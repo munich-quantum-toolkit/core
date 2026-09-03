@@ -16,7 +16,6 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
-#include "ir/Definitions.hpp"
 
 #include <algorithm>
 #include <array>
@@ -519,7 +518,7 @@ auto std::hash<dd::Edge<Node>>::operator()(
     const dd::Edge<Node>& e) const noexcept -> std::size_t {
   const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(e.p));
   const auto h2 = std::hash<dd::Complex>{}(e.w);
-  return qc::combineHash(h1, h2);
+  return dd::combineHash(h1, h2);
 }
 
 // NOLINTNEXTLINE(bugprone-std-namespace-modification)

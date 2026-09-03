@@ -52,6 +52,10 @@ Runtime integer preconditions and classical-index bounds are represented
 explicitly in QC. This safety machinery is supported by the normal compiler and
 QIR paths, but it is intentionally outside the export subset described below.
 
+OpenQASM 3 supports all six unsigned comparisons with a bit register on the left
+and an integer constant on the right. OpenQASM 2 retains its equality-only
+register condition.
+
 Fixed-width angles are a compile-time input feature. An omitted angle width
 resolves to 52 bits. Both `const angle[N]` and initialized `angle[N]`
 declarations are accepted as write-once values. Initializers and angle casts
@@ -83,10 +87,12 @@ do not index qubits keep their runtime behavior.
 
 Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
 zero. OpenQASM 3 leaves each register undefined until a statement writes it.
-Explicit outputs and implicit global outputs are returned by the entry function;
-internal CBit allocations are not outputs. Other scalar outputs use builtin MLIR
-scalar types. A scalar `qubit` lowers to `qc.alloc`, while `qubit[1]` remains a
-one-element qubit register.
+Whole-register comparisons lower to `cbit.cmp` and keep their unsigned integer
+meaning without expanding into per-bit expression trees. Explicit outputs and
+implicit global outputs are returned by the entry function; internal CBit
+allocations are not outputs. Other scalar outputs use builtin MLIR scalar types.
+A scalar `qubit` lowers to `qc.alloc`, while `qubit[1]` remains a one-element
+qubit register.
 
 ## Export OpenQASM
 
@@ -187,6 +193,7 @@ Unsigned constants therefore normalize to `int`. Operations whose signedness
 affects their meaning, such as unsigned division, comparison, or conversion, are
 rejected instead of being approximated. Integer sign extension and truncation
 are also rejected because OpenQASM scalar casts have different value semantics.
+Direct `cbit.cmp` operations retain their unsigned register semantics.
 
 Emitted scalar casts use standard OpenQASM conversion syntax. The MQT Core
 frontend does not yet parse that syntax, so cast-containing output is outside

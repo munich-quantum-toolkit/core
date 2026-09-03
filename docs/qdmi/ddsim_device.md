@@ -10,11 +10,11 @@ simulate quantum programs.
 
 ## Capabilities
 
-The simulator device supports all operations that our
-[MQT Core IR](../mqt_core_ir.md) supports. It accepts OpenQASM 2, OpenQASM 3,
-and textual or binary QIR programs using the Base or Adaptive Profile. See
-[QIR Support in the MQT](../qir/index.md) for the exact QDMI program formats and
-payload contracts.
+The simulator device accepts OpenQASM 2, OpenQASM 3, and textual or binary QIR
+programs using the Base or Adaptive Profile. See the
+{doc}`OpenQASM support table <../mlir/OpenQASM>` and
+[QIR Support in the MQT](../qir/index.md) for the supported operations, exact
+QDMI program formats, and payload contracts.
 
 The device can perform weak simulation for every supported format, i.e., sample
 from the distribution produced by the program. It can also perform strong
@@ -25,18 +25,26 @@ for weak simulation or to `0` for strong simulation. QIR Adaptive Profile
 programs require at least one shot because their measurement-dependent control
 flow cannot be represented by state extraction.
 
-For reproducible sampling, set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM1` to a positive
-`int` seed. The Python API exposes the same parameter as `custom1`. If `custom1`
-is absent, the device seeds the random-number generator from the system. The
-seed applies to OpenQASM and QIR sampling jobs. State extraction does not use
-it.
+For OpenQASM state extraction, terminal output measurements are deferred. They
+do not collapse the returned state. Mid-circuit measurements still execute and
+may therefore collapse the state before subsequent operations.
 
-Under the hood, the QDMI device uses the MQT Core OpenQASM parser (see
-{cpp-api:func}`qasm3::Importer::imports`) to parse the program into a
-{cpp-api:class}`qc::QuantumComputation` object. That circuit is then passed
-either to the {cpp-api:func}`dd::sample` or {cpp-api:func}`dd::simulate`
-function, depending on the mode. Consult the respective documentation for more
-details and limitations.
+For reproducible stochastic execution, set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM1`
+to a positive `int` seed. The Python API exposes the same parameter as
+`custom1`. If `custom1` is absent, the device seeds the random-number generator
+from the system. The seed controls OpenQASM and QIR sampling. During OpenQASM
+state extraction, it also controls mid-circuit measurements and resets; QIR Base
+state extraction does not use it.
+
+Under the hood, the QDMI device imports OpenQASM into the compiler's QC
+representation, lowers it to QCO, and executes it with the QCO DD utilities.
+This is the same compiler-backed simulation path exposed by
+{py:class}`~mqt.core.mlir.QCOProgram`.
+
+OpenQASM 3 output bits are undefined until written, so direct QDMI jobs with a
+partially initialized output register fail during import. The Qiskit backend
+preserves Qiskit's zero-initialized classical-bit semantics by writing every
+classical bit before submitting its generated OpenQASM 3 program.
 
 The device implements the full QDMI job interface (except for the
 `QDMI_JOB_RESULT_SHOTS` result format not supported by the simulator).

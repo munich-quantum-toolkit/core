@@ -10,8 +10,8 @@
 
 #include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 
-#include "ir/Definitions.hpp"
-#include "ir/operations/OpType.hpp"
+#include "dd/DDDefinitions.hpp"
+#include "dd/GateMatrixDefinitions.hpp"
 #include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
 
 #include <algorithm>
@@ -64,16 +64,16 @@ static auto controlsFromArray(Array* array) -> std::vector<Qubit*> {
   return controls;
 }
 
-static auto applyControlled(const qc::OpType op, Array* controlArray,
-                            Qubit* target, const std::span<const qc::fp> params)
+static auto applyControlled(const dd::GateType gate, Array* controlArray,
+                            Qubit* target, const std::span<const dd::fp> params)
     -> void {
   const auto controls = controlsFromArray(controlArray);
   const std::array targets{target};
-  qir::Runtime::getInstance().apply(op, params, controls, targets);
+  qir::Runtime::getInstance().apply(gate, params, controls, targets);
 }
 
 template <std::size_t NumParams, std::size_t NumTargets>
-static auto applyControlledTuple(const qc::OpType op, Array* controls,
+static auto applyControlledTuple(const dd::GateType gate, Array* controls,
                                  Tuple* tuple) -> void {
   if (tuple == nullptr) {
     throw std::invalid_argument(
@@ -95,10 +95,10 @@ static auto applyControlledTuple(const qc::OpType op, Array* controls,
     Args args;
     std::memcpy(&args, tuple, sizeof(Args));
     const auto controlList = controlsFromArray(controls);
-    qir::Runtime::getInstance().apply(op, {}, controlList, args.targets);
+    qir::Runtime::getInstance().apply(gate, {}, controlList, args.targets);
   } else {
     struct Args {
-      std::array<qc::fp, NumParams> parameters{};
+      std::array<dd::fp, NumParams> parameters{};
       std::array<Qubit*, NumTargets> targets{};
     };
     static_assert(std::is_standard_layout_v<Args>);
@@ -106,7 +106,7 @@ static auto applyControlledTuple(const qc::OpType op, Array* controls,
     Args args;
     std::memcpy(&args, tuple, sizeof(Args));
     const auto controlList = controlsFromArray(controls);
-    qir::Runtime::getInstance().apply(op, args.parameters, controlList,
+    qir::Runtime::getInstance().apply(gate, args.parameters, controlList,
                                       args.targets);
   }
 }
@@ -269,148 +269,156 @@ void __quantum__rt__qubit_release(Qubit* qubit) {
 // QUANTUM INSTRUCTION SET
 #define MQT_QIR_DEFINE_1_0(NAME, OP, SUFFIX)                                   \
   void __quantum__qis__##NAME##__##SUFFIX(Qubit* target) {                     \
-    qir::Runtime::getInstance().apply<qc::OP>(target);                         \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(target);               \
   }                                                                            \
   void __quantum__qis__c##NAME##__##SUFFIX(Qubit* control, Qubit* target) {    \
-    qir::Runtime::getInstance().apply<qc::OP>(control, target);                \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(control, target);      \
   }                                                                            \
   void __quantum__qis__cc##NAME##__##SUFFIX(Qubit* control0, Qubit* control1,  \
                                             Qubit* target) {                   \
-    qir::Runtime::getInstance().apply<qc::OP>(control0, control1, target);     \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(control0, control1,    \
+                                                        target);               \
   }
 #define MQT_QIR_DEFINE_1_1(NAME, OP, SUFFIX)                                   \
   void __quantum__qis__##NAME##__##SUFFIX(double p0, Qubit* target) {          \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, target);                     \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, target);           \
   }                                                                            \
   void __quantum__qis__c##NAME##__##SUFFIX(double p0, Qubit* control,          \
                                            Qubit* target) {                    \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, control, target);            \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, control, target);  \
   }                                                                            \
   void __quantum__qis__cc##NAME##__##SUFFIX(double p0, Qubit* control0,        \
                                             Qubit* control1, Qubit* target) {  \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, control0, control1, target); \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, control0,          \
+                                                        control1, target);     \
   }
 #define MQT_QIR_DEFINE_1_2(NAME, OP, SUFFIX)                                   \
   void __quantum__qis__##NAME##__##SUFFIX(double p0, double p1,                \
                                           Qubit* target) {                     \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, target);                 \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, p1, target);       \
   }                                                                            \
   void __quantum__qis__c##NAME##__##SUFFIX(double p0, double p1,               \
                                            Qubit* control, Qubit* target) {    \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, control, target);        \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, p1, control,       \
+                                                        target);               \
   }                                                                            \
   void __quantum__qis__cc##NAME##__##SUFFIX(                                   \
       double p0, double p1, Qubit* control0, Qubit* control1, Qubit* target) { \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, control0, control1,      \
-                                              target);                         \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, p1, control0,      \
+                                                        control1, target);     \
   }
 #define MQT_QIR_DEFINE_1_3(NAME, OP, SUFFIX)                                   \
   void __quantum__qis__##NAME##__##SUFFIX(double p0, double p1, double p2,     \
                                           Qubit* target) {                     \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, p2, target);             \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, p1, p2, target);   \
   }                                                                            \
   void __quantum__qis__c##NAME##__##SUFFIX(double p0, double p1, double p2,    \
                                            Qubit* control, Qubit* target) {    \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, p2, control, target);    \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, p1, p2, control,   \
+                                                        target);               \
   }                                                                            \
   void __quantum__qis__cc##NAME##__##SUFFIX(double p0, double p1, double p2,   \
                                             Qubit* control0, Qubit* control1,  \
                                             Qubit* target) {                   \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, p2, control0, control1,  \
-                                              target);                         \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, p1, p2, control0,  \
+                                                        control1, target);     \
   }
 #define MQT_QIR_DEFINE_2_0(NAME, OP, SUFFIX)                                   \
   void __quantum__qis__##NAME##__##SUFFIX(Qubit* target0, Qubit* target1) {    \
-    qir::Runtime::getInstance().apply<qc::OP>(target0, target1);               \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(target0, target1);     \
   }                                                                            \
   void __quantum__qis__c##NAME##__##SUFFIX(Qubit* control, Qubit* target0,     \
                                            Qubit* target1) {                   \
-    qir::Runtime::getInstance().apply<qc::OP>(control, target0, target1);      \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(control, target0,      \
+                                                        target1);              \
   }                                                                            \
   void __quantum__qis__cc##NAME##__##SUFFIX(Qubit* control0, Qubit* control1,  \
                                             Qubit* target0, Qubit* target1) {  \
-    qir::Runtime::getInstance().apply<qc::OP>(control0, control1, target0,     \
-                                              target1);                        \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(control0, control1,    \
+                                                        target0, target1);     \
   }
 #define MQT_QIR_DEFINE_2_1(NAME, OP, SUFFIX)                                   \
   void __quantum__qis__##NAME##__##SUFFIX(double p0, Qubit* target0,           \
                                           Qubit* target1) {                    \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, target0, target1);           \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, target0, target1); \
   }                                                                            \
   void __quantum__qis__c##NAME##__##SUFFIX(double p0, Qubit* control,          \
                                            Qubit* target0, Qubit* target1) {   \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, control, target0, target1);  \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, control, target0,  \
+                                                        target1);              \
   }                                                                            \
   void __quantum__qis__cc##NAME##__##SUFFIX(double p0, Qubit* control0,        \
                                             Qubit* control1, Qubit* target0,   \
                                             Qubit* target1) {                  \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, control0, control1, target0, \
-                                              target1);                        \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(                       \
+        p0, control0, control1, target0, target1);                             \
   }
 #define MQT_QIR_DEFINE_2_2(NAME, OP, SUFFIX)                                   \
   void __quantum__qis__##NAME##__##SUFFIX(double p0, double p1,                \
                                           Qubit* target0, Qubit* target1) {    \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, target0, target1);       \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, p1, target0,       \
+                                                        target1);              \
   }                                                                            \
   void __quantum__qis__c##NAME##__##SUFFIX(                                    \
       double p0, double p1, Qubit* control, Qubit* target0, Qubit* target1) {  \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, control, target0,        \
-                                              target1);                        \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(p0, p1, control,       \
+                                                        target0, target1);     \
   }                                                                            \
   void __quantum__qis__cc##NAME##__##SUFFIX(double p0, double p1,              \
                                             Qubit* control0, Qubit* control1,  \
                                             Qubit* target0, Qubit* target1) {  \
-    qir::Runtime::getInstance().apply<qc::OP>(p0, p1, control0, control1,      \
-                                              target0, target1);               \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(                       \
+        p0, p1, control0, control1, target0, target1);                         \
   }
 #define MQT_QIR_DEFINE_3_0(NAME, OP, SUFFIX)                                   \
   void __quantum__qis__##NAME##__##SUFFIX(Qubit* target0, Qubit* target1,      \
                                           Qubit* target2) {                    \
-    qir::Runtime::getInstance().apply<qc::OP>(target0, target1, target2);      \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(target0, target1,      \
+                                                        target2);              \
   }                                                                            \
   void __quantum__qis__c##NAME##__##SUFFIX(Qubit* control, Qubit* target0,     \
                                            Qubit* target1, Qubit* target2) {   \
-    qir::Runtime::getInstance().apply<qc::OP>(control, target0, target1,       \
-                                              target2);                        \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(control, target0,      \
+                                                        target1, target2);     \
   }                                                                            \
   void __quantum__qis__cc##NAME##__##SUFFIX(Qubit* control0, Qubit* control1,  \
                                             Qubit* target0, Qubit* target1,    \
                                             Qubit* target2) {                  \
-    qir::Runtime::getInstance().apply<qc::OP>(control0, control1, target0,     \
-                                              target1, target2);               \
+    qir::Runtime::getInstance().apply<dd::GateType::OP>(                       \
+        control0, control1, target0, target1, target2);                        \
   }
 #define MQT_QIR_DEFINE_CTL_1_0(NAME, OP, CTL_SUFFIX)                           \
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls,                 \
                                               Qubit* target) {                 \
-    applyControlled(qc::OP, controls, target, {});                             \
+    applyControlled(dd::GateType::OP, controls, target, {});                   \
   }
 #define MQT_QIR_DEFINE_CTL_1_1(NAME, OP, CTL_SUFFIX)                           \
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
-    applyControlledTuple<1, 1>(qc::OP, controls, args);                        \
+    applyControlledTuple<1, 1>(dd::GateType::OP, controls, args);              \
   }
 #define MQT_QIR_DEFINE_CTL_1_2(NAME, OP, CTL_SUFFIX)                           \
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
-    applyControlledTuple<2, 1>(qc::OP, controls, args);                        \
+    applyControlledTuple<2, 1>(dd::GateType::OP, controls, args);              \
   }
 #define MQT_QIR_DEFINE_CTL_1_3(NAME, OP, CTL_SUFFIX)                           \
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
-    applyControlledTuple<3, 1>(qc::OP, controls, args);                        \
+    applyControlledTuple<3, 1>(dd::GateType::OP, controls, args);              \
   }
 #define MQT_QIR_DEFINE_CTL_2_0(NAME, OP, CTL_SUFFIX)                           \
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
-    applyControlledTuple<0, 2>(qc::OP, controls, args);                        \
+    applyControlledTuple<0, 2>(dd::GateType::OP, controls, args);              \
   }
 #define MQT_QIR_DEFINE_CTL_2_1(NAME, OP, CTL_SUFFIX)                           \
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
-    applyControlledTuple<1, 2>(qc::OP, controls, args);                        \
+    applyControlledTuple<1, 2>(dd::GateType::OP, controls, args);              \
   }
 #define MQT_QIR_DEFINE_CTL_2_2(NAME, OP, CTL_SUFFIX)                           \
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
-    applyControlledTuple<2, 2>(qc::OP, controls, args);                        \
+    applyControlledTuple<2, 2>(dd::GateType::OP, controls, args);              \
   }
 #define MQT_QIR_DEFINE_CTL_3_0(NAME, OP, CTL_SUFFIX)                           \
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array* controls, Tuple* args) {  \
-    applyControlledTuple<0, 3>(qc::OP, controls, args);                        \
+    applyControlledTuple<0, 3>(dd::GateType::OP, controls, args);              \
   }
 
 #define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \

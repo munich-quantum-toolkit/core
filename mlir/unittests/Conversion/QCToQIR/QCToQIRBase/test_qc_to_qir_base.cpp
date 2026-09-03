@@ -11,6 +11,8 @@
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
@@ -155,6 +157,32 @@ TEST(QCToQIRBaseNativeTest, RejectsMultiBlockEntryFunctionWithoutMutation) {
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
   EXPECT_EQ(entryPoint.getBlocks().size(), 2);
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsClassicalRegisterComparisons) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, qc::QCDialect, arith::ArithDialect,
+                      func::FuncDialect, LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto reg = builder.allocClassicalBitRegister(1);
+  auto rhs = builder.getIntegerAttr(builder.getIntegerType(1), 0);
+  (void)cbit::CompareOp::create(builder, builder.getI1Type(),
+                                cbit::ComparisonPredicate::Equal, reg, rhs);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "QIR Base Profile does not support classical-register comparisons");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
 TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {

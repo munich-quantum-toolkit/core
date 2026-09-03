@@ -67,12 +67,12 @@ jobs:
         include:
           - runs-on: macos-26
             compiler: clang
-            preset: release
-            run-on-draft: false
-          - runs-on: macos-26
-            compiler: clang
             preset: debug
             run-on-draft: true
+          - runs-on: macos-26
+            compiler: clang
+            preset: release
+            run-on-draft: false
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-macos.yml@063c90c8e7e094bfffb73f8436eb55341c1e820f # v2.3.0
     with:
       runs-on: ${{ matrix.runs-on }}
@@ -94,7 +94,7 @@ jobs:
         include:
           - runs-on: windows-2025
             compiler: msvc
-            preset: debug-windows
+            preset: release-windows
             run-on-draft: true
           - runs-on: windows-11-arm
             compiler: msvc
@@ -106,7 +106,6 @@ jobs:
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
       llvm-version: 23.1.0
-      mlir-debug: ${{ matrix.preset == 'debug-windows' }}
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:

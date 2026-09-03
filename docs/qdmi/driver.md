@@ -34,9 +34,9 @@ use. They can be selected independently before making MQT Core available:
 - {code}`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`
 - {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`
 
-The {code}`BUILD_MQT_CORE_MLIR` option controls the MLIR compiler infrastructure
-and QIR support in the DDSIM device. A build with this option set to {code}`OFF`
-retains the DDSIM device's OpenQASM 2 and OpenQASM 3 support.
+The DDSIM device uses the MLIR compiler infrastructure for both OpenQASM and QIR
+programs. Its target is skipped when {code}`BUILD_MQT_CORE_MLIR` is {code}`OFF`,
+while the QDMI driver and superconducting device remain available.
 
 For example, an embedded simulator consumer can enable only the DDSIM device,
 while CUDA-Q can enable the DDSIM and superconducting devices used by its
@@ -44,8 +44,8 @@ integration tests.
 
 The QDMI driver and QDMI libraries are available independently. Device-free
 builds can register external device libraries through
-[QDMI device configuration](configuration.md). Building MQT Core's C++ tests
-requires both bundled devices so that the complete device integration is tested.
+[QDMI device configuration](configuration.md). C++ test builds require every
+bundled device available in the selected build configuration.
 
 ## Python Bindings
 

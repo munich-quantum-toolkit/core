@@ -11,19 +11,12 @@
 #include "dd/CachedEdge.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
-#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
-#include "ir/Permutation.hpp"
-#include "ir/operations/Control.hpp"
-#include "ir/operations/IfElseOperation.hpp"
-#include "ir/operations/NonUnitaryOperation.hpp"
-#include "ir/operations/Operation.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/pair.h>    // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/set.h>     // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
 #include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
@@ -34,7 +27,6 @@
 #include <cstddef>
 #include <random>
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
 namespace mqt {
@@ -297,106 +289,6 @@ Returns:
     The resulting state is guaranteed to have its reference count increased.)pb");
 
   dd.def(
-      "apply_unitary_operation",
-      [](dd::Package& p, const dd::vEdge& v, const qc::Operation& op,
-         const qc::Permutation& perm = {}) {
-        return applyUnitaryOperation(op, v, p, perm);
-      },
-      "vec"_a, "operation"_a, "permutation"_a = qc::Permutation{},
-      // keep the DD package alive while the returned vector DD is alive.
-      nb::keep_alive<0, 1>(), R"pb(Apply a unitary operation to the DD.
-
-Notes:
-    Automatically manages the reference count of the input and output DDs.
-    The input DD must have a non-zero reference count.
-
-Args:
-    vec: The input DD.
-    operation: The operation. Must be unitary.
-    permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-Returns:
-    The resulting DD.)pb");
-
-  dd.def(
-      "apply_measurement",
-      [](dd::Package& p, const dd::vEdge& v, const qc::NonUnitaryOperation& op,
-         const std::vector<bool>& measurements,
-         const qc::Permutation& perm = {}) {
-        static thread_local std::mt19937_64 rng(std::random_device{}());
-        auto measurementsCopy = measurements;
-        return std::pair{
-            applyMeasurement(op, v, p, rng, measurementsCopy, perm),
-            measurementsCopy};
-      },
-      "vec"_a, "operation"_a, "measurements"_a,
-      "permutation"_a = qc::Permutation{},
-      // keep the DD package alive while the returned vector DD is alive.
-      nb::keep_alive<0, 1>(), R"pb(Apply a measurement to the DD.
-
-Notes:
-    Automatically manages the reference count of the input and output DDs.
-    The input DD must have a non-zero reference count
-
-Args:
-    vec: The input DD.
-    operation: The measurement operation.
-    measurements: A list of bits with existing measurement outcomes.
-    permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-Returns:
-    The resulting DD after the measurement as well as the updated measurement outcomes.)pb");
-
-  dd.def(
-      "apply_reset",
-      [](dd::Package& p, const dd::vEdge& v, const qc::NonUnitaryOperation& op,
-         const qc::Permutation& perm = {}) {
-        static thread_local std::mt19937_64 rng(std::random_device{}());
-        return applyReset(op, v, p, rng, perm);
-      },
-      "vec"_a, "operation"_a, "permutation"_a = qc::Permutation{},
-      // keep the DD package alive while the returned vector DD is alive.
-      nb::keep_alive<0, 1>(), R"pb(Apply a reset to the DD.
-
-Notes:
-    Automatically manages the reference count of the input and output DDs.
-    The input DD must have a non-zero reference count.
-
-Args:
-    vec: The input DD.
-    operation: The reset operation.
-    permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-Returns:
-    The resulting DD after the reset.)pb");
-
-  dd.def(
-      "apply_if_else_operation",
-      [](dd::Package& p, const dd::vEdge& v, const qc::IfElseOperation& op,
-         const std::vector<bool>& measurements,
-         const qc::Permutation& perm = {}) {
-        return applyIfElseOperation(op, v, p, measurements, perm);
-      },
-      "vec"_a, "operation"_a, "measurements"_a,
-      "permutation"_a = qc::Permutation{},
-      // keep the DD package alive while the returned vector DD is alive.
-      nb::keep_alive<0, 1>(),
-      R"pb(Apply a classically controlled operation to the DD.
-
-Notes:
-    Automatically manages the reference count of the input and output DDs.
-    The input DD must have a non-zero reference count.
-
-Args:
-    vec: The input DD.
-    operation: The classically controlled operation.
-    measurements: A list of bits with stored measurement outcomes.
-    permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-Returns:
-    The resulting DD after the operation.)pb");
-
-  dd.def(
       "measure_collapsing",
       [](dd::Package& p, dd::vEdge& v, const dd::Qubit q) {
         static thread_local std::mt19937_64 rng(std::random_device{}());
@@ -463,7 +355,7 @@ Returns:
   dd.def(
       "controlled_single_qubit_gate",
       [](dd::Package& p, const SingleQubitMatrix& mat,
-         const qc::Control& control, const dd::Qubit target) {
+         const dd::Control& control, const dd::Qubit target) {
         return p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)},
                             control, target);
       },
@@ -473,7 +365,7 @@ Returns:
       nb::sig(
           "def controlled_single_qubit_gate(self, "
           "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (2, 2)}],"
-          "control: mqt.core.ir.operations.Control | int,"
+          "control: mqt.core.dd.Control | int,"
           "target: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a controlled single-qubit gate.
 
@@ -488,7 +380,7 @@ Returns:
   dd.def(
       "multi_controlled_single_qubit_gate",
       [](dd::Package& p, const SingleQubitMatrix& mat,
-         const qc::Controls& controls, const dd::Qubit target) {
+         const dd::Controls& controls, const dd::Qubit target) {
         return p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)},
                             controls, target);
       },
@@ -498,7 +390,7 @@ Returns:
       nb::sig(
           "def multi_controlled_single_qubit_gate(self, "
           "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (2, 2)}],"
-          "controls: collections.abc.Set[mqt.core.ir.operations.Control | int],"
+          "controls: collections.abc.Set[mqt.core.dd.Control | int],"
           "target: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a multi-controlled single-qubit gate.
 
@@ -535,7 +427,7 @@ Returns:
 
   dd.def(
       "controlled_two_qubit_gate",
-      [](dd::Package& p, const TwoQubitMatrix& mat, const qc::Control& control,
+      [](dd::Package& p, const TwoQubitMatrix& mat, const dd::Control& control,
          const dd::Qubit target0, const dd::Qubit target1) {
         return p.makeTwoQubitGateDD(
             {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
@@ -550,7 +442,7 @@ Returns:
       nb::sig(
           "def controlled_two_qubit_gate(self, "
           "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (4, 4)}],"
-          "control: mqt.core.ir.operations.Control | int,"
+          "control: mqt.core.dd.Control | int,"
           "target0: int, target1: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a controlled two-qubit gate.
 
@@ -566,7 +458,7 @@ Returns:
   dd.def(
       "multi_controlled_two_qubit_gate",
       [](dd::Package& p, const TwoQubitMatrix& mat,
-         const qc::Controls& controls, const dd::Qubit target0,
+         const dd::Controls& controls, const dd::Qubit target0,
          const dd::Qubit target1) {
         return p.makeTwoQubitGateDD(
             {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
@@ -581,7 +473,7 @@ Returns:
       nb::sig(
           "def multi_controlled_two_qubit_gate(self, "
           "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (4, 4)}],"
-          "controls: collections.abc.Set[mqt.core.ir.operations.Control | int],"
+          "controls: collections.abc.Set[mqt.core.dd.Control | int],"
           "target0: int, target1: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a multi-controlled two-qubit gate.
 
@@ -625,25 +517,6 @@ Args:
 
 Returns:
     The DD for the matrix.)pb");
-
-  dd.def(
-      "from_operation",
-      [](dd::Package& p, const qc::Operation& op, const bool invert = false) {
-        if (invert) {
-          return getInverseDD(op, p);
-        }
-        return getDD(op, p);
-      },
-      "operation"_a, "invert"_a = false,
-      // keep the DD package alive while the returned matrix DD is alive.
-      nb::keep_alive<0, 1>(), R"pb(Create a DD from an operation.
-
-Args:
-    operation: The operation. Must be unitary.
-    invert: Whether to get the inverse of the operation.
-
-Returns:
-    The DD for the operation.)pb");
 
   // Reference counting and garbage collection
   dd.def("inc_ref_vec", &dd::Package::incRef<dd::vNode>, "vec"_a,

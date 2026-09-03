@@ -11,7 +11,6 @@
 #include "dd/GateMatrixDefinitions.hpp"
 
 #include "dd/DDDefinitions.hpp"
-#include "ir/operations/OpType.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -160,92 +159,81 @@ TwoQubitGateMatrix xxPlusYYMat(const fp theta, const fp beta = 0.) {
 
 namespace dd {
 
-GateMatrix opToSingleQubitGateMatrix(const qc::OpType t,
+GateMatrix opToSingleQubitGateMatrix(const GateType t,
                                      const std::vector<fp>& params) {
   switch (t) {
-  case qc::I:
+  case GateType::I:
     return {1, 0, 0, 1};
-  case qc::H:
+  case GateType::H:
     return {SQRT2_2, SQRT2_2, SQRT2_2, -SQRT2_2};
-  case qc::X:
+  case GateType::X:
     return {0, 1, 1, 0};
-  case qc::Y:
+  case GateType::Y:
     return {0, {0, -1}, {0, 1}, 0};
-  case qc::Z:
+  case GateType::Z:
     return {1, 0, 0, -1};
-  case qc::S:
+  case GateType::S:
     return {1, 0, 0, {0, 1}};
-  case qc::Sdg:
+  case GateType::Sdg:
     return {1, 0, 0, {0, -1}};
-  case qc::T:
+  case GateType::T:
     return {1, 0, 0, {SQRT2_2, SQRT2_2}};
-  case qc::Tdg:
+  case GateType::Tdg:
     return {1, 0, 0, {SQRT2_2, -SQRT2_2}};
-  case qc::SX:
+  case GateType::SX:
     return {std::complex<fp>{0.5, 0.5}, std::complex<fp>{0.5, -0.5},
             std::complex<fp>{0.5, -0.5}, std::complex<fp>{0.5, 0.5}};
-  case qc::SXdg:
+  case GateType::SXdg:
     return {std::complex<fp>{0.5, -0.5}, std::complex<fp>{0.5, 0.5},
             std::complex<fp>{0.5, 0.5}, std::complex<fp>{0.5, -0.5}};
-  case qc::V:
-    return {SQRT2_2, {0., -SQRT2_2}, {0., -SQRT2_2}, SQRT2_2};
-  case qc::Vdg:
-    return {SQRT2_2, {0., SQRT2_2}, {0., SQRT2_2}, SQRT2_2};
-  case qc::U:
+  case GateType::U:
     // shuffle parameters to match semantics of parameter <-> matrix from
-    // getStandardOperationDD
+    // getGateDD
     return uMat(params.at(2), params.at(1), params.at(0));
-  case qc::U2:
+  case GateType::U2:
     // swap parameters to match semantics of parameter <-> matrix from
-    // getStandardOperationDD
+    // getGateDD
     return u2Mat(params.at(1), params.at(0));
-  case qc::P:
+  case GateType::P:
     return pMat(params.at(0));
-  case qc::RX:
+  case GateType::RX:
     return rxMat(params.at(0));
-  case qc::RY:
+  case GateType::RY:
     return ryMat(params.at(0));
-  case qc::RZ:
+  case GateType::RZ:
     return rzMat(params.at(0));
-  case qc::R:
+  case GateType::R:
     return rMat(params.at(0), params.at(1));
   default:
     throw std::invalid_argument("Invalid single-qubit gate type");
   }
 }
 
-TwoQubitGateMatrix opToTwoQubitGateMatrix(const qc::OpType t,
+TwoQubitGateMatrix opToTwoQubitGateMatrix(const GateType t,
                                           const std::vector<fp>& params) {
   switch (t) {
-  case qc::SWAP:
+  case GateType::SWAP:
     return {{{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}}};
-  case qc::iSWAP:
+  case GateType::iSWAP:
     return {{{1, 0, 0, 0}, {0, 0, {0, 1}, 0}, {0, {0, 1}, 0, 0}, {0, 0, 0, 1}}};
-  case qc::iSWAPdg:
-    return {
-        {{1, 0, 0, 0}, {0, 0, {0, -1}, 0}, {0, {0, -1}, 0, 0}, {0, 0, 0, 1}}};
-  case qc::ECR:
+  case GateType::ECR:
     return {{{0, 0, SQRT2_2, {0, SQRT2_2}},
              {0, 0, {0, SQRT2_2}, SQRT2_2},
              {SQRT2_2, {0, -SQRT2_2}, 0, 0},
              {std::complex<fp>{0., -SQRT2_2}, SQRT2_2, 0, 0}}};
-  case qc::DCX:
+  case GateType::DCX:
     return {{{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, 1}, {0, 1, 0, 0}}};
-  case qc::Peres:
-    return {{{0, 0, 0, 1}, {0, 0, 1, 0}, {1, 0, 0, 0}, {0, 1, 0, 0}}};
-  case qc::Peresdg:
-    return {{{0, 0, 1, 0}, {0, 0, 0, 1}, {0, 1, 0, 0}, {1, 0, 0, 0}}};
-  case qc::RXX:
+  case GateType::RXX:
     return rxxMat(params.at(0));
-  case qc::RYY:
+  case GateType::RYY:
     return ryyMat(params.at(0));
-  case qc::RZZ:
+  case GateType::RZZ:
     return rzzMat(params.at(0));
-  case qc::RZX:
+  case GateType::RZX:
     return rzxMat(params.at(0));
-  case qc::XXminusYY:
+  case GateType::XXminusYY:
     return xxMinusYYMat(params.at(0), params.at(1));
-  case qc::XXplusYY:
+  case GateType::XXplusYY:
     return xxPlusYYMat(params.at(0), params.at(1));
   default:
     throw std::invalid_argument("Invalid two-qubit gate type");
@@ -253,10 +241,9 @@ TwoQubitGateMatrix opToTwoQubitGateMatrix(const qc::OpType t,
 }
 
 ThreeQubitGateMatrix
-opToThreeQubitGateMatrix(const qc::OpType t,
-                         const std::vector<fp>& /*params*/) {
+opToThreeQubitGateMatrix(const GateType t, const std::vector<fp>& /*params*/) {
   switch (t) {
-  case qc::RCCX: {
+  case GateType::RCCX: {
     ThreeQubitGateMatrix matrix{};
     for (size_t i = 0; i < THREE_QUBIT_GATE_DIM; ++i) {
       matrix[i][i] = 1.;

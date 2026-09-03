@@ -67,9 +67,9 @@ option(BUILD_MQT_CORE_DOCUMENTATION "Generate documentation artifacts as part of
 if(BUILD_MQT_CORE_DOCUMENTATION AND NOT BUILD_MQT_CORE_MLIR)
   message(FATAL_ERROR "BUILD_MQT_CORE_DOCUMENTATION requires BUILD_MQT_CORE_MLIR")
 endif()
-if(BUILD_MQT_CORE_TESTS AND (NOT BUILD_MQT_CORE_QDMI_DDSIM_DEVICE OR NOT
-                                                                     BUILD_MQT_CORE_QDMI_SC_DEVICE))
-  message(FATAL_ERROR "BUILD_MQT_CORE_TESTS requires all bundled QDMI devices")
+if(BUILD_MQT_CORE_TESTS AND (NOT BUILD_MQT_CORE_QDMI_SC_DEVICE
+                             OR (BUILD_MQT_CORE_MLIR AND NOT BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)))
+  message(FATAL_ERROR "BUILD_MQT_CORE_TESTS requires all available bundled QDMI devices")
 endif()
 if(BUILD_MQT_CORE_MLIR)
   if(APPLE AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
@@ -149,7 +149,6 @@ if(BUILD_MQT_CORE_MLIR)
       COMMENT "Copying and cleaning up generated MLIR documentation"
       VERBATIM)
   endif()
-
   if(BUILD_MQT_CORE_DOCUMENTATION)
     if(PROJECT_IS_TOP_LEVEL)
       add_custom_target(mqt-core-docs DEPENDS mlir-doc)
@@ -164,25 +163,19 @@ if(BUILD_MQT_CORE_MLIR)
         COMMENT "Copying and cleaning up generated MLIR documentation"
         VERBATIM)
     endif()
-    foreach(binding ir dd qdmi)
+    foreach(binding dd qdmi)
       add_dependencies(${MQT_CORE_TARGET_NAME}-${binding}-bindings mqt-core-docs)
     endforeach()
   endif()
 endif()
 
 if(BUILD_MQT_CORE_BINDINGS)
-  set(MQT_CORE_WHEEL_TARGETS
-      mqt-core-bench-bindings
-      mqt-core-bench-library
-      mqt-core-ir
-      mqt-core-dd
-      mqt-core-ir-bindings
-      mqt-core-dd-bindings
-      mqt-core-qdmi-bindings)
+  set(MQT_CORE_WHEEL_TARGETS mqt-core-bench-bindings mqt-core-bench-library mqt-core-dd
+                             mqt-core-dd-bindings mqt-core-qdmi-bindings)
   if(BUILD_MQT_CORE_MLIR)
     list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-bench mqt-core-mlir-bindings)
   endif()
-  if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
+  if(BUILD_MQT_CORE_MLIR AND BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
     list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device)
   endif()
   if(BUILD_MQT_CORE_QDMI_SC_DEVICE)

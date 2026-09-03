@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -49,7 +50,7 @@ using decomposition::emitUnitary2QWeyl;
 
 namespace {
 
-/** Composed unitary and metadata for a fusable two-qubit run. */
+/// Composed unitary and metadata for a fusable two-qubit run.
 struct FusableTwoQubitRun {
   SmallVector<Operation*, 8> ops; ///< Members in program order.
   Matrix4x4 composed = Matrix4x4::identity();
@@ -299,6 +300,28 @@ static bool requiresTargetSynthesis(Operation* operation,
   return !target.supports(operation);
 }
 
+/// Normalize relative phase effects and discard only the unobservable global
+/// phase of an entry point when the target cannot represent it.
+static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
+                                         const CompilerTarget& target) {
+  if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
+    return failure();
+  }
+  if (target.supportsOperation("gphase", 0, 1)) {
+    return success();
+  }
+  auto entryPoint = mqt::getEntryPoint(moduleOp);
+  if (!entryPoint) {
+    return success();
+  }
+  for (auto& block : entryPoint.getBody()) {
+    for (auto phase : llvm::make_early_inc_range(block.getOps<GPhaseOp>())) {
+      phase.erase();
+    }
+  }
+  return success();
+}
+
 namespace {
 
 struct SynthesisPlan {
@@ -451,15 +474,19 @@ struct TargetNativeSynthesisPass final
 
 protected:
   void runOnOperation() override {
-    if (!target.hasExplicitOperations()) {
+    if (target.nativeOperationsKind() ==
+        CompilerTarget::NativeOperations::Kind::Unrestricted) {
       return;
     }
     ModuleOp moduleOp = getOperation();
+    if (failed(prepareGlobalPhases(moduleOp, target))) {
+      signalPassFailure();
+      return;
+    }
     const auto plan = planTargetSynthesis(moduleOp, target);
     if (plan.firstNeed == nullptr) {
       return;
     }
-
     const auto targetBasis = target.synthesisBasis();
     if (!targetBasis) {
       plan.firstNeed->emitError()
@@ -483,7 +510,7 @@ protected:
       lowerTargetOperation(rewriter, cast<UnitaryOpInterface>(operation),
                            *targetBasis);
     }
-    if (failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
+    if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
     }
   }

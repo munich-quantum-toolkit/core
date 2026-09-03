@@ -60,6 +60,15 @@ static SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {
   return loops;
 }
 
+static bool hasIdentityYieldOnlyBody(scf::ForOp loop) {
+  if (!llvm::hasSingleElement(loop.getBody()->getOperations())) {
+    return false;
+  }
+  return llvm::equal(
+      loop.getRegionIterArgs(),
+      cast<scf::YieldOp>(loop.getBody()->getTerminator()).getResults());
+}
+
 namespace {
 
 /**
@@ -101,8 +110,7 @@ protected:
           if (!tripCount) {
             continue;
           }
-          if (tripCount->isZero() ||
-              llvm::hasSingleElement(loop.getBody()->getOperations())) {
+          if (tripCount->isZero() || hasIdentityYieldOnlyBody(loop)) {
             loop.replaceAllUsesWith(loop.getInitArgs());
             loop.erase();
             changed = true;

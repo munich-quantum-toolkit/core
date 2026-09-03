@@ -92,14 +92,16 @@ def test_sampler_run_parameterized_circuit(sampler: QDMISampler) -> None:
 
 def test_sampler_run_multiple_cregs(sampler: QDMISampler) -> None:
     """Sampler correctly handles multiple classical registers."""
-    c0 = ClassicalRegister(1, "c0")
+    c0 = ClassicalRegister(2, "c0")
     c1 = ClassicalRegister(1, "c1")
-    qc = QuantumCircuit(2)
+    qc = QuantumCircuit(3)
     qc.add_register(c0)
     qc.add_register(c1)
-    qc.h(0)
+    qc.x(0)
+    qc.x(2)
     qc.measure(0, c0[0])
-    qc.measure(1, c1[0])
+    qc.measure(1, c0[1])
+    qc.measure(2, c1[0])
 
     job = sampler.run([(qc,)], shots=100)
     result = job.result()
@@ -108,8 +110,10 @@ def test_sampler_run_multiple_cregs(sampler: QDMISampler) -> None:
     c0_bits = pub_result.data["c0"]
     c1_bits = pub_result.data["c1"]
 
-    assert c0_bits.num_bits == 1
+    assert c0_bits.num_bits == 2
     assert c1_bits.num_bits == 1
+    assert c0_bits.get_counts() == {"01": 100}
+    assert c1_bits.get_counts() == {"1": 100}
 
 
 def test_sampler_shot_defaults(sampler: QDMISampler) -> None:

@@ -25,9 +25,6 @@
 #include "dd/RealNumberUniqueTable.hpp"
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
-#include "ir/Definitions.hpp"
-#include "ir/Permutation.hpp"
-#include "ir/operations/Control.hpp"
 
 #include <algorithm>
 #include <array>
@@ -172,8 +169,8 @@ namespace {
 }
 
 void ensureGateQubitsInRange(const std::size_t nqubits,
-                             const qc::Controls& controls,
-                             const std::initializer_list<qc::Qubit> targets) {
+                             const Controls& controls,
+                             const std::initializer_list<Qubit> targets) {
   if (nqubits == 0U ||
       std::ranges::any_of(controls,
                           [nqubits](const auto& c) {
@@ -218,14 +215,14 @@ void fillTerminalVector(std::array<mCachedEdge, NEDGE>& em,
 
 [[nodiscard]] mCachedEdge makeControlledNode(Package& dd,
                                              const Qubit controlQubit,
-                                             const qc::Control::Type type,
+                                             const Control::Type type,
                                              const mCachedEdge& gate,
                                              const bool identity) {
   std::array<mCachedEdge, NEDGE> edges{mCachedEdge::zero(), mCachedEdge::zero(),
                                        mCachedEdge::zero(),
                                        mCachedEdge::zero()};
   const auto idEdge = identity ? mCachedEdge::one() : mCachedEdge::zero();
-  if (type == qc::Control::Type::Neg) {
+  if (type == Control::Type::Neg) {
     edges[0] = gate;
     edges[3] = idEdge;
   } else {
@@ -241,9 +238,8 @@ void fillTerminalVector(std::array<mCachedEdge, NEDGE>& em,
 }
 
 template <std::size_t Dim>
-void wrapControlsUntil(Package& dd, qc::Controls::const_iterator& it,
-                       const qc::Controls::const_iterator end,
-                       const Qubit bound,
+void wrapControlsUntil(Package& dd, Controls::const_iterator& it,
+                       const Controls::const_iterator end, const Qubit bound,
                        std::array<std::array<mCachedEdge, Dim>, Dim>& em) {
   for (; it != end && it->qubit < bound; ++it) {
     for (std::size_t row = 0; row < Dim; ++row) {
@@ -255,9 +251,9 @@ void wrapControlsUntil(Package& dd, qc::Controls::const_iterator& it,
   }
 }
 
-void wrapControlsUntil(Package& dd, qc::Controls::const_iterator& it,
-                       const qc::Controls::const_iterator end,
-                       const Qubit bound, std::array<mCachedEdge, NEDGE>& em) {
+void wrapControlsUntil(Package& dd, Controls::const_iterator& it,
+                       const Controls::const_iterator end, const Qubit bound,
+                       std::array<mCachedEdge, NEDGE>& em) {
   for (; it != end && it->qubit < bound; ++it) {
     for (std::size_t i = 0; i < NEDGE; ++i) {
       em[i] = makeControlledNode(dd, it->qubit, it->type, em[i],
@@ -266,8 +262,8 @@ void wrapControlsUntil(Package& dd, qc::Controls::const_iterator& it,
   }
 }
 
-void wrapControlsAbove(Package& dd, qc::Controls::const_iterator& it,
-                       const qc::Controls::const_iterator end, mCachedEdge& e) {
+void wrapControlsAbove(Package& dd, Controls::const_iterator& it,
+                       const Controls::const_iterator end, mCachedEdge& e) {
   for (; it != end; ++it) {
     e = makeControlledNode(dd, it->qubit, it->type, e, true);
   }
@@ -279,15 +275,15 @@ void wrapControlsAbove(Package& dd, qc::Controls::const_iterator& it,
 
 } // namespace
 
-mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Qubit target) {
-  return makeGateDD(mat, qc::Controls{}, target);
+mEdge Package::makeGateDD(const GateMatrix& mat, const Qubit target) {
+  return makeGateDD(mat, Controls{}, target);
 }
-mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Control& control,
-                          const qc::Qubit target) {
-  return makeGateDD(mat, qc::Controls{control}, target);
+mEdge Package::makeGateDD(const GateMatrix& mat, const Control& control,
+                          const Qubit target) {
+  return makeGateDD(mat, Controls{control}, target);
 }
-mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Controls& controls,
-                          const qc::Qubit target) {
+mEdge Package::makeGateDD(const GateMatrix& mat, const Controls& controls,
+                          const Qubit target) {
   ensureGateQubitsInRange(nqubits, controls, {target});
 
   std::array<mCachedEdge, NEDGE> em{};
@@ -308,20 +304,17 @@ mEdge Package::makeGateDD(const GateMatrix& mat, const qc::Controls& controls,
   return toMatrixDD(*this, e);
 }
 mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                  const qc::Qubit target0,
-                                  const qc::Qubit target1) {
-  return makeTwoQubitGateDD(mat, qc::Controls{}, target0, target1);
+                                  const Qubit target0, const Qubit target1) {
+  return makeTwoQubitGateDD(mat, Controls{}, target0, target1);
 }
 mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                  const qc::Control& control,
-                                  const qc::Qubit target0,
-                                  const qc::Qubit target1) {
-  return makeTwoQubitGateDD(mat, qc::Controls{control}, target0, target1);
+                                  const Control& control, const Qubit target0,
+                                  const Qubit target1) {
+  return makeTwoQubitGateDD(mat, Controls{control}, target0, target1);
 }
 mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                  const qc::Controls& controls,
-                                  const qc::Qubit target0,
-                                  const qc::Qubit target1) {
+                                  const Controls& controls, const Qubit target0,
+                                  const Qubit target1) {
   ensureGateQubitsInRange(nqubits, controls, {target0, target1});
 
   std::array<std::array<mCachedEdge, NEDGE>, NEDGE> em{};
@@ -368,24 +361,20 @@ mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
   return toMatrixDD(*this, e);
 }
 mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                                    const qc::Qubit target0,
-                                    const qc::Qubit target1,
-                                    const qc::Qubit target2) {
-  return makeThreeQubitGateDD(mat, qc::Controls{}, target0, target1, target2);
+                                    const Qubit target0, const Qubit target1,
+                                    const Qubit target2) {
+  return makeThreeQubitGateDD(mat, Controls{}, target0, target1, target2);
 }
 mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                                    const qc::Control& control,
-                                    const qc::Qubit target0,
-                                    const qc::Qubit target1,
-                                    const qc::Qubit target2) {
-  return makeThreeQubitGateDD(mat, qc::Controls{control}, target0, target1,
+                                    const Control& control, const Qubit target0,
+                                    const Qubit target1, const Qubit target2) {
+  return makeThreeQubitGateDD(mat, Controls{control}, target0, target1,
                               target2);
 }
 mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                                    const qc::Controls& controls,
-                                    const qc::Qubit target0,
-                                    const qc::Qubit target1,
-                                    const qc::Qubit target2) {
+                                    const Controls& controls,
+                                    const Qubit target0, const Qubit target1,
+                                    const Qubit target2) {
   // Bottom-up construction analogous to makeTwoQubitGateDD: materialize the
   // 8×8 as terminals in MSB-first order (targets[0] = high bit), sort targets
   // by qubit index, then reduce 8×8 → 4×4 → 4 edges → root while inserting
@@ -791,7 +780,7 @@ fp Package::fidelity(const vEdge& x, const vEdge& y) {
 }
 fp Package::fidelityOfMeasurementOutcomes(const vEdge& e,
                                           const SparsePVec& probs,
-                                          const qc::Permutation& permutation) {
+                                          const Permutation& permutation) {
   if (e.w.approximatelyZero()) {
     return 0.;
   }
@@ -842,7 +831,7 @@ ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y,
 }
 fp Package::fidelityOfMeasurementOutcomesRecursive(
     const vEdge& e, const SparsePVec& probs, const std::size_t i,
-    const qc::Permutation& permutation, const std::size_t nQubits) {
+    const Permutation& permutation, const std::size_t nQubits) {
   const auto top = ComplexNumbers::mag(e.w);
   if (e.isTerminal()) {
     auto idx = i;

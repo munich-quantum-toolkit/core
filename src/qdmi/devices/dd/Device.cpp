@@ -8,29 +8,24 @@
  * Licensed under the MIT License
  */
 
-/** @file Device.cpp
- * @brief The MQT QDMI device implementation for its DD-based simulator.
- */
+/// @file Device.cpp
+/// The MQT QDMI device implementation for its DD-based simulator.
 
 #include "qdmi/devices/dd/Device.hpp"
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
-#include "dd/Simulation.hpp"
-#include "dd/StateGeneration.hpp"
-#include "ir/QuantumComputation.hpp"
-#ifdef BUILD_MQT_CORE_MLIR
+#include "mlir/Compiler/Programs.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Dialect/QIR/Execution/JIT/Session.h"
 #include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
-#endif
 #include "mqt_ddsim_qdmi/device.h"
-#include "qasm3/Importer.hpp"
 #include "qdmi/common/Common.hpp"
 
-#ifdef BUILD_MQT_CORE_MLIR
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/FormatVariadic.h>
-#endif
+#include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
 #include <array>
@@ -49,11 +44,12 @@
 #include <memory>
 #include <mutex>
 #include <numeric>
+#include <optional>
 #include <ranges>
 #include <span>
 #include <sstream>
-#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -74,61 +70,73 @@ struct OperationInfo {
   std::size_t numSites{};
   std::size_t numParams{};
   bool isVariadic = false;
+  bool supportsArbitraryPositiveControls = false;
 };
+
+constexpr auto ARBITRARY_POSITIVE_CONTROLS_METADATA =
+    "mqt.compiler-target.v1:arbitrary-positive-controls";
+
+constexpr auto controllableOperation(const char* name, const size_t numSites,
+                                     const size_t numParams) -> OperationInfo {
+  return OperationInfo{.name = name,
+                       .numSites = numSites,
+                       .numParams = numParams,
+                       .supportsArbitraryPositiveControls = true};
+}
 
 constexpr std::array OPERATIONS{
     OperationInfo{.name = "gphase", .numSites = 0, .numParams = 1},
-    OperationInfo{.name = "i", .numSites = 1, .numParams = 0},
-    OperationInfo{.name = "x", .numSites = 1, .numParams = 0},
+    controllableOperation("i", 1, 0),
+    controllableOperation("x", 1, 0),
     OperationInfo{.name = "cx", .numSites = 2, .numParams = 0},
     OperationInfo{.name = "ccx", .numSites = 3, .numParams = 0},
     OperationInfo{
         .name = "mcx", .numSites = 0, .numParams = 0, .isVariadic = true},
-    OperationInfo{.name = "y", .numSites = 1, .numParams = 0},
+    controllableOperation("y", 1, 0),
     OperationInfo{.name = "cy", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "z", .numSites = 1, .numParams = 0},
+    controllableOperation("z", 1, 0),
     OperationInfo{.name = "cz", .numSites = 2, .numParams = 0},
     OperationInfo{.name = "ccz", .numSites = 3, .numParams = 0},
-    OperationInfo{.name = "h", .numSites = 1, .numParams = 0},
+    controllableOperation("h", 1, 0),
     OperationInfo{.name = "ch", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "s", .numSites = 1, .numParams = 0},
+    controllableOperation("s", 1, 0),
     OperationInfo{.name = "cs", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "sdg", .numSites = 1, .numParams = 0},
+    controllableOperation("sdg", 1, 0),
     OperationInfo{.name = "csdg", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "t", .numSites = 1, .numParams = 0},
-    OperationInfo{.name = "tdg", .numSites = 1, .numParams = 0},
-    OperationInfo{.name = "sx", .numSites = 1, .numParams = 0},
+    controllableOperation("t", 1, 0),
+    controllableOperation("tdg", 1, 0),
+    controllableOperation("sx", 1, 0),
     OperationInfo{.name = "csx", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "sxdg", .numSites = 1, .numParams = 0},
-    OperationInfo{.name = "r", .numSites = 1, .numParams = 2},
-    OperationInfo{.name = "rx", .numSites = 1, .numParams = 1},
+    controllableOperation("sxdg", 1, 0),
+    controllableOperation("r", 1, 2),
+    controllableOperation("rx", 1, 1),
     OperationInfo{.name = "crx", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "ry", .numSites = 1, .numParams = 1},
+    controllableOperation("ry", 1, 1),
     OperationInfo{.name = "cry", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "rz", .numSites = 1, .numParams = 1},
+    controllableOperation("rz", 1, 1),
     OperationInfo{.name = "crz", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "p", .numSites = 1, .numParams = 1},
+    controllableOperation("p", 1, 1),
     OperationInfo{.name = "cp", .numSites = 2, .numParams = 1},
     OperationInfo{
         .name = "mcp", .numSites = 0, .numParams = 1, .isVariadic = true},
     OperationInfo{.name = "u1", .numSites = 1, .numParams = 1},
     OperationInfo{.name = "cu1", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "u2", .numSites = 1, .numParams = 2},
-    OperationInfo{.name = "u", .numSites = 1, .numParams = 3},
+    controllableOperation("u2", 1, 2),
+    controllableOperation("u", 1, 3),
     OperationInfo{.name = "u3", .numSites = 1, .numParams = 3},
     OperationInfo{.name = "cu3", .numSites = 2, .numParams = 3},
-    OperationInfo{.name = "swap", .numSites = 2, .numParams = 0},
+    controllableOperation("swap", 2, 0),
     OperationInfo{.name = "cswap", .numSites = 3, .numParams = 0},
-    OperationInfo{.name = "iswap", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "dcx", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "ecr", .numSites = 2, .numParams = 0},
-    OperationInfo{.name = "rxx", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "ryy", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "rzz", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "rzx", .numSites = 2, .numParams = 1},
-    OperationInfo{.name = "xx_minus_yy", .numSites = 2, .numParams = 2},
-    OperationInfo{.name = "xx_plus_yy", .numSites = 2, .numParams = 2},
-    OperationInfo{.name = "rccx", .numSites = 3, .numParams = 0},
+    controllableOperation("iswap", 2, 0),
+    controllableOperation("dcx", 2, 0),
+    controllableOperation("ecr", 2, 0),
+    controllableOperation("rxx", 2, 1),
+    controllableOperation("ryy", 2, 1),
+    controllableOperation("rzz", 2, 1),
+    controllableOperation("rzx", 2, 1),
+    controllableOperation("xx_minus_yy", 2, 2),
+    controllableOperation("xx_plus_yy", 2, 2),
+    controllableOperation("rccx", 3, 0),
     OperationInfo{.name = "measure", .numSites = 1, .numParams = 0},
     OperationInfo{.name = "reset", .numSites = 1, .numParams = 0},
     OperationInfo{
@@ -150,13 +158,31 @@ constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 constexpr std::array SUPPORTED_PROGRAM_FORMATS = {
     QDMI_PROGRAM_FORMAT_QASM2,
     QDMI_PROGRAM_FORMAT_QASM3,
-#ifdef BUILD_MQT_CORE_MLIR
     QDMI_PROGRAM_FORMAT_QIRBASESTRING,
     QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
     QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
     QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
-#endif
 };
+
+[[nodiscard]] auto parseQASMToQCO(const std::string_view source)
+    -> std::optional<mlir::QCOProgram> {
+  auto qcProgram = mlir::QCProgram::fromQASMString(source);
+  if (!qcProgram) {
+    return std::nullopt;
+  }
+  auto qcoProgram = std::move(*qcProgram).intoQCO();
+  if (!qcoProgram) {
+    return std::nullopt;
+  }
+  return qcoProgram;
+}
+
+[[nodiscard]] auto reportEmptyResult(size_t* sizeRet) -> QDMI_STATUS {
+  if (sizeRet != nullptr) {
+    *sizeRet = 0;
+  }
+  return QDMI_SUCCESS;
+}
 
 } // namespace
 
@@ -223,6 +249,12 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                     prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_OPERATIONS, MQT_DDSIM_QDMI_Operation,
                     OPERATION_ADDRESSES, prop, size, value, sizeRet)
+  /// Target facts that QDMI v1.3 cannot encode compactly.
+  /// TODO(#2093): Remove this compatibility marker when QDMI standardizes
+  /// explicit unrestricted connectivity and operation applicability.
+  ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_CUSTOM1,
+                      "mqt.compiler-target.v1:all-to-all-homogeneous", prop,
+                      size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS,
                     QDMI_Program_Format, SUPPORTED_PROGRAM_FORMATS, prop, size,
                     value, sizeRet)
@@ -327,7 +359,8 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
       IS_INVALID_ARGUMENT(prop, QDMI_OPERATION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  const auto& [name_, numSites_, numParams_, isVariadic] =
+  const auto& [name_, numSites_, numParams_, isVariadic,
+               supportsArbitraryPositiveControls] =
       *reinterpret_cast<const OperationInfo*>(operation);
   ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, name_, prop, size, value,
                       sizeRet)
@@ -342,6 +375,11 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
                             numParams_, prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double, 1.0, prop,
                             size, value, sizeRet)
+  if (supportsArbitraryPositiveControls) {
+    ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_CUSTOM1,
+                        ARBITRARY_POSITIVE_CONTROLS_METADATA, prop, size, value,
+                        sizeRet)
+  }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::free() -> void {
@@ -447,13 +485,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
   return QDMI_ERROR_NOTSUPPORTED;
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitProgramAsync(
-    std::function<void()> body) -> QDMI_STATUS {
+    std::function<bool()> body) -> QDMI_STATUS {
   jobHandle_ = std::async(std::launch::async, [this, body = std::move(body)]() {
     qdmi::dd::Device::get().increaseRunningJobs();
     status_.store(QDMI_JOB_STATUS_RUNNING);
     try {
-      body();
-      status_.store(QDMI_JOB_STATUS_DONE);
+      status_.store(body() ? QDMI_JOB_STATUS_DONE : QDMI_JOB_STATUS_FAILED);
     } catch (const std::exception& e) {
       status_.store(QDMI_JOB_STATUS_FAILED);
       std::cerr << "Error: " << e.what() << '\n';
@@ -470,23 +507,48 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
     -> QDMI_STATUS {
   return submitProgramAsync([this]() {
     const auto& text = std::get<std::string>(program_);
-    const auto qc = qasm3::Importer::imports(text);
-    counts_ = dd::sample(qc, numShots_,
-                         seed_.has_value() ? static_cast<size_t>(*seed_) : 0U);
+    auto qcoProgram = parseQASMToQCO(text);
+    if (!qcoProgram) {
+      return false;
+    }
+    const auto entryPoint = mlir::mqt::getEntryPoint(qcoProgram->module());
+    if (!entryPoint) {
+      std::cerr << "Error: QCO program has no entry point\n";
+      return false;
+    }
+    auto counts = mlir::qco::sample(entryPoint, numShots_,
+                                    static_cast<uint64_t>(seed_.value_or(0)));
+    if (mlir::failed(counts)) {
+      std::cerr << "Error: failed to sample the QCO program\n";
+      return false;
+    }
+    counts_ = std::move(*counts);
+    return true;
   });
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
     -> QDMI_STATUS {
   return submitProgramAsync([this]() {
     const auto& text = std::get<std::string>(program_);
-    auto qc = qasm3::Importer::imports(text);
-    qc.removeFinalMeasurements();
-    const auto nQubits = qc.getNqubits();
-    dd_ = std::make_unique<dd::Package>(nQubits);
-    stateVecDD_ = dd::simulate(qc, dd::makeZeroState(nQubits, *dd_), *dd_);
+    auto qcoProgram = parseQASMToQCO(text);
+    if (!qcoProgram) {
+      return false;
+    }
+    const auto entryPoint = mlir::mqt::getEntryPoint(qcoProgram->module());
+    if (!entryPoint) {
+      std::cerr << "Error: QCO program has no entry point\n";
+      return false;
+    }
+    dd_ = std::make_unique<dd::Package>();
+    auto state = mlir::qco::simulateStatevector(entryPoint, *dd_);
+    if (mlir::failed(state)) {
+      std::cerr << "Error: failed to simulate the QCO program\n";
+      return false;
+    }
+    stateVecDD_ = *state;
+    return true;
   });
 }
-#ifdef BUILD_MQT_CORE_MLIR
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
   return numShots_ > 0 ? submitQIRProgramSampling()
                        : submitQIRProgramStateExtraction();
@@ -514,12 +576,13 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
       const auto rc = jitSession.run();
       runtime.outputShotEnd(rc);
       if (rc != 0) {
-        throw std::runtime_error(
-            llvm::formatv("QIR program failed with error: {}", rc));
+        std::cerr << "Error: QIR program failed with error: " << rc << '\n';
+        return false;
       }
       // Update the measurement counts.
       ++counts_[runtime.getMeasurements()];
     }
+    return true;
   });
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
@@ -544,15 +607,15 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
     std::ostringstream output;
     runtime.setOstream(output);
     if (const auto rc = jitSession.run(); rc != 0) {
-      throw std::runtime_error(
-          llvm::formatv("QIR program failed with error: {}", rc));
+      std::cerr << "Error: QIR program failed with error: " << rc << '\n';
+      return false;
     }
     auto state = runtime.takeState();
     dd_ = std::move(state.dd);
     stateVecDD_ = state.edge;
+    return true;
   });
 }
-#endif
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   if (status_.load() != QDMI_JOB_STATUS_CREATED) {
     return QDMI_ERROR_BADSTATE;
@@ -562,12 +625,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
       format_ == QDMI_PROGRAM_FORMAT_QASM3) {
     return submitQASMProgram();
   }
-#ifdef BUILD_MQT_CORE_MLIR
   return submitQIRProgram();
-#else
-  // Format is validated against the allowed set at setParameter time.
-  qdmi::unreachable();
-#endif
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::cancel() -> QDMI_STATUS {
   const auto s = status_.load();
@@ -623,6 +681,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::wait(const size_t timeout) const
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::getHistogram(
     const QDMI_Job_Result result, const size_t size, void* data,
     size_t* sizeRet) -> QDMI_STATUS {
+  if (counts_.size() == 1 && counts_.begin()->first.empty()) {
+    return reportEmptyResult(sizeRet);
+  }
   if (result == QDMI_JOB_RESULT_HIST_KEYS) {
     const size_t bitstringSize =
         counts_.empty() ? 0 : counts_.begin()->first.length();
@@ -668,6 +729,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
                                                       void* data,
                                                       size_t* sizeRet)
     -> QDMI_STATUS {
+  if (stateVecDD_.isTerminal()) {
+    return reportEmptyResult(sizeRet);
+  }
   std::call_once(stateVecOnce_,
                  [this]() { stateVec_ = stateVecDD_.getVector(); });
   const size_t reqSize = stateVec_.size() * 2 * sizeof(double);
@@ -685,9 +749,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
     const QDMI_Job_Result result, const size_t size, void* data,
     size_t* sizeRet) -> QDMI_STATUS {
+  if (stateVecDD_.isTerminal()) {
+    return reportEmptyResult(sizeRet);
+  }
   std::call_once(stateVecSparseOnce_,
                  [this]() { stateVecSparse_ = stateVecDD_.getSparseVector(); });
-  const size_t numQubits = stateVecDD_.p->v + 1;
+  const size_t numQubits = static_cast<size_t>(stateVecDD_.p->v) + 1U;
   switch (result) {
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS:
   case QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS: {
@@ -758,6 +825,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProbabilities(const size_t size,
                                                         void* data,
                                                         size_t* sizeRet)
     -> QDMI_STATUS {
+  if (stateVecDD_.isTerminal()) {
+    return reportEmptyResult(sizeRet);
+  }
   if (stateVec_.empty()) {
     stateVec_ = stateVecDD_.getVector();
   }
@@ -781,8 +851,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
                                                   const size_t size, void* data,
                                                   size_t* sizeRet)
     -> QDMI_STATUS {
-  if ((data != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
+  if (IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_.load() != QDMI_JOB_STATUS_DONE) {

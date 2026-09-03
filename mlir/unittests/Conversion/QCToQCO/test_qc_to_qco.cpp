@@ -1200,13 +1200,15 @@ TEST_F(QCToQCORegressionTest,
 }
 
 namespace {
-enum class CBitModifierBodyOp : std::uint8_t { Alloc, Load, Store };
+enum class CBitModifierBodyOp : std::uint8_t { Alloc, Compare, Load, Store };
 } // namespace
 
 static StringRef cbitOperationName(CBitModifierBodyOp operation) {
   switch (operation) {
   case CBitModifierBodyOp::Alloc:
     return "cbit.alloc";
+  case CBitModifierBodyOp::Compare:
+    return "cbit.cmp";
   case CBitModifierBodyOp::Load:
     return "cbit.load";
   case CBitModifierBodyOp::Store:
@@ -1232,6 +1234,11 @@ buildInvalidCBitModifierProgram(MLIRContext* context,
         cbit::AllocOp::create(builder,
                               cbit::RegisterType::get(builder.getContext(), 1),
                               cbit::Initialization::Zero);
+        break;
+      case CBitModifierBodyOp::Compare:
+        cbit::CompareOp::create(builder, builder.getI1Type(),
+                                cbit::ComparisonPredicate::Equal, reg,
+                                builder.getIntegerAttr(builder.getI1Type(), 0));
         break;
       case CBitModifierBodyOp::Load:
         cbit::LoadOp::create(builder, builder.getI1Type(), reg,
@@ -1262,9 +1269,9 @@ TEST_F(QCToQCORegressionTest,
        PreflightRejectsEveryCBitOperationInEveryModifier) {
   constexpr std::array modifiers{ModifierKind::Inv, ModifierKind::Ctrl,
                                  ModifierKind::Pow};
-  constexpr std::array operations{CBitModifierBodyOp::Alloc,
-                                  CBitModifierBodyOp::Load,
-                                  CBitModifierBodyOp::Store};
+  constexpr std::array operations{
+      CBitModifierBodyOp::Alloc, CBitModifierBodyOp::Compare,
+      CBitModifierBodyOp::Load, CBitModifierBodyOp::Store};
 
   for (const auto modifier : modifiers) {
     for (const auto operation : operations) {

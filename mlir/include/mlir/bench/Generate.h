@@ -20,6 +20,7 @@ namespace mqt::bench {
 class BV;
 class GHZ;
 class Grover;
+class Multiplexer;
 class QFT;
 class QPE;
 
@@ -39,6 +40,10 @@ struct GeneratedBenchmark {
 
 /// Generate the QC program for a configured Grover benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const Grover& benchmark);
+
+/// Generate the QC program for a configured quantum multiplexer benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generate(const Multiplexer& benchmark);
 
 /// Generate a configured quantum Fourier-transform benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const QFT& benchmark);

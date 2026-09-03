@@ -33,6 +33,17 @@ def CBit_InitializationAttr
   let assemblyFormat = "`<` $value `>`";
 }
 
+def CBit_ComparisonPredicate
+    : I64EnumAttr<"ComparisonPredicate", "unsigned comparison predicate",
+                  [I64EnumAttrCase<"Equal", 0, "eq">,
+                   I64EnumAttrCase<"NotEqual", 1, "ne">,
+                   I64EnumAttrCase<"Less", 2, "ult">,
+                   I64EnumAttrCase<"LessEqual", 3, "ule">,
+                   I64EnumAttrCase<"Greater", 4, "ugt">,
+                   I64EnumAttrCase<"GreaterEqual", 5, "uge">]> {
+  let cppNamespace = "::mlir::cbit";
+}
+
 def CBit_RegisterType : TypeDef<CBitDialect, "Register"> {
   let mnemonic = "reg";
   let summary = "A static classical-bit register";
@@ -91,6 +102,28 @@ def LoadOp : CBitOp<"load"> {
   let results = (outs I1:$result);
   let assemblyFormat = [{
     $reg `[` $index `]` attr-dict `:` qualified(type($reg))
+  }];
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
+def CompareOp : CBitOp<"cmp"> {
+  let summary = "Compare a classical-bit register with an integer";
+  let description = [{
+    Compares the complete register with an unsigned integer of the same width.
+    The predicate must be `eq`, `ne`, `ult`, `ule`, `ugt`, or `uge`.
+
+    Example:
+    ```mlir
+    %matches = cbit.cmp eq, %c, 1 : i2 : !cbit.reg<2>
+    ```
+  }];
+
+  let arguments = (ins CBit_ComparisonPredicate:$predicate,
+      Arg<CBit_RegisterType, "register", [MemRead]>:$reg, APIntAttr:$rhs);
+  let results = (outs I1:$result);
+  let assemblyFormat = [{
+    $predicate `,` $reg `,` $rhs attr-dict `:` qualified(type($reg))
   }];
   let hasCanonicalizer = 1;
   let hasVerifier = 1;

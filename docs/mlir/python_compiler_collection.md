@@ -14,10 +14,7 @@ Collection. It accepts source strings, {code}`.qasm`, {code}`.mlir`, and
 and typed compiler programs. The requested output format determines where
 compilation stops and which program type is returned.
 
-The compiler does not accept legacy {py:class}`~mqt.core.ir.QuantumComputation`
-objects. Convert such an object to OpenQASM 3 with
-{py:meth}`~mqt.core.ir.QuantumComputation.qasm3_str` before passing it to the
-compiler.
+The compiler collection is the circuit and program interface in MQT Core v4.
 
 Install {doc}`MQT Core <../installation>` and import the compiler interface:
 
@@ -167,12 +164,7 @@ assert restored.count_ops() == qiskit_bell.count_ops()
 assert compiled_qiskit.is_valid
 ```
 
-This compiler route does not construct an intermediate
-{py:class}`~mqt.core.ir.QuantumComputation`. The existing
-{py:func}`~mqt.core.plugins.qiskit.qiskit_to_mqt`,
-{py:func}`~mqt.core.plugins.qiskit.mqt_to_qiskit`, and {py:func}`mqt.core.load`
-interfaces remain independent and retain their existing version range and
-behavior.
+This compiler route is the Qiskit circuit interface in MQT Core v4.
 
 Qiskit 2.5's C API cannot construct classical expressions or structured control
 flow, so export uses Qiskit's public Python classes for these operations.

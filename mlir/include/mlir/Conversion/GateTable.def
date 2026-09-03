@@ -15,7 +15,7 @@
  * Define
  * `MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)`
  * before including this file. `KEY` names the MLIR QC/QCO operation, `NAME` is
- * the QIR symbol stem, `OP` is the `qc::OpType` enumerator, `GETTER` identifies
+ * the QIR symbol stem, `OP` is the `dd::GateType` enumerator, `GETTER` identifies
  * the QIR function-name selector, `TARGETS` and `PARAMS` describe the body
  * signature, and `SUFFIX`/`CTL_SUFFIX` select the uncontrolled and controlled
  * QIR specializations.

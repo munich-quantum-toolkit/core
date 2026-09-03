@@ -277,9 +277,7 @@ enum class ClassicalTargetKind : uint8_t {
 struct ClassicalTarget {
   ClassicalTargetKind kind = ClassicalTargetKind::ClassicalBit;
   uint32_t bit = 0;
-  bool expectedBit = false;
   Register reg;
-  uint64_t expectedRegister = 0;
   uint32_t width = 1;
   std::unique_ptr<Expression> expression;
 };

@@ -30,7 +30,7 @@ forms the backbone of the quantum software tools developed as part of the
 
 ## Key Features
 
-- Fully fledged intermediate representation (IR) for quantum computations.
+- An MLIR-based compiler collection for quantum programs.
 - A state-of-the-art decision diagram (DD) package for quantum computing.
 - A QIR runtime based on the decision diagram package.
 
@@ -94,17 +94,36 @@ To support this endeavor, please consider:
 uv pip install mqt.core
 ```
 
-The following code gives an example on the usage:
+The following example compiles an OpenQASM program to QIR and executes it on the
+QDMI DDSIM device:
 
 ```python3
-from mqt.core.ir import QuantumComputation
+from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi.driver import open_device
 
-qc = QuantumComputation(2, 2)
-qc.h(0)
-qc.cx(0, 1)
-qc.measure(range(2), range(2))
+source = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] result;
+h q[0];
+cx q[0], q[1];
+result = measure q;
+"""
 
-print(qc)
+device = open_device("mqt.ddsim.default")
+program = compile_program(
+    source,
+    target=CompilerTarget.from_device(device),
+    output=OutputFormat.QIR_BASE,
+)
+job = device.submit_job(
+    program.to_bitcode(),
+    ProgramFormat.QIR_BASE_MODULE,
+    num_shots=1024,
+)
+job.wait()
+print(job.get_counts())
 ```
 
 **Detailed documentation and examples are available at

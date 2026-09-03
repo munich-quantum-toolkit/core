@@ -167,6 +167,30 @@ TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
   EXPECT_EQ(range_size(entry.getOps<HOp>()), 1);
 }
 
+TEST_F(QuantumLoopUnrollTest, PreservesYieldOnlyPermutation) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value q0 = builder.allocQubit();
+  Value q1 = builder.allocQubit();
+  const auto results =
+      builder.scfFor(0, 1, 1, {q0, q1}, [](Value, ValueRange iterArgs) {
+        return SmallVector{iterArgs[1], iterArgs[0]};
+      });
+  builder.sink(results[0]);
+  builder.sink(results[1]);
+  auto m = builder.finalize();
+
+  ASSERT_TRUE(succeeded(runPass(m, QuantumLoopUnrollOptions{})));
+  auto entry = *m->getOps<func::FuncOp>().begin();
+  EXPECT_TRUE(entry.getOps<scf::ForOp>().empty());
+
+  auto sinks = llvm::to_vector(entry.getOps<SinkOp>());
+  ASSERT_EQ(sinks.size(), 2);
+  EXPECT_EQ(sinks[0].getQubit(), q1);
+  EXPECT_EQ(sinks[1].getQubit(), q0);
+}
+
 TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
   auto m = getGHZ(context.get(), 9);
   auto entry = *(m->getOps<func::FuncOp>().begin());

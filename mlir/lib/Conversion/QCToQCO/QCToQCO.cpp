@@ -649,9 +649,9 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       }
     }
 
-    if (!isa<cbit::AllocOp, cbit::LoadOp, cbit::StoreOp, qc::AllocOp,
-             qc::DeallocOp, qc::MeasureOp, qc::ResetOp, memref::LoadOp,
-             memref::StoreOp>(operation)) {
+    if (!isa<cbit::AllocOp, cbit::CompareOp, cbit::LoadOp, cbit::StoreOp,
+             qc::AllocOp, qc::DeallocOp, qc::MeasureOp, qc::ResetOp,
+             memref::LoadOp, memref::StoreOp>(operation)) {
       return WalkResult::advance();
     }
 

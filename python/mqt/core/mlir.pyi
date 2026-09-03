@@ -61,27 +61,27 @@ class OutputFormat(enum.Enum):
 class CompilerTarget:
     """Immutable MLIR compiler target.
 
-    An absent topology means all-to-all connectivity. An absent operation set
-    means every operation is native.
+    Every target has either all-to-all or explicitly enumerated connectivity and
+    either unrestricted or explicitly enumerated native-operation support.
     """
 
     @overload
     def __init__(
         self,
-        num_qubits: int,
+        num_sites: int,
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
     def __init__(
         self,
         name: str,
-        num_qubits: int,
+        num_sites: int,
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -89,8 +89,8 @@ class CompilerTarget:
         self,
         sites: Sequence[CompilerTarget.Site],
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -99,8 +99,8 @@ class CompilerTarget:
         name: str,
         sites: Sequence[CompilerTarget.Site],
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
 
@@ -156,13 +156,42 @@ class CompilerTarget:
         def fidelity(self) -> float | None:
             """The operation fidelity, if available."""
 
+    class OperationArityKind(enum.Enum):
+        """How an operation capability accepts qubit widths."""
+
+        FIXED = 0
+
+        VARIADIC = 1
+
+    class OperationArity:
+        """Accepted operation qubit widths."""
+
+        @staticmethod
+        def fixed(value: int) -> CompilerTarget.OperationArity:
+            """Create an exact operation arity."""
+
+        @staticmethod
+        def variadic(minimum: int) -> CompilerTarget.OperationArity:
+            """Create an operation arity with an inclusive minimum. Operation construction requires a positive minimum."""
+
+        @property
+        def kind(self) -> CompilerTarget.OperationArityKind:
+            """The arity kind."""
+
+        @property
+        def value(self) -> int:
+            """The exact arity or inclusive variadic minimum."""
+
+        def accepts(self, width: int) -> bool:
+            """Whether this arity accepts a concrete width."""
+
     class Operation:
         """A homogeneous target-wide operation capability and its calibration."""
 
         def __init__(
             self,
             name: str,
-            num_qubits: int,
+            arity: int | CompilerTarget.OperationArity,
             num_parameters: int,
             site_tuples: Sequence[CompilerTarget.SiteTuple] | None = None,
             duration: int | None = None,
@@ -177,8 +206,8 @@ class CompilerTarget:
             """The normalized compiler operation name."""
 
         @property
-        def num_qubits(self) -> int:
-            """The fixed operation arity."""
+        def arity(self) -> CompilerTarget.OperationArity:
+            """The accepted operation arity."""
 
         @property
         def num_parameters(self) -> int:
@@ -257,6 +286,56 @@ class CompilerTarget:
         def entangler(self) -> CompilerTarget.GateKind:
             """The two-qubit entangler."""
 
+    class ConnectivityKind(enum.Enum):
+        """The target connectivity model."""
+
+        ALL_TO_ALL = 0
+
+        EXPLICIT = 1
+
+    class Connectivity:
+        """A target connectivity model."""
+
+        def __init__(self, couplings: Sequence[tuple[int, int]]) -> None:
+            """Create an explicit connectivity model."""
+
+        @staticmethod
+        def all_to_all() -> CompilerTarget.Connectivity:
+            """Create an all-to-all connectivity model."""
+
+        @property
+        def kind(self) -> CompilerTarget.ConnectivityKind:
+            """The connectivity model."""
+
+        @property
+        def couplings(self) -> list[tuple[int, int]]:
+            """The explicit couplings, if present."""
+
+    class NativeOperationsKind(enum.Enum):
+        """The native-operation support model."""
+
+        UNRESTRICTED = 0
+
+        EXPLICIT = 1
+
+    class NativeOperations:
+        """Native-operation support."""
+
+        def __init__(self, operations: Sequence[CompilerTarget.Operation]) -> None:
+            """Create explicit native-operation support."""
+
+        @staticmethod
+        def unrestricted() -> CompilerTarget.NativeOperations:
+            """Create unrestricted native-operation support."""
+
+        @property
+        def kind(self) -> CompilerTarget.NativeOperationsKind:
+            """The native-operation support model."""
+
+        @property
+        def operations(self) -> list[CompilerTarget.Operation]:
+            """The explicit operations, if present."""
+
     @staticmethod
     def from_device(device: Device) -> CompilerTarget:
         """Snapshot a circuit-model QDMI device."""
@@ -274,7 +353,7 @@ class CompilerTarget:
         """The target timing unit, if available."""
 
     @property
-    def num_qubits(self) -> int:
+    def num_sites(self) -> int:
         """The number of target sites."""
 
     @property
@@ -282,16 +361,16 @@ class CompilerTarget:
         """Detailed sites in compiler-vertex order."""
 
     @property
-    def has_explicit_topology(self) -> bool:
-        """Whether the target defines a coupling topology."""
+    def connectivity_kind(self) -> CompilerTarget.ConnectivityKind:
+        """The target connectivity model."""
 
     @property
     def couplings(self) -> list[tuple[int, int]]:
         """Canonical undirected couplings in target site IDs."""
 
     @property
-    def has_explicit_operations(self) -> bool:
-        """Whether the target defines an operation set."""
+    def native_operations_kind(self) -> CompilerTarget.NativeOperationsKind:
+        """The target native-operation support model."""
 
     @property
     def operations(self) -> list[CompilerTarget.Operation]:
@@ -305,8 +384,8 @@ class CompilerTarget:
     def synthesis_basis(self) -> CompilerTarget.SynthesisBasis | None:
         """A complete target-wide synthesis basis, if available."""
 
-    def supports_operation(self, name: str, num_qubits: int, num_parameters: int | None = None) -> bool:
-        """Whether the target supports an operation capability."""
+    def supports_operation(self, name: str, arity: int, num_parameters: int | None = None) -> bool:
+        """Whether the target supports an operation."""
 
 class Program:
     """Base class for a typed MLIR compiler program.
@@ -509,18 +588,18 @@ class QCOProgram(Program):
                 has too few qubits, or the program is unsupported for simulation.
         """
 
-    def sample(self, dd_package: mqt.core.dd.DDPackage, shots: int = 1024, seed: int = 0) -> dict[str, int]:
+    def sample(self, shots: int = 1024, seed: int = 0) -> dict[str, int]:
         """Sample the declared outputs of a QCO program.
 
         Args:
-            dd_package: DD package with enough qubits for the program.
             shots: Number of shots (default 1024).
             seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
                 value produces reproducible results.
 
         Returns:
-            Histogram of returned CBit registers in return order, each MSB first. If
-            no CBit result exists, final ``measureAll`` bitstrings instead.
+            Histogram keys use conventional count-string order. The last returned
+            register comes first, and each register is MSB-first. If no CBit result
+            exists, final ``measureAll`` bitstrings are used instead.
 
         Raises:
             ValueError: When the program is unsupported for sampling.

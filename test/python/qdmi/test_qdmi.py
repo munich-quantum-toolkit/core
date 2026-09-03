@@ -6,15 +6,17 @@
 #
 # Licensed under the MIT License
 
-"""Test the quantum computation IR."""
+"""Test the QDMI Python bindings."""
 
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import cast
 
 import pytest
+from packaging import version
 
 from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
 from mqt.core.qdmi import (
@@ -220,16 +222,16 @@ def test_device_min_atom_distance(device: Device) -> None:
 @pytest.mark.parametrize("value_type", [str, bool, int, float, bytes])
 def test_device_custom_property_unsupported(device: Device, value_type: CustomValueType) -> None:
     """Test typed custom device queries for unsupported slots."""
-    assert device.query_custom_property(CustomProperty.CUSTOM1, value_type) is None
+    assert device.query_custom_property(CustomProperty.CUSTOM2, value_type) is None
 
 
 def test_device_custom_property_type_overloads(device: Device) -> None:
     """Test that each explicit value type produces a correspondingly typed result."""
-    string_value: str | None = device.query_custom_property(CustomProperty.CUSTOM1, str)
-    bool_value: bool | None = device.query_custom_property(CustomProperty.CUSTOM1, bool)
-    int_value: int | None = device.query_custom_property(CustomProperty.CUSTOM1, int)
-    float_value: float | None = device.query_custom_property(CustomProperty.CUSTOM1, float)
-    bytes_value: bytes | None = device.query_custom_property(CustomProperty.CUSTOM1, bytes)
+    string_value: str | None = device.query_custom_property(CustomProperty.CUSTOM2, str)
+    bool_value: bool | None = device.query_custom_property(CustomProperty.CUSTOM2, bool)
+    int_value: int | None = device.query_custom_property(CustomProperty.CUSTOM2, int)
+    float_value: float | None = device.query_custom_property(CustomProperty.CUSTOM2, float)
+    bytes_value: bytes | None = device.query_custom_property(CustomProperty.CUSTOM2, bytes)
     assert all(value is None for value in (string_value, bool_value, int_value, float_value, bytes_value))
 
 
@@ -565,6 +567,38 @@ c = measure q;
     assert sum(counts.values()) == 1024
 
 
+def test_device_executes_controlled_qir_with_exact_phase(ddsim_device: Device) -> None:
+    """Keep DDSIM-native controlled gates and their global phase."""
+    qiskit = pytest.importorskip("qiskit")
+    if not (
+        version.parse("2.5") <= version.parse(qiskit.__version__) < version.parse("2.6")
+        or qiskit.__version__ == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
+    ):
+        pytest.skip(f"no Qiskit translation is registered for {qiskit.__version__}")
+    circuit_library = pytest.importorskip("qiskit.circuit.library")
+    quantum_info = pytest.importorskip("qiskit.quantum_info")
+
+    circuit = qiskit.QuantumCircuit(5)
+    circuit.global_phase = 0.37
+    circuit.x(0)
+    circuit.x(1)
+    circuit.append(circuit_library.HGate().control(2, annotated=False), [0, 1, 2])
+    circuit.append(circuit_library.RXGate(0.23).control(2, annotated=False), [0, 1, 2])
+    circuit.append(circuit_library.RXXGate(0.31).control(annotated=False), [0, 3, 4])
+    circuit.append(circuit_library.SwapGate().control(annotated=False), [0, 3, 4])
+    circuit.append(circuit_library.RCCXGate().control(annotated=False), [0, 1, 2, 3])
+    circuit.mcx([0, 1], 4)
+    circuit.mcp(0.41, [0, 1], 4)
+    expected = quantum_info.Statevector.from_instruction(circuit).data
+
+    target = CompilerTarget.from_device(ddsim_device)
+    program = compile_program(circuit, output=OutputFormat.QIR_BASE, target=target)
+    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=0)
+    job.wait()
+
+    assert job.get_dense_statevector() == pytest.approx(expected)
+
+
 def test_device_executes_binary_qir_program(ddsim_device: Device) -> None:
     """Submit and retrieve an exact QIR module byte payload."""
     qasm3_program = """
@@ -766,6 +800,22 @@ h q[0];
 cx q[0], q[1];
 """
     return ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=0)
+
+
+def test_empty_qasm_program_has_empty_results(ddsim_device: Device) -> None:
+    """Return empty results for an empty QASM program."""
+    program = "OPENQASM 3.0;"
+
+    sample_job = ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=4)
+    sample_job.wait()
+    assert sample_job.get_counts() == {}
+
+    state_job = ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=0)
+    state_job.wait()
+    assert state_job.get_dense_statevector() == []
+    assert state_job.get_dense_probabilities() == []
+    assert state_job.get_sparse_statevector() == {}
+    assert state_job.get_sparse_probabilities() == {}
 
 
 def test_simulator_job_get_dense_state_vector_returns_valid_state(simulator_job: Job) -> None:

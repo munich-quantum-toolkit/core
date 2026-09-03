@@ -572,6 +572,9 @@ private:
       return chargeDynamicBitRead(condition.bit, multiplicity,
                                   projectedEmission, source);
     }
+    if (condition.kind == frontend::ConditionKind::RegisterComparison) {
+      return chargeScaledEmission(1, multiplicity, projectedEmission, source);
+    }
     if (condition.kind == frontend::ConditionKind::Comparison) {
       return chargeExpressionEmission(condition.comparisonLhs, multiplicity,
                                       projectedEmission, source) &&
@@ -1871,6 +1874,25 @@ private:
     return builder.loadClassicalBit(reg, registerIndex.getResult());
   }
 
+  [[nodiscard]] static cbit::ComparisonPredicate
+  registerPredicate(const frontend::ComparisonKind comparison) {
+    switch (comparison) {
+    case frontend::ComparisonKind::Equal:
+      return cbit::ComparisonPredicate::Equal;
+    case frontend::ComparisonKind::NotEqual:
+      return cbit::ComparisonPredicate::NotEqual;
+    case frontend::ComparisonKind::Less:
+      return cbit::ComparisonPredicate::Less;
+    case frontend::ComparisonKind::LessEqual:
+      return cbit::ComparisonPredicate::LessEqual;
+    case frontend::ComparisonKind::Greater:
+      return cbit::ComparisonPredicate::Greater;
+    case frontend::ComparisonKind::GreaterEqual:
+      return cbit::ComparisonPredicate::GreaterEqual;
+    }
+    llvm_unreachable("unknown register comparison");
+  }
+
   [[nodiscard]] Value
   emitComparison(const frontend::ConditionExpression& condition,
                  ValueRange gateParameters) {
@@ -1942,6 +1964,16 @@ private:
       return emitQubitOperation(
           condition.measurement, gateQubits,
           [&](Value qubit) { return builder.measure(qubit); });
+    case frontend::ConditionKind::RegisterComparison: {
+      auto reg = classicalRegisters.at(condition.reg);
+      assert(reg && "semantic analysis must declare bit registers before use");
+      auto rhs = builder.getIntegerAttr(
+          builder.getIntegerType(condition.expected.getBitWidth()),
+          condition.expected);
+      return cbit::CompareOp::create(builder, builder.getI1Type(),
+                                     registerPredicate(condition.comparison),
+                                     reg, rhs);
+    }
     case frontend::ConditionKind::Not:
       return arith::XOrIOp::create(
           builder, emitCondition(condition.lhs, gateParameters, gateQubits),

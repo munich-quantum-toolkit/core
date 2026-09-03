@@ -14,6 +14,7 @@
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassRegistry.h>
 
+#include <cstdint>
 #include <memory>
 
 namespace mlir {
@@ -37,6 +38,14 @@ namespace mlir::qco {
  * @brief Create target-independent two-qubit gate fusion.
  */
 [[nodiscard]] std::unique_ptr<Pass> createFuseTwoQubitGates();
+
+/// Create multi-controlled decomposition for one compiler target.
+///
+/// Supported operations remain native on all-to-all targets. Targets with
+/// explicit connectivity use the target-independent decomposition.
+[[nodiscard]] std::unique_ptr<Pass>
+createDecomposeMultiControlled(const CompilerTarget& target,
+                               uint64_t minQubits = 3);
 
 /**
  * @brief Create post-routing synthesis for one immutable compiler target.

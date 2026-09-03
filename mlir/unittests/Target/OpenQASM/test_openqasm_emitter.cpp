@@ -1258,10 +1258,59 @@ if (c == 1) x q[0];
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t conditionals = 0;
+  size_t comparisons = 0;
   moduleOp->walk([&](scf::IfOp) { ++conditionals; });
-  // The register equality and the source-level branch each short-circuit
-  // through their own structured conditional.
-  EXPECT_EQ(conditionals, 2);
+  moduleOp->walk([&](cbit::CompareOp) { ++comparisons; });
+  EXPECT_EQ(conditionals, 1);
+  EXPECT_EQ(comparisons, 1);
+}
+
+TEST(OpenQASMTargetTest, EmitsAllRegisterComparisonPredicates) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+bit[3] c;
+c[0] = true;
+c[1] = false;
+c[2] = true;
+qubit q;
+if (c == 5) { x q; }
+if (c != 5) { x q; }
+if (c < 5) { x q; }
+if (c <= 5) { x q; }
+if (c > 5) { x q; }
+if (c >= 5) { x q; }
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  std::array<bool, 6> predicates{};
+  moduleOp->walk([&](cbit::CompareOp comparison) {
+    predicates.at(static_cast<size_t>(comparison.getPredicate())) = true;
+    EXPECT_EQ(comparison.getRhs(), llvm::APInt(3, 5));
+  });
+  EXPECT_TRUE(llvm::all_of(predicates, [](const bool value) { return value; }));
+}
+
+TEST(OpenQASMTargetTest, PreservesWideRegisterComparisons) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[65];
+if (c == 18446744073709551616) x q[0];
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  cbit::CompareOp comparison;
+  moduleOp->walk([&](cbit::CompareOp op) { comparison = op; });
+  ASSERT_TRUE(comparison);
+  EXPECT_EQ(comparison.getRhs(), llvm::APInt(65, 1).shl(64));
 }
 
 TEST(OpenQASMTargetTest, ZeroInitializesUnmeasuredOpenQASM2Registers) {

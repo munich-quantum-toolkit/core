@@ -10,9 +10,6 @@
 
 #pragma once
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -73,11 +70,13 @@ public:
   using value_type = Operation*;
 
   /// Construct a dead-end sentinel wire-iterator.
-  WireIterator() : op_(nullptr), qubit_(nullptr), pos_(Position::PastTail) {}
+  WireIterator()
+      : mapping_(nullptr), op_(nullptr), qubit_(nullptr),
+        pos_(Position::PastTail) {}
 
   /// Construct a wire iterator pointing at the defining op of a qubit value.
-  explicit WireIterator(Value qubit)
-      : op_(qubit.getDefiningOp()), qubit_(qubit) {
+  explicit WireIterator(Value qubit, CallQubitMapping* mapping = nullptr)
+      : mapping_(mapping), op_(qubit.getDefiningOp()), qubit_(qubit) {
     if (op_ == nullptr || isHead(op_)) {
       pos_ = Position::Head;
     } else if (isTail(op_)) {
@@ -133,10 +132,6 @@ private:
   /// Labels the position on the wire.
   enum class Position : uint8_t { BeforeHead, Head, Between, Tail, PastTail };
 
-  WireIterator(Value qubit, CallQubitMapping* mapping) : WireIterator(qubit) {
-    mapping_ = mapping;
-  }
-
   /// Return true, if an op doesn't return, but only consumes, a qubit value.
   static bool isTail(Operation*);
 
@@ -149,11 +144,6 @@ private:
   // Moves to the previous operation on the qubit wire.
   void backward();
 
-  Operation* op_;
-  Value qubit_;
-  Position pos_;
-  bool mappingFailed_ = false;
-
   // Resolves the call result continuing an operand's wire.
   FailureOr<Value> resultForOperand(func::CallOp callOp, Value operand) const;
 
@@ -161,7 +151,11 @@ private:
   [[nodiscard]] Value operandForResult(func::CallOp callOp, Value result) const;
 
   // Null means that each call query uses a fresh mapping.
-  CallQubitMapping* mapping_ = nullptr;
+  CallQubitMapping* mapping_;
+  Operation* op_;
+  Value qubit_;
+  Position pos_;
+  bool mappingFailed_ = false;
 };
 
 /// Categorizes the current traversal direction.

@@ -484,6 +484,25 @@ def test_backend_qasm3_serialization_success(mock_qdmi_device_factory: type[Mock
     assert "cx q[0], q[1]" in program
 
 
+def test_backend_qasm3_zero_initializes_classical_bits(
+    mock_qdmi_device_factory: type[MockQDMIDevice],
+) -> None:
+    """Initialize every QASM 3 classical bit before measurement."""
+    qc = QuantumCircuit(2, 2)
+    qc.measure(0, 0)
+
+    device = mock_qdmi_device_factory(num_qubits=2, operations=["measure"])
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
+
+    program, fmt = backend._serialize_circuit(qc, [ProgramFormat.QASM3])  # ruff:ignore[private-member-access]
+
+    assert fmt == ProgramFormat.QASM3
+    assert isinstance(program, str)
+    assert "c[0] = false;" in program
+    assert "c[1] = false;" in program
+    assert program.index("c[0] = false;") < program.index("c[0] = measure q[0];")
+
+
 def test_backend_qasm2_serialization_success(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:
     """Backend should successfully serialize a circuit into OpenQASM 2."""
     qc = QuantumCircuit(2)

@@ -134,6 +134,34 @@ TEST_F(CBitToMemRefTest, LargeZeroInitializationProducesBoundedIR) {
   EXPECT_EQ(stores, 1);
 }
 
+TEST_F(CBitToMemRefTest, LowersRegisterComparisons) {
+  auto moduleOp = convert(R"mlir(
+    module {
+      func.func @main() -> (i1, i1, i1, i1, i1, i1) {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
+        %eq = cbit.cmp eq, %reg, 5 : i3 : !cbit.reg<3>
+        %ne = cbit.cmp ne, %reg, 5 : i3 : !cbit.reg<3>
+        %ult = cbit.cmp ult, %reg, 5 : i3 : !cbit.reg<3>
+        %ule = cbit.cmp ule, %reg, 5 : i3 : !cbit.reg<3>
+        %ugt = cbit.cmp ugt, %reg, 5 : i3 : !cbit.reg<3>
+        %uge = cbit.cmp uge, %reg, 5 : i3 : !cbit.reg<3>
+        return %eq, %ne, %ult, %ule, %ugt, %uge : i1, i1, i1, i1, i1, i1
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool containsCBit = false;
+  moduleOp->walk([&](Operation* op) {
+    containsCBit |= op->getDialect() == context->getLoadedDialect("cbit");
+  });
+  EXPECT_FALSE(containsCBit);
+  size_t loads = 0;
+  moduleOp->walk([&](memref::LoadOp) { ++loads; });
+  EXPECT_EQ(loads, 18);
+}
+
 TEST_F(CBitToMemRefTest, ConvertsFunctionSignaturesCallsAndReturns) {
   auto moduleOp = convert(R"mlir(
     module {

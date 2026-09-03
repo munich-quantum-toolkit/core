@@ -7,7 +7,6 @@
 # Licensed under the MIT License
 
 add_subdirectory(bench)
-add_subdirectory(ir)
 add_subdirectory(dd)
 add_subdirectory(qdmi)
 if(BUILD_MQT_CORE_MLIR)

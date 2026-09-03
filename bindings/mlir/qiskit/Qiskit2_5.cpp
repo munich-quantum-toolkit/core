@@ -1189,14 +1189,16 @@ public:
         throw std::runtime_error(
             "Qiskit classical-bit condition must compare against zero or one");
       }
-      result.expectedBit = expected != 0U;
-      return result;
+      return normalizePythonTarget(expressionModule.attr("equal")(
+          condition[0], nb::bool_(expected != 0U)));
     }
     if (result.kind == ClassicalTargetKind::ClassicalRegister) {
-      result.width = static_cast<uint32_t>(
-          std::max<size_t>(result.reg.bits.size(), std::bit_width(expected)));
-      result.expectedRegister = expected;
-      return result;
+      if (std::bit_width(expected) > result.reg.bits.size()) {
+        return normalizePythonTarget(
+            expressionModule.attr("lift")(nb::bool_(false)));
+      }
+      return normalizePythonTarget(
+          expressionModule.attr("equal")(condition[0], nb::int_(expected)));
     }
     throw std::runtime_error("Qiskit control flow has an unknown condition "
                              "target");
@@ -1646,34 +1648,15 @@ public:
   }
 
   [[nodiscard]] nb::object condition(const ClassicalTarget& target) const {
-    switch (target.kind) {
-    case ClassicalTargetKind::ClassicalBit:
-      return nb::make_tuple(classicalBit(target.bit),
-                            nb::bool_(target.expectedBit));
-    case ClassicalTargetKind::ClassicalRegister: {
-      validateRegisterValue(target.reg, target.expectedRegister);
-      if (const auto reg = registeredClassicalRegister(target.reg)) {
-        return nb::make_tuple(*reg, nb::int_(target.expectedRegister));
-      }
-      const auto packed = packedRegister(target.reg);
-      const auto expected = expressionModule_.attr("lift")(
-          nb::int_(target.expectedRegister),
-          classicalType(ClassicalType::Uint,
-                        static_cast<uint32_t>(target.reg.bits.size())));
-      return expressionModule_.attr("equal")(packed, expected);
+    if (target.kind != ClassicalTargetKind::Expression || !target.expression) {
+      throw std::runtime_error(
+          "Qiskit control-flow condition has no expression");
     }
-    case ClassicalTargetKind::Expression:
-      if (!target.expression) {
-        throw std::runtime_error(
-            "Qiskit control-flow condition has no expression");
-      }
-      if (target.expression->type != ClassicalType::Bool) {
-        throw std::runtime_error(
-            "Qiskit control-flow condition expression must be Boolean");
-      }
-      return expression(*target.expression);
+    if (target.expression->type != ClassicalType::Bool) {
+      throw std::runtime_error(
+          "Qiskit control-flow condition expression must be Boolean");
     }
-    throw std::runtime_error("Qiskit control flow has an unknown condition");
+    return expression(*target.expression);
   }
 
   [[nodiscard]] nb::object switchTarget(const ClassicalTarget& target) const {
@@ -1750,18 +1733,6 @@ private:
       }
     }
     return std::nullopt;
-  }
-
-  static void validateRegisterValue(const Register& reg, const uint64_t value) {
-    if (reg.bits.empty() || reg.bits.size() > 64U) {
-      throw std::runtime_error(
-          "Qiskit condition registers must contain between 1 and 64 bits");
-    }
-    if (reg.bits.size() < std::numeric_limits<uint64_t>::digits &&
-        value >= (uint64_t{1} << reg.bits.size())) {
-      throw std::runtime_error(
-          "Qiskit register condition value exceeds its register width");
-    }
   }
 
   [[nodiscard]] nb::object

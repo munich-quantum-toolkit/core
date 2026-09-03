@@ -347,6 +347,7 @@ TEST_F(WireIteratorFixture, TraversalTerminatesAtUnknownCarrier) {
   --backward;
   EXPECT_EQ(backward, std::default_sentinel);
 }
+
 TEST_F(WireIteratorFixture, CallMappingFollowsNestedReordering) {
   auto module = parseModule(R"mlir(
 func.func private @swap(%flag: i1, %a: !qco.qubit, %b: !qco.qubit)

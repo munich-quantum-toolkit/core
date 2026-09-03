@@ -92,20 +92,20 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
     @overload
     def __init__(
         self,
-        num_qubits: int,
+        num_sites: int,
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
     def __init__(
         self,
         name: str,
-        num_qubits: int,
+        num_sites: int,
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -113,8 +113,8 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         self,
         sites: Sequence[CompilerTarget.Site],
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
     @overload
@@ -123,10 +123,23 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         name: str,
         sites: Sequence[CompilerTarget.Site],
         *,
-        couplings: Sequence[tuple[int, int]] | None = None,
-        operations: Sequence[CompilerTarget.Operation] | None = None,
+        connectivity: CompilerTarget.Connectivity,
+        native_operations: CompilerTarget.NativeOperations,
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
+
+mqt\.core\.mlir\.CompilerTarget\.Operation\.__init__$:
+    \from collections.abc import Sequence
+    def __init__(
+        self,
+        name: str,
+        arity: int | CompilerTarget.OperationArity,
+        num_parameters: int,
+        site_tuples: Sequence[CompilerTarget.SiteTuple] | None = None,
+        duration: int | None = None,
+        fidelity: float | None = None,
+    ) -> None:
+        \doc
 
 mqt\.core\.mlir\.CompilerTarget\.from_device$:
     \from mqt.core.qdmi import Device

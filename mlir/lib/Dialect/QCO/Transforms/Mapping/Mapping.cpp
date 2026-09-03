@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/Graph.h"
 #include "mlir/Dialect/QCO/Utils/Layout.h"
+#include "mlir/Dialect/QCO/Utils/Sorting.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
@@ -27,7 +28,9 @@
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -236,12 +239,12 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
 static LogicalResult checkCapacity(func::FuncOp func,
                                    const CompilerTarget& target,
                                    const Computation& computation) {
-  if (computation.wires.size() <= target.numQubits()) {
+  if (computation.wires.size() <= target.numSites()) {
     return success();
   }
   return func.emitError() << "requires " << computation.wires.size()
-                          << " qubits, but the target supports "
-                          << target.numQubits();
+                          << " program qubits, but the target site count is "
+                          << target.numSites();
 }
 
 /// Replace dynamic qubit roots with the target sites selected by `layout`.
@@ -488,14 +491,14 @@ private:
   /// Describes the graph F of arXiv:1602.05150v3.
   struct FGraph {
     explicit FGraph(const CompilerTarget& target)
-        : f_(llvm::to_vector(llvm::seq(target.numQubits()))),
+        : f_(llvm::to_vector(llvm::seq(target.numSites()))),
           target_(&target) {};
 
     /// Build F-graph: Add edges to F for each edge in the coupling graph.
     /// Note that this assumes that the coupling graph is directed, but
     /// symmetric (essentially: undirected).
     void construct(const Layout& from, const Layout& to) {
-      for (size_t u = 0; u < target_->numQubits(); ++u) {
+      for (size_t u = 0; u < target_->numSites(); ++u) {
         target_->forEachNeighbour(u, [&](const auto v) {
           if (shouldAddEdge(u, v, from, to)) {
             f_.addEdge(u, v);
@@ -581,7 +584,8 @@ protected:
     }
 
     auto moduleOp = getOperation();
-    if (!target->hasExplicitTopology()) {
+    if (target->connectivityKind() !=
+        CompilerTarget::Connectivity::Kind::Explicit) {
       moduleOp.emitError()
           << "place-and-route requires an explicit target topology";
       signalPassFailure();
@@ -638,8 +642,8 @@ protected:
     numRoutingSWAPs = stats.numRoutingSWAPs;
     numAppendixSWAPs = stats.numAppendixSWAPs;
 
-    // Fix SSA Dominance issues.
-    llvm::for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
+    // Fix SSA dominance errors.
+    reorderTopologically(body.front(), rewriter);
   }
 
 private:
@@ -781,6 +785,35 @@ private:
     return newWhileOp;
   }
 
+  /// Return the value whose wire edge crosses a composite in block order.
+  static Value valueBeforeBoundary(WireIterator iterator, Operation* boundary) {
+    assert(boundary != nullptr && boundary->getBlock() != nullptr);
+
+    // Independent wires can advance beyond `boundary`. Rewind to the qubit
+    // value that crosses it so extending the composite does not move later
+    // operations before the boundary.
+    if (iterator == std::default_sentinel) {
+      --iterator;
+    }
+
+    while (iterator.operation() != nullptr &&
+           !iterator.operation()->isBeforeInBlock(boundary)) {
+      assert(iterator.operation()->getBlock() == boundary->getBlock());
+      --iterator;
+    }
+
+    Value value = iterator.qubit();
+    assert(value && "expected a qubit value before the composite boundary");
+    assert(value.hasOneUse() && "expected linear qubit use at boundary");
+    Operation* consumer = boundary->getBlock()->findAncestorOpInBlock(
+        *value.use_begin()->getOwner());
+    assert(consumer != nullptr && "expected consumer in boundary block");
+    assert((consumer == boundary || boundary->isBeforeInBlock(consumer) ||
+            isa<SinkOp>(consumer)) &&
+           "selected qubit value does not cross composite boundary");
+    return value;
+  }
+
   /// Execute `ntrials` many (parallel) initial layout refinement trials and
   /// return the heuristically best one.
   ///
@@ -808,8 +841,8 @@ private:
       trials.emplace_back(
           RoutingBundle{.wires = wires,
                         .infos = infos,
-                        .layout = Layout::random(target->numQubits(),
-                                                 target->numQubits(), rng())});
+                        .layout = Layout::random(target->numSites(),
+                                                 target->numSites(), rng())});
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
@@ -819,22 +852,10 @@ private:
           return;
         }
 
-        assert(all_of(t.bundle.wires, [](const auto& it) {
-          return it == std::default_sentinel;
-        }));
-
-        for_each(t.bundle.wires, [](auto& it) { std::advance(it, -1); });
-
         const auto bwRouteRes = route<WireDirection::Backward>(t.bundle);
         if (failed(bwRouteRes)) {
           return;
         }
-
-        assert(all_of(t.bundle.wires, [](const auto& it) {
-          return it == std::default_sentinel;
-        }));
-
-        for_each(t.bundle.wires, [](auto& it) { std::advance(it, 1); });
 
         t.stats = *bwRouteRes;
       }
@@ -871,7 +892,7 @@ private:
                                                const Layout& layout) const {
     constexpr size_t cap = 25'000'000UL;
 
-    const size_t b = target->maxDegree() * ((target->numQubits() + 1) / 2);
+    const size_t b = target->maxDegree() * ((target->numSites() + 1) / 2);
     const size_t budget = std::min(b * b * b, cap);
 
     const Parameters params{.alpha = alpha, .lambda = lambda};
@@ -1076,90 +1097,48 @@ private:
     return curr;
   }
 
-  /// Skip to the end of the two-qubit block for both wire iterators, where
-  /// initially both must point at the same two-qubit operation.
-  template <WireDirection Direction>
-  static void skipQubitPairBlock(WireIterator& it0, WireIterator& it1) {
-    using Traits = WireTraversalTraits<Direction>;
-
-    // Traverses the pair of wire iterators in tandem until a two-qubit
-    // operation is found. If the two-qubit operation is equivalent, continue.
-    // Otherwise, stop.
-
-    std::array block{it0, it1};
-
-    // Move past the initial two-qubit op.
-    assert(it0.operation() == it1.operation());
-    std::advance(block[0], Traits::stride());
-    std::advance(block[1], Traits::stride());
-
-    while (true) {
-      for (auto& it : block) {
-        for (; it != std::default_sentinel;
-             std::advance(it, Traits::stride())) {
-          if (it.operation() == nullptr) { // isa<Blockargument>
-            return;
-          }
-
-          if (auto u = dyn_cast<UnitaryOpInterface>(it.operation());
-              u && u.getNumQubits() > 1) {
-            // Handle two-qubit barrier edge case explicitly.
-            if (isa<BarrierOp>(u) && u.getNumQubits() != 2) {
-              return;
-            }
-            // Otherwise stop for subsequent two-qubit unitary comparison.
-            break;
-          }
-        }
-
-        if (it == std::default_sentinel) {
-          return;
-        }
-      }
-
-      if (block[0].operation() != block[1].operation()) {
-        return;
-      }
-
-      it0 = block[0];
-      it1 = block[1];
-
-      std::advance(block[0], Traits::stride());
-      std::advance(block[1], Traits::stride());
-    }
-  }
-
-  /// Return a window of layers with a maximum size of `1 + nlookahead`.
+  /// Collect a routing lookahead window of up to `1 + nlookahead` ready
+  /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
   Window getWindow(Wires wires, const WireInfos& infos) {
     Window window;
     window.reserve(1 + nlookahead);
 
+    SmallVector<IndexPairType> prev;
+    SmallVector<IndexPairType> next;
+
     walkProgramGraph<Direction>(
-        wires, [&](const ReadyMap& ready, ReleasedOps& released) {
-          if (ready.empty()) {
-            return WalkResult::advance();
+        MutableArrayRef(wires.data(), wires.size()),
+        [&](const Frontier& frontier, ReleasedOps& released) {
+          for (const auto& [op, indices] : frontier) {
+            if (indices.size() == 1) {
+              released.emplace_back(op);
+            }
           }
 
-          for (const auto& [op, indices] : ready) {
-            if (isa<UnitaryOpInterface>(op)) {
-              const auto i0 = indices[0];
-              const auto i1 = indices[1];
-              const auto prog0 = infos.lookupProgram(i0);
-              const auto prog1 = infos.lookupProgram(i1);
+          if (released.empty()) {
+            for (const auto& [op, indices] : frontier) {
+              if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
+                const auto i0 = indices[0];
+                const auto i1 = indices[1];
+                const auto prog0 = infos.lookupProgram(i0);
+                const auto prog1 = infos.lookupProgram(i1);
+                const IndexPairType gate = std::minmax(prog0, prog1);
 
-              window.emplace_back(prog0, prog1);
-              if (window.size() == 1 + nlookahead) {
-                return WalkResult::interrupt();
+                if (!is_contained(prev, gate)) {
+                  window.emplace_back(gate);
+                  if (window.size() == 1 + nlookahead) {
+                    return WalkResult::interrupt();
+                  }
+                }
+                next.emplace_back(gate);
               }
 
-              skipQubitPairBlock<Direction>(wires[i0], wires[i1]);
               released.emplace_back(op);
-              return WalkResult::advance();
             }
 
-            released.emplace_back(op);
-            return WalkResult::advance();
+            prev.swap(next);
+            next.clear();
           }
 
           return WalkResult::advance();
@@ -1201,8 +1180,8 @@ private:
 
         infos.swap(prog0, prog1);
 
-        std::advance(w0, 1); // Move to SWAP.
-        std::advance(w1, 1);
+        std::ranges::advance(w0, 1); // Move to SWAP.
+        std::ranges::advance(w1, 1);
       }
 
       layout.swap(hw0, hw1);
@@ -1211,43 +1190,83 @@ private:
 
   /// Advance past all executable gates and return operations with nested
   /// regions and the respective wire indices. Stops when no more executable
-  /// gates are found. After the function returns, the wires point at the
-  /// results of non-executable gates or operations with nested regions.
+  /// gates are found. The function positions each wire on a non-executable
+  /// two-qubit gate or a composite unitary, if possible. The function never
+  /// advances past sink-like operation and thus, each wire will never reach the
+  /// sentinel state.
   template <WireDirection Direction>
   SmallVector<CompositeUnitary> advance(Wires& wires, const WireInfos& infos,
                                         const Layout& layout) {
     DenseSet<Operation*> visited;
     SmallVector<CompositeUnitary> composites;
 
-    // Advance wires past all executable gates and push composite unitaries and
-    // the respective wire indices of their inputs onto the vector.
+    // Advance wires past all executable gates and push composite unitaries
+    // and the respective wire indices of their inputs onto the vector.
 
-    walkProgramGraph<Direction>(wires, [&](const ReadyMap& ready,
+    walkProgramGraph<Direction>(wires, [&](const Frontier& frontier,
                                            ReleasedOps& released) {
-      if (ready.empty()) {
-        return WalkResult::advance();
-      }
+      for (const auto& [op, indices] : frontier) {
+        const auto release =
+            TypeSwitch<Operation*, bool>(op)
+                .Case<BarrierOp>([](auto&) { return true; })
+                .template Case<UnitaryOpInterface>([&](auto&) {
+                  if (indices.size() == 1) {
+                    return true;
+                  }
 
-      for (const auto& [op, indices] : ready) {
-        if (isa<BarrierOp>(op)) {
+                  const auto prog0 = infos.lookupProgram(indices[0]);
+                  const auto prog1 = infos.lookupProgram(indices[1]);
+                  const auto [hw0, hw1] =
+                      layout.getHardwareIndices(prog0, prog1);
+                  return target->areAdjacent(hw0, hw1);
+                })
+                .template Case<ResetOp>([](auto&) { return true; })
+                .template Case<MeasureOp>([](MeasureOp& m) {
+                  if (Direction == WireDirection::Backward) {
+                    return true;
+                  }
+
+                  /// Only advance past measurements in adaptive-profile
+                  /// scenarios, where a qubit is used after measurement
+                  /// (multiple subsequent measurements are fine) or a bit is
+                  /// used to determine a subsequent chain of unitaries.
+                  /// The forward slice follows SSA def-use chains only.
+
+                  Value qubit = m.getQubitOut();
+                  Value bit = m.getResult();
+
+                  assert(qubit.hasOneUse());
+                  Operation* user = *qubit.user_begin();
+                  if (!isa<MeasureOp, SinkOp>(user)) {
+                    return true;
+                  }
+
+                  SetVector<Operation*> slice;
+                  getForwardSlice(bit, &slice);
+                  return any_of(slice, [](Operation* op) {
+                    return isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp,
+                               UnitaryOpInterface>(op);
+                  });
+                })
+                .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
+                    [](auto&) { return Direction == WireDirection::Forward; })
+                .template Case<SinkOp, MeasureOp, qtensor::InsertOp, YieldOp,
+                               scf::YieldOp, scf::ConditionOp>(
+                    [](auto&) { return Direction == WireDirection::Backward; })
+                .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
+                    [&](auto&) {
+                      if (indices.size() == 1) {
+                        return true;
+                      }
+                      if (visited.insert(op).second) {
+                        composites.emplace_back(op, indices);
+                      }
+                      return false;
+                    })
+                .Default([&](auto) { return false; });
+
+        if (release) {
           released.emplace_back(op);
-          continue;
-        }
-
-        if (isa<UnitaryOpInterface>(op)) {
-          const auto prog0 = infos.lookupProgram(indices[0]);
-          const auto prog1 = infos.lookupProgram(indices[1]);
-          if (const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-              target->areAdjacent(hw0, hw1)) {
-            released.emplace_back(op);
-          }
-          continue;
-        }
-
-        if (op->getNumRegions() > 0 && visited.insert(op).second) {
-          assert((isa<scf::ForOp, scf::WhileOp, IfOp, IndexSwitchOp>(op)));
-          composites.emplace_back(op, indices);
-          continue;
         }
       }
 
@@ -1267,6 +1286,26 @@ private:
                  assert(lhs.op->getBlock() == rhs.op->getBlock());
                  return lhs.op->isBeforeInBlock(rhs.op);
                });
+
+    // Defer a composite while another active wire points to an operation that
+    // precedes it in the traversal direction. Otherwise, dispatch would remove
+    // that operation from the routing frontier.
+    llvm::erase_if(composites, [&](const CompositeUnitary& composite) {
+      return llvm::any_of(wires, [&](const WireIterator& iterator) {
+        if (iterator == std::default_sentinel) {
+          return false;
+        }
+        Operation* operation = iterator.operation();
+        if (operation == nullptr || operation == composite.op) {
+          return false;
+        }
+        assert(operation->getBlock() == composite.op->getBlock());
+        if constexpr (Direction == WireDirection::Forward) {
+          return operation->isBeforeInBlock(composite.op);
+        }
+        return composite.op->isBeforeInBlock(operation);
+      });
+    });
 
     return composites;
   }
@@ -1292,16 +1331,13 @@ private:
       included.insert(index);
     }
 
-    const auto allIndices = to_vector(llvm::seq(target->numQubits()));
+    const auto allIndices = to_vector(llvm::seq(target->numSites()));
 
     const SmallVector<size_t> excluded(llvm::make_filter_range(
         allIndices, [&](const size_t i) { return !included.contains(i); }));
 
     const SmallVector<Value> addons(map_range(excluded, [&](const size_t i) {
-      // Make sure the qubits point to an already processed operation.
-      const auto& it = std::prev(
-          parent.wires[i], parent.wires[i] == std::default_sentinel ? 2 : 1);
-      return it.qubit();
+      return valueBeforeBoundary(parent.wires[i], composite.op);
     }));
 
     composite = CompositeUnitary{
@@ -1478,7 +1514,7 @@ private:
       totalStats.merge(*stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
-        for_each(child.wires, [](auto& it) { std::advance(it, -2); });
+        for_each(child.wires, [](auto& it) { std::ranges::advance(it, -1); });
       }
     }
 
@@ -1494,8 +1530,8 @@ private:
         if constexpr (Direction == WireDirection::Forward) {
           return whileOp.getAfterArguments();
         }
-        return cast<scf::YieldOp>(whileOp.getAfterBody()->getTerminator())
-            .getResults();
+        Operation* const terminator = whileOp.getAfterBody()->getTerminator();
+        return cast<scf::YieldOp>(terminator).getResults();
       }();
 
       for (auto [i, arg] : llvm::enumerate(getQubitValues(values))) {
@@ -1513,7 +1549,8 @@ private:
       totalStats.merge(*stats);
 
       if constexpr (Mode == RoutingMode::Hot) {
-        for_each(children[1].wires, [](auto& it) { std::advance(it, -2); });
+        for_each(children[1].wires,
+                 [](auto& it) { std::ranges::advance(it, -1); });
       }
     }
 
@@ -1592,13 +1629,14 @@ private:
 
         // Sort topologically to fix any occurring SSA dominance errors.
 
-        sortTopologically(block);
+        // Fix SSA dominance errors.
+        reorderTopologically(*block, *rewriter);
       }
     }
 
-    // If the operation is a scf::ForOp, where the parent.layout = child.layout,
-    // we are done. Otherwise, propagate a patch with the final layout and
-    // index-to-program mapping.
+    // If the operation is a scf::ForOp, where the parent.layout =
+    // child.layout, we are done. Otherwise, propagate a patch with the final
+    // layout and index-to-program mapping.
 
     if (isa<scf::ForOp>(op)) {
       return std::make_pair(RoutingBundle::Patch{}, totalStats);
@@ -1651,11 +1689,12 @@ private:
           bundle.applyPatch(std::move(res->first));
           stats.merge(res->second);
 
-          // Once the composite is mapped, move past this op by incrementing the
-          // respective wires.
+          // Once the composite is mapped, move past this op by incrementing
+          // the respective wires.
 
           for_each(composite.indices, [&](size_t i) {
-            std::advance(wires[i], WireTraversalTraits<Direction>::stride());
+            std::ranges::advance(wires[i],
+                                 WireTraversalTraits<Direction>::stride());
           });
         }
       }
@@ -1672,67 +1711,12 @@ private:
 
       if constexpr (Mode == RoutingMode::Hot) {
 
-        // At this point the wire iterators either point to
-        // std::default_sentinel or a multi-qubit gate (incl. barriers) of
-        // the current or subsequent layers. The former must be decremented
-        // twice (sentinel → sink → final op). For the latter, we must ensure
-        // the insertion point is before the multi-qubit gates.
+        // At this point the wire iterators point to sink-like operations
+        // (e.g. SinkOp, YieldOp), measurements, or two-qubit gate of the
+        // subsequent layer. Decrementing once ensures that the wire iterators
+        // point at the input qubits of those operations.
 
-        Operation* latest = nullptr;
-        bool comparable = true;
-        for (WireIterator it : wires) {
-          if (it == std::default_sentinel) {
-            std::advance(it, -2);
-            while (isa_and_nonnull<MeasureOp>(it.operation())) {
-              std::advance(it, -1);
-            }
-          } else {
-            std::advance(it, -1);
-          }
-
-          Operation* operation = it.operation();
-          if (operation == nullptr) {
-            continue;
-          }
-          if (latest != nullptr &&
-              operation->getBlock() != latest->getBlock()) {
-            comparable = false;
-            break;
-          }
-          if (latest == nullptr || latest->isBeforeInBlock(operation)) {
-            latest = operation;
-          }
-        }
-
-        // Keep terminal measurements after routing SWAPs. A measurement can
-        // only move past the routing frontier if doing so does not move it past
-        // a classical use of its result.
-        for (auto& it : wires) {
-          if (it != std::default_sentinel) {
-            std::advance(it, -1);
-            continue;
-          }
-
-          std::advance(it, -2);
-          if (!comparable) {
-            continue;
-          }
-          while (auto measure = dyn_cast_or_null<MeasureOp>(it.operation())) {
-            if (latest != nullptr &&
-                llvm::any_of(measure.getResult().getUsers(),
-                             [&](Operation* user) {
-                               while (user != nullptr &&
-                                      user->getBlock() != latest->getBlock()) {
-                                 user = user->getParentOp();
-                               }
-                               return user == nullptr || user == latest ||
-                                      user->isBeforeInBlock(latest);
-                             })) {
-              break;
-            }
-            std::advance(it, -1);
-          }
-        }
+        for_each(wires, [](auto& it) { std::ranges::advance(it, -1); });
       }
 
       insertSWAPs<Mode>(*swaps, bundle, rewriter);
@@ -1744,10 +1728,10 @@ private:
         // insertion or pointing at a SWAP operation. If the former is the
         // case, incrementing the wire iterator will undo the previous
         // decrement, leaving it at the same position as before the SWAP
-        // insertion. Otherwise, an increment will move the iterator to the
-        // multi-qubit op of the current or subsequent layer or to a sink.
+        // insertion. Otherwise, an increment will move the iterator past the
+        // inserted SWAP operation.
 
-        for_each(wires, [](auto& it) { std::advance(it, 1); });
+        for_each(wires, [](auto& it) { std::ranges::advance(it, 1); });
       }
     }
 

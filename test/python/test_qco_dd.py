@@ -74,7 +74,7 @@ def test_unitary_x_build_simulate_and_sample() -> None:
     package.dec_ref_vec(out)
     package.dec_ref_vec(expected)
 
-    assert program.sample(package, shots=32, seed=1) == {"1": 32}
+    assert program.sample(shots=32) == {"1": 32}
 
 
 def test_simulate_measure_uses_default_or_explicit_seed() -> None:
@@ -129,7 +129,7 @@ module {
 
 
 @pytest.mark.parametrize(
-    ("source", "num_qubits", "expected"),
+    ("source", "expected"),
     [
         (
             """
@@ -143,7 +143,6 @@ cx q0, q1;
 c[0] = measure q0;
 c[1] = measure q1;
 """,
-            2,
             {"00", "11"},
         ),
         (
@@ -159,7 +158,6 @@ if (c[0]) {
 }
 c[1] = measure q;
 """,
-            1,
             {"00", "01"},
         ),
         (
@@ -173,19 +171,18 @@ while (repeat) { h q; repeat = measure q; }
 output bit out;
 out = measure q;
 """,
-            1,
             {"0"},
         ),
     ],
     ids=["terminal-bell", "adaptive-reset", "while-reset"],
 )
-def test_compiler_to_sampler_outputs(source: str, num_qubits: int, expected: set[str]) -> None:
+def test_compiler_to_sampler_outputs(source: str, expected: set[str]) -> None:
     """Compile optimized QCO and sample the declared CBit output."""
     program = compile_program(source, output=OutputFormat.QCO_OPTIMIZED)
-    package = DDPackage(num_qubits)
     shots = 256
 
-    counts = program.sample(package, shots=shots, seed=17)
+    counts = program.sample(shots=shots, seed=17)
 
     assert set(counts) == expected
     assert sum(counts.values()) == shots
+    assert program.sample(shots=shots, seed=17) == counts

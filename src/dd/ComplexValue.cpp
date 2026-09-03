@@ -12,7 +12,6 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
-#include "ir/Definitions.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -306,5 +305,5 @@ std::size_t std::hash<dd::ComplexValue>::operator()(
       static_cast<std::size_t>(std::round(c.r / dd::RealNumber::eps)));
   const auto h2 = dd::murmur64(
       static_cast<std::size_t>(std::round(c.i / dd::RealNumber::eps)));
-  return qc::combineHash(h1, h2);
+  return dd::combineHash(h1, h2);
 }

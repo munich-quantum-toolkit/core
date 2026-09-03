@@ -21,6 +21,7 @@
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/SmallString.h>
@@ -224,6 +225,79 @@ private:
     return uniqueName("q", nextQubit);
   }
 
+  [[nodiscard]] static bool storesToRegister(Operation& operation, Value reg) {
+    return operation
+        .walk([&](cbit::StoreOp store) {
+          return store.getReg() == reg ? WalkResult::interrupt()
+                                       : WalkResult::advance();
+        })
+        .wasInterrupted();
+  }
+
+  [[nodiscard]] static bool
+  hasInterveningRegisterWrite(cbit::CompareOp comparison, Operation& consumer) {
+    Operation* anchor = &consumer;
+    Block* block = consumer.getBlock();
+    Block* comparisonBlock = comparison->getBlock();
+    while (block != comparisonBlock) {
+      for (Operation& operation : *block) {
+        if (&operation == anchor) {
+          break;
+        }
+        if (storesToRegister(operation, comparison.getReg())) {
+          return true;
+        }
+      }
+      Operation* parent = block->getParentOp();
+      if (parent == nullptr) {
+        return true;
+      }
+      if (isa<scf::ForOp, scf::WhileOp>(parent) &&
+          storesToRegister(*parent, comparison.getReg())) {
+        return true;
+      }
+      anchor = parent;
+      block = parent->getBlock();
+    }
+
+    for (Operation* operation = comparison->getNextNode(); operation != anchor;
+         operation = operation->getNextNode()) {
+      if (operation == nullptr ||
+          storesToRegister(*operation, comparison.getReg())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  [[nodiscard]] LogicalResult validateRegisterComparisonSnapshots() {
+    const auto walkResult = function.walk([&](cbit::CompareOp comparison) {
+      SmallVector<Operation*> consumers;
+      llvm::append_range(consumers, comparison.getResult().getUsers());
+      DenseSet<Operation*> visited;
+      while (!consumers.empty()) {
+        Operation* consumer = consumers.pop_back_val();
+        if (!visited.insert(consumer).second) {
+          continue;
+        }
+        if (hasInterveningRegisterWrite(comparison, *consumer)) {
+          std::ignore =
+              fail(comparison,
+                   "register comparison crosses an intervening register write");
+          return WalkResult::interrupt();
+        }
+        if (!isInlineExpressionOperation(*consumer)) {
+          continue;
+        }
+        for (Value result : consumer->getResults()) {
+          llvm::append_range(consumers, result.getUsers());
+        }
+      }
+      return WalkResult::advance();
+    });
+    return walkResult.wasInterrupted() ? failure() : success();
+  }
+
   [[nodiscard]] LogicalResult preflight() {
     SmallVector<func::FuncOp> functions(moduleOp.getOps<func::FuncOp>());
     if (functions.size() != 1) {
@@ -261,7 +335,7 @@ private:
                                 "scope");
       }
     }
-    return success();
+    return validateRegisterComparisonSnapshots();
   }
 
   [[nodiscard]] LogicalResult collectProgramShape() {
@@ -303,8 +377,8 @@ private:
       if (auto alloc = dyn_cast<cbit::AllocOp>(&operation)) {
         const auto type = alloc.getResult().getType();
         const auto width = type.getWidth();
-        if (width <= 0 || static_cast<uint64_t>(width) >
-                              MAX_CLASSICAL_BITS - numClassicalBits) {
+        if (width <= 0 ||
+            std::cmp_greater(width, MAX_CLASSICAL_BITS - numClassicalBits)) {
           return fail(alloc, "total classical register width exceeds the "
                              "supported limit of " +
                                  Twine(MAX_CLASSICAL_BITS) + " bits");
@@ -498,7 +572,8 @@ private:
 
   [[nodiscard]] static bool isInlineExpressionOperation(Operation& operation) {
     const auto name = operation.getName().getStringRef();
-    return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp>(&operation) ||
+    return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp,
+               cbit::CompareOp>(&operation) ||
            !binaryOperator(name).empty() || name == "arith.negf" ||
            name == "arith.remf" || isScalarCast(name) ||
            !mathFunction(name).empty();
@@ -587,6 +662,37 @@ private:
     }
     if (auto load = value.getDefiningOp<cbit::LoadOp>()) {
       return emitBitReference(load.getReg(), load.getIndex());
+    }
+    if (auto comparison = value.getDefiningOp<cbit::CompareOp>()) {
+      const auto resource = resources.find(comparison.getReg());
+      if (resource == resources.end() ||
+          resource->second.kind != ResourceKind::Bit) {
+        return failExpression(value,
+                              "register comparison refers to unsupported "
+                              "storage");
+      }
+      const auto* predicate = [&] {
+        switch (comparison.getPredicate()) {
+        case cbit::ComparisonPredicate::Equal:
+          return "==";
+        case cbit::ComparisonPredicate::NotEqual:
+          return "!=";
+        case cbit::ComparisonPredicate::Less:
+          return "<";
+        case cbit::ComparisonPredicate::LessEqual:
+          return "<=";
+        case cbit::ComparisonPredicate::Greater:
+          return ">";
+        case cbit::ComparisonPredicate::GreaterEqual:
+          return ">=";
+        }
+        llvm_unreachable("unknown CBit comparison predicate");
+      }();
+      llvm::SmallString<32> rhs;
+      comparison.getRhs().toString(rhs, 10, false);
+      return (Twine("(") + resource->second.name + " " + predicate + " " + rhs +
+              ")")
+          .str();
     }
     auto* operation = value.getDefiningOp();
     if (operation == nullptr) {
@@ -936,8 +1042,8 @@ private:
       return fail(whileOp, "scf.while loop-carried values are not supported");
     }
     for (Operation& operation : before.without_terminator()) {
-      if (auto load = dyn_cast<cbit::LoadOp>(operation)) {
-        if (failed(emitExpression(load.getResult()))) {
+      if (isa<cbit::LoadOp, cbit::CompareOp>(operation)) {
+        if (failed(emitExpression(operation.getResult(0)))) {
           return failure();
         }
         continue;

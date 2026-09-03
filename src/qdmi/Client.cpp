@@ -648,25 +648,13 @@ std::vector<std::string> Job::getShots() const {
     return {};
   }
 
-  std::string shots(shotsSize - 1, '\0');
+  std::string shots(shotsSize, '\0');
   qdmi::throwIfError(QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_SHOTS,
                                           shotsSize, shots.data(), nullptr),
                      "Querying shots");
+  shots.pop_back();
 
-  // Parse the shots (comma-separated)
-  std::vector<std::string> shotsVec;
-  const auto numShots = getNumShots();
-  shotsVec.reserve(numShots);
-  std::istringstream shotsStream(shots);
-  std::string shot;
-  while (std::getline(shotsStream, shot, ',')) {
-    shotsVec.emplace_back(shot);
-  }
-  if (shotsVec.size() != numShots) {
-    throw std::runtime_error("Number of shots mismatch");
-  }
-
-  return shotsVec;
+  return detail::parseShots(shots, getNumShots());
 }
 
 std::map<std::string, size_t> Job::getCounts() const {
@@ -680,10 +668,11 @@ std::map<std::string, size_t> Job::getCounts() const {
     return {}; // Empty histogram
   }
 
-  std::string keys(keysSize - 1, '\0');
+  std::string keys(keysSize, '\0');
   qdmi::throwIfError(QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_HIST_KEYS,
                                           keysSize, keys.data(), nullptr),
                      "Querying histogram keys");
+  keys.pop_back();
 
   // Get the histogram values
   size_t valuesSize = 0;
@@ -705,6 +694,10 @@ std::map<std::string, size_t> Job::getCounts() const {
 
   // Parse the keys (comma-separated)
   std::map<std::string, size_t> counts;
+  if (keys.empty() && values.size() == 1) {
+    counts[""] = values.front();
+    return counts;
+  }
   std::istringstream keysStream(keys);
   std::string key;
   size_t idx = 0;
@@ -774,11 +767,12 @@ std::map<std::string, std::complex<double>> Job::getSparseStateVector() const {
     return {}; // Empty state vector
   }
 
-  std::string keys(keysSize - 1, '\0');
+  std::string keys(keysSize, '\0');
   qdmi::throwIfError(
       QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
                            keysSize, keys.data(), nullptr),
       "Querying sparse state vector keys");
+  keys.pop_back();
 
   size_t valuesSize = 0;
   qdmi::throwIfError(QDMI_job_get_results(
@@ -801,6 +795,10 @@ std::map<std::string, std::complex<double>> Job::getSparseStateVector() const {
 
   // Parse the keys (comma-separated)
   std::map<std::string, std::complex<double>> stateVector;
+  if (keys.empty() && values.size() == 1) {
+    stateVector[""] = values.front();
+    return stateVector;
+  }
   std::istringstream keysStream(keys);
   std::string key;
   size_t idx = 0;
@@ -829,11 +827,12 @@ std::map<std::string, double> Job::getSparseProbabilities() const {
     return {}; // Empty probabilities
   }
 
-  std::string keys(keysSize - 1, '\0');
+  std::string keys(keysSize, '\0');
   qdmi::throwIfError(QDMI_job_get_results(
                          job_.get(), QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
                          keysSize, keys.data(), nullptr),
                      "Querying sparse probabilities keys");
+  keys.pop_back();
 
   size_t valuesSize = 0;
   qdmi::throwIfError(
@@ -856,6 +855,10 @@ std::map<std::string, double> Job::getSparseProbabilities() const {
 
   // Parse the keys (comma-separated)
   std::map<std::string, double> probabilities;
+  if (keys.empty() && values.size() == 1) {
+    probabilities[""] = values.front();
+    return probabilities;
+  }
   std::istringstream keysStream(keys);
   std::string key;
   size_t idx = 0;
