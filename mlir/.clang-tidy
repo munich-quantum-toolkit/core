@@ -30,6 +30,7 @@ Checks: |
   llvm-prefer-static-over-anonymous-namespace,
   llvm-redundant-casting,
   llvm-twine-local,
+  llvm-type-switch-case-types,
   llvm-use-vector-utils,
   cppcoreguidelines-avoid-capturing-lambda-coroutines,
   cppcoreguidelines-avoid-goto,
