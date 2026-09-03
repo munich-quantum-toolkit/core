@@ -105,7 +105,7 @@ func::FuncOp QCOProgramBuilder::createFunction(
     llvm::reportFatalUsageError(
         "QCOProgramBuilder must be initialized before creating a function");
   }
-  if (SymbolTable::lookupSymbolIn(moduleOp, name)) {
+  if (SymbolTable::lookupSymbolIn(moduleOp, name) != nullptr) {
     llvm::reportFatalUsageError("Function name is already defined");
   }
 

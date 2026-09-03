@@ -424,6 +424,9 @@ TEST_F(QCTest, BuilderCreatesGenericAndUnitaryFunctions) {
   ASSERT_TRUE(mainFunc);
   EXPECT_EQ(llvm::range_size(mainFunc.getBody().getOps<func::CallOp>()), 1U);
   EXPECT_EQ(llvm::range_size(mainFunc.getBody().getOps<CallOp>()), 1U);
+  auto directCall = *mainFunc.getBody().getOps<CallOp>().begin();
+  ASSERT_EQ(directCall.getQubits().size(), 1U);
+  EXPECT_EQ(directCall.getQubits().front(), qubit);
   auto inverse = *mainFunc.getBody().getOps<InvOp>().begin();
   auto nestedCall = *inverse.getRegion().getOps<CallOp>().begin();
   EXPECT_TRUE(isa<UnitaryOpInterface>(nestedCall.getOperation()));
@@ -524,6 +527,90 @@ TEST_F(QCTest, UnitaryFunctionMarkerRequiresFunctionReturn) {
   });
   EXPECT_TRUE(failed(verify(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect>();
+  context->appendDialectRegistry(registry);
+  context->getOrLoadDialect<mlir::mqt::MQTDialect>();
+
+  constexpr std::array<StringLiteral, 9> invalidPrograms{
+      R"mlir(module {
+        func.func private @bad(%q: !qc.qubit)
+            attributes {mqt.unitary = true} { return }
+      })mlir",
+      R"mlir(module {
+        func.func @bad(%q: !qc.qubit) attributes {mqt.unitary} { return }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad() attributes {mqt.unitary} { return }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qc.qubit, %theta: f64)
+            attributes {mqt.unitary} { return }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qc.qubit) -> i1
+            attributes {mqt.unitary} {
+          %value = arith.constant true
+          return %value : i1
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qc.qubit) attributes {mqt.unitary} {
+          qc.call @bad(%q) : !qc.qubit
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qc.qubit) attributes {mqt.unitary} {
+          qc.call @missing(%q) : !qc.qubit
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @plain(%q: !qc.qubit) { return }
+        func.func @main(%q: !qc.qubit) attributes {mqt.entry_point} {
+          qc.call @plain(%q) : !qc.qubit
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @flip(%q: !qc.qubit) attributes {mqt.unitary} {
+          qc.x %q : !qc.qubit
+          return
+        }
+        func.func @main(%theta: f64, %q: !qc.qubit)
+            attributes {mqt.entry_point} {
+          qc.call @flip(%theta, %q) : f64, !qc.qubit
+          return
+        }
+      })mlir",
+  };
+
+  ParserConfig config(context.get(), false);
+  for (const auto source : invalidPrograms) {
+    auto module = parseSourceString<ModuleOp>(source, config);
+    ASSERT_TRUE(module);
+    EXPECT_TRUE(failed(verify(*module)));
+  }
+
+  auto resultModule = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @bad(%q: !qc.qubit) -> i1 attributes {mqt.unitary}
+    func.func @main(%q: !qc.qubit) attributes {mqt.entry_point} {
+      qc.call @bad(%q) : !qc.qubit
+      return
+    }
+  })mlir",
+                                                  config);
+  ASSERT_TRUE(resultModule);
+  auto call = *mlir::mqt::getEntryPoint(*resultModule)
+                   .getBody()
+                   .getOps<CallOp>()
+                   .begin();
+  SymbolTableCollection symbols;
+  EXPECT_TRUE(failed(call.verifySymbolUses(symbols)));
 }
 
 TEST_F(QCTest, DirectSingleQubitPowBuilder) {

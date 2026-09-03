@@ -19,6 +19,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/Passes.h"
@@ -358,6 +359,9 @@ TEST_F(QCOTest, BuilderCreatesGenericAndUnitaryFunctions) {
   ASSERT_TRUE(mainFunc);
   EXPECT_EQ(llvm::range_size(mainFunc.getBody().getOps<func::CallOp>()), 1U);
   EXPECT_EQ(llvm::range_size(mainFunc.getBody().getOps<CallOp>()), 1U);
+  auto call = *mainFunc.getBody().getOps<CallOp>().begin();
+  EXPECT_FALSE(call.getInputForOutput(qubit));
+  EXPECT_FALSE(call.getOutputForInput(qubit));
   auto inverse = *mainFunc.getBody().getOps<InvOp>().begin();
   EXPECT_TRUE(isa<UnitaryOpInterface>(&inverse.getRegion().front().front()));
 }
@@ -387,6 +391,137 @@ TEST_F(QCOTest, UnitaryVerifierDiagnosesMalformedCalls) {
   });
   EXPECT_TRUE(failed(verify(*module)));
   EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCOTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect>();
+  context->appendDialectRegistry(registry);
+  context->getOrLoadDialect<mlir::mqt::MQTDialect>();
+
+  constexpr std::array<StringLiteral, 9> invalidPrograms{
+      R"mlir(module {
+        func.func private @bad() attributes {mqt.unitary} { return }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qco.qubit, %theta: f64)
+            -> !qco.qubit attributes {mqt.unitary} {
+          return %q : !qco.qubit
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qco.qubit)
+            attributes {mqt.unitary} { return }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qco.qubit) -> !qco.qubit
+            attributes {mqt.unitary} {
+          %out = qco.reset %q : !qco.qubit -> !qco.qubit
+          return %out : !qco.qubit
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%left: !qco.qubit, %right: !qco.qubit)
+            -> (!qco.qubit, !qco.qubit) attributes {mqt.unitary} {
+          return %right, %left : !qco.qubit, !qco.qubit
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qco.qubit) -> !qco.qubit
+            attributes {mqt.unitary} {
+          %out = qco.call @bad(%q) : (!qco.qubit) -> !qco.qubit
+          return %out : !qco.qubit
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qco.qubit) -> !qco.qubit
+            attributes {mqt.unitary} {
+          %out = qco.call @missing(%q) : (!qco.qubit) -> !qco.qubit
+          return %out : !qco.qubit
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @plain(%q: !qco.qubit) -> !qco.qubit {
+          return %q : !qco.qubit
+        }
+        func.func @main(%q: !qco.qubit) -> !qco.qubit
+            attributes {mqt.entry_point} {
+          %out = qco.call @plain(%q) : (!qco.qubit) -> !qco.qubit
+          return %out : !qco.qubit
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @flip(%q: !qco.qubit) -> !qco.qubit
+            attributes {mqt.unitary} {
+          %out = qco.x %q : !qco.qubit -> !qco.qubit
+          return %out : !qco.qubit
+        }
+        func.func @main(%left: !qco.qubit, %right: !qco.qubit)
+            -> (!qco.qubit, !qco.qubit) attributes {mqt.entry_point} {
+          %a, %b = qco.call @flip(%left, %right)
+              : (!qco.qubit, !qco.qubit) -> (!qco.qubit, !qco.qubit)
+          return %a, %b : !qco.qubit, !qco.qubit
+        }
+      })mlir",
+  };
+
+  ParserConfig config(context.get(), false);
+  for (const auto source : invalidPrograms) {
+    auto module = parseSourceString<ModuleOp>(source, config);
+    ASSERT_TRUE(module);
+    EXPECT_TRUE(failed(verify(*module)));
+  }
+
+  auto resultModule = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @bad(%q: !qco.qubit)
+        -> (!qco.qubit, !qco.qubit) attributes {mqt.unitary}
+    func.func @main(%q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.entry_point} {
+      %out = qco.call @bad(%q) : (!qco.qubit) -> !qco.qubit
+      return %out : !qco.qubit
+    }
+  })mlir",
+                                                  config);
+  ASSERT_TRUE(resultModule);
+  auto call = *mlir::mqt::getEntryPoint(*resultModule)
+                   .getBody()
+                   .getOps<CallOp>()
+                   .begin();
+  SymbolTableCollection symbols;
+  EXPECT_TRUE(failed(call.verifySymbolUses(symbols)));
+}
+
+TEST_F(QCOTest, TraceQubitArgumentRejectsUnsupportedSources) {
+  ParserConfig config(context.get(), false);
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @declaration(!qco.qubit) -> !qco.qubit
+    func.func private @callee(%q: !qco.qubit) -> (i1, !qco.qubit) {
+      %flag = arith.constant true
+      return %flag, %q : i1, !qco.qubit
+    }
+    func.func @main(%q: !qco.qubit) -> (i1, !qco.qubit) {
+      %flag, %out = func.call @callee(%q)
+          : (!qco.qubit) -> (i1, !qco.qubit)
+      %missing = func.call @missing(%q) : (!qco.qubit) -> !qco.qubit
+      %constant = arith.constant true
+      return %flag, %out : i1, !qco.qubit
+    }
+  })mlir",
+                                            config);
+  ASSERT_TRUE(module);
+  auto declaration = module->lookupSymbol<func::FuncOp>("declaration");
+  auto callee = module->lookupSymbol<func::FuncOp>("callee");
+  auto main = module->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(declaration && callee && main);
+  auto calls = llvm::to_vector(main.getOps<func::CallOp>());
+  ASSERT_EQ(calls.size(), 2U);
+  auto constant = *main.getOps<arith::ConstantOp>().begin();
+
+  EXPECT_TRUE(failed(traceQubitArgument(declaration, {})));
+  EXPECT_TRUE(failed(traceQubitArgument(main, callee.getArgument(0))));
+  EXPECT_TRUE(failed(traceQubitArgument(main, calls[0].getResult(0))));
+  EXPECT_TRUE(failed(traceQubitArgument(main, calls[1].getResult(0))));
+  EXPECT_TRUE(failed(traceQubitArgument(main, constant.getResult())));
 }
 
 TEST_F(QCOTest, DirectSingleQubitPowBuilder) {

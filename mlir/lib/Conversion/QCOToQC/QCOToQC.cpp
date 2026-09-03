@@ -256,6 +256,8 @@ public:
   }
 };
 
+} // namespace
+
 [[nodiscard]] static LogicalResult
 collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
   for (auto function : moduleOp.getOps<func::FuncOp>()) {
@@ -308,6 +310,8 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
   }
   return success();
 }
+
+namespace {
 
 struct ConvertFuncOp final : StatefulOpConversionPattern<func::FuncOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;

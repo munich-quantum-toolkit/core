@@ -282,6 +282,23 @@ module {
   EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
+TEST(QCOToQCRegressionTest, RejectsMissingPositionalQubitResults) {
+  DialectRegistry registry;
+  registry.insert<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @bad(%q: !qco.qubit) -> i1 {
+      %flag = arith.constant true
+      return %flag : i1
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(failed(runQCOToQCConversion(*module)));
+}
+
 TEST(QCOToQCRegressionTest, PreservesDynamicQTensorSlotSwapAcrossLoop) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
