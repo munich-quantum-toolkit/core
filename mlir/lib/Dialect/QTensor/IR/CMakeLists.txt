@@ -10,6 +10,7 @@ file(GLOB_RECURSE OPERATIONS "${CMAKE_CURRENT_SOURCE_DIR}/Operations/*.cpp")
 
 add_mlir_dialect_library(
   MLIRQTensorDialect
+  QTensorCanonicalization.cpp
   QTensorOps.cpp
   ${OPERATIONS}
   ADDITIONAL_HEADER_DIRS
@@ -18,16 +19,13 @@ add_mlir_dialect_library(
   MLIRQTensorOpsIncGen
   LINK_LIBS
   PRIVATE
-  MLIRQTensorUtils
   MLIRIR
   MLIRDialectUtils
   MLIRArithDialect
   MLIRInferTypeOpInterface
-  MLIRSideEffectInterfaces)
-
-# Keep the cyclic link dependency out of LLVM's object-library build ordering.
-# add_mlir_dialect_library already orders compilation after mlir-headers.
-target_link_libraries(MLIRQTensorDialect PUBLIC MLIRQCODialect)
+  MLIRSideEffectInterfaces
+  PUBLIC
+  MLIRQCODialect)
 
 mqt_mlir_target_use_project_options(MLIRQTensorDialect)
 

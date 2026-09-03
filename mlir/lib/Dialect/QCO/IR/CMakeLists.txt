@@ -35,7 +35,6 @@ add_mlir_dialect_library(
   MLIRArithDialect
   MLIRInferTypeOpInterface
   MLIRSideEffectInterfaces
-  MLIRQTensorDialect
   MLIRTransformUtils)
 
 mqt_mlir_target_use_project_options(MLIRQCODialect)
