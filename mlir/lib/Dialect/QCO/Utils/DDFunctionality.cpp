@@ -238,25 +238,41 @@ resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
          << "floating-point SSA value has no concrete QCO DD binding";
 }
 
-using StandardGateMatrixFactory = DynamicMatrix (*)(llvm::ArrayRef<double>);
+using StandardGateFactory = dd::MatrixDD (*)(dd::Package&, ArrayRef<double>,
+                                             size_t, ArrayRef<dd::Qubit>,
+                                             const dd::Controls&);
+
+namespace {
+struct DecodedStandardGate {
+  StandardGateFactory build;
+  SmallVector<double, 3> parameters;
+};
+} // namespace
+
+template <typename GateOp>
+static auto buildStandardGateDD(dd::Package& package,
+                                ArrayRef<double> parameters, size_t numQubits,
+                                ArrayRef<dd::Qubit> targets,
+                                const dd::Controls& controls) -> dd::MatrixDD {
+  return makeGateDD(package, getStandardGateMatrix<GateOp>(parameters),
+                    numQubits, targets, controls);
+}
 
 /// `std::nullopt` if @p unitary is not a standard gate; failure if its unitary
 /// parameters are not concrete.
-static FailureOr<std::optional<DynamicMatrix>>
+static FailureOr<std::optional<DecodedStandardGate>>
 decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
   Operation* op = unitary.getOperation();
-  TypeSwitch<Operation*, StandardGateMatrixFactory> typeSwitch(op);
+  TypeSwitch<Operation*, StandardGateFactory> typeSwitch(op);
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
-  typeSwitch.Case<KEY##Op>(                                                    \
-      [](auto) { return &getStandardGateMatrix<KEY##Op>; });
+  typeSwitch.Case<KEY##Op>([](auto) { return &buildStandardGateDD<KEY##Op>; });
 #include "mlir/Conversion/GateTable.def"
   const auto factory = typeSwitch.Default(nullptr);
   if (factory == nullptr) {
-    return std::optional<DynamicMatrix>{std::nullopt};
+    return std::optional<DecodedStandardGate>{std::nullopt};
   }
 
-  SmallVector<double> parameters;
-  parameters.reserve(unitary.getParameters().size());
+  DecodedStandardGate gate{factory, {}};
   for (Value param : unitary.getParameters()) {
     auto concrete = resolveDouble(param, classical, op);
     if (failed(concrete)) {
@@ -266,9 +282,9 @@ decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
       return op->emitError()
              << "gate parameters must be finite for QCO DD simulation";
     }
-    parameters.push_back(*concrete);
+    gate.parameters.push_back(*concrete);
   }
-  return std::optional{factory(parameters)};
+  return std::optional{std::move(gate)};
 }
 
 template <typename StateDD>
@@ -322,7 +338,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
 
 template <typename StateDD>
 static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
-                                          const DynamicMatrix& matrix,
+                                          const DecodedStandardGate& gate,
                                           const dd::Controls& controls,
                                           WalkState& walk, StateDD& state) {
   SmallVector<Value> targetVals;
@@ -333,9 +349,10 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
   if (failed(targets)) {
     return failure();
   }
-  state = walk.dd->applyOperation(
-      makeGateDD(*walk.dd, matrix, walk.qubits->numQubits, *targets, controls),
-      state);
+  state = walk.dd->applyOperation(gate.build(*walk.dd, gate.parameters,
+                                             walk.qubits->numQubits, *targets,
+                                             controls),
+                                  state);
   return walk.qubits->remapUnitary(unitary);
 }
 

@@ -55,13 +55,9 @@ static auto controlsFromArray(Array* array) -> std::vector<Qubit*> {
   }
   const auto size = __quantum__rt__array_get_size_1d(array);
   std::vector<Qubit*> controls(static_cast<std::size_t>(size));
-  for (int64_t i = 0; i < size; ++i) {
-    const auto* element = __quantum__rt__array_get_element_ptr_1d(array, i);
-    if (element == nullptr) {
-      throw std::out_of_range("QIR control array index out of range");
-    }
-    std::memcpy(static_cast<void*>(&controls[static_cast<std::size_t>(i)]),
-                element, sizeof(Qubit*));
+  if (!controls.empty()) {
+    std::memcpy(static_cast<void*>(controls.data()), array->data.data(),
+                array->data.size());
   }
   return controls;
 }
@@ -83,8 +79,8 @@ static auto applyGateMatrix(llvm::ArrayRef<double> parameters,
 
 template <typename GateOp, size_t NumTargets, typename... Args>
 static auto applyGate(Args... args) -> void {
-  auto parameters = qir::Utils::packOfType<double>(args...);
-  auto qubits = qir::Utils::packOfType<Qubit*>(args...);
+  auto parameters = qir::packOfType<double>(args...);
+  auto qubits = qir::packOfType<Qubit*>(args...);
   static_assert(parameters.size() + qubits.size() == sizeof...(Args),
                 "Parameters must precede the gate's qubits");
   static_assert(qubits.size() >= NumTargets,

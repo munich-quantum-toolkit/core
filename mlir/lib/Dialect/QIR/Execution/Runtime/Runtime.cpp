@@ -20,6 +20,8 @@
 #include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mlir/Dialect/QIR/QIRDefinitions.h"
 
+#include <llvm/ADT/ArrayRef.h>
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -86,10 +88,7 @@ Runtime::Runtime() : Runtime(generateRandomSeed()) {}
 Runtime::Runtime(const uint64_t randomSeed)
     : qubitMode(ResourceMode::UNKNOWN), resultMode(ResourceMode::UNKNOWN),
       currentMaxQubitAddress(MIN_DYN_QUBIT_ADDRESS), currentMaxQubitId(0),
-      currentMaxResultAddress(MIN_DYN_RESULT_ADDRESS), mt(randomSeed) {
-  qRegister = std::unordered_map<const Qubit*, dd::Qubit>();
-  rRegister = std::unordered_map<Result*, ResultStruct>();
-}
+      currentMaxResultAddress(MIN_DYN_RESULT_ADDRESS), mt(randomSeed) {}
 
 auto Runtime::enlargeState(const size_t maxQubit) -> void {
   if (maxQubit >= dd::Package::MAX_POSSIBLE_QUBITS) {
@@ -129,31 +128,34 @@ auto Runtime::enlargeState(const size_t maxQubit) -> void {
   }
 }
 
-auto Runtime::translateAddresses(const std::span<Qubit* const> qubits)
-    -> std::vector<dd::Qubit> {
-  std::vector<dd::Qubit> qubitIds(qubits.size());
-  if (qubitMode != ResourceMode::STATIC) {
-    try {
-      std::ranges::transform(qubits, qubitIds.begin(), [&](const auto* q) {
-        try {
-          return qRegister.at(q);
-        } catch (const std::out_of_range&) {
-          std::ostringstream ss;
-          ss << __FILE__ << ":" << __LINE__
-             << ": Qubit not allocated (not found): " << q;
-          throw std::out_of_range(ss.str());
-        }
-      });
-    } catch (std::out_of_range&) {
-      if (qubitMode == ResourceMode::DYNAMIC) {
-        throw;
-      }
-      qubitMode = ResourceMode::STATIC;
-    }
+auto Runtime::resolveAddress(const Qubit* qubit) -> dd::Qubit {
+  if (qubitMode == ResourceMode::UNKNOWN) {
+    qubitMode = ResourceMode::STATIC;
   }
   if (qubitMode == ResourceMode::STATIC) {
-    std::ranges::transform(qubits, qubitIds.begin(),
-                           [](const auto* q) { return staticQubitId(q); });
+    return staticQubitId(qubit);
+  }
+
+  const auto it = qRegister.find(qubit);
+  if (it == qRegister.end()) {
+    std::ostringstream ss;
+    ss << __FILE__ << ":" << __LINE__
+       << ": Qubit not allocated (not found): " << qubit;
+    throw std::out_of_range(ss.str());
+  }
+  return it->second;
+}
+
+auto Runtime::translateAddresses(const std::span<Qubit* const> qubits,
+                                 const std::span<Qubit* const> additionalQubits)
+    -> std::vector<dd::Qubit> {
+  std::vector<dd::Qubit> qubitIds;
+  qubitIds.reserve(qubits.size() + additionalQubits.size());
+  for (const auto* qubit : qubits) {
+    qubitIds.push_back(resolveAddress(qubit));
+  }
+  for (const auto* qubit : additionalQubits) {
+    qubitIds.push_back(resolveAddress(qubit));
   }
   if (!qubitIds.empty()) {
     enlargeState(*std::ranges::max_element(qubitIds));
@@ -161,22 +163,18 @@ auto Runtime::translateAddresses(const std::span<Qubit* const> qubits)
   return qubitIds;
 }
 
-auto Runtime::apply(const mlir::qco::DynamicMatrix& matrix,
+auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
                     std::span<Qubit* const> controls,
                     std::span<Qubit* const> targets) -> void {
-  std::vector<Qubit*> qubits;
-  qubits.reserve(controls.size() + targets.size());
-  qubits.insert(qubits.end(), controls.begin(), controls.end());
-  qubits.insert(qubits.end(), targets.begin(), targets.end());
-  auto addresses = translateAddresses(qubits);
+  auto addresses = translateAddresses(controls, targets);
   std::ranges::transform(addresses, addresses.begin(), [&](const auto address) {
     return qubitPermutation[address];
   });
 
-  const auto controlEnd =
-      addresses.cbegin() + static_cast<std::ptrdiff_t>(controls.size());
-  const dd::Controls mappedControls(addresses.cbegin(), controlEnd);
-  const dd::Targets mappedTargets(controlEnd, addresses.cend());
+  const llvm::ArrayRef mappedAddresses(addresses);
+  const auto mappedTargets = mappedAddresses.drop_front(controls.size());
+  const dd::Controls mappedControls(mappedAddresses.begin(),
+                                    mappedTargets.begin());
   qState.edge = qState.dd->applyOperation(
       mlir::qco::makeGateDD(*qState.dd, matrix, qState.numQubits, mappedTargets,
                             mappedControls),
@@ -206,9 +204,8 @@ auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
 
 // NOLINTNEXTLINE(bugprone-exception-escape)
 auto Runtime::swap(Qubit* qubit1, Qubit* qubit2) -> void {
-  const auto target1 = translateAddresses(std::array{qubit1})[0];
-  const auto target2 = translateAddresses(std::array{qubit2})[0];
-  std::swap(qubitPermutation[target1], qubitPermutation[target2]);
+  const auto targets = translateAddresses(std::array{qubit1, qubit2});
+  std::swap(qubitPermutation[targets[0]], qubitPermutation[targets[1]]);
 }
 
 auto Runtime::qAlloc() -> Qubit* {

@@ -130,8 +130,10 @@ template <typename GateOp>
 [[nodiscard]] static ReferenceGate
 referenceGate(dd::Targets targets, std::vector<double> params = {},
               dd::Controls controls = {}) {
-  return {&getStandardGateMatrix<GateOp>, std::move(targets), std::move(params),
-          std::move(controls)};
+  return {[](const llvm::ArrayRef<double> parameters) {
+            return DynamicMatrix{getStandardGateMatrix<GateOp>(parameters)};
+          },
+          std::move(targets), std::move(params), std::move(controls)};
 }
 
 template <typename GateOp>

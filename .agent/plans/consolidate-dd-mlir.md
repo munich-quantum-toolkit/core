@@ -44,6 +44,19 @@ convenience API no longer exists in the v4 C++ surface.
       documented the v4 API migration.
 - [x] (2026-09-03 02:05 CEST) Completed focused, DD-only, full build, test,
       formatting, and lint validation and inspected the final diff.
+- [x] (2026-09-03 16:30 CEST) Replaced QCO-to-DD matrix copies with row-major
+      views, retained the specialized DD builders, and simplified the QIR
+      runtime hot path and argument packing.
+- [x] (2026-09-03) Rebased onto merged #2334 at `3b0f8c069`, preserving the
+      local adapter and runtime work and verifying all seven rewritten
+      signatures.
+- [x] (2026-09-03) Added fixed `Matrix8x8` storage for RCCX, unified the
+      generated unitary-matrix extraction bodies, and made named-gate dispatch
+      build DDs directly without a dynamically allocated or variant-held matrix.
+- [x] (2026-09-03) Rebuilt the Python bindings and passed all 17 QCO DD helper
+      tests from #2334. Rechecked the standalone DD build and its 155 tests.
+- [x] (2026-09-03) Checked changed C++ implementation and test files directly
+      with clang-tidy; recorded the full-build C++ lint limitation.
 
 ## Surprises & Discoveries
 
@@ -67,13 +80,19 @@ convenience API no longer exists in the v4 C++ surface.
   Keeping it also avoids an unrelated v4 API removal.
 - Observation: `llvm::DenseMap<dd::Qubit, ...>` cannot key the two largest valid
   qubit indices because LLVM reserves those values as sentinels. The
-  arbitrary-target adapter now scans its small target list instead; its
-  recursion follows target levels only and adds intervening identity levels
-  iteratively.
+  arbitrary-target adapter instead sorts its operands once; its recursion
+  follows target levels only and adds intervening identity levels iteratively.
 - Observation: Integration tests that build their expected DD through the new
   adapter can hide conversion and operand-order defects. Direct adapter tests
   therefore compare the specialized paths with raw DD constructors and the
   arbitrary-target path with an independently embedded dense matrix.
+- Observation: QCO's fixed one- and two-qubit matrices already use the row-major
+  layout consumed by the DD package. Read-only entry views let the adapter call
+  the package's specialized builders without allocating and copying an
+  intermediate DD matrix.
+- Observation: The actual #2334 merge adds compiler-input Python helpers, not
+  another DD construction primitive. Those helpers already route through the QCO
+  interpreter and therefore inherit this work without another adapter.
 
 ## Decision Log
 
@@ -103,6 +122,26 @@ convenience API no longer exists in the v4 C++ surface.
   in the matrix adapter would add guardrails for unreachable inputs. The adapter
   retains the existing matrix-arity check needed by dynamic custom unitaries.
   Date/Author: 2026-09-03 / Codex.
+- Decision: Expose row-major span overloads on the raw DD builders rather than
+  replace their one-, two-, and three-qubit algorithms with the arbitrary-size
+  adapter recursion. Rationale: The specialized builders are the package's
+  idiomatic fast paths; a view changes only storage access and keeps CoreDD
+  independent of QCO. Date/Author: 2026-09-03 / Codex.
+- Decision: Keep the QIR control-array copy. Rationale: The control-array ABI
+  requires aligned pointer storage with an owning lifetime. Copy its contiguous
+  storage once rather than invoking the element accessor for each pointer.
+  Date/Author: 2026-09-03 / Codex.
+- Decision: Replace the earlier dynamic-RCCX decision with `Matrix8x8` following
+  explicit user approval. Rationale: RCCX has a fixed three-qubit matrix and can
+  use the same allocation-free path as smaller named gates. Add only the access,
+  adjoint, comparison, and assignment operations actually needed here, not a
+  speculative general-purpose 8x8 numerical API. Date/Author: 2026-09-03 / User
+  and Codex.
+- Decision: Store a named gate's resolved parameters and DD-builder pointer,
+  rather than a matrix variant. Rationale: No gate needs to carry storage sized
+  for the largest matrix; the selected builder constructs its native matrix
+  immediately before the shared DD adapter consumes it. Date/Author: 2026-09-03
+  / Codex.
 
 ## Outcomes & Retrospective
 
@@ -112,15 +151,31 @@ execution. CoreDD remains an installed, MLIR-independent primitive library; its
 raw matrix constructors and global-phase operation remain available, while the
 duplicate `dd::GateType`, named matrix formulas, and dispatch are gone.
 
-The release build and all 3,781 discovered tests passed, with one test skipped.
-Focused validation passed 173 QCO utility tests, 72 QIR runtime tests, and 155
-DD tests. A separate MLIR-disabled build also passed all 155 DD tests. The
-repository lint and C++ lint passed with zero format or tidy findings.
+Before the rebase, the release build and all 3,781 discovered tests passed, with
+one test skipped; a separate MLIR-disabled build passed all 155 DD tests.
+Rebased focused validation passed 178 QCO utility tests, 494 QCO IR tests, and
+72 QIR runtime tests, plus 155 standalone DD tests and all 17 Python DD-helper
+tests against rebuilt extensions. Repository lint passed. Direct clang-tidy
+checks passed for the changed QCO/QIR sources and tests; the Package translation
+unit reports an analyzer warning in the unchanged `Package::add2`
+implementation. Full C++ lint again stopped at the existing QTensor
+static-library link-order failure in QIR executables:
+`undefined reference to mlir::qtensor::ExtractOp::create` and
+`InsertOp::create`. This is a build failure, not a successful full C++ lint
+result.
 
-No behavior or ABI changes were needed in the QIR runtime. The deliberately
-retained boundary is raw matrix-to-DD construction; moving CoreDD under MLIR or
-removing backend-neutral primitives would make standalone DD builds impossible
-and was therefore not part of this consolidation.
+The fixed RCCX matrix now follows the same storage-view path as smaller gates.
+Unitary-interface extraction uses one shared generated body for all five matrix
+types, and named-gate dispatch holds only resolved parameters and a builder
+pointer rather than a temporary dynamic matrix. No changes to #2334's public
+Python contracts were needed.
+
+The QIR runtime now consumes QCO matrix views directly, translates controls and
+targets in one allocation, and avoids exception-driven static-address detection.
+Its internal template utilities were reduced to one fold-expression helper. The
+deliberately retained boundary is raw matrix-to-DD construction; moving CoreDD
+under MLIR or removing backend-neutral primitives would make standalone DD
+builds impossible and was therefore not part of this consolidation.
 
 ## Context and Orientation
 
@@ -199,7 +254,7 @@ At completion, matches may exist only in migration prose. Configure and test a
 normal release build using the repository preset and the available MLIR 23.1
 package when discovery requires it:
 
-    cmake --preset release -DMLIR_DIR=/private/tmp/mqt-core-llvm-23.1.0/lib/cmake/mlir
+    cmake --preset release
     cmake --build --preset release
     ctest --preset release --output-on-failure
 

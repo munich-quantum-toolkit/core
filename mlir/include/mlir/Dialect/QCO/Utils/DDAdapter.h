@@ -21,6 +21,7 @@
 #include <llvm/ADT/ArrayRef.h>
 
 #include <cstddef>
+#include <span>
 #include <stdexcept>
 
 namespace mlir::qco {
@@ -35,33 +36,31 @@ namespace mlir::qco {
  *
  * @tparam GateOp Standard QCO gate operation type.
  * @param parameters Concrete gate parameters in operation order.
- * @return The operation's canonical QCO matrix.
+ * @return The operation's canonical QCO matrix type.
  * @throws std::invalid_argument If the parameter count does not match the gate.
  */
 template <typename GateOp>
-[[nodiscard]] auto getStandardGateMatrix(llvm::ArrayRef<double> parameters)
-    -> DynamicMatrix {
+[[nodiscard]] auto getStandardGateMatrix(llvm::ArrayRef<double> parameters) {
   if constexpr (requires { GateOp::unitaryMatrix(0., 0., 0.); }) {
     if (parameters.size() != 3) {
       throw std::invalid_argument("Expected three gate parameters");
     }
-    return DynamicMatrix{
-        GateOp::unitaryMatrix(parameters[0], parameters[1], parameters[2])};
+    return GateOp::unitaryMatrix(parameters[0], parameters[1], parameters[2]);
   } else if constexpr (requires { GateOp::unitaryMatrix(0., 0.); }) {
     if (parameters.size() != 2) {
       throw std::invalid_argument("Expected two gate parameters");
     }
-    return DynamicMatrix{GateOp::unitaryMatrix(parameters[0], parameters[1])};
+    return GateOp::unitaryMatrix(parameters[0], parameters[1]);
   } else if constexpr (requires { GateOp::unitaryMatrix(0.); }) {
     if (parameters.size() != 1) {
       throw std::invalid_argument("Expected one gate parameter");
     }
-    return DynamicMatrix{GateOp::unitaryMatrix(parameters[0])};
+    return GateOp::unitaryMatrix(parameters[0]);
   } else {
     if (!parameters.empty()) {
       throw std::invalid_argument("Expected no gate parameters");
     }
-    return DynamicMatrix{GateOp::getUnitaryMatrix()};
+    return GateOp::getUnitaryMatrix();
   }
 }
 
@@ -79,9 +78,20 @@ template <typename GateOp>
  * @throws std::invalid_argument If the matrix dimension and target count differ
  *         or sparse controls accompany a matrix with more than three targets.
  */
-[[nodiscard]] auto
-makeGateDD(dd::Package& package, const DynamicMatrix& matrix, size_t numQubits,
-           llvm::ArrayRef<dd::Qubit> targets, const dd::Controls& controls = {})
+[[nodiscard]] auto makeGateDD(dd::Package& package,
+                              std::span<const Complex> matrix, size_t numQubits,
+                              llvm::ArrayRef<dd::Qubit> targets,
+                              const dd::Controls& controls = {})
     -> dd::MatrixDD;
+
+template <typename Matrix>
+  requires requires(const Matrix& matrix) { matrix.entries(); }
+[[nodiscard]] auto makeGateDD(dd::Package& package, const Matrix& matrix,
+                              const size_t numQubits,
+                              const llvm::ArrayRef<dd::Qubit> targets,
+                              const dd::Controls& controls = {})
+    -> dd::MatrixDD {
+  return makeGateDD(package, matrix.entries(), numQubits, targets, controls);
+}
 
 } // namespace mlir::qco

@@ -1788,6 +1788,28 @@ SymmetricEigenDecomposition4x4 Matrix4x4::symmetricEigenDecomposition() const {
   return symmetricEigenDecomposition4x4(realPart());
 }
 
+Complex& Matrix8x8::operator()(size_t row, size_t col) {
+  return data[checkedFlatIndex(row, col, K_COLS)];
+}
+
+Complex Matrix8x8::operator()(size_t row, size_t col) const {
+  return data[checkedFlatIndex(row, col, K_COLS)];
+}
+
+Matrix8x8 Matrix8x8::adjoint() const {
+  Matrix8x8 out;
+  adjointInto(data, out.data, K_ROWS);
+  return out;
+}
+
+bool Matrix8x8::isApprox(const Matrix8x8& other, double tol) const {
+  return entriesAreApprox(data, other.data, tol);
+}
+
+bool Matrix8x8::assignFrom(const DynamicMatrix& src) {
+  return assignFromDynamicImpl<K_ROWS, K_SIZE_AT_COMPILE_TIME>(src, data);
+}
+
 struct DynamicMatrix::Impl {
   int64_t dim = 0;
   SmallVector<Complex> data;
@@ -1807,6 +1829,11 @@ DynamicMatrix::DynamicMatrix(const Matrix2x2& src)
 }
 
 DynamicMatrix::DynamicMatrix(const Matrix4x4& src)
+    : impl_(std::make_unique<Impl>()) {
+  assignFrom(src);
+}
+
+DynamicMatrix::DynamicMatrix(const Matrix8x8& src)
     : impl_(std::make_unique<Impl>()) {
   assignFrom(src);
 }
@@ -1855,6 +1882,10 @@ Complex DynamicMatrix::operator()(const int64_t row, const int64_t col) const {
       ->data[static_cast<size_t>(checkedFlatIndex(row, col, impl_->dim))];
 }
 
+std::span<const Complex> DynamicMatrix::entries() const noexcept {
+  return {impl_->data.data(), impl_->data.size()};
+}
+
 void DynamicMatrix::setBottomRightCorner(const Matrix2x2& block) {
   copyBottomRightCorner(impl_->dim, impl_->data,
                         static_cast<int64_t>(Matrix2x2::K_ROWS), block.data);
@@ -1888,6 +1919,11 @@ void DynamicMatrix::assignFrom(const Matrix2x2& src) {
 
 void DynamicMatrix::assignFrom(const Matrix4x4& src) {
   assignFixedImpl<Matrix4x4::K_ROWS, Matrix4x4::K_SIZE_AT_COMPILE_TIME>(
+      impl_->dim, impl_->data, src.data);
+}
+
+void DynamicMatrix::assignFrom(const Matrix8x8& src) {
+  assignFixedImpl<Matrix8x8::K_ROWS, Matrix8x8::K_SIZE_AT_COMPILE_TIME>(
       impl_->dim, impl_->data, src.data);
 }
 

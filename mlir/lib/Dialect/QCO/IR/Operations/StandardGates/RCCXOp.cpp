@@ -41,8 +41,8 @@ void RCCXOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<RemoveSubsequentRCCX>(context);
 }
 
-DynamicMatrix RCCXOp::getUnitaryMatrix() {
-  DynamicMatrix unitary = DynamicMatrix::identity(8);
+Matrix8x8 RCCXOp::getUnitaryMatrix() {
+  auto unitary = Matrix8x8::identity();
   unitary(5, 5) = -1.0;
   unitary(6, 6) = 0.0;
   unitary(7, 7) = 0.0;

@@ -1071,7 +1071,7 @@ TEST_F(QCOMatrixTest, POpMatrix) {
 /// @{
 TEST_F(QCOMatrixTest, RCCXOpMatrix) {
   const auto matrix = RCCXOp::getUnitaryMatrix();
-  auto expected = DynamicMatrix::identity(8);
+  auto expected = Matrix8x8::identity();
   expected(5, 5) = -1.0;
   expected(6, 6) = 0.0;
   expected(7, 7) = 0.0;
@@ -1079,6 +1079,27 @@ TEST_F(QCOMatrixTest, RCCXOpMatrix) {
   expected(7, 6) = {0.0, 1.0};
 
   ASSERT_TRUE(matrix.isApprox(expected));
+
+  auto moduleOp = QCOProgramBuilder::build(context.get(), rccx);
+  ASSERT_TRUE(moduleOp);
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto rccxOp = *funcOp.getBody().getOps<RCCXOp>().begin();
+  auto unitary = cast<UnitaryOpInterface>(rccxOp.getOperation());
+  const auto fixed = unitary.getUnitaryMatrix<Matrix8x8>();
+  ASSERT_TRUE(fixed);
+  EXPECT_TRUE(fixed->isApprox(expected));
+  const auto dynamic = unitary.getUnitaryMatrix<DynamicMatrix>();
+  ASSERT_TRUE(dynamic);
+  EXPECT_TRUE(dynamic->isApprox(DynamicMatrix{expected}));
+  EXPECT_FALSE(unitary.getUnitaryMatrix<Matrix4x4>());
+
+  auto inverseModule = QCOProgramBuilder::build(context.get(), inverseRccx);
+  ASSERT_TRUE(inverseModule);
+  auto inverse =
+      cast<UnitaryOpInterface>(firstInvOp(*inverseModule).getOperation());
+  const auto inverseFixed = inverse.getUnitaryMatrix<Matrix8x8>();
+  ASSERT_TRUE(inverseFixed);
+  EXPECT_TRUE(inverseFixed->isApprox(expected.adjoint()));
 }
 /// @}
 

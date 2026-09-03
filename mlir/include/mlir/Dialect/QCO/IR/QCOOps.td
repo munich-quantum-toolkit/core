@@ -1020,7 +1020,7 @@ def RCCXOp : QCOOp<"rccx", traits = [UnitaryOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rccx"; }
-        [[nodiscard]] static DynamicMatrix getUnitaryMatrix();
+        [[nodiscard]] static Matrix8x8 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
