@@ -243,7 +243,7 @@ static auto createRuntimeRegistry() -> RuntimeRegistry {
   addSymbol(registry, "__quantum__qis__" #NAME "__" #CTL_SUFFIX,               \
             AbiType::Void, {AbiType::Pointer, AbiType::Pointer},               \
             &__quantum__qis__##NAME##__##CTL_SUFFIX);
-#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   MQT_QIR_ADD_GATE(NAME, SUFFIX, CTL_SUFFIX, TARGETS, PARAMS)
 #include "mlir/Conversion/GateTable.def"
 #undef MQT_QIR_ADD_GATE

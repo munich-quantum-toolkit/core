@@ -130,8 +130,9 @@ releases may include breaking changes.
   QCEC and mapping transformations to MQT QMAP. Move single-qubit gate fusion to
   both downstream packages. Remove the public circuit dependency graph and
   transformations without production consumers ([#2262]) ([**@simon1hofmann**])
-- 💥 Remove test-only DD state generators and recursive functionality
-  construction from MQT Core ([#2257]) ([**@simon1hofmann**])
+- 💥 Remove test-only DD state generators, recursive functionality construction,
+  and DD-specific named-gate helpers from MQT Core ([#2257], [#2335])
+  ([**@simon1hofmann**])
 - 💥 Remove the standalone QIR runner and make the QIR runtime and JIT internal
   DDSIM implementation details ([#2246]) ([**@denialhaag**])
 - 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
@@ -869,6 +870,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2337]: https://github.com/munich-quantum-toolkit/core/pull/2337
+[#2335]: https://github.com/munich-quantum-toolkit/core/pull/2335
 [#2334]: https://github.com/munich-quantum-toolkit/core/pull/2334
 [#2323]: https://github.com/munich-quantum-toolkit/core/pull/2323
 [#2315]: https://github.com/munich-quantum-toolkit/core/pull/2315

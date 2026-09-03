@@ -9,7 +9,6 @@
  */
 
 #include "dd/DDDefinitions.hpp"
-#include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
@@ -21,42 +20,15 @@
 #include <complex>
 #include <cstddef>
 #include <numbers>
-#include <stdexcept>
-#include <vector>
 
 namespace dd {
-
-TEST(DDGateConstruction, DispatchesByArity) {
-  Package package(4);
-
-  EXPECT_EQ(getGateDD(package, GateType::X, {}, {}, {0}),
-            package.makeGateDD(opToSingleQubitGateMatrix(GateType::X), 0));
-  EXPECT_EQ(getGateDD(package, GateType::SWAP, {}, {{3}}, {0, 1}),
-            package.makeTwoQubitGateDD(opToTwoQubitGateMatrix(GateType::SWAP),
-                                       Controls{3}, 0, 1));
-  EXPECT_EQ(getGateDD(package, GateType::RCCX, {}, {}, {0, 1, 2}),
-            package.makeThreeQubitGateDD(
-                opToThreeQubitGateMatrix(GateType::RCCX), 0, 1, 2));
-}
-
-TEST(DDGateConstruction, RejectsInvalidTargetsAndTypes) {
-  Package package(4);
-
-  EXPECT_THROW(getGateDD(package, GateType::X, {}, {}, {}),
-               std::invalid_argument);
-  EXPECT_THROW(getGateDD(package, GateType::SWAP, {}, {}, {0}),
-               std::invalid_argument);
-  EXPECT_THROW(getGateDD(package, GateType::RCCX, {}, {}, {0, 1}),
-               std::invalid_argument);
-  EXPECT_THROW(getGateDD(package, GateType::None, {}, {}, {}),
-               std::invalid_argument);
-}
 
 TEST(DDGateConstruction, AppliesGlobalPhase) {
   Package package(1);
   auto state = makeZeroState(1, package);
 
   const auto phased = applyGlobalPhase(state, std::numbers::pi / 2., package);
+  EXPECT_EQ(state, phased);
   const auto vector = phased.getVector();
 
   ASSERT_EQ(vector.size(), 2);

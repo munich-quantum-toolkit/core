@@ -9,9 +9,7 @@
  */
 
 #include "dd/DDDefinitions.hpp"
-#include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Node.hpp"
-#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
@@ -19,6 +17,8 @@
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/DDAdapter.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
@@ -59,14 +59,93 @@
 using namespace mlir;
 using namespace qco;
 
+template <size_t Dimension>
+using LiteralMatrix =
+    std::array<std::array<std::complex<double>, Dimension>, Dimension>;
+
+template <size_t Dimension>
+[[nodiscard]] static constexpr auto
+makePermutationMatrix(const std::array<size_t, Dimension>& rowForColumn)
+    -> LiteralMatrix<Dimension> {
+  LiteralMatrix<Dimension> matrix{};
+  for (size_t column = 0; column < Dimension; ++column) {
+    matrix[rowForColumn[column]][column] = 1.;
+  }
+  return matrix;
+}
+
+template <size_t Dimension>
+[[nodiscard]] static auto
+toDynamicMatrix(const LiteralMatrix<Dimension>& source) -> DynamicMatrix {
+  DynamicMatrix matrix(static_cast<int64_t>(Dimension));
+  for (size_t row = 0; row < Dimension; ++row) {
+    for (size_t column = 0; column < Dimension; ++column) {
+      matrix(static_cast<int64_t>(row), static_cast<int64_t>(column)) =
+          source[row][column];
+    }
+  }
+  return matrix;
+}
+
+[[nodiscard]] static auto embedPermutation(size_t numQubits,
+                                           llvm::ArrayRef<dd::Qubit> targets,
+                                           llvm::ArrayRef<size_t> rowForColumn)
+    -> dd::CMat {
+  const auto dimension = size_t{1} << numQubits;
+  dd::CMat matrix(dimension, dd::CVec(dimension));
+  for (size_t column = 0; column < dimension; ++column) {
+    size_t localColumn = 0;
+    for (const auto target : targets) {
+      localColumn = (localColumn << 1U) | ((column >> target) & 1U);
+    }
+
+    auto row = column;
+    const auto localRow = rowForColumn[localColumn];
+    for (size_t operand = 0; operand < targets.size(); ++operand) {
+      const auto targetMask = size_t{1} << targets[operand];
+      const auto operandMask = size_t{1} << (targets.size() - 1U - operand);
+      if ((localRow & operandMask) != 0U) {
+        row |= targetMask;
+      } else {
+        row &= ~targetMask;
+      }
+    }
+    matrix[row][column] = 1.;
+  }
+  return matrix;
+}
+
 namespace {
 
 struct ReferenceGate {
-  dd::GateType type;
+  DynamicMatrix (*matrix)(llvm::ArrayRef<double>);
   dd::Targets targets;
-  std::vector<dd::fp> params;
+  std::vector<double> params;
   dd::Controls controls;
 };
+
+} // namespace
+
+template <typename GateOp>
+[[nodiscard]] static ReferenceGate
+referenceGate(dd::Targets targets, std::vector<double> params = {},
+              dd::Controls controls = {}) {
+  return {[](const llvm::ArrayRef<double> parameters) {
+            return DynamicMatrix{getStandardGateMatrix<GateOp>(parameters)};
+          },
+          std::move(targets), std::move(params), std::move(controls)};
+}
+
+template <typename GateOp>
+[[nodiscard]] static dd::MatrixDD
+referenceGateDD(dd::Package& package, llvm::ArrayRef<dd::Qubit> targets,
+                llvm::ArrayRef<double> params = {},
+                const dd::Controls& controls = {}) {
+  return makeGateDD(package, getStandardGateMatrix<GateOp>(params),
+                    package.qubits(), targets, controls);
+}
+
+namespace {
 
 class QCODDFunctionalityTest : public testing::Test {
 protected:
@@ -105,8 +184,8 @@ protected:
     auto referenceFn = dd::MatrixDD::one();
     auto referenceSim = dd::makeZeroState(numQubits, *dd);
     for (const auto& gate : gates) {
-      const auto operation = dd::getGateDD(*dd, gate.type, gate.params,
-                                           gate.controls, gate.targets);
+      const auto operation = makeGateDD(*dd, gate.matrix(gate.params),
+                                        numQubits, gate.targets, gate.controls);
       referenceFn = dd->applyOperation(operation, referenceFn);
       referenceSim = dd->applyOperation(operation, referenceSim);
     }
@@ -137,9 +216,7 @@ protected:
     auto dd = std::make_unique<dd::Package>(1);
     auto expected = dd::makeZeroState(1, *dd);
     if (expectedOne) {
-      expected = dd->applyOperation(
-          dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
-          expected);
+      expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}), expected);
     }
     const auto out = simulate(func, dd::makeZeroState(1, *dd), *dd, rng);
     ASSERT_TRUE(succeeded(out));
@@ -161,6 +238,63 @@ protected:
     expectSimulationFails(mainFunc(*mod), numQubits);
   }
 };
+
+TEST(DDAdapterTest, MatchesRawSingleQubitConstructor) {
+  constexpr LiteralMatrix<2> literal{{{{0., 1.}}, {{-1., 0.}}}};
+  constexpr dd::GateMatrix raw{0., 1., -1., 0.};
+  constexpr size_t numQubits = 4;
+  const dd::Controls controls{{0, dd::Control::Type::Neg}, {3}};
+  dd::Package package(numQubits);
+
+  EXPECT_EQ(
+      makeGateDD(package, toDynamicMatrix(literal), numQubits, {2}, controls),
+      package.makeGateDD(raw, controls, 2));
+}
+
+TEST(DDAdapterTest, PreservesTwoQubitOperandOrder) {
+  constexpr std::array<size_t, 4> rowForColumn{2, 0, 3, 1};
+  constexpr auto literal = makePermutationMatrix(rowForColumn);
+  constexpr size_t numQubits = 5;
+  const dd::Controls controls{{4, dd::Control::Type::Neg}};
+  dd::Package package(numQubits);
+
+  for (const std::array<dd::Qubit, 2> targets :
+       {std::array<dd::Qubit, 2>{3, 1}, {1, 3}}) {
+    EXPECT_EQ(
+        makeGateDD(package, toDynamicMatrix(literal), numQubits, targets,
+                   controls),
+        package.makeTwoQubitGateDD(literal, controls, targets[0], targets[1]));
+  }
+}
+
+TEST(DDAdapterTest, PreservesThreeQubitOperandOrder) {
+  constexpr std::array<size_t, 8> rowForColumn{3, 6, 1, 4, 7, 0, 5, 2};
+  constexpr auto literal = makePermutationMatrix(rowForColumn);
+  constexpr size_t numQubits = 6;
+  const dd::Controls controls{{5}};
+  dd::Package package(numQubits);
+
+  for (const std::array<dd::Qubit, 3> targets :
+       {std::array<dd::Qubit, 3>{4, 1, 3}, {1, 3, 4}}) {
+    EXPECT_EQ(makeGateDD(package, toDynamicMatrix(literal), numQubits, targets,
+                         controls),
+              package.makeThreeQubitGateDD(literal, controls, targets[0],
+                                           targets[1], targets[2]));
+  }
+}
+
+TEST(DDAdapterTest, EmbedsFourQubitMatrixOnNoncontiguousTargets) {
+  constexpr std::array<size_t, 16> rowForColumn{0, 2, 4, 6, 8, 10, 12, 14,
+                                                1, 3, 5, 7, 9, 11, 13, 15};
+  constexpr auto literal = makePermutationMatrix(rowForColumn);
+  constexpr size_t numQubits = 6;
+  constexpr std::array<dd::Qubit, 4> targets{4, 1, 5, 2};
+  dd::Package package(numQubits);
+
+  EXPECT_EQ(makeGateDD(package, toDynamicMatrix(literal), numQubits, targets),
+            package.makeDDFromMatrix(
+                embedPermutation(numQubits, targets, rowForColumn)));
+}
 
 TEST_F(QCODDFunctionalityTest, ExercisesStandardGatePaths) {
   // Every `decodeStandardGate` branch once (distinct angles catch param-order
@@ -219,38 +353,38 @@ TEST_F(QCODDFunctionalityTest, ExercisesStandardGatePaths) {
 
   expectEqualToReference(
       mainFunc(*mod), 3,
-      {{dd::GateType::I, {0}},
-       {dd::GateType::X, {0}},
-       {dd::GateType::Y, {0}},
-       {dd::GateType::Z, {0}},
-       {dd::GateType::H, {0}},
-       {dd::GateType::S, {0}},
-       {dd::GateType::Sdg, {0}},
-       {dd::GateType::T, {0}},
-       {dd::GateType::Tdg, {0}},
-       {dd::GateType::SX, {0}},
-       {dd::GateType::SXdg, {0}},
-       {dd::GateType::RX, {0}, {theta}},
-       {dd::GateType::RY, {0}, {theta}},
-       {dd::GateType::RZ, {0}, {theta}},
-       {dd::GateType::P, {0}, {theta}},
-       {dd::GateType::R, {0}, {theta, phi}},
-       {dd::GateType::U2, {0}, {phi, lambda}},
-       {dd::GateType::U, {0}, {theta, phi, lambda}},
-       {dd::GateType::SWAP, {0, 1}},
-       {dd::GateType::iSWAP, {0, 1}},
-       {dd::GateType::DCX, {0, 1}},
-       {dd::GateType::ECR, {0, 1}},
-       {dd::GateType::RXX, {0, 1}, {theta}},
-       {dd::GateType::RYY, {0, 1}, {theta}},
-       {dd::GateType::RZZ, {0, 1}, {theta}},
-       {dd::GateType::RZX, {0, 1}, {theta}},
-       {dd::GateType::XXplusYY, {0, 1}, {theta, beta}},
-       {dd::GateType::XXminusYY, {0, 1}, {theta, beta}},
-       {dd::GateType::X, {1}, {}, {{0}}},
-       {dd::GateType::P, {2}, {std::numbers::pi / 5.0}, {{1}}},
-       {dd::GateType::X, {2}, {}, {{0}, {1}}},
-       {dd::GateType::Sdg, {2}}});
+      {referenceGate<IdOp>({0}),
+       referenceGate<XOp>({0}),
+       referenceGate<YOp>({0}),
+       referenceGate<ZOp>({0}),
+       referenceGate<HOp>({0}),
+       referenceGate<SOp>({0}),
+       referenceGate<SdgOp>({0}),
+       referenceGate<TOp>({0}),
+       referenceGate<TdgOp>({0}),
+       referenceGate<SXOp>({0}),
+       referenceGate<SXdgOp>({0}),
+       referenceGate<RXOp>({0}, {theta}),
+       referenceGate<RYOp>({0}, {theta}),
+       referenceGate<RZOp>({0}, {theta}),
+       referenceGate<POp>({0}, {theta}),
+       referenceGate<ROp>({0}, {theta, phi}),
+       referenceGate<U2Op>({0}, {phi, lambda}),
+       referenceGate<UOp>({0}, {theta, phi, lambda}),
+       referenceGate<SWAPOp>({0, 1}),
+       referenceGate<iSWAPOp>({0, 1}),
+       referenceGate<DCXOp>({0, 1}),
+       referenceGate<ECROp>({0, 1}),
+       referenceGate<RXXOp>({0, 1}, {theta}),
+       referenceGate<RYYOp>({0, 1}, {theta}),
+       referenceGate<RZZOp>({0, 1}, {theta}),
+       referenceGate<RZXOp>({0, 1}, {theta}),
+       referenceGate<XXPlusYYOp>({0, 1}, {theta, beta}),
+       referenceGate<XXMinusYYOp>({0, 1}, {theta, beta}),
+       referenceGate<XOp>({1}, {}, {{0}}),
+       referenceGate<POp>({2}, {std::numbers::pi / 5.0}, {{1}}),
+       referenceGate<XOp>({2}, {}, {{0}, {1}}),
+       referenceGate<SdgOp>({2})});
 }
 
 TEST_F(QCODDFunctionalityTest, Rccx) {
@@ -275,8 +409,8 @@ TEST_F(QCODDFunctionalityTest, Rccx) {
   ASSERT_TRUE(mod);
 
   expectEqualToReference(mainFunc(*mod), 4,
-                         {{dd::GateType::RCCX, {2, 0, 3}},
-                          {dd::GateType::RCCX, {2, 0, 3}, {}, {{1}}}});
+                         {referenceGate<RCCXOp>({2, 0, 3}),
+                          referenceGate<RCCXOp>({2, 0, 3}, {}, {{1}})});
 }
 
 TEST_F(QCODDFunctionalityTest, DensePaths) {
@@ -296,9 +430,9 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
     });
     ASSERT_TRUE(mod);
     expectEqualToReference(mainFunc(*mod), 3,
-                           {{dd::GateType::X, {1}},
-                            {dd::GateType::T, {0}, {}, {{2}}},
-                            {dd::GateType::H, {0}, {}, {{2}}}});
+                           {referenceGate<XOp>({1}),
+                            referenceGate<TOp>({0}, {}, {{2}}),
+                            referenceGate<HOp>({0}, {}, {{2}})});
   }
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
@@ -313,7 +447,7 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
       return b.intConstant(0);
     });
     ASSERT_TRUE(mod);
-    expectEqualToReference(mainFunc(*mod), 2, {{dd::GateType::SWAP, {0, 1}}});
+    expectEqualToReference(mainFunc(*mod), 2, {referenceGate<SWAPOp>({0, 1})});
   }
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
@@ -330,9 +464,9 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
     });
     ASSERT_TRUE(mod);
     expectEqualToReference(mainFunc(*mod), 3,
-                           {{dd::GateType::RX, {0}, {-0.2}},
-                            {dd::GateType::RY, {1}, {-0.3}},
-                            {dd::GateType::RZ, {2}, {-0.4}}});
+                           {referenceGate<RXOp>({0}, {-0.2}),
+                            referenceGate<RYOp>({1}, {-0.3}),
+                            referenceGate<RZOp>({2}, {-0.4})});
   }
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
@@ -351,9 +485,9 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
     });
     ASSERT_TRUE(mod);
     expectEqualToReference(mainFunc(*mod), 4,
-                           {{dd::GateType::RX, {0}, {-0.2}},
-                            {dd::GateType::RY, {1}, {-0.3}},
-                            {dd::GateType::RZ, {2}, {-0.4}}});
+                           {referenceGate<RXOp>({0}, {-0.2}),
+                            referenceGate<RYOp>({1}, {-0.3}),
+                            referenceGate<RZOp>({2}, {-0.4})});
   }
   {
     // Four-qubit dense `inv` on a non-contiguous wire subset (idle q3).
@@ -376,11 +510,10 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
       return b.intConstant(0);
     });
     ASSERT_TRUE(mod);
-    expectEqualToReference(mainFunc(*mod), 5,
-                           {{dd::GateType::RX, {0}, {-0.2}},
-                            {dd::GateType::RY, {1}, {-0.3}},
-                            {dd::GateType::RZ, {2}, {-0.4}},
-                            {dd::GateType::H, {4}}});
+    expectEqualToReference(
+        mainFunc(*mod), 5,
+        {referenceGate<RXOp>({0}, {-0.2}), referenceGate<RYOp>({1}, {-0.3}),
+         referenceGate<RZOp>({2}, {-0.4}), referenceGate<HOp>({4})});
   }
 }
 
@@ -463,7 +596,7 @@ TEST_F(QCODDFunctionalityTest, FuncArgs) {
                                          context.get());
   ASSERT_TRUE(mod);
 
-  expectEqualToReference(mainFunc(*mod), 1, {{dd::GateType::H, {0}}});
+  expectEqualToReference(mainFunc(*mod), 1, {referenceGate<HOp>({0})});
 }
 
 TEST_F(QCODDFunctionalityTest, ReturnedQubitsMustPreserveWireOrder) {
@@ -605,18 +738,14 @@ TEST_F(QCODDFunctionalityTest,
   ASSERT_TRUE(mod);
 
   auto dd = std::make_unique<dd::Package>(3);
-  auto input = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 1),
-      dd::makeZeroState(2, *dd));
+  auto input = dd->applyOperation(referenceGateDD<XOp>(*dd, {1}),
+                                  dd::makeZeroState(2, *dd));
   const auto output = simulate(mainFunc(*mod), input, *dd, rng);
   ASSERT_TRUE(succeeded(output));
 
-  auto expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 1),
-      dd::makeZeroState(3, *dd));
-  expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 2),
-      expected);
+  auto expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {1}),
+                                     dd::makeZeroState(3, *dd));
+  expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {2}), expected);
   EXPECT_EQ(output->getVector(), expected.getVector());
   dd->decRef(*output);
   dd->decRef(expected);
@@ -636,8 +765,7 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureCollapsesLikePackage) {
 
   std::mt19937_64 refRng(seed);
   auto ref = dd::makeZeroState(1, *dd);
-  ref = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::H), 0), ref);
+  ref = dd->applyOperation(referenceGateDD<HOp>(*dd, {0}), ref);
   static_cast<void>(dd->measureOneCollapsing(ref, 0, refRng));
   const auto expected = ref.getVector();
 
@@ -690,7 +818,7 @@ TEST_F(QCODDFunctionalityTest, SimulateIfConstantBranches) {
   ASSERT_TRUE(thenMod);
   ASSERT_TRUE(elseMod);
 
-  expectEqualToReference(mainFunc(*thenMod), 1, {{dd::GateType::X, {0}}});
+  expectEqualToReference(mainFunc(*thenMod), 1, {referenceGate<XOp>({0})});
   expectEqualToReference(mainFunc(*elseMod), 1, {});
 }
 
@@ -718,7 +846,7 @@ TEST_F(QCODDFunctionalityTest, SimulateIndexSwitchBranches) {
   ASSERT_TRUE(caseMod);
   ASSERT_TRUE(defaultMod);
 
-  expectEqualToReference(mainFunc(*caseMod), 1, {{dd::GateType::X, {0}}});
+  expectEqualToReference(mainFunc(*caseMod), 1, {referenceGate<XOp>({0})});
   expectEqualToReference(mainFunc(*defaultMod), 1, {});
 }
 
@@ -738,9 +866,8 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIf) {
 
   auto dd = std::make_unique<dd::Package>(1);
   std::mt19937_64 rng(99);
-  auto one = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
-      dd::makeZeroState(1, *dd));
+  auto one = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}),
+                                dd::makeZeroState(1, *dd));
   const auto out =
       simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(out));
@@ -778,9 +905,8 @@ TEST_F(QCODDFunctionalityTest, SimulateCBitConditionAndMeasurementUpdate) {
   auto dd = std::make_unique<dd::Package>(1);
   std::mt19937_64 rng(99);
   auto zero = dd::makeZeroState(1, *dd);
-  auto one = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
-      dd::makeZeroState(1, *dd));
+  auto one = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}),
+                                dd::makeZeroState(1, *dd));
 
   const auto zeroOut =
       simulate(mainFunc(*zeroCondition), dd::makeZeroState(1, *dd), *dd, rng);
@@ -960,12 +1086,8 @@ TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
   std::mt19937_64 rng(11);
   // Final computational basis: |1>|0>|1> after measures and case-1 X on q2.
   auto expected = dd::makeZeroState(3, *dd);
-  expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
-      expected);
-  expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 2),
-      expected);
+  expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}), expected);
+  expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {2}), expected);
 
   const auto out =
       simulate(mainFunc(*mod), dd::makeZeroState(3, *dd), *dd, rng);
@@ -997,9 +1119,8 @@ TEST_F(QCODDFunctionalityTest, AcceptsLargestValidShift) {
   const auto out =
       simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(out));
-  auto expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
-      dd::makeZeroState(1, *dd));
+  auto expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}),
+                                     dd::makeZeroState(1, *dd));
   EXPECT_EQ(out->getVector(), expected.getVector());
   dd->decRef(*out);
   dd->decRef(expected);
@@ -1183,11 +1304,10 @@ TEST_F(QCODDFunctionalityTest, EmbedsWideLocalMatrixWithoutRegisterLimit) {
   });
   ASSERT_TRUE(mod);
 
-  expectEqualToReference(mainFunc(*mod), 13,
-                         {{dd::GateType::RX, {0}, {-0.2}},
-                          {dd::GateType::RY, {4}, {-0.3}},
-                          {dd::GateType::RZ, {8}, {-0.4}},
-                          {dd::GateType::H, {12}}});
+  expectEqualToReference(
+      mainFunc(*mod), 13,
+      {referenceGate<RXOp>({0}, {-0.2}), referenceGate<RYOp>({4}, {-0.3}),
+       referenceGate<RZOp>({8}, {-0.4}), referenceGate<HOp>({12})});
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnsupportedOrUnboundClassicalOperations) {
@@ -1310,9 +1430,8 @@ TEST_F(QCODDFunctionalityTest, BindsClassicalIfResults) {
   const auto out =
       simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(out));
-  auto expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
-      dd::makeZeroState(1, *dd));
+  auto expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}),
+                                     dd::makeZeroState(1, *dd));
   EXPECT_EQ(out->getVector(), expected.getVector());
   dd->decRef(*out);
   dd->decRef(expected);
@@ -1352,9 +1471,8 @@ TEST_F(QCODDFunctionalityTest, BindsClassicalIndexResults) {
   const auto out =
       simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng);
   ASSERT_TRUE(succeeded(out));
-  auto expected = dd->applyOperation(
-      dd->makeGateDD(dd::opToSingleQubitGateMatrix(dd::GateType::X), 0),
-      dd::makeZeroState(1, *dd));
+  auto expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}),
+                                     dd::makeZeroState(1, *dd));
   EXPECT_EQ(out->getVector(), expected.getVector());
   dd->decRef(*out);
   dd->decRef(expected);
@@ -2328,10 +2446,8 @@ TEST_F(QCODDFunctionalityTest, BuildsThroughConcreteControlFlow) {
   ASSERT_TRUE(mod);
 
   expectEqualToReference(mainFunc(*mod), 1,
-                         {{dd::GateType::X, {0}},
-                          {dd::GateType::Z, {0}},
-                          {dd::GateType::H, {0}},
-                          {dd::GateType::H, {0}}});
+                         {referenceGate<XOp>({0}), referenceGate<ZOp>({0}),
+                          referenceGate<HOp>({0}), referenceGate<HOp>({0})});
 }
 
 TEST_F(QCODDFunctionalityTest, StructuredScfAndWhileCarryValues) {
@@ -2393,9 +2509,9 @@ TEST_F(QCODDFunctionalityTest, StructuredScfAndWhileCarryValues) {
                                          context.get());
   ASSERT_TRUE(mod);
 
-  expectEqualToReference(
-      mainFunc(*mod), 1,
-      {{dd::GateType::X, {0}}, {dd::GateType::Z, {0}}, {dd::GateType::X, {0}}});
+  expectEqualToReference(mainFunc(*mod), 1,
+                         {referenceGate<XOp>({0}), referenceGate<ZOp>({0}),
+                          referenceGate<XOp>({0})});
 }
 
 TEST_F(QCODDFunctionalityTest, DynamicAllocationsAndQTensorBookkeeping) {
@@ -2858,7 +2974,7 @@ TEST_F(QCODDFunctionalityTest, InterpretsMinMaxAndCommonMathOperations) {
   });
   ASSERT_TRUE(mod);
 
-  expectEqualToReference(mainFunc(*mod), 1, {{dd::GateType::X, {0}}});
+  expectEqualToReference(mainFunc(*mod), 1, {referenceGate<XOp>({0})});
 }
 
 TEST_F(QCODDFunctionalityTest, StatevectorSupportsTerminalMeasurements) {

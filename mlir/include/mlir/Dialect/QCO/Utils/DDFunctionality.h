@@ -41,6 +41,10 @@ using DDArgumentBindings = DenseMap<Value, Attribute>;
 /// `qco.alloc` operations add subsequent wires. Measurements, resets, symbolic
 /// control, and other runtime allocation are not supported.
 ///
+/// Runtime-bound parameters are supported for standard gates and for a sole
+/// standard gate inside `qco.ctrl`. Custom matrices and composite modifiers
+/// must have a compile-time-known matrix.
+///
 /// The containing module must pass MLIR verification and
 /// `qco::verifyLinearity`.
 ///

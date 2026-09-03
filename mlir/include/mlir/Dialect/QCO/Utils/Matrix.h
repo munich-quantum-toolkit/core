@@ -20,6 +20,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <type_traits>
 
 namespace mlir::qco {
@@ -71,6 +72,11 @@ struct Matrix1x1 {
    * @return Copy of the sole matrix entry.
    */
   [[nodiscard]] Complex operator()(size_t row, size_t col) const;
+
+  /// Return the matrix entries in row-major order.
+  [[nodiscard]] std::span<const Complex, 1> entries() const noexcept {
+    return std::span<const Complex, 1>{&value, 1};
+  }
 
   /**
    * @brief Element-wise scaling by a complex scalar.
@@ -170,6 +176,12 @@ struct Matrix2x2 {
    * @return Copy of the element at `(row, col)`.
    */
   [[nodiscard]] Complex operator()(size_t row, size_t col) const;
+
+  /// Return the matrix entries in row-major order.
+  [[nodiscard]] std::span<const Complex, K_SIZE_AT_COMPILE_TIME>
+  entries() const noexcept {
+    return data;
+  }
 
   /**
    * @brief Matrix product `*this * rhs`.
@@ -359,6 +371,12 @@ struct Matrix4x4 {
    * @return Copy of the element at `(row, col)`.
    */
   [[nodiscard]] Complex operator()(size_t row, size_t col) const;
+
+  /// Return the matrix entries in row-major order.
+  [[nodiscard]] std::span<const Complex, K_SIZE_AT_COMPILE_TIME>
+  entries() const noexcept {
+    return data;
+  }
 
   /**
    * @brief Matrix product `*this * rhs`.
@@ -587,6 +605,38 @@ struct Matrix4x4 {
                                            size_t q1Index) const;
 };
 
+/// Fixed-size 8x8 matrix in row-major layout for three-qubit unitaries.
+struct Matrix8x8 {
+  static constexpr size_t K_ROWS = 8;
+  static constexpr size_t K_COLS = 8;
+  static constexpr size_t K_SIZE_AT_COMPILE_TIME = 64;
+
+  std::array<Complex, K_SIZE_AT_COMPILE_TIME> data{};
+
+  [[nodiscard]] static constexpr Matrix8x8 identity() {
+    Matrix8x8 result;
+    for (size_t i = 0; i < K_ROWS; ++i) {
+      result.data[(i * K_COLS) + i] = 1.0;
+    }
+    return result;
+  }
+
+  [[nodiscard]] Complex& operator()(size_t row, size_t col);
+  [[nodiscard]] Complex operator()(size_t row, size_t col) const;
+
+  /// Return the matrix entries in row-major order.
+  [[nodiscard]] std::span<const Complex, K_SIZE_AT_COMPILE_TIME>
+  entries() const noexcept {
+    return data;
+  }
+
+  [[nodiscard]] Matrix8x8 adjoint() const;
+  [[nodiscard]] bool isApprox(const Matrix8x8& other,
+                              double tol = MATRIX_TOLERANCE) const;
+  /// Copy an 8x8 dynamic matrix; leave this matrix unchanged for other sizes.
+  [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
+};
+
 /**
  * @brief Square matrix with runtime dimension.
  *
@@ -616,6 +666,9 @@ public:
    * @param src Source matrix.
    */
   explicit DynamicMatrix(const Matrix4x4& src);
+
+  /// Create a dynamic matrix from a fixed 8x8 matrix.
+  explicit DynamicMatrix(const Matrix8x8& src);
 
   /// Copy constructor.
   DynamicMatrix(const DynamicMatrix& other);
@@ -670,6 +723,9 @@ public:
    */
   [[nodiscard]] Complex operator()(int64_t row, int64_t col) const;
 
+  /// Return the matrix entries in row-major order.
+  [[nodiscard]] std::span<const Complex> entries() const noexcept;
+
   /**
    * @brief Copies a 2x2 block into the bottom-right corner.
    * @param block Source block placed at indices `(dim-2, dim-2)` through
@@ -715,6 +771,9 @@ public:
    * @param src Source matrix.
    */
   void assignFrom(const Matrix4x4& src);
+
+  /// Replace this matrix with a copy of an 8x8 matrix.
+  void assignFrom(const Matrix8x8& src);
 
   /**
    * @brief Replaces this matrix with a copy of another dynamic matrix.
@@ -858,13 +917,12 @@ private:
   std::unique_ptr<Impl> impl_;
 };
 
-/**
- * @brief Concept for the four supported matrix types.
- */
+/// Matrix types supported by the unitary operation interface.
 template <typename T>
 concept SupportedMatrix =
     std::same_as<T, Matrix1x1> || std::same_as<T, Matrix2x2> ||
-    std::same_as<T, Matrix4x4> || std::same_as<T, DynamicMatrix>;
+    std::same_as<T, Matrix4x4> || std::same_as<T, Matrix8x8> ||
+    std::same_as<T, DynamicMatrix>;
 
 /// Scalar-on-the-left multiply `scalar * matrix` (commutes with the member
 /// `matrix * scalar`). Provided so generic code can scale a matrix from

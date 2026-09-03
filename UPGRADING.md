@@ -87,7 +87,7 @@ The `MQT::CoreCircuitOptimizer` CMake target and the
 `circuit_optimizer/mqt_core_circuit_optimizer_export.h` header is no longer
 generated or installed.
 
-### Pruned DD construction helpers
+### Pruned DD helpers
 
 MQT Core no longer provides `dd::GenerationWireStrategy`,
 `dd::generateExponentialState`, or `dd::generateRandomState`. These APIs
@@ -102,6 +102,16 @@ representation. Use the `mqt.core.mlir.sample`, `simulate`, or
 and call the corresponding method for custom initial states, DD results, or
 program reuse. Use MQT DDSIM's unitary simulator when recursive pairwise
 construction is required.
+
+MQT Core also removed `dd/GateMatrixDefinitions.hpp` and the named-gate dispatch
+from `dd/Operations.hpp`. This removes `dd::GateType`, the
+`dd::isSingleQubitGate`, `dd::isTwoQubitGate`, and `dd::isThreeQubitGate`
+classifiers, `dd::opToSingleQubitGateMatrix`, `dd::opToTwoQubitGateMatrix`,
+`dd::opToThreeQubitGateMatrix`, `dd::getGateDD`, and the `dd::MEAS_ZERO_MAT` and
+`dd::MEAS_ONE_MAT` constants. Low-level consumers must pass raw matrices to
+`dd::Package::makeGateDD`, `makeTwoQubitGateDD`, `makeThreeQubitGateDD`, or
+`makeDDFromMatrix`. Compiler-backed paths use QCO operations as the canonical
+source of named-gate matrices.
 
 The zero, basis, GHZ, W, dense-vector, dense-matrix, and raw gate-matrix DD
 constructors remain available.

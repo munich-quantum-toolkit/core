@@ -10,11 +10,7 @@
 
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
-#include "dd/CachedEdge.hpp"
 #include "dd/DDDefinitions.hpp"
-#include "dd/GateMatrixDefinitions.hpp"
-#include "dd/Node.hpp"
-#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
@@ -25,6 +21,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/DDAdapter.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -170,11 +167,6 @@ struct ClassicalEnv {
   }
 };
 
-struct DecodedGate {
-  dd::GateType type = dd::GateType::None;
-  std::vector<dd::fp> params;
-};
-
 struct WalkState {
   QubitMap* qubits;
   TensorMap* tensors;
@@ -246,20 +238,41 @@ resolveDouble(Value value, const ClassicalEnv& classical, Operation* op) {
          << "floating-point SSA value has no concrete QCO DD binding";
 }
 
+using StandardGateFactory = dd::MatrixDD (*)(dd::Package&, ArrayRef<double>,
+                                             size_t, ArrayRef<dd::Qubit>,
+                                             const dd::Controls&);
+
+namespace {
+struct DecodedStandardGate {
+  StandardGateFactory build;
+  SmallVector<double, 3> parameters;
+};
+} // namespace
+
+template <typename GateOp>
+static auto buildStandardGateDD(dd::Package& package,
+                                ArrayRef<double> parameters, size_t numQubits,
+                                ArrayRef<dd::Qubit> targets,
+                                const dd::Controls& controls) -> dd::MatrixDD {
+  return makeGateDD(package, getStandardGateMatrix<GateOp>(parameters),
+                    numQubits, targets, controls);
+}
+
 /// `std::nullopt` if @p unitary is not a standard gate; failure if its unitary
 /// parameters are not concrete.
-static FailureOr<std::optional<DecodedGate>>
+static FailureOr<std::optional<DecodedStandardGate>>
 decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
   Operation* op = unitary.getOperation();
-  TypeSwitch<Operation*, dd::GateType> typeSwitch(op);
-#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
-  typeSwitch.Case<KEY##Op>([](auto) { return dd::GateType::OP; });
+  TypeSwitch<Operation*, StandardGateFactory> typeSwitch(op);
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
+  typeSwitch.Case<KEY##Op>([](auto) { return &buildStandardGateDD<KEY##Op>; });
 #include "mlir/Conversion/GateTable.def"
-  const auto type = typeSwitch.Default(dd::GateType::None);
-  if (type == dd::GateType::None) {
-    return std::optional<DecodedGate>{std::nullopt};
+  const auto factory = typeSwitch.Default(nullptr);
+  if (factory == nullptr) {
+    return std::optional<DecodedStandardGate>{std::nullopt};
   }
-  DecodedGate decoded{.type = type, .params = {}};
+
+  DecodedStandardGate gate{factory, {}};
   for (Value param : unitary.getParameters()) {
     auto concrete = resolveDouble(param, classical, op);
     if (failed(concrete)) {
@@ -269,57 +282,9 @@ decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
       return op->emitError()
              << "gate parameters must be finite for QCO DD simulation";
     }
-    decoded.params.push_back(static_cast<dd::fp>(*concrete));
+    gate.parameters.push_back(*concrete);
   }
-  return std::optional{std::move(decoded)};
-}
-
-static dd::mCachedEdge
-buildEmbeddedLocalDD(dd::Package& dd, const DynamicMatrix& local,
-                     const DenseMap<dd::Qubit, size_t>& operandForWire,
-                     size_t numOperands, int64_t level, size_t row,
-                     size_t col) {
-  if (level < 0) {
-    return dd::mCachedEdge::terminal(
-        local(static_cast<int64_t>(row), static_cast<int64_t>(col)));
-  }
-  const auto wire = static_cast<dd::Qubit>(level);
-  const auto operand = operandForWire.find(wire);
-  if (operand == operandForWire.end()) {
-    const auto child = buildEmbeddedLocalDD(dd, local, operandForWire,
-                                            numOperands, level - 1, row, col);
-    return dd.makeDDNode<dd::mNode, dd::CachedEdge>(
-        wire, {child, dd::mCachedEdge::zero(), dd::mCachedEdge::zero(), child});
-  }
-
-  const size_t operandMask = size_t{1} << (numOperands - 1 - operand->second);
-  const auto edge00 = buildEmbeddedLocalDD(dd, local, operandForWire,
-                                           numOperands, level - 1, row, col);
-  const auto edge01 =
-      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
-                           row, col | operandMask);
-  const auto edge10 =
-      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
-                           row | operandMask, col);
-  const auto edge11 =
-      buildEmbeddedLocalDD(dd, local, operandForWire, numOperands, level - 1,
-                           row | operandMask, col | operandMask);
-  return dd.makeDDNode<dd::mNode, dd::CachedEdge>(
-      wire, {edge00, edge01, edge10, edge11});
-}
-
-static dd::MatrixDD makeEmbeddedLocalDD(dd::Package& dd,
-                                        const DynamicMatrix& local,
-                                        size_t numQubits,
-                                        ArrayRef<dd::Qubit> wires) {
-  DenseMap<dd::Qubit, size_t> operandForWire;
-  for (auto [operand, wire] : llvm::enumerate(wires)) {
-    operandForWire[wire] = operand;
-  }
-  const auto root =
-      buildEmbeddedLocalDD(dd, local, operandForWire, wires.size(),
-                           static_cast<int64_t>(numQubits) - 1, 0, 0);
-  return {.p = root.p, .w = dd.cn.lookup(root.w)};
+  return std::optional{std::move(gate)};
 }
 
 template <typename StateDD>
@@ -335,8 +300,9 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
       return gphase.emitError()
              << "global phase must be finite for QCO DD simulation";
     }
+    const auto phase = GPhaseOp::unitaryMatrix(*theta).value;
     auto id = dd::Package::makeIdent();
-    id.w = walk.dd->cn.lookup(std::cos(*theta), std::sin(*theta));
+    id.w = walk.dd->cn.lookup(phase.real(), phase.imag());
     state = walk.dd->applyOperation(id, state);
     return success();
   }
@@ -365,49 +331,14 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
            << "unitary matrix dimension does not match its target count";
   }
 
-  if (wires.size() == 1) {
-    const dd::GateMatrix mat{local(0, 0), local(0, 1), local(1, 0),
-                             local(1, 1)};
-    state = walk.dd->applyOperation(walk.dd->makeGateDD(mat, wires[0]), state);
-    return walk.qubits->remapUnitary(unitary);
-  }
-
-  if (wires.size() == 2) {
-    dd::TwoQubitGateMatrix mat{};
-    for (size_t row = 0; row < mat.size(); ++row) {
-      for (size_t col = 0; col < mat[row].size(); ++col) {
-        mat[row][col] =
-            local(static_cast<int64_t>(row), static_cast<int64_t>(col));
-      }
-    }
-    state = walk.dd->applyOperation(
-        walk.dd->makeTwoQubitGateDD(mat, wires[0], wires[1]), state);
-    return walk.qubits->remapUnitary(unitary);
-  }
-
-  if (wires.size() == 3) {
-    dd::ThreeQubitGateMatrix mat{};
-    for (size_t row = 0; row < mat.size(); ++row) {
-      for (size_t col = 0; col < mat[row].size(); ++col) {
-        mat[row][col] =
-            local(static_cast<int64_t>(row), static_cast<int64_t>(col));
-      }
-    }
-    state = walk.dd->applyOperation(
-        walk.dd->makeThreeQubitGateDD(mat, wires[0], wires[1], wires[2]),
-        state);
-    return walk.qubits->remapUnitary(unitary);
-  }
-
   state = walk.dd->applyOperation(
-      makeEmbeddedLocalDD(*walk.dd, local, walk.qubits->numQubits, wires),
-      state);
+      makeGateDD(*walk.dd, local, walk.qubits->numQubits, wires), state);
   return walk.qubits->remapUnitary(unitary);
 }
 
 template <typename StateDD>
 static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
-                                          const DecodedGate& gate,
+                                          const DecodedStandardGate& gate,
                                           const dd::Controls& controls,
                                           WalkState& walk, StateDD& state) {
   SmallVector<Value> targetVals;
@@ -418,10 +349,10 @@ static LogicalResult applyDecodedStandard(UnitaryOpInterface unitary,
   if (failed(targets)) {
     return failure();
   }
-  state = walk.dd->applyOperation(
-      dd::getGateDD(*walk.dd, gate.type, gate.params, controls,
-                    {targets->begin(), targets->end()}),
-      state);
+  state = walk.dd->applyOperation(gate.build(*walk.dd, gate.parameters,
+                                             walk.qubits->numQubits, *targets,
+                                             controls),
+                                  state);
   return walk.qubits->remapUnitary(unitary);
 }
 
@@ -1377,8 +1308,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           const char bit = walk.dd->measureOneCollapsing(state, *q, *walk.rng);
           if (bit == '1') {
             state = walk.dd->applyOperation(
-                walk.dd->makeGateDD(
-                    dd::opToSingleQubitGateMatrix(dd::GateType::X), *q),
+                makeGateDD(*walk.dd, getStandardGateMatrix<XOp>({}),
+                           walk.qubits->numQubits, {*q}),
                 state);
           }
           walk.qubits->bind(resetOp.getQubitOut(), *q);
