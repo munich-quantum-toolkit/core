@@ -641,11 +641,10 @@ loadClassicalBit(mlir::qc::QCProgramBuilder& builder,
   return builder.loadClassicalBit(bit.storage, bit.index);
 }
 
-[[nodiscard]] static mlir::Value emitRegisterComparison(
-    mlir::qc::QCProgramBuilder& builder,
-    const llvm::ArrayRef<ClassicalBitRef> classicalBits,
-    const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg,
-    mlir::arith::CmpIPredicate predicate, uint64_t expected) {
+[[nodiscard]] static mlir::Value
+registerStorage(const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+                const llvm::ArrayRef<uint32_t> rootClbitMap,
+                const Register& reg) {
   mlir::Value storage;
   for (size_t index = 0U; index < reg.bits.size(); ++index) {
     const auto& bit =
@@ -656,14 +655,24 @@ loadClassicalBit(mlir::qc::QCProgramBuilder& builder,
     }
     storage = bit.storage;
   }
+  if (!storage ||
+      llvm::cast<mlir::cbit::RegisterType>(storage.getType()).getWidth() !=
+          static_cast<int64_t>(reg.bits.size())) {
+    return {};
+  }
+  return storage;
+}
+
+[[nodiscard]] static mlir::Value emitRegisterComparison(
+    mlir::qc::QCProgramBuilder& builder,
+    const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+    const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg,
+    mlir::arith::CmpIPredicate predicate, uint64_t expected) {
+  auto storage = registerStorage(classicalBits, rootClbitMap, reg);
   if (!storage) {
     return {};
   }
   const auto width = static_cast<unsigned>(reg.bits.size());
-  if (llvm::cast<mlir::cbit::RegisterType>(storage.getType()).getWidth() !=
-      width) {
-    return {};
-  }
   const auto rhs = builder.getIntegerAttr(builder.getIntegerType(width),
                                           llvm::APInt(width, expected, false));
   return mlir::cbit::CompareOp::create(builder, builder.getI1Type(), predicate,
@@ -680,6 +689,9 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
   }
   const auto width = static_cast<uint32_t>(reg.bits.size());
   const auto type = builder.getIntegerType(width);
+  if (auto storage = registerStorage(classicalBits, rootClbitMap, reg)) {
+    return mlir::cbit::ReadOp::create(builder, type, storage).getResult();
+  }
   llvm::SmallVector<mlir::Value> terms;
   terms.reserve(reg.bits.size());
   for (size_t index = 0; index < reg.bits.size(); ++index) {
@@ -976,10 +988,16 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     if (expression.binaryOperation == BinaryOperation::ShiftLeft ||
         expression.binaryOperation == BinaryOperation::ShiftRight) {
       const auto shiftType = llvm::dyn_cast<mlir::IntegerType>(right.getType());
-      if (!shiftType || shiftType.getWidth() > integerType.getWidth()) {
+      if (!shiftType) {
         throw std::runtime_error(
-            "Qiskit circuit import does not support a shift amount wider "
-            "than its integer operand");
+            "Qiskit shift distance must have integer type");
+      }
+      if (auto constant = right.getDefiningOp<mlir::arith::ConstantOp>()) {
+        const auto value =
+            llvm::dyn_cast<mlir::IntegerAttr>(constant.getValue());
+        if (value && value.getValue().uge(integerType.getWidth())) {
+          return integerConstant(builder, integerType.getWidth(), 0U);
+        }
       }
     }
     right = castInteger(builder, right, integerType);

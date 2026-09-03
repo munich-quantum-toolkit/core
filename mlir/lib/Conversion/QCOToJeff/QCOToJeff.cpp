@@ -137,9 +137,9 @@ public:
   /// Records source register operands before dialect conversion remaps them.
   void recordRegisterUses(Operation* root) {
     root->walk([&](Operation* operation) {
-      if (isa<cbit::LoadOp>(operation)) {
+      if (isa<cbit::LoadOp, cbit::ReadOp, cbit::CompareOp>(operation)) {
         operationRegisters[operation] = operation->getOperand(0);
-      } else if (isa<cbit::StoreOp>(operation)) {
+      } else if (isa<cbit::StoreOp, cbit::WriteOp>(operation)) {
         operationRegisters[operation] = operation->getOperand(1);
       }
     });
@@ -628,6 +628,30 @@ struct ConvertCBitLoadOpToJeff final
     rewriter.replaceOpWithNewOp<jeff::IntArrayGetIndexOp>(
         op, op.getType(), array, adaptor.getIndex());
     return success();
+  }
+};
+
+/// Rejects whole-register reads until jeff supports integer-width casts.
+struct RejectCBitReadOpToJeff final
+    : StatefulOpConversionPattern<cbit::ReadOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::ReadOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& /*rewriter*/) const override {
+    return op.emitError("jeff does not support whole-register reads");
+  }
+};
+
+/// Rejects whole-register writes until jeff supports integer-width casts.
+struct RejectCBitWriteOpToJeff final
+    : StatefulOpConversionPattern<cbit::WriteOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::WriteOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& /*rewriter*/) const override {
+    return op.emitError("jeff does not support whole-register writes");
   }
 };
 
@@ -1910,6 +1934,7 @@ protected:
     jeff::populateNativeToJeffConversionPatterns(patterns);
     patterns.add<ConvertCBitAllocOpToJeff, ConvertCBitCompareOpToJeff,
                  ConvertCBitStoreOpToJeff, ConvertCBitLoadOpToJeff,
+                 RejectCBitReadOpToJeff, RejectCBitWriteOpToJeff,
                  ConvertQTensorAllocOp, ConvertQTensorExtractOp,
                  ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
                  ConvertQCOAllocOpToJeff, ConvertQCOStaticOpToJeff,

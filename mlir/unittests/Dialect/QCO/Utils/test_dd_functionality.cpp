@@ -806,11 +806,15 @@ TEST_F(QCODDFunctionalityTest, SimulateCBitRegisterComparisons) {
       std::pair{arith::CmpIPredicate::ule, true},
       std::pair{arith::CmpIPredicate::ugt, false},
       std::pair{arith::CmpIPredicate::uge, false},
+      std::pair{arith::CmpIPredicate::slt, false},
+      std::pair{arith::CmpIPredicate::sle, false},
+      std::pair{arith::CmpIPredicate::sgt, true},
+      std::pair{arith::CmpIPredicate::sge, true},
   };
   for (const auto [predicate, expected] : comparisons) {
     auto mod = buildModule([&](QCOProgramBuilder& b) {
       auto reg = b.allocClassicalBitRegister(2, "c");
-      auto rhs = b.getIntegerAttr(b.getIntegerType(2), 1);
+      auto rhs = b.getIntegerAttr(b.getIntegerType(2), 3);
       auto condition =
           cbit::CompareOp::create(b, b.getI1Type(), predicate, reg, rhs);
       auto q = b.staticQubit(0);
@@ -864,6 +868,27 @@ TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitRegisterComparison) {
   std::mt19937_64 rng(1);
   EXPECT_TRUE(
       failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateWholeCBitRegisterReadAndWrite) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto reg = b.allocClassicalBitRegister(3, "c");
+    auto five = arith::ConstantIntOp::create(b, 5, 3).getResult();
+    cbit::WriteOp::create(b, five, reg);
+    auto value = cbit::ReadOp::create(b, b.getIntegerType(3), reg).getResult();
+    auto condition =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq, value, five)
+            .getResult();
+    auto q = b.staticQubit(0);
+    q = b.qcoIf(
+        condition, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {

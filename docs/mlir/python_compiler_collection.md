@@ -180,6 +180,8 @@ flow, so export uses Qiskit's public Python classes for these operations.
 | Classical-bit and register conditions                             | Supported            | Supported      |
 | Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Supported      |
 | Clbit and ClassicalRegister expression variables                  | Supported            | Supported      |
+| Fixed-width bitwise operations, comparisons, and bounded shifts   | Supported            | Supported      |
+| Whole-register `Store` assignments                                | Rejected             | Rejected       |
 | Standalone classical runtime variables                            | Rejected             | Rejected       |
 | Free symbols and supported real parameter expressions             | Supported            | Supported      |
 | Parameter-vector elements                                         | Supported            | Supported      |
@@ -227,11 +229,19 @@ Nested blocks may capture existing qubits and classical bits but may not
 allocate or release circuit resources. Control flow and classical expressions
 may nest up to 64 levels, and expression trees may contain at most 4,096 nodes.
 Boolean, unsigned-integer up to 64 bits, and floating-point expression
-operations must have a direct Qiskit equivalent. Unsupported operations, signed
-interpretations, invalid widths, non-finite constants, dynamic bounds,
-loop-carried values, and other SSA results fail during validation. The sole
-exception is Core's canonical constant-zero `i64` exit-code sentinel for a
-circuit without classical outputs.
+operations must have a direct Qiskit equivalent. Signed `cbit.cmp` ordering is
+encoded by XOR-biasing the fixed-width sign bit before one unsigned Qiskit
+comparison. Fixed-width bitwise expressions use Qiskit's `Uint` operations.
+Runtime shift distances are assumed to be less than the value width, as in the
+OpenQASM path. Other unsupported operations or signed interpretations, invalid
+widths, non-finite constants, dynamic bounds, loop-carried values, and other SSA
+results fail during validation. The sole exception is Core's canonical
+constant-zero `i64` exit-code sentinel for a circuit without classical outputs.
+Whole-register reads map to Qiskit `ClassicalRegister` expressions. The current
+C adapter cannot safely inspect or construct Qiskit `Store` operations, so
+Qiskit import and export do not support whole-register writes. OpenQASM remains
+the supported interchange path for `cbit.write`, arbitrary register widths,
+rotations, and `popcount`.
 
 Conditions and switch targets may read a zero-initialized public CBit register.
 An undefined public CBit may be read only after an unconditional top-level

@@ -88,6 +88,45 @@ struct ConvertLoadOp final : OpConversionPattern<cbit::LoadOp> {
   }
 };
 
+struct ConvertReadOp final : OpConversionPattern<cbit::ReadOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::ReadOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto result = cbit::buildRead(
+        rewriter, op.getLoc(), op.getResult().getType().getWidth(),
+        [&](const int64_t index) -> Value {
+          auto indexValue =
+              arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
+          return memref::LoadOp::create(rewriter, op.getLoc(), adaptor.getReg(),
+                                        ValueRange{indexValue});
+        });
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
+struct ConvertWriteOp final : OpConversionPattern<cbit::WriteOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::WriteOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    cbit::buildWrite(
+        rewriter, op.getLoc(), adaptor.getValue(),
+        op.getValue().getType().getWidth(),
+        [&](const int64_t index, Value bit) {
+          auto indexValue =
+              arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
+          memref::StoreOp::create(rewriter, op.getLoc(), bit, adaptor.getReg(),
+                                  ValueRange{indexValue});
+        });
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
 struct ConvertCompareOp final : OpConversionPattern<cbit::CompareOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -142,9 +181,8 @@ protected:
     target.addDynamicallyLegalOp<func::ReturnOp, func::CallOp>(
         [&](Operation* op) { return typeConverter.isLegal(op); });
 
-    patterns
-        .add<ConvertAllocOp, ConvertCompareOp, ConvertLoadOp, ConvertStoreOp>(
-            typeConverter, context);
+    patterns.add<ConvertAllocOp, ConvertCompareOp, ConvertLoadOp, ConvertReadOp,
+                 ConvertStoreOp, ConvertWriteOp>(typeConverter, context);
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
     populateReturnOpTypeConversionPattern(patterns, typeConverter);

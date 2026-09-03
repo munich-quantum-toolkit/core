@@ -14,6 +14,8 @@
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallPtrSet.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -152,6 +154,42 @@ static std::optional<KnownLoadValue> findKnownLoadValue(LoadOp load) {
   return std::nullopt;
 }
 
+static arith::CmpIPredicate
+swapPredicate(const arith::CmpIPredicate predicate) {
+  switch (predicate) {
+  case arith::CmpIPredicate::eq:
+  case arith::CmpIPredicate::ne:
+    return predicate;
+  case arith::CmpIPredicate::slt:
+    return arith::CmpIPredicate::sgt;
+  case arith::CmpIPredicate::sle:
+    return arith::CmpIPredicate::sge;
+  case arith::CmpIPredicate::sgt:
+    return arith::CmpIPredicate::slt;
+  case arith::CmpIPredicate::sge:
+    return arith::CmpIPredicate::sle;
+  case arith::CmpIPredicate::ult:
+    return arith::CmpIPredicate::ugt;
+  case arith::CmpIPredicate::ule:
+    return arith::CmpIPredicate::uge;
+  case arith::CmpIPredicate::ugt:
+    return arith::CmpIPredicate::ult;
+  case arith::CmpIPredicate::uge:
+    return arith::CmpIPredicate::ule;
+  }
+  llvm_unreachable("unknown integer comparison predicate");
+}
+
+static std::optional<llvm::APInt> integerConstant(Value value) {
+  auto constant = value.getDefiningOp<arith::ConstantOp>();
+  auto attribute =
+      constant ? dyn_cast<IntegerAttr>(constant.getValue()) : IntegerAttr{};
+  if (!attribute) {
+    return std::nullopt;
+  }
+  return attribute.getValue();
+}
+
 namespace {
 struct ForwardKnownLoad final : OpRewritePattern<LoadOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -183,7 +221,7 @@ struct FoldUntouchedZeroComparison final : OpRewritePattern<CompareOp> {
       return failure();
     }
     for (auto* user : compare.getReg().getUsers()) {
-      if (!isa<LoadOp, CompareOp>(user)) {
+      if (!isa<LoadOp, ReadOp, CompareOp>(user)) {
         auto* ancestor = compare->getBlock()->findAncestorOpInBlock(*user);
         if (ancestor != nullptr && ancestor->isBeforeInBlock(compare)) {
           return failure();
@@ -198,24 +236,115 @@ struct FoldUntouchedZeroComparison final : OpRewritePattern<CompareOp> {
   }
 };
 
+struct CanonicalizeReadComparison final : OpRewritePattern<arith::CmpIOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(arith::CmpIOp compare,
+                                PatternRewriter& rewriter) const override {
+    Value candidate = compare.getLhs();
+    auto expected = integerConstant(compare.getRhs());
+    auto predicate = compare.getPredicate();
+    if (!expected) {
+      expected = integerConstant(compare.getLhs());
+      candidate = compare.getRhs();
+      predicate = swapPredicate(predicate);
+    }
+    if (!expected) {
+      return failure();
+    }
+
+    while (auto extension = candidate.getDefiningOp<arith::ExtUIOp>()) {
+      if (predicate != arith::CmpIPredicate::eq &&
+          predicate != arith::CmpIPredicate::ne &&
+          getUnsignedPredicate(predicate) != predicate) {
+        return failure();
+      }
+      const auto width =
+          cast<IntegerType>(extension.getIn().getType()).getWidth();
+      if (expected->getActiveBits() > width) {
+        return failure();
+      }
+      candidate = extension.getIn();
+      *expected = expected->trunc(width);
+    }
+
+    auto read = candidate.getDefiningOp<ReadOp>();
+    if (!read) {
+      auto bias = candidate.getDefiningOp<arith::XOrIOp>();
+      if (!bias) {
+        return failure();
+      }
+      read = bias.getLhs().getDefiningOp<ReadOp>();
+      auto mask = integerConstant(bias.getRhs());
+      if (!read) {
+        read = bias.getRhs().getDefiningOp<ReadOp>();
+        mask = integerConstant(bias.getLhs());
+      }
+      const auto width = expected->getBitWidth();
+      if (!read || !mask || *mask != llvm::APInt::getSignMask(width)) {
+        return failure();
+      }
+      switch (predicate) {
+      case arith::CmpIPredicate::eq:
+      case arith::CmpIPredicate::ne:
+        break;
+      case arith::CmpIPredicate::ult:
+        predicate = arith::CmpIPredicate::slt;
+        break;
+      case arith::CmpIPredicate::ule:
+        predicate = arith::CmpIPredicate::sle;
+        break;
+      case arith::CmpIPredicate::ugt:
+        predicate = arith::CmpIPredicate::sgt;
+        break;
+      case arith::CmpIPredicate::uge:
+        predicate = arith::CmpIPredicate::sge;
+        break;
+      default:
+        return failure();
+      }
+      expected->flipBit(width - 1U);
+    }
+
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPointAfter(read);
+    auto rhs = rewriter.getIntegerAttr(read.getResult().getType(), *expected);
+    auto replacement =
+        CompareOp::create(rewriter, compare.getLoc(), rewriter.getI1Type(),
+                          predicate, read.getReg(), rhs);
+    rewriter.replaceOp(compare, replacement.getResult());
+    return success();
+  }
+};
+
 } // namespace
 
 LogicalResult LoadOp::verify() {
   return verifyIndex(getOperation(), getReg(), getIndex());
 }
 
-LogicalResult CompareOp::verify() {
-  switch (getPredicate()) {
-  case arith::CmpIPredicate::eq:
-  case arith::CmpIPredicate::ne:
-  case arith::CmpIPredicate::ult:
-  case arith::CmpIPredicate::ule:
-  case arith::CmpIPredicate::ugt:
-  case arith::CmpIPredicate::uge:
-    break;
-  default:
-    return emitOpError("predicate must be an unsigned integer comparison");
+LogicalResult ReadOp::verify() {
+  if (std::cmp_not_equal(getResult().getType().getWidth(),
+                         getReg().getType().getWidth())) {
+    return emitOpError("result width must match register width");
   }
+  return success();
+}
+
+void ReadOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                         MLIRContext* context) {
+  results.add<CanonicalizeReadComparison>(context);
+}
+
+LogicalResult WriteOp::verify() {
+  if (std::cmp_not_equal(getValue().getType().getWidth(),
+                         getReg().getType().getWidth())) {
+    return emitOpError("value width must match register width");
+  }
+  return success();
+}
+
+LogicalResult CompareOp::verify() {
   if (std::cmp_not_equal(getRhs().getBitWidth(),
                          getReg().getType().getWidth())) {
     return emitOpError("expected integer width must match register width");
@@ -223,22 +352,113 @@ LogicalResult CompareOp::verify() {
   return success();
 }
 
+Value mlir::cbit::buildRead(OpBuilder& builder, const Location location,
+                            const unsigned width,
+                            const llvm::function_ref<Value(int64_t)> loadBit) {
+  assert(width > 0);
+  if (width == 1) {
+    return loadBit(0);
+  }
+
+  const auto type = builder.getIntegerType(width);
+  Value result = arith::ExtUIOp::create(builder, location, type, loadBit(0));
+  for (unsigned index = 1; index < width; ++index) {
+    Value bit = arith::ExtUIOp::create(builder, location, type, loadBit(index));
+    auto shift = arith::ConstantIntOp::create(builder, location, type, index);
+    bit = arith::ShLIOp::create(builder, location, bit, shift);
+    result = arith::OrIOp::create(builder, location, result, bit);
+  }
+  return result;
+}
+
+void mlir::cbit::buildWrite(
+    OpBuilder& builder, const Location location, Value value,
+    const unsigned width,
+    const llvm::function_ref<void(int64_t, Value)> storeBit) {
+  assert(width > 0);
+  const auto type = builder.getIntegerType(width);
+  for (unsigned index = 0; index < width; ++index) {
+    Value selected = value;
+    if (index != 0) {
+      auto shift = arith::ConstantIntOp::create(builder, location, type, index);
+      selected = arith::ShRUIOp::create(builder, location, value, shift);
+    }
+    if (width != 1) {
+      selected = arith::TruncIOp::create(builder, location, builder.getI1Type(),
+                                         selected);
+    }
+    storeBit(index, selected);
+  }
+}
+
+arith::CmpIPredicate
+mlir::cbit::getUnsignedPredicate(const arith::CmpIPredicate predicate) {
+  switch (predicate) {
+  case arith::CmpIPredicate::slt:
+    return arith::CmpIPredicate::ult;
+  case arith::CmpIPredicate::sle:
+    return arith::CmpIPredicate::ule;
+  case arith::CmpIPredicate::sgt:
+    return arith::CmpIPredicate::ugt;
+  case arith::CmpIPredicate::sge:
+    return arith::CmpIPredicate::uge;
+  default:
+    return predicate;
+  }
+}
+
+bool mlir::cbit::isRegisterBitVector(Value value) {
+  SmallVector<Value, 8> worklist{value};
+  llvm::SmallPtrSet<Operation*, 16> visited;
+  while (!worklist.empty()) {
+    auto* operation = worklist.pop_back_val().getDefiningOp();
+    if (operation == nullptr || !visited.insert(operation).second) {
+      continue;
+    }
+    if (isa<ReadOp>(operation)) {
+      return true;
+    }
+    const auto name = operation->getName().getStringRef();
+    const bool rotation =
+        (name == "llvm.intr.fshl" || name == "llvm.intr.fshr") &&
+        operation->getNumOperands() == 3 &&
+        operation->getOperand(0) == operation->getOperand(1);
+    if (isa<arith::ShLIOp, arith::ShRUIOp>(operation) || rotation) {
+      worklist.push_back(operation->getOperand(0));
+    } else if (isa<arith::AndIOp, arith::OrIOp, arith::XOrIOp>(operation)) {
+      llvm::append_range(worklist, operation->getOperands());
+    }
+  }
+  return false;
+}
+
 Value mlir::cbit::buildComparison(
     OpBuilder& builder, const Location location,
     const arith::CmpIPredicate predicate, const llvm::APInt& rhs,
     const llvm::function_ref<Value(int64_t)> loadBit) {
+  const auto encodedPredicate = getUnsignedPredicate(predicate);
+  auto encodedRhs = rhs;
+  const bool biasSignBit = encodedPredicate != predicate;
+  if (biasSignBit) {
+    encodedRhs.flipBit(encodedRhs.getBitWidth() - 1U);
+  }
+
   auto one = arith::ConstantIntOp::create(builder, location, 1, 1);
   Value equal = one;
   Value less;
-  if (predicate != arith::CmpIPredicate::eq &&
-      predicate != arith::CmpIPredicate::ne) {
+  if (encodedPredicate != arith::CmpIPredicate::eq &&
+      encodedPredicate != arith::CmpIPredicate::ne) {
     less = arith::ConstantIntOp::create(builder, location, 0, 1);
   }
-  for (int64_t index = static_cast<int64_t>(rhs.getBitWidth()) - 1; index >= 0;
-       --index) {
+  for (int64_t index = static_cast<int64_t>(encodedRhs.getBitWidth()) - 1;
+       index >= 0; --index) {
     auto bit = loadBit(index);
+    if (biasSignBit &&
+        index == static_cast<int64_t>(encodedRhs.getBitWidth()) - 1) {
+      bit = arith::XOrIOp::create(builder, location, bit, one);
+    }
     Value matches = bit;
-    if (!rhs[static_cast<unsigned>(index)]) {
+    if (!encodedRhs[static_cast<unsigned>(index)]) {
       matches = arith::XOrIOp::create(builder, location, bit, one);
     } else if (less) {
       auto lower = arith::XOrIOp::create(builder, location, bit, one);
@@ -248,7 +468,7 @@ Value mlir::cbit::buildComparison(
     }
     equal = arith::AndIOp::create(builder, location, equal, matches);
   }
-  switch (predicate) {
+  switch (encodedPredicate) {
   case arith::CmpIPredicate::eq:
     return equal;
   case arith::CmpIPredicate::ne:
@@ -264,7 +484,7 @@ Value mlir::cbit::buildComparison(
   case arith::CmpIPredicate::uge:
     return arith::XOrIOp::create(builder, location, less, one);
   default:
-    llvm_unreachable("CBit comparisons must use an unsigned predicate");
+    llvm_unreachable("signed CBit predicate must be encoded as unsigned");
   }
 }
 

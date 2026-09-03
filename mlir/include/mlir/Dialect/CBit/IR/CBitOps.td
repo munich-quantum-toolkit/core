@@ -89,11 +89,56 @@ def LoadOp : CBitOp<"load"> {
   let hasVerifier = 1;
 }
 
+def ReadOp : CBitOp<"read"> {
+  let summary = "Read a classical-bit register as an integer";
+  let description = [{
+    Reads the complete register as an unsigned fixed-width integer. Register
+    element zero is the least-significant result bit, and the result width must
+    equal the static register width.
+
+    Example:
+    ```mlir
+    %value = cbit.read %c : !cbit.reg<3> -> i3
+    ```
+  }];
+
+  let arguments = (ins Arg<CBit_RegisterType, "register", [MemRead]>:$reg);
+  let results = (outs AnyInteger:$result);
+  let assemblyFormat = [{
+    $reg attr-dict `:` qualified(type($reg)) `->` qualified(type($result))
+  }];
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
+def WriteOp : CBitOp<"write"> {
+  let summary = "Write an integer to a classical-bit register";
+  let description = [{
+    Writes a fixed-width integer to the complete register. Integer bit zero is
+    stored in register element zero, and the value width must equal the static
+    register width.
+
+    Example:
+    ```mlir
+    cbit.write %value, %c : i3, !cbit.reg<3>
+    ```
+  }];
+
+  let arguments = (ins AnyInteger:$value,
+      Arg<CBit_RegisterType, "register", [MemWrite]>:$reg);
+  let assemblyFormat = [{
+    $value `,` $reg attr-dict `:` qualified(type($value)) `,`
+        qualified(type($reg))
+  }];
+  let hasVerifier = 1;
+}
+
 def CompareOp : CBitOp<"cmp"> {
   let summary = "Compare a classical-bit register with an integer";
   let description = [{
-    Compares the complete register with an unsigned integer of the same width.
-    The predicate must be `eq`, `ne`, `ult`, `ule`, `ugt`, or `uge`.
+    Compares the complete register with an integer of the same width. Signed
+    predicates interpret the most significant register bit as a two's-complement
+    sign bit.
 
     Example:
     ```mlir

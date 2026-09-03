@@ -655,6 +655,44 @@ static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
                      classical);
 }
 
+static LogicalResult readRegister(cbit::ReadOp read, ClassicalEnv& classical) {
+  const auto regIt = classical.registers.find(read.getReg());
+  if (regIt == classical.registers.end()) {
+    return read.emitError()
+           << "CBit register is not mapped for QCO DD simulation";
+  }
+  llvm::APInt value(read.getResult().getType().getWidth(), 0);
+  for (const auto [index, cell] : llvm::enumerate(*regIt->second)) {
+    if (cell.deferredWire && classical.deferredMeasurementUse != nullptr) {
+      *classical.deferredMeasurementUse = read.getOperation();
+      return failure();
+    }
+    if (!cell.value) {
+      return read.emitError() << "read from an undefined CBit register element";
+    }
+    value.setBitVal(static_cast<unsigned>(index), *cell.value);
+  }
+  return bindInteger(read.getResult(), value, classical);
+}
+
+static LogicalResult writeRegister(cbit::WriteOp write,
+                                   ClassicalEnv& classical) {
+  const auto regIt = classical.registers.find(write.getReg());
+  if (regIt == classical.registers.end()) {
+    return write.emitError()
+           << "CBit register is not mapped for QCO DD simulation";
+  }
+  auto value = lookupInteger(write.getValue(), classical, write);
+  if (failed(value)) {
+    return failure();
+  }
+  for (auto&& [index, bit] : llvm::enumerate(*regIt->second)) {
+    bit.value.emplace((*value)[static_cast<unsigned>(index)]);
+    bit.deferredWire.reset();
+  }
+  return success();
+}
+
 static LogicalResult compareRegister(cbit::CompareOp compare,
                                      ClassicalEnv& classical) {
   const auto regIt = classical.registers.find(compare.getReg());
@@ -1306,6 +1344,12 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .template Case<cbit::LoadOp>([&](cbit::LoadOp load) {
         return loadRegister(load, *walk.classical);
+      })
+      .template Case<cbit::ReadOp>([&](cbit::ReadOp read) {
+        return readRegister(read, *walk.classical);
+      })
+      .template Case<cbit::WriteOp>([&](cbit::WriteOp write) {
+        return writeRegister(write, *walk.classical);
       })
       .template Case<cbit::CompareOp>([&](cbit::CompareOp compare) {
         return compareRegister(compare, *walk.classical);

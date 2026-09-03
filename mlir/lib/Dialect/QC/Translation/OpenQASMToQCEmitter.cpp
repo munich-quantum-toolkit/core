@@ -344,10 +344,8 @@ private:
     case frontend::ExpressionKind::Cast:
       return remember(unary(1));
     case frontend::ExpressionKind::BitVectorCast: {
-      const auto& bitVector =
-          program.bitVectorExpressions.at(expression.bitVector);
-      return remember(add(bitVectorExpressionEmissionCost(expression.bitVector),
-                          4 * static_cast<size_t>(bitVector.width)));
+      return remember(
+          add(bitVectorExpressionEmissionCost(expression.bitVector), 1));
     }
     case frontend::ExpressionKind::Negate:
       if (expression.type == frontend::ScalarType::Float ||
@@ -369,10 +367,8 @@ private:
     case frontend::ExpressionKind::Sqrt:
       return remember(unary(2));
     case frontend::ExpressionKind::PopCount: {
-      const auto& bitVector =
-          program.bitVectorExpressions.at(expression.bitVector);
-      return remember(add(bitVectorExpressionEmissionCost(expression.bitVector),
-                          (4 * static_cast<size_t>(bitVector.width)) + 2));
+      return remember(
+          add(bitVectorExpressionEmissionCost(expression.bitVector), 2));
     }
     case frontend::ExpressionKind::Add:
     case frontend::ExpressionKind::Subtract:
@@ -456,33 +452,43 @@ private:
       return *bitVectorExpressionEmissionCosts[id];
     }
     const auto& expression = program.bitVectorExpressions.at(id);
+    const auto add = [](const size_t lhs, const size_t rhs) {
+      return lhs > PROJECTED_EMISSION_LIMIT || rhs > PROJECTED_EMISSION_LIMIT ||
+                     lhs > PROJECTED_EMISSION_LIMIT - rhs
+                 ? PROJECTED_EMISSION_LIMIT + 1
+                 : lhs + rhs;
+    };
     const auto remember = [&](const size_t cost) {
       bitVectorExpressionEmissionCosts[id] = cost;
       return cost;
     };
-    if (expression.kind == frontend::BitVectorExpressionKind::Register) {
-      const auto width = static_cast<size_t>(expression.width);
-      return remember(width > PROJECTED_EMISSION_LIMIT / 2
-                          ? PROJECTED_EMISSION_LIMIT + 1
-                          : 2 * width);
+    switch (expression.kind) {
+    case frontend::BitVectorExpressionKind::Constant:
+    case frontend::BitVectorExpressionKind::Register:
+      return remember(1);
+    case frontend::BitVectorExpressionKind::Not:
+      return remember(
+          add(bitVectorExpressionEmissionCost(expression.operand), 2));
+    case frontend::BitVectorExpressionKind::And:
+    case frontend::BitVectorExpressionKind::Or:
+    case frontend::BitVectorExpressionKind::Xor:
+      return remember(
+          add(add(bitVectorExpressionEmissionCost(expression.operand),
+                  bitVectorExpressionEmissionCost(expression.rhs)),
+              1));
+    case frontend::BitVectorExpressionKind::ShiftLeft:
+    case frontend::BitVectorExpressionKind::ShiftRight:
+      return remember(
+          add(add(bitVectorExpressionEmissionCost(expression.operand),
+                  expressionEmissionCost(expression.distance)),
+              2));
+    case frontend::BitVectorExpressionKind::RotateLeft:
+    case frontend::BitVectorExpressionKind::RotateRight:
+      break;
     }
     const auto operand = bitVectorExpressionEmissionCost(expression.operand);
-    if (program.expressions.at(expression.distance).kind ==
-        frontend::ExpressionKind::Constant) {
-      return remember(operand > PROJECTED_EMISSION_LIMIT - 2
-                          ? PROJECTED_EMISSION_LIMIT + 1
-                          : operand + 2);
-    }
-    const auto width = static_cast<size_t>(expression.width);
-    const auto local = (8 * width) + 8;
     const auto distance = expressionEmissionCost(expression.distance);
-    if (operand > PROJECTED_EMISSION_LIMIT ||
-        distance > PROJECTED_EMISSION_LIMIT ||
-        operand > PROJECTED_EMISSION_LIMIT - distance ||
-        operand + distance > PROJECTED_EMISSION_LIMIT - local) {
-      return remember(PROJECTED_EMISSION_LIMIT + 1);
-    }
-    return remember(operand + distance + local);
+    return remember(add(add(operand, distance), 6));
   }
 
   [[nodiscard]] bool
@@ -580,6 +586,15 @@ private:
     }
     if (condition.kind == frontend::ConditionKind::RegisterComparison) {
       return chargeScaledEmission(1, multiplicity, projectedEmission, source);
+    }
+    if (condition.kind == frontend::ConditionKind::BitVectorComparison) {
+      return chargeScaledEmission(bitVectorExpressionEmissionCost(
+                                      condition.bitVectorComparisonLhs),
+                                  multiplicity, projectedEmission, source) &&
+             chargeScaledEmission(bitVectorExpressionEmissionCost(
+                                      condition.bitVectorComparisonRhs),
+                                  multiplicity, projectedEmission, source) &&
+             chargeScaledEmission(1, multiplicity, projectedEmission, source);
     }
     if (condition.kind == frontend::ConditionKind::Comparison) {
       return chargeExpressionEmission(condition.comparisonLhs, multiplicity,
@@ -755,10 +770,8 @@ private:
           if (!chargeScaledEmission(
                   bitVectorExpressionEmissionCost(assignment->value),
                   multiplicity, projectedEmission, statement.location) ||
-              !chargeScaledEmission(
-                  2 * static_cast<size_t>(
-                          program.registers.at(assignment->target).width),
-                  multiplicity, projectedEmission, statement.location)) {
+              !chargeScaledEmission(1, multiplicity, projectedEmission,
+                                    statement.location)) {
             return false;
           }
         } else if (const auto* declaration =
@@ -1080,88 +1093,76 @@ private:
                             .getResult();
   }
 
-  [[nodiscard]] static Value packBits(OpBuilder& opBuilder,
-                                      ArrayRef<Value> bits) {
-    assert(!bits.empty());
-    const auto width = static_cast<unsigned>(bits.size());
-    auto packedType = opBuilder.getIntegerType(width);
-    auto loc = UnknownLoc::get(opBuilder.getContext());
-    Value packed =
-        width == 1
-            ? bits.front()
-            : arith::ExtUIOp::create(opBuilder, loc, packedType, bits.front());
-    for (unsigned bit = 1; bit < width; ++bit) {
-      auto extended =
-          arith::ExtUIOp::create(opBuilder, loc, packedType, bits[bit]);
-      auto shift = arith::ConstantIntOp::create(opBuilder, loc, bit, width);
-      auto shifted = arith::ShLIOp::create(opBuilder, loc, extended, shift);
-      packed = arith::OrIOp::create(opBuilder, loc, packed, shifted);
-    }
-    return packed;
-  }
-
-  [[nodiscard]] static SmallVector<Value>
-  unpackBits(OpBuilder& opBuilder, Value packed, const uint64_t width) {
-    SmallVector<Value> bits;
-    bits.reserve(width);
-    if (width == 1) {
-      bits.push_back(packed);
-      return bits;
-    }
-    auto loc = UnknownLoc::get(opBuilder.getContext());
-    for (uint64_t bit = 0; bit < width; ++bit) {
-      Value selected = packed;
-      if (bit != 0) {
-        auto shift = arith::ConstantIntOp::create(opBuilder, loc,
-                                                  static_cast<int64_t>(bit),
-                                                  static_cast<unsigned>(width));
-        selected = arith::ShRUIOp::create(opBuilder, loc, packed, shift);
-      }
-      bits.push_back(arith::TruncIOp::create(opBuilder, loc,
-                                             opBuilder.getI1Type(), selected));
-    }
-    return bits;
-  }
-
-  struct EmittedBitVector {
-    uint64_t width = 0;
-    SmallVector<Value> bits;
-    Value packed;
-  };
-
-  static Value ensurePacked(OpBuilder& opBuilder, EmittedBitVector& value) {
-    if (!value.packed) {
-      value.packed = packBits(opBuilder, value.bits);
-    }
-    return value.packed;
-  }
-
-  static ArrayRef<Value> ensureBits(OpBuilder& opBuilder,
-                                    EmittedBitVector& value) {
-    if (value.bits.empty()) {
-      value.bits = unpackBits(opBuilder, value.packed, value.width);
-    }
-    return value.bits;
-  }
-
-  [[nodiscard]] EmittedBitVector
+  [[nodiscard]] Value
   emitBitVectorExpression(OpBuilder& opBuilder,
                           const frontend::BitVectorExpressionId id) {
     const auto& expression = program.bitVectorExpressions.at(id);
     auto loc = UnknownLoc::get(opBuilder.getContext());
-    if (expression.kind == frontend::BitVectorExpressionKind::Register) {
-      SmallVector<Value> bits;
-      bits.reserve(expression.width);
+    const auto type =
+        opBuilder.getIntegerType(static_cast<unsigned>(expression.width));
+    switch (expression.kind) {
+    case frontend::BitVectorExpressionKind::Constant:
+      return arith::ConstantOp::create(
+          opBuilder, loc, IntegerAttr::get(type, expression.constant));
+    case frontend::BitVectorExpressionKind::Register: {
       auto reg = classicalRegisters.at(expression.reg);
       assert(reg && "semantic analysis must declare bit registers before use");
-      for (uint64_t bit = 0; bit < expression.width; ++bit) {
-        auto index = arith::ConstantIndexOp::create(opBuilder, loc,
-                                                    static_cast<int64_t>(bit));
-        bits.push_back(cbit::LoadOp::create(opBuilder, loc,
-                                            opBuilder.getI1Type(), reg, index));
-      }
-      return {.width = expression.width, .bits = std::move(bits)};
+      return cbit::ReadOp::create(opBuilder, loc, type, reg);
     }
+    case frontend::BitVectorExpressionKind::Not: {
+      auto operand = emitBitVectorExpression(opBuilder, expression.operand);
+      auto ones = arith::ConstantOp::create(
+          opBuilder, loc,
+          IntegerAttr::get(type, APInt::getAllOnes(expression.width)));
+      return arith::XOrIOp::create(opBuilder, loc, operand, ones);
+    }
+    case frontend::BitVectorExpressionKind::And:
+    case frontend::BitVectorExpressionKind::Or:
+    case frontend::BitVectorExpressionKind::Xor: {
+      auto lhs = emitBitVectorExpression(opBuilder, expression.operand);
+      auto rhs = emitBitVectorExpression(opBuilder, expression.rhs);
+      if (expression.kind == frontend::BitVectorExpressionKind::And) {
+        return arith::AndIOp::create(opBuilder, loc, lhs, rhs);
+      }
+      if (expression.kind == frontend::BitVectorExpressionKind::Or) {
+        return arith::OrIOp::create(opBuilder, loc, lhs, rhs);
+      }
+      return arith::XOrIOp::create(opBuilder, loc, lhs, rhs);
+    }
+    case frontend::BitVectorExpressionKind::ShiftLeft:
+    case frontend::BitVectorExpressionKind::ShiftRight: {
+      const auto& distance = program.expressions.at(expression.distance);
+      auto operand = emitBitVectorExpression(opBuilder, expression.operand);
+      Value shift;
+      if (distance.kind == frontend::ExpressionKind::Constant) {
+        const auto amount =
+            distance.type == frontend::ScalarType::Uint
+                ? std::get<uint64_t>(distance.constant)
+                : static_cast<uint64_t>(std::get<int64_t>(distance.constant));
+        if (amount >= expression.width) {
+          return arith::ConstantIntOp::create(opBuilder, loc, type, 0);
+        }
+        shift = arith::ConstantIntOp::create(opBuilder, loc, type,
+                                             static_cast<int64_t>(amount));
+      } else {
+        shift = emitExpression(opBuilder, expression.distance, {});
+        if (expression.width < 64) {
+          shift = arith::TruncIOp::create(opBuilder, loc, type, shift);
+        } else if (expression.width > 64) {
+          shift = arith::ExtUIOp::create(opBuilder, loc, type, shift);
+        }
+      }
+      return expression.kind == frontend::BitVectorExpressionKind::ShiftLeft
+                 ? arith::ShLIOp::create(opBuilder, loc, operand, shift)
+                       .getResult()
+                 : arith::ShRUIOp::create(opBuilder, loc, operand, shift)
+                       .getResult();
+    }
+    case frontend::BitVectorExpressionKind::RotateLeft:
+    case frontend::BitVectorExpressionKind::RotateRight:
+      break;
+    }
+
     auto operand = emitBitVectorExpression(opBuilder, expression.operand);
     const auto& distanceExpression =
         program.expressions.at(expression.distance);
@@ -1172,34 +1173,16 @@ private:
       if (normalized < 0) {
         normalized += width;
       }
-      if (operand.bits.empty()) {
-        if (normalized == 0) {
-          return operand;
-        }
-        auto shift = arith::ConstantIntOp::create(
-            opBuilder, loc, normalized,
-            static_cast<unsigned>(expression.width));
-        Value rotated =
-            expression.kind == frontend::BitVectorExpressionKind::RotateLeft
-                ? LLVM::FshlOp::create(opBuilder, loc, operand.packed,
-                                       operand.packed, shift)
-                      .getResult()
-                : LLVM::FshrOp::create(opBuilder, loc, operand.packed,
-                                       operand.packed, shift)
-                      .getResult();
-        return {.width = expression.width, .packed = rotated};
+      if (normalized == 0) {
+        return operand;
       }
-      const auto bits = ensureBits(opBuilder, operand);
-      SmallVector<Value> rotated(expression.width);
-      for (uint64_t bit = 0; bit < expression.width; ++bit) {
-        const auto source =
-            expression.kind == frontend::BitVectorExpressionKind::RotateLeft
-                ? (bit + expression.width - static_cast<uint64_t>(normalized)) %
-                      expression.width
-                : (bit + static_cast<uint64_t>(normalized)) % expression.width;
-        rotated[bit] = bits[source];
-      }
-      return {.width = expression.width, .bits = std::move(rotated)};
+      auto shift = arith::ConstantIntOp::create(
+          opBuilder, loc, normalized, static_cast<unsigned>(expression.width));
+      return expression.kind == frontend::BitVectorExpressionKind::RotateLeft
+                 ? LLVM::FshlOp::create(opBuilder, loc, operand, operand, shift)
+                       .getResult()
+                 : LLVM::FshrOp::create(opBuilder, loc, operand, operand, shift)
+                       .getResult();
     }
 
     auto distance = emitExpression(opBuilder, expression.distance, {});
@@ -1211,9 +1194,7 @@ private:
         arith::AddIOp::create(opBuilder, loc, remainder, widthConstant);
     auto normalized =
         arith::RemSIOp::create(opBuilder, loc, positive, widthConstant);
-    auto packed = ensurePacked(opBuilder, operand);
-    auto packedType =
-        opBuilder.getIntegerType(static_cast<unsigned>(expression.width));
+    auto packedType = type;
     Value shift = normalized;
     if (expression.width < 64) {
       shift = arith::TruncIOp::create(opBuilder, loc, packedType, normalized);
@@ -1222,11 +1203,11 @@ private:
     }
     Value rotated =
         expression.kind == frontend::BitVectorExpressionKind::RotateLeft
-            ? LLVM::FshlOp::create(opBuilder, loc, packed, packed, shift)
+            ? LLVM::FshlOp::create(opBuilder, loc, operand, operand, shift)
                   .getResult()
-            : LLVM::FshrOp::create(opBuilder, loc, packed, packed, shift)
+            : LLVM::FshrOp::create(opBuilder, loc, operand, operand, shift)
                   .getResult();
-    return {.width = expression.width, .packed = rotated};
+    return rotated;
   }
 
   Value emitExpression(OpBuilder& opBuilder, const frontend::ExpressionId id,
@@ -1269,9 +1250,10 @@ private:
                             expression.type);
     }
     case frontend::ExpressionKind::BitVectorCast: {
-      auto value = emitBitVectorExpression(opBuilder, expression.bitVector);
-      auto packed = ensurePacked(opBuilder, value);
-      if (value.width == 64) {
+      auto packed = emitBitVectorExpression(opBuilder, expression.bitVector);
+      const auto width =
+          program.bitVectorExpressions.at(expression.bitVector).width;
+      if (width == 64) {
         return packed;
       }
       auto resultType = opBuilder.getI64Type();
@@ -1341,8 +1323,7 @@ private:
     case frontend::ExpressionKind::PopCount: {
       const auto& bitVector =
           program.bitVectorExpressions.at(expression.bitVector);
-      auto value = emitBitVectorExpression(opBuilder, expression.bitVector);
-      auto packed = ensurePacked(opBuilder, value);
+      auto packed = emitBitVectorExpression(opBuilder, expression.bitVector);
       auto count = math::CtPopOp::create(opBuilder, loc, packed);
       if (bitVector.width < 64) {
         return arith::ExtUIOp::create(opBuilder, loc, opBuilder.getI64Type(),
@@ -1970,10 +1951,19 @@ private:
       auto rhs = builder.getIntegerAttr(
           builder.getIntegerType(condition.expected.getBitWidth()),
           condition.expected);
-      return cbit::CompareOp::create(builder, builder.getI1Type(),
-                                     integerPredicate(condition.comparison,
-                                                      /*isUnsigned=*/true),
+      const auto predicate = integerPredicate(
+          condition.comparison, !condition.signedRegisterComparison);
+      return cbit::CompareOp::create(builder, builder.getI1Type(), predicate,
                                      reg, rhs);
+    }
+    case frontend::ConditionKind::BitVectorComparison: {
+      auto lhs =
+          emitBitVectorExpression(builder, condition.bitVectorComparisonLhs);
+      auto rhs =
+          emitBitVectorExpression(builder, condition.bitVectorComparisonRhs);
+      return arith::CmpIOp::create(
+          builder, integerPredicate(condition.comparison, /*isUnsigned=*/true),
+          lhs, rhs);
     }
     case frontend::ConditionKind::Not:
       return arith::XOrIOp::create(
@@ -2247,12 +2237,9 @@ private:
   void emitBitVectorAssignment(
       const frontend::BitVectorAssignmentStatement& assignment) {
     auto value = emitBitVectorExpression(builder, assignment.value);
-    const auto bits = ensureBits(builder, value);
     auto reg = classicalRegisters[assignment.target];
     assert(reg && "semantic analysis must declare bit registers before use");
-    for (auto [index, bit] : llvm::enumerate(bits)) {
-      builder.storeClassicalBit(bit, reg, static_cast<int64_t>(index));
-    }
+    cbit::WriteOp::create(builder, builder.getUnknownLoc(), value, reg);
   }
 
   void emitMeasurement(const frontend::MeasurementStatement& measurement,

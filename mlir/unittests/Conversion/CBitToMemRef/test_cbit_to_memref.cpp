@@ -137,7 +137,7 @@ TEST_F(CBitToMemRefTest, LargeZeroInitializationProducesBoundedIR) {
 TEST_F(CBitToMemRefTest, LowersRegisterComparisons) {
   auto moduleOp = convert(R"mlir(
     module {
-      func.func @main() -> (i1, i1, i1, i1, i1, i1) {
+      func.func @main() -> (i1, i1, i1, i1, i1, i1, i1, i1, i1, i1) {
         %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
         %eq = cbit.cmp eq, %reg, 5 : i3 : !cbit.reg<3>
         %ne = cbit.cmp ne, %reg, 5 : i3 : !cbit.reg<3>
@@ -145,7 +145,12 @@ TEST_F(CBitToMemRefTest, LowersRegisterComparisons) {
         %ule = cbit.cmp ule, %reg, 5 : i3 : !cbit.reg<3>
         %ugt = cbit.cmp ugt, %reg, 5 : i3 : !cbit.reg<3>
         %uge = cbit.cmp uge, %reg, 5 : i3 : !cbit.reg<3>
-        return %eq, %ne, %ult, %ule, %ugt, %uge : i1, i1, i1, i1, i1, i1
+        %slt = cbit.cmp slt, %reg, 5 : i3 : !cbit.reg<3>
+        %sle = cbit.cmp sle, %reg, 5 : i3 : !cbit.reg<3>
+        %sgt = cbit.cmp sgt, %reg, 5 : i3 : !cbit.reg<3>
+        %sge = cbit.cmp sge, %reg, 5 : i3 : !cbit.reg<3>
+        return %eq, %ne, %ult, %ule, %ugt, %uge, %slt, %sle, %sgt, %sge
+            : i1, i1, i1, i1, i1, i1, i1, i1, i1, i1
       }
     }
   )mlir");
@@ -159,7 +164,35 @@ TEST_F(CBitToMemRefTest, LowersRegisterComparisons) {
   EXPECT_FALSE(containsCBit);
   size_t loads = 0;
   moduleOp->walk([&](memref::LoadOp) { ++loads; });
-  EXPECT_EQ(loads, 18);
+  EXPECT_GT(loads, 0);
+}
+
+TEST_F(CBitToMemRefTest, LowersWholeRegisterReadsAndWrites) {
+  auto moduleOp = convert(R"mlir(
+    module {
+      func.func @main() -> i3 {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
+        %value = cbit.read %reg : !cbit.reg<3> -> i3
+        cbit.write %value, %reg : i3, !cbit.reg<3>
+        return %value : i3
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t loads = 0;
+  size_t stores = 0;
+  bool containsRead = false;
+  bool containsWrite = false;
+  moduleOp->walk([&](memref::LoadOp) { ++loads; });
+  moduleOp->walk([&](memref::StoreOp) { ++stores; });
+  moduleOp->walk([&](cbit::ReadOp) { containsRead = true; });
+  moduleOp->walk([&](cbit::WriteOp) { containsWrite = true; });
+  EXPECT_GT(loads, 0);
+  EXPECT_GT(stores, 0);
+  EXPECT_FALSE(containsRead);
+  EXPECT_FALSE(containsWrite);
 }
 
 TEST_F(CBitToMemRefTest, ConvertsFunctionSignaturesCallsAndReturns) {

@@ -121,6 +121,28 @@ TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
       << *emitted;
 }
 
+TEST(OpenQASM3EmissionTest, RejectsStaleClassicalSnapshots) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main() -> (!cbit.reg<2>, i1) attributes {mqt.entry_point} {
+      %one = arith.constant 1 : i2
+      %zero = arith.constant 0 : i2
+      %bits = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "c"}
+          : !cbit.reg<2>
+      cbit.write %one, %bits : i2, !cbit.reg<2>
+      %old = cbit.read %bits : !cbit.reg<2> -> i2
+      cbit.write %zero, %bits : i2, !cbit.reg<2>
+      %condition = arith.cmpi eq, %old, %one : i2
+      return %bits, %condition : !cbit.reg<2>, i1
+    }
+  })mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+}
+
 TEST(OpenQASM3EmissionTest, CanonicalizesFixedAnglesToPortableFloats) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 include "stdgates.inc";
@@ -304,6 +326,10 @@ module {
     %ule = cbit.cmp ule, %c, 5 : i3 : !cbit.reg<3>
     %ugt = cbit.cmp ugt, %c, 5 : i3 : !cbit.reg<3>
     %uge = cbit.cmp uge, %c, 5 : i3 : !cbit.reg<3>
+    %slt = cbit.cmp slt, %c, -3 : i3 : !cbit.reg<3>
+    %sle = cbit.cmp sle, %c, -3 : i3 : !cbit.reg<3>
+    %sgt = cbit.cmp sgt, %c, -3 : i3 : !cbit.reg<3>
+    %sge = cbit.cmp sge, %c, -3 : i3 : !cbit.reg<3>
     scf.if %eq {
       qc.x %q : !qc.qubit
     }
@@ -322,6 +348,18 @@ module {
     scf.if %uge {
       qc.x %q : !qc.qubit
     }
+    scf.if %slt {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %sle {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %sgt {
+      qc.x %q : !qc.qubit
+    }
+    scf.if %sge {
+      qc.x %q : !qc.qubit
+    }
     return %c : !cbit.reg<3>
   }
 }
@@ -334,8 +372,9 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  for (const auto* comparison :
-       {"c == 5", "c != 5", "c < 5", "c <= 5", "c > 5", "c >= 5"}) {
+  for (const auto* comparison : {"c == 5", "c != 5", "c < 5", "c <= 5", "c > 5",
+                                 "c >= 5", "int[3](c) < -3", "int[3](c) <= -3",
+                                 "int[3](c) > -3", "int[3](c) >= -3"}) {
     EXPECT_NE(emitted->find(comparison), std::string::npos) << *emitted;
   }
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
@@ -369,6 +408,140 @@ module {
   ASSERT_TRUE(moduleOp);
 
   EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+}
+
+TEST(OpenQASM3EmissionTest, EmitsFixedWidthRegisterExpressions) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> !cbit.reg<3> attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
+        : !cbit.reg<3>
+    %value = cbit.read %c : !cbit.reg<3> -> i3
+    %four = arith.constant 4 : i3
+    %biased = arith.xori %value, %four : i3
+    %one = arith.constant 1 : i3
+    %distance = arith.andi %value, %one : i3
+    %shifted = arith.shli %biased, %distance : i3
+    cbit.write %shifted, %c : i3, !cbit.reg<3>
+    %updated = cbit.read %c : !cbit.reg<3> -> i3
+    %three = arith.constant 3 : i3
+    %condition = arith.cmpi ult, %updated, %three : i3
+    scf.if %condition {
+      qc.x %q : !qc.qubit
+    }
+    return %c : !cbit.reg<3>
+  }
+}
+)mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("c = ((c ^ 4) << (c & 1));"), std::string::npos)
+      << *emitted;
+  EXPECT_NE(emitted->find("(c < 3)"), std::string::npos) << *emitted;
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+}
+
+TEST(OpenQASM3EmissionTest, RejectsWideBitRegisterShiftDistance) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> !cbit.reg<65> attributes {mqt.entry_point} {
+    %a = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "a"}
+        : !cbit.reg<65>
+    %b = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "b"}
+        : !cbit.reg<65>
+    %av = cbit.read %a : !cbit.reg<65> -> i65
+    %bv = cbit.read %b : !cbit.reg<65> -> i65
+    %shifted = arith.shli %av, %bv : i65
+    cbit.write %shifted, %a : i65, !cbit.reg<65>
+    return %a : !cbit.reg<65>
+  }
+}
+)mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+}
+
+TEST(OpenQASM3EmissionTest, RejectsBooleanShiftDistance) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> !cbit.reg<64> attributes {mqt.entry_point} {
+    %zero = arith.constant 0 : index
+    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
+        : !cbit.reg<64>
+    %bit = cbit.load %c[%zero] : !cbit.reg<64>
+    %distance = arith.extui %bit : i1 to i64
+    %value = cbit.read %c : !cbit.reg<64> -> i64
+    %shifted = arith.shli %value, %distance : i64
+    cbit.write %shifted, %c : i64, !cbit.reg<64>
+    return %c : !cbit.reg<64>
+  }
+}
+)mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+}
+
+TEST(OpenQASM3EmissionTest, EmitsScalarWidthOneRegisterWrites) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+    %true = arith.constant true
+    %c = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"}
+        : !cbit.reg<1>
+    cbit.write %true, %c : i1, !cbit.reg<1>
+    return %c : !cbit.reg<1>
+  }
+}
+)mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("c[0] = true;"), std::string::npos) << *emitted;
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+      << *emitted;
+}
+
+TEST(OpenQASM3EmissionTest, RoundTripsWholeRegisterRotations) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit[5] q;
+output bit[5] result;
+result = measure q;
+result = rotl(result, 2);
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("result = rotl(result, 2);"), std::string::npos)
+      << *emitted;
+  EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
 }
 
 TEST(OpenQASM3EmissionTest, EmitsNativeIndexSwitch) {
@@ -910,13 +1083,6 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
         func.func @main() -> memref<1x!qc.qubit> {
           %memory = memref.alloc() : memref<1x!qc.qubit>
           return %memory : memref<1x!qc.qubit>
-        }
-      })mlir"},
-      Fixture{.name = "unsupported-expression-width", .source = R"mlir(module {
-        func.func @main() {
-          %one = arith.constant 1 : i32
-          %sum = arith.addi %one, %one : i32
-          return
         }
       })mlir"},
       Fixture{.name = "sign-extension", .source = R"mlir(module {

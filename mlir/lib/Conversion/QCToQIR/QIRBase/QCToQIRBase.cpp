@@ -142,6 +142,28 @@ struct RejectCBitLoadOp final : OpConversionPattern<cbit::LoadOp> {
   }
 };
 
+struct RejectCBitReadOp final : OpConversionPattern<cbit::ReadOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::ReadOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& /*rewriter*/) const override {
+    return op.emitError(
+        "QIR Base Profile does not support classical-register reads");
+  }
+};
+
+struct RejectCBitWriteOp final : OpConversionPattern<cbit::WriteOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::WriteOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& /*rewriter*/) const override {
+    return op.emitError(
+        "QIR Base Profile does not support classical-register writes");
+  }
+};
+
 struct RejectCBitCompareOp final : OpConversionPattern<cbit::CompareOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -346,7 +368,8 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
   patterns.add<ConvertCBitAllocOp, ConvertMemRefAllocOp, ConvertMemRefLoadOp,
                ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCMeasureOp,
                ConvertQCDeallocOp>(typeConverter, ctx, &state);
-  patterns.add<RejectCBitCompareOp, RejectCBitLoadOp>(typeConverter, ctx);
+  patterns.add<RejectCBitCompareOp, RejectCBitLoadOp, RejectCBitReadOp,
+               RejectCBitWriteOp>(typeConverter, ctx);
 }
 
 namespace {

@@ -66,7 +66,9 @@ TEST_F(CBitIRTest, ParsesAndPrintsRegisterOperations) {
         %reg = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<2>
         cbit.store %false, %reg[%c0] : !cbit.reg<2>
         %bit = cbit.load %reg[%c0] : !cbit.reg<2>
-        %matches = cbit.cmp eq, %reg, 1 : i2 : !cbit.reg<2>
+        %value = cbit.read %reg : !cbit.reg<2> -> i2
+        cbit.write %value, %reg : i2, !cbit.reg<2>
+        %matches = cbit.cmp slt, %reg, 1 : i2 : !cbit.reg<2>
         return %reg : !cbit.reg<2>
       }
     }
@@ -85,7 +87,9 @@ TEST_F(CBitIRTest, ParsesAndPrintsRegisterOperations) {
   EXPECT_NE(printed.find("!cbit.reg<2>"), std::string::npos);
   EXPECT_NE(printed.find("cbit.store"), std::string::npos);
   EXPECT_NE(printed.find("cbit.load"), std::string::npos);
-  EXPECT_NE(printed.find("cbit.cmp eq"), std::string::npos);
+  EXPECT_NE(printed.find("cbit.read"), std::string::npos);
+  EXPECT_NE(printed.find("cbit.write"), std::string::npos);
+  EXPECT_NE(printed.find("cbit.cmp slt"), std::string::npos);
 }
 
 TEST_F(CBitIRTest, RejectsComparisonWidthMismatch) {
@@ -106,6 +110,31 @@ TEST_F(CBitIRTest, RejectsUnsupportedComparisonWidth) {
       func.func @main() {
         %reg = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<4294967297>
         %matches = cbit.cmp eq, %reg, 0 : i1 : !cbit.reg<4294967297>
+        return
+      }
+    }
+  )mlir"));
+}
+
+TEST_F(CBitIRTest, RejectsReadWidthMismatch) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %value = cbit.read %reg : !cbit.reg<2> -> i3
+        return
+      }
+    }
+  )mlir"));
+}
+
+TEST_F(CBitIRTest, RejectsWriteWidthMismatch) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %value = arith.constant 0 : i3
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        cbit.write %value, %reg : i3, !cbit.reg<2>
         return
       }
     }
@@ -163,16 +192,88 @@ TEST_F(CBitIRTest, RejectsInvalidOperandTypes) {
   )mlir"));
 }
 
-TEST_F(CBitIRTest, RejectsSignedRegisterComparisons) {
-  EXPECT_FALSE(parse(R"mlir(
+TEST_F(CBitIRTest, BuildsSignedComparisonFromBits) {
+  auto moduleOp = parse(R"mlir(
     module {
-      func.func @main() {
-        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
-        %matches = cbit.cmp slt, %reg, 0 : i1 : !cbit.reg<1>
+      func.func @main() -> i1 {
+        %false = arith.constant false
+        return %false : i1
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  auto funcOp = *moduleOp->getOps<func::FuncOp>().begin();
+  auto returnOp = *funcOp.getOps<func::ReturnOp>().begin();
+  OpBuilder builder(returnOp);
+  const llvm::APInt actual(3, 4);
+  auto comparison = cbit::buildComparison(
+      builder, returnOp.getLoc(), arith::CmpIPredicate::slt, llvm::APInt(3, 3),
+      [&](const int64_t index) -> Value {
+        return arith::ConstantIntOp::create(
+            builder, returnOp.getLoc(), actual[static_cast<unsigned>(index)],
+            1);
+      });
+  returnOp.setOperand(0, comparison);
+
+  PassManager canonicalizer(context.get());
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+
+  APInt result;
+  EXPECT_TRUE(matchPattern(returnOp.getOperand(0), m_ConstantInt(&result)));
+  EXPECT_TRUE(result.isOne());
+}
+
+TEST_F(CBitIRTest, CanonicalizesSignedRegisterReadComparison) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @main(%reg: !cbit.reg<4>) -> i1 {
+        %value = cbit.read %reg : !cbit.reg<4> -> i4
+        %replacement = arith.constant 1 : i4
+        cbit.write %replacement, %reg : i4, !cbit.reg<4>
+        %sign = arith.constant 8 : i4
+        %biased = arith.xori %value, %sign : i4
+        %expected = arith.constant 10 : i4
+        %condition = arith.cmpi ult, %biased, %expected : i4
+        return %condition : i1
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+
+  PassManager canonicalizer(context.get());
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+
+  auto funcOp = *moduleOp->getOps<func::FuncOp>().begin();
+  auto returnOp = *funcOp.getOps<func::ReturnOp>().begin();
+  auto comparison = returnOp.getOperand(0).getDefiningOp<cbit::CompareOp>();
+  ASSERT_TRUE(comparison);
+  auto write = *funcOp.getOps<cbit::WriteOp>().begin();
+  EXPECT_TRUE(comparison->isBeforeInBlock(write));
+  EXPECT_EQ(comparison.getPredicate(), arith::CmpIPredicate::slt);
+  EXPECT_EQ(comparison.getRhs(), APInt(4, 2));
+}
+
+TEST_F(CBitIRTest, RecognizesSharedRegisterExpressionDAG) {
+  auto moduleOp = parse(R"mlir(
+    module {
+      func.func @main(%reg: !cbit.reg<4>) {
         return
       }
     }
-  )mlir"));
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  auto funcOp = *moduleOp->getOps<func::FuncOp>().begin();
+  auto returnOp = *funcOp.getOps<func::ReturnOp>().begin();
+  OpBuilder builder(returnOp);
+  Value value =
+      cbit::ReadOp::create(builder, returnOp.getLoc(),
+                           builder.getIntegerType(4), funcOp.getArgument(0));
+  for (unsigned index = 0; index < 32; ++index) {
+    value = arith::XOrIOp::create(builder, returnOp.getLoc(), value, value);
+  }
+  EXPECT_TRUE(cbit::isRegisterBitVector(value));
 }
 
 TEST_F(CBitIRTest, ReportsMemoryEffects) {
@@ -184,6 +285,8 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
         %reg = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
         cbit.store %false, %reg[%c0] : !cbit.reg<1>
         %bit = cbit.load %reg[%c0] : !cbit.reg<1>
+        %value = cbit.read %reg : !cbit.reg<1> -> i1
+        cbit.write %value, %reg : i1, !cbit.reg<1>
         %matches = cbit.cmp eq, %reg, 0 : i1 : !cbit.reg<1>
         return
       }
@@ -194,16 +297,22 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
   cbit::AllocOp alloc;
   cbit::CompareOp compare;
   cbit::LoadOp load;
+  cbit::ReadOp read;
   cbit::StoreOp store;
+  cbit::WriteOp write;
   moduleOp->walk([&](cbit::AllocOp op) { alloc = op; });
   moduleOp->walk([&](cbit::CompareOp op) { compare = op; });
   moduleOp->walk([&](cbit::LoadOp op) { load = op; });
+  moduleOp->walk([&](cbit::ReadOp op) { read = op; });
   moduleOp->walk([&](cbit::StoreOp op) { store = op; });
+  moduleOp->walk([&](cbit::WriteOp op) { write = op; });
 
   ASSERT_NE(alloc.getOperation(), nullptr);
   ASSERT_NE(compare.getOperation(), nullptr);
   ASSERT_NE(load.getOperation(), nullptr);
+  ASSERT_NE(read.getOperation(), nullptr);
   ASSERT_NE(store.getOperation(), nullptr);
+  ASSERT_NE(write.getOperation(), nullptr);
 
   SmallVector<MemoryEffects::EffectInstance> effects;
   alloc.getEffects(effects);
@@ -217,6 +326,12 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
   EXPECT_EQ(effects.front().getValue(), load.getReg());
 
   effects.clear();
+  read.getEffects(effects);
+  ASSERT_EQ(effects.size(), 1);
+  EXPECT_TRUE(isa<MemoryEffects::Read>(effects.front().getEffect()));
+  EXPECT_EQ(effects.front().getValue(), read.getReg());
+
+  effects.clear();
   compare.getEffects(effects);
   ASSERT_EQ(effects.size(), 1);
   EXPECT_TRUE(isa<MemoryEffects::Read>(effects.front().getEffect()));
@@ -227,6 +342,12 @@ TEST_F(CBitIRTest, ReportsMemoryEffects) {
   ASSERT_EQ(effects.size(), 1);
   EXPECT_TRUE(isa<MemoryEffects::Write>(effects.front().getEffect()));
   EXPECT_EQ(effects.front().getValue(), store.getReg());
+
+  effects.clear();
+  write.getEffects(effects);
+  ASSERT_EQ(effects.size(), 1);
+  EXPECT_TRUE(isa<MemoryEffects::Write>(effects.front().getEffect()));
+  EXPECT_EQ(effects.front().getValue(), write.getReg());
 }
 
 TEST_F(CBitIRTest, ForwardsStraightLineStoresAndZeroInitialization) {

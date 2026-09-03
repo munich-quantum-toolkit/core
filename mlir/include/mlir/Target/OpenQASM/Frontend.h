@@ -140,7 +140,14 @@ struct ScalarExpression {
 };
 
 enum class BitVectorExpressionKind : uint8_t {
+  Constant,
   Register,
+  Not,
+  And,
+  Or,
+  Xor,
+  ShiftLeft,
+  ShiftRight,
   RotateLeft,
   RotateRight,
 };
@@ -148,8 +155,10 @@ enum class BitVectorExpressionKind : uint8_t {
 struct BitVectorExpression {
   BitVectorExpressionKind kind = BitVectorExpressionKind::Register;
   uint64_t width = 0;
+  llvm::APInt constant = llvm::APInt(1, 0);
   RegisterId reg = 0;
   BitVectorExpressionId operand = 0;
+  BitVectorExpressionId rhs = 0;
   ExpressionId distance = 0;
 };
 
@@ -212,6 +221,7 @@ enum class ConditionKind : uint8_t {
   And,
   Or,
   RegisterComparison,
+  BitVectorComparison,
   Comparison,
 };
 
@@ -226,6 +236,9 @@ struct ConditionExpression {
   ConditionId rhs = 0;
   RegisterId reg = 0;
   llvm::APInt expected = llvm::APInt(1, 0);
+  bool signedRegisterComparison = false;
+  BitVectorExpressionId bitVectorComparisonLhs = 0;
+  BitVectorExpressionId bitVectorComparisonRhs = 0;
   ExpressionId comparisonLhs = 0;
   ExpressionId comparisonRhs = 0;
   ComparisonKind comparison = ComparisonKind::Equal;

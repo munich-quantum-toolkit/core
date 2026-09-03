@@ -33,6 +33,7 @@ from qiskit.circuit import (
     ParameterVector,
     PowerModifier,
     Qubit,
+    Store,
     library,
 )
 from qiskit.circuit.classical import expr, types
@@ -604,6 +605,65 @@ if (c >= 1) { x q[2]; }
     reimported_condition = reimported_circuit.data[2].operation.condition
     assert isinstance(reimported_condition, expr.Expr)
     assert expr.structurally_equivalent(reimported_condition, expr.greater_equal(reimported_circuit.cregs[0], 1))
+
+
+def test_openqasm_signed_register_ordering_exports_to_qiskit_uint_expression() -> None:
+    """Encode signed register ordering with Qiskit's unsigned expressions."""
+    program = QCProgram.from_qasm_str(
+        """OPENQASM 3.1;
+include "stdgates.inc";
+qubit[4] q;
+bit[3] c;
+c[0] = measure q[0];
+c[1] = measure q[1];
+c[2] = measure q[2];
+if (int[3](c) < -1) { x q[3]; }
+"""
+    )
+
+    restored = program.to_qiskit()
+    expected_negative = expr.less(expr.bit_xor(restored.cregs[0], 4), 3)
+
+    assert "cbit.cmp slt" in program.ir
+    assert expr.structurally_equivalent(restored.data[3].operation.condition, expected_negative)
+
+    reimported = QCProgram.from_qiskit(restored).to_qiskit()
+    reimported_negative = expr.less(expr.bit_xor(reimported.cregs[0], 4), 3)
+    assert expr.structurally_equivalent(reimported.data[3].operation.condition, reimported_negative)
+
+    qasm_reimported = QCProgram.from_qasm_str(qiskit.qasm3.dumps(restored))
+    assert qasm_reimported.is_valid
+
+
+def test_qiskit_lossless_register_cast_imports_canonically() -> None:
+    """Canonicalize a lossless Uint widening around a register comparison."""
+    circuit = QuantumCircuit(2, 3)
+    circuit.measure(0, 0)
+    uint8 = types.Uint(8)
+    condition = expr.equal(expr.cast(circuit.cregs[0], uint8), expr.lift(3, uint8))
+    with circuit.if_test(condition):
+        circuit.x(1)
+
+    program = QCProgram.from_qiskit(circuit)
+    program.cleanup()
+    ir = program.ir
+
+    assert "cbit.cmp eq" in ir
+    assert "cbit.load" not in ir
+
+
+def test_qiskit_lossy_register_cast_remains_an_expression() -> None:
+    """Do not treat a truncating Uint cast as a whole-register read."""
+    circuit = QuantumCircuit(1, 3)
+    uint2 = types.Uint(2)
+    condition = expr.equal(expr.cast(circuit.cregs[0], uint2), expr.lift(1, uint2))
+    with circuit.if_test(condition):
+        circuit.x(0)
+
+    ir = QCProgram.from_qiskit(circuit).ir
+
+    assert "cbit.cmp" not in ir
+    assert "cbit.read" in ir
 
 
 @pytest.mark.parametrize(
@@ -2086,20 +2146,52 @@ def test_classical_expression_clbit_captures_import() -> None:
 
 
 def test_classical_expression_register_captures_round_trip_on_import() -> None:
-    """Pack a captured register in Qiskit's little-endian bit order."""
-    circuit = QuantumCircuit(1, 3)
-    condition = expr.equal(expr.bit_xor(circuit.cregs[0], 1), 5)
+    """Preserve a captured register and an in-range runtime shift."""
+    circuit = QuantumCircuit(4, 3)
+    circuit.measure(range(3), range(3))
+    distance = expr.bit_and(circuit.cregs[0], 1)
+    condition = expr.equal(expr.shift_left(expr.bit_xor(circuit.cregs[0], 1), distance), 2)
     with circuit.if_test(condition):
-        circuit.x(0)
+        circuit.x(3)
 
     program = QCProgram.from_qiskit(circuit)
     assert QCProgram.from_mlir_str(program.ir).ir == program.ir
+    assert QCProgram.from_qasm_str(qiskit.qasm3.dumps(circuit)).is_valid
     ir = program.ir
 
-    assert _cbit_load_indices(ir) == [0, 1, 2]
-    assert ir.count("arith.shli") == 2
+    assert "cbit.read" in ir
+    assert "cbit.load" not in ir
     assert "arith.xori" in ir
+    assert "arith.shli" in ir
     assert "arith.cmpi eq" in ir
+
+
+def test_width_one_register_bitwise_expression_round_trips() -> None:
+    """Keep one-bit register expressions typed as Qiskit Uint values."""
+    circuit = QuantumCircuit(2, 1)
+    circuit.measure(0, 0)
+    condition = expr.equal(expr.bit_xor(circuit.cregs[0], 1), 0)
+    with circuit.if_test(condition):
+        circuit.x(1)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    restored_condition = restored.data[1].operation.condition
+
+    assert isinstance(restored_condition, expr.Expr)
+    assert expr.structurally_equivalent(restored_condition, expr.equal(expr.bit_xor(restored.cregs[0], 1), 0))
+
+
+def test_qiskit_store_is_rejected_safely() -> None:
+    """Reject Store before Qiskit's native numeric-parameter accessor."""
+    circuit = QuantumCircuit(1, 3)
+    circuit.append(
+        Store(expr.lift(circuit.cregs[0]), expr.bit_xor(circuit.cregs[0], 1)),
+        [],
+        [],
+    )
+
+    with pytest.raises(RuntimeError, match="Store instructions are not supported"):
+        QCProgram.from_qiskit(circuit)
 
 
 def test_nested_classical_expression_captures_import() -> None:
@@ -2128,7 +2220,8 @@ def test_switch_expression_captures_import() -> None:
 
     ir = QCProgram.from_qiskit(circuit).ir
 
-    assert _cbit_load_indices(ir) == [0, 1]
+    assert "cbit.read" in ir
+    assert "cbit.load" not in ir
     assert "arith.xori" in ir
     assert "scf.index_switch" in ir
 
@@ -2169,7 +2262,8 @@ def test_condition_only_switch_expression_imports() -> None:
 
     ir = QCProgram.from_qiskit(circuit).ir
 
-    assert _cbit_load_indices(ir) == [0, 1]
+    assert "cbit.read" in ir
+    assert "cbit.load" not in ir
     assert "arith.xori" in ir
     assert "scf.index_switch" in ir
 

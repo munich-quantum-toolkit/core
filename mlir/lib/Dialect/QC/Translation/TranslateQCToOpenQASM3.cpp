@@ -146,6 +146,7 @@ public:
     raw_indented_ostream bodyOutput(bodyStream);
     output = &bodyOutput;
 
+    indexClassicalWrites(function.getBody().front());
     if (failed(emitDeclarations()) ||
         failed(emitBlock(function.getBody().front()))) {
       return failure();
@@ -176,6 +177,9 @@ private:
   llvm::StringSet<> usedNames;
   llvm::StringSet<> fixedHelpers;
   SmallVector<std::string> compositeHelpers;
+  DenseMap<Operation*, size_t> operationPositions;
+  DenseMap<Block*, DenseMap<Value, SmallVector<size_t>>> classicalWrites;
+  Operation* expressionConsumer = nullptr;
   size_t nextQubit = 0;
   size_t nextBit = 0;
   size_t nextScalar = 0;
@@ -497,16 +501,19 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
+    auto* previousConsumer = std::exchange(expressionConsumer, &operation);
+    auto consumerGuard =
+        llvm::make_scope_exit([&] { expressionConsumer = previousConsumer; });
     if (isa<arith::SelectOp>(&operation)) {
       return fail(&operation, "arith.select is not supported");
     }
-    if (isa<arith::ConstantOp, cbit::LoadOp, cbit::AllocOp, memref::LoadOp,
-            memref::AllocOp, memref::DeallocOp, qc::AllocOp, qc::DeallocOp,
-            qc::StaticOp>(&operation)) {
+    if (isa<arith::ConstantOp, cbit::LoadOp, cbit::ReadOp, cbit::AllocOp,
+            memref::LoadOp, memref::AllocOp, memref::DeallocOp, qc::AllocOp,
+            qc::DeallocOp, qc::StaticOp>(&operation)) {
       return success();
     }
     if (isInlineExpressionOperation(operation)) {
-      return validateInlineExpressionOperation(operation);
+      return success();
     }
     if (isa<cf::AssertOp>(&operation) ||
         (isa<ub::PoisonOp>(&operation) &&
@@ -519,6 +526,27 @@ private:
     }
     if (auto store = dyn_cast<cbit::StoreOp>(&operation)) {
       return emitStore(store);
+    }
+    if (auto write = dyn_cast<cbit::WriteOp>(&operation)) {
+      const auto resource = resources.find(write.getReg());
+      if (resource == resources.end() ||
+          resource->second.kind != ResourceKind::Bit) {
+        return fail(write, "register write refers to unsupported storage");
+      }
+      const bool scalarWidthOne = resource->second.width == 1 &&
+                                  !cbit::isRegisterBitVector(write.getValue());
+      auto value = emitExpression(
+          write.getValue(), scalarWidthOne ? ExpressionContext::Scalar
+                                           : ExpressionContext::BitVector);
+      if (failed(value)) {
+        return failure();
+      }
+      *output << resource->second.name;
+      if (scalarWidthOne) {
+        *output << "[0]";
+      }
+      *output << " = " << *value << ";\n";
+      return success();
     }
     if (auto measurement = dyn_cast<qc::MeasureOp>(&operation)) {
       return emitMeasurement(measurement);
@@ -572,24 +600,65 @@ private:
 
   [[nodiscard]] static bool isInlineExpressionOperation(Operation& operation) {
     const auto name = operation.getName().getStringRef();
-    return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp,
-               cbit::CompareOp>(&operation) ||
+    return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp, cbit::LoadOp,
+               cbit::ReadOp, cbit::CompareOp, arith::ExtUIOp, arith::TruncIOp>(
+               &operation) ||
            !binaryOperator(name).empty() || name == "arith.negf" ||
-           name == "arith.remf" || isScalarCast(name) ||
+           name == "arith.remf" || name == "llvm.intr.fshl" ||
+           name == "llvm.intr.fshr" || isScalarCast(name) ||
            !mathFunction(name).empty();
   }
 
-  [[nodiscard]] LogicalResult
-  validateInlineExpressionOperation(Operation& operation) {
-    for (auto result : operation.getResults()) {
-      const auto type = result.getType();
-      if (!type.isInteger(1) && !type.isInteger(64) && !type.isIndex() &&
-          !type.isF64()) {
-        return fail(&operation, "unsupported scalar expression result type");
+  void indexClassicalWrites(Block& block) {
+    size_t position = 0;
+    for (Operation& operation : block) {
+      operationPositions[&operation] = position;
+      DenseSet<Value> writtenRegisters;
+      operation.walk([&](Operation* nested) {
+        if (auto store = dyn_cast<cbit::StoreOp>(nested)) {
+          writtenRegisters.insert(store.getReg());
+        } else if (auto write = dyn_cast<cbit::WriteOp>(nested)) {
+          writtenRegisters.insert(write.getReg());
+        }
+      });
+      for (auto reg : writtenRegisters) {
+        classicalWrites[&block][reg].push_back(position);
       }
-      if (failed(emitExpression(result))) {
-        return failure();
+      for (Region& region : operation.getRegions()) {
+        for (Block& nested : region) {
+          indexClassicalWrites(nested);
+        }
       }
+      ++position;
+    }
+  }
+
+  [[nodiscard]] LogicalResult validateClassicalSnapshot(Operation* read,
+                                                        Value reg) {
+    if (expressionConsumer == nullptr ||
+        read->getBlock() != expressionConsumer->getBlock()) {
+      return fail(read, "cannot preserve a classical snapshot across a "
+                        "control-flow region");
+    }
+    const auto readPosition = operationPositions.at(read);
+    const auto consumerPosition = operationPositions.at(expressionConsumer);
+    if (readPosition >= consumerPosition) {
+      return fail(read, "classical snapshot does not dominate its use");
+    }
+    const auto blockWrites = classicalWrites.find(read->getBlock());
+    if (blockWrites == classicalWrites.end()) {
+      return success();
+    }
+    const auto registerWrites = blockWrites->second.find(reg);
+    if (registerWrites == blockWrites->second.end()) {
+      return success();
+    }
+    auto* const nextWrite =
+        std::upper_bound(registerWrites->second.begin(),
+                         registerWrites->second.end(), readPosition);
+    if (nextWrite != registerWrites->second.end() &&
+        *nextWrite < consumerPosition) {
+      return fail(read, "cannot preserve a stale classical snapshot");
     }
     return success();
   }
@@ -640,7 +709,34 @@ private:
     return (Twine(resource->second.name) + "[" + *dynamicIndex + "]").str();
   }
 
-  [[nodiscard]] FailureOr<std::string> emitExpression(Value value) {
+  [[nodiscard]] static bool isBitVectorScalar(Value value) {
+    auto* operation = value.getDefiningOp();
+    if (operation == nullptr) {
+      return false;
+    }
+    if (isa<arith::ExtUIOp, arith::TruncIOp>(operation)) {
+      return isBitVectorScalar(operation->getOperand(0));
+    }
+    return operation->getName().getStringRef() == "math.ctpop" &&
+           operation->getNumOperands() == 1 &&
+           cbit::isRegisterBitVector(operation->getOperand(0));
+  }
+
+  [[nodiscard]] static Value stripShiftDistanceCasts(Value value) {
+    while (auto* operation = value.getDefiningOp()) {
+      if (!isa<arith::ExtUIOp, arith::TruncIOp>(operation)) {
+        break;
+      }
+      value = operation->getOperand(0);
+    }
+    return value;
+  }
+
+  enum class ExpressionContext : uint8_t { Scalar, BitVector, ShiftDistance };
+
+  [[nodiscard]] FailureOr<std::string>
+  emitExpression(Value value,
+                 const ExpressionContext context = ExpressionContext::Scalar) {
     if (expressionNesting == 0) {
       expressionWork = 0;
     }
@@ -657,13 +753,37 @@ private:
                                    "maximum of " +
                                        Twine(MAX_EXPRESSION_WORK) + " values");
     }
+    const auto type = value.getType();
+    if (!type.isInteger(1) && !type.isInteger(64) && !type.isIndex() &&
+        !type.isF64() && context == ExpressionContext::Scalar &&
+        !cbit::isRegisterBitVector(value) && !isBitVectorScalar(value)) {
+      return failExpression(value, "unsupported scalar expression result type");
+    }
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
     }
     if (auto load = value.getDefiningOp<cbit::LoadOp>()) {
+      if (failed(validateClassicalSnapshot(load, load.getReg()))) {
+        return failure();
+      }
       return emitBitReference(load.getReg(), load.getIndex());
     }
+    if (auto read = value.getDefiningOp<cbit::ReadOp>()) {
+      if (failed(validateClassicalSnapshot(read, read.getReg()))) {
+        return failure();
+      }
+      const auto resource = resources.find(read.getReg());
+      if (resource == resources.end() ||
+          resource->second.kind != ResourceKind::Bit) {
+        return failExpression(value,
+                              "register read refers to unsupported storage");
+      }
+      return resource->second.name;
+    }
     if (auto comparison = value.getDefiningOp<cbit::CompareOp>()) {
+      if (failed(validateClassicalSnapshot(comparison, comparison.getReg()))) {
+        return failure();
+      }
       const auto resource = resources.find(comparison.getReg());
       if (resource == resources.end() ||
           resource->second.kind != ResourceKind::Bit) {
@@ -671,8 +791,11 @@ private:
                               "register comparison refers to unsupported "
                               "storage");
       }
+      const auto predicateValue = comparison.getPredicate();
+      const auto unsignedPredicate = cbit::getUnsignedPredicate(predicateValue);
+      const bool isSigned = unsignedPredicate != predicateValue;
       const auto* predicate = [&] {
-        switch (comparison.getPredicate()) {
+        switch (unsignedPredicate) {
         case arith::CmpIPredicate::eq:
           return "==";
         case arith::CmpIPredicate::ne:
@@ -686,31 +809,50 @@ private:
         case arith::CmpIPredicate::uge:
           return ">=";
         default:
-          llvm_unreachable("CBit comparisons must use an unsigned predicate");
+          llvm_unreachable("unknown CBit comparison predicate");
         }
       }();
       llvm::SmallString<32> rhs;
-      comparison.getRhs().toString(rhs, 10, false);
-      return (Twine("(") + resource->second.name + " " + predicate + " " + rhs +
-              ")")
-          .str();
+      comparison.getRhs().toString(rhs, 10, isSigned);
+      const auto lhs =
+          isSigned ? (Twine("int[") + Twine(comparison.getRhs().getBitWidth()) +
+                      "](" + resource->second.name + ")")
+                         .str()
+                   : resource->second.name;
+      return (Twine("(") + lhs + " " + predicate + " " + rhs + ")").str();
     }
     auto* operation = value.getDefiningOp();
     if (operation == nullptr) {
       return failExpression(value, "unmapped block argument");
     }
     if (auto constant = dyn_cast<arith::ConstantOp>(operation)) {
-      return emitConstant(constant);
+      return emitConstant(constant, context != ExpressionContext::Scalar);
     }
     if (isa<ub::PoisonOp>(operation)) {
       return failExpression(value, "poison values are not supported");
     }
     if (auto cmp = dyn_cast<arith::CmpIOp>(operation)) {
+      const bool bitVectorComparison =
+          cbit::isRegisterBitVector(cmp.getLhs()) ||
+          cbit::isRegisterBitVector(cmp.getRhs());
+      if (bitVectorComparison &&
+          cbit::getUnsignedPredicate(cmp.getPredicate()) !=
+              cmp.getPredicate()) {
+        return failExpression(value,
+                              "signed register comparison must use cbit.cmp");
+      }
       auto predicate = integerPredicate(cmp.getPredicate());
-      if (predicate.empty()) {
+      if (predicate.empty() ||
+          (cbit::getUnsignedPredicate(cmp.getPredicate()) ==
+               cmp.getPredicate() &&
+           cmp.getPredicate() != arith::CmpIPredicate::eq &&
+           cmp.getPredicate() != arith::CmpIPredicate::ne &&
+           !bitVectorComparison)) {
         return failExpression(value, "unsupported integer comparison");
       }
-      return emitBinary(cmp.getLhs(), predicate, cmp.getRhs());
+      return emitBinary(cmp.getLhs(), predicate, cmp.getRhs(),
+                        bitVectorComparison ? ExpressionContext::BitVector
+                                            : ExpressionContext::Scalar);
     }
     if (auto cmp = dyn_cast<arith::CmpFOp>(operation)) {
       auto predicate = floatPredicate(cmp.getPredicate());
@@ -720,6 +862,29 @@ private:
       return emitBinary(cmp.getLhs(), predicate, cmp.getRhs());
     }
     const auto name = operation->getName().getStringRef();
+    if (name == "llvm.intr.fshl" || name == "llvm.intr.fshr") {
+      if (operation->getNumOperands() != 3 ||
+          operation->getOperand(0) != operation->getOperand(1) ||
+          !cbit::isRegisterBitVector(operation->getOperand(0))) {
+        return failExpression(value,
+                              "only register-rooted rotations are supported");
+      }
+      if (const auto distance = getConstantInteger(operation->getOperand(2));
+          distance && *distance < 0) {
+        return failExpression(
+            value, "rotation distance must be in canonical nonnegative form");
+      }
+      auto operand = emitExpression(operation->getOperand(0),
+                                    ExpressionContext::BitVector);
+      auto distance = emitExpression(operation->getOperand(2),
+                                     ExpressionContext::ShiftDistance);
+      if (failed(operand) || failed(distance)) {
+        return failure();
+      }
+      return (Twine(name == "llvm.intr.fshl" ? "rotl(" : "rotr(") + *operand +
+              ", " + *distance + ")")
+          .str();
+    }
     if (name == "arith.remf") {
       auto lhs = emitExpression(operation->getOperand(0));
       if (failed(lhs)) {
@@ -735,15 +900,51 @@ private:
       if (operation->getNumOperands() != 2) {
         return failExpression(value, "malformed binary expression");
       }
-      if ((name == "arith.andi" || name == "arith.ori" ||
-           name == "arith.xori") &&
-          !value.getType().isInteger(1)) {
-        return failExpression(value,
-                              "packed integer bitwise operations are not "
-                              "supported");
+      const bool bitVector = cbit::isRegisterBitVector(value);
+      if (context == ExpressionContext::BitVector && !bitVector) {
+        return failExpression(
+            value, "bit-vector expression contains a scalar operation");
       }
-      return emitBinary(operation->getOperand(0), binary,
-                        operation->getOperand(1));
+      if ((name == "arith.andi" || name == "arith.ori" ||
+           name == "arith.xori" || name == "arith.shli" ||
+           name == "arith.shrui") &&
+          !value.getType().isInteger(1) && !bitVector) {
+        return failExpression(value,
+                              "integer bitwise operation is not rooted in a "
+                              "classical register read");
+      }
+      if (bitVector && (name == "arith.shli" || name == "arith.shrui")) {
+        const auto rhs = operation->getOperand(1);
+        const auto shiftSource = stripShiftDistanceCasts(rhs);
+        if (cbit::isRegisterBitVector(shiftSource)) {
+          if (cast<IntegerType>(shiftSource.getType()).getWidth() > 64) {
+            return failExpression(
+                rhs, "bit-register shift distance supports at most 64 bits");
+          }
+        } else if (!isBitVectorScalar(shiftSource)) {
+          const auto constant = getConstantInteger(shiftSource);
+          if (!constant || *constant < 0) {
+            return failExpression(
+                rhs, "cannot prove that shift distance is unsigned");
+          }
+        }
+        auto lhs = emitExpression(operation->getOperand(0),
+                                  ExpressionContext::BitVector);
+        auto emittedRhs = emitExpression(rhs, ExpressionContext::ShiftDistance);
+        if (failed(lhs) || failed(emittedRhs)) {
+          return failure();
+        }
+        return (Twine("(") + *lhs + " " + binary + " " + *emittedRhs + ")")
+            .str();
+      }
+      const auto emittedBinary = !bitVector             ? binary
+                                 : name == "arith.andi" ? StringRef("&")
+                                 : name == "arith.ori"  ? StringRef("|")
+                                 : name == "arith.xori" ? StringRef("^")
+                                                        : binary;
+      return emitBinary(
+          operation->getOperand(0), emittedBinary, operation->getOperand(1),
+          bitVector ? ExpressionContext::BitVector : ExpressionContext::Scalar);
     }
     if (name == "arith.negf") {
       auto operand = emitExpression(operation->getOperand(0));
@@ -751,6 +952,11 @@ private:
         return failure();
       }
       return (Twine("(-") + *operand + ")").str();
+    }
+    if (isa<arith::ExtUIOp, arith::TruncIOp>(operation) &&
+        (isBitVectorScalar(value) ||
+         context == ExpressionContext::ShiftDistance)) {
+      return emitExpression(operation->getOperand(0), context);
     }
     if (isScalarCast(name)) {
       auto operand = emitExpression(operation->getOperand(0));
@@ -786,14 +992,15 @@ private:
   }
 
   [[nodiscard]] static FailureOr<std::string>
-  emitConstant(arith::ConstantOp constant) {
+  emitConstant(arith::ConstantOp constant,
+               const bool bitVectorContext = false) {
     if (auto integer = dyn_cast<IntegerAttr>(constant.getValue())) {
-      if (integer.getType().isInteger(1)) {
+      if (integer.getType().isInteger(1) && !bitVectorContext) {
         return integer.getValue().isZero() ? std::string("false")
                                            : std::string("true");
       }
       llvm::SmallString<32> text;
-      integer.getValue().toString(text, 10, true);
+      integer.getValue().toString(text, 10, !bitVectorContext);
       return text.str().str();
     }
     if (auto floating = dyn_cast<FloatAttr>(constant.getValue())) {
@@ -819,12 +1026,13 @@ private:
   }
 
   [[nodiscard]] FailureOr<std::string>
-  emitBinary(Value lhsValue, const StringRef operation, Value rhsValue) {
-    auto lhs = emitExpression(lhsValue);
+  emitBinary(Value lhsValue, const StringRef operation, Value rhsValue,
+             const ExpressionContext context = ExpressionContext::Scalar) {
+    auto lhs = emitExpression(lhsValue, context);
     if (failed(lhs)) {
       return failure();
     }
-    auto rhs = emitExpression(rhsValue);
+    auto rhs = emitExpression(rhsValue, context);
     if (failed(rhs)) {
       return failure();
     }
@@ -841,6 +1049,8 @@ private:
         .Case("arith.andi", "&&")
         .Case("arith.ori", "||")
         .Case("arith.xori", "!=")
+        .Case("arith.shli", "<<")
+        .Case("arith.shrui", ">>")
         .Default({});
   }
 
@@ -852,18 +1062,17 @@ private:
     case arith::CmpIPredicate::ne:
       return "!=";
     case arith::CmpIPredicate::slt:
+    case arith::CmpIPredicate::ult:
       return "<";
     case arith::CmpIPredicate::sle:
+    case arith::CmpIPredicate::ule:
       return "<=";
     case arith::CmpIPredicate::sgt:
+    case arith::CmpIPredicate::ugt:
       return ">";
     case arith::CmpIPredicate::sge:
-      return ">=";
-    case arith::CmpIPredicate::ult:
-    case arith::CmpIPredicate::ule:
-    case arith::CmpIPredicate::ugt:
     case arith::CmpIPredicate::uge:
-      return {};
+      return ">=";
     }
     return {};
   }
@@ -921,6 +1130,7 @@ private:
         .Case("math.floor", "floor")
         .Case("math.log", "log")
         .Case("math.powf", "pow")
+        .Case("math.ctpop", "popcount")
         .Case("math.sin", "sin")
         .Case("math.sqrt", "sqrt")
         .Case("math.tan", "tan")
@@ -1043,21 +1253,17 @@ private:
       return fail(whileOp, "scf.while loop-carried values are not supported");
     }
     for (Operation& operation : before.without_terminator()) {
-      if (isa<cbit::LoadOp, cbit::CompareOp>(operation)) {
-        if (failed(emitExpression(operation.getResult(0)))) {
-          return failure();
-        }
-        continue;
-      }
       if (!isInlineExpressionOperation(operation) ||
-          !isMemoryEffectFree(&operation)) {
+          (!isa<cbit::LoadOp, cbit::ReadOp, cbit::CompareOp>(&operation) &&
+           !isMemoryEffectFree(&operation))) {
         return fail(&operation,
                     "scf.while condition region must be side-effect free");
       }
-      if (failed(validateInlineExpressionOperation(operation))) {
-        return failure();
-      }
     }
+    auto* previousConsumer =
+        std::exchange(expressionConsumer, conditionOp.getOperation());
+    auto consumerGuard =
+        llvm::make_scope_exit([&] { expressionConsumer = previousConsumer; });
     auto condition = emitExpression(conditionOp.getCondition());
     if (failed(condition)) {
       return failure();

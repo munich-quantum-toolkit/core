@@ -864,9 +864,14 @@ public:
     if (kind == OperationKind::ControlFlow) {
       return {.kind = kind, .name = "control_flow"};
     }
+    const auto operation = pythonOperation(index);
+    if (pythonStringAttribute(operation, "name",
+                              "Qiskit operation has an invalid name") ==
+        "store") {
+      throw std::runtime_error("Qiskit Store instructions are not supported");
+    }
     std::optional<Instruction> normalizedUnknown;
     if (kind == OperationKind::Unknown) {
-      const auto operation = pythonOperation(index);
       if (isPythonUnitaryGate(operation)) {
         Instruction result{.kind = OperationKind::Unitary, .name = "unitary"};
         normalizePythonGate(operation, result);
@@ -899,7 +904,7 @@ public:
     if (result.kind == OperationKind::Gate ||
         result.kind == OperationKind::Unknown) {
       const auto parameters =
-          pythonAttribute(pythonOperation(index), "params",
+          pythonAttribute(operation, "params",
                           "Qiskit operation does not expose its parameters");
       try {
         for (const nb::handle parameter : nb::iter(parameters)) {

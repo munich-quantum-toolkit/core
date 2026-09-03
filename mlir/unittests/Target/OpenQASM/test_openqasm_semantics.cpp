@@ -1731,6 +1731,35 @@ if (uint[2](value) < -1) {}
             oq3::frontend::ScalarType::Int);
 }
 
+TEST(OpenQASMFrontendTest, RejectsUnsupportedBitRegisterExpressionOperands) {
+  struct InvalidExpression {
+    llvm::StringRef source;
+    llvm::StringRef diagnostic;
+  };
+  constexpr auto invalidExpressions = std::to_array<InvalidExpression>({
+      {.source = "OPENQASM 3.1; qubit[3] q; bit[3] value = measure q; "
+                 "if ((value ^ 8) == 0) {}",
+       .diagnostic = "fit the operand width"},
+      {.source = "OPENQASM 3.1; qubit[3] q; bit[3] value = measure q; "
+                 "int distance = 1; "
+                 "if ((value << distance) == 0) {}",
+       .diagnostic = "must have unsigned integer type"},
+      {.source = "OPENQASM 3.1; qubit[3] q; bit[3] value = measure q; "
+                 "if ((value >> -1) == 0) {}",
+       .diagnostic = "must be nonnegative"},
+  });
+
+  for (const auto& invalid : invalidExpressions) {
+    SCOPED_TRACE(invalid.source.str());
+    auto analyzed = oq3::frontend::analyzeOpenQASM(invalid.source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+    EXPECT_NE(analyzed.diagnostics.front().message.find(invalid.diagnostic),
+              std::string::npos)
+        << analyzed.diagnostics.front().message;
+  }
+}
+
 TEST(OpenQASMFrontendTest, RejectsInvalidSizedBitRegisterCasts) {
   struct InvalidCast {
     llvm::StringRef source;

@@ -31,6 +31,21 @@ namespace mlir::cbit {
 void validateStaticRegisterIndex(Value reg,
                                  const std::variant<int64_t, Value>& index);
 
+/// Maps signed ordering to the corresponding unsigned predicate.
+arith::CmpIPredicate getUnsignedPredicate(arith::CmpIPredicate predicate);
+
+/// Whether a value is a fixed-width bit vector rooted in a register read.
+bool isRegisterBitVector(Value value);
+
+/// Builds an integer value from individual register bits.
+Value buildRead(OpBuilder& builder, Location location, unsigned width,
+                llvm::function_ref<Value(int64_t)> loadBit);
+
+/// Stores individual bits from a fixed-width integer value.
+void buildWrite(OpBuilder& builder, Location location, Value value,
+                unsigned width,
+                llvm::function_ref<void(int64_t, Value)> storeBit);
+
 /// Builds an equivalent comparison from individual register bits.
 Value buildComparison(OpBuilder& builder, Location location,
                       arith::CmpIPredicate predicate, const llvm::APInt& rhs,
