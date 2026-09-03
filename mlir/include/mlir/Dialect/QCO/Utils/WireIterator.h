@@ -22,6 +22,8 @@ namespace mlir::qco {
 ///
 /// The iterator follows the flow of a qubit through a sequence of quantum
 /// operations while respecting the semantics of each operation.
+/// Unitary calls preserve the wire without entering the callee. Generic
+/// `func.call` operations end traversal; clients manage callee traversal.
 class [[nodiscard]] WireIterator {
 public:
   using iterator_category = std::bidirectional_iterator_tag;

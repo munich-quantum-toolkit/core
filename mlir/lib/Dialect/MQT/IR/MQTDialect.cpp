@@ -25,6 +25,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
+#include <llvm/Support/Casting.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -36,6 +37,7 @@
 #include <mlir/IR/DialectImplementation.h> // IWYU pragma: keep
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/SymbolTable.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
@@ -309,17 +311,10 @@ verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
   return success();
 }
 
-[[nodiscard]] static bool hasQCQubit(Type type) {
-  return isa<qc::QubitType>(type);
-}
-
-[[nodiscard]] static bool hasQCOQubit(Type type) {
-  return isa<qco::QubitType>(type);
-}
-
 template <typename CallOp>
 [[nodiscard]] static LogicalResult
 verifyNoUnitaryRecursion(func::FuncOp function) {
+  // A cycle of unitary calls passes local body checks without any control flow.
   DenseSet<Operation*> visited;
   SmallVector<func::FuncOp> worklist{function};
   while (!worklist.empty()) {
@@ -328,31 +323,29 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
       continue;
     }
     WalkResult result = current.walk([&](CallOp call) {
+      if (failed(verify(call))) {
+        return WalkResult::interrupt();
+      }
       auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
           call, call.getCalleeAttr());
       if (!callee) {
         return WalkResult::advance();
       }
       if (callee == function) {
+        function.emitError("unitary function must not be recursive");
         return WalkResult::interrupt();
       }
       worklist.emplace_back(callee);
       return WalkResult::advance();
     });
     if (result.wasInterrupted()) {
-      return function.emitError() << "unitary function must not be recursive";
+      return failure();
     }
   }
   return success();
 }
 
 [[nodiscard]] static LogicalResult verifyQCUnitaryBody(func::FuncOp function) {
-  auto returnOp = dyn_cast<func::ReturnOp>(function.getBody().front().back());
-  if (!returnOp || returnOp.getNumOperands() != 0) {
-    return function.emitError(
-        "unitary QC function must end in an empty func.return");
-  }
-
   bool valid = true;
   function.walk([&](Operation* nested) {
     if (!valid || nested == function.getOperation()) {
@@ -364,9 +357,11 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
     if (isa<qc::UnitaryOpInterface, qc::YieldOp>(nested)) {
       return;
     }
-    valid = nested->getNumRegions() == 0 && isMemoryEffectFree(nested) &&
-            llvm::none_of(nested->getOperandTypes(), hasQCQubit) &&
-            llvm::none_of(nested->getResultTypes(), hasQCQubit);
+    valid =
+        nested->getNumRegions() == 0 && isMemoryEffectFree(nested) &&
+        llvm::none_of(nested->getOperandTypes(),
+                      llvm::IsaPred<qc::QubitType>) &&
+        llvm::none_of(nested->getResultTypes(), llvm::IsaPred<qc::QubitType>);
   });
   if (!valid) {
     return function.emitError()
@@ -376,8 +371,8 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
   return verifyNoUnitaryRecursion<qc::CallOp>(function);
 }
 
-[[nodiscard]] static LogicalResult
-verifyQCOUnitaryBody(func::FuncOp function, const unsigned firstQubit) {
+[[nodiscard]] static LogicalResult verifyQCOUnitaryBody(func::FuncOp function,
+                                                        unsigned firstQubit) {
   bool valid = true;
   function.walk([&](Operation* nested) {
     if (!valid || nested == function.getOperation()) {
@@ -386,22 +381,25 @@ verifyQCOUnitaryBody(func::FuncOp function, const unsigned firstQubit) {
     if (isa<func::ReturnOp, qco::UnitaryOpInterface, qco::YieldOp>(nested)) {
       return;
     }
-    valid = nested->getNumRegions() == 0 && isMemoryEffectFree(nested) &&
-            llvm::none_of(nested->getOperandTypes(), hasQCOQubit) &&
-            llvm::none_of(nested->getResultTypes(), hasQCOQubit);
+    valid =
+        nested->getNumRegions() == 0 && isMemoryEffectFree(nested) &&
+        llvm::none_of(nested->getOperandTypes(),
+                      llvm::IsaPred<qco::QubitType>) &&
+        llvm::none_of(nested->getResultTypes(), llvm::IsaPred<qco::QubitType>);
   });
   if (!valid) {
     return function.emitError()
            << "unitary QCO function body contains a non-unitary operation";
   }
 
-  auto returnOp = dyn_cast<func::ReturnOp>(function.getBody().front().back());
-  if (!returnOp) {
-    return function.emitError("unitary QCO function must end in func.return");
-  }
+  auto returnOp = cast<func::ReturnOp>(function.getBody().front().back());
   for (auto [resultIndex, returned] : llvm::enumerate(returnOp.getOperands())) {
     Value current = returned;
+    llvm::SmallDenseSet<Value> visited;
     while (auto result = dyn_cast<OpResult>(current)) {
+      if (!visited.insert(current).second) {
+        return function.emitError("unitary QCO result has cyclic qubit flow");
+      }
       auto unitary = dyn_cast<qco::UnitaryOpInterface>(result.getOwner());
       if (!unitary) {
         return function.emitError()
@@ -441,6 +439,9 @@ verifyUnitaryFunction(Operation* operation, const NamedAttribute attribute) {
            << "attribute '" << attribute.getName().getValue()
            << "' requires a private, defined, single-block non-entry function";
   }
+  if (function.getBody().front().empty()) {
+    return operation->emitError("unitary function body must not be empty");
+  }
 
   unsigned firstQubit = function.getNumArguments();
   bool usesQC = false;
@@ -467,20 +468,33 @@ verifyUnitaryFunction(Operation* operation, const NamedAttribute attribute) {
   }
 
   const auto numQubits = function.getNumArguments() - firstQubit;
-  if (usesQC) {
-    if (function.getNumResults() != 0) {
-      return operation->emitError()
-             << "unitary QC function must not return values";
-    }
-    return verifyQCUnitaryBody(function);
+  if (usesQC && function.getNumResults() != 0) {
+    return operation->emitError()
+           << "unitary QC function must not return values";
   }
-  if (function.getNumResults() != numQubits ||
-      llvm::any_of(function.getResultTypes(),
-                   [](Type type) { return !isa<qco::QubitType>(type); })) {
+  if (usesQCO && (function.getNumResults() != numQubits ||
+                  llvm::any_of(function.getResultTypes(), [](Type type) {
+                    return !isa<qco::QubitType>(type);
+                  }))) {
     return operation->emitError()
            << "unitary QCO function must return one qubit per qubit argument";
   }
-  return verifyQCOUnitaryBody(function, firstQubit);
+  auto returnOp = dyn_cast<func::ReturnOp>(function.getBody().front().back());
+  if (!returnOp || (usesQC && returnOp.getNumOperands() != 0)) {
+    return operation->emitError(
+        usesQC ? "unitary QC function must end in an empty func.return"
+               : "unitary QCO function must end in func.return");
+  }
+
+  // Attribute verification precedes nested operation verification. Check the
+  // body before querying memory effects or qubit correspondence.
+  for (Operation& nested : function.getBody().front()) {
+    if (failed(verify(&nested))) {
+      return failure();
+    }
+  }
+  return usesQC ? verifyQCUnitaryBody(function)
+                : verifyQCOUnitaryBody(function, firstQubit);
 }
 
 [[nodiscard]] static LogicalResult verifyName(Operation* operation,

@@ -21,6 +21,8 @@
 namespace mlir::qtensor {
 
 /// A bidirectional iterator traversing the tensor chain.
+///
+/// `func.call` operations end traversal; clients manage callee traversal.
 class [[nodiscard]] TensorIterator {
 public:
   using iterator_category = std::bidirectional_iterator_tag;
