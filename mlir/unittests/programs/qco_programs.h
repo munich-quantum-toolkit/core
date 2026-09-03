@@ -25,6 +25,8 @@ Value reusableUnitaryFunction(QCOProgramBuilder& b);
 /// Calls a reusable reset function.
 Value reusableResetFunction(QCOProgramBuilder& b);
 
+// --- Qubit Management ----------------------------------------------------- //
+
 /// Allocates a single qubit.
 Value allocQubit(QCOProgramBuilder& b);
 
@@ -86,6 +88,8 @@ Value deadGatesWithIfOpProgram(QCOProgramBuilder& b);
 /// Allocates two qubits and performs only non-dead `if` operations.
 Value deadGatesWithIfOpSimplified(QCOProgramBuilder& b);
 
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
 /// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
 /// alloc.
 Value mixedStaticThenDynamicQubit(QCOProgramBuilder& b);
@@ -93,6 +97,8 @@ Value mixedStaticThenDynamicQubit(QCOProgramBuilder& b);
 /// @pre `builder.initialize()`. Fatal mixed addressing: `qtensor` alloc then
 /// static.
 Value mixedDynamicRegisterThenStaticQubit(QCOProgramBuilder& b);
+
+// --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.
 Value singleMeasurementToSingleBit(QCOProgramBuilder& b);
@@ -117,6 +123,8 @@ Value dynamicallyIndexedMeasurement(QCOProgramBuilder& b);
 /// allocating a quantum or classical register.
 Value measurementWithoutRegisters(QCOProgramBuilder& b);
 
+// --- ResetOp -------------------------------------------------------------- //
+
 /// Resets a single qubit without any operations being applied.
 Value resetQubitWithoutOp(QCOProgramBuilder& b);
 
@@ -134,6 +142,8 @@ SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCOProgramBuilder& b);
 
 /// Repeatedly resets a single qubit after a single operation.
 SmallVector<Value> repeatedResetAfterSingleOp(QCOProgramBuilder& b);
+
+// --- GPhaseOp ------------------------------------------------------------- //
 
 /// Creates a circuit with just a global phase.
 Value globalPhase(QCOProgramBuilder& b);
@@ -163,6 +173,8 @@ Value negPowGphase(QCOProgramBuilder& b);
 /// Reference for negPowGphase: gphase(-3.0 * 0.123).
 Value negPowGphaseRef(QCOProgramBuilder& b);
 
+// --- IdOp ----------------------------------------------------------------- //
+
 /// Creates a circuit with just an identity gate.
 Value identity(QCOProgramBuilder& b);
 
@@ -187,6 +199,8 @@ Value inverseMultipleControlledIdentity(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(2.0) wrapping id (should pass through).
 Value powId(QCOProgramBuilder& b);
+
+// --- XOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an X gate.
 Value x(QCOProgramBuilder& b);
@@ -249,6 +263,8 @@ Value powThirdX(QCOProgramBuilder& b);
 /// Creates the reference for powThirdX: gphase(π/6) + rx(π/3).
 Value powThirdXRef(QCOProgramBuilder& b);
 
+// --- YOp ------------------------------------------------------------------ //
+
 /// Creates a circuit with just a Y gate.
 Value y(QCOProgramBuilder& b);
 
@@ -278,6 +294,8 @@ Value powHalfY(QCOProgramBuilder& b);
 
 /// Creates the reference for powHalfY: gphase(π/4) followed by ry(π/2).
 Value powHalfYRef(QCOProgramBuilder& b);
+
+// --- ZOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Z gate.
 Value z(QCOProgramBuilder& b);
@@ -316,6 +334,8 @@ Value powThirdZ(QCOProgramBuilder& b);
 /// Creates the reference for powThirdZ: p(π/3).
 Value powThirdZRef(QCOProgramBuilder& b);
 
+// --- HOp ------------------------------------------------------------------ //
+
 /// Creates a circuit with just an H gate.
 Value h(QCOProgramBuilder& b);
 
@@ -348,6 +368,8 @@ Value powEvenH(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(3) wrapping an H gate (odd hermitian → H).
 Value powOddH(QCOProgramBuilder& b);
+
+// --- SOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an S gate.
 Value s(QCOProgramBuilder& b);
@@ -393,6 +415,8 @@ Value powThirdS(QCOProgramBuilder& b);
 /// Creates the reference for powThirdS: p(π/6).
 Value powThirdSRef(QCOProgramBuilder& b);
 
+// --- SdgOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with just an Sdg gate.
 Value sdg(QCOProgramBuilder& b);
 
@@ -433,6 +457,8 @@ Value powThirdSdg(QCOProgramBuilder& b);
 /// Creates the reference for powThirdSdg: p(-π/6).
 Value powThirdSdgRef(QCOProgramBuilder& b);
 
+// --- TOp ------------------------------------------------------------------ //
+
 /// Creates a circuit with just a T gate.
 Value t_(QCOProgramBuilder& b); // NOLINT(*-identifier-naming)
 
@@ -469,6 +495,8 @@ Value powThirdT(QCOProgramBuilder& b);
 /// Creates the reference for powThirdT: p(π/12).
 Value powThirdTRef(QCOProgramBuilder& b);
 
+// --- TdgOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with just a Tdg gate.
 Value tdg(QCOProgramBuilder& b);
 
@@ -504,6 +532,8 @@ Value powThirdTdg(QCOProgramBuilder& b);
 
 /// Creates the reference for powThirdTdg: p(-π/12).
 Value powThirdTdgRef(QCOProgramBuilder& b);
+
+// --- SXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an SX gate.
 Value sx(QCOProgramBuilder& b);
@@ -543,6 +573,8 @@ Value powThirdSx(QCOProgramBuilder& b);
 
 /// Creates the reference for powThirdSx: gphase(π/12) + rx(π/6).
 Value powThirdSxRef(QCOProgramBuilder& b);
+
+// --- SXdgOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just an SXdg gate.
 Value sxdg(QCOProgramBuilder& b);
@@ -585,6 +617,8 @@ Value powThirdSxdg(QCOProgramBuilder& b);
 /// Creates the reference for powThirdSxdg: gphase(-π/12) + rx(-π/6).
 Value powThirdSxdgRef(QCOProgramBuilder& b);
 
+// --- RXOp ----------------------------------------------------------------- //
+
 /// Creates a circuit with just an RX gate.
 Value rx(QCOProgramBuilder& b);
 
@@ -618,6 +652,8 @@ Value powRxScaled(QCOProgramBuilder& b);
 /// Creates the reference for powRxScaled: rx(0.246) directly.
 Value rxScaled(QCOProgramBuilder& b);
 
+// --- RYOp ----------------------------------------------------------------- //
+
 /// Creates a circuit with just an RY gate.
 Value ry(QCOProgramBuilder& b);
 
@@ -645,6 +681,8 @@ Value twoRyOppositePhase(QCOProgramBuilder& b);
 /// Creates a circuit with an RY gate with an angle of pi/2.
 Value ryPiOver2(QCOProgramBuilder& b);
 
+// --- RZOp ----------------------------------------------------------------- //
+
 /// Creates a circuit with just an RZ gate.
 Value rz(QCOProgramBuilder& b);
 
@@ -669,6 +707,8 @@ Value inverseMultipleControlledRz(QCOProgramBuilder& b);
 /// Creates a circuit with two RZ gates in a row with opposite phases.
 Value twoRzOppositePhase(QCOProgramBuilder& b);
 
+// --- POp ------------------------------------------------------------------ //
+
 /// Creates a circuit with just a P gate.
 Value p(QCOProgramBuilder& b);
 
@@ -692,6 +732,8 @@ Value inverseMultipleControlledP(QCOProgramBuilder& b);
 
 /// Creates a circuit with two P gates in a row with opposite phases.
 Value twoPOppositePhase(QCOProgramBuilder& b);
+
+// --- ROp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an R gate.
 Value r(QCOProgramBuilder& b);
@@ -729,6 +771,8 @@ Value canonicalizeRToRy(QCOProgramBuilder& b);
 /// Creates a circuit with two R gates in a row with the same `phi`.
 Value twoR(QCOProgramBuilder& b);
 
+// --- U2Op ----------------------------------------------------------------- //
+
 /// Creates a circuit with just a U2 gate.
 Value u2(QCOProgramBuilder& b);
 
@@ -758,6 +802,8 @@ Value canonicalizeU2ToRx(QCOProgramBuilder& b);
 
 /// Creates a circuit with a U2 gate that can be canonicalized to an RY gate.
 Value canonicalizeU2ToRy(QCOProgramBuilder& b);
+
+// --- UOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a U gate.
 Value u(QCOProgramBuilder& b);
@@ -791,6 +837,8 @@ Value canonicalizeUToRy(QCOProgramBuilder& b);
 
 /// Creates a circuit with a U gate that can be canonicalized to a U2 gate.
 Value canonicalizeUToU2(QCOProgramBuilder& b);
+
+// --- SWAPOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just a SWAP gate.
 Value swap(QCOProgramBuilder& b);
@@ -826,6 +874,8 @@ Value powEvenSwap(QCOProgramBuilder& b);
 /// Creates a circuit with pow(3) wrapping a SWAP gate (odd hermitian → SWAP).
 Value powOddSwap(QCOProgramBuilder& b);
 
+// --- iSWAPOp -------------------------------------------------------------- //
+
 /// Creates a circuit with just an iSWAP gate.
 Value iswap(QCOProgramBuilder& b);
 
@@ -855,6 +905,8 @@ Value powHalfIswap(QCOProgramBuilder& b);
 /// Creates the reference for powHalfIswap: xx_plus_yy(-π/2, 0) directly.
 Value powHalfIswapRef(QCOProgramBuilder& b);
 
+// --- DCXOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with just a DCX gate.
 Value dcx(QCOProgramBuilder& b);
 
@@ -881,6 +933,8 @@ Value twoDcx(QCOProgramBuilder& b);
 
 /// Creates a circuit with two DCX gates in a row with swapped targets.
 Value twoDcxSwappedTargets(QCOProgramBuilder& b);
+
+// --- ECROp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an ECR gate.
 Value ecr(QCOProgramBuilder& b);
@@ -911,6 +965,8 @@ Value powEvenEcr(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(3) wrapping an ECR gate (odd hermitian → ECR).
 Value powOddEcr(QCOProgramBuilder& b);
+
+// --- RXXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RXX gate.
 Value rxx(QCOProgramBuilder& b);
@@ -952,6 +1008,8 @@ Value twoRxxOppositePhase(QCOProgramBuilder& b);
 /// swapped targets.
 Value twoRxxOppositePhaseSwappedTargets(QCOProgramBuilder& b);
 
+// --- RYYOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with just an RYY gate.
 Value ryy(QCOProgramBuilder& b);
 
@@ -986,6 +1044,8 @@ Value twoRyyOppositePhase(QCOProgramBuilder& b);
 /// swapped targets.
 Value twoRyyOppositePhaseSwappedTargets(QCOProgramBuilder& b);
 
+// --- RZXOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with just an RZX gate.
 Value rzx(QCOProgramBuilder& b);
 
@@ -1009,6 +1069,8 @@ Value inverseMultipleControlledRzx(QCOProgramBuilder& b);
 
 /// Creates a circuit with two RZX gates in a row with opposite phases.
 Value twoRzxOppositePhase(QCOProgramBuilder& b);
+
+// --- RZZOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZZ gate.
 Value rzz(QCOProgramBuilder& b);
@@ -1044,6 +1106,8 @@ Value twoRzzOppositePhase(QCOProgramBuilder& b);
 /// swapped targets.
 Value twoRzzOppositePhaseSwappedTargets(QCOProgramBuilder& b);
 
+// --- XXPlusYYOp ----------------------------------------------------------- //
+
 /// Creates a circuit with just an XXPlusYY gate.
 Value xxPlusYY(QCOProgramBuilder& b);
 
@@ -1077,6 +1141,8 @@ Value twoXxPlusYYOppositePhase(QCOProgramBuilder& b);
 
 /// Creates a circuit with two XXPlusYY gates in a row with swapped targets.
 Value twoXxPlusYYSwappedTargets(QCOProgramBuilder& b);
+
+// --- XXMinusYYOp ---------------------------------------------------------- //
 
 /// Creates a circuit with just an XXMinusYY gate.
 Value xxMinusYY(QCOProgramBuilder& b);
@@ -1112,6 +1178,8 @@ Value twoXxMinusYYOppositePhase(QCOProgramBuilder& b);
 /// Creates a circuit with two XXMinusYY gates in a row with swapped targets.
 Value twoXxMinusYYSwappedTargets(QCOProgramBuilder& b);
 
+// --- RCCXOp --------------------------------------------------------------- //
+
 /// Creates a circuit with just an RCCX gate.
 Value rccx(QCOProgramBuilder& b);
 
@@ -1143,6 +1211,8 @@ Value inverseRccx(QCOProgramBuilder& b);
 /// RCCX gate.
 Value inverseMultipleControlledRccx(QCOProgramBuilder& b);
 
+// --- BarrierOp ------------------------------------------------------------ //
+
 /// Creates a circuit with a barrier.
 Value barrier(QCOProgramBuilder& b);
 
@@ -1163,6 +1233,8 @@ Value powBarrier(QCOProgramBuilder& b);
 
 /// Creates a circuit with two barriers in a row with overlapping qubits.
 Value twoBarrier(QCOProgramBuilder& b);
+
+// --- CtrlOp --------------------------------------------------------------- //
 
 /// Creates a circuit with a trivial ctrl modifier.
 Value trivialCtrl(QCOProgramBuilder& b);
@@ -1203,6 +1275,8 @@ Value nestedCtrlTwo(QCOProgramBuilder& b);
 /// Creates a circuit with a control modifier applied to an inverse modifier
 /// applied to two gates.
 Value ctrlInvTwo(QCOProgramBuilder& b);
+
+// --- InvOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with an empty inverse modifier.
 Value emptyInv(QCOProgramBuilder& b);
@@ -1245,6 +1319,8 @@ Value modifierBodyReuseReordered(QCOProgramBuilder& b);
 
 /// Canonical reference for modifierBodyReuseReordered.
 Value modifierBodyReuseReorderedRef(QCOProgramBuilder& b);
+
+// --- PowOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with pow(1.0) modifier (should inline to just the gate).
 Value pow1Inline(QCOProgramBuilder& b);
@@ -1343,6 +1419,8 @@ Value negPowInvIswapRef(QCOProgramBuilder& b);
 /// so the pow survives canonicalization and reaches ConvertQCOPowOp.
 Value ctrlPowSx(QCOProgramBuilder& b);
 
+// --- IfOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with a simple if operation with one qubit.
 SmallVector<Value> simpleIf(QCOProgramBuilder& b);
 SmallVector<Value> simpleIfCompleteTensorState(QCOProgramBuilder& b);
@@ -1390,6 +1468,8 @@ SmallVector<Value> nestedFalseIf(QCOProgramBuilder& b);
 /// a register.
 Value nestedIfOpForLoop(QCOProgramBuilder& b);
 
+// --- IndexSwitchOp ------------------------------------------------------- //
+
 /// Creates a circuit with an index switch operation with one qubit.
 SmallVector<Value> simpleIndexSwitch(QCOProgramBuilder& b);
 SmallVector<Value> simpleIndexSwitchCompleteTensorState(QCOProgramBuilder& b);
@@ -1398,11 +1478,15 @@ SmallVector<Value> simpleIndexSwitchCompleteTensorState(QCOProgramBuilder& b);
 Value indexSwitchMultiCase(QCOProgramBuilder& b);
 Value indexSwitchMultiCaseCompleteTensorState(QCOProgramBuilder& b);
 
+// --- WhileOp -------------------------------------------------------------- //
+
 /// Creates a circuit with a while operation using a while loop.
 Value simpleWhileReset(QCOProgramBuilder& b);
 
 /// Creates a circuit with a while operation using a do-while loop.
 Value simpleDoWhileReset(QCOProgramBuilder& b);
+
+// --- ForOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with a simple for operation with a register.
 Value simpleForLoop(QCOProgramBuilder& b);
@@ -1432,6 +1516,8 @@ Value nestedForLoopCtrlOpWithSeparateQubit(QCOProgramBuilder& b);
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is extracted from the register.
 Value nestedForLoopCtrlOpWithExtractedQubit(QCOProgramBuilder& b);
+
+// --- QTensor Operations -------------------------------------------------- //
 
 /// Allocates a tensor of size `3`.
 Value qtensorAlloc(QCOProgramBuilder& b);

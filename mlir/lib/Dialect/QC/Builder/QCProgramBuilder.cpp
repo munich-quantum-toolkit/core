@@ -359,7 +359,7 @@ QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
       const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     ctrl(controls, ValueRange{},                                               \
-         [&](ValueRange) { OP_CLASS::create(*this, param); });                 \
+         [&](ValueRange /*targets*/) { OP_CLASS::create(*this, param); });     \
     return *this;                                                              \
   }
 

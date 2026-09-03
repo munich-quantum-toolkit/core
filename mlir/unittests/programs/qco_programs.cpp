@@ -436,7 +436,7 @@ Value multipleControlledGlobalPhase(QCOProgramBuilder& b) {
 }
 
 Value inverseGlobalPhase(QCOProgramBuilder& b) {
-  b.inv(ValueRange{}, [&](ValueRange) {
+  b.inv(ValueRange{}, [&](ValueRange /*qubits*/) {
     b.gphase(-0.123);
     return SmallVector<Value>{};
   });
@@ -454,7 +454,7 @@ Value inverseMultipleControlledGlobalPhase(QCOProgramBuilder& b) {
 }
 
 Value powGphaseScaled(QCOProgramBuilder& b) {
-  b.pow(3.0, ValueRange{}, [&](mlir::ValueRange) {
+  b.pow(3.0, ValueRange{}, [&](mlir::ValueRange /*qubits*/) {
     b.gphase(0.123);
     return llvm::SmallVector<mlir::Value>{};
   });
@@ -467,7 +467,7 @@ Value powGphaseScaledRef(QCOProgramBuilder& b) {
 }
 
 Value negPowGphase(QCOProgramBuilder& b) {
-  b.pow(-3.0, ValueRange{}, [&](mlir::ValueRange) {
+  b.pow(-3.0, ValueRange{}, [&](mlir::ValueRange /*qubits*/) {
     b.gphase(0.123);
     return llvm::SmallVector<mlir::Value>{};
   });

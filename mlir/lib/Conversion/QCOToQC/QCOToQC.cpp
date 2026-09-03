@@ -53,9 +53,9 @@ namespace {
 
 /// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
-  Unset,  ///< No allocation mode has been established yet.
-  Static, ///< The module uses static qubit allocation.
-  Dynamic ///< The module uses dynamic qubit allocation.
+  Unset,  //!< No allocation mode has been established yet.
+  Static, //!< The module uses static qubit allocation.
+  Dynamic //!< The module uses dynamic qubit allocation.
 };
 
 /// State object for tracking qubit allocation mode.
@@ -232,8 +232,9 @@ public:
     addConversion([](Type type) { return type; });
 
     // Convert QCO qubit values to QC qubit references
-    addConversion(
-        [ctx](qco::QubitType) -> Type { return qc::QubitType::get(ctx); });
+    addConversion([ctx](qco::QubitType /*type*/) -> Type {
+      return qc::QubitType::get(ctx);
+    });
 
     addConversion([ctx](RankedTensorType type) -> Type {
       if (isa<qco::QubitType>(type.getElementType())) {
@@ -442,7 +443,7 @@ struct ConvertQTensorAllocOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qtensor::AllocOp op, OpAdaptor,
+  matchAndRewrite(qtensor::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
                                                op.getOperation()))) {
@@ -580,8 +581,8 @@ struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   template <std::size_t... TargetIndices, std::size_t... ParamIndices>
   static void createGate(ConversionPatternRewriter& rewriter, Location loc,
                          ValueRange qcOperands,
-                         std::index_sequence<TargetIndices...>,
-                         std::index_sequence<ParamIndices...>) {
+                         std::index_sequence<TargetIndices...> /*tgt*/,
+                         std::index_sequence<ParamIndices...> /*par*/) {
     QCOpType::create(rewriter, loc, qcOperands[TargetIndices]...,
                      qcOperands[NumTargets + ParamIndices]...);
   }
@@ -642,7 +643,7 @@ struct ConvertQCOAllocOp final : StatefulOpConversionPattern<qco::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::AllocOp op, OpAdaptor,
+  matchAndRewrite(qco::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic,
                                                op.getOperation()))) {
@@ -710,7 +711,7 @@ struct ConvertQCOStaticOp final : StatefulOpConversionPattern<qco::StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qco::StaticOp op, OpAdaptor,
+  matchAndRewrite(qco::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     if (failed(getState().ensureAllocationMode(AllocationMode::Static,
                                                op.getOperation()))) {
@@ -822,7 +823,7 @@ struct ConvertQCOZeroTargetOneParameterToQC final
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor,
+  matchAndRewrite(QCOOpType op, QCOOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     QCOpType::create(rewriter, op.getLoc(), op.getParameter(0));
     rewriter.eraseOp(op);

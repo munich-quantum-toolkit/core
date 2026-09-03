@@ -25,6 +25,8 @@ Value reusableUnitaryFunction(QCProgramBuilder& b);
 /// Calls a reusable reset function.
 Value reusableResetFunction(QCProgramBuilder& b);
 
+// --- Qubit Management ----------------------------------------------------- //
+
 /// Allocates a single qubit.
 Value allocQubit(QCProgramBuilder& b);
 
@@ -80,6 +82,8 @@ Value staticQubitsCanonical(QCProgramBuilder& b);
 /// Allocates and explicitly deallocates a single qubit.
 Value allocDeallocPair(QCProgramBuilder& b);
 
+// --- Invalid / mixed addressing (unit tests) --------------------------------
+
 /// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
 /// alloc.
 Value mixedStaticThenDynamicQubit(QCProgramBuilder& b);
@@ -87,6 +91,8 @@ Value mixedStaticThenDynamicQubit(QCProgramBuilder& b);
 /// @pre `builder.initialize()`. Fatal mixed addressing: dynamic register then
 /// static.
 Value mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b);
+
+// --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.
 Value singleMeasurementToSingleBit(QCProgramBuilder& b);
@@ -111,6 +117,8 @@ Value dynamicallyIndexedMeasurement(QCProgramBuilder& b);
 /// allocating a quantum or classical register.
 Value measurementWithoutRegisters(QCProgramBuilder& b);
 
+// --- ResetOp -------------------------------------------------------------- //
+
 /// Resets a single qubit without any operations being applied.
 Value resetQubitWithoutOp(QCProgramBuilder& b);
 
@@ -128,6 +136,8 @@ SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b);
 
 /// Repeatedly resets a single qubit after a single operation.
 SmallVector<Value> repeatedResetAfterSingleOp(QCProgramBuilder& b);
+
+// --- GPhaseOp ------------------------------------------------------------- //
 
 /// Creates a circuit with just a global phase.
 Value globalPhase(QCProgramBuilder& b);
@@ -166,6 +176,8 @@ Value negPowGphase(QCProgramBuilder& b);
 /// Reference for negPowGphase: gphase(-3.0 * 0.123).
 Value negPowGphaseRef(QCProgramBuilder& b);
 
+// --- IdOp ----------------------------------------------------------------- //
+
 /// Creates a circuit with just an identity gate.
 Value identity(QCProgramBuilder& b);
 
@@ -199,6 +211,8 @@ Value inverseMultipleControlledIdentity(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(2.0) wrapping id (should pass through).
 Value powId(QCProgramBuilder& b);
+
+// --- XOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an X gate.
 Value x(QCProgramBuilder& b);
@@ -239,6 +253,8 @@ Value powThirdX(QCProgramBuilder& b);
 /// Creates the reference for powThirdX: gphase(π/6) + rx(π/3).
 Value powThirdXRef(QCProgramBuilder& b);
 
+// --- YOp ------------------------------------------------------------------ //
+
 /// Creates a circuit with just a Y gate.
 Value y(QCProgramBuilder& b);
 
@@ -265,6 +281,8 @@ Value powHalfY(QCProgramBuilder& b);
 
 /// Creates the reference for powHalfY: gphase(π/4) followed by ry(π/2).
 Value powHalfYRef(QCProgramBuilder& b);
+
+// --- ZOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Z gate.
 Value z(QCProgramBuilder& b);
@@ -300,6 +318,8 @@ Value powThirdZ(QCProgramBuilder& b);
 /// Creates the reference for powThirdZ: p(π/3).
 Value powThirdZRef(QCProgramBuilder& b);
 
+// --- HOp ------------------------------------------------------------------ //
+
 /// Creates a circuit with just an H gate.
 Value h(QCProgramBuilder& b);
 
@@ -329,6 +349,8 @@ Value powEvenH(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(3) wrapping an H gate (odd hermitian → H).
 Value powOddH(QCProgramBuilder& b);
+
+// --- SOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an S gate.
 Value s(QCProgramBuilder& b);
@@ -368,6 +390,8 @@ Value powThirdS(QCProgramBuilder& b);
 /// Creates the reference for powThirdS: p(π/6).
 Value powThirdSRef(QCProgramBuilder& b);
 
+// --- SdgOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with just an Sdg gate.
 Value sdg(QCProgramBuilder& b);
 
@@ -402,6 +426,8 @@ Value powThirdSdg(QCProgramBuilder& b);
 /// Creates the reference for powThirdSdg: p(-π/6).
 Value powThirdSdgRef(QCProgramBuilder& b);
 
+// --- TOp ------------------------------------------------------------------ //
+
 /// Creates a circuit with just a T gate.
 Value t_(QCProgramBuilder& b); // NOLINT(*-identifier-naming)
 
@@ -432,6 +458,8 @@ Value powThirdT(QCProgramBuilder& b);
 /// Creates the reference for powThirdT: p(π/12).
 Value powThirdTRef(QCProgramBuilder& b);
 
+// --- TdgOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with just a Tdg gate.
 Value tdg(QCProgramBuilder& b);
 
@@ -461,6 +489,8 @@ Value powThirdTdg(QCProgramBuilder& b);
 
 /// Creates the reference for powThirdTdg: p(-π/12).
 Value powThirdTdgRef(QCProgramBuilder& b);
+
+// --- SXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an SX gate.
 Value sx(QCProgramBuilder& b);
@@ -494,6 +524,8 @@ Value powThirdSx(QCProgramBuilder& b);
 
 /// Creates the reference for powThirdSx: gphase(π/12) + rx(π/6).
 Value powThirdSxRef(QCProgramBuilder& b);
+
+// --- SXdgOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just an SXdg gate.
 Value sxdg(QCProgramBuilder& b);
@@ -530,6 +562,8 @@ Value powThirdSxdg(QCProgramBuilder& b);
 /// Creates the reference for powThirdSxdg: gphase(-π/12) + rx(-π/6).
 Value powThirdSxdgRef(QCProgramBuilder& b);
 
+// --- RXOp ----------------------------------------------------------------- //
+
 /// Creates a circuit with just an RX gate.
 Value rx(QCProgramBuilder& b);
 
@@ -557,6 +591,8 @@ Value powRxScaled(QCProgramBuilder& b);
 /// Creates the reference for powRxScaled: rx(0.246) directly.
 Value rxScaled(QCProgramBuilder& b);
 
+// --- RYOp ----------------------------------------------------------------- //
+
 /// Creates a circuit with just an RY gate.
 Value ry(QCProgramBuilder& b);
 
@@ -577,6 +613,8 @@ Value inverseRy(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RY gate.
 Value inverseMultipleControlledRy(QCProgramBuilder& b);
+
+// --- RZOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZ gate.
 Value rz(QCProgramBuilder& b);
@@ -599,6 +637,8 @@ Value inverseRz(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled RZ gate.
 Value inverseMultipleControlledRz(QCProgramBuilder& b);
 
+// --- POp ------------------------------------------------------------------ //
+
 /// Creates a circuit with just a P gate.
 Value p(QCProgramBuilder& b);
 
@@ -619,6 +659,8 @@ Value inverseP(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled P gate.
 Value inverseMultipleControlledP(QCProgramBuilder& b);
+
+// --- ROp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an R gate.
 Value r(QCProgramBuilder& b);
@@ -647,6 +689,8 @@ Value powRScaled(QCProgramBuilder& b);
 /// Creates the reference for powRScaled: r(3*0.123, 0.456).
 Value powRScaledRef(QCProgramBuilder& b);
 
+// --- U2Op ----------------------------------------------------------------- //
+
 /// Creates a circuit with just a U2 gate.
 Value u2(QCProgramBuilder& b);
 
@@ -668,6 +712,8 @@ Value inverseU2(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled U2 gate.
 Value inverseMultipleControlledU2(QCProgramBuilder& b);
 
+// --- UOp ------------------------------------------------------------------ //
+
 /// Creates a circuit with just a U gate.
 Value u(QCProgramBuilder& b);
 
@@ -688,6 +734,8 @@ Value inverseU(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled U gate.
 Value inverseMultipleControlledU(QCProgramBuilder& b);
+
+// --- SWAPOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just a SWAP gate.
 Value swap(QCProgramBuilder& b);
@@ -716,6 +764,8 @@ Value powEvenSwap(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(3) wrapping a SWAP gate (odd hermitian → SWAP).
 Value powOddSwap(QCProgramBuilder& b);
+
+// --- iSWAPOp -------------------------------------------------------------- //
 
 /// Creates a circuit with just an iSWAP gate.
 Value iswap(QCProgramBuilder& b);
@@ -746,6 +796,8 @@ Value powHalfIswap(QCProgramBuilder& b);
 /// Creates the reference for powHalfIswap: xx_plus_yy(-π/2, 0) directly.
 Value powHalfIswapRef(QCProgramBuilder& b);
 
+// --- DCXOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with just a DCX gate.
 Value dcx(QCProgramBuilder& b);
 
@@ -766,6 +818,8 @@ Value inverseDcx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled DCX gate.
 Value inverseMultipleControlledDcx(QCProgramBuilder& b);
+
+// --- ECROp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an ECR gate.
 Value ecr(QCProgramBuilder& b);
@@ -794,6 +848,8 @@ Value powEvenEcr(QCProgramBuilder& b);
 /// Creates a circuit with pow(3) wrapping an ECR gate (odd hermitian → ECR).
 Value powOddEcr(QCProgramBuilder& b);
 
+// --- RXXOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with just an RXX gate.
 Value rxx(QCProgramBuilder& b);
 
@@ -821,6 +877,8 @@ Value tripleControlledRxx(QCProgramBuilder& b);
 /// Creates a circuit with a four-controlled RXX gate.
 Value fourControlledRxx(QCProgramBuilder& b);
 
+// --- RYYOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with just an RYY gate.
 Value ryy(QCProgramBuilder& b);
 
@@ -841,6 +899,8 @@ Value inverseRyy(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RYY gate.
 Value inverseMultipleControlledRyy(QCProgramBuilder& b);
+
+// --- RZXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZX gate.
 Value rzx(QCProgramBuilder& b);
@@ -863,6 +923,8 @@ Value inverseRzx(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a controlled RZX gate.
 Value inverseMultipleControlledRzx(QCProgramBuilder& b);
 
+// --- RZZOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with just an RZZ gate.
 Value rzz(QCProgramBuilder& b);
 
@@ -883,6 +945,8 @@ Value inverseRzz(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RZZ gate.
 Value inverseMultipleControlledRzz(QCProgramBuilder& b);
+
+// --- XXPlusYYOp ----------------------------------------------------------- //
 
 /// Creates a circuit with just an XXPlusYY gate.
 Value xxPlusYY(QCProgramBuilder& b);
@@ -912,6 +976,8 @@ Value powXxPlusYYScaled(QCProgramBuilder& b);
 /// Creates the reference for powXxPlusYYScaled: xx_plus_yy(3*0.123, 0.456).
 Value powXxPlusYYScaledRef(QCProgramBuilder& b);
 
+// --- XXMinusYYOp ---------------------------------------------------------- //
+
 /// Creates a circuit with just an XXMinusYY gate.
 Value xxMinusYY(QCProgramBuilder& b);
 
@@ -939,6 +1005,8 @@ Value powXxMinusYYScaled(QCProgramBuilder& b);
 
 /// Creates the reference for powXxMinusYYScaled: xx_minus_yy(3*0.123, 0.456).
 Value powXxMinusYYScaledRef(QCProgramBuilder& b);
+
+// --- RCCXOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just an RCCX gate.
 Value rccx(QCProgramBuilder& b);
@@ -968,6 +1036,8 @@ Value inverseRccx(QCProgramBuilder& b);
 /// RCCX gate.
 Value inverseMultipleControlledRccx(QCProgramBuilder& b);
 
+// --- BarrierOp ------------------------------------------------------------ //
+
 /// Creates a circuit with a barrier.
 Value barrier(QCProgramBuilder& b);
 
@@ -985,6 +1055,8 @@ Value inverseBarrier(QCProgramBuilder& b);
 
 /// Creates a circuit with pow(2.0) wrapping barrier (should pass through).
 Value powBarrier(QCProgramBuilder& b);
+
+// --- CtrlOp --------------------------------------------------------------- //
 
 /// Creates a circuit with a trivial ctrl modifier.
 Value trivialCtrl(QCProgramBuilder& b);
@@ -1029,6 +1101,8 @@ Value modifierBodyReuseReordered(QCProgramBuilder& b);
 /// Canonical reference for modifierBodyReuseReordered.
 Value modifierBodyReuseReorderedRef(QCProgramBuilder& b);
 
+// --- InvOp ---------------------------------------------------------------- //
+
 /// Creates a circuit with an empty inverse modifier.
 Value emptyInv(QCProgramBuilder& b);
 
@@ -1050,6 +1124,8 @@ Value invTwo(QCProgramBuilder& b);
 /// Creates a circuit with an inverse modifier applied to a control modifier
 /// applied to two gates.
 Value invCtrlTwo(QCProgramBuilder& b);
+
+// --- PowOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with pow(1.0) modifier (should inline to just the gate).
 Value pow1Inline(QCProgramBuilder& b);
@@ -1165,6 +1241,8 @@ Value powHalfDisjoint(QCProgramBuilder& b);
 /// level).
 Value pow0Two(QCProgramBuilder& b);
 
+// --- IfOp ----------------------------------------------------------------- //
+
 /// Creates a circuit with a simple if operation with one qubit.
 SmallVector<Value> simpleIf(QCProgramBuilder& b);
 
@@ -1185,17 +1263,23 @@ SmallVector<Value> ifWithCreg(QCProgramBuilder& b);
 /// a register.
 Value nestedIfOpForLoop(QCProgramBuilder& b);
 
+// --- IndexSwitchOp -------------------------------------------------------- //
+
 /// Creates a circuit with an index switch operation with one qubit.
 SmallVector<Value> simpleIndexSwitch(QCProgramBuilder& b);
 
 /// Creates a circuit with an index switch operation with multiple cases.
 Value indexSwitchMultiCase(QCProgramBuilder& b);
 
+// --- WhileOp -------------------------------------------------------------- //
+
 /// Creates a circuit with a while operation using a while loop.
 Value simpleWhileReset(QCProgramBuilder& b);
 
 /// Creates a circuit with a while operation using a do-while loop.
 Value simpleDoWhileReset(QCProgramBuilder& b);
+
+// --- ForOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with a simple for operation with a register.
 Value simpleForLoop(QCProgramBuilder& b);
@@ -1220,6 +1304,8 @@ Value nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b);
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is extracted from the register.
 Value nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b);
+
+// --- Qubit Reuse ---------------------------------------------------------- //
 
 /// Creates a circuit with two qubits and a H gate applied to both.
 SmallVector<Value> hGateOnMultipleQubits(QCProgramBuilder& b);

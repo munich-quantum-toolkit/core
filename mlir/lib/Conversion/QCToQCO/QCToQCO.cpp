@@ -84,9 +84,9 @@ struct SeenRegisterIndices {
 
 /// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
-  Unset,  ///< No allocation mode has been established yet.
-  Static, ///< The module uses static qubit allocation.
-  Dynamic ///< The module uses dynamic qubit allocation.
+  Unset,  //!< No allocation mode has been established yet.
+  Static, //!< The module uses static qubit allocation.
+  Dynamic //!< The module uses dynamic qubit allocation.
 };
 
 /// State object for tracking qubit value flow during conversion
@@ -842,8 +842,9 @@ public:
     addConversion([](Type type) { return type; });
 
     // Convert QC qubit references to QCO qubit values
-    addConversion(
-        [ctx](qc::QubitType) -> Type { return qco::QubitType::get(ctx); });
+    addConversion([ctx](qc::QubitType /*type*/) -> Type {
+      return qco::QubitType::get(ctx);
+    });
   }
 };
 
@@ -1088,7 +1089,7 @@ struct ConvertMemRefDeallocOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(memref::DeallocOp op, OpAdaptor,
+  matchAndRewrite(memref::DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto memref = op.getMemref();
     if (!isa<qc::QubitType>(memref.getType().getElementType())) {
@@ -1120,7 +1121,7 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::AllocOp op, OpAdaptor,
+  matchAndRewrite(qc::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     if (failed(state.ensureAllocationMode(AllocationMode::Dynamic,
@@ -1155,7 +1156,7 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(DeallocOp op, OpAdaptor,
+  matchAndRewrite(DeallocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto& qubitMap = state.qubitMap[op->getParentRegion()];
@@ -1190,7 +1191,7 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::StaticOp op, OpAdaptor,
+  matchAndRewrite(qc::StaticOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     if (failed(state.ensureAllocationMode(AllocationMode::Static,
@@ -1228,7 +1229,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::MeasureOp op, OpAdaptor,
+  matchAndRewrite(qc::MeasureOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1271,7 +1272,7 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::ResetOp op, OpAdaptor,
+  matchAndRewrite(qc::ResetOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1300,8 +1301,9 @@ struct ConvertQCGateToQCO final : StatefulOpConversionPattern<QCOpType> {
 
   template <std::size_t... TargetIndices, std::size_t... ParamIndices>
   auto createGate(ConversionPatternRewriter& rewriter, QCOpType op,
-                  ValueRange qcoTargets, std::index_sequence<TargetIndices...>,
-                  std::index_sequence<ParamIndices...>) const {
+                  ValueRange qcoTargets,
+                  std::index_sequence<TargetIndices...> /*targets*/,
+                  std::index_sequence<ParamIndices...> /*params*/) const {
     auto params = op.getParameters();
     return QCOOpType::create(rewriter, op.getLoc(),
                              qcoTargets[TargetIndices]...,
@@ -1309,7 +1311,7 @@ struct ConvertQCGateToQCO final : StatefulOpConversionPattern<QCOpType> {
   }
 
   LogicalResult
-  matchAndRewrite(QCOpType op, QCOpType::Adaptor,
+  matchAndRewrite(QCOpType op, QCOpType::Adaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
     auto qcTargets = op.getTargets();
@@ -1332,7 +1334,7 @@ struct ConvertQCUnitaryOp final : StatefulOpConversionPattern<qc::UnitaryOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::UnitaryOp op, OpAdaptor,
+  matchAndRewrite(qc::UnitaryOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1363,7 +1365,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::BarrierOp op, OpAdaptor,
+  matchAndRewrite(qc::BarrierOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1401,7 +1403,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::CtrlOp op, OpAdaptor,
+  matchAndRewrite(qc::CtrlOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1457,7 +1459,7 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::InvOp op, OpAdaptor,
+  matchAndRewrite(qc::InvOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1506,7 +1508,7 @@ struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::PowOp op, OpAdaptor,
+  matchAndRewrite(qc::PowOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1551,7 +1553,7 @@ struct ConvertQCYieldOp final : StatefulOpConversionPattern<qc::YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(qc::YieldOp op, OpAdaptor,
+  matchAndRewrite(qc::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1593,7 +1595,7 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::ForOp op, OpAdaptor,
+  matchAndRewrite(scf::ForOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1675,7 +1677,7 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::WhileOp op, OpAdaptor,
+  matchAndRewrite(scf::WhileOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1778,7 +1780,7 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::IfOp op, OpAdaptor,
+  matchAndRewrite(scf::IfOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1870,7 +1872,7 @@ struct ConvertSCFIndexSwitchOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::IndexSwitchOp op, OpAdaptor,
+  matchAndRewrite(scf::IndexSwitchOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1937,7 +1939,7 @@ struct ConvertSCFYieldOp final : StatefulOpConversionPattern<scf::YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::YieldOp op, OpAdaptor,
+  matchAndRewrite(scf::YieldOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();
@@ -1971,7 +1973,7 @@ struct ConvertSCFConditionOp final
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(scf::ConditionOp op, OpAdaptor,
+  matchAndRewrite(scf::ConditionOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
     auto* operation = op.getOperation();

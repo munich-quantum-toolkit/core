@@ -658,7 +658,7 @@ Value QCOProgramBuilder::reset(Value qubit) {
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     auto controlsOut =                                                         \
-        ctrl(control, {}, [&](ValueRange) -> SmallVector<Value> {              \
+        ctrl(control, {}, [&](ValueRange /*targets*/) -> SmallVector<Value> {  \
           OP_NAME(param);                                                      \
           return {};                                                           \
         }).first;                                                              \
@@ -669,7 +669,7 @@ Value QCOProgramBuilder::reset(Value qubit) {
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
     auto controlsOut =                                                         \
-        ctrl(controls, {}, [&](ValueRange) -> SmallVector<Value> {             \
+        ctrl(controls, {}, [&](ValueRange /*targets*/) -> SmallVector<Value> { \
           OP_NAME(param);                                                      \
           return {};                                                           \
         }).first;                                                              \

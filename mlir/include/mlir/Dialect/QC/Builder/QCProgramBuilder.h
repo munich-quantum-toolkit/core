@@ -322,9 +322,57 @@ public:
   // ZeroTargetOneParameter
 
 #define DECLARE_ZERO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)            \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM);                                                   \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.OP_NAME(%PARAM)                                                        \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM));        \
+  /**                                                                          \
+   * Apply a controlled OP_CLASS                                               \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param control Control qubit                                              \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM, q);                                             \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q) {                                                             \
+   *   qc.OP_NAME(%PARAM)                                                      \
+   * } : !qc.qubit                                                             \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),      \
                                Value control);                                 \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param controls Control qubits                                            \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM, {q0, q1});                                     \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0, %q1) {                                                       \
+   *   qc.OP_NAME(%PARAM)                                                      \
+   * } : !qc.qubit, !qc.qubit                                                  \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),     \
                                 ValueRange controls);
 
@@ -335,8 +383,56 @@ public:
   // OneTargetZeroParameter
 
 #define DECLARE_ONE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                   \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(q);                                                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.OP_NAME %q : !qc.qubit                                                 \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& OP_NAME(Value qubit);                                      \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(q0, q1);                                               \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
+   *   qc.OP_NAME %a0 : !qc.qubit                                              \
+   * } : !qc.qubit                                                             \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& c##OP_NAME(Value control, Value target);                   \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME({q0, q1}, q2);                                        \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
+   *   qc.OP_NAME %a0 : !qc.qubit                                              \
+   * } : !qc.qubit, !qc.qubit                                                  \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(ValueRange controls, Value target);
 
   DECLARE_ONE_TARGET_ZERO_PARAMETER(IdOp, id)
@@ -356,10 +452,61 @@ public:
   // OneTargetOneParameter
 
 #define DECLARE_ONE_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM, q);                                                \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.OP_NAME(%PARAM) %q : !qc.qubit                                         \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),         \
                             Value qubit);                                      \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM, q0, q1);                                        \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
+   *   qc.OP_NAME(%PARAM) %a0 : !qc.qubit                                      \
+   * } : !qc.qubit                                                             \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),      \
                                Value control, Value target);                   \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM, {q0, q1}, q2);                                 \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
+   *   qc.OP_NAME(%PARAM) %a0 : !qc.qubit                                      \
+   * } : !qc.qubit, !qc.qubit                                                  \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),     \
                                 ValueRange controls, Value target);
 
@@ -373,12 +520,66 @@ public:
   // OneTargetTwoParameter
 
 #define DECLARE_ONE_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)    \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM1, PARAM2, q);                                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.OP_NAME(%PARAM1, %PARAM2) %q : !qc.qubit                               \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),        \
                             const std::variant<double, Value>&(PARAM2),        \
                             Value qubit);                                      \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1);                               \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
+   *   qc.OP_NAME(%PARAM1, %PARAM2) %a0 : !qc.qubit                            \
+   * } : !qc.qubit                                                             \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),     \
                                const std::variant<double, Value>&(PARAM2),     \
                                Value control, Value target);                   \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM1, PARAM2, {q0, q1}, q2);                        \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
+   *   qc.OP_NAME(%PARAM1, %PARAM2) %a0 : !qc.qubit                            \
+   * } : !qc.qubit, !qc.qubit                                                  \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
                                 const std::variant<double, Value>&(PARAM2),    \
                                 ValueRange controls, Value target);
@@ -392,14 +593,71 @@ public:
 
 #define DECLARE_ONE_TARGET_THREE_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2,  \
                                            PARAM3)                             \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param PARAM3 Rotation angle in radians                                   \
+   * @param qubit Target qubit                                                 \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM1, PARAM2, PARAM3, q);                               \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %q : !qc.qubit                      \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),        \
                             const std::variant<double, Value>&(PARAM2),        \
                             const std::variant<double, Value>&(PARAM3),        \
                             Value qubit);                                      \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param PARAM3 Rotation angle in radians                                   \
+   * @param control Control qubit                                              \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM1, PARAM2, PARAM3, q0, q1);                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0) targets(%a0 = %q1) {                                         \
+   *   qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %a0 : !qc.qubit                   \
+   * } : !qc.qubit                                                             \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),     \
                                const std::variant<double, Value>&(PARAM2),     \
                                const std::variant<double, Value>&(PARAM3),     \
                                Value control, Value target);                   \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param PARAM3 Rotation angle in radians                                   \
+   * @param controls Control qubits                                            \
+   * @param target Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM1, PARAM2, PARAM3, {q0, q1}, q2);                \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2) {                                    \
+   *   qc.OP_NAME(%PARAM1, %PARAM2, %PARAM3) %a0 : !qc.qubit                   \
+   * } : !qc.qubit, !qc.qubit                                                  \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
                                 const std::variant<double, Value>&(PARAM2),    \
                                 const std::variant<double, Value>&(PARAM3),    \
@@ -412,8 +670,59 @@ public:
   // TwoTargetZeroParameter
 
 #define DECLARE_TWO_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                   \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(q0, q1);                                                  \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.OP_NAME %q0, %q1 : !qc.qubit, !qc.qubit                                \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& OP_NAME(Value qubit0, Value qubit1);                       \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param control Control qubit                                              \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(q0, q1, q2);                                           \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2) {                              \
+   *   qc.OP_NAME %a0, %a1 : !qc.qubit, !qc.qubit                              \
+   * } : !qc.qubit                                                             \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1);     \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param controls Control qubits                                            \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME({q0, q1}, q2, q3);                                    \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3) {                         \
+   *   qc.OP_NAME %a0, %a1 : !qc.qubit, !qc.qubit                              \
+   * } : !qc.qubit, !qc.qubit                                                  \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,             \
                                 Value qubit1);
 
@@ -427,10 +736,64 @@ public:
   // TwoTargetOneParameter
 
 #define DECLARE_TWO_TARGET_ONE_PARAMETER(OP_CLASS, OP_NAME, PARAM)             \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM, q0, q1);                                           \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.OP_NAME(%PARAM) %q0, %q1 : !qc.qubit, !qc.qubit                        \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM),         \
                             Value qubit0, Value qubit1);                       \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param control Control qubit                                              \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM, q0, q1, q2);                                    \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2) {                              \
+   *   qc.OP_NAME(%PARAM) %a0, %a1 : !qc.qubit, !qc.qubit                      \
+   * } : !qc.qubit                                                             \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM),      \
                                Value control, Value qubit0, Value qubit1);     \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param PARAM Rotation angle in radians                                    \
+   * @param controls Control qubits                                            \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM, {q0, q1}, q2, q3);                             \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3) {                         \
+   *   qc.OP_NAME(%PARAM) %a0, %a1 : !qc.qubit, !qc.qubit                      \
+   * } : !qc.qubit, !qc.qubit                                                  \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM),     \
                                 ValueRange controls, Value qubit0,             \
                                 Value qubit1);
@@ -445,12 +808,70 @@ public:
   // TwoTargetTwoParameter
 
 #define DECLARE_TWO_TARGET_TWO_PARAMETER(OP_CLASS, OP_NAME, PARAM1, PARAM2)    \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(PARAM1, PARAM2, q0, q1);                                  \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.OP_NAME(%PARAM1, %PARAM2) %q0, %q1 : !qc.qubit, !qc.qubit              \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& OP_NAME(const std::variant<double, Value>&(PARAM1),        \
                             const std::variant<double, Value>&(PARAM2),        \
                             Value qubit0, Value qubit1);                       \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param control Control qubit                                              \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(PARAM1, PARAM2, q0, q1, q2);                           \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2) {                              \
+   *   qc.OP_NAME(%PARAM1, %PARAM2) %a0, %a1 : !qc.qubit,                      \
+   * !qc.qubit                                                                 \
+   * } : !qc.qubit                                                             \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& c##OP_NAME(const std::variant<double, Value>&(PARAM1),     \
                                const std::variant<double, Value>&(PARAM2),     \
                                Value control, Value qubit0, Value qubit1);     \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param PARAM1 Rotation angle in radians                                   \
+   * @param PARAM2 Rotation angle in radians                                   \
+   * @param controls Control qubits                                            \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME(PARAM1, PARAM2, {q0, q1}, q2, q3);                    \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3) {                         \
+   *  qc.OP_NAME(%PARAM1, %PARAM2) %a0, %a1 : !qc.qubit, !qc.qubit             \
+   * } : !qc.qubit, !qc.qubit                                                  \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(const std::variant<double, Value>&(PARAM1),    \
                                 const std::variant<double, Value>&(PARAM2),    \
                                 ValueRange controls, Value qubit0,             \
@@ -464,9 +885,63 @@ public:
   // ThreeTargetZeroParameter
 
 #define DECLARE_THREE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                 \
+  /**                                                                          \
+   * @brief Apply a OP_CLASS                                                   \
+   *                                                                           \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @param qubit2 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.OP_NAME(q0, q1, q2);                                              \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.OP_NAME %q0, %q1, %q2 : !qc.qubit, !qc.qubit, !qc.qubit                \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& OP_NAME(Value qubit0, Value qubit1, Value qubit2);         \
+  /**                                                                          \
+   * @brief Apply a controlled OP_CLASS                                        \
+   *                                                                           \
+   * @param control Control qubit                                              \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @param qubit2 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.c##OP_NAME(q0, q1, q2, q3);                                       \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0) targets(%a0 = %q1, %a1 = %q2, %a2 = %q3) {                   \
+   *   qc.OP_NAME %a0, %a1, %a2 : !qc.qubit, !qc.qubit, !qc.qubit              \
+   * } : !qc.qubit                                                             \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& c##OP_NAME(Value control, Value qubit0, Value qubit1,      \
                                Value qubit2);                                  \
+  /**                                                                          \
+   * @brief Apply a multi-controlled OP_CLASS                                  \
+   *                                                                           \
+   * @param controls Control qubits                                            \
+   * @param qubit0 Target qubit                                                \
+   * @param qubit1 Target qubit                                                \
+   * @param qubit2 Target qubit                                                \
+   * @return Reference to this builder for method chaining                     \
+   *                                                                           \
+   * @par Example:                                                             \
+   * ```c++                                                                    \
+   * builder.mc##OP_NAME({q0, q1}, q2, q3, q4);                                \
+   * ```                                                                       \
+   * ```mlir                                                                   \
+   * qc.ctrl(%q0, %q1) targets(%a0 = %q2, %a1 = %q3, %a2 = %q4) {              \
+   *   qc.OP_NAME %a0, %a1, %a2 : !qc.qubit, !qc.qubit, !qc.qubit              \
+   * } : !qc.qubit, !qc.qubit                                                  \
+   * ```                                                                       \
+   */                                                                          \
   QCProgramBuilder& mc##OP_NAME(ValueRange controls, Value qubit0,             \
                                 Value qubit1, Value qubit2);
 

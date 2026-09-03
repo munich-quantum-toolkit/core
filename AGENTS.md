@@ -116,8 +116,11 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 
 The C++ code targets C++20 and uses GoogleTest. Follow these rules:
 
-- Write Doxygen API descriptions with `///`. Use `//` for ordinary code comments
-  and namespace closing comments.
+- Write Doxygen API and `@file` descriptions with `///`, preserving their
+  content. Keep `//!<` or `///<` for trailing member documentation and block
+  documentation inside continued macros.
+- Use `//` for ordinary code comments and namespace closing comments. Keep
+  inline `/* ... */` comments, including unused parameter names.
 - Use `#pragma once` in headers and use existing project abstractions.
 - Prefer C++20 standard-library facilities over custom equivalents.
 - Within the `mlir` namespace and its nested namespaces, prefer LLVM types such

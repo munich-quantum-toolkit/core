@@ -241,7 +241,7 @@ public:
         sourcePreserved(sourcePreserved) {}
 
   LogicalResult
-  matchAndRewrite(func::FuncOp op, OpAdaptor,
+  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     if (!op->hasAttr("test.reject_region_move")) {
       return failure();
@@ -296,8 +296,8 @@ module {
   RewritePatternSet patterns(&context);
   patterns.add<RejectingRegionMovePattern>(typeConverter, &context,
                                            sourcePreserved);
-  ScopedDiagnosticHandler handler(&context,
-                                  [](Diagnostic&) { return success(); });
+  ScopedDiagnosticHandler handler(
+      &context, [](Diagnostic& /*diagnostic*/) { return success(); });
   EXPECT_TRUE(
       failed(applyPartialConversion(*moduleOp, target, std::move(patterns))));
   EXPECT_TRUE(sourcePreserved);
