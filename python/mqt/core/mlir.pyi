@@ -11,8 +11,9 @@
 import enum
 import os
 from collections.abc import Sequence
-from typing import Literal, Unpack, overload
+from typing import Annotated, Literal, Unpack, overload
 
+import numpy as np
 import qiskit.circuit
 
 import mqt.core.dd
@@ -674,6 +675,74 @@ class QIRProgram(Program):
 
     def write_bitcode(self, path: str | os.PathLike) -> None:
         """Write this program as LLVM bitcode."""
+
+def build_functionality(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+) -> Annotated[np.typing.NDArray[np.complex128], {"shape": (None, None)}]:
+    """Build the full unitary matrix of a supported compiler input.
+
+    The DD package is managed internally. The matrix is materialized directly into
+    the returned NumPy array without an additional copy. The full matrix grows
+    exponentially, and the caller is responsible for requesting a result that fits
+    in memory.
+
+    Raises:
+        MemoryError: When the dense matrix does not fit in memory.
+        ValueError: When the program is unsupported or the matrix dimensions exceed
+            addressable memory.
+    """
+
+def simulate(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+) -> Annotated[np.typing.NDArray[np.complex128], {"shape": (None,)}]:
+    """Simulate a closed compiler input from the all-zero state.
+
+    The DD package is managed internally. Terminal measurements that only assemble
+    returned classical registers do not collapse the state. Mid-circuit measurement
+    feedback and resets are unsupported; use {py:meth}`QCOProgram.simulate` with an
+    explicit DD package for those workflows or for a custom initial state.
+
+    Args:
+        program: Compiler input to lower directly to QCO.
+
+    Returns:
+        Full statevector, materialized directly into the returned NumPy array.
+
+    Raises:
+        MemoryError: When the dense statevector does not fit in memory.
+        ValueError: When the program is not closed, is unsupported for statevector
+            simulation, or the statevector dimensions exceed addressable memory.
+    """
+
+def sample(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    shots: int = 1024,
+    seed: int = 0,
+) -> dict[str, int]:
+    """Sample a supported input after lowering it directly to QCO.
+
+    An existing QCO program is used without copying. See
+    {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
+    contracts.
+    """
 
 @overload
 def compile_program(

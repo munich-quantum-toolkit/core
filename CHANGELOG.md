@@ -34,8 +34,10 @@ releases may include breaking changes.
   C++, Python, and command-line interfaces ([#2135], [#2299], [#2315], [#2337])
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add DD construction, simulation, statevector extraction, and sampling for
-  QCO programs with structured control and dynamic quantum data ([#1915],
-  [#1973], [#2077], [#2078], [#2079]) ([**@simon1hofmann**], [**@burgholzer**])
+  QCO programs with structured control and dynamic quantum data, including
+  direct lowering and dense-array helpers for supported compiler inputs
+  ([#1915], [#1973], [#2077], [#2078], [#2079], [#2334]) ([**@simon1hofmann**],
+  [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
   compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
   [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
@@ -867,6 +869,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2337]: https://github.com/munich-quantum-toolkit/core/pull/2337
+[#2334]: https://github.com/munich-quantum-toolkit/core/pull/2334
 [#2323]: https://github.com/munich-quantum-toolkit/core/pull/2323
 [#2315]: https://github.com/munich-quantum-toolkit/core/pull/2315
 [#2299]: https://github.com/munich-quantum-toolkit/core/pull/2299
