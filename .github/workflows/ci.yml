@@ -94,7 +94,7 @@ jobs:
         include:
           - runs-on: windows-2025
             compiler: msvc
-            preset: debug-windows
+            preset: release-windows
             run-on-draft: true
           - runs-on: windows-11-arm
             compiler: msvc
@@ -106,7 +106,6 @@ jobs:
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
       llvm-version: 23.1.0
-      mlir-debug: ${{ matrix.preset == 'debug-windows' }}
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
