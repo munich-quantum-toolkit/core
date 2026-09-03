@@ -91,6 +91,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⚡ Submit all QDMI jobs from one PennyLane execution before waiting so they
+  can run concurrently, preserve ordered synchronous results, and release the
+  Python GIL while waiting ([#2349]) ([**@burgholzer**])
 - 💥 Drop support for x86 macOS and stop publishing the respective wheels
   ([#2259]) ([**@denialhaag**])
 - ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
@@ -865,6 +868,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2349]: https://github.com/munich-quantum-toolkit/core/pull/2349
 [#2337]: https://github.com/munich-quantum-toolkit/core/pull/2337
 [#2323]: https://github.com/munich-quantum-toolkit/core/pull/2323
 [#2315]: https://github.com/munich-quantum-toolkit/core/pull/2315
