@@ -1224,7 +1224,7 @@ private:
                   // used to determine a subsequent chain of unitaries.
 
                   Value qubit = m.getQubitOut();
-                  auto bit = m.getResult();
+                  Value bit = m.getResult();
 
                   assert(qubit.hasOneUse());
                   Operation* user = *qubit.user_begin();
