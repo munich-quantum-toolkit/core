@@ -24,6 +24,8 @@
 #include <llvm/Support/FormatVariadic.h>
 #include <llvm/Support/InitLLVM.h>
 #include <llvm/Support/ManagedStatic.h>
+#include <llvm/Support/MemoryBuffer.h>
+#include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/Timer.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -33,6 +35,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassInstrumentation.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
@@ -42,6 +45,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <random>
@@ -51,16 +55,22 @@
 
 using namespace mlir;
 using namespace mlir::qco;
+using namespace std::filesystem;
+
+namespace {
+llvm::cl::opt<std::string>
+    mlirDir("mlir-dir",
+            llvm::cl::desc("Directory containing .mlir files to benchmark"),
+            llvm::cl::value_desc("directory path"));
+}
 
 struct BenchmarkEntry {
   std::string name;
-  size_t numQubits;
   std::function<OwningOpRef<ModuleOp>(MLIRContext*)> fn;
 };
 
 /// Statistics structure to collect statistics of one pass run.
 struct BenchmarkResult {
-  size_t numUnitaries{0};
   size_t numRoutingSWAPs{0};
   size_t numAppendixSWAPs{0};
   std::chrono::time_point<std::chrono::high_resolution_clock> start;
@@ -75,12 +85,7 @@ struct BenchmarkResult {
 
 struct AggregateBenchmarkResult {
   std::string name;
-  size_t numQubits{0};
   SmallVector<BenchmarkResult> stats;
-
-  [[nodiscard]] size_t numUnitaries() const {
-    return stats.front().numUnitaries;
-  }
 
   [[nodiscard]] size_t minTime() const {
     const auto* it = llvm::min_element(
@@ -186,7 +191,6 @@ public:
       : stats(&stats) {}
 
   void runBeforePass([[maybe_unused]] Pass* pass, Operation* op) override {
-    op->walk([&](UnitaryOpInterface) { ++stats->numUnitaries; });
     stats->start = std::chrono::high_resolution_clock::now();
   }
 
@@ -574,7 +578,8 @@ static OwningOpRef<ModuleOp> vqe(MLIRContext* context, const int64_t nqubits,
 
         // auto energy =
         //     func::CallOp::create(builder, "getEnergy",
-        //                          SmallVector<Type>{builder.getI64Type()}, reg)
+        //                          SmallVector<Type>{builder.getI64Type()},
+        //                          reg)
         //         .getResult(0);
 
         // auto improved = arith::CmpIOp::create(
@@ -615,7 +620,6 @@ static AggregateBenchmarkResult runBenchmark(MLIRContext* context,
 
   AggregateBenchmarkResult aggStats;
   aggStats.name = entry.name;
-  aggStats.numQubits = entry.numQubits;
 
   for (size_t r = 0; r < numRepeats; ++r) {
     BenchmarkResult stats;
@@ -642,17 +646,15 @@ static AggregateBenchmarkResult runBenchmark(MLIRContext* context,
 /// Print benchmark results as in comma-seperated format.
 static void printCSV(const SmallVector<AggregateBenchmarkResult>& allStats,
                      const char sep = ';') {
-  llvm::outs() << "Circuit Name" << sep << "NumQubits" << sep << "NumUnitaries"
-               << sep << "Min Time" << sep << "Max Time" << sep << "Avg Time"
-               << sep << "Min Routing SWAPs" << sep << "Max Routing SWAPs"
-               << sep << "Avg Routing SWAPs" << sep << "Min Appendix SWAPs"
-               << sep << "Max Appendix SWAPs" << sep << "Avg Appendix SWAPs"
-               << sep << "\n";
+  llvm::outs() << "Circuit Name" << sep << "Min Time" << sep << "Max Time"
+               << sep << "Avg Time" << sep << "Min Routing SWAPs" << sep
+               << "Max Routing SWAPs" << sep << "Avg Routing SWAPs" << sep
+               << "Min Appendix SWAPs" << sep << "Max Appendix SWAPs" << sep
+               << "Avg Appendix SWAPs" << sep << "\n";
 
   // Print each benchmark's stats
   for (const auto& stats : allStats) {
-    llvm::outs() << stats.name << sep << stats.numQubits << sep
-                 << stats.numUnitaries() << sep << stats.minTime() << sep
+    llvm::outs() << stats.name << sep << stats.minTime() << sep
                  << stats.maxTime() << sep << stats.avgTime() << sep
                  << stats.minNumRoutingSWAPs() << sep
                  << stats.maxNumRoutingSWAPs() << sep
@@ -663,7 +665,70 @@ static void printCSV(const SmallVector<AggregateBenchmarkResult>& allStats,
   }
 }
 
+/// Parse an MLIR file and return the module
+static OwningOpRef<ModuleOp> parseMLIRFile(MLIRContext* context,
+                                           const path& filePath) {
+  llvm::SourceMgr sourceMgr;
+
+  // Try to open the file using LLVM's file system
+  auto file = llvm::MemoryBuffer::getFile(filePath.string());
+  if (!file) {
+    llvm::errs() << "Error: Could not open MLIR file: " << filePath.string()
+                 << ": " << file.getError().message() << "\n";
+    return nullptr;
+  }
+
+  sourceMgr.AddNewSourceBuffer(std::move(*file), llvm::SMLoc());
+
+  // Parse the MLIR
+  auto mod = parseSourceFile<ModuleOp>(sourceMgr, context);
+  if (!mod) {
+    llvm::errs() << "Error: Failed to parse MLIR file: " << filePath.string()
+                 << "\n";
+    return nullptr;
+  }
+
+  return mod;
+}
+
+/// Load all .mlir files from a directory and create benchmark entries
+static SmallVector<BenchmarkEntry>
+loadMLIRBenchmarks(MLIRContext* context, const std::string& directory) {
+
+  if (directory.empty()) {
+    llvm::errs()
+        << "Error: No MLIR directory specified. Use --mlir-dir option.\n";
+    return {};
+  }
+
+  std::filesystem::path dirPath(directory);
+  if (!exists(dirPath) || !is_directory(dirPath)) {
+    llvm::errs()
+        << "Error: MLIR directory does not exist or is not a directory: "
+        << directory << "\n";
+    return {};
+  }
+
+  // Iterate through all .mlir files in the directory
+  SmallVector<BenchmarkEntry> entries;
+  for (const auto& entry : directory_iterator(dirPath)) {
+    if (entry.is_regular_file() && entry.path().extension() == ".mlir") {
+      std::string name = entry.path().stem().string(); // Remove .mlir extension
+
+      // Create benchmark entry
+      entries.emplace_back(name, [filePath = entry.path()](MLIRContext* ctx) {
+        return parseMLIRFile(ctx, filePath);
+      });
+    }
+  }
+
+  return entries;
+}
+
 int main(int argc, char** argv) {
+  llvm::InitLLVM initLLVM(argc, argv);
+  llvm::cl::ParseCommandLineOptions(argc, argv, "MQT Core Mapping Benchmark\n");
+
   CompilerTarget target = getSquareGridTarget(10, 12);
 
   MLIRContext context;
@@ -673,28 +738,18 @@ int main(int argc, char** argv) {
   context.appendDialectRegistry(registry);
   context.loadAllAvailableDialects();
 
-  SmallVector<BenchmarkEntry> entries;
-  for (size_t i = 2; i <= 120; ++i) {
-    entries.emplace_back("grover", i, [i](MLIRContext* context) {
-      return groverDecomposed(context, static_cast<int64_t>(i), 1000,
-                              std::string(i, '1'));
-    });
-    entries.emplace_back("qaoa", i, [i](MLIRContext* context) {
-      return qaoa(context, static_cast<int64_t>(i), 100, 0.7, 0.3);
-    });
-    entries.emplace_back(
-        "magic-state-distillation", i, [i](MLIRContext* context) {
-          return magicState(context, static_cast<int64_t>(i), 5);
-        });
-    entries.emplace_back("vqe", i, [i](MLIRContext* context) {
-      return vqe(context, static_cast<int64_t>(i), 1000, 0.05);
-    });
+  // Load benchmark entries from MLIR files
+  SmallVector<BenchmarkEntry> entries = loadMLIRBenchmarks(&context, mlirDir);
+
+  if (entries.empty()) {
+    llvm::errs() << "Error: No valid .mlir files found in directory: "
+                 << mlirDir << "\n";
+    return 1;
   }
 
   SmallVector<AggregateBenchmarkResult> allAggStats;
   for (const auto& entry : entries) {
-    llvm::dbgs() << "[benchmark] " << entry.name << " with " << entry.numQubits
-                 << " qubits!\n";
+    llvm::dbgs() << "[benchmark] " << entry.name << " qubits!\n";
     allAggStats.emplace_back(runBenchmark(&context, entry, target, 5));
   }
 

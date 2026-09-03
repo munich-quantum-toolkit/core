@@ -40,15 +40,12 @@
 #include <mlir/Support/Timing.h>
 #include <mlir/Transforms/Passes.h>
 
-#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
-#include <limits>
-#include <memory>
+#include <random>
 #include <string>
 #include <tuple>
-#include <vector>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -199,11 +196,24 @@ int main(int argc, char** argv) {
   context.appendDialectRegistry(registry);
   context.loadAllAvailableDialects();
 
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<> dis(0, 1);
+
   for (size_t i = 2; i <= 120; ++i) {
-    auto mod = groverDecomposed(&context, static_cast<int64_t>(i), 10000,
-                                std::string(i, '1'));
-    writeMLIR(*mod, outputDir + "/mlir/grover_" + std::to_string(i) + ".mlir");
-    writeQASM(*mod, outputDir + "/qasm/grover_" + std::to_string(i) + ".qasm");
+    for (int b = 0; b < 10; ++b) {
+      std::string bitstring;
+      for (size_t j = 0; j < i; ++j) {
+        bitstring += static_cast<bool>(dis(gen)) ? '1' : '0';
+      }
+
+      auto mod =
+          groverDecomposed(&context, static_cast<int64_t>(i), 10000, bitstring);
+      writeMLIR(*mod, outputDir + "/mlir/" + "grover_" + std::to_string(i) +
+                          "_" + bitstring + ".mlir");
+      writeQASM(*mod, outputDir + "/qasm/" + "grover_" + std::to_string(i) +
+                          "_" + bitstring + ".qasm");
+    }
   }
 
   return 0;
