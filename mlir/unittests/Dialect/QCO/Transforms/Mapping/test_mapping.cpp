@@ -683,19 +683,22 @@ TEST_P(MappingPassTest, MapScalarAllocation) {
 TEST_F(MappingPassFixture, ExpandNonAdjacentTwoQubitIfOnLineTarget) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
+
   Value q0 = builder.allocQubit();
   Value q1 = builder.allocQubit();
   Value q2 = builder.allocQubit();
+
   std::tie(q0, q1) = builder.swap(q0, q1);
   std::tie(q1, q2) = builder.swap(q1, q2);
-  SmallVector<Value> conditionalInputs{q0, q2};
+
   auto conditionalResults = builder.qcoIf(
-      true, conditionalInputs,
+      true, {q0, q2},
       [&](ValueRange args) {
         auto [then0, then2] = builder.swap(args[0], args[1]);
         return SmallVector<Value>{then0, then2};
       },
       [](ValueRange args) { return llvm::to_vector(args); });
+
   builder.sink(conditionalResults[0]);
   builder.sink(q1);
   builder.sink(conditionalResults[1]);
