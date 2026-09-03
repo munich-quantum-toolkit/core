@@ -114,8 +114,8 @@ releases may include breaking changes.
   default, with one build option for source builds that omit both parts
   ([#1356], [#1549], [#1953], [#2284], [#2298]) ([**@burgholzer**],
   [**@denialhaag**], [**@simon1hofmann**])
-- ✨ Include one-qubit ops to the `walkProgramGraph` graph traversal
-  function ([#2205]) ([**@MatthiasReumann**])
+- ✨ Include one-qubit ops to the `walkProgramGraph` graph traversal function
+  ([#2205]) ([**@MatthiasReumann**])
 
 ### Removed
 
