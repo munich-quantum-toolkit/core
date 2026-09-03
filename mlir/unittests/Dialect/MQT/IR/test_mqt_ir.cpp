@@ -102,6 +102,36 @@ TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
   )mlir"));
 }
 
+TEST_F(MQTIRTest, AcceptsSourceFunctionName) {
+  EXPECT_TRUE(parse(R"mlir(
+    module {
+      func.func private @unique() attributes {mqt.source_name = "source"}
+    }
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, RejectsInvalidSourceFunctionNames) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func private @empty() attributes {mqt.source_name = ""}
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func private @null() attributes {mqt.source_name = "a\00b"}
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %c0 = "arith.constant"() {mqt.source_name = "source", value = 0 : i64}
+            : () -> i64
+        return
+      }
+    }
+  )mlir"));
+}
+
 TEST_F(MQTIRTest, RoundTripsTypedCompilationTarget) {
   const auto compilationTarget =
       dyn_cast_if_present<mqt::CompilationTargetAttr>(

@@ -79,7 +79,7 @@ TEST_F(QCQCORoundTripTest, PreservesSharedMQTMetadata) {
   constexpr StringLiteral source = R"mlir(
 module {
   func.func @main(%theta: f64 {mqt.input_name = "theta"})
-      attributes {mqt.entry_point} {
+      attributes {mqt.entry_point, mqt.source_name = "source"} {
     %reg = memref.alloc() {mqt.register_name = "q"}
         : memref<2x!qc.qubit>
     memref.dealloc %reg : memref<2x!qc.qubit>
@@ -96,6 +96,10 @@ module {
   auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(function);
   EXPECT_TRUE(mqt::isEntryPoint(function));
+  auto sourceName = function->getAttrOfType<StringAttr>(
+      mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
+  ASSERT_TRUE(sourceName);
+  EXPECT_EQ(sourceName.getValue(), "source");
   const auto inputName = function.getArgAttrOfType<StringAttr>(
       0, mqt::MQTDialect::InputNameAttrHelper::getNameStr());
   ASSERT_TRUE(inputName);

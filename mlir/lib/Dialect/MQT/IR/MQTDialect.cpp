@@ -626,6 +626,14 @@ MQTDialect::verifyOperationAttribute(Operation* operation,
   if (attribute.getName() == RegisterNameAttrHelper::getNameStr()) {
     return verifyRegisterName(operation, attribute);
   }
+  if (attribute.getName() == SourceNameAttrHelper::getNameStr()) {
+    if (!isa<FunctionOpInterface>(operation)) {
+      return operation->emitError()
+             << "attribute '" << attribute.getName().getValue()
+             << "' is only valid on a function";
+    }
+    return verifyName(operation, attribute);
+  }
   if (attribute.getName() == ParameterGroupAttrHelper::getNameStr()) {
     if (!isa<scf::ForOp>(operation)) {
       return operation->emitError()
