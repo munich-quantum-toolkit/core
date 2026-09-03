@@ -37,24 +37,6 @@ static bool containsQubit(Type type) {
       .wasInterrupted();
 }
 
-static bool carriesQubit(Operation* operation) {
-  return llvm::any_of(operation->getOperandTypes(), containsQubit) ||
-         llvm::any_of(operation->getResultTypes(), containsQubit);
-}
-
-static bool isClassical(Operation* operation) {
-  if (!isPure(operation)) {
-    return false;
-  }
-  return !operation
-              ->walk([](Operation* nested) {
-                return isa<UnitaryOpInterface>(nested) || carriesQubit(nested)
-                           ? WalkResult::interrupt()
-                           : WalkResult::advance();
-              })
-              .wasInterrupted();
-}
-
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   SetVector<Value> captures;
   getUsedValuesDefinedAbove(modifierOp->getRegions(), captures);
@@ -68,7 +50,21 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
 
   const auto hasNonUnitaryOperation =
       llvm::any_of(body.without_terminator(), [](Operation& operation) {
-        return !isa<UnitaryOpInterface>(operation) && !isClassical(&operation);
+        if (isa<UnitaryOpInterface>(operation)) {
+          return false;
+        }
+        return !isPure(&operation) ||
+               operation
+                   .walk([](Operation* nested) {
+                     const auto carriesQubit =
+                         llvm::any_of(nested->getOperandTypes(),
+                                      containsQubit) ||
+                         llvm::any_of(nested->getResultTypes(), containsQubit);
+                     return isa<UnitaryOpInterface>(nested) || carriesQubit
+                                ? WalkResult::interrupt()
+                                : WalkResult::advance();
+                   })
+                   .wasInterrupted();
       });
   if (hasNonUnitaryOperation) {
     return modifierOp->emitOpError(
