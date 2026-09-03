@@ -1235,8 +1235,8 @@ private:
                   SetVector<Operation*> slice;
                   getForwardSlice(bit, &slice);
                   return any_of(slice, [](Operation* op) {
-                    return isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp, UnitaryOpInterface>(
-                        op);
+                    return isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp,
+                               UnitaryOpInterface>(op);
                   });
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
