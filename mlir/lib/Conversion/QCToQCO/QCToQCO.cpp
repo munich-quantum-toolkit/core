@@ -602,8 +602,8 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
         RegisterAccess{.reg = regIt->second, .index = op.getIndices().front()});
 
     for (Operation* user : op.getResult().getUsers()) {
-      if (isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp,
-              func::CallOp>(user)) {
+      if (isa<qc::UnitaryOpInterface, qc::MeasureOp, qc::ResetOp, func::CallOp>(
+              user)) {
         continue;
       }
       user->emitOpError(
@@ -997,10 +997,9 @@ struct ConvertQCCallOp final : StatefulOpConversionPattern<qc::CallOp> {
   matchAndRewrite(qc::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    const auto firstQubit =
-        llvm::find_if(op.getOperands(), [](Value operand) {
-          return isa<qc::QubitType, qco::QubitType>(operand.getType());
-        });
+    const auto firstQubit = llvm::find_if(op.getOperands(), [](Value operand) {
+      return isa<qc::QubitType, qco::QubitType>(operand.getType());
+    });
     const auto numParams = static_cast<size_t>(
         std::distance(op.getOperands().begin(), firstQubit));
     auto qcQubits = op.getOperands().drop_front(numParams);
