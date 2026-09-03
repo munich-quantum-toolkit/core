@@ -44,7 +44,6 @@ Checks: |
   cppcoreguidelines-pro-type-vararg,
   cppcoreguidelines-rvalue-reference-param-not-moved,
   cppcoreguidelines-use-enum-class,
-  google-explicit-constructor,
   modernize-avoid-bind,
   modernize-loop-convert,
   modernize-make-shared,
