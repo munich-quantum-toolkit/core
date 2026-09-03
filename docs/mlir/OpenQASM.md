@@ -234,8 +234,8 @@ outside the export subset. Multi-operation modifier bodies must have a target
 qubit and cannot capture additional qubits from an enclosing scope.
 
 The OpenQASM path additionally supports arbitrary bit-register widths,
-whole-register writes, `popcount`, `rotl`, and `rotr`. Qiskit interoperability
-uses the common subset described in the Python compiler documentation.
+`popcount`, `rotl`, and `rotr`. Qiskit interoperability uses the common subset
+described in the Python compiler documentation.
 
 The exporter inlines a whole-register read only in the block that contains the
 read and only when no later write to that register precedes the expression use.

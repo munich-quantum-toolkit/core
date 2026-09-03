@@ -501,8 +501,8 @@ measure q[0] -> c[1];
 
 
 @pytest.mark.parametrize("late_value", ["false", "true"])
-def test_flat_export_rejects_classical_store_after_quantum_work(late_value: str) -> None:
-    """Reject constant CBit stores regardless of their position."""
+def test_flat_export_preserves_classical_store_order(late_value: str) -> None:
+    """Preserve constant CBit stores around quantum work."""
     program = QCProgram.from_mlir_str(
         f"""module {{
   func.func @main() -> !cbit.reg<2> attributes {{mqt.entry_point}} {{
@@ -522,8 +522,11 @@ def test_flat_export_rejects_classical_store_after_quantum_work(late_value: str)
 """
     )
 
-    with pytest.raises(RuntimeError, match="does not support non-measurement classical stores"):
-        program.to_qiskit()
+    restored = program.to_qiskit()
+
+    assert [instruction.operation.name for instruction in restored.data] == ["store", "x", "store"]
+    assert not restored.data[0].operation.rvalue.value
+    assert bool(restored.data[2].operation.rvalue.value) is (late_value == "true")
 
 
 def test_target_compiled_openqasm2_measurements_export() -> None:
@@ -627,7 +630,10 @@ if (int[3](c) < -1) { x q[3]; }
     assert "cbit.cmp slt" in program.ir
     assert expr.structurally_equivalent(restored.data[3].operation.condition, expected_negative)
 
-    reimported = QCProgram.from_qiskit(restored).to_qiskit()
+    reimported_program = QCProgram.from_qiskit(restored)
+    assert "cbit.cmp slt" in reimported_program.ir
+    assert "arith.xori" not in reimported_program.ir
+    reimported = reimported_program.to_qiskit()
     reimported_negative = expr.less(expr.bit_xor(reimported.cregs[0], 4), 3)
     assert expr.structurally_equivalent(reimported.data[3].operation.condition, reimported_negative)
 
@@ -727,6 +733,136 @@ def test_qiskit_oversized_tuple_condition_is_false() -> None:
     condition = program.to_qiskit().data[0].operation.condition
     assert isinstance(condition, expr.Value)
     assert condition.value == 0
+
+
+def test_qiskit_store_round_trip_preserves_register_semantics() -> None:
+    """Import and export bit, register, and runtime-indexed assignments."""
+    data = ClassicalRegister(3, "data")
+    index = ClassicalRegister(2, "index")
+    circuit = QuantumCircuit(data, index)
+    circuit.store(
+        data[1],
+        True,  # ruff: ignore[boolean-positional-value-in-call] Qiskit Store arguments are positional-only.
+    )
+    circuit.store(data, expr.bit_xor(data, 3))
+    circuit.store(
+        expr.index(data, index),
+        False,  # ruff: ignore[boolean-positional-value-in-call] Qiskit Store arguments are positional-only.
+    )
+
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert program.ir.count("cbit.store") == 2
+    assert "cbit.write" in program.ir
+    assert "cbit.read" in program.ir
+    assert "arith.index_castui" in program.ir
+    assert [instruction.operation.name for instruction in restored.data] == ["store"] * 3
+    expected = (
+        (
+            expr.lift(restored.cregs[0][1]),
+            expr.lift(
+                True,  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
+            ),
+        ),
+        (expr.lift(restored.cregs[0]), expr.bit_xor(restored.cregs[0], 3)),
+        (
+            expr.index(restored.cregs[0], restored.cregs[1]),
+            expr.lift(
+                False,  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
+            ),
+        ),
+    )
+    for instruction, (lvalue, rvalue) in zip(restored.data, expected, strict=True):
+        assert isinstance(instruction.operation, Store)
+        assert expr.structurally_equivalent(instruction.operation.lvalue, lvalue)
+        assert expr.structurally_equivalent(instruction.operation.rvalue, rvalue)
+
+
+def test_qiskit_store_round_trip_inside_control_flow() -> None:
+    """Keep register metadata when rebasing a control-flow Store body."""
+    register = ClassicalRegister(3, "c")
+    circuit = QuantumCircuit(register)
+    with circuit.if_test(expr.lift(register[0])):
+        circuit.store(register, 5)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    body = restored.data[0].operation.blocks[0]
+    assert body.cregs == restored.cregs
+    assert len(body.data) == 1
+    operation = body.data[0].operation
+    assert isinstance(operation, Store)
+    assert expr.structurally_equivalent(operation.lvalue, expr.lift(body.cregs[0]))
+    assert expr.structurally_equivalent(operation.rvalue, expr.lift(5, types.Uint(3)))
+
+
+def test_qiskit_store_preserves_width_one_uint_contexts() -> None:
+    """Cast i1 values to Uint(1) for register and index operands."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> (!cbit.reg<2>, !cbit.reg<1>) attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %data = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "data"} : !cbit.reg<2>
+    %index = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "index"} : !cbit.reg<1>
+    %zero = arith.constant 0 : index
+    %true = arith.constant true
+    cbit.write %true, %index : i1, !cbit.reg<1>
+    %bit = cbit.load %index[%zero] : !cbit.reg<1>
+    %target = arith.index_castui %bit : i1 to index
+    %false = arith.constant false
+    cbit.store %false, %data[%target] : !cbit.reg<2>
+    qc.dealloc %q : !qc.qubit
+    return %data, %index : !cbit.reg<2>, !cbit.reg<1>
+  }
+}
+"""
+    )
+
+    register_store, indexed_store = (item.operation for item in program.to_qiskit().data)
+
+    assert isinstance(register_store, Store)
+    assert register_store.rvalue.type == types.Uint(1)
+    assert isinstance(indexed_store, Store)
+    assert indexed_store.lvalue.index.type == types.Uint(1)
+
+
+def test_qiskit_store_rejects_stale_dynamic_index() -> None:
+    """Reject an index snapshot that Qiskit would re-evaluate after a write."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> (!cbit.reg<4>, !cbit.reg<2>) attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %data = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "data"} : !cbit.reg<4>
+    %index = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "index"} : !cbit.reg<2>
+    %old_index = cbit.read %index : !cbit.reg<2> -> i2
+    %zero = arith.constant 0 : index
+    %true = arith.constant true
+    cbit.store %true, %index[%zero] : !cbit.reg<2>
+    %target = arith.index_castui %old_index : i2 to index
+    %false = arith.constant false
+    cbit.store %false, %data[%target] : !cbit.reg<4>
+    qc.dealloc %q : !qc.qubit
+    return %data, %index : !cbit.reg<4>, !cbit.reg<2>
+  }
+}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="cannot preserve a stale classical snapshot"):
+        program.to_qiskit()
+
+
+def test_qiskit_custom_gate_named_store_remains_a_gate() -> None:
+    """Use the Store type, not its public name, to classify assignments."""
+    definition = QuantumCircuit(1)
+    definition.x(0)
+    gate = Gate("store", 1, [])
+    gate.definition = definition
+    circuit = QuantumCircuit(1)
+    circuit.append(gate, [0])
+
+    assert "qc.x" in QCProgram.from_qiskit(circuit).ir
 
 
 def test_openqasm_short_circuit_expression_exports_to_qiskit() -> None:
@@ -839,8 +975,8 @@ def test_qiskit_export_rejects_mixed_sentinel_and_cbit_results() -> None:
         program.to_qiskit()
 
 
-def test_qiskit_round_trip_preserves_anonymous_clbits() -> None:
-    """Represent loose Qiskit clbits as one anonymous public CBit register."""
+def test_qiskit_round_trip_groups_anonymous_clbits() -> None:
+    """Represent loose Qiskit Clbits as one explicit public register."""
     circuit = QuantumCircuit(1)
     circuit.add_bits([Clbit()])
     circuit.measure(0, 0)
@@ -850,7 +986,7 @@ def test_qiskit_round_trip_preserves_anonymous_clbits() -> None:
 
     assert "cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>" in program.ir
     assert restored.num_clbits == 1
-    assert restored.cregs == []
+    assert [(register.name, len(register)) for register in restored.cregs] == [("_mqt_c0", 1)]
     assert restored.count_ops() == {"measure": 1}
 
 
@@ -875,14 +1011,16 @@ def test_qiskit_export_excludes_internal_cbit_registers() -> None:
     assert [(register.name, len(register)) for register in restored.cregs] == [("output", 1)]
 
 
-def test_qiskit_export_rejects_duplicate_measurement_destinations() -> None:
-    """Reject multiple measurements that write the same public bit."""
+def test_qiskit_export_preserves_repeated_measurement_destinations() -> None:
+    """Preserve sequential measurements that overwrite the same bit."""
     circuit = QuantumCircuit(1, 1)
     circuit.measure(0, 0)
     circuit.measure(0, 0)
 
-    with pytest.raises(RuntimeError, match="duplicate classical destinations"):
-        QCProgram.from_qiskit(circuit).to_qiskit()
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert restored.count_ops() == {"measure": 2}
+    assert [restored.find_bit(item.clbits[0]).index for item in restored.data] == [0, 0]
 
 
 def test_qiskit_export_rejects_measurement_with_multiple_destinations() -> None:
@@ -1290,7 +1428,7 @@ def test_control_flow_and_controlled_unitary_preserve_instruction_order() -> Non
 
 @pytest.mark.parametrize("num_clbits", [3, 64])
 def test_root_register_expression_and_nested_condition_preserve_captures(num_clbits: int) -> None:
-    """Keep a root register leaf and pack its nested block-local condition."""
+    """Keep root-register metadata in nested block conditions."""
     circuit = QuantumCircuit(1, num_clbits)
     condition = expr.logic_and(expr.equal(circuit.cregs[0], 5), circuit.clbits[0])
     with circuit.if_test(condition), circuit.if_test((circuit.cregs[0], 2)):
@@ -1302,9 +1440,11 @@ def test_root_register_expression_and_nested_condition_preserve_captures(num_clb
     assert isinstance(outer.condition, expr.Expr)
     outer_variables = {variable.var for variable in expr.iter_vars(outer.condition)}
     assert outer_variables == {restored.cregs[0], restored.clbits[0]}
-    inner = outer.blocks[0].data[0].operation
+    body = outer.blocks[0]
+    assert body.cregs == restored.cregs
+    inner = body.data[0].operation
     assert isinstance(inner.condition, expr.Expr)
-    assert {variable.var for variable in expr.iter_vars(inner.condition)} == set(outer.blocks[0].clbits)
+    assert {variable.var for variable in expr.iter_vars(inner.condition)} == {body.cregs[0]}
 
 
 def test_repeated_cbit_uint_expression_falls_back_to_expression_tree() -> None:
@@ -2179,19 +2319,6 @@ def test_width_one_register_bitwise_expression_round_trips() -> None:
 
     assert isinstance(restored_condition, expr.Expr)
     assert expr.structurally_equivalent(restored_condition, expr.equal(expr.bit_xor(restored.cregs[0], 1), 0))
-
-
-def test_qiskit_store_is_rejected_safely() -> None:
-    """Reject Store before Qiskit's native numeric-parameter accessor."""
-    circuit = QuantumCircuit(1, 3)
-    circuit.append(
-        Store(expr.lift(circuit.cregs[0]), expr.bit_xor(circuit.cregs[0], 1)),
-        [],
-        [],
-    )
-
-    with pytest.raises(RuntimeError, match="Store instructions are not supported"):
-        QCProgram.from_qiskit(circuit)
 
 
 def test_nested_classical_expression_captures_import() -> None:

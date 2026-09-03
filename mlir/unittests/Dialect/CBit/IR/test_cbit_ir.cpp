@@ -128,6 +128,18 @@ TEST_F(CBitIRTest, RejectsReadWidthMismatch) {
   )mlir"));
 }
 
+TEST_F(CBitIRTest, RejectsUnsignedIntegerType) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %value = "cbit.read"(%reg) : (!cbit.reg<2>) -> ui2
+        return
+      }
+    }
+  )mlir"));
+}
+
 TEST_F(CBitIRTest, RejectsWriteWidthMismatch) {
   EXPECT_FALSE(parse(R"mlir(
     module {
@@ -222,37 +234,6 @@ TEST_F(CBitIRTest, BuildsSignedComparisonFromBits) {
   APInt result;
   EXPECT_TRUE(matchPattern(returnOp.getOperand(0), m_ConstantInt(&result)));
   EXPECT_TRUE(result.isOne());
-}
-
-TEST_F(CBitIRTest, CanonicalizesSignedRegisterReadComparison) {
-  auto moduleOp = parse(R"mlir(
-    module {
-      func.func @main(%reg: !cbit.reg<4>) -> i1 {
-        %value = cbit.read %reg : !cbit.reg<4> -> i4
-        %replacement = arith.constant 1 : i4
-        cbit.write %replacement, %reg : i4, !cbit.reg<4>
-        %sign = arith.constant 8 : i4
-        %biased = arith.xori %value, %sign : i4
-        %expected = arith.constant 10 : i4
-        %condition = arith.cmpi ult, %biased, %expected : i4
-        return %condition : i1
-      }
-    }
-  )mlir");
-  ASSERT_TRUE(moduleOp);
-
-  PassManager canonicalizer(context.get());
-  canonicalizer.addPass(createCanonicalizerPass());
-  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
-
-  auto funcOp = *moduleOp->getOps<func::FuncOp>().begin();
-  auto returnOp = *funcOp.getOps<func::ReturnOp>().begin();
-  auto comparison = returnOp.getOperand(0).getDefiningOp<cbit::CompareOp>();
-  ASSERT_TRUE(comparison);
-  auto write = *funcOp.getOps<cbit::WriteOp>().begin();
-  EXPECT_TRUE(comparison->isBeforeInBlock(write));
-  EXPECT_EQ(comparison.getPredicate(), arith::CmpIPredicate::slt);
-  EXPECT_EQ(comparison.getRhs(), APInt(4, 2));
 }
 
 TEST_F(CBitIRTest, RecognizesSharedRegisterExpressionDAG) {

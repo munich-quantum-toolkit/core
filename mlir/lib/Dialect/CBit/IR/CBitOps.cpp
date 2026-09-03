@@ -154,41 +154,11 @@ static std::optional<KnownLoadValue> findKnownLoadValue(LoadOp load) {
   return std::nullopt;
 }
 
-static arith::CmpIPredicate
-swapPredicate(const arith::CmpIPredicate predicate) {
-  switch (predicate) {
-  case arith::CmpIPredicate::eq:
-  case arith::CmpIPredicate::ne:
-    return predicate;
-  case arith::CmpIPredicate::slt:
-    return arith::CmpIPredicate::sgt;
-  case arith::CmpIPredicate::sle:
-    return arith::CmpIPredicate::sge;
-  case arith::CmpIPredicate::sgt:
-    return arith::CmpIPredicate::slt;
-  case arith::CmpIPredicate::sge:
-    return arith::CmpIPredicate::sle;
-  case arith::CmpIPredicate::ult:
-    return arith::CmpIPredicate::ugt;
-  case arith::CmpIPredicate::ule:
-    return arith::CmpIPredicate::uge;
-  case arith::CmpIPredicate::ugt:
-    return arith::CmpIPredicate::ult;
-  case arith::CmpIPredicate::uge:
-    return arith::CmpIPredicate::ule;
-  }
-  llvm_unreachable("unknown integer comparison predicate");
-}
-
-static std::optional<llvm::APInt> integerConstant(Value value) {
-  auto constant = value.getDefiningOp<arith::ConstantOp>();
-  auto attribute =
-      constant ? dyn_cast<IntegerAttr>(constant.getValue()) : IntegerAttr{};
-  if (!attribute) {
-    return std::nullopt;
-  }
-  return attribute.getValue();
-}
+static Value buildRead(OpBuilder& builder, Location location, unsigned width,
+                       llvm::function_ref<Value(int64_t)> loadBit);
+static void buildWrite(OpBuilder& builder, Location location, Value value,
+                       unsigned width,
+                       llvm::function_ref<void(int64_t, Value)> storeBit);
 
 namespace {
 struct ForwardKnownLoad final : OpRewritePattern<LoadOp> {
@@ -236,83 +206,57 @@ struct FoldUntouchedZeroComparison final : OpRewritePattern<CompareOp> {
   }
 };
 
-struct CanonicalizeReadComparison final : OpRewritePattern<arith::CmpIOp> {
+struct DecomposeRead final : OpRewritePattern<ReadOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(arith::CmpIOp compare,
+  LogicalResult matchAndRewrite(ReadOp read,
                                 PatternRewriter& rewriter) const override {
-    Value candidate = compare.getLhs();
-    auto expected = integerConstant(compare.getRhs());
-    auto predicate = compare.getPredicate();
-    if (!expected) {
-      expected = integerConstant(compare.getLhs());
-      candidate = compare.getRhs();
-      predicate = swapPredicate(predicate);
-    }
-    if (!expected) {
-      return failure();
-    }
+    auto result = buildRead(
+        rewriter, read.getLoc(), read.getResult().getType().getWidth(),
+        [&](const int64_t index) -> Value {
+          auto indexValue =
+              arith::ConstantIndexOp::create(rewriter, read.getLoc(), index);
+          return LoadOp::create(rewriter, read.getLoc(), rewriter.getI1Type(),
+                                read.getReg(), indexValue);
+        });
+    rewriter.replaceOp(read, result);
+    return success();
+  }
+};
 
-    while (auto extension = candidate.getDefiningOp<arith::ExtUIOp>()) {
-      if (predicate != arith::CmpIPredicate::eq &&
-          predicate != arith::CmpIPredicate::ne &&
-          getUnsignedPredicate(predicate) != predicate) {
-        return failure();
-      }
-      const auto width =
-          cast<IntegerType>(extension.getIn().getType()).getWidth();
-      if (expected->getActiveBits() > width) {
-        return failure();
-      }
-      candidate = extension.getIn();
-      *expected = expected->trunc(width);
-    }
+struct DecomposeWrite final : OpRewritePattern<WriteOp> {
+  using OpRewritePattern::OpRewritePattern;
 
-    auto read = candidate.getDefiningOp<ReadOp>();
-    if (!read) {
-      auto bias = candidate.getDefiningOp<arith::XOrIOp>();
-      if (!bias) {
-        return failure();
-      }
-      read = bias.getLhs().getDefiningOp<ReadOp>();
-      auto mask = integerConstant(bias.getRhs());
-      if (!read) {
-        read = bias.getRhs().getDefiningOp<ReadOp>();
-        mask = integerConstant(bias.getLhs());
-      }
-      const auto width = expected->getBitWidth();
-      if (!read || !mask || *mask != llvm::APInt::getSignMask(width)) {
-        return failure();
-      }
-      switch (predicate) {
-      case arith::CmpIPredicate::eq:
-      case arith::CmpIPredicate::ne:
-        break;
-      case arith::CmpIPredicate::ult:
-        predicate = arith::CmpIPredicate::slt;
-        break;
-      case arith::CmpIPredicate::ule:
-        predicate = arith::CmpIPredicate::sle;
-        break;
-      case arith::CmpIPredicate::ugt:
-        predicate = arith::CmpIPredicate::sgt;
-        break;
-      case arith::CmpIPredicate::uge:
-        predicate = arith::CmpIPredicate::sge;
-        break;
-      default:
-        return failure();
-      }
-      expected->flipBit(width - 1U);
-    }
+  LogicalResult matchAndRewrite(WriteOp write,
+                                PatternRewriter& rewriter) const override {
+    buildWrite(rewriter, write.getLoc(), write.getValue(),
+               write.getValue().getType().getWidth(),
+               [&](const int64_t index, Value bit) {
+                 auto indexValue = arith::ConstantIndexOp::create(
+                     rewriter, write.getLoc(), index);
+                 StoreOp::create(rewriter, write.getLoc(), bit, write.getReg(),
+                                 indexValue);
+               });
+    rewriter.eraseOp(write);
+    return success();
+  }
+};
 
-    OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPointAfter(read);
-    auto rhs = rewriter.getIntegerAttr(read.getResult().getType(), *expected);
-    auto replacement =
-        CompareOp::create(rewriter, compare.getLoc(), rewriter.getI1Type(),
-                          predicate, read.getReg(), rhs);
-    rewriter.replaceOp(compare, replacement.getResult());
+struct DecomposeComparison final : OpRewritePattern<CompareOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(CompareOp compare,
+                                PatternRewriter& rewriter) const override {
+    auto result =
+        buildComparison(rewriter, compare.getLoc(), compare.getPredicate(),
+                        compare.getRhs(), [&](const int64_t index) -> Value {
+                          auto indexValue = arith::ConstantIndexOp::create(
+                              rewriter, compare.getLoc(), index);
+                          return LoadOp::create(rewriter, compare.getLoc(),
+                                                rewriter.getI1Type(),
+                                                compare.getReg(), indexValue);
+                        });
+    rewriter.replaceOp(compare, result);
     return success();
   }
 };
@@ -331,11 +275,6 @@ LogicalResult ReadOp::verify() {
   return success();
 }
 
-void ReadOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                         MLIRContext* context) {
-  results.add<CanonicalizeReadComparison>(context);
-}
-
 LogicalResult WriteOp::verify() {
   if (std::cmp_not_equal(getValue().getType().getWidth(),
                          getReg().getType().getWidth())) {
@@ -352,9 +291,9 @@ LogicalResult CompareOp::verify() {
   return success();
 }
 
-Value mlir::cbit::buildRead(OpBuilder& builder, const Location location,
-                            const unsigned width,
-                            const llvm::function_ref<Value(int64_t)> loadBit) {
+static Value buildRead(OpBuilder& builder, const Location location,
+                       const unsigned width,
+                       const llvm::function_ref<Value(int64_t)> loadBit) {
   assert(width > 0);
   if (width == 1) {
     return loadBit(0);
@@ -371,10 +310,10 @@ Value mlir::cbit::buildRead(OpBuilder& builder, const Location location,
   return result;
 }
 
-void mlir::cbit::buildWrite(
-    OpBuilder& builder, const Location location, Value value,
-    const unsigned width,
-    const llvm::function_ref<void(int64_t, Value)> storeBit) {
+static void
+buildWrite(OpBuilder& builder, const Location location, Value value,
+           const unsigned width,
+           const llvm::function_ref<void(int64_t, Value)> storeBit) {
   assert(width > 0);
   const auto type = builder.getIntegerType(width);
   for (unsigned index = 0; index < width; ++index) {
@@ -430,6 +369,12 @@ bool mlir::cbit::isRegisterBitVector(Value value) {
     }
   }
   return false;
+}
+
+void mlir::cbit::populateCBitDecompositionPatterns(
+    RewritePatternSet& patterns) {
+  patterns.add<DecomposeComparison, DecomposeRead, DecomposeWrite>(
+      patterns.getContext());
 }
 
 Value mlir::cbit::buildComparison(

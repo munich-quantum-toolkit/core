@@ -748,6 +748,68 @@ integerComparisonPredicate(const BinaryOperation operation,
   }
 }
 
+namespace {
+struct RegisterComparison {
+  const Register* reg;
+  mlir::arith::CmpIPredicate predicate;
+  uint64_t expected;
+};
+} // namespace
+
+[[nodiscard]] static std::optional<RegisterComparison>
+signedRegisterComparison(const Expression& expression) {
+  const auto reverse = expression.left->kind == ExpressionKind::Value;
+  const auto& biasedRegister = reverse ? *expression.right : *expression.left;
+  const auto& biasedExpected = reverse ? *expression.left : *expression.right;
+  const auto predicate =
+      integerComparisonPredicate(expression.binaryOperation, reverse);
+  if (!predicate || biasedRegister.kind != ExpressionKind::Binary ||
+      biasedRegister.binaryOperation != BinaryOperation::BitXor ||
+      biasedRegister.type != ClassicalType::Uint ||
+      biasedExpected.kind != ExpressionKind::Value ||
+      biasedExpected.type != ClassicalType::Uint ||
+      biasedExpected.width != biasedRegister.width) {
+    return std::nullopt;
+  }
+  const auto& left = *biasedRegister.left;
+  const auto& right = *biasedRegister.right;
+  const auto* reg = left.kind == ExpressionKind::ClassicalRegister    ? &left
+                    : right.kind == ExpressionKind::ClassicalRegister ? &right
+                                                                      : nullptr;
+  const auto* mask = left.kind == ExpressionKind::Value    ? &left
+                     : right.kind == ExpressionKind::Value ? &right
+                                                           : nullptr;
+  if (reg == nullptr || mask == nullptr || reg->type != ClassicalType::Uint ||
+      reg->width == 0U || reg->width != reg->reg.bits.size() ||
+      reg->width != biasedRegister.width || mask->type != ClassicalType::Uint ||
+      mask->width != reg->width ||
+      mask->uintValue != (uint64_t{1} << (reg->width - 1U))) {
+    return std::nullopt;
+  }
+  const auto signedPredicate =
+      [&]() -> std::optional<mlir::arith::CmpIPredicate> {
+    switch (*predicate) {
+    case mlir::arith::CmpIPredicate::ult:
+      return mlir::arith::CmpIPredicate::slt;
+    case mlir::arith::CmpIPredicate::ule:
+      return mlir::arith::CmpIPredicate::sle;
+    case mlir::arith::CmpIPredicate::ugt:
+      return mlir::arith::CmpIPredicate::sgt;
+    case mlir::arith::CmpIPredicate::uge:
+      return mlir::arith::CmpIPredicate::sge;
+    default:
+      return std::nullopt;
+    }
+  }();
+  if (!signedPredicate) {
+    return std::nullopt;
+  }
+  return RegisterComparison{.reg = &reg->reg,
+                            .predicate = *signedPredicate,
+                            .expected =
+                                biasedExpected.uintValue ^ mask->uintValue};
+}
+
 [[nodiscard]] static mlir::Value
 emitExpression(mlir::qc::QCProgramBuilder& builder,
                const Expression& expression,
@@ -866,23 +928,48 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     break;
   }
   case ExpressionKind::Binary: {
+    if (const auto comparison = signedRegisterComparison(expression)) {
+      if (auto result = emitRegisterComparison(
+              builder, classicalBits, rootClbitMap, *comparison->reg,
+              comparison->predicate, comparison->expected)) {
+        return result;
+      }
+    }
     const auto reverse =
         expression.left->kind == ExpressionKind::Value &&
         expression.right->kind == ExpressionKind::ClassicalRegister;
     const auto& registerExpression =
         reverse ? *expression.right : *expression.left;
     const auto& expected = reverse ? *expression.left : *expression.right;
+    const Expression* registerValue = nullptr;
+    if (registerExpression.kind == ExpressionKind::ClassicalRegister &&
+        registerExpression.type == ClassicalType::Uint &&
+        registerExpression.width == registerExpression.reg.bits.size()) {
+      registerValue = &registerExpression;
+    } else if (registerExpression.kind == ExpressionKind::Cast &&
+               registerExpression.type == ClassicalType::Uint &&
+               registerExpression.left->kind ==
+                   ExpressionKind::ClassicalRegister &&
+               registerExpression.left->type == ClassicalType::Uint &&
+               registerExpression.left->width ==
+                   registerExpression.left->reg.bits.size() &&
+               registerExpression.width >= registerExpression.left->width &&
+               expected.kind == ExpressionKind::Value &&
+               expected.type == ClassicalType::Uint &&
+               expected.width == registerExpression.width &&
+               (registerExpression.left->width == 64U ||
+                expected.uintValue <
+                    (uint64_t{1} << registerExpression.left->width))) {
+      registerValue = registerExpression.left.get();
+    }
     if (const auto predicate =
             integerComparisonPredicate(expression.binaryOperation, reverse);
-        predicate &&
-        registerExpression.kind == ExpressionKind::ClassicalRegister &&
-        registerExpression.type == ClassicalType::Uint &&
-        registerExpression.width == registerExpression.reg.bits.size() &&
+        predicate && registerValue != nullptr &&
         expected.kind == ExpressionKind::Value &&
         expected.type == ClassicalType::Uint &&
         expected.width == registerExpression.width) {
       if (auto comparison = emitRegisterComparison(
-              builder, classicalBits, rootClbitMap, registerExpression.reg,
+              builder, classicalBits, rootClbitMap, registerValue->reg,
               *predicate, expected.uintValue)) {
         return comparison;
       }
@@ -1053,6 +1140,62 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
   }
   }
   throw std::runtime_error("unsupported normalized Qiskit expression");
+}
+
+static void emitStore(mlir::qc::QCProgramBuilder& builder,
+                      const ClassicalAssignment& assignment,
+                      const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+                      const llvm::ArrayRef<uint32_t> clbitMap) {
+  if (!assignment.value) {
+    throw std::runtime_error("Qiskit Store has no rvalue");
+  }
+  auto value =
+      emitExpression(builder, *assignment.value, classicalBits, clbitMap);
+  switch (assignment.target.kind) {
+  case ClassicalTargetKind::ClassicalBit: {
+    if (!value.getType().isInteger(1)) {
+      throw std::runtime_error("Qiskit Clbit Store requires a Boolean rvalue");
+    }
+    const auto& bit =
+        classicalBitRef(classicalBits, clbitMap, assignment.target.bit);
+    builder.storeClassicalBit(value, bit.storage, bit.index);
+    return;
+  }
+  case ClassicalTargetKind::ClassicalRegister: {
+    auto storage =
+        registerStorage(classicalBits, clbitMap, assignment.target.reg);
+    if (!storage || value.getType() != builder.getIntegerType(
+                                           assignment.target.reg.bits.size())) {
+      throw std::runtime_error(
+          "Qiskit register Store requires a matching canonical register");
+    }
+    mlir::cbit::WriteOp::create(builder, value, storage);
+    return;
+  }
+  case ClassicalTargetKind::Expression:
+    break;
+  }
+  const auto* target = assignment.target.expression.get();
+  if (target == nullptr || target->kind != ExpressionKind::Index ||
+      target->left == nullptr || target->right == nullptr ||
+      target->left->kind != ExpressionKind::ClassicalRegister ||
+      !value.getType().isInteger(1)) {
+    throw std::runtime_error(
+        "Qiskit Store supports only register-index lvalue expressions");
+  }
+  auto storage = registerStorage(classicalBits, clbitMap, target->left->reg);
+  if (!storage) {
+    throw std::runtime_error(
+        "Qiskit indexed Store requires a canonical classical register");
+  }
+  auto index = emitExpression(builder, *target->right, classicalBits, clbitMap);
+  if (!llvm::isa<mlir::IntegerType>(index.getType())) {
+    throw std::runtime_error("Qiskit Store index must have Uint type");
+  }
+  index =
+      mlir::arith::IndexCastUIOp::create(builder, builder.getIndexType(), index)
+          .getResult();
+  builder.storeClassicalBit(value, storage, index);
 }
 
 [[nodiscard]] static mlir::Value
@@ -1451,6 +1594,9 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
                               builder.unitary(targetArguments, matrix);
                             });
     } break;
+    case OperationKind::Store:
+      emitStore(builder, circuit.store(index), classicalBits, clbitMap);
+      break;
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);
       translateControlFlow(builder, *controlFlow, allQubits, classicalBits,
@@ -2021,6 +2167,48 @@ void validateCircuit(const CircuitReader& circuit,
     case OperationKind::Unitary:
       static_cast<void>(denseUnitaryArity(instruction));
       break;
+    case OperationKind::Store: {
+      if (!instruction.qubits.empty() || !instruction.clbits.empty() ||
+          !instruction.parameters.empty() || !instruction.modifiers.empty()) {
+        throw std::runtime_error("Qiskit Store has an invalid operand arity");
+      }
+      const auto assignment = circuit.store(index);
+      if (!assignment.value) {
+        throw std::runtime_error("Qiskit Store has no rvalue");
+      }
+      validateTarget(assignment.target, circuit.numClbits());
+      validateExpression(*assignment.value, circuit.numClbits());
+      switch (assignment.target.kind) {
+      case ClassicalTargetKind::ClassicalBit:
+        if (assignment.value->type != ClassicalType::Bool) {
+          throw std::runtime_error(
+              "Qiskit Clbit Store requires a Boolean rvalue");
+        }
+        break;
+      case ClassicalTargetKind::ClassicalRegister:
+        if (assignment.value->type != ClassicalType::Uint ||
+            assignment.value->width != assignment.target.reg.bits.size()) {
+          throw std::runtime_error(
+              "Qiskit register Store requires a matching Uint rvalue");
+        }
+        break;
+      case ClassicalTargetKind::Expression: {
+        const auto* target = assignment.target.expression.get();
+        if (target == nullptr || target->kind != ExpressionKind::Index ||
+            target->left == nullptr || target->right == nullptr ||
+            target->left->kind != ExpressionKind::ClassicalRegister ||
+            target->left->type != ClassicalType::Uint ||
+            target->left->width != target->left->reg.bits.size() ||
+            target->right->type != ClassicalType::Uint ||
+            assignment.value->type != ClassicalType::Bool) {
+          throw std::runtime_error(
+              "Qiskit Store supports only register-index lvalues");
+        }
+        break;
+      }
+      }
+      break;
+    }
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);
       validateControlFlow(*controlFlow, localParameters, freeParameters,

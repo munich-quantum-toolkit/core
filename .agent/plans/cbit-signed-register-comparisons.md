@@ -41,6 +41,12 @@ reconstructing loads or signed-comparison range trees.
   register snapshots and emit canonical rotations.
 - [x] (2026-09-03 01:33Z) Ran the complete affected suites and lint, inspected
   the final diff, and recorded the audit.
+- [x] (2026-09-03) Added Qiskit `Store` import and export, moved signed
+  comparison recognition to the Qiskit boundary, and shared whole-register
+  decomposition between MemRef and Adaptive QIR lowering.
+- [x] (2026-09-03) Completed an independent final audit, required signless
+      whole-register integer values, and passed the final affected suites and
+      lint.
 
 ## Surprises & Discoveries
 
@@ -54,10 +60,9 @@ reconstructing loads or signed-comparison range trees.
 - Observation: Qiskit serializes a sign-bit-XOR comparison as `(c ^ S) < C`.
   Rejecting that valid fixed-width OpenQASM expression is the shared compiler
   gap, so an exporter-only range split would preserve needless asymmetry.
-- Observation: Qiskit exposes `Store` in Python, but the vendored Qiskit C API
-  cannot read or construct it. Whole-register assignment support therefore stops
-  at the adapter boundary rather than adding Python-object patching to this
-  change.
+- Observation: Qiskit exposes `Store` in Python, but not through its C API.
+  Reusing the adapter's existing deferred Python-instruction path preserves
+  whole-register assignment without changing the C API boundary.
 - Observation: jeff 2.x has no conversion operations for arbitrary fixed-width
   integers. The jeff path reports `cbit.read` and `cbit.write` directly instead
   of accepting an expression it cannot preserve.
@@ -68,6 +73,9 @@ reconstructing loads or signed-comparison range trees.
   arbitrary signless shift distance therefore cannot be emitted as `uint`.
   Register bit vectors and `popcount` retain enough provenance; other dynamic
   scalar distances must fail closed.
+- Observation: `AnyInteger` also admits MLIR signed and unsigned integer types,
+  but every CBit decomposition produces signless `iN` values. The `cbit.read`
+  and `cbit.write` type constraints must state the signless invariant.
 
 ## Decision Log
 
@@ -80,9 +88,11 @@ reconstructing loads or signed-comparison range trees.
   expression, and supporting it closes a real OpenQASM language gap shared by
   both format paths. Date/Author: 2026-09-02, Codex with user direction after
   independent specialist review.
-- Decision: Require only semantic Qiskit round trips. Rationale: reconstructing
-  `cbit.cmp` from an exported XOR tree adds a producer-shape matcher without
-  increasing supported behavior. Date/Author: 2026-09-02, user selection.
+- Decision: Recognize Qiskit's exact sign-bit-XOR comparison encoding only in
+  the Qiskit importer and delete the generic CBit arithmetic-graph
+  canonicalizer. Rationale: the frontend knows the encoding it introduced;
+  shared IR should not guess the intent of arbitrary arithmetic graphs.
+  Date/Author: 2026-09-03, Codex after independent simplification review.
 - Decision: Add unsigned, fixed-width `cbit.read` and `cbit.write` operations
   and reuse `arith` for all bitwise computation. Keep `cbit.cmp` for direct
   register and constant comparisons. Rationale: register memory semantics and
@@ -112,6 +122,17 @@ reconstructing loads or signed-comparison range trees.
   scalar. Rationale: treating an arbitrary signless integer as unsigned emits
   OpenQASM that may not parse or may change meaning. Date/Author: 2026-09-03,
   Codex after independent specialist review.
+- Decision: Preserve Qiskit `Store` atomically as `cbit.store` or `cbit.write`,
+  including dynamic register indices, while continuing to reject standalone
+  mutable variables. Rationale: Clbits and ClassicalRegisters already have an
+  exact CBit representation; standalone variables require a different storage
+  abstraction. Date/Author: 2026-09-03, user-selected scope after independent
+  simplification review.
+- Decision: Keep Jeff's arbitrary-width `cbit.cmp` lowering and defer general
+  register reads and writes until Jeff has integer casts and logical right
+  shift. Rationale: promotion would require per-operation logical-width masking
+  and would still be incomplete at width 64. Date/Author: 2026-09-03,
+  user-selected scope after independent simplification review.
 
 ## Outcomes & Retrospective
 
@@ -119,19 +140,19 @@ The implementation now uses one CBit representation for runtime fixed-width
 values: `cbit.read` and `cbit.write` define register snapshots and updates,
 ordinary integer operations define computation, and `cbit.cmp` retains compact
 register-versus-constant comparisons. OpenQASM and Qiskit share this IR instead
-of reconstructing bit-load graphs. The shared canonicalizer recovers compact
-comparisons from direct reads, lossless unsigned widening, and Qiskit's signed
-XOR encoding.
+of reconstructing bit-load graphs. Each frontend emits compact comparisons where
+their source meaning is known, and one explicit lowering decomposes
+whole-register operations for MemRef and Adaptive QIR consumers.
 
 The final audit found no remaining practical semantic defect. OpenQASM rejects
 stale or cross-region snapshots and dynamic shift distances whose unsigned
-provenance was erased. Qiskit rejects whole-register writes because its C
-adapter cannot inspect or construct `Store`. QIR Base and jeff reject general
-whole-register expressions that they cannot represent; Adaptive QIR lowers
-internal values. These are explicit backend boundaries rather than speculative
-emulation.
+provenance was erased. Qiskit imports and exports Clbit, indexed-register, and
+atomic whole-register `Store` operations through its public Python classes. QIR
+Base and Jeff reject general whole-register expressions that they cannot
+represent; Adaptive QIR lowers internal values. These are explicit backend
+boundaries rather than speculative emulation.
 
-Validation passed for 1,144 tests across the nine affected C++ binaries and 249
+Validation passed for 1,646 tests across ten affected C++ binaries and 253
 Qiskit translation tests. `uvx nox -s lint`, `uvx nox -s cpp-lint`, stub
 regeneration, and `git diff --check` passed. No dependency was added.
 
@@ -211,20 +232,22 @@ lowering must distinguish signed from unsigned order at the sign bit. OpenQASM
 `bit[N]` bitwise expressions, assignments, casts, comparisons, shifts,
 rotations, and popcount must lower through `cbit.read`; writes must occur only
 after the RHS snapshot. OpenQASM export must parse back with the same meaning.
-Qiskit export must produce an unsigned XOR-biased expression, and both direct
-import and Qiskit's OpenQASM serialization must remain supported even though the
-compact signed operation is not reconstructed.
+Qiskit export must produce an unsigned XOR-biased expression, and direct import
+must recognize that exact encoding as a compact signed comparison. Qiskit
+`Store` round trips must preserve Clbit, indexed-register, and atomic
+whole-register assignment semantics.
 
 ## Idempotence and Recovery
 
-All edits and tests are repeatable. Build output stays under `build/`. No remote
-operation is part of this plan. Preserve unrelated working-tree changes; if a
-test formatter changes a touched file, inspect and retain only relevant output.
+All edits and tests are repeatable. Build output stays under `build/`. Remote
+publication uses signed commits and an exact force-with-lease after rebasing.
+Preserve unrelated working-tree changes; if a formatter changes a touched file,
+inspect and retain only relevant output.
 
 ## Artifacts and Notes
 
-The final plan revision will record focused test output and a production-line
-comparison against the current branch base.
+The final plan revision records the affected test totals and the backend
+capability boundary.
 
 ## Interfaces and Dependencies
 
@@ -240,3 +263,10 @@ require structural signed round trips.
 
 Revision note (2026-09-02): Broadened the plan after the user required genuine
 runtime fixed-width bitwise support and parity between OpenQASM and Qiskit.
+
+Revision note (2026-09-03): Added Qiskit `Store` parity, removed generic
+comparison reconstruction, shared explicit CBit decomposition, and retained Jeff
+comparison-only support rather than adding an incomplete promotion pass.
+
+Revision note (2026-09-03): Recorded the independent final audit, signless CBit
+integer contract, and final local validation.

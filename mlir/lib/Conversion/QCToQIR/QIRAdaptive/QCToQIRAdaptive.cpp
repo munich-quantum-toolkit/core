@@ -44,6 +44,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Transforms/WalkPatternRewriteDriver.h>
 
 #include <cassert>
 #include <cstdint>
@@ -154,20 +155,15 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
   };
   moduleOp->walk(
       [&](cbit::LoadOp loadOp) { prepareRead(loadOp, loadOp.getReg()); });
-  moduleOp->walk(
-      [&](cbit::ReadOp readOp) { prepareRead(readOp, readOp.getReg()); });
-  moduleOp->walk([&](cbit::CompareOp compareOp) {
-    prepareRead(compareOp, compareOp.getReg());
-  });
-  moduleOp->walk([&](cbit::WriteOp writeOp) {
-    const auto representation = representations.lookup(writeOp.getReg());
+  moduleOp->walk([&](cbit::StoreOp storeOp) {
+    const auto representation = representations.lookup(storeOp.getReg());
     if (representation == MIXED_CBIT_REGISTER) {
-      writeOp.emitOpError(
+      storeOp.emitOpError(
           "adaptive QIR conversion cannot merge returned and local CBit "
           "registers");
       hasInvalidAccess = true;
     } else if (representation == RETURNED_CBIT_REGISTER) {
-      writeOp.emitOpError(
+      storeOp.emitOpError(
           "adaptive QIR conversion does not support non-measurement writes "
           "to returned CBit registers");
       hasInvalidAccess = true;
@@ -356,49 +352,6 @@ struct ConvertCBitLoadOp final : StatefulOpConversionPattern<cbit::LoadOp> {
   }
 };
 
-struct ConvertCBitReadOp final : StatefulOpConversionPattern<cbit::ReadOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(cbit::ReadOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    const auto returnedRegister =
-        getState().returnedCBitReads.contains(op.getOperation());
-    auto result = cbit::buildRead(
-        rewriter, op.getLoc(), op.getResult().getType().getWidth(),
-        [&](const int64_t index) -> Value {
-          auto indexValue = LLVM::ConstantOp::create(
-              rewriter, op.getLoc(), rewriter.getI64Type(), index);
-          return loadCBit(op, adaptor.getReg(), indexValue, rewriter,
-                          returnedRegister);
-        });
-    rewriter.replaceOp(op, result);
-    return success();
-  }
-};
-
-struct ConvertCBitCompareOp final
-    : StatefulOpConversionPattern<cbit::CompareOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(cbit::CompareOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    const auto returnedRegister =
-        getState().returnedCBitReads.contains(op.getOperation());
-    auto result = cbit::buildComparison(
-        rewriter, op.getLoc(), op.getPredicate(), op.getRhs(),
-        [&](const int64_t index) -> Value {
-          auto indexValue = LLVM::ConstantOp::create(
-              rewriter, op.getLoc(), rewriter.getI64Type(), index);
-          return loadCBit(op, adaptor.getReg(), indexValue, rewriter,
-                          returnedRegister);
-        });
-    rewriter.replaceOp(op, result);
-    return success();
-  }
-};
-
 struct ConvertCBitStoreOp final : StatefulOpConversionPattern<cbit::StoreOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -412,25 +365,6 @@ struct ConvertCBitStoreOp final : StatefulOpConversionPattern<cbit::StoreOp> {
     }
     storeCBit(op, adaptor.getValue(), adaptor.getReg(), adaptor.getIndex(),
               rewriter);
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-struct ConvertCBitWriteOp final : StatefulOpConversionPattern<cbit::WriteOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(cbit::WriteOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    cbit::buildWrite(rewriter, op.getLoc(), adaptor.getValue(),
-                     op.getValue().getType().getWidth(),
-                     [&](const int64_t index, Value bit) {
-                       auto indexValue = LLVM::ConstantOp::create(
-                           rewriter, op.getLoc(), rewriter.getI64Type(), index);
-                       storeCBit(op, bit, adaptor.getReg(), indexValue,
-                                 rewriter);
-                     });
     rewriter.eraseOp(op);
     return success();
   }
@@ -738,8 +672,7 @@ static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
                                             MLIRContext* ctx,
                                             LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
-  patterns.add<ConvertCBitAllocOp, ConvertCBitCompareOp, ConvertCBitLoadOp,
-               ConvertCBitReadOp, ConvertCBitStoreOp, ConvertCBitWriteOp,
+  patterns.add<ConvertCBitAllocOp, ConvertCBitLoadOp, ConvertCBitStoreOp,
                ConvertMemRefAllocOp, ConvertMemRefLoadOp,
                ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
                ConvertQCMeasureOp, ConvertQCResetOp>(typeConverter, ctx,
@@ -919,6 +852,12 @@ protected:
     if (failed(prepareClassicalResults(moduleOp, state))) {
       signalPassFailure();
       return;
+    }
+    {
+      RewritePatternSet patterns(ctx);
+      cbit::populateCBitDecompositionPatterns(patterns);
+      const FrozenRewritePatternSet frozen(std::move(patterns));
+      walkAndApplyPatterns(moduleOp, frozen);
     }
     if (failed(prepareCBitRegisterAccesses(moduleOp, state))) {
       signalPassFailure();

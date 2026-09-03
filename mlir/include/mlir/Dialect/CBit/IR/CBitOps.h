@@ -16,6 +16,7 @@
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
@@ -37,14 +38,9 @@ arith::CmpIPredicate getUnsignedPredicate(arith::CmpIPredicate predicate);
 /// Whether a value is a fixed-width bit vector rooted in a register read.
 bool isRegisterBitVector(Value value);
 
-/// Builds an integer value from individual register bits.
-Value buildRead(OpBuilder& builder, Location location, unsigned width,
-                llvm::function_ref<Value(int64_t)> loadBit);
-
-/// Stores individual bits from a fixed-width integer value.
-void buildWrite(OpBuilder& builder, Location location, Value value,
-                unsigned width,
-                llvm::function_ref<void(int64_t, Value)> storeBit);
+/// Populates patterns that decompose whole-register operations into static
+/// bit loads, stores, and ordinary integer arithmetic.
+void populateCBitDecompositionPatterns(RewritePatternSet& patterns);
 
 /// Builds an equivalent comparison from individual register bits.
 Value buildComparison(OpBuilder& builder, Location location,

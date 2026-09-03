@@ -24,6 +24,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Transforms/WalkPatternRewriteDriver.h>
 
 #include <utility>
 
@@ -88,64 +89,6 @@ struct ConvertLoadOp final : OpConversionPattern<cbit::LoadOp> {
   }
 };
 
-struct ConvertReadOp final : OpConversionPattern<cbit::ReadOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(cbit::ReadOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto result = cbit::buildRead(
-        rewriter, op.getLoc(), op.getResult().getType().getWidth(),
-        [&](const int64_t index) -> Value {
-          auto indexValue =
-              arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
-          return memref::LoadOp::create(rewriter, op.getLoc(), adaptor.getReg(),
-                                        ValueRange{indexValue});
-        });
-    rewriter.replaceOp(op, result);
-    return success();
-  }
-};
-
-struct ConvertWriteOp final : OpConversionPattern<cbit::WriteOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(cbit::WriteOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    cbit::buildWrite(
-        rewriter, op.getLoc(), adaptor.getValue(),
-        op.getValue().getType().getWidth(),
-        [&](const int64_t index, Value bit) {
-          auto indexValue =
-              arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
-          memref::StoreOp::create(rewriter, op.getLoc(), bit, adaptor.getReg(),
-                                  ValueRange{indexValue});
-        });
-    rewriter.eraseOp(op);
-    return success();
-  }
-};
-
-struct ConvertCompareOp final : OpConversionPattern<cbit::CompareOp> {
-  using OpConversionPattern::OpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(cbit::CompareOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    auto result = cbit::buildComparison(
-        rewriter, op.getLoc(), op.getPredicate(), op.getRhs(),
-        [&](const int64_t index) -> Value {
-          auto indexValue =
-              arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
-          return memref::LoadOp::create(rewriter, op.getLoc(), adaptor.getReg(),
-                                        ValueRange{indexValue});
-        });
-    rewriter.replaceOp(op, result);
-    return success();
-  }
-};
-
 struct ConvertStoreOp final : OpConversionPattern<cbit::StoreOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -168,6 +111,13 @@ protected:
     auto moduleOp = getOperation();
     CBitTypeConverter typeConverter;
     ConversionTarget target(*context);
+
+    {
+      RewritePatternSet patterns(context);
+      cbit::populateCBitDecompositionPatterns(patterns);
+      const FrozenRewritePatternSet frozen(std::move(patterns));
+      walkAndApplyPatterns(moduleOp, frozen);
+    }
     RewritePatternSet patterns(context);
 
     target.addIllegalDialect<cbit::CBitDialect>();
@@ -181,8 +131,8 @@ protected:
     target.addDynamicallyLegalOp<func::ReturnOp, func::CallOp>(
         [&](Operation* op) { return typeConverter.isLegal(op); });
 
-    patterns.add<ConvertAllocOp, ConvertCompareOp, ConvertLoadOp, ConvertReadOp,
-                 ConvertStoreOp, ConvertWriteOp>(typeConverter, context);
+    patterns.add<ConvertAllocOp, ConvertLoadOp, ConvertStoreOp>(typeConverter,
+                                                                context);
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
     populateReturnOpTypeConversionPattern(patterns, typeConverter);

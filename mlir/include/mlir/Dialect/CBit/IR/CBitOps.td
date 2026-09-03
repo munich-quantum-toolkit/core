@@ -103,11 +103,10 @@ def ReadOp : CBitOp<"read"> {
   }];
 
   let arguments = (ins Arg<CBit_RegisterType, "register", [MemRead]>:$reg);
-  let results = (outs AnyInteger:$result);
+  let results = (outs AnySignlessInteger:$result);
   let assemblyFormat = [{
     $reg attr-dict `:` qualified(type($reg)) `->` qualified(type($result))
   }];
-  let hasCanonicalizer = 1;
   let hasVerifier = 1;
 }
 
@@ -124,7 +123,7 @@ def WriteOp : CBitOp<"write"> {
     ```
   }];
 
-  let arguments = (ins AnyInteger:$value,
+  let arguments = (ins AnySignlessInteger:$value,
       Arg<CBit_RegisterType, "register", [MemWrite]>:$reg);
   let assemblyFormat = [{
     $value `,` $reg attr-dict `:` qualified(type($value)) `,`
