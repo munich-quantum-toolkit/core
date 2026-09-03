@@ -61,6 +61,8 @@ struct PendingItem {
 /// that end, the function traverses the def-use chain of each qubit until a
 /// ready operation is found. A multi-qubit gate is considered ready, if each
 /// input (backward: output) qubit has been visited.
+/// The traversal considers only qubit def-use dependencies. It does not order
+/// operations by classical values or side effects.
 /// The signature of the callback function is:
 ///
 ///     (const Frontier& frontier, ReleasedOps& released) -> WalkResult

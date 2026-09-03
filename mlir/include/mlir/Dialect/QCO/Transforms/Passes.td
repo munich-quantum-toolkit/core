@@ -126,6 +126,10 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     mapping. Target-defined site identifiers are retained in the resulting
     `qco.static` operations.
 
+    The entry function and supported structured-control-flow regions must each
+    contain one block. Calls that carry qubits must be inlined before mapping.
+    Adaptive classical dependencies must be represented by SSA def-use chains.
+
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
     mapping, which is referred to as the initial layout. The layout covers the
     complete target virtually, while only program qubits and vacant sites used

@@ -1218,10 +1218,11 @@ private:
                     return true;
                   }
 
-                  // Only advance past measurements in adaptive-profile
-                  // scenarios, where a qubit is used after measurement
-                  // (multiple subsequent measurements are fine) or a bit is
-                  // used to determine a subsequent chain of unitaries.
+                  /// Only advance past measurements in adaptive-profile
+                  /// scenarios, where a qubit is used after measurement
+                  /// (multiple subsequent measurements are fine) or a bit is
+                  /// used to determine a subsequent chain of unitaries.
+                  /// The forward slice follows SSA def-use chains only.
 
                   Value qubit = m.getQubitOut();
                   Value bit = m.getResult();
