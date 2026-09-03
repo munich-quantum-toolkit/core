@@ -23,9 +23,11 @@ add_mlir_dialect_library(
   MLIRDialectUtils
   MLIRArithDialect
   MLIRInferTypeOpInterface
-  MLIRSideEffectInterfaces
-  PUBLIC
-  MLIRQCODialect)
+  MLIRSideEffectInterfaces)
+
+# Keep the cyclic link dependency out of LLVM's object-library build ordering.
+# add_mlir_dialect_library already orders compilation after mlir-headers.
+target_link_libraries(MLIRQTensorDialect PUBLIC MLIRQCODialect)
 
 mqt_mlir_target_use_project_options(MLIRQTensorDialect)
 

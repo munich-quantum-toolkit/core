@@ -21,5 +21,5 @@ if(NOT TARGET ${TARGET_NAME})
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC MLIRQCODDAdapter MQT::CoreDD
-    PRIVATE MLIRQTensorDialect MQT::ProjectWarnings MQT::ProjectOptions)
+    PRIVATE MQT::ProjectWarnings MQT::ProjectOptions)
 endif()

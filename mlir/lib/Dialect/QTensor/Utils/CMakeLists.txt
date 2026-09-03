@@ -16,11 +16,14 @@ add_mlir_dialect_library(
   DEPENDS
   MLIRQTensorOpsIncGen
   LINK_LIBS
-  PUBLIC
-  MLIRQCODialect
   PRIVATE
+  MLIRQTensorDialect
   MLIRFuncDialect
   MLIRSCFDialect)
+
+# Keep the cyclic link dependency out of LLVM's object-library build ordering.
+# add_mlir_dialect_library already orders compilation after mlir-headers.
+target_link_libraries(MLIRQTensorUtils PUBLIC MLIRQCODialect)
 
 mqt_mlir_target_use_project_options(MLIRQTensorUtils)
 
