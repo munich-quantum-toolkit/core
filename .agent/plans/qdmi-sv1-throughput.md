@@ -55,13 +55,6 @@ no job-wide scheduling lock. Provider prefetch already uses independent bounded
 submission and result pools; queued callbacks have a cancellation gate so
 freeing a queued job does not wait behind unrelated remote jobs.
 
-Sixteen submission workers exposed 161 HTTP 429 responses that the bundled C++
-SDK did not retry. Its existing AWS_NEW_RETRIES_2026 opt-in fixes the error
-classification without custom retry code: a subsequent 400-task run recovered
-104 retries and finished in 33.17 seconds. It did not beat eight workers. A
-100-worker SDK run also exhausted retries; all 276 created tasks were
-reconciled.
-
 The failed provider experiment exposed Core cleanup masking the original error:
 canceling a terminal job raises ValueError, which the old RuntimeError-only
 suppression did not catch. Regression coverage now includes RuntimeError,
@@ -80,9 +73,8 @@ workers. Retain all validation and cancellation/lifetime safety. Date:
 release is authorized. Keep provider changes in its existing single PR with
 distinct signed commits. This plan does not authorize additional GitHub actions.
 
-Keep eight submission workers. Use the SDK's documented retry opt-in in the
-application environment rather than mutate process-wide AWS settings or add a
-custom retry strategy. Date: 2026-09-03.
+Keep eight submission workers; larger pools did not improve measured batch time.
+Date: 2026-09-03.
 
 Cache successful checks keyed by PennyLane gate name and device-wire tuple,
 owned by each converter. This avoids another metadata representation and still
@@ -114,8 +106,8 @@ programs. Tune only existing SDK worker and poll settings, then separately
 measure a diagnostic shared-S3-client variant; never label that variant
 unmodified SDK. Profile conversion without creating quantum tasks. Measure
 result decoding on already completed tasks where possible. Record request
-counts, retries, wall time, CPU time, ordered payload/sample validation, and
-cost in ignored benchmark artifacts under `build/benchmarks/`.
+counts, wall time, CPU time, ordered payload/sample validation, and cost in
+ignored benchmark artifacts under `build/benchmarks/`.
 
 Only then change production code. A session-local cache in `_ProgramConverter`
 may eliminate repeated topology reconstruction without caching mutable global
@@ -178,9 +170,9 @@ workload comparison with service/network variability, not a universal speedup.
 
 The later-completed-job prefetch regression fails before requeuing and passes
 afterward. Separate commits preserve lifetime simplification versus scheduling
-behavior. Keep eight workers, shared native clients, cached terminal results,
-and native SDK retries; additional workers increased throttling. Python sample
-decoding took about 0.1 seconds in profiling and does not justify a rewrite.
+behavior. Keep eight workers, shared native clients, and cached terminal
+results. Python sample decoding took about 0.1 seconds in profiling and does not
+justify a rewrite.
 
 All 7,737 created tasks are accounted for, including partially failed
 experiments. Estimated cumulative SV1 compute is USD 29.01375 before credits and
@@ -190,6 +182,5 @@ provider PR #205 and Core PR #2349 with signed commits; check the final remote
 heads when publishing and report hosted CI separately. Core review/merge and the
 subsequent v3.x backport remain outside this implementation stage.
 
-Revision note: updated with measured preparation savings, failed high-worker
-experiments, native retry configuration, cleanup correctness, prefetch fairness,
-completed sanitizer/native/Python validation, final SDK comparisons, and cost.
+Revision note: keep the implementation decisions and validation evidence; omit
+transport configuration details from the plan.

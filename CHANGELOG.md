@@ -91,11 +91,8 @@ releases may include breaking changes.
 
 ### Changed
 
-- ⚡ Submit all QDMI jobs from one PennyLane execution before waiting so they
-  can run concurrently, preserve ordered synchronous results, and release the
-  Python GIL while waiting or fetching samples. Preserve the original error if
-  cancellation fails. Reuse successful gate-location checks within each device
-  session when preparing circuits ([#2349]) ([**@burgholzer**])
+- ⚡ Run PennyLane QDMI jobs concurrently and release the GIL during waits and
+  result retrieval ([#2349]) ([**@burgholzer**])
 - 💥 Drop support for x86 macOS and stop publishing the respective wheels
   ([#2259]) ([**@denialhaag**])
 - ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
