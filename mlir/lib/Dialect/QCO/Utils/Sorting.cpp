@@ -19,9 +19,8 @@
 
 using namespace mlir;
 
-namespace {
 /// Find the nearest neighbour in a given block.
-Operation* findParentInBlock(Operation* op, Block& block) {
+static Operation* findParentInBlock(Operation* op, Block& block) {
   Operation* parent = op->getParentOp();
   while (parent != nullptr && parent->getBlock() != &block) {
     parent = parent->getParentOp();
@@ -30,11 +29,10 @@ Operation* findParentInBlock(Operation* op, Block& block) {
 }
 
 /// Return the vector of locations for each block argument.
-SmallVector<Location> getArgumentLocs(Block& block) {
+static SmallVector<Location> getArgumentLocs(Block& block) {
   return to_vector(map_range(block.getArguments(),
                              [](BlockArgument& arg) { return arg.getLoc(); }));
 }
-} // namespace
 
 namespace mlir::qco {
 void reorderTopologically(Block& block, IRRewriter& rewriter) {
