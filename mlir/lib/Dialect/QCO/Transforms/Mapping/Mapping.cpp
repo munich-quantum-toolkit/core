@@ -27,7 +27,9 @@
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
+#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -1210,11 +1212,37 @@ private:
                       layout.getHardwareIndices(prog0, prog1);
                   return target->areAdjacent(hw0, hw1);
                 })
-                .template Case<ResetOp, MeasureOp>([](auto&) { return true; })
+                .template Case<ResetOp>([](auto&) { return true; })
+                .template Case<MeasureOp>([](MeasureOp& m) {
+                  if (Direction == WireDirection::Backward) {
+                    return true;
+                  }
+
+                  // Only advance past measurements in adaptive-profile
+                  // scenarios, where a qubit is used after measurement
+                  // (multiple subsequent measurements are fine) or a bit is
+                  // used to determine a subsequent chain of unitaries.
+
+                  Value qubit = m.getQubitOut();
+                  auto bit = m.getResult();
+
+                  assert(qubit.hasOneUse());
+                  Operation* user = *qubit.user_begin();
+                  if (!isa<MeasureOp, SinkOp>(user)) {
+                    return true;
+                  }
+
+                  SetVector<Operation*> slice;
+                  getForwardSlice(bit, &slice);
+                  return any_of(slice, [](Operation* op) {
+                    return isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp, UnitaryOpInterface>(
+                        op);
+                  });
+                })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
                     [](auto&) { return Direction == WireDirection::Forward; })
-                .template Case<SinkOp, qtensor::InsertOp, YieldOp, scf::YieldOp,
-                               scf::ConditionOp>(
+                .template Case<SinkOp, MeasureOp, qtensor::InsertOp, YieldOp,
+                               scf::YieldOp, scf::ConditionOp>(
                     [](auto&) { return Direction == WireDirection::Backward; })
                 .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
                     [&](auto&) {
@@ -1665,67 +1693,12 @@ private:
 
       if constexpr (Mode == RoutingMode::Hot) {
 
-        // At this point the wire iterators either point to
-        // std::default_sentinel or a multi-qubit gate (incl. barriers) of
-        // the current or subsequent layers. The former must be decremented
-        // twice (sentinel → sink → final op). For the latter, we must ensure
-        // the insertion point is before the multi-qubit gates.
+        // At this point the wire iterators point to sink-like operations
+        // (e.g. SinkOp, YieldOp), measurements, or two-qubit gate of the
+        // subsequent layer. Decrementing once ensures that the wire iterators
+        // point at the input qubits of those operations.
 
-        Operation* latest = nullptr;
-        bool comparable = true;
-        for (WireIterator it : wires) {
-          if (it == std::default_sentinel) {
-            std::ranges::advance(it, -2);
-            while (isa_and_nonnull<MeasureOp>(it.operation())) {
-              std::ranges::advance(it, -1);
-            }
-          } else {
-            std::ranges::advance(it, -1);
-          }
-
-          Operation* operation = it.operation();
-          if (operation == nullptr) {
-            continue;
-          }
-          if (latest != nullptr &&
-              operation->getBlock() != latest->getBlock()) {
-            comparable = false;
-            break;
-          }
-          if (latest == nullptr || latest->isBeforeInBlock(operation)) {
-            latest = operation;
-          }
-        }
-
-        // Keep terminal measurements after routing SWAPs. A measurement can
-        // only move past the routing frontier if doing so does not move it past
-        // a classical use of its result.
-        for (auto& it : wires) {
-          if (it != std::default_sentinel) {
-            std::ranges::advance(it, -1);
-            continue;
-          }
-
-          std::ranges::advance(it, -2);
-          if (!comparable) {
-            continue;
-          }
-          while (auto measure = dyn_cast_or_null<MeasureOp>(it.operation())) {
-            if (latest != nullptr &&
-                llvm::any_of(measure.getResult().getUsers(),
-                             [&](Operation* user) {
-                               while (user != nullptr &&
-                                      user->getBlock() != latest->getBlock()) {
-                                 user = user->getParentOp();
-                               }
-                               return user == nullptr || user == latest ||
-                                      user->isBeforeInBlock(latest);
-                             })) {
-              break;
-            }
-            std::ranges::advance(it, -1);
-          }
-        }
+        for_each(wires, [](auto& it) { std::ranges::advance(it, -1); });
       }
 
       insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
