@@ -377,8 +377,8 @@ private:
       if (auto alloc = dyn_cast<cbit::AllocOp>(&operation)) {
         const auto type = alloc.getResult().getType();
         const auto width = type.getWidth();
-        if (width <= 0 || static_cast<uint64_t>(width) >
-                              MAX_CLASSICAL_BITS - numClassicalBits) {
+        if (width <= 0 ||
+            std::cmp_greater(width, MAX_CLASSICAL_BITS - numClassicalBits)) {
           return fail(alloc, "total classical register width exceeds the "
                              "supported limit of " +
                                  Twine(MAX_CLASSICAL_BITS) + " bits");

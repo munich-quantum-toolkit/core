@@ -360,7 +360,7 @@ static LogicalResult applyUnitaryMatrix(UnitaryOpInterface unitary,
   }
   ArrayRef<dd::Qubit> wires = *wiresOr;
   if (wires.size() >= 63 ||
-      local.rows() != static_cast<int64_t>(size_t{1} << wires.size())) {
+      std::cmp_not_equal(local.rows(), uint64_t{1} << wires.size())) {
     return unitary.emitError()
            << "unitary matrix dimension does not match its target count";
   }
