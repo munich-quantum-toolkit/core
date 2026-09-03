@@ -35,8 +35,9 @@ releases may include breaking changes.
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add DD construction, simulation, statevector extraction, and sampling for
   QCO programs with structured control and dynamic quantum data, including
-  direct lowering from supported compiler inputs ([#1915], [#1973], [#2077],
-  [#2078], [#2079], [#2334]) ([**@simon1hofmann**], [**@burgholzer**])
+  direct lowering and dense-array helpers for supported compiler inputs
+  ([#1915], [#1973], [#2077], [#2078], [#2079], [#2334]) ([**@simon1hofmann**],
+  [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, and target
   compilation through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999],
   [#2049]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])

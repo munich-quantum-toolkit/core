@@ -8,8 +8,11 @@
  * Licensed under the MIT License
  */
 
+#include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
+#include "dd/StateGeneration.hpp"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
@@ -27,6 +30,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/Support/LogicalResult.h>
 #include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
 #include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/map.h>
 #include <nanobind/stl/optional.h>
@@ -36,7 +40,9 @@
 #include <nanobind/stl/variant.h>
 #include <nanobind/stl/vector.h>
 
+#include <bit>
 #include <cctype>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -57,6 +63,14 @@ namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+
+using DenseVectorInput =
+    nb::ndarray<nb::numpy, const std::complex<dd::fp>, nb::ndim<1>,
+                nb::c_contig, nb::device::cpu>;
+using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
+                                nb::c_contig, nb::device::cpu>;
+using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,
+                                nb::c_contig, nb::device::cpu>;
 
 template <class T>
 [[nodiscard]] static T takeResult(std::optional<T>&& result) {
@@ -361,6 +375,91 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
   return withQCOProgram(program, [&](const mlir::QCOProgram& qco) {
     return simulateQCO(qco, initialState, ddPackage, seed);
   });
+}
+
+[[nodiscard]] static DenseVectorInput
+asDenseVector(const nb::object& initialState) {
+  DenseVectorInput state;
+  if (nb::try_cast(initialState, state, false)) {
+    return state;
+  }
+
+  const auto numpy = nb::module_::import_("numpy");
+  const auto array = numpy.attr("asarray")(
+      initialState, "dtype"_a = numpy.attr("complex128"), "order"_a = "C");
+  if (nb::cast<size_t>(array.attr("ndim")) != 1U) {
+    throw nb::value_error("initial_state must be one-dimensional");
+  }
+  return nb::cast<DenseVectorInput>(array, false);
+}
+
+[[nodiscard]] static DenseVector toDenseVector(const dd::VectorDD& state) {
+  auto dataPtr = std::make_unique<dd::CVec>(state.getVector());
+  auto* const data = dataPtr->data();
+  const auto size = dataPtr->size();
+  const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
+    delete static_cast<dd::CVec*>(ptr);
+  });
+  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
+  return DenseVector(data, {size}, owner);
+}
+
+[[nodiscard]] static DenseMatrix toDenseMatrix(const dd::MatrixDD& matrix,
+                                               size_t numQubits) {
+  if (numQubits > 20U) {
+    throw nb::value_error("num_qubits exceeds practical limit of 20");
+  }
+
+  if (numQubits == 0U) {
+    auto dataPtr = std::make_unique<std::complex<dd::fp>>(matrix.w);
+    auto* const data = dataPtr.get();
+    const nb::capsule owner(data, [](void* ptr) noexcept {
+      delete static_cast<std::complex<dd::fp>*>(ptr);
+    });
+    [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
+    return DenseMatrix(data, {1, 1}, owner);
+  }
+
+  const size_t dim = 1ULL << numQubits;
+  auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(dim * dim);
+  matrix.traverseMatrix(
+      std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
+      [&dataPtr, dim](size_t i, size_t j, const std::complex<dd::fp>& value) {
+        dataPtr[(i * dim) + j] = value;
+      },
+      numQubits);
+  auto* const data = dataPtr.get();
+  const nb::capsule owner(data, [](void* ptr) noexcept {
+    delete[] static_cast<std::complex<dd::fp>*>(ptr);
+  });
+  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
+  return DenseMatrix(data, {dim, dim}, owner);
+}
+
+[[nodiscard]] static DenseMatrix
+buildDenseFunctionality(const nb::object& program) {
+  dd::Package ddPackage(0);
+  const auto matrix = buildFunctionality(program, ddPackage);
+  return toDenseMatrix(matrix, ddPackage.qubits());
+}
+
+[[nodiscard]] static DenseVector simulateDense(const nb::object& program,
+                                               const nb::object& initialState,
+                                               uint64_t seed) {
+  const auto denseState = asDenseVector(initialState);
+  const size_t size = denseState.size();
+  if (!std::has_single_bit(size)) {
+    throw nb::value_error(
+        "initial_state must be a nonempty one-dimensional array with a "
+        "power-of-two length");
+  }
+
+  const size_t numQubits = std::countr_zero(size); // spellchecker:disable-line
+  dd::Package ddPackage(numQubits);
+  const auto input = dd::makeStateFromVector(
+      std::span<const std::complex<dd::fp>>(denseState.data(), size),
+      ddPackage);
+  return toDenseVector(simulate(program, input, ddPackage, seed));
 }
 
 [[nodiscard]] static std::map<std::string, size_t>
@@ -1224,6 +1323,20 @@ An existing QCO program is used without copying. See
 {py:meth}`QCOProgram.build_functionality` for DD package requirements and
 errors.)pb");
 
+  m.def("build_functionality", &buildDenseFunctionality, "program"_a,
+        nb::sig("def build_functionality(program: str | os.PathLike[str] | "
+                "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
+                "JeffProgram | OpenQASMProgram) -> "
+                "numpy.typing.NDArray[numpy.complex128]"),
+        R"pb(Build the full unitary matrix of a supported compiler input.
+
+The DD package is managed internally. The matrix is materialized directly into
+the returned NumPy array without an additional copy. Functionality construction
+is limited to 20 qubits because the dense result grows exponentially.
+
+Raises:
+    ValueError: When the program is unsupported or exceeds 20 qubits.)pb");
+
   m.def("simulate", &simulate, "program"_a, "initial_state"_a, "dd_package"_a,
         "seed"_a = 0U,
         // Keep the DD package alive while the returned vector DD is alive.
@@ -1240,6 +1353,33 @@ lowering and therefore normally use ``dd_package.zero_state(0)`` as the initial
 state. An existing QCO program is used without copying and keeps its explicit
 allocation and static-qubit semantics. See {py:meth}`QCOProgram.simulate` for
 the state, DD package, seed, and error contracts.)pb");
+
+  m.def(
+      "simulate", &simulateDense, "program"_a, "initial_state"_a, "seed"_a = 0U,
+      nb::sig("def simulate(program: str | os.PathLike[str] | "
+              "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
+              "JeffProgram | OpenQASMProgram, initial_state: "
+              "numpy.typing.ArrayLike, seed: int = 0) -> "
+              "numpy.typing.NDArray[numpy.complex128]"),
+      R"pb(Simulate a supported compiler input and return its full statevector.
+
+Compatible one-dimensional, C-contiguous ``complex128`` arrays are read
+directly. Other array-like inputs are converted once. The input length must be
+a nonzero power of two. Source, QC, OpenQASM, and Qiskit inputs allocate their
+declared qubits and therefore normally start with the one-amplitude state
+``[1]``.
+
+Args:
+    initial_state: Dense state before the program's explicit allocations.
+    seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+        value produces reproducible measurement and reset results.
+
+Returns:
+    Full statevector, materialized directly into the returned NumPy array.
+
+Raises:
+    ValueError: When the input state shape is invalid or the program is
+        unsupported for simulation.)pb");
 
   m.def("sample", &sample, "program"_a, "shots"_a = 1024U, "seed"_a = 0U,
         nb::sig("def sample(program: str | os.PathLike[str] | "

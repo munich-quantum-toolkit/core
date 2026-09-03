@@ -13,7 +13,9 @@ import os
 from collections.abc import Sequence
 from typing import Literal, Unpack, overload
 
+import numpy as np
 import qiskit.circuit
+from numpy.typing import ArrayLike, NDArray
 
 import mqt.core.dd
 from mqt.core.qdmi import Device
@@ -675,6 +677,7 @@ class QIRProgram(Program):
     def write_bitcode(self, path: str | os.PathLike) -> None:
         """Write this program as LLVM bitcode."""
 
+@overload
 def build_functionality(
     program: str
     | os.PathLike[str]
@@ -692,6 +695,27 @@ def build_functionality(
     errors.
     """
 
+@overload
+def build_functionality(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+) -> NDArray[np.complex128]:
+    """Build the full unitary matrix of a supported compiler input.
+
+    The DD package is managed internally. The matrix is materialized directly into
+    the returned NumPy array without an additional copy. Functionality construction
+    is limited to 20 qubits because the dense result grows exponentially.
+
+    Raises:
+        ValueError: When the program is unsupported or exceeds 20 qubits.
+    """
+
+@overload
 def simulate(
     program: str
     | os.PathLike[str]
@@ -711,6 +735,40 @@ def simulate(
     state. An existing QCO program is used without copying and keeps its explicit
     allocation and static-qubit semantics. See {py:meth}`QCOProgram.simulate` for
     the state, DD package, seed, and error contracts.
+    """
+
+@overload
+def simulate(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    initial_state: ArrayLike,
+    seed: int = 0,
+) -> NDArray[np.complex128]:
+    """Simulate a supported compiler input and return its full statevector.
+
+    Compatible one-dimensional, C-contiguous ``complex128`` arrays are read
+    directly. Other array-like inputs are converted once. The input length must be
+    a nonzero power of two. Source, QC, OpenQASM, and Qiskit inputs allocate their
+    declared qubits and therefore normally start with the one-amplitude state
+    ``[1]``.
+
+    Args:
+        program: Compiler input to lower directly to QCO.
+        initial_state: Dense state before the program's explicit allocations.
+        seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
+            value produces reproducible measurement and reset results.
+
+    Returns:
+        Full statevector, materialized directly into the returned NumPy array.
+
+    Raises:
+        ValueError: When the input state shape is invalid or the program is
+            unsupported for simulation.
     """
 
 def sample(

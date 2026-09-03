@@ -222,6 +222,61 @@ def test_build_and_simulate_accept_source() -> None:
     package.dec_ref_vec(expected_state)
 
 
+def test_dense_build_and_simulate_hide_dd_package() -> None:
+    """Dense overloads own the DD package and return NumPy arrays."""
+    matrix = build_functionality(_x_program())
+    assert isinstance(matrix, np.ndarray)
+    assert matrix.dtype == np.complex128
+    assert matrix.flags.c_contiguous
+    assert matrix.base is not None
+    assert np.allclose(matrix, [[0, 1], [1, 0]])
+
+    initial_state = np.array([1, 0], dtype=np.complex128)
+    initial_state.flags.writeable = False  # spellchecker:disable-line
+    state = simulate(_x_program(), initial_state, seed=7)
+    assert isinstance(state, np.ndarray)
+    assert state.dtype == np.complex128
+    assert state.flags.c_contiguous
+    assert state.base is not None
+    assert np.allclose(state, [0, 1])
+
+    # Compiler frontends allocate qubits from a scalar state and retain its phase.
+    assert np.allclose(simulate(UNITARY_QASM, [1j], seed=7), [0, 1j])
+
+
+def test_dense_build_handles_zero_qubits_and_size_limit() -> None:
+    """Dense functionality handles scalars and rejects impractical matrices."""
+    empty = QCOProgram.from_mlir_str("""
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %theta = arith.constant 0.0 : f64
+    qco.gphase(%theta)
+    return
+  }
+}
+""")
+    assert np.array_equal(build_functionality(empty), [[1]])
+
+    too_large = QCOProgram.from_mlir_str("""
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qco.static 20 : !qco.qubit
+    qco.sink %q : !qco.qubit
+    return
+  }
+}
+""")
+    with pytest.raises(ValueError, match=r"practical limit of 20"):
+        build_functionality(too_large)
+
+
+@pytest.mark.parametrize("initial_state", [[], [1, 0, 0], [[1, 0]]])
+def test_dense_simulate_rejects_invalid_shape(initial_state: list[int] | list[list[int]]) -> None:
+    """Dense simulation requires a one-dimensional power-of-two state."""
+    with pytest.raises(ValueError, match=r"initial_state"):
+        simulate(_x_program(), initial_state)
+
+
 @pytest.mark.parametrize(
     ("source", "expected"),
     [

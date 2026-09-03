@@ -18,7 +18,9 @@
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
+#include <complex>
 #include <cstddef>
+#include <span>
 #include <vector>
 
 namespace dd {
@@ -79,6 +81,17 @@ VectorDD makeGHZState(std::size_t n, Package& dd);
  * @return A vector DD for the W state.
  */
 VectorDD makeWState(std::size_t n, Package& dd);
+
+/**
+ * @brief Construct a decision diagram from an arbitrary state vector.
+ * @param vec The state vector to convert to a DD.
+ * @param dd The DD package to use for making the vector DD.
+ * @throws `std::invalid_argument`, if `vec.size()` is not a power of two or
+ * `dd.qubits() < log2(vec.size()) - 1`.
+ * @return A vector DD representing the state.
+ */
+VectorDD makeStateFromVector(std::span<const std::complex<fp>> vec,
+                             Package& dd);
 
 /**
  * @brief Construct a decision diagram from an arbitrary state vector.
