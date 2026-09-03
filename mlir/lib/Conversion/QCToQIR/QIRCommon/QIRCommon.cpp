@@ -336,6 +336,12 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
                                          "Nested CtrlOps are not supported");
     }
 
+    bool hasGlobalPhase = false;
+    op.getRegion().walk([&](GPhaseOp) { hasGlobalPhase = true; });
+    if (hasGlobalPhase) {
+      return op.emitError("Controlled GPhaseOps cannot be converted to QIR");
+    }
+
     if (op.getNumBodyUnitaries() > 1) {
       return rewriter.notifyMatchFailure(
           op, "CtrlOps with multiple body unitaries are not supported. Run the "

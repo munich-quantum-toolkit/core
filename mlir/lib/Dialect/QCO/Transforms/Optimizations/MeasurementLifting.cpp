@@ -18,7 +18,6 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
@@ -111,12 +110,6 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
       return mlir::failure();
     }
 
-    // Erasing or moving the modifier must not discard or reorder its support
-    // operations relative to the measurement.
-    if (!isMemoryEffectFree(predecessor)) {
-      return mlir::failure();
-    }
-
     if (predecessorUnitary.isSingleQubit()) {
       rewriter.replaceOp(predecessor, predecessorUnitary.getInputQubits());
       return mlir::success();
@@ -188,10 +181,6 @@ struct LiftMeasurementsAboveControlsPattern final
     auto predecessorCtrl = mlir::dyn_cast<CtrlOp>(predecessor);
 
     if (!predecessorCtrl) {
-      return mlir::failure();
-    }
-
-    if (!isMemoryEffectFree(predecessor)) {
       return mlir::failure();
     }
 

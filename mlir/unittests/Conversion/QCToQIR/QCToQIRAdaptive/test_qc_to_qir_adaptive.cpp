@@ -122,25 +122,27 @@ TEST(QCToQIRAdaptiveNativeTest,
 
 TEST(QCToQIRAdaptiveNativeTest, RejectsControlledPhaseWithNonHoistableAngle) {
   MLIRContext context;
-  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
-                      LLVM::LLVMDialect>();
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect, scf::SCFDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
   auto control = builder.allocQubit();
   auto target = builder.allocQubit();
   builder.ctrl(control, target, [&](Value /*targetArg*/) {
-    auto angle = func::CallOp::create(builder, builder.getLoc(), "angle",
-                                      builder.getF64Type(), ValueRange{});
-    builder.gphase(angle.getResult(0));
+    auto ifOp = scf::IfOp::create(builder, TypeRange{builder.getF64Type()},
+                                  builder.boolConstant(true), true);
+    const auto yield = [&](Region& region, double value) {
+      builder.setInsertionPointToEnd(&region.front());
+      scf::YieldOp::create(builder, builder.floatConstant(value));
+    };
+    yield(ifOp.getThenRegion(), 0.25);
+    yield(ifOp.getElseRegion(), 0.5);
+    builder.setInsertionPointAfter(ifOp);
+    builder.gphase(ifOp.getResult(0));
   });
   auto moduleOp = builder.finalize();
   ASSERT_TRUE(moduleOp);
-  OpBuilder moduleBuilder(&context);
-  moduleBuilder.setInsertionPointToStart(moduleOp->getBody());
-  auto angleFunction = func::FuncOp::create(
-      moduleBuilder, moduleOp->getLoc(), "angle",
-      moduleBuilder.getFunctionType({}, {moduleBuilder.getF64Type()}));
-  angleFunction.setPrivate();
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   bool sawExpectedDiagnostic = false;

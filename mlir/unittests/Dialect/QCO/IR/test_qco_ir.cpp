@@ -396,7 +396,9 @@ enum class ForbiddenModifierBodyOp : uint8_t {
   CBitAlloc,
   CBitCompare,
   CBitLoad,
-  CBitStore
+  CBitStore,
+  FunctionCall,
+  UnitaryInClassicalRegion
 };
 
 } // namespace
@@ -425,6 +427,10 @@ static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
     return "cbit.load";
   case ForbiddenModifierBodyOp::CBitStore:
     return "cbit.store";
+  case ForbiddenModifierBodyOp::FunctionCall:
+    return "func.call";
+  case ForbiddenModifierBodyOp::UnitaryInClassicalRegion:
+    return "unitary-in-scf.if";
   }
   llvm_unreachable("unknown forbidden modifier operation");
 }
@@ -463,9 +469,9 @@ buildInvalidModifierCapture(QCOProgramBuilder& builder,
 }
 
 static Operation*
-buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
-                               const VerifierModifierKind modifier,
-                               ForbiddenModifierBodyOp forbiddenOperation) {
+buildInvalidModifierBody(QCOProgramBuilder& builder,
+                         const VerifierModifierKind modifier,
+                         ForbiddenModifierBodyOp forbiddenOperation) {
   builder.initialize();
   const auto target = builder.allocQubit();
   const auto control = builder.allocQubit();
@@ -473,33 +479,39 @@ buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
   auto cbitReg = builder.allocClassicalBitRegister(1);
   auto index = arith::ConstantIndexOp::create(builder, 0);
   const auto modifierBody = [&](Value argument) -> Value {
-    auto ifOp = IfOp::create(
-        builder, condition, argument, [&](Value nestedArgument) -> Value {
-          switch (forbiddenOperation) {
-          case ForbiddenModifierBodyOp::Measure:
-            return MeasureOp::create(builder, nestedArgument).getQubitOut();
-          case ForbiddenModifierBodyOp::CBitAlloc:
-            cbit::AllocOp::create(
-                builder, cbit::RegisterType::get(builder.getContext(), 1),
-                cbit::Initialization::Zero);
-            break;
-          case ForbiddenModifierBodyOp::CBitCompare:
-            cbit::CompareOp::create(
-                builder, builder.getI1Type(), cbit::ComparisonPredicate::Equal,
-                cbitReg, builder.getIntegerAttr(builder.getI1Type(), 0));
-            break;
-          case ForbiddenModifierBodyOp::CBitLoad:
-            cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg,
-                                 index.getResult());
-            break;
-          case ForbiddenModifierBodyOp::CBitStore:
-            cbit::StoreOp::create(builder, condition, cbitReg,
-                                  index.getResult());
-            break;
-          }
-          return nestedArgument;
-        });
-    return ifOp.getResult(0);
+    switch (forbiddenOperation) {
+    case ForbiddenModifierBodyOp::Measure:
+      return MeasureOp::create(builder, argument).getQubitOut();
+    case ForbiddenModifierBodyOp::CBitAlloc:
+      cbit::AllocOp::create(builder,
+                            cbit::RegisterType::get(builder.getContext(), 1),
+                            cbit::Initialization::Zero);
+      break;
+    case ForbiddenModifierBodyOp::CBitCompare:
+      cbit::CompareOp::create(builder, builder.getI1Type(),
+                              cbit::ComparisonPredicate::Equal, cbitReg,
+                              builder.getIntegerAttr(builder.getI1Type(), 0));
+      break;
+    case ForbiddenModifierBodyOp::CBitLoad:
+      cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg,
+                           index.getResult());
+      break;
+    case ForbiddenModifierBodyOp::CBitStore:
+      cbit::StoreOp::create(builder, condition, cbitReg, index.getResult());
+      break;
+    case ForbiddenModifierBodyOp::FunctionCall:
+      func::CallOp::create(builder, "observe", TypeRange{}, ValueRange{});
+      break;
+    case ForbiddenModifierBodyOp::UnitaryInClassicalRegion: {
+      auto ifOp = scf::IfOp::create(builder, TypeRange{}, condition, false);
+      const OpBuilder::InsertionGuard guard(builder);
+      builder.setInsertionPointToStart(&ifOp.getThenRegion().front());
+      builder.inv(ValueRange{},
+                  [](ValueRange) -> SmallVector<Value> { return {}; });
+      break;
+    }
+    }
+    return argument;
   };
 
   switch (modifier) {
@@ -514,14 +526,18 @@ buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
   llvm_unreachable("unknown modifier");
 }
 
-TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
+TEST_F(QCOTest, ModifiersRejectNonUnitaryOperations) {
   constexpr std::array modifiers{VerifierModifierKind::Inv,
                                  VerifierModifierKind::Ctrl,
                                  VerifierModifierKind::Pow};
   constexpr std::array forbiddenOperations{
-      ForbiddenModifierBodyOp::Measure, ForbiddenModifierBodyOp::CBitAlloc,
-      ForbiddenModifierBodyOp::CBitCompare, ForbiddenModifierBodyOp::CBitLoad,
-      ForbiddenModifierBodyOp::CBitStore};
+      ForbiddenModifierBodyOp::Measure,
+      ForbiddenModifierBodyOp::CBitAlloc,
+      ForbiddenModifierBodyOp::CBitCompare,
+      ForbiddenModifierBodyOp::CBitLoad,
+      ForbiddenModifierBodyOp::CBitStore,
+      ForbiddenModifierBodyOp::FunctionCall,
+      ForbiddenModifierBodyOp::UnitaryInClassicalRegion};
 
   for (const auto modifier : modifiers) {
     for (const auto forbiddenOperation : forbiddenOperations) {
@@ -531,15 +547,16 @@ TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
                    << forbiddenOperationName(forbiddenOperation).str());
       QCOProgramBuilder builder(context.get());
       auto* modifierOp =
-          buildInvalidNestedModifierBody(builder, modifier, forbiddenOperation);
+          buildInvalidModifierBody(builder, modifier, forbiddenOperation);
 
       bool sawExpectedDiagnostic = false;
       ScopedDiagnosticHandler handler(
           context.get(), [&](Diagnostic& diagnostic) {
             sawExpectedDiagnostic |=
                 StringRef(diagnostic.str())
-                    .contains("body must not contain non-unitary operations or "
-                              "access registers");
+                    .contains("body may contain only unitary operations and "
+                              "pure, speculatable classical support "
+                              "operations");
             return success();
           });
       EXPECT_TRUE(failed(verify(modifierOp)));

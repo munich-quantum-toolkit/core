@@ -10,18 +10,19 @@
 
 #include "ModifierUtils.h"
 
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/WalkResult.h>
@@ -31,21 +32,30 @@
 
 namespace mlir::qc::detail {
 
-LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
-  const auto hasNonUnitaryOperation =
-      body.walk([](Operation* operation) {
-            return isa<cbit::AllocOp, cbit::CompareOp, cbit::LoadOp,
-                       cbit::StoreOp, AllocOp, DeallocOp, StaticOp, MeasureOp,
-                       ResetOp, memref::LoadOp, memref::StoreOp>(operation)
-                       ? WalkResult::interrupt()
-                       : WalkResult::advance();
-          })
-          .wasInterrupted();
-  if (hasNonUnitaryOperation) {
-    return modifierOp->emitOpError(
-        "body must not contain non-unitary operations or access registers");
-  }
+static bool containsQubit(Type type) {
+  return type.walk([](QubitType) { return WalkResult::interrupt(); })
+      .wasInterrupted();
+}
 
+static bool carriesQubit(Operation* operation) {
+  return llvm::any_of(operation->getOperandTypes(), containsQubit) ||
+         llvm::any_of(operation->getResultTypes(), containsQubit);
+}
+
+static bool isClassical(Operation* operation) {
+  if (!isPure(operation)) {
+    return false;
+  }
+  return !operation
+              ->walk([](Operation* nested) {
+                return isa<UnitaryOpInterface>(nested) || carriesQubit(nested)
+                           ? WalkResult::interrupt()
+                           : WalkResult::advance();
+              })
+              .wasInterrupted();
+}
+
+LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   SetVector<Value> captures;
   getUsedValuesDefinedAbove(modifierOp->getRegions(), captures);
   if (llvm::any_of(captures, [](Value value) {
@@ -54,6 +64,16 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
     return modifierOp->emitOpError(
         "body must not capture qubits from above; use only its aliased block "
         "arguments");
+  }
+
+  const auto hasNonUnitaryOperation =
+      llvm::any_of(body.without_terminator(), [](Operation& operation) {
+        return !isa<UnitaryOpInterface>(operation) && !isClassical(&operation);
+      });
+  if (hasNonUnitaryOperation) {
+    return modifierOp->emitOpError(
+        "body may contain only unitary operations and pure, speculatable "
+        "classical support operations");
   }
 
   return success();

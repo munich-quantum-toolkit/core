@@ -1177,7 +1177,8 @@ def CtrlOp : QCOOp<"ctrl",
         The operation takes a variadic number of control and target qubits as inputs and produces corresponding output qubits.
         Control qubits are not modified by the operation and simply pass through to the outputs.
 
-        The body region may contain an arbitrary amount of unitary and classical operations.
+        The body region may contain unitary operations and pure, speculatable
+        classical support operations.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
@@ -1262,7 +1263,8 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
 
         The operation takes a variadic number of qubits as inputs and produces corresponding output qubits.
 
-        The body region may contain an arbitrary amount of unitary and classical operations.
+        The body region may contain unitary operations and pure, speculatable
+        classical support operations.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
@@ -1345,7 +1347,8 @@ def PowOp
         - r = 0: identity (no-op).
         - r < 0: equivalent to inv @ pow(-r) @ g.
 
-        The body region may contain an arbitrary amount of unitary and classical operations.
+        The body region may contain unitary operations and pure, speculatable
+        classical support operations.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
