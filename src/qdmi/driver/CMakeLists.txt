@@ -12,6 +12,10 @@ if(NOT TARGET ${TARGET_NAME})
   # Add driver library
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver)
 
+  # A shared driver discovers device manifests beside its own library.
+  set_target_properties(${TARGET_NAME} PROPERTIES LIBRARY_OUTPUT_DIRECTORY
+                                                  "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}")
+
   # Add sources to target
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
 

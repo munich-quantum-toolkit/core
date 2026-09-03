@@ -33,7 +33,7 @@ jobs:
         include:
           - runs-on: ubuntu-24.04
             compiler: gcc
-            preset: debug
+            preset: debug-shared
             run-on-draft: true
             setup-mlir: true
           - runs-on: ubuntu-24.04

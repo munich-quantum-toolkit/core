@@ -62,6 +62,15 @@
       }
     },
     {
+      "name": "debug-shared",
+      "inherits": "debug",
+      "displayName": "Debug config with shared Core libraries",
+      "cacheVariables": {
+        "BUILD_SHARED_LIBS": "ON",
+        "BUILD_MQT_CORE_SHARED_LIBS": "ON"
+      }
+    },
+    {
       "name": "debug-no-mlir",
       "inherits": "base-unix-no-mlir",
       "displayName": "Debug config without MLIR",
@@ -145,6 +154,10 @@
       "configurePreset": "debug"
     },
     {
+      "name": "debug-shared",
+      "configurePreset": "debug-shared"
+    },
+    {
       "name": "debug-no-mlir",
       "configurePreset": "debug-no-mlir"
     },
@@ -196,6 +209,11 @@
       "name": "debug",
       "inherits": "base",
       "configurePreset": "debug"
+    },
+    {
+      "name": "debug-shared",
+      "inherits": "base",
+      "configurePreset": "debug-shared"
     },
     {
       "name": "debug-no-mlir",

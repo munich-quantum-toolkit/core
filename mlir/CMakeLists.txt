@@ -6,6 +6,10 @@
 #
 # Licensed under the MIT License
 
+# Compiler libraries are private implementation details of the tools, bindings, and QDMI device.
+# Embed them in those consumers instead of creating unexported shared-library dependencies.
+set(BUILD_SHARED_LIBS OFF)
+
 if(MSVC)
   add_compile_definitions(_SILENCE_NONFLOATING_COMPLEX_DEPRECATION_WARNING)
 endif()

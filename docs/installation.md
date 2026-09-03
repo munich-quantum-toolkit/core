@@ -230,6 +230,12 @@ cmake --build build
 cmake --install build
 ```
 
+Set `BUILD_MQT_CORE_SHARED_LIBS=ON` to build the public Core libraries as shared
+libraries. This option defaults to `BUILD_SHARED_LIBS`. Internal compiler
+libraries and the bundled jeff dependencies remain static and are linked into
+their consumers; they are not an installed compiler SDK. QDMI device libraries
+are always shared so the driver can load them at runtime.
+
 Then, in your project's {code}`CMakeLists.txt`, use {code}`find_package()` to
 locate the installed library:
 
