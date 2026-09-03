@@ -58,9 +58,9 @@ struct Control {
   Type type = Type::Pos;
 
   /// Allow implicit conversion from a qubit index.
-  /// NOLINTBEGIN(google-explicit-constructor)
+  /// NOLINTBEGIN(misc-explicit-constructor)
   Control(const Qubit q = {}, const Type t = Type::Pos) : qubit(q), type(t) {}
-  /// NOLINTEND(google-explicit-constructor)
+  /// NOLINTEND(misc-explicit-constructor)
 
   [[nodiscard]] std::string toString() const {
     std::ostringstream oss{};
