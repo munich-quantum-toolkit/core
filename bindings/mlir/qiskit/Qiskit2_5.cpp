@@ -12,7 +12,9 @@
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringMap.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringSwitch.h>
 
 // Qiskit requires its umbrella header before the extension function table.
@@ -96,6 +98,16 @@ constexpr size_t MAX_ANNOTATED_OPERATION_DEPTH = 64U;
   }
 }
 
+[[nodiscard]] static std::string pythonHex(const nb::handle object,
+                                           const std::string_view error) {
+  try {
+    return nb::cast<std::string>(
+        nb::module_::import_("builtins").attr("hex")(object));
+  } catch (const nb::python_error&) {
+    throw std::runtime_error(std::string(error));
+  }
+}
+
 [[nodiscard]] static std::string
 pythonStringAttribute(const nb::handle object, const char* name,
                       const std::string_view error) {
@@ -111,6 +123,33 @@ pythonUnsignedAttribute(const nb::handle object, const char* name,
     throw std::runtime_error(std::string(error));
   }
   return result;
+}
+
+[[nodiscard]] static llvm::APInt
+pythonUnsignedValue(const nb::handle object, const uint32_t width,
+                    const std::string_view error) {
+  if (!nb::isinstance<nb::int_>(object)) {
+    throw std::runtime_error(std::string(error));
+  }
+  const auto text = pythonHex(object, error);
+  auto value = llvm::StringRef(text);
+  llvm::APInt result;
+  if (!value.consume_front("0x") || value.getAsInteger(16, result) ||
+      result.getActiveBits() > width) {
+    throw std::runtime_error(std::string(error));
+  }
+  return result;
+}
+
+[[nodiscard]] static nb::object pythonInteger(const llvm::APInt& value,
+                                              const std::string_view error) {
+  const auto text = llvm::toString(value, 16, false);
+  try {
+    return nb::module_::import_("builtins")
+        .attr("int")(nb::str(text.c_str()), nb::int_(16));
+  } catch (const nb::python_error&) {
+    throw std::runtime_error(std::string(error));
+  }
 }
 
 [[noreturn]] static void throwPythonError(const std::string_view message) {
@@ -1106,9 +1145,9 @@ static void setPythonExpressionType(Expression& result,
   if (typeName == "Uint") {
     const auto width = pythonUnsignedAttribute(
         type, "width", "Qiskit Uint expression has no width");
-    if (width == 0U || width > 64U) {
+    if (width == 0U || width > std::numeric_limits<uint32_t>::max()) {
       throw std::runtime_error(
-          "Qiskit unsigned classical values must be between 1 and 64 bits");
+          "Qiskit unsigned classical value width is out of range");
     }
     result.type = ClassicalType::Uint;
     result.width = static_cast<uint32_t>(width);
@@ -1186,7 +1225,7 @@ static void normalizePythonVariable(Expression& result,
   }
   if (nb::isinstance(variable, circuitModule.attr("ClassicalRegister"))) {
     if (result.type != ClassicalType::Uint || nb::len(variable) == 0U ||
-        nb::len(variable) > 64U || result.width < nb::len(variable)) {
+        result.width < nb::len(variable)) {
       throw std::runtime_error(
           "Qiskit classical-register variable has an invalid type");
     }
@@ -1241,12 +1280,9 @@ static void normalizePythonVariable(Expression& result,
       break;
     }
     case ClassicalType::Uint:
-      if (!nb::try_cast(value, result->uintValue) ||
-          (result->width < 64U &&
-           result->uintValue >= (uint64_t{1} << result->width))) {
-        throw std::runtime_error(
-            "Qiskit Uint literal does not fit its declared width");
-      }
+      result->uintValue = pythonUnsignedValue(
+          value, result->width,
+          "Qiskit Uint literal does not fit its declared width");
       break;
     case ClassicalType::Float:
       if (!nb::try_cast(value, result->floatValue) ||
@@ -1782,9 +1818,8 @@ private:
       }
       return typesModule_.attr("Bool")();
     case ClassicalType::Uint:
-      if (width == 0U || width > 64U) {
-        throw std::runtime_error(
-            "Qiskit unsigned expressions require a width from 1 to 64");
+      if (width == 0U) {
+        throw std::runtime_error("Qiskit unsigned expressions require a width");
       }
       return typesModule_.attr("Uint")(width);
     case ClassicalType::Float:
@@ -1892,13 +1927,16 @@ private:
       switch (value.type) {
       case ClassicalType::Bool:
         return expressionModule_.attr("lift")(nb::bool_(value.boolValue), type);
-      case ClassicalType::Uint:
-        if (value.width < std::numeric_limits<uint64_t>::digits &&
-            value.uintValue >= (uint64_t{1} << value.width)) {
+      case ClassicalType::Uint: {
+        if (value.uintValue.getActiveBits() > value.width) {
           throw std::runtime_error(
               "Qiskit unsigned expression value exceeds its width");
         }
-        return expressionModule_.attr("lift")(nb::int_(value.uintValue), type);
+        return expressionModule_.attr("lift")(
+            pythonInteger(value.uintValue,
+                          "Qiskit failed to convert a Uint literal"),
+            type);
+      }
       case ClassicalType::Float:
         if (!std::isfinite(value.floatValue)) {
           throw std::runtime_error(
@@ -1917,7 +1955,7 @@ private:
       return expressionModule_.attr("lift")(classicalBit(value.bit));
     case ExpressionKind::ClassicalRegister:
       if (value.type != ClassicalType::Uint || value.width == 0U ||
-          value.width < value.reg.bits.size() || value.width > 64U) {
+          value.width < value.reg.bits.size()) {
         throw std::runtime_error(
             "Qiskit classical-register expression has an invalid type");
       }
