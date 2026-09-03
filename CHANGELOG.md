@@ -71,7 +71,7 @@ releases may include breaking changes.
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
   [#1748], [#1805], [#1870], [#1904], [#1911], [#1951], [#1956], [#1997],
-  [#2016], [#2060], [#2179], [#2184], [#2185], [#2205]) ([**@MatthiasReumann**],
+  [#2016], [#2060], [#2179], [#2184], [#2185], [#2205], [#2240]) ([**@MatthiasReumann**],
   [**@burgholzer**], [**@rturrado**], [**@simon1hofmann**])
 - ✨ Add modifier and global-phase normalization passes ([#1986], [#1995],
   [#2015]) ([**@burgholzer**], [**@denialhaag**])
@@ -114,8 +114,6 @@ releases may include breaking changes.
   default, with one build option for source builds that omit both parts
   ([#1356], [#1549], [#1953], [#2284], [#2298]) ([**@burgholzer**],
   [**@denialhaag**], [**@simon1hofmann**])
-- ✨ Include one-qubit ops to the `walkProgramGraph` graph traversal function
-  ([#2205]) ([**@MatthiasReumann**])
 
 ### Removed
 
@@ -882,6 +880,7 @@ for previous changelogs._
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
+[#2240]: https://github.com/munich-quantum-toolkit/core/pull/2240
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2228]: https://github.com/munich-quantum-toolkit/core/pull/2228
 [#2224]: https://github.com/munich-quantum-toolkit/core/pull/2224
