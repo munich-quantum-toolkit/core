@@ -1360,6 +1360,7 @@ declared qubits and therefore normally start with the one-amplitude state
 ``[1]``.
 
 Args:
+    program: Compiler input to lower directly to QCO.
     initial_state: Dense state before the program's explicit allocations.
     seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
         value produces reproducible measurement and reset results.
