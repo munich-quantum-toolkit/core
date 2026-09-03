@@ -82,15 +82,11 @@ Branch conditions do not add proof facts. Classical bit indexing and loops that
 do not index qubits keep their runtime behavior.
 
 Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
-zero. OpenQASM 3 leaves each register undefined until a statement writes it. As
-a Qiskit compatibility extension, the frontend accepts an integer literal zero
-assigned to a complete bit register, such as `bit[3] c; c = 0;`, and sets every
-bit to false. Other integer literals and integer expressions remain invalid for
-whole-register assignment; this syntax is not a general integer-to-bit
-conversion. Explicit outputs and implicit global outputs are returned by the
-entry function; internal CBit allocations are not outputs. Other scalar outputs
-use builtin MLIR scalar types. A scalar `qubit` lowers to `qc.alloc`, while
-`qubit[1]` remains a one-element qubit register.
+zero. OpenQASM 3 leaves each register undefined until a statement writes it.
+Explicit outputs and implicit global outputs are returned by the entry function;
+internal CBit allocations are not outputs. Other scalar outputs use builtin MLIR
+scalar types. A scalar `qubit` lowers to `qc.alloc`, while `qubit[1]` remains a
+one-element qubit register.
 
 ## Export OpenQASM
 

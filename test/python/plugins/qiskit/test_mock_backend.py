@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, ClassVar, NoReturn
 
 import pytest
 from qiskit import qasm2, qasm3
-from qiskit.circuit import ClassicalRegister, Clbit, Gate, Parameter, QuantumCircuit
+from qiskit.circuit import Gate, Parameter, QuantumCircuit
 
 from mqt.core.plugins.qiskit import (
     QDMIBackend,
@@ -487,14 +487,9 @@ def test_backend_qasm3_serialization_success(mock_qdmi_device_factory: type[Mock
 def test_backend_qasm3_zero_initializes_classical_bits(
     mock_qdmi_device_factory: type[MockQDMIDevice],
 ) -> None:
-    """Initialize each register and loose bit before measurement."""
-    one = ClassicalRegister(1, "one")
-    many = ClassicalRegister(2, "many")
-    loose = Clbit()
-    qc = QuantumCircuit(2)
-    qc.add_register(one, many)
-    qc.add_bits([loose])
-    qc.measure(0, many[0])
+    """Initialize every QASM 3 classical bit before measurement."""
+    qc = QuantumCircuit(2, 2)
+    qc.measure(0, 0)
 
     device = mock_qdmi_device_factory(num_qubits=2, operations=["measure"])
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
@@ -503,16 +498,9 @@ def test_backend_qasm3_zero_initializes_classical_bits(
 
     assert fmt == ProgramFormat.QASM3
     assert isinstance(program, str)
-    assert program.count("one = 0;") == 1
-    assert program.count("many = 0;") == 1
-    assert "one[0] = false;" not in program
-    assert "many[0] = false;" not in program
-    assert "many[1] = false;" not in program
-    loose_initialization = re.search(r"(?m)^_bit\d+ = false;$", program)
-    assert loose_initialization is not None
-    measurement = "many[0] = measure q[0];"
-    for initialization in ("one = 0;", "many = 0;", loose_initialization.group()):
-        assert program.index(initialization) < program.index(measurement)
+    assert "c[0] = false;" in program
+    assert "c[1] = false;" in program
+    assert program.index("c[0] = false;") < program.index("c[0] = measure q[0];")
 
 
 def test_backend_qasm2_serialization_success(mock_qdmi_device_factory: type[MockQDMIDevice]) -> None:

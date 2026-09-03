@@ -944,41 +944,6 @@ if (target[0] || target[1]) { x q[0]; }
   EXPECT_EQ(*returned[1], measured[1]);
 }
 
-TEST(OpenQASMTargetTest, ZeroInitializesUntouchedOpenQASM3RegisterBits) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.1;
-qubit q;
-output bit[3] c;
-c = 0;
-c[1] = measure q;
-)qasm";
-
-  MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  PassManager canonicalizer(&context);
-  canonicalizer.addPass(createCanonicalizerPass());
-  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
-
-  qc::MeasureOp measurement;
-  moduleOp->walk([&](qc::MeasureOp operation) { measurement = operation; });
-  ASSERT_TRUE(measurement);
-
-  const auto returned = returnedBitValues(*moduleOp);
-  ASSERT_EQ(returned.size(), 3);
-  ASSERT_TRUE(returned[0]);
-  ASSERT_TRUE(returned[1]);
-  ASSERT_TRUE(returned[2]);
-  const auto first = evaluateConstantInteger(*returned[0]);
-  const auto last = evaluateConstantInteger(*returned[2]);
-  ASSERT_TRUE(first);
-  ASSERT_TRUE(last);
-  EXPECT_TRUE(first->isZero());
-  EXPECT_EQ(*returned[1], measurement.getResult());
-  EXPECT_TRUE(last->isZero());
-}
-
 TEST(OpenQASMTargetTest, LowersTypedBitVectorBuiltins) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
