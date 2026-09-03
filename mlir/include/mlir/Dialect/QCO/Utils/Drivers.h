@@ -16,6 +16,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -36,7 +37,7 @@
 
 namespace mlir::qco {
 
-using Frontier = llvm::SmallDenseMap<Operation*, SmallVector<size_t>, 8>;
+using Frontier = llvm::SmallMapVector<Operation*, SmallVector<size_t>, 8>;
 using ReleasedOps = SmallVector<Operation*, 8>;
 using WalkProgramGraphFn =
     function_ref<WalkResult(const Frontier&, ReleasedOps&)>;
@@ -67,6 +68,7 @@ struct PendingItem {
 ///
 ///     (const Frontier& frontier, ReleasedOps& released) -> WalkResult
 ///
+/// The frontier preserves deterministic wire traversal order.
 /// The operations inserted into the "released" vector determine which
 /// operations are released in the next iteration. The function returns if the
 /// callback does not release any operations or there are no more ready
