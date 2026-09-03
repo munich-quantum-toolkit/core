@@ -60,10 +60,9 @@
 namespace mlir {
 
 [[nodiscard]] static LogicalResult
-runPasses(ModuleOp mod,
-          const llvm::function_ref<void(OpPassManager&)> populatePasses,
-          const StringRef failureMessage, const bool enableTiming = false,
-          const bool enableStatistics = false) {
+runPasses(ModuleOp mod, llvm::function_ref<void(OpPassManager&)> populatePasses,
+          StringRef failureMessage, bool enableTiming = false,
+          bool enableStatistics = false) {
   PassManager pm(mod.getContext());
   if (enableTiming) {
     pm.enableTiming();
@@ -78,10 +77,11 @@ runPasses(ModuleOp mod,
   return success();
 }
 
-[[nodiscard]] static LogicalResult runQCOTransformPasses(
-    ModuleOp mod, const llvm::function_ref<void(OpPassManager&)> populatePasses,
-    const StringRef failureMessage, const bool enableTiming = false,
-    const bool enableStatistics = false) {
+[[nodiscard]] static LogicalResult
+runQCOTransformPasses(ModuleOp mod,
+                      llvm::function_ref<void(OpPassManager&)> populatePasses,
+                      StringRef failureMessage, bool enableTiming = false,
+                      bool enableStatistics = false) {
   if (failed(qco::verifyLinearity(mod))) {
     return failure();
   }
@@ -117,7 +117,7 @@ std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
   return OpenQASMProgram(std::move(*source));
 }
 
-std::optional<QIRProgram> QCProgram::intoQIR(const QIRProfile profile) && {
+std::optional<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   if (failed(runPasses(
           mod(),
           [profile](OpPassManager& pm) {
@@ -155,9 +155,8 @@ bool QCOProgram::normalizeGlobalPhases() {
   return succeeded(mqt::normalizeGlobalPhases(mod())) && hasValidLinearity();
 }
 
-bool QCOProgram::runPassPipeline(const std::string_view pipeline,
-                                 const bool enableTiming,
-                                 const bool enableStatistics) {
+bool QCOProgram::runPassPipeline(std::string_view pipeline, bool enableTiming,
+                                 bool enableStatistics) {
   if (!hasValidLinearity()) {
     return false;
   }
@@ -175,7 +174,7 @@ bool QCOProgram::mergeSingleQubitRotationGates() {
       "failed to merge single-qubit rotation gates"));
 }
 
-bool QCOProgram::fuseSingleQubitUnitaryRuns(const std::string_view basis) {
+bool QCOProgram::fuseSingleQubitUnitaryRuns(std::string_view basis) {
   qco::FuseSingleQubitUnitaryRunsOptions options;
   options.basis = basis;
   return succeeded(runQCOTransformPasses(
@@ -186,7 +185,7 @@ bool QCOProgram::fuseSingleQubitUnitaryRuns(const std::string_view basis) {
       "failed to fuse single-qubit unitary runs"));
 }
 
-bool QCOProgram::unrollQuantumLoops(const int64_t factor) {
+bool QCOProgram::unrollQuantumLoops(int64_t factor) {
   qco::QuantumLoopUnrollOptions options;
   options.unrollFactor = factor;
   return succeeded(runQCOTransformPasses(
@@ -216,7 +215,7 @@ bool QCOProgram::runQubitReusePipeline() {
       "failed to run the qubit reuse pipeline"));
 }
 
-bool QCOProgram::decomposeMultiControlled(const uint64_t minQubits) {
+bool QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
   return succeeded(runQCOTransformPasses(
       mod(),
       [minQubits](OpPassManager& pm) {
@@ -226,8 +225,7 @@ bool QCOProgram::decomposeMultiControlled(const uint64_t minQubits) {
 }
 
 bool QCOProgram::compileForTarget(const CompilerTarget& target,
-                                  const bool enableTiming,
-                                  const bool enableStatistics) {
+                                  bool enableTiming, bool enableStatistics) {
   return succeeded(runQCOTransformPasses(
       mod(),
       [&target](OpPassManager& pm) {
@@ -264,7 +262,7 @@ std::optional<JeffProgram> QCOProgram::intoJeff() && {
 //===----------------------------------------------------------------------===//
 
 std::optional<JeffProgram>
-JeffProgram::fromBytes(const std::span<const std::byte> bytes) {
+JeffProgram::fromBytes(std::span<const std::byte> bytes) {
   if (bytes.size() % sizeof(capnp::word) != 0U) {
     auto context = createCompilerContext();
     emitError(UnknownLoc::get(context.get()),
@@ -336,7 +334,7 @@ std::optional<QCOProgram> JeffProgram::intoQCO() && {
 // QIRProgram
 //===----------------------------------------------------------------------===//
 
-QIRProgram::QIRProgram(Storage storage, const QIRProfile profile)
+QIRProgram::QIRProgram(Storage storage, QIRProfile profile)
     : Program(std::move(storage)), profile_(profile) {}
 
 QIRProgram QIRProgram::copy() const { return {cloneStorage(), profile_}; }
@@ -419,10 +417,9 @@ bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
 //===----------------------------------------------------------------------===//
 
 std::optional<CompilerProgram>
-runDefaultPipeline(CompilerInput&& program, const ProgramFormat output,
-                   const CompilerTarget* const target,
-                   const std::string_view qcoPipeline, const bool enableTiming,
-                   const bool enableStatistics) {
+runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
+                   const CompilerTarget* target, std::string_view qcoPipeline,
+                   bool enableTiming, bool enableStatistics) {
   if (target != nullptr &&
       (output == ProgramFormat::QCImport || output == ProgramFormat::QCO ||
        output == ProgramFormat::Jeff)) {
