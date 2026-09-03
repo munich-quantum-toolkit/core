@@ -410,16 +410,6 @@ asDenseVector(const nb::object& initialState) {
     throw nb::value_error("num_qubits exceeds practical limit of 20");
   }
 
-  if (numQubits == 0U) {
-    auto dataPtr = std::make_unique<std::complex<dd::fp>>(matrix.w);
-    auto* const data = dataPtr.get();
-    const nb::capsule owner(data, [](void* ptr) noexcept {
-      delete static_cast<std::complex<dd::fp>*>(ptr);
-    });
-    [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
-    return DenseMatrix(data, {1, 1}, owner);
-  }
-
   const size_t dim = 1ULL << numQubits;
   auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(dim * dim);
   matrix.traverseMatrix(
