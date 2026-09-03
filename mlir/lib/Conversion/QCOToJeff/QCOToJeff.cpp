@@ -631,6 +631,35 @@ struct ConvertCBitLoadOpToJeff final
   }
 };
 
+/// Converts a CBit register comparison to jeff array reads and Boolean logic.
+struct ConvertCBitCompareOpToJeff final
+    : StatefulOpConversionPattern<cbit::CompareOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(cbit::CompareOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto& state = getState().cbitState;
+    auto reg = state.resolveRegisterUse(op, op.getReg());
+    auto array = state.getCurrentValue(reg, op);
+    if (!array) {
+      return rewriter.notifyMatchFailure(op, "unknown classical register");
+    }
+    array = rewriter.getRemappedValue(array);
+    auto result = cbit::buildComparison(
+        rewriter, op.getLoc(), op.getPredicate(), op.getRhs(),
+        [&](const int64_t index) -> Value {
+          auto position = jeff::IntConst32Op::create(
+              rewriter, op.getLoc(),
+              rewriter.getI32IntegerAttr(static_cast<int32_t>(index)));
+          return jeff::IntArrayGetIndexOp::create(
+              rewriter, op.getLoc(), rewriter.getI1Type(), array, position);
+        });
+    rewriter.replaceOp(op, result);
+    return success();
+  }
+};
+
 /**
  * @brief Converts qtensor.alloc to jeff.qureg_alloc
  *
@@ -1879,13 +1908,14 @@ protected:
 
     // Register operation conversion patterns
     jeff::populateNativeToJeffConversionPatterns(patterns);
-    patterns.add<ConvertCBitAllocOpToJeff, ConvertCBitStoreOpToJeff,
-                 ConvertCBitLoadOpToJeff, ConvertQTensorAllocOp,
-                 ConvertQTensorExtractOp, ConvertQTensorInsertOp,
-                 ConvertQTensorDeallocOp, ConvertQCOAllocOpToJeff,
-                 ConvertQCOStaticOpToJeff, ConvertQCOSinkOpToJeff,
-                 ConvertQCOMeasureOpToJeff, ConvertQCOResetOpToJeff,
-                 ConvertQCOGPhaseOpToJeff>(typeConverter, context, &state);
+    patterns.add<ConvertCBitAllocOpToJeff, ConvertCBitCompareOpToJeff,
+                 ConvertCBitStoreOpToJeff, ConvertCBitLoadOpToJeff,
+                 ConvertQTensorAllocOp, ConvertQTensorExtractOp,
+                 ConvertQTensorInsertOp, ConvertQTensorDeallocOp,
+                 ConvertQCOAllocOpToJeff, ConvertQCOStaticOpToJeff,
+                 ConvertQCOSinkOpToJeff, ConvertQCOMeasureOpToJeff,
+                 ConvertQCOResetOpToJeff, ConvertQCOGPhaseOpToJeff>(
+        typeConverter, context, &state);
 
     using JK = JeffKind;
     using PP = PPRPaulis;
