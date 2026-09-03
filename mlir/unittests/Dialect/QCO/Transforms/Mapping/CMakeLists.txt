@@ -12,6 +12,7 @@ add_executable(${target_name} test_mapping.cpp)
 target_link_libraries(
   ${target_name}
   PRIVATE GTest::gtest_main
+          MLIRCBitDialect
           MLIRParser
           MLIRMQTDialect
           MQTCompilerTarget

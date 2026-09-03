@@ -10,15 +10,45 @@
 
 #include "mlir/Dialect/QCO/Utils/Sorting.h"
 
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
+
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SetVector.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
+#include <optional>
+
 using namespace mlir;
+
+namespace {
+struct RegisterEffects {
+  Operation* latestRegisterBarrier = nullptr;
+  DenseMap<int64_t, Operation*> latestIndexedEffects;
+};
+} // namespace
+
+/// Return the static index of a direct CBit element access. Dynamic and
+/// indirect accesses conservatively alias the complete register.
+static std::optional<int64_t> getDirectCBitIndex(Operation* operation,
+                                                 Value reg) {
+  if (auto load = dyn_cast<cbit::LoadOp>(operation);
+      load && load.getReg() == reg) {
+    return getConstantIntValue(load.getIndex());
+  }
+  if (auto store = dyn_cast<cbit::StoreOp>(operation);
+      store && store.getReg() == reg) {
+    return getConstantIntValue(store.getIndex());
+  }
+  return std::nullopt;
+}
 
 /// Find the nearest neighbour in a given block.
 static Operation* findParentInBlock(Operation* op, Block& block) {
@@ -42,23 +72,34 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
   // Construct unresolved map: The dependencies of each operation.
 
   DenseMap<Operation*, size_t> inDegree;
+  DenseMap<Operation*, size_t> blockOrder;
   DenseMap<Operation*, llvm::SmallSetVector<Operation*, 16>> successors;
   DenseMap<Operation*, llvm::SmallDenseSet<Operation*, 16>> predecessors;
+
+  const auto addDependency = [&](Operation* predecessor, Operation* successor) {
+    if (predecessor == successor ||
+        !predecessors[successor].insert(predecessor).second) {
+      return;
+    }
+    ++inDegree[successor];
+    successors[predecessor].insert(successor);
+  };
+
+  DenseMap<Value, RegisterEffects> registerEffects;
 
   for (Operation& op : block) {
 
     // Collect the in-block dependencies of the current operation.
 
-    auto& succs = successors[&op];
-    auto& pres = predecessors[&op];
+    successors.try_emplace(&op);
+    predecessors.try_emplace(&op);
     inDegree.try_emplace(&op, 0);
+    blockOrder.try_emplace(&op, blockOrder.size());
 
     for (Value v : op.getOperands()) {
       Operation* def = v.getDefiningOp();
-      if (def != nullptr && v.getParentBlock() == &block &&
-          !pres.contains(def)) {
-        pres.insert(def);
-        ++inDegree[&op];
+      if (def != nullptr && v.getParentBlock() == &block) {
+        addDependency(def, &op);
       }
     }
 
@@ -69,50 +110,86 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
 
     for (Operation* user : op.getUsers()) {
       if (user->getBlock() == &block) {
-        if (!succs.contains(user)) {
-          succs.insert(user);
-        }
+        addDependency(&op, user);
         continue;
       }
 
       if (Operation* parent = findParentInBlock(user, block);
           parent != nullptr) {
+        addDependency(&op, parent);
+      }
+    }
 
-        auto& parentPre = predecessors[parent];
-        if (!parentPre.contains(&op)) {
-          parentPre.insert(&op);
-          ++inDegree[parent];
+    // SSA use-def chains do not capture ordering constraints on mutable CBit
+    // registers. Preserve the original order of effects that may alias the
+    // same register element. Direct, statically indexed accesses to distinct
+    // elements do not alias; whole-register and dynamic accesses
+    // conservatively alias every element. Value-less effects cannot safely
+    // impose block-order dependencies here: routing may temporarily require
+    // those operations to move while repairing SSA order.
+    const auto effects = getEffectsRecursively(&op);
+    if (!effects) {
+      continue;
+    }
+
+    llvm::SmallDenseSet<Value, 4> affectedValues;
+    for (const auto& effect : *effects) {
+      Value value = effect.getValue();
+      if (!value || !affectedValues.insert(value).second) {
+        continue;
+      }
+      if (isa<cbit::RegisterType>(value.getType())) {
+        auto& state = registerEffects[value];
+        if (const auto index = getDirectCBitIndex(&op, value)) {
+          if (state.latestRegisterBarrier != nullptr) {
+            addDependency(state.latestRegisterBarrier, &op);
+          }
+          if (Operation* previous = state.latestIndexedEffects.lookup(*index)) {
+            addDependency(previous, &op);
+          }
+          state.latestIndexedEffects[*index] = &op;
+          continue;
         }
 
-        if (!succs.contains(parent)) {
-          succs.insert(parent);
+        if (state.latestRegisterBarrier != nullptr) {
+          addDependency(state.latestRegisterBarrier, &op);
         }
+        for (const auto& indexed : state.latestIndexedEffects) {
+          addDependency(indexed.second, &op);
+        }
+        state.latestIndexedEffects.clear();
+        state.latestRegisterBarrier = &op;
       }
     }
   }
 
   assert((inDegree.size() == range_size(block)));
 
-  SmallVector<Operation*> worklist;
-  worklist.reserve(range_size(block));
+  const auto laterInBlock = [&blockOrder](Operation* lhs, Operation* rhs) {
+    return blockOrder.lookup(lhs) > blockOrder.lookup(rhs);
+  };
+  llvm::PriorityQueue<Operation*, std::vector<Operation*>,
+                      decltype(laterInBlock)>
+      worklist(laterInBlock);
   for (Operation& op : block) {
     if (inDegree.lookup(&op) == 0) {
-      worklist.emplace_back(&op);
+      worklist.push(&op);
     }
   }
 
   Block* newBlock = rewriter.createBlock(&block, block.getArgumentTypes(),
                                          getArgumentLocs(block));
 
-  for (size_t cursor = 0; cursor < worklist.size(); ++cursor) {
-    Operation* ready = worklist[cursor];
+  while (!worklist.empty()) {
+    Operation* ready = worklist.top();
+    worklist.pop();
 
     rewriter.moveOpBefore(ready, newBlock, newBlock->end());
 
     for (Operation* user : successors[ready]) {
       inDegree[user]--;
       if (inDegree[user] == 0) {
-        worklist.push_back(user);
+        worklist.push(user);
       }
     }
   }
