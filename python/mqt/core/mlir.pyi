@@ -706,9 +706,11 @@ def simulate(
 ) -> mqt.core.dd.VectorDD:
     """Simulate a supported input after lowering it directly to QCO.
 
-    An existing QCO program is used without copying. See
-    {py:meth}`QCOProgram.simulate` for the state, DD package, seed, and error
-    contracts.
+    Source, QC, OpenQASM, and Qiskit inputs allocate their declared qubits during
+    lowering and therefore normally use ``dd_package.zero_state(0)`` as the initial
+    state. An existing QCO program is used without copying and keeps its explicit
+    allocation and static-qubit semantics. See {py:meth}`QCOProgram.simulate` for
+    the state, DD package, seed, and error contracts.
     """
 
 def sample(

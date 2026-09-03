@@ -28,7 +28,7 @@ to work with decision diagrams in MQT Core from Python.
 
 ## Quickstart
 
-The MQT Compiler Collection uses the DD package to simulate optimized
+The MQT Compiler Collection uses the DD package to simulate
 {py:class}`~mqt.core.mlir.QCOProgram` objects. The simulator supports
 mid-circuit measurements, resets, and classically controlled operations. This
 example compiles and samples a Bell-state program:
@@ -61,7 +61,7 @@ converted with {py:meth}`~mqt.core.dd.VectorDD.get_vector` or
 ```{code-cell} ipython3
 import numpy as np
 from mqt.core.dd import DDPackage
-from mqt.core.mlir import QCOProgram, build_functionality, simulate
+from mqt.core.mlir import QCOProgram
 
 unitary_program = QCOProgram.from_mlir_str("""
 module {
@@ -82,12 +82,12 @@ module {
 
 dd = DDPackage(2)
 zero_state_dd = dd.zero_state(2)
-out_state_dd = simulate(unitary_program, zero_state_dd, dd)
+out_state_dd = unitary_program.simulate(zero_state_dd, dd)
 vec = np.array(out_state_dd.get_vector(), copy=False)
 with np.printoptions(precision=3, suppress=True):
   print(vec)
 
-functionality_dd = build_functionality(unitary_program, dd)
+functionality_dd = unitary_program.build_functionality(dd)
 unitary = np.array(functionality_dd.get_matrix(2), copy=False)
 with np.printoptions(precision=3, suppress=True):
   print(unitary)
