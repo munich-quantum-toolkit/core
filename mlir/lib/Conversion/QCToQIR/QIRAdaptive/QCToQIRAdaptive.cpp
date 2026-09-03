@@ -40,6 +40,7 @@
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
+#include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -55,6 +56,109 @@ using namespace qir;
 
 #define GEN_PASS_DEF_QCTOQIRADAPTIVE
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h.inc"
+
+namespace {
+
+constexpr unsigned LOCAL_CBIT_REGISTER = 1U;
+constexpr unsigned RETURNED_CBIT_REGISTER = 2U;
+constexpr unsigned MIXED_CBIT_REGISTER =
+    LOCAL_CBIT_REGISTER | RETURNED_CBIT_REGISTER;
+
+} // namespace
+
+static LogicalResult prepareCBitRegisterReads(Operation* moduleOp,
+                                              LoweringState& state) {
+  DenseMap<Value, SmallVector<Value>> forwardedRegisters;
+  moduleOp->walk([&](Operation* operation) {
+    for (auto& region : operation->getRegions()) {
+      for (auto& block : region) {
+        for (auto argument : block.getArguments()) {
+          if (!isa<cbit::RegisterType>(argument.getType())) {
+            continue;
+          }
+          for (auto* predecessor : block.getPredecessors()) {
+            auto branch =
+                dyn_cast<BranchOpInterface>(predecessor->getTerminator());
+            if (!branch) {
+              continue;
+            }
+            for (unsigned successorIndex = 0;
+                 successorIndex < branch->getNumSuccessors();
+                 ++successorIndex) {
+              if (branch->getSuccessor(successorIndex) != &block) {
+                continue;
+              }
+              auto operands = branch.getSuccessorOperands(successorIndex);
+              if (argument.getArgNumber() >= operands.size() ||
+                  operands.isOperandProduced(argument.getArgNumber())) {
+                continue;
+              }
+              if (auto incoming = operands[argument.getArgNumber()]) {
+                forwardedRegisters[incoming].push_back(argument);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+  moduleOp->walk([&](arith::SelectOp selectOp) {
+    if (isa<cbit::RegisterType>(selectOp.getType())) {
+      forwardedRegisters[selectOp.getTrueValue()].push_back(
+          selectOp.getResult());
+      forwardedRegisters[selectOp.getFalseValue()].push_back(
+          selectOp.getResult());
+    }
+  });
+
+  DenseMap<Value, unsigned> representations;
+  SmallVector<Value> worklist;
+  moduleOp->walk([&](cbit::AllocOp allocOp) {
+    const auto it = state.cregIndices.find(allocOp.getOperation());
+    if (it == state.cregIndices.end()) {
+      return;
+    }
+    representations[allocOp.getResult()] = state.cregs[it->second].record
+                                               ? RETURNED_CBIT_REGISTER
+                                               : LOCAL_CBIT_REGISTER;
+    worklist.push_back(allocOp.getResult());
+  });
+
+  while (!worklist.empty()) {
+    auto source = worklist.pop_back_val();
+    const auto it = forwardedRegisters.find(source);
+    if (it == forwardedRegisters.end()) {
+      continue;
+    }
+    for (auto destination : it->second) {
+      auto& representation = representations[destination];
+      const auto merged = representation | representations.lookup(source);
+      if (merged != representation) {
+        representation = merged;
+        worklist.push_back(destination);
+      }
+    }
+  }
+
+  bool hasMixedRepresentation = false;
+  const auto prepareRead = [&](Operation* operation, Value reg) {
+    const auto representation = representations.lookup(reg);
+    if (representation == MIXED_CBIT_REGISTER) {
+      operation->emitOpError(
+          "adaptive QIR conversion cannot merge returned and local CBit "
+          "registers");
+      hasMixedRepresentation = true;
+    } else if (representation == RETURNED_CBIT_REGISTER) {
+      state.returnedCBitReads.insert(operation);
+    }
+  };
+  moduleOp->walk(
+      [&](cbit::LoadOp loadOp) { prepareRead(loadOp, loadOp.getReg()); });
+  moduleOp->walk([&](cbit::CompareOp compareOp) {
+    prepareRead(compareOp, compareOp.getReg());
+  });
+  return success(!hasMixedRepresentation);
+}
 
 /**
  * @brief Returns the result pointer the `qc::MeasureOp` @p op writes to, or
@@ -191,9 +295,9 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
 
 static Value loadCBit(Operation* op, Value reg, Value index,
                       ConversionPatternRewriter& rewriter,
-                      LoweringState& state) {
+                      bool returnedRegister) {
   const auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
-  if (!state.resultArrays.contains(reg)) {
+  if (!returnedRegister) {
     auto elementptr =
         LLVM::GEPOp::create(rewriter, op->getLoc(), ptrType,
                             rewriter.getI1Type(), reg, ValueRange{index});
@@ -219,8 +323,10 @@ struct ConvertCBitLoadOp final : StatefulOpConversionPattern<cbit::LoadOp> {
   LogicalResult
   matchAndRewrite(cbit::LoadOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    const auto returnedRegister =
+        getState().returnedCBitReads.contains(op.getOperation());
     rewriter.replaceOp(op, loadCBit(op, adaptor.getReg(), adaptor.getIndex(),
-                                    rewriter, getState()));
+                                    rewriter, returnedRegister));
     return success();
   }
 };
@@ -232,13 +338,15 @@ struct ConvertCBitCompareOp final
   LogicalResult
   matchAndRewrite(cbit::CompareOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
+    const auto returnedRegister =
+        getState().returnedCBitReads.contains(op.getOperation());
     auto result = cbit::buildComparison(
         rewriter, op.getLoc(), op.getPredicate(), op.getRhs(),
         [&](const int64_t index) -> Value {
           auto indexValue = LLVM::ConstantOp::create(
               rewriter, op.getLoc(), rewriter.getI64Type(), index);
           return loadCBit(op, adaptor.getReg(), indexValue, rewriter,
-                          getState());
+                          returnedRegister);
         });
     rewriter.replaceOp(op, result);
     return success();
@@ -747,6 +855,10 @@ protected:
 
     // Stage 2.0: Prepare classical result registers
     if (failed(prepareClassicalResults(moduleOp, state))) {
+      signalPassFailure();
+      return;
+    }
+    if (failed(prepareCBitRegisterReads(moduleOp, state))) {
       signalPassFailure();
       return;
     }
