@@ -158,7 +158,10 @@ def test_batches_execute_in_input_order(monkeypatch: pytest.MonkeyPatch) -> None
     np.testing.assert_equal(results, ([0.0, 0.0, 1.0, 0.0], [0.0, 1.0, 0.0, 0.0]))
 
 
-def test_execution_failure_cancels_submitted_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("cancel_error", [RuntimeError, ValueError, KeyboardInterrupt])
+def test_execution_failure_cancels_submitted_jobs(
+    monkeypatch: pytest.MonkeyPatch, cancel_error: type[BaseException]
+) -> None:
     """Cancel every submitted job without masking the execution failure."""
     qdmi = stub_device()
     submit_job = qdmi.submit_job
@@ -170,7 +173,7 @@ def test_execution_failure_cancels_submitted_jobs(monkeypatch: pytest.MonkeyPatc
     def fail_cancel() -> None:
         qdmi.events.append("cancel:1")
         msg = "cancel failed"
-        raise RuntimeError(msg)
+        raise cancel_error(msg)
 
     def submit(
         program: str,

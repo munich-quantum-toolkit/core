@@ -398,7 +398,7 @@ class QDMIDevice(Device):
                 tape_results[index].append(self._result(job, converted, shots))
         except BaseException:
             for *_unused, job in submitted:
-                with suppress(RuntimeError):
+                with suppress(BaseException):
                     job.cancel()
             raise
         finally:
