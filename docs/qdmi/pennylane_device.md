@@ -188,8 +188,9 @@ print(f"Elapsed time: {elapsed:.3f} s")
 ```
 
 Parameter-shift expands one gradient evaluation into several shifted tapes. Each
-executable tape is submitted as a distinct QDMI job. Jobs are submitted
-sequentially; parallel QDMI submission is not supported.
+executable tape is submitted as a distinct QDMI job. The device submits all jobs
+in one PennyLane batch before it waits for their ordered results, which lets
+asynchronous QDMI implementations execute them concurrently.
 
 The sampled bit strings determine candidate bipartitions. The cut value is the
 number of graph edges whose endpoints have different bit values.
@@ -326,7 +327,8 @@ Arbitrary PennyLane wire labels map deterministically to contiguous QASM
 indices. The converter validates the one- and two-qubit loci advertised through
 QDMI but does not route circuits. A topology-incompatible program therefore
 fails before submission. Shot vectors, batches, and parameter-shift tapes are
-executed in order, and every execution requires finite shots.
+submitted in order before their results are collected in the same order. The
+PennyLane call remains synchronous, and every execution requires finite shots.
 
 ## Supported gate-level scope
 
@@ -337,4 +339,4 @@ rotations. PennyLane decomposes higher-level operations when their
 decompositions reach operations advertised by the QDMI device.
 
 The interface does not implement pulse programming, device-specific non-gate
-properties, routing, analytic execution, or parallel job submission.
+properties, routing, analytic execution, or QDMI batch jobs.

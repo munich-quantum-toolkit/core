@@ -26,11 +26,13 @@ except ImportError:
 
 from mqt.core.plugins.pennylane import (
     PennyLaneConfigurationError,
+    PennyLaneExecutionError,
     PennyLaneUnsupportedFormatError,
     PennyLaneValidationError,
     QDMIDevice,
 )
 from mqt.core.qdmi import Device as QDMIDeviceHandle
+from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 
 from .helpers import StubDevice, patch_open_device, rotation_results, stub_device
@@ -93,11 +95,11 @@ def test_histogram_only_device_reconstructs_samples(monkeypatch: pytest.MonkeyPa
     assert Counter(map(tuple, samples.tolist())) == {(0, 0): 4, (1, 1): 4}
 
 
-def test_execution_time_accumulates_one_interval_per_job(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Accumulate one wall-clock interval for every submitted QDMI job."""
+def test_execution_time_accumulates_batch_wall_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Count overlapping job execution once for each PennyLane batch."""
     qdmi = stub_device()
     patch_open_device(monkeypatch, qdmi)
-    readings = iter([0.0, 1.5, 10.0, 12.25, 100.0, 100.5])
+    readings = iter([0.0, 1.5, 10.0, 12.25])
     monkeypatch.setattr("mqt.core.plugins.pennylane.device.monotonic", lambda: next(readings))
     device = QDMIDevice("fake.qdmi", wires=2, shots=[(5, 2), 7])
 
@@ -106,13 +108,14 @@ def test_execution_time_accumulates_one_interval_per_job(monkeypatch: pytest.Mon
         return qp.probs(wires=[0, 1])
 
     circuit()
+    circuit()
 
-    assert device.submitted_jobs == 3
-    assert device.execution_time == pytest.approx(1.5 + 2.25 + 0.5)
+    assert device.submitted_jobs == 6
+    assert device.execution_time == pytest.approx(1.5 + 2.25)
 
 
-def test_shot_vectors_submit_sequential_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Execute every shot-vector copy as a sequential QDMI job."""
+def test_shot_vectors_submit_before_waiting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Submit every shot-vector copy before waiting for the first job."""
     qdmi = stub_device()
     patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2, shots=[(5, 2), 7])
@@ -125,13 +128,19 @@ def test_shot_vectors_submit_sequential_jobs(monkeypatch: pytest.MonkeyPatch) ->
 
     assert len(results) == 3
     assert [submission[2] for submission in qdmi.submissions] == [5, 5, 7]
+    assert qdmi.events == ["submit:1", "submit:2", "submit:3", "wait:1", "wait:2", "wait:3"]
     for probabilities in results:
+        assert probabilities.shape == (4,)
         assert np.sum(probabilities) == pytest.approx(1.0)
 
 
 def test_batches_execute_in_input_order(monkeypatch: pytest.MonkeyPatch) -> None:
     """Preserve batch ordering with one QDMI submission per tape."""
-    qdmi = stub_device()
+
+    def basis_state_results(program: str, shots: int) -> list[str]:
+        return ["01" if "x q[0];" in program else "10"] * shots
+
+    qdmi = stub_device(result_factory=basis_state_results)
     patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2, shots=6)
     tapes = (
@@ -145,6 +154,54 @@ def test_batches_execute_in_input_order(monkeypatch: pytest.MonkeyPatch) -> None
     assert len(qdmi.submissions) == 2
     assert "x q[0];" in qdmi.submissions[0][0]
     assert "x q[1];" in qdmi.submissions[1][0]
+    assert qdmi.events == ["submit:1", "submit:2", "wait:1", "wait:2"]
+    np.testing.assert_equal(results, ([0.0, 0.0, 1.0, 0.0], [0.0, 1.0, 0.0, 0.0]))
+
+
+def test_execution_failure_cancels_submitted_jobs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cancel every submitted job without masking the execution failure."""
+    qdmi = stub_device()
+    submit_job = qdmi.submit_job
+
+    def fail_wait() -> bool:
+        msg = "wait failed"
+        raise RuntimeError(msg)
+
+    def fail_cancel() -> None:
+        qdmi.events.append("cancel:1")
+        msg = "cancel failed"
+        raise RuntimeError(msg)
+
+    def submit(
+        program: str,
+        program_format: ProgramFormat,
+        num_shots: int,
+        **parameters: object,
+    ) -> QDMIJobHandle:
+        job = submit_job(program, program_format, num_shots, **parameters)
+        if job.id == "1":
+            monkeypatch.setattr(job, "cancel", fail_cancel)
+        elif job.id == "2":
+            monkeypatch.setattr(job, "wait", fail_wait)
+        return job
+
+    monkeypatch.setattr(qdmi, "submit_job", submit)
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2, shots=[2, 3, 4])
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=[2, 3, 4])
+
+    with pytest.raises(PennyLaneExecutionError, match="wait failed"):
+        device.execute(tape)
+
+    assert qdmi.events == [
+        "submit:1",
+        "submit:2",
+        "submit:3",
+        "wait:1",
+        "cancel:1",
+        "cancel:2",
+        "cancel:3",
+    ]
 
 
 def test_parameter_shift_gradient_uses_multiple_qdmi_jobs(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -95,6 +95,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
   job.def("check", &qdmi::Job::check, "Returns the current status of the job.");
 
   job.def("wait", &qdmi::Job::wait, "timeout"_a = 0,
+          nb::call_guard<nb::gil_scoped_release>(),
           R"pb(Waits for the job to complete.
 
 Args:
