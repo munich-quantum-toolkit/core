@@ -1,13 +1,8 @@
 # Add compile-time fixed-width OpenQASM angles
 
-This ExecPlan is a living document. The sections `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
-be kept up to date as work proceeds.
+Status: historical implementation record.
 
-This ExecPlan must be maintained in accordance with `.agent/PLANS.md` from the
-repository root.
-
-## Purpose / Big Picture
+## Goal and scope
 
 MQT Core currently recognizes the OpenQASM `angle` keyword but rejects angle
 declarations. After this change, users can declare initialized fixed-width
@@ -22,137 +17,79 @@ two. Exporting that QC program produces valid OpenQASM 3.1 with a floating-point
 gate argument. The export does not reproduce the source declaration or attach
 OpenQASM-specific metadata to MLIR.
 
-## Progress
+## Constraints
 
-- [x] (2026-08-19 11:59Z) Rechecked current `origin/main`, repository policy,
-      the old pull-request stack, the live OpenQASM 3.1 rules, and the angle
-      representations used by common quantum frameworks.
-- [x] (2026-08-19 11:59Z) Added private parser syntax for angle declarations,
-      width designators, and angle casts.
-- [x] (2026-08-19 11:59Z) Added exact compile-time quantization, resizing,
-      modular arithmetic, comparisons, and the binary64 lowering boundary.
-- [x] (2026-08-19 11:59Z) Added focused frontend and canonical export tests; the
-      new tests pass.
-- [x] (2026-08-19 12:17Z) Updated the OpenQASM support documentation and
-      completed release, non-unity, test, documentation, and lint validation.
-- [x] (2026-08-19 12:17Z) Reviewed the final nine-file change and recorded the
-      outcome. No remote state was changed.
-- [x] (2026-08-19 12:37Z) Rebased the signed implementation on current `main`,
-      including a non-overlapping workflow update that landed during
-      publication. Opened draft pull request #2169 and folded its reference into
-      the existing unreleased OpenQASM changelog entry.
-- [x] (2026-08-19 13:23Z) Resolved all four Clang-Tidy 22.1.8 findings from the
-      first CI run. The exact checks, release and non-unity builds, and both
-      affected test suites pass locally.
-- [x] (2026-08-19 20:24Z) Rebased the branch on `cb5cf0103`, retained the CBit
-      representation from #2158 while resolving adjacent conflicts, and kept
-      #2169 in the current unreleased OpenQASM changelog entry.
-- [x] (2026-08-19 20:24Z) Added small coverage cases for direct angle casts,
-      both comparison orderings, runtime casts, unsupported outputs, and mixed
-      angle arithmetic. The focused OpenQASM and QC translation suites pass.
-- [x] (2026-08-19 20:24Z) Created #2174 for the format-independent runtime and
-      target-aware work that remains after #2169 closes #1128.
+- The typed OpenQASM frontend and QC emitter already represent gate parameters
+  as binary64 radians. An angle constant can therefore become an ordinary
+  `ScalarType::Angle` constant at the end of semantic analysis without changing
+  the public frontend types or the QC dialect. Evidence: the focused export test
+  emits `rx(1.5707963267948966)` and reparses it in strict mode.
 
-## Surprises & Discoveries
+- The source width is needed only while constant expressions are evaluated.
+  Keeping a private pair of residue and width removes the need for source-format
+  attributes, integer angle operations in QC, and pattern reconstruction in the
+  exporter.
 
-- Observation: The typed OpenQASM frontend and QC emitter already represent gate
-  parameters as binary64 radians. An angle constant can therefore become an
-  ordinary `ScalarType::Angle` constant at the end of semantic analysis without
-  changing the public frontend types or the QC dialect. Evidence: the focused
-  export test emits `rx(1.5707963267948966)` and reparses it in strict mode.
-- Observation: The source width is needed only while constant expressions are
-  evaluated. Keeping a private pair of residue and width removes the need for
-  source-format attributes, integer angle operations in QC, and pattern
-  reconstruction in the exporter.
-- Observation: Binary64 cannot distinguish every adjacent fixed-angle residue at
-  width 53 near two pi. Width 52 has a step larger than the largest binary64
-  spacing in the represented interval. The supported range is therefore 1
-  through 52, and an omitted width resolves to 52.
-- Observation: OpenQASM defines `pi`, `tau`, and `euler` as 64-bit floats, and
-  inverse trigonometric functions return floats. The previous frontend treated
-  some of these values as angles. The fixed-angle work exposes and corrects that
+- Binary64 cannot distinguish every adjacent fixed-angle residue at width 53
+  near two pi. Width 52 has a step larger than the largest binary64 spacing in
+  the represented interval. The supported range is therefore 1 through 52, and
+  an omitted width resolves to 52.
+
+- OpenQASM defines `pi`, `tau`, and `euler` as 64-bit floats, and inverse
+  trigonometric functions return floats. The previous frontend treated some of
+  these values as angles. The fixed-angle work exposes and corrects that
   mismatch.
-- Observation: The live specification first describes binary angle operations on
-  equal-width operands, then states that mixed-width angles use unsigned integer
-  promotion. The implementation widens both fixed values before it applies the
-  operation.
-- Observation: The normal documentation build needs a QDMI 1.3.2 tag file from
-  GitHub Pages. The first build failed during a temporary DNS outage. Reusing
-  the identical cached 1.3.2 tag file made the warnings-as-errors build pass.
-- Observation: Current `main` replaces implicit classical-register memrefs with
-  CBit IR. The rebase conflicts were adjacent rather than semantic. The resolved
-  documentation and end-to-end test retain CBit and the compile-time angle
-  boundary.
 
-## Decision Log
+- The live specification first describes binary angle operations on equal-width
+  operands, then states that mixed-width angles use unsigned integer promotion.
+  The implementation widens both fixed values before it applies the operation.
 
-- Decision: Support fixed-width angles only as compile-time values. Rationale:
-  the requested use case does not require runtime angle storage, and the
-  existing backend interfaces use binary64 gate parameters. Date/Author:
-  2026-08-19 / Codex.
-- Decision: Keep fixed-angle state private to
+## Decisions
+
+- Support fixed-width angles only as compile-time values. Rationale: the
+  requested use case does not require runtime angle storage, and the existing
+  backend interfaces use binary64 gate parameters.
+
+- Keep fixed-angle state private to
   `mlir/lib/Target/OpenQASM/OpenQASMSemantics.cpp`. Rationale: no other format
   or dialect needs the OpenQASM storage width when the selected output contract
-  is canonical semantic output rather than source round-trip. Date/Author:
-  2026-08-19 / Codex.
-- Decision: Accept widths 1 through 52 and use 52 for unsized angles. Rationale:
-  every supported residue remains distinguishable after conversion to the
-  existing binary64 radians boundary. Date/Author: 2026-08-19 / Codex.
-- Decision: Use round-to-nearest, ties-to-even for float conversion and angle
-  narrowing. Widening appends zero low bits. Rationale: this is one of the
-  OpenQASM-defined narrowing policies and is the required float-to-angle rule.
-  Date/Author: 2026-08-19 / Codex.
-- Decision: Treat initialized declarations with or without `const` as write-once
+  is canonical semantic output rather than source round-trip.
+
+- Accept widths 1 through 52 and use 52 for unsized angles. Rationale: every
+  supported residue remains distinguishable after conversion to the existing
+  binary64 radians boundary.
+
+- Use round-to-nearest, ties-to-even for float conversion and angle narrowing.
+  Widening appends zero low bits. Rationale: this is one of the OpenQASM-defined
+  narrowing policies and is the required float-to-angle rule.
+
+- Treat initialized declarations with or without `const` as write-once
   compile-time bindings. Rationale: this accepts common source while avoiding
   runtime storage and assignment. Reassignment and missing or dynamic
-  initializers receive diagnostics. Date/Author: 2026-08-19 / Codex.
-- Decision: Leave bare gate parameters as binary64 and defer global gate-angle
+  initializers receive diagnostics.
+
+- Leave bare gate parameters as binary64 and defer global gate-angle
   quantization. Rationale: other quantum formats use continuous floating-point
   parameters, and unconditional modulo reduction is unsafe for phase-sensitive
-  or controlled operations. Date/Author: 2026-08-19 / Codex.
-- Decision: Let #2169 close #1128 and track the remaining runtime storage and
-  target-aware quantization work in #2174. Rationale: #2169 satisfies the
-  issue's stated design and parser or lowering acceptance criterion. The
-  remaining work needs a format-independent compiler contract and is not part of
-  compile-time OpenQASM input support. Date/Author: 2026-08-19 / Codex.
+  or controlled operations.
 
-## Outcomes & Retrospective
+- Let #2169 close #1128 and track the remaining runtime storage and target-aware
+  quantization work in #2174. Rationale: #2169 satisfies the issue's stated
+  design and parser or lowering acceptance criterion. The remaining work needs a
+  format-independent compiler contract and is not part of compile-time OpenQASM
+  input support.
 
-The implementation is published as draft pull request #2169. The source, test,
-and feature-documentation diff changes eight files with 577 insertions and 65
-deletions. The changelog and ExecPlan bring the pull request to ten files. The
-old pull-request stack changed 30 files with about 6,000 insertions. The smaller
-design needs no public frontend change, no MLIR dialect or operation, no
-format-specific attribute, no exporter reconstruction, and no Python or
-generated-file change.
+## Outcome and validation
 
-The release build passed after the latest rebase. CTest passed all 4,295 tests;
-one device query test was skipped by its fixture. The complete OpenQASM target
-and QC translation binaries passed 168 and 175 tests. The same two targets also
-built without unity before the rebase and their test binaries passed. The
-repository lint session, diff-scoped Clang-Tidy with warnings as errors, and the
-warnings-as-errors documentation build passed. `git diff --check` passed.
+Compile-time fixed angles are implemented in semantic analysis and QC emission
+without new dialect operations, format-specific attributes, exporter
+reconstruction, or Python API changes. Release and non-unity affected tests, the
+configured CTest suite with one expected skip, Clang-Tidy, lint, and strict
+documentation passed.
 
-The first ordinary documentation run failed only because DNS resolution could
-not download the QDMI 1.3.2 tag file. The successful retry used the identical
-cached tag file from another current MQT Core worktree through Sphinx's normal
-configuration override. The existing unreleased staged-OpenQASM changelog entry
-now references pull request #2169. The entry already credits the contributing
-authors.
+Issue `#2174` owns runtime fixed angles and target-aware quantization.
 
-The first CI lint run found four warnings in the new code: one signed/unsigned
-comparison, two nested conditional expressions, and one redundant cast. The
-follow-up uses `std::cmp_greater`, explicit branches, and the literal exponent
-type. These changes preserve behavior. The four exact checks pass with
-Clang-Tidy 22.1.8, and both affected test binaries pass in release and non-unity
-builds.
-
-The branch was later rebased on `cb5cf0103`, after the v3.9.0 release and the
-CBit migration. The conflict resolution retains the current unreleased changelog
-structure and CBit semantics. Follow-up issue #2174 owns the separate,
-format-independent runtime fixed-angle and target-aware quantization contract.
-
-## Context and Orientation
+## Code and ownership
 
 The parser in `mlir/include/mlir/Target/OpenQASM/Detail/OpenQASMParser.h`
 creates a private syntax tree declared in `OpenQASMSyntax.h` and copied by
@@ -180,52 +117,7 @@ inputs or outputs, mutable or runtime angles, bit casts, bitwise operations,
 shifts, rotations, population count, angle divided by angle, or a global
 quantization pass.
 
-## Plan of Work
-
-Extend the private parse vocabulary with an angle scalar kind and an angle-cast
-expression. Preserve an optional width expression on declarations and casts so
-semantic analysis can evaluate named constant widths.
-
-Inside semantic analysis, store fixed constants as a private `FixedAngle` value
-containing an unsigned residue and a width. Use integer arithmetic to quantize
-every finite binary64 input exactly relative to the binary64 value of two pi.
-Keep every operation in the residue domain. Convert to radians only when a
-folded constant enters the existing typed frontend.
-
-Do not change `mlir/include/mlir/Target/OpenQASM/Frontend.h`, QC, QCO, QIR,
-Python bindings, generated stubs, or the QC-to-OpenQASM exporter. Document the
-compile-time input subset and the canonical floating-point output boundary in
-`docs/mlir/OpenQASM.md`.
-
-Add parser and semantic tests under `mlir/unittests/Target/OpenQASM/`. Add one
-end-to-end import/export test under `mlir/unittests/Dialect/QC/Translation/`.
-The tests must cover the specification halfway example, negative and multi-turn
-conversion, widths 1 and 52, omitted width, widening and narrowing, large and
-subnormal binary64 inputs, modular arithmetic, comparisons, trigonometric use,
-unsupported runtime behavior, and strict reparsing of canonical output.
-
-## Concrete Steps
-
-Run all commands from the repository root. Build and run the focused frontend
-tests first:
-
-    cmake --build --preset release --target mqt-core-mlir-unittest-openqasm-target
-    ./build/release/mlir/unittests/Target/OpenQASM/mqt-core-mlir-unittest-openqasm-target
-
-Build and run the QC translation tests:
-
-    cmake --build --preset release --target mqt-core-mlir-unittest-qc-translation
-    ./build/release/mlir/unittests/Dialect/QC/Translation/mqt-core-mlir-unittest-qc-translation
-
-Then complete release, documentation, and repository validation:
-
-    cmake --build --preset release
-    ctest --preset release
-    uvx nox --non-interactive -s docs
-    uvx nox -s lint
-    git diff --check
-
-## Validation and Acceptance
+## Acceptance
 
 The OpenQASM target tests must pass and show that a width-8 halfway input rounds
 to the even residue, negative and multi-turn inputs reduce modulo two pi, mixed
@@ -238,12 +130,3 @@ The QC translation test must import a fixed angle, export the QC program, find
 no `angle` declaration or `mqt.openqasm` attribute in the output, observe the
 expected binary64 gate argument, and reparse the emitted OpenQASM 3.1 in strict
 mode. Existing OpenQASM, compiler, and repository tests must remain green.
-
-## Idempotence and Recovery
-
-Builds and tests write only under existing build and cache directories and are
-safe to repeat. The implementation changes no generated files and performs no
-remote action. If a focused test fails, rerun its GoogleTest filter after the
-source fix, then rerun the complete binary so shared frontend behavior is not
-missed. Preserve unrelated worktree changes when inspecting or revising the
-diff.

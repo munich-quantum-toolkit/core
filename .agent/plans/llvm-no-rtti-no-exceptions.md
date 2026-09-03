@@ -1,13 +1,8 @@
 # Support stock LLVM builds without exceptions or RTTI
 
-This ExecPlan is a living document. The sections `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
-be kept up to date as work proceeds.
+Status: historical implementation record.
 
-This ExecPlan must be maintained in accordance with `.agent/PLANS.md` from the
-repository root.
-
-## Purpose / Big Picture
+## Goal and scope
 
 MQT Core's MLIR compiler must build against a stock LLVM and MLIR installation
 that disables C++ exceptions and run-time type information (RTTI). After this
@@ -24,125 +19,85 @@ ordinary MLIR sources. The driver can still list QDMI devices and compile a Bell
 program for `mqt.ddsim.default`; QDMI failures become `llvm::Error` values and
 produce normal diagnostics instead of escaping as C++ exceptions.
 
-## Progress
+## Constraints
 
-- [x] (2026-08-15 19:03Z) Rebased the prerequisite compiler-input removal onto
-  the current upstream main, regenerated stubs, validated it, and updated PR
-  #2054 at exact head `b74138dd7`.
-- [x] (2026-08-15 19:03Z) Created this combined ExecPlan from the validated
-  prerequisite tree and recorded the no-exception and no-RTTI boundaries.
-- [x] (2026-08-15 19:15Z) Removed the project and MLIR configuration overrides,
-      then applied LLVM's target policy centrally to MLIR libraries, object
-      libraries, tools, and test fixture libraries.
-- [x] (2026-08-15 19:15Z) Added non-throwing QDMI device-list and device-ID
-      compiler-target adapters, then removed exception-based QDMI calls and the
-      top-level catch from `mqt-cc`.
-- [x] (2026-08-15 19:15Z) Marked only the confirmed compatibility boundaries and
-      header-dependent MLIR tests as exception-enabled while keeping them
-      RTTI-free with an RTTI-free LLVM installation.
-- [x] (2026-08-15 19:15Z) Added adapter tests, validated the driver paths, and
-      documented the non-throwing target path.
-- [x] (2026-08-15 19:15Z) Updated every repository LLVM and MLIR pin to 22.1.8;
-      added the combined pull request reference after publication.
-- [x] (2026-08-15 19:20Z) Validated focused targets, the complete build and
-      4,382 CTests, all supported Python suites, MLIR docs, lint, formatting,
-      and compile flags against LLVM and MLIR 22.1.8. The full Sphinx build
-      remains unavailable because this host has no Doxygen executable.
-- [x] (2026-08-15 19:40Z) Rebased onto merged PR #2054 and published draft PR
-      #2125. Inspect all checks for the exact final head before handoff. A human
-      performs the merge.
-- [x] (2026-08-16 08:05Z) Addressed the first human review. Restored MLIR plugin
-      support in `mqt-cc`, isolated the DDSIM device's static archive symbols,
-      removed the redundant driver subprocess test, and repeated the focused
-      adapter and driver checks.
+- The local LLVM and MLIR 22.1.8 installation reports both `-fno-exceptions` and
+  `-fno-rtti` through `llvm-config --cxxflags`. Evidence: configuring an
+  unchanged tree against that installation made ordinary MLIR code compile with
+  those flags, but linking the DDSIM device exposed LLVM RTTI references from
+  the exception-enabled QIR JIT boundary.
 
-## Surprises & Discoveries
+- Loading the DDSIM QDMI device into an executable that exports statically
+  linked LLVM symbols registers LLVM command-line options twice and aborts
+  before QDMI can return an error. Evidence: the first Bell-program driver test
+  reported `Option 'bitcode-mdindex-threshold' registered more than once`.
+  Hiding archive symbols in the DDSIM shared device with the ELF linker's
+  `--exclude-libs,ALL` option isolates its LLVM copy while retaining plugin
+  support in `mqt-cc`.
 
-- Observation: The local LLVM and MLIR 22.1.8 installation reports both
-  `-fno-exceptions` and `-fno-rtti` through `llvm-config --cxxflags`. Evidence:
-  configuring an unchanged tree against that installation made ordinary MLIR
-  code compile with those flags, but linking the DDSIM device exposed LLVM RTTI
-  references from the exception-enabled QIR JIT boundary.
-- Observation: The prerequisite PR's complete configured CTest suite contains
-  4,162 tests. All passed; the two job-ID tests were skipped by design. The
-  supported Python 3.10 through 3.14 sessions each passed all 48 affected MLIR
-  binding tests.
-- Observation: The full documentation session cannot finish on this host because
-  the external `doxygen` executable is absent. The `mlir-doc` CMake target
-  succeeds. This environmental limitation must be checked again before final
-  handoff and reported if it remains.
-- Observation: Loading the DDSIM QDMI device into an executable that exports
-  statically linked LLVM symbols registers LLVM command-line options twice and
-  aborts before QDMI can return an error. Evidence: the first Bell-program
-  driver test reported
-  `Option 'bitcode-mdindex-threshold' registered more than once`. Hiding archive
-  symbols in the DDSIM shared device with the ELF linker's `--exclude-libs,ALL`
-  option isolates its LLVM copy while retaining plugin support in `mqt-cc`.
-- Observation: The fresh complete build confirmed the planned seven
-  exception-enabled MLIR test executables without additions. Every ordinary MLIR
-  compile command contains `-fno-exceptions -fno-rtti`; the two MLIR
-  compatibility libraries and seven tests omit the exception-disable flag and
-  contain `-fno-rtti`.
-- Observation: The first PR #2125 workflow runs failed uniformly in the MLIR
-  setup step before compilation. The pinned reusable workflows used setup-mlir
-  v1.4.1, which could not load the new 22.1.8 manifest entries. The exact
-  current reusable-workflows commit uses setup-mlir v1.4.2, which reads the
-  remote manifest and supports versions released after its own tag.
-- Observation: The macOS ARM debug driver test converted an invalid QDMI
-  registry failure to `llvm::Error`, but the nested QDMI exception did not match
-  `std::exception` across the platform boundary. The adapter therefore emitted
-  its stable `Failed to discover registered QDMI devices` prefix followed by
+- The fresh complete build confirmed the planned seven exception-enabled MLIR
+  test executables without additions. Every ordinary MLIR compile command
+  contains `-fno-exceptions -fno-rtti`; the two MLIR compatibility libraries and
+  seven tests omit the exception-disable flag and contain `-fno-rtti`.
+
+- The macOS ARM debug driver test converted an invalid QDMI registry failure to
+  `llvm::Error`, but the nested QDMI exception did not match `std::exception`
+  across the platform boundary. The adapter therefore emitted its stable
+  `Failed to discover registered QDMI devices` prefix followed by
   `unknown exception`. The driver test now checks the stable adapter diagnostic
   instead of a platform-specific nested exception string.
-- Observation: The macOS 15 Qiskit job linked the nanobind extension with one
-  undefined OpenQASM semantic-analyzer member-template instantiation. The normal
-  C++ macOS job did not expose the defect because its build mode emitted the
+
+- The macOS 15 Qiskit job linked the nanobind extension with one undefined
+  OpenQASM semantic-analyzer member-template instantiation. The normal C++ macOS
+  job did not expose the defect because its build mode emitted the
   instantiation. Replacing the local member template with typed qubit and bit
   overloads backed by an ordinary helper removes the platform-dependent weak
   symbol without changing semantic behavior.
-- Observation: C++ patch coverage first reported 82.1%. All eight missed lines
-  were duplicated defensive exception-conversion branches in the QDMI adapter. A
+
+- C++ patch coverage first reported 82.1%. All eight missed lines were
+  duplicated defensive exception-conversion branches in the QDMI adapter. A
   shared `std::exception_ptr` converter preserves standard diagnostics and the
   unknown-exception fallback while leaving only the fallback branch inherently
   unreachable through the current QDMI APIs.
 
-## Decision Log
+## Decisions
 
-- Decision: Inherit `LLVM_ENABLE_EH`, `LLVM_ENABLE_RTTI`, and ordinary compile
-  flags from the imported LLVM package instead of adding an MQT option or
-  overriding the imported values. Rationale: This matches stock MLIR consumer
-  policy and keeps the full compiler enabled in one supported configuration.
-  Date/Author: 2026-08-15 / Codex.
-- Decision: Apply `llvm_update_compile_flags` in the central
+- Inherit `LLVM_ENABLE_EH`, `LLVM_ENABLE_RTTI`, and ordinary compile flags from
+  the imported LLVM package instead of adding an MQT option or overriding the
+  imported values. Rationale: This matches stock MLIR consumer policy and keeps
+  the full compiler enabled in one supported configuration.
+
+- Apply `llvm_update_compile_flags` in the central
   `mqt_mlir_target_use_project_options` path to both the named MLIR target and
   its `obj.<name>` target. Rationale: MLIR's CMake helpers often compile sources
   in object targets; configuring only the archive or executable does not change
-  the actual compile commands. Date/Author: 2026-08-15 / Codex.
-- Decision: Keep exceptions only in the QDMI adapter, QCO DD functionality, QIR
-  JIT and runner, DDSIM QDMI device, proven MLIR test executables, and the
-  nanobind extension. Rationale: These targets directly use headers or APIs that
-  throw. Ordinary compiler code and `mqt-cc` can use `llvm::Expected` and
-  `llvm::Error`. Date/Author: 2026-08-15 / Codex.
-- Decision: When imported LLVM is RTTI-free, add LLVM's own platform-specific
-  no-RTTI flag only to exception-enabled compatibility boundaries and direct
-  LLVM consumers outside the central MLIR helper. Rationale: This keeps their
-  ABI compatible without imposing LLVM policy on unrelated Core libraries.
-  Date/Author: 2026-08-15 / Codex.
-- Decision: Keep the nanobind extension exception-enabled and RTTI-enabled.
-  Rationale: nanobind headers require both and form a language binding boundary,
-  not part of the exception-free compiler driver. Date/Author: 2026-08-15 /
-  Codex.
-- Decision: Retain dynamic pass-plugin support in `mqt-cc` and hide symbols from
-  static dependencies in the DDSIM shared device on ELF platforms. Rationale:
-  the QDMI entry points remain exported, but the device's LLVM copy cannot
-  interpose the host's LLVM registries. Date/Author: 2026-08-16 / Codex.
-- Decision: Pin CI and upstream reusable workflows to commit
-  `12b5111fd3bbfd5434765e51a8d49182d3e2d8e0` until the pending v2.2.3 release
-  receives a tag. Rationale: v2.2.2 embeds setup-mlir v1.4.1 and cannot install
-  LLVM 22.1.8; the pinned commit embeds v1.4.2 and keeps every reusable workflow
-  immutable. Date/Author: 2026-08-15 / Codex.
+  the actual compile commands.
 
-## Outcomes & Retrospective
+- Keep exceptions only in the QDMI adapter, QCO DD functionality, QIR JIT and
+  runner, DDSIM QDMI device, proven MLIR test executables, and the nanobind
+  extension. Rationale: These targets directly use headers or APIs that throw.
+  Ordinary compiler code and `mqt-cc` can use `llvm::Expected` and
+  `llvm::Error`.
+
+- When imported LLVM is RTTI-free, add LLVM's own platform-specific no-RTTI flag
+  only to exception-enabled compatibility boundaries and direct LLVM consumers
+  outside the central MLIR helper. Rationale: This keeps their ABI compatible
+  without imposing LLVM policy on unrelated Core libraries.
+
+- Keep the nanobind extension exception-enabled and RTTI-enabled. Rationale:
+  nanobind headers require both and form a language binding boundary, not part
+  of the exception-free compiler driver.
+
+- Retain dynamic pass-plugin support in `mqt-cc` and hide symbols from static
+  dependencies in the DDSIM shared device on ELF platforms. Rationale: the QDMI
+  entry points remain exported, but the device's LLVM copy cannot interpose the
+  host's LLVM registries.
+
+- The LLVM upgrade required a shared workflow version capable of installing the
+  selected portable toolchain. Keep the workflow and toolchain requirements
+  aligned; the workflow files, not this historical record, own the current pins.
+
+## Outcome and validation
 
 The prerequisite merged as PR #2054. The combined implementation configures and
 builds fully against the stock exception-free, RTTI-free LLVM and MLIR 22.1.8
@@ -152,7 +107,7 @@ complete compile audit matches the intended boundaries. The full Sphinx build is
 blocked only by the missing Doxygen executable. Draft PR #2125 contains the
 combined change.
 
-## Context and Orientation
+## Code and ownership
 
 `cmake/CompilerOptions.cmake` defines options inherited by ordinary MQT targets.
 It currently adds `-fexceptions` on non-MSVC builds. `cmake/SetupMLIR.cmake`
@@ -186,103 +141,7 @@ builds, Read the Docs, and the development container. All pins must use the
 portable 22.1.8 release. No reduced compiler feature set, build option, or new
 CI matrix is part of this work.
 
-## Plan of Work
-
-First, remove the unconditional `-fexceptions` option from
-`cmake/CompilerOptions.cmake` and the forced LLVM exception and RTTI variables
-from `cmake/SetupMLIR.cmake`. After LLVM's CMake modules are loaded, add a
-helper that applies `${LLVM_CXXFLAGS_RTTI_DISABLE}` to a named C++ target only
-when the imported `LLVM_ENABLE_RTTI` value is false. The helper must reject
-missing targets and must not change unrelated Core targets.
-
-Next, extend `mqt_mlir_apply_target_options` in `mlir/CMakeLists.txt` to call
-`llvm_update_compile_flags` and then apply the no-RTTI helper. Keep
-`mqt_mlir_target_use_project_options` responsible for both the named and object
-targets. Remove the duplicate direct LLVM flag call from `mqt-cc`. Route every
-fixture library in `mlir/unittests/programs/CMakeLists.txt` through this helper.
-
-Wrap the QDMI adapter and QCO DD library creation with local `LLVM_REQUIRES_EH`
-and `LLVM_REQUIRES_RTTI` values, then unset both immediately. LLVM's helper
-treats these variables as the request to preserve exceptions at those targets;
-the central helper then restores LLVM's no-RTTI flag when the toolchain is
-RTTI-free. Do the same for the QIR runner, and call the no-RTTI helper for the
-direct LLVM consumers in the QIR JIT and DDSIM device. Extend the MLIR unit-test
-helper with a `REQUIRES_EH` keyword. Use that keyword for the seven tests
-already proven to include exception-dependent headers, then use a fresh build to
-add or remove entries based on compiler evidence.
-
-Add `compilerTargetFromDeviceId(std::string_view)` and
-`registeredQDMIDeviceIds()` to `QDMIAdapter.h`, both returning LLVM error-aware
-types. In `QDMIAdapter.cpp`, keep the existing snapshot logic in an internal
-function. Make every public factory catch `std::exception` and unknown
-exceptions from QDMI, then return `llvm::createStringError`. The ID factory must
-open the device and snapshot it entirely inside the adapter boundary. The list
-function must contain `qdmi::Driver::get().registeredDeviceIds()` in the same
-way. Change `mqt-cc` to use these functions, remove its QDMI client and driver
-includes, remove its top-level `try` and `catch`, and report adapter errors with
-a nonzero exit code.
-
-Extend `mlir/unittests/Compiler/test_compiler_qdmi_adapter.cpp` with an unknown
-device-ID failure and a registered-ID success case. Add driver-level CTest cases
-under `test/qir/mqt-cc/` for device listing, invalid registry configuration, an
-unknown device, and compiling a Bell OpenQASM program through
-`mqt.ddsim.default`. The tests must assert normal nonzero exits and useful
-diagnostics for failures.
-
-Document the non-throwing C++ path in `docs/mlir/target_compilation.md`. Replace
-every pin for the previous LLVM patch release with 22.1.8 in repository
-configuration. Add the combined pull request reference to the existing generic
-QC/QCO compiler infrastructure changelog entry after GitHub assigns the pull
-request number.
-
-## Concrete Steps
-
-Run all commands from the repository root. During implementation, use the
-installed LLVM and MLIR 22.1.8 package:
-
-    cmake --preset release -B build/no-rtti-no-eh \
-      -DMLIR_DIR=/path/to/llvm-22.1.8/lib/cmake/mlir \
-      -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
-
-Build the narrow targets first so each boundary failure is local:
-
-    cmake --build build/no-rtti-no-eh --target \
-      mqt-cc MQTCompilerQDMIAdapter MLIRQCODDFunctionality \
-      mqt-core-qir-jit mqt-core-qir-runner \
-      mqt-core-qdmi-ddsim-device -j4
-    cmake --build build/no-rtti-no-eh --target \
-      mqt-core-mlir-unittests-compiler -j4
-
-Then build and test the complete configured project:
-
-    cmake --build build/no-rtti-no-eh -j4
-    ctest --test-dir build/no-rtti-no-eh --output-on-failure -j4
-    uvx nox --non-interactive -s tests -- test/python/test_mlir.py -q
-    cmake --build build/no-rtti-no-eh --target mlir-doc -j4
-    uvx nox --non-interactive -s docs
-    uvx nox --non-interactive -s lint
-    git diff --check
-
-Search the compile database by source and target. Ordinary MLIR sources and
-`mqt-cc.cpp` must contain `-fno-exceptions` and `-fno-rtti`. Each documented
-compatibility boundary must contain exception-enable and no-RTTI flags, with the
-enable flag occurring after any inherited disable flag. The nanobind module may
-contain exception-enable and RTTI-enable flags. No other MLIR source may retain
-both.
-
-Before publication, run:
-
-    rg '22\.1\.[0-7]' --hidden -g '!build/**' -g '!.git/**'
-    git status --short
-    git diff --stat <base>...HEAD
-
-The first command must return no matches. Push only the combined branch, open a
-draft pull request that targets the post-prerequisite main, and inspect all
-checks for the exact pushed head. The pull request body must start with the AI
-text disclosure required by `docs/ai_usage.md`, explain validation, state that
-it fixes #1589 and #1590, and state that it supersedes #2048 and #2051.
-
-## Validation and Acceptance
+## Acceptance
 
 Acceptance requires a fresh Release configuration using LLVM and MLIR 22.1.8
 without modifying that installation. The complete build and CTest suite must
@@ -306,61 +165,7 @@ available, lint, and `git diff --check` must pass. Any unavailable check must be
 recorded with its exact environmental cause. GitHub checks must belong to the
 exact published head before the work is ready for human review.
 
-## Idempotence and Recovery
-
-All configure, build, CTest, Nox, search, and audit commands are repeatable. The
-dedicated build directory prevents this work from altering another build. If
-configuration or compilation fails, edit only the target named in the first
-relevant diagnostic and rerun that target before resuming the complete build. Do
-not delete or reset unrelated work. Generated Python stubs must be produced only
-by `uvx nox -s stubs`; do not edit them by hand.
-
-Rebasing and force-pushing the prerequisite used an exact remote lease. The
-combined branch must use an ordinary push unless its own history is later
-rewritten, in which case use a lease tied to the previously observed remote
-head. Never merge either pull request; a human reviews and merges them.
-
-## Artifacts and Notes
-
-The prerequisite validation established a clean starting point:
-
-    100% tests passed out of 4162
-    48 passed on each of Python 3.10, 3.11, 3.12, 3.13, and 3.14
-    lint: all hooks passed
-    mlir-doc: built successfully
-
-The full Sphinx session stopped before rendering native API documentation with:
-
-    ExtensionError: Doxygen is required to build the native C++ API documentation
-
-The combined C++ validation currently records:
-
-    complete Release build against LLVM and MLIR 22.1.8: passed
-    100% tests passed out of 4381
-    QDMI adapter tests: 8 passed
-    mqt-cc QIR test: passed
-    mqt-cc QDMI listing, failure, and DDSIM compilation checks: passed manually
-    exception-enabled MLIR test executables: exactly 7, all with -fno-rtti
-
-The supported Python sessions passed with these totals:
-
-    Python 3.10: 646 passed, 7 skipped
-    Python 3.11: 678 passed, 4 skipped
-    Python 3.12: 678 passed, 4 skipped
-    Python 3.13: 678 passed, 4 skipped
-    Python 3.14: 689 passed, 3 skipped
-
-The final compile database classification is:
-
-    ordinary MLIR and mqt-cc entries: 55 with -fno-exceptions -fno-rtti
-    MLIR compatibility and test entries: 9 with exceptions and -fno-rtti
-    direct Core LLVM consumers: QIR JIT, QIR runner, and DDSIM with exceptions and -fno-rtti
-    nanobind extension entries: 2 with compiler-default exceptions and RTTI
-
-Update this section with focused compile errors that change the exception
-boundary list and with the final compile-command audit summary.
-
-## Interfaces and Dependencies
+## Interfaces
 
 At completion, `mlir/include/mlir/Compiler/QDMIAdapter.h` exports:
 
@@ -377,11 +182,3 @@ propagate failure. They depend on the existing QDMI C++ API only inside
 `MQTCompilerQDMIAdapter`, which remains the compatibility boundary. No public
 `mqt-cc` code directly includes `qdmi/Client.hpp` or `qdmi/driver/Driver.hpp`
 after this change.
-
-Revision note (2026-08-15): Created the combined plan after rebasing and
-validating PR #2054. It supersedes the separate exception and RTTI plans for
-this implementation and records the narrowed QDMI adapter design. Updated the
-plan after the full 22.1.8 build to record the confirmed boundary list, the
-symbol-export loader failure, completed C++ and Python validation, and the final
-compile database audit. Updated the final design after review to retain plugin
-support and isolate the DDSIM device at the shared-library boundary.
