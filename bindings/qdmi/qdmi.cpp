@@ -107,9 +107,11 @@ Returns:
   job.def("cancel", &qdmi::Job::cancel, "Cancels the job.");
 
   job.def("get_shots", &qdmi::Job::getShots,
+          nb::call_guard<nb::gil_scoped_release>(),
           "Returns the raw shot results from the job.");
 
   job.def("get_counts", &qdmi::Job::getCounts,
+          nb::call_guard<nb::gil_scoped_release>(),
           "Returns the measurement counts from the job.");
 
   job.def("get_dense_statevector", &qdmi::Job::getDenseStateVector,
