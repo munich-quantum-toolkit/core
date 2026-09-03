@@ -106,6 +106,13 @@ enum class ExpressionKind : uint8_t {
   Variable,
   Cast,
   BitVectorCast,
+  Condition,
+  BitNot,
+  BitAnd,
+  BitOr,
+  BitXor,
+  ShiftLeft,
+  ShiftRight,
   Negate,
   ArcCos,
   ArcSin,
@@ -136,10 +143,13 @@ struct ScalarExpression {
   ExpressionId lhs = 0;
   ExpressionId rhs = 0;
   BitVectorExpressionId bitVector = 0;
-  bool signedBitVectorCast = false;
+  /// Zero denotes the default 64-bit machine integer type.
+  unsigned integerWidth = 0;
+  ConditionId condition = 0;
 };
 
 enum class BitVectorExpressionKind : uint8_t {
+  ScalarCast,
   Constant,
   Register,
   Not,
@@ -160,10 +170,12 @@ struct BitVectorExpression {
   BitVectorExpressionId operand = 0;
   BitVectorExpressionId rhs = 0;
   ExpressionId distance = 0;
+  ExpressionId scalar = 0;
 };
 
 struct ScalarDeclaration {
   ScalarType type = ScalarType::Int;
+  unsigned integerWidth = 0;
   std::string name;
   SourceLocation location;
 };

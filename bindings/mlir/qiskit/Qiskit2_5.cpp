@@ -75,7 +75,7 @@ namespace mqt::bindings::qiskit {
 namespace nb = nanobind;
 
 constexpr size_t MAX_EXPRESSION_DEPTH = 64U;
-constexpr size_t MAX_EXPRESSION_NODES = 4096U;
+constexpr size_t MAX_EXPRESSION_NODES = 16384U;
 constexpr size_t MAX_ANNOTATED_OPERATION_DEPTH = 64U;
 
 [[nodiscard]] static nb::object pythonAttribute(const nb::handle object,
@@ -1214,7 +1214,7 @@ static void normalizePythonVariable(Expression& result,
   }
   if (nodeCount >= MAX_EXPRESSION_NODES) {
     throw std::runtime_error(
-        "Qiskit classical expressions exceed the node limit of 4096");
+        "Qiskit classical expressions exceed the node limit of 16384");
   }
   ++nodeCount;
   auto result = std::make_unique<Expression>();

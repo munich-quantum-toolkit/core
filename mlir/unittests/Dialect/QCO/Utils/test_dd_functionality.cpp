@@ -815,8 +815,9 @@ TEST_F(QCODDFunctionalityTest, SimulateCBitRegisterComparisons) {
     auto mod = buildModule([&](QCOProgramBuilder& b) {
       auto reg = b.allocClassicalBitRegister(2, "c");
       auto rhs = b.getIntegerAttr(b.getIntegerType(2), 3);
-      auto condition =
-          cbit::CompareOp::create(b, b.getI1Type(), predicate, reg, rhs);
+      auto condition = arith::CmpIOp::create(
+          b, predicate, cbit::ReadOp::create(b, rhs.getType(), reg),
+          arith::ConstantOp::create(b, rhs));
       auto q = b.staticQubit(0);
       q = b.qcoIf(
           condition, q, [&](Value arg) { return b.x(arg); },
@@ -853,8 +854,10 @@ TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitRegisterComparison) {
     auto reg =
         b.allocClassicalBitRegister(1, "c", cbit::Initialization::Undefined);
     auto rhs = b.getIntegerAttr(b.getIntegerType(1), 0);
-    auto condition = cbit::CompareOp::create(
-        b, b.getI1Type(), arith::CmpIPredicate::eq, reg, rhs);
+    auto condition =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq,
+                              cbit::ReadOp::create(b, rhs.getType(), reg),
+                              arith::ConstantOp::create(b, rhs));
     auto q = b.staticQubit(0);
     q = b.qcoIf(
         condition, q, [&](Value arg) { return arg; },

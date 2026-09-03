@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Support/IntegerExpressions.h"
 #include "mlir/Target/OpenQASM/GateCatalog.h"
 
 #include <llvm/ADT/APInt.h>
@@ -382,6 +383,10 @@ private:
     if (type.isInteger(64) || type.isIndex()) {
       return "int";
     }
+    if (auto integer = dyn_cast<IntegerType>(type);
+        integer && integer.getWidth() <= 64) {
+      return (Twine("uint[") + Twine(integer.getWidth()) + "]").str();
+    }
     if (type.isF64()) {
       return "float";
     }
@@ -431,9 +436,6 @@ private:
     auto* previousConsumer = std::exchange(expressionConsumer, &operation);
     auto consumerGuard =
         llvm::make_scope_exit([&] { expressionConsumer = previousConsumer; });
-    if (isa<arith::SelectOp>(&operation)) {
-      return fail(&operation, "arith.select is not supported");
-    }
     if (isa<arith::ConstantOp, cbit::LoadOp, cbit::ReadOp, cbit::AllocOp,
             memref::LoadOp, memref::AllocOp, memref::DeallocOp, qc::AllocOp,
             qc::DeallocOp, qc::StaticOp>(&operation)) {
@@ -460,18 +462,17 @@ private:
           resource->second.kind != ResourceKind::Bit) {
         return fail(write, "register write refers to unsupported storage");
       }
-      const bool scalarWidthOne = resource->second.width == 1 &&
-                                  !cbit::isRegisterBitVector(write.getValue());
-      auto value = emitExpression(
-          write.getValue(), scalarWidthOne ? ExpressionContext::Scalar
-                                           : ExpressionContext::BitVector);
+      auto value =
+          emitExpression(write.getValue(), ExpressionContext::BitVector);
+      if (succeeded(value) && resource->second.width <= 64) {
+        value = (Twine("bit[") + Twine(resource->second.width) + "](uint[" +
+                 Twine(resource->second.width) + "](" + *value + "))")
+                    .str();
+      }
       if (failed(value)) {
         return failure();
       }
       *output << resource->second.name;
-      if (scalarWidthOne) {
-        *output << "[0]";
-      }
       *output << " = " << *value << ";\n";
       return success();
     }
@@ -528,8 +529,8 @@ private:
   [[nodiscard]] static bool isInlineExpressionOperation(Operation& operation) {
     const auto name = operation.getName().getStringRef();
     return isa<arith::ConstantOp, arith::CmpIOp, arith::CmpFOp, cbit::LoadOp,
-               cbit::ReadOp, cbit::CompareOp, arith::ExtUIOp, arith::TruncIOp>(
-               &operation) ||
+               cbit::ReadOp, arith::SelectOp, arith::ExtSIOp, arith::ExtUIOp,
+               arith::TruncIOp, arith::ShRSIOp>(&operation) ||
            !binaryOperator(name).empty() || name == "arith.negf" ||
            name == "arith.remf" || name == "llvm.intr.fshl" ||
            name == "llvm.intr.fshr" || isScalarCast(name) ||
@@ -636,30 +637,7 @@ private:
     return (Twine(resource->second.name) + "[" + *dynamicIndex + "]").str();
   }
 
-  [[nodiscard]] static bool isBitVectorScalar(Value value) {
-    auto* operation = value.getDefiningOp();
-    if (operation == nullptr) {
-      return false;
-    }
-    if (isa<arith::ExtUIOp, arith::TruncIOp>(operation)) {
-      return isBitVectorScalar(operation->getOperand(0));
-    }
-    return operation->getName().getStringRef() == "math.ctpop" &&
-           operation->getNumOperands() == 1 &&
-           cbit::isRegisterBitVector(operation->getOperand(0));
-  }
-
-  [[nodiscard]] static Value stripShiftDistanceCasts(Value value) {
-    while (auto* operation = value.getDefiningOp()) {
-      if (!isa<arith::ExtUIOp, arith::TruncIOp>(operation)) {
-        break;
-      }
-      value = operation->getOperand(0);
-    }
-    return value;
-  }
-
-  enum class ExpressionContext : uint8_t { Scalar, BitVector, ShiftDistance };
+  enum class ExpressionContext : uint8_t { Scalar, BitVector };
 
   [[nodiscard]] FailureOr<std::string>
   emitExpression(Value value,
@@ -681,11 +659,6 @@ private:
                                        Twine(MAX_EXPRESSION_WORK) + " values");
     }
     const auto type = value.getType();
-    if (!type.isInteger(1) && !type.isInteger(64) && !type.isIndex() &&
-        !type.isF64() && context == ExpressionContext::Scalar &&
-        !cbit::isRegisterBitVector(value) && !isBitVectorScalar(value)) {
-      return failExpression(value, "unsupported scalar expression result type");
-    }
     if (const auto found = valueNames.find(value); found != valueNames.end()) {
       return found->second;
     }
@@ -705,48 +678,9 @@ private:
         return failExpression(value,
                               "register read refers to unsupported storage");
       }
-      return resource->second.name;
-    }
-    if (auto comparison = value.getDefiningOp<cbit::CompareOp>()) {
-      if (failed(validateClassicalSnapshot(comparison, comparison.getReg()))) {
-        return failure();
-      }
-      const auto resource = resources.find(comparison.getReg());
-      if (resource == resources.end() ||
-          resource->second.kind != ResourceKind::Bit) {
-        return failExpression(value,
-                              "register comparison refers to unsupported "
-                              "storage");
-      }
-      const auto predicateValue = comparison.getPredicate();
-      const auto unsignedPredicate = cbit::getUnsignedPredicate(predicateValue);
-      const bool isSigned = unsignedPredicate != predicateValue;
-      const auto* predicate = [&] {
-        switch (unsignedPredicate) {
-        case arith::CmpIPredicate::eq:
-          return "==";
-        case arith::CmpIPredicate::ne:
-          return "!=";
-        case arith::CmpIPredicate::ult:
-          return "<";
-        case arith::CmpIPredicate::ule:
-          return "<=";
-        case arith::CmpIPredicate::ugt:
-          return ">";
-        case arith::CmpIPredicate::uge:
-          return ">=";
-        default:
-          llvm_unreachable("unknown CBit comparison predicate");
-        }
-      }();
-      llvm::SmallString<32> rhs;
-      comparison.getRhs().toString(rhs, 10, isSigned);
-      const auto lhs =
-          isSigned ? (Twine("int[") + Twine(comparison.getRhs().getBitWidth()) +
-                      "](" + resource->second.name + ")")
-                         .str()
-                   : resource->second.name;
-      return (Twine("(") + lhs + " " + predicate + " " + rhs + ")").str();
+      return context == ExpressionContext::Scalar && type.isInteger(1)
+                 ? resource->second.name + "[0]"
+                 : resource->second.name;
     }
     auto* operation = value.getDefiningOp();
     if (operation == nullptr) {
@@ -758,28 +692,125 @@ private:
     if (isa<ub::PoisonOp>(operation)) {
       return failExpression(value, "poison values are not supported");
     }
+    const auto integer = [&](Value operand,
+                             bool isSigned = false) -> FailureOr<std::string> {
+      auto text = emitExpression(operand, ExpressionContext::BitVector);
+      if (failed(text)) {
+        return failure();
+      }
+      const auto operandType = dyn_cast<IntegerType>(operand.getType());
+      if (!operandType) {
+        return text;
+      }
+      const auto width = operandType.getWidth();
+      if (width > 64 && !isSigned) {
+        return text;
+      }
+      return (Twine(isSigned ? "int[" : "uint[") + Twine(width) + "](" + *text +
+              ")")
+          .str();
+    };
     if (auto cmp = dyn_cast<arith::CmpIOp>(operation)) {
-      const bool bitVectorComparison =
-          cbit::isRegisterBitVector(cmp.getLhs()) ||
-          cbit::isRegisterBitVector(cmp.getRhs());
-      if (bitVectorComparison &&
-          cbit::getUnsignedPredicate(cmp.getPredicate()) !=
-              cmp.getPredicate()) {
-        return failExpression(value,
-                              "signed register comparison must use cbit.cmp");
+      const bool isSigned =
+          mqt::unsignedPredicate(cmp.getPredicate()) != cmp.getPredicate();
+      auto lhs = integer(cmp.getLhs(), isSigned);
+      auto rhs = integer(cmp.getRhs(), isSigned);
+      if (failed(lhs) || failed(rhs)) {
+        return failure();
       }
-      auto predicate = integerPredicate(cmp.getPredicate());
-      if (predicate.empty() ||
-          (cbit::getUnsignedPredicate(cmp.getPredicate()) ==
-               cmp.getPredicate() &&
-           cmp.getPredicate() != arith::CmpIPredicate::eq &&
-           cmp.getPredicate() != arith::CmpIPredicate::ne &&
-           !bitVectorComparison)) {
-        return failExpression(value, "unsupported integer comparison");
+      return (Twine("(") + *lhs + " " + integerPredicate(cmp.getPredicate()) +
+              " " + *rhs + ")")
+          .str();
+    }
+    if (auto selection = dyn_cast<arith::SelectOp>(operation)) {
+      auto condition = emitExpression(selection.getCondition());
+      auto lhs = integer(selection.getTrueValue());
+      auto rhs = integer(selection.getFalseValue());
+      if (failed(condition) || failed(lhs) || failed(rhs)) {
+        return failure();
       }
-      return emitBinary(cmp.getLhs(), predicate, cmp.getRhs(),
-                        bitVectorComparison ? ExpressionContext::BitVector
-                                            : ExpressionContext::Scalar);
+      const auto integerType = dyn_cast<IntegerType>(type);
+      if (!integerType || integerType.getWidth() > 64) {
+        return failExpression(
+            value, "selection requires an integer of at most 64 bits");
+      }
+      const auto width = Twine(integerType.getWidth()).str();
+      const auto mask =
+          "uint[" + width + "](0 - uint[" + width + "](" + *condition + "))";
+      const auto selected =
+          "(" + *rhs + " ^ ((" + *lhs + " ^ " + *rhs + ") & " + mask + "))";
+      return type.isInteger(1) ? "bool(" + selected + ")" : selected;
+    }
+    if (isa<arith::ExtUIOp, arith::ExtSIOp, arith::TruncIOp>(operation)) {
+      auto operand =
+          integer(operation->getOperand(0), isa<arith::ExtSIOp>(operation));
+      if (failed(operand)) {
+        return failure();
+      }
+      const auto width = cast<IntegerType>(type).getWidth();
+      if (width == 1) {
+        return (Twine("((") + *operand + " & uint[" +
+                Twine(cast<IntegerType>(operation->getOperand(0).getType())
+                          .getWidth()) +
+                "](1)) != 0)")
+            .str();
+      }
+      return (Twine("uint[") + Twine(width) + "](" + *operand + ")").str();
+    }
+    if (isa<arith::AddIOp, arith::SubIOp, arith::MulIOp, arith::DivUIOp,
+            arith::DivSIOp, arith::RemUIOp, arith::RemSIOp, arith::AndIOp,
+            arith::OrIOp, arith::XOrIOp, arith::ShLIOp, arith::ShRUIOp,
+            arith::ShRSIOp>(operation)) {
+      const bool isSigned =
+          isa<arith::DivSIOp, arith::RemSIOp, arith::ShRSIOp>(operation);
+      auto lhs = integer(operation->getOperand(0), isSigned);
+      auto rhs = integer(operation->getOperand(1),
+                         isSigned && !isa<arith::ShRSIOp>(operation));
+      if (failed(lhs) || failed(rhs)) {
+        return failure();
+      }
+      if (isa<arith::AddIOp, arith::SubIOp, arith::MulIOp>(operation)) {
+        /// Unsigned machine arithmetic preserves every narrower modular result.
+        *lhs = "uint[64](" + *lhs + ")";
+        *rhs = "uint[64](" + *rhs + ")";
+      }
+      if (isa<arith::ShRSIOp>(operation)) {
+        /// OpenQASM only has a zero-filling shift. Bias the sign bit around it.
+        const auto width = cast<IntegerType>(type).getWidth();
+        auto source = integer(operation->getOperand(0));
+        if (failed(source) || width > 64) {
+          return failExpression(value,
+                                "signed right shifts support at most 64 bits");
+        }
+        const auto sign = (Twine("uint[") + Twine(width) + "](" +
+                           Twine(uint64_t{1} << (width - 1)) + ")")
+                              .str();
+        return (Twine("uint[") + Twine(width) + "](uint[64](((" + *source +
+                " ^ " + sign + ") >> " + *rhs + ")) - uint[64](" + sign +
+                " >> " + *rhs + "))")
+            .str();
+      }
+      const auto name = operation->getName().getStringRef();
+      const auto op = isa<arith::AndIOp>(operation)    ? StringRef("&")
+                      : isa<arith::OrIOp>(operation)   ? StringRef("|")
+                      : isa<arith::XOrIOp>(operation)  ? StringRef("^")
+                      : isa<arith::ShRSIOp>(operation) ? StringRef(">>")
+                                                       : binaryOperator(name);
+      const auto expression =
+          (Twine("(") + *lhs + " " + op + " " + *rhs + ")").str();
+      if (cast<IntegerType>(type).getWidth() > 64 &&
+          isa<arith::ShLIOp, arith::ShRUIOp>(operation)) {
+        return failExpression(
+            value, "integer shift distances support at most 64 bits");
+      }
+      const auto width = cast<IntegerType>(type).getWidth();
+      if (width == 1) {
+        return (Twine("(uint[1](") + expression + ") != 0)").str();
+      }
+      return width > 64
+                 ? expression
+                 : (Twine("uint[") + Twine(width) + "](" + expression + ")")
+                       .str();
     }
     if (auto cmp = dyn_cast<arith::CmpFOp>(operation)) {
       auto predicate = floatPredicate(cmp.getPredicate());
@@ -791,26 +822,35 @@ private:
     const auto name = operation->getName().getStringRef();
     if (name == "llvm.intr.fshl" || name == "llvm.intr.fshr") {
       if (operation->getNumOperands() != 3 ||
-          operation->getOperand(0) != operation->getOperand(1) ||
-          !cbit::isRegisterBitVector(operation->getOperand(0))) {
-        return failExpression(value,
-                              "only register-rooted rotations are supported");
-      }
-      if (const auto distance = getConstantInteger(operation->getOperand(2));
-          distance && *distance < 0) {
+          operation->getOperand(0) != operation->getOperand(1)) {
         return failExpression(
-            value, "rotation distance must be in canonical nonnegative form");
+            value, "only rotations with identical data operands are supported");
       }
       auto operand = emitExpression(operation->getOperand(0),
                                     ExpressionContext::BitVector);
-      auto distance = emitExpression(operation->getOperand(2),
-                                     ExpressionContext::ShiftDistance);
+      auto distance = integer(operation->getOperand(2));
       if (failed(operand) || failed(distance)) {
         return failure();
       }
-      return (Twine(name == "llvm.intr.fshl" ? "rotl(" : "rotr(") + *operand +
-              ", " + *distance + ")")
-          .str();
+      const auto width = cast<IntegerType>(type).getWidth();
+      if (width <= 64) {
+        *operand = (Twine("bit[") + Twine(width) + "](uint[" + Twine(width) +
+                    "](" + *operand + "))")
+                       .str();
+      }
+      if (width <= 64) {
+        /// OpenQASM rotations take signed counts; reduce before interpreting.
+        *distance = (Twine("int[64](") + *distance + " % uint[" + Twine(width) +
+                     "](" + Twine(width) + "))")
+                        .str();
+      }
+      auto rotation = (Twine(name == "llvm.intr.fshl" ? "rotl(" : "rotr(") +
+                       *operand + ", " + *distance + ")")
+                          .str();
+      return width > 64
+                 ? rotation
+                 : (Twine("uint[") + Twine(width) + "](" + rotation + ")")
+                       .str();
     }
     if (name == "arith.remf") {
       auto lhs = emitExpression(operation->getOperand(0));
@@ -827,51 +867,8 @@ private:
       if (operation->getNumOperands() != 2) {
         return failExpression(value, "malformed binary expression");
       }
-      const bool bitVector = cbit::isRegisterBitVector(value);
-      if (context == ExpressionContext::BitVector && !bitVector) {
-        return failExpression(
-            value, "bit-vector expression contains a scalar operation");
-      }
-      if ((name == "arith.andi" || name == "arith.ori" ||
-           name == "arith.xori" || name == "arith.shli" ||
-           name == "arith.shrui") &&
-          !value.getType().isInteger(1) && !bitVector) {
-        return failExpression(value,
-                              "integer bitwise operation is not rooted in a "
-                              "classical register read");
-      }
-      if (bitVector && (name == "arith.shli" || name == "arith.shrui")) {
-        const auto rhs = operation->getOperand(1);
-        const auto shiftSource = stripShiftDistanceCasts(rhs);
-        if (cbit::isRegisterBitVector(shiftSource)) {
-          if (cast<IntegerType>(shiftSource.getType()).getWidth() > 64) {
-            return failExpression(
-                rhs, "bit-register shift distance supports at most 64 bits");
-          }
-        } else if (!isBitVectorScalar(shiftSource)) {
-          const auto constant = getConstantInteger(shiftSource);
-          if (!constant || *constant < 0) {
-            return failExpression(
-                rhs, "cannot prove that shift distance is unsigned");
-          }
-        }
-        auto lhs = emitExpression(operation->getOperand(0),
-                                  ExpressionContext::BitVector);
-        auto emittedRhs = emitExpression(rhs, ExpressionContext::ShiftDistance);
-        if (failed(lhs) || failed(emittedRhs)) {
-          return failure();
-        }
-        return (Twine("(") + *lhs + " " + binary + " " + *emittedRhs + ")")
-            .str();
-      }
-      const auto emittedBinary = !bitVector             ? binary
-                                 : name == "arith.andi" ? StringRef("&")
-                                 : name == "arith.ori"  ? StringRef("|")
-                                 : name == "arith.xori" ? StringRef("^")
-                                                        : binary;
-      return emitBinary(
-          operation->getOperand(0), emittedBinary, operation->getOperand(1),
-          bitVector ? ExpressionContext::BitVector : ExpressionContext::Scalar);
+      return emitBinary(operation->getOperand(0), binary,
+                        operation->getOperand(1));
     }
     if (name == "arith.negf") {
       auto operand = emitExpression(operation->getOperand(0));
@@ -880,13 +877,11 @@ private:
       }
       return (Twine("(-") + *operand + ")").str();
     }
-    if (isa<arith::ExtUIOp, arith::TruncIOp>(operation) &&
-        (isBitVectorScalar(value) ||
-         context == ExpressionContext::ShiftDistance)) {
-      return emitExpression(operation->getOperand(0), context);
-    }
     if (isScalarCast(name)) {
-      auto operand = emitExpression(operation->getOperand(0));
+      auto input = operation->getOperand(0);
+      auto operand = isa<IntegerType>(input.getType())
+                         ? integer(input, name != "arith.uitofp")
+                         : emitExpression(input);
       if (failed(operand)) {
         return failure();
       }
@@ -901,6 +896,19 @@ private:
         return failExpression(value, "unsupported scalar conversion");
       }
       return (Twine(type) + "(" + *operand + ")").str();
+    }
+    if (name == "math.ctpop") {
+      auto operand = integer(operation->getOperand(0));
+      if (failed(operand)) {
+        return failure();
+      }
+      const auto width = cast<IntegerType>(type).getWidth();
+      if (width > 64) {
+        return (Twine("popcount(") + *operand + ")").str();
+      }
+      return (Twine("uint[") + Twine(width) + "](popcount(bit[" + Twine(width) +
+              "](" + *operand + ")))")
+          .str();
     }
     if (const auto functionName = mathFunction(name); !functionName.empty()) {
       SmallVector<std::string> arguments;
@@ -971,8 +979,8 @@ private:
         .Cases({"arith.addi", "arith.addf"}, "+")
         .Cases({"arith.subi", "arith.subf"}, "-")
         .Cases({"arith.muli", "arith.mulf"}, "*")
-        .Cases({"arith.divsi", "arith.divf"}, "/")
-        .Case("arith.remsi", "%")
+        .Cases({"arith.divsi", "arith.divui", "arith.divf"}, "/")
+        .Cases({"arith.remsi", "arith.remui"}, "%")
         .Case("arith.andi", "&&")
         .Case("arith.ori", "||")
         .Case("arith.xori", "!=")
@@ -1027,21 +1035,27 @@ private:
   [[nodiscard]] static bool isScalarCast(const StringRef name) {
     return llvm::StringSwitch<bool>(name)
         .Case("arith.index_cast", true)
-        .Case("arith.sitofp", true)
-        .Case("arith.fptosi", true)
+        .Cases({"arith.sitofp", "arith.uitofp"}, true)
+        .Cases({"arith.fptosi", "arith.fptoui"}, true)
         .Default(false);
   }
 
-  [[nodiscard]] static StringRef castTarget(const StringRef name,
-                                            const Type resultType) {
-    if (name == "arith.sitofp" || resultType.isF64()) {
+  [[nodiscard]] static std::string castTarget(const StringRef name,
+                                              const Type resultType) {
+    if (resultType.isF64()) {
       return "float";
     }
     if (resultType.isInteger(1)) {
       return "bool";
     }
-    if (resultType.isInteger(64) || resultType.isIndex()) {
+    if (resultType.isIndex()) {
       return "int";
+    }
+    if (auto type = dyn_cast<IntegerType>(resultType);
+        type && type.getWidth() <= 64) {
+      return (Twine(name == "arith.fptoui" ? "uint[" : "int[") +
+              Twine(type.getWidth()) + "]")
+          .str();
     }
     return {};
   }
@@ -1181,7 +1195,7 @@ private:
     }
     for (Operation& operation : before.without_terminator()) {
       if (!isInlineExpressionOperation(operation) ||
-          (!isa<cbit::LoadOp, cbit::ReadOp, cbit::CompareOp>(&operation) &&
+          (!isa<cbit::LoadOp, cbit::ReadOp>(&operation) &&
            !isMemoryEffectFree(&operation))) {
         return fail(&operation,
                     "scf.while condition region must be side-effect free");
@@ -1254,6 +1268,10 @@ private:
       auto expression = emitExpression(value);
       if (failed(expression)) {
         return failure();
+      }
+      if (auto integer = dyn_cast<IntegerType>(value.getType());
+          integer && integer.getWidth() > 1) {
+        *expression = scalarOutputs[scalarIndex].kind + "(" + *expression + ")";
       }
       *output << scalarOutputs[scalarIndex].name << " = " << *expression
               << ";\n";

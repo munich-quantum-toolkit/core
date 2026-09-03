@@ -11,7 +11,6 @@
 
 include "mlir/Dialect/CBit/IR/CBitDialect.td"
 
-include "mlir/Dialect/Arith/IR/ArithBase.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
@@ -92,7 +91,7 @@ def LoadOp : CBitOp<"load"> {
 def ReadOp : CBitOp<"read"> {
   let summary = "Read a classical-bit register as an integer";
   let description = [{
-    Reads the complete register as an unsigned fixed-width integer. Register
+    Reads the complete register as an exact-width integer bit pattern. Register
     element zero is the least-significant result bit, and the result width must
     equal the static register width.
 
@@ -129,29 +128,6 @@ def WriteOp : CBitOp<"write"> {
     $value `,` $reg attr-dict `:` qualified(type($value)) `,`
         qualified(type($reg))
   }];
-  let hasVerifier = 1;
-}
-
-def CompareOp : CBitOp<"cmp"> {
-  let summary = "Compare a classical-bit register with an integer";
-  let description = [{
-    Compares the complete register with an integer of the same width. Signed
-    predicates interpret the most significant register bit as a two's-complement
-    sign bit.
-
-    Example:
-    ```mlir
-    %matches = cbit.cmp eq, %c, 1 : i2 : !cbit.reg<2>
-    ```
-  }];
-
-  let arguments = (ins Arith_CmpIPredicateAttr:$predicate,
-      Arg<CBit_RegisterType, "register", [MemRead]>:$reg, APIntAttr:$rhs);
-  let results = (outs I1:$result);
-  let assemblyFormat = [{
-    $predicate `,` $reg `,` $rhs attr-dict `:` qualified(type($reg))
-  }];
-  let hasCanonicalizer = 1;
   let hasVerifier = 1;
 }
 

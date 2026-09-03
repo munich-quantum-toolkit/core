@@ -24,6 +24,7 @@
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
+#include "mlir/Support/IntegerExpressions.h"
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
@@ -46,6 +47,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/WalkResult.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <nanobind/nanobind.h>
 
 #include <algorithm>
@@ -69,7 +71,8 @@ namespace mqt::bindings::qiskit {
 
 constexpr size_t MAX_EXPORT_CONTROL_FLOW_DEPTH = 64U;
 constexpr size_t MAX_EXPORT_EXPRESSION_DEPTH = 64U;
-constexpr size_t MAX_EXPORT_EXPRESSION_NODES = 4096U;
+/// Bounded bit-based casts between jeff native widths expand expression trees.
+constexpr size_t MAX_EXPORT_EXPRESSION_NODES = 16384U;
 
 namespace {
 struct ExportedControlFlow;
@@ -874,11 +877,12 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
     throw std::runtime_error(
         "QC to Qiskit export requires an entry-function return");
   }
+  mlir::ValueRange returnedValues = returnOp.getOperands();
   if (returnOp.getNumOperands() == 1U) {
     auto result = returnOp.getOperand(0);
     const auto sentinel = mlir::getConstantIntValue(result);
     if (result.getType().isInteger(64) && sentinel && *sentinel == 0) {
-      return;
+      returnedValues = {};
     }
   }
   llvm::DenseSet<mlir::Value> returnedRegisters;
@@ -889,7 +893,17 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
   for (const auto& parameter : state.parameterNames) {
     usedNames.insert(parameter.getKey());
   }
-  for (auto result : returnOp.getOperands()) {
+  llvm::SmallVector<mlir::Value> registers;
+  for (auto alloc : function.getBody().front().getOps<mlir::cbit::AllocOp>()) {
+    if (!alloc.getResult().use_empty() &&
+        !llvm::is_contained(returnedValues, alloc.getResult())) {
+      registers.push_back(alloc.getResult());
+    }
+  }
+  llvm::append_range(registers, returnedValues);
+  /// Qiskit exposes all register storage; put observable outputs last in count
+  /// order.
+  for (auto result : registers) {
     if (auto alloc = result.getDefiningOp<mlir::cbit::AllocOp>()) {
       if (const auto name = alloc->getAttrOfType<mlir::StringAttr>(
               mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
@@ -898,7 +912,7 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
     }
   }
   size_t generatedRegister = 0U;
-  for (auto result : returnOp.getOperands()) {
+  for (auto result : registers) {
     const auto type =
         llvm::dyn_cast<mlir::cbit::RegisterType>(result.getType());
     if (!type) {
@@ -1060,7 +1074,7 @@ comparisonOperation(const mlir::arith::CmpIPredicate predicate) {
 
 [[noreturn]] static void throwClassicalExpressionSizeError() {
   throw std::runtime_error(
-      "QC classical expression exceeds the size limit of 4096 nodes");
+      "QC classical expression exceeds the size limit of 16384 nodes");
 }
 
 [[noreturn]] static void throwClassicalExpressionDepthError() {
@@ -1073,17 +1087,6 @@ static void countExpressionNode(size_t& nodeCount) {
     throwClassicalExpressionSizeError();
   }
 }
-
-namespace {
-struct PackedRegister {
-  Register reg;
-  llvm::SmallPtrSet<mlir::Operation*, 16> operations;
-};
-} // namespace
-
-[[nodiscard]] static std::optional<PackedRegister>
-matchPackedRegister(mlir::Value value, ExportState& state,
-                    mlir::Block& evaluationBlock);
 
 [[nodiscard]] static std::unique_ptr<Expression>
 exportExpressionImpl(mlir::Value value, ExportState& state,
@@ -1106,26 +1109,12 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
   }
 
   auto result = std::make_unique<Expression>();
-  if (value.getType().isInteger(1) && mlir::cbit::isRegisterBitVector(value)) {
-    result->type = ClassicalType::Uint;
-    result->width = 1U;
-  } else {
-    setExpressionType(*result, value.getType());
-  }
+  setExpressionType(*result, value.getType());
   if (const auto measured = state.measurementResultBits.find(value);
       measured != state.measurementResultBits.end()) {
     result->kind = ExpressionKind::ClassicalBit;
     result->bit = measured->second;
     return result;
-  }
-  if (result->type == ClassicalType::Uint) {
-    if (auto packed = matchPackedRegister(value, state, evaluationBlock)) {
-      result->kind = ExpressionKind::ClassicalRegister;
-      result->reg = std::move(packed->reg);
-      state.expressionOperations.insert(packed->operations.begin(),
-                                        packed->operations.end());
-      return result;
-    }
   }
   if (auto constant = llvm::dyn_cast<mlir::arith::ConstantOp>(operation)) {
     result->kind = ExpressionKind::Value;
@@ -1162,54 +1151,9 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
   if (auto read = llvm::dyn_cast<mlir::cbit::ReadOp>(operation)) {
     result->kind = ExpressionKind::ClassicalRegister;
     result->reg = classicalRegister(read.getReg(), state);
-    state.expressionOperations.insert(operation);
-    return result;
-  }
-  if (auto comparison = llvm::dyn_cast<mlir::cbit::CompareOp>(operation)) {
-    const auto width = comparison.getRhs().getBitWidth();
-    if (width > 64U) {
-      throw std::runtime_error(
-          "Qiskit register comparisons support at most 64 bits");
-    }
-    const auto encodedPredicate =
-        mlir::cbit::getUnsignedPredicate(comparison.getPredicate());
-    const bool isSigned = encodedPredicate != comparison.getPredicate();
-    const auto reg = classicalRegister(comparison.getReg(), state);
-    const auto uintValue = [&](const uint64_t value) {
-      countExpressionNode(nodeCount);
-      auto expression = std::make_unique<Expression>();
-      expression->kind = ExpressionKind::Value;
-      expression->type = ClassicalType::Uint;
-      expression->width = width;
-      expression->uintValue = value;
-      return expression;
-    };
-    const auto uintRegister = [&] {
-      countExpressionNode(nodeCount);
-      auto expression = std::make_unique<Expression>();
-      expression->kind = ExpressionKind::ClassicalRegister;
-      expression->type = ClassicalType::Uint;
-      expression->width = width;
-      expression->reg = reg;
-      return expression;
-    };
-    result->kind = ExpressionKind::Binary;
-    result->binaryOperation = comparisonOperation(encodedPredicate);
-    if (isSigned) {
-      const auto signMask = uint64_t{1} << (width - 1U);
-      countExpressionNode(nodeCount);
-      auto biased = std::make_unique<Expression>();
-      biased->kind = ExpressionKind::Binary;
-      biased->type = ClassicalType::Uint;
-      biased->width = width;
-      biased->binaryOperation = BinaryOperation::BitXor;
-      biased->left = uintRegister();
-      biased->right = uintValue(signMask);
-      result->left = std::move(biased);
-      result->right = uintValue(comparison.getRhs().getZExtValue() ^ signMask);
-    } else {
-      result->left = uintRegister();
-      result->right = uintValue(comparison.getRhs().getZExtValue());
+    if (read.getType().isInteger(1)) {
+      result->kind = ExpressionKind::ClassicalBit;
+      result->bit = result->reg.bits.front();
     }
     state.expressionOperations.insert(operation);
     return result;
@@ -1271,60 +1215,155 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
     state.expressionOperations.insert(operation);
     return std::move(result);
   };
-  const auto binary =
-      [&](const BinaryOperation kind, mlir::Value left, mlir::Value right,
-          const std::optional<unsigned> bitVectorWidth = std::nullopt) {
-        result->kind = ExpressionKind::Binary;
-        result->binaryOperation = kind;
-        result->left = exportExpressionImpl(left, state, evaluationBlock,
-                                            depth + 1U, nodeCount);
-        result->right = exportExpressionImpl(right, state, evaluationBlock,
-                                             depth + 1U, nodeCount);
-        const auto requireUint = [&](std::unique_ptr<Expression>& operand) {
-          if (!bitVectorWidth) {
-            return;
-          }
-          if (operand->type == ClassicalType::Uint &&
-              operand->width == *bitVectorWidth) {
-            return;
-          }
-          if (operand->kind == ExpressionKind::Value &&
-              operand->type == ClassicalType::Bool && *bitVectorWidth == 1U) {
-            operand->type = ClassicalType::Uint;
-            operand->uintValue = operand->boolValue;
-            return;
-          }
-          throw std::runtime_error(
-              "fixed-width Qiskit expression has an incompatible operand");
-        };
-        requireUint(result->left);
-        const bool shift = kind == BinaryOperation::ShiftLeft ||
-                           kind == BinaryOperation::ShiftRight;
-        if (!shift) {
-          requireUint(result->right);
-        } else if (bitVectorWidth) {
-          if (result->right->kind == ExpressionKind::Value &&
-              result->right->type == ClassicalType::Bool) {
-            result->right->type = ClassicalType::Uint;
-            result->right->width = 1U;
-            result->right->uintValue = result->right->boolValue;
-          }
-          if (result->right->type != ClassicalType::Uint) {
-            throw std::runtime_error(
-                "fixed-width Qiskit shift distance must be Uint");
-          }
-        }
-        state.expressionOperations.insert(operation);
-        return std::move(result);
-      };
+  const auto binary = [&](const BinaryOperation kind, mlir::Value left,
+                          mlir::Value right,
+                          const std::optional<unsigned> bitVectorWidth =
+                              std::nullopt) {
+    result->kind = ExpressionKind::Binary;
+    result->binaryOperation = kind;
+    result->left = exportExpressionImpl(left, state, evaluationBlock,
+                                        depth + 1U, nodeCount);
+    result->right = exportExpressionImpl(right, state, evaluationBlock,
+                                         depth + 1U, nodeCount);
+    const auto requireUint = [&](std::unique_ptr<Expression>& operand) {
+      if (!bitVectorWidth) {
+        return;
+      }
+      if (operand->type == ClassicalType::Uint &&
+          operand->width == *bitVectorWidth) {
+        return;
+      }
+      if (operand->kind == ExpressionKind::Value &&
+          operand->type == ClassicalType::Bool && *bitVectorWidth == 1U) {
+        operand->type = ClassicalType::Uint;
+        operand->uintValue = operand->boolValue;
+        return;
+      }
+      countExpressionNode(nodeCount);
+      auto cast = std::make_unique<Expression>();
+      cast->kind = ExpressionKind::Cast;
+      cast->type = ClassicalType::Uint;
+      cast->width = *bitVectorWidth;
+      cast->left = std::move(operand);
+      operand = std::move(cast);
+    };
+    requireUint(result->left);
+    requireUint(result->right);
+    state.expressionOperations.insert(operation);
+    if (bitVectorWidth == 1U && !llvm::isa<mlir::arith::CmpIOp>(operation)) {
+      result->type = ClassicalType::Uint;
+      countExpressionNode(nodeCount);
+      auto boolean = std::make_unique<Expression>();
+      boolean->kind = ExpressionKind::Cast;
+      boolean->left = std::move(result);
+      return boolean;
+    }
+    return std::move(result);
+  };
 
-  if (llvm::isa<mlir::arith::ExtUIOp, mlir::arith::UIToFPOp,
-                mlir::arith::FPToUIOp>(operation)) {
+  const auto uintLiteral = [&](unsigned width, uint64_t bits) {
+    countExpressionNode(nodeCount);
+    auto literal = std::make_unique<Expression>();
+    literal->type = ClassicalType::Uint;
+    literal->width = width;
+    literal->uintValue = bits;
+    return literal;
+  };
+  const auto uintCast = [&](std::unique_ptr<Expression> operand,
+                            unsigned width) {
+    if (operand->type == ClassicalType::Uint && operand->width == width) {
+      return operand;
+    }
+    if (operand->kind == ExpressionKind::ClassicalRegister) {
+      /// Qiskit's OpenQASM exporter needs a matching-width register cast first.
+      countExpressionNode(nodeCount);
+      auto exact = std::make_unique<Expression>();
+      exact->kind = ExpressionKind::Cast;
+      exact->type = ClassicalType::Uint;
+      exact->width = operand->width;
+      exact->left = std::move(operand);
+      operand = std::move(exact);
+    }
+    countExpressionNode(nodeCount);
+    auto cast = std::make_unique<Expression>();
+    cast->kind = ExpressionKind::Cast;
+    cast->type = ClassicalType::Uint;
+    cast->width = width;
+    cast->left = std::move(operand);
+    return cast;
+  };
+  const auto uintBinary = [&](BinaryOperation kind, unsigned width,
+                              std::unique_ptr<Expression> lhs,
+                              std::unique_ptr<Expression> rhs) {
+    countExpressionNode(nodeCount);
+    auto expression = std::make_unique<Expression>();
+    expression->kind = ExpressionKind::Binary;
+    expression->type = ClassicalType::Uint;
+    expression->width = width;
+    expression->binaryOperation = kind;
+    expression->left = std::move(lhs);
+    expression->right = std::move(rhs);
+    return expression;
+  };
+  if (auto cast = llvm::dyn_cast<mlir::arith::ExtSIOp>(operation)) {
+    const auto sourceWidth =
+        llvm::cast<mlir::IntegerType>(cast.getIn().getType()).getWidth();
+    const auto width = result->width;
+    auto operand =
+        uintCast(exportExpressionImpl(cast.getIn(), state, evaluationBlock,
+                                      depth + 1U, nodeCount),
+                 width);
+    const auto sign = uint64_t{1} << (sourceWidth - 1U);
+    state.expressionOperations.insert(operation);
+    return uintBinary(BinaryOperation::Subtract, width,
+                      uintBinary(BinaryOperation::BitXor, width,
+                                 std::move(operand), uintLiteral(width, sign)),
+                      uintLiteral(width, sign));
+  }
+  if (auto select = llvm::dyn_cast<mlir::arith::SelectOp>(operation)) {
+    if (!llvm::isa<mlir::IntegerType>(value.getType())) {
+      throw std::runtime_error("Qiskit selection requires integer values");
+    }
+    const auto width = result->width;
+    const auto operand = [&](mlir::Value input) {
+      return uintCast(exportExpressionImpl(input, state, evaluationBlock,
+                                           depth + 1U, nodeCount),
+                      width);
+    };
+    auto mask =
+        uintBinary(BinaryOperation::Subtract, width, uintLiteral(width, 0),
+                   operand(select.getCondition()));
+    auto difference = uintBinary(BinaryOperation::BitXor, width,
+                                 operand(select.getTrueValue()),
+                                 operand(select.getFalseValue()));
+    auto selected = uintBinary(
+        BinaryOperation::BitXor, width, operand(select.getFalseValue()),
+        uintBinary(BinaryOperation::BitAnd, width, std::move(difference),
+                   std::move(mask)));
+    state.expressionOperations.insert(operation);
+    if (width != 1U) {
+      return selected;
+    }
+    result->kind = ExpressionKind::Cast;
+    result->left = std::move(selected);
+    return result;
+  }
+
+  if (auto cast = llvm::dyn_cast<mlir::arith::ExtUIOp>(operation)) {
+    state.expressionOperations.insert(operation);
+    return uintCast(exportExpressionImpl(cast.getIn(), state, evaluationBlock,
+                                         depth + 1U, nodeCount),
+                    result->width);
+  }
+  if (llvm::isa<mlir::arith::UIToFPOp, mlir::arith::FPToUIOp>(operation)) {
     return unary(ExpressionKind::Cast, operation->getOperand(0));
   }
   if (auto cast = llvm::dyn_cast<mlir::arith::TruncIOp>(operation)) {
     if (!cast.getType().isInteger(1)) {
-      return unary(ExpressionKind::Cast, cast.getIn());
+      state.expressionOperations.insert(operation);
+      return uintCast(exportExpressionImpl(cast.getIn(), state, evaluationBlock,
+                                           depth + 1U, nodeCount),
+                      result->width);
     }
     result->kind = ExpressionKind::Index;
     if (auto shift = cast.getIn().getDefiningOp<mlir::arith::ShRUIOp>()) {
@@ -1352,19 +1391,30 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
                                 depth + 1U, nodeCount);
   }
   if (auto op = llvm::dyn_cast<mlir::arith::CmpIOp>(operation)) {
-    std::optional<unsigned> width;
-    const bool bitVectorComparison =
-        mlir::cbit::isRegisterBitVector(op.getLhs()) ||
-        mlir::cbit::isRegisterBitVector(op.getRhs());
-    if (bitVectorComparison && mlir::cbit::getUnsignedPredicate(
-                                   op.getPredicate()) != op.getPredicate()) {
-      throw std::runtime_error("signed register comparison must use cbit.cmp");
+    const auto width =
+        llvm::cast<mlir::IntegerType>(op.getLhs().getType()).getWidth();
+    auto comparison = binary(
+        comparisonOperation(mlir::mqt::unsignedPredicate(op.getPredicate())),
+        op.getLhs(), op.getRhs(), width);
+    if (mlir::mqt::unsignedPredicate(op.getPredicate()) != op.getPredicate()) {
+      for (auto* operand : {&comparison->left, &comparison->right}) {
+        countExpressionNode(nodeCount);
+        countExpressionNode(nodeCount);
+        auto mask = std::make_unique<Expression>();
+        mask->type = ClassicalType::Uint;
+        mask->width = width;
+        mask->uintValue = uint64_t{1} << (width - 1U);
+        auto biased = std::make_unique<Expression>();
+        biased->kind = ExpressionKind::Binary;
+        biased->type = ClassicalType::Uint;
+        biased->width = width;
+        biased->binaryOperation = BinaryOperation::BitXor;
+        biased->left = std::move(*operand);
+        biased->right = std::move(mask);
+        *operand = std::move(biased);
+      }
     }
-    if (bitVectorComparison) {
-      width = llvm::cast<mlir::IntegerType>(op.getLhs().getType()).getWidth();
-    }
-    return binary(comparisonOperation(op.getPredicate()), op.getLhs(),
-                  op.getRhs(), width);
+    return comparison;
   }
   if (auto op = llvm::dyn_cast<mlir::arith::CmpFOp>(operation)) {
     auto kind = BinaryOperation::Equal;
@@ -1394,54 +1444,106 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
     return binary(kind, op.getLhs(), op.getRhs());
   }
   if (auto op = llvm::dyn_cast<mlir::arith::AndIOp>(operation)) {
-    const bool bitVector = mlir::cbit::isRegisterBitVector(value);
+    const bool bitVector = !value.getType().isInteger(1);
     return binary(
-        bitVector || !value.getType().isInteger(1) ? BinaryOperation::BitAnd
-                                                   : BinaryOperation::LogicAnd,
+        bitVector ? BinaryOperation::BitAnd : BinaryOperation::LogicAnd,
         op.getLhs(), op.getRhs(),
         bitVector ? std::optional<unsigned>(result->width) : std::nullopt);
   }
   if (auto op = llvm::dyn_cast<mlir::arith::OrIOp>(operation)) {
-    const bool bitVector = mlir::cbit::isRegisterBitVector(value);
-    return binary(
-        bitVector || !value.getType().isInteger(1) ? BinaryOperation::BitOr
-                                                   : BinaryOperation::LogicOr,
-        op.getLhs(), op.getRhs(),
-        bitVector ? std::optional<unsigned>(result->width) : std::nullopt);
+    const bool bitVector = !value.getType().isInteger(1);
+    return binary(bitVector ? BinaryOperation::BitOr : BinaryOperation::LogicOr,
+                  op.getLhs(), op.getRhs(),
+                  bitVector ? std::optional<unsigned>(result->width)
+                            : std::nullopt);
   }
   if (auto op = llvm::dyn_cast<mlir::arith::XOrIOp>(operation)) {
-    const bool bitVector = mlir::cbit::isRegisterBitVector(value);
+    const bool bitVector = !value.getType().isInteger(1);
     return binary(BinaryOperation::BitXor, op.getLhs(), op.getRhs(),
                   bitVector ? std::optional<unsigned>(result->width)
                             : std::nullopt);
   }
   if (auto op = llvm::dyn_cast<mlir::arith::ShLIOp>(operation)) {
-    const bool bitVector = mlir::cbit::isRegisterBitVector(value);
     return binary(BinaryOperation::ShiftLeft, op.getLhs(), op.getRhs(),
-                  bitVector ? std::optional<unsigned>(result->width)
-                            : std::nullopt);
+                  result->width);
   }
   if (auto op = llvm::dyn_cast<mlir::arith::ShRUIOp>(operation)) {
-    const bool bitVector = mlir::cbit::isRegisterBitVector(value);
     return binary(BinaryOperation::ShiftRight, op.getLhs(), op.getRhs(),
-                  bitVector ? std::optional<unsigned>(result->width)
-                            : std::nullopt);
+                  result->width);
+  }
+  if (auto op = llvm::dyn_cast<mlir::arith::ShRSIOp>(operation)) {
+    const auto width = result->width;
+    const auto operand = [&](mlir::Value input) {
+      return uintCast(exportExpressionImpl(input, state, evaluationBlock,
+                                           depth + 1U, nodeCount),
+                      width);
+    };
+    const auto sign = uint64_t{1} << (width - 1U);
+    auto shifted =
+        uintBinary(BinaryOperation::ShiftRight, width,
+                   uintBinary(BinaryOperation::BitXor, width,
+                              operand(op.getLhs()), uintLiteral(width, sign)),
+                   operand(op.getRhs()));
+    auto bias = uintBinary(BinaryOperation::ShiftRight, width,
+                           uintLiteral(width, sign), operand(op.getRhs()));
+    auto difference = uintBinary(BinaryOperation::Subtract, width,
+                                 std::move(shifted), std::move(bias));
+    state.expressionOperations.insert(operation);
+    if (width != 1U) {
+      return difference;
+    }
+    result->kind = ExpressionKind::Cast;
+    result->left = std::move(difference);
+    return result;
+  }
+  if (auto op = llvm::dyn_cast<mlir::arith::RemUIOp>(operation)) {
+    const auto width = result->width;
+    const auto operand = [&](mlir::Value input) {
+      return uintCast(exportExpressionImpl(input, state, evaluationBlock,
+                                           depth + 1U, nodeCount),
+                      width);
+    };
+    auto quotient = uintBinary(BinaryOperation::Divide, width,
+                               operand(op.getLhs()), operand(op.getRhs()));
+    auto product = uintBinary(BinaryOperation::Multiply, width,
+                              std::move(quotient), operand(op.getRhs()));
+    state.expressionOperations.insert(operation);
+    auto remainder = uintBinary(BinaryOperation::Subtract, width,
+                                operand(op.getLhs()), std::move(product));
+    if (width != 1U) {
+      return remainder;
+    }
+    result->kind = ExpressionKind::Cast;
+    result->left = std::move(remainder);
+    return result;
   }
   if (llvm::isa<mlir::arith::AddIOp, mlir::arith::AddFOp>(operation)) {
     return binary(BinaryOperation::Add, operation->getOperand(0),
-                  operation->getOperand(1));
+                  operation->getOperand(1),
+                  llvm::isa<mlir::IntegerType>(value.getType())
+                      ? std::optional<unsigned>(result->width)
+                      : std::nullopt);
   }
   if (llvm::isa<mlir::arith::SubIOp, mlir::arith::SubFOp>(operation)) {
     return binary(BinaryOperation::Subtract, operation->getOperand(0),
-                  operation->getOperand(1));
+                  operation->getOperand(1),
+                  llvm::isa<mlir::IntegerType>(value.getType())
+                      ? std::optional<unsigned>(result->width)
+                      : std::nullopt);
   }
   if (llvm::isa<mlir::arith::MulIOp, mlir::arith::MulFOp>(operation)) {
     return binary(BinaryOperation::Multiply, operation->getOperand(0),
-                  operation->getOperand(1));
+                  operation->getOperand(1),
+                  llvm::isa<mlir::IntegerType>(value.getType())
+                      ? std::optional<unsigned>(result->width)
+                      : std::nullopt);
   }
   if (llvm::isa<mlir::arith::DivUIOp, mlir::arith::DivFOp>(operation)) {
     return binary(BinaryOperation::Divide, operation->getOperand(0),
-                  operation->getOperand(1));
+                  operation->getOperand(1),
+                  llvm::isa<mlir::IntegerType>(value.getType())
+                      ? std::optional<unsigned>(result->width)
+                      : std::nullopt);
   }
   if (auto op = llvm::dyn_cast<mlir::arith::NegFOp>(operation)) {
     result->unaryOperation = UnaryOperation::Negate;
@@ -1473,90 +1575,6 @@ exportExpression(mlir::Value value, ExportState& state,
       exportExpressionImpl(value, state, evaluationBlock, 0U, nodeCount);
   validateExpressionDepth(*result);
   return result;
-}
-
-[[nodiscard]] std::optional<PackedRegister>
-matchPackedRegister(mlir::Value value, ExportState& state,
-                    mlir::Block& evaluationBlock) {
-  auto type = llvm::dyn_cast<mlir::IntegerType>(value.getType());
-  if (!type || type.getWidth() == 0U || type.getWidth() > 64U) {
-    return std::nullopt;
-  }
-  std::vector<std::optional<uint32_t>> bits(type.getWidth());
-  llvm::SmallPtrSet<mlir::Operation*, 16> operations;
-  size_t nodeCount = 0U;
-  const std::function<bool(mlir::Value, uint32_t, size_t)> collect =
-      [&](mlir::Value current, const uint32_t shift, const size_t depth) {
-        if (depth >= MAX_EXPORT_EXPRESSION_DEPTH ||
-            ++nodeCount > MAX_EXPORT_EXPRESSION_NODES) {
-          return false;
-        }
-        auto* operation = current.getDefiningOp();
-        if (operation == nullptr) {
-          return false;
-        }
-        if (auto constant =
-                llvm::dyn_cast<mlir::arith::ConstantOp>(operation)) {
-          const auto integer =
-              llvm::dyn_cast<mlir::IntegerAttr>(constant.getValue());
-          return integer && integer.getValue().isZero();
-        }
-        if (operation->getBlock() != &evaluationBlock) {
-          return false;
-        }
-        if (auto op = llvm::dyn_cast<mlir::arith::OrIOp>(operation)) {
-          operations.insert(operation);
-          return collect(op.getLhs(), shift, depth + 1U) &&
-                 collect(op.getRhs(), shift, depth + 1U);
-        }
-        if (auto op = llvm::dyn_cast<mlir::arith::ShLIOp>(operation)) {
-          const auto amount = constantUnsignedInteger(op.getRhs());
-          if (!amount || *amount >= bits.size() ||
-              *amount > std::numeric_limits<uint32_t>::max() - shift) {
-            return false;
-          }
-          operations.insert(operation);
-          return collect(op.getLhs(), shift + static_cast<uint32_t>(*amount),
-                         depth + 1U);
-        }
-        if (auto op = llvm::dyn_cast<mlir::arith::ExtUIOp>(operation)) {
-          operations.insert(operation);
-          return collect(op.getIn(), shift, depth + 1U);
-        }
-        auto load = llvm::dyn_cast<mlir::cbit::LoadOp>(operation);
-        if (!load || shift >= bits.size() || bits[shift]) {
-          return false;
-        }
-        bits[shift] = classicalBitIndex(load, state);
-        operations.insert(operation);
-        return true;
-      };
-  if (!collect(value, 0U, 0U) ||
-      llvm::any_of(bits, [](const auto& bit) { return !bit.has_value(); })) {
-    return std::nullopt;
-  }
-  Register reg;
-  reg.bits.reserve(bits.size());
-  llvm::DenseSet<uint32_t> seenBits;
-  for (const auto bit : bits) {
-    if (!seenBits.insert(*bit).second) {
-      return std::nullopt;
-    }
-    reg.bits.push_back(*bit);
-  }
-  for (const auto& candidate : state.classicalRegisters) {
-    if (candidate.bits == reg.bits) {
-      reg.name = candidate.name;
-      break;
-    }
-  }
-  return PackedRegister{.reg = std::move(reg),
-                        .operations = std::move(operations)};
-}
-
-static void acceptPackedRegister(PackedRegister& packed, ExportState& state) {
-  state.expressionOperations.insert(packed.operations.begin(),
-                                    packed.operations.end());
 }
 
 [[nodiscard]] static bool storesToValueRecursively(mlir::Operation& operation,
@@ -1599,10 +1617,6 @@ static void validateClassicalSnapshot(mlir::Value expression,
     }
     if (auto read = llvm::dyn_cast<mlir::cbit::ReadOp>(operation)) {
       reads.emplace_back(read, read.getReg());
-      continue;
-    }
-    if (auto comparison = llvm::dyn_cast<mlir::cbit::CompareOp>(operation)) {
-      reads.emplace_back(comparison, comparison.getReg());
       continue;
     }
     if (auto ifOp = llvm::dyn_cast<mlir::scf::IfOp>(operation)) {
@@ -1760,12 +1774,6 @@ exportSwitchTarget(mlir::Value value, ExportState& state,
     state.expressionOperations.insert(load);
     return {.kind = ClassicalTargetKind::ClassicalBit,
             .bit = classicalBitIndex(load, state)};
-  }
-  if (auto packed = matchPackedRegister(value, state, evaluationBlock)) {
-    acceptPackedRegister(*packed, state);
-    return {.kind = ClassicalTargetKind::ClassicalRegister,
-            .reg = std::move(packed->reg),
-            .width = llvm::cast<mlir::IntegerType>(value.getType()).getWidth()};
   }
   ClassicalTarget target{.kind = ClassicalTargetKind::Expression};
   target.expression = exportExpression(value, state, evaluationBlock);
@@ -2090,7 +2098,7 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportState& state,
       deferredExpressions.push_back(&operation);
       continue;
     }
-    if (llvm::isa<mlir::cbit::ReadOp, mlir::cbit::CompareOp>(operation)) {
+    if (llvm::isa<mlir::cbit::ReadOp>(operation)) {
       deferredExpressions.push_back(&operation);
       continue;
     }
@@ -2353,7 +2361,17 @@ static void emitCircuit(ExportedCircuit& circuit, CircuitWriter& writer,
 
 nb::object exportCircuit(const mlir::QCProgram& program,
                          const mlir::CompilerTarget* const target) {
-  auto moduleOp = program.module();
+  mlir::OwningOpRef<mlir::ModuleOp> expanded = program.module().clone();
+  auto moduleOp = *expanded;
+  mlir::RewritePatternSet patterns(moduleOp.getContext());
+  mlir::mqt::populateIntegerExpansionPatterns(patterns);
+  /// Expand missing operations and eliminate dead expressions, without folding
+  /// unrelated control flow or changing the source program.
+  if (mlir::failed(mlir::applyPatternsGreedily(
+          moduleOp, std::move(patterns),
+          mlir::GreedyRewriteConfig().enableFolding(false)))) {
+    throw std::runtime_error("failed to expand integer operations for Qiskit");
+  }
   const auto functions = moduleOp.getOps<mlir::func::FuncOp>();
   if (functions.empty() || !llvm::hasSingleElement(functions)) {
     throw std::runtime_error(

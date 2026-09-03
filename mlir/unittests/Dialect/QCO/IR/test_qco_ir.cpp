@@ -420,7 +420,7 @@ static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
   case ForbiddenModifierBodyOp::CBitAlloc:
     return "cbit.alloc";
   case ForbiddenModifierBodyOp::CBitCompare:
-    return "cbit.cmp";
+    return "cbit.read";
   case ForbiddenModifierBodyOp::CBitLoad:
     return "cbit.load";
   case ForbiddenModifierBodyOp::CBitStore:
@@ -484,9 +484,7 @@ buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
                 cbit::Initialization::Zero);
             break;
           case ForbiddenModifierBodyOp::CBitCompare:
-            cbit::CompareOp::create(
-                builder, builder.getI1Type(), arith::CmpIPredicate::eq, cbitReg,
-                builder.getIntegerAttr(builder.getI1Type(), 0));
+            cbit::ReadOp::create(builder, builder.getI1Type(), cbitReg);
             break;
           case ForbiddenModifierBodyOp::CBitLoad:
             cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg,

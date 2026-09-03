@@ -1471,11 +1471,11 @@ llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms() {
 
 llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
   static const std::array programs{
+      OpenQASMProgram{.name = "integer-to-floating-gate-parameter",
+                      .source = bitVectorBuiltins},
       OpenQASMProgram{.name = "checked-integer-state",
                       .source = checkedIntegerState},
       OpenQASMProgram{.name = "dynamic-range", .source = dynamicRange},
-      OpenQASMProgram{.name = "bit-vector-builtins",
-                      .source = bitVectorBuiltins},
   };
   return programs;
 }

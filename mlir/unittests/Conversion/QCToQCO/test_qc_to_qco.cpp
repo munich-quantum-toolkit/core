@@ -1208,7 +1208,7 @@ static StringRef cbitOperationName(CBitModifierBodyOp operation) {
   case CBitModifierBodyOp::Alloc:
     return "cbit.alloc";
   case CBitModifierBodyOp::Compare:
-    return "cbit.cmp";
+    return "cbit.read";
   case CBitModifierBodyOp::Load:
     return "cbit.load";
   case CBitModifierBodyOp::Store:
@@ -1236,9 +1236,14 @@ buildInvalidCBitModifierProgram(MLIRContext* context,
                               cbit::Initialization::Zero);
         break;
       case CBitModifierBodyOp::Compare:
-        cbit::CompareOp::create(builder, builder.getI1Type(),
-                                arith::CmpIPredicate::eq, reg,
-                                builder.getIntegerAttr(builder.getI1Type(), 0));
+        arith::CmpIOp::create(
+            builder, arith::CmpIPredicate::eq,
+            cbit::ReadOp::create(
+                builder,
+                (builder.getIntegerAttr(builder.getI1Type(), 0)).getType(),
+                reg),
+            arith::ConstantOp::create(
+                builder, builder.getIntegerAttr(builder.getI1Type(), 0)));
         break;
       case CBitModifierBodyOp::Load:
         cbit::LoadOp::create(builder, builder.getI1Type(), reg,

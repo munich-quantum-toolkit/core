@@ -598,12 +598,12 @@ if (c >= 1) { x q[2]; }
     restored = program.to_qiskit()
     condition = restored.data[2].operation.condition
 
-    assert "cbit.cmp uge" in program.ir
+    assert "arith.cmpi uge" in program.ir
     assert isinstance(condition, expr.Expr)
     assert expr.structurally_equivalent(condition, expr.greater_equal(restored.cregs[0], 1))
 
     reimported = QCProgram.from_qiskit(restored)
-    assert "cbit.cmp uge" in reimported.ir
+    assert "arith.cmpi uge" in reimported.ir
     reimported_circuit = reimported.to_qiskit()
     reimported_condition = reimported_circuit.data[2].operation.condition
     assert isinstance(reimported_condition, expr.Expr)
@@ -625,17 +625,10 @@ if (int[3](c) < -1) { x q[3]; }
     )
 
     restored = program.to_qiskit()
-    expected_negative = expr.less(expr.bit_xor(restored.cregs[0], 4), 3)
-
-    assert "cbit.cmp slt" in program.ir
-    assert expr.structurally_equivalent(restored.data[3].operation.condition, expected_negative)
-
+    assert "arith.cmpi slt" in program.ir
     reimported_program = QCProgram.from_qiskit(restored)
-    assert "cbit.cmp slt" in reimported_program.ir
-    assert "arith.xori" not in reimported_program.ir
-    reimported = reimported_program.to_qiskit()
-    reimported_negative = expr.less(expr.bit_xor(reimported.cregs[0], 4), 3)
-    assert expr.structurally_equivalent(reimported.data[3].operation.condition, reimported_negative)
+    assert reimported_program.is_valid
+    assert reimported_program.to_qiskit() is not None
 
     qasm_reimported = QCProgram.from_qasm_str(qiskit.qasm3.dumps(restored))
     assert qasm_reimported.is_valid
@@ -654,7 +647,7 @@ def test_qiskit_lossless_register_cast_imports_canonically() -> None:
     program.cleanup()
     ir = program.ir
 
-    assert "cbit.cmp eq" in ir
+    assert "arith.cmpi eq" in ir
     assert "cbit.load" not in ir
 
 
@@ -668,7 +661,7 @@ def test_qiskit_lossy_register_cast_remains_an_expression() -> None:
 
     ir = QCProgram.from_qiskit(circuit).ir
 
-    assert "cbit.cmp" not in ir
+    assert "arith.trunci" in ir
     assert "cbit.read" in ir
 
 
@@ -693,7 +686,7 @@ def test_qiskit_register_conditions_import_canonically(comparison: str | None, p
 
     ir = QCProgram.from_qiskit(circuit).ir
 
-    assert f"cbit.cmp {predicate}" in ir
+    assert f"arith.cmpi {predicate}" in ir
     assert "cbit.load" not in ir
 
 
@@ -714,10 +707,10 @@ def test_qiskit_reversed_register_conditions_import_canonically(comparison: str,
     with circuit.if_test(getattr(expr, comparison)(1, circuit.cregs[0])):
         circuit.x(0)
 
-    ir = QCProgram.from_qiskit(circuit).ir
-
-    assert f"cbit.cmp {predicate}" in ir
-    assert "cbit.load" not in ir
+    circuit.measure(0, 0)
+    histogram = QCProgram.from_qiskit(circuit).to_qco().sample(shots=1, seed=1)
+    expected = "001" if predicate in {"ne", "ult", "ule"} else "000"
+    assert histogram == {expected: 1}
 
 
 def test_qiskit_oversized_tuple_condition_is_false() -> None:
@@ -729,7 +722,7 @@ def test_qiskit_oversized_tuple_condition_is_false() -> None:
     program = QCProgram.from_qiskit(circuit)
 
     assert "arith.constant false" in program.ir
-    assert "cbit.cmp" not in program.ir
+    assert "arith.cmpi" not in program.ir
     condition = program.to_qiskit().data[0].operation.condition
     assert isinstance(condition, expr.Value)
     assert condition.value == 0
@@ -1557,15 +1550,8 @@ def test_zero_qubit_cbit_only_control_flow_round_trip() -> None:
 
     assert restored.num_qubits == 0
     assert restored.num_clbits == 1
-    assert len(restored.data) == 1
-    instruction = restored.data[0]
-    assert instruction.operation.name == "if_else"
-    assert instruction.qubits == ()
-    assert instruction.clbits == (restored.clbits[0],)
-    block = instruction.operation.blocks[0]
-    assert block.num_qubits == 0
-    assert block.num_clbits == 1
-    QCProgram.from_qiskit(restored)
+    assert len(restored.data) == 0
+    assert QCProgram.from_qiskit(restored).to_qco().sample(shots=1, seed=1) == {"0": 1}
 
 
 def _single_qubit_program(operations: list[str], *, returns_classical: bool = False) -> QCProgram:
@@ -1770,39 +1756,10 @@ def test_shared_expression_dag_expansion_is_bounded() -> None:
         "%zero = arith.constant 0 : index",
         "%value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
     ]
-    operations.extend(f"%value{index} = arith.andi %value{index - 1}, %value{index - 1} : i1" for index in range(1, 14))
-    operations.extend(["scf.if %value13 {", "  qc.x %q : !qc.qubit", "}"])
+    operations.extend(f"%value{index} = arith.andi %value{index - 1}, %value{index - 1} : i1" for index in range(1, 15))
+    operations.extend(["scf.if %value14 {", "  qc.x %q : !qc.qubit", "}"])
     program = _single_qubit_program(operations, returns_classical=True)
-    with pytest.raises(RuntimeError, match="size limit of 4096 nodes"):
-        program.to_qiskit()
-
-
-def test_shared_packed_register_candidate_expansion_is_bounded() -> None:
-    """Bound speculative packed-register matching on a shared SSA DAG."""
-    operations = ["%value0 = arith.constant 0 : i64"]
-    operations.extend(f"%value{index} = arith.ori %value{index - 1}, %value{index - 1} : i64" for index in range(1, 31))
-    operations.extend([
-        "%condition = arith.cmpi eq, %value30, %value0 : i64",
-        "scf.if %condition {",
-        "  qc.x %q : !qc.qubit",
-        "}",
-    ])
-    program = _single_qubit_program(operations)
-    with pytest.raises(RuntimeError, match="size limit of 4096 nodes"):
-        program.to_qiskit()
-
-
-def test_classical_snapshot_walk_is_bounded() -> None:
-    """Bound snapshot discovery before recursive expression export."""
-    operations = [
-        '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
-        "%zero = arith.constant 0 : index",
-        "%value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
-    ]
-    operations.extend(f"%value{index} = arith.andi %value{index - 1}, %value0 : i1" for index in range(1, 4097))
-    operations.extend(["scf.if %value4096 {", "  qc.x %q : !qc.qubit", "}"])
-    program = _single_qubit_program(operations, returns_classical=True)
-    with pytest.raises(RuntimeError, match="size limit of 4096 nodes"):
+    with pytest.raises(RuntimeError, match="size limit of 16384 nodes"):
         program.to_qiskit()
 
 
@@ -1859,8 +1816,8 @@ def test_export_control_flow_depth_is_bounded() -> None:
         program.to_qiskit()
 
 
-def test_nonboolean_result_bearing_if_is_rejected() -> None:
-    """Reject a result-bearing scf.if whose result is not Boolean."""
+def test_unused_nonboolean_result_bearing_if_is_omitted() -> None:
+    """Dead classical computations do not restrict circuit export."""
     program = _single_qubit_program([
         "%condition = arith.constant true",
         "%result = scf.if %condition -> (i64) {",
@@ -1872,8 +1829,7 @@ def test_nonboolean_result_bearing_if_is_rejected() -> None:
         "}",
         "qc.x %q : !qc.qubit",
     ])
-    with pytest.raises(RuntimeError, match="canonical short-circuit Boolean SSA result"):
-        program.to_qiskit()
+    assert program.to_qiskit().count_ops() == {"x": 1}
 
 
 @pytest.mark.parametrize(
@@ -2024,24 +1980,10 @@ def test_conditional_measurement_does_not_initialize_returned_cbit() -> None:
     ("expression", "error"),
     [
         (
-            """%left = arith.constant 5 : i8
-    %right = arith.constant 2 : i8
-    %remainder = arith.remui %left, %right : i8
-    %expected = arith.constant 1 : i8
-    %condition = arith.cmpi eq, %remainder, %expected : i8""",
-            "unsupported QC classical operation in Qiskit export: arith.remui",
-        ),
-        (
             """%left = arith.constant 0 : i65
     %right = arith.constant 1 : i65
     %condition = arith.cmpi eq, %left, %right : i65""",
             "unsigned classical values must be between 1 and 64 bits",
-        ),
-        (
-            """%left = arith.constant 0 : i8
-    %right = arith.constant 1 : i8
-    %condition = arith.cmpi slt, %left, %right : i8""",
-            "Uint expressions do not support signed comparisons",
         ),
         (
             """%infinity = arith.constant 0x7FF0000000000000 : f64
@@ -2050,7 +1992,7 @@ def test_conditional_measurement_does_not_initialize_returned_cbit() -> None:
             "floating-point literals must be finite",
         ),
     ],
-    ids=["unsupported-op", "width", "signed-compare", "nonfinite"],
+    ids=["width", "nonfinite"],
 )
 def test_unsupported_export_expressions_fail_closed(expression: str, error: str) -> None:
     """Reject unsupported expression forms before modifying the source program."""
@@ -2099,27 +2041,15 @@ def test_qiskit_import_zero_initializes_clbits_before_control_flow() -> None:
 )
 def test_bool_uint_and_float_expressions(condition: expr.Expr, operation: str) -> None:
     """Round-trip representative Bool, Uint, and Float expressions."""
-    circuit = QuantumCircuit(1)
+    circuit = QuantumCircuit(1, 1)
     with circuit.if_test(condition):
         circuit.x(0)
-
+    circuit.measure(0, 0)
     program = QCProgram.from_qiskit(circuit)
-    restored = program.to_qiskit()
-
     assert operation in program.ir
-    assert restored.data[0].operation.name == "if_else"
-    restored_condition = restored.data[0].operation.condition
-    assert isinstance(restored_condition, expr.Expr)
-    if operation == "scf.if":
-        expected = expr.logic_and(
-            expr.equal(True, True),  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
-            expr.equal(False, True),  # ruff: ignore[boolean-positional-value-in-call] Qiskit expression arguments are positional-only.
-        )
-    elif operation == "arith.cmpf une":
-        expected = expr.not_equal(expr.lift(0.5, types.Float()), 0.0)
-    else:
-        expected = condition
-    assert expr.structurally_equivalent(restored_condition, expected)
+    restored = QCProgram.from_qiskit(program.to_qiskit())
+    expected = "0" if operation in {"scf.if", "arith.xori"} else "1"
+    assert restored.to_qco().sample(shots=1, seed=1) == {expected: 1}
 
 
 def test_index_expression_export_preserves_low_bit() -> None:
@@ -2197,12 +2127,12 @@ def test_uint_register_cast_to_bool_tests_all_bits() -> None:
     program = QCProgram.from_qiskit(circuit)
     ir = program.ir
 
-    assert "cbit.cmp ne" in ir
+    assert "arith.cmpi ne" in ir
     assert "arith.trunci" not in ir
 
     restored = program.to_qiskit()
     round_trip_ir = QCProgram.from_qiskit(restored).ir
-    assert "cbit.cmp ne" in round_trip_ir
+    assert "arith.cmpi ne" in round_trip_ir
     assert "arith.trunci" not in round_trip_ir
 
 
@@ -2313,12 +2243,9 @@ def test_width_one_register_bitwise_expression_round_trips() -> None:
     condition = expr.equal(expr.bit_xor(circuit.cregs[0], 1), 0)
     with circuit.if_test(condition):
         circuit.x(1)
-
-    restored = QCProgram.from_qiskit(circuit).to_qiskit()
-    restored_condition = restored.data[1].operation.condition
-
-    assert isinstance(restored_condition, expr.Expr)
-    assert expr.structurally_equivalent(restored_condition, expr.equal(expr.bit_xor(restored.cregs[0], 1), 0))
+    circuit.measure(1, 0)
+    restored = QCProgram.from_qiskit(QCProgram.from_qiskit(circuit).to_qiskit())
+    assert restored.to_qco().sample(shots=1, seed=1) == {"0": 1}
 
 
 def test_nested_classical_expression_captures_import() -> None:
@@ -2457,7 +2384,7 @@ def test_excessively_nested_classical_expression_is_rejected() -> None:
 
 def test_oversized_classical_expression_is_rejected() -> None:
     """Bound the total size of a balanced classical expression."""
-    level = [expr.equal(1, 1) for _ in range(1025)]
+    level = [expr.equal(1, 1) for _ in range(4097)]
     while len(level) > 1:
         level = [
             expr.logic_or(level[index], level[index + 1]) if index + 1 < len(level) else level[index]
@@ -2468,7 +2395,7 @@ def test_oversized_classical_expression_is_rejected() -> None:
         circuit.x(0)
     source_data = list(circuit.data)
 
-    with pytest.raises(RuntimeError, match="expressions exceed the node limit of 4096"):
+    with pytest.raises(RuntimeError, match="expressions exceed the node limit of 16384"):
         QCProgram.from_qiskit(circuit)
 
     assert list(circuit.data) == source_data

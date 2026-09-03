@@ -19,6 +19,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Support/Passes.h"
 #include "qco_programs.h"
 
@@ -515,6 +516,42 @@ TEST(JeffRoundTripRegressionTest, ConvertsJeffBitArraysDirectlyToCBit) {
   EXPECT_GE(loads, 1);
   EXPECT_GE(stores, 1);
   EXPECT_FALSE(hasI1Tensor);
+}
+
+TEST(JeffRoundTripRegressionTest, PreservesLiveOldArrayValues) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, qco::QCODialect, arith::ArithDialect,
+                      func::FuncDialect, jeff::JeffDialect>();
+  auto program = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+      %q = qco.alloc : !qco.qubit
+      %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %index = arith.constant 0 : index
+      %true = arith.constant true
+      cbit.store %true, %c[%index] : !cbit.reg<1>
+      qco.sink %q : !qco.qubit
+      return %c : !cbit.reg<1>
+    }
+  })mlir",
+                                             &context);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*program)));
+  auto main = program->lookupSymbol<func::FuncOp>("main");
+  auto returned = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  auto original = *main.getOps<jeff::IntArrayZeroOp>().begin();
+  auto updated = returned.getOperand(0);
+  returned->setOperands({original.getResult(), updated});
+  main.setFunctionType(
+      FunctionType::get(&context, {}, {updated.getType(), updated.getType()}));
+  auto bytes = serialize(*program);
+  program = deserialize(&context, bytes);
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*program)));
+  ASSERT_TRUE(succeeded(verify(*program)));
+  auto histogram =
+      qco::sample(program->lookupSymbol<func::FuncOp>("main"), 1, 1);
+  ASSERT_TRUE(succeeded(histogram));
+  EXPECT_EQ(histogram->at("10"), 1);
 }
 
 TEST(JeffRoundTripRegressionTest, RejectsClassicalIfResultsPrecisely) {

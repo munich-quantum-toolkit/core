@@ -56,16 +56,14 @@ x q;
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(v31));
 }
 
-TEST(OpenQASMFrontendTest, RejectsUnsupportedIntegerDeclarations) {
+TEST(OpenQASMFrontendTest, AcceptsSizedIntegerDeclarations) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
-int[32] counter;
+int[32] counter = 0;
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
-  ASSERT_FALSE(analyzed);
-  ASSERT_FALSE(analyzed.diagnostics.empty());
-  EXPECT_NE(analyzed.diagnostics.front().message.find("Integer declarations"),
-            std::string::npos);
+  ASSERT_TRUE(analyzed);
+  EXPECT_EQ(analyzed.program->scalars.front().integerWidth, 32);
 }
 
 TEST(OpenQASMFrontendTest, RejectsTooFewVariadicControlOperands) {
@@ -153,7 +151,7 @@ TEST(OpenQASMFrontendTest, RejectsUnprovedQuantumIndices) {
            "cannot prove that qubit index is in bounds"},
           {"OPENQASM 3.1; qubit[2] q; bit b = measure q[0]; int i = b; "
            "x q[i];",
-           "not a scalar value"},
+           "cannot prove that qubit index is in bounds"},
           {"OPENQASM 3.1; qubit[16] q; for int i in [0:3] { x q[i * i]; }",
            "cannot prove that qubit index is in bounds"},
           {"OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[i / 1]; }",
@@ -170,7 +168,7 @@ TEST(OpenQASMFrontendTest, RejectsUnprovedQuantumIndices) {
            "x q[i - 9223372036854775806]; }",
            "cannot prove that qubit index is in bounds"},
           {"OPENQASM 3.1; qubit[4] q; for int i in [0:1] { x q[i << 1]; }",
-           "not supported yet"},
+           "explicitly sized uint"},
           {"OPENQASM 3.1; qubit[4] q; for int i in [3:-1:0] { x q[i]; }",
            "cannot prove that qubit index is in bounds"},
           {"OPENQASM 3.1; qubit[4] q; int i = 4; if (i < 4) { x q[i]; }",
@@ -1386,18 +1384,6 @@ TEST(OpenQASMFrontendTest, RejectsInvalidProgramsAcrossSemanticFamilies) {
        .source = "OPENQASM 3.1; int value = 1; if (value) {}"},
       {.name = "bool-compound-assignment",
        .source = "OPENQASM 3.1; bool value = true; value += false;"},
-      {.name = "unsupported-bitwise-not",
-       .source = "OPENQASM 3.1; int value = ~1;"},
-      {.name = "unsupported-bitwise-and",
-       .source = "OPENQASM 3.1; int value = 1 & 2;"},
-      {.name = "unsupported-bitwise-or",
-       .source = "OPENQASM 3.1; int value = 1 | 2;"},
-      {.name = "unsupported-bitwise-xor",
-       .source = "OPENQASM 3.1; int value = 1 ^ 2;"},
-      {.name = "unsupported-shift-left",
-       .source = "OPENQASM 3.1; int value = 1 << 2;"},
-      {.name = "unsupported-shift-right",
-       .source = "OPENQASM 3.1; int value = 2 >> 1;"},
       {.name = "uninitialized-scalar",
        .source = "OPENQASM 3.1; int x; int y = x + 1;"},
       {.name = "self-initialization", .source = "OPENQASM 3.1; int x = x + 1;"},
@@ -1775,12 +1761,9 @@ TEST(OpenQASMFrontendTest, RejectsInvalidSizedBitRegisterCasts) {
       {.source = "OPENQASM 3.1; bit[2] value; "
                  "uint result = uint[2](value);",
        .diagnostic = "has not been initialized"},
-      {.source = "OPENQASM 3.1; int value = 1; "
-                 "int result = int[2](value);",
-       .diagnostic = "requires a bit register"},
       {.source = "OPENQASM 3.1; bit[2] value; "
                  "uint result = uint(value);",
-       .diagnostic = "requires an explicit width"},
+       .diagnostic = "has not been initialized"},
       {.source = "OPENQASM 3.1; uint width = 2; bit[2] value; "
                  "uint result = uint[width](value);",
        .diagnostic = "must be a constant integer expression"},

@@ -72,6 +72,7 @@ add_mlir_library(
   MLIRArithDialect
   MLIRFuncDialect
   MLIRMathDialect
+  MLIRLLVMDialect
   MLIRSCFDialect
   MQT::CoreDD
   PRIVATE

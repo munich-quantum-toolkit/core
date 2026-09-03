@@ -38,6 +38,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -165,7 +166,9 @@ struct ClassicalEnv {
       return op->emitError()
              << "classical SSA value is not mapped for QCO DD simulation";
     }
-    values[dest] = it->second;
+    /// Inserting the destination can grow the map and invalidate the iterator.
+    auto value = it->second;
+    values[dest] = value;
     return success();
   }
 };
@@ -693,31 +696,6 @@ static LogicalResult writeRegister(cbit::WriteOp write,
   return success();
 }
 
-static LogicalResult compareRegister(cbit::CompareOp compare,
-                                     ClassicalEnv& classical) {
-  const auto regIt = classical.registers.find(compare.getReg());
-  if (regIt == classical.registers.end()) {
-    return compare.emitError()
-           << "CBit register is not mapped for QCO DD simulation";
-  }
-  llvm::APInt actual(compare.getRhs().getBitWidth(), 0);
-  for (const auto [index, cell] : llvm::enumerate(*regIt->second)) {
-    if (cell.deferredWire && classical.deferredMeasurementUse != nullptr) {
-      *classical.deferredMeasurementUse = compare.getOperation();
-      return failure();
-    }
-    if (!cell.value) {
-      return compare.emitError()
-             << "read from an undefined CBit register element";
-    }
-    actual.setBitVal(static_cast<unsigned>(index), *cell.value);
-  }
-  const auto result = arith::applyCmpPredicate(compare.getPredicate(), actual,
-                                               compare.getRhs());
-  return bindInteger(compare.getResult(),
-                     llvm::APInt(1, static_cast<uint64_t>(result)), classical);
-}
-
 static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
                                               ClassicalEnv& classical,
                                               Operation* op) {
@@ -913,10 +891,26 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
             arith::MinSIOp, arith::MaxUIOp, arith::MinUIOp, arith::MaximumFOp,
             arith::MinimumFOp, arith::MaxNumFOp, arith::MinNumFOp, math::AbsFOp,
             math::CeilOp, math::CosOp, math::ExpOp, math::FloorOp, math::LogOp,
-            math::SinOp, math::SqrtOp, math::TanOp, math::PowFOp>(
-          [&](Operation* foldable) {
-            return foldClassicalOp(*foldable, classical);
-          })
+            math::SinOp, math::SqrtOp, math::TanOp, math::PowFOp,
+            math::CtPopOp>([&](Operation* foldable) {
+        return foldClassicalOp(*foldable, classical);
+      })
+      .Case<LLVM::FshlOp, LLVM::FshrOp>([&](Operation* shift) -> LogicalResult {
+        auto lhs = lookupInteger(shift->getOperand(0), classical, shift);
+        auto rhs = lookupInteger(shift->getOperand(1), classical, shift);
+        auto distance = lookupInteger(shift->getOperand(2), classical, shift);
+        if (failed(lhs) || failed(rhs) || failed(distance)) {
+          return failure();
+        }
+        const auto width = lhs->getBitWidth();
+        const auto amount = static_cast<unsigned>(distance->urem(width));
+        const bool left = isa<LLVM::FshlOp>(shift);
+        auto value = amount == 0
+                         ? (left ? *lhs : *rhs)
+                         : lhs->shl(left ? amount : width - amount) |
+                               rhs->lshr(left ? width - amount : amount);
+        return bindInteger(shift->getResult(0), value, classical);
+      })
       .Case<arith::DivUIOp>([&](arith::DivUIOp value) {
         return applyDivision(
             value, classical,
@@ -1351,9 +1345,6 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<cbit::WriteOp>([&](cbit::WriteOp write) {
         return writeRegister(write, *walk.classical);
       })
-      .template Case<cbit::CompareOp>([&](cbit::CompareOp compare) {
-        return compareRegister(compare, *walk.classical);
-      })
       .template Case<cbit::StoreOp>([&](cbit::StoreOp store) {
         return storeRegister(store, *walk.classical);
       })
@@ -1622,7 +1613,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .Default([&](Operation* unsupported) -> LogicalResult {
         const StringRef dialect = unsupported->getName().getDialectNamespace();
         if (dialect == arith::ArithDialect::getDialectNamespace() ||
-            dialect == math::MathDialect::getDialectNamespace()) {
+            dialect == math::MathDialect::getDialectNamespace() ||
+            isa<LLVM::FshlOp, LLVM::FshrOp>(unsupported)) {
           return applyClassicalOp(*unsupported, *walk.classical);
         }
         return unsupported->emitError()

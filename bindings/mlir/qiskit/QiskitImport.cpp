@@ -23,6 +23,7 @@
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Support/IntegerExpressions.h"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
@@ -675,8 +676,9 @@ registerStorage(const llvm::ArrayRef<ClassicalBitRef> classicalBits,
   const auto width = static_cast<unsigned>(reg.bits.size());
   const auto rhs = builder.getIntegerAttr(builder.getIntegerType(width),
                                           llvm::APInt(width, expected, false));
-  return mlir::cbit::CompareOp::create(builder, builder.getI1Type(), predicate,
-                                       storage, rhs);
+  auto value = mlir::cbit::ReadOp::create(builder, rhs.getType(), storage);
+  auto constant = mlir::arith::ConstantOp::create(builder, rhs);
+  return mlir::arith::CmpIOp::create(builder, predicate, value, constant);
 }
 
 [[nodiscard]] static mlir::Value
@@ -1079,13 +1081,9 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
         throw std::runtime_error(
             "Qiskit shift distance must have integer type");
       }
-      if (auto constant = right.getDefiningOp<mlir::arith::ConstantOp>()) {
-        const auto value =
-            llvm::dyn_cast<mlir::IntegerAttr>(constant.getValue());
-        if (value && value.getValue().uge(integerType.getWidth())) {
-          return integerConstant(builder, integerType.getWidth(), 0U);
-        }
-      }
+      return mlir::mqt::buildZeroFillingShift(
+          builder, builder.getUnknownLoc(), left, right,
+          expression.binaryOperation == BinaryOperation::ShiftLeft);
     }
     right = castInteger(builder, right, integerType);
     switch (expression.binaryOperation) {

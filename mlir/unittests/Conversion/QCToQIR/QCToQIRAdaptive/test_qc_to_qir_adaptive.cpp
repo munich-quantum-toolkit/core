@@ -270,8 +270,10 @@ TEST(QCToQIRAdaptiveNativeTest, LowersClassicalRegisterComparison) {
   auto c = builder.allocClassicalBitRegister(3);
   builder.measure(q, c, 0);
   auto rhs = builder.getIntegerAttr(builder.getIntegerType(3), 2);
-  auto comparison = cbit::CompareOp::create(builder, builder.getI1Type(),
-                                            arith::CmpIPredicate::ult, c, rhs);
+  auto comparison =
+      arith::CmpIOp::create(builder, arith::CmpIPredicate::ult,
+                            cbit::ReadOp::create(builder, rhs.getType(), c),
+                            arith::ConstantOp::create(builder, rhs));
   builder.scfIf(comparison, [&] { builder.x(q); });
   auto module = builder.finalize();
   ASSERT_TRUE(module);
@@ -279,8 +281,81 @@ TEST(QCToQIRAdaptiveNativeTest, LowersClassicalRegisterComparison) {
   ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
   bool retainsComparison = false;
-  module->walk([&](cbit::CompareOp) { retainsComparison = true; });
+  module->walk([&](arith::CmpIOp) { retainsComparison = true; });
   EXPECT_FALSE(retainsComparison);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsRegisterCallsAtTheSharedBoundary) {
+  const auto sources = {
+      R"mlir(module {
+        func.func private @callee(!cbit.reg<1>)
+        func.func @main() attributes {mqt.entry_point} {
+          %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+          func.call @callee(%c) : (!cbit.reg<1>) -> ()
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @callee() -> !cbit.reg<1>
+        func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+          %c = func.call @callee() : () -> !cbit.reg<1>
+          return %c : !cbit.reg<1>
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @callee(!cbit.reg<1>)
+        func.func @main() attributes {mqt.entry_point} {
+          %callee = func.constant @callee : (!cbit.reg<1>) -> ()
+          %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+          func.call_indirect %callee(%c) : (!cbit.reg<1>) -> ()
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @callee() -> !cbit.reg<1>
+        func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+          %callee = func.constant @callee : () -> !cbit.reg<1>
+          %c = func.call_indirect %callee() : () -> !cbit.reg<1>
+          return %c : !cbit.reg<1>
+        }
+      })mlir"};
+  for (const auto* source : sources) {
+    SCOPED_TRACE(source);
+    MLIRContext context;
+    context.loadDialect<cbit::CBitDialect, func::FuncDialect>();
+    auto module = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(module);
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      std::string message;
+      llvm::raw_string_ostream stream(message);
+      diagnostic.print(stream);
+      diagnosed |= StringRef(message).contains(
+          "does not support CBit registers in calls");
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+    EXPECT_TRUE(diagnosed);
+  }
+}
+
+TEST(QCToQIRAdaptiveNativeTest, PreservesScalarCalls) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, func::FuncDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @callee(i64) -> i64
+    func.func @main() attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : i64
+      %callee = func.constant @callee : (i64) -> i64
+      %direct = func.call @callee(%zero) : (i64) -> i64
+      %indirect = func.call_indirect %callee(%direct) : (i64) -> i64
+      return
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
 }
 
 TEST(QCToQIRAdaptiveNativeTest, RejectsMixedClassicalRegisterRepresentations) {
@@ -303,7 +378,9 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMixedClassicalRegisterRepresentations) {
         }
         %bit = cbit.load %selected[%c0] : !cbit.reg<1>
         %whole = cbit.read %selected : !cbit.reg<1> -> i1
-        %matches = cbit.cmp eq, %selected, 0 : i1 : !cbit.reg<1>
+        %matches_read = cbit.read %selected : !cbit.reg<1> -> i1
+        %matches_rhs = arith.constant 0 : i1
+        %matches = arith.cmpi eq, %matches_read, %matches_rhs : i1
         cbit.write %true, %selected : i1, !cbit.reg<1>
         return %bit, %whole, %matches, %returned
             : i1, i1, i1, !cbit.reg<1>
@@ -348,7 +425,9 @@ TEST(QCToQIRAdaptiveNativeTest, LowersReturnedRegisterMerge) {
         }
         %bit = cbit.load %selected[%c0] : !cbit.reg<1>
         %whole = cbit.read %selected : !cbit.reg<1> -> i1
-        %matches = cbit.cmp eq, %selected, 0 : i1 : !cbit.reg<1>
+        %matches_read = cbit.read %selected : !cbit.reg<1> -> i1
+        %matches_rhs = arith.constant 0 : i1
+        %matches = arith.cmpi eq, %matches_read, %matches_rhs : i1
         return %bit, %whole, %matches, %first, %second
             : i1, i1, i1, !cbit.reg<1>, !cbit.reg<1>
       }

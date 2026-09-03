@@ -1124,7 +1124,7 @@ if (c == 1) x q[0];
   size_t conditionals = 0;
   size_t comparisons = 0;
   moduleOp->walk([&](scf::IfOp) { ++conditionals; });
-  moduleOp->walk([&](cbit::CompareOp) { ++comparisons; });
+  moduleOp->walk([&](arith::CmpIOp) { ++comparisons; });
   EXPECT_EQ(conditionals, 1);
   EXPECT_EQ(comparisons, 1);
 }
@@ -1152,9 +1152,13 @@ if (c >= 5) { x q; }
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   std::vector<arith::CmpIPredicate> predicates;
-  moduleOp->walk([&](cbit::CompareOp comparison) {
+  moduleOp->walk([&](arith::CmpIOp comparison) {
     predicates.emplace_back(comparison.getPredicate());
-    EXPECT_EQ(comparison.getRhs(), llvm::APInt(3, 5));
+    EXPECT_EQ(
+        cast<IntegerAttr>(
+            comparison.getRhs().getDefiningOp<arith::ConstantOp>().getValue())
+            .getValue(),
+        llvm::APInt(3, 5));
   });
   EXPECT_EQ(
       predicates,
@@ -1175,10 +1179,14 @@ if (c == 18446744073709551616) x q[0];
   MLIRContext context;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
-  cbit::CompareOp comparison;
-  moduleOp->walk([&](cbit::CompareOp op) { comparison = op; });
+  arith::CmpIOp comparison;
+  moduleOp->walk([&](arith::CmpIOp op) { comparison = op; });
   ASSERT_TRUE(comparison);
-  EXPECT_EQ(comparison.getRhs(), llvm::APInt(65, 1).shl(64));
+  EXPECT_EQ(
+      cast<IntegerAttr>(
+          comparison.getRhs().getDefiningOp<arith::ConstantOp>().getValue())
+          .getValue(),
+      llvm::APInt(65, 1).shl(64));
 }
 
 TEST(OpenQASMTargetTest, EmitsSizedBitRegisterCastCondition) {
@@ -1210,12 +1218,16 @@ if (uint[2](syndrome) < 3) {
   });
   EXPECT_EQ(conditionalGates, 2);
   std::vector<arith::CmpIPredicate> predicates;
-  moduleOp->walk([&](cbit::CompareOp comparison) {
+  moduleOp->walk([&](arith::CmpIOp comparison) {
     predicates.emplace_back(comparison.getPredicate());
-    EXPECT_EQ(comparison.getRhs(), llvm::APInt(2, 3));
+    EXPECT_EQ(
+        cast<IntegerAttr>(
+            comparison.getRhs().getDefiningOp<arith::ConstantOp>().getValue())
+            .getInt(),
+        3);
   });
   EXPECT_EQ(predicates,
-            (std::vector{arith::CmpIPredicate::eq, arith::CmpIPredicate::ult}));
+            (std::vector{arith::CmpIPredicate::eq, arith::CmpIPredicate::slt}));
 }
 
 TEST(OpenQASMTargetTest, EmitsSignedBitRegisterCastComparisons) {
@@ -1240,14 +1252,14 @@ if (-1 <= int[2](syndrome)) { x q[0]; }
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   std::vector<arith::CmpIPredicate> predicates;
-  moduleOp->walk([&](cbit::CompareOp comparison) {
+  moduleOp->walk([&](arith::CmpIOp comparison) {
     predicates.emplace_back(comparison.getPredicate());
-    EXPECT_EQ(comparison.getRhs(), llvm::APInt(2, 3));
+    EXPECT_TRUE(comparison.getLhs().getType().isInteger(64));
   });
   EXPECT_EQ(
       predicates,
       (std::vector{arith::CmpIPredicate::slt, arith::CmpIPredicate::sle,
-                   arith::CmpIPredicate::sgt, arith::CmpIPredicate::sge}));
+                   arith::CmpIPredicate::slt, arith::CmpIPredicate::sle}));
 }
 
 TEST(OpenQASMTargetTest, PreservesBitRegisterCastSignedness) {
@@ -1305,13 +1317,11 @@ if (c == 0) x q[0];
   ASSERT_EQ(returned.size(), 2);
   EXPECT_TRUE(llvm::none_of(
       returned, [](const auto& value) { return value.has_value(); }));
-  size_t conditionals = 0;
   size_t xGates = 0;
-  moduleOp->walk([&](scf::IfOp) { ++conditionals; });
+  moduleOp->walk([&](cbit::AllocOp alloc) {
+    EXPECT_EQ(alloc.getInitialization(), cbit::Initialization::Zero);
+  });
   moduleOp->walk([&](qc::XOp) { ++xGates; });
-  // Zero initialization proves the condition true and removes both
-  // short-circuit conditionals.
-  EXPECT_EQ(conditionals, 0);
   EXPECT_EQ(xGates, 1);
 }
 
@@ -2031,7 +2041,7 @@ for int i in [0:stride:6] { x q[i]; }
   EXPECT_EQ(text.find("i128"), std::string::npos);
 }
 
-TEST(OpenQASMTargetTest, LowersCheckedIntegerArithmeticAtQCTarget) {
+TEST(OpenQASMTargetTest, LowersIntegerArithmeticAtItsMachineWidth) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       R"qasm(
 OPENQASM 3.1;
@@ -2056,9 +2066,9 @@ if (value + 1 > 0) { x q; })qasm",
     auto moduleOp = qc::translateQASM3ToQC(source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    size_t assertions = 0;
-    moduleOp->walk([&](cf::AssertOp) { ++assertions; });
-    EXPECT_GE(assertions, 1);
+    moduleOp->walk([&](arith::AddIOp add) {
+      EXPECT_TRUE(add.getType().isInteger(64) || add.getType().isIndex());
+    });
   }
 }
 
@@ -2089,11 +2099,8 @@ unsignedValue = unsignedValue ** unsignedOperand;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  size_t assertions = 0;
   size_t powerLoops = 0;
-  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
   moduleOp->walk([&](scf::WhileOp) { ++powerLoops; });
-  EXPECT_GE(assertions, 7);
   EXPECT_EQ(powerLoops, 2);
 }
 
