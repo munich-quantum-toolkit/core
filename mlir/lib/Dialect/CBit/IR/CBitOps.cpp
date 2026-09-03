@@ -27,6 +27,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <variant>
 
 using namespace mlir;
@@ -217,8 +218,8 @@ LogicalResult LoadOp::verify() {
 }
 
 LogicalResult CompareOp::verify() {
-  const auto width = static_cast<unsigned>(getReg().getType().getWidth());
-  if (getRhs().getBitWidth() != width) {
+  if (std::cmp_not_equal(getRhs().getBitWidth(),
+                         getReg().getType().getWidth())) {
     return emitOpError("expected integer width must match register width");
   }
   return success();

@@ -100,6 +100,18 @@ TEST_F(CBitIRTest, RejectsComparisonWidthMismatch) {
   )mlir"));
 }
 
+TEST_F(CBitIRTest, RejectsUnsupportedComparisonWidth) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %reg = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<4294967297>
+        %matches = cbit.cmp eq, %reg, 0 : i1 : !cbit.reg<4294967297>
+        return
+      }
+    }
+  )mlir"));
+}
+
 TEST_F(CBitIRTest, RejectsNonPositiveRegisterWidth) {
   EXPECT_FALSE(parse(R"mlir(
     module {
