@@ -610,6 +610,185 @@ if (c >= 1) { x q[2]; }
     assert expr.structurally_equivalent(reimported_condition, expr.greater_equal(reimported_circuit.cregs[0], 1))
 
 
+@pytest.mark.parametrize(
+    ("width", "expected"),
+    [(65, 0), (151, 1 << 150), (301, (1 << 301) - 1)],
+    ids=["zero", "highest-bit", "all-ones"],
+)
+def test_wide_cbit_register_comparisons_round_trip(width: int, expected: int) -> None:
+    """Preserve direct wide register comparisons as positive Python integers."""
+    program = QCProgram.from_mlir_str(
+        f"""module {{
+  func.func @main() -> !cbit.reg<{width}> attributes {{mqt.entry_point}} {{
+    %q = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<zero>) {{mqt.register_name = "c"}} : !cbit.reg<{width}>
+    %highest = arith.constant {width - 1} : index
+    %measured = qc.measure %q : !qc.qubit -> i1
+    cbit.store %measured, %classical[%highest] : !cbit.reg<{width}>
+    %value = cbit.read %classical : !cbit.reg<{width}> -> i{width}
+    %expected = arith.constant {expected} : i{width}
+    %condition = arith.cmpi eq, %value, %expected : i{width}
+    scf.if %condition {{
+      qc.x %q : !qc.qubit
+    }}
+    qc.dealloc %q : !qc.qubit
+    return %classical : !cbit.reg<{width}>
+  }}
+}}
+"""
+    )
+
+    circuit = program.to_qiskit()
+    condition = circuit.data[1].operation.condition
+
+    assert expr.structurally_equivalent(condition, expr.equal(circuit.cregs[0], expected))
+
+    reimported = QCProgram.from_qiskit(circuit)
+    assert reimported.ir.count("cbit.read") == 1
+    assert reimported.ir.count("arith.cmpi eq") == 1
+    restored = reimported.to_qiskit()
+    assert expr.structurally_equivalent(
+        restored.data[1].operation.condition,
+        expr.equal(restored.cregs[0], expected),
+    )
+
+
+@pytest.mark.parametrize(
+    ("comparison", "swapped"),
+    [
+        ("equal", "equal"),
+        ("not_equal", "not_equal"),
+        ("less", "greater"),
+        ("less_equal", "greater_equal"),
+        ("greater", "less"),
+        ("greater_equal", "less_equal"),
+    ],
+)
+@pytest.mark.parametrize("reverse", [False, True])
+def test_wide_qiskit_register_comparison_round_trip(comparison: str, swapped: str, *, reverse: bool) -> None:
+    """Preserve every unsigned comparison in either operand order."""
+    circuit = QuantumCircuit(1, 65)
+    expected = 1 << 64
+    operands = (expected, circuit.cregs[0]) if reverse else (circuit.cregs[0], expected)
+    with circuit.if_test(getattr(expr, comparison)(*operands)):
+        circuit.x(0)
+
+    program = QCProgram.from_qiskit(circuit)
+    assert program.ir.count("cbit.read") == 1
+    restored = program.to_qiskit()
+    operands = (expected, restored.cregs[0]) if reverse else (restored.cregs[0], expected)
+    assert any(
+        expr.structurally_equivalent(restored.data[0].operation.condition, condition)
+        for condition in (
+            getattr(expr, comparison)(*operands),
+            getattr(expr, swapped)(*reversed(operands)),
+        )
+    )
+    assert program.to_qco().to_jeff().ir
+
+
+@pytest.mark.parametrize(
+    ("width", "expected"),
+    [(65, 0), (65, 1 << 64), (65, 1 << 65), (2, False), (2, True), (65, False), (65, True)],
+    ids=["zero", "highest-bit", "out-of-range", "narrow-false", "narrow-true", "wide-false", "wide-true"],
+)
+def test_wide_qiskit_tuple_condition_round_trip(width: int, expected: int) -> None:
+    """Import integer and Boolean register equalities, folding impossible values."""
+    circuit = QuantumCircuit(1, width)
+    with circuit.if_test((circuit.cregs[0], expected)):
+        circuit.x(0)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    condition = restored.data[0].operation.condition
+    if expected < 1 << width:
+        assert expr.structurally_equivalent(condition, expr.equal(restored.cregs[0], int(expected)))
+    else:
+        assert isinstance(condition, expr.Value)
+        assert not condition.value
+
+
+def test_nested_wide_qiskit_tuple_condition_round_trip() -> None:
+    """Resolve a captured wide register in a nested tuple condition."""
+    circuit = QuantumCircuit(1, 65)
+    with circuit.if_test((circuit.clbits[0], 0)), circuit.if_test((circuit.cregs[0], 1 << 64)):
+        circuit.x(0)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    body = restored.data[0].operation.blocks[0]
+    assert expr.structurally_equivalent(body.data[0].operation.condition, expr.equal(restored.cregs[0], 1 << 64))
+
+
+def test_wide_qiskit_reordered_register_capture_is_rejected() -> None:
+    """Require wide comparisons to read one complete register in bit order."""
+    circuit = QuantumCircuit(1, 65)
+    body = QuantumCircuit(1, 65)
+    with body.if_test(expr.equal(body.cregs[0], 1)):
+        body.x(0)
+    circuit.append(IfElseOp((circuit.clbits[0], 0), body), circuit.qubits, list(reversed(circuit.clbits)))
+
+    with pytest.raises(RuntimeError, match="complete classical register"):
+        QCProgram.from_qiskit(circuit)
+
+
+def test_wide_cbit_register_comparison_ignores_decimal_digit_limit() -> None:
+    """Exchange wide integers without Python's decimal string conversion."""
+    previous_limit = sys.get_int_max_str_digits()
+    limit = sys.int_info.str_digits_check_threshold
+    width = limit * 4
+    expected = 1 << (width - 1)
+    sys.set_int_max_str_digits(limit)
+    try:
+        circuit = QuantumCircuit(1, width)
+        with circuit.if_test(expr.equal(circuit.cregs[0], expected)):
+            circuit.x(0)
+
+        program = QCProgram.from_qiskit(circuit)
+        restored = program.to_qiskit()
+
+        assert "arith.cmpi eq" in program.ir
+        assert expr.structurally_equivalent(
+            restored.data[0].operation.condition,
+            expr.equal(restored.cregs[0], expected),
+        )
+    finally:
+        sys.set_int_max_str_digits(previous_limit)
+
+
+def test_wide_computed_qiskit_uint_expression_is_rejected() -> None:
+    """Keep computed Qiskit Uint expressions capped at 64 bits."""
+    circuit = QuantumCircuit(1, 65)
+    condition = expr.equal(expr.bit_xor(circuit.cregs[0], 1), 2)
+    with circuit.if_test(condition):
+        circuit.x(0)
+
+    with pytest.raises(RuntimeError, match="wider than 64 bits require a direct register comparison"):
+        QCProgram.from_qiskit(circuit)
+
+
+def test_wide_signed_cbit_comparison_is_rejected() -> None:
+    """Keep signed wide comparisons outside the direct unsigned path."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<65> attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<65>
+    %value = cbit.read %classical : !cbit.reg<65> -> i65
+    %one = arith.constant 1 : i65
+    %condition = arith.cmpi slt, %value, %one : i65
+    scf.if %condition {
+      qc.x %q : !qc.qubit
+    }
+    qc.dealloc %q : !qc.qubit
+    return %classical : !cbit.reg<65>
+  }
+}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="signed register comparisons support at most 64 bits"):
+        program.to_qiskit()
+
+
 def test_openqasm_signed_register_ordering_exports_to_qiskit_uint_expression() -> None:
     """Encode signed register ordering with Qiskit's unsigned expressions."""
     program = QCProgram.from_qasm_str(

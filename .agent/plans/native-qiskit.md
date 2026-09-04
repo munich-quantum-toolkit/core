@@ -1,7 +1,7 @@
 # Native Qiskit primitives
 
-Status: validated; native Qiskit integration is stacked on the separate DDSIM
-ordered-shots change.
+Status: validated; native Qiskit integration targets main after DDSIM
+ordered-shots support merged in #2368.
 
 ## Goal and scope
 
