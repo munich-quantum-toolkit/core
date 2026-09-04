@@ -2250,19 +2250,15 @@ collectWhile(mlir::scf::WhileOp loop, ExportedCircuit& containing,
       {.kind = ExportedInstruction::Kind::ControlFlow,
        .controlFlow = std::move(breakOp)});
   exit->blocks.push_back(std::move(breakBody));
-  body.instructions.push_back({.kind = ExportedInstruction::Kind::ControlFlow,
-                               .controlFlow = std::move(exit)});
+  validateControlFlowDepth(controlFlowDepth + 1U);
   auto exitWrites = state.unconditionalWrites;
-  auto tail = collectBlock(after, state, controlFlowDepth + 1);
+  auto tail = collectBlock(after, state, controlFlowDepth + 2U);
   state.unconditionalWrites = std::move(exitWrites);
   assignEdge(before.getArguments(), yield.getResults(), tail, state,
              *yield.getOperation());
-  for (auto& variable : tail.variables) {
-    body.variables.push_back(std::move(variable));
-  }
-  for (auto& instruction : tail.instructions) {
-    body.instructions.push_back(std::move(instruction));
-  }
+  exit->blocks.push_back(std::move(tail));
+  body.instructions.push_back({.kind = ExportedInstruction::Kind::ControlFlow,
+                               .controlFlow = std::move(exit)});
   auto truth = std::make_unique<Expression>();
   truth->boolValue = true;
   result->target = {.kind = ClassicalTargetKind::Expression,

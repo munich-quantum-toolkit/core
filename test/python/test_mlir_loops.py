@@ -20,6 +20,7 @@ from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import Parameter
 from qiskit.circuit.classical import expr, types
 
+from mqt.core.dd import DDPackage
 from mqt.core.mlir import JeffProgram, QCProgram
 
 if not (
@@ -37,6 +38,15 @@ def observe(program: QCProgram) -> int:
     counts = program.to_qco(copy=True).sample(shots=1, seed=1)
     assert len(counts) == 1
     return int(next(iter(counts)).replace(" ", ""), 2)
+
+
+def amplitude(program: QCProgram) -> complex:
+    """Return the single-qubit zero-state amplitude."""
+    package = DDPackage(1)
+    result = program.to_qco(copy=True).simulate(package.zero_state(1), package, seed=1)
+    value = complex(result.get_vector()[0])
+    package.dec_ref_vec(result)
+    return value
 
 
 def check_paths(program: QCProgram, expected: int) -> None:
@@ -85,6 +95,26 @@ def test_do_while_round_trip(iterations: int) -> None:
     assert qasm.ir.count("scf.while") == 1
     assert "scf.if" not in qasm.ir
     check_paths(program, iterations % 2)
+
+
+def test_general_while_preserves_after_region_global_phase() -> None:
+    """A general while loop applies its after-region phase only while continuing."""
+    program = QCProgram.from_qasm_str("""
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+output bit result;
+uint counter = 0;
+while (counter < 2) {
+  gphase(pi / 4);
+  x q;
+  counter += 1;
+}
+result = false;
+""")
+    restored = QCProgram.from_qiskit(program.to_qiskit())
+    assert amplitude(program) == pytest.approx(1j)
+    assert amplitude(restored) == pytest.approx(1j)
 
 
 @pytest.mark.parametrize("stale", [False, True])
@@ -186,6 +216,21 @@ while ({condition}) {{
 result = bit[8](value);
 """)
     check_paths(program, expected)
+
+
+def test_for_continue_does_not_wrap_induction() -> None:
+    """A singleton range stops before its positive step can overflow."""
+    program = QCProgram.from_qasm_str("""
+OPENQASM 3.1;
+output bit[8] result;
+uint[8] iterations = 0;
+for int i in [1:9223372036854775807:1] {
+  iterations += 1;
+  continue;
+}
+result = bit[8](iterations);
+""")
+    assert observe(program) == 1
 
 
 def test_nested_breaks_and_switches() -> None:

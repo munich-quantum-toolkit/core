@@ -3964,7 +3964,7 @@ private:
     result.provenPositiveRange =
         startForm && stopForm && endpointValuesPreserved && positiveStep &&
         *positiveStep <= signedMaximum() &&
-        provesUpperBound(*stopForm, signedMaximum() - 1);
+        provesUpperBound(*stopForm, signedMaximum() - *positiveStep);
     if (result.provenPositiveRange) {
       const auto expandedStart = expandAffineScalarValues(result.start);
       const auto expandedStep = expandAffineScalarValues(result.step);
