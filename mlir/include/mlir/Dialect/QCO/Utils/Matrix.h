@@ -343,8 +343,8 @@ struct Matrix4x4 {
         m00, m01, m02, m03, // row 0
         m10, m11, m12, m13, // row 1
         m20, m21, m22, m23, // row 2
-        m30, m31, m32, m33,
-    }; // row 3
+        m30, m31, m32, m33, // row 3
+    };
   }
 
   /**
@@ -356,8 +356,8 @@ struct Matrix4x4 {
         1, 0, 0, 0, // row 0
         0, 1, 0, 0, // row 1
         0, 0, 1, 0, // row 2
-        0, 0, 0, 1,
-    }; // row 3
+        0, 0, 0, 1, // row 3
+    };
   }
 
   /**
@@ -459,11 +459,11 @@ struct Matrix4x4 {
                                                         const Complex& m22,
                                                         const Complex& m33) {
     return {
-        m00, 0,   0,   0, // row 0
-        0,   m11, 0,   0, // row 1
-        0,   0,   m22, 0, // row 2
-        0,   0,   0,   m33,
-    }; // row 3
+        m00, 0,   0,   0,   // row 0
+        0,   m11, 0,   0,   // row 1
+        0,   0,   m22, 0,   // row 2
+        0,   0,   0,   m33, // row 3
+    };
   }
 
   /**
