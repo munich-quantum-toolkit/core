@@ -911,9 +911,7 @@ def simulate_statevector(qc: mqt.core.ir.QuantumComputation) -> Annotated[NDArra
         The state vector of the final state.
     """
 
-def build_unitary(
-    qc: mqt.core.ir.QuantumComputation, recursive: bool = False
-) -> Annotated[NDArray[np.complex128], {"shape": (None, None)}]:
+def build_unitary(qc: mqt.core.ir.QuantumComputation) -> Annotated[NDArray[np.complex128], {"shape": (None, None)}]:
     """Build a unitary matrix representation of a quantum computation.
 
     This function builds a matrix representation of the unitary representing the functionality of a quantum computation.
@@ -928,10 +926,6 @@ def build_unitary(
 
     Args:
         qc: The quantum computation. Must only contain unitary operations.
-        recursive: Whether to build the unitary matrix recursively.
-            If set to True, the unitary matrix is built recursively by pairwise grouping the operations of the quantum computation.
-            If set to False, the unitary matrix is built by sequentially applying the operations of the quantum computation to the identity matrix.
-            Defaults to False.
 
     Returns:
         The unitary matrix representing the functionality of the quantum computation.
@@ -956,7 +950,7 @@ def simulate(qc: mqt.core.ir.QuantumComputation, initial_state: VectorDD, dd_pac
         The final state as a DD. The reference count of the final state is non-zero and must be manually decremented by the caller if it is no longer needed.
     """
 
-def build_functionality(qc: mqt.core.ir.QuantumComputation, dd_package: DDPackage, recursive: bool = False) -> MatrixDD:
+def build_functionality(qc: mqt.core.ir.QuantumComputation, dd_package: DDPackage) -> MatrixDD:
     """Build a functional representation of a quantum computation.
 
     This function builds a matrix DD representation of the unitary representing the functionality of a quantum computation.
@@ -966,10 +960,6 @@ def build_functionality(qc: mqt.core.ir.QuantumComputation, dd_package: DDPackag
         qc: The quantum computation.
             Must only contain unitary operations.
         dd_package: The DD package. Must be configured with a sufficient number of qubits to accommodate the quantum computation.
-        recursive: Whether to build the functionality matrix recursively.
-            If set to True, the functionality matrix is built recursively by pairwise grouping the operations of the quantum computation.
-            If set to False, the functionality matrix is built by sequentially applying the operations of the quantum computation to the identity matrix.
-            Defaults to False.
 
     Returns:
         The functionality as a DD. The reference count of the result is non-zero and must be manually decremented by the caller if it is no longer needed.
