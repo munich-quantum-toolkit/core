@@ -117,21 +117,21 @@ private:
 ///
 /// @param sourceRegion Source region where the operations are moved from
 /// @param targetRegion Target region where the operations are moved to
-/// @param offset Offset to the arguments that are dropped
 /// @param replacementValues Values to replace the uses of the arguments
 /// @param rewriter PatternRewriter of the current conversion pass
 static void inlineRegion(Region& sourceRegion, Region& targetRegion,
-                         unsigned int offset, ValueRange replacementValues,
+                         ValueRange replacementValues,
                          ConversionPatternRewriter& rewriter) {
   rewriter.inlineRegionBefore(sourceRegion, targetRegion, targetRegion.end());
   auto& block = targetRegion.front();
-  assert(block.getNumArguments() == offset + replacementValues.size() &&
+  assert(block.getNumArguments() == replacementValues.size() &&
          "Number of replacement values must match number of block arguments");
-  for (auto [arg, replacementVal] : llvm::zip_equal(
-           block.getArguments().drop_front(offset), replacementValues)) {
-    arg.replaceAllUsesWith(replacementVal);
+  TypeConverter::SignatureConversion signature(block.getNumArguments());
+  for (auto [arg, replacementVal] :
+       llvm::zip_equal(block.getArguments(), replacementValues)) {
+    signature.remapInput(arg.getArgNumber(), replacementVal);
   }
-  block.eraseArguments(offset, replacementValues.size());
+  rewriter.applySignatureConversion(&block, signature);
 }
 
 [[nodiscard]] static bool isQuantumStateType(const Type type) {
@@ -168,23 +168,23 @@ static void inlineSCFRegion(Region& sourceRegion, Region& targetRegion,
   assert(block.getNumArguments() == offset + originalState.size() &&
          "region arguments must match the original loop state");
 
-  SmallVector<unsigned int> quantumArguments;
+  TypeConverter::SignatureConversion signature(block.getNumArguments());
+  for (auto arg : block.getArguments().take_front(offset)) {
+    signature.addInputs(arg.getArgNumber(), arg.getType());
+  }
   size_t quantumIndex = 0;
   for (const auto [index, original] : llvm::enumerate(originalState)) {
     if (!isQuantumStateType(original.getType())) {
+      signature.addInputs(offset + index, original.getType());
       continue;
     }
     assert(quantumIndex < quantumReplacements.size() &&
            "missing replacement for quantum loop state");
-    block.getArgument(offset + index)
-        .replaceAllUsesWith(quantumReplacements[quantumIndex++]);
-    quantumArguments.push_back(static_cast<unsigned int>(offset + index));
+    signature.remapInput(offset + index, quantumReplacements[quantumIndex++]);
   }
   assert(quantumIndex == quantumReplacements.size() &&
          "unused replacement for quantum loop state");
-  for (const auto argument : llvm::reverse(quantumArguments)) {
-    block.eraseArgument(argument);
-  }
+  rewriter.applySignatureConversion(&block, signature);
 }
 
 [[nodiscard]] static SmallVector<Value>
@@ -1153,14 +1153,14 @@ struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
     rewriter.eraseBlock(&newThenRegion.front());
 
     // Inline the region and replace the block arguments
-    inlineRegion(op.getThenRegion(), newThenRegion, 0, adaptor.getQubits(),
+    inlineRegion(op.getThenRegion(), newThenRegion, adaptor.getQubits(),
                  rewriter);
 
     // Inline the else block when it has observable operations or must produce
     // classical results.
     if (keepElseRegion) {
       rewriter.eraseBlock(&newIf.getElseRegion().front());
-      inlineRegion(oldElseRegion, newIf.getElseRegion(), 0, adaptor.getQubits(),
+      inlineRegion(oldElseRegion, newIf.getElseRegion(), adaptor.getQubits(),
                    rewriter);
     }
 
@@ -1214,11 +1214,11 @@ struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
     const auto oldRegions = op.getCaseRegions();
     const auto newCaseRegions = newOp.getCaseRegions();
     for (size_t i = 0; i < op.getNumCases(); ++i) {
-      inlineRegion(oldRegions[i], newCaseRegions[i], 0, adaptor.getTargets(),
+      inlineRegion(oldRegions[i], newCaseRegions[i], adaptor.getTargets(),
                    rewriter);
     }
 
-    inlineRegion(op.getDefaultRegion(), newOp.getDefaultRegion(), 0,
+    inlineRegion(op.getDefaultRegion(), newOp.getDefaultRegion(),
                  adaptor.getTargets(), rewriter);
 
     SmallVector<Value> replacements(newOp.getResults());
