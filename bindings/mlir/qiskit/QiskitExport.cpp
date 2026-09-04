@@ -26,6 +26,7 @@
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 #include "mlir/Support/IntegerExpressions.h"
 
+#include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
@@ -1017,10 +1018,11 @@ static void setExpressionType(Expression& expression, const mlir::Type type) {
 }
 
 [[nodiscard]] static Register
-classicalRegisterLayout(mlir::Value value, const ExportState& state) {
+classicalRegisterLayout(mlir::Value value, const ExportState& state,
+                        const bool allowWide = false) {
   const auto info = state.classicalRegisterInfo.find(value);
   if (info == state.classicalRegisterInfo.end() || info->second.size == 0U ||
-      info->second.size > 64U) {
+      (!allowWide && info->second.size > 64U)) {
     throw std::runtime_error(
         "Qiskit classical registers require between 1 and 64 bits");
   }
@@ -1037,7 +1039,8 @@ classicalRegisterLayout(mlir::Value value, const ExportState& state) {
 }
 
 [[nodiscard]] static Register classicalRegister(mlir::Value value,
-                                                const ExportState& state) {
+                                                const ExportState& state,
+                                                const bool allowWide = false) {
   const auto info = state.classicalRegisterInfo.find(value);
   if (info != state.classicalRegisterInfo.end() &&
       info->second.initialization != mlir::cbit::Initialization::Zero) {
@@ -1048,7 +1051,7 @@ classicalRegisterLayout(mlir::Value value, const ExportState& state) {
           "Qiskit classical expression reads undefined classical bits");
     }
   }
-  return classicalRegisterLayout(value, state);
+  return classicalRegisterLayout(value, state, allowWide);
 }
 
 [[nodiscard]] static BinaryOperation
@@ -1123,7 +1126,7 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
       if (result->type == ClassicalType::Bool) {
         result->boolValue = !integer.getValue().isZero();
       } else if (result->type == ClassicalType::Uint) {
-        result->uintValue = integer.getValue().getZExtValue();
+        result->uintValue = integer.getValue();
       } else {
         throw std::runtime_error(
             "Qiskit Float expressions require a floating-point constant");
@@ -1236,7 +1239,7 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
       if (operand->kind == ExpressionKind::Value &&
           operand->type == ClassicalType::Bool && *bitVectorWidth == 1U) {
         operand->type = ClassicalType::Uint;
-        operand->uintValue = operand->boolValue;
+        operand->uintValue = llvm::APInt(1U, operand->boolValue);
         return;
       }
       countExpressionNode(nodeCount);
@@ -1266,7 +1269,7 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
     auto literal = std::make_unique<Expression>();
     literal->type = ClassicalType::Uint;
     literal->width = width;
-    literal->uintValue = bits;
+    literal->uintValue = llvm::APInt(width, bits);
     return literal;
   };
   const auto uintCast = [&](std::unique_ptr<Expression> operand,
@@ -1379,7 +1382,7 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
       auto zero = std::make_unique<Expression>();
       setExpressionType(*zero, cast.getIn().getType());
       zero->kind = ExpressionKind::Value;
-      zero->uintValue = 0U;
+      zero->uintValue = llvm::APInt::getZero(zero->width);
       result->right = std::move(zero);
     }
     state.expressionOperations.insert(operation);
@@ -1397,6 +1400,50 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
           "Qiskit integer comparisons require integer operands");
     }
     const auto width = type.getWidth();
+    if (width > 64U) {
+      auto read = op.getLhs().getDefiningOp<mlir::cbit::ReadOp>();
+      auto constant = op.getRhs().getDefiningOp<mlir::arith::ConstantOp>();
+      bool reverse = false;
+      if (!read || !constant ||
+          !llvm::isa<mlir::IntegerAttr>(constant.getValue())) {
+        read = op.getRhs().getDefiningOp<mlir::cbit::ReadOp>();
+        constant = op.getLhs().getDefiningOp<mlir::arith::ConstantOp>();
+        reverse = true;
+      }
+      const auto integer =
+          constant ? llvm::dyn_cast<mlir::IntegerAttr>(constant.getValue())
+                   : mlir::IntegerAttr{};
+      if (read && integer) {
+        if (mlir::mqt::unsignedPredicate(op.getPredicate()) !=
+            op.getPredicate()) {
+          throw std::runtime_error(
+              "Qiskit signed register comparisons support at most 64 bits");
+        }
+        if (read->getBlock() != &evaluationBlock) {
+          throw std::runtime_error(
+              "Qiskit classical expressions cannot capture a computed SSA "
+              "value across a control-flow region");
+        }
+        countExpressionNode(nodeCount);
+        auto reg = std::make_unique<Expression>();
+        reg->kind = ExpressionKind::ClassicalRegister;
+        reg->type = ClassicalType::Uint;
+        reg->width = width;
+        reg->reg = classicalRegister(read.getReg(), state, true);
+        countExpressionNode(nodeCount);
+        auto expected = std::make_unique<Expression>();
+        expected->type = ClassicalType::Uint;
+        expected->width = width;
+        expected->uintValue = integer.getValue();
+        result->kind = ExpressionKind::Binary;
+        result->binaryOperation = comparisonOperation(op.getPredicate());
+        result->left = reverse ? std::move(expected) : std::move(reg);
+        result->right = reverse ? std::move(reg) : std::move(expected);
+        state.expressionOperations.insert(read);
+        state.expressionOperations.insert(operation);
+        return result;
+      }
+    }
     auto comparison = binary(
         comparisonOperation(mlir::mqt::unsignedPredicate(op.getPredicate())),
         op.getLhs(), op.getRhs(), width);
@@ -1761,7 +1808,7 @@ exportSwitchTarget(mlir::Value value, ExportState& state,
       expression->kind = ExpressionKind::Value;
       expression->type = ClassicalType::Uint;
       expression->width = 64U;
-      expression->uintValue = *constant;
+      expression->uintValue = llvm::APInt(64U, *constant);
       return {.kind = ClassicalTargetKind::Expression,
               .width = 64U,
               .expression = std::move(expression)};

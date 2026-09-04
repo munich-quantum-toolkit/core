@@ -578,9 +578,9 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
   case ClassicalType::Bool:
     return builder.getI1Type();
   case ClassicalType::Uint:
-    if (width == 0U || width > 64U) {
+    if (width == 0U) {
       throw std::runtime_error(
-          "Qiskit unsigned classical values must be between 1 and 64 bits");
+          "Qiskit unsigned classical values require a nonzero width");
     }
     return builder.getIntegerType(width);
   case ClassicalType::Float:
@@ -591,11 +591,20 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
 
 [[nodiscard]] static mlir::Value
 integerConstant(mlir::ImplicitLocOpBuilder& builder, const uint32_t width,
-                const uint64_t value) {
+                const llvm::APInt& value) {
+  if (value.getActiveBits() > width) {
+    throw std::runtime_error(
+        "Qiskit Uint literal does not fit its declared width");
+  }
   const auto type = builder.getIntegerType(width);
-  const auto attribute =
-      builder.getIntegerAttr(type, llvm::APInt(width, value, false));
+  const auto attribute = builder.getIntegerAttr(type, value.zextOrTrunc(width));
   return mlir::arith::ConstantOp::create(builder, attribute).getResult();
+}
+
+[[nodiscard]] static mlir::Value
+integerConstant(mlir::ImplicitLocOpBuilder& builder, const uint32_t width,
+                const uint64_t value) {
+  return integerConstant(builder, width, llvm::APInt(width, value, false));
 }
 
 [[nodiscard]] static mlir::Value
@@ -668,14 +677,14 @@ registerStorage(const llvm::ArrayRef<ClassicalBitRef> classicalBits,
 packRegister(mlir::qc::QCProgramBuilder& builder,
              const llvm::ArrayRef<ClassicalBitRef> classicalBits,
              const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg) {
-  if (reg.bits.empty() || reg.bits.size() > 64U) {
-    throw std::runtime_error(
-        "Qiskit classical registers must contain between 1 and 64 bits");
-  }
   const auto width = static_cast<uint32_t>(reg.bits.size());
   const auto type = builder.getIntegerType(width);
   if (auto storage = registerStorage(classicalBits, rootClbitMap, reg)) {
     return mlir::cbit::ReadOp::create(builder, type, storage).getResult();
+  }
+  if (reg.bits.empty() || reg.bits.size() > 64U) {
+    throw std::runtime_error("Qiskit wide register comparisons require one "
+                             "complete classical register");
   }
   llvm::SmallVector<mlir::Value> terms;
   terms.reserve(reg.bits.size());
@@ -706,6 +715,37 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
     terms.resize(reducedSize);
   }
   return terms.front();
+}
+
+[[nodiscard]] static bool
+isWideRegisterComparison(const Expression& expression) {
+  if (expression.kind != ExpressionKind::Binary || !expression.left ||
+      !expression.right) {
+    return false;
+  }
+  const auto* reg = expression.left.get();
+  const auto* expected = expression.right.get();
+  if (reg->kind == ExpressionKind::Value) {
+    std::swap(reg, expected);
+  }
+  if (reg->kind != ExpressionKind::ClassicalRegister ||
+      reg->type != ClassicalType::Uint || reg->width <= 64U ||
+      reg->width != reg->reg.bits.size() ||
+      expected->kind != ExpressionKind::Value ||
+      expected->type != ClassicalType::Uint || expected->width != reg->width) {
+    return false;
+  }
+  switch (expression.binaryOperation) {
+  case BinaryOperation::Equal:
+  case BinaryOperation::NotEqual:
+  case BinaryOperation::Less:
+  case BinaryOperation::LessEqual:
+  case BinaryOperation::Greater:
+  case BinaryOperation::GreaterEqual:
+    return true;
+  default:
+    return false;
+  }
 }
 
 [[nodiscard]] static mlir::Value
@@ -1588,20 +1628,27 @@ static void validateCircuit(const CircuitReader& circuit,
                             size_t definitionDepth, size_t controlFlowDepth);
 
 static void validateExpression(const Expression& expression,
-                               const uint32_t rootClbits) {
+                               const uint32_t rootClbits,
+                               bool allowWideLeaf = false) {
+  if (expression.type == ClassicalType::Uint && expression.width > 64U &&
+      !allowWideLeaf) {
+    throw std::runtime_error(
+        "Qiskit unsigned expressions wider than 64 bits require a direct "
+        "register comparison");
+  }
   if ((expression.type == ClassicalType::Bool && expression.width != 1U) ||
-      (expression.type == ClassicalType::Uint &&
-       (expression.width == 0U || expression.width > 64U)) ||
+      (expression.type == ClassicalType::Uint && expression.width == 0U) ||
       (expression.type == ClassicalType::Float && expression.width != 64U)) {
     throw std::runtime_error(
         "Qiskit classical expression has an invalid type width");
   }
+  const bool wideComparison = isWideRegisterComparison(expression);
   const auto requireOperand = [&](const std::unique_ptr<Expression>& operand) {
     if (!operand) {
       throw std::runtime_error(
           "Qiskit classical expression has a missing operand");
     }
-    validateExpression(*operand, rootClbits);
+    validateExpression(*operand, rootClbits, wideComparison);
   };
   const auto sameType = [](const Expression& first, const Expression& second) {
     return first.type == second.type && first.width == second.width;
@@ -1618,6 +1665,11 @@ static void validateExpression(const Expression& expression,
   };
   switch (expression.kind) {
   case ExpressionKind::Value:
+    if (expression.type == ClassicalType::Uint &&
+        expression.uintValue.getActiveBits() > expression.width) {
+      throw std::runtime_error(
+          "Qiskit Uint literal does not fit its declared width");
+    }
     return;
   case ExpressionKind::ClassicalBit:
     if (expression.type != ClassicalType::Bool || expression.width != 1U ||
@@ -1628,7 +1680,6 @@ static void validateExpression(const Expression& expression,
     return;
   case ExpressionKind::ClassicalRegister: {
     if (expression.type != ClassicalType::Uint || expression.reg.bits.empty() ||
-        expression.reg.bits.size() > 64U ||
         expression.width < expression.reg.bits.size()) {
       throw std::runtime_error(
           "Qiskit classical-register expression has an invalid type");

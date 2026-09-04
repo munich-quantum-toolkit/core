@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 
+#include <llvm/ADT/APInt.h>
 #include <llvm/ADT/StringMap.h>
 #include <nanobind/nanobind.h>
 
@@ -252,7 +253,7 @@ struct Expression {
   BinaryOperation binaryOperation = BinaryOperation::Equal;
   UnaryOperation unaryOperation = UnaryOperation::LogicNot;
   bool boolValue = false;
-  uint64_t uintValue = 0;
+  llvm::APInt uintValue;
   double floatValue = 0.0;
   uint32_t bit = 0;
   Register reg;
