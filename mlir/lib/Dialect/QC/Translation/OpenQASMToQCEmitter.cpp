@@ -1108,7 +1108,7 @@ private:
     case frontend::BitVectorExpressionKind::Register: {
       auto reg = classicalRegisters.at(expression.reg);
       assert(reg && "semantic analysis must declare bit registers before use");
-      return cbit::ReadOp::create(opBuilder, loc, type, reg);
+      return {cbit::ReadOp::create(opBuilder, loc, type, reg)};
     }
     case frontend::BitVectorExpressionKind::Not: {
       auto operand = emitBitVectorExpression(opBuilder, expression.operand);
