@@ -23,5 +23,5 @@ The QIR runtime supplies each shot's output directly.
 
 ## Validation
 
-Use the release CMake preset and DDSIM device test binary. Qiskit native
-Sampler integration is covered by its separate plugin change.
+Use the release CMake preset and DDSIM device test binary. Qiskit native Sampler
+integration is covered by its separate plugin change.
