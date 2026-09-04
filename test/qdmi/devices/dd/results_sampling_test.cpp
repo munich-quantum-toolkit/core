@@ -24,6 +24,7 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <map>
 #include <memory>
@@ -283,8 +284,8 @@ TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
   ASSERT_EQ(qdmi_test::setShots(j.job, 4), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-  constexpr QDMI_Job_Result results[]{QDMI_JOB_RESULT_HIST_KEYS,
-                                      QDMI_JOB_RESULT_HIST_VALUES};
+  constexpr std::array results{QDMI_JOB_RESULT_HIST_KEYS,
+                               QDMI_JOB_RESULT_HIST_VALUES};
   char dummy{};
   for (const auto result : results) {
     size_t size = 1;

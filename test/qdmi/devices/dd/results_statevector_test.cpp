@@ -18,6 +18,7 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -71,13 +72,12 @@ TEST(ResultsStatevector, EmptyQASM3YieldsEmptyResults) {
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-  constexpr QDMI_Job_Result results[]{
-      QDMI_JOB_RESULT_STATEVECTOR_DENSE,
-      QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
-      QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
-      QDMI_JOB_RESULT_PROBABILITIES_DENSE,
-      QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
-      QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES};
+  constexpr std::array results{QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+                               QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
+                               QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
+                               QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+                               QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
+                               QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES};
   char dummy{};
   for (const auto result : results) {
     size_t size = 1;
