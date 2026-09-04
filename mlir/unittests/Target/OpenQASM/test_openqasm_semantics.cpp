@@ -492,7 +492,7 @@ TEST(OpenQASMFrontendTest, RejectsUninitializedScalarOutputs) {
             std::string::npos);
 }
 
-TEST(OpenQASMFrontendTest, RejectsRecursiveCustomGatesAfterBodyAnalysis) {
+TEST(OpenQASMFrontendTest, RejectsRecursiveCustomGates) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 gate recursive q {
@@ -847,7 +847,7 @@ TEST(OpenQASMFrontendTest, BoundsExpressionAndBlockDepth) {
             std::string::npos);
 }
 
-TEST(OpenQASMFrontendTest, BoundsModifiersAndGateDependencies) {
+TEST(OpenQASMFrontendTest, BoundsModifierDepth) {
   std::string modifiers = "OPENQASM 3.1; qubit[66] q;";
   for (size_t depth = 0; depth < 65; ++depth) {
     modifiers += "ctrl @ ";
@@ -857,17 +857,6 @@ TEST(OpenQASMFrontendTest, BoundsModifiersAndGateDependencies) {
   ASSERT_FALSE(parsed);
   ASSERT_FALSE(parsed.diagnostics.empty());
   EXPECT_NE(parsed.diagnostics.front().message.find("modifier depth"),
-            std::string::npos);
-
-  std::string gates = "OPENQASM 3.1; gate g0 q { U(0, 0, 0) q; }\n";
-  for (size_t depth = 1; depth < 65; ++depth) {
-    gates += "gate g" + std::to_string(depth) + " q { g" +
-             std::to_string(depth - 1) + " q; }\n";
-  }
-  auto analyzed = oq3::frontend::analyzeOpenQASM(gates);
-  ASSERT_FALSE(analyzed);
-  ASSERT_FALSE(analyzed.diagnostics.empty());
-  EXPECT_NE(analyzed.diagnostics.front().message.find("dependency depth"),
             std::string::npos);
 }
 

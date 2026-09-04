@@ -56,7 +56,6 @@ namespace {
 constexpr uint64_t REGISTER_WIDTH_LIMIT = 100'000;
 constexpr uint64_t TOTAL_REGISTER_ELEMENT_LIMIT = 100'000;
 constexpr size_t EXPRESSION_DEPTH_LIMIT = 256;
-constexpr size_t GATE_DEPENDENCY_DEPTH_LIMIT = 64;
 constexpr size_t TYPED_STATEMENT_LIMIT = 1'000'000;
 constexpr size_t AFFINE_DISTINCTNESS_COMPARISON_LIMIT = 1'024;
 constexpr uint32_t DEFAULT_ANGLE_WIDTH = 52;
@@ -402,8 +401,7 @@ public:
 
   [[nodiscard]] AnalysisResult run() {
     if (failed(analyzeVersion()) || failed(validateExpressionDepth()) ||
-        failed(analyzeTopLevelBody()) || failed(validateGateCallGraph()) ||
-        failed(finalizeOutputs())) {
+        failed(analyzeTopLevelBody()) || failed(finalizeOutputs())) {
       assert(failureDiagnostic.has_value());
       return {
           .program = nullptr,
@@ -489,7 +487,7 @@ private:
   mutable std::vector<int8_t> constantExpressionStatus;
   mutable std::vector<std::optional<Constant>> constantValues;
   mutable std::vector<std::optional<ScalarType>> constantTypes;
-  bool insideGate = false;
+  StringRef activeGate_;
   std::set<uint64_t> hardwareQubits;
   uint64_t totalRegisterElements = 0;
   std::optional<SyntaxIncludeContextId> currentIncludeContext;
@@ -1152,97 +1150,6 @@ private:
                                             std::to_string(version.major) +
                                             "." +
                                             std::to_string(version.minor));
-  }
-
-  [[nodiscard]] LogicalResult validateGateCallGraph() const {
-    llvm::StringMap<size_t> gateIndices;
-    for (const auto [index, gate] : llvm::enumerate(program.gates)) {
-      gateIndices[gate.name] = index;
-    }
-    enum class VisitState : uint8_t { Unvisited, Active, Complete };
-    std::vector states(program.gates.size(), VisitState::Unvisited);
-    std::vector<size_t> dependencyDepths(program.gates.size());
-    const auto visitApplications = [&](auto&& self,
-                                       ArrayRef<StatementId> statements,
-                                       const auto& callback) -> LogicalResult {
-      for (const auto statementId : statements) {
-        const auto& statement = program.statements[statementId];
-        if (failed(std::visit(
-                [&](const auto& data) -> LogicalResult {
-                  using T = std::decay_t<decltype(data)>;
-                  if constexpr (std::is_same_v<T, GateApplication>) {
-                    return callback(data, statement.location);
-                  } else if constexpr (std::is_same_v<T, IfStatement>) {
-                    if (failed(self(self, data.thenStatements, callback))) {
-                      return failure();
-                    }
-                    return self(self, data.elseStatements, callback);
-                  } else if constexpr (std::is_same_v<T, ForStatement> ||
-                                       std::is_same_v<T, WhileStatement>) {
-                    return self(self, data.body, callback);
-                  } else if constexpr (std::is_same_v<T, SwitchStatement>) {
-                    for (const auto& switchCase : data.cases) {
-                      if (failed(self(self, switchCase.body, callback))) {
-                        return failure();
-                      }
-                    }
-                    return self(self, data.defaultStatements, callback);
-                  }
-                  return success();
-                },
-                statement.data))) {
-          return failure();
-        }
-      }
-      return success();
-    };
-    const auto visit = [&](auto&& self,
-                           const size_t index) -> FailureOr<size_t> {
-      if (states[index] == VisitState::Complete) {
-        return dependencyDepths[index];
-      }
-      states[index] = VisitState::Active;
-      size_t dependencyDepth = 1;
-      if (failed(visitApplications(
-              visitApplications, program.gates[index].body,
-              [&](const GateApplication& application,
-                  const SourceLocation& location) -> LogicalResult {
-                const auto callee = gateIndices.find(application.callee);
-                if (callee == gateIndices.end()) {
-                  return success();
-                }
-                if (states[callee->second] == VisitState::Active) {
-                  return fail(location,
-                              "recursive custom gate definition involving '" +
-                                  application.callee + "'");
-                }
-                const auto calleeDepth = self(self, callee->second);
-                if (failed(calleeDepth)) {
-                  return failure();
-                }
-                if (*calleeDepth >= GATE_DEPENDENCY_DEPTH_LIMIT) {
-                  return fail(
-                      location,
-                      "custom gate dependency depth exceeds the limit of " +
-                          std::to_string(GATE_DEPENDENCY_DEPTH_LIMIT));
-                }
-                dependencyDepth = std::max(dependencyDepth, *calleeDepth + 1);
-                return success();
-              }))) {
-        return failure();
-      }
-      states[index] = VisitState::Complete;
-      dependencyDepths[index] = dependencyDepth;
-      return dependencyDepth;
-    };
-    for (size_t index = 0; index < program.gates.size(); ++index) {
-      if (states[index] == VisitState::Unvisited) {
-        if (failed(visit(visit, index))) {
-          return failure();
-        }
-      }
-    }
-    return success();
   }
 
   [[nodiscard]] FailureOr<StatementId> addStatement(SMLoc location,
@@ -2596,7 +2503,7 @@ private:
             expression.location,
             "bit-vector expression requires a bit register, not scalar bit");
       }
-      if (insideGate) {
+      if (!activeGate_.empty()) {
         return fail(expression.location,
                     "gate definitions cannot capture outer bit register '" +
                         expression.identifier + "'");
@@ -2784,7 +2691,7 @@ private:
   [[nodiscard]] FailureOr<ExpressionId>
   analyzeExpression(const SyntaxExpressionId syntaxId) {
     const auto& expression = syntax.expressions[syntaxId];
-    if (insideGate && failed(validateGateExpression(syntaxId))) {
+    if (!activeGate_.empty() && failed(validateGateExpression(syntaxId))) {
       return failure();
     }
     if (isConstantExpression(syntaxId)) {
@@ -3296,7 +3203,7 @@ private:
           if constexpr (!std::is_same_v<T, SyntaxGateCall> &&
                         !std::is_same_v<T, SyntaxFor> &&
                         !std::is_same_v<T, SyntaxWhile>) {
-            if (insideGate) {
+            if (!activeGate_.empty()) {
               return fail(
                   statement.location,
                   "gate bodies may contain only gate calls and loops over "
@@ -3800,10 +3707,10 @@ private:
         return failure();
       }
     }
-    insideGate = true;
+    activeGate_ = declaration.identifier;
     const auto bodyResult =
         analyzeBody(declaration.body, definition.body, /*global=*/false);
-    insideGate = false;
+    activeGate_ = {};
     scopes.pop_back();
     if (failed(bodyResult)) {
       return failure();
@@ -4167,8 +4074,9 @@ private:
     affineScalarValues.emplace_back();
     if (failed(declare(location, loop.inductionVariable,
                        {
-                           .kind = insideGate ? SymbolKind::GateLocalScalar
-                                              : SymbolKind::Scalar,
+                           .kind = !activeGate_.empty()
+                                       ? SymbolKind::GateLocalScalar
+                                       : SymbolKind::Scalar,
                            .type = type,
                            .id = scalar,
                            .constant = std::nullopt,
@@ -4869,6 +4777,11 @@ private:
     if (custom != customGates.end()) {
       standard = nullptr;
     }
+    if (custom != customGates.end() && callee == activeGate_) {
+      return fail(call.location,
+                  "recursive custom gate definition involving '" + callee +
+                      "'");
+    }
     if (standard == nullptr && custom == customGates.end()) {
       return fail(call.location, "No OpenQASM definition found for gate '" +
                                      call.identifier + "'.");
@@ -5057,7 +4970,7 @@ private:
   [[nodiscard]] FailureOr<std::vector<QubitReference>>
   resolveQubitOperand(const SyntaxOperand& operand) {
     if (operand.hardwareQubit) {
-      if (insideGate) {
+      if (!activeGate_.empty()) {
         return fail(operand.location,
                     "hardware qubits are not allowed in gate definitions");
       }
@@ -5071,7 +4984,7 @@ private:
       };
     }
     const auto* symbol = lookup(operand.identifier);
-    if (insideGate) {
+    if (!activeGate_.empty()) {
       if (symbol == nullptr || symbol->kind != SymbolKind::GateQubit) {
         return fail(operand.location,
                     "unknown gate-local qubit '" + operand.identifier + "'");
