@@ -23,6 +23,7 @@
 #include <map>
 #include <random>
 #include <string>
+#include <vector>
 
 namespace mlir::qco {
 
@@ -106,8 +107,11 @@ FailureOr<dd::VectorDD> simulateStatevector(
 /// @param shots Number of samples.
 /// @param seed RNG seed. Zero selects nondeterministic seeding.
 /// @param argumentBindings Scalar values and dynamic QTensor argument sizes.
+/// @param shotResults Optional output, cleared then filled in sampling order.
+/// On failure, it may contain an incomplete sequence.
 /// @return Outcome counts, or failure for an unsupported program.
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed = 0,
-       const DDArgumentBindings& argumentBindings = DDArgumentBindings());
+       const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
+       std::vector<std::string>* shotResults = nullptr);
 } // namespace mlir::qco

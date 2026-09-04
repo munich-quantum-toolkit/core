@@ -1888,7 +1888,8 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
 
 static FailureOr<std::map<std::string, size_t>>
 sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
-           size_t shots, std::mt19937_64& rng, const PreparedState& prepared) {
+           size_t shots, std::mt19937_64& rng, const PreparedState& prepared,
+           std::vector<std::string>* shotResults) {
   const auto inputGuard = llvm::make_scope_exit([&] { dd.decRef(in); });
   auto plan = getSamplingPlan(func);
   if (failed(plan)) {
@@ -1915,6 +1916,9 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
       return failure();
     }
     ++counts[*outcome];
+    if (shotResults != nullptr) {
+      shotResults->push_back(std::move(*outcome));
+    }
     return success();
   };
 
@@ -1961,7 +1965,12 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed,
-       const DDArgumentBindings& argumentBindings) {
+       const DDArgumentBindings& argumentBindings,
+       std::vector<std::string>* shotResults) {
+  if (shotResults != nullptr) {
+    shotResults->clear();
+    shotResults->reserve(shots);
+  }
   auto dd = std::make_unique<dd::Package>();
   std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
   auto prepared = prepare(func, *dd, argumentBindings);
@@ -1969,7 +1978,7 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
     return failure();
   }
   return sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, *dd),
-                    *dd, shots, rng, *prepared);
+                    *dd, shots, rng, *prepared, shotResults);
 }
 
 } // namespace mlir::qco

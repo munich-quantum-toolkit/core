@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+from collections import Counter
 from pathlib import Path
 from typing import cast
 
@@ -784,6 +785,22 @@ def test_job_get_counts_is_consistent(submitted_job: Job) -> None:
 
     # Results should be identical
     assert counts1 == counts2
+
+
+def test_job_shots_match_counts(submitted_job: Job) -> None:
+    """Keep the same ordered samples on repeated reads and in the histogram."""
+    submitted_job.wait()
+    shots = submitted_job.get_shots()
+    assert len(shots) == submitted_job.num_shots
+    assert Counter(shots) == submitted_job.get_counts()
+    assert submitted_job.get_shots() == shots
+
+
+def test_empty_program_has_empty_shot_strings(ddsim_device: Device) -> None:
+    """Preserve shot cardinality when the program has no output bits."""
+    job = ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, num_shots=4)
+    job.wait()
+    assert job.get_shots() == [""] * 4
 
 
 @pytest.fixture
