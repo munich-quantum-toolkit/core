@@ -1,7 +1,7 @@
 # Native Qiskit primitives
 
-Status: in progress; validate and publish DDSIM Sampler integration after the
-separate DDSIM ordered-shots change.
+Status: validated; native Qiskit integration is stacked on the separate DDSIM
+ordered-shots change.
 
 ## Goal and scope
 
@@ -25,10 +25,12 @@ single-threaded. The backend submits a validated batch before collecting it.
 
 ## Validation
 
-`uv run --no-sync pytest test/python/plugins/qiskit test/python/qdmi` passes 414
-checks with Qiskit 2.5.2. The same suites pass with Qiskit 2.1.0 (413 passed,
-one compiler-translation check skipped because it requires Qiskit 2.5). Lint and
-documentation builds pass locally.
+`uv run --no-sync pytest test/python/plugins/qiskit test/python/qdmi` passes 419
+checks with Qiskit 2.5.2, including genuine DDSIM Sampler integration. The same
+suites pass with Qiskit 2.1.0 and the rebuilt DDSIM library (418 passed, one
+compiler-translation check skipped because it requires Qiskit 2.5). A static
+typing probe accepts supported factory keywords and rejects wrong names and
+types. Lint and documentation builds pass locally.
 
 Five offline recording runs of 400 circuits at 100 shots show native Sampler
 submits all 400 jobs before collection, compared with one for the custom

@@ -47,7 +47,7 @@ class QDMIJobParameters(TypedDict, total=False):
 
 
 class QiskitSamplerOptions(TypedDict, total=False):
-    """Native options accepted by :meth:`~mqt.core.plugins.qiskit.QDMIBackend.sampler`."""
+    """Native options accepted by ``QDMIBackend.sampler``."""
 
     default_shots: int
     seed_simulator: int | None
@@ -55,7 +55,7 @@ class QiskitSamplerOptions(TypedDict, total=False):
 
 
 class QiskitEstimatorOptions(TypedDict, total=False):
-    """Native options accepted by :meth:`~mqt.core.plugins.qiskit.QDMIBackend.estimator`."""
+    """Native options accepted by ``QDMIBackend.estimator``."""
 
     default_precision: float
     abelian_grouping: bool
