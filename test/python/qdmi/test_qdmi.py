@@ -1033,8 +1033,8 @@ def test_open_device_rejects_unknown_id() -> None:
 
 def test_open_device_creates_a_fresh_session() -> None:
     """Stable-ID opens should return separately owned sessions."""
-    first = open_device("mqt.na.default")
-    second = open_device("mqt.na.default")
+    first = open_device("mqt.sc.default")
+    second = open_device("mqt.sc.default")
     assert first != second
 
 
@@ -1062,7 +1062,7 @@ def test_device_configuration_arguments_are_mutually_exclusive() -> None:
         )
     with pytest.raises(ValueError, match="mutually exclusive"):
         open_device(
-            "mqt.na.default",
+            "mqt.sc.default",
             device_config="{}",
             device_config_file="device.json",
         )
@@ -1091,11 +1091,11 @@ def test_sc_open_device_accepts_runtime_configuration(tmp_path: Path) -> None:
 
 def test_site_keeps_fresh_session_alive() -> None:
     """A site should remain usable after its device wrapper is destroyed."""
-    site = open_device("mqt.na.default").sites()[0]
+    site = open_device("mqt.sc.default").sites()[0]
     assert site.index() == 0
 
 
 def test_operation_keeps_fresh_session_alive() -> None:
     """An operation should remain usable after its device wrapper is destroyed."""
-    operation = open_device("mqt.na.default").operations()[0]
+    operation = open_device("mqt.sc.default").operations()[0]
     assert operation.name()

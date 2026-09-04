@@ -16,8 +16,6 @@ import sys
 import pytest
 
 from mqt.core import qdmi
-from mqt.core.na import fomac as legacy_na
-from mqt.core.na import qdmi as na_qdmi
 from mqt.core.qdmi import driver
 
 
@@ -45,13 +43,6 @@ def test_fomac_module_warns_and_preserves_object_identity() -> None:
     )
     assert all(getattr(legacy, name) is getattr(qdmi, name) for name in qdmi_names)
     assert all(getattr(legacy, name) is getattr(driver, name) for name in driver_names)
-
-
-def test_na_qdmi_namespace_preserves_v3_fomac_aliases() -> None:
-    """Expose the neutral-atom device through QDMI while retaining v3 aliases."""
-    assert na_qdmi.Device.__module__ == "mqt.core.na.qdmi"
-    assert legacy_na.Device is na_qdmi.Device
-    assert legacy_na.devices is na_qdmi.devices
 
 
 def test_legacy_session_warns_on_construction() -> None:

@@ -40,6 +40,11 @@ releases may include breaking changes.
 - 💥 Remove the unused decision-diagram approximation algorithm, including the
   `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
   `dd::approximate`. No replacement is provided ([#2154]) ([**@burgholzer**])
+- 💥 Remove the neutral-atom stack, which moves to MQT QMAP. This drops the
+  neutral-atom computation model, the neutral-atom FoMaC device session, the
+  neutral-atom QDMI device and its configuration, the `mqt.core.na` Python
+  module, `AodOperation`, and the `Move`, `Bridge`, `AodActivate`,
+  `AodDeactivate`, and `AodMove` operation kinds ([#2137]) ([**@denialhaag**])
 - 🔥 Remove density matrix support from the DD package ([#1466])
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
@@ -775,6 +780,7 @@ for previous changelogs._
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2141]: https://github.com/munich-quantum-toolkit/core/pull/2141
+[#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2114]: https://github.com/munich-quantum-toolkit/core/pull/2114

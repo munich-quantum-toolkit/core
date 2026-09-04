@@ -74,9 +74,6 @@ add_subdirectory(dd)
 # add ZX package library
 add_subdirectory(zx)
 
-# add NA library
-add_subdirectory(na)
-
 # add QDMI package library
 add_subdirectory(qdmi)
 

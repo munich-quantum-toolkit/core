@@ -11,7 +11,7 @@ mystnb:
 ## Objective
 
 A QDMI Driver manages the communication between QDMI devices, such as
-[MQT Core's NA QDMI Device](na_device.md) or
+[MQT Core's SC QDMI Device](sc_device.md) or
 [MQT Core's DDSIM QDMI Device](ddsim_device.md), and QDMI clients, see the
 [QDMI specification](https://munich-quantum-software-stack.github.io/QDMI/).
 It is responsible for loading the device, forwarding requests from the client to
@@ -24,15 +24,13 @@ Built-in and external devices can also be registered through
 
 ## Building the Bundled Devices
 
-Standalone MQT Core builds include the DDSIM, superconducting, and neutral-atom
-QDMI device libraries by default. When MQT Core is embedded in another CMake
-project using {code}`FetchContent` or {code}`add_subdirectory`, these device
-libraries are disabled by default so the consumer does not build implementations
-it may not use. They can be selected independently before making MQT Core
-available:
+Standalone MQT Core builds include the DDSIM and superconducting QDMI device
+libraries by default. When MQT Core is embedded in another CMake project using
+{code}`FetchContent` or {code}`add_subdirectory`, these device libraries are
+disabled by default so the consumer does not build implementations it may not
+use. They can be selected independently before making MQT Core available:
 
 - {code}`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`
-- {code}`BUILD_MQT_CORE_QDMI_NA_DEVICE`
 - {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`
 
 For example, an embedded simulator consumer can enable only the DDSIM device,

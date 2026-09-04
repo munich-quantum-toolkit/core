@@ -59,8 +59,6 @@ option(BUILD_MQT_CORE_SHARED_LIBS "Build MQT Core libraries as shared libraries"
        ${BUILD_SHARED_LIBS})
 option(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE "Build the MQT Core DDSIM QDMI device"
        ${PROJECT_IS_TOP_LEVEL})
-option(BUILD_MQT_CORE_QDMI_NA_DEVICE "Build the MQT Core neutral-atom QDMI device"
-       ${PROJECT_IS_TOP_LEVEL})
 option(BUILD_MQT_CORE_QDMI_SC_DEVICE "Build the MQT Core superconducting QDMI device"
        ${PROJECT_IS_TOP_LEVEL})
 
@@ -120,16 +118,11 @@ if(BUILD_MQT_CORE_BINDINGS)
       mqt-core-circuit-optimizer
       mqt-core-dd
       mqt-core-zx
-      mqt-core-na
       mqt-core-ir-bindings
       mqt-core-dd-bindings
-      mqt-core-qdmi-bindings
-      mqt-core-na-bindings)
+      mqt-core-qdmi-bindings)
   if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
     list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device)
-  endif()
-  if(BUILD_MQT_CORE_QDMI_NA_DEVICE)
-    list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-na-device)
   endif()
   if(BUILD_MQT_CORE_QDMI_SC_DEVICE)
     list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-sc-device)
