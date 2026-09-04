@@ -80,7 +80,7 @@ struct TensorAccess {
       if (!index || failed(markLiveIndex(*index, tensorSize, live))) {
         return failure();
       }
-      accesses.push_back({extractOp, *index});
+      accesses.push_back({.operation = extractOp, .index = *index});
       tensor = extractOp.getOutTensor();
       continue;
     }
@@ -93,7 +93,7 @@ struct TensorAccess {
       if (!index || failed(markLiveIndex(*index, tensorSize, live))) {
         return failure();
       }
-      accesses.push_back({insertOp, *index});
+      accesses.push_back({.operation = insertOp, .index = *index});
       tensor = insertOp.getResult();
       continue;
     }

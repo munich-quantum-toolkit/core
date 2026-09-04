@@ -135,7 +135,7 @@ createSibling(const std::filesystem::path& finalPath,
     const auto error = llvm::sys::fs::openFileForWrite(
         path.string(), descriptor, llvm::sys::fs::CD_CreateNew);
     if (!error) {
-      return {std::move(path), descriptor};
+      return {.path = std::move(path), .descriptor = descriptor};
     }
     if (error != std::errc::file_exists) {
       throw std::runtime_error("failed to create a " + std::string(purpose) +

@@ -275,7 +275,7 @@ decodeStandardGate(UnitaryOpInterface unitary, const ClassicalEnv& classical) {
     return std::optional<DecodedStandardGate>{std::nullopt};
   }
 
-  DecodedStandardGate gate{factory, {}};
+  DecodedStandardGate gate{.build = factory, .parameters = {}};
   for (Value param : unitary.getParameters()) {
     auto concrete = resolveDouble(param, classical, op);
     if (failed(concrete)) {
