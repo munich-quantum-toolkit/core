@@ -31,8 +31,16 @@ longer accept the `recursive` argument and always use sequential construction.
 Use MQT DDSIM's unitary simulator when recursive pairwise construction is
 required.
 
-The zero, basis, GHZ, W, dense-vector, and sequential circuit constructors
-remain available.
+MQT Core also removed `dd/GateMatrixDefinitions.hpp`,
+`dd::opToSingleQubitGateMatrix`, `dd::opToTwoQubitGateMatrix`,
+`dd::opToThreeQubitGateMatrix`, `dd::getStandardOperationDD`,
+`dd::MEAS_ZERO_MAT`, and `dd::MEAS_ONE_MAT`. Low-level consumers must pass raw
+matrices to `dd::Package::makeGateDD`, `makeTwoQubitGateDD`,
+`makeThreeQubitGateDD`, or `makeDDFromMatrix`. Circuit-facing DD functions
+continue to translate CoreIR operations internally.
+
+The zero, basis, GHZ, W, dense-vector, dense-matrix, raw gate-matrix, and
+sequential circuit constructors remain available.
 
 ### macOS support
 

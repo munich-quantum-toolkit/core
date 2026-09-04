@@ -11,63 +11,22 @@
 #pragma once
 
 #include "dd/DDDefinitions.hpp"
-#include "dd/GateMatrixDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
-#include "ir/operations/Control.hpp"
 #include "ir/operations/IfElseOperation.hpp"
 #include "ir/operations/NonUnitaryOperation.hpp"
-#include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
-#include "ir/operations/StandardOperation.hpp"
 
 #include <cassert>
 #include <random>
 #include <stdexcept>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace dd {
-
-/**
- * @brief Get the decision diagram representation of an operation based on its
- * constituent parts.
- *
- * @note This function is only intended for internal use and should not be
- * called directly.
- *
- * @param dd The DD package to use
- * @param type The operation type
- * @param params The operation parameters
- * @param controls The operation controls
- * @param targets The operation targets
- * @return The decision diagram representation of the operation
- */
-MatrixDD getStandardOperationDD(Package& dd, qc::OpType type,
-                                const std::vector<fp>& params,
-                                const qc::Controls& controls,
-                                const std::vector<qc::Qubit>& targets);
-
-/**
- * @brief Get the decision diagram representation of a @ref
- * qc::StandardOperation.
- *
- * @note This function is only intended for internal use and should not be
- * called directly.
- *
- * @param op The operation to get the DD for
- * @param dd The DD package to use
- * @param controls The operation controls
- * @param targets The operation targets
- * @param inverse Whether to get the inverse of the operation
- * @return The decision diagram representation of the operation
- */
-MatrixDD getStandardOperationDD(const qc::StandardOperation& op, Package& dd,
-                                const qc::Controls& controls,
-                                const std::vector<qc::Qubit>& targets,
-                                bool inverse);
 
 /**
  * @brief Get the decision diagram representation of an operation.
@@ -248,6 +207,8 @@ template <class DDType>
 void changePermutation(DDType& on, qc::Permutation& from,
                        const qc::Permutation& to, Package& dd,
                        const bool regular = true) {
+  constexpr TwoQubitGateMatrix swapMatrix{
+      {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}}};
   assert(from.size() >= to.size());
   if (on.isZeroTerminal()) {
     return;
@@ -280,8 +241,8 @@ void changePermutation(DDType& on, qc::Permutation& from,
 
     // swap i and j
     auto saved = on;
-    const auto swapDD = dd.makeTwoQubitGateDD(opToTwoQubitGateMatrix(qc::SWAP),
-                                              from.at(i), from.at(j));
+    const auto swapDD =
+        dd.makeTwoQubitGateDD(swapMatrix, from.at(i), from.at(j));
     if constexpr (std::is_same_v<DDType, VectorDD>) {
       on = dd.multiply(swapDD, on);
     } else {

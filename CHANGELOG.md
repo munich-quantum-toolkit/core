@@ -34,6 +34,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove test-only DD state generators, recursive functionality construction,
+  and DD-specific named-gate helpers from MQT Core ([#2257], [#2335])
+  ([**@simon1hofmann**])
 - 💥 Remove MQT Core's optional MLIR stack, including its dialects, conversions,
   passes, tools, build integration, tests, documentation, and dependency on
   LLVM. ([#2314]) ([**@denialhaag**])
@@ -43,8 +46,6 @@ releases may include breaking changes.
 - 💥 Remove the `spdlog` dependency from MQT Core source builds, installed CMake
   packages, and Python wheels. QDMI diagnostics continue to be written to
   standard error ([#2270]) ([**@denialhaag**])
-- 💥 Remove test-only DD state generators and recursive functionality
-  construction from MQT Core ([#2257]) ([**@simon1hofmann**])
 - 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
   DD package evaluation. MQT Core provides no direct replacement ([#2214])
   ([**@burgholzer**])
@@ -789,6 +790,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2335]: https://github.com/munich-quantum-toolkit/core/pull/2335
 [#2314]: https://github.com/munich-quantum-toolkit/core/pull/2314
 [#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
 [#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278

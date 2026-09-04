@@ -10,7 +10,6 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Export.hpp"
-#include "dd/GateMatrixDefinitions.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
@@ -49,6 +48,27 @@
 using namespace qc::literals;
 
 namespace dd {
+namespace {
+constexpr GateMatrix X_MAT{0, 1, 1, 0};
+constexpr GateMatrix Z_MAT{1, 0, 0, -1};
+constexpr TwoQubitGateMatrix SWAP_MAT{
+    {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}}};
+constexpr ThreeQubitGateMatrix RCCX_MAT = [] {
+  ThreeQubitGateMatrix matrix{};
+  for (size_t i = 0; i < THREE_QUBIT_GATE_DIM; ++i) {
+    matrix[i][i] = 1.;
+  }
+  matrix[5][5] = -1.;
+  matrix[6][6] = 0.;
+  matrix[7][7] = 0.;
+  matrix[6][7] = {0., -1.};
+  matrix[7][6] = {0., 1.};
+  return matrix;
+}();
+constexpr GateMatrix ZERO_PROJECTOR{1, 0, 0, 0};
+constexpr GateMatrix ONE_PROJECTOR{0, 0, 0, 1};
+} // namespace
+
 TEST(DDPackageTest, TrivialTest) {
   auto dd = std::make_unique<Package>(2);
   EXPECT_EQ(dd->qubits(), 2);
@@ -301,12 +321,6 @@ TEST(DDPackageTest, InvalidStandardOperation) {
     ASSERT_THROW(getDD(qc::StandardOperation(targets, type), *dd),
                  std::invalid_argument);
   }
-  ASSERT_THROW(opToSingleQubitGateMatrix(qc::SWAP), std::invalid_argument);
-  ASSERT_THROW(opToSingleQubitGateMatrix(qc::OpTypeEnd), std::invalid_argument);
-  ASSERT_THROW(opToTwoQubitGateMatrix(qc::I), std::invalid_argument);
-  ASSERT_THROW(opToTwoQubitGateMatrix(qc::OpTypeEnd), std::invalid_argument);
-  ASSERT_THROW(opToThreeQubitGateMatrix(qc::I), std::invalid_argument);
-  ASSERT_THROW(opToThreeQubitGateMatrix(qc::OpTypeEnd), std::invalid_argument);
 }
 
 TEST(DDPackageTest, PrintNoneGateType) {
@@ -941,43 +955,37 @@ TEST(DDPackageTest, InvalidMakeBasisStateAndGate) {
 
 TEST(DDPackageTest, RejectsGateConstructionInEmptyPackage) {
   auto dd = std::make_unique<Package>(0U);
-  EXPECT_THROW(dd->makeGateDD(opToSingleQubitGateMatrix(qc::X), 0U),
+  EXPECT_THROW(dd->makeGateDD(X_MAT, 0U), std::runtime_error);
+  EXPECT_THROW(dd->makeTwoQubitGateDD(SWAP_MAT, 0U, 0U), std::runtime_error);
+  EXPECT_THROW(dd->makeThreeQubitGateDD(RCCX_MAT, 0U, 0U, 0U),
                std::runtime_error);
-  EXPECT_THROW(dd->makeTwoQubitGateDD(opToTwoQubitGateMatrix(qc::SWAP), 0U, 0U),
-               std::runtime_error);
-  EXPECT_THROW(
-      dd->makeThreeQubitGateDD(opToThreeQubitGateMatrix(qc::RCCX), 0U, 0U, 0U),
-      std::runtime_error);
 }
 
 TEST(DDPackageTest, RejectsOverlappingGateQubits) {
   auto dd = std::make_unique<Package>(5U);
-  const auto rccxMatrix = opToThreeQubitGateMatrix(qc::RCCX);
 
   // Duplicate two-qubit targets
-  EXPECT_THROW(dd->makeTwoQubitGateDD(opToTwoQubitGateMatrix(qc::SWAP), 1U, 1U),
-               std::runtime_error);
+  EXPECT_THROW(dd->makeTwoQubitGateDD(SWAP_MAT, 1U, 1U), std::runtime_error);
 
   // Control coincides with single-qubit target
-  EXPECT_THROW(
-      dd->makeGateDD(opToSingleQubitGateMatrix(qc::X), qc::Controls{{1}}, 1U),
-      std::runtime_error);
+  EXPECT_THROW(dd->makeGateDD(X_MAT, qc::Controls{{1}}, 1U),
+               std::runtime_error);
 
   // Duplicate three-qubit targets (cases skipped by RCCXGateDDConstruction)
-  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 0U, 0U, 1U),
+  EXPECT_THROW(dd->makeThreeQubitGateDD(RCCX_MAT, 0U, 0U, 1U),
                std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 0U, 1U, 0U),
+  EXPECT_THROW(dd->makeThreeQubitGateDD(RCCX_MAT, 0U, 1U, 0U),
                std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 2U, 1U, 2U),
+  EXPECT_THROW(dd->makeThreeQubitGateDD(RCCX_MAT, 2U, 1U, 2U),
                std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, 1U, 1U, 1U),
+  EXPECT_THROW(dd->makeThreeQubitGateDD(RCCX_MAT, 1U, 1U, 1U),
                std::runtime_error);
 
   // Extra control coincides with an RCCX target
   EXPECT_THROW(
-      dd->makeThreeQubitGateDD(rccxMatrix, qc::Controls{{1}}, 0U, 1U, 2U),
+      dd->makeThreeQubitGateDD(RCCX_MAT, qc::Controls{{1}}, 0U, 1U, 2U),
       std::runtime_error);
-  EXPECT_THROW(dd->makeThreeQubitGateDD(rccxMatrix, qc::Control{0}, 0U, 1U, 2U),
+  EXPECT_THROW(dd->makeThreeQubitGateDD(RCCX_MAT, qc::Control{0}, 0U, 1U, 2U),
                std::runtime_error);
 }
 
@@ -1820,8 +1828,7 @@ TEST(DDPackageTest, TwoQubitControlledGateDDConstruction) {
   const auto dd = std::make_unique<Package>(nrQubits);
 
   const auto gateMatrices =
-      std::vector{std::pair{opToSingleQubitGateMatrix(qc::X), CX_MAT},
-                  std::pair{opToSingleQubitGateMatrix(qc::Z), CZ_MAT}};
+      std::vector{std::pair{X_MAT, CX_MAT}, std::pair{Z_MAT, CZ_MAT}};
 
   // For every combination of control and target, test that the DD created by
   // makeTwoQubitGateDD is equal to the DD created by makeGateDD. This should
@@ -1847,8 +1854,7 @@ TEST(DDPackageTest, TwoQubitControlledGateDDConstructionNegativeControls) {
   const auto dd = std::make_unique<Package>(nrQubits);
 
   const auto gateMatrices =
-      std::vector{std::pair{opToSingleQubitGateMatrix(qc::X), CX_MAT},
-                  std::pair{opToSingleQubitGateMatrix(qc::Z), CZ_MAT}};
+      std::vector{std::pair{X_MAT, CX_MAT}, std::pair{Z_MAT, CZ_MAT}};
 
   // For every combination of controls, control type, and target, test that the
   // DD created by makeTwoQubitGateDD is equal to the DD created by makeGateDD.
@@ -2342,7 +2348,6 @@ TEST(DDPackageTest, XXPlusYYGateDDConstruction) {
 TEST(DDPackageTest, RCCXGateDDConstruction) {
   constexpr auto nrQubits = 5U;
   const auto dd = std::make_unique<Package>(nrQubits);
-  const auto rccxMatrix = opToThreeQubitGateMatrix(qc::RCCX);
 
   const auto rccxDecomposition = [&](const qc::Controls& extra,
                                      const Qubit control0, const Qubit control1,
@@ -2386,9 +2391,9 @@ TEST(DDPackageTest, RCCXGateDDConstruction) {
 
         // Bare RCCX via the no-control overload.
         const auto bareOverload =
-            dd->makeThreeQubitGateDD(rccxMatrix, control0, control1, target);
+            dd->makeThreeQubitGateDD(RCCX_MAT, control0, control1, target);
         const auto bareControls = dd->makeThreeQubitGateDD(
-            rccxMatrix, qc::Controls{}, control0, control1, target);
+            RCCX_MAT, qc::Controls{}, control0, control1, target);
         EXPECT_EQ(bareOverload, bareControls);
         EXPECT_EQ(bareOverload,
                   rccxDecomposition({}, control0, control1, target));
@@ -2414,9 +2419,9 @@ TEST(DDPackageTest, RCCXGateDDConstruction) {
           // Single-control overload matches Controls{control}.
           if (controls.size() == 1U) {
             const auto& control = *controls.begin();
-            EXPECT_EQ(dd->makeThreeQubitGateDD(rccxMatrix, control, control0,
+            EXPECT_EQ(dd->makeThreeQubitGateDD(RCCX_MAT, control, control0,
                                                control1, target),
-                      dd->makeThreeQubitGateDD(rccxMatrix, controls, control0,
+                      dd->makeThreeQubitGateDD(RCCX_MAT, controls, control0,
                                                control1, target));
           }
         }
@@ -2454,8 +2459,8 @@ TEST(DDPackageTest, DDNodeLeakRegressionTest) {
   constexpr auto nqubits = 1U;
   auto dd = std::make_unique<Package>(nqubits);
 
-  const auto dd1 = dd->makeGateDD(MEAS_ZERO_MAT, 0U);
-  const auto dd2 = dd->makeGateDD(MEAS_ONE_MAT, 0U);
+  const auto dd1 = dd->makeGateDD(ZERO_PROJECTOR, 0U);
+  const auto dd2 = dd->makeGateDD(ONE_PROJECTOR, 0U);
   dd->multiply(dd1, dd2);
   dd->garbageCollect(true);
   EXPECT_EQ(dd->mMemoryManager.getStats().numUsed, 0U);
@@ -2471,8 +2476,8 @@ TEST(DDPackageTest, CTPerformanceRegressionTest) {
   constexpr auto nqubits = 1U;
   auto dd = std::make_unique<Package>(nqubits);
 
-  const auto dd1 = dd->makeGateDD(MEAS_ZERO_MAT, 0U);
-  const auto dd2 = dd->makeGateDD(MEAS_ONE_MAT, 0U);
+  const auto dd1 = dd->makeGateDD(ZERO_PROJECTOR, 0U);
+  const auto dd2 = dd->makeGateDD(ONE_PROJECTOR, 0U);
   constexpr auto repetitions = 10U;
   for (auto i = 0U; i < repetitions; ++i) {
     dd->multiply(dd1, dd2);
