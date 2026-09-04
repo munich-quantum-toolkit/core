@@ -2161,6 +2161,16 @@ TEST_F(QCODDFunctionalityTest,
   const auto histogram = sample(mainFunc(*mod), 64, 11);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 64}}));
+
+  std::vector<std::string> shots{"stale output"};
+  const auto withShots =
+      sample(mainFunc(*mod), 64, 11, DDArgumentBindings{}, &shots);
+  ASSERT_TRUE(succeeded(withShots));
+  EXPECT_EQ(*withShots, *histogram);
+  EXPECT_EQ(shots, std::vector<std::string>(64, "1"));
+  EXPECT_TRUE(
+      succeeded(sample(mainFunc(*mod), 0, 11, DDArgumentBindings{}, &shots)));
+  EXPECT_TRUE(shots.empty());
 }
 
 TEST_F(QCODDFunctionalityTest, SampleDefersAllocatedQubitMeasurement) {

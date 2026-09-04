@@ -89,6 +89,8 @@ releases may include breaking changes.
 
 #### Other additions
 
+- ✨ Expose ordered shots from DDSIM QDMI OpenQASM and QIR jobs, with matching
+  histograms ([#2368]) ([**@burgholzer**])
 - 🐳 Add dev container configuration for a consistent local development
   environment ([#1786]) ([**@denialhaag**])
 
@@ -869,6 +871,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368
 [#2337]: https://github.com/munich-quantum-toolkit/core/pull/2337
 [#2336]: https://github.com/munich-quantum-toolkit/core/pull/2336
 [#2335]: https://github.com/munich-quantum-toolkit/core/pull/2335
