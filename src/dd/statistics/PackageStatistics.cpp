@@ -10,6 +10,7 @@
 
 #include "dd/statistics/PackageStatistics.hpp"
 
+#include "StatisticsJson.hpp"
 #include "dd/Complex.hpp"
 #include "dd/ComplexNumbers.hpp"
 #include "dd/ComplexValue.hpp"
@@ -78,8 +79,11 @@ double computePeakMemoryMiB(const Package& package) {
   return memoryForNodes + memoryForEdges + memoryForRealNumbers;
 }
 
-nlohmann::basic_json<> getStatistics(Package& package,
-                                     const bool includeIndividualTables) {
+namespace {
+[[nodiscard]] nlohmann::basic_json<> getDataStructureStatistics();
+
+[[nodiscard]] nlohmann::basic_json<>
+getStatistics(Package& package, const bool includeIndividualTables) {
   nlohmann::basic_json<> j;
 
   j["data_structure"] = getDataStructureStatistics();
@@ -89,43 +93,43 @@ nlohmann::basic_json<> getStatistics(Package& package,
 
   auto& vector = j["vector"];
   auto& vectorUniqueTable = vector["unique_table"];
-  vectorUniqueTable =
-      package.vUniqueTable.getStatsJson(includeIndividualTables);
+  vectorUniqueTable = toJson(package.vUniqueTable, includeIndividualTables);
   if (vectorUniqueTable != "unused") {
     vectorUniqueTable["total"]["num_active_entries"] = activeVectorNodes;
   }
-  vector["memory_manager"] = package.vMemoryManager.getStats().json();
+  vector["memory_manager"] = toJson(package.vMemoryManager.getStats());
 
   auto& matrix = j["matrix"];
   auto& matrixUniqueTable = matrix["unique_table"];
-  matrixUniqueTable =
-      package.mUniqueTable.getStatsJson(includeIndividualTables);
+  matrixUniqueTable = toJson(package.mUniqueTable, includeIndividualTables);
   if (matrixUniqueTable != "unused") {
     matrixUniqueTable["total"]["num_active_entries"] = activeMatrixNodes;
   }
-  matrix["memory_manager"] = package.mMemoryManager.getStats().json();
+  matrix["memory_manager"] = toJson(package.mMemoryManager.getStats());
 
   auto& realNumbers = j["real_numbers"];
   auto& realNumbersUniqueTable = realNumbers["unique_table"];
-  realNumbersUniqueTable = package.cUniqueTable.getStats().json();
+  realNumbersUniqueTable = toJson(package.cUniqueTable.getStats());
   if (realNumbersUniqueTable != "unused") {
     realNumbersUniqueTable["num_active_entries"] = activeRealNumbers;
   }
-  realNumbers["memory_manager"] = package.cMemoryManager.getStats().json();
+  realNumbers["memory_manager"] = toJson(package.cMemoryManager.getStats());
 
   auto& computeTables = j["compute_tables"];
-  computeTables["vector_add"] = package.vectorAdd.getStats().json();
-  computeTables["matrix_add"] = package.matrixAdd.getStats().json();
+  computeTables["vector_add"] = toJson(package.vectorAdd.getStats());
+  computeTables["matrix_add"] = toJson(package.matrixAdd.getStats());
   computeTables["matrix_conjugate_transpose"] =
-      package.conjugateMatrixTranspose.getStats().json();
+      toJson(package.conjugateMatrixTranspose.getStats());
   computeTables["matrix_vector_mult"] =
-      package.matrixVectorMultiplication.getStats().json();
+      toJson(package.matrixVectorMultiplication.getStats());
   computeTables["matrix_matrix_mult"] =
-      package.matrixMatrixMultiplication.getStats().json();
-  computeTables["vector_kronecker"] = package.vectorKronecker.getStats().json();
-  computeTables["matrix_kronecker"] = package.matrixKronecker.getStats().json();
+      toJson(package.matrixMatrixMultiplication.getStats());
+  computeTables["vector_kronecker"] =
+      toJson(package.vectorKronecker.getStats());
+  computeTables["matrix_kronecker"] =
+      toJson(package.matrixKronecker.getStats());
   computeTables["vector_inner_product"] =
-      package.vectorInnerProduct.getStats().json();
+      toJson(package.vectorInnerProduct.getStats());
 
   j["active_memory_mib"] = computeActiveMemoryMiB(package);
   j["peak_memory_mib"] = computePeakMemoryMiB(package);
@@ -133,7 +137,7 @@ nlohmann::basic_json<> getStatistics(Package& package,
   return j;
 }
 
-nlohmann::basic_json<> getDataStructureStatistics() {
+[[nodiscard]] nlohmann::basic_json<> getDataStructureStatistics() {
   nlohmann::basic_json<> j;
 
   // Information about key data structures
@@ -222,8 +226,15 @@ nlohmann::basic_json<> getDataStructureStatistics() {
   return j;
 }
 
-std::string getStatisticsString(Package& package) {
-  return getStatistics(package).dump(2U);
+} // namespace
+
+std::string getDataStructureStatisticsString() {
+  return getDataStructureStatistics().dump(2U);
+}
+
+std::string getStatisticsString(Package& package,
+                                const bool includeIndividualTables) {
+  return getStatistics(package, includeIndividualTables).dump(2U);
 }
 
 void printStatistics(Package& package, std::ostream& os) {

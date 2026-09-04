@@ -11,10 +11,10 @@
 #include "fomac/FoMaC.hpp"
 
 #include "qdmi/common/Common.hpp"
+#include "qdmi/common/Diagnostics.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <qdmi/client.h>
-#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <complex>
@@ -898,8 +898,8 @@ Session::Session(const SessionConfig& config) {
           session_.get(), param, value->size() + 1, value->c_str()));
       if (status == QDMI_ERROR_NOTSUPPORTED) {
         // Optional parameter not supported by session - skip it
-        SPDLOG_INFO("Session parameter {} not supported (skipped)",
-                    qdmi::toString(param));
+        qdmi::diagnostics::info("Session parameter {} not supported (skipped)",
+                                qdmi::toString(param));
         return;
       }
       if (status == QDMI_SUCCESS) {

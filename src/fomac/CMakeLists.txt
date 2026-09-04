@@ -27,10 +27,7 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}/fomac/Slurm.hpp)
 
   # Add link libraries
-  target_link_libraries(
-    ${TARGET_NAME}
-    PUBLIC qdmi::qdmi MQT::CoreQDMICommon MQT::CoreQDMIDriver
-    PRIVATE spdlog::spdlog)
+  target_link_libraries(${TARGET_NAME} PUBLIC qdmi::qdmi MQT::CoreQDMICommon MQT::CoreQDMIDriver)
 
   # add to list of MQT core targets
   set(MQT_CORE_TARGETS

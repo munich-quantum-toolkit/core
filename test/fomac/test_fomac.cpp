@@ -1155,6 +1155,20 @@ TEST(AuthenticationTest, SessionConstructionWithToken) {
   EXPECT_NO_THROW({ const Session session(config3); });
 }
 
+TEST(AuthenticationTest, ReportsSkippedUnsupportedParameter) {
+  SessionConfig config;
+  config.token = "test-token";
+
+  testing::internal::CaptureStderr();
+  EXPECT_NO_THROW({ const Session session(config); });
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_THAT(
+      diagnostic,
+      testing::AllOf(testing::HasSubstr("[mqt-core] [info]"),
+                     testing::HasSubstr(
+                         "Session parameter TOKEN not supported (skipped)")));
+}
+
 TEST(AuthenticationTest, SessionConstructionWithAuthUrl) {
   // Valid HTTPS URL
   SessionConfig config1;

@@ -6,6 +6,18 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### Removal of the `spdlog` dependency
+
+MQT Core no longer discovers, downloads, builds, installs, or exports `spdlog`.
+The installed CMake package no longer calls `find_dependency(spdlog)`, and the
+Python wheels no longer contain the `spdlog` headers or shared library. QDMI
+diagnostics continue to use standard error.
+
+Downstream projects that use `spdlog` must declare and package the dependency
+themselves. Stop passing `MQT_CORE_SPDLOG_INSTALL` or `SPDLOG_*` cache variables
+when configuring MQT Core. Configure the downstream project's own `spdlog`
+dependency instead.
+
 ### macOS support
 
 MQT Core no longer supports x86 macOS. Use Apple silicon with macOS 13.3 or
@@ -21,6 +33,28 @@ configurations.
 
 The bundled DDSIM QDMI device no longer accepts QIR Base or Adaptive Profile
 programs in string or module form. Use QASM2 or QASM3 with this device.
+
+### Private `nlohmann_json` dependency
+
+MQT Core uses `nlohmann_json` only inside its implementation. It no longer
+installs the library, exports it, or looks for it in its package configuration.
+Depend on `nlohmann_json` directly if your project uses it.
+
+No installed header includes a `nlohmann` header any more. The decision-diagram
+statistics report through strings and streams instead. MQT Core removed the
+following names:
+
+- `dd::Statistics::json`, `dd::MemoryManagerStatistics::json`,
+  `dd::TableStatistics::json`, and `dd::UniqueTableStatistics::json`. Use
+  `toString`, the stream operator, or the individual counters.
+- `dd::UniqueTable::getStatsJson`. Use `dd::getStatisticsString`.
+- `dd::getStatistics` and `dd::getDataStructureStatistics`. Use
+  `dd::getStatisticsString` and `dd::getDataStructureStatisticsString`, which
+  return the same report as a JSON-formatted string.
+- The `MQT_CORE_JSON_INSTALL` CMake option.
+
+`dd::getStatisticsString` takes the `includeIndividualTables` flag that
+`dd::getStatistics` used to take.
 
 ### Removal of the neutral-atom stack
 

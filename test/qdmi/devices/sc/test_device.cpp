@@ -228,8 +228,16 @@ TEST(ScRuntimeConfiguration, ValidatesRawParameterStringsAndRetry) {
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
                 malformed.size(), malformed.data()),
             QDMI_SUCCESS);
-  EXPECT_EQ(MQT_SC_QDMI_device_session_init(session),
-            QDMI_ERROR_INVALIDARGUMENT);
+  testing::internal::CaptureStderr();
+  const auto malformedStatus = MQT_SC_QDMI_device_session_init(session);
+  const auto malformedDiagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_EQ(malformedStatus, QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_THAT(
+      malformedDiagnostic,
+      testing::AllOf(testing::HasSubstr("[mqt-core] [error]"),
+                     testing::HasSubstr("Invalid SC device configuration from "
+                                        "inline session configuration"),
+                     testing::HasSubstr("invalid JSON")));
   ASSERT_EQ(MQT_SC_QDMI_device_session_set_parameter(
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1,
                 std::strlen(CUSTOM_SC) + 1, CUSTOM_SC),
@@ -370,8 +378,16 @@ TEST(ScRuntimeConfiguration, SelectsEnvironmentAndExplicitFileSources) {
   MQT_SC_QDMI_Device_Session conflictingEnvironmentSession = nullptr;
   ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&conflictingEnvironmentSession),
             QDMI_SUCCESS);
-  EXPECT_EQ(MQT_SC_QDMI_device_session_init(conflictingEnvironmentSession),
-            QDMI_ERROR_INVALIDARGUMENT);
+  testing::internal::CaptureStderr();
+  const auto conflictingStatus =
+      MQT_SC_QDMI_device_session_init(conflictingEnvironmentSession);
+  const auto conflictingDiagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_EQ(conflictingStatus, QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_THAT(conflictingDiagnostic,
+              testing::AllOf(
+                  testing::HasSubstr("[mqt-core] [error]"),
+                  testing::HasSubstr("Both MQT_CORE_QDMI_SC_CONFIG_JSON and "
+                                     "MQT_CORE_QDMI_SC_CONFIG_FILE are set")));
   MQT_SC_QDMI_device_session_free(conflictingEnvironmentSession);
 }
 
@@ -384,7 +400,17 @@ TEST(ScRuntimeConfiguration, MapsMissingExplicitFileToNotFound) {
                 session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2, missing.size(),
                 missing.data()),
             QDMI_SUCCESS);
-  EXPECT_EQ(MQT_SC_QDMI_device_session_init(session), QDMI_ERROR_NOTFOUND);
+  testing::internal::CaptureStderr();
+  const auto status = MQT_SC_QDMI_device_session_init(session);
+  const auto diagnostic = testing::internal::GetCapturedStderr();
+  EXPECT_EQ(status, QDMI_ERROR_NOTFOUND);
+  EXPECT_THAT(
+      diagnostic,
+      testing::AllOf(
+          testing::HasSubstr("[mqt-core] [error]"),
+          testing::HasSubstr("QDMI device configuration "
+                             "'missing-sc-device-configuration.json' does not "
+                             "exist")));
   MQT_SC_QDMI_device_session_free(session);
 }
 

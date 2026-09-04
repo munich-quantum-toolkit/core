@@ -12,6 +12,7 @@
 
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
+#include "statistics/StatisticsJson.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -113,8 +114,9 @@ UniqueTable::getStats(const std::size_t idx) const noexcept {
   return stats.at(idx);
 }
 
-nlohmann::basic_json<>
-UniqueTable::getStatsJson(const bool includeIndividualTables) const {
+nlohmann::basic_json<> toJson(const UniqueTable& table,
+                              const bool includeIndividualTables) {
+  const auto& stats = table.getStats();
   if (std::ranges::all_of(stats, [](const UniqueTableStatistics& stat) {
         return stat.peakNumEntries == 0U;
       })) {
@@ -135,11 +137,11 @@ UniqueTable::getStatsJson(const bool includeIndividualTables) const {
   }
 
   nlohmann::basic_json<> j;
-  j["total"] = totalStats.json();
+  j["total"] = toJson(totalStats);
   if (includeIndividualTables) {
     std::size_t v = 0U;
     for (const auto& stat : stats) {
-      j[std::to_string(v)] = stat.json();
+      j[std::to_string(v)] = toJson(stat);
       ++v;
     }
   }
