@@ -7,9 +7,7 @@
 # Licensed under the MIT License
 
 add_subdirectory(devices)
-if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE
-   AND BUILD_MQT_CORE_QDMI_NA_DEVICE
-   AND BUILD_MQT_CORE_QDMI_SC_DEVICE)
+if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE AND BUILD_MQT_CORE_QDMI_SC_DEVICE)
   add_subdirectory(driver)
 endif()
 add_subdirectory(registry)

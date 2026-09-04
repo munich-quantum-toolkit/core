@@ -236,7 +236,6 @@ add_executable(my-application main.cpp)
 target_link_libraries(my-application PRIVATE MQT::CoreFoMaC)
 mqt_copy_qdmi_runtime(
   my-application
-  MQT::CoreQDMINaDevice
   MQT::CoreQDMIScDevice
   MQT::CoreQDMI_DDSIM_Device)
 ```

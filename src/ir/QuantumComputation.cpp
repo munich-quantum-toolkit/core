@@ -1485,7 +1485,6 @@ DEFINE_TWO_TARGET_OPERATION(iswap)
 DEFINE_TWO_TARGET_OPERATION(iswapdg)
 DEFINE_TWO_TARGET_OPERATION(peres)
 DEFINE_TWO_TARGET_OPERATION(peresdg)
-DEFINE_TWO_TARGET_OPERATION(move)
 
 #undef DEFINE_TWO_TARGET_OPERATION
 
@@ -1612,11 +1611,6 @@ void QuantumComputation::measureAll(const bool addBits) {
     const auto q = static_cast<Qubit>(i - 1);
     measure(q, start + q);
   }
-}
-
-void QuantumComputation::bridge(const Targets& targets) {
-  checkQubitRange(targets);
-  emplace_back<StandardOperation>(targets, Bridge);
 }
 
 void QuantumComputation::reset(const Qubit target) {

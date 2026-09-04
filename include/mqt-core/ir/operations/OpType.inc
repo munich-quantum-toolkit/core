@@ -58,13 +58,6 @@ HANDLE_OP_TYPE(31, Reset, OpTypeNone, "reset")
 // Control flow operations
 HANDLE_OP_TYPE(32, IfElse, OpTypeNone, "if_else")
 
-// Neutral atom shuttling operations
-HANDLE_OP_TYPE(37, Move, 0, "move")
-HANDLE_OP_TYPE(42, Bridge, 0, "bridge")
-HANDLE_OP_TYPE(38, AodActivate, 0, "aod_activate")
-HANDLE_OP_TYPE(39, AodDeactivate, 0, "aod_deactivate")
-HANDLE_OP_TYPE(40, AodMove, 0, "aod_move")
-
 LAST_OP_TYPE(43)
 
 

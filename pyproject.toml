@@ -279,7 +279,7 @@ select = ["cp*-win_arm64", "cp315*"]
 before-test = ""
 test-groups = []
 test-sources = []
-test-command = "python -c \"import mqt.core.dd, mqt.core.ir, mqt.core.na, mqt.core.qdmi\""
+test-command = "python -c \"import mqt.core.dd, mqt.core.ir, mqt.core.qdmi\""
 
 [tool.cibuildwheel.linux]
 before-all = "uv tool install sccache>=0.10.0"

@@ -283,7 +283,6 @@ public:
   DECLARE_TWO_TARGET_OPERATION(iswapdg)
   DECLARE_TWO_TARGET_OPERATION(peres)
   DECLARE_TWO_TARGET_OPERATION(peresdg)
-  DECLARE_TWO_TARGET_OPERATION(move)
 
 #undef DECLARE_TWO_TARGET_OPERATION
 
@@ -338,8 +337,6 @@ public:
    * is true. Otherwise, qubit q is measured into classical bit q.
    */
   void measureAll(bool addBits = true);
-
-  void bridge(const Targets& targets);
 
   void reset(Qubit target);
   void reset(const Targets& targets);

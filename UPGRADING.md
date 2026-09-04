@@ -22,6 +22,30 @@ configurations.
 The bundled DDSIM QDMI device no longer accepts QIR Base or Adaptive Profile
 programs in string or module form. Use QASM2 or QASM3 with this device.
 
+### Removal of the neutral-atom stack
+
+MQT Core no longer contains neutral-atom functionality. The complete stack moved
+to [MQT QMAP](https://github.com/munich-quantum-toolkit/qmap), which is now its
+sole owner. Depend on MQT QMAP to keep using this functionality.
+
+MQT Core removed the following names:
+
+- The `MQT::CoreNA`, `MQT::CoreNAFoMaC`, `MQT::CoreQDMINaDevice`, and
+  `MQT::CoreQDMINaDeviceConfig` CMake targets.
+- The `BUILD_MQT_CORE_QDMI_NA_DEVICE` CMake option.
+- The `na/NAComputation.hpp`, `na/entities/*.hpp`, `na/operations/*.hpp`,
+  `na/fomac/Device.hpp`, `qdmi/devices/na/Configuration.hpp`, and
+  `ir/operations/AodOperation.hpp` headers.
+- The `na` C++ namespace.
+- The `mqt.core.na` Python module and its `mqt.core.na.qdmi` and
+  `mqt.core.na.fomac` submodules.
+- The `Move`, `Bridge`, `AodActivate`, `AodDeactivate`, and `AodMove`
+  `qc::OpType` values, together with `QuantumComputation::move`,
+  `QuantumComputation::cmove`, `QuantumComputation::mcmove`,
+  `QuantumComputation::bridge`, and the OpenQASM names `move`, `bridge`,
+  `aod_activate`, `aod_deactivate`, and `aod_move`.
+- The bundled `mqt.na.default` QDMI device.
+
 ### Removal of density matrix support from the DD package
 
 MQT Core no longer provides density matrix decision diagrams or the related
