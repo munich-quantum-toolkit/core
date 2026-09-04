@@ -15,11 +15,12 @@ from __future__ import annotations
 
 import inspect
 import warnings
+from collections import Counter
 from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit import qasm2, qasm3
-from qiskit.circuit import QuantumCircuit
+from qiskit.circuit import ForLoopOp, IfElseOp, QuantumCircuit, SwitchCaseOp, WhileLoopOp
 from qiskit.circuit.library import (
     MCPhaseGate,
     MCXGate,
@@ -42,10 +43,9 @@ from .exceptions import (
     UnsupportedOperationError,
 )
 from .job import QDMIJob, _cancel_jobs
-from .serializers import preferred_program_formats, program_serializer, register_program_serializer
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Mapping, MutableSet, Sequence
+    from collections.abc import Callable, Iterable, Mapping, MutableSet, Sequence
     from typing import Unpack
 
     from qiskit.circuit import Instruction, Parameter
@@ -214,8 +214,8 @@ def _check_payload_type(program: str | bytes, fmt: ProgramFormat) -> None:
     expected = bytes if is_binary_program_format(fmt) else str
     if not isinstance(program, expected):
         msg = (
-            f"The program serializer for {fmt.name} returned {type(program).__name__}, "
-            f"but {fmt.name} requires {expected.__name__}"
+            f"The program serializer for {fmt.format_id} returned {type(program).__name__}, "
+            f"but its {fmt.encoding.name.lower()} encoding requires {expected.__name__}"
         )
         raise TranslationError(msg)
 
@@ -246,6 +246,39 @@ class QDMIBackend(BackendV2):
         """Returns whether a device can be represented in Qiskit's Target model."""
         # Zoned operations cannot easily be represented in Qiskit's Target model
         return not any(op.is_zoned() for op in device.operations())
+
+    def _program_serializer(  # ruff:ignore[no-self-use]
+        self, program_format: ProgramFormat
+    ) -> Callable[[QuantumCircuit, QDMIBackend], str | bytes] | None:
+        """Return the serializer for one exact program format.
+
+        A device-specific backend can override this method for a format that it
+        owns and delegate all other formats to this implementation.
+
+        Args:
+            program_format: The exact format to serialize.
+
+        Returns:
+            A serializer, or ``None`` if the backend does not support the format.
+        """
+        if program_format == ProgramFormat.OPENQASM3:
+            return _serialize_to_qasm3
+        if program_format == ProgramFormat.OPENQASM2:
+            return _serialize_to_qasm2
+        return None
+
+    def _decode_counts(self, job: QDMIJobHandle) -> dict[str, int]:  # ruff:ignore[no-self-use]
+        """Decode one completed QDMI job into Qiskit counts.
+
+        A backend that owns a vendor result format can override this method.
+
+        Args:
+            job: The completed QDMI job.
+
+        Returns:
+            The measurement counts.
+        """
+        return job.get_counts()
 
     # Define known aliases
     _GATE_ALIASES: ClassVar[dict[str, set[str]]] = {
@@ -301,6 +334,7 @@ class QDMIBackend(BackendV2):
         provider: QDMIProvider | None = None,
         *,
         device_id: str | None = None,
+        payload_descriptor: ProgramFormat | None = None,
     ) -> None:
         """Initialize the backend with a QDMI device wrapper.
 
@@ -308,9 +342,14 @@ class QDMIBackend(BackendV2):
             device: QDMI device wrapper.
             provider: Provider instance that created this backend.
             device_id: Stable registry ID for the opened device, if known.
+            payload_descriptor: Exact payload to produce. By default, select
+                the first device-supported descriptor that this backend can
+                serialize.
 
         Raises:
             UnsupportedDeviceError: If the device cannot be represented in Qiskit's Target model.
+            UnsupportedFormatError: If this backend cannot serialize any
+                accepted payload.
         """
         if not self.is_convertible(device):
             msg = f"Device '{device.name()}' cannot be represented in Qiskit's Target model"
@@ -319,6 +358,44 @@ class QDMIBackend(BackendV2):
         super().__init__(name=device.name(), provider=provider, backend_version=device.version())
         self._device = device
         self._device_id = device_id
+
+        formats = device.supported_program_formats()
+        if payload_descriptor is not None:
+            formats = [fmt for fmt in formats if fmt == payload_descriptor]
+            if not formats:
+                msg = "The device does not accept the requested payload descriptor"
+                raise UnsupportedFormatError(msg)
+        selected = None
+        for fmt in formats:
+            if serializer := self._program_serializer(fmt):
+                selected = (fmt, serializer)
+                break
+        if selected is None:
+            msg = "The device reports no payload descriptor that this Qiskit backend can serialize"
+            raise UnsupportedFormatError(msg)
+        self._program_format, self._serialize_program = selected
+        features = device.try_program_features(self._program_format)
+        feature_groups = Counter((feature.id, feature.value) for feature in features or ())
+        self._program_capabilities = (
+            None
+            if features is None
+            else {
+                feature.id
+                for feature in features
+                if feature.value == 0
+                and feature_groups[feature.id, feature.value] == 1
+                and not feature.constraint_id
+                and feature.constraint_value == 0
+            }
+        )
+        if self._program_format.format_id == "qir" and self._program_format.profile == "adaptive":
+            self._program_capabilities = (self._program_capabilities or set()) | {
+                "mid-circuit-measurement",
+                "measured-qubit-reuse",
+                "measurement-result-use",
+                "boolean-computation",
+                "forward-branching",
+            }
 
         # Build Target from device
         self._target = self._build_target()
@@ -329,6 +406,7 @@ class QDMIBackend(BackendV2):
         device_id: str,
         *,
         provider: QDMIProvider | None = None,
+        payload_descriptor: ProgramFormat | None = None,
         **session_parameters: Unpack[QDMISessionParameters],
     ) -> QDMIBackend:
         """Open a registered QDMI device and adapt it for Qiskit.
@@ -336,6 +414,7 @@ class QDMIBackend(BackendV2):
         Args:
             device_id: Stable ID from the QDMI device registry.
             provider: Provider to associate with the backend.
+            payload_descriptor: Exact payload to produce.
             session_parameters: Optional overrides for this device session.
 
         Returns:
@@ -345,6 +424,7 @@ class QDMIBackend(BackendV2):
             device=open_device(device_id, **session_parameters),
             provider=provider,
             device_id=device_id,
+            payload_descriptor=payload_descriptor,
         )
 
     @property
@@ -356,6 +436,11 @@ class QDMIBackend(BackendV2):
     def device_id(self) -> str | None:
         """Stable QDMI device ID, if known."""
         return self._device_id
+
+    @property
+    def payload_descriptor(self) -> ProgramFormat:
+        """The exact payload produced by this backend."""
+        return self._program_format
 
     def sampler(self, **options: Unpack[QiskitSamplerOptions]) -> BackendSamplerV2:
         """Construct Qiskit's native sampler with typed keyword options.
@@ -440,6 +525,16 @@ class QDMIBackend(BackendV2):
                 UserWarning,
                 stacklevel=2,
             )
+
+        capabilities = self._program_capabilities or set()
+        for capability, instruction, name in (
+            ("forward-branching", IfElseOp, "if_else"),
+            ("counted-iteration", ForLoopOp, "for_loop"),
+            ("conditional-loop", WhileLoopOp, "while_loop"),
+            ("multiway-branching", SwitchCaseOp, "switch_case"),
+        ):
+            if capability in capabilities:
+                target.add_instruction(instruction, name=name)
 
         return target
 
@@ -646,55 +741,33 @@ class QDMIBackend(BackendV2):
         """
         return circuit
 
-    def _serialize_circuit(
-        self, circuit: QuantumCircuit, supported_program_formats: Iterable[ProgramFormat]
-    ) -> tuple[str | bytes, ProgramFormat]:
+    def _serialize_circuit(self, circuit: QuantumCircuit) -> tuple[str | bytes, ProgramFormat]:
         """Serialize a :class:`~qiskit.circuit.QuantumCircuit` into a program the device accepts.
 
-        The method walks the formats the device supports in the order of
-        :data:`~mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE`
-        and uses the first one that has a registered serializer. See
-        :mod:`mqt.core.plugins.qiskit.serializers` for how a package registers a
-        serializer.
+        The backend selects the descriptor and serializer once during
+        construction.
 
         Args:
             circuit: The circuit to serialize.
-            supported_program_formats: The program formats the device accepts.
 
         Returns:
             Tuple of (program, program format). The program is a string for a
             text format and bytes for a binary format.
 
         Raises:
-            UnsupportedFormatError: If the device reports no program format that
-                has a serializer.
             UnsupportedOperationError: If the circuit contains an operation the
                 chosen format cannot express.
             TranslationError: If serialization fails.
         """
-        formats = list(supported_program_formats)
-        if not formats:
-            msg = "The device reports no supported program formats"
-            raise UnsupportedFormatError(msg)
-
-        for fmt in preferred_program_formats(formats):
-            serializer = program_serializer(fmt)
-            if serializer is None:
-                continue
-            try:
-                program = serializer(circuit, self)
-            except UnsupportedOperationError:
-                # A circuit the chosen format cannot express must fail loudly
-                # rather than arrive at the device in a weaker format.
-                raise
-            except Exception as exc:
-                msg = f"Failed to serialize the circuit to {fmt.name}: {exc}"
-                raise TranslationError(msg) from exc
-            _check_payload_type(program, fmt)
-            return program, fmt
-
-        msg = f"No program serializer for any format the device supports: {[fmt.name for fmt in formats]}"
-        raise UnsupportedFormatError(msg)
+        try:
+            program = self._serialize_program(circuit, self)
+        except UnsupportedOperationError:
+            raise
+        except Exception as exc:
+            msg = f"Failed to serialize the circuit to {self._program_format.format_id}: {exc}"
+            raise TranslationError(msg) from exc
+        _check_payload_type(program, self._program_format)
+        return program, self._program_format
 
     def run(
         self,
@@ -779,8 +852,6 @@ class QDMIBackend(BackendV2):
 
         # Build set of all supported QDMI operation names once
         device_ops = {op.name().lower() for op in self._device.operations()}
-        supported_formats = self._device.supported_program_formats()
-
         # Process each circuit
         qdmi_jobs: list[QDMIJobHandle] = []
         prepared_circuits: list[QuantumCircuit] = []
@@ -811,8 +882,17 @@ class QDMIBackend(BackendV2):
                 raise CircuitValidationError(msg)
 
             # Validate operations are supported
-            for instruction in bound_circuit.data:
+            pending = list(bound_circuit.data)
+            while pending:
+                instruction = pending.pop()
                 op_name = instruction.operation.name
+                for block in getattr(instruction.operation, "blocks", ()):
+                    pending.extend(block.data)
+                if op_name in {"if_else", "for_loop", "while_loop", "switch_case"}:
+                    if op_name not in self._target.operation_names:
+                        msg = f"Unsupported control flow operation: '{op_name}'"
+                        raise UnsupportedOperationError(msg)
+                    continue
                 # Map the Qiskit gate name to possible QDMI operation names and check if any match
                 possible_qdmi_names = self._map_qiskit_gate_to_operation_names(op_name)
                 # Check if any of the possible QDMI names are supported by the device
@@ -822,7 +902,7 @@ class QDMIBackend(BackendV2):
                     raise UnsupportedOperationError(msg)
 
             # Serialize the circuit into a program format the device accepts
-            serialized_circuits.append(self._serialize_circuit(bound_circuit, supported_formats))
+            serialized_circuits.append(self._serialize_circuit(bound_circuit))
             prepared_circuits.append(bound_circuit)
 
         # Second pass: submit all validated circuits
@@ -839,12 +919,3 @@ class QDMIBackend(BackendV2):
         except BaseException:
             _cancel_jobs(qdmi_jobs)
             raise
-
-
-# MQT Core owns the two OpenQASM formats and registers them through the same
-# registry as everyone else, so the backend walks one ordered list of formats
-# with no format-specific branch. `mqt.core.plugins.qiskit.__init__` imports this
-# module whenever Qiskit is installed, so both formats are available as soon as
-# the adapter is.
-register_program_serializer(ProgramFormat.QASM3, _serialize_to_qasm3)
-register_program_serializer(ProgramFormat.QASM2, _serialize_to_qasm2)

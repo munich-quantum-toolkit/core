@@ -410,17 +410,17 @@ When you run a circuit, the backend:
 
 1. Validates the circuit (checks for unbound parameters, supported operations,
    valid options)
-2. Serializes the circuit into one of the program formats supported by the
-   target device, through the program serializer registered for that format
+2. Serializes the circuit into the first supported format that the backend owns
 3. Submits the program to the QDMI device via `device.submit_job()`
 4. Returns a {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob`
 
 ### Program Serializers
 
-A _program serializer_ turns one circuit into one program in one program format.
-MQT Core provides the serializers for OpenQASM 2 and OpenQASM 3. Every other
-format belongs to the package that owns the device, which registers its
-serializer through the same registry.
+A _program serializer_ turns one circuit into one program in one exact program
+format. `QDMIBackend` provides serializers for OpenQASM 3 and OpenQASM 2. It
+tries formats in the order reported by the device. A subclass can own a vendor
+format by overriding `_program_serializer` and delegating other formats to the
+base implementation.
 
 A format fixes the kind of payload it carries, so there are two signatures. A
 text format takes a serializer that returns `str`:
@@ -443,50 +443,21 @@ A serializer reads the device through
 operations through
 {py:attr}`~mqt.core.plugins.qiskit.backend.QDMIBackend.target`.
 
-A package advertises its serializers through the
-`mqt.core.qiskit.program_serializers` entry point group. The entry point name is
-the {py:class}`~mqt.core.qdmi.ProgramFormat` member name:
-
-```toml
-[project.entry-points."mqt.core.qiskit.program_serializers"]
-IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
-```
-
-{py:func}`~mqt.core.plugins.qiskit.serializers.register_program_serializer` does
-the same at run time:
-
 ```python
-from mqt.core.plugins.qiskit import register_program_serializer
-from mqt.core.qdmi import ProgramFormat
+class VendorBackend(QDMIBackend):
+    def _program_serializer(self, program_format):
+        if program_format == VENDOR_FORMAT:
+            return serialize_vendor_program
+        return super()._program_serializer(program_format)
 
-register_program_serializer(ProgramFormat.IQM_JSON, qiskit_to_iqm_json)
+    def _decode_counts(self, job):
+        if self.payload_descriptor == VENDOR_FORMAT:
+            return decode_vendor_counts(job)
+        return super()._decode_counts(job)
 ```
 
-Pass `replace=True` to take over a format that already has a serializer,
-including OpenQASM 2 and OpenQASM 3.
-
-A device usually accepts several formats. The backend walks them in the order of
-{py:data}`~mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` and
-uses the first one that has a serializer, so the order of the list decides and
-not the order the device reports:
-
-```text
-IQM_JSON, CUSTOM1 ... CUSTOM5,
-QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
-QPY, QASM3,
-QIR_BASE_MODULE, QIR_BASE_STRING,
-QASM2
-```
-
-A device-native format comes first, because a package that registers a
-serializer for its own device's format wants that format used. The standardized
-formats follow in order of what a circuit may contain: the QIR adaptive profile
-allows classical control, QPY carries a Qiskit circuit without loss, and
-OpenQASM 3 expresses control flow, while the QIR base profile forbids classical
-feedback and OpenQASM 2 has no control flow at all. Encoding only breaks a tie
-within one profile, because it decides how the program travels rather than what
-it may say. `CALIBRATION` and `BATCH_JOB` are absent because a serialized
-circuit is not what they carry.
+The same backend owns vendor result decoding through `_decode_counts`. The base
+implementation uses the standard QDMI counts result.
 
 ### Device Introspection
 

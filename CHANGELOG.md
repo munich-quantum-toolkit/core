@@ -92,6 +92,9 @@ releases may include breaking changes.
 
 - ✨ Expose ordered shots from DDSIM QDMI OpenQASM and QIR jobs, with matching
   histograms ([#2368]) ([**@burgholzer**])
+- ✨ Add backend-owned program serialization and result decoding to QDMI Qiskit
+  backends. [QDMI-on-IQM] now provides the IQM JSON integration and `MoveGate`
+  ([#2114], [#2226]) ([**@marcelwa**], [**@burgholzer**])
 - 🐳 Add dev container configuration for a consistent local development
   environment ([#1786]) ([**@denialhaag**])
 

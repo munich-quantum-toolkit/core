@@ -145,6 +145,9 @@ struct DeviceLibrary {
   /// Function pointer to @ref QDMI_device_session_query_device_property.
   decltype(QDMI_device_session_query_device_property)*
       device_session_query_device_property{};
+  /// Function pointer to @ref QDMI_device_session_query_program_features.
+  decltype(QDMI_device_session_query_program_features)*
+      device_session_query_program_features{};
   /// Function pointer to @ref QDMI_device_session_query_site_property.
   decltype(QDMI_device_session_query_site_property)*
       device_session_query_site_property{};
@@ -292,6 +295,10 @@ public:
    */
   auto queryDeviceProperty(QDMI_Device_Property prop, size_t size, void* value,
                            size_t* sizeRet) const -> int;
+
+  auto queryProgramFeatures(const QDMI_Program_Format* format, size_t size,
+                            QDMI_Program_Feature* value, size_t* sizeRet) const
+      -> int;
 
   /**
    * @brief Queries a site property.

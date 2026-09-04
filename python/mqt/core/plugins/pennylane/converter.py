@@ -46,6 +46,8 @@ class _ConvertedProgram:
     program_format: ProgramFormat
     wire_map: Mapping[Hashable, int]
     measurement_order: tuple[int, ...]
+    mcm_slot_by_uid: Mapping[str, int]
+    output_width: int
 
 
 @dataclass(frozen=True)
@@ -189,11 +191,18 @@ class _ProgramConverter:
         program_format: Program format the device selected.
     """
 
-    def __init__(self, device: QDMIDevice, device_wires: Wires, program_format: ProgramFormat) -> None:
+    def __init__(
+        self,
+        device: QDMIDevice,
+        device_wires: Wires,
+        program_format: ProgramFormat,
+        capabilities: frozenset[str] = frozenset(),
+    ) -> None:
         """Read the advertised capabilities of one opened QDMI device."""
         self._device = device
         self._device_wires = device_wires
         self._program_format = program_format
+        self._capabilities = capabilities
         self._advertised = {operation.name().lower(): operation for operation in device.operations()}
         self._wire_map: Mapping[Hashable, int] = MappingProxyType({
             wire: index for index, wire in enumerate(device_wires)
@@ -210,7 +219,11 @@ class _ProgramConverter:
         Returns:
             Whether the device runs the operation without further decomposition.
         """
-        if self._program_format == ProgramFormat.QASM3:
+        if isinstance(operation, qp.ops.MidMeasure):
+            return self._supports_mcm(reset=operation.reset)
+        if isinstance(operation, qp.ops.op_math.Conditional):
+            return self._supports_mcm() and self.supports(operation.base)
+        if self._program_format == ProgramFormat.OPENQASM3:
             return _resolve_qasm3_operation(operation, self._advertised) is not None
         spelling = _QASM2_OPERATIONS.get(operation.name)
         return spelling is not None and spelling in self._advertised
@@ -224,11 +237,13 @@ class _ProgramConverter:
         Returns:
             The converted program and its deterministic measurement metadata.
         """
-        if self._program_format == ProgramFormat.QASM3:
+        if self._program_format == ProgramFormat.OPENQASM3:
             return self._convert_qasm3(tape)
         return self._convert_qasm2(tape)
 
-    def _program(self, tape: QuantumScript, payload: str) -> _ConvertedProgram:
+    def _program(
+        self, tape: QuantumScript, payload: str, mcm_slot_by_uid: Mapping[str, int] | None = None
+    ) -> _ConvertedProgram:
         """Attach the measurement-decoding metadata to one converted payload.
 
         Returns:
@@ -239,6 +254,25 @@ class _ProgramConverter:
             program_format=self._program_format,
             wire_map=self._wire_map,
             measurement_order=self._measurement_order(tape),
+            mcm_slot_by_uid=MappingProxyType(dict(mcm_slot_by_uid or {})),
+            output_width=len(self._device_wires) + len(mcm_slot_by_uid or {}),
+        )
+
+    def _supports_mcm(self, *, reset: bool = False) -> bool:
+        """Return whether the selected OpenQASM path supports one-shot MCM."""
+        required = {
+            "mid-circuit-measurement",
+            "measured-qubit-reuse",
+            "measurement-result-use",
+            "boolean-computation",
+            "forward-branching",
+        }
+        operations = self._advertised
+        return (
+            self._program_format == ProgramFormat.OPENQASM3
+            and required <= self._capabilities
+            and "measure" in operations
+            and (not reset or "reset" in operations)
         )
 
     def _measurement_order(self, tape: QuantumScript) -> tuple[int, ...]:
@@ -317,13 +351,67 @@ class _ProgramConverter:
             PennyLaneUnsupportedOperationError: If no advertised spelling exists.
             PennyLaneValidationError: If parameters, wires, or topology are invalid.
         """
+        mid_measurements = [operation for operation in tape.operations if isinstance(operation, qp.ops.MidMeasure)]
+        if any(not operation.meas_uid for operation in mid_measurements):
+            msg = "Mid-circuit measurements require unique nonempty measurement IDs."
+            raise ValidationError(msg)
+        uids = [operation.meas_uid for operation in mid_measurements if operation.meas_uid is not None]
+        if len(set(uids)) != len(uids):
+            msg = "Mid-circuit measurements require unique nonempty measurement IDs."
+            raise ValidationError(msg)
+        mcm_slot_by_uid = {uid: len(self._device_wires) + index for index, uid in enumerate(uids)}
         lines = [
             "OPENQASM 3.0;",
             f"qubit[{len(self._device_wires)}] q;",
-            f"bit[{len(self._device_wires)}] c;",
+            f"bit[{len(self._device_wires) + len(uids)}] c;",
         ]
+        seen_measurements: set[str] = set()
 
         for operation in tape.operations:
+            if isinstance(operation, qp.ops.MidMeasure):
+                if not self._supports_mcm(reset=operation.reset):
+                    msg = "The selected payload does not support mid-circuit measurement and reset."
+                    raise UnsupportedOperationError(msg)
+                wire = self._wire_map[operation.wires[0]]
+                uid = operation.meas_uid
+                assert uid is not None
+                lines.append(f"c[{mcm_slot_by_uid[uid]}] = measure q[{wire}];")
+                seen_measurements.add(uid)
+                if operation.reset:
+                    lines.append(f"reset q[{wire}];")
+                continue
+            if isinstance(operation, qp.ops.op_math.Conditional):
+                if not self._supports_mcm():
+                    msg = "The selected payload does not support measurement-conditioned execution."
+                    raise UnsupportedOperationError(msg)
+                dependencies = operation.meas_val.measurements
+                if any(measurement.meas_uid not in seen_measurements for measurement in dependencies):
+                    msg = "A conditional uses a measurement that does not precede it."
+                    raise ValidationError(msg)
+                if len(dependencies) > 16:
+                    msg = "A conditional depends on more than 16 measurements."
+                    raise ValidationError(msg)
+                true_assignments = [assignment for assignment, value in operation.meas_val.items() if bool(value)]
+                resolved = _resolve_qasm3_operation(operation.base, self._advertised)
+                if resolved is None:
+                    msg = f"Conditional operation '{operation.base.name}' is not supported."
+                    raise UnsupportedOperationError(msg)
+                spelling, spec, qdmi_operation = resolved
+                _validate_operation_shape(operation.base, spec)
+                indices = tuple(self._wire_map[wire] for wire in operation.base.wires)
+                self._validate_qdmi_contract(operation.base, spec, qdmi_operation, indices)
+                parameters = ",".join(
+                    repr(_finite_parameter(parameter, operation.base.name)) for parameter in operation.base.parameters
+                )
+                gate = f"{spelling}{f'({parameters})' if parameters else ''} "
+                gate += ",".join(f"q[{index}]" for index in indices) + ";"
+                for assignment in true_assignments:
+                    terms = [
+                        f"c[{mcm_slot_by_uid[measurement.meas_uid]}] == {bit}"
+                        for measurement, bit in zip(dependencies, assignment, strict=True)
+                    ]
+                    lines.append(f"if ({' && '.join(terms)}) {{ {gate} }}")
+                continue
             resolved = _resolve_qasm3_operation(operation, self._advertised)
             if resolved is None:
                 msg = (
@@ -353,8 +441,8 @@ class _ProgramConverter:
             operands = ",".join(f"q[{index}]" for index in indices)
             lines.append(f"{spelling}{parameter_list} {operands};")
 
-        lines.append("c = measure q;")
-        return self._program(tape, "\n".join(lines) + "\n")
+        lines.extend(f"c[{index}] = measure q[{index}];" for index in range(len(self._device_wires)))
+        return self._program(tape, "\n".join(lines) + "\n", mcm_slot_by_uid)
 
     def _convert_qasm2(self, tape: QuantumScript) -> _ConvertedProgram:
         """Serialize a QASM2-only program with PennyLane's built-in converter.

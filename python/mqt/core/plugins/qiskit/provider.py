@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 from ...qdmi.driver import registered_device_ids
 from .backend import QDMIBackend
-from .exceptions import UnsupportedDeviceError
+from .exceptions import UnsupportedDeviceError, UnsupportedFormatError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -95,7 +95,7 @@ class QDMIProvider:
         for device_id in self.device_ids():
             try:
                 backend = self.get_backend_by_device_id(device_id)
-            except UnsupportedDeviceError:
+            except (UnsupportedDeviceError, UnsupportedFormatError):
                 continue
             except (IndexError, RuntimeError, ValueError):
                 warnings.warn(

@@ -148,13 +148,13 @@ class QIRHistogramTestString : public HistogramTest {};
 } // namespace
 
 TEST_F(HistogramTest, QASM3Program) {
-  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM3;
+  constexpr QDMI_Program_Format format = qdmi_test::OPENQASM3;
   constexpr std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
   checkHistogram(runProgram(format, program));
 }
 
 TEST_F(HistogramTest, QASM3ProgramWithoutMeasurements) {
-  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM3;
+  constexpr QDMI_Program_Format format = qdmi_test::OPENQASM3;
   constexpr std::string_view program = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
@@ -165,7 +165,7 @@ cx q[0], q[1];
 }
 
 TEST_F(HistogramTest, QASM2Program) {
-  constexpr QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_QASM2;
+  constexpr QDMI_Program_Format format = qdmi_test::OPENQASM2;
   constexpr std::string_view program = qdmi_test::QASM2_BELL_SAMPLING;
   checkHistogram(runProgram(format, program));
 }
@@ -182,58 +182,58 @@ c0[0] = measure q[0];
 c0[1] = measure q[1];
 c1 = measure q[2];
 )qasm";
-  const auto [keys, values] = runProgram(QDMI_PROGRAM_FORMAT_QASM3, program);
+  const auto [keys, values] = runProgram(qdmi_test::OPENQASM3, program);
   EXPECT_EQ(keys, std::vector<std::string>{"101"});
   EXPECT_EQ(values, std::vector<size_t>{NUM_SHOTS});
 }
 
 TEST_F(QIRHistogramTestModule, BaseStatic) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
+  constexpr auto format = qdmi_test::QIR21_BASE_BINARY;
   checkHistogram(runProgram(format, getProgram("BellPairStatic.ll")));
 }
 
 TEST_F(QIRHistogramTestString, BaseStatic) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  constexpr auto format = qdmi_test::QIR21_BASE_TEXT;
   checkHistogram(
       runProgram(format, qdmi_test::getQIRProgram("BellPairStatic.ll")));
 }
 
 TEST_F(QIRHistogramTestModule, BaseDynamic) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
+  constexpr auto format = qdmi_test::QIR21_BASE_BINARY;
   checkHistogram(runProgram(format, getProgram("BellPairDynamic.ll")));
 }
 
 TEST_F(QIRHistogramTestString, BaseDynamic) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  constexpr auto format = qdmi_test::QIR21_BASE_TEXT;
   checkHistogram(
       runProgram(format, qdmi_test::getQIRProgram("BellPairDynamic.ll")));
 }
 
 TEST_F(QIRHistogramTestModule, Adaptive) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  constexpr auto format = qdmi_test::QIR21_ADAPTIVE_BINARY;
   checkHistogram(runProgram(format, getProgram("BellPairAdaptive.ll")));
 }
 
 TEST_F(QIRHistogramTestString, Adaptive) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+  constexpr auto format = qdmi_test::QIR21_ADAPTIVE_TEXT;
   checkHistogram(
       runProgram(format, qdmi_test::getQIRProgram("BellPairAdaptive.ll")));
 }
 
 TEST_F(QIRHistogramTestModule, AdaptiveRecordOutputs) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  constexpr auto format = qdmi_test::QIR21_ADAPTIVE_BINARY;
   checkSmokeHistogram(
       runProgram(format, getProgram("AdaptiveRecordOutputs.ll")));
 }
 
 TEST_F(QIRHistogramTestString, AdaptiveRecordOutputs) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+  constexpr auto format = qdmi_test::QIR21_ADAPTIVE_TEXT;
   checkSmokeHistogram(
       runProgram(format, qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll")));
 }
 
 TEST_F(HistogramTest, SeedReproducesQASMSampling) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
+  constexpr auto format = qdmi_test::OPENQASM3;
   constexpr std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
   std::vector<std::string> first;
   std::vector<std::string> second;
@@ -244,7 +244,7 @@ TEST_F(HistogramTest, SeedReproducesQASMSampling) {
 }
 
 TEST_F(QIRHistogramTestString, SeedReproducesQIRSampling) {
-  constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  constexpr auto format = qdmi_test::QIR21_BASE_TEXT;
   const auto program = qdmi_test::getQIRProgram("BellPairStatic.ll");
   std::vector<std::string> first;
   std::vector<std::string> second;
@@ -269,7 +269,7 @@ a[1] = measure q[0];
 if (a[1]) { x q[1]; }
 b[0] = measure q[1];
 )qasm";
-  const auto [keys, values] = runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7);
+  const auto [keys, values] = runProgram(qdmi_test::OPENQASM3, program, 7);
   EXPECT_EQ(keys, (std::vector<std::string>{"0000", "0110"}));
   EXPECT_EQ(std::accumulate(values.begin(), values.end(), size_t{0}),
             NUM_SHOTS);
@@ -278,9 +278,8 @@ b[0] = measure q[1];
 TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(
-      qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3, "OPENQASM 3.0;"),
-      QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3, "OPENQASM 3.0;"),
+            QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 4), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
@@ -301,10 +300,35 @@ TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
   }
 }
 
+TEST(ResultsSampling, QIRProgramOutputIsAvailable) {
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  ASSERT_EQ(qdmi_test::setProgram(
+                job.job, qdmi_test::QIR21_ADAPTIVE_TEXT,
+                qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll")),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 1), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+
+  const auto size =
+      qdmi_test::querySize(job.job, QDMI_JOB_RESULT_PROGRAMOUTPUT);
+  ASSERT_GT(size, 0U);
+  std::string output(size, '\0');
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                job.job, QDMI_JOB_RESULT_PROGRAMOUTPUT, size - 1U,
+                output.data(), nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job.job,
+                                                  QDMI_JOB_RESULT_PROGRAMOUTPUT,
+                                                  size, output.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_TRUE(output.starts_with("HEADER\tschema_id\t"));
+}
+
 TEST(ResultsSampling, BufferTooSmallErrors) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 512), QDMI_SUCCESS);
@@ -317,6 +341,10 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
                 j.job, QDMI_JOB_RESULT_SHOTS, shotsTooSmall.size(),
                 shotsTooSmall.data(), nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
+
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, QDMI_JOB_RESULT_PROGRAMOUTPUT, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
 
   if (const size_t ks = qdmi_test::querySize(j.job, QDMI_JOB_RESULT_HIST_KEYS);
       ks > 0) {
@@ -341,7 +369,7 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
 TEST(ResultsSampling, StateAndProbRequestsAreInvalidWhenShotsPositive) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 32), QDMI_SUCCESS);

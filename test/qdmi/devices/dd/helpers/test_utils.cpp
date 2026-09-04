@@ -94,26 +94,22 @@ int setProgram(MQT_DDSIM_QDMI_Device_Job job, const QDMI_Program_Format fmt,
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  int rc = MQT_DDSIM_QDMI_device_job_set_parameter(
-      job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT, sizeof(QDMI_Program_Format),
-      &fmt);
-  if (rc != QDMI_SUCCESS && rc != QDMI_ERROR_NOTSUPPORTED) {
-    return rc;
-  }
   // Text payloads include the trailing '\0' per the QDMI wire convention.
   // Binary payloads ship the exact byte count.
   // The `+1` is safe here because every existing call to `setProgram` with a
   // text format passes a `program` with a string literal or `std::string`, both
   // of which guarantee `'\0'` at `data()[size()]`.
-  const bool isTextProgramFormat = fmt == QDMI_PROGRAM_FORMAT_QASM2 ||
-                                   fmt == QDMI_PROGRAM_FORMAT_QASM3 ||
-                                   fmt == QDMI_PROGRAM_FORMAT_QIRBASESTRING ||
-                                   fmt == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+  const bool isTextProgramFormat = fmt.encoding == QDMI_PROGRAM_ENCODING_TEXT;
   const auto bytesToSend =
       isTextProgramFormat ? program.size() + 1 : program.size();
-  rc = MQT_DDSIM_QDMI_device_job_set_parameter(
-      job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, bytesToSend, program.data());
-  return rc;
+  const void* const programData = program.data();
+  const auto result = MQT_DDSIM_QDMI_device_job_set_parameter(
+      job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT, sizeof(fmt), &fmt);
+  if (result != QDMI_SUCCESS) {
+    return result;
+  }
+  return MQT_DDSIM_QDMI_device_job_set_parameter(
+      job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, bytesToSend, programData);
 }
 
 int setShots(MQT_DDSIM_QDMI_Device_Job job, const size_t shots) {

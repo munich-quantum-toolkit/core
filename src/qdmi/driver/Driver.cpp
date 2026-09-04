@@ -154,6 +154,7 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
     LOAD_DYNAMIC_SYMBOL(device_job_get_results)
     // device query interface
     LOAD_DYNAMIC_SYMBOL(device_session_query_device_property)
+    LOAD_DYNAMIC_SYMBOL(device_session_query_program_features)
     LOAD_DYNAMIC_SYMBOL(device_session_query_site_property)
     LOAD_DYNAMIC_SYMBOL(device_session_query_operation_property)
     // NOLINTEND(cppcoreguidelines-pro-type-reinterpret-cast)
@@ -481,6 +482,14 @@ auto QDMI_Device_impl_d::querySiteProperty(QDMI_Site site,
       deviceSession_, site, prop, size, value, sizeRet);
 }
 
+auto QDMI_Device_impl_d::queryProgramFeatures(const QDMI_Program_Format* format,
+                                              const size_t size,
+                                              QDMI_Program_Feature* value,
+                                              size_t* sizeRet) const -> int {
+  return library_->device_session_query_program_features(deviceSession_, format,
+                                                         size, value, sizeRet);
+}
+
 auto QDMI_Device_impl_d::queryOperationProperty(
     QDMI_Operation operation, const size_t numSites, const QDMI_Site* sites,
     const size_t numParams, const double* params, QDMI_Operation_Property prop,
@@ -494,10 +503,10 @@ namespace {
 [[nodiscard]] auto toDeviceJobParameter(const QDMI_Job_Parameter& param)
     -> QDMI_Device_Job_Parameter {
   switch (param) {
-  case QDMI_JOB_PARAMETER_PROGRAM:
-    return QDMI_DEVICE_JOB_PARAMETER_PROGRAM;
   case QDMI_JOB_PARAMETER_PROGRAMFORMAT:
     return QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT;
+  case QDMI_JOB_PARAMETER_PROGRAM:
+    return QDMI_DEVICE_JOB_PARAMETER_PROGRAM;
   case QDMI_JOB_PARAMETER_SHOTSNUM:
     return QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM;
   case QDMI_JOB_PARAMETER_CUSTOM1:
@@ -511,6 +520,9 @@ namespace {
   case QDMI_JOB_PARAMETER_CUSTOM5:
     return QDMI_DEVICE_JOB_PARAMETER_CUSTOM5;
   default:
+    if (qdmi::detail::isCustomValue(param)) {
+      return static_cast<QDMI_Device_Job_Parameter>(param);
+    }
     return QDMI_DEVICE_JOB_PARAMETER_MAX;
   }
 }
@@ -565,6 +577,9 @@ namespace {
   case QDMI_JOB_PROPERTY_CUSTOM5:
     return QDMI_DEVICE_JOB_PROPERTY_CUSTOM5;
   default:
+    if (qdmi::detail::isCustomValue(prop)) {
+      return static_cast<QDMI_Device_Job_Property>(prop);
+    }
     return QDMI_DEVICE_JOB_PROPERTY_MAX;
   }
 }
@@ -1000,6 +1015,17 @@ int QDMI_device_query_device_property(QDMI_Device device,
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   return device->queryDeviceProperty(prop, size, value, sizeRet);
+}
+
+int QDMI_device_query_program_features(QDMI_Device device,
+                                       const QDMI_Program_Format* format,
+                                       const size_t size,
+                                       QDMI_Program_Feature* value,
+                                       size_t* sizeRet) {
+  if (device == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return device->queryProgramFeatures(format, size, value, sizeRet);
 }
 
 int QDMI_device_query_site_property(QDMI_Device device, QDMI_Site site,

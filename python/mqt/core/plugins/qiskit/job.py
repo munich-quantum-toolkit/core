@@ -190,7 +190,7 @@ class QDMIJob(JobV1):
         elif not width:
             data = {"counts": {}}
         else:
-            counts = job.get_counts()
+            counts = self._backend._decode_counts(job)  # ruff:ignore[private-member-access]
             if any(not isinstance(count, Integral) or count < 0 for count in counts.values()):
                 msg = "Invalid QDMI histogram: counts must be nonnegative integers."
                 raise JobError(msg)

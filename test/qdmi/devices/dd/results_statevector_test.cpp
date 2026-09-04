@@ -48,27 +48,26 @@ void expectBellState(const QDMI_Program_Format format,
 } // namespace
 
 TEST(ResultsStatevector, QASM2YieldsBellState) {
-  expectBellState(QDMI_PROGRAM_FORMAT_QASM2, qdmi_test::QASM2_BELL_STATE);
+  expectBellState(qdmi_test::OPENQASM2, qdmi_test::QASM2_BELL_STATE);
 }
 
 TEST(ResultsStatevector, QASM2IgnoresFinalMeasurements) {
-  expectBellState(QDMI_PROGRAM_FORMAT_QASM2, qdmi_test::QASM2_BELL_SAMPLING);
+  expectBellState(qdmi_test::OPENQASM2, qdmi_test::QASM2_BELL_SAMPLING);
 }
 
 TEST(ResultsStatevector, QASM3YieldsBellState) {
-  expectBellState(QDMI_PROGRAM_FORMAT_QASM3, qdmi_test::QASM3_BELL_STATE);
+  expectBellState(qdmi_test::OPENQASM3, qdmi_test::QASM3_BELL_STATE);
 }
 
 TEST(ResultsStatevector, QASM3IgnoresFinalMeasurements) {
-  expectBellState(QDMI_PROGRAM_FORMAT_QASM3, qdmi_test::QASM3_BELL_SAMPLING);
+  expectBellState(qdmi_test::OPENQASM3, qdmi_test::QASM3_BELL_SAMPLING);
 }
 
 TEST(ResultsStatevector, EmptyQASM3YieldsEmptyResults) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(
-      qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3, "OPENQASM 3.0;"),
-      QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3, "OPENQASM 3.0;"),
+            QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
@@ -96,7 +95,7 @@ TEST(ResultsStatevector, EmptyQASM3YieldsEmptyResults) {
 TEST(ResultsStatevector, DenseNormalizedAndBufferTooSmall) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_STATE),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
@@ -124,7 +123,7 @@ TEST(ResultsStatevector, DenseNormalizedAndBufferTooSmall) {
 TEST(ResultsStatevector, SparseNormalizedAndBufferTooSmall) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_STATE),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
@@ -161,7 +160,7 @@ TEST(ResultsStatevector, SparseNormalizedAndBufferTooSmall) {
 TEST(ResultsStatevector, SamplingRequestsInvalidWithShotsZero) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_BELL_STATE),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
@@ -182,9 +181,8 @@ TEST(ResultsStatevector, QIRBaseStringYieldsBellState) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
   const auto program = qdmi_test::getQIRProgram("BellPairStatic.ll");
-  ASSERT_EQ(
-      qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QIRBASESTRING, program),
-      QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::QIR21_BASE_TEXT, program),
+            QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 

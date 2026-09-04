@@ -28,7 +28,7 @@ TEST(JobParameters, SetAndQueryBasics) {
   const qdmi_test::JobGuard j{s.session};
 
   // Program format QASM3
-  constexpr QDMI_Program_Format fmt = QDMI_PROGRAM_FORMAT_QASM3;
+  constexpr QDMI_Program_Format fmt = qdmi_test::OPENQASM3;
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                 j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
                 sizeof(QDMI_Program_Format), &fmt),
@@ -56,7 +56,7 @@ TEST(JobParameters, SetAndQueryBasics) {
                 sizeof(QDMI_Program_Format), &fmtOut, &size),
             QDMI_SUCCESS);
   EXPECT_EQ(size, sizeof(QDMI_Program_Format));
-  EXPECT_EQ(fmtOut, QDMI_PROGRAM_FORMAT_QASM3);
+  EXPECT_EQ(fmtOut, qdmi_test::OPENQASM3);
 
   size_t shotsOut = 0;
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
@@ -95,7 +95,7 @@ TEST(JobParameters, RejectsUnterminatedTextProgram) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
 
-  constexpr QDMI_Program_Format fmt = QDMI_PROGRAM_FORMAT_QASM3;
+  constexpr QDMI_Program_Format fmt = qdmi_test::OPENQASM3;
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                 j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
                 sizeof(QDMI_Program_Format), &fmt),
@@ -112,7 +112,7 @@ TEST(JobParameters, RejectsInteriorNullInTextProgram) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
 
-  constexpr QDMI_Program_Format fmt = QDMI_PROGRAM_FORMAT_QASM3;
+  constexpr QDMI_Program_Format fmt = qdmi_test::OPENQASM3;
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                 j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
                 sizeof(QDMI_Program_Format), &fmt),
@@ -129,14 +129,14 @@ TEST(JobParameters, ProgramFormatSupport) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
 
-  // Supported
+  /// Supported descriptors.
   for (QDMI_Program_Format fmt : {
-           QDMI_PROGRAM_FORMAT_QASM2,
-           QDMI_PROGRAM_FORMAT_QASM3,
-           QDMI_PROGRAM_FORMAT_QIRBASESTRING,
-           QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
-           QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
-           QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+           qdmi_test::OPENQASM2,
+           qdmi_test::OPENQASM3,
+           qdmi_test::QIR21_BASE_TEXT,
+           qdmi_test::QIR21_BASE_BINARY,
+           qdmi_test::QIR21_ADAPTIVE_TEXT,
+           qdmi_test::QIR21_ADAPTIVE_BINARY,
        }) {
     EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                   j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
@@ -144,22 +144,24 @@ TEST(JobParameters, ProgramFormatSupport) {
               QDMI_SUCCESS);
   }
 
-  // Unsupported → NOTSUPPORTED
-  for (QDMI_Program_Format fmt : {
-           QDMI_PROGRAM_FORMAT_CALIBRATION,
-           QDMI_PROGRAM_FORMAT_QPY,
-           QDMI_PROGRAM_FORMAT_IQMJSON,
-           QDMI_PROGRAM_FORMAT_CUSTOM1,
-           QDMI_PROGRAM_FORMAT_CUSTOM2,
-           QDMI_PROGRAM_FORMAT_CUSTOM3,
-           QDMI_PROGRAM_FORMAT_CUSTOM4,
-           QDMI_PROGRAM_FORMAT_CUSTOM5,
-       }) {
-    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
-                  j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
-                  sizeof(QDMI_Program_Format), &fmt),
-              QDMI_ERROR_NOTSUPPORTED);
-  }
+  /// An exact but unsupported descriptor is rejected.
+  QDMI_Program_Format unsupported{
+      .version = QDMI_MAKE_VERSION(1, 0, 0),
+      .encoding = QDMI_PROGRAM_ENCODING_BINARY,
+      .id = "qiskit.qpy",
+      .profile = "",
+  };
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
+                sizeof(QDMI_Program_Format), &unsupported),
+            QDMI_ERROR_NOTSUPPORTED);
+
+  auto invalid = qdmi_test::OPENQASM3;
+  invalid.id[sizeof("openqasm")] = 'x';
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
+                sizeof(QDMI_Program_Format), &invalid),
+            QDMI_ERROR_INVALIDARGUMENT);
 }
 
 TEST(JobParameters, SamplingSeed) {
