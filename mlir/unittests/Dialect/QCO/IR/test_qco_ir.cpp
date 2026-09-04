@@ -94,9 +94,9 @@ protected:
 void QCOTest::SetUp() {
   // Register all necessary dialects
   DialectRegistry registry;
-  registry.insert<cbit::CBitDialect, QCODialect, arith::ArithDialect,
-                  func::FuncDialect, memref::MemRefDialect, scf::SCFDialect,
-                  qtensor::QTensorDialect>();
+  registry.insert<cbit::CBitDialect, mlir::mqt::MQTDialect, QCODialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect, qtensor::QTensorDialect>();
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
@@ -382,9 +382,12 @@ TEST_F(QCOTest, UnitaryVerifierDiagnosesMalformedCalls) {
   ParserConfig config(context.get(), false);
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {
-      func.func private @malformed(%q: !qco.qubit) -> !qco.qubit
+      func.func private @callee(%q: !qco.qubit) -> !qco.qubit
           attributes {mqt.unitary} {
-        %left, %right = qco.call @malformed(%q)
+        return %q : !qco.qubit
+      }
+      func.func private @caller(%q: !qco.qubit) -> !qco.qubit {
+        %left, %right = qco.call @callee(%q)
             : (!qco.qubit) -> (!qco.qubit, !qco.qubit)
         return %left : !qco.qubit
       }
@@ -406,11 +409,6 @@ TEST_F(QCOTest, UnitaryVerifierDiagnosesMalformedCalls) {
 }
 
 TEST_F(QCOTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
-  DialectRegistry registry;
-  registry.insert<mlir::mqt::MQTDialect>();
-  context->appendDialectRegistry(registry);
-  context->getOrLoadDialect<mlir::mqt::MQTDialect>();
-
   constexpr std::array<StringLiteral, 9> invalidPrograms{
       R"mlir(module {
         func.func private @bad() attributes {mqt.unitary} { return }
@@ -501,6 +499,48 @@ TEST_F(QCOTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
                    .begin();
   SymbolTableCollection symbols;
   EXPECT_TRUE(failed(call.verifySymbolUses(symbols)));
+}
+
+TEST_F(QCOTest, CleanupRemovesOnlyUnreachableUnitaryFunctions) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @used(%q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %out = qco.x %q : !qco.qubit -> !qco.qubit
+      return %out : !qco.qubit
+    }
+    func.func private @unused(%q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %out = qco.h %q : !qco.qubit -> !qco.qubit
+      return %out : !qco.qubit
+    }
+    func.func private @conditional(%q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %out = qco.z %q : !qco.qubit -> !qco.qubit
+      return %out : !qco.qubit
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %false = arith.constant false
+      scf.if %false {
+        %branchQ = qco.alloc : !qco.qubit
+        %branchOut = qco.call @conditional(%branchQ)
+            : (!qco.qubit) -> !qco.qubit
+        qco.sink %branchOut : !qco.qubit
+      }
+      %q = qco.alloc : !qco.qubit
+      %out = qco.call @used(%q) : (!qco.qubit) -> !qco.qubit
+      qco.sink %out : !qco.qubit
+      return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(moduleOp->lookupSymbol<func::FuncOp>("used"));
+  EXPECT_FALSE(moduleOp->lookupSymbol<func::FuncOp>("unused"));
+  EXPECT_FALSE(moduleOp->lookupSymbol<func::FuncOp>("conditional"));
+  EXPECT_TRUE(mlir::mqt::getEntryPoint(*moduleOp));
 }
 
 TEST_F(QCOTest, TraceQubitArgumentRejectsUnsupportedSources) {
