@@ -378,20 +378,20 @@ auto MQT_DDSIM_QDMI_Device_Session_impl_d::queryOperationProperty(
       IS_INVALID_ARGUMENT(prop, QDMI_OPERATION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  const auto& [name_, numSites_, numParams_, isVariadic,
+  const auto& [operationName, operationNumSites, operationNumParams, isVariadic,
                supportsArbitraryPositiveControls] =
       *reinterpret_cast<const OperationInfo*>(operation);
-  ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, name_, prop, size, value,
-                      sizeRet)
+  ADD_STRING_PROPERTY(QDMI_OPERATION_PROPERTY_NAME, operationName, prop, size,
+                      value, sizeRet)
   if (!isVariadic) {
-    if (sites != nullptr && numSites_ != numSites) {
+    if (sites != nullptr && operationNumSites != numSites) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
     ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_QUBITSNUM, size_t,
-                              numSites_, prop, size, value, sizeRet)
+                              operationNumSites, prop, size, value, sizeRet)
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_PARAMETERSNUM, size_t,
-                            numParams_, prop, size, value, sizeRet)
+                            operationNumParams, prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_OPERATION_PROPERTY_FIDELITY, double, 1.0, prop,
                             size, value, sizeRet)
   if (supportsArbitraryPositiveControls) {
