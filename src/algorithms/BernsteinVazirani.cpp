@@ -105,8 +105,9 @@ auto createBernsteinVazirani(const BVBitString& hiddenString)
 
 auto createBernsteinVazirani(const Qubit nq, const std::size_t seed)
     -> QuantumComputation {
-  auto qc = QuantumComputation(0, 0, seed);
-  const auto hiddenString = generateBitstring(nq, qc.getGenerator());
+  auto generator = std::mt19937_64(seed);
+  const auto hiddenString = generateBitstring(nq, generator);
+  auto qc = QuantumComputation();
   constructBernsteinVaziraniCircuit(qc, hiddenString, nq);
   return qc;
 }
@@ -169,8 +170,9 @@ auto createIterativeBernsteinVazirani(const BVBitString& hiddenString)
 
 auto createIterativeBernsteinVazirani(const Qubit nq, const std::size_t seed)
     -> QuantumComputation {
-  auto qc = QuantumComputation(0, 0, seed);
-  const auto hiddenString = generateBitstring(nq, qc.getGenerator());
+  auto generator = std::mt19937_64(seed);
+  const auto hiddenString = generateBitstring(nq, generator);
+  auto qc = QuantumComputation();
   constructIterativeBernsteinVaziraniCircuit(qc, hiddenString, nq);
   return qc;
 }

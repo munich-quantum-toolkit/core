@@ -127,6 +127,14 @@ The CoreIR API cleanup requires the following migrations:
 The register lookup helpers `getQubitRegister()`, `getPhysicalQubitIndex()`, and
 `physicalQubitIsAncillary()` are now private implementation details.
 
+### QuantumComputation random-number generator
+
+`QuantumComputation` no longer stores a random-number generator or seed. Remove
+the third `seed` argument from C++ and Python constructor calls. C++ callers
+that used `QuantumComputation::getGenerator()` must create and own a
+random-number generator instead. Randomized circuit generators continue to
+accept a seed and now own a separate generator for each call.
+
 ### Removal of the `datastructures` (sub)library
 
 MQT Core no longer provides the `datastructures` (`ds`) sublibrary. [MQT QMAP]

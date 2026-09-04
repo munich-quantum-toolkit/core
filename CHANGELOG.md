@@ -55,6 +55,9 @@ releases may include breaking changes.
   neutral-atom QDMI device and its configuration, the `mqt.core.na` Python
   module, `AodOperation`, and the `Move`, `Bridge`, `AodActivate`,
   `AodDeactivate`, and `AodMove` operation kinds ([#2137]) ([**@denialhaag**])
+- 💥 Remove the random-number generator, seed, and `getGenerator()` method from
+  `QuantumComputation`; randomized algorithms now own generators initialized
+  from their seed arguments ([#2111]) ([**@simon1hofmann**])
 - 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
   `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
   and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
@@ -802,6 +805,7 @@ for previous changelogs._
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2114]: https://github.com/munich-quantum-toolkit/core/pull/2114
 [#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
+[#2111]: https://github.com/munich-quantum-toolkit/core/pull/2111
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
