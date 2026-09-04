@@ -336,17 +336,18 @@ openQASM2UMatrix(const double theta, const double phi, const double lambda) {
 }
 
 [[nodiscard]] static Matrix2 integerPower(Matrix2 base, int64_t exponent) {
+  auto exponentMagnitude = static_cast<uint64_t>(exponent);
   if (exponent < 0) {
     base = base.adjoint();
-    exponent = -exponent;
+    exponentMagnitude = uint64_t{0} - exponentMagnitude;
   }
   auto result = Matrix2::identity();
-  while (exponent > 0) {
-    if ((exponent & 1) != 0) {
+  while (exponentMagnitude > 0U) {
+    if ((exponentMagnitude & 1U) != 0U) {
       result = base * result;
     }
     base = base * base;
-    exponent >>= 1;
+    exponentMagnitude >>= 1U;
   }
   return result;
 }

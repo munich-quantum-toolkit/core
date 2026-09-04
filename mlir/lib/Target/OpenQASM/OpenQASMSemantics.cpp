@@ -1689,7 +1689,7 @@ private:
         if (operand.type == ScalarType::Uint) {
           const auto value = std::get<uint64_t>(operand.value);
           if (syntax.expressions[*expression.lhs].kind == Expr::Kind::Int) {
-            if (value > (1ULL << 63)) {
+            if (value > (1ULL << 63U)) {
               return fail(expression.location,
                           "integer negation overflows i64");
             }

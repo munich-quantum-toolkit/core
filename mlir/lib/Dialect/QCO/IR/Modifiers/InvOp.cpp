@@ -33,6 +33,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <numbers>
 #include <optional>
 
@@ -522,7 +523,8 @@ bool InvOp::hasCompileTimeKnownUnitaryMatrix() {
 
 std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
   if (getNumBodyUnitaries() == 0) {
-    return DynamicMatrix::identity(1LL << getNumTargets());
+    return DynamicMatrix::identity(
+        static_cast<int64_t>(uint64_t{1} << getNumTargets()));
   }
 
   // Single inner unitary (e.g. `inv { h }`, `inv { cx }`).

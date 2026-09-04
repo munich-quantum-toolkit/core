@@ -67,7 +67,8 @@ std::string sha256Hex(const std::string_view input) {
   }
   const auto bitLength = static_cast<uint64_t>(input.size()) * 8U;
   for (auto shift = 56; shift >= 0; shift -= 8) {
-    message.emplace_back(static_cast<uint8_t>(bitLength >> shift));
+    message.emplace_back(
+        static_cast<uint8_t>(bitLength >> static_cast<unsigned>(shift)));
   }
 
   std::array<uint32_t, 8> hash{
@@ -131,7 +132,7 @@ std::string sha256Hex(const std::string_view input) {
   result.reserve(64U);
   for (const auto word : hash) {
     for (auto shift = 28; shift >= 0; shift -= 4) {
-      result.push_back(digits[(word >> shift) & 0xFU]);
+      result.push_back(digits[(word >> static_cast<unsigned>(shift)) & 0xFU]);
     }
   }
   return result;

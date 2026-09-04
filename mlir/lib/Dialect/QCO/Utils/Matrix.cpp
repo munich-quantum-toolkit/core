@@ -546,9 +546,9 @@ DynamicMatrix Matrix4x4::embedInNqubit(const size_t numQubits,
       if (!otherQubitBitsMatch(row, col, numQubits, q0Index, q1Index)) {
         continue;
       }
-      const size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1) |
+      const size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1U) |
                              qubitBitAt(row, numQubits, q1Index);
-      const size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1) |
+      const size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1U) |
                              qubitBitAt(col, numQubits, q1Index);
       out(static_cast<int64_t>(row), static_cast<int64_t>(col)) =
           (*this)(rowPair, colPair);
@@ -2019,7 +2019,7 @@ void DynamicMatrix::premultiplyByEmbedded1Q(const Matrix2x2& gate,
   }
   const auto udim = checkedDim(impl_->dim);
   const size_t mask = size_t{1} << (numQubits - 1 - qubitIndex);
-  const size_t step = mask << 1;
+  const size_t step = mask << 1U;
   auto& data = impl_->data;
   for (size_t chunk = 0; chunk < udim; chunk += step) {
     for (size_t inner = 0; inner < mask; ++inner) {
@@ -2052,7 +2052,7 @@ void DynamicMatrix::premultiplyByEmbedded2Q(const Matrix4x4& gate,
   const size_t mask0 = size_t{1} << (numQubits - 1 - q0Index);
   const size_t mask1 = size_t{1} << (numQubits - 1 - q1Index);
   auto& data = impl_->data;
-  for (size_t block = 0; block < (udim >> 2); ++block) {
+  for (size_t block = 0; block < (udim >> 2U); ++block) {
     size_t base = 0;
     size_t rest = block;
     for (size_t q = 0; q < numQubits; ++q) {

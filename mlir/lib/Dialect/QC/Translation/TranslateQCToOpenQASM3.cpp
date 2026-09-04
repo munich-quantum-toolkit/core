@@ -194,7 +194,7 @@ private:
 
   static constexpr size_t MAX_EXPRESSION_NESTING = 256;
   static constexpr size_t MAX_EXPRESSION_WORK = 4096;
-  static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20;
+  static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20U;
 
   [[nodiscard]] static LogicalResult fail(Operation* operation,
                                           const Twine& message) {

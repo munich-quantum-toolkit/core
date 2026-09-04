@@ -434,11 +434,11 @@ TEST(DynamicMatrix, PremultiplyByEmbeddedMatchesDense) {
   const Matrix4x4 swap = swapMatrix();
   for (const size_t numQubits : {2U, 3U}) {
     for (size_t wire = 0; wire < numQubits; ++wire) {
-      DynamicMatrix dense =
-          DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+      DynamicMatrix dense = DynamicMatrix::identity(
+          static_cast<int64_t>(uint64_t{1} << numQubits));
       dense.premultiplyBy(x.embedInNqubit(numQubits, wire));
-      DynamicMatrix structured =
-          DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+      DynamicMatrix structured = DynamicMatrix::identity(
+          static_cast<int64_t>(uint64_t{1} << numQubits));
       structured.premultiplyByEmbedded1Q(x, numQubits, wire);
       EXPECT_TRUE(dense.isApprox(structured));
     }
@@ -450,10 +450,10 @@ TEST(DynamicMatrix, PremultiplyByEmbeddedMatchesDense) {
        }) {
     constexpr size_t numQubits = 3;
     DynamicMatrix dense =
-        DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+        DynamicMatrix::identity(static_cast<int64_t>(uint64_t{1} << numQubits));
     dense.premultiplyBy(swap.embedInNqubit(numQubits, wires[0], wires[1]));
     DynamicMatrix structured =
-        DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+        DynamicMatrix::identity(static_cast<int64_t>(uint64_t{1} << numQubits));
     structured.premultiplyByEmbedded2Q(swap, numQubits, wires[0], wires[1]);
     EXPECT_TRUE(dense.isApprox(structured));
   }

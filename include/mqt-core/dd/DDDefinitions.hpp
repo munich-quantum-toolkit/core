@@ -131,7 +131,7 @@ static constexpr fp PI_4 = PI / 4;
 /// Combine two hashes with the Boost hash-combine formula.
 [[nodiscard]] constexpr std::size_t
 combineHash(const std::size_t lhs, const std::size_t rhs) noexcept {
-  return lhs ^ (rhs + 0x9e3779b97f4a7c15ULL + (lhs << 6) + (lhs >> 2));
+  return lhs ^ (rhs + 0x9e3779b97f4a7c15ULL + (lhs << 6U) + (lhs >> 2U));
 }
 
 /// Add an integer to a hash.
@@ -208,11 +208,11 @@ intToBinaryString(const std::size_t value, const std::size_t nbits) {
  * @see https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
  */
 [[nodiscard]] constexpr std::size_t murmur64(std::size_t k) noexcept {
-  k ^= k >> 33;
+  k ^= k >> 33U;
   k *= 0xff51afd7ed558ccdULL;
-  k ^= k >> 33;
+  k ^= k >> 33U;
   k *= 0xc4ceb9fe1a85ec53ULL;
-  k ^= k >> 33;
+  k ^= k >> 33U;
   return k;
 }
 

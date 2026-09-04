@@ -406,7 +406,7 @@ TEST(GenerateProgramTest, KeepsLargeQFTStructured) {
 TEST(GenerateProgramTest, DoublesQPEPhaseModuloOneWithoutOverflow) {
   const QPE benchmark({
       .precision = 4,
-      .phase = Phase(uint64_t{1} << 63, std::numeric_limits<uint64_t>::max()),
+      .phase = Phase(uint64_t{1} << 63U, std::numeric_limits<uint64_t>::max()),
   });
   auto program = generate(benchmark);
   ASSERT_TRUE(program);
@@ -418,7 +418,7 @@ TEST(GenerateProgramTest, DoublesQPEPhaseModuloOneWithoutOverflow) {
   const auto denominator =
       static_cast<long double>(std::numeric_limits<uint64_t>::max());
   const auto turn = 2.L * std::numbers::pi_v<long double> / denominator;
-  EXPECT_DOUBLE_EQ(angles[0], static_cast<double>((uint64_t{1} << 63) * turn));
+  EXPECT_DOUBLE_EQ(angles[0], static_cast<double>((uint64_t{1} << 63U) * turn));
   EXPECT_DOUBLE_EQ(angles[1], static_cast<double>(turn));
   EXPECT_DOUBLE_EQ(angles[2], static_cast<double>(2.L * turn));
   EXPECT_DOUBLE_EQ(angles[3], static_cast<double>(4.L * turn));
