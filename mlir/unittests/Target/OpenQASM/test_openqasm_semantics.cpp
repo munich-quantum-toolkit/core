@@ -629,6 +629,21 @@ source[1] = true;
 bit[3] target;
 target = rotr(source, 1);
 )qasm",
+      R"qasm(OPENQASM 3.1;
+qubit q;
+bit[2] value = 1;
+if (popcount(value)) { x q; }
+)qasm",
+      R"qasm(OPENQASM 3.1;
+qubit q;
+bit[2] value = 1;
+if (rotl(value, 1)) { x q; }
+)qasm",
+      R"qasm(OPENQASM 3.1;
+qubit q;
+bit[2] value = 1;
+if (rotr(value, 1)) { x q; }
+)qasm",
   };
   for (const auto source : invalidSources) {
     auto analyzed = oq3::frontend::analyzeOpenQASM(source);
