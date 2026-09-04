@@ -990,8 +990,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Other links -->
 
-[MQT DDSIM]: https://github.com/cda-tum/mqt-ddsim
-[MQT QMAP]: https://github.com/cda-tum/mqt-qmap
-[MQT QCEC]: https://github.com/cda-tum/mqt-qcec
-[MQT SyReC]: https://github.com/cda-tum/mqt-syrec
+[MQT DDSIM]: https://github.com/munich-quantum-toolkit/ddsim
+[MQT QMAP]: https://github.com/munich-quantum-toolkit/qmap
+[MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
+[MQT SyReC]: https://github.com/munich-quantum-toolkit/syrec
 [CMake presets]: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html

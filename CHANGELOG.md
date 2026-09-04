@@ -136,10 +136,11 @@ releases may include breaking changes.
 - 💥 Remove the `spdlog` dependency from MQT Core source builds, installed CMake
   packages, and Python wheels. QDMI diagnostics continue to be written to
   standard error ([#2270]) ([**@denialhaag**])
-- 💥 Remove `CircuitOptimizer`. Move equivalence-checking transformations to MQT
-  QCEC and mapping transformations to MQT QMAP. Move single-qubit gate fusion to
-  both downstream packages. Remove the public circuit dependency graph and
-  transformations without production consumers ([#2262]) ([**@simon1hofmann**])
+- 💥 Remove `CircuitOptimizer`. Move equivalence-checking transformations to
+  [MQT QCEC] and mapping transformations to [MQT QMAP]. Move single-qubit gate
+  fusion to both downstream packages. Remove the public circuit dependency graph
+  and transformations without production consumers ([#2262])
+  ([**@simon1hofmann**])
 - 💥 Remove test-only DD state generators, recursive functionality construction,
   and DD-specific named-gate helpers from MQT Core ([#2257], [#2335])
   ([**@simon1hofmann**])
@@ -1348,3 +1349,5 @@ for previous changelogs._
 [PEP 735]: https://peps.python.org/pep-0735/
 [CMake presets]: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
 [munich-quantum-toolkit/workflows]: https://github.com/munich-quantum-toolkit/workflows
+[MQT QMAP]: https://github.com/munich-quantum-toolkit/qmap
+[MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec

@@ -382,6 +382,5 @@ test = [
 dev = [
   {include-group = "build"},
   {include-group = "test"},
-  "lit>=18.1.8",
   "nox>=2025.11.12"
 ]
