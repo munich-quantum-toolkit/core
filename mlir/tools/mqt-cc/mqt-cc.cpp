@@ -530,33 +530,33 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if (*parsedOutputFormat != OutputFormat::QCImport &&
-      *parsedOutputFormat != OutputFormat::QCO) {
-    if (failed(runPasses([&](OpPassManager& pm) {
-          if (compilerTarget) {
-            populateTargetCompilationPipeline(pm, *compilerTarget);
-            return success();
-          }
-          populateQCOCleanupPipeline(pm);
-          if (passPipeline.hasAnyOccurrences()) {
-            if (failed(passPipeline.addToPipeline(pm, [](const Twine& message) {
-                  llvm::errs() << message << "\n";
-                  return failure();
-                }))) {
-              return failure();
-            }
-          } else {
-            if (enableDecomposeMultiControlled) {
-              populateDecomposeMultiControlledPipeline(
-                  pm, decomposeMultiControlledMinQubits.getValue());
-            }
-            populateDefaultQCOOptimizationPipeline(pm);
-          }
-          populateQCOCleanupPipeline(pm);
+  const bool requiresPostQcoPasses =
+      *parsedOutputFormat != OutputFormat::QCImport &&
+      *parsedOutputFormat != OutputFormat::QCO;
+  if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
+        if (compilerTarget) {
+          populateTargetCompilationPipeline(pm, *compilerTarget);
           return success();
-        }))) {
-      return 1;
-    }
+        }
+        populateQCOCleanupPipeline(pm);
+        if (passPipeline.hasAnyOccurrences()) {
+          if (failed(passPipeline.addToPipeline(pm, [](const Twine& message) {
+                llvm::errs() << message << "\n";
+                return failure();
+              }))) {
+            return failure();
+          }
+        } else {
+          if (enableDecomposeMultiControlled) {
+            populateDecomposeMultiControlledPipeline(
+                pm, decomposeMultiControlledMinQubits.getValue());
+          }
+          populateDefaultQCOOptimizationPipeline(pm);
+        }
+        populateQCOCleanupPipeline(pm);
+        return success();
+      }))) {
+    return 1;
   }
 
   if (*parsedOutputFormat == OutputFormat::Jeff &&

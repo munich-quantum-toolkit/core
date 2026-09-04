@@ -2016,15 +2016,16 @@ private:
       case Expr::Kind::GreaterEqual: {
         MQT_OQ3_TRY_ASSIGN(lhs, constantExpressionType(*expression.lhs));
         MQT_OQ3_TRY_ASSIGN(rhs, constantExpressionType(*expression.rhs));
-        if (lhs == ScalarType::Bool || rhs == ScalarType::Bool) {
-          if (lhs != ScalarType::Bool || rhs != ScalarType::Bool ||
-              (expression.kind != Expr::Kind::Equal &&
-               expression.kind != Expr::Kind::NotEqual)) {
-            return fail(
-                expression.location,
-                "bool values only support equality comparisons with bool "
-                "values");
-          }
+        const bool hasBoolOperand =
+            lhs == ScalarType::Bool || rhs == ScalarType::Bool;
+        const bool isBoolEquality = lhs == ScalarType::Bool &&
+                                    rhs == ScalarType::Bool &&
+                                    (expression.kind == Expr::Kind::Equal ||
+                                     expression.kind == Expr::Kind::NotEqual);
+        if (hasBoolOperand && !isBoolEquality) {
+          return fail(
+              expression.location,
+              "bool values only support equality comparisons with bool values");
         }
         return ScalarType::Bool;
       }

@@ -1259,11 +1259,10 @@ mCachedEdge Package::reduceAncillaeRecursion(mNode* p,
   std::array<mCachedEdge, NEDGE> edges{};
   std::bitset<NEDGE> handled{};
   for (auto i = 0U; i < NEDGE; ++i) {
-    if (ancillary[p->v]) {
-      // no need to reduce ancillaries for entries that will be zeroed anyway
-      if ((i == 3) || (i == 1 && regular) || (i == 2 && !regular)) {
-        continue;
-      }
+    // no need to reduce ancillaries for entries that will be zeroed anyway
+    if (ancillary[p->v] &&
+        ((i == 3) || (i == 1 && regular) || (i == 2 && !regular))) {
+      continue;
     }
     if (handled.test(i)) {
       continue;

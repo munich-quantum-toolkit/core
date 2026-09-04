@@ -839,10 +839,12 @@ private:
         } else if (const auto* barrier =
                        std::get_if<frontend::BarrierStatement>(
                            &statement.data)) {
-          if (!chargeQubitAccesses(barrier->qubits, multiplicity,
-                                   projectedEmission, statement.location) ||
-              !chargeScaledEmission(1, multiplicity, projectedEmission,
-                                    statement.location)) {
+          const bool canEmitBarrier =
+              chargeQubitAccesses(barrier->qubits, multiplicity,
+                                  projectedEmission, statement.location) &&
+              chargeScaledEmission(1, multiplicity, projectedEmission,
+                                   statement.location);
+          if (!canEmitBarrier) {
             return false;
           }
         }
