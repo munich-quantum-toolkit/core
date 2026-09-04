@@ -457,20 +457,31 @@ resolve against the file that declares them. `MQT_CORE_QDMI_CONFIG_FILE`,
 `MQT_CORE_QDMI_CONFIG_JSON`, the system and user files, and the packaged
 `*.qdmi.json` fragments do not change.
 
-### QDMI Qiskit primitive options
+### Qiskit 2.1 minimum and native primitives (v4 only)
 
-`QDMISampler` and `QDMIEstimator` no longer accept the MQT-specific `options`
-mapping. Pass shot and precision defaults directly, preferably through the
-backend factories:
+MQT Core v4 raises the minimum Qiskit version from **1.1.0 to 2.1.0**, dropping
+support for all Qiskit 1.x releases and Qiskit 2.0. This breaking change cannot
+be backported to MQT Core v3.x. Upgrade Qiskit to 2.1.0 or newer before moving
+to v4; projects that must retain an older Qiskit must stay on `mqt-core>=3,<4`.
+
+`QDMISampler` and `QDMIEstimator` are removed. Use Qiskit's `BackendSamplerV2`
+and `BackendEstimatorV2`, or the backend factories with native options:
 
 ```python
-sampler = backend.sampler(default_shots=2048)
-estimator = backend.estimator(default_precision=0.01, default_shots=2048)
+sampler = backend.sampler(options={"default_shots": 2048})
+estimator = backend.estimator(options={"default_precision": 0.01})
 ```
 
-Replace `QDMIEstimator(..., options={"default_shots": shots})` with
-`QDMIEstimator(..., default_shots=shots)`. The sampler ignored its former
-`options` mapping, so remove that argument without replacement.
+Estimator uses positive precision, not `default_shots`: its default is `1/64`
+(4096 shots). Grouping, metadata, broadcasting, and standard errors now follow
+Qiskit. Sampler requires genuine QDMI `SHOTS`; counts-only devices, including
+DDSIM, remain usable for Estimator but cannot run Sampler. No shot
+reconstruction is available.
+
+`backend.run(memory=True)` preserves shot order. Results include classical
+register boundaries; failed jobs and invalid results raise on collection, and
+unsupported execution options are rejected. See the
+[backend requirements](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qdmi_backend.html#backend-requirements).
 
 ### Runtime-configurable SC QDMI device
 

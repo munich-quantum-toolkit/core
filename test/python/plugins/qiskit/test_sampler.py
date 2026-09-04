@@ -6,27 +6,32 @@
 #
 # Licensed under the MIT License
 
-"""Tests for QDMISampler."""
+"""Tests for BackendSamplerV2."""
 
 from __future__ import annotations
 
-from collections import Counter
+from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import ClassicalRegister, Parameter
+from qiskit.primitives import BackendSamplerV2
+from test_mock_backend import ShotQDMIDevice
 
-from mqt.core.plugins.qiskit import QDMIBackend, QDMISampler
+from mqt.core.plugins.qiskit import QDMIBackend
+
+if TYPE_CHECKING:
+    from mqt.core.qdmi import Device
 
 
 @pytest.fixture
-def sampler() -> QDMISampler:
-    """Returns a QDMISampler based on the DDSIM backend."""
-    return QDMISampler(QDMIBackend.from_device_id("mqt.ddsim.default"))
+def sampler() -> BackendSamplerV2:
+    """Return a native sampler using genuine reference-simulator shots."""
+    return BackendSamplerV2(backend=QDMIBackend(cast("Device", ShotQDMIDevice())))
 
 
-def test_sampler_run_simple_circuit(sampler: QDMISampler) -> None:
+def test_sampler_run_simple_circuit(sampler: BackendSamplerV2) -> None:
     """Sampler runs a simple circuit."""
     qc = QuantumCircuit(2)
     qc.h(0)
@@ -51,7 +56,7 @@ def test_sampler_run_simple_circuit(sampler: QDMISampler) -> None:
     assert sum(counts.values()) == 100
 
 
-def test_sampler_run_parameterized_circuit(sampler: QDMISampler) -> None:
+def test_sampler_run_parameterized_circuit(sampler: BackendSamplerV2) -> None:
     """Sampler runs a parameterized circuit."""
     theta = Parameter("theta")
     qc = QuantumCircuit(1)
@@ -72,25 +77,11 @@ def test_sampler_run_parameterized_circuit(sampler: QDMISampler) -> None:
     assert bit_array.num_shots == 100
     assert bit_array.num_bits == 1
 
-    # Check individual results
-    try:
-        # For Qiskit versions >=2.3
-        counts0 = bit_array[0].get_counts()
-        counts1 = bit_array[1].get_counts()
-    except TypeError:
-        # For Qiskit versions <2.3
-        bitstrings = bit_array.get_bitstrings()
-        # The bitstrings are interleaved for the two parameter sets. We take every second one.
-        bitstrings0 = bitstrings[0::2]
-        bitstrings1 = bitstrings[1::2]
-        counts0 = Counter(bitstrings0)
-        counts1 = Counter(bitstrings1)
-
-    assert sum(counts0.values()) == 100
-    assert sum(counts1.values()) == 100
+    assert bit_array.get_counts(0) == {"0": 100}
+    assert bit_array.get_counts(1) == {"1": 100}
 
 
-def test_sampler_run_multiple_cregs(sampler: QDMISampler) -> None:
+def test_sampler_run_multiple_cregs(sampler: BackendSamplerV2) -> None:
     """Sampler correctly handles multiple classical registers."""
     c0 = ClassicalRegister(2, "c0")
     c1 = ClassicalRegister(1, "c1")
@@ -116,10 +107,10 @@ def test_sampler_run_multiple_cregs(sampler: QDMISampler) -> None:
     assert c1_bits.get_counts() == {"1": 100}
 
 
-def test_sampler_shot_defaults(sampler: QDMISampler) -> None:
+def test_sampler_shot_defaults(sampler: BackendSamplerV2) -> None:
     """Test sampler shot defaults."""
     # 1. Use default shots from init
-    sampler2 = QDMISampler(sampler.backend, default_shots=500)
+    sampler2 = BackendSamplerV2(backend=sampler.backend, options={"default_shots": 500})
     qc = QuantumCircuit(1)
     qc.measure_all()
 
@@ -135,24 +126,36 @@ def test_sampler_shot_defaults(sampler: QDMISampler) -> None:
 
 def test_backend_constructs_sampler() -> None:
     """A backend constructs a sampler that retains its identity and defaults."""
-    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
-    sampler = backend.sampler(default_shots=37)
+    backend = QDMIBackend(cast("Device", ShotQDMIDevice()))
+    sampler = backend.sampler(options={"default_shots": 37})
     qc = QuantumCircuit(1)
     qc.measure_all()
 
-    assert isinstance(sampler, QDMISampler)
+    assert isinstance(sampler, BackendSamplerV2)
     assert sampler.backend is backend
     assert sampler.run([(qc,)]).result()[0].metadata["shots"] == 37
 
 
-def test_sampler_no_circuits(sampler: QDMISampler) -> None:
+def test_sampler_no_circuits(sampler: BackendSamplerV2) -> None:
     """Test run with empty pub list."""
     job = sampler.run([])
     result = job.result()
     assert len(result) == 0
 
 
-def test_sampler_broadcasting(sampler: QDMISampler) -> None:
+def test_sampler_unmeasured_bits_and_mapping(sampler: BackendSamplerV2) -> None:
+    """Measure into reordered classical destinations while preserving unmeasured zeros."""
+    qc = QuantumCircuit(2)
+    qc.add_register(ClassicalRegister(2, "a"), ClassicalRegister(3, "b"))
+    qc.x(0)
+    qc.measure(0, 3)
+    qc.measure(1, 1)
+    result = sampler.run([qc], shots=4).result()[0]
+    assert result.data["a"].get_bitstrings() == ["00"] * 4
+    assert result.data["b"].get_bitstrings() == ["010"] * 4
+
+
+def test_sampler_broadcasting(sampler: BackendSamplerV2) -> None:
     """Test sampler with parameter broadcasting."""
     theta = Parameter("theta")
     qc = QuantumCircuit(1)

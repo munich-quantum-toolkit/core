@@ -15,10 +15,12 @@ import secrets
 import string
 import warnings
 from typing import TYPE_CHECKING, ClassVar, NoReturn
+from unittest.mock import Mock
 
 import pytest
 from qiskit import qasm2, qasm3
 from qiskit.circuit import Gate, Parameter, QuantumCircuit
+from qiskit.providers.basic_provider import BasicSimulator
 
 from mqt.core.plugins.qiskit import (
     QDMIBackend,
@@ -196,6 +198,14 @@ class MockQDMIDevice:
         def cancel(self) -> None:
             """Cancel job (no-op for mock)."""
 
+        def get_shots(self) -> list[str]:
+            """Raise unless the test device implements ordered shots.
+
+            Raises:
+                NotImplementedError: This device only supports counts.
+            """
+            raise NotImplementedError
+
     def __init__(
         self,
         name: str = "Mock QDMI Device",
@@ -295,6 +305,38 @@ class MockQDMIDevice:
 
         num_clbits = count_qasm2 + count_qasm3_arrays + count_qasm3_scalars
         return self.MockJob(num_clbits=num_clbits, shots=num_shots)
+
+
+class ShotQDMIDevice(MockQDMIDevice):
+    """Expose genuine reference-simulator shots through the QDMI test interface."""
+
+    def __init__(self) -> None:
+        """Advertise the operations used by the sampler integration tests."""
+        super().__init__(operations=["h", "x", "cx", "rx", "ry", "rz", "measure"])
+
+    @staticmethod
+    def supported_program_formats() -> list[ProgramFormat]:
+        """Use OpenQASM 2 so Qiskit can read back the converted programs.
+
+        Returns:
+            The OpenQASM 2 format.
+        """
+        return [ProgramFormat.QASM2]
+
+    def submit_job(self, program: str, program_format: ProgramFormat, num_shots: int) -> MockQDMIDevice.MockJob:
+        """Run the serialized circuit with genuine ordered memory.
+
+        Returns:
+            A job exposing the reference simulator's samples.
+        """
+        job = super().submit_job(program, program_format, num_shots)
+        circuit = qasm2.loads(program, custom_instructions=qasm2.LEGACY_CUSTOM_INSTRUCTIONS)
+        result = BasicSimulator().run(circuit, shots=num_shots, memory=True, seed_simulator=123).result()
+        job.get_shots = Mock(return_value=[bits.replace(" ", "") for bits in result.get_memory()])
+        job.get_counts = Mock(
+            return_value={bits.replace(" ", ""): count for bits, count in result.get_counts().items()}
+        )
+        return job
 
 
 @pytest.fixture

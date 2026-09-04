@@ -30,7 +30,6 @@ __all__ = [
 
 if TYPE_CHECKING or HAS_QISKIT:
     from .backend import QDMIBackend
-    from .estimator import QDMIEstimator
     from .exceptions import (
         CircuitValidationError,
         JobSubmissionError,
@@ -41,7 +40,6 @@ if TYPE_CHECKING or HAS_QISKIT:
     )
     from .job import QDMIJob
     from .provider import QDMIProvider
-    from .sampler import QDMISampler
     from .serializers import (
         ProgramSerializer,
         program_serializer,
@@ -54,11 +52,9 @@ if TYPE_CHECKING or HAS_QISKIT:
         "JobSubmissionError",
         "ProgramSerializer",
         "QDMIBackend",
-        "QDMIEstimator",
         "QDMIJob",
         "QDMIProvider",
         "QDMIQiskitError",
-        "QDMISampler",
         "TranslationError",
         "UnsupportedFormatError",
         "UnsupportedOperationError",
