@@ -12,7 +12,6 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
-#include "ir/Register.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 
@@ -33,16 +32,6 @@ protected:
 
   OpType type = None;
   std::string name;
-
-  static constexpr size_t OUTPUT_INDENT_SIZE = 2;
-
-  static bool isWholeQubitRegister(const QubitIndexToRegisterMap& regMap,
-                                   const Qubit start, const Qubit end) {
-    const auto& startReg = regMap.at(start).first;
-    const auto& endReg = regMap.at(end).first;
-    return startReg == endReg && startReg.getStartIndex() == start &&
-           endReg.getEndIndex() == end;
-  }
 
 public:
   Operation() = default;
@@ -187,19 +176,6 @@ public:
   virtual std::ostream& print(std::ostream& os, const Permutation& permutation,
                               std::size_t prefixWidth,
                               std::size_t nqubits) const;
-
-  void dumpOpenQASM2(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
-                     const BitIndexToRegisterMap& bitMap) const {
-    dumpOpenQASM(of, qubitMap, bitMap, 0, false);
-  }
-  void dumpOpenQASM3(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
-                     const BitIndexToRegisterMap& bitMap) const {
-    dumpOpenQASM(of, qubitMap, bitMap, 0, true);
-  }
-  virtual void dumpOpenQASM(std::ostream& of,
-                            const QubitIndexToRegisterMap& qubitMap,
-                            const BitIndexToRegisterMap& bitMap, size_t indent,
-                            bool openQASM3) const = 0;
 
   /// Checks whether operation commutes with other operation on a given qubit.
   [[nodiscard]] virtual auto commutesAtQubit(const Operation& /*other*/,

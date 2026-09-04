@@ -13,7 +13,6 @@
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
-#include "ir/Register.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -180,16 +179,6 @@ void CompoundOperation::addDepthContribution(
     std::vector<std::size_t>& depths) const {
   for (const auto& op : ops) {
     op->addDepthContribution(depths);
-  }
-}
-
-void CompoundOperation::dumpOpenQASM(std::ostream& of,
-                                     const QubitIndexToRegisterMap& qubitMap,
-                                     const BitIndexToRegisterMap& bitMap,
-                                     const std::size_t indent,
-                                     bool openQASM3) const {
-  for (const auto& op : ops) {
-    op->dumpOpenQASM(of, qubitMap, bitMap, indent, openQASM3);
   }
 }
 

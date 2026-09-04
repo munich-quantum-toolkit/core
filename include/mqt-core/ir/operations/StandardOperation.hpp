@@ -12,7 +12,6 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
-#include "ir/Register.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -20,8 +19,6 @@
 #include <cmath>
 #include <cstddef>
 #include <memory>
-#include <ostream>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -108,28 +105,10 @@ public:
     return controls.erase(it);
   }
 
-  void dumpOpenQASM(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
-                    const BitIndexToRegisterMap& bitMap, size_t indent,
-                    bool openQASM3) const override;
-
   [[nodiscard]] auto commutesAtQubit(const Operation& other,
                                      const Qubit& qubit) const -> bool override;
 
   void invert() override;
-
-protected:
-  void dumpOpenQASM2(std::ostream& of, std::ostringstream& op,
-                     const QubitIndexToRegisterMap& qubitMap) const;
-  void dumpOpenQASM3(std::ostream& of, std::ostringstream& op,
-                     const QubitIndexToRegisterMap& qubitMap) const;
-
-  void dumpGateType(std::ostream& of, std::ostringstream& op,
-                    const QubitIndexToRegisterMap& qubitMap) const;
-
-  void dumpOpenQASMGateOperands(std::ostream& of,
-                                const QubitIndexToRegisterMap& qubitMap) const;
-
-  void dumpControls(std::ostringstream& op) const;
 };
 
 } // namespace qc

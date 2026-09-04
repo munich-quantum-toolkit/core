@@ -14,7 +14,6 @@
 #include "Operation.hpp"
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
-#include "ir/Register.hpp"
 
 #include <cstddef>
 #include <functional>
@@ -79,10 +78,6 @@ public:
   [[nodiscard]] bool actsOn(Qubit i) const override;
 
   void addDepthContribution(std::vector<std::size_t>& depths) const override;
-
-  void dumpOpenQASM(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
-                    const BitIndexToRegisterMap& bitMap, std::size_t indent,
-                    bool openQASM3) const override;
 
   [[nodiscard]] const std::vector<std::unique_ptr<Operation>>&
   getOps() const noexcept {
