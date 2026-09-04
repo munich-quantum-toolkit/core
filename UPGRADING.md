@@ -46,6 +46,20 @@ MQT Core removed the following names:
   `aod_activate`, `aod_deactivate`, and `aod_move`.
 - The bundled `mqt.na.default` QDMI device.
 
+### Removal of the ZX-calculus library
+
+MQT Core no longer provides the `mqt-core-zx` library, the `MQT::CoreZX` CMake
+target, the `mqt-core/zx` headers, or the global `zx` namespace. Remove these
+from downstream includes and link dependencies. Equivalence-checking users
+should use [MQT QCEC]; QCEC's ZX implementation is internal and is not a
+replacement public API.
+
+The build-tree `MQT::Multiprecision` alias, the installed `MQT::multiprecision`
+target, the `USE_SYSTEM_BOOST`, `MQT_CORE_WITH_GMP`, and
+`MQT_CORE_ZX_SYSTEM_BOOST` CMake options, and the `BOOST_MIN_VERSION` cache
+variable have also been removed. MQT Core no longer discovers, fetches, or
+exports configuration for Boost.Multiprecision or GMP.
+
 ### Removal of density matrix support from the DD package
 
 MQT Core no longer provides density matrix decision diagrams or the related

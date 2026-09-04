@@ -38,26 +38,6 @@ set(JSON_Install
 FetchContent_Declare(nlohmann_json URL ${JSON_URL} FIND_PACKAGE_ARGS ${JSON_VERSION})
 list(APPEND FETCH_PACKAGES nlohmann_json)
 
-option(USE_SYSTEM_BOOST "Whether to try to use the system Boost installation" OFF)
-set(BOOST_MIN_VERSION
-    1.80.0
-    CACHE STRING "Minimum required Boost version")
-if(USE_SYSTEM_BOOST)
-  find_package(Boost ${BOOST_MIN_VERSION} CONFIG REQUIRED)
-else()
-  set(BOOST_MP_STANDALONE
-      ON
-      CACHE INTERNAL "Use standalone boost multiprecision")
-  set(BOOST_VERSION
-      1_89_0
-      CACHE INTERNAL "Boost version")
-  set(BOOST_URL
-      https://github.com/boostorg/multiprecision/archive/refs/tags/Boost_${BOOST_VERSION}.tar.gz)
-  FetchContent_Declare(boost_mp URL ${BOOST_URL} FIND_PACKAGE_ARGS ${BOOST_MIN_VERSION} CONFIG
-                                    NAMES boost_multiprecision)
-  list(APPEND FETCH_PACKAGES boost_mp)
-endif()
-
 if(BUILD_MQT_CORE_TESTS)
   set(gtest_force_shared_crt
       ON

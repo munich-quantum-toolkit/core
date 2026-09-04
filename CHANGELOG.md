@@ -45,6 +45,11 @@ releases may include breaking changes.
   neutral-atom QDMI device and its configuration, the `mqt.core.na` Python
   module, `AodOperation`, and the `Move`, `Bridge`, `AodActivate`,
   `AodDeactivate`, and `AodMove` operation kinds ([#2137]) ([**@denialhaag**])
+- 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
+  `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
+  and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
+  ZX implementation is internal and does not provide a replacement public API
+  ([#2082]) ([**@burgholzer**])
 - 🔥 Remove density matrix support from the DD package ([#1466])
   ([**@burgholzer**])
 - 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
@@ -787,6 +792,7 @@ for previous changelogs._
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
+[#2082]: https://github.com/munich-quantum-toolkit/core/pull/2082
 [#2046]: https://github.com/munich-quantum-toolkit/core/pull/2046
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
 [#2043]: https://github.com/munich-quantum-toolkit/core/pull/2043
@@ -1008,6 +1014,7 @@ for previous changelogs._
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Common Changelog]: https://common-changelog.org
+[MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
 [QDMI-on-IQM]: https://github.com/iqm-finland/QDMI-on-IQM
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
 [munich-quantum-toolkit]: https://github.com/munich-quantum-toolkit
