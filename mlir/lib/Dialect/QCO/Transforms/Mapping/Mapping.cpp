@@ -644,8 +644,8 @@ protected:
 private:
   /// Return the qubit values in `values`, preserving their relative order.
   static SmallVector<Value> getQubitValues(ValueRange values) {
-    return to_vector(llvm::make_filter_range(
-        values, [](Value value) { return isa<QubitType>(value.getType()); }));
+    return llvm::filter_to_vector(
+        values, [](Value value) { return isa<QubitType>(value.getType()); });
   }
 
   /// Extend the init arguments of an `scf::ForOp` by adding a given range of

@@ -213,17 +213,17 @@ public:
           llvm::any_of(operation->getResultTypes(), isQubitTensor);
       EXPECT_TRUE(hasTensorOperand);
       EXPECT_TRUE(hasTensorResult);
-      const auto tensorOperands = llvm::to_vector(
-          llvm::make_filter_range(operation->getOperandTypes(), isQubitTensor));
-      const auto tensorResults = llvm::to_vector(
-          llvm::make_filter_range(operation->getResultTypes(), isQubitTensor));
+      const auto tensorOperands =
+          llvm::filter_to_vector(operation->getOperandTypes(), isQubitTensor);
+      const auto tensorResults =
+          llvm::filter_to_vector(operation->getResultTypes(), isQubitTensor);
       EXPECT_EQ(tensorOperands, tensorResults);
       for (Region& region : operation->getRegions()) {
         if (region.empty()) {
           continue;
         }
-        const auto tensorArguments = llvm::to_vector(llvm::make_filter_range(
-            region.front().getArgumentTypes(), isQubitTensor));
+        const auto tensorArguments = llvm::filter_to_vector(
+            region.front().getArgumentTypes(), isQubitTensor);
         EXPECT_EQ(tensorArguments, tensorResults);
       }
       sawStructuredQuantumState = true;

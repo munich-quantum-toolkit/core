@@ -74,8 +74,8 @@ static std::string printModule(ModuleOp moduleOp) {
 }
 
 static SmallVector<Value> getQubitValues(ValueRange values) {
-  return to_vector(llvm::make_filter_range(
-      values, [](Value value) { return isa<QubitType>(value.getType()); }));
+  return llvm::filter_to_vector(
+      values, [](Value value) { return isa<QubitType>(value.getType()); });
 }
 
 /// Return true, if the operations within a region fulfill the given coupling
@@ -143,8 +143,8 @@ static bool isExecutable(Region& body,
                   [&](scf::ForOp forOp) { return forOp.getInits(); })
               .Default([](Operation*) -> ValueRange { return {}; });
 
-      const auto initialHardwareOrder = to_vector(llvm::map_range(
-          getQubitValues(initArgs), [&](auto v) { return m.at(v); }));
+      const auto initialHardwareOrder = llvm::map_to_vector(
+          getQubitValues(initArgs), [&](auto v) { return m.at(v); });
 
       const auto qubitArgs = getQubitValues(region.getArguments());
 
@@ -174,9 +174,8 @@ static bool isExecutable(Region& body,
               })
               .Default([](Operation*) -> ValueRange { return {}; });
 
-      const auto finalOrder =
-          to_vector(llvm::map_range(getQubitValues(finalOrderArgs),
-                                    [&](auto v) { return localM.at(v); }));
+      const auto finalOrder = llvm::map_to_vector(
+          getQubitValues(finalOrderArgs), [&](auto v) { return localM.at(v); });
 
       if (finalOrder != initialHardwareOrder) {
         llvm::dbgs()

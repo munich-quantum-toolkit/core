@@ -116,8 +116,8 @@ class EulerSynthesisExactTest
  */
 static SmallVector<Value> measureAndReturn(QCOProgramBuilder& b,
                                            ValueRange qubits) {
-  return to_vector(
-      llvm::map_range(qubits, [&](Value q) { return b.measure(q).second; }));
+  return llvm::map_to_vector(qubits,
+                             [&](Value q) { return b.measure(q).second; });
 }
 
 //===----------------------------------------------------------------------===//

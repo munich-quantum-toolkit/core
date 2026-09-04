@@ -310,9 +310,9 @@ template <typename Range>
 [[nodiscard]] static SmallVector<Value>
 resolveMappedQubits(LoweringState& state, Operation* anchor,
                     const Range& qcQubits) {
-  return llvm::to_vector(llvm::map_range(qcQubits, [&](Value qcQubit) {
+  return llvm::map_to_vector(qcQubits, [&](Value qcQubit) {
     return lookupMappedQubit(state, anchor, qcQubit);
-  }));
+  });
 }
 
 /// Resolves a range of QC memrefs to their latest QTensor values.
@@ -320,9 +320,9 @@ template <typename Range>
 [[nodiscard]] static SmallVector<Value>
 resolveMappedTensors(LoweringState& state, Operation* anchor,
                      const Range& registers) {
-  return llvm::to_vector(llvm::map_range(registers, [&](RegisterId reg) {
+  return llvm::map_to_vector(registers, [&](RegisterId reg) {
     return lookupMappedTensor(state, anchor, reg);
-  }));
+  });
 }
 
 /// Updates mappings for matching QC and QCO qubit ranges.
