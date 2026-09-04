@@ -425,7 +425,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
     -> QDMI_STATUS {
   return submitProgramAsync([this]() {
     const auto qc = qasm3::Importer::imports(program_);
-    counts_ = dd::sample(qc, numShots_);
+    counts_ = dd::sample(qc, numShots_, 0U, &shots_);
   });
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
@@ -494,6 +494,33 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::wait(const size_t timeout) const
     }
   } else {
     jobHandle_.wait();
+  }
+  return QDMI_SUCCESS;
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::getShots(const size_t size, void* data,
+                                                size_t* sizeRet) const
+    -> QDMI_STATUS {
+  const size_t required =
+      std::accumulate(shots_.begin(), shots_.end(), size_t{0},
+                      [](const size_t total, const auto& shot) {
+                        return total + shot.size() + 1;
+                      });
+  if (sizeRet != nullptr) {
+    *sizeRet = required;
+  }
+  if (data != nullptr) {
+    if (size < required) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    auto output = std::span(static_cast<char*>(data), required);
+    for (const auto& shot : shots_) {
+      std::ranges::copy(shot, output.begin());
+      output[shot.size()] = ',';
+      output = output.subspan(shot.size() + 1);
+    }
+    if (required > 0) {
+      std::span(static_cast<char*>(data), required).back() = '\0';
+    }
   }
   return QDMI_SUCCESS;
 }
@@ -677,6 +704,11 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
     return QDMI_ERROR_BADSTATE;
   }
   switch (result) {
+  case QDMI_JOB_RESULT_SHOTS:
+    if (numShots_ == 0) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    return getShots(size, data, sizeRet);
   case QDMI_JOB_RESULT_HIST_KEYS:
   case QDMI_JOB_RESULT_HIST_VALUES:
     if (numShots_ == 0) {

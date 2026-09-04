@@ -31,6 +31,7 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace qdmi::dd {
 class Device final : public Singleton<Device> {
@@ -202,6 +203,9 @@ private:
   /// The measurement counts for the job
   std::map<std::string, std::size_t> counts_;
 
+  /// Measurement outcomes in sampling order.
+  std::vector<std::string> shots_;
+
   /// The DD package used for the state vector simulation
   std::unique_ptr<dd::Package> dd_;
 
@@ -223,6 +227,9 @@ private:
   /// Translate counts to QDMI histogram
   auto getHistogram(QDMI_Job_Result result, size_t size, void* data,
                     size_t* sizeRet) -> QDMI_STATUS;
+
+  /// Copy ordered outcomes to the QDMI comma-separated shot representation.
+  auto getShots(size_t size, void* data, size_t* sizeRet) const -> QDMI_STATUS;
 
   /// Translate the state vector DD to a dense state vector for QDMI
   auto getStateVector(size_t size, void* data, size_t* sizeRet) -> QDMI_STATUS;

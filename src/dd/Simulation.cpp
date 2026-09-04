@@ -32,10 +32,15 @@
 
 namespace dd {
 
-std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
-                                          const VectorDD& in, Package& dd,
-                                          const std::size_t shots,
-                                          const std::size_t seed) {
+std::map<std::string, std::size_t>
+sample(const qc::QuantumComputation& qc, const VectorDD& in, Package& dd,
+       const std::size_t shots, const std::size_t seed,
+       std::vector<std::string>* shotResults) {
+  if (shotResults != nullptr) {
+    shotResults->clear();
+    shotResults->reserve(shots);
+  }
+
   auto isDynamicCircuit = false;
   auto hasMeasurements = false;
   auto measurementsLast = true;
@@ -120,6 +125,9 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
       // measure all returns a string of the form "q(n-1) ... q(0)"
       auto measurement = dd.measureAll(e, false, mt);
       counts.operator[](measurement) += 1U;
+      if (shotResults != nullptr) {
+        shotResults->push_back(std::move(measurement));
+      }
     }
     // reduce reference count of measured state
     dd.decRef(e);
@@ -127,14 +135,14 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
     std::map<std::string, std::size_t> actualCounts{};
     const auto numBits =
         qc.getClassicalRegisters().empty() ? qc.getNqubits() : qc.getNcbits();
-    for (const auto& [bitstring, count] : counts) {
+    const auto mapMeasurement = [&](const std::string& bitstring) {
       std::string measurement(numBits, '0');
       if (hasMeasurements) {
         // if the circuit contains measurements, we only want to return the
         // measured bits
         for (const auto& [qubit, bit] : measurementMap) {
-          // measurement map specifies that the circuit `qubit` is measured into
-          // a certain `bit`
+          // measurement map specifies that the circuit `qubit` is measured
+          // into a certain `bit`
           measurement[numBits - 1U - bit] =
               bitstring[bitstring.size() - 1U - permutation.at(qubit)];
         }
@@ -146,7 +154,15 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
               bitstring[bitstring.size() - 1U - qubit];
         }
       }
-      actualCounts[measurement] += count;
+      return measurement;
+    };
+    for (const auto& [bitstring, count] : counts) {
+      actualCounts[mapMeasurement(bitstring)] += count;
+    }
+    if (shotResults != nullptr) {
+      for (auto& shot : *shotResults) {
+        shot = mapMeasurement(shot);
+      }
     }
     return actualCounts;
   }
@@ -201,6 +217,9 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
         shot[qc.getNcbits() - bit - 1U] = '1';
       }
     }
+    if (shotResults != nullptr) {
+      shotResults->push_back(shot);
+    }
     counts[shot]++;
   }
   return counts;
@@ -229,11 +248,11 @@ VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
   return out;
 }
 
-std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
-                                          const std::size_t shots,
-                                          const std::size_t seed) {
+std::map<std::string, std::size_t>
+sample(const qc::QuantumComputation& qc, const std::size_t shots,
+       const std::size_t seed, std::vector<std::string>* shotResults) {
   const auto nqubits = qc.getNqubits();
   const auto dd = std::make_unique<Package>(nqubits);
-  return sample(qc, makeZeroState(nqubits, *dd), *dd, shots, seed);
+  return sample(qc, makeZeroState(nqubits, *dd), *dd, shots, seed, shotResults);
 }
 } // namespace dd

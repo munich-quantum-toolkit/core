@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Added
+
+- ✨ Expose ordered shots from DDSIM QDMI OpenQASM jobs, with matching
+  histograms ([#2368]) ([**@burgholzer**])
+
 ### Changed
 
 - 💥 Drop support for x86 macOS and stop publishing the respective wheels
@@ -804,6 +809,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368
 [#2335]: https://github.com/munich-quantum-toolkit/core/pull/2335
 [#2314]: https://github.com/munich-quantum-toolkit/core/pull/2314
 [#2288]: https://github.com/munich-quantum-toolkit/core/pull/2288

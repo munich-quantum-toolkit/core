@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+from collections import Counter
 from pathlib import Path
 from typing import cast
 
@@ -698,6 +699,15 @@ def test_job_get_counts_is_consistent(submitted_job: Job) -> None:
     assert counts1 == counts2
 
 
+def test_job_shots_match_counts(submitted_job: Job) -> None:
+    """Keep the same ordered samples on repeated reads and in the histogram."""
+    submitted_job.wait()
+    shots = submitted_job.get_shots()
+    assert len(shots) == submitted_job.num_shots
+    assert Counter(shots) == submitted_job.get_counts()
+    assert submitted_job.get_shots() == shots
+
+
 @pytest.fixture
 def simulator_job(ddsim_device: Device) -> Job:
     """Fixture that provides a simulator job for testing.
@@ -721,6 +731,7 @@ def test_empty_qasm_program_has_empty_results(ddsim_device: Device) -> None:
     sample_job = ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=4)
     sample_job.wait()
     assert sample_job.get_counts() == {}
+    assert sample_job.get_shots() == [""] * 4
 
     state_job = ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=0)
     state_job.wait()

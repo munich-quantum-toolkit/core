@@ -19,10 +19,31 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
+#include <map>
 #include <numeric>
 #include <ranges>
+#include <string>
 #include <vector>
+
+namespace {
+
+std::vector<std::string> getShots(MQT_DDSIM_QDMI_Device_Job job) {
+  const size_t size = qdmi_test::querySize(job, QDMI_JOB_RESULT_SHOTS);
+  std::string result(size, '\0');
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_SHOTS,
+                                                  size, result.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_FALSE(result.empty());
+  if (!result.empty()) {
+    EXPECT_EQ(result.back(), '\0');
+    result.pop_back();
+  }
+  return qdmi_test::splitCSV(result);
+}
+
+} // namespace
 
 TEST(ResultsSampling, QASM3Program) {
   constexpr size_t numShots = 1024;
@@ -34,12 +55,25 @@ TEST(ResultsSampling, QASM3Program) {
   ASSERT_EQ(qdmi_test::setShots(j.job, numShots), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
+  const auto shots = getShots(j.job);
+  EXPECT_EQ(shots.size(), numShots);
+  EXPECT_EQ(getShots(j.job), shots);
+
   const auto [keys, vals] = qdmi_test::getHistogram(j.job);
   ASSERT_EQ(keys.size(), vals.size());
   EXPECT_EQ(std::accumulate(vals.cbegin(), vals.cend(), size_t{0}), numShots);
   ASSERT_EQ(keys.size(), 2U);
   EXPECT_TRUE(std::ranges::all_of(
       keys, [](const auto& key) { return key == "00" || key == "11"; }));
+
+  std::map<std::string, size_t> counts;
+  for (const auto& shot : shots) {
+    ++counts[shot];
+  }
+  ASSERT_EQ(counts.size(), keys.size());
+  for (size_t i = 0; i < keys.size(); ++i) {
+    EXPECT_EQ(counts.at(keys[i]), vals.at(i));
+  }
 }
 
 TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
@@ -51,8 +85,8 @@ TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
   ASSERT_EQ(qdmi_test::setShots(j.job, 4), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-  constexpr QDMI_Job_Result results[]{QDMI_JOB_RESULT_HIST_KEYS,
-                                      QDMI_JOB_RESULT_HIST_VALUES};
+  constexpr std::array results{QDMI_JOB_RESULT_HIST_KEYS,
+                               QDMI_JOB_RESULT_HIST_VALUES};
   char dummy{};
   for (const auto result : results) {
     size_t size = 1;
@@ -74,6 +108,14 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 512), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+
+  const size_t shotsSize = qdmi_test::querySize(j.job, QDMI_JOB_RESULT_SHOTS);
+  ASSERT_EQ(shotsSize, 512U * 3U);
+  std::vector<char> shotsTooSmall(shotsSize - 1);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, QDMI_JOB_RESULT_SHOTS, shotsTooSmall.size(),
+                shotsTooSmall.data(), nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
 
   if (const size_t ks = qdmi_test::querySize(j.job, QDMI_JOB_RESULT_HIST_KEYS);
       ks > 0) {
