@@ -41,6 +41,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Target/LLVMIR/ModuleTranslation.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -122,7 +123,7 @@ std::optional<QIRProgram> QCProgram::intoQIR(QIRProfile profile) && {
   if (failed(runPasses(
           mod(),
           [profile](OpPassManager& pm) {
-            pm.addPass(mqt::createUnrollModifiers());
+            populateQIRPreparationPipeline(pm);
             if (profile == QIRProfile::Adaptive) {
               pm.addPass(createQCToQIRAdaptive());
             } else {
@@ -479,6 +480,15 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
   }
   if (output == ProgramFormat::QCO) {
     return CompilerProgram(std::move(*qco));
+  }
+
+  if ((output == ProgramFormat::QIRBase ||
+       output == ProgramFormat::QIRAdaptive) &&
+      failed(runQCOTransformPasses(
+          qco->module(),
+          [](OpPassManager& pm) { pm.addPass(createInlinerPass()); },
+          "failed to inline QCO calls", enableTiming, enableStatistics))) {
+    return std::nullopt;
   }
 
   if (target != nullptr) {
