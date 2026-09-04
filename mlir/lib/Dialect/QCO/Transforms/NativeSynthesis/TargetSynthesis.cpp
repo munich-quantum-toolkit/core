@@ -295,8 +295,8 @@ using SiteMap = DenseMap<Value, SiteId>;
 } // namespace
 
 static SmallVector<Value> getQubitValues(ValueRange values) {
-  return llvm::to_vector(llvm::make_filter_range(
-      values, [](Value value) { return isa<QubitType>(value.getType()); }));
+  return llvm::filter_to_vector(
+      values, [](Value value) { return isa<QubitType>(value.getType()); });
 }
 
 /// Propagate exact sites, rejecting unknown inputs or inconsistent joins.

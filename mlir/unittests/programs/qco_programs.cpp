@@ -177,20 +177,16 @@ Value staticQubitsWithParametricOps(QCOProgramBuilder& b) {
 }
 
 Value staticQubitsWithTwoTargetOps(QCOProgramBuilder& b) {
-  auto q0 = b.staticQubit(0);
-  auto q1 = b.staticQubit(1);
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(q0, q1) = b.rzz(0.123, q0, q1);
+  const auto q0Input = b.staticQubit(0);
+  const auto q1Input = b.staticQubit(1);
+  auto [q0, q1] = b.rzz(0.123, q0Input, q1Input);
   return measureAndReturn(b, {q0, q1});
 }
 
 Value staticQubitsWithCtrl(QCOProgramBuilder& b) {
-  auto q0 = b.staticQubit(0);
-  auto q1 = b.staticQubit(1);
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(q0, q1) = b.cx(q0, q1);
+  const auto q0Input = b.staticQubit(0);
+  const auto q1Input = b.staticQubit(1);
+  auto [q0, q1] = b.cx(q0Input, q1Input);
   return measureAndReturn(b, {q0, q1});
 }
 
@@ -3584,11 +3580,9 @@ Value ctrlTwoUnrolled(QCOProgramBuilder& b) {
 Value ctrlTwoMixed(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
-    auto i0 = targets[0];
-    auto i1 = targets[1];
-    // Reassigns existing SSA handles.
-    // NOLINTNEXTLINE(modernize-use-structured-binding)
-    std::tie(i0, i1) = b.cx(i0, i1);
+    const auto i0Input = targets[0];
+    const auto i1Input = targets[1];
+    auto [i0, i1] = b.cx(i0Input, i1Input);
     std::tie(i0, i1) = b.rxx(0.123, i0, i1);
     return SmallVector{i0, i1};
   });
@@ -4916,11 +4910,9 @@ Value inverseTwoRxRy(QCOProgramBuilder& b) {
 Value inverseCxThenRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange targets) {
-    auto w0 = targets[0];
-    auto w1 = targets[1];
-    // Reassigns existing SSA handles.
-    // NOLINTNEXTLINE(modernize-use-structured-binding)
-    std::tie(w0, w1) = b.cx(w0, w1);
+    const auto w0Input = targets[0];
+    const auto w1Input = targets[1];
+    auto [w0, w1] = b.cx(w0Input, w1Input);
     w1 = b.rz(0.4, w1);
     return SmallVector{w0, w1};
   });
@@ -4930,11 +4922,9 @@ Value inverseCxThenRz(QCOProgramBuilder& b) {
 Value inverseDcxThenRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange targets) {
-    auto w0 = targets[0];
-    auto w1 = targets[1];
-    // Reassigns existing SSA handles.
-    // NOLINTNEXTLINE(modernize-use-structured-binding)
-    std::tie(w0, w1) = b.dcx(w0, w1);
+    const auto w0Input = targets[0];
+    const auto w1Input = targets[1];
+    auto [w0, w1] = b.dcx(w0Input, w1Input);
     w1 = b.rz(0.4, w1);
     return SmallVector{w0, w1};
   });

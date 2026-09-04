@@ -47,11 +47,8 @@ static OwningOpRef<ModuleOp> getGHZ(MLIRContext* context, int64_t n) {
   QCOProgramBuilder builder(context);
   builder.initialize();
 
-  Value tensor = builder.qtensorAlloc(n);
-  Value q0;
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
+  const auto inputTensor = builder.qtensorAlloc(n);
+  auto [tensor, q0] = builder.qtensorExtract(inputTensor, 0);
   q0 = builder.h(q0);
   tensor = builder.qtensorInsert(q0, tensor, 0);
 
@@ -151,11 +148,7 @@ TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
           auto lower = arith::AddIOp::create(b, outer, step).getResult();
           return b.scfFor(
               lower, upper, step, outerArgs, [&](Value, ValueRange innerArgs) {
-                auto tensor = innerArgs.front();
-                Value qubit;
-                // Reassigns existing SSA handles.
-                // NOLINTNEXTLINE(modernize-use-structured-binding)
-                std::tie(tensor, qubit) = b.qtensorExtract(tensor, 0);
+                auto [tensor, qubit] = b.qtensorExtract(innerArgs.front(), 0);
                 tensor = b.qtensorInsert(b.h(qubit), tensor, 0);
                 return SmallVector{tensor};
               });

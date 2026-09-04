@@ -77,11 +77,7 @@ TEST_F(TensorIteratorTest, Traversal) {
   auto tensor6 = builder.qtensorInsert(q11, tensor5, 1);
   auto tensor7 = builder.scfFor(
       1, n, 1, {tensor6}, [&builder](Value iv, ValueRange iterArgs) {
-        Value loopTensor = iterArgs[0];
-        Value q;
-        // Reassigns existing SSA handles.
-        // NOLINTNEXTLINE(modernize-use-structured-binding)
-        std::tie(loopTensor, q) = builder.qtensorExtract(loopTensor, iv);
+        auto [loopTensor, q] = builder.qtensorExtract(iterArgs[0], iv);
         q = builder.h(q);
         loopTensor = builder.qtensorInsert(q, loopTensor, 0);
         return SmallVector{loopTensor};

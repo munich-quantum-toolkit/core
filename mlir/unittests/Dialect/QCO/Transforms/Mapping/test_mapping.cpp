@@ -486,11 +486,8 @@ TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
 
   QCOProgramBuilder builder(context.get());
   builder.initialize({builder.getI1Type()});
-  auto qubit = builder.h(builder.allocQubit());
-  Value bit;
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(qubit, bit) = builder.measure(qubit);
+  const auto inputQubit = builder.h(builder.allocQubit());
+  const auto [qubit, bit] = builder.measure(inputQubit);
   builder.sink(qubit);
   auto module = builder.finalize(bit);
 
@@ -620,11 +617,9 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
   builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
 
   SmallVector<Value> bits(2);
-  Value q0 = builder.allocQubit();
-  Value q1 = builder.allocQubit();
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(q0, q1) = builder.cx(q0, q1);
+  const auto inputQ0 = builder.allocQubit();
+  const auto inputQ1 = builder.allocQubit();
+  auto [q0, q1] = builder.cx(inputQ0, inputQ1);
   std::tie(q0, bits[0]) = builder.measure(q0);
   std::tie(q1, bits[1]) = builder.measure(q1);
   builder.sink(q0);

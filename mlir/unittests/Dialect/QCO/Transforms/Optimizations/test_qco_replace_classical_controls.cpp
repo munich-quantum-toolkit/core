@@ -256,11 +256,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   SmallVector<Value> r12 = referenceBuilder.qcoIf(
       cr0, {r1, r2}, [&](ValueRange qubits) -> SmallVector<Value> {
-        Value t1 = qubits[0];
-        Value t2 = qubits[1];
-        // Reassigns existing SSA handles.
-        // NOLINTNEXTLINE(modernize-use-structured-binding)
-        std::tie(t1, t2) = referenceBuilder.cx(t1, t2);
+        const auto inputT1 = qubits[0];
+        const auto inputT2 = qubits[1];
+        const auto [t1, t2] = referenceBuilder.cx(inputT1, inputT2);
         return SmallVector<Value>{t1, t2};
       });
   Value cr1;
@@ -420,11 +418,10 @@ TEST_F(QCOReplaceClassicalControlsTest,
   SmallVector<Value> r23 =
       referenceBuilder.qcoIf(andOp.getResult(), {r2, r3},
                              [&](ValueRange qubits) -> SmallVector<Value> {
-                               Value t2 = qubits[0];
-                               Value t3 = qubits[1];
-                               // Reassigns existing SSA handles.
-                               // NOLINTNEXTLINE(modernize-use-structured-binding)
-                               std::tie(t2, t3) = referenceBuilder.cx(t2, t3);
+                               const auto inputT2 = qubits[0];
+                               const auto inputT3 = qubits[1];
+                               const auto [t2, t3] =
+                                   referenceBuilder.cx(inputT2, inputT3);
                                return SmallVector<Value>{t2, t3};
                              });
   Value cr2;
@@ -1246,12 +1243,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
   std::tie(q[2], targetOutcome) = programBuilder.measure(q[2]);
   auto [controls, targets] =
       programBuilder.mcrzz(theta, {q[0], q[1]}, q[2], q[3]);
-  Value quantumControl = controls[1];
-  Value quantumControlOutcome;
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(quantumControl, quantumControlOutcome) =
-      programBuilder.measure(quantumControl);
+  const auto inputQuantumControl = controls[1];
+  const auto [quantumControl, quantumControlOutcome] =
+      programBuilder.measure(inputQuantumControl);
   Value otherTargetOutcome;
   std::tie(targets.second, otherTargetOutcome) =
       programBuilder.measure(targets.second);
@@ -1285,12 +1279,10 @@ TEST_F(QCOReplaceClassicalControlsTest,
   auto conditionalQubits = referenceBuilder.qcoIf(
       referenceControlOutcome, ValueRange{r[1], r[3]},
       [&](ValueRange qubits) -> SmallVector<Value> {
-        Value quantumControl = qubits[0];
-        Value otherTarget = qubits[1];
-        // Reassigns existing SSA handles.
-        // NOLINTNEXTLINE(modernize-use-structured-binding)
-        std::tie(quantumControl, otherTarget) =
-            referenceBuilder.crz(selectedAngle, quantumControl, otherTarget);
+        const auto inputQuantumControl = qubits[0];
+        const auto inputOtherTarget = qubits[1];
+        const auto [quantumControl, otherTarget] = referenceBuilder.crz(
+            selectedAngle, inputQuantumControl, inputOtherTarget);
         return {quantumControl, otherTarget};
       });
   r[1] = conditionalQubits[0];
@@ -1418,11 +1410,9 @@ TEST_F(QCOReplaceClassicalControlsTest,
 
   SmallVector<Value> r21 = referenceBuilder.qcoIf(
       cr0, {r2, r1}, [&](ValueRange qubits) -> SmallVector<Value> {
-        Value t2 = qubits[0];
-        Value t1 = qubits[1];
-        // Reassigns existing SSA handles.
-        // NOLINTNEXTLINE(modernize-use-structured-binding)
-        std::tie(t2, t1) = referenceBuilder.cz(t2, t1);
+        const auto inputT2 = qubits[0];
+        const auto inputT1 = qubits[1];
+        const auto [t2, t1] = referenceBuilder.cz(inputT2, inputT1);
         return SmallVector<Value>{t2, t1};
       });
   Value cr1;

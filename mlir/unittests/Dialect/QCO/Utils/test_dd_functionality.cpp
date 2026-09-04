@@ -877,11 +877,8 @@ TEST_F(QCODDFunctionalityTest, SimulateIndexSwitchBranches) {
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIf) {
   // |1> measure is deterministic; then-branch identity keeps |1>.
   auto mod = buildModule([](QCOProgramBuilder& b) {
-    auto q = b.x(b.staticQubit(0));
-    Value bit;
-    // Reassigns existing SSA handles.
-    // NOLINTNEXTLINE(modernize-use-structured-binding)
-    std::tie(q, bit) = b.measure(q);
+    const auto inputQ = b.x(b.staticQubit(0));
+    auto [q, bit] = b.measure(inputQ);
     q = b.qcoIf(
         bit, q, [&](Value arg) { return arg; },
         [&](Value arg) { return b.x(arg); });
@@ -915,11 +912,8 @@ TEST_F(QCODDFunctionalityTest, SimulateCBitConditionAndMeasurementUpdate) {
   auto measurementCondition = buildModule([](QCOProgramBuilder& b) {
     auto reg =
         b.allocClassicalBitRegister(1, "c", cbit::Initialization::Undefined);
-    auto q = b.x(b.staticQubit(0));
-    Value bit;
-    // Reassigns existing SSA handles.
-    // NOLINTNEXTLINE(modernize-use-structured-binding)
-    std::tie(q, bit) = b.measure(q);
+    const auto inputQ = b.x(b.staticQubit(0));
+    auto [q, bit] = b.measure(inputQ);
     b.storeClassicalBit(bit, reg, 0);
     q = b.qcoIf(
         b.loadClassicalBit(reg, 0), q, [&](Value arg) { return arg; },
@@ -1051,11 +1045,8 @@ TEST_F(QCODDFunctionalityTest, SimulateWholeCBitRegisterReadAndWrite) {
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {
   // |1> → measure → index_castui → index_switch case 1 applies X → |0>.
   auto mod = buildModule([](QCOProgramBuilder& b) {
-    auto q = b.x(b.staticQubit(0));
-    Value bit;
-    // Reassigns existing SSA handles.
-    // NOLINTNEXTLINE(modernize-use-structured-binding)
-    std::tie(q, bit) = b.measure(q);
+    const auto inputQ = b.x(b.staticQubit(0));
+    auto [q, bit] = b.measure(inputQ);
     auto idx =
         arith::IndexCastUIOp::create(b, b.getIndexType(), bit).getResult();
     q = b.qcoIndexSwitch(idx, q, ArrayRef<int64_t>{0, 1},
@@ -1082,11 +1073,8 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {
 
 TEST_F(QCODDFunctionalityTest, SimulateExtUI) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
-    auto q = b.x(b.staticQubit(0));
-    Value bit;
-    // Reassigns existing SSA handles.
-    // NOLINTNEXTLINE(modernize-use-structured-binding)
-    std::tie(q, bit) = b.measure(q);
+    const auto inputQ = b.x(b.staticQubit(0));
+    auto [q, bit] = b.measure(inputQ);
     auto extended = arith::ExtUIOp::create(b, b.getI8Type(), bit).getResult();
     auto one = arith::ConstantIntOp::create(b, 1, 8).getResult();
     auto condition =
@@ -1278,11 +1266,8 @@ TEST_F(QCODDFunctionalityTest, SampleResetUsesDynamicSampling) {
 TEST_F(QCODDFunctionalityTest, SampleDynamicMeasureIf) {
   // |1> measure then identity branch; final measureAll is always "1".
   auto mod = buildModule([](QCOProgramBuilder& b) {
-    auto q = b.x(b.staticQubit(0));
-    Value bit;
-    // Reassigns existing SSA handles.
-    // NOLINTNEXTLINE(modernize-use-structured-binding)
-    std::tie(q, bit) = b.measure(q);
+    const auto inputQ = b.x(b.staticQubit(0));
+    auto [q, bit] = b.measure(inputQ);
     q = b.qcoIf(
         bit, q, [&](Value arg) { return arg; },
         [&](Value arg) { return b.x(arg); });
@@ -2239,11 +2224,8 @@ TEST_F(QCODDFunctionalityTest, SampleExecutesControlMeasurementPerShot) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto reg =
         b.allocClassicalBitRegister(1, {}, cbit::Initialization::Undefined);
-    auto q = b.x(b.staticQubit(0));
-    Value bit;
-    // Reassigns existing SSA handles.
-    // NOLINTNEXTLINE(modernize-use-structured-binding)
-    std::tie(q, bit) = b.measure(q, reg, 0);
+    const auto inputQ = b.x(b.staticQubit(0));
+    auto [q, bit] = b.measure(inputQ, reg, 0);
     q = b.qcoIf(
         bit, q, [&](Value arg) { return arg; }, [&](Value arg) { return arg; });
     q = b.x(q);
@@ -3140,11 +3122,9 @@ TEST_F(QCODDFunctionalityTest, StatevectorRejectsNonTerminalMeasurement) {
 
 TEST_F(QCODDFunctionalityTest, LifetimeMarkersPreserveEntangledState) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
-    auto q0 = b.h(b.staticQubit(0));
-    auto q1 = b.staticQubit(1);
-    // Reassigns existing SSA handles.
-    // NOLINTNEXTLINE(modernize-use-structured-binding)
-    std::tie(q0, q1) = b.cx(q0, q1);
+    const auto inputQ0 = b.h(b.staticQubit(0));
+    const auto inputQ1 = b.staticQubit(1);
+    const auto [q0, q1] = b.cx(inputQ0, inputQ1);
     b.qtensorDealloc(b.qtensorFromElements({q0, q1}));
     b.sink(b.x(b.staticQubit(2)));
     return b.intConstant(0);

@@ -279,12 +279,9 @@ TEST_F(QCOMeasurementLiftingTest,
        liftMeasurementOverControlledParametrizedGate) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.allocQubit();
-
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(q0, q1) = programBuilder.crx(std::numbers::pi / 2, q0, q1);
+  const auto q0Input = programBuilder.allocQubit();
+  const auto q1Input = programBuilder.allocQubit();
+  auto [q0, q1] = programBuilder.crx(std::numbers::pi / 2, q0Input, q1Input);
 
   Value c0;
   Value c1;
@@ -403,11 +400,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.allocQubit();
-  Value cr;
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(r, cr) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.allocQubit();
+  auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
@@ -437,11 +431,8 @@ TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.h(referenceBuilder.allocQubit());
-  Value referenceFirstOutcome;
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(r, referenceFirstOutcome) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto [r, referenceFirstOutcome] = referenceBuilder.measure(rInput);
   r = referenceBuilder.h(r);
   Value referenceSecondOutcome;
   std::tie(r, referenceSecondOutcome) = referenceBuilder.measure(r);
@@ -469,11 +460,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.allocQubit();
-  Value cr;
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(r, cr) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.allocQubit();
+  auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
@@ -490,12 +478,9 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
  */
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.allocQubit();
-
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(q0, q1) = programBuilder.cy(q0, q1);
+  const auto q0Input = programBuilder.allocQubit();
+  const auto q1Input = programBuilder.allocQubit();
+  auto [q0, q1] = programBuilder.cy(q0Input, q1Input);
   q0 = programBuilder.x(q0);
   std::tie(q0, q1) = programBuilder.cy(q0, q1);
   q0 = programBuilder.x(q0);
@@ -535,12 +520,9 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.allocQubit();
-
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(q0, q1) = programBuilder.cz(q0, q1);
+  const auto q0Input = programBuilder.allocQubit();
+  const auto q1Input = programBuilder.allocQubit();
+  auto [q0, q1] = programBuilder.cz(q0Input, q1Input);
 
   Value c0;
   Value c1;
@@ -579,11 +561,9 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
 TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto control = programBuilder.h(programBuilder.allocQubit());
-  auto target = programBuilder.x(programBuilder.allocQubit());
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(control, target) = programBuilder.cz(control, target);
+  const auto controlInput = programBuilder.h(programBuilder.allocQubit());
+  const auto targetInput = programBuilder.x(programBuilder.allocQubit());
+  auto [control, target] = programBuilder.cz(controlInput, targetInput);
 
   Value targetOutcome;
   std::tie(target, targetOutcome) = programBuilder.measure(target);
@@ -597,12 +577,9 @@ TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
-  auto referenceTarget = referenceBuilder.allocQubit();
-  Value rawTargetOutcome;
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(referenceTarget, rawTargetOutcome) =
-      referenceBuilder.measure(referenceTarget);
+  const auto referenceTargetInput = referenceBuilder.allocQubit();
+  auto [referenceTarget, rawTargetOutcome] =
+      referenceBuilder.measure(referenceTargetInput);
   referenceTarget = referenceBuilder.x(referenceTarget);
   std::tie(referenceControl, referenceTarget) =
       referenceBuilder.cz(referenceControl, referenceTarget);
@@ -688,11 +665,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
   program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.allocQubit();
-  Value cr;
-  // Reassigns existing SSA handles.
-  // NOLINTNEXTLINE(modernize-use-structured-binding)
-  std::tie(r, cr) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.allocQubit();
+  auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
