@@ -383,6 +383,11 @@ class QuantumComputation(MutableSequence[operations.Operation]):
 
         If no initial layout is explicitly specified, the initial layout is assumed to be the identity permutation.
         If the circuit contains measurements at the end, these measurements are used to infer the output permutation.
+        If the output permutation is not empty, it must contain every measured device qubit as a key.
+        Clear the output permutation before calling this method to infer it only from measurements.
+
+        Raises:
+            ValueError: If a measured device qubit is missing from a non-empty output permutation.
         """
 
     @property
