@@ -461,11 +461,11 @@ parseMultiplexerParameters(const Json& parameters,
   }
 }
 
-[[nodiscard]] std::string topologyName(const GHZTopology topology) {
+[[nodiscard]] std::string_view topologyName(const GHZTopology topology) {
   return topology == GHZTopology::Linear ? "linear" : "star";
 }
 
-[[nodiscard]] std::string basisName(const GHZBasis basis) {
+[[nodiscard]] std::string_view basisName(const GHZBasis basis) {
   return basis == GHZBasis::Z ? "z" : "x";
 }
 

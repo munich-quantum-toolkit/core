@@ -179,7 +179,7 @@ static void removeIfPresent(const std::optional<std::filesystem::path>& path) {
   }
 }
 
-[[nodiscard]] static std::string
+[[nodiscard]] static const char*
 programExtension(const std::string_view format) {
   if (format == "qc") {
     return ".qc.mlir";
