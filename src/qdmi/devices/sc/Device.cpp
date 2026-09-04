@@ -19,9 +19,8 @@
 #include "mqt_sc_qdmi/types.h"
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/DeviceConfiguration.hpp"
+#include "qdmi/common/Diagnostics.hpp"
 #include "qdmi/devices/sc/Configuration.hpp"
-
-#include <spdlog/spdlog.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -34,6 +33,7 @@
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -63,16 +63,17 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
   if (status != Status::ALLOCATED) {
     return QDMI_ERROR_BADSTATE;
   }
-  int loadStatus = QDMI_SUCCESS;
-  const auto loaded = qdmi::detail::loadDeviceConfiguration(
-      inlineConfiguration, fileConfiguration, "MQT_CORE_QDMI_SC_CONFIG_JSON",
-      "MQT_CORE_QDMI_SC_CONFIG_FILE", "mqt-core-qdmi-sc-device.json",
-      reinterpret_cast<const void*>(&MQT_SC_QDMI_device_initialize),
-      loadStatus);
-  if (!loaded) {
-    return loadStatus;
-  }
+  std::optional<qdmi::detail::LoadedDeviceConfiguration> loaded;
   try {
+    int loadStatus = QDMI_SUCCESS;
+    loaded = qdmi::detail::loadDeviceConfiguration(
+        inlineConfiguration, fileConfiguration, "MQT_CORE_QDMI_SC_CONFIG_JSON",
+        "MQT_CORE_QDMI_SC_CONFIG_FILE", "mqt-core-qdmi-sc-device.json",
+        reinterpret_cast<const void*>(&MQT_SC_QDMI_device_initialize),
+        loadStatus);
+    if (!loaded) {
+      return loadStatus;
+    }
     const auto configuration = sc::readJSON(loaded->json, loaded->source);
 
     std::vector<std::unique_ptr<MQT_SC_QDMI_Site_impl_d>> newSiteStorage;
@@ -165,16 +166,25 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
     status = Status::INITIALIZED;
     return QDMI_SUCCESS;
   } catch (const std::bad_alloc&) {
-    SPDLOG_ERROR("Out of memory while initializing SC device from {}",
-                 loaded->source);
+    const std::string_view source =
+        loaded ? std::string_view(loaded->source)
+               : std::string_view("selected configuration");
+    qdmi::diagnostics::error(
+        "Out of memory while initializing SC device from {}", source);
     return QDMI_ERROR_OUTOFMEM;
   } catch (const std::invalid_argument& error) {
-    SPDLOG_ERROR("Invalid SC device configuration from {}: {}", loaded->source,
-                 error.what());
+    const std::string_view source =
+        loaded ? std::string_view(loaded->source)
+               : std::string_view("selected configuration");
+    qdmi::diagnostics::error("Invalid SC device configuration from {}: {}",
+                             source, error.what());
     return QDMI_ERROR_INVALIDARGUMENT;
   } catch (const std::exception& error) {
-    SPDLOG_ERROR("Failed to initialize SC device from {}: {}", loaded->source,
-                 error.what());
+    const std::string_view source =
+        loaded ? std::string_view(loaded->source)
+               : std::string_view("selected configuration");
+    qdmi::diagnostics::error("Failed to initialize SC device from {}: {}",
+                             source, error.what());
     return QDMI_ERROR_FATAL;
   }
 }

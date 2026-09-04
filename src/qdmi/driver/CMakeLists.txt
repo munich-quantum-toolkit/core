@@ -24,7 +24,7 @@ if(NOT TARGET ${TARGET_NAME})
     ${TARGET_NAME}
     PUBLIC qdmi::qdmi MQT::CoreQDMICommon
     PRIVATE qdmi::qdmi_project_warnings $<BUILD_INTERFACE:nlohmann_json::nlohmann_json>
-            spdlog::spdlog ${CMAKE_DL_LIBS})
+            ${CMAKE_DL_LIBS})
 
   mqt_get_qdmi_device_targets(QDMI_DEVICE_TARGETS)
 

@@ -37,6 +37,9 @@ releases may include breaking changes.
 - 💥 Remove the entire MQT Core QIR stack, including its runtime, JIT,
   standalone runner, DDSIM integration, build integration, tests, and
   documentation. ([#2314]) ([**@denialhaag**])
+- 💥 Remove the `spdlog` dependency from MQT Core source builds, installed CMake
+  packages, and Python wheels. QDMI diagnostics continue to be written to
+  standard error ([#2270]) ([**@denialhaag**])
 - 💥 Remove the unused decision-diagram approximation algorithm, including the
   `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
   `dd::approximate`. No replacement is provided ([#2154]) ([**@burgholzer**])
@@ -778,6 +781,7 @@ for previous changelogs._
 [#2314]: https://github.com/munich-quantum-toolkit/core/pull/2314
 [#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
 [#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
+[#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
