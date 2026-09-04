@@ -33,6 +33,7 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
+#include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringMap.h>
@@ -1207,7 +1208,135 @@ TEST_F(CompilerPipelineTest, TypedProgramsNormalizeGlobalPhases) {
   EXPECT_EQ(StringRef(textual->str()).count("qco.gphase"), 1);
 }
 
-// Test: jeff programs round-trip through their binary APIs
+// Test: typed QCO-to-jeff conversion expands reusable unitary functions.
+TEST_F(CompilerPipelineTest, QCOProgramInlinesNestedUnitaryCallsIntoJeff) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @flip(%q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %out = qco.x %q : !qco.qubit -> !qco.qubit
+      return %out : !qco.qubit
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %two = arith.constant 2.0 : f64
+      %q = qco.alloc : !qco.qubit
+      %out = qco.pow(%two) (%arg = %q) {
+        %called = qco.call @flip(%arg) : (!qco.qubit) -> !qco.qubit
+        qco.yield %called : !qco.qubit
+      } : {!qco.qubit} -> {!qco.qubit}
+      qco.sink %out : !qco.qubit
+      return
+    }
+  })mlir";
+
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, QCODialect, arith::ArithDialect,
+                  func::FuncDialect, LLVM::LLVMDialect, jeff::JeffDialect>();
+  auto ownedContext = std::make_shared<MLIRContext>(registry);
+  ownedContext->loadAllAvailableDialects();
+  auto moduleOp = parseSourceString<ModuleOp>(source, ownedContext.get());
+  ASSERT_TRUE(moduleOp);
+  auto qco = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
+  ASSERT_TRUE(qco);
+
+  auto jeffProgram = std::move(*qco).intoJeff();
+  ASSERT_TRUE(jeffProgram);
+  EXPECT_EQ(jeffProgram->str().find("qco.call"), std::string::npos);
+  EXPECT_TRUE(succeeded(verify(jeffProgram->module())));
+  auto helper = jeffProgram->module().lookupSymbol<func::FuncOp>("flip");
+  ASSERT_TRUE(helper);
+  EXPECT_FALSE(mlir::mqt::isUnitaryFunction(helper));
+  auto main = jeffProgram->module().lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  EXPECT_TRUE(main.getOps<func::CallOp>().empty());
+  EXPECT_EQ(std::distance(main.getOps<jeff::XOp>().begin(),
+                          main.getOps<jeff::XOp>().end()),
+            1);
+}
+
+TEST_F(CompilerPipelineTest, JeffBinaryRoundTripPreservesReusableFunctions) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %angle = arith.constant 0.25 : f64
+      %q = qco.alloc : !qco.qubit
+      %a = qco.call @rotate(%angle, %q) : (f64, !qco.qubit) -> !qco.qubit
+      %b = qco.call @rotate(%angle, %a) : (f64, !qco.qubit) -> !qco.qubit
+      %c = qco.sx %b : !qco.qubit -> !qco.qubit
+      %bit, %out = func.call @read(%c) : (!qco.qubit) -> (i1, !qco.qubit)
+      qco.sink %out : !qco.qubit
+      return %bit : i1
+    }
+    func.func private @rotate(%angle: f64, %q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %out = qco.ry(%angle) %q : !qco.qubit -> !qco.qubit
+      return %out : !qco.qubit
+    }
+    func.func private @read(%q: !qco.qubit) -> (i1, !qco.qubit) {
+      %out, %bit = qco.measure %q : !qco.qubit
+      return %bit, %out : i1, !qco.qubit
+    }
+  })mlir";
+  auto qco = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(qco);
+  auto jeffProgram = std::move(*qco).intoJeff();
+  ASSERT_TRUE(jeffProgram);
+  EXPECT_TRUE(succeeded(verify(jeffProgram->module())));
+  EXPECT_EQ(jeffProgram->module()
+                ->getAttrOfType<IntegerAttr>("jeff.entrypoint")
+                .getUInt(),
+            0);
+  auto main = jeffProgram->module().lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  EXPECT_EQ(std::distance(main.getOps<func::CallOp>().begin(),
+                          main.getOps<func::CallOp>().end()),
+            3);
+  auto helper = jeffProgram->module().lookupSymbol<func::FuncOp>("rotate");
+  ASSERT_TRUE(helper);
+  EXPECT_EQ(std::distance(helper.getOps<jeff::RyOp>().begin(),
+                          helper.getOps<jeff::RyOp>().end()),
+            1);
+
+  auto restoredJeff = JeffProgram::fromBytes(jeffProgram->toBytes());
+  ASSERT_TRUE(restoredJeff);
+  auto restored = std::move(*restoredJeff).intoQCO();
+  ASSERT_TRUE(restored);
+  EXPECT_TRUE(succeeded(verify(restored->module())));
+  helper = restored->module().lookupSymbol<func::FuncOp>("rotate");
+  ASSERT_TRUE(helper);
+  EXPECT_TRUE(helper.isPrivate());
+  EXPECT_FALSE(mlir::mqt::isUnitaryFunction(helper));
+  EXPECT_EQ(std::distance(helper.getOps<qco::RYOp>().begin(),
+                          helper.getOps<qco::RYOp>().end()),
+            1);
+  main = mlir::mqt::getEntryPoint(restored->module());
+  ASSERT_TRUE(main);
+  EXPECT_EQ(main.getSymName(), "main");
+  EXPECT_EQ(std::distance(main.getOps<func::CallOp>().begin(),
+                          main.getOps<func::CallOp>().end()),
+            3);
+  auto qc = std::move(*restored).intoQC();
+  ASSERT_TRUE(qc);
+  EXPECT_TRUE(succeeded(verify(qc->module())));
+  helper = qc->module().lookupSymbol<func::FuncOp>("rotate");
+  ASSERT_TRUE(helper);
+  EXPECT_EQ(helper.getNumResults(), 0);
+}
+
+TEST_F(CompilerPipelineTest, JeffRejectsMutableClassicalHelperArguments) {
+  auto qco = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func private @helper(%bits: !cbit.reg<1>) {
+      return
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qco.alloc : !qco.qubit
+      qco.sink %q : !qco.qubit
+      return
+    }
+  })mlir");
+  ASSERT_TRUE(qco);
+  EXPECT_FALSE(std::move(*qco).intoJeff());
+}
+
+// Test: jeff programs round-trip through their binary APIs.
 TEST_F(CompilerPipelineTest, JeffProgramsRoundTripThroughBytesAndFiles) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";

@@ -125,7 +125,6 @@ void populateQCExportPipeline(OpPassManager& pm) {
 
 void populateQCCleanupPipeline(OpPassManager& pm) {
   populateQCExportPipeline(pm);
-  pm.addPass(createRemoveDeadValuesPass());
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
@@ -134,7 +133,6 @@ void populateQCOCleanupPipeline(OpPassManager& pm) {
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
-  pm.addPass(createRemoveDeadValuesPass());
 }
 
 void populateQIRCleanupPipeline(OpPassManager& pm, bool useAdaptive) {
