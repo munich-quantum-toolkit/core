@@ -138,16 +138,15 @@ CompoundOperation::removeControl(const Controls::iterator it) {
 
   return controls.erase(it);
 }
-bool CompoundOperation::equals(const Operation& op, const Permutation& perm1,
-                               const Permutation& perm2) const {
-  if (const auto* comp = dynamic_cast<const CompoundOperation*>(&op)) {
+bool CompoundOperation::equals(const Operation& operation) const {
+  if (const auto* comp = dynamic_cast<const CompoundOperation*>(&operation)) {
     if (comp->ops.size() != ops.size()) {
       return false;
     }
 
     auto it = comp->ops.cbegin();
-    for (const auto& operation : ops) {
-      if (!operation->equals(**it, perm1, perm2)) {
+    for (const auto& op : ops) {
+      if (!op->equals(**it)) {
         return false;
       }
       ++it;
@@ -155,10 +154,6 @@ bool CompoundOperation::equals(const Operation& op, const Permutation& perm1,
     return true;
   }
   return false;
-}
-
-bool CompoundOperation::equals(const Operation& operation) const {
-  return equals(operation, {}, {});
 }
 
 std::ostream& CompoundOperation::print(std::ostream& os,
@@ -198,11 +193,10 @@ void CompoundOperation::dumpOpenQASM(std::ostream& of,
   }
 }
 
-auto CompoundOperation::getUsedQubitsPermuted(const Permutation& perm) const
-    -> std::set<Qubit> {
+auto CompoundOperation::getUsedQubits() const -> std::set<Qubit> {
   std::set<Qubit> usedQubits{};
   for (const auto& op : ops) {
-    usedQubits.merge(op->getUsedQubitsPermuted(perm));
+    usedQubits.merge(op->getUsedQubits());
   }
   return usedQubits;
 }

@@ -110,6 +110,23 @@ algorithm had no production owner in the MQT ecosystem. Remove uses of the
 `dd/Approximation.hpp` header, the `dd::ApproximationMetadata` type, and the
 `dd::approximate` function. MQT Core does not provide a replacement.
 
+### CoreIR API cleanup
+
+The CoreIR API cleanup requires the following migrations:
+
+- Replace `getNmeasuredQubits()` and `num_measured_qubits` with
+  `getNoutputQubits()` and `num_output_qubits`, respectively.
+- Replace permutation-aware `Operation::equals()` and `getUsedQubitsPermuted()`
+  calls by applying the permutation to cloned operations before comparing them.
+- Replace `getHighestLogicalQubitIndex()`, `printStatistics()`, and
+  `printPermutation()` with `initialLayout.maxValue()`, the individual count
+  accessors, and direct `Permutation` iteration, respectively.
+- Construct output-permutation measurements explicitly instead of calling
+  `appendMeasurementsAccordingToOutputPermutation()`.
+
+The register lookup helpers `getQubitRegister()`, `getPhysicalQubitIndex()`, and
+`physicalQubitIsAncillary()` are now private implementation details.
+
 ### Removal of the `datastructures` (sub)library
 
 MQT Core no longer provides the `datastructures` (`ds`) sublibrary. [MQT QMAP]

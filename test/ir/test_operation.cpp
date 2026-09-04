@@ -9,7 +9,6 @@
  */
 
 #include "ir/Definitions.hpp"
-#include "ir/Permutation.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/Control.hpp"
@@ -155,6 +154,15 @@ TEST(NonStandardOperation, CommutesAtQubit) {
           .commutesAtQubit(op, 0));
 }
 
+TEST(NonUnitaryOperation, ResetEquality) {
+  const qc::NonUnitaryOperation reset0(qc::Targets{0});
+  const qc::NonUnitaryOperation equalReset(qc::Targets{0});
+  const qc::NonUnitaryOperation differentReset(qc::Targets{1});
+
+  EXPECT_EQ(reset0, equalReset);
+  EXPECT_NE(reset0, differentReset);
+}
+
 TEST(Operation, IsIndividualGate) {
   const qc::StandardOperation op1(0, qc::X);
   EXPECT_TRUE(op1.isSingleQubitGate());
@@ -228,7 +236,7 @@ TEST(Operation, IsGlobalGate) {
                                "rz(pi/4) q[0];\n"
                                "ry(pi/2) q;\n";
   const auto qc = qasm3::Importer::imports(testfile);
-  EXPECT_EQ(qc.getHighestLogicalQubitIndex(), 2);
+  EXPECT_EQ(qc.getNqubits(), 3);
   EXPECT_FALSE(qc.at(0)->isGlobal(3));
   EXPECT_TRUE(qc.at(1)->isGlobal(3));
 }
@@ -242,13 +250,6 @@ TEST(Operation, Equality) {
   EXPECT_TRUE(op2 == op3);
   EXPECT_TRUE(op3 == op2);
   EXPECT_FALSE(op2 == op4);
-
-  EXPECT_TRUE(op2.equals(op3, qc::Permutation{{{0, 0}, {1, 2}}},
-                         qc::Permutation{{{0, 2}, {1, 0}}}));
-  EXPECT_FALSE(
-      op2.equals(op3, qc::Permutation{{{0, 0}, {1, 2}}}, qc::Permutation{}));
-  EXPECT_FALSE(op2.equals(op4, qc::Permutation{{{0, 0}, {1, 2}}},
-                          qc::Permutation{{{0, 2}, {1, 0}}}));
 }
 
 TEST(StandardOperation, Constructor) {

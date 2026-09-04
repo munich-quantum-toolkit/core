@@ -121,10 +121,10 @@ Note:
     Garbage qubits are qubits whose final state is not relevant for the computation.)pb");
 
   qc.def_prop_ro(
-      "num_measured_qubits", &qc::QuantumComputation::getNmeasuredQubits,
-      R"pb(The number of qubits that are measured in the quantum computation.
+      "num_output_qubits", &qc::QuantumComputation::getNoutputQubits,
+      R"pb(The number of logical output qubits in the quantum computation.
 
-Computed as :math:`| \text{qubits} | - | \text{garbage} |`.)pb");
+Output qubits are the qubits that are not marked as garbage.)pb");
 
   qc.def_prop_ro("num_data_qubits",
                  &qc::QuantumComputation::getNqubitsWithoutAncillae,

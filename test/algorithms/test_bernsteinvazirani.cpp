@@ -19,7 +19,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <memory>
 #include <sstream>
 
@@ -55,7 +54,6 @@ TEST_P(BernsteinVazirani, FunctionTest) {
 
   // construct Bernstein Vazirani circuit
   const auto qc = qc::createBernsteinVazirani(s);
-  qc.printStatistics(std::cout);
 
   // simulate the circuit
   constexpr std::size_t shots = 1024;
@@ -74,7 +72,6 @@ TEST_P(BernsteinVazirani, FunctionTestDynamic) {
 
   // construct Bernstein Vazirani circuit
   const auto qc = qc::createIterativeBernsteinVazirani(s);
-  qc.printStatistics(std::cout);
 
   // simulate the circuit
   constexpr std::size_t shots = 1024;

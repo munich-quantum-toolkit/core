@@ -624,12 +624,7 @@ TEST_F(Qasm3ParserTest, ImportQasm3OutputPerm) {
                                "qubit[4] q;\n";
   const auto qc = qasm3::Importer::imports(testfile);
 
-  std::stringstream out{};
-  QuantumComputation::printPermutation(qc.outputPermutation, out);
-
-  const std::string expected = "\t0: 1\n"
-                               "\t3: 0\n";
-  EXPECT_EQ(out.str(), expected);
+  EXPECT_EQ(qc.outputPermutation, (Permutation{{0, 1}, {3, 0}}));
 }
 
 TEST_F(Qasm3ParserTest, ImportQasm3OutputPermDefault) {
@@ -637,14 +632,8 @@ TEST_F(Qasm3ParserTest, ImportQasm3OutputPermDefault) {
                                "qubit[4] q;\n";
   const auto qc = qasm3::Importer::imports(testfile);
 
-  std::stringstream out{};
-  QuantumComputation::printPermutation(qc.outputPermutation, out);
-
-  const std::string expected = "\t0: 0\n"
-                               "\t1: 1\n"
-                               "\t2: 2\n"
-                               "\t3: 3\n";
-  EXPECT_EQ(out.str(), expected);
+  EXPECT_EQ(qc.outputPermutation,
+            (Permutation{{0, 0}, {1, 1}, {2, 2}, {3, 3}}));
 }
 
 TEST_F(Qasm3ParserTest, ImportQasm3IfElseNoBlock) {

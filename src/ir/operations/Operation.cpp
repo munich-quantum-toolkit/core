@@ -98,8 +98,7 @@ std::ostream& Operation::print(std::ostream& os, const Permutation& permutation,
   return os;
 }
 
-bool Operation::equals(const Operation& op, const Permutation& perm1,
-                       const Permutation& perm2) const {
+bool Operation::equals(const Operation& op) const {
   // check type
   if (getType() != op.getType()) {
     return false;
@@ -121,8 +120,8 @@ bool Operation::equals(const Operation& op, const Permutation& perm1,
 
   if (isDiagonalGate()) {
     // check pos. controls and targets together
-    const auto& usedQubits1 = getUsedQubitsPermuted(perm1);
-    const auto& usedQubits2 = op.getUsedQubitsPermuted(perm2);
+    const auto& usedQubits1 = getUsedQubits();
+    const auto& usedQubits2 = op.getUsedQubits();
     if (usedQubits1 != usedQubits2) {
       return false;
     }
@@ -130,24 +129,23 @@ bool Operation::equals(const Operation& op, const Permutation& perm1,
     std::set<Qubit> negControls1{};
     for (const auto& control : getControls()) {
       if (control.type == Control::Type::Neg) {
-        negControls1.emplace(perm1.apply(control.qubit));
+        negControls1.emplace(control.qubit);
       }
     }
     std::set<Qubit> negControls2{};
     for (const auto& control : op.getControls()) {
       if (control.type == Control::Type::Neg) {
-        negControls2.emplace(perm2.apply(control.qubit));
+        negControls2.emplace(control.qubit);
       }
     }
     return negControls1 == negControls2;
   }
   // check controls
-  if (nc1 != 0U &&
-      perm1.apply(getControls()) != perm2.apply(op.getControls())) {
+  if (nc1 != 0U && getControls() != op.getControls()) {
     return false;
   }
 
-  return perm1.apply(getTargets()) == perm2.apply(op.getTargets());
+  return getTargets() == op.getTargets();
 }
 
 void Operation::addDepthContribution(std::vector<std::size_t>& depths) const {
@@ -180,19 +178,14 @@ auto Operation::isInverseOf(const Operation& other) const -> bool {
   return operator==(*other.getInverted());
 }
 
-auto Operation::getUsedQubitsPermuted(const qc::Permutation& perm) const
-    -> std::set<Qubit> {
+auto Operation::getUsedQubits() const -> std::set<Qubit> {
   std::set<Qubit> usedQubits;
   for (const auto& target : getTargets()) {
-    usedQubits.emplace(perm.apply(target));
+    usedQubits.emplace(target);
   }
   for (const auto& control : getControls()) {
-    usedQubits.emplace(perm.apply(control.qubit));
+    usedQubits.emplace(control.qubit);
   }
   return usedQubits;
-}
-
-auto Operation::getUsedQubits() const -> std::set<Qubit> {
-  return getUsedQubitsPermuted({});
 }
 } // namespace qc

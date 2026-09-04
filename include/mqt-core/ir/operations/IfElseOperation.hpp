@@ -90,11 +90,7 @@ public:
     return comparisonKind_;
   }
 
-  [[nodiscard]] bool equals(const Operation& op, const Permutation& perm1,
-                            const Permutation& perm2) const override;
-  [[nodiscard]] bool equals(const Operation& op) const override {
-    return equals(op, {}, {});
-  }
+  [[nodiscard]] bool equals(const Operation& op) const override;
 
   virtual std::ostream& print(std::ostream& os, const Permutation& permutation,
                               std::size_t prefixWidth,

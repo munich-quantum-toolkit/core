@@ -28,6 +28,9 @@ releases may include breaking changes.
   ([**@burgholzer**])
 - 🐛 Protect process-wide DD, IR, and QDMI state for free-threaded Python
   ([#2209]) ([**@burgholzer**])
+- 💥 Prune dead and misleading CoreIR APIs, including renaming the non-garbage
+  logical output count to `getNoutputQubits()` and `num_output_qubits` ([#2112])
+  ([**@simon1hofmann**])
 
 ### Removed
 
@@ -798,6 +801,7 @@ for previous changelogs._
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2114]: https://github.com/munich-quantum-toolkit/core/pull/2114
+[#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2108]: https://github.com/munich-quantum-toolkit/core/pull/2108
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
