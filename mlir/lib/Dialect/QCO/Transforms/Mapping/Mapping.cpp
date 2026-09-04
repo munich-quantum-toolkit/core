@@ -10,7 +10,7 @@
 
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
-#include "mlir/Compiler/MappingTarget.h"
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -438,7 +438,7 @@ private:
     /// Construct a non-root node from its parent node. Apply the given swap to
     /// the layout of the parent node.
     Node(Node* parent, const IndexPairType& swap, const Window& window,
-         const MappingTarget& target, const Parameters& params)
+         const CompilerTarget& target, const Parameters& params)
         : layout(parent->layout), swap(swap), parent(parent),
           depth(parent->depth + 1), f(0) {
       layout.swap(swap.first, swap.second);
@@ -448,10 +448,10 @@ private:
     /// Return true, if the current SWAP sequence makes all gates in the front
     /// executable.
     [[nodiscard]] bool isGoal(const IndexPairType& front,
-                              const MappingTarget& target) const {
+                              const CompilerTarget& target) const {
       const auto [hw0, hw1] =
           layout.getHardwareIndices(front.first, front.second);
-      return target.isExecutable(hw0, hw1);
+      return target.areAdjacent(hw0, hw1);
     }
 
   private:
@@ -468,14 +468,16 @@ private:
     /// between its hardware qubits. Intuitively, this is the number of SWAPs
     /// that a naive router would insert to route the layers (with a constant
     /// layout).
-    [[nodiscard]] float h(const Window& window, const MappingTarget& target,
+    [[nodiscard]] float h(const Window& window, const CompilerTarget& target,
                           const Parameters& params) const {
       float costs{0};
       float decay{1.};
 
-      for (const auto& [prog0, prog1] : window) {
+      for (const auto& [i, progs] : enumerate(window)) {
+        const auto [prog0, prog1] = progs;
         const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
-        costs += decay * target.pathCostBetween(hw0, hw1);
+        const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
+        costs += decay * static_cast<float>(nswaps);
         decay *= params.lambda;
       }
       return costs;
@@ -484,7 +486,7 @@ private:
 
   /// Describes the graph F of arXiv:1602.05150v3.
   struct FGraph {
-    explicit FGraph(const MappingTarget& target)
+    explicit FGraph(const CompilerTarget& target)
         : f_(llvm::to_vector(llvm::seq(target.numSites()))),
           target_(&target) {};
 
@@ -551,7 +553,7 @@ private:
     }
 
     Graph f_;
-    const MappingTarget* target_;
+    const CompilerTarget* target_;
   };
 
 public:
@@ -578,7 +580,7 @@ protected:
     }
 
     auto moduleOp = getOperation();
-    if (target->compilerTarget().connectivityKind() !=
+    if (target->connectivityKind() !=
         CompilerTarget::Connectivity::Kind::Explicit) {
       moduleOp.emitError()
           << "place-and-route requires an explicit target topology";
@@ -600,7 +602,7 @@ protected:
 
     auto computation = discoverComputation(func);
     if (failed(computation) ||
-        failed(checkCapacity(func, target->compilerTarget(), *computation))) {
+        failed(checkCapacity(func, *target, *computation))) {
       signalPassFailure();
       return;
     }
@@ -616,8 +618,8 @@ protected:
     }
 
     IRRewriter rewriter(&getContext());
-    std::tie(wires, infos) = std::move(applyPlacement(
-        body, target->compilerTarget(), *layout, *computation, rewriter));
+    std::tie(wires, infos) = std::move(
+        applyPlacement(body, *target, *layout, *computation, rewriter));
 
     RoutingBundle bundle{.wires = std::move(wires),
                          .infos = std::move(infos),
@@ -882,7 +884,7 @@ private:
     constexpr size_t cap = 25'000'000UL;
 
     const size_t b = target->maxDegree() * ((target->numSites() + 1) / 2);
-    const size_t budget = std::max<size_t>(2, std::min(b * b * b, cap));
+    const size_t budget = std::min(b * b * b, cap);
 
     const Parameters params{.alpha = alpha, .lambda = lambda};
 
@@ -890,7 +892,12 @@ private:
     llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer>
         frontier;
 
+    // Early exit, if the root node is a goal node already.
     Node* root = std::construct_at(arena.Allocate(), layout);
+    if (root->isGoal(window.front(), *target)) {
+      return SmallVector<IndexPairType>{};
+    }
+
     frontier.emplace(root);
 
     DenseMap<ArrayRef<size_t>, size_t> bestDepth;
@@ -1081,24 +1088,6 @@ private:
     return curr;
   }
 
-  [[nodiscard]] static IndexPairType orderedPrograms(UnitaryOpInterface unitary,
-                                                     ArrayRef<size_t> indices,
-                                                     const Wires& wires,
-                                                     const WireInfos& infos) {
-    assert(unitary.getNumQubits() == 2 && indices.size() == 2 &&
-           "expected a ready two-qubit operation");
-    const bool reversed =
-        wires[indices.front()].qubit() == unitary.getOutputQubit(1);
-    assert(wires[indices.front()].qubit() ==
-               unitary.getOutputQubit(reversed ? 1 : 0) &&
-           wires[indices.back()].qubit() ==
-               unitary.getOutputQubit(reversed ? 0 : 1) &&
-           "ready wires do not match operation results");
-    const IndexPairType programs{infos.lookupProgram(indices.front()),
-                                 infos.lookupProgram(indices.back())};
-    return reversed ? IndexPairType{programs.second, programs.first} : programs;
-  }
-
   /// Collect a routing lookahead window of up to `1 + nlookahead` ready
   /// two-qubit gates, while skipping qubit-pair blocks.
   template <WireDirection Direction>
@@ -1120,8 +1109,7 @@ private:
 
           if (released.empty()) {
             for (const auto& [op, indices] : frontier) {
-              if (auto unitary = dyn_cast<UnitaryOpInterface>(op);
-                  !isa<BarrierOp>(op) && unitary) {
+              if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
                 const auto i0 = indices[0];
                 const auto i1 = indices[1];
                 const auto prog0 = infos.lookupProgram(i0);
@@ -1129,8 +1117,7 @@ private:
                 const IndexPairType gate = std::minmax(prog0, prog1);
 
                 if (!is_contained(prev, gate)) {
-                  window.emplace_back(
-                      orderedPrograms(unitary, indices, wires, infos));
+                  window.emplace_back(gate);
                   if (window.size() == 1 + nlookahead) {
                     return WalkResult::interrupt();
                   }
@@ -1215,18 +1202,17 @@ private:
         const auto release =
             TypeSwitch<Operation*, bool>(op)
                 .Case<BarrierOp>([](auto&) { return true; })
-                .template Case<UnitaryOpInterface>(
-                    [&](UnitaryOpInterface unitary) {
-                      if (indices.size() == 1) {
-                        return true;
-                      }
+                .template Case<UnitaryOpInterface>([&](auto&) {
+                  if (indices.size() == 1) {
+                    return true;
+                  }
 
-                      const auto [prog0, prog1] =
-                          orderedPrograms(unitary, indices, wires, infos);
-                      const auto [hw0, hw1] =
-                          layout.getHardwareIndices(prog0, prog1);
-                      return target->isExecutable(hw0, hw1);
-                    })
+                  const auto prog0 = infos.lookupProgram(indices[0]);
+                  const auto prog1 = infos.lookupProgram(indices[1]);
+                  const auto [hw0, hw1] =
+                      layout.getHardwareIndices(prog0, prog1);
+                  return target->areAdjacent(hw0, hw1);
+                })
                 .template Case<ResetOp>([](auto&) { return true; })
                 .template Case<MeasureOp>([](MeasureOp& m) {
                   if (Direction == WireDirection::Backward) {
@@ -1739,7 +1725,7 @@ private:
     return stats;
   }
 
-  std::optional<MappingTarget> target;
+  std::optional<CompilerTarget> target;
 };
 
 } // namespace

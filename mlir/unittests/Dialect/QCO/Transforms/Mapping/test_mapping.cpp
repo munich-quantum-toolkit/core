@@ -48,13 +48,11 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/Passes.h>
 
-#include <array>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <random>
 #include <string>
 #include <tuple>
@@ -84,8 +82,7 @@ static SmallVector<Value> getQubitValues(ValueRange values) {
 /// constraints.
 static bool isExecutable(Region& body,
                          DenseMap<Value, CompilerTarget::SiteId>& m,
-                         const CompilerTarget& target,
-                         const bool requireNativeDirection = false) {
+                         const CompilerTarget& target) {
   for (Operation& op : body.getOps()) {
     if (auto staticOp = dyn_cast<StaticOp>(op)) {
       m.try_emplace(staticOp.getQubit(), staticOp.getIndex());
@@ -100,9 +97,7 @@ static bool isExecutable(Region& body,
         const auto siteB = m.at(unitaryOp.getInputQubit(1));
         const auto vertexA = target.vertexForSite(siteA);
         const auto vertexB = target.vertexForSite(siteB);
-        if (!vertexA || !vertexB || !target.areAdjacent(*vertexA, *vertexB) ||
-            (requireNativeDirection && isa<CtrlOp>(op) &&
-             !target.supports(&op, std::array{siteA, siteB}))) {
+        if (!vertexA || !vertexB || !target.areAdjacent(*vertexA, *vertexB)) {
           llvm::dbgs() << "The two-qubit gate (" << siteA << ", " << siteB
                        << ") is not executable: \n";
           unitaryOp->dump();
@@ -158,7 +153,7 @@ static bool isExecutable(Region& body,
         localM.try_emplace(arg, hw);
       }
 
-      if (!isExecutable(region, localM, target, requireNativeDirection)) {
+      if (!isExecutable(region, localM, target)) {
         return false;
       }
 
@@ -226,11 +221,9 @@ static bool isExecutable(Region& body,
 }
 
 /// Return true, if the entry point fulfills the given coupling constraints.
-static bool isExecutable(func::FuncOp entry, const CompilerTarget& target,
-                         const bool requireNativeDirection = false) {
+static bool isExecutable(func::FuncOp entry, const CompilerTarget& target) {
   DenseMap<Value, CompilerTarget::SiteId> m;
-  return isExecutable(entry.getFunctionBody(), m, target,
-                      requireNativeDirection);
+  return isExecutable(entry.getFunctionBody(), m, target);
 }
 
 /// Return a nxn square-grid compiler target.
@@ -438,84 +431,6 @@ TEST_F(MappingPassFixture,
   ASSERT_TRUE(measurement);
   ASSERT_TRUE(measurement.getQubitOut().hasOneUse());
   EXPECT_TRUE(isa<SWAPOp>(*measurement.getQubitOut().getUsers().begin()));
-}
-
-TEST_F(MappingPassFixture, PrefersNativeDirectionWhenRouting) {
-  using Operation = CompilerTarget::Operation;
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
-      NativeOperations::fromOperations(
-          {llvm::cantFail(Operation::create("u", 1, 3)),
-           llvm::cantFail(Operation::create(
-               "cx", 2, 0, {}, std::nullopt, std::nullopt,
-               std::vector<std::vector<CompilerTarget::SiteId>>{{1, 0},
-                                                                {1, 2}}))})));
-
-  QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(3, builder.getI1Type()));
-  SmallVector<Value> qubits(3);
-  SmallVector<Value> bits(3);
-  for (auto& qubit : qubits) {
-    qubit = builder.allocQubit();
-  }
-  std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
-  std::tie(qubits[0], qubits[2]) = builder.cx(qubits[0], qubits[2]);
-  std::tie(qubits[2], qubits[1]) = builder.cx(qubits[2], qubits[1]);
-  for (size_t i = 0; i < qubits.size(); ++i) {
-    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
-    builder.sink(qubits[i]);
-  }
-  auto module = builder.finalize(bits);
-
-  ASSERT_TRUE(
-      runPass(module.get(), target,
-              MappingPassOptions{.niterations = 1, .ntrials = 1, .seed = 42})
-          .succeeded());
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target, true));
-
-  size_t numControls = 0;
-  size_t numSwaps = 0;
-  module->walk([&](CtrlOp) { ++numControls; });
-  module->walk([&](SWAPOp) { ++numSwaps; });
-  EXPECT_EQ(numControls, 3);
-  EXPECT_EQ(numSwaps, 1);
-}
-
-TEST_F(MappingPassFixture, RoutesOppositeDirectionsOnTwoSites) {
-  using Operation = CompilerTarget::Operation;
-  const auto target = llvm::cantFail(CompilerTarget::create(
-      2, Connectivity::fromCouplings({{0, 1}}),
-      NativeOperations::fromOperations(
-          {llvm::cantFail(Operation::create("u", 1, 3)),
-           llvm::cantFail(Operation::create(
-               "cx", 2, 0, {}, std::nullopt, std::nullopt,
-               std::vector<std::vector<CompilerTarget::SiteId>>{{0, 1}}))})));
-
-  QCOProgramBuilder builder(context.get());
-  builder.initialize(SmallVector<Type>(2, builder.getI1Type()));
-  auto q0 = builder.allocQubit();
-  auto q1 = builder.allocQubit();
-  std::tie(q0, q1) = builder.cx(q0, q1);
-  std::tie(q1, q0) = builder.cx(q1, q0);
-  auto [q0Out, b0] = builder.measure(q0);
-  auto [q1Out, b1] = builder.measure(q1);
-  builder.sink(q0Out);
-  builder.sink(q1Out);
-  auto module = builder.finalize({b0, b1});
-
-  ASSERT_TRUE(
-      runPass(module.get(), target,
-              MappingPassOptions{.niterations = 1, .ntrials = 1, .seed = 42})
-          .succeeded());
-
-  EXPECT_TRUE(isExecutable(getEntryPoint(module.get()), target, true));
-
-  size_t numControls = 0;
-  size_t numSwaps = 0;
-  module->walk([&](CtrlOp) { ++numControls; });
-  module->walk([&](SWAPOp) { ++numSwaps; });
-  EXPECT_EQ(numControls, 2);
-  EXPECT_EQ(numSwaps, 1);
 }
 
 TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {

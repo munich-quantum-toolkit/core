@@ -70,6 +70,14 @@ ordered tuples; it is independent of the sparse calibration entries in
 `site_tuples`. Structural and program-format constructs are not compiler-target
 operations.
 
+Routing uses undirected adjacency; native synthesis repairs unsupported operand
+directions. Target compilation requires a known static physical site for each
+qubit. Structured branch exits must agree on sites, and loop backedges must
+preserve the entry sites. Unsupported or inconsistent site transfers are
+diagnosed, including after all-to-all placement. A synthesis basis must provide
+the same one-qubit gate family on every site and an entangler on every routing
+edge in at least one direction.
+
 Target synthesis preserves a native `gphase`. If the target does not support
 `gphase`, target synthesis preserves relative phase effects and removes only the
 unobservable global phase of the entry point.

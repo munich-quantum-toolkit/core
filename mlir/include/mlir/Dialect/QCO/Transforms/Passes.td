@@ -154,9 +154,9 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     - `window` contains at most `1 + nlookahead` two-qubit operations in program order.
     - `depth(n)` returns the distance from the node `n` to the root node.
     - `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
-    - `h(gate, p)` is `dist(p[gate.first], p[gate.second]) - 1` for nonadjacent operands, zero for an adjacent native operand order, one when only the reverse operand order is native, and infinity when neither adjacent order is supported.
+    - `h(gate, p)` is `dist(p[gate.first], p[gate.second]) - 1`.
 
-    Routing uses the undirected connectivity underlying the target topology, while gate costs retain the semantic operand order. Target-native synthesis realizes operations and inserted SWAPs in a supported direction.
+    Routing uses undirected target connectivity. Target-native synthesis realizes operations and inserted SWAPs in a supported operand direction.
 
     To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions

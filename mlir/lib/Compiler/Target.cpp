@@ -382,9 +382,8 @@ llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
       uniqueApplicableSiteCombinations.emplace_back(sites);
     }
     if (llvm::any_of(siteTuples, [&](const auto& siteTuple) {
-          return llvm::none_of(*applicableSiteTuples, [&](const auto& sites) {
-            return ArrayRef<SiteId>(sites) == siteTuple.sites();
-          });
+          return !llvm::is_contained(uniqueApplicableSiteCombinations,
+                                     siteTuple.sites());
         })) {
       return invalidTarget("Compiler target operation calibration references "
                            "an inapplicable site tuple");

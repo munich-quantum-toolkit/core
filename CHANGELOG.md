@@ -39,9 +39,9 @@ releases may include breaking changes.
   ([#1915], [#1973], [#2077], [#2078], [#2079], [#2334]) ([**@simon1hofmann**],
   [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets, QDMI device integration, ordered
-  operation applicability, directional mapping, and target compilation through
-  C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999], [#2049], [#2285])
-  ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
+  operation applicability, directional native synthesis, and target compilation
+  through C++, Python, and `mqt-cc` ([#1687], [#1993], [#1999], [#2049],
+  [#2285]) ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
 
 #### Import and export
 

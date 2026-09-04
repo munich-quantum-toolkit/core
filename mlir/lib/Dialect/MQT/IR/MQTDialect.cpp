@@ -234,11 +234,7 @@ LogicalResult NativeOperationAttr::verify(
   }
   if (applicability == OperationApplicabilityKind::Explicit &&
       llvm::any_of(siteTuples, [&](const SiteTupleAttr siteTuple) {
-        return llvm::none_of(applicableSiteTuples,
-                             [&](const ApplicableSiteTupleAttr applicable) {
-                               return applicable.getSites() ==
-                                      siteTuple.getSites();
-                             });
+        return !llvm::is_contained(seenApplicable, siteTuple.getSites());
       })) {
     return emitError() << "compiler target operation calibration references "
                           "an inapplicable site tuple";
