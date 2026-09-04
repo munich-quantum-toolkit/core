@@ -22,6 +22,35 @@
 #include <cstddef>
 #include <vector>
 
+TEST(ResultsStatevector, EmptyQASM3YieldsEmptyResults) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  ASSERT_EQ(
+      qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3, "OPENQASM 3.0;"),
+      QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+
+  constexpr QDMI_Job_Result results[]{
+      QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+      QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
+      QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
+      QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+      QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
+      QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES};
+  char dummy{};
+  for (const auto result : results) {
+    size_t size = 1;
+    EXPECT_EQ(
+        MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, nullptr, &size),
+        QDMI_SUCCESS);
+    EXPECT_EQ(size, 0U);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, &dummy,
+                                                    nullptr),
+              QDMI_SUCCESS);
+  }
+}
+
 TEST(ResultsStatevector, DenseNormalizedAndBufferTooSmall) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};

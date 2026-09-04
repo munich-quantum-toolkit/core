@@ -170,7 +170,7 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     # By excluding already defined gates, we allow the exporter to emit otherwise unsupported gates without
     # needing to provide a definition for them. The exporter will then treat them as opaque gates, which is fine
     # as long as the target device supports them.
-    basis_gates = [gate for gate in backend.target.operation_names if gate not in exclusion_list] + ["U"]
+    basis_gates = [gate for gate in backend.target.operation_names if gate not in exclusion_list] + ["mcx_gray", "U"]
 
     return qasm3.dumps(circuit, basis_gates=basis_gates)
 

@@ -78,6 +78,32 @@ queuePositionFromResult(const int result, const size_t queuePosition) {
   return queuePosition;
 }
 
+[[nodiscard]] inline std::vector<std::string>
+parseShots(const std::string_view shots, const size_t numShots) {
+  if (numShots == 0) {
+    if (!shots.empty()) {
+      throw std::runtime_error("Number of shots mismatch");
+    }
+    return {};
+  }
+
+  std::vector<std::string> parsed;
+  parsed.reserve(numShots);
+  size_t start = 0;
+  while (true) {
+    const auto end = shots.find(',', start);
+    parsed.emplace_back(shots.substr(start, end - start));
+    if (end == std::string_view::npos) {
+      break;
+    }
+    start = end + 1;
+  }
+  if (parsed.size() != numShots) {
+    throw std::runtime_error("Number of shots mismatch");
+  }
+  return parsed;
+}
+
 template <custom_property_value T, typename Query>
 [[nodiscard]] std::optional<T>
 queryCustomValue(Query query, const std::string_view description) {

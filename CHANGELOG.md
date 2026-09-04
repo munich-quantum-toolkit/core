@@ -88,6 +88,8 @@ releases may include breaking changes.
 
 ### Fixed
 
+- 🐛 Handle empty DDSIM results and NUL-terminated QDMI result buffers ([#2288])
+  ([**@simon1hofmann**])
 - 🐛 Validate output permutations before I/O mapping initialization ([#2278])
   ([**@denialhaag**])
 
@@ -804,6 +806,7 @@ for previous changelogs._
 
 [#2335]: https://github.com/munich-quantum-toolkit/core/pull/2335
 [#2314]: https://github.com/munich-quantum-toolkit/core/pull/2314
+[#2288]: https://github.com/munich-quantum-toolkit/core/pull/2288
 [#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
 [#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
 [#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270

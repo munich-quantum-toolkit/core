@@ -42,6 +42,30 @@ TEST(ResultsSampling, QASM3Program) {
       keys, [](const auto& key) { return key == "00" || key == "11"; }));
 }
 
+TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  ASSERT_EQ(
+      qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3, "OPENQASM 3.0;"),
+      QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 4), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+
+  constexpr QDMI_Job_Result results[]{QDMI_JOB_RESULT_HIST_KEYS,
+                                      QDMI_JOB_RESULT_HIST_VALUES};
+  char dummy{};
+  for (const auto result : results) {
+    size_t size = 1;
+    EXPECT_EQ(
+        MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, nullptr, &size),
+        QDMI_SUCCESS);
+    EXPECT_EQ(size, 0U);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, &dummy,
+                                                    nullptr),
+              QDMI_SUCCESS);
+  }
+}
+
 TEST(ResultsSampling, BufferTooSmallErrors) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};

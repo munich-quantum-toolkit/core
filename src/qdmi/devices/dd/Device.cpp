@@ -137,6 +137,13 @@ constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 constexpr std::array SUPPORTED_PROGRAM_FORMATS = {QDMI_PROGRAM_FORMAT_QASM2,
                                                   QDMI_PROGRAM_FORMAT_QASM3};
 
+[[nodiscard]] auto reportEmptyResult(size_t* sizeRet) -> QDMI_STATUS {
+  if (sizeRet != nullptr) {
+    *sizeRet = 0;
+  }
+  return QDMI_SUCCESS;
+}
+
 } // namespace
 
 namespace qdmi::dd {
@@ -493,6 +500,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::wait(const size_t timeout) const
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::getHistogram(
     const QDMI_Job_Result result, const size_t size, void* data,
     size_t* sizeRet) -> QDMI_STATUS {
+  if (counts_.size() == 1 && counts_.begin()->first.empty()) {
+    return reportEmptyResult(sizeRet);
+  }
   if (result == QDMI_JOB_RESULT_HIST_KEYS) {
     const size_t bitstringSize =
         counts_.empty() ? 0 : counts_.begin()->first.length();
@@ -538,6 +548,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
                                                       void* data,
                                                       size_t* sizeRet)
     -> QDMI_STATUS {
+  if (stateVecDD_.isTerminal()) {
+    return reportEmptyResult(sizeRet);
+  }
   std::call_once(stateVecOnce_,
                  [this]() { stateVec_ = stateVecDD_.getVector(); });
   const size_t reqSize = stateVec_.size() * 2 * sizeof(double);
@@ -555,9 +568,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
     const QDMI_Job_Result result, const size_t size, void* data,
     size_t* sizeRet) -> QDMI_STATUS {
+  if (stateVecDD_.isTerminal()) {
+    return reportEmptyResult(sizeRet);
+  }
   std::call_once(stateVecSparseOnce_,
                  [this]() { stateVecSparse_ = stateVecDD_.getSparseVector(); });
-  const size_t numQubits = stateVecDD_.p->v + 1;
+  const size_t numQubits = static_cast<size_t>(stateVecDD_.p->v) + 1U;
   switch (result) {
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS:
   case QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS: {
@@ -628,6 +644,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProbabilities(const size_t size,
                                                         void* data,
                                                         size_t* sizeRet)
     -> QDMI_STATUS {
+  if (stateVecDD_.isTerminal()) {
+    return reportEmptyResult(sizeRet);
+  }
   if (stateVec_.empty()) {
     stateVec_ = stateVecDD_.getVector();
   }
@@ -651,8 +670,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
                                                   const size_t size, void* data,
                                                   size_t* sizeRet)
     -> QDMI_STATUS {
-  if ((data != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
+  if (IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_.load() != QDMI_JOB_STATUS_DONE) {

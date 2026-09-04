@@ -275,6 +275,18 @@ TEST(QueuePositionTest, PropagatesOtherQueryErrors) {
                std::invalid_argument);
 }
 
+TEST(JobShotsTest, PreservesZeroWidthShots) {
+  EXPECT_EQ(detail::parseShots("", 0), std::vector<std::string>{});
+  EXPECT_EQ(detail::parseShots("", 1), std::vector<std::string>{""});
+  EXPECT_EQ(detail::parseShots(",,,", 4),
+            (std::vector<std::string>{"", "", "", ""}));
+}
+
+TEST(JobShotsTest, ValidatesShotCount) {
+  EXPECT_THROW(std::ignore = detail::parseShots("0,1", 1), std::runtime_error);
+  EXPECT_THROW(std::ignore = detail::parseShots("0", 2), std::runtime_error);
+}
+
 TEST(QDMITest, StatusToString) {
   EXPECT_STREQ(qdmi::toString(QDMI_WARN_GENERAL), "General warning");
   EXPECT_STREQ(qdmi::toString(QDMI_SUCCESS), "Success");
