@@ -1320,7 +1320,7 @@ vCachedEdge Package::reduceGarbageRecursion(vNode* p,
   // something to reduce for this qubit
   return makeDDNode(p->v,
                     std::array{addMagnitudes(edges[0], edges[1], p->v - 1),
-                               vCachedEdge ::zero()});
+                               vCachedEdge::zero()});
 }
 mCachedEdge Package::reduceGarbageRecursion(mNode* p,
                                             const std::vector<bool>& garbage,
