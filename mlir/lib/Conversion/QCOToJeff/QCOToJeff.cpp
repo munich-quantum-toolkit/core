@@ -835,7 +835,7 @@ struct ConvertCBitWriteOpToJeff final
   LogicalResult
   matchAndRewrite(cbit::WriteOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto width = cast<IntegerType>(op.getValue().getType()).getWidth();
+    const auto width = op.getValue().getType().getWidth();
     if (width > 64) {
       return op.emitError(
           "jeff supports general integer expressions only up to 64 bits");

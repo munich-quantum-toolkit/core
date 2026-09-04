@@ -341,7 +341,7 @@ private:
       if (!alloc) {
         continue;
       }
-      const auto type = dyn_cast<MemRefType>(alloc.getType());
+      const auto type = alloc.getType();
       if (!type || !type.hasStaticShape() || type.getRank() != 1 ||
           type.getDimSize(0) <= 0) {
         return fail(alloc, "only non-empty static rank-one memrefs are "

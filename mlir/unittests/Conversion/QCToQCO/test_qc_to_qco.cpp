@@ -1064,7 +1064,7 @@ module {
     auto moduleOp = parseSourceString<ModuleOp>(source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    OwningOpRef<ModuleOp> original = cast<ModuleOp>(moduleOp->clone());
+    OwningOpRef<ModuleOp> original = moduleOp->clone();
     bool sawExpectedDiagnostic = false;
     ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
       sawExpectedDiagnostic |= StringRef(diagnostic.str()).contains(expected);

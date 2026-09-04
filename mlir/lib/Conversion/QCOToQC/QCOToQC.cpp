@@ -451,7 +451,7 @@ struct ConvertQTensorAllocOp final
       return failure();
     }
     auto qubitType = qc::QubitType::get(op.getContext());
-    auto tensorType = cast<RankedTensorType>(op.getResult().getType());
+    auto tensorType = op.getResult().getType();
     auto memrefType = MemRefType::get(tensorType.getShape(), qubitType);
 
     memref::AllocOp alloc;

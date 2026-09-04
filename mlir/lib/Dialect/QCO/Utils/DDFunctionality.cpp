@@ -655,7 +655,7 @@ static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
 
 static LogicalResult applyMemRefAlloc(memref::AllocOp alloc,
                                       ClassicalEnv& classical) {
-  const auto type = dyn_cast<MemRefType>(alloc.getType());
+  const auto type = alloc.getType();
   if (!type || type.getRank() != 1 ||
       !isSupportedClassicalType(type.getElementType())) {
     return alloc.emitError()

@@ -1360,7 +1360,7 @@ TEST(FuseSingleQubitUnitaryRunsTest,
 
     for (const auto& values : singularParameterSets) {
       SCOPED_TRACE(values.front());
-      OwningOpRef<ModuleOp> boundOriginal = cast<ModuleOp>(original->clone());
+      OwningOpRef<ModuleOp> boundOriginal = original->clone();
       OwningOpRef<ModuleOp> boundActual = cast<ModuleOp>(mlirModule->clone());
       auto originalFunc = boundOriginal->lookupSymbol<func::FuncOp>("main");
       auto actualFunc = boundActual->lookupSymbol<func::FuncOp>("main");

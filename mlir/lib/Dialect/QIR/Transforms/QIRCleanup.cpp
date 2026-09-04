@@ -45,7 +45,7 @@ namespace mlir::qir {
 
 [[nodiscard]] static StringRef getCalleeName(LLVM::CallOp callOp) {
   auto calleeAttr = callOp.getCalleeAttr();
-  auto flatRef = dyn_cast_or_null<FlatSymbolRefAttr>(calleeAttr);
+  auto flatRef = calleeAttr;
   if (!flatRef) {
     return {};
   }

@@ -255,7 +255,7 @@ protected:
     builder.sink(q);
 
     module = builder.finalize();
-    OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
+    OwningOpRef<ModuleOp> original = module->clone();
     const auto result = runMergePass(*module);
     if (succeeded(result)) {
       ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
@@ -713,7 +713,7 @@ TEST_P(MergeFixedSingleQubitGateTest, PreservesMatrix) {
   builder.sink(q);
   module = builder.finalize();
 
-  OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
+  OwningOpRef<ModuleOp> original = module->clone();
   ASSERT_TRUE(runMergePass(*module).succeeded());
 
   ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);

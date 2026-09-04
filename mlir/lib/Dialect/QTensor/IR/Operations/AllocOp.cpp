@@ -37,7 +37,7 @@ void AllocOp::build(OpBuilder& builder, OperationState& result, Value size) {
 }
 
 LogicalResult AllocOp::verify() {
-  auto resultType = cast<RankedTensorType>(getResult().getType());
+  auto resultType = getResult().getType();
   auto sizeValue = getConstantIntValue(getSize());
   auto resultSize = resultType.getShape()[0];
 
