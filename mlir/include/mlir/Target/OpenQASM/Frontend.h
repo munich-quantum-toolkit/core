@@ -338,6 +338,8 @@ struct ForStatement {
   std::vector<StatementId> body;
 };
 
+struct BreakStatement {};
+
 struct WhileStatement {
   ConditionId condition = 0;
   std::vector<StatementId> body;
@@ -354,12 +356,11 @@ struct SwitchStatement {
   std::vector<StatementId> defaultStatements;
 };
 
-using StatementData =
-    std::variant<DeclarationStatement, ScalarDeclarationStatement,
-                 ScalarAssignmentStatement, BitAssignmentStatement,
-                 BitVectorAssignmentStatement, GateApplication,
-                 MeasurementStatement, ResetStatement, BarrierStatement,
-                 IfStatement, ForStatement, WhileStatement, SwitchStatement>;
+using StatementData = std::variant<
+    DeclarationStatement, ScalarDeclarationStatement, ScalarAssignmentStatement,
+    BitAssignmentStatement, BitVectorAssignmentStatement, GateApplication,
+    MeasurementStatement, ResetStatement, BarrierStatement, IfStatement,
+    ForStatement, WhileStatement, SwitchStatement, BreakStatement>;
 
 struct Statement {
   StatementData data;

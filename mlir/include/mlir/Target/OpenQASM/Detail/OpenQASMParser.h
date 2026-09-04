@@ -228,6 +228,7 @@ concept QASMSink =
       s.ifStmt(loc, expr, cont, cont);
       s.forStmt(loc, str, flag, expr, expr, expr, cont);
       s.whileStmt(loc, expr, cont);
+      s.breakStmt(loc);
       s.switchStmt(loc, expr, cont);
       s.switchCase(loc, expressions, cont);
       s.switchDefault(loc, cont);
@@ -370,6 +371,14 @@ private:
       return parseFor();
     case TokenKind::While:
       return parseWhile();
+    case TokenKind::Break: {
+      const auto loc = current().loc;
+      advance();
+      if (failed(expect(TokenKind::Semicolon))) {
+        return failure();
+      }
+      return sink.breakStmt(loc);
+    }
     case TokenKind::Switch:
       return parseSwitch();
     case TokenKind::Inv:

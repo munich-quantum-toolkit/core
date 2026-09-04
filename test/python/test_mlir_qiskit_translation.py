@@ -1428,7 +1428,7 @@ def test_rejections_do_not_modify_source_circuits() -> None:
     with runtime_input.if_test(expr.equal(value, 1)):
         runtime_input.x(0)
     input_data = list(runtime_input.data)
-    with pytest.raises(RuntimeError, match="standalone classical variables"):
+    with pytest.raises(RuntimeError, match="runtime input"):
         QCProgram.from_qiskit(runtime_input)
     assert list(runtime_input.data) == input_data
 
@@ -1958,8 +1958,8 @@ def test_export_expression_depth_is_bounded() -> None:
         program.to_qiskit()
 
 
-def test_general_boolean_select_is_rejected() -> None:
-    """Reject a result-bearing scf.if that is not short-circuit logic."""
+def test_general_boolean_select_round_trip() -> None:
+    """Preserve scalar results through native local variables."""
     program = _single_qubit_program(
         [
             '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
@@ -1979,8 +1979,8 @@ def test_general_boolean_select_is_rejected() -> None:
         returns_classical=True,
     )
 
-    with pytest.raises(RuntimeError, match=r"canonical short-circuit Boolean scf\.if"):
-        program.to_qiskit()
+    restored = QCProgram.from_qiskit(program.to_qiskit())
+    assert restored.to_qco().sample(shots=1, seed=1) == program.to_qco().sample(shots=1, seed=1)
 
 
 def test_export_control_flow_depth_is_bounded() -> None:
@@ -2105,8 +2105,8 @@ def test_delayed_measurement_store_is_rejected() -> None:
         program.to_qiskit()
 
 
-def test_multi_result_boolean_select_is_rejected() -> None:
-    """Reject multiple results instead of reconstructing Boolean selections."""
+def test_multi_result_boolean_select_round_trip() -> None:
+    """Multiple branch results survive export without additional classical bits."""
     program = _single_qubit_program([
         "%condition = arith.constant true",
         "%first, %second = scf.if %condition -> (i1, i1) {",
@@ -2123,8 +2123,10 @@ def test_multi_result_boolean_select_is_rejected() -> None:
         "}",
     ])
 
-    with pytest.raises(RuntimeError, match="only one canonical short-circuit Boolean SSA result"):
-        program.to_qiskit()
+    circuit = program.to_qiskit()
+    assert circuit.num_clbits == 0
+    circuit.measure_all()
+    assert QCProgram.from_qiskit(circuit).to_qco().sample(shots=1, seed=1) == {"1": 1}
 
 
 def _undefined_cbit_program(operations: list[str]) -> QCProgram:

@@ -55,6 +55,9 @@ runPassPipeline(mlir::ModuleOp module, mlir::StringRef pipeline,
  */
 void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 
+/// Prepare QC for source export without introducing poison for dead loop state.
+void populateQCExportPipeline(mlir::OpPassManager& pm);
+
 /**
  * @brief Populate a QCO-oriented cleanup pipeline on the given pass manager.
  * @details Adds generic cleanup and qtensor shrink-to-fit.

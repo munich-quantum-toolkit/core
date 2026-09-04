@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mlir/Dialect/QC/Translation/LoopBuilder.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 #include "mlir/Support/IntegerExpressions.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
@@ -28,6 +29,7 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/ErrorHandling.h>
+#include <llvm/Support/SaveAndRestore.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
@@ -46,6 +48,7 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Support/LLVM.h>
 
+#include <array>
 #include <bit>
 #include <cassert>
 #include <cstddef>
@@ -197,6 +200,10 @@ private:
       structuredGateCapabilities;
   llvm::StringMap<const oq3::frontend::GateDefinition*> customGateIndex;
   bool emissionFailed = false;
+  LoopBuilder* activeLoop = nullptr;
+  SmallVector<frontend::ScalarId> breakSlots;
+  SmallVector<Value> breakPrefix;
+  bool flowReachable = true;
 
   using StateSlot = frontend::ScalarId;
 
@@ -2071,7 +2078,7 @@ private:
 
   void emitStatement(const frontend::StatementId id, ValueRange gateParameters,
                      ValueRange gateQubits) {
-    if (emissionFailed || emissionBudget.isExhausted()) {
+    if (emissionFailed || emissionBudget.isExhausted() || !flowReachable) {
       return;
     }
     const auto& statement = program.statements.at(id);
@@ -2114,6 +2121,11 @@ private:
             emitFor(data, gateParameters, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::WhileStatement>) {
             emitWhile(data, gateParameters, gateQubits);
+          } else if constexpr (std::is_same_v<T, frontend::BreakStatement>) {
+            auto state = breakPrefix;
+            llvm::append_range(state, stateValues(breakSlots));
+            activeLoop->branch(false, state);
+            flowReachable = false;
           } else if constexpr (std::is_same_v<T, frontend::SwitchStatement>) {
             emitSwitch(data, gateParameters, gateQubits);
           }
@@ -2245,6 +2257,65 @@ private:
     }
   }
 
+  bool hasBreak(ArrayRef<frontend::StatementId> statements) const {
+    return llvm::any_of(statements, [&](auto id) {
+      return std::visit(
+          [&](const auto& data) -> bool {
+            using T = std::decay_t<decltype(data)>;
+            if constexpr (std::is_same_v<T, frontend::BreakStatement>) {
+              return true;
+            } else if constexpr (std::is_same_v<T, frontend::IfStatement>) {
+              return hasBreak(data.thenStatements) ||
+                     hasBreak(data.elseStatements);
+            } else if constexpr (std::is_same_v<T, frontend::SwitchStatement>) {
+              return hasBreak(data.defaultStatements) ||
+                     llvm::any_of(data.cases, [&](const auto& branch) {
+                       return hasBreak(branch.body);
+                     });
+            }
+            return false;
+          },
+          program.statements.at(id).data);
+    });
+  }
+
+  void emitCFGIf(Value condition, ArrayRef<StateSlot> slots,
+                 function_ref<void()> thenBody, function_ref<void()> elseBody) {
+    const auto savedScalars = scalarValues;
+    auto values = stateValues(slots);
+    auto* entry = builder.getInsertionBlock();
+    auto* region = entry->getParent();
+    auto* thenBlock = builder.createBlock(region);
+    auto* elseBlock = builder.createBlock(region);
+    auto* join = builder.createBlock(
+        region, {}, ValueRange(values).getTypes(),
+        SmallVector<Location>(values.size(), builder.getLoc()));
+    builder.setInsertionPointToEnd(entry);
+    cf::CondBranchOp::create(builder, condition, thenBlock, elseBlock);
+    const auto emitBranch = [&](Block* block, function_ref<void()> body) {
+      scalarValues = savedScalars;
+      flowReachable = true;
+      builder.setInsertionPointToEnd(block);
+      body();
+      if (flowReachable) {
+        cf::BranchOp::create(builder, join, stateValues(slots));
+      }
+      return flowReachable;
+    };
+    const bool thenReachable = emitBranch(thenBlock, thenBody);
+    const bool elseReachable = emitBranch(elseBlock, elseBody);
+    flowReachable = thenReachable || elseReachable;
+    scalarValues = savedScalars;
+    assignState(slots, join->getArguments());
+    builder.setInsertionPointToEnd(join);
+    if (!flowReachable) {
+      /// Unreachable joins still need a terminator before CFG normalization.
+      auto state = breakPrefix;
+      llvm::append_range(state, stateValues(breakSlots));
+      activeLoop->branch(false, state);
+    }
+  }
+
   void emitIf(const frontend::IfStatement& conditional,
               ValueRange gateParameters, ValueRange gateQubits) {
     const auto& typedCondition = program.conditions.at(conditional.condition);
@@ -2264,6 +2335,21 @@ private:
     nestedStatements.append(conditional.elseStatements.begin(),
                             conditional.elseStatements.end());
     const auto slots = mutatedState(nestedStatements);
+    if (activeLoop != nullptr && hasBreak(nestedStatements)) {
+      emitCFGIf(
+          condition, slots,
+          [&] {
+            for (auto statement : conditional.thenStatements) {
+              emitStatement(statement, gateParameters, gateQubits);
+            }
+          },
+          [&] {
+            for (auto statement : conditional.elseStatements) {
+              emitStatement(statement, gateParameters, gateQubits);
+            }
+          });
+      return;
+    }
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
     const auto* thenStatements = &conditional.thenStatements;
@@ -2355,8 +2441,37 @@ private:
     return static_cast<int64_t>(count.getZExtValue());
   }
 
+  [[nodiscard]] std::array<Value, 3>
+  emitWideRange(const frontend::ForStatement& loop) {
+    auto start = emitExpression(builder, loop.start, {});
+    auto step = emitExpression(builder, loop.step, {});
+    auto stop = emitExpression(builder, loop.stop, {});
+    auto i128 = builder.getIntegerType(128);
+    const bool unsignedEndpoints =
+        program.expressions.at(loop.start).type == frontend::ScalarType::Uint ||
+        program.expressions.at(loop.stop).type == frontend::ScalarType::Uint;
+    auto startWide = extendRangeValue(start, i128, unsignedEndpoints);
+    auto stepWide = extendRangeValue(step, i128,
+                                     program.expressions.at(loop.step).type ==
+                                         frontend::ScalarType::Uint);
+    auto stopWide = extendRangeValue(stop, i128, unsignedEndpoints);
+    if (program.expressions.at(loop.step).kind !=
+        frontend::ExpressionKind::Constant) {
+      auto nonzero =
+          arith::CmpIOp::create(builder, arith::CmpIPredicate::ne, stepWide,
+                                arith::ConstantIntOp::create(builder, 0, 128));
+      cf::AssertOp::create(builder, nonzero,
+                           "for-loop range step must not be zero");
+    }
+    return {startWide, stepWide, stopWide};
+  }
+
   void emitFor(const frontend::ForStatement& loop, ValueRange gateParameters,
                ValueRange gateQubits) {
+    if (hasBreak(loop.body)) {
+      emitLoopWithBreak(loop, gateParameters, gateQubits);
+      return;
+    }
     const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
@@ -2392,19 +2507,8 @@ private:
       return;
     }
 
-    auto start = emitExpression(builder, loop.start, {});
-    auto step = emitExpression(builder, loop.step, {});
-    auto stop = emitExpression(builder, loop.stop, {});
-    auto i128 = IntegerType::get(&context, 128);
-    const bool unsignedEndpoints =
-        program.expressions.at(loop.start).type == frontend::ScalarType::Uint ||
-        program.expressions.at(loop.stop).type == frontend::ScalarType::Uint;
-    auto startWide = extendRangeValue(start, i128, unsignedEndpoints);
-    auto stepWide = extendRangeValue(step, i128,
-                                     program.expressions.at(loop.step).type ==
-                                         frontend::ScalarType::Uint);
-    auto stopWide = extendRangeValue(stop, i128, unsignedEndpoints);
-    auto zero = arith::ConstantIntOp::create(builder, 0, 128);
+    auto [startWide, stepWide, stopWide] = emitWideRange(loop);
+    auto i128 = builder.getIntegerType(128);
     if (const auto tripCount = constantRangeTripCount(loop)) {
       auto lowerBound = arith::ConstantIndexOp::create(builder, 0);
       auto upperBound = arith::ConstantIndexOp::create(builder, *tripCount);
@@ -2437,13 +2541,7 @@ private:
       return;
     }
 
-    if (program.expressions.at(loop.step).kind !=
-        frontend::ExpressionKind::Constant) {
-      auto nonzero = arith::CmpIOp::create(builder, arith::CmpIPredicate::ne,
-                                           stepWide, zero);
-      cf::AssertOp::create(builder, nonzero,
-                           "for-loop range step must not be zero");
-    }
+    auto zero = arith::ConstantIntOp::create(builder, 0, 128);
     SmallVector<Type> resultTypes{i128};
     llvm::append_range(resultTypes, ValueRange(initialValues).getTypes());
     SmallVector<Value> operands{startWide};
@@ -2483,8 +2581,105 @@ private:
     assignState(slots, whileOp.getResults().drop_front());
   }
 
+  template <typename Loop>
+  void emitLoopWithBreak(const Loop& loop, ValueRange gateParameters,
+                         ValueRange gateQubits) {
+    const auto slots = mutatedState(loop.body);
+    const auto savedScalars = scalarValues;
+    SmallVector<Value> initial;
+    Value step, stop;
+    bool indexRange = false;
+    if constexpr (std::is_same_v<Loop, frontend::ForStatement>) {
+      indexRange = loop.provenPositiveRange;
+      if (indexRange) {
+        initial.push_back(builder.createOrFold<arith::IndexCastOp>(
+            builder.getI64Type(),
+            emitProvenIndexExpression(builder, loop.start)));
+        step = builder.createOrFold<arith::IndexCastOp>(
+            builder.getI64Type(),
+            emitProvenIndexExpression(builder, loop.step));
+        stop = arith::AddIOp::create(
+            builder,
+            builder.createOrFold<arith::IndexCastOp>(
+                builder.getI64Type(),
+                emitProvenIndexExpression(builder, loop.stop)),
+            arith::ConstantIntOp::create(builder, 1, 64));
+      } else {
+        auto [startWide, stepWide, stopWide] = emitWideRange(loop);
+        initial.push_back(startWide);
+        step = stepWide;
+        stop = stopWide;
+      }
+    }
+    llvm::append_range(initial, stateValues(slots));
+    LoopBuilder cfg(builder, builder.getLoc(), initial);
+    llvm::SaveAndRestore loopScope(activeLoop, &cfg);
+    llvm::SaveAndRestore slotsScope(breakSlots, SmallVector<StateSlot>(slots));
+    llvm::SaveAndRestore prefixScope(breakPrefix, SmallVector<Value>{});
+    auto arguments = cfg.arguments();
+    Value condition;
+    if constexpr (std::is_same_v<Loop, frontend::ForStatement>) {
+      auto induction = arguments.front();
+      breakPrefix.push_back(induction);
+      assignState(slots, arguments.drop_front());
+      if (indexRange) {
+        provenInductionValues[loop.inductionVariable] =
+            arith::IndexCastOp::create(builder, builder.getIndexType(),
+                                       induction);
+        scalarValues.at(loop.inductionVariable) = induction;
+        condition = arith::CmpIOp::create(builder, arith::CmpIPredicate::slt,
+                                          induction, stop);
+      } else {
+        scalarValues.at(loop.inductionVariable) =
+            arith::TruncIOp::create(builder, builder.getI64Type(), induction);
+        auto positive = arith::CmpIOp::create(
+            builder, arith::CmpIPredicate::sgt, step,
+            arith::ConstantIntOp::create(builder, 0, 128));
+        auto ascending = arith::CmpIOp::create(
+            builder, arith::CmpIPredicate::sle, induction, stop);
+        auto descending = arith::CmpIOp::create(
+            builder, arith::CmpIPredicate::sge, induction, stop);
+        condition =
+            arith::SelectOp::create(builder, positive, ascending, descending);
+      }
+    } else {
+      assignState(slots, arguments);
+      condition = emitCondition(loop.condition, gateParameters, gateQubits);
+    }
+    cfg.enterBody(condition, arguments);
+    for (auto statement : loop.body) {
+      emitStatement(statement, gateParameters, gateQubits);
+    }
+    if (flowReachable) {
+      SmallVector<Value> state;
+      if constexpr (std::is_same_v<Loop, frontend::ForStatement>) {
+        state.push_back(
+            arith::AddIOp::create(builder, arguments.front(), step));
+      }
+      llvm::append_range(state, stateValues(slots));
+      cfg.branch(true, state);
+    }
+    auto results = cfg.finish();
+    flowReachable = true;
+    scalarValues = savedScalars;
+    if (failed(results)) {
+      emissionFailed = true;
+      return;
+    }
+    if constexpr (std::is_same_v<Loop, frontend::ForStatement>) {
+      provenInductionValues.erase(loop.inductionVariable);
+      assignState(slots, ValueRange(*results).drop_front());
+    } else {
+      assignState(slots, *results);
+    }
+  }
+
   void emitWhile(const frontend::WhileStatement& loop,
                  ValueRange gateParameters, ValueRange gateQubits) {
+    if (hasBreak(loop.body)) {
+      emitLoopWithBreak(loop, gateParameters, gateQubits);
+      return;
+    }
     const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
     const auto savedScalars = scalarValues;
@@ -2529,6 +2724,34 @@ private:
     const auto savedScalars = scalarValues;
 
     auto control = emitExpression(builder, switchStatement.control, {});
+    if (activeLoop != nullptr && hasBreak(nestedStatements)) {
+      const auto emitCases = [&](auto&& self, size_t index) -> void {
+        if (index == switchStatement.cases.size()) {
+          for (auto statement : switchStatement.defaultStatements) {
+            emitStatement(statement, gateParameters, gateQubits);
+          }
+          return;
+        }
+        const auto& branch = switchStatement.cases[index];
+        Value match = builder.boolConstant(false);
+        for (const auto label : branch.labels) {
+          auto equal = arith::CmpIOp::create(
+              builder, arith::CmpIPredicate::eq, control,
+              arith::ConstantIntOp::create(builder, control.getType(), label));
+          match = arith::OrIOp::create(builder, match, equal);
+        }
+        emitCFGIf(
+            match, slots,
+            [&] {
+              for (auto statement : branch.body) {
+                emitStatement(statement, gateParameters, gateQubits);
+              }
+            },
+            [&] { self(self, index + 1); });
+      };
+      emitCases(emitCases, 0);
+      return;
+    }
     const auto type = program.expressions.at(switchStatement.control).type;
     control = emitScalarCast(builder, builder.getLoc(), control, type, type);
     auto selector =

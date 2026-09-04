@@ -43,9 +43,9 @@ mqt-cc --input-format=qasm program.txt
 | Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Recursive custom gates are rejected.                                                                                                 |
 | Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC target rejects programs that mix logical allocation with physical qubits.                                                                                                          |
 | Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. Initialized bit registers support `~`, `&`, `\|`, `^`, `<<`, `>>`, `popcount`, `rotl`, and `rotr`.                                             |
-| Structured control         | `if`, inclusive `for`, `while`, and `switch` lower to SCF operations. Switch controls and case labels must be integers; labels must be unique constant expressions.                                                                                                       |
+| Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop, including from conditional and switch bodies.                                                                                                                       |
 | Dynamic indexing           | Classical bit indices can be dynamic and receive runtime bounds checks. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                                  |
-| Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, input declarations, arbitrary arrays, `break`, and `continue` are diagnosed.                                                                                                                                    |
+| Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, input declarations, arbitrary arrays and `continue` are diagnosed.                                                                                                                                              |
 
 Sized `uint[N](bits)` and `int[N](bits)` casts accept an initialized `bit[N]`
 register when the constant width is 1 through 64. Bit zero is the least
@@ -191,8 +191,41 @@ bypasses that QCO optimization round trip.
 | Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u2` uses the standard compatibility alias. |
 | Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body with target qubits becomes a private generated gate.                                                                                                        |
 | Scalar values             | Integers of widths 1–64, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                    |
-| Structured control        | Result-free `scf.if` and `scf.index_switch`, constant-range `scf.for` without iterated state, and zero-state expression-based `scf.while`. Index switches use native `switch`, `case`, and `default` statements.             |
+| Structured control        | `scf.if`, `scf.index_switch`, constant-range `scf.for`, and general two-region `scf.while`, including supported scalar arguments and results. Index switches use native `switch`, `case`, and `default` statements.          |
 | Results                   | Multiple scalar and bit-register outputs using the canonical type and naming rules below.                                                                                                                                    |
+
+Ordinary while loops retain `while (condition)` when the condition region can be
+expressed directly. Loops with executable statements before their condition use
+`while (true)` and a conditional `break`. The before and after regions may have
+different argument counts and types. Local variables preserve scalar state, exit
+values, and simultaneous updates such as swaps. The condition and its forwarded
+values are evaluated before any continuation updates.
+
+For example, this terminating do-while form executes its body three times:
+
+```openqasm
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+int count = 0;
+while (true) {
+  x q;
+  count += 1;
+  if (!(count < 3)) { break; }
+}
+```
+
+Import recognizes this form structurally and produces one `scf.while` with a
+forwarding after region. No additional conditional is needed solely to exit.
+Initialization facts include every reachable break: a value assigned before all
+exits of this do-while form is initialized afterwards. An ordinary while loop
+may execute zero times. Constant-true loops remain valid; translation does not
+prove termination.
+
+Resources must be allocated outside loops and conditionals. Unsupported scalar
+types, operations, captures, or runtime gate parameters produce a
+target-specific diagnostic. Export preserves the source module and buffers
+output until it succeeds.
 
 The exporter writes an OpenQASM 3.1 version declaration and includes
 `stdgates.inc`. Gates in MQT Core's compatibility catalog, such as `r`, `rzz`,

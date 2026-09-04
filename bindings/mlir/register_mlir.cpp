@@ -171,6 +171,9 @@ template <typename Fn>
           diagnostics.push_back('\n');
         }
         llvm::raw_string_ostream os(diagnostics);
+        if (!llvm::isa<mlir::UnknownLoc>(diag.getLocation())) {
+          os << diag.getLocation() << ": ";
+        }
         os << diag;
         return mlir::success();
       });
@@ -983,10 +986,27 @@ before conversion to QCO.)pb");
       .def("normalize_global_phases",
            &BooleanMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
            "Normalize scoped global phases in place.")
-      .def("to_openqasm3",
-           &OptionalMemberAdapter<&mlir::QCProgram::toOpenQASM3>::call,
-           "Clean up and emit this QC program as OpenQASM 3 without QCO "
-           "optimization.")
+      .def(
+          "to_openqasm3",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            try {
+              return takeFailureOr(
+                  program.module().getContext(),
+                  "cannot export QC program to OpenQASM 3",
+                  [&]() -> mlir::FailureOr<mlir::OpenQASMProgram> {
+                    auto result = program.toOpenQASM3();
+                    if (!result) {
+                      return mlir::failure();
+                    }
+                    return std::move(*result);
+                  });
+            } catch (const nb::builtin_exception& error) {
+              throw std::runtime_error(error.what());
+            }
+          },
+          "Clean up and emit this QC program as OpenQASM 3 without QCO "
+          "optimization.")
       .def(
           "to_qiskit",
           [](const mlir::QCProgram& program,

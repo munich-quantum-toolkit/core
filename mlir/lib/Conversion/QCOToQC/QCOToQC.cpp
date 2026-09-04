@@ -36,6 +36,7 @@
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
 
@@ -512,7 +513,21 @@ struct ConvertQTensorInsertOp final
     auto& state = getState();
     auto& qubitValues =
         state.qubitValues[op->getParentRegion()][adaptor.getDest()];
-    if (qubitValues.lookup(adaptor.getIndex()) == adaptor.getScalar()) {
+    const auto sameIndex = [&](Value index) {
+      if (index == adaptor.getIndex()) {
+        return true;
+      }
+      auto* left = index.getDefiningOp();
+      auto* right = adaptor.getIndex().getDefiningOp();
+      return left && right && isPure(left) && isPure(right) &&
+             OperationEquivalence::isEquivalentTo(
+                 left, right, OperationEquivalence::exactValueMatch, nullptr,
+                 OperationEquivalence::Flags::IgnoreLocations);
+    };
+    if (llvm::any_of(qubitValues, [&](const auto& cached) {
+          return cached.second == adaptor.getScalar() &&
+                 sameIndex(cached.first);
+        })) {
       rewriter.replaceOp(op, adaptor.getDest());
       return success();
     }

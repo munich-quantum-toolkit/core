@@ -836,11 +836,7 @@ public:
   [[nodiscard]] size_t numClassicalRegisters() const override {
     return qk_circuit_num_classical_registers(circuit_);
   }
-  [[nodiscard]] bool hasClassicalVariables() const override {
-    return pythonUnsignedAttribute(
-               pythonCircuit_, "num_vars",
-               "Qiskit circuit has an invalid classical-variable count") != 0U;
-  }
+  [[nodiscard]] std::vector<ClassicalVariable> variables() const override;
 
   [[nodiscard]] Register quantumRegister(const size_t index) const override {
     const auto* reg = qk_circuit_get_quantum_register(circuit_, index);
@@ -1237,9 +1233,12 @@ static void normalizePythonVariable(Expression& result,
     }
     return;
   }
-  throw std::runtime_error(
-      "Qiskit circuit import does not support standalone variables in "
-      "classical expressions");
+  if (!nb::isinstance(variable, nb::module_::import_("uuid").attr("UUID"))) {
+    throw std::runtime_error(
+        "Qiskit classical variable has an invalid identity");
+  }
+  result.kind = ExpressionKind::Variable;
+  result.variable = nb::cast<std::string>(nb::str(variable));
 }
 
 [[nodiscard]] static std::unique_ptr<Expression> normalizePythonExpressionOnly(
@@ -1684,6 +1683,34 @@ private:
 };
 } // namespace
 
+std::vector<ClassicalVariable> NativeCircuitReader::variables() const {
+  std::vector<ClassicalVariable> result;
+  const auto append = [&](const char* method, bool captured, bool input) {
+    for (auto variable : nb::iter(pythonCircuit_.attr(method)())) {
+      size_t nodes = 0;
+      auto normalized = normalizePythonExpressionOnly(
+          variable, nodes, [](nb::handle) -> uint32_t {
+            throw std::runtime_error("expected a standalone Qiskit variable");
+          });
+      if (normalized->kind != ExpressionKind::Variable) {
+        throw std::runtime_error(
+            "Qiskit local variable has no stable identity");
+      }
+      result.push_back({.identity = normalized->variable,
+                        .name = pythonStringAttribute(
+                            variable, "name", "Qiskit variable has no name"),
+                        .type = normalized->type,
+                        .width = normalized->width,
+                        .captured = captured,
+                        .input = input});
+    }
+  };
+  append("iter_declared_vars", false, false);
+  append("iter_captured_vars", true, false);
+  append("iter_input_vars", false, true);
+  return result;
+}
+
 ClassicalAssignment NativeCircuitReader::store(const size_t index) const {
   const auto operation = pythonOperation(index);
   if (!isPythonStore(operation)) {
@@ -1739,10 +1766,14 @@ NativeCircuitReader::controlFlow(const size_t index) const {
 }
 
 namespace {
+using PythonVariables = llvm::StringMap<nb::object>;
+
 class PythonClassicalBuilder final {
 public:
-  explicit PythonClassicalBuilder(const nb::handle circuit)
-      : clbits_(pythonAttribute(circuit, "clbits",
+  explicit PythonClassicalBuilder(const nb::handle circuit,
+                                  const PythonVariables& variables)
+      : circuit_(nb::borrow<nb::object>(circuit)), variables_(variables),
+        clbits_(pythonAttribute(circuit, "clbits",
                                 "Qiskit circuit has no classical bits")),
         cregs_(pythonAttribute(circuit, "cregs",
                                "Qiskit circuit has no classical registers")),
@@ -1808,7 +1839,6 @@ public:
         "Qiskit control flow has an unknown switch target");
   }
 
-private:
   [[nodiscard]] nb::object classicalType(const ClassicalType type,
                                          const uint32_t width) const {
     switch (type) {
@@ -1832,6 +1862,7 @@ private:
     throw std::runtime_error("Qiskit expression has an unknown type");
   }
 
+private:
   [[nodiscard]] nb::object classicalBit(const uint32_t bit) const {
     if (bit >= nb::len(clbits_)) {
       throw std::runtime_error(
@@ -1922,6 +1953,17 @@ private:
       return operand.get();
     };
     switch (value.kind) {
+    case ExpressionKind::Variable: {
+      const auto found = variables_.find(value.variable);
+      if (found == variables_.end()) {
+        throw std::runtime_error("Qiskit expression refers to an unavailable "
+                                 "local variable capture");
+      }
+      if (!nb::cast<bool>(circuit_.attr("has_var")(found->second))) {
+        circuit_.attr("add_capture")(found->second);
+      }
+      return found->second;
+    }
     case ExpressionKind::Value: {
       const auto type = classicalType(value.type, value.width);
       switch (value.type) {
@@ -1981,6 +2023,8 @@ private:
     throw std::runtime_error("Qiskit classical expression has an unknown kind");
   }
 
+  nb::object circuit_;
+  const PythonVariables& variables_;
   nb::object clbits_;
   nb::object cregs_;
   nb::object expressionModule_;
@@ -2134,6 +2178,10 @@ public:
     }
   }
 
+  void declareVariable(ClassicalVariable variable) override {
+    variables_.push_back(std::move(variable));
+  }
+
   void
   addControlFlow(const ControlFlowKind kind, ClassicalTarget target, Loop loop,
                  std::vector<SwitchCase> switchCases,
@@ -2147,8 +2195,9 @@ public:
         return blocks.size() == 1U;
       case ControlFlowKind::Switch:
         return !blocks.empty() && blocks.size() == switchCases.size();
-      case ControlFlowKind::Box:
       case ControlFlowKind::Break:
+        return blocks.empty();
+      case ControlFlowKind::Box:
       case ControlFlowKind::Continue:
         return false;
       }
@@ -2188,14 +2237,15 @@ public:
   [[nodiscard]] nb::object finish() override {
     PythonParameterGroups groups;
     return finishImpl(false, nb::none(), nb::none(), nb::none(), nb::none(),
-                      groups);
+                      groups, {});
   }
 
 private:
   [[nodiscard]] nb::object
   finishImpl(const bool rebase, const nb::handle exactQubits,
              const nb::handle exactClbits, const nb::handle exactQregs,
-             const nb::handle exactCregs, PythonParameterGroups& groups) {
+             const nb::handle exactCregs, PythonParameterGroups& groups,
+             PythonVariables variables) {
     if (circuit_ == nullptr) {
       throw std::runtime_error(
           "Qiskit circuit writer has already been finalized");
@@ -2213,8 +2263,21 @@ private:
       }
       replacePendingControlledUnitaries(pythonCircuit);
       restoreParameterGroups(pythonCircuit, *symbols_, groups);
-      replacePendingStores(pythonCircuit);
-      replacePendingControlFlow(pythonCircuit, groups);
+      const PythonClassicalBuilder classical(pythonCircuit, variables);
+      for (const auto& variable : variables_) {
+        auto local =
+            nb::module_::import_("qiskit.circuit.classical.expr")
+                .attr("Var")
+                .attr("new")(variable.name, classical.classicalType(
+                                                variable.type, variable.width));
+        pythonCircuit.attr("add_uninitialized_var")(local);
+        if (!variables.try_emplace(variable.identity, local).second) {
+          throw std::runtime_error(
+              "Qiskit export contains a duplicate local variable identity");
+        }
+      }
+      replacePendingStores(pythonCircuit, variables);
+      replacePendingControlFlow(pythonCircuit, groups, variables);
     } catch (const nb::python_error& error) {
       throwPythonError("Qiskit failed to construct deferred instructions",
                        error);
@@ -2339,11 +2402,12 @@ private:
     return rebased;
   }
 
-  void replacePendingStores(const nb::handle pythonCircuit) const {
+  void replacePendingStores(const nb::handle pythonCircuit,
+                            const PythonVariables& variables) const {
     auto data = pythonAttribute(pythonCircuit, "data",
                                 "Qiskit circuit has no instruction data");
     const auto circuitModule = nb::module_::import_("qiskit.circuit");
-    const PythonClassicalBuilder classical(pythonCircuit);
+    const PythonClassicalBuilder classical(pythonCircuit, variables);
     for (const auto& pending : pendingStores_) {
       if (pending.instructionIndex >= nb::len(data)) {
         throw std::runtime_error("Qiskit Store placeholder is missing");
@@ -2390,7 +2454,8 @@ private:
 
   [[nodiscard]] static nb::object constructControlFlowOperation(
       const PendingControlFlow& pending, const std::vector<nb::object>& blocks,
-      const PythonClassicalBuilder& classical, const nb::handle circuitModule) {
+      const PythonClassicalBuilder& classical, const nb::handle circuitModule,
+      uint32_t numQubits, uint32_t numClbits) {
     switch (pending.kind) {
     case ControlFlowKind::IfElse:
       return circuitModule.attr("IfElseOp")(
@@ -2422,8 +2487,9 @@ private:
       return circuitModule.attr("SwitchCaseOp")(
           classical.switchTarget(pending.target), cases);
     }
-    case ControlFlowKind::Box:
     case ControlFlowKind::Break:
+      return circuitModule.attr("BreakLoopOp")(numQubits, numClbits);
+    case ControlFlowKind::Box:
     case ControlFlowKind::Continue:
       break;
     }
@@ -2432,7 +2498,8 @@ private:
   }
 
   void replacePendingControlFlow(const nb::handle pythonCircuit,
-                                 PythonParameterGroups& groups) {
+                                 PythonParameterGroups& groups,
+                                 const PythonVariables& variables) {
     auto data = pythonAttribute(pythonCircuit, "data",
                                 "Qiskit circuit has no instruction data");
     const auto circuitQubits = pythonAttribute(pythonCircuit, "qubits",
@@ -2445,7 +2512,7 @@ private:
         pythonCircuit, "cregs", "Qiskit circuit has no classical registers");
     const auto circuitModule = nb::module_::import_("qiskit.circuit");
     const auto circuitInstruction = circuitModule.attr("CircuitInstruction");
-    const PythonClassicalBuilder classical(pythonCircuit);
+    const PythonClassicalBuilder classical(pythonCircuit, variables);
     for (auto& pending : pendingControlFlow_) {
       if (pending.instructionIndex >= nb::len(data)) {
         throw std::runtime_error("Qiskit control-flow placeholder is missing");
@@ -2459,13 +2526,21 @@ private:
           throw std::runtime_error(
               "Qiskit control-flow blocks use an incompatible writer");
         }
-        blocks.emplace_back(writer->finishImpl(true, circuitQubits,
-                                               circuitClbits, circuitQregs,
-                                               circuitCregs, groups));
+        blocks.emplace_back(
+            writer->finishImpl(true, circuitQubits, circuitClbits, circuitQregs,
+                               circuitCregs, groups, variables));
+        for (auto captured :
+             nb::iter(blocks.back().attr("iter_captured_vars")())) {
+          if (!nb::cast<bool>(pythonCircuit.attr("has_var")(captured))) {
+            pythonCircuit.attr("add_capture")(captured);
+          }
+        }
       }
       pending.blockWriters.clear();
-      auto operation = constructControlFlowOperation(pending, blocks, classical,
-                                                     circuitModule);
+      auto operation = constructControlFlowOperation(
+          pending, blocks, classical, circuitModule,
+          static_cast<uint32_t>(nb::len(circuitQubits)),
+          static_cast<uint32_t>(nb::len(circuitClbits)));
       if (pythonUnsignedAttribute(operation, "num_qubits",
                                   "Qiskit control flow has no qubit count") !=
               nb::len(circuitQubits) ||
@@ -2584,6 +2659,7 @@ private:
   QkCircuit* circuit_ = nullptr;
   std::vector<PendingControlledUnitary> pendingControlledUnitaries_;
   std::vector<PendingStore> pendingStores_;
+  std::vector<ClassicalVariable> variables_;
   std::vector<PendingControlFlow> pendingControlFlow_;
   std::shared_ptr<NativeSymbolTable> symbols_;
 };

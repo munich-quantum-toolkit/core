@@ -697,7 +697,7 @@ TEST(JeffRoundTripRegressionTest, RejectsLiveOldArrayAcrossSwitchRegions) {
   }
 }
 
-TEST(JeffRoundTripRegressionTest, RejectsClassicalIfResultsPrecisely) {
+TEST(JeffRoundTripRegressionTest, PreservesClassicalIfResults) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, cbit::CBitDialect,
                   func::FuncDialect, jeff::JeffDialect, qco::QCODialect,
@@ -728,18 +728,12 @@ module {
   ASSERT_TRUE(module);
   ASSERT_TRUE(succeeded(verify(*module)));
 
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "classical qco.if results are not supported by the QCO-to-Jeff "
-        "conversion");
-    return success();
-  });
-  EXPECT_TRUE(failed(convertQCOToJeff(*module)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  auto function = *module->getOps<func::FuncOp>().begin();
+  EXPECT_TRUE(function.getResultTypes().front().isInteger(64));
 }
 
 TEST(JeffRoundTripRegressionTest, RejectsLegacyClassicalMemref) {
