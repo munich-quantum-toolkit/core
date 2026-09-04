@@ -15,7 +15,6 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QC/Translation/LoopBuilder.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 #include "mlir/Support/IntegerExpressions.h"
 #include "mlir/Target/OpenQASM/Frontend.h"
@@ -200,7 +199,7 @@ private:
       structuredGateCapabilities;
   llvm::StringMap<const oq3::frontend::GateDefinition*> customGateIndex;
   bool emissionFailed = false;
-  LoopBuilder* activeLoop = nullptr;
+  QCProgramBuilder::LoopBuilder* activeLoop = nullptr;
   SmallVector<frontend::ScalarId> breakSlots;
   SmallVector<Value> breakPrefix;
   bool flowReachable = true;
@@ -2121,10 +2120,12 @@ private:
             emitFor(data, gateParameters, gateQubits);
           } else if constexpr (std::is_same_v<T, frontend::WhileStatement>) {
             emitWhile(data, gateParameters, gateQubits);
-          } else if constexpr (std::is_same_v<T, frontend::BreakStatement>) {
+          } else if constexpr (std::is_same_v<T, frontend::BreakStatement> ||
+                               std::is_same_v<T, frontend::ContinueStatement>) {
             auto state = breakPrefix;
             llvm::append_range(state, stateValues(breakSlots));
-            activeLoop->branch(false, state);
+            activeLoop->branch(std::is_same_v<T, frontend::ContinueStatement>,
+                               state);
             flowReachable = false;
           } else if constexpr (std::is_same_v<T, frontend::SwitchStatement>) {
             emitSwitch(data, gateParameters, gateQubits);
@@ -2151,16 +2152,18 @@ private:
   void
   emitScalarDeclaration(const frontend::ScalarDeclarationStatement& statement,
                         ValueRange gateQubits) {
-    const auto type = program.scalars.at(statement.scalar).type;
-    Value value =
-        ub::PoisonOp::create(
-            builder,
-            scalarType(type, program.scalars.at(statement.scalar).integerWidth))
-            .getResult();
+    Value value;
     if (statement.initializer) {
       value = emitExpression(builder, *statement.initializer, {});
     } else if (statement.conditionInitializer) {
       value = emitCondition(*statement.conditionInitializer, {}, gateQubits);
+    } else {
+      /// Definite initialization rejects reads until an assignment; a loop may
+      /// carry this unobservable placeholder before its first assignment.
+      const auto& scalar = program.scalars.at(statement.scalar);
+      auto type = scalarType(scalar.type, scalar.integerWidth);
+      value =
+          arith::ConstantOp::create(builder, type, builder.getZeroAttr(type));
     }
     scalarValues.at(statement.scalar) = value;
   }
@@ -2257,20 +2260,21 @@ private:
     }
   }
 
-  bool hasBreak(ArrayRef<frontend::StatementId> statements) const {
+  bool hasLoopJump(ArrayRef<frontend::StatementId> statements) const {
     return llvm::any_of(statements, [&](auto id) {
       return std::visit(
           [&](const auto& data) -> bool {
             using T = std::decay_t<decltype(data)>;
-            if constexpr (std::is_same_v<T, frontend::BreakStatement>) {
+            if constexpr (std::is_same_v<T, frontend::BreakStatement> ||
+                          std::is_same_v<T, frontend::ContinueStatement>) {
               return true;
             } else if constexpr (std::is_same_v<T, frontend::IfStatement>) {
-              return hasBreak(data.thenStatements) ||
-                     hasBreak(data.elseStatements);
+              return hasLoopJump(data.thenStatements) ||
+                     hasLoopJump(data.elseStatements);
             } else if constexpr (std::is_same_v<T, frontend::SwitchStatement>) {
-              return hasBreak(data.defaultStatements) ||
+              return hasLoopJump(data.defaultStatements) ||
                      llvm::any_of(data.cases, [&](const auto& branch) {
-                       return hasBreak(branch.body);
+                       return hasLoopJump(branch.body);
                      });
             }
             return false;
@@ -2335,7 +2339,7 @@ private:
     nestedStatements.append(conditional.elseStatements.begin(),
                             conditional.elseStatements.end());
     const auto slots = mutatedState(nestedStatements);
-    if (activeLoop != nullptr && hasBreak(nestedStatements)) {
+    if (activeLoop != nullptr && hasLoopJump(nestedStatements)) {
       emitCFGIf(
           condition, slots,
           [&] {
@@ -2468,8 +2472,8 @@ private:
 
   void emitFor(const frontend::ForStatement& loop, ValueRange gateParameters,
                ValueRange gateQubits) {
-    if (hasBreak(loop.body)) {
-      emitLoopWithBreak(loop, gateParameters, gateQubits);
+    if (hasLoopJump(loop.body)) {
+      emitLoopWithJumps(loop, gateParameters, gateQubits);
       return;
     }
     const auto slots = mutatedState(loop.body);
@@ -2582,7 +2586,7 @@ private:
   }
 
   template <typename Loop>
-  void emitLoopWithBreak(const Loop& loop, ValueRange gateParameters,
+  void emitLoopWithJumps(const Loop& loop, ValueRange gateParameters,
                          ValueRange gateQubits) {
     const auto slots = mutatedState(loop.body);
     const auto savedScalars = scalarValues;
@@ -2612,7 +2616,7 @@ private:
       }
     }
     llvm::append_range(initial, stateValues(slots));
-    LoopBuilder cfg(builder, builder.getLoc(), initial);
+    QCProgramBuilder::LoopBuilder cfg(builder, initial, step);
     llvm::SaveAndRestore loopScope(activeLoop, &cfg);
     llvm::SaveAndRestore slotsScope(breakSlots, SmallVector<StateSlot>(slots));
     llvm::SaveAndRestore prefixScope(breakPrefix, SmallVector<Value>{});
@@ -2653,8 +2657,7 @@ private:
     if (flowReachable) {
       SmallVector<Value> state;
       if constexpr (std::is_same_v<Loop, frontend::ForStatement>) {
-        state.push_back(
-            arith::AddIOp::create(builder, arguments.front(), step));
+        state.push_back(arguments.front());
       }
       llvm::append_range(state, stateValues(slots));
       cfg.branch(true, state);
@@ -2676,8 +2679,8 @@ private:
 
   void emitWhile(const frontend::WhileStatement& loop,
                  ValueRange gateParameters, ValueRange gateQubits) {
-    if (hasBreak(loop.body)) {
-      emitLoopWithBreak(loop, gateParameters, gateQubits);
+    if (hasLoopJump(loop.body)) {
+      emitLoopWithJumps(loop, gateParameters, gateQubits);
       return;
     }
     const auto slots = mutatedState(loop.body);
@@ -2724,7 +2727,7 @@ private:
     const auto savedScalars = scalarValues;
 
     auto control = emitExpression(builder, switchStatement.control, {});
-    if (activeLoop != nullptr && hasBreak(nestedStatements)) {
+    if (activeLoop != nullptr && hasLoopJump(nestedStatements)) {
       const auto emitCases = [&](auto&& self, size_t index) -> void {
         if (index == switchStatement.cases.size()) {
           for (auto statement : switchStatement.defaultStatements) {

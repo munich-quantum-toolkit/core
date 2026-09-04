@@ -425,6 +425,7 @@ private:
     std::vector<bool> scalars;
     std::vector<uint64_t> scalarGenerations;
     std::vector<uint64_t> bitGenerations;
+    bool continuing = false;
   };
   SmallVector<SmallVector<InitializationState>> loopExits;
   bool reachable = true;
@@ -3246,18 +3247,26 @@ private:
             MQT_OQ3_TRY_ASSIGN(analyzed, analyzeFor(statement.location, data));
             destination.push_back(analyzed);
             return success();
-          } else if constexpr (std::is_same_v<T, SyntaxBreak>) {
+          } else if constexpr (std::is_same_v<T, SyntaxBreak> ||
+                               std::is_same_v<T, SyntaxContinue>) {
+            constexpr bool continuing = std::is_same_v<T, SyntaxContinue>;
             if (loopExits.empty()) {
-              return fail(statement.location,
-                          "break requires an enclosing for or while loop");
+              return fail(
+                  statement.location,
+                  continuing
+                      ? "continue requires an enclosing for or while loop"
+                      : "break requires an enclosing for or while loop");
             }
             if (activePath) {
               loopExits.back().push_back({initializedBits, initializedScalars,
-                                          scalarGenerations, bitGenerations});
+                                          scalarGenerations, bitGenerations,
+                                          continuing});
             }
             reachable = false;
-            MQT_OQ3_TRY_ASSIGN(
-                analyzed, addStatement(statement.location, BreakStatement{}));
+            using Jump = std::conditional_t<continuing, ContinueStatement,
+                                            BreakStatement>;
+            MQT_OQ3_TRY_ASSIGN(analyzed,
+                               addStatement(statement.location, Jump{}));
             destination.push_back(analyzed);
             return success();
           } else if constexpr (std::is_same_v<T, SyntaxWhile>) {
@@ -4152,6 +4161,7 @@ private:
       bitGenerations[reg] =
           std::max(beforeBitGenerations[reg], afterBodyBitGenerations[reg]);
     }
+    llvm::erase_if(exits, [](const auto& state) { return state.continuing; });
     MQT_OQ3_TRY_ASSIGN(knownCondition, constantCondition(loop.condition));
     if (knownCondition && *knownCondition && !exits.empty()) {
       for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {

@@ -159,9 +159,10 @@ entryFunc(const mlir::QCOProgram& program) {
   return std::mt19937_64(seed);
 }
 
-/// Run @p fn under a diagnostic handler and raise `ValueError` on failure,
+/// Run @p fn under a diagnostic handler and raise the chosen Python exception,
 /// appending any emitted MLIR diagnostics to @p message.
-template <typename Fn>
+template <nb::exception_type Exception = nb::exception_type::value_error,
+          typename Fn>
 [[nodiscard]] static auto takeFailureOr(mlir::MLIRContext* context,
                                         const char* message, Fn&& fn) {
   std::string diagnostics;
@@ -183,7 +184,7 @@ template <typename Fn>
     if (!diagnostics.empty()) {
       full.append(": ").append(diagnostics);
     }
-    throw nb::value_error(full.c_str());
+    throw nb::builtin_exception(Exception, full.c_str());
   }
   return *std::move(result);
 }
@@ -990,20 +991,16 @@ before conversion to QCO.)pb");
           "to_openqasm3",
           [](const mlir::QCProgram& program) {
             requireValid(program);
-            try {
-              return takeFailureOr(
-                  program.module().getContext(),
-                  "cannot export QC program to OpenQASM 3",
-                  [&]() -> mlir::FailureOr<mlir::OpenQASMProgram> {
-                    auto result = program.toOpenQASM3();
-                    if (!result) {
-                      return mlir::failure();
-                    }
-                    return std::move(*result);
-                  });
-            } catch (const nb::builtin_exception& error) {
-              throw std::runtime_error(error.what());
-            }
+            return takeFailureOr<nb::exception_type::runtime_error>(
+                program.module().getContext(),
+                "cannot export QC program to OpenQASM 3",
+                [&]() -> mlir::FailureOr<mlir::OpenQASMProgram> {
+                  auto result = program.toOpenQASM3();
+                  if (!result) {
+                    return mlir::failure();
+                  }
+                  return std::move(*result);
+                });
           },
           "Clean up and emit this QC program as OpenQASM 3 without QCO "
           "optimization.")

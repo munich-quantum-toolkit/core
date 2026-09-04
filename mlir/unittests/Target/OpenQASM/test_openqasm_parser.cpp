@@ -572,10 +572,10 @@ if (int[2](value) == -1) {}
 
 TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
   constexpr auto reservedWords = std::to_array<llvm::StringLiteral>({
-      "defcalgrammar", "def",      "cal",     "defcal", "extern",  "box",
-      "let",           "continue", "end",     "return", "pragma",  "input",
-      "readonly",      "mutable",  "complex", "array",  "void",    "stretch",
-      "durationof",    "delay",    "im",      "#dim",   "#pragma",
+      "defcalgrammar", "def",     "cal",    "defcal",  "extern",  "box",
+      "let",           "end",     "return", "pragma",  "input",   "readonly",
+      "mutable",       "complex", "array",  "void",    "stretch", "durationof",
+      "delay",         "im",      "#dim",   "#pragma",
   });
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());

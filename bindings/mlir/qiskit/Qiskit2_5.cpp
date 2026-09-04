@@ -2196,9 +2196,9 @@ public:
       case ControlFlowKind::Switch:
         return !blocks.empty() && blocks.size() == switchCases.size();
       case ControlFlowKind::Break:
+      case ControlFlowKind::Continue:
         return blocks.empty();
       case ControlFlowKind::Box:
-      case ControlFlowKind::Continue:
         return false;
       }
       return false;
@@ -2489,8 +2489,9 @@ private:
     }
     case ControlFlowKind::Break:
       return circuitModule.attr("BreakLoopOp")(numQubits, numClbits);
-    case ControlFlowKind::Box:
     case ControlFlowKind::Continue:
+      return circuitModule.attr("ContinueLoopOp")(numQubits, numClbits);
+    case ControlFlowKind::Box:
       break;
     }
     throw std::runtime_error(

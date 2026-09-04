@@ -106,6 +106,7 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("for", TokenKind::For)
       .Case("while", TokenKind::While)
       .Case("break", TokenKind::Break)
+      .Case("continue", TokenKind::Continue)
       .Case("switch", TokenKind::Switch)
       .Case("case", TokenKind::Case)
       .Case("default", TokenKind::Default)
@@ -125,8 +126,7 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("false", TokenKind::False)
       .Cases({"defcalgrammar", "def", "cal", "defcal"},
              TokenKind::UnsupportedKeyword)
-      .Cases({"extern", "box", "let", "continue"},
-             TokenKind::UnsupportedKeyword)
+      .Cases({"extern", "box", "let"}, TokenKind::UnsupportedKeyword)
       .Cases({"end", "return"}, TokenKind::UnsupportedKeyword)
       .Cases({"pragma", "input", "readonly", "mutable"},
              TokenKind::UnsupportedKeyword)

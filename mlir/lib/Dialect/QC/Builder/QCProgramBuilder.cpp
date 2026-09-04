@@ -22,30 +22,132 @@
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/FormatVariadic.h>
+#include <mlir/Conversion/ControlFlowToSCF/ControlFlowToSCF.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/CFGToSCF.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include <mlir/Transforms/RegionUtils.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <variant>
 
 using namespace mlir::mqt;
 
 namespace mlir::qc {
+
+QCProgramBuilder::LoopBuilder::LoopBuilder(QCProgramBuilder& builder,
+                                           ValueRange initialState, Value step)
+    : builder_(builder), location_(builder.getLoc()), step_(step) {
+  regionOp_ = scf::ExecuteRegionOp::create(builder_, location_,
+                                           initialState.getTypes());
+  auto& region = regionOp_.getRegion();
+  auto* entry = builder_.createBlock(&region);
+  SmallVector<Location> locations(initialState.size(), location_);
+  header_ =
+      builder_.createBlock(&region, {}, initialState.getTypes(), locations);
+  SmallVector<Type> decisionTypes{builder_.getI1Type()};
+  llvm::append_range(decisionTypes, initialState.getTypes());
+  decision_ = builder_.createBlock(
+      &region, {}, decisionTypes,
+      SmallVector<Location>(decisionTypes.size(), location_));
+  exit_ = builder_.createBlock(&region, {}, initialState.getTypes(), locations);
+  builder_.setInsertionPointToEnd(entry);
+  cf::BranchOp::create(builder_, location_, header_, initialState);
+  builder_.setInsertionPointToEnd(header_);
+}
+
+ValueRange QCProgramBuilder::LoopBuilder::arguments() {
+  return header_->getArguments();
+}
+
+void QCProgramBuilder::LoopBuilder::enterBody(Value condition,
+                                              ValueRange state) {
+  auto* current = builder_.getInsertionBlock();
+  auto* body = builder_.createBlock(&regionOp_.getRegion());
+  builder_.setInsertionPointToEnd(current);
+  if (matchPattern(condition, m_One())) {
+    cf::BranchOp::create(builder_, location_, body);
+  } else {
+    SmallVector<Value> exitValues{
+        arith::ConstantIntOp::create(builder_, location_, 0, 1)};
+    llvm::append_range(exitValues, state);
+    cf::CondBranchOp::create(builder_, location_, condition, body, ValueRange{},
+                             decision_, exitValues);
+  }
+  builder_.setInsertionPointToEnd(body);
+}
+
+void QCProgramBuilder::LoopBuilder::branch(bool continuing, ValueRange state) {
+  SmallVector<Value> values{
+      arith::ConstantIntOp::create(builder_, location_, continuing ? 1 : 0, 1)};
+  llvm::append_range(values, state);
+  cf::BranchOp::create(builder_, location_, decision_, values);
+}
+
+FailureOr<SmallVector<Value>> QCProgramBuilder::LoopBuilder::finish() {
+  builder_.setInsertionPointToEnd(decision_);
+  auto continuing = decision_->getArgument(0);
+  SmallVector<Value> state(decision_->getArguments().drop_front());
+  if (step_) {
+    auto next =
+        arith::AddIOp::create(builder_, location_, state.front(), step_);
+    state.front() = arith::SelectOp::create(builder_, location_, continuing,
+                                            next, state.front());
+  }
+  cf::CondBranchOp::create(builder_, location_, continuing, header_, state,
+                           exit_, state);
+  builder_.setInsertionPointToEnd(exit_);
+  scf::YieldOp::create(builder_, location_, exit_->getArguments());
+  IRRewriter rewriter(builder_.getContext());
+  std::ignore = eraseUnreachableBlocks(rewriter, regionOp_->getRegions());
+  DominanceInfo dominance;
+  ControlFlowToSCFTransformation transformation;
+  if (failed(transformCFGToSCF(regionOp_.getRegion(), transformation,
+                               dominance))) {
+    return regionOp_.emitError("cannot structure loop control flow");
+  }
+  RewritePatternSet patterns(builder_.getContext());
+  scf::WhileOp::getCanonicalizationPatterns(patterns, builder_.getContext());
+  scf::IfOp::getCanonicalizationPatterns(patterns, builder_.getContext());
+  arith::SelectOp::getCanonicalizationPatterns(patterns, builder_.getContext());
+  arith::TruncIOp::getCanonicalizationPatterns(patterns, builder_.getContext());
+  SmallVector<Operation*> operations;
+  regionOp_.getRegion().walk([&](Operation* op) { operations.push_back(op); });
+  if (failed(applyOpPatternsGreedily(operations, std::move(patterns)))) {
+    return regionOp_.emitError("cannot canonicalize loop control flow");
+  }
+  std::ignore = runRegionDCE(rewriter, regionOp_->getRegions());
+  auto& block = regionOp_.getRegion().front();
+  auto terminator = cast<scf::YieldOp>(block.getTerminator());
+  SmallVector<Value> results(terminator.getResults());
+  rewriter.inlineBlockBefore(&block, regionOp_);
+  rewriter.eraseOp(terminator);
+  builder_.setInsertionPointAfter(regionOp_);
+  rewriter.eraseOp(regionOp_);
+  return results;
+}
+
 QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qc-program-builder>", 1, 1), context),

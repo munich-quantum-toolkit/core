@@ -19,7 +19,11 @@ add_mlir_library(
   MLIRSCFDialect
   MLIRQCDialect
   PRIVATE
-  MLIRMQTUtils)
+  MLIRMQTUtils
+  MLIRControlFlowDialect
+  MLIRControlFlowToSCF
+  MLIRSCFTransforms
+  MLIRTransforms)
 
 mqt_mlir_target_use_project_options(MLIRQCProgramBuilder)
 

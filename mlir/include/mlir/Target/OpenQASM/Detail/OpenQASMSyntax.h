@@ -132,6 +132,7 @@ struct SyntaxFor {
 };
 
 struct SyntaxBreak {};
+struct SyntaxContinue {};
 
 struct SyntaxWhile {
   SyntaxExpressionId condition = 0;
@@ -163,7 +164,7 @@ using SyntaxStatementData =
                  SyntaxAssignment, SyntaxQubitDeclaration, SyntaxBitDeclaration,
                  SyntaxMeasurement, SyntaxReset, SyntaxBarrier, SyntaxGateCall,
                  SyntaxGateDefinition, SyntaxIf, SyntaxFor, SyntaxWhile,
-                 SyntaxSwitch, SyntaxBreak>;
+                 SyntaxSwitch, SyntaxBreak, SyntaxContinue>;
 
 struct SyntaxStatement {
   SMLoc location;
@@ -235,6 +236,7 @@ public:
           const Expr& start, const Expr& step, const Expr& stop,
           function_ref<LogicalResult()> continuation);
   [[nodiscard]] LogicalResult breakStmt(SMLoc location);
+  [[nodiscard]] LogicalResult continueStmt(SMLoc location);
   [[nodiscard]] LogicalResult
   whileStmt(SMLoc location, const Expr& condition,
             function_ref<LogicalResult()> continuation);

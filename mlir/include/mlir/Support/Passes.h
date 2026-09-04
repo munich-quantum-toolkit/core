@@ -55,7 +55,9 @@ runPassPipeline(mlir::ModuleOp module, mlir::StringRef pipeline,
  */
 void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 
-/// Prepare QC for source export without introducing poison for dead loop state.
+/// Run QC cleanup that preserves defined values on every syntactic loop edge.
+/// Source formats cannot represent the poison backedge values introduced by
+/// RemoveDeadValues, even when those edges are unreachable.
 void populateQCExportPipeline(mlir::OpPassManager& pm);
 
 /**

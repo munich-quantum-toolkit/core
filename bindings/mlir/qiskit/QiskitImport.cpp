@@ -20,7 +20,6 @@
 #include "mlir/Dialect/MQT/Utils/DenseUnitary.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/Translation/LoopBuilder.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -764,12 +763,13 @@ struct ImportedVariables {
   };
   using Environment = std::map<std::string, Entry>;
   Environment variables;
-  mlir::qc::LoopBuilder* loop = nullptr;
+  mlir::qc::QCProgramBuilder::LoopBuilder* loop = nullptr;
   std::vector<std::string> loopSlots;
   llvm::SmallVector<mlir::Value> loopPrefix;
   std::vector<Environment> exits;
+  std::vector<Environment> continues;
   bool reachable = true;
-  bool structuringBreak = false;
+  bool structuringLoop = false;
 
   std::vector<std::string> slots() const {
     std::vector<std::string> result;
@@ -791,15 +791,17 @@ struct ImportedVariables {
       variables.at(key).value = value;
     }
   }
-  void breakLoop() {
+  void jumpLoop(bool continuing) {
     if (loop == nullptr) {
       throw std::runtime_error(
-          "Qiskit BreakLoopOp must be inside a for or while loop");
+          continuing
+              ? "Qiskit ContinueLoopOp must be inside a for or while loop"
+              : "Qiskit BreakLoopOp must be inside a for or while loop");
     }
     auto state = loopPrefix;
     llvm::append_range(state, values(loopSlots));
-    loop->branch(false, state);
-    exits.push_back(variables);
+    loop->branch(continuing, state);
+    (continuing ? continues : exits).push_back(variables);
     reachable = false;
   }
   void conditional(mlir::qc::QCProgramBuilder& builder, mlir::Value condition,
@@ -1341,13 +1343,14 @@ loopParameterValue(mlir::qc::QCProgramBuilder& builder, mlir::Value iteration,
       .getResult();
 }
 
-[[nodiscard]] static bool containsBreak(const CircuitReader& circuit) {
+[[nodiscard]] static bool containsLoopJump(const CircuitReader& circuit) {
   for (size_t index = 0; index < circuit.numInstructions(); ++index) {
     if (circuit.instruction(index).kind != OperationKind::ControlFlow) {
       continue;
     }
     auto control = circuit.controlFlow(index);
-    if (control->kind() == ControlFlowKind::Break) {
+    if (control->kind() == ControlFlowKind::Break ||
+        control->kind() == ControlFlowKind::Continue) {
       return true;
     }
     if (control->kind() == ControlFlowKind::For ||
@@ -1355,7 +1358,7 @@ loopParameterValue(mlir::qc::QCProgramBuilder& builder, mlir::Value iteration,
       continue;
     }
     for (size_t block = 0; block < control->numBlocks(); ++block) {
-      if (containsBreak(*control->block(block))) {
+      if (containsLoopJump(*control->block(block))) {
         return true;
       }
     }
@@ -1404,7 +1407,7 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
                      variables);
   };
 
-  const auto translateBreakingLoop =
+  const auto translateLoopWithJumps =
       [&](mlir::Value initialCounter,
           llvm::function_ref<mlir::Value(mlir::Value)> condition,
           llvm::function_ref<void(mlir::Value)> body, bool guaranteedFirst) {
@@ -1415,15 +1418,21 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
           initial.push_back(initialCounter);
         }
         llvm::append_range(initial, variables.values(keys));
-        mlir::qc::LoopBuilder cfg(builder, builder.getLoc(), initial);
+        mlir::qc::QCProgramBuilder::LoopBuilder cfg(
+            builder, initial,
+            initialCounter ? mlir::Value(mlir::arith::ConstantIntOp::create(
+                                 builder, 1, 64))
+                           : mlir::Value{});
         llvm::SaveAndRestore loopScope(variables.loop, &cfg);
-        llvm::SaveAndRestore structuringScope(variables.structuringBreak, true);
+        llvm::SaveAndRestore structuringScope(variables.structuringLoop, true);
         llvm::SaveAndRestore slotsScope(variables.loopSlots,
                                         std::vector<std::string>(keys));
         llvm::SaveAndRestore prefixScope(variables.loopPrefix,
                                          llvm::SmallVector<mlir::Value>{});
         llvm::SaveAndRestore exitsScope(
             variables.exits, std::vector<ImportedVariables::Environment>{});
+        llvm::SaveAndRestore continuesScope(
+            variables.continues, std::vector<ImportedVariables::Environment>{});
         auto arguments = cfg.arguments();
         mlir::Value counter;
         if (initialCounter) {
@@ -1437,16 +1446,14 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
         body(counter);
         if (variables.reachable) {
           auto state = variables.loopPrefix;
-          if (counter) {
-            state.front() = mlir::arith::AddIOp::create(
-                builder, counter,
-                mlir::arith::ConstantIntOp::create(builder, 1, 64));
-          }
           llvm::append_range(state, variables.values(keys));
           cfg.branch(true, state);
         }
         auto finalVariables = variables.variables;
         auto exits = std::move(variables.exits);
+        if (initialCounter) {
+          llvm::append_range(exits, variables.continues);
+        }
         auto results = cfg.finish();
         if (mlir::failed(results)) {
           throw std::runtime_error(
@@ -1472,10 +1479,11 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
   case ControlFlowKind::Box:
     throw std::runtime_error("Qiskit box instructions are not supported");
   case ControlFlowKind::Break:
-    variables.breakLoop();
+    variables.jumpLoop(false);
     return;
   case ControlFlowKind::Continue:
-    throw std::runtime_error("Qiskit continue instructions are not supported");
+    variables.jumpLoop(true);
+    return;
   case ControlFlowKind::IfElse: {
     if (controlFlow.numBlocks() < 1U || controlFlow.numBlocks() > 2U) {
       throw std::runtime_error(
@@ -1502,12 +1510,12 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
     }
     const auto condition = controlFlow.condition();
     const auto body = controlFlow.block(0);
-    if (containsBreak(*body)) {
+    if (containsLoopJump(*body)) {
       const bool always = condition.kind == ClassicalTargetKind::Expression &&
                           condition.expression &&
                           condition.expression->kind == ExpressionKind::Value &&
                           condition.expression->boolValue;
-      translateBreakingLoop(
+      translateLoopWithJumps(
           {},
           [&](mlir::Value) {
             return emitCondition(builder, condition, classicalBits,
@@ -1516,8 +1524,8 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
           [&](mlir::Value) { translateBlock(*body, localParameters); }, always);
       return;
     }
-    llvm::SaveAndRestore<mlir::qc::LoopBuilder*> loopScope(variables.loop,
-                                                           nullptr);
+    llvm::SaveAndRestore<mlir::qc::QCProgramBuilder::LoopBuilder*> loopScope(
+        variables.loop, nullptr);
     const auto keys = variables.slots();
     const auto saved = variables.variables;
     auto initial = variables.values(keys);
@@ -1556,12 +1564,12 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
     }
     const auto loop = controlFlow.loop();
     const auto body = controlFlow.block(0);
-    if (containsBreak(*body)) {
+    if (containsLoopJump(*body)) {
       const auto count = loop.isRange
                              ? rangeLength(loop)
                              : static_cast<int64_t>(loop.values.size());
       auto limit = mlir::arith::ConstantIntOp::create(builder, count, 64);
-      translateBreakingLoop(
+      translateLoopWithJumps(
           mlir::arith::ConstantIntOp::create(builder, 0, 64),
           [&](mlir::Value counter) {
             return mlir::arith::CmpIOp::create(
@@ -1606,8 +1614,8 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
           count > 0);
       return;
     }
-    llvm::SaveAndRestore<mlir::qc::LoopBuilder*> loopScope(variables.loop,
-                                                           nullptr);
+    llvm::SaveAndRestore<mlir::qc::QCProgramBuilder::LoopBuilder*> loopScope(
+        variables.loop, nullptr);
     if (!loop.isRange) {
       for (const auto value : loop.values) {
         auto parameters = localParameters;
@@ -1796,10 +1804,13 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
         throw std::runtime_error(
             "Qiskit variable is declared more than once in an enclosing scope");
       }
+      /// Definite initialization rejects reads until a store; the initial loop
+      /// state still needs a representable, unobservable scalar placeholder.
       variables.variables.emplace(
           variable.identity,
           ImportedVariables::Entry{
-              .value = mlir::ub::PoisonOp::create(builder, type)});
+              .value = mlir::arith::ConstantOp::create(
+                  builder, type, builder.getZeroAttr(type))});
       declared.push_back(variable.identity);
     }
   }
@@ -1809,9 +1820,8 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
     }
   });
   const auto phase = circuit.globalPhase();
-  if (const auto* number = phase.getNumber(); number == nullptr ||
-                                              number->value != 0.0 ||
-                                              !variables.structuringBreak) {
+  if (const auto* number = phase.getNumber();
+      number == nullptr || number->value != 0.0 || !variables.structuringLoop) {
     builder.gphase(
         parameterValue(builder, phase, localParameters, globalParameters));
   }
@@ -2273,12 +2283,12 @@ static void validateControlFlow(const ControlFlowReader& controlFlow,
   case ControlFlowKind::Box:
     throw std::runtime_error("Qiskit box instructions are not supported");
   case ControlFlowKind::Break:
+  case ControlFlowKind::Continue:
     if (blockCount != 0U) {
-      throw std::runtime_error("Qiskit BreakLoopOp must not contain blocks");
+      throw std::runtime_error(
+          "Qiskit break/continue instructions must not contain blocks");
     }
     break;
-  case ControlFlowKind::Continue:
-    throw std::runtime_error("Qiskit continue instructions are not supported");
   case ControlFlowKind::IfElse: {
     if (blockCount < 1U || blockCount > 2U) {
       throw std::runtime_error("Qiskit if/else has an invalid block count");

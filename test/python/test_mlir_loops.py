@@ -11,13 +11,25 @@
 from __future__ import annotations
 
 import math
+import os
 
 import pytest
+import qiskit
+from packaging.version import Version
 from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import Parameter
 from qiskit.circuit.classical import expr, types
 
 from mqt.core.mlir import JeffProgram, QCProgram
+
+if not (
+    Version("2.5.0") <= Version(qiskit.__version__) < Version("2.6.0")
+    or qiskit.__version__ == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
+):
+    pytest.skip(
+        f"Loop interchange tests require Qiskit 2.5.x (installed: {qiskit.__version__})",
+        allow_module_level=True,
+    )
 
 
 def observe(program: QCProgram) -> int:
@@ -199,26 +211,63 @@ result = bit[8](value);
     check_paths(program, 5)
 
 
-@pytest.mark.parametrize("indexset", [range(5), [2, 4, 7]])
-def test_qiskit_for_break(indexset: range | list[int]) -> None:
-    """Break exits both range and list loops after the first body."""
+@pytest.mark.parametrize("indexset", [range(3), [2, 4, 7, 9]])
+@pytest.mark.parametrize("jump", ["break", "continue"])
+def test_qiskit_for_jump(indexset: range | list[int], jump: str) -> None:
+    """Both jumps skip the tail; continue advances the range or list iterator."""
     circuit = QuantumCircuit(1, 1)
     with circuit.for_loop(indexset, None, None, None, None, label=None):
         circuit.x(0)
-        circuit.break_loop()
+        getattr(circuit, f"{jump}_loop")()
+        circuit.x(0)
+    circuit.measure(0, 0)
+    check_paths(QCProgram.from_qiskit(circuit), 1 if jump == "break" else len(indexset) % 2)
+
+
+def test_continue_in_nested_loop_and_switch() -> None:
+    """Continue targets the inner loop and break still skips its remaining iterations."""
+    program = QCProgram.from_qasm_str("""
+OPENQASM 3.1;
+output bit[8] result;
+uint[8] value = 0;
+uint[8] iteration = 0;
+while (iteration < 4) {
+  iteration += 1;
+  if (iteration == 2) { continue; }
+  for int inner in [0:2] {
+    switch (inner) {
+      case 0 { continue; }
+      default { value += 1; }
+    }
+    if (inner == 1) { break; }
+  }
+}
+result = bit[8](value);
+""")
+    check_paths(program, 3)
+
+
+def test_qiskit_while_continue() -> None:
+    """Continue carries updated scalar state back to the while condition."""
+    circuit = QuantumCircuit(1, 1)
+    counter = circuit.add_var("counter", expr.lift(0, types.Uint(8)))
+    with circuit.while_loop(expr.less(counter, expr.lift(4, types.Uint(8))), None, None, None, label=None):
+        circuit.store(counter, expr.add(counter, expr.lift(1, types.Uint(8))))
+        with circuit.if_test(expr.equal(counter, expr.lift(2, types.Uint(8)))):
+            circuit.continue_loop()
         circuit.x(0)
     circuit.measure(0, 0)
     check_paths(QCProgram.from_qiskit(circuit), 1)
 
 
-@pytest.mark.parametrize("source", ["break;", "if (true) { break; }"])
-def test_invalid_break_placement(source: str) -> None:
+@pytest.mark.parametrize("source", ["break;", "if (true) { break; }", "continue;", "if (true) { continue; }"])
+def test_invalid_loop_jump_placement(source: str) -> None:
     """The source diagnostic distinguishes an invalid break from export limits."""
     with pytest.raises((ValueError, RuntimeError)):
         QCProgram.from_qasm_str("OPENQASM 3.1; " + source)
 
 
-def test_qiskit_uninitialized_local_and_input() -> None:
+def test_qiskit_uninitialized_local() -> None:
     """Local variables need a definition on every reachable read path."""
     circuit = QuantumCircuit(1, 1)
     variable = expr.Var.new("value", types.Bool())
@@ -229,9 +278,28 @@ def test_qiskit_uninitialized_local_and_input() -> None:
         circuit.x(0)
     with pytest.raises(RuntimeError, match="initialization"):
         QCProgram.from_qiskit(circuit)
-    external = QuantumCircuit(inputs=[expr.Var.new("external", types.Bool())])
-    with pytest.raises(RuntimeError, match="runtime input"):
-        QCProgram.from_qiskit(external)
+
+
+@pytest.mark.parametrize("initialize_before", [False, True])
+def test_qiskit_continue_initialization(*, initialize_before: bool) -> None:
+    """Only assignments reached before continue initialize the eventual exit."""
+    circuit = QuantumCircuit(1, 1)
+    variable = expr.Var.new("value", types.Bool())
+    circuit.add_uninitialized_var(variable)
+    with circuit.for_loop(range(1), None, None, None, None, label=None):
+        if initialize_before:
+            circuit.store(variable, True)  # ruff: ignore[boolean-positional-value-in-call] - Qiskit requires a positional value.
+        circuit.continue_loop()
+        if not initialize_before:
+            circuit.store(variable, True)  # ruff: ignore[boolean-positional-value-in-call] - Qiskit requires a positional value.
+    with circuit.if_test(variable):
+        circuit.x(0)
+    circuit.measure(0, 0)
+    if initialize_before:
+        check_paths(QCProgram.from_qiskit(circuit), 1)
+    else:
+        with pytest.raises(RuntimeError, match="initialization"):
+            QCProgram.from_qiskit(circuit)
 
 
 @pytest.mark.parametrize("direct_measurement", [False, True])

@@ -169,28 +169,29 @@ This compiler route is the Qiskit circuit interface in MQT Core v4.
 Qiskit 2.5's C API cannot construct classical expressions or structured control
 flow, so export uses Qiskit's public Python classes for these operations.
 
-| Circuit feature                                                      | Import               | Export                        |
-| -------------------------------------------------------------------- | -------------------- | ----------------------------- |
-| Standard gates, constructible numeric modifiers, and global phase    | Supported            | Supported                     |
-| Other finite numeric modifiers                                       | Supported            | Rejected                      |
-| Measurement, reset, and barrier                                      | Supported            | Supported                     |
-| Canonical named registers and leading loose bits                     | Supported            | Explicit registers            |
-| Custom instructions with finite, acyclic definitions                 | Recursively expanded | Not applicable                |
-| Nested `if`/`else`, `for`, `while`, and `switch`                     | Supported            | Supported                     |
-| Classical-bit and register conditions                                | Supported            | Supported                     |
-| Constant Boolean, `Uint` up to 64 bits, and `Float` expressions      | Supported            | Supported                     |
-| Clbit and ClassicalRegister expression variables                     | Supported            | Supported                     |
-| Fixed-width bitwise operations, comparisons, and bounded shifts      | Supported            | Supported                     |
-| Direct complete-register comparisons wider than 64 bits              | Supported            | Supported                     |
-| Clbit, indexed-register, and whole-register `Store` assignments      | Supported            | Supported                     |
-| Initialized local classical variables and enclosing captures         | Supported            | Native `expr.Var` and `Store` |
-| External runtime input variables                                     | Rejected             | Rejected                      |
-| `break` in `for` and `while`, including nested conditionals/switches | Supported            | Native `BreakLoopOp`          |
-| Free symbols and supported real parameter expressions                | Supported            | Supported                     |
-| Parameter-vector elements                                            | Supported            | Supported                     |
-| Dense numeric unitaries up to eight qubits                           | Supported            | Supported                     |
-| Register aliases or interleaved membership                           | Rejected             | Rejected                      |
-| Transpiler layout metadata                                           | Accepted and ignored | Not emitted                   |
+| Circuit feature                                                         | Import               | Export                             |
+| ----------------------------------------------------------------------- | -------------------- | ---------------------------------- |
+| Standard gates, constructible numeric modifiers, and global phase       | Supported            | Supported                          |
+| Other finite numeric modifiers                                          | Supported            | Rejected                           |
+| Measurement, reset, and barrier                                         | Supported            | Supported                          |
+| Canonical named registers and leading loose bits                        | Supported            | Explicit registers                 |
+| Custom instructions with finite, acyclic definitions                    | Recursively expanded | Not applicable                     |
+| Nested `if`/`else`, `for`, `while`, and `switch`                        | Supported            | Supported                          |
+| Classical-bit and register conditions                                   | Supported            | Supported                          |
+| Constant Boolean, `Uint` up to 64 bits, and `Float` expressions         | Supported            | Supported                          |
+| Clbit and ClassicalRegister expression variables                        | Supported            | Supported                          |
+| Fixed-width bitwise operations, comparisons, and bounded shifts         | Supported            | Supported                          |
+| Direct complete-register comparisons wider than 64 bits                 | Supported            | Supported                          |
+| Clbit, indexed-register, and whole-register `Store` assignments         | Supported            | Supported                          |
+| Initialized local classical variables and enclosing captures            | Supported            | Native `expr.Var` and `Store`      |
+| External runtime input variables                                        | Rejected             | Rejected                           |
+| `break` in `for` and `while`, including nested conditionals/switches    | Supported            | Native `BreakLoopOp`               |
+| `continue` in `for` and `while`, including nested conditionals/switches | Supported            | Preserved through SCF control flow |
+| Free symbols and supported real parameter expressions                   | Supported            | Supported                          |
+| Parameter-vector elements                                               | Supported            | Supported                          |
+| Dense numeric unitaries up to eight qubits                              | Supported            | Supported                          |
+| Register aliases or interleaved membership                              | Rejected             | Rejected                           |
+| Transpiler layout metadata                                              | Accepted and ignored | Not emitted                        |
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
 containing circuit. This includes values used only by the condition or switch
@@ -222,6 +223,11 @@ retain native while-loop conditions. More general loops use a constant-true
 after-region instructions. The condition's values become the loop results on
 exit and the after-region arguments on continuation. Edge updates preserve
 parallel-assignment semantics, including swaps and unequal before/after tuples.
+
+`break` and `continue` target the innermost loop. `continue` skips the remaining
+body, advances a for-loop iterator, and then reevaluates the loop condition.
+Both imports use SCF control flow, so export preserves behavior without
+requiring the original jump statement to survive normalization.
 
 Local scalar state covers Boolean values, integers of widths 1–64, and `f64`
 using supported backend operations. It uses native `expr.Var` declarations,

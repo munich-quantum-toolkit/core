@@ -266,6 +266,11 @@ SyntaxBuilder::parseNestedBody(function_ref<LogicalResult()> continuation) {
   return body;
 }
 
+LogicalResult SyntaxBuilder::continueStmt(SMLoc location) {
+  std::ignore = addStatement(location, SyntaxContinue{});
+  return success();
+}
+
 LogicalResult SyntaxBuilder::breakStmt(SMLoc location) {
   std::ignore = addStatement(location, SyntaxBreak{});
   return success();

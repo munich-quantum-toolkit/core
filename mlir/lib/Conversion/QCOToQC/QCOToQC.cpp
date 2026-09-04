@@ -519,7 +519,11 @@ struct ConvertQTensorInsertOp final
       }
       auto* left = index.getDefiningOp();
       auto* right = adaptor.getIndex().getDefiningOp();
-      return left && right && isPure(left) && isPure(right) &&
+      /// Distinct results of one pure operation can identify different slots.
+      return left && right &&
+             cast<OpResult>(index).getResultNumber() ==
+                 cast<OpResult>(adaptor.getIndex()).getResultNumber() &&
+             isPure(left) && isPure(right) &&
              OperationEquivalence::isEquivalentTo(
                  left, right, OperationEquivalence::exactValueMatch, nullptr,
                  OperationEquivalence::Flags::IgnoreLocations);
