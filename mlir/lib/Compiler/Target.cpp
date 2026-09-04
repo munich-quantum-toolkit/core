@@ -700,7 +700,7 @@ bool CompilerTarget::Storage::supportsGate(
        supportsOperation("z", 2, 0, orderedSites, /*variadicOnly=*/true))) {
     return true;
   }
-  const decltype(GATE_SPECIFICATIONS.cbegin()) specification =
+  const auto specification =
       std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
   assert(specification != GATE_SPECIFICATIONS.end() &&
          "unknown compiler target gate");
@@ -762,7 +762,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
         (gate == GateKind::CZ && supportsEveryPlacement("z", 2, 0, true))) {
       return true;
     }
-    const decltype(GATE_SPECIFICATIONS.cbegin()) specification =
+    const auto specification =
         std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
     assert(specification != GATE_SPECIFICATIONS.end() &&
            "unknown compiler target gate");
@@ -794,7 +794,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       GateKind::RXX,   GateKind::RYY, GateKind::RZX, GateKind::RZZ,
       GateKind::ISWAP, GateKind::CZ,  GateKind::CX,  GateKind::ECR,
   };
-  const decltype(entanglerPreference.cbegin()) entangler =
+  const auto entangler =
       std::ranges::find_if(entanglerPreference, supportsOnEveryCoupling);
   if (!singleQubit || entangler == entanglerPreference.end()) {
     return std::nullopt;

@@ -560,6 +560,7 @@ static void appendControlModifier(const nb::handle object,
   modifiers.push_back({
       .kind = GateModifierKind::Control,
       .numControls = static_cast<uint32_t>(controls),
+      .exponent = {},
   });
 }
 
@@ -603,7 +604,11 @@ static void normalizePythonModifier(const nb::handle modifier,
   const auto name = pythonStringAttribute(
       type, "__name__", "Qiskit modifier has an invalid type name");
   if (name == "InverseModifier") {
-    modifiers.push_back({.kind = GateModifierKind::Inverse});
+    modifiers.push_back({
+        .kind = GateModifierKind::Inverse,
+        .numControls = 0,
+        .exponent = {},
+    });
     return;
   }
   if (name == "ControlModifier") {
@@ -854,7 +859,7 @@ public:
     if (name == nullptr) {
       throwPythonError("Qiskit failed to read a quantum-register name");
     }
-    Register result{.name = name};
+    Register result{.name = name, .bits = {}};
     qk_str_free(name);
     result.bits.resize(qk_quantum_register_num_bits(reg));
     if (!result.bits.empty()) {
@@ -871,7 +876,7 @@ public:
     if (name == nullptr) {
       throwPythonError("Qiskit failed to read a classical-register name");
     }
-    Register result{.name = name};
+    Register result{.name = name, .bits = {}};
     qk_str_free(name);
     result.bits.resize(qk_classical_register_num_bits(reg));
     if (!result.bits.empty()) {
@@ -906,22 +911,54 @@ public:
     const auto kind =
         normalizeKind(qk_circuit_instruction_kind(circuit_, index));
     if (kind == OperationKind::Delay) {
-      return {.kind = kind, .name = "delay"};
+      return {
+          .kind = kind,
+          .name = "delay",
+          .qubits = {},
+          .clbits = {},
+          .parameters = {},
+          .modifiers = {},
+          .standardGate = {},
+      };
     }
     if (kind == OperationKind::ControlFlow) {
-      return {.kind = kind, .name = "control_flow"};
+      return {
+          .kind = kind,
+          .name = "control_flow",
+          .qubits = {},
+          .clbits = {},
+          .parameters = {},
+          .modifiers = {},
+          .standardGate = {},
+      };
     }
     const auto operation = pythonOperation(index);
     if (pythonStringAttribute(operation, "name",
                               "Qiskit operation has an invalid name") ==
             "store" &&
         isPythonStore(operation)) {
-      return {.kind = OperationKind::Store, .name = "store"};
+      return {
+          .kind = OperationKind::Store,
+          .name = "store",
+          .qubits = {},
+          .clbits = {},
+          .parameters = {},
+          .modifiers = {},
+          .standardGate = {},
+      };
     }
     std::optional<Instruction> normalizedUnknown;
     if (kind == OperationKind::Unknown) {
       if (isPythonUnitaryGate(operation)) {
-        Instruction result{.kind = OperationKind::Unitary, .name = "unitary"};
+        Instruction result{
+            .kind = OperationKind::Unitary,
+            .name = "unitary",
+            .qubits = {},
+            .clbits = {},
+            .parameters = {},
+            .modifiers = {},
+            .standardGate = {},
+        };
         normalizePythonGate(operation, result);
         result.name = "unitary";
         result.qubits = pythonInstructionQubits(index);
@@ -1706,13 +1743,15 @@ std::vector<ClassicalVariable> NativeCircuitReader::variables() const {
         throw std::runtime_error(
             "Qiskit local variable has no stable identity");
       }
-      result.push_back({.identity = normalized->variable,
-                        .name = pythonStringAttribute(
-                            variable, "name", "Qiskit variable has no name"),
-                        .type = normalized->type,
-                        .width = normalized->width,
-                        .captured = captured,
-                        .input = input});
+      result.push_back({
+          .identity = normalized->variable,
+          .name = pythonStringAttribute(variable, "name",
+                                        "Qiskit variable has no name"),
+          .type = normalized->type,
+          .width = normalized->width,
+          .captured = captured,
+          .input = input,
+      });
     }
   };
   append("iter_declared_vars", false, false);

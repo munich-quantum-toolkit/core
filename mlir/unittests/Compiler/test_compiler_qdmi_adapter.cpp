@@ -195,7 +195,8 @@ TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
 
 TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
   qdmi::DeviceSessionConfig overrides;
-  overrides.deviceConfiguration = qdmi::InlineDeviceConfiguration{.json = R"({
+  overrides.deviceConfiguration = qdmi::InlineDeviceConfiguration{
+      .json = R"({
     "schema-version": 1,
     "name": "Unavailable operation",
     "numQubits": 1,
@@ -205,7 +206,8 @@ TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
     "operations": [
       {"name": "x", "numQubits": 1, "numParameters": 0, "sites": []}
     ]
-  })"};
+  })",
+  };
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
   EXPECT_EQ(target.nativeOperationsKind(),

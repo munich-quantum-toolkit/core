@@ -1512,7 +1512,8 @@ cx q[1], q[0];
       llvm::cantFail(TargetOperation::create("u", 1, 3)),
       llvm::cantFail(TargetOperation::create(
           "cx", 2, 0,
-          {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1}))}))};
+          {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1}))})),
+  };
   const auto target = llvm::cantFail(CompilerTarget::create(
       2, CompilerTarget::Connectivity::fromCouplings({{0, 1}}),
       CompilerTarget::NativeOperations::fromOperations(operations)));
@@ -1538,7 +1539,8 @@ cx q[1], q[0];
       ++numTwoQubitOperations;
       const llvm::SmallVector<SiteId, 2> orderedSites{
           sites.at(unitary.getInputQubit(0)),
-          sites.at(unitary.getInputQubit(1))};
+          sites.at(unitary.getInputQubit(1)),
+      };
       EXPECT_TRUE(target.supports(&operation, orderedSites));
     }
     for (const auto [input, output] :

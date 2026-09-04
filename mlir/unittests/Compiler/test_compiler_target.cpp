@@ -70,9 +70,11 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   sites.emplace_back(valid(Site::create(11, "right")));
 
   std::vector<Operation> operations;
-  std::vector siteTuples{valid(SiteTuple::create({7}, 0, 0.99)),
-                         valid(SiteTuple::create({2}, 5, 0.98)),
-                         valid(SiteTuple::create({11}))};
+  std::vector siteTuples{
+      valid(SiteTuple::create({7}, 0, 0.99)),
+      valid(SiteTuple::create({2}, 5, 0.98)),
+      valid(SiteTuple::create({11})),
+  };
   operations.emplace_back(
       valid(Operation::create(" PRX ", 1, 2, std::move(siteTuples), 0, 0.97)));
 
@@ -174,8 +176,10 @@ TEST(CompilerTargetTest, PreservesFullNonnegativeSiteIdDomain) {
   constexpr auto maxSite = std::numeric_limits<SiteId>::max();
   constexpr auto nextSite = maxSite - 1;
   auto siteTuple = valid(SiteTuple::create({maxSite, nextSite}));
-  std::vector sites{valid(Site::create(maxSite)),
-                    valid(Site::create(nextSite))};
+  std::vector sites{
+      valid(Site::create(maxSite)),
+      valid(Site::create(nextSite)),
+  };
   const auto target = valid(Target::create(
       std::move(sites), Connectivity::fromCouplings({{maxSite, nextSite}}),
       NativeOperations::fromOperations(
@@ -193,8 +197,11 @@ TEST(CompilerTargetTest, PreservesFullNonnegativeSiteIdDomain) {
 }
 
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
-  std::vector sites{valid(Site::create(7)), valid(Site::create(2)),
-                    valid(Site::create(11))};
+  std::vector sites{
+      valid(Site::create(7)),
+      valid(Site::create(2)),
+      valid(Site::create(11)),
+  };
   const auto target = valid(Target::create(
       std::move(sites),
       Connectivity::fromCouplings({{11, 2}, {2, 11}, {7, 2}, {2, 7}}),
@@ -271,8 +278,10 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
                         std::vector{valid(SiteTuple::create({0, 1}))}),
       "Compiler target operation site tuple does not match its arity");
   expectInvalid(Operation::create("x", 1, 0,
-                                  std::vector{valid(SiteTuple::create({0})),
-                                              valid(SiteTuple::create({0}))}),
+                                  std::vector{
+                                      valid(SiteTuple::create({0})),
+                                      valid(SiteTuple::create({0})),
+                                  }),
                 "Compiler target operation contains a duplicate site tuple");
   expectInvalid(
       Operation::create("x", 1, 0, {}, std::nullopt,
@@ -297,14 +306,17 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
                     Connectivity::allToAll(), NativeOperations::unrestricted()),
                 "Compiler target timing metadata requires a duration unit");
   expectInvalid(Target::create(1, Connectivity::allToAll(),
-                               NativeOperations::fromOperations({valid(
-                                   Operation::create("x", 1, 0, {}, 1))})),
+                               NativeOperations::fromOperations({
+                                   valid(Operation::create("x", 1, 0, {}, 1)),
+                               })),
                 "Compiler target timing metadata requires a duration unit");
   expectInvalid(
       Target::create(
           1, Connectivity::allToAll(),
-          NativeOperations::fromOperations({valid(Operation::create(
-              "x", 1, 0, std::vector{valid(SiteTuple::create({0}, 1))}))})),
+          NativeOperations::fromOperations({
+              valid(Operation::create(
+                  "x", 1, 0, std::vector{valid(SiteTuple::create({0}, 1))})),
+          })),
       "Compiler target timing metadata requires a duration unit");
   expectInvalid(Target::create(2, Connectivity::fromCouplings({{0, 0}}),
                                NativeOperations::unrestricted()),
@@ -318,8 +330,10 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
   expectInvalid(
       Target::create(
           2, Connectivity::allToAll(),
-          NativeOperations::fromOperations({valid(Operation::create(
-              "x", 1, 0, std::vector{valid(SiteTuple::create({2}))}))})),
+          NativeOperations::fromOperations({
+              valid(Operation::create(
+                  "x", 1, 0, std::vector{valid(SiteTuple::create({2}))})),
+          })),
       "Compiler target operation site tuple references an unknown site");
   expectInvalid(Target::create(1, Connectivity::allToAll(),
                                NativeOperations::fromOperations(
@@ -327,8 +341,9 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
                 "Compiler target operation arity exceeds its site count");
   expectInvalid(
       Target::create(2, Connectivity::allToAll(),
-                     NativeOperations::fromOperations({valid(
-                         Operation::create("h", Arity::variadic(3), 0))})),
+                     NativeOperations::fromOperations({
+                         valid(Operation::create("h", Arity::variadic(3), 0)),
+                     })),
       "Compiler target operation variadic minimum exceeds its site count");
 }
 
@@ -337,13 +352,14 @@ TEST(CompilerTargetTest, DistinguishesOperationSupport) {
       2, Connectivity::allToAll(), NativeOperations::unrestricted()));
   const auto closed = valid(Target::create(
       2, Connectivity::allToAll(), NativeOperations::fromOperations({})));
-  const auto variadic = valid(Target::create(
-      4, Connectivity::allToAll(),
-      NativeOperations::fromOperations(
-          {valid(Operation::create("gphase", Arity::fixed(0), 1)),
-           valid(Operation::create("h", Arity::variadic(1), 0)),
-           valid(Operation::create("rxx", Arity::variadic(2), 1)),
-           valid(Operation::create("I", Arity::fixed(1), 0))})));
+  const auto variadic = valid(
+      Target::create(4, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(Operation::create("gphase", Arity::fixed(0), 1)),
+                         valid(Operation::create("h", Arity::variadic(1), 0)),
+                         valid(Operation::create("rxx", Arity::variadic(2), 1)),
+                         valid(Operation::create("I", Arity::fixed(1), 0)),
+                     })));
 
   EXPECT_EQ(unrestricted.nativeOperationsKind(),
             NativeOperations::Kind::Unrestricted);
@@ -378,11 +394,13 @@ TEST(CompilerTargetTest, DistinguishesOperationSupport) {
 TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   const std::vector<Coupling> chain{{0, 1}, {1, 2}};
   const auto globalU = valid(Operation::create("U3", 1, 3));
-  const auto cz = valid(
-      Operation::create("cz", 2, 0,
-                        std::vector{valid(SiteTuple::create({1, 0}, 5, 0.99)),
-                                    valid(SiteTuple::create({1, 2}))},
-                        7, 0.98));
+  const auto cz =
+      valid(Operation::create("cz", 2, 0,
+                              std::vector{
+                                  valid(SiteTuple::create({1, 0}, 5, 0.99)),
+                                  valid(SiteTuple::create({1, 2})),
+                              },
+                              7, 0.98));
   const auto target =
       valid(Target::create(3, Connectivity::fromCouplings(chain),
                            NativeOperations::fromOperations({globalU, cz}),
@@ -413,17 +431,21 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
   mlir::MLIRContext context;
   context.loadDialect<mlir::mqt::MQTDialect>();
 
-  std::vector sites{valid(Site::create(7, "left", 100, 80)),
-                    valid(Site::create(2, std::nullopt, 120, std::nullopt)),
-                    valid(Site::create(11, "right"))};
+  std::vector sites{
+      valid(Site::create(7, "left", 100, 80)),
+      valid(Site::create(2, std::nullopt, 120, std::nullopt)),
+      valid(Site::create(11, "right")),
+  };
   std::vector operations{
-      valid(
-          Operation::create(" PRX ", 1, 2,
-                            std::vector{valid(SiteTuple::create({7}, 0, 0.99)),
-                                        valid(SiteTuple::create({2}, 5, 0.98))},
-                            0, 0.97)),
+      valid(Operation::create(" PRX ", 1, 2,
+                              std::vector{
+                                  valid(SiteTuple::create({7}, 0, 0.99)),
+                                  valid(SiteTuple::create({2}, 5, 0.98)),
+                              },
+                              0, 0.97)),
       valid(Operation::create("gphase", Arity::fixed(0), 1)),
-      valid(Operation::create("h", Arity::variadic(1), 0))};
+      valid(Operation::create("h", Arity::variadic(1), 0)),
+  };
   const auto target =
       valid(Target::create("device", std::move(sites),
                            Connectivity::fromCouplings({{7, 2}, {2, 11}}),
@@ -448,12 +470,16 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
 TEST(CompilerTargetTest, SupportsMaximumSiteIds) {
   constexpr auto maxSite = std::numeric_limits<SiteId>::max();
   constexpr auto nextSite = maxSite - 1;
-  std::vector sites{valid(Site::create(nextSite)),
-                    valid(Site::create(maxSite))};
-  const auto x = valid(
-      Operation::create("x", 1, 0,
-                        std::vector{valid(SiteTuple::create({nextSite})),
-                                    valid(SiteTuple::create({maxSite}))}));
+  std::vector sites{
+      valid(Site::create(nextSite)),
+      valid(Site::create(maxSite)),
+  };
+  const auto x =
+      valid(Operation::create("x", 1, 0,
+                              std::vector{
+                                  valid(SiteTuple::create({nextSite})),
+                                  valid(SiteTuple::create({maxSite})),
+                              }));
   const auto cx = valid(Operation::create(
       "cx", 2, 0, std::vector{valid(SiteTuple::create({nextSite, maxSite}))}));
   const auto target =
@@ -502,15 +528,20 @@ TEST(CompilerTargetTest, RoundTripsSupportedTargetStates) {
 }
 
 TEST(CompilerTargetTest, EnforcesExactOrderedOperationApplicability) {
-  std::vector sites{valid(Site::create(10)), valid(Site::create(20)),
-                    valid(Site::create(30))};
+  std::vector sites{
+      valid(Site::create(10)),
+      valid(Site::create(20)),
+      valid(Site::create(30)),
+  };
   const auto globalU = valid(Operation::create("u", 1, 3));
   const auto restrictedX = valid(Operation::create(
       "x", 1, 0, std::vector{valid(SiteTuple::create({10}))}));
   const auto directionalCX =
       valid(Operation::create("cx", 2, 0,
-                              std::vector{valid(SiteTuple::create({10, 20})),
-                                          valid(SiteTuple::create({20, 30}))}));
+                              std::vector{
+                                  valid(SiteTuple::create({10, 20})),
+                                  valid(SiteTuple::create({20, 30})),
+                              }));
   const auto exactCZ = valid(Operation::create(
       "cz", 2, 0, std::vector{valid(SiteTuple::create({10, 20}))}));
   const auto threeQubit = valid(
@@ -547,14 +578,16 @@ TEST(CompilerTargetTest, EnforcesExactOrderedOperationApplicability) {
 
 TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
   using Entangler = std::tuple<GateKind, std::string_view, size_t>;
-  const std::array entanglers{Entangler{GateKind::CZ, "cz", 0},
-                              Entangler{GateKind::RXX, "rxx", 1},
-                              Entangler{GateKind::RYY, "ryy", 1},
-                              Entangler{GateKind::RZZ, "rzz", 1},
-                              Entangler{GateKind::ISWAP, "iswap", 0},
-                              Entangler{GateKind::CX, "cx", 0},
-                              Entangler{GateKind::ECR, "ecr", 0},
-                              Entangler{GateKind::RZX, "rzx", 1}};
+  const std::array entanglers{
+      Entangler{GateKind::CZ, "cz", 0},
+      Entangler{GateKind::RXX, "rxx", 1},
+      Entangler{GateKind::RYY, "ryy", 1},
+      Entangler{GateKind::RZZ, "rzz", 1},
+      Entangler{GateKind::ISWAP, "iswap", 0},
+      Entangler{GateKind::CX, "cx", 0},
+      Entangler{GateKind::ECR, "ecr", 0},
+      Entangler{GateKind::RZX, "rzx", 1},
+  };
   const std::vector<Coupling> chain{{0, 1}, {1, 2}};
   const auto globalU = valid(Operation::create("u", 1, 3));
 
@@ -598,11 +631,12 @@ TEST(CompilerTargetTest, DerivesControlledEntanglersFromVariadicBases) {
 
 TEST(CompilerTargetTest, ResolvesLargeAllToAllVariadicBasis) {
   constexpr size_t numSites = 65'535;
-  const auto target = valid(Target::create(
-      numSites, Connectivity::allToAll(),
-      NativeOperations::fromOperations(
-          {valid(Operation::create("u", 1, 3)),
-           valid(Operation::create("x", Arity::variadic(1), 0))})));
+  const auto target = valid(
+      Target::create(numSites, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(Operation::create("u", 1, 3)),
+                         valid(Operation::create("x", Arity::variadic(1), 0)),
+                     })));
 
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
@@ -680,7 +714,8 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
       valid(Operation::create("measure", 1, 0)),
       valid(Operation::create("reset", 1, 0)),
       valid(Operation::create("cnot", 2, 0, std::move(directionalTuples))),
-      valid(Operation::create("cz", 2, 0))};
+      valid(Operation::create("cz", 2, 0)),
+  };
   const auto target =
       valid(Target::create(std::move(sites), Connectivity::allToAll(),
                            NativeOperations::fromOperations(operations)));
@@ -742,11 +777,12 @@ TEST(CompilerTargetTest, SupportsArbitrarilyControlledBaseOperations) {
 
   const auto target = valid(Target::create(
       5, Connectivity::allToAll(),
-      NativeOperations::fromOperations(
-          {valid(Operation::create("h", Arity::variadic(1), 0)),
-           valid(Operation::create("rx", Arity::variadic(1), 1)),
-           valid(Operation::create("rxx", Arity::variadic(2), 1)),
-           valid(Operation::create("rccx", Arity::variadic(3), 0))})));
+      NativeOperations::fromOperations({
+          valid(Operation::create("h", Arity::variadic(1), 0)),
+          valid(Operation::create("rx", Arity::variadic(1), 1)),
+          valid(Operation::create("rxx", Arity::variadic(2), 1)),
+          valid(Operation::create("rccx", Arity::variadic(3), 0)),
+      })));
   for (auto* controlled : supportedControls) {
     EXPECT_TRUE(target.supports(controlled));
   }
@@ -765,14 +801,18 @@ TEST(CompilerTargetTest, SupportsArbitrarilyControlledBaseOperations) {
                          {builder.staticQubit(2), builder.staticQubit(3)},
                          [&](mlir::ValueRange targets) {
                            return llvm::SmallVector<mlir::Value>{
-                               builder.h(targets[0]), builder.x(targets[1])};
+                               builder.h(targets[0]),
+                               builder.x(targets[1]),
+                           };
                          }));
         static_cast<void>(
             builder.ctrl({builder.staticQubit(4)},
                          {builder.staticQubit(5), builder.staticQubit(6)},
                          [&](mlir::ValueRange targets) {
                            return llvm::SmallVector<mlir::Value>{
-                               builder.h(targets[0]), targets[1]};
+                               builder.h(targets[0]),
+                               targets[1],
+                           };
                          }));
         return builder.intConstant(0);
       });

@@ -771,14 +771,14 @@ struct ImportedVariables {
   bool reachable = true;
   bool structuringLoop = false;
 
-  std::vector<std::string> slots() const {
+  [[nodiscard]] std::vector<std::string> slots() const {
     std::vector<std::string> result;
     for (const auto& [identity, entry] : variables) {
       result.push_back(identity);
     }
     return result;
   }
-  llvm::SmallVector<mlir::Value>
+  [[nodiscard]] llvm::SmallVector<mlir::Value>
   values(const std::vector<std::string>& keys) const {
     llvm::SmallVector<mlir::Value> result;
     for (const auto& key : keys) {
@@ -1196,8 +1196,9 @@ static void emitStore(mlir::qc::QCProgramBuilder& builder,
   case ClassicalTargetKind::ClassicalRegister: {
     auto storage =
         registerStorage(classicalBits, clbitMap, assignment.target.reg);
-    if (!storage || value.getType() != builder.getIntegerType(
-                                           assignment.target.reg.bits.size())) {
+    if (!storage ||
+        value.getType() != builder.getIntegerType(static_cast<unsigned>(
+                               assignment.target.reg.bits.size()))) {
       throw std::runtime_error(
           "Qiskit register Store requires a matching canonical register");
     }
@@ -1807,14 +1808,14 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
       /// Definite initialization rejects reads until a store; the initial loop
       /// state still needs a representable, unobservable scalar placeholder.
       variables.variables.emplace(
-          variable.identity,
-          ImportedVariables::Entry{
-              .value = mlir::arith::ConstantOp::create(
-                  builder, type, builder.getZeroAttr(type))});
+          variable.identity, ImportedVariables::Entry{
+                                 .value = mlir::arith::ConstantOp::create(
+                                     builder, type, builder.getZeroAttr(type)),
+                             });
       declared.push_back(variable.identity);
     }
   }
-  auto scope = llvm::make_scope_exit([&] {
+  llvm::scope_exit scope([&] {
     for (const auto& identity : declared) {
       variables.variables.erase(identity);
     }
