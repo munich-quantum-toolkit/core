@@ -216,7 +216,7 @@ LogicalResult YieldOp::verify() {
       .Case<IfOp, IndexSwitchOp, InvOp, PowOp>([&](auto parent) {
         llvm::append_range(expectedTypes, parent.getResultTypes());
       })
-      .Case<CtrlOp>([&](CtrlOp parent) {
+      .Case([&](CtrlOp parent) {
         llvm::append_range(expectedTypes, parent.getTargetsOut().getTypes());
       })
       .Default([&](Operation*) { validParent = false; });

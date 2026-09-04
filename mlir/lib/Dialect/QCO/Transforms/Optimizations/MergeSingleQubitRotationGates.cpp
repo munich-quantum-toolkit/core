@@ -368,8 +368,8 @@ static Quat<T> quaternionFromZYZ(Val<T> theta, Val<T> phi, Val<T> lambda,
  */
 static std::optional<RotationAxis> getRotationAxis(Operation* op) {
   return TypeSwitch<Operation*, std::optional<RotationAxis>>(op)
-      .Case<RXOp>([](auto) { return RotationAxis::X; })
-      .Case<RYOp>([](auto) { return RotationAxis::Y; })
+      .Case([](RXOp) { return RotationAxis::X; })
+      .Case([](RYOp) { return RotationAxis::Y; })
       .Case<RZOp, POp>([](auto) { return RotationAxis::Z; })
       .Default([](auto) { return std::nullopt; });
 }
@@ -426,43 +426,43 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
 
   // Fixed and multi-parameter gates each need their own conversion.
   return TypeSwitch<Operation*, std::optional<Quat<T>>>(op.getOperation())
-      .template Case<XOp>([&](XOp) {
+      .Case([&](XOp) {
         return fixedAxisRotation(RotationAxis::X, std::numbers::pi);
       })
-      .template Case<YOp>([&](YOp) {
+      .Case([&](YOp) {
         return fixedAxisRotation(RotationAxis::Y, std::numbers::pi);
       })
-      .template Case<ZOp>([&](ZOp) {
+      .Case([&](ZOp) {
         return fixedAxisRotation(RotationAxis::Z, std::numbers::pi);
       })
-      .template Case<SOp>([&](SOp) {
+      .Case([&](SOp) {
         return fixedAxisRotation(RotationAxis::Z, std::numbers::pi / 2.0);
       })
-      .template Case<SdgOp>([&](SdgOp) {
+      .Case([&](SdgOp) {
         return fixedAxisRotation(RotationAxis::Z, -std::numbers::pi / 2.0);
       })
-      .template Case<TOp>([&](TOp) {
+      .Case([&](TOp) {
         return fixedAxisRotation(RotationAxis::Z, std::numbers::pi / 4.0);
       })
-      .template Case<TdgOp>([&](TdgOp) {
+      .Case([&](TdgOp) {
         return fixedAxisRotation(RotationAxis::Z, -std::numbers::pi / 4.0);
       })
-      .template Case<SXOp>([&](SXOp) {
+      .Case([&](SXOp) {
         return fixedAxisRotation(RotationAxis::X, std::numbers::pi / 2.0);
       })
-      .template Case<SXdgOp>([&](SXdgOp) {
+      .Case([&](SXdgOp) {
         return fixedAxisRotation(RotationAxis::X, -std::numbers::pi / 2.0);
       })
-      .template Case<HOp>([&](HOp) -> std::optional<Quat<T>> {
+      .Case([&](HOp) -> std::optional<Quat<T>> {
         const auto invSqrtTwo =
             Val<T>::constant(rewriter, loc, 1.0 / std::numbers::sqrt2);
         return Quat<T>{
             .w = c.zero, .x = invSqrtTwo, .y = c.zero, .z = invSqrtTwo};
       })
-      .template Case<IdOp>([&](IdOp) -> std::optional<Quat<T>> {
+      .Case([&](IdOp) -> std::optional<Quat<T>> {
         return Quat<T>{.w = c.one, .x = c.zero, .y = c.zero, .z = c.zero};
       })
-      .template Case<ROp>([&](ROp) -> std::optional<Quat<T>> {
+      .Case([&](ROp) -> std::optional<Quat<T>> {
         const auto theta = param(0);
         const auto phi = param(1);
         if (!theta || !phi) {
@@ -475,7 +475,7 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
                        .y = sinHalf * phi->sin(),
                        .z = c.zero};
       })
-      .template Case<U2Op>([&](U2Op) -> std::optional<Quat<T>> {
+      .Case([&](U2Op) -> std::optional<Quat<T>> {
         const auto phi = param(0);
         const auto lambda = param(1);
         if (!phi || !lambda) {
@@ -483,7 +483,7 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
         }
         return quaternionFromZYZ(c.pi / c.two, *phi, *lambda, c);
       })
-      .template Case<UOp>([&](UOp) -> std::optional<Quat<T>> {
+      .Case([&](UOp) -> std::optional<Quat<T>> {
         const auto theta = param(0);
         const auto phi = param(1);
         const auto lambda = param(2);
@@ -533,14 +533,14 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
       .template Case<SdgOp, SXdgOp>([&](auto) -> FailureOr<Val<T>> {
         return Val<T>::constant(rewriter, loc, -std::numbers::pi / 4.0);
       })
-      .template Case<TOp>([&](auto) -> FailureOr<Val<T>> {
+      .Case([&](TOp) -> FailureOr<Val<T>> {
         return Val<T>::constant(rewriter, loc, std::numbers::pi / 8.0);
       })
-      .template Case<TdgOp>([&](auto) -> FailureOr<Val<T>> {
+      .Case([&](TdgOp) -> FailureOr<Val<T>> {
         return Val<T>::constant(rewriter, loc, -std::numbers::pi / 8.0);
       })
-      .template Case<IdOp>([&](auto) -> FailureOr<Val<T>> { return c.zero; })
-      .template Case<POp>([&](auto) -> FailureOr<Val<T>> {
+      .Case([&](IdOp) -> FailureOr<Val<T>> { return c.zero; })
+      .Case([&](POp) -> FailureOr<Val<T>> {
         const auto theta = param(0);
         if (!theta) {
           return failure();

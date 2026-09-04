@@ -89,14 +89,14 @@ void WireIterator::forward() {
   pos_ = Position::Between;
 
   TypeSwitch<Operation*>(op_)
-      .Case<UnitaryOpInterface>(
+      .Case(
           [&](UnitaryOpInterface op) { qubit_ = op.getOutputForInput(qubit_); })
-      .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitOut(); })
-      .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitOut(); })
-      .Case<scf::ForOp>([&](scf::ForOp op) {
+      .Case([&](MeasureOp op) { qubit_ = op.getQubitOut(); })
+      .Case([&](ResetOp op) { qubit_ = op.getQubitOut(); })
+      .Case([&](scf::ForOp op) {
         qubit_ = op.getTiedLoopResult(qubit_.use_begin().getOperand());
       })
-      .Case<scf::WhileOp>([&](scf::WhileOp op) {
+      .Case([&](scf::WhileOp op) {
         // Because the scf::WhileOp doesn't implement "getLoopResults", we
         // have to fallback to the following instead of using
         // "getTiedLoopResult".
@@ -104,9 +104,8 @@ void WireIterator::forward() {
         OpOperand* operand = qubit_.use_begin().getOperand();
         qubit_ = op->getResult(operand->getOperandNumber());
       })
-      .Case<IfOp>(
-          [&](IfOp op) { qubit_ = op.getTiedResult(&(*qubit_.use_begin())); })
-      .Case<IndexSwitchOp>([&](IndexSwitchOp op) {
+      .Case([&](IfOp op) { qubit_ = op.getTiedResult(&(*qubit_.use_begin())); })
+      .Case([&](IndexSwitchOp op) {
         qubit_ = op.getTiedResult(&(*qubit_.use_begin()));
       })
       .Default([&](Operation*) { pos_ = Position::Tail; });
@@ -140,19 +139,19 @@ void WireIterator::backward() {
     bool unknown = false;
     // Find the input from the output qubit SSA value.
     TypeSwitch<Operation*>(op_)
-        .Case<UnitaryOpInterface>([&](UnitaryOpInterface op) {
+        .Case([&](UnitaryOpInterface op) {
           qubit_ = op.getInputForOutput(qubit_);
         })
-        .Case<MeasureOp>([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
-        .Case<ResetOp>([&](ResetOp op) { qubit_ = op.getQubitIn(); })
-        .Case<scf::ForOp>([&](scf::ForOp op) {
+        .Case([&](MeasureOp op) { qubit_ = op.getQubitIn(); })
+        .Case([&](ResetOp op) { qubit_ = op.getQubitIn(); })
+        .Case([&](scf::ForOp op) {
           if (auto result = dyn_cast<OpResult>(qubit_)) {
             qubit_ = op.getTiedLoopInit(result)->get();
             return;
           }
           llvm::reportFatalInternalError("expected result lookup");
         })
-        .Case<scf::WhileOp>([&](scf::WhileOp op) {
+        .Case([&](scf::WhileOp op) {
           // Because the scf::WhileOp doesn't implement "getLoopResults", we
           // have to fallback to the following instead of using
           // "getTiedLoopInit".
@@ -164,14 +163,14 @@ void WireIterator::backward() {
 
           llvm::reportFatalInternalError("expected result lookup");
         })
-        .Case<IfOp>([&](IfOp op) {
+        .Case([&](IfOp op) {
           if (auto result = dyn_cast<OpResult>(qubit_)) {
             qubit_ = op.getTiedQubit(result)->get();
             return;
           }
           llvm::reportFatalInternalError("expected result lookup");
         })
-        .Case<IndexSwitchOp>([&](IndexSwitchOp op) {
+        .Case([&](IndexSwitchOp op) {
           if (auto result = dyn_cast<OpResult>(qubit_)) {
             qubit_ = op.getTiedTarget(result)->get();
             return;

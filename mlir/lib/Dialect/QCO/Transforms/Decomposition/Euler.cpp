@@ -33,22 +33,22 @@ namespace mlir::qco::decomposition {
 
 bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
   return TypeSwitch<Operation*, bool>(op)
-      .Case<RZOp>([&](auto) {
+      .Case([&](RZOp) {
         return basis == SingleQubitBasis::ZYZ ||
                basis == SingleQubitBasis::ZXZ ||
                basis == SingleQubitBasis::XZX ||
                basis == SingleQubitBasis::ZSXX;
       })
-      .Case<RYOp>([&](auto) {
+      .Case([&](RYOp) {
         return basis == SingleQubitBasis::ZYZ || basis == SingleQubitBasis::XYX;
       })
-      .Case<RXOp>([&](auto) {
+      .Case([&](RXOp) {
         return basis == SingleQubitBasis::ZXZ ||
                basis == SingleQubitBasis::XZX || basis == SingleQubitBasis::XYX;
       })
-      .Case<UOp>([&](auto) { return basis == SingleQubitBasis::U; })
+      .Case([&](UOp) { return basis == SingleQubitBasis::U; })
       .Case<SXOp, XOp>([&](auto) { return basis == SingleQubitBasis::ZSXX; })
-      .Case<ROp>([&](auto) { return basis == SingleQubitBasis::R; })
+      .Case([&](ROp) { return basis == SingleQubitBasis::R; })
       .Default([](auto) { return false; });
 }
 

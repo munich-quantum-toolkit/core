@@ -68,19 +68,19 @@ struct LiftHadamardsAbovePauliGatesPattern final
                                              PatternRewriter& rewriter) {
     auto* op = gate.getOperation();
     return TypeSwitch<Operation*, LogicalResult>(op)
-        .Case<XOp>([&](auto) {
+        .Case([&](XOp) {
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
           rewriter.replaceOpWithNewOp<ZOp>(hadamardGate,
                                            hadamardGate.getInputQubit(0));
           return success();
         })
-        .Case<ZOp>([&](auto) {
+        .Case([&](ZOp) {
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
           rewriter.replaceOpWithNewOp<XOp>(hadamardGate,
                                            hadamardGate.getInputQubit(0));
           return success();
         })
-        .Case<YOp>([&](auto) {
+        .Case([&](YOp) {
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
           auto yGate = rewriter.replaceOpWithNewOp<YOp>(
               hadamardGate, hadamardGate.getInputQubit(0));

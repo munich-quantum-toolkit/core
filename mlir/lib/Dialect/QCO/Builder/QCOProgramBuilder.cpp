@@ -497,8 +497,8 @@ void QCOProgramBuilder::updateQubitValueTracking(ValueRange oldValues,
 void QCOProgramBuilder::checkQubitType(ValueRange values) {
   for (Type type : values.getTypes()) {
     auto isQubitType = TypeSwitch<Type, bool>(type)
-                           .Case<QubitType>([](auto) { return true; })
-                           .Case<RankedTensorType>([](RankedTensorType t) {
+                           .Case([](QubitType) { return true; })
+                           .Case([](RankedTensorType t) {
                              return isa<QubitType>(t.getElementType());
                            })
                            .Default([](Type) { return false; });

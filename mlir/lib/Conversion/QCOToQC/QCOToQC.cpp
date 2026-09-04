@@ -1363,10 +1363,10 @@ protected:
       auto isQubitType = [](Type t) {
         return TypeSwitch<Type, bool>(t)
             .Case<qc::QubitType, qco::QubitType>([](auto) { return true; })
-            .Case<MemRefType>([](MemRefType t) {
+            .Case([](MemRefType t) {
               return isa<qc::QubitType>(t.getElementType());
             })
-            .Case<RankedTensorType>([](RankedTensorType t) {
+            .Case([](RankedTensorType t) {
               return isa<qco::QubitType>(t.getElementType());
             })
             .Default([](auto) { return false; });

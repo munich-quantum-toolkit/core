@@ -133,14 +133,12 @@ static bool isExecutable(Region& body,
     for (Region& region : op.getRegions()) {
       ValueRange initArgs =
           TypeSwitch<Operation*, ValueRange>(&op)
-              .Case<qco::IfOp>([&](qco::IfOp ifOp) { return ifOp.getQubits(); })
-              .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp switchOp) {
+              .Case([&](qco::IfOp ifOp) { return ifOp.getQubits(); })
+              .Case([&](qco::IndexSwitchOp switchOp) {
                 return switchOp.getTargets();
               })
-              .Case<scf::WhileOp>(
-                  [&](scf::WhileOp whileOp) { return whileOp.getInits(); })
-              .Case<scf::ForOp>(
-                  [&](scf::ForOp forOp) { return forOp.getInits(); })
+              .Case([&](scf::WhileOp whileOp) { return whileOp.getInits(); })
+              .Case([&](scf::ForOp forOp) { return forOp.getInits(); })
               .Default([](Operation*) -> ValueRange { return {}; });
 
       const auto initialHardwareOrder = llvm::map_to_vector(
@@ -163,13 +161,13 @@ static bool isExecutable(Region& body,
               .Case<qco::IfOp, qco::IndexSwitchOp>([&](auto) {
                 return cast<qco::YieldOp>(terminator).getTargets();
               })
-              .Case<scf::WhileOp>([&](auto) {
+              .Case([&](scf::WhileOp) {
                 // Choose between "before" and "after" terminator.
                 return region.getRegionNumber() == 0
                            ? cast<scf::ConditionOp>(terminator).getArgs()
                            : cast<scf::YieldOp>(terminator).getResults();
               })
-              .Case<scf::ForOp>([&](scf::ForOp) {
+              .Case([&](scf::ForOp) {
                 return cast<scf::YieldOp>(terminator).getResults();
               })
               .Default([](Operation*) -> ValueRange { return {}; });
@@ -197,19 +195,19 @@ static bool isExecutable(Region& body,
       if (!isa<QubitType>(res.getType())) {
         continue;
       }
-      Value init =
-          TypeSwitch<Operation*, Value>(&op)
-              .Case<scf::WhileOp>([&](scf::WhileOp whileOp) {
-                return whileOp.getInits()[res.getResultNumber()];
-              })
-              .Case<scf::ForOp>([&](scf::ForOp forOp) {
-                return forOp.getTiedLoopInit(res)->get();
-              })
-              .Case<qco::IfOp>(
-                  [&](qco::IfOp ifOp) { return ifOp.getTiedQubit(res)->get(); })
-              .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp switchOp) {
-                return switchOp.getTiedTarget(res)->get();
-              });
+      Value init = TypeSwitch<Operation*, Value>(&op)
+                       .Case([&](scf::WhileOp whileOp) {
+                         return whileOp.getInits()[res.getResultNumber()];
+                       })
+                       .Case([&](scf::ForOp forOp) {
+                         return forOp.getTiedLoopInit(res)->get();
+                       })
+                       .Case([&](qco::IfOp ifOp) {
+                         return ifOp.getTiedQubit(res)->get();
+                       })
+                       .Case([&](qco::IndexSwitchOp switchOp) {
+                         return switchOp.getTiedTarget(res)->get();
+                       });
 
       const auto hw = m.at(init);
       m.try_emplace(res, hw);
