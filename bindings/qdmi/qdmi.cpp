@@ -649,7 +649,8 @@ when the custom slot is unsupported.)pb");
                 .session = qdmi::makeDeviceSessionConfig(
                     baseUrl, token, authFile, authUrl, username, password,
                     deviceConfig, deviceConfigFile, custom1, custom2, custom3,
-                    custom4, custom5)};
+                    custom4, custom5),
+            };
           },
           "device_id"_a, "library_path"_a, "prefix"_a, nb::kw_only(),
           "base_url"_a = std::nullopt, "token"_a = std::nullopt,

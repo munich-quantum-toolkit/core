@@ -97,8 +97,12 @@ TEST(StateGenerationTest, MakeBasisDifficult) {
 
   constexpr std::size_t nq = 4;
 
-  const std::vector<BasisStates> state{BasisStates::plus, BasisStates::minus,
-                                       BasisStates::right, BasisStates::left};
+  const std::vector<BasisStates> state{
+      BasisStates::plus,
+      BasisStates::minus,
+      BasisStates::right,
+      BasisStates::left,
+  };
 
   const CVec vec{
       {.25, 0},  {.25, 0},  {-.25, 0}, {-.25, 0}, {0, .25}, {0, .25},
@@ -162,14 +166,16 @@ TEST(StateGenerationTest, MakeW) {
 
   constexpr std::size_t nq = 3;
 
-  const CVec vec{0,
-                 std::numbers::inv_sqrt3,
-                 std::numbers::inv_sqrt3,
-                 0,
-                 std::numbers::inv_sqrt3,
-                 0,
-                 0,
-                 0};
+  const CVec vec{
+      0,
+      std::numbers::inv_sqrt3,
+      std::numbers::inv_sqrt3,
+      0,
+      std::numbers::inv_sqrt3,
+      0,
+      0,
+      0,
+  };
 
   auto dd = std::make_unique<Package>(nq);
   auto w = makeWState(nq, *dd);
@@ -242,8 +248,12 @@ TEST(StateGenerationTest, FromVector) {
       {.25, 0},  {.25, 0},  {-.25, 0}, {-.25, 0},
   };
 
-  const std::vector<BasisStates> state{BasisStates::plus, BasisStates::minus,
-                                       BasisStates::right, BasisStates::left};
+  const std::vector<BasisStates> state{
+      BasisStates::plus,
+      BasisStates::minus,
+      BasisStates::right,
+      BasisStates::left,
+  };
 
   auto dd = std::make_unique<Package>(nq);
   auto ref = makeBasisState(nq, state, *dd);

@@ -2577,7 +2577,8 @@ private:
             emitStatement(statement, gateParameters, gateQubits);
           }
           SmallVector<Value> yielded{
-              arith::AddIOp::create(builder, arguments.front(), stepWide)};
+              arith::AddIOp::create(builder, arguments.front(), stepWide),
+          };
           llvm::append_range(yielded, stateValues(slots));
           scf::YieldOp::create(builder, yielded);
         });

@@ -207,11 +207,12 @@ static auto addSymbol(RuntimeRegistry& registry, const std::string_view name,
                       const AbiType result,
                       std::initializer_list<AbiType> parameters,
                       Function* function) -> void {
-  registry.insert_or_assign(
-      std::string(name),
-      RuntimeSymbol{.result = result,
-                    .parameters = parameters,
-                    .address = reinterpret_cast<void*>(function)});
+  registry.insert_or_assign(std::string(name),
+                            RuntimeSymbol{
+                                .result = result,
+                                .parameters = parameters,
+                                .address = reinterpret_cast<void*>(function),
+                            });
 }
 
 template <typename Function>
@@ -223,11 +224,12 @@ static auto addGate(RuntimeRegistry& registry, const std::string_view name,
   std::vector<AbiType> parameters(parameterCount, AbiType::F64);
   parameters.insert(parameters.end(), controlCount + targetCount,
                     AbiType::Pointer);
-  registry.insert_or_assign(
-      std::string(name),
-      RuntimeSymbol{.result = AbiType::Void,
-                    .parameters = std::move(parameters),
-                    .address = reinterpret_cast<void*>(function)});
+  registry.insert_or_assign(std::string(name),
+                            RuntimeSymbol{
+                                .result = AbiType::Void,
+                                .parameters = std::move(parameters),
+                                .address = reinterpret_cast<void*>(function),
+                            });
 }
 
 static auto createRuntimeRegistry() -> RuntimeRegistry {
@@ -543,10 +545,15 @@ void JitSession::initialize(
     auto& workaroundJD = jit_->getProcessSymbolsJITDylib()
                              ? *jit_->getProcessSymbolsJITDylib()
                              : jit_->getMainJITDylib();
-    if (auto err = workaroundJD.define(llvm::orc::absoluteSymbols(
-            {{jit_->mangleAndIntern("__main"),
-              {llvm::orc::ExecutorAddr::fromPtr(mingwNoopMain),
-               llvm::JITSymbolFlags::Exported}}}))) {
+    if (auto err = workaroundJD.define(llvm::orc::absoluteSymbols({
+            {
+                jit_->mangleAndIntern("__main"),
+                {
+                    llvm::orc::ExecutorAddr::fromPtr(mingwNoopMain),
+                    llvm::JITSymbolFlags::Exported,
+                },
+            },
+        }))) {
       throw std::runtime_error(llvm::toString(std::move(err)));
     }
   }

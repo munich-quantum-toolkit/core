@@ -151,10 +151,12 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
  */
 [[nodiscard]] static EulerAngles paramsZXZ(const Matrix2x2& matrix) {
   const auto [theta, phi, lambda, phase] = paramsZYZ(matrix);
-  return {.theta = theta,
-          .phi = phi + (std::numbers::pi / 2.0),
-          .lambda = lambda - (std::numbers::pi / 2.0),
-          .phase = phase};
+  return {
+      .theta = theta,
+      .phi = phi + (std::numbers::pi / 2.0),
+      .lambda = lambda - (std::numbers::pi / 2.0),
+      .phase = phase,
+  };
 }
 
 /**
@@ -176,10 +178,12 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
 [[nodiscard]] static EulerAngles paramsXYX(const Matrix2x2& matrix) {
   // Shift outer angles by pi and fix global phase.
   const auto [theta, phi, lambda, phase] = paramsZYZ(hadamardConjugate(matrix));
-  return {.theta = theta,
-          .phi = phi + std::numbers::pi,
-          .lambda = lambda + std::numbers::pi,
-          .phase = phase + std::numbers::pi};
+  return {
+      .theta = theta,
+      .phi = phi + std::numbers::pi,
+      .lambda = lambda + std::numbers::pi,
+      .phase = phase + std::numbers::pi,
+  };
 }
 
 /**
@@ -192,10 +196,12 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
   // `U` differs from RZ(phi)*RY(theta)*RZ(lambda) by a global phase of
   // -(phi + lambda)/2.
   const auto [theta, phi, lambda, phase] = paramsZYZ(matrix);
-  return {.theta = theta,
-          .phi = phi,
-          .lambda = lambda,
-          .phase = phase - (0.5 * (phi + lambda))};
+  return {
+      .theta = theta,
+      .phi = phi,
+      .lambda = lambda,
+      .phase = phase - (0.5 * (phi + lambda)),
+  };
 }
 
 EulerAngles anglesFromUnitary(const Matrix2x2& matrix,

@@ -119,8 +119,10 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
       operation->name = operationConfiguration.name;
       operation->numParameters = operationConfiguration.numParameters;
       operation->numQubits = operationConfiguration.numQubits;
-      operation->defaults = {.duration = operationConfiguration.duration,
-                             .fidelity = operationConfiguration.fidelity};
+      operation->defaults = {
+          .duration = operationConfiguration.duration,
+          .fidelity = operationConfiguration.fidelity,
+      };
       if (operationConfiguration.sites) {
         for (const auto& tuple : *operationConfiguration.sites) {
           operation->supportedSites.emplace_back(
@@ -146,9 +148,10 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
               "operation site override is not a supported tuple");
         }
         operation->overrides.emplace_back(
-            std::move(tuple),
-            MQT_SC_QDMI_Operation_impl_d::Calibration{
-                .duration = override.duration, .fidelity = override.fidelity});
+            std::move(tuple), MQT_SC_QDMI_Operation_impl_d::Calibration{
+                                  .duration = override.duration,
+                                  .fidelity = override.fidelity,
+                              });
       }
       newOperations.emplace_back(operation.get());
       newOperationStorage.emplace_back(std::move(operation));
@@ -378,10 +381,12 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
               overrides, tuple,
               &std::pair<std::vector<MQT_SC_QDMI_Site>, Calibration>::first);
           found != overrides.end()) {
-        return {.duration = found->second.duration ? found->second.duration
-                                                   : defaults.duration,
-                .fidelity = found->second.fidelity ? found->second.fidelity
-                                                   : defaults.fidelity};
+        return {
+            .duration = found->second.duration ? found->second.duration
+                                               : defaults.duration,
+            .fidelity = found->second.fidelity ? found->second.fidelity
+                                               : defaults.fidelity,
+        };
       }
     }
     return defaults;

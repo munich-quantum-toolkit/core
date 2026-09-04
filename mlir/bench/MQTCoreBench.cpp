@@ -268,12 +268,14 @@ programExtension(const std::string_view format) {
   temporaryProgram.reset();
   temporaryManifest.reset();
 
-  llvm::json::Object response{{"benchmark", generated.benchmarkId},
-                              {"case_id", generated.caseId},
-                              {"format", std::string(format)},
-                              {"manifest_path", manifestPath.string()},
-                              {"program_path", programPath.string()},
-                              {"schema_version", 1}};
+  llvm::json::Object response{
+      {"benchmark", generated.benchmarkId},
+      {"case_id", generated.caseId},
+      {"format", std::string(format)},
+      {"manifest_path", manifestPath.string()},
+      {"program_path", programPath.string()},
+      {"schema_version", 1},
+  };
   llvm::outs() << llvm::json::Value(std::move(response)) << '\n';
   return 0;
 }

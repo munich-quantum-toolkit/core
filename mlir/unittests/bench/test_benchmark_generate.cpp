@@ -362,11 +362,12 @@ TEST(GenerateProgramTest, KeepsLargeQPEFiniteAndStructured) {
   constexpr size_t precision = 1025;
   for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
     SCOPED_TRACE(static_cast<int>(method));
-    const QPE benchmark(
-        {.precision = precision,
-         .phase = Phase(std::numeric_limits<uint64_t>::max() - 1,
-                        std::numeric_limits<uint64_t>::max()),
-         .method = method});
+    const QPE benchmark({
+        .precision = precision,
+        .phase = Phase(std::numeric_limits<uint64_t>::max() - 1,
+                       std::numeric_limits<uint64_t>::max()),
+        .method = method,
+    });
     auto program = generate(benchmark);
     ASSERT_TRUE(program);
     auto moduleOp = program->module();
@@ -403,9 +404,10 @@ TEST(GenerateProgramTest, KeepsLargeQFTStructured) {
 }
 
 TEST(GenerateProgramTest, DoublesQPEPhaseModuloOneWithoutOverflow) {
-  const QPE benchmark({.precision = 4,
-                       .phase = Phase(uint64_t{1} << 63,
-                                      std::numeric_limits<uint64_t>::max())});
+  const QPE benchmark({
+      .precision = 4,
+      .phase = Phase(uint64_t{1} << 63, std::numeric_limits<uint64_t>::max()),
+  });
   auto program = generate(benchmark);
   ASSERT_TRUE(program);
   const auto table = angleTable(program->module());

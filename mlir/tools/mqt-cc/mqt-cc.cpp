@@ -125,7 +125,7 @@ enum class OutputFormat : std::uint8_t {
   OpenQASM3,
   QIRBase,
   QIRAdaptive,
-  Jeff
+  Jeff,
 };
 
 struct ParsedProgram {

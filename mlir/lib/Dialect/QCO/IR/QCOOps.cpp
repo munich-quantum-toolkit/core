@@ -168,8 +168,10 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
   }
 
   llvm::copy(
-      ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
-                         static_cast<int32_t>(numLinearResults)}),
+      ArrayRef<int32_t>({
+          static_cast<int32_t>(numClassicalResults),
+          static_cast<int32_t>(numLinearResults),
+      }),
       result.getOrAddProperties<IfOp::Properties>().resultSegmentSizes.begin());
 
   return success();
@@ -412,8 +414,10 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
 
   const auto numLinearResults = linearResultTypes.size();
   const auto numClassicalResults = result.types.size() - numLinearResults;
-  llvm::copy(ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
-                                static_cast<int32_t>(numLinearResults)}),
+  llvm::copy(ArrayRef<int32_t>({
+                 static_cast<int32_t>(numClassicalResults),
+                 static_cast<int32_t>(numLinearResults),
+             }),
              result.getOrAddProperties<IndexSwitchOp::Properties>()
                  .resultSegmentSizes.begin());
 

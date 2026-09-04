@@ -197,14 +197,18 @@ makeSparseUCZTarget(const bool includeMeasure) {
   using Operation = CompilerTarget::Operation;
   using Site = CompilerTarget::Site;
 
-  std::vector operations{llvm::cantFail(Operation::create("u", 1, 3)),
-                         llvm::cantFail(Operation::create("cz", 2, 0))};
+  std::vector operations{
+      llvm::cantFail(Operation::create("u", 1, 3)),
+      llvm::cantFail(Operation::create("cz", 2, 0)),
+  };
   if (includeMeasure) {
     operations.emplace_back(llvm::cantFail(Operation::create("measure", 1, 0)));
   }
-  std::vector sites{llvm::cantFail(Site::create(5)),
-                    llvm::cantFail(Site::create(9)),
-                    llvm::cantFail(Site::create(17))};
+  std::vector sites{
+      llvm::cantFail(Site::create(5)),
+      llvm::cantFail(Site::create(9)),
+      llvm::cantFail(Site::create(17)),
+  };
   return llvm::cantFail(CompilerTarget::create(
       "sparse-line", std::move(sites),
       CompilerTarget::Connectivity::fromCouplings({{5, 9}, {9, 17}}),
@@ -392,8 +396,12 @@ TEST(CompilerProgramOwnershipTest, EnforcesQCOLinearityAtPublicBoundaries) {
   main.getBody().front().getTerminator()->erase();
   EXPECT_FALSE(QCOProgram::fromModule(context, std::move(invalidModule)));
 
-  for (const auto source : {nonlinearSource, aliasedStaticSource,
-                            helperStaticSource, nestedStaticSource}) {
+  for (const auto source : {
+           nonlinearSource,
+           aliasedStaticSource,
+           helperStaticSource,
+           nestedStaticSource,
+       }) {
     auto rejectedModule = parseSourceString<ModuleOp>(source, context.get());
     ASSERT_TRUE(rejectedModule);
     EXPECT_FALSE(QCOProgram::fromModule(context, std::move(rejectedModule)));
@@ -762,8 +770,10 @@ bits[1] = false;
 output float ratio;
 ratio = 2.0;
 )qasm";
-  const qasm::OpenQASMProgram program{.name = "mixed-output-results",
-                                      .source = source};
+  const qasm::OpenQASMProgram program{
+      .name = "mixed-output-results",
+      .source = source,
+  };
 
   std::optional<QCProgram> restoredQC;
   std::vector<std::string> resultTypes;
@@ -881,9 +891,10 @@ static void expectQIRArtifacts(const QIRProgram& program,
     if (outputShape == OutputRecordingShape::AdaptiveArrays) {
       expected.assign(2, QIR_RESULT_ARRAY_RECORD_OUTPUT);
     } else {
-      expected = {QIR_ARRAY_RECORD_OUTPUT, QIR_RECORD_OUTPUT,
-                  QIR_RECORD_OUTPUT,       QIR_RECORD_OUTPUT,
-                  QIR_ARRAY_RECORD_OUTPUT, QIR_RECORD_OUTPUT};
+      expected = {
+          QIR_ARRAY_RECORD_OUTPUT, QIR_RECORD_OUTPUT,       QIR_RECORD_OUTPUT,
+          QIR_RECORD_OUTPUT,       QIR_ARRAY_RECORD_OUTPUT, QIR_RECORD_OUTPUT,
+      };
     }
     EXPECT_EQ(entry->outputRecordings, expected)
         << name.str() << ": QIR multi-output recording order";
@@ -1409,8 +1420,10 @@ TEST_F(CompilerPipelineTest,
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(program);
   using TargetOperation = CompilerTarget::Operation;
-  std::vector operations{llvm::cantFail(TargetOperation::create("u", 1, 3)),
-                         llvm::cantFail(TargetOperation::create("cz", 2, 0))};
+  std::vector operations{
+      llvm::cantFail(TargetOperation::create("u", 1, 3)),
+      llvm::cantFail(TargetOperation::create("cz", 2, 0)),
+  };
   auto target = llvm::cantFail(CompilerTarget::create(
       2, CompilerTarget::Connectivity::fromCouplings({{0, 1}}),
       CompilerTarget::NativeOperations::fromOperations(operations)));
@@ -1553,30 +1566,42 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {
     std::vector<NameAndCount> expectedGates;
   };
   const std::vector cases{
-      Case{.name = "u",
-           .target = makeSparseUCZTarget(false),
-           .resolvedBasis = CompilerTarget::SingleQubitBasis::U,
-           .expectedGates = {{"u", 1}}},
-      Case{.name = "zsxx",
-           .target = makeCZTarget({{"x", 0}, {"sx", 0}, {"rz", 1}}),
-           .resolvedBasis = CompilerTarget::SingleQubitBasis::ZSXX,
-           .expectedGates = {{"rz", 3}, {"sx", 2}}},
-      Case{.name = "rx-rz",
-           .target = makeCZTarget({{"rx", 1}, {"rz", 1}}),
-           .resolvedBasis = CompilerTarget::SingleQubitBasis::XZX,
-           .expectedGates = {{"rz", 1}, {"rx", 2}}},
-      Case{.name = "rx-ry",
-           .target = makeCZTarget({{"rx", 1}, {"ry", 1}}),
-           .resolvedBasis = CompilerTarget::SingleQubitBasis::XYX,
-           .expectedGates = {{"rx", 2}, {"ry", 1}}},
-      Case{.name = "ry-rz",
-           .target = makeCZTarget({{"ry", 1}, {"rz", 1}}),
-           .resolvedBasis = CompilerTarget::SingleQubitBasis::ZYZ,
-           .expectedGates = {{"rz", 2}, {"ry", 1}}},
-      Case{.name = "r",
-           .target = makeCZTarget({{"r", 2}}),
-           .resolvedBasis = CompilerTarget::SingleQubitBasis::R,
-           .expectedGates = {{"r", 3}}},
+      Case{
+          .name = "u",
+          .target = makeSparseUCZTarget(false),
+          .resolvedBasis = CompilerTarget::SingleQubitBasis::U,
+          .expectedGates = {{"u", 1}},
+      },
+      Case{
+          .name = "zsxx",
+          .target = makeCZTarget({{"x", 0}, {"sx", 0}, {"rz", 1}}),
+          .resolvedBasis = CompilerTarget::SingleQubitBasis::ZSXX,
+          .expectedGates = {{"rz", 3}, {"sx", 2}},
+      },
+      Case{
+          .name = "rx-rz",
+          .target = makeCZTarget({{"rx", 1}, {"rz", 1}}),
+          .resolvedBasis = CompilerTarget::SingleQubitBasis::XZX,
+          .expectedGates = {{"rz", 1}, {"rx", 2}},
+      },
+      Case{
+          .name = "rx-ry",
+          .target = makeCZTarget({{"rx", 1}, {"ry", 1}}),
+          .resolvedBasis = CompilerTarget::SingleQubitBasis::XYX,
+          .expectedGates = {{"rx", 2}, {"ry", 1}},
+      },
+      Case{
+          .name = "ry-rz",
+          .target = makeCZTarget({{"ry", 1}, {"rz", 1}}),
+          .resolvedBasis = CompilerTarget::SingleQubitBasis::ZYZ,
+          .expectedGates = {{"rz", 2}, {"ry", 1}},
+      },
+      Case{
+          .name = "r",
+          .target = makeCZTarget({{"r", 2}}),
+          .resolvedBasis = CompilerTarget::SingleQubitBasis::R,
+          .expectedGates = {{"r", 3}},
+      },
   };
 
   for (const auto& testCase : cases) {
@@ -1676,9 +1701,11 @@ c = measure q;
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
 
-  std::vector sites{llvm::cantFail(CompilerTarget::Site::create(2472)),
-                    llvm::cantFail(CompilerTarget::Site::create(18449)),
-                    llvm::cantFail(CompilerTarget::Site::create(65535))};
+  std::vector sites{
+      llvm::cantFail(CompilerTarget::Site::create(2472)),
+      llvm::cantFail(CompilerTarget::Site::create(18449)),
+      llvm::cantFail(CompilerTarget::Site::create(65535)),
+  };
   const auto target = llvm::cantFail(CompilerTarget::create(
       std::move(sites), CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::unrestricted()));
@@ -1976,9 +2003,13 @@ TEST_F(CompilerPipelineTest,
 TEST_F(CompilerPipelineTest, PopulateDecomposeMultiControlledPipeline) {
   auto moduleOp =
       QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& builder) {
-        builder.mcx({builder.staticQubit(0), builder.staticQubit(1),
-                     builder.staticQubit(2)},
-                    builder.staticQubit(3));
+        builder.mcx(
+            {
+                builder.staticQubit(0),
+                builder.staticQubit(1),
+                builder.staticQubit(2),
+            },
+            builder.staticQubit(3));
         return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);

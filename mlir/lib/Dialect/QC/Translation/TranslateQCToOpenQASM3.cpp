@@ -301,10 +301,12 @@ private:
     for (Operation& operation : function.getBody().front().getOperations()) {
       if (auto alloc = dyn_cast<qc::AllocOp>(&operation)) {
         const auto name = uniqueName("q", nextQubit);
-        Resource resource{.kind = ResourceKind::Qubit,
-                          .name = name,
-                          .width = 1,
-                          .scalar = true};
+        Resource resource{
+            .kind = ResourceKind::Qubit,
+            .name = name,
+            .width = 1,
+            .scalar = true,
+        };
         resources.try_emplace(alloc.getResult(), resource);
         resourceOrder.push_back(alloc.getResult());
         valueNames.try_emplace(alloc.getResult(), name);
@@ -324,12 +326,13 @@ private:
         const auto name = alloc->getAttrOfType<StringAttr>(
             mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
         const auto requested = name ? name.getValue() : StringRef{};
-        Resource resource{.kind = ResourceKind::Bit,
-                          .name = isOutput ? outputName(requested)
-                                           : uniqueName("c", nextBit),
-                          .width = width,
-                          .output = isOutput,
-                          .initialization = alloc.getInitialization()};
+        Resource resource{
+            .kind = ResourceKind::Bit,
+            .name = isOutput ? outputName(requested) : uniqueName("c", nextBit),
+            .width = width,
+            .output = isOutput,
+            .initialization = alloc.getInitialization(),
+        };
         resources.try_emplace(alloc.getResult(), std::move(resource));
         resourceOrder.push_back(alloc.getResult());
         continue;
@@ -352,9 +355,11 @@ private:
               mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
         requested = attr.getValue();
       }
-      Resource resource{.kind = ResourceKind::Qubit,
-                        .name = qubitRegisterName(requested),
-                        .width = type.getDimSize(0)};
+      Resource resource{
+          .kind = ResourceKind::Qubit,
+          .name = qubitRegisterName(requested),
+          .width = type.getDimSize(0),
+      };
       resources.try_emplace(alloc.getResult(), resource);
       resourceOrder.push_back(alloc.getResult());
     }

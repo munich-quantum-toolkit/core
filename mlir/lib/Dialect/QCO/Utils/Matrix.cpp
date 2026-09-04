@@ -469,8 +469,12 @@ Matrix4x4 Matrix4x4::kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
 std::array<Complex, Matrix4x4::K_ROWS>
 Matrix4x4::column(const size_t col) const {
   assert(col < K_COLS && "matrix index out of bounds");
-  return {data[col], data[K_COLS + col], data[(2 * K_COLS) + col],
-          data[(3 * K_COLS) + col]};
+  return {
+      data[col],
+      data[K_COLS + col],
+      data[(2 * K_COLS) + col],
+      data[(3 * K_COLS) + col],
+  };
 }
 
 void Matrix4x4::setColumn(const size_t col, const ArrayRef<Complex> values) {
@@ -500,18 +504,22 @@ void Matrix4x4::setRow(const size_t row, const ArrayRef<Complex> values) {
 
 std::array<double, Matrix4x4::K_SIZE_AT_COMPILE_TIME>
 Matrix4x4::realPart() const {
-  return {data[0].real(),  data[1].real(),  data[2].real(),  data[3].real(),
-          data[4].real(),  data[5].real(),  data[6].real(),  data[7].real(),
-          data[8].real(),  data[9].real(),  data[10].real(), data[11].real(),
-          data[12].real(), data[13].real(), data[14].real(), data[15].real()};
+  return {
+      data[0].real(),  data[1].real(),  data[2].real(),  data[3].real(),
+      data[4].real(),  data[5].real(),  data[6].real(),  data[7].real(),
+      data[8].real(),  data[9].real(),  data[10].real(), data[11].real(),
+      data[12].real(), data[13].real(), data[14].real(), data[15].real(),
+  };
 }
 
 std::array<double, Matrix4x4::K_SIZE_AT_COMPILE_TIME>
 Matrix4x4::imagPart() const {
-  return {data[0].imag(),  data[1].imag(),  data[2].imag(),  data[3].imag(),
-          data[4].imag(),  data[5].imag(),  data[6].imag(),  data[7].imag(),
-          data[8].imag(),  data[9].imag(),  data[10].imag(), data[11].imag(),
-          data[12].imag(), data[13].imag(), data[14].imag(), data[15].imag()};
+  return {
+      data[0].imag(),  data[1].imag(),  data[2].imag(),  data[3].imag(),
+      data[4].imag(),  data[5].imag(),  data[6].imag(),  data[7].imag(),
+      data[8].imag(),  data[9].imag(),  data[10].imag(), data[11].imag(),
+      data[12].imag(), data[13].imag(), data[14].imag(), data[15].imag(),
+  };
 }
 
 bool Matrix4x4::isApprox(const Matrix4x4& other, const double tol) const {
@@ -2057,7 +2065,11 @@ void DynamicMatrix::premultiplyByEmbedded2Q(const Matrix4x4& gate,
       rest >>= 1U;
     }
     const std::array<size_t, Matrix4x4::K_ROWS> rowIdx = {
-        base, base | mask1, base | mask0, base | mask0 | mask1};
+        base,
+        base | mask1,
+        base | mask0,
+        base | mask0 | mask1,
+    };
     for (size_t col = 0; col < udim; ++col) {
       apply4x4LeftToColumn(gate.data, data[(rowIdx[0] * udim) + col],
                            data[(rowIdx[1] * udim) + col],

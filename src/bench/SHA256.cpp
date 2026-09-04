@@ -36,7 +36,8 @@ constexpr std::array<uint32_t, 64> ROUND_CONSTANTS{
     0xd6990624U, 0xf40e3585U, 0x106aa070U, 0x19a4c116U, 0x1e376c08U,
     0x2748774cU, 0x34b0bcb5U, 0x391c0cb3U, 0x4ed8aa4aU, 0x5b9cca4fU,
     0x682e6ff3U, 0x748f82eeU, 0x78a5636fU, 0x84c87814U, 0x8cc70208U,
-    0x90befffaU, 0xa4506cebU, 0xbef9a3f7U, 0xc67178f2U};
+    0x90befffaU, 0xa4506cebU, 0xbef9a3f7U, 0xc67178f2U,
+};
 
 [[nodiscard]] uint32_t choose(const uint32_t x, const uint32_t y,
                               const uint32_t z) {
@@ -69,9 +70,10 @@ std::string sha256Hex(const std::string_view input) {
     message.emplace_back(static_cast<uint8_t>(bitLength >> shift));
   }
 
-  std::array<uint32_t, 8> hash{0x6a09e667U, 0xbb67ae85U, 0x3c6ef372U,
-                               0xa54ff53aU, 0x510e527fU, 0x9b05688cU,
-                               0x1f83d9abU, 0x5be0cd19U};
+  std::array<uint32_t, 8> hash{
+      0x6a09e667U, 0xbb67ae85U, 0x3c6ef372U, 0xa54ff53aU,
+      0x510e527fU, 0x9b05688cU, 0x1f83d9abU, 0x5be0cd19U,
+  };
   for (size_t offset = 0; offset < message.size(); offset += 64U) {
     std::array<uint32_t, 64> words{};
     for (size_t index = 0; index < 16U; ++index) {

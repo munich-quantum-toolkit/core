@@ -130,10 +130,14 @@ template <typename GateOp>
 [[nodiscard]] static ReferenceGate
 referenceGate(dd::Targets targets, std::vector<double> params = {},
               dd::Controls controls = {}) {
-  return {[](const llvm::ArrayRef<double> parameters) {
-            return DynamicMatrix{getStandardGateMatrix<GateOp>(parameters)};
-          },
-          std::move(targets), std::move(params), std::move(controls)};
+  return {
+      [](const llvm::ArrayRef<double> parameters) {
+        return DynamicMatrix{getStandardGateMatrix<GateOp>(parameters)};
+      },
+      std::move(targets),
+      std::move(params),
+      std::move(controls),
+  };
 }
 
 template <typename GateOp>
@@ -284,8 +288,9 @@ TEST(DDAdapterTest, PreservesThreeQubitOperandOrder) {
 }
 
 TEST(DDAdapterTest, EmbedsFourQubitMatrixOnNoncontiguousTargets) {
-  constexpr std::array<size_t, 16> rowForColumn{0, 2, 4, 6, 8, 10, 12, 14,
-                                                1, 3, 5, 7, 9, 11, 13, 15};
+  constexpr std::array<size_t, 16> rowForColumn{
+      0, 2, 4, 6, 8, 10, 12, 14, 1, 3, 5, 7, 9, 11, 13, 15,
+  };
   constexpr auto literal = makePermutationMatrix(rowForColumn);
   constexpr size_t numQubits = 6;
   constexpr std::array<dd::Qubit, 4> targets{4, 1, 5, 2};
@@ -353,38 +358,40 @@ TEST_F(QCODDFunctionalityTest, ExercisesStandardGatePaths) {
 
   expectEqualToReference(
       mainFunc(*mod), 3,
-      {referenceGate<IdOp>({0}),
-       referenceGate<XOp>({0}),
-       referenceGate<YOp>({0}),
-       referenceGate<ZOp>({0}),
-       referenceGate<HOp>({0}),
-       referenceGate<SOp>({0}),
-       referenceGate<SdgOp>({0}),
-       referenceGate<TOp>({0}),
-       referenceGate<TdgOp>({0}),
-       referenceGate<SXOp>({0}),
-       referenceGate<SXdgOp>({0}),
-       referenceGate<RXOp>({0}, {theta}),
-       referenceGate<RYOp>({0}, {theta}),
-       referenceGate<RZOp>({0}, {theta}),
-       referenceGate<POp>({0}, {theta}),
-       referenceGate<ROp>({0}, {theta, phi}),
-       referenceGate<U2Op>({0}, {phi, lambda}),
-       referenceGate<UOp>({0}, {theta, phi, lambda}),
-       referenceGate<SWAPOp>({0, 1}),
-       referenceGate<iSWAPOp>({0, 1}),
-       referenceGate<DCXOp>({0, 1}),
-       referenceGate<ECROp>({0, 1}),
-       referenceGate<RXXOp>({0, 1}, {theta}),
-       referenceGate<RYYOp>({0, 1}, {theta}),
-       referenceGate<RZZOp>({0, 1}, {theta}),
-       referenceGate<RZXOp>({0, 1}, {theta}),
-       referenceGate<XXPlusYYOp>({0, 1}, {theta, beta}),
-       referenceGate<XXMinusYYOp>({0, 1}, {theta, beta}),
-       referenceGate<XOp>({1}, {}, {{0}}),
-       referenceGate<POp>({2}, {std::numbers::pi / 5.0}, {{1}}),
-       referenceGate<XOp>({2}, {}, {{0}, {1}}),
-       referenceGate<SdgOp>({2})});
+      {
+          referenceGate<IdOp>({0}),
+          referenceGate<XOp>({0}),
+          referenceGate<YOp>({0}),
+          referenceGate<ZOp>({0}),
+          referenceGate<HOp>({0}),
+          referenceGate<SOp>({0}),
+          referenceGate<SdgOp>({0}),
+          referenceGate<TOp>({0}),
+          referenceGate<TdgOp>({0}),
+          referenceGate<SXOp>({0}),
+          referenceGate<SXdgOp>({0}),
+          referenceGate<RXOp>({0}, {theta}),
+          referenceGate<RYOp>({0}, {theta}),
+          referenceGate<RZOp>({0}, {theta}),
+          referenceGate<POp>({0}, {theta}),
+          referenceGate<ROp>({0}, {theta, phi}),
+          referenceGate<U2Op>({0}, {phi, lambda}),
+          referenceGate<UOp>({0}, {theta, phi, lambda}),
+          referenceGate<SWAPOp>({0, 1}),
+          referenceGate<iSWAPOp>({0, 1}),
+          referenceGate<DCXOp>({0, 1}),
+          referenceGate<ECROp>({0, 1}),
+          referenceGate<RXXOp>({0, 1}, {theta}),
+          referenceGate<RYYOp>({0, 1}, {theta}),
+          referenceGate<RZZOp>({0, 1}, {theta}),
+          referenceGate<RZXOp>({0, 1}, {theta}),
+          referenceGate<XXPlusYYOp>({0, 1}, {theta, beta}),
+          referenceGate<XXMinusYYOp>({0, 1}, {theta, beta}),
+          referenceGate<XOp>({1}, {}, {{0}}),
+          referenceGate<POp>({2}, {std::numbers::pi / 5.0}, {{1}}),
+          referenceGate<XOp>({2}, {}, {{0}, {1}}),
+          referenceGate<SdgOp>({2}),
+      });
 }
 
 TEST_F(QCODDFunctionalityTest, Rccx) {
@@ -409,8 +416,10 @@ TEST_F(QCODDFunctionalityTest, Rccx) {
   ASSERT_TRUE(mod);
 
   expectEqualToReference(mainFunc(*mod), 4,
-                         {referenceGate<RCCXOp>({2, 0, 3}),
-                          referenceGate<RCCXOp>({2, 0, 3}, {}, {{1}})});
+                         {
+                             referenceGate<RCCXOp>({2, 0, 3}),
+                             referenceGate<RCCXOp>({2, 0, 3}, {}, {{1}}),
+                         });
 }
 
 TEST_F(QCODDFunctionalityTest, DensePaths) {
@@ -430,9 +439,11 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
     });
     ASSERT_TRUE(mod);
     expectEqualToReference(mainFunc(*mod), 3,
-                           {referenceGate<XOp>({1}),
-                            referenceGate<TOp>({0}, {}, {{2}}),
-                            referenceGate<HOp>({0}, {}, {{2}})});
+                           {
+                               referenceGate<XOp>({1}),
+                               referenceGate<TOp>({0}, {}, {{2}}),
+                               referenceGate<HOp>({0}, {}, {{2}}),
+                           });
   }
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
@@ -464,9 +475,11 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
     });
     ASSERT_TRUE(mod);
     expectEqualToReference(mainFunc(*mod), 3,
-                           {referenceGate<RXOp>({0}, {-0.2}),
-                            referenceGate<RYOp>({1}, {-0.3}),
-                            referenceGate<RZOp>({2}, {-0.4})});
+                           {
+                               referenceGate<RXOp>({0}, {-0.2}),
+                               referenceGate<RYOp>({1}, {-0.3}),
+                               referenceGate<RZOp>({2}, {-0.4}),
+                           });
   }
   {
     auto mod = buildModule([](QCOProgramBuilder& b) {
@@ -485,9 +498,11 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
     });
     ASSERT_TRUE(mod);
     expectEqualToReference(mainFunc(*mod), 4,
-                           {referenceGate<RXOp>({0}, {-0.2}),
-                            referenceGate<RYOp>({1}, {-0.3}),
-                            referenceGate<RZOp>({2}, {-0.4})});
+                           {
+                               referenceGate<RXOp>({0}, {-0.2}),
+                               referenceGate<RYOp>({1}, {-0.3}),
+                               referenceGate<RZOp>({2}, {-0.4}),
+                           });
   }
   {
     // Four-qubit dense `inv` on a non-contiguous wire subset (idle q3).
@@ -499,8 +514,12 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
       auto q4 = b.staticQubit(4);
       auto outs =
           b.inv({q0, q1, q2, q4}, [&](ValueRange t) -> SmallVector<Value> {
-            return {b.rx(0.2, t[0]), b.ry(0.3, t[1]), b.rz(0.4, t[2]),
-                    b.h(t[3])};
+            return {
+                b.rx(0.2, t[0]),
+                b.ry(0.3, t[1]),
+                b.rz(0.4, t[2]),
+                b.h(t[3]),
+            };
           });
       b.sink(outs[0]);
       b.sink(outs[1]);
@@ -510,10 +529,13 @@ TEST_F(QCODDFunctionalityTest, DensePaths) {
       return b.intConstant(0);
     });
     ASSERT_TRUE(mod);
-    expectEqualToReference(
-        mainFunc(*mod), 5,
-        {referenceGate<RXOp>({0}, {-0.2}), referenceGate<RYOp>({1}, {-0.3}),
-         referenceGate<RZOp>({2}, {-0.4}), referenceGate<HOp>({4})});
+    expectEqualToReference(mainFunc(*mod), 5,
+                           {
+                               referenceGate<RXOp>({0}, {-0.2}),
+                               referenceGate<RYOp>({1}, {-0.3}),
+                               referenceGate<RZOp>({2}, {-0.4}),
+                               referenceGate<HOp>({4}),
+                           });
   }
 }
 
@@ -828,7 +850,8 @@ TEST_F(QCODDFunctionalityTest, SimulateIndexSwitchBranches) {
     q = b.qcoIndexSwitch(0, q, ArrayRef<int64_t>{0, 1},
                          SmallVector<function_ref<Value(Value)>>{
                              [&](Value arg) { return b.x(arg); },
-                             [&](Value arg) { return arg; }},
+                             [&](Value arg) { return arg; },
+                         },
                          [&](Value arg) { return arg; });
     b.sink(q);
     return b.intConstant(0);
@@ -838,7 +861,8 @@ TEST_F(QCODDFunctionalityTest, SimulateIndexSwitchBranches) {
     q = b.qcoIndexSwitch(5, q, ArrayRef<int64_t>{0, 1},
                          SmallVector<function_ref<Value(Value)>>{
                              [&](Value arg) { return b.x(arg); },
-                             [&](Value arg) { return b.x(arg); }},
+                             [&](Value arg) { return b.x(arg); },
+                         },
                          [&](Value arg) { return arg; });
     b.sink(q);
     return b.intConstant(0);
@@ -1031,7 +1055,8 @@ TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {
     q = b.qcoIndexSwitch(idx, q, ArrayRef<int64_t>{0, 1},
                          SmallVector<function_ref<Value(Value)>>{
                              [&](Value arg) { return arg; },
-                             [&](Value arg) { return b.x(arg); }},
+                             [&](Value arg) { return b.x(arg); },
+                         },
                          [&](Value arg) { return arg; });
     b.sink(q);
     return b.intConstant(0);
@@ -1101,7 +1126,8 @@ TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
                           SmallVector<function_ref<Value(Value)>>{
                               [&](Value arg) { return arg; },
                               [&](Value arg) { return b.x(arg); },
-                              [&](Value arg) { return arg; }},
+                              [&](Value arg) { return arg; },
+                          },
                           [&](Value arg) { return arg; });
     b.sink(q0);
     b.sink(q1);
@@ -1166,7 +1192,8 @@ TEST_F(QCODDFunctionalityTest, RejectsOutOfRangeShift) {
       auto shifted = arith::ShLIOp::create(b, value, bad).getResult();
       q = b.qcoIndexSwitch(shifted, q, ArrayRef<int64_t>{0},
                            SmallVector<function_ref<Value(Value)>>{
-                               [&](Value arg) { return arg; }},
+                               [&](Value arg) { return arg; },
+                           },
                            [&](Value arg) { return arg; });
       b.sink(q);
       return b.intConstant(0);
@@ -1332,10 +1359,13 @@ TEST_F(QCODDFunctionalityTest, EmbedsWideLocalMatrixWithoutRegisterLimit) {
   });
   ASSERT_TRUE(mod);
 
-  expectEqualToReference(
-      mainFunc(*mod), 13,
-      {referenceGate<RXOp>({0}, {-0.2}), referenceGate<RYOp>({4}, {-0.3}),
-       referenceGate<RZOp>({8}, {-0.4}), referenceGate<HOp>({12})});
+  expectEqualToReference(mainFunc(*mod), 13,
+                         {
+                             referenceGate<RXOp>({0}, {-0.2}),
+                             referenceGate<RYOp>({4}, {-0.3}),
+                             referenceGate<RZOp>({8}, {-0.4}),
+                             referenceGate<HOp>({12}),
+                         });
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnsupportedOrUnboundClassicalOperations) {
@@ -1387,12 +1417,14 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedOrUnboundClassicalOperations) {
                qco.sink %q : !qco.qubit
                return
              }
-           })mlir"}) {
+           })mlir",
+       }) {
     expectMlirSimulationFails(1, source);
   }
 }
 TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalControl) {
-  for (const StringRef source : {R"mlir(
+  for (const StringRef source : {
+           R"mlir(
     module {
       func.func @main(%condition: i1) {
         %q = qco.static 0 : !qco.qubit
@@ -1406,7 +1438,7 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalControl) {
       }
     }
   )mlir",
-                                 R"mlir(
+           R"mlir(
     module {
       func.func @main(%index: index) {
         %q = qco.static 0 : !qco.qubit
@@ -1418,7 +1450,8 @@ TEST_F(QCODDFunctionalityTest, RejectsUnmappedClassicalControl) {
         return
       }
     }
-  )mlir"}) {
+  )mlir",
+       }) {
     auto mod = parseSourceString<ModuleOp>(source, context.get());
     ASSERT_TRUE(mod);
     auto dd = std::make_unique<dd::Package>(1);
@@ -1536,7 +1569,8 @@ TEST_F(QCODDFunctionalityTest, RejectsUnboundClassicalRegionResults) {
                qco.sink %out : !qco.qubit
                return
              }
-           })mlir"}) {
+           })mlir",
+       }) {
     expectMlirSimulationFails(1, source);
   }
 }
@@ -1924,12 +1958,13 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
 }
 
 TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
-  for (const auto [lower, upper, step, succeeds] :
-       {std::tuple<int64_t, int64_t, int64_t, bool>{3, 3, 1, true},
-        {0, 10000, 1, true},
-        {0, 10001, 1, false},
-        {0, 3, 0, false},
-        {0, 3, -1, false}}) {
+  for (const auto [lower, upper, step, succeeds] : {
+           std::tuple<int64_t, int64_t, int64_t, bool>{3, 3, 1, true},
+           {0, 10000, 1, true},
+           {0, 10001, 1, false},
+           {0, 3, 0, false},
+           {0, 3, -1, false},
+       }) {
     auto mod = buildModule([=](QCOProgramBuilder& b) {
       auto q = b.staticQubit(0);
       auto results =
@@ -2069,7 +2104,8 @@ TEST_F(QCODDFunctionalityTest, ExecutionBudgetIncludesBranchesAndCalls) {
                }
                return
              }
-           })mlir"}) {
+           })mlir",
+       }) {
     expectMlirSimulationFails(0, source);
   }
 }
@@ -2308,7 +2344,8 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedClassicalMemRefs) {
                memref.store %value, %reg[%i2] : memref<1xi1>
                return
              }
-           })mlir"}) {
+           })mlir",
+       }) {
     expectMlirSimulationFails(0, source);
   }
 }
@@ -2452,10 +2489,11 @@ TEST_F(QCODDFunctionalityTest, RejectsNonFiniteParameters) {
   ASSERT_TRUE(gate);
   ASSERT_TRUE(phase);
 
-  for (auto [func, value] :
-       {std::pair{mainFunc(*gate), std::numeric_limits<double>::infinity()},
-        std::pair{mainFunc(*phase),
-                  std::numeric_limits<double>::quiet_NaN()}}) {
+  for (auto [func, value] : {
+           std::pair{mainFunc(*gate), std::numeric_limits<double>::infinity()},
+           std::pair{mainFunc(*phase),
+                     std::numeric_limits<double>::quiet_NaN()},
+       }) {
     DDArgumentBindings bindings;
     bindings[func.getArgument(0)] =
         FloatAttr::get(Float64Type::get(context.get()), value);
@@ -2472,7 +2510,8 @@ TEST_F(QCODDFunctionalityTest, BuildsThroughConcreteControlFlow) {
     q = b.qcoIndexSwitch(1, q, ArrayRef<int64_t>{0, 1},
                          SmallVector<function_ref<Value(Value)>>{
                              [&](Value arg) { return b.h(arg); },
-                             [&](Value arg) { return b.z(arg); }},
+                             [&](Value arg) { return b.z(arg); },
+                         },
                          [&](Value arg) { return arg; });
     q = b.scfFor(0, 2, 1, ValueRange{q.value},
                  [&](Value /*index*/, ValueRange args) -> SmallVector<Value> {
@@ -2484,8 +2523,12 @@ TEST_F(QCODDFunctionalityTest, BuildsThroughConcreteControlFlow) {
   ASSERT_TRUE(mod);
 
   expectEqualToReference(mainFunc(*mod), 1,
-                         {referenceGate<XOp>({0}), referenceGate<ZOp>({0}),
-                          referenceGate<HOp>({0}), referenceGate<HOp>({0})});
+                         {
+                             referenceGate<XOp>({0}),
+                             referenceGate<ZOp>({0}),
+                             referenceGate<HOp>({0}),
+                             referenceGate<HOp>({0}),
+                         });
 }
 
 TEST_F(QCODDFunctionalityTest, StructuredScfAndWhileCarryValues) {
@@ -2548,8 +2591,11 @@ TEST_F(QCODDFunctionalityTest, StructuredScfAndWhileCarryValues) {
   ASSERT_TRUE(mod);
 
   expectEqualToReference(mainFunc(*mod), 1,
-                         {referenceGate<XOp>({0}), referenceGate<ZOp>({0}),
-                          referenceGate<XOp>({0})});
+                         {
+                             referenceGate<XOp>({0}),
+                             referenceGate<ZOp>({0}),
+                             referenceGate<XOp>({0}),
+                         });
 }
 
 TEST_F(QCODDFunctionalityTest, DynamicAllocationsAndQTensorBookkeeping) {
@@ -2897,7 +2943,8 @@ TEST_F(QCODDFunctionalityTest, RejectsRepresentativeClassicalRuntimeErrors) {
                qtensor.dealloc %tensor : tensor<?x!qco.qubit>
                return
              }
-           })mlir"}) {
+           })mlir",
+       }) {
     expectMlirSimulationFails(0, source);
   }
 
@@ -2983,7 +3030,8 @@ TEST_F(QCODDFunctionalityTest, RejectsMultiBlockAndExecuteRegion) {
                qco.sink %out : !qco.qubit
                return
              }
-           })mlir"}) {
+           })mlir",
+       }) {
     auto mod = parseSourceString<ModuleOp>(source, context.get());
     ASSERT_TRUE(mod);
     auto dd = std::make_unique<dd::Package>(1);

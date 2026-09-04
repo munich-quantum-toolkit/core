@@ -508,10 +508,12 @@ TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
 }
 
 TEST_F(MappingPassFixture, PlaceTensorOnFirstTargetSites) {
-  std::vector sites{llvm::cantFail(CompilerTarget::Site::create(7)),
-                    llvm::cantFail(CompilerTarget::Site::create(19)),
-                    llvm::cantFail(CompilerTarget::Site::create(42)),
-                    llvm::cantFail(CompilerTarget::Site::create(81))};
+  std::vector sites{
+      llvm::cantFail(CompilerTarget::Site::create(7)),
+      llvm::cantFail(CompilerTarget::Site::create(19)),
+      llvm::cantFail(CompilerTarget::Site::create(42)),
+      llvm::cantFail(CompilerTarget::Site::create(81)),
+  };
   const auto target = llvm::cantFail(CompilerTarget::create(
       std::move(sites), CompilerTarget::Connectivity::allToAll(),
       NativeOperations::unrestricted()));
@@ -868,8 +870,11 @@ TEST_P(MappingPassTest, FailNestedHigherArityUnitary) {
 
   QCOProgramBuilder builder(context.get());
   builder.initialize();
-  SmallVector<Value> qubits{builder.allocQubit(), builder.allocQubit(),
-                            builder.allocQubit()};
+  SmallVector<Value> qubits{
+      builder.allocQubit(),
+      builder.allocQubit(),
+      builder.allocQubit(),
+  };
   qubits = llvm::to_vector(builder.qcoIf(
       true, qubits,
       [&](ValueRange args) {

@@ -210,7 +210,8 @@ TEST_F(PauliTwirlingTest, LeavesUnsupportedModifiedGatesAndPhasesUnchanged) {
 }
 
 constexpr std::array<uint64_t, 16> SEEDS_FOR_EACH_TWIRL = {
-    6, 16, 10, 11, 12, 18, 5, 4, 1, 8, 62, 3, 2, 94, 0, 13};
+    6, 16, 10, 11, 12, 18, 5, 4, 1, 8, 62, 3, 2, 94, 0, 13,
+};
 
 TEST_P(AllPauliTwirlSeedsTest, CoversEveryTwirl) {
   using PauliTuple =

@@ -504,22 +504,36 @@ TEST(QASM3TranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
     Matrix2 expected;
   };
   const auto oneQubitCases = std::to_array<OneQubitCase>({
-      {.source = "OPENQASM 3.1; qubit q; U(0.37, -0.29, 0.83) q;",
-       .expected = qasm3U},
-      {.source = "OPENQASM 2.0; qreg q[1]; U(0.37, -0.29, 0.83) q[0];",
-       .expected = qasm2U},
-      {.source = "OPENQASM 3.1; include \"stdgates.inc\"; qubit q; "
-                 "u2(-0.29, 0.83) q;",
-       .expected = openQASM2UMatrix(std::numbers::pi / 2.0, phi, lambda)},
-      {.source = "OPENQASM 3.1; include \"stdgates.inc\"; qubit q; "
-                 "u3(0.37, -0.29, 0.83) q;",
-       .expected = qasm2U},
-      {.source = "OPENQASM 3.1; qubit q; u(0.37, -0.29, 0.83) q;",
-       .expected = qasm2U},
-      {.source = "OPENQASM 3.1; qubit q; inv @ U(0.37, -0.29, 0.83) q;",
-       .expected = qasm3U.adjoint()},
-      {.source = "OPENQASM 3.1; qubit q; pow(2) @ U(0.37, -0.29, 0.83) q;",
-       .expected = qasm3U * qasm3U},
+      {
+          .source = "OPENQASM 3.1; qubit q; U(0.37, -0.29, 0.83) q;",
+          .expected = qasm3U,
+      },
+      {
+          .source = "OPENQASM 2.0; qreg q[1]; U(0.37, -0.29, 0.83) q[0];",
+          .expected = qasm2U,
+      },
+      {
+          .source = "OPENQASM 3.1; include \"stdgates.inc\"; qubit q; "
+                    "u2(-0.29, 0.83) q;",
+          .expected = openQASM2UMatrix(std::numbers::pi / 2.0, phi, lambda),
+      },
+      {
+          .source = "OPENQASM 3.1; include \"stdgates.inc\"; qubit q; "
+                    "u3(0.37, -0.29, 0.83) q;",
+          .expected = qasm2U,
+      },
+      {
+          .source = "OPENQASM 3.1; qubit q; u(0.37, -0.29, 0.83) q;",
+          .expected = qasm2U,
+      },
+      {
+          .source = "OPENQASM 3.1; qubit q; inv @ U(0.37, -0.29, 0.83) q;",
+          .expected = qasm3U.adjoint(),
+      },
+      {
+          .source = "OPENQASM 3.1; qubit q; pow(2) @ U(0.37, -0.29, 0.83) q;",
+          .expected = qasm3U * qasm3U,
+      },
   });
   for (const auto& test : oneQubitCases) {
     SCOPED_TRACE(test.source.str());
@@ -535,18 +549,26 @@ TEST(QASM3TranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
     Matrix4 expected;
   };
   const auto twoQubitCases = std::to_array<TwoQubitCase>({
-      {.source = "OPENQASM 3.1; qubit[2] q; "
-                 "ctrl @ U(0.37, -0.29, 0.83) q[0], q[1];",
-       .expected = controlledQASM3},
-      {.source = "OPENQASM 3.1; qubit[2] q; "
-                 "negctrl @ U(0.37, -0.29, 0.83) q[0], q[1];",
-       .expected = controlledMatrix(qasm3U, true)},
-      {.source = "OPENQASM 3.1; include \"stdgates.inc\"; qubit[2] q; "
-                 "cu(0.37, -0.29, 0.83, -0.41) q[0], q[1];",
-       .expected = controlledMatrix(phasedQASM3)},
-      {.source = "OPENQASM 3.1; include \"qelib1.inc\"; qubit[2] q; "
-                 "cu3(0.37, -0.29, 0.83) q[0], q[1];",
-       .expected = controlledQASM2},
+      {
+          .source = "OPENQASM 3.1; qubit[2] q; "
+                    "ctrl @ U(0.37, -0.29, 0.83) q[0], q[1];",
+          .expected = controlledQASM3,
+      },
+      {
+          .source = "OPENQASM 3.1; qubit[2] q; "
+                    "negctrl @ U(0.37, -0.29, 0.83) q[0], q[1];",
+          .expected = controlledMatrix(qasm3U, true),
+      },
+      {
+          .source = "OPENQASM 3.1; include \"stdgates.inc\"; qubit[2] q; "
+                    "cu(0.37, -0.29, 0.83, -0.41) q[0], q[1];",
+          .expected = controlledMatrix(phasedQASM3),
+      },
+      {
+          .source = "OPENQASM 3.1; include \"qelib1.inc\"; qubit[2] q; "
+                    "cu3(0.37, -0.29, 0.83) q[0], q[1];",
+          .expected = controlledQASM2,
+      },
   });
   for (const auto& test : twoQubitCases) {
     SCOPED_TRACE(test.source.str());
@@ -1012,19 +1034,21 @@ named_result = measure q;
 }
 
 TEST_F(QASM3TranslationTest, UsesVersionSpecificBitInitialization) {
-  constexpr std::array sources{std::pair{R"qasm(OPENQASM 2.0;
+  constexpr std::array sources{
+      std::pair{R"qasm(OPENQASM 2.0;
 include "qelib1.inc";
 qreg q[1];
 creg c[1];
 measure q[0] -> c[0];
 )qasm",
-                                         cbit::Initialization::Zero},
-                               std::pair{R"qasm(OPENQASM 3.0;
+                cbit::Initialization::Zero},
+      std::pair{R"qasm(OPENQASM 3.0;
 qubit q;
 bit[1] c;
 c[0] = measure q;
 )qasm",
-                                         cbit::Initialization::Undefined}};
+                cbit::Initialization::Undefined},
+  };
 
   for (const auto& [source, expected] : sources) {
     auto translated = qc::translateQASM3ToQC(source, context.get());

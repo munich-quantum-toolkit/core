@@ -193,11 +193,13 @@ TEST(DecompositionHelpersTest, GateMatrixFactoriesMatchCanonicalForm) {
 }
 
 TEST(DecompositionHelpersTest, CanonicalMatrixMatchesGateProduct) {
-  for (const auto& [a, b, c] : {std::tuple{0.3, 0.2, 0.1},
-                                {0.5, 0.5, 0.5},
-                                {0.5, 0.1, -0.1},
-                                {1.1, 0.2, 3.0},
-                                {-0.2, 0.3, 0.4}}) {
+  for (const auto& [a, b, c] : {
+           std::tuple{0.3, 0.2, 0.1},
+           {0.5, 0.5, 0.5},
+           {0.5, 0.1, -0.1},
+           {1.1, 0.2, 3.0},
+           {-0.2, 0.3, 0.4},
+       }) {
     const auto fromGates = RZZOp::unitaryMatrix(-2.0 * c) *
                            RYYOp::unitaryMatrix(-2.0 * b) *
                            RXXOp::unitaryMatrix(-2.0 * a);
@@ -284,8 +286,10 @@ TEST_P(BasisDecomposerTest, ReconstructsWithinRequestedFidelity) {
 
 TEST(BasisDecomposerTest, Random) {
   std::mt19937 rng{123456UL};
-  const mlir::SmallVector<Matrix4x4, 2> basisMatrices{TWO_QUBIT_CONTROLLED_X01,
-                                                      TWO_QUBIT_CONTROLLED_X10};
+  const mlir::SmallVector<Matrix4x4, 2> basisMatrices{
+      TWO_QUBIT_CONTROLLED_X01,
+      TWO_QUBIT_CONTROLLED_X10,
+  };
   std::uniform_int_distribution<std::size_t> distBasisGate{0, 1};
 
   for (int i = 0; i < 2000; ++i) {
@@ -594,11 +598,16 @@ INSTANTIATE_TEST_SUITE_P(
     });
 
 TEST(WeylSynthesisTest, IdentityRequiresNoEntanglers) {
-  for (const auto entangler :
-       {CompilerTarget::GateKind::RXX, CompilerTarget::GateKind::RYY,
-        CompilerTarget::GateKind::RZX, CompilerTarget::GateKind::RZZ,
-        CompilerTarget::GateKind::ISWAP, CompilerTarget::GateKind::CZ,
-        CompilerTarget::GateKind::CX, CompilerTarget::GateKind::ECR}) {
+  for (const auto entangler : {
+           CompilerTarget::GateKind::RXX,
+           CompilerTarget::GateKind::RYY,
+           CompilerTarget::GateKind::RZX,
+           CompilerTarget::GateKind::RZZ,
+           CompilerTarget::GateKind::ISWAP,
+           CompilerTarget::GateKind::CZ,
+           CompilerTarget::GateKind::CX,
+           CompilerTarget::GateKind::ECR,
+       }) {
     const auto native =
         decomposeUnitary2QWeyl(Matrix4x4::identity(), entangler);
     EXPECT_EQ(native.numBasisUses, 0U);

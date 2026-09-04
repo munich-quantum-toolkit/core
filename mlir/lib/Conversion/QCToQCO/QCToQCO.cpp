@@ -84,9 +84,9 @@ struct SeenRegisterIndices {
 
 /// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
-  Unset,  //!< No allocation mode has been established yet.
-  Static, //!< The module uses static qubit allocation.
-  Dynamic //!< The module uses dynamic qubit allocation.
+  Unset,   //!< No allocation mode has been established yet.
+  Static,  //!< The module uses static qubit allocation.
+  Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
 /// State object for tracking qubit value flow during conversion
@@ -1635,8 +1635,10 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
 
     SmallVector<Value> qubits(qubitMap.begin(), qubitMap.end());
     SmallVector<RegisterId> registers(registerMap.begin(), registerMap.end());
-    state.structuredValues[newForOp] = {.qubits = qubits,
-                                        .registers = registers};
+    state.structuredValues[newForOp] = {
+        .qubits = qubits,
+        .registers = registers,
+    };
     seedRegionMappings(state, newForOp.getRegion(), qubits, registers,
                        dstBlock.getArguments().take_back(numQubits),
                        dstBlock.getArguments()
@@ -1741,8 +1743,10 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
 
     SmallVector<Value> qubits(qubitMap.begin(), qubitMap.end());
     SmallVector<RegisterId> registers(registerMap.begin(), registerMap.end());
-    state.structuredValues[newWhileOp] = {.qubits = qubits,
-                                          .registers = registers};
+    state.structuredValues[newWhileOp] = {
+        .qubits = qubits,
+        .registers = registers,
+    };
     seedRegionMappings(state, newWhileOp.getBefore(), qubits, registers,
                        newBeforeBlock->getArguments().take_back(numQubits),
                        newBeforeBlock->getArguments()
@@ -1819,8 +1823,10 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
     SmallVector<Value> qubits(qubitMap.begin(), qubitMap.end());
     SmallVector<RegisterId> registers(registerMap.begin(), registerMap.end());
-    state.structuredValues[newIfOp] = {.qubits = qubits,
-                                       .registers = registers};
+    state.structuredValues[newIfOp] = {
+        .qubits = qubits,
+        .registers = registers,
+    };
 
     if (!op.getElseRegion().empty()) {
       elseBlock->getOperations().splice(

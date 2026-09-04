@@ -130,7 +130,11 @@ translationFactory(const InstalledVersion& version) {
         "'; supported versions: " + supportedVersionRanges());
   }
   const InstalledVersion result{
-      .major = major, .minor = minor, .patch = patch, .text = text};
+      .major = major,
+      .minor = minor,
+      .patch = patch,
+      .text = text,
+  };
   return result;
 }
 

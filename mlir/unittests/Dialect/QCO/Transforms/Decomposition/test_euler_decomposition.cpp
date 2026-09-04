@@ -153,8 +153,9 @@ template <typename RotationOp>
 }
 
 template <typename Fn> static void forEachBasis(Fn fn) {
-  constexpr std::array<const char*, 7> bases = {"zyz", "zxz",  "xzx", "xyx",
-                                                "u",   "zsxx", "r"};
+  constexpr std::array<const char*, 7> bases = {
+      "zyz", "zxz", "xzx", "xyx", "u", "zsxx", "r",
+  };
   for (const char* basis : bases) {
     fn(StringRef{basis});
   }
@@ -779,31 +780,41 @@ const std::array DYNAMIC_GATE_CASES = {
     DynamicGateCase{
         .name = "rx",
         .numParameters = 1,
-        .build = [](QCOProgramBuilder& b, Value q) { return b.rx(0.11, q); }},
+        .build = [](QCOProgramBuilder& b, Value q) { return b.rx(0.11, q); },
+    },
     DynamicGateCase{
         .name = "ry",
         .numParameters = 1,
-        .build = [](QCOProgramBuilder& b, Value q) { return b.ry(0.13, q); }},
+        .build = [](QCOProgramBuilder& b, Value q) { return b.ry(0.13, q); },
+    },
     DynamicGateCase{
         .name = "rz",
         .numParameters = 1,
-        .build = [](QCOProgramBuilder& b, Value q) { return b.rz(0.17, q); }},
+        .build = [](QCOProgramBuilder& b, Value q) { return b.rz(0.17, q); },
+    },
     DynamicGateCase{
         .name = "p",
         .numParameters = 1,
-        .build = [](QCOProgramBuilder& b, Value q) { return b.p(0.19, q); }},
-    DynamicGateCase{.name = "r",
-                    .numParameters = 2,
-                    .build = [](QCOProgramBuilder& b,
-                                Value q) { return b.r(0.23, -0.29, q); }},
-    DynamicGateCase{.name = "u2",
-                    .numParameters = 2,
-                    .build = [](QCOProgramBuilder& b,
-                                Value q) { return b.u2(0.31, -0.37, q); }},
-    DynamicGateCase{.name = "u",
-                    .numParameters = 3,
-                    .build = [](QCOProgramBuilder& b,
-                                Value q) { return b.u(0.41, -0.43, 0.47, q); }},
+        .build = [](QCOProgramBuilder& b, Value q) { return b.p(0.19, q); },
+    },
+    DynamicGateCase{
+        .name = "r",
+        .numParameters = 2,
+        .build = [](QCOProgramBuilder& b,
+                    Value q) { return b.r(0.23, -0.29, q); },
+    },
+    DynamicGateCase{
+        .name = "u2",
+        .numParameters = 2,
+        .build = [](QCOProgramBuilder& b,
+                    Value q) { return b.u2(0.31, -0.37, q); },
+    },
+    DynamicGateCase{
+        .name = "u",
+        .numParameters = 3,
+        .build = [](QCOProgramBuilder& b,
+                    Value q) { return b.u(0.41, -0.43, 0.47, q); },
+    },
 };
 
 struct DirectSynthesisCounts {
@@ -1308,10 +1319,12 @@ TEST(FuseSingleQubitUnitaryRunsTest,
   TestFixture fx;
   fx.setUp();
   constexpr std::array<const char*, 3> bases = {"xzx", "xyx", "r"};
-  constexpr std::array<std::array<double, 3>, 2> singularParameterSets{{
-      {0.0, 0.0, 0.0},
-      {std::numbers::pi, 0.0, 0.0},
-  }};
+  constexpr std::array<std::array<double, 3>, 2> singularParameterSets{
+      {
+          {0.0, 0.0, 0.0},
+          {std::numbers::pi, 0.0, 0.0},
+      },
+  };
   constexpr size_t numParameters = singularParameterSets.front().size();
 
   for (const StringRef basis : bases) {
@@ -1373,18 +1386,24 @@ TEST(FuseSingleQubitUnitaryRunsTest, FusesProgramsAllBases) {
     SmallVector<Value> (*program)(QCOProgramBuilder&);
     void (*extra)(func::FuncOp, StringRef);
   };
-  const std::array<Case, 2> cases = {{
-      {.program = &singleQubitRunWithSingleQubitGate,
-       .extra =
-           [](func::FuncOp funcOp, StringRef basis) {
-             EXPECT_EQ(countOps<InvOp>(funcOp), 0U) << basis.str();
-           }},
-      {.program = &singleNonBasisGate,
-       .extra =
-           [](func::FuncOp funcOp, StringRef basis) {
-             EXPECT_EQ(countOps<HOp>(funcOp), 0U) << basis.str();
-           }},
-  }};
+  const std::array<Case, 2> cases = {
+      {
+          {
+              .program = &singleQubitRunWithSingleQubitGate,
+              .extra =
+                  [](func::FuncOp funcOp, StringRef basis) {
+                    EXPECT_EQ(countOps<InvOp>(funcOp), 0U) << basis.str();
+                  },
+          },
+          {
+              .program = &singleNonBasisGate,
+              .extra =
+                  [](func::FuncOp funcOp, StringRef basis) {
+                    EXPECT_EQ(countOps<HOp>(funcOp), 0U) << basis.str();
+                  },
+          },
+      },
+  };
 
   for (const Case& testCase : cases) {
     runFuseForAllBases(fx.ctx(), testCase.program,
@@ -1453,39 +1472,48 @@ TEST(FuseSingleQubitUnitaryRunsTest, DoesNotFuseAcrossBoundariesAllBases) {
     SmallVector<Value> (*program)(QCOProgramBuilder&);
     void (*check)(func::FuncOp, StringRef, MLIRContext*);
   };
-  const std::array<Case, 3> cases = {{
-      {.program = &singleQubitRunsSplitByTwoQGate,
-       .check =
-           [](func::FuncOp funcOp, StringRef basis, MLIRContext* ctx) {
-             std::size_t twoQ = 0;
-             funcOp.walk([&twoQ](UnitaryOpInterface op) {
-               if (op.isTwoQubit()) {
-                 ++twoQ;
-               }
-             });
-             EXPECT_EQ(twoQ, 1U) << basis.str();
-             expectSplitFixtureSegments(funcOp, basis, ctx, [](Operation& op) {
-               if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
-                 return unitary.isTwoQubit();
-               }
-               return false;
-             });
-           }},
-      {.program = &singleQubitRunsSplitByBarrier,
-       .check =
-           [](func::FuncOp funcOp, StringRef basis, MLIRContext* ctx) {
-             EXPECT_EQ(countOps<BarrierOp>(funcOp), 1U) << basis.str();
-             expectSplitFixtureSegments(funcOp, basis, ctx, [](Operation& op) {
-               return isa<BarrierOp>(op);
-             });
-           }},
-      {.program = &singleQubitRunsSplitByScfFor,
-       .check =
-           [](func::FuncOp funcOp, StringRef basis, MLIRContext* ctx) {
-             EXPECT_EQ(countOps<scf::ForOp>(funcOp), 1U) << basis.str();
-             expectSplitFixtureSegments(funcOp, basis, ctx);
-           }},
-  }};
+  const std::array<Case, 3> cases = {
+      {
+          {
+              .program = &singleQubitRunsSplitByTwoQGate,
+              .check =
+                  [](func::FuncOp funcOp, StringRef basis, MLIRContext* ctx) {
+                    std::size_t twoQ = 0;
+                    funcOp.walk([&twoQ](UnitaryOpInterface op) {
+                      if (op.isTwoQubit()) {
+                        ++twoQ;
+                      }
+                    });
+                    EXPECT_EQ(twoQ, 1U) << basis.str();
+                    expectSplitFixtureSegments(
+                        funcOp, basis, ctx, [](Operation& op) {
+                          if (auto unitary = dyn_cast<UnitaryOpInterface>(op)) {
+                            return unitary.isTwoQubit();
+                          }
+                          return false;
+                        });
+                  },
+          },
+          {
+              .program = &singleQubitRunsSplitByBarrier,
+              .check =
+                  [](func::FuncOp funcOp, StringRef basis, MLIRContext* ctx) {
+                    EXPECT_EQ(countOps<BarrierOp>(funcOp), 1U) << basis.str();
+                    expectSplitFixtureSegments(
+                        funcOp, basis, ctx,
+                        [](Operation& op) { return isa<BarrierOp>(op); });
+                  },
+          },
+          {
+              .program = &singleQubitRunsSplitByScfFor,
+              .check =
+                  [](func::FuncOp funcOp, StringRef basis, MLIRContext* ctx) {
+                    EXPECT_EQ(countOps<scf::ForOp>(funcOp), 1U) << basis.str();
+                    expectSplitFixtureSegments(funcOp, basis, ctx);
+                  },
+          },
+      },
+  };
 
   for (const Case& testCase : cases) {
     runFuseForAllBases(fx.ctx(), testCase.program,

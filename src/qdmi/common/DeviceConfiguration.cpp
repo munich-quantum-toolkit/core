@@ -161,8 +161,10 @@ readFile(const std::filesystem::path& path, const bool bundled, int& status) {
     return std::nullopt;
   }
   status = QDMI_SUCCESS;
-  return LoadedDeviceConfiguration{.json = std::move(json),
-                                   .source = path.string()};
+  return LoadedDeviceConfiguration{
+      .json = std::move(json),
+      .source = path.string(),
+  };
 }
 } // namespace
 
@@ -206,8 +208,10 @@ loadDeviceConfiguration(const std::optional<std::string>& inlineJson,
                         const void* anchor, int& status) {
   if (inlineJson) {
     status = QDMI_SUCCESS;
-    return LoadedDeviceConfiguration{.json = *inlineJson,
-                                     .source = "inline session configuration"};
+    return LoadedDeviceConfiguration{
+        .json = *inlineJson,
+        .source = "inline session configuration",
+    };
   }
   if (file) {
     return readFile(*file, false, status);
@@ -222,8 +226,10 @@ loadDeviceConfiguration(const std::optional<std::string>& inlineJson,
   }
   if (environmentJson) {
     status = QDMI_SUCCESS;
-    return LoadedDeviceConfiguration{.json = *environmentJson,
-                                     .source = std::string(inlineEnvironment)};
+    return LoadedDeviceConfiguration{
+        .json = *environmentJson,
+        .source = std::string(inlineEnvironment),
+    };
   }
   if (environmentFile) {
     return readFile(std::filesystem::path(*environmentFile), false, status);

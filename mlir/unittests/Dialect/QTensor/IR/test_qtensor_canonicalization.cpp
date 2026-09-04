@@ -364,7 +364,8 @@ TEST_F(QTensorCanonicalizationTest, LeavesUnsupportedQTensorIfUnchanged) {
             return
           }
         }
-      )mlir"};
+      )mlir",
+  };
 
   for (StringRef mlirCode : mlirCodes) {
     auto moduleOp = parseSourceString<ModuleOp>(mlirCode, &context_);

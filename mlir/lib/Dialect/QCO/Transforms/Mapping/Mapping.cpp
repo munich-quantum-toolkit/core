@@ -621,9 +621,11 @@ protected:
     std::tie(wires, infos) = std::move(
         applyPlacement(body, *target, *layout, *computation, rewriter));
 
-    RoutingBundle bundle{.wires = std::move(wires),
-                         .infos = std::move(infos),
-                         .layout = std::move(*layout)};
+    RoutingBundle bundle{
+        .wires = std::move(wires),
+        .infos = std::move(infos),
+        .layout = std::move(*layout),
+    };
 
     const auto routeRes =
         route<WireDirection::Forward, RoutingMode::Hot>(bundle, &rewriter);
@@ -829,11 +831,12 @@ private:
     SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
     for (size_t i = 0; i < ntrials; ++i) {
-      trials.emplace_back(
-          RoutingBundle{.wires = wires,
-                        .infos = infos,
-                        .layout = Layout::random(target->numSites(),
-                                                 target->numSites(), rng())});
+      trials.emplace_back(RoutingBundle{
+          .wires = wires,
+          .infos = infos,
+          .layout =
+              Layout::random(target->numSites(), target->numSites(), rng()),
+      });
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
@@ -1342,7 +1345,8 @@ private:
                                        op->getName().getStringRef());
                     return nullptr;
                   }),
-        .indices = allIndices};
+        .indices = allIndices,
+    };
 
     auto results = composite.op->getResults();
 
@@ -1359,9 +1363,11 @@ private:
       return it.operation() == composite.op;
     }));
 
-    return RoutingBundle::Patch{.layout = std::nullopt,
-                                .infos = std::nullopt,
-                                .wires = std::move(wires)};
+    return RoutingBundle::Patch{
+        .layout = std::nullopt,
+        .infos = std::nullopt,
+        .wires = std::move(wires),
+    };
   }
 
   /// Return `values` with only the qubit entries realigned according to the
@@ -1404,7 +1410,8 @@ private:
         TypeSwitch<Operation*, SmallVector<RoutingBundle, 0>>(op)
             .template Case<scf::ForOp, scf::WhileOp>([&](auto) {
               return SmallVector<RoutingBundle, 0>{
-                  RoutingBundle{.layout = parent.layout}};
+                  RoutingBundle{.layout = parent.layout},
+              };
             })
             .Case([&](IfOp) {
               return SmallVector<RoutingBundle, 0>(

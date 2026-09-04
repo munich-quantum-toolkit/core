@@ -76,40 +76,55 @@ template <typename T> struct Val {
     if constexpr (std::is_same_v<T, double>) {
       return {v + o.v, rewriter, loc};
     } else {
-      return {arith::AddFOp::create(*rewriter, loc, v, o.v).getResult(),
-              rewriter, loc};
+      return {
+          arith::AddFOp::create(*rewriter, loc, v, o.v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
   [[nodiscard]] Val operator-(Val o) const {
     if constexpr (std::is_same_v<T, double>) {
       return {v - o.v, rewriter, loc};
     } else {
-      return {arith::SubFOp::create(*rewriter, loc, v, o.v).getResult(),
-              rewriter, loc};
+      return {
+          arith::SubFOp::create(*rewriter, loc, v, o.v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
   [[nodiscard]] Val operator*(Val o) const {
     if constexpr (std::is_same_v<T, double>) {
       return {v * o.v, rewriter, loc};
     } else {
-      return {arith::MulFOp::create(*rewriter, loc, v, o.v).getResult(),
-              rewriter, loc};
+      return {
+          arith::MulFOp::create(*rewriter, loc, v, o.v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
   [[nodiscard]] Val operator/(Val o) const {
     if constexpr (std::is_same_v<T, double>) {
       return {v / o.v, rewriter, loc};
     } else {
-      return {arith::DivFOp::create(*rewriter, loc, v, o.v).getResult(),
-              rewriter, loc};
+      return {
+          arith::DivFOp::create(*rewriter, loc, v, o.v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
   [[nodiscard]] Val operator-() const {
     if constexpr (std::is_same_v<T, double>) {
       return {-v, rewriter, loc};
     } else {
-      return {arith::NegFOp::create(*rewriter, loc, v).getResult(), rewriter,
-              loc};
+      return {
+          arith::NegFOp::create(*rewriter, loc, v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
 
@@ -117,40 +132,55 @@ template <typename T> struct Val {
     if constexpr (std::is_same_v<T, double>) {
       return {std::sin(v), rewriter, loc};
     } else {
-      return {math::SinOp::create(*rewriter, loc, v).getResult(), rewriter,
-              loc};
+      return {
+          math::SinOp::create(*rewriter, loc, v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
   [[nodiscard]] Val cos() const {
     if constexpr (std::is_same_v<T, double>) {
       return {std::cos(v), rewriter, loc};
     } else {
-      return {math::CosOp::create(*rewriter, loc, v).getResult(), rewriter,
-              loc};
+      return {
+          math::CosOp::create(*rewriter, loc, v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
   [[nodiscard]] Val abs() const {
     if constexpr (std::is_same_v<T, double>) {
       return {std::abs(v), rewriter, loc};
     } else {
-      return {math::AbsFOp::create(*rewriter, loc, v).getResult(), rewriter,
-              loc};
+      return {
+          math::AbsFOp::create(*rewriter, loc, v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
   [[nodiscard]] Val floor() const {
     if constexpr (std::is_same_v<T, double>) {
       return {std::floor(v), rewriter, loc};
     } else {
-      return {math::FloorOp::create(*rewriter, loc, v).getResult(), rewriter,
-              loc};
+      return {
+          math::FloorOp::create(*rewriter, loc, v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
   [[nodiscard]] Val acos() const {
     if constexpr (std::is_same_v<T, double>) {
       return {std::acos(v), rewriter, loc};
     } else {
-      return {math::AcosOp::create(*rewriter, loc, v).getResult(), rewriter,
-              loc};
+      return {
+          math::AcosOp::create(*rewriter, loc, v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
   [[nodiscard]] Val atan2(Val x) const {
@@ -158,24 +188,33 @@ template <typename T> struct Val {
     if constexpr (std::is_same_v<T, double>) {
       return {std::atan2(v, x.v), rewriter, loc};
     } else {
-      return {math::Atan2Op::create(*rewriter, loc, v, x.v).getResult(),
-              rewriter, loc};
+      return {
+          math::Atan2Op::create(*rewriter, loc, v, x.v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
   [[nodiscard]] Val maximum(Val o) const {
     if constexpr (std::is_same_v<T, double>) {
       return {std::max(v, o.v), rewriter, loc};
     } else {
-      return {arith::MaximumFOp::create(*rewriter, loc, v, o.v).getResult(),
-              rewriter, loc};
+      return {
+          arith::MaximumFOp::create(*rewriter, loc, v, o.v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
   [[nodiscard]] Val minimum(Val o) const {
     if constexpr (std::is_same_v<T, double>) {
       return {std::min(v, o.v), rewriter, loc};
     } else {
-      return {arith::MinimumFOp::create(*rewriter, loc, v, o.v).getResult(),
-              rewriter, loc};
+      return {
+          arith::MinimumFOp::create(*rewriter, loc, v, o.v).getResult(),
+          rewriter,
+          loc,
+      };
     }
   }
 
@@ -222,7 +261,9 @@ template <typename T> struct Val {
     } else {
       return {
           arith::SelectOp::create(*t.rewriter, t.loc, c, t.v, f.v).getResult(),
-          t.rewriter, t.loc};
+          t.rewriter,
+          t.loc,
+      };
     }
   }
 };
@@ -265,12 +306,14 @@ struct RuntimeEulerAngles {
 template <typename T>
 static ScalarConsts<T> makeConsts(RewriterBase& rewriter, Location loc) {
   auto c = [&](double x) { return Val<T>::constant(rewriter, loc, x); };
-  return {.negOne = c(-1.0),
-          .zero = c(0.0),
-          .one = c(1.0),
-          .two = c(2.0),
-          .eps = c(1e-12),
-          .pi = c(std::numbers::pi)};
+  return {
+      .negOne = c(-1.0),
+      .zero = c(0.0),
+      .one = c(1.0),
+      .two = c(2.0),
+      .eps = c(1e-12),
+      .pi = c(std::numbers::pi),
+  };
 }
 
 /**
@@ -457,7 +500,11 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
         const auto invSqrtTwo =
             Val<T>::constant(rewriter, loc, 1.0 / std::numbers::sqrt2);
         return Quat<T>{
-            .w = c.zero, .x = invSqrtTwo, .y = c.zero, .z = invSqrtTwo};
+            .w = c.zero,
+            .x = invSqrtTwo,
+            .y = c.zero,
+            .z = invSqrtTwo,
+        };
       })
       .Case([&](IdOp) -> std::optional<Quat<T>> {
         return Quat<T>{.w = c.one, .x = c.zero, .y = c.zero, .z = c.zero};
@@ -470,10 +517,12 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
         }
         const auto halfTheta = *theta / c.two;
         const auto sinHalf = halfTheta.sin();
-        return Quat<T>{.w = halfTheta.cos(),
-                       .x = sinHalf * phi->cos(),
-                       .y = sinHalf * phi->sin(),
-                       .z = c.zero};
+        return Quat<T>{
+            .w = halfTheta.cos(),
+            .x = sinHalf * phi->cos(),
+            .y = sinHalf * phi->sin(),
+            .z = c.zero,
+        };
       })
       .Case([&](U2Op) -> std::optional<Quat<T>> {
         const auto phi = param(0);
@@ -775,7 +824,10 @@ directZYZAnglesFromGate(UnitaryOpInterface op, RewriterBase& rewriter,
   const Location loc = op->getLoc();
   auto parameter = [&](unsigned index) {
     return Val<Value>{
-        .v = op.getParameter(index), .rewriter = &rewriter, .loc = loc};
+        .v = op.getParameter(index),
+        .rewriter = &rewriter,
+        .loc = loc,
+    };
   };
   const auto halfPi =
       Val<Value>::constant(rewriter, loc, std::numbers::pi / 2.0);
@@ -788,42 +840,52 @@ directZYZAnglesFromGate(UnitaryOpInterface op, RewriterBase& rewriter,
     case RotationAxis::X:
       return {.theta = angle, .phi = -halfPi, .lambda = halfPi, .phase = phase};
     case RotationAxis::Y:
-      return {.theta = angle,
-              .phi = consts.zero,
-              .lambda = consts.zero,
-              .phase = phase};
+      return {
+          .theta = angle,
+          .phi = consts.zero,
+          .lambda = consts.zero,
+          .phase = phase,
+      };
     case RotationAxis::Z:
-      return {.theta = consts.zero,
-              .phi = consts.zero,
-              .lambda = angle,
-              .phase = phase};
+      return {
+          .theta = consts.zero,
+          .phi = consts.zero,
+          .lambda = angle,
+          .phase = phase,
+      };
     }
   }
 
   if (isa<ROp>(op.getOperation())) {
     const auto theta = parameter(0);
     const auto phi = parameter(1);
-    return {.theta = theta,
-            .phi = phi - halfPi,
-            .lambda = halfPi - phi,
-            .phase = consts.zero};
+    return {
+        .theta = theta,
+        .phi = phi - halfPi,
+        .lambda = halfPi - phi,
+        .phase = consts.zero,
+    };
   }
   if (isa<U2Op>(op.getOperation())) {
     const auto phi = parameter(0);
     const auto lambda = parameter(1);
-    return {.theta = halfPi,
-            .phi = phi,
-            .lambda = lambda,
-            .phase = sumAngles(phi, lambda) / consts.two};
+    return {
+        .theta = halfPi,
+        .phi = phi,
+        .lambda = lambda,
+        .phase = sumAngles(phi, lambda) / consts.two,
+    };
   }
 
   const auto theta = parameter(0);
   const auto phi = parameter(1);
   const auto lambda = parameter(2);
-  return {.theta = theta,
-          .phi = phi,
-          .lambda = lambda,
-          .phase = sumAngles(phi, lambda) / consts.two};
+  return {
+      .theta = theta,
+      .phi = phi,
+      .lambda = lambda,
+      .phase = sumAngles(phi, lambda) / consts.two,
+  };
 }
 
 static Value emitDirectU(RewriterBase& rewriter, UnitaryOpInterface op,
@@ -832,7 +894,10 @@ static Value emitDirectU(RewriterBase& rewriter, UnitaryOpInterface op,
   Value qubit = op.getInputQubit(0);
   auto parameter = [&](unsigned index) {
     return Val<Value>{
-        .v = op.getParameter(index), .rewriter = &rewriter, .loc = loc};
+        .v = op.getParameter(index),
+        .rewriter = &rewriter,
+        .loc = loc,
+    };
   };
   const auto halfPi =
       Val<Value>::constant(rewriter, loc, std::numbers::pi / 2.0);
@@ -1070,10 +1135,12 @@ struct MergeSingleQubitRotationGatesPattern final
       lambda = lambda + consts.pi;
       eulerPhase = eulerPhase + consts.pi;
     }
-    const RuntimeEulerAngles angles{.theta = theta,
-                                    .phi = phi,
-                                    .lambda = lambda,
-                                    .phase = phaseAccum + eulerPhase};
+    const RuntimeEulerAngles angles{
+        .theta = theta,
+        .phi = phi,
+        .lambda = lambda,
+        .phase = phaseAccum + eulerPhase,
+    };
     Value qubit = emitRuntimeEulerAngles(
         rewriter, loc, chain.front().getInputQubit(0), angles, basis, consts);
     rewriter.replaceOp(chain.front(), qubit);

@@ -138,26 +138,32 @@ cx q[0], q[1];
 TEST(CustomPropertyTest, SelectorsMapToEveryQDMIPropertyFamily) {
   constexpr std::array properties{
       CustomProperty::Custom1, CustomProperty::Custom2, CustomProperty::Custom3,
-      CustomProperty::Custom4, CustomProperty::Custom5};
+      CustomProperty::Custom4, CustomProperty::Custom5,
+  };
   constexpr std::array deviceProperties{
       QDMI_DEVICE_PROPERTY_CUSTOM1, QDMI_DEVICE_PROPERTY_CUSTOM2,
       QDMI_DEVICE_PROPERTY_CUSTOM3, QDMI_DEVICE_PROPERTY_CUSTOM4,
-      QDMI_DEVICE_PROPERTY_CUSTOM5};
+      QDMI_DEVICE_PROPERTY_CUSTOM5,
+  };
   constexpr std::array siteProperties{
       QDMI_SITE_PROPERTY_CUSTOM1, QDMI_SITE_PROPERTY_CUSTOM2,
       QDMI_SITE_PROPERTY_CUSTOM3, QDMI_SITE_PROPERTY_CUSTOM4,
-      QDMI_SITE_PROPERTY_CUSTOM5};
+      QDMI_SITE_PROPERTY_CUSTOM5,
+  };
   constexpr std::array operationProperties{
       QDMI_OPERATION_PROPERTY_CUSTOM1, QDMI_OPERATION_PROPERTY_CUSTOM2,
       QDMI_OPERATION_PROPERTY_CUSTOM3, QDMI_OPERATION_PROPERTY_CUSTOM4,
-      QDMI_OPERATION_PROPERTY_CUSTOM5};
+      QDMI_OPERATION_PROPERTY_CUSTOM5,
+  };
   constexpr std::array jobProperties{
       QDMI_JOB_PROPERTY_CUSTOM1, QDMI_JOB_PROPERTY_CUSTOM2,
       QDMI_JOB_PROPERTY_CUSTOM3, QDMI_JOB_PROPERTY_CUSTOM4,
-      QDMI_JOB_PROPERTY_CUSTOM5};
+      QDMI_JOB_PROPERTY_CUSTOM5,
+  };
   constexpr std::array jobResults{
       QDMI_JOB_RESULT_CUSTOM1, QDMI_JOB_RESULT_CUSTOM2, QDMI_JOB_RESULT_CUSTOM3,
-      QDMI_JOB_RESULT_CUSTOM4, QDMI_JOB_RESULT_CUSTOM5};
+      QDMI_JOB_RESULT_CUSTOM4, QDMI_JOB_RESULT_CUSTOM5,
+  };
 
   for (size_t i = 0; i < properties.size(); ++i) {
     EXPECT_EQ(detail::toDeviceProperty(properties[i]), deviceProperties[i]);
@@ -185,9 +191,10 @@ TEST(CustomPropertyTest, RejectsInvalidSelector) {
 }
 
 TEST(CustomPropertyTest, DecodesSupportedTypes) {
-  const std::vector<std::byte> stringBytes{std::byte{'v'}, std::byte{'a'},
-                                           std::byte{'l'}, std::byte{'u'},
-                                           std::byte{'e'}, std::byte{0}};
+  const std::vector<std::byte> stringBytes{
+      std::byte{'v'}, std::byte{'a'}, std::byte{'l'},
+      std::byte{'u'}, std::byte{'e'}, std::byte{0},
+  };
   EXPECT_EQ(detail::queryCustomValue<std::string>(queryBytes(stringBytes),
                                                   "test property"),
             "value");
@@ -453,21 +460,23 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
 
   // Every program format QDMI defines. A format added to QDMI must be added
   // here as well so that the loop below covers it.
-  constexpr std::array formats{QDMI_PROGRAM_FORMAT_QASM2,
-                               QDMI_PROGRAM_FORMAT_QASM3,
-                               QDMI_PROGRAM_FORMAT_QIRBASESTRING,
-                               QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
-                               QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
-                               QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
-                               QDMI_PROGRAM_FORMAT_CALIBRATION,
-                               QDMI_PROGRAM_FORMAT_QPY,
-                               QDMI_PROGRAM_FORMAT_IQMJSON,
-                               QDMI_PROGRAM_FORMAT_BATCHJOB,
-                               QDMI_PROGRAM_FORMAT_CUSTOM1,
-                               QDMI_PROGRAM_FORMAT_CUSTOM2,
-                               QDMI_PROGRAM_FORMAT_CUSTOM3,
-                               QDMI_PROGRAM_FORMAT_CUSTOM4,
-                               QDMI_PROGRAM_FORMAT_CUSTOM5};
+  constexpr std::array formats{
+      QDMI_PROGRAM_FORMAT_QASM2,
+      QDMI_PROGRAM_FORMAT_QASM3,
+      QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+      QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+      QDMI_PROGRAM_FORMAT_CALIBRATION,
+      QDMI_PROGRAM_FORMAT_QPY,
+      QDMI_PROGRAM_FORMAT_IQMJSON,
+      QDMI_PROGRAM_FORMAT_BATCHJOB,
+      QDMI_PROGRAM_FORMAT_CUSTOM1,
+      QDMI_PROGRAM_FORMAT_CUSTOM2,
+      QDMI_PROGRAM_FORMAT_CUSTOM3,
+      QDMI_PROGRAM_FORMAT_CUSTOM4,
+      QDMI_PROGRAM_FORMAT_CUSTOM5,
+  };
 
   for (const auto format : formats) {
     EXPECT_EQ(qdmi::isBinaryProgramFormat(format), expected(format))

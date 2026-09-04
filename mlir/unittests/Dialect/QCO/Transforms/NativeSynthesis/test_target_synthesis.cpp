@@ -162,9 +162,11 @@ makeUCxTarget(std::optional<std::vector<Site>> sites = std::nullopt) {
   if (!sites) {
     sites = std::vector{valid(Site::create(0)), valid(Site::create(1))};
   }
-  std::vector operations{valid(Operation::create("u", 1, 3)),
-                         valid(Operation::create("cx", 2, 0)),
-                         valid(Operation::create("gphase", 0, 1))};
+  std::vector operations{
+      valid(Operation::create("u", 1, 3)),
+      valid(Operation::create("cx", 2, 0)),
+      valid(Operation::create("gphase", 0, 1)),
+  };
   return valid(Target::create(std::move(*sites), Connectivity::allToAll(),
                               NativeOperations::fromOperations(operations)));
 }
@@ -194,32 +196,36 @@ denseMatrix(QCOProgramBuilder& builder, const int64_t dimension,
   return mlir::DenseElementsAttr::get(type, values);
 }
 
-constexpr std::array<std::complex<double>, 4> X_MATRIX{{
-    {0.0, 0.0},
-    {1.0, 0.0},
-    {1.0, 0.0},
-    {0.0, 0.0},
-}};
+constexpr std::array<std::complex<double>, 4> X_MATRIX{
+    {
+        {0.0, 0.0},
+        {1.0, 0.0},
+        {1.0, 0.0},
+        {0.0, 0.0},
+    },
+};
 
 // CX with operand 0 as the most-significant (control) qubit.
-constexpr std::array<std::complex<double>, 16> CX_MATRIX{{
-    {1.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {1.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {1.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {1.0, 0.0},
-    {0.0, 0.0},
-}};
+constexpr std::array<std::complex<double>, 16> CX_MATRIX{
+    {
+        {1.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {1.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {1.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {1.0, 0.0},
+        {0.0, 0.0},
+    },
+};
 
 namespace {
 
@@ -968,9 +974,10 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisPreservesNativeGlobalPhase) {
   auto synthesized = build(phasedX);
   const auto target =
       valid(Target::create(1, Connectivity::allToAll(),
-                           NativeOperations::fromOperations(
-                               {valid(Operation::create("x", 1, 0)),
-                                valid(Operation::create("gphase", 0, 1))})));
+                           NativeOperations::fromOperations({
+                               valid(Operation::create("x", 1, 0)),
+                               valid(Operation::create("gphase", 0, 1)),
+                           })));
 
   ASSERT_TRUE(mlir::succeeded(
       runPass(*synthesized, mlir::qco::createTargetNativeSynthesis(target))));
@@ -1046,10 +1053,11 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisUsesHomogeneousCapability) {
   auto synthesized = build(swap);
   const auto target =
       valid(Target::create(2, Connectivity::allToAll(),
-                           NativeOperations::fromOperations(
-                               {valid(Operation::create("u", 1, 3)),
-                                valid(Operation::create("cz", 2, 0)),
-                                valid(Operation::create("gphase", 0, 1))})));
+                           NativeOperations::fromOperations({
+                               valid(Operation::create("u", 1, 3)),
+                               valid(Operation::create("cz", 2, 0)),
+                               valid(Operation::create("gphase", 0, 1)),
+                           })));
   ASSERT_TRUE(target.synthesisBasis());
   ASSERT_EQ(target.synthesisBasis()->entangler, Target::GateKind::CZ);
 
@@ -1184,9 +1192,10 @@ TEST_F(TargetSynthesisTest, SupportedRuntimeParameterizedGateStaysUntouched) {
   ASSERT_TRUE(module);
   const auto target =
       valid(Target::create(2, Connectivity::allToAll(),
-                           NativeOperations::fromOperations(
-                               {valid(Operation::create("u", 1, 3)),
-                                valid(Operation::create("rxx", 2, 1))})));
+                           NativeOperations::fromOperations({
+                               valid(Operation::create("u", 1, 3)),
+                               valid(Operation::create("rxx", 2, 1)),
+                           })));
   const auto before = printModule(*module);
 
   ASSERT_TRUE(mlir::succeeded(

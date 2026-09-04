@@ -84,8 +84,10 @@ static auto makeEmbeddedLocalDD(dd::Package& package,
   llvm::SmallVector<EmbeddedOperand, 8> operands;
   operands.reserve(wires.size());
   for (size_t operand = 0; operand < wires.size(); ++operand) {
-    operands.push_back({.wire = wires[operand],
-                        .mask = size_t{1} << (wires.size() - 1 - operand)});
+    operands.push_back({
+        .wire = wires[operand],
+        .mask = size_t{1} << (wires.size() - 1 - operand),
+    });
   }
   std::ranges::sort(operands, std::greater{}, &EmbeddedOperand::wire);
 

@@ -538,7 +538,8 @@ static LogicalResult synthesizeTargetOperation(
 static LogicalResult fuseTwoQubitGates(ModuleOp moduleOp) {
   constexpr CompilerTarget::SynthesisBasis basis{
       .singleQubit = CompilerTarget::SingleQubitBasis::U,
-      .entangler = CompilerTarget::GateKind::CZ};
+      .entangler = CompilerTarget::GateKind::CZ,
+  };
 
   bool changed = false;
   IRRewriter rewriter(moduleOp.getContext());

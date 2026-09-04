@@ -170,8 +170,10 @@ Program::Storage Program::cloneStorage() const {
 
 Program::Storage Program::releaseStorage() && {
   assert(storage_.mod && "compiler program was already consumed");
-  return {.context = std::move(storage_.context),
-          .mod = std::move(storage_.mod)};
+  return {
+      .context = std::move(storage_.context),
+      .mod = std::move(storage_.mod),
+  };
 }
 
 //===----------------------------------------------------------------------===//

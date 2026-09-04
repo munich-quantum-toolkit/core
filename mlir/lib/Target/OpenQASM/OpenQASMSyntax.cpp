@@ -42,9 +42,11 @@ LogicalResult SyntaxBuilder::version(SMLoc location, const Version value) {
 }
 
 LogicalResult SyntaxBuilder::include(SMLoc location, StringRef filename) {
-  program.includes.push_back({.location = location,
-                              .filename = filename,
-                              .bodyOffset = program.body.size()});
+  program.includes.push_back({
+      .location = location,
+      .filename = filename,
+      .bodyOffset = program.body.size(),
+  });
   sawConstruct = true;
   return success();
 }
@@ -94,14 +96,16 @@ SyntaxExpressionId SyntaxBuilder::copyExpression(const Expr& expression) {
       }
       continue;
     }
-    SyntaxExpression copy{.kind = current->kind,
-                          .location = current->loc,
-                          .integer = current->intValue,
-                          .floatingPoint = current->floatValue,
-                          .boolean = current->boolValue,
-                          .identifier = current->identifier,
-                          .wideInteger = current->wideInteger,
-                          .hardwareQubit = current->hardwareQubit};
+    SyntaxExpression copy{
+        .kind = current->kind,
+        .location = current->loc,
+        .integer = current->intValue,
+        .floatingPoint = current->floatValue,
+        .boolean = current->boolValue,
+        .identifier = current->identifier,
+        .wideInteger = current->wideInteger,
+        .hardwareQubit = current->hardwareQubit,
+    };
     if (current->lhs != nullptr) {
       copy.lhs = copies.lookup(current->lhs);
     }
@@ -116,9 +120,11 @@ SyntaxExpressionId SyntaxBuilder::copyExpression(const Expr& expression) {
 }
 
 SyntaxOperand SyntaxBuilder::copyOperand(const Operand& operand) {
-  SyntaxOperand copy{.location = operand.loc,
-                     .identifier = operand.identifier,
-                     .hardwareQubit = operand.hardwareQubit};
+  SyntaxOperand copy{
+      .location = operand.loc,
+      .identifier = operand.identifier,
+      .hardwareQubit = operand.hardwareQubit,
+  };
   if (operand.index != nullptr) {
     copy.index = copyExpression(*operand.index);
   }
@@ -127,8 +133,10 @@ SyntaxOperand SyntaxBuilder::copyOperand(const Operand& operand) {
 
 SyntaxBitReference
 SyntaxBuilder::copyBitReference(const BitReference& reference) {
-  SyntaxBitReference copy{.location = reference.loc,
-                          .identifier = reference.identifier};
+  SyntaxBitReference copy{
+      .location = reference.loc,
+      .identifier = reference.identifier,
+  };
   if (reference.index != nullptr) {
     copy.index = copyExpression(*reference.index);
   }
@@ -159,10 +167,12 @@ LogicalResult SyntaxBuilder::scalarDecl(SMLoc location, const ScalarKind kind,
                                         StringRef identifier, const Expr* size,
                                         const Expr* initializer,
                                         const bool isConst, const bool output) {
-  SyntaxScalarDeclaration declaration{.kind = kind,
-                                      .identifier = identifier,
-                                      .isConst = isConst,
-                                      .output = output};
+  SyntaxScalarDeclaration declaration{
+      .kind = kind,
+      .identifier = identifier,
+      .isConst = isConst,
+      .output = output,
+  };
   if (size != nullptr) {
     declaration.size = copyExpression(*size);
   }
@@ -176,9 +186,10 @@ LogicalResult SyntaxBuilder::scalarDecl(SMLoc location, const ScalarKind kind,
 LogicalResult SyntaxBuilder::assignment(SMLoc location,
                                         const BitReference& target,
                                         const Expr& value) {
-  std::ignore = addStatement(
-      location, SyntaxAssignment{.target = copyBitReference(target),
-                                 .value = copyExpression(value)});
+  std::ignore = addStatement(location, SyntaxAssignment{
+                                           .target = copyBitReference(target),
+                                           .value = copyExpression(value),
+                                       });
   return success();
 }
 
@@ -242,9 +253,11 @@ LogicalResult SyntaxBuilder::gateCall(const GateCall& call) {
 LogicalResult SyntaxBuilder::gateDefinition(
     SMLoc location, StringRef identifier, ArrayRef<StringRef> parameters,
     ArrayRef<StringRef> qubits, function_ref<LogicalResult()> continuation) {
-  SyntaxGateDefinition definition{.identifier = identifier,
-                                  .parameters = parameters.vec(),
-                                  .qubits = qubits.vec()};
+  SyntaxGateDefinition definition{
+      .identifier = identifier,
+      .parameters = parameters.vec(),
+      .qubits = qubits.vec(),
+  };
   auto body = parseNestedBody(continuation);
   if (failed(body)) {
     return failure();
@@ -288,10 +301,12 @@ SyntaxBuilder::ifStmt(SMLoc location, const Expr& condition,
   if (failed(elseStatements)) {
     return failure();
   }
-  std::ignore = addStatement(
-      location, SyntaxIf{.condition = copyExpression(condition),
-                         .thenStatements = std::move(*thenStatements),
-                         .elseStatements = std::move(*elseStatements)});
+  std::ignore =
+      addStatement(location, SyntaxIf{
+                                 .condition = copyExpression(condition),
+                                 .thenStatements = std::move(*thenStatements),
+                                 .elseStatements = std::move(*elseStatements),
+                             });
   return success();
 }
 
@@ -305,12 +320,14 @@ SyntaxBuilder::forStmt(SMLoc location, StringRef inductionVariable,
     return failure();
   }
   std::ignore =
-      addStatement(location, SyntaxFor{.inductionVariable = inductionVariable,
-                                       .isUnsigned = isUnsigned,
-                                       .start = copyExpression(start),
-                                       .step = copyExpression(step),
-                                       .stop = copyExpression(stop),
-                                       .body = std::move(*body)});
+      addStatement(location, SyntaxFor{
+                                 .inductionVariable = inductionVariable,
+                                 .isUnsigned = isUnsigned,
+                                 .start = copyExpression(start),
+                                 .step = copyExpression(step),
+                                 .stop = copyExpression(stop),
+                                 .body = std::move(*body),
+                             });
   return success();
 }
 
@@ -322,8 +339,10 @@ SyntaxBuilder::whileStmt(SMLoc location, const Expr& condition,
     return failure();
   }
   std::ignore =
-      addStatement(location, SyntaxWhile{.condition = copyExpression(condition),
-                                         .body = std::move(*body)});
+      addStatement(location, SyntaxWhile{
+                                 .condition = copyExpression(condition),
+                                 .body = std::move(*body),
+                             });
   return success();
 }
 

@@ -78,10 +78,12 @@ constexpr auto ARBITRARY_POSITIVE_CONTROLS_METADATA =
 
 constexpr auto controllableOperation(const char* name, const size_t numSites,
                                      const size_t numParams) -> OperationInfo {
-  return OperationInfo{.name = name,
-                       .numSites = numSites,
-                       .numParams = numParams,
-                       .supportsArbitraryPositiveControls = true};
+  return OperationInfo{
+      .name = name,
+      .numSites = numSites,
+      .numParams = numParams,
+      .supportsArbitraryPositiveControls = true,
+  };
 }
 
 constexpr std::array OPERATIONS{
@@ -91,7 +93,11 @@ constexpr std::array OPERATIONS{
     OperationInfo{.name = "cx", .numSites = 2, .numParams = 0},
     OperationInfo{.name = "ccx", .numSites = 3, .numParams = 0},
     OperationInfo{
-        .name = "mcx", .numSites = 0, .numParams = 0, .isVariadic = true},
+        .name = "mcx",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
     controllableOperation("y", 1, 0),
     OperationInfo{.name = "cy", .numSites = 2, .numParams = 0},
     controllableOperation("z", 1, 0),
@@ -118,7 +124,11 @@ constexpr std::array OPERATIONS{
     controllableOperation("p", 1, 1),
     OperationInfo{.name = "cp", .numSites = 2, .numParams = 1},
     OperationInfo{
-        .name = "mcp", .numSites = 0, .numParams = 1, .isVariadic = true},
+        .name = "mcp",
+        .numSites = 0,
+        .numParams = 1,
+        .isVariadic = true,
+    },
     OperationInfo{.name = "u1", .numSites = 1, .numParams = 1},
     OperationInfo{.name = "cu1", .numSites = 2, .numParams = 1},
     controllableOperation("u2", 1, 2),
@@ -140,9 +150,18 @@ constexpr std::array OPERATIONS{
     OperationInfo{.name = "measure", .numSites = 1, .numParams = 0},
     OperationInfo{.name = "reset", .numSites = 1, .numParams = 0},
     OperationInfo{
-        .name = "barrier", .numSites = 0, .numParams = 0, .isVariadic = true},
+        .name = "barrier",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
     OperationInfo{
-        .name = "if_else", .numSites = 0, .numParams = 0, .isVariadic = true}};
+        .name = "if_else",
+        .numSites = 0,
+        .numParams = 0,
+        .isVariadic = true,
+    },
+};
 
 template <std::size_t N>
 constexpr std::array<const OperationInfo*, N>

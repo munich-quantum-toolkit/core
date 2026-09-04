@@ -115,10 +115,12 @@ private:
 public:
   /// The memory manager for vector nodes
   MemoryManager vMemoryManager{
-      MemoryManager::create<vNode>(config_.utVecInitialAllocationSize)};
+      MemoryManager::create<vNode>(config_.utVecInitialAllocationSize),
+  };
   /// The memory manager for matrix nodes
   MemoryManager mMemoryManager{
-      MemoryManager::create<mNode>(config_.utMatInitialAllocationSize)};
+      MemoryManager::create<mNode>(config_.utMatInitialAllocationSize),
+  };
   /**
    * @brief The memory manager for complex numbers
    * @note The real and imaginary part of complex numbers are treated

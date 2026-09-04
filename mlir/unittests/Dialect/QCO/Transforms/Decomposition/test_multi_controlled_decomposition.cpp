@@ -54,17 +54,20 @@ using namespace mlir::qco;
 /// coherent-state DD at selected policy boundaries and representative larger
 /// MCP widths.
 static constexpr std::array<size_t, 20> K_DD_CONTROL_COUNTS = {
-    2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 33};
+    2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 33,
+};
 static constexpr size_t K_MATRIX_DD_MAX_PAULI = 8;
 static constexpr size_t K_MATRIX_DD_MAX_MCP = 6;
 static constexpr std::array<size_t, 5> K_COHERENT_HP24_CONTROL_COUNTS = {
-    10, 11, 21, 22, 23};
+    10, 11, 21, 22, 23,
+};
 static constexpr std::array<size_t, 2> K_COHERENT_MCP_CONTROL_COUNTS = {7, 12};
 /// Additional fully-lowered/CX smoke checks for k > 20 through the SP22 MCX
 /// limit (k=32) and the first HP24 width (k=33). Selected widths also receive
 /// coherent DD coverage above.
 static constexpr std::array<size_t, 13> K_SMOKE_CONTROL_COUNTS = {
-    21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33};
+    21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33,
+};
 
 /// Expected elementary Ctrl@X counts after default `min-qubits=3` lowering.
 /// Indexed by control count `k`; unused slots are zero.
@@ -646,8 +649,10 @@ TEST_F(MultiControlledDecompositionTest,
   ASSERT_TRUE(moduleOp);
 
   using Operation = CompilerTarget::Operation;
-  std::vector operations{llvm::cantFail(
-      Operation::create("rccx", Operation::Arity::variadic(4), 0))};
+  std::vector operations{
+      llvm::cantFail(
+          Operation::create("rccx", Operation::Arity::variadic(4), 0)),
+  };
   const auto target = llvm::cantFail(CompilerTarget::create(
       4, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations(operations)));

@@ -322,9 +322,10 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
 
     auto replacement = cast<IfOp>(rewriter.eraseOpResults(op, resultsToErase));
     rewriter.modifyOpInPlace(replacement, [&] {
-      replacement.getProperties().setResultSegmentSizes(
-          ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
-                             static_cast<int32_t>(numLinearResults)}));
+      replacement.getProperties().setResultSegmentSizes(ArrayRef<int32_t>({
+          static_cast<int32_t>(numClassicalResults),
+          static_cast<int32_t>(numLinearResults),
+      }));
     });
     return success();
   }

@@ -63,10 +63,14 @@ static void setIntegerModuleFlag(llvm::Module& moduleOp,
 }
 
 void normalizeQIRModuleFlags(llvm::Module& moduleOp, ModuleOp sourceModule) {
-  for (const auto* const key :
-       {"dynamic_qubit_management", "dynamic_result_management", "arrays",
-        "ir_functions", "multiple_target_branching",
-        "multiple_return_points"}) {
+  for (const auto* const key : {
+           "dynamic_qubit_management",
+           "dynamic_result_management",
+           "arrays",
+           "ir_functions",
+           "multiple_target_branching",
+           "multiple_return_points",
+       }) {
     if (moduleOp.getModuleFlag(key) != nullptr) {
       setIntegerModuleFlag(moduleOp, llvm::Module::Error, key, 1,
                            moduleFlagIntegerValue(moduleOp, key));
@@ -198,8 +202,10 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
         LLVM::CallOp::create(builder, loc, tupleCreate, sizeValue).getResult();
 
     for (const auto& [index, value] : llvm::enumerate(payload)) {
-      const SmallVector<LLVM::GEPArg> indices{0,
-                                              static_cast<std::int32_t>(index)};
+      const SmallVector<LLVM::GEPArg> indices{
+          0,
+          static_cast<std::int32_t>(index),
+      };
       auto element = LLVM::GEPOp::create(builder, loc, ptrType, tupleType,
                                          gateArgs, indices)
                          .getResult();

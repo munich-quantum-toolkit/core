@@ -51,7 +51,8 @@ constexpr GateMatrix S_MAT{1, 0, 0, {0, 1}};
 constexpr GateMatrix T_MAT{1, 0, 0, {SQRT2_2, SQRT2_2}};
 constexpr GateMatrix TDG_MAT{1, 0, 0, {SQRT2_2, -SQRT2_2}};
 constexpr TwoQubitGateMatrix SWAP_MAT{
-    {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}}};
+    {{1, 0, 0, 0}, {0, 0, 1, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}},
+};
 constexpr ThreeQubitGateMatrix THREE_QUBIT_MAT = [] {
   ThreeQubitGateMatrix matrix{};
   for (size_t i = 0; i < THREE_QUBIT_GATE_DIM; ++i) {
@@ -197,7 +198,8 @@ TEST(DDPackageTest, BellState) {
       "bell_state_mono_labels.dot",    "bell_state_mono_labels_classic.dot",
       "bell_state_colored.dot",        "bell_state_colored_classic.dot",
       "bell_state_mono.dot",           "bell_state_mono_classic.dot",
-      "bell_state_memory.dot"};
+      "bell_state_memory.dot",
+  };
 
   for (const auto* const filename : filenames) {
     std::ifstream ifs(filename);
@@ -297,33 +299,35 @@ TEST(DDPackageTest, QFTState) {
   export2Dot(qftOp, "qft_op_rectangular_memory.dot", false, true, true, true,
              false, false);
 
-  const auto filenames = {"qft_state_colored_labels.dot",
-                          "qft_state_colored_labels_classic.dot",
-                          "qft_state_mono_labels.dot",
-                          "qft_state_mono_labels_classic.dot",
-                          "qft_state_colored.dot",
-                          "qft_state_colored_classic.dot",
-                          "qft_state_mono.dot",
-                          "qft_state_mono_classic.dot",
-                          "qft_state_memory.dot",
-                          "qft_op_polar_colored_labels.dot",
-                          "qft_op_polar_colored_labels_classic.dot",
-                          "qft_op_polar_mono_labels.dot",
-                          "qft_op_polar_mono_labels_classic.dot",
-                          "qft_op_polar_colored.dot",
-                          "qft_op_polar_colored_classic.dot",
-                          "qft_op_polar_mono.dot",
-                          "qft_op_polar_mono_classic.dot",
-                          "qft_op_polar_memory.dot",
-                          "qft_op_rectangular_colored_labels.dot",
-                          "qft_op_rectangular_colored_labels_classic.dot",
-                          "qft_op_rectangular_mono_labels.dot",
-                          "qft_op_rectangular_mono_labels_classic.dot",
-                          "qft_op_rectangular_colored.dot",
-                          "qft_op_rectangular_colored_classic.dot",
-                          "qft_op_rectangular_mono.dot",
-                          "qft_op_rectangular_mono_classic.dot",
-                          "qft_op_rectangular_memory.dot"};
+  const auto filenames = {
+      "qft_state_colored_labels.dot",
+      "qft_state_colored_labels_classic.dot",
+      "qft_state_mono_labels.dot",
+      "qft_state_mono_labels_classic.dot",
+      "qft_state_colored.dot",
+      "qft_state_colored_classic.dot",
+      "qft_state_mono.dot",
+      "qft_state_mono_classic.dot",
+      "qft_state_memory.dot",
+      "qft_op_polar_colored_labels.dot",
+      "qft_op_polar_colored_labels_classic.dot",
+      "qft_op_polar_mono_labels.dot",
+      "qft_op_polar_mono_labels_classic.dot",
+      "qft_op_polar_colored.dot",
+      "qft_op_polar_colored_classic.dot",
+      "qft_op_polar_mono.dot",
+      "qft_op_polar_mono_classic.dot",
+      "qft_op_polar_memory.dot",
+      "qft_op_rectangular_colored_labels.dot",
+      "qft_op_rectangular_colored_labels_classic.dot",
+      "qft_op_rectangular_mono_labels.dot",
+      "qft_op_rectangular_mono_labels_classic.dot",
+      "qft_op_rectangular_colored.dot",
+      "qft_op_rectangular_colored_classic.dot",
+      "qft_op_rectangular_mono.dot",
+      "qft_op_rectangular_mono_classic.dot",
+      "qft_op_rectangular_memory.dot",
+  };
 
   // cleanup files
   for (const auto* const filename : filenames) {
@@ -511,9 +515,14 @@ TEST(DDPackageTest, StateGenerationManipulation) {
   b[0] = b[1] = true;
   auto e = makeBasisState(nqubits, b, *dd);
   auto f = makeBasisState(nqubits,
-                          {BasisStates::zero, BasisStates::one,
-                           BasisStates::plus, BasisStates::minus,
-                           BasisStates::left, BasisStates::right},
+                          {
+                              BasisStates::zero,
+                              BasisStates::one,
+                              BasisStates::plus,
+                              BasisStates::minus,
+                              BasisStates::left,
+                              BasisStates::right,
+                          },
                           *dd);
   dd->vUniqueTable.print<vNode>();
   dd->decRef(e);
@@ -607,15 +616,17 @@ TEST(DDPackageTest, BellMatrix) {
   export2Dot(bellMatrix, "bell_matrix_memory.dot", false, true, true, true,
              false);
 
-  const auto filenames = {"bell_matrix_colored_labels.dot",
-                          "bell_matrix_colored_labels_classic.dot",
-                          "bell_matrix_mono_labels.dot",
-                          "bell_matrix_mono_labels_classic.dot",
-                          "bell_matrix_colored.dot",
-                          "bell_matrix_colored_classic.dot",
-                          "bell_matrix_mono.dot",
-                          "bell_matrix_mono_classic.dot",
-                          "bell_matrix_memory.dot"};
+  const auto filenames = {
+      "bell_matrix_colored_labels.dot",
+      "bell_matrix_colored_labels_classic.dot",
+      "bell_matrix_mono_labels.dot",
+      "bell_matrix_mono_labels_classic.dot",
+      "bell_matrix_colored.dot",
+      "bell_matrix_colored_classic.dot",
+      "bell_matrix_mono.dot",
+      "bell_matrix_mono_classic.dot",
+      "bell_matrix_memory.dot",
+  };
 
   for (const auto* const filename : filenames) {
     std::ifstream ifs(filename);
@@ -879,7 +890,8 @@ TEST(DDPackageTest, ReduceGarbageMatrix) {
       {0, 0, 0, 0, 0, 0, 0, 0},
       {0, 0, 0, 0, 0, 0, 0, 0},
       {0, 0, 0, 0, 0, 0, 0, 0},
-      {0, 0, 0, 0, 0, 0, 0, 0}};
+      {0, 0, 0, 0, 0, 0, 0, 0},
+  };
   EXPECT_EQ(reducedState1.getMatrix(dd->qubits()), expectedMatrix1);
 
   dd->incRef(initialState);
@@ -888,11 +900,12 @@ TEST(DDPackageTest, ReduceGarbageMatrix) {
   std::cout << "After reduceGarbage(q0 is garbage):\n";
   reducedState2.printMatrix(dd->qubits());
 
-  auto expectedMatrix2 =
-      CMat{{1, 0, 0, 1, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
-           {0, 1, 1, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
-           {0, 0, 0, 0, 1, 0, 0, 1}, {0, 0, 0, 0, 0, 0, 0, 0},
-           {0, 0, 0, 0, 0, 1, 1, 0}, {0, 0, 0, 0, 0, 0, 0, 0}};
+  auto expectedMatrix2 = CMat{
+      {1, 0, 0, 1, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
+      {0, 1, 1, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
+      {0, 0, 0, 0, 1, 0, 0, 1}, {0, 0, 0, 0, 0, 0, 0, 0},
+      {0, 0, 0, 0, 0, 1, 1, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
+  };
   EXPECT_EQ(reducedState2.getMatrix(dd->qubits()), expectedMatrix2);
 }
 
@@ -1784,10 +1797,12 @@ TEST(DDPackageTest, DDFromTwoQubitMatrix) {
 }
 
 TEST(DDPackageTest, DDFromTwoQubitAsymmetricalMatrix) {
-  const auto inputMatrix = CMat{{SQRT2_2, SQRT2_2, 0, 0},
-                                {-SQRT2_2, SQRT2_2, 0, 0},
-                                {0, 0, SQRT2_2, -SQRT2_2},
-                                {0, 0, SQRT2_2, SQRT2_2}};
+  const auto inputMatrix = CMat{
+      {SQRT2_2, SQRT2_2, 0, 0},
+      {-SQRT2_2, SQRT2_2, 0, 0},
+      {0, 0, SQRT2_2, -SQRT2_2},
+      {0, 0, SQRT2_2, SQRT2_2},
+  };
 
   constexpr auto nrQubits = 2U;
   const auto dd = std::make_unique<Package>(nrQubits);
@@ -1798,11 +1813,12 @@ TEST(DDPackageTest, DDFromTwoQubitAsymmetricalMatrix) {
 }
 
 TEST(DDPackageTest, DDFromThreeQubitMatrix) {
-  const auto inputMatrix =
-      CMat{{1, 0, 0, 0, 0, 0, 0, 0}, {0, 1, 0, 0, 0, 0, 0, 0},
-           {0, 0, 1, 0, 0, 0, 0, 0}, {0, 0, 0, 1, 0, 0, 0, 0},
-           {0, 0, 0, 0, 1, 0, 0, 0}, {0, 0, 0, 0, 0, 1, 0, 0},
-           {0, 0, 0, 0, 0, 0, 0, 1}, {0, 0, 0, 0, 0, 0, 1, 0}};
+  const auto inputMatrix = CMat{
+      {1, 0, 0, 0, 0, 0, 0, 0}, {0, 1, 0, 0, 0, 0, 0, 0},
+      {0, 0, 1, 0, 0, 0, 0, 0}, {0, 0, 0, 1, 0, 0, 0, 0},
+      {0, 0, 0, 0, 1, 0, 0, 0}, {0, 0, 0, 0, 0, 1, 0, 0},
+      {0, 0, 0, 0, 0, 0, 0, 1}, {0, 0, 0, 0, 0, 0, 1, 0},
+  };
 
   constexpr auto nrQubits = 3U;
   const auto dd = std::make_unique<Package>(nrQubits);
@@ -1847,9 +1863,11 @@ TEST(DDPackageTest, DDFromSingleElementMatrix) {
 }
 
 constexpr TwoQubitGateMatrix CX_MAT{
-    {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}}};
+    {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 0, 1}, {0, 0, 1, 0}},
+};
 constexpr TwoQubitGateMatrix CZ_MAT{
-    {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, -1}}};
+    {{1, 0, 0, 0}, {0, 1, 0, 0}, {0, 0, 1, 0}, {0, 0, 0, -1}},
+};
 
 TEST(DDPackageTest, TwoQubitControlledGateDDConstruction) {
   constexpr auto nrQubits = 5U;
@@ -2011,10 +2029,13 @@ TEST(DDPackageTest, InnerProductTopNodeConjugation) {
   const auto cosTheta = std::cos(1.);
   const auto sinTheta = std::sin(1.);
   const TwoQubitGateMatrix evolutionMatrix{
-      {{cosTheta, 0, 0, {0., sinTheta}},
-       {0, cosTheta, {0., sinTheta}, 0},
-       {0, {0., sinTheta}, cosTheta, 0},
-       {std::complex<fp>{0., sinTheta}, 0, 0, cosTheta}}};
+      {
+          {cosTheta, 0, 0, {0., sinTheta}},
+          {0, cosTheta, {0., sinTheta}, 0},
+          {0, {0., sinTheta}, cosTheta, 0},
+          {std::complex<fp>{0., sinTheta}, 0, 0, cosTheta},
+      },
+  };
   const auto rxx = dd->makeTwoQubitGateDD(evolutionMatrix, 0, 1);
   const auto op = getDD(TestGate(0, Fixture::Z), *dd);
 
@@ -2135,10 +2156,12 @@ TEST(DDPackageTest, VectorConjugate) {
   EXPECT_EQ(dd->conjugate(vEdge::terminal(dd->cn.lookup(0., 1.))),
             vEdge::terminal(dd->cn.lookup(0., -1.)));
 
-  CVec vec{{0., 0.5},
-           {0.5 * SQRT2_2, 0.5 * SQRT2_2},
-           {0., -0.5},
-           {-0.5 * SQRT2_2, -0.5 * SQRT2_2}};
+  CVec vec{
+      {0., 0.5},
+      {0.5 * SQRT2_2, 0.5 * SQRT2_2},
+      {0., -0.5},
+      {-0.5 * SQRT2_2, -0.5 * SQRT2_2},
+  };
 
   const auto vecDD = makeStateFromVector(vec, *dd);
   std::cout << "Vector:\n";
@@ -2203,11 +2226,12 @@ TEST(DDPackageTest, ReduceAncillaIdentityBetweenTwoNodes) {
   dd->incRef(state);
   const auto outputDD = dd->reduceAncillae(state, {false, true, false});
   const auto outputMatrix = outputDD.getMatrix(dd->qubits());
-  const auto expected =
-      CMat{{0, 0, 0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0, 0, 0},
-           {0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
-           {0, 1, 0, 0, 0, 0, 0, 0}, {1, 0, 0, 0, 0, 0, 0, 0},
-           {0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0}};
+  const auto expected = CMat{
+      {0, 0, 0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0, 0, 0},
+      {0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
+      {0, 1, 0, 0, 0, 0, 0, 0}, {1, 0, 0, 0, 0, 0, 0, 0},
+      {0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
+  };
   EXPECT_EQ(outputMatrix, expected);
 }
 
@@ -2277,10 +2301,12 @@ TEST(DDPackageTest, ReduceGarbageIdentityBetweenTwoNodes) {
   dd->incRef(state);
   auto outputDD = dd->reduceGarbage(state, {false, true, false});
   auto outputMatrix = outputDD.getMatrix(dd->qubits());
-  auto expected = CMat{{0, 0, 0, 0, 0, 1, 0, 1}, {0, 0, 0, 0, 1, 0, 1, 0},
-                       {0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
-                       {0, 1, 0, 1, 0, 0, 0, 0}, {1, 0, 1, 0, 0, 0, 0, 0},
-                       {0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0}};
+  auto expected = CMat{
+      {0, 0, 0, 0, 0, 1, 0, 1}, {0, 0, 0, 0, 1, 0, 1, 0},
+      {0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
+      {0, 1, 0, 1, 0, 0, 0, 0}, {1, 0, 1, 0, 0, 0, 0, 0},
+      {0, 0, 0, 0, 0, 0, 0, 0}, {0, 0, 0, 0, 0, 0, 0, 0},
+  };
   EXPECT_EQ(outputMatrix, expected);
 
   // test also for non-regular garbage reduction as well
@@ -2288,10 +2314,12 @@ TEST(DDPackageTest, ReduceGarbageIdentityBetweenTwoNodes) {
   outputDD = dd->reduceGarbage(state, {false, true, false}, false);
 
   outputMatrix = outputDD.getMatrix(dd->qubits());
-  expected = CMat{{0, 0, 0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0, 0, 0},
-                  {0, 0, 0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0, 0, 0},
-                  {0, 1, 0, 0, 0, 0, 0, 0}, {1, 0, 0, 0, 0, 0, 0, 0},
-                  {0, 1, 0, 0, 0, 0, 0, 0}, {1, 0, 0, 0, 0, 0, 0, 0}};
+  expected = CMat{
+      {0, 0, 0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0, 0, 0},
+      {0, 0, 0, 0, 0, 1, 0, 0}, {0, 0, 0, 0, 1, 0, 0, 0},
+      {0, 1, 0, 0, 0, 0, 0, 0}, {1, 0, 0, 0, 0, 0, 0, 0},
+      {0, 1, 0, 0, 0, 0, 0, 0}, {1, 0, 0, 0, 0, 0, 0, 0},
+  };
   EXPECT_EQ(outputMatrix, expected);
 }
 } // namespace dd

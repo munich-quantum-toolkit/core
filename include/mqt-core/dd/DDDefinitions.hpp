@@ -49,7 +49,7 @@ struct Control {
     /// Positive controls trigger on \f$\ket{1}\f$.
     Pos = true,
     /// Negative controls trigger on \f$\ket{0}\f$.
-    Neg = false
+    Neg = false,
   };
 
   /// Control qubit index.
@@ -119,7 +119,7 @@ enum class BasisStates : std::uint8_t {
   plus,  // NOLINT(readability-identifier-naming)
   minus, // NOLINT(readability-identifier-naming)
   right, // NOLINT(readability-identifier-naming)
-  left   // NOLINT(readability-identifier-naming)
+  left,  // NOLINT(readability-identifier-naming)
 };
 
 static constexpr auto SQRT2_2 = static_cast<fp>(

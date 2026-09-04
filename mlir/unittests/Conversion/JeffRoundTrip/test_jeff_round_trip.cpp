@@ -406,14 +406,20 @@ TEST(JeffRoundTripRegressionTest, RejectsInvalidJeffModuleMetadata) {
       {builder.getNamedAttr("jeff.entrypoint", builder.getI16IntegerAttr(0))},
       "requires an unsigned integer 'jeff.entrypoint' attribute");
   rejects({entryPoint}, "requires an array 'jeff.strings' attribute");
-  rejects({builder.getNamedAttr("jeff.entrypoint",
-                                builder.getIntegerAttr(uint16Type, 1)),
-           strings},
-          "'jeff.entrypoint' index is out of bounds");
   rejects(
-      {entryPoint, builder.getNamedAttr(
-                       "jeff.strings",
-                       builder.getArrayAttr({builder.getI32IntegerAttr(0)}))},
+      {
+          builder.getNamedAttr("jeff.entrypoint",
+                               builder.getIntegerAttr(uint16Type, 1)),
+          strings,
+      },
+      "'jeff.entrypoint' index is out of bounds");
+  rejects(
+      {
+          entryPoint,
+          builder.getNamedAttr(
+              "jeff.strings",
+              builder.getArrayAttr({builder.getI32IntegerAttr(0)})),
+      },
       "'jeff.entrypoint' must index a string");
 }
 

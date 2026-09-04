@@ -86,7 +86,8 @@ TEST_F(CNTest, SortedBuckets) {
       num + (2. * RealNumber::eps), num - (2. * RealNumber::eps),
       num + (4. * RealNumber::eps), num,
       num - (4. * RealNumber::eps), num + (6. * RealNumber::eps),
-      num + (8. * RealNumber::eps)};
+      num + (8. * RealNumber::eps),
+  };
 
   const auto theBucket =
       static_cast<std::size_t>(RealNumberUniqueTable::hash(num));

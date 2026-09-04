@@ -24,7 +24,7 @@ enum class QFTMethod : uint8_t {
   /// Transform one qubit for each input bit before measurement.
   Standard,
   /// Measure and reset one reused qubit, with feed-forward from prior results.
-  Semiclassical
+  Semiclassical,
 };
 
 /// Parameters for one QFT benchmark instance.

@@ -128,9 +128,20 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
     -> SessionPatch {
   requireObject(value, source, path);
   rejectUnknownKeys(value,
-                    {"base-url", "token", "auth-file", "auth-url", "username",
-                     "password", "custom1", "custom2", "custom3", "custom4",
-                     "custom5", "device-config"},
+                    {
+                        "base-url",
+                        "token",
+                        "auth-file",
+                        "auth-url",
+                        "username",
+                        "password",
+                        "custom1",
+                        "custom2",
+                        "custom3",
+                        "custom4",
+                        "custom5",
+                        "device-config",
+                    },
                     source, path);
   SessionPatch patch;
   patch.baseUrl = optionalString(value, "base-url", source, path);
@@ -168,7 +179,8 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
                                     " must be a non-empty string");
       }
       patch.deviceConfiguration = FileDeviceConfiguration{
-          .path = resolvePath(fileConfig->get<std::string>(), base)};
+          .path = resolvePath(fileConfig->get<std::string>(), base),
+      };
     }
   }
   if (auto authFile = optionalString(value, "auth-file", source, path)) {

@@ -75,9 +75,12 @@ static void verifyMatrix2x2FixedMatchesDynamic() {
 }
 
 static void verifyMatrix4x4FixedMatchesDynamic() {
-  const Matrix4x4 gate =
-      Matrix4x4::fromDiagonal({std::exp(1i * 0.2), std::exp(1i * 0.5),
-                               std::exp(1i * 1.1), std::exp(1i * -0.7)});
+  const Matrix4x4 gate = Matrix4x4::fromDiagonal({
+      std::exp(1i * 0.2),
+      std::exp(1i * 0.5),
+      std::exp(1i * 1.1),
+      std::exp(1i * -0.7),
+  });
   const std::optional<EigenDecomposition4x4> fixed = gate.eigenDecomposition();
   const std::optional<EigenDecomposition> dynamic =
       DynamicMatrix(gate).eigenDecomposition();
@@ -440,9 +443,11 @@ TEST(DynamicMatrix, PremultiplyByEmbeddedMatchesDense) {
       EXPECT_TRUE(dense.isApprox(structured));
     }
   }
-  for (const std::array<size_t, 2> wires :
-       {std::array<size_t, 2>{0, 1}, std::array<size_t, 2>{0, 2},
-        std::array<size_t, 2>{1, 2}}) {
+  for (const std::array<size_t, 2> wires : {
+           std::array<size_t, 2>{0, 1},
+           std::array<size_t, 2>{0, 2},
+           std::array<size_t, 2>{1, 2},
+       }) {
     constexpr size_t numQubits = 3;
     DynamicMatrix dense =
         DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
@@ -835,9 +840,12 @@ TEST(SymmetricEigensolver, ReconstructsRandomSymmetric) {
     EXPECT_TRUE((v.transpose() * v).isIdentity());
 
     // Reconstruction: V D V^T == A.
-    const Matrix4x4 d =
-        Matrix4x4::fromDiagonal({result.eigenvalues[0], result.eigenvalues[1],
-                                 result.eigenvalues[2], result.eigenvalues[3]});
+    const Matrix4x4 d = Matrix4x4::fromDiagonal({
+        result.eigenvalues[0],
+        result.eigenvalues[1],
+        result.eigenvalues[2],
+        result.eigenvalues[3],
+    });
     const Matrix4x4 reconstructed = v * d * v.transpose();
     const Matrix4x4 original =
         Matrix4x4::fromElements(a[0], a[1], a[2], a[3],      // row 0

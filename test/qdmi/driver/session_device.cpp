@@ -90,11 +90,19 @@ namespace {
 [[nodiscard]] auto customOperationHandles()
     -> const std::array<QDMI_Operation, 2>& {
   static QDMI_Operation_impl_d rotate{
-      .name = "custom-rx", .qubitsNum = 1, .parametersNum = 1};
+      .name = "custom-rx",
+      .qubitsNum = 1,
+      .parametersNum = 1,
+  };
   static QDMI_Operation_impl_d controlledNot{
-      .name = "custom-cx", .qubitsNum = 2, .parametersNum = 0};
-  static const std::array<QDMI_Operation, 2> OPERATIONS{&rotate,
-                                                        &controlledNot};
+      .name = "custom-cx",
+      .qubitsNum = 2,
+      .parametersNum = 0,
+  };
+  static const std::array<QDMI_Operation, 2> OPERATIONS{
+      &rotate,
+      &controlledNot,
+  };
   return OPERATIONS;
 }
 

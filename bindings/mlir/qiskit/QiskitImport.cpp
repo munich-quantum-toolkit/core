@@ -2658,7 +2658,8 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
     llvm::SmallVector<mlir::NamedAttribute> argumentAttributes{
         builder.getNamedAttr(
             mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
-            builder.getStringAttr(symbol->name))};
+            builder.getStringAttr(symbol->name)),
+    };
     if (symbol->group) {
       argumentAttributes.push_back(builder.getNamedAttr(
           mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr(),

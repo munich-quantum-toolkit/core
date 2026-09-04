@@ -137,30 +137,32 @@ private:
       attributes.append(passthrough.begin(), passthrough.end());
     }
     llvm::erase_if(attributes, isQIRFunctionMetadata);
-    attributes.append(
-        {rewriter.getStrArrayAttr(
-             {::qir::OUTPUT_LABELING_SCHEMA_ATTR, ::qir::LABELED_SCHEMA}),
-         rewriter.getStrArrayAttr(
-             {::qir::QIR_PROFILES_ATTR,
-              useAdaptive ? ::qir::ADAPTIVE_PROFILE : ::qir::BASE_PROFILE}),
-         rewriter.getStrArrayAttr(
-             {"required_num_qubits", std::to_string(metadata.numQubits)}),
-         rewriter.getStrArrayAttr(
-             {"required_num_results", std::to_string(metadata.numResults)})});
+    attributes.append({
+        rewriter.getStrArrayAttr(
+            {::qir::OUTPUT_LABELING_SCHEMA_ATTR, ::qir::LABELED_SCHEMA}),
+        rewriter.getStrArrayAttr({
+            ::qir::QIR_PROFILES_ATTR,
+            useAdaptive ? ::qir::ADAPTIVE_PROFILE : ::qir::BASE_PROFILE,
+        }),
+        rewriter.getStrArrayAttr(
+            {"required_num_qubits", std::to_string(metadata.numQubits)}),
+        rewriter.getStrArrayAttr(
+            {"required_num_results", std::to_string(metadata.numResults)}),
+    });
 
     main.setPassthroughAttr(rewriter.getArrayAttr(attributes));
 
     rewriter.setInsertionPointToEnd(m.getBody());
 
     SmallVector<Attribute> flags = collectUnrelatedModuleFlags(m, rewriter);
-    flags.append(
-        {createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
-         createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1),
-         createBoolFlag(LLVM::ModFlagBehavior::Error,
-                        "dynamic_qubit_management", metadata.useDynamicQubit),
-         createBoolFlag(LLVM::ModFlagBehavior::Error,
-                        "dynamic_result_management",
-                        metadata.useDynamicResult)});
+    flags.append({
+        createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
+        createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1),
+        createBoolFlag(LLVM::ModFlagBehavior::Error, "dynamic_qubit_management",
+                       metadata.useDynamicQubit),
+        createBoolFlag(LLVM::ModFlagBehavior::Error,
+                       "dynamic_result_management", metadata.useDynamicResult),
+    });
 
     if (useAdaptive) {
       flags.emplace_back(createI32Flag(LLVM::ModFlagBehavior::Error,
@@ -487,12 +489,14 @@ private:
 
   /// Return the metadata for a QIR base profile compliant program.
   static Metadata getBase(LLVM::LLVMFuncOp& main) {
-    return {.numQubits = getNumQubits(main),
-            .numResults = getNumResults(main),
-            .useDynamicQubit = false,
-            .useDynamicResult = false,
-            .useArrays = false,
-            .backwardsBranching = 0};
+    return {
+        .numQubits = getNumQubits(main),
+        .numResults = getNumResults(main),
+        .useDynamicQubit = false,
+        .useDynamicResult = false,
+        .useArrays = false,
+        .backwardsBranching = 0,
+    };
   }
 
   /// Return the metadata for a QIR adaptive profile compliant program.

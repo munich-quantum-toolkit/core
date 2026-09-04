@@ -38,8 +38,12 @@ TEST(VectorFunctionality, GetValueByIndexTerminal) {
 
 TEST(VectorFunctionality, GetValueByIndexEndianness) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
 
   for (std::size_t i = 0U; i < state.size(); ++i) {
@@ -54,8 +58,12 @@ TEST(VectorFunctionality, GetVectorTerminal) {
 
 TEST(VectorFunctionality, GetVectorRoundtrip) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateVec = stateDD.getVector();
   EXPECT_EQ(stateVec, state);
@@ -63,8 +71,12 @@ TEST(VectorFunctionality, GetVectorRoundtrip) {
 
 TEST(VectorFunctionality, GetVectorTolerance) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateVec = stateDD.getVector(std::sqrt(0.1));
   EXPECT_EQ(stateVec, state);
@@ -82,8 +94,12 @@ TEST(VectorFunctionality, GetSparseVectorTerminal) {
 
 TEST(VectorFunctionality, GetSparseVectorConsistency) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateSparseVec = stateDD.getSparseVector();
   const auto stateVec = stateDD.getVector();
@@ -94,8 +110,12 @@ TEST(VectorFunctionality, GetSparseVectorConsistency) {
 
 TEST(VectorFunctionality, GetSparseVectorTolerance) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   const auto stateSparseVec = stateDD.getSparseVector(std::sqrt(0.1));
   for (const auto& [index, value] : stateSparseVec) {
@@ -120,8 +140,12 @@ TEST(VectorFunctionality, PrintVectorTerminal) {
 
 TEST(VectorFunctionality, PrintVector) {
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   testing::internal::CaptureStdout();
   stateDD.printVector();
@@ -140,8 +164,12 @@ TEST(VectorFunctionality, AddToVector) {
   CVec vec = {0., 0., 0., 0.};
 
   auto dd = std::make_unique<Package>(2);
-  const CVec state = {std::sqrt(0.1), std::sqrt(0.2), std::sqrt(0.3),
-                      std::sqrt(0.4)};
+  const CVec state = {
+      std::sqrt(0.1),
+      std::sqrt(0.2),
+      std::sqrt(0.3),
+      std::sqrt(0.4),
+  };
   const auto stateDD = makeStateFromVector(state, *dd);
   stateDD.addToVector(vec);
   EXPECT_EQ(vec, state);
@@ -180,7 +208,7 @@ TEST(MatrixFunctionality, GetValueByIndexEndianness) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -207,7 +235,7 @@ TEST(MatrixFunctionality, GetMatrixRoundtrip) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -229,7 +257,7 @@ TEST(MatrixFunctionality, GetMatrixTolerance) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -265,7 +293,7 @@ TEST(MatrixFunctionality, GetSparseMatrixConsistency) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -285,7 +313,7 @@ TEST(MatrixFunctionality, GetSparseMatrixTolerance) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -323,7 +351,7 @@ TEST(MatrixFunctionality, PrintMatrix) {
     {std::sqrt(0.1),  std::sqrt(0.2),  std::sqrt(0.3),  std::sqrt(0.4)},
     {-std::sqrt(0.2), -std::sqrt(0.3), std::sqrt(0.4),  std::sqrt(0.1)},
     {-std::sqrt(0.3), -std::sqrt(0.4), std::sqrt(0.1),  std::sqrt(0.2)},
-    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)}};
+    {-std::sqrt(0.4), -std::sqrt(0.1), -std::sqrt(0.2), std::sqrt(0.3)},};
   // clang-format on
 
   const auto matDD = dd->makeDDFromMatrix(mat);
@@ -348,7 +376,7 @@ TEST(MatrixFunctionality, SizeBellState) {
     {SQRT2_2, 0., 0., SQRT2_2},
     {0., SQRT2_2, SQRT2_2, 0.},
     {0., SQRT2_2, -SQRT2_2, 0.},
-    {SQRT2_2, 0., 0., -SQRT2_2}};
+    {SQRT2_2, 0., 0., -SQRT2_2},};
   // clang-format on
 
   const auto bell = dd->makeDDFromMatrix(mat);

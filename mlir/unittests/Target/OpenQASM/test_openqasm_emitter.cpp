@@ -2645,18 +2645,26 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
     ConditionalCounts conditionals;
   };
   const auto fixtures = std::to_array<Fixture>({
-      {.name = "simple-while",
-       .source = qasm::simpleWhileReset,
-       .tripCounts = {},
-       .whileLoops = 1,
-       .operations = {.h = 2, .x = 0, .measurements = 3, .controls = 0},
-       .conditionals = {.semantic = 0, .dispatch = 0, .whileMeasurements = 0}},
-      {.name = "condition-while-and",
-       .source = qasm::conditionWhileAnd,
-       .tripCounts = {},
-       .whileLoops = 1,
-       .operations = {.h = 3, .x = 0, .measurements = 6, .controls = 0},
-       .conditionals = {.semantic = 1, .dispatch = 0, .whileMeasurements = 0}},
+      {
+          .name = "simple-while",
+          .source = qasm::simpleWhileReset,
+          .tripCounts = {},
+          .whileLoops = 1,
+          .operations = {.h = 2, .x = 0, .measurements = 3, .controls = 0},
+          .conditionals = {.semantic = 0,
+                           .dispatch = 0,
+                           .whileMeasurements = 0},
+      },
+      {
+          .name = "condition-while-and",
+          .source = qasm::conditionWhileAnd,
+          .tripCounts = {},
+          .whileLoops = 1,
+          .operations = {.h = 3, .x = 0, .measurements = 6, .controls = 0},
+          .conditionals = {.semantic = 1,
+                           .dispatch = 0,
+                           .whileMeasurements = 0},
+      },
   });
 
   for (const auto& fixture : fixtures) {

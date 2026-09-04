@@ -1667,11 +1667,13 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
   QubitMap qubits = std::move(prepared->qubits);
   TensorMap tensors = std::move(prepared->tensors);
   ClassicalEnv classical = std::move(prepared->classical);
-  WalkState walkState{.qubits = &qubits,
-                      .tensors = &tensors,
-                      .classical = &classical,
-                      .dd = &dd,
-                      .rng = nullptr};
+  WalkState walkState{
+      .qubits = &qubits,
+      .tensors = &tensors,
+      .classical = &classical,
+      .dd = &dd,
+      .rng = nullptr,
+  };
   walkState.activeCalls.insert(func.getOperation());
 
   dd::MatrixDD state =
@@ -1708,13 +1710,15 @@ simulateImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
   TensorMap tensors = prepared.tensors.clone();
   ClassicalEnv classical = prepared.classical;
   classical.deferredMeasurementUse = deferredMeasurementUse;
-  WalkState walkState{.qubits = &qubits,
-                      .tensors = &tensors,
-                      .classical = &classical,
-                      .dd = &dd,
-                      .rng = rng,
-                      .deferredMeasurements = deferredMeasurements,
-                      .deferredMeasuredWires = deferredMeasuredWires};
+  WalkState walkState{
+      .qubits = &qubits,
+      .tensors = &tensors,
+      .classical = &classical,
+      .dd = &dd,
+      .rng = rng,
+      .deferredMeasurements = deferredMeasurements,
+      .deferredMeasuredWires = deferredMeasuredWires,
+  };
   walkState.activeCalls.insert(func.getOperation());
 
   dd::VectorDD state = in;
