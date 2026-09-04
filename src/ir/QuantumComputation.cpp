@@ -257,6 +257,26 @@ void QuantumComputation::initializeIOMapping() {
   // physical qubit.
   const bool outputPermutationFound = !outputPermutation.empty();
 
+  if (outputPermutationFound) {
+    for (const auto& opIt : ops) {
+      const auto* const op = dynamic_cast<NonUnitaryOperation*>(opIt.get());
+      if (op == nullptr || op->getType() != Measure) {
+        continue;
+      }
+      for (const auto& qubit : op->getTargets()) {
+        if (outputPermutation.find(qubit) == outputPermutation.end()) {
+          throw std::invalid_argument(
+              "[initializeIOMapping] Measured device qubit " +
+              std::to_string(qubit) +
+              " is missing from the output permutation. A non-empty output "
+              "permutation must contain every measured device qubit. Set a "
+              "consistent output permutation or clear it before "
+              "initialization.");
+        }
+      }
+    }
+  }
+
   // track whether the circuit contains measurements at the end of the circuit
   // if it does, then all qubits that are not measured shall be considered
   // garbage outputs

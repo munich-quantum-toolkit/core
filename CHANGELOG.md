@@ -38,6 +38,11 @@ releases may include breaking changes.
   standalone runner, DDSIM integration, build integration, tests, and
   documentation. ([#2314]) ([**@denialhaag**])
 
+### Fixed
+
+- 🐛 Validate output permutations before I/O mapping initialization ([#2278])
+  ([**@denialhaag**])
+
 ## [3.9.2] - 2026-08-26
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#392)._
@@ -751,6 +756,7 @@ for previous changelogs._
 
 [#2314]: https://github.com/munich-quantum-toolkit/core/pull/2314
 [#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
+[#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232

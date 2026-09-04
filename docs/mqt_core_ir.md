@@ -183,6 +183,12 @@ qc.initialize_io_mapping()
 print(qc.qasm3_str())
 ```
 
+If {py:attr}`~mqt.core.ir.QuantumComputation.output_permutation` is not empty,
+{py:meth}`~mqt.core.ir.QuantumComputation.initialize_io_mapping` uses it as an
+existing mapping. The permutation must contain every measured device qubit as a
+key. Clear {py:attr}`~mqt.core.ir.QuantumComputation.output_permutation` before
+the call to infer it only from the measurements.
+
 In the example above, the initial layout is not explicitly specified. A trivial
 layout is thus assumed, where the circuit qubits are mapped to the device qubits
 in order. The output permutation is determined from the measurements and is
