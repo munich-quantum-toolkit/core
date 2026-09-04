@@ -97,7 +97,7 @@ releases may include breaking changes.
 - 💥 Raise the minimum Qiskit version from 1.1.0 to 2.1.0 and replace the
   QDMI-specific primitives with native Qiskit primitives. Sampler and
   `memory=True` require genuine QDMI `SHOTS`. This breaking change is for MQT
-  Core v4 only and cannot be backported to v3.x ([**@burgholzer**])
+  Core v4 only and cannot be backported to v3.x ([#2358]) ([**@burgholzer**])
 - 💥 Drop support for x86 macOS and stop publishing the respective wheels
   ([#2259]) ([**@denialhaag**])
 - ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
@@ -873,6 +873,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2358]: https://github.com/munich-quantum-toolkit/core/pull/2358
 [#2337]: https://github.com/munich-quantum-toolkit/core/pull/2337
 [#2336]: https://github.com/munich-quantum-toolkit/core/pull/2336
 [#2335]: https://github.com/munich-quantum-toolkit/core/pull/2335
