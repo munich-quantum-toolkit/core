@@ -1098,7 +1098,7 @@ TEST(DeviceRegistrationTest,
     qdmi::DeviceSessionConfig overrides;
     overrides.token = "override-token";
     overrides.custom2 = "override-custom";
-    auto device =
+    auto const device =
         qdmi::Session::openDevice("test.session-overrides", overrides);
     EXPECT_EQ(device.getName(),
               "base=registered-base;token=override-token;custom1="
@@ -1390,7 +1390,7 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   registerSessionTestDevice();
   std::optional<qdmi::Job> job;
   {
-    auto device = qdmi::Session::openDevice("test.session-overrides");
+    auto const device = qdmi::Session::openDevice("test.session-overrides");
     job.emplace(
         device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2, 1));
   }
@@ -1498,7 +1498,8 @@ TEST(DeviceRegistrationTest, FreshChildDeviceRetainsItsRootSession) {
   {
     qdmi::DeviceSessionConfig overrides;
     overrides.custom5 = "with-child";
-    auto root = qdmi::Session::openDevice("test.session-overrides", overrides);
+    auto const root =
+        qdmi::Session::openDevice("test.session-overrides", overrides);
     auto children = root.getChildDevices();
     ASSERT_EQ(children.size(), 1);
     child.emplace(std::move(children.front()));

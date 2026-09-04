@@ -907,7 +907,7 @@ TEST_F(DDSimulatorDeviceTest, CalibrationJobReachesTheDevice) {
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
   constexpr auto qasm3Program = "OPENQASM 3.0;";
 
-  auto submitWithCustoms = [&](auto custom, const size_t which) {
+  auto const submitWithCustoms = [&](auto custom, const size_t which) {
     try {
       switch (which) {
       case 1:
@@ -1271,10 +1271,10 @@ TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
 
   // Existing file (should succeed even if parameter is unsupported)
   const auto tempDir = std::filesystem::temp_directory_path();
-  auto tmpPath = tempDir / ("qdmi_test_auth_" +
-                            std::to_string(std::hash<std::thread::id>{}(
-                                std::this_thread::get_id())) +
-                            ".txt");
+  auto const tmpPath = tempDir / ("qdmi_test_auth_" +
+                                  std::to_string(std::hash<std::thread::id>{}(
+                                      std::this_thread::get_id())) +
+                                  ".txt");
   {
     std::ofstream tmpFile(tmpPath);
     ASSERT_TRUE(tmpFile.is_open()) << "Failed to create temporary file";
@@ -1386,7 +1386,7 @@ TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
 
 TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
   Session session;
-  auto devices = session.getDevices();
+  auto const devices = session.getDevices();
 
   EXPECT_FALSE(devices.empty());
 
@@ -1401,8 +1401,8 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
   Session session1;
   Session session2;
 
-  auto devices1 = session1.getDevices();
-  auto devices2 = session2.getDevices();
+  auto const devices1 = session1.getDevices();
+  auto const devices2 = session2.getDevices();
 
   // Both should return devices
   EXPECT_FALSE(devices1.empty());
@@ -1414,7 +1414,7 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
 
 TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
   const auto site = [] {
-    auto device = Session::openDevice("mqt.sc.default");
+    auto const device = Session::openDevice("mqt.sc.default");
     return device.getSites().front();
   }();
 
@@ -1423,7 +1423,7 @@ TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
 
 TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
   const auto operation = [] {
-    auto device = Session::openDevice("mqt.sc.default");
+    auto const device = Session::openDevice("mqt.sc.default");
     return device.getOperations().front();
   }();
 
@@ -1432,7 +1432,7 @@ TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
 
 TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
   const auto site = [] {
-    auto device = Session::openDevice("mqt.sc.default");
+    auto const device = Session::openDevice("mqt.sc.default");
     const auto operation = device.getOperations().front();
     return operation.getSites().value().front();
   }();

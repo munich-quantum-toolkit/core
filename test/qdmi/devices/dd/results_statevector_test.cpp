@@ -102,7 +102,7 @@ TEST(ResultsStatevector, DenseNormalizedAndBufferTooSmall) {
   ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-  auto vec = qdmi_test::getDenseState(j.job);
+  auto const vec = qdmi_test::getDenseState(j.job);
   ASSERT_FALSE(vec.empty());
   auto norm = 0.0;
   for (const auto& v : vec) {

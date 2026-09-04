@@ -129,7 +129,7 @@ protected:
     const std::string text = qdmi_test::getQIRProgram(file);
     llvm::LLVMContext context;
     llvm::SMDiagnostic err;
-    auto llvmModule = llvm::parseAssemblyString(text, err, context);
+    auto const llvmModule = llvm::parseAssemblyString(text, err, context);
     EXPECT_NE(llvmModule, nullptr)
         << "parseAssemblyString failed: " << err.getMessage().str();
     if (llvmModule == nullptr) {
