@@ -878,7 +878,7 @@ enum class ForbiddenModifierBodyOp : std::uint8_t {
   QubitRegisterLoad,
   QubitRegisterStore,
   CBitAlloc,
-  CBitCompare,
+  CBitRead,
   CBitLoad,
   CBitStore
 };
@@ -913,8 +913,8 @@ static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
     return "qubit-register-store";
   case ForbiddenModifierBodyOp::CBitAlloc:
     return "cbit.alloc";
-  case ForbiddenModifierBodyOp::CBitCompare:
-    return "cbit.cmp";
+  case ForbiddenModifierBodyOp::CBitRead:
+    return "cbit.read";
   case ForbiddenModifierBodyOp::CBitLoad:
     return "cbit.load";
   case ForbiddenModifierBodyOp::CBitStore:
@@ -952,10 +952,8 @@ static void emitForbiddenModifierBodyOperation(QCProgramBuilder& builder,
                           cbit::RegisterType::get(builder.getContext(), 1),
                           cbit::Initialization::Zero);
     return;
-  case ForbiddenModifierBodyOp::CBitCompare:
-    cbit::CompareOp::create(builder, builder.getI1Type(),
-                            cbit::ComparisonPredicate::Equal, cbitReg,
-                            builder.getIntegerAttr(builder.getI1Type(), 0));
+  case ForbiddenModifierBodyOp::CBitRead:
+    cbit::ReadOp::create(builder, builder.getI1Type(), cbitReg);
     return;
   case ForbiddenModifierBodyOp::CBitLoad:
     cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg, index);
@@ -1013,7 +1011,7 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
       ForbiddenModifierBodyOp::QubitRegisterLoad,
       ForbiddenModifierBodyOp::QubitRegisterStore,
       ForbiddenModifierBodyOp::CBitAlloc,
-      ForbiddenModifierBodyOp::CBitCompare,
+      ForbiddenModifierBodyOp::CBitRead,
       ForbiddenModifierBodyOp::CBitLoad,
       ForbiddenModifierBodyOp::CBitStore};
 

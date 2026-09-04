@@ -674,8 +674,9 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
       }
     }
 
-    if (!isa<cbit::AllocOp, cbit::CompareOp, cbit::LoadOp, cbit::StoreOp,
-             qc::AllocOp, qc::DeallocOp, qc::MeasureOp, qc::ResetOp,
+    if (operation->getName().getDialectNamespace() !=
+            cbit::CBitDialect::getDialectNamespace() &&
+        !isa<qc::AllocOp, qc::DeallocOp, qc::MeasureOp, qc::ResetOp,
              memref::LoadOp, memref::StoreOp>(operation)) {
       return WalkResult::advance();
     }

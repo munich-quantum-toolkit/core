@@ -14,6 +14,8 @@
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallPtrSet.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -171,42 +173,56 @@ struct ForwardKnownLoad final : OpRewritePattern<LoadOp> {
   }
 };
 
-struct FoldUntouchedZeroComparison final : OpRewritePattern<CompareOp> {
+struct DecomposeRead final : OpRewritePattern<ReadOp> {
   using OpRewritePattern::OpRewritePattern;
 
-  LogicalResult matchAndRewrite(CompareOp compare,
+  LogicalResult matchAndRewrite(ReadOp read,
                                 PatternRewriter& rewriter) const override {
-    auto alloc = compare.getReg().getDefiningOp<AllocOp>();
-    if (!alloc || alloc.getInitialization() != Initialization::Zero ||
-        alloc->getBlock() != compare->getBlock() ||
-        !alloc->isBeforeInBlock(compare)) {
-      return failure();
-    }
-    for (auto* user : compare.getReg().getUsers()) {
-      if (!isa<LoadOp, CompareOp>(user)) {
-        auto* ancestor = compare->getBlock()->findAncestorOpInBlock(*user);
-        if (ancestor != nullptr && ancestor->isBeforeInBlock(compare)) {
-          return failure();
-        }
+    auto loc = read.getLoc();
+    const auto type = read.getResult().getType();
+    const auto width = type.getWidth();
+    Value result;
+    for (unsigned index = 0; index < width; ++index) {
+      auto indexValue = arith::ConstantIndexOp::create(rewriter, loc, index);
+      Value bit = LoadOp::create(rewriter, loc, rewriter.getI1Type(),
+                                 read.getReg(), indexValue);
+      if (width != 1) {
+        bit = arith::ExtUIOp::create(rewriter, loc, type, bit);
+      }
+      if (index == 0) {
+        result = bit;
+      } else {
+        auto shift = arith::ConstantIntOp::create(rewriter, loc, type, index);
+        bit = arith::ShLIOp::create(rewriter, loc, bit, shift);
+        result = arith::OrIOp::create(rewriter, loc, result, bit);
       }
     }
-    const auto zero = compare.getRhs().isZero();
-    const auto result = [&] {
-      switch (compare.getPredicate()) {
-      case ComparisonPredicate::Equal:
-      case ComparisonPredicate::GreaterEqual:
-        return zero;
-      case ComparisonPredicate::NotEqual:
-      case ComparisonPredicate::Less:
-        return !zero;
-      case ComparisonPredicate::LessEqual:
-        return true;
-      case ComparisonPredicate::Greater:
-        return false;
+    rewriter.replaceOp(read, result);
+    return success();
+  }
+};
+
+struct DecomposeWrite final : OpRewritePattern<WriteOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(WriteOp write,
+                                PatternRewriter& rewriter) const override {
+    auto loc = write.getLoc();
+    const auto type = write.getValue().getType();
+    const auto width = type.getWidth();
+    for (unsigned index = 0; index < width; ++index) {
+      Value bit = write.getValue();
+      if (index != 0) {
+        auto shift = arith::ConstantIntOp::create(rewriter, loc, type, index);
+        bit = arith::ShRUIOp::create(rewriter, loc, bit, shift);
       }
-      llvm_unreachable("unknown CBit comparison predicate");
-    }();
-    rewriter.replaceOpWithNewOp<arith::ConstantIntOp>(compare, result, 1);
+      if (width != 1) {
+        bit = arith::TruncIOp::create(rewriter, loc, rewriter.getI1Type(), bit);
+      }
+      auto indexValue = arith::ConstantIndexOp::create(rewriter, loc, index);
+      StoreOp::create(rewriter, loc, bit, write.getReg(), indexValue);
+    }
+    rewriter.eraseOp(write);
     return success();
   }
 };
@@ -217,66 +233,30 @@ LogicalResult LoadOp::verify() {
   return verifyIndex(getOperation(), getReg(), getIndex());
 }
 
-LogicalResult CompareOp::verify() {
-  if (std::cmp_not_equal(getRhs().getBitWidth(),
+LogicalResult ReadOp::verify() {
+  if (std::cmp_not_equal(getResult().getType().getWidth(),
                          getReg().getType().getWidth())) {
-    return emitOpError("expected integer width must match register width");
+    return emitOpError("result width must match register width");
   }
   return success();
 }
 
-Value mlir::cbit::buildComparison(
-    OpBuilder& builder, const Location location,
-    const ComparisonPredicate predicate, const llvm::APInt& rhs,
-    const llvm::function_ref<Value(int64_t)> loadBit) {
-  auto one = arith::ConstantIntOp::create(builder, location, 1, 1);
-  Value equal = one;
-  Value less;
-  if (predicate != ComparisonPredicate::Equal &&
-      predicate != ComparisonPredicate::NotEqual) {
-    less = arith::ConstantIntOp::create(builder, location, 0, 1);
+LogicalResult WriteOp::verify() {
+  if (std::cmp_not_equal(getValue().getType().getWidth(),
+                         getReg().getType().getWidth())) {
+    return emitOpError("value width must match register width");
   }
-  for (int64_t index = static_cast<int64_t>(rhs.getBitWidth()) - 1; index >= 0;
-       --index) {
-    auto bit = loadBit(index);
-    Value matches = bit;
-    if (!rhs[static_cast<unsigned>(index)]) {
-      matches = arith::XOrIOp::create(builder, location, bit, one);
-    } else if (less) {
-      auto lower = arith::XOrIOp::create(builder, location, bit, one);
-      auto firstDifference =
-          arith::AndIOp::create(builder, location, equal, lower);
-      less = arith::OrIOp::create(builder, location, less, firstDifference);
-    }
-    equal = arith::AndIOp::create(builder, location, equal, matches);
-  }
-  switch (predicate) {
-  case ComparisonPredicate::Equal:
-    return equal;
-  case ComparisonPredicate::NotEqual:
-    return arith::XOrIOp::create(builder, location, equal, one);
-  case ComparisonPredicate::Less:
-    return less;
-  case ComparisonPredicate::LessEqual:
-    return arith::OrIOp::create(builder, location, less, equal);
-  case ComparisonPredicate::Greater: {
-    auto lessOrEqual = arith::OrIOp::create(builder, location, less, equal);
-    return arith::XOrIOp::create(builder, location, lessOrEqual, one);
-  }
-  case ComparisonPredicate::GreaterEqual:
-    return arith::XOrIOp::create(builder, location, less, one);
-  }
-  llvm_unreachable("unknown CBit comparison predicate");
+  return success();
+}
+
+void mlir::cbit::populateCBitDecompositionPatterns(
+    RewritePatternSet& patterns) {
+  patterns.add<DecomposeRead, DecomposeWrite>(patterns.getContext());
 }
 
 void LoadOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                          MLIRContext* context) {
   results.add<ForwardKnownLoad>(context);
-}
-
-void CompareOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                            MLIRContext* context) {
-  results.add<FoldUntouchedZeroComparison>(context);
 }
 
 LogicalResult StoreOp::verify() {

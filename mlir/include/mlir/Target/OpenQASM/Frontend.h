@@ -105,6 +105,14 @@ enum class ExpressionKind : uint8_t {
   GateParameter,
   Variable,
   Cast,
+  BitVectorCast,
+  Condition,
+  BitNot,
+  BitAnd,
+  BitOr,
+  BitXor,
+  ShiftLeft,
+  ShiftRight,
   Negate,
   ArcCos,
   ArcSin,
@@ -135,10 +143,21 @@ struct ScalarExpression {
   ExpressionId lhs = 0;
   ExpressionId rhs = 0;
   BitVectorExpressionId bitVector = 0;
+  /// Zero denotes the default 64-bit machine integer type.
+  unsigned integerWidth = 0;
+  ConditionId condition = 0;
 };
 
 enum class BitVectorExpressionKind : uint8_t {
+  ScalarCast,
+  Constant,
   Register,
+  Not,
+  And,
+  Or,
+  Xor,
+  ShiftLeft,
+  ShiftRight,
   RotateLeft,
   RotateRight,
 };
@@ -146,13 +165,17 @@ enum class BitVectorExpressionKind : uint8_t {
 struct BitVectorExpression {
   BitVectorExpressionKind kind = BitVectorExpressionKind::Register;
   uint64_t width = 0;
+  llvm::APInt constant = llvm::APInt(1, 0);
   RegisterId reg = 0;
   BitVectorExpressionId operand = 0;
+  BitVectorExpressionId rhs = 0;
   ExpressionId distance = 0;
+  ExpressionId scalar = 0;
 };
 
 struct ScalarDeclaration {
   ScalarType type = ScalarType::Int;
+  unsigned integerWidth = 0;
   std::string name;
   SourceLocation location;
 };
@@ -210,6 +233,7 @@ enum class ConditionKind : uint8_t {
   And,
   Or,
   RegisterComparison,
+  BitVectorComparison,
   Comparison,
 };
 
@@ -224,6 +248,8 @@ struct ConditionExpression {
   ConditionId rhs = 0;
   RegisterId reg = 0;
   llvm::APInt expected = llvm::APInt(1, 0);
+  BitVectorExpressionId bitVectorComparisonLhs = 0;
+  BitVectorExpressionId bitVectorComparisonRhs = 0;
   ExpressionId comparisonLhs = 0;
   ExpressionId comparisonRhs = 0;
   ComparisonKind comparison = ComparisonKind::Equal;
