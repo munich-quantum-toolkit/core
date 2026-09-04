@@ -45,9 +45,9 @@ releases may include breaking changes.
 
 #### Import and export
 
-- ✨ Add Qiskit circuit import and target-aware export to the compiler
-  collection ([#2031], [#2133], [#2140], [#2150], [#2175], [#2176], [#2178])
-  ([**@burgholzer**], [**@simon1hofmann**])
+- ✨ Add Qiskit circuit import, target-aware export, and reusable custom Gate
+  round trips to the compiler collection ([#2031], [#2133], [#2140], [#2150],
+  [#2175], [#2176], [#2178], [#2342]) ([**@burgholzer**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105],
   [#2339]) ([**@denialhaag**], [**@burgholzer**])
@@ -886,6 +886,7 @@ for previous changelogs._
 [#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368
 [#2358]: https://github.com/munich-quantum-toolkit/core/pull/2358
 [#2349]: https://github.com/munich-quantum-toolkit/core/pull/2349
+[#2342]: https://github.com/munich-quantum-toolkit/core/pull/2342
 [#2340]: https://github.com/munich-quantum-toolkit/core/pull/2340
 [#2339]: https://github.com/munich-quantum-toolkit/core/pull/2339
 [#2338]: https://github.com/munich-quantum-toolkit/core/pull/2338

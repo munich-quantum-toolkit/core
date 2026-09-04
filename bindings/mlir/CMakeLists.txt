@@ -83,6 +83,7 @@ if(NOT TARGET ${TARGET_NAME})
     MQT::CoreBenchGenerate
     MQTCompilerQDMIAdapter
     MQTCompilerPipeline
+    MLIRAnalysis
     MLIRMQTDialect
     MLIRMQTUtils
     MLIRQCTranslationSupport
