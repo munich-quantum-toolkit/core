@@ -167,7 +167,7 @@ func::FuncOp QCOProgramBuilder::createFunction(
           "Function must return every qubit argument as a trailing result");
     }
   }
-  for (auto [index, result] : llvm::enumerate(results)) {
+  for (Value result : results) {
     if (isa<QubitType>(result.getType())) {
       validateQubitValue(result);
       validQubits.erase(result);

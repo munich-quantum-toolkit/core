@@ -473,7 +473,7 @@ private:
       float costs{0};
       float decay{1.};
 
-      for (const auto& [i, progs] : enumerate(window)) {
+      for (const auto& progs : window) {
         const auto [prog0, prog1] = progs;
         const auto [hw0, hw1] = layout.getHardwareIndices(prog0, prog1);
         const size_t nswaps = target.distanceBetween(hw0, hw1) - 1;
