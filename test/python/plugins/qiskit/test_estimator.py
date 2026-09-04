@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Tests for QDMIEstimator."""
+"""Tests for BackendEstimatorV2."""
 
 from __future__ import annotations
 
@@ -14,19 +14,20 @@ import numpy as np
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import Parameter
+from qiskit.primitives import BackendEstimatorV2
 from qiskit.primitives.containers.estimator_pub import EstimatorPub
 from qiskit.quantum_info import SparsePauliOp
 
-from mqt.core.plugins.qiskit import QDMIBackend, QDMIEstimator
+from mqt.core.plugins.qiskit import QDMIBackend
 
 
 @pytest.fixture
-def estimator() -> QDMIEstimator:
-    """Returns a QDMIEstimator based on the DDSIM backend."""
-    return QDMIEstimator(QDMIBackend.from_device_id("mqt.ddsim.default"))
+def estimator() -> BackendEstimatorV2:
+    """Returns a BackendEstimatorV2 based on the DDSIM backend."""
+    return QDMIBackend.from_device_id("mqt.ddsim.default").estimator()
 
 
-def test_estimator_run_simple_observable(estimator: QDMIEstimator) -> None:
+def test_estimator_run_simple_observable(estimator: BackendEstimatorV2) -> None:
     """Estimator runs a simple observable estimation."""
     qc = QuantumCircuit(1)  # |0> state
     op = [SparsePauliOp("Z"), SparsePauliOp("X")]  # Expectation of Z should be 1, X should be 0
@@ -43,7 +44,7 @@ def test_estimator_run_simple_observable(estimator: QDMIEstimator) -> None:
     assert stds.shape == (2,)
 
 
-def test_estimator_run_parameterized_observable(estimator: QDMIEstimator) -> None:
+def test_estimator_run_parameterized_observable(estimator: BackendEstimatorV2) -> None:
     """Estimator runs parameterized circuit and observables."""
     theta = Parameter("theta")
     qc = QuantumCircuit(1)
@@ -61,16 +62,16 @@ def test_estimator_run_parameterized_observable(estimator: QDMIEstimator) -> Non
     assert evs.shape == (2,)
 
 
-def test_estimator_precision_handling(estimator: QDMIEstimator) -> None:
+def test_estimator_precision_handling(estimator: BackendEstimatorV2) -> None:
     """Test that precision argument controls the number of shots."""
     qc = QuantumCircuit(1)
     qc.h(0)
     op = SparsePauliOp("Z")
 
-    # Case 1: Default precision (None) -> default shots (1024)
+    # Case 1: Default precision (None) -> default shots (4096)
     job = estimator.run([(qc, op)])
     result = job.result()
-    assert result[0].metadata["shots"] == 1024
+    assert result[0].metadata["shots"] == 4096
 
     # Case 2: Specific precision -> 1/precision^2 shots
     precision = 0.1
@@ -88,18 +89,19 @@ def test_estimator_precision_handling(estimator: QDMIEstimator) -> None:
     assert result[0].metadata["shots"] == other_expected_shots
 
 
-def test_estimator_defaults(estimator: QDMIEstimator) -> None:
+def test_estimator_defaults() -> None:
     """Test explicit estimator shot and precision defaults."""
-    estimator2 = QDMIEstimator(estimator.backend, default_shots=500)
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+    estimator2 = backend.estimator(default_precision=0.125)
     qc = QuantumCircuit(1)
     op = SparsePauliOp("Z")
 
     job = estimator2.run([(qc, op)])
     result = job.result()
-    assert result[0].metadata["shots"] == 500
+    assert result[0].metadata["shots"] == 64
 
     # Test the default precision.
-    estimator_prec = QDMIEstimator(estimator.backend, default_precision=0.1)
+    estimator_prec = backend.estimator(default_precision=0.1)
     job = estimator_prec.run([(qc, op)])
     result = job.result()
     # Should use default_precision -> 100 shots
@@ -109,16 +111,16 @@ def test_estimator_defaults(estimator: QDMIEstimator) -> None:
 def test_backend_constructs_estimator() -> None:
     """A backend constructs an estimator that retains its identity and defaults."""
     backend = QDMIBackend.from_device_id("mqt.ddsim.default")
-    estimator = backend.estimator(default_shots=73)
+    estimator = backend.estimator(default_precision=0.125)
     qc = QuantumCircuit(1)
     op = SparsePauliOp("Z")
 
-    assert isinstance(estimator, QDMIEstimator)
+    assert isinstance(estimator, BackendEstimatorV2)
     assert estimator.backend is backend
-    assert estimator.run([(qc, op)]).result()[0].metadata["shots"] == 73
+    assert estimator.run([(qc, op)]).result()[0].metadata["shots"] == 64
 
 
-def test_estimator_observable_bases(estimator: QDMIEstimator) -> None:
+def test_estimator_observable_bases(estimator: BackendEstimatorV2) -> None:
     """Test estimating observables in different bases."""
     qc = QuantumCircuit(2)
     qc.h(0)
@@ -143,7 +145,7 @@ def test_estimator_observable_bases(estimator: QDMIEstimator) -> None:
     assert evs.shape == (6,)
 
 
-def test_estimator_broadcasting(estimator: QDMIEstimator) -> None:
+def test_estimator_broadcasting(estimator: BackendEstimatorV2) -> None:
     """Test broadcasting of parameters and observables."""
     # 1 qubit, parameterized
     theta = Parameter("theta")
@@ -169,14 +171,14 @@ def test_estimator_broadcasting(estimator: QDMIEstimator) -> None:
     assert stds.shape == (2,)
 
 
-def test_estimator_no_circuits(estimator: QDMIEstimator) -> None:
+def test_estimator_no_circuits(estimator: BackendEstimatorV2) -> None:
     """Test run with empty pub list."""
     job = estimator.run([])
     result = job.result()
     assert len(result) == 0
 
 
-def test_estimator_mismatched_qubits(estimator: QDMIEstimator) -> None:
+def test_estimator_mismatched_qubits(estimator: BackendEstimatorV2) -> None:
     """Test estimator run with mismatched observable vs circuit qubit count."""
     qc = QuantumCircuit(1)  # 1 qubit
     op = SparsePauliOp("XX")  # 2 qubits
@@ -186,7 +188,8 @@ def test_estimator_mismatched_qubits(estimator: QDMIEstimator) -> None:
         estimator.run([(qc, op)])
 
 
-def test_estimator_invalid_precision(estimator: QDMIEstimator) -> None:
+@pytest.mark.parametrize("precision", [-0.1, 0.0])
+def test_estimator_invalid_precision(estimator: BackendEstimatorV2, precision: float) -> None:
     """Test estimator run with invalid precision."""
     qc = QuantumCircuit(1)
     op = SparsePauliOp("Z")
@@ -195,10 +198,10 @@ def test_estimator_invalid_precision(estimator: QDMIEstimator) -> None:
     # Negative precision should raise ValueError
     with pytest.raises(ValueError, match="precision"):
         # The run method calls EstimatorPub.coerce(pub, precision)
-        estimator.run([(qc, op)], precision=-0.1)
+        estimator.run([(qc, op)], precision=precision)
 
 
-def test_estimator_identity_observable_only(estimator: QDMIEstimator) -> None:
+def test_estimator_identity_observable_only(estimator: BackendEstimatorV2) -> None:
     """Test case where no measurement circuits are needed (Identity)."""
     qc = QuantumCircuit(1)
     op = SparsePauliOp("I")

@@ -14,8 +14,8 @@ Provides a Qiskit BackendV2-compatible interface to QDMI devices.
 from __future__ import annotations
 
 import inspect
-import itertools
 import warnings
+from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit import qasm2, qasm3
@@ -25,6 +25,7 @@ from qiskit.circuit.library import (
     MCXGate,
     get_standard_gate_name_mapping,
 )
+from qiskit.primitives import BackendEstimatorV2, BackendSamplerV2
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
@@ -32,7 +33,6 @@ from ...qdmi import Device as QDMIDevice
 from ...qdmi import Job as QDMIJobHandle
 from ...qdmi import ProgramFormat, is_binary_program_format
 from ...qdmi.driver import open_device
-from .estimator import QDMIEstimator
 from .exceptions import (
     CircuitValidationError,
     JobSubmissionError,
@@ -41,8 +41,7 @@ from .exceptions import (
     UnsupportedFormatError,
     UnsupportedOperationError,
 )
-from .job import QDMIJob
-from .sampler import QDMISampler
+from .job import QDMIJob, _cancel_jobs
 from .serializers import preferred_program_formats, program_serializer, register_program_serializer
 
 if TYPE_CHECKING:
@@ -52,7 +51,7 @@ if TYPE_CHECKING:
     from qiskit.circuit import Instruction, Parameter
     from qiskit.circuit.parameterexpression import ParameterValueType
 
-    from ...typing import QDMISessionParameters
+    from ...typing import QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
     from .provider import QDMIProvider
 
     # Type alias for parameter values
@@ -235,9 +234,6 @@ class QDMIBackend(BackendV2):
         # Zoned operations cannot easily be represented in Qiskit's Target model
         return not any(op.is_zoned() for op in device.operations())
 
-    # Class-level counter for generating unique circuit names
-    _circuit_counter = itertools.count()
-
     # Define known aliases
     _GATE_ALIASES: ClassVar[dict[str, set[str]]] = {
         "id": {"i"},  # Identity gate can also be called 'i'
@@ -362,30 +358,21 @@ class QDMIBackend(BackendV2):
         """Stable QDMI device ID, if known."""
         return self._device_id
 
-    def sampler(self, *, default_shots: int = 1024) -> QDMISampler:
-        """Construct a QDMI sampler for this backend.
+    def sampler(self, **options: Unpack[QiskitSamplerOptions]) -> BackendSamplerV2:
+        """Construct Qiskit's native sampler with typed keyword options.
 
         Returns:
             A sampler that executes on this backend.
         """
-        return QDMISampler(self, default_shots=default_shots)
+        return BackendSamplerV2(backend=self, options=dict(options))
 
-    def estimator(
-        self,
-        *,
-        default_precision: float = 0.0,
-        default_shots: int = 1024,
-    ) -> QDMIEstimator:
-        """Construct a QDMI estimator for this backend.
+    def estimator(self, **options: Unpack[QiskitEstimatorOptions]) -> BackendEstimatorV2:
+        """Construct Qiskit's native estimator with typed keyword options.
 
         Returns:
             An estimator that executes on this backend.
         """
-        return QDMIEstimator(
-            self,
-            default_precision=default_precision,
-            default_shots=default_shots,
-        )
+        return BackendEstimatorV2(backend=self, options=dict(options))
 
     @property
     def target(self) -> Target:
@@ -400,7 +387,7 @@ class QDMIBackend(BackendV2):
     @property
     def max_circuits(self) -> int | None:
         """The maximum number of circuits that can be run in a single job."""
-        return None  # No limit, processed sequentially
+        return None
 
     @property
     def options(self) -> Options:
@@ -412,9 +399,9 @@ class QDMIBackend(BackendV2):
         """Return default backend options.
 
         Returns:
-            Default Options with shots=1024.
+            Default Options with shots=1024 and memory=False.
         """
-        return Options(shots=1024)
+        return Options(shots=1024, memory=False)
 
     def _target_num_qubits(self) -> int:
         """Number of addressable qubits to expose in the Target.
@@ -723,7 +710,8 @@ class QDMIBackend(BackendV2):
             parameter_values: Optional parameter values to bind to the circuits. If provided, must be a sequence
                 with one entry per circuit. Each entry can be either a dictionary mapping parameters to values,
                 or a sequence of values in the order of circuit.parameters.
-            **options: Execution options (e.g., shots).
+            **options: Execution options: nonnegative integer ``shots`` and boolean ``memory``.
+                Memory requires genuine QDMI SHOTS results. Simulator seeds are unsupported.
 
         Returns:
             Job handle for the execution. For multiple circuits, the job aggregates results from all circuits.
@@ -770,25 +758,35 @@ class QDMIBackend(BackendV2):
             )
             raise CircuitValidationError(msg)
 
-        # Get shots option
+        # Native primitives pass an unset simulator seed to every backend.
+        if options.get("seed_simulator") is None:
+            options.pop("seed_simulator", None)
+        if unsupported := options.keys() - self._options.keys():
+            msg = f"Unsupported execution options: {', '.join(sorted(unsupported))}"
+            raise CircuitValidationError(msg)
+
         shots_opt = options.get("shots", self._options.shots)
-        try:
-            shots = int(shots_opt)
-        except Exception as exc:
+        if not isinstance(shots_opt, Integral) or isinstance(shots_opt, bool):
             msg = f"Invalid 'shots' value: {shots_opt!r}"
-            raise CircuitValidationError(msg) from exc
+            raise CircuitValidationError(msg)
+        shots = int(shots_opt)
         if shots < 0:
             msg = f"'shots' must be >= 0, got {shots}"
+            raise CircuitValidationError(msg)
+        memory = options.get("memory", self._options.memory)
+        if not isinstance(memory, bool):
+            msg = f"Invalid 'memory' value: {memory!r}"
             raise CircuitValidationError(msg)
 
         # Build set of all supported QDMI operation names once
         device_ops = {op.name().lower() for op in self._device.operations()}
+        supported_formats = self._device.supported_program_formats()
 
         # Process each circuit
         qdmi_jobs: list[QDMIJobHandle] = []
-        circuit_names: list[str] = []
+        prepared_circuits: list[QuantumCircuit] = []
         # First pass: validate and serialize all circuits
-        serialized_circuits: list[tuple[str | bytes, ProgramFormat, str]] = []
+        serialized_circuits: list[tuple[str | bytes, ProgramFormat]] = []
 
         for idx, circuit in enumerate(circuits):
             # Bind parameters if provided
@@ -809,6 +807,9 @@ class QDMIBackend(BackendV2):
                 raise CircuitValidationError(msg)
 
             bound_circuit = self._preprocess_circuit(bound_circuit)
+            if [bit for register in bound_circuit.cregs for bit in register] != bound_circuit.clbits:
+                msg = "Classical registers must partition circuit.clbits in register order."
+                raise CircuitValidationError(msg)
 
             # Validate operations are supported
             for instruction in bound_circuit.data:
@@ -822,29 +823,23 @@ class QDMIBackend(BackendV2):
                     raise UnsupportedOperationError(msg)
 
             # Serialize the circuit into a program format the device accepts
-            program, program_format = self._serialize_circuit(bound_circuit, self._device.supported_program_formats())
-            circuit_name = circuit.name or f"circuit-{next(QDMIBackend._circuit_counter)}"
-            serialized_circuits.append((program, program_format, circuit_name))
+            serialized_circuits.append(self._serialize_circuit(bound_circuit, supported_formats))
+            prepared_circuits.append(bound_circuit)
 
         # Second pass: submit all validated circuits
-        for program, program_format, circuit_name in serialized_circuits:
-            # Submit job to QDMI device
-            try:
-                qdmi_job = self._device.submit_job(
-                    program=program,
-                    program_format=program_format,
-                    num_shots=shots,
-                )
-            except Exception as exc:
-                msg = f"Failed to submit job to device: {exc}"
-                raise JobSubmissionError(msg) from exc
-
-            # Track the job and circuit name
-            qdmi_jobs.append(qdmi_job)
-            circuit_names.append(circuit_name)
-
-        # Create and return Qiskit job wrapper (handles single or multiple jobs)
-        return QDMIJob(backend=self, jobs=qdmi_jobs, circuit_names=circuit_names)
+        try:
+            for program, program_format in serialized_circuits:
+                try:
+                    qdmi_jobs.append(
+                        self._device.submit_job(program=program, program_format=program_format, num_shots=shots)
+                    )
+                except Exception as exc:
+                    msg = f"Failed to submit job to device: {exc}"
+                    raise JobSubmissionError(msg) from exc
+            return QDMIJob(self, qdmi_jobs, prepared_circuits, shots=shots, memory=memory)
+        except BaseException:
+            _cancel_jobs(qdmi_jobs)
+            raise
 
 
 # MQT Core owns the two OpenQASM formats and registers them through the same
