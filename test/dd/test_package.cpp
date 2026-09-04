@@ -434,7 +434,7 @@ TEST(DDPackageTest, TraceComplexity) {
   // instead of paths in the DD due to the usage of a compute table
   for (std::size_t numQubits = 1; numQubits <= 10; ++numQubits) {
     auto dd = std::make_unique<Package>(numQubits);
-    auto& computeTable = dd->getTraceComputeTable();
+    auto const& computeTable = dd->getTraceComputeTable();
     const auto hGate = getDD(TestGate(0, Fixture::H), *dd);
     auto hKron = hGate;
     for (std::size_t i = 0; i < numQubits - 1; ++i) {
@@ -453,7 +453,7 @@ TEST(DDPackageTest, KeepBottomQubitsPartialTraceComplexity) {
   // recurse further but immediately returns the current CachedEdge<Node>.
   constexpr std::size_t numQubits = 8;
   auto dd = std::make_unique<Package>(numQubits);
-  auto& uniqueTable = dd->getUniqueTable<mNode>();
+  auto const& uniqueTable = dd->getUniqueTable<mNode>();
   const auto hGate = getDD(TestGate(0, Fixture::H), *dd);
   auto hKron = hGate;
   for (std::size_t i = 0; i < numQubits - 1; ++i) {
@@ -482,7 +482,7 @@ TEST(DDPackageTest, PartialTraceComplexity) {
   // bottom qubits.
   constexpr std::size_t numQubits = 9;
   auto dd = std::make_unique<Package>(numQubits);
-  auto& uniqueTable = dd->getUniqueTable<mNode>();
+  auto const& uniqueTable = dd->getUniqueTable<mNode>();
   const auto hGate = getDD(TestGate(0, Fixture::H), *dd);
   auto hKron = hGate;
   for (std::size_t i = 0; i < numQubits - 2; ++i) {

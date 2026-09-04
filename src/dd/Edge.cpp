@@ -504,7 +504,7 @@ void Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
   const auto coords = {std::pair{i, j}, {i, y}, {x, j}, {x, y}};
   std::size_t k = 0U;
   for (const auto& [a, b] : coords) {
-    if (auto& e = p->e[k++]; !e.w.exactlyZero()) {
+    if (auto const& e = p->e[k++]; !e.w.exactlyZero()) {
       e.traverseMatrix(c, a, b, f, nextLevel, threshold);
     }
   }
