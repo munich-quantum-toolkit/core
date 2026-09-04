@@ -232,24 +232,26 @@ may nest up to 64 levels, and classical expression trees may contain at most
 16,384 nodes (parameter-expression limits are unchanged). Integer values use
 exact widths from 1 through 64. The only wider form is a direct unsigned
 comparison between one complete `ClassicalRegister` and one same-width literal;
-computed, packed, and signed wide values remain rejected. Standard `arith.cmpi`
-handles every comparison: signed ordering is encoded by XOR-biasing both
-operands' sign bits, including computed operands. Casts preserve truncation and
-sign/zero extension. Bitwise operations, modular arithmetic, integer selection,
-and shifts share these typed rules. Import guards runtime shifts so overshifts
-produce zero; export preserves the guards. Rotations and population count are
-expanded through the same bounded integer lowering used by jeff. Unsupported
-operations, invalid widths, non-finite constants, dynamic bounds, loop-carried
-values, and other SSA results fail during validation. Core's constant-zero `i64`
-status return is not a classical output. Whole-register reads map to Qiskit
-`ClassicalRegister` expressions, and writes map to atomic Qiskit `Store`
-operations. Indexed stores assume that their runtime index is in bounds. The
-Qiskit C API does not expose `Store`, so the adapter inspects and constructs
-that instruction through Qiskit's public Python classes, as it already does for
-structured control flow. Internal entry-block CBit storage becomes additional
-Qiskit registers, ordered before returned registers; Qiskit exposes all circuit
-storage. OpenQASM remains the source interchange path for arbitrary register
-widths.
+computed, packed, and signed wide values remain rejected. Both expression
+conditions and tuple conditions such as `if_test((register, value))` support
+this form. Tuple equalities with a value outside the register range become
+false. Standard `arith.cmpi` handles every comparison: signed ordering is
+encoded by XOR-biasing both operands' sign bits, including computed operands.
+Casts preserve truncation and sign/zero extension. Bitwise operations, modular
+arithmetic, integer selection, and shifts share these typed rules. Import guards
+runtime shifts so overshifts produce zero; export preserves the guards.
+Rotations and population count are expanded through the same bounded integer
+lowering used by jeff. Unsupported operations, invalid widths, non-finite
+constants, dynamic bounds, loop-carried values, and other SSA results fail
+during validation. Core's constant-zero `i64` status return is not a classical
+output. Whole-register reads map to Qiskit `ClassicalRegister` expressions, and
+writes map to atomic Qiskit `Store` operations. Indexed stores assume that their
+runtime index is in bounds. The Qiskit C API does not expose `Store`, so the
+adapter inspects and constructs that instruction through Qiskit's public Python
+classes, as it already does for structured control flow. Internal entry-block
+CBit storage becomes additional Qiskit registers, ordered before returned
+registers; Qiskit exposes all circuit storage. OpenQASM remains the source
+interchange path for arbitrary register widths.
 
 Every public CBit output is exported as a Qiskit `ClassicalRegister`; an unnamed
 allocation receives a collision-free `_mqt_cN` name. This preserves the CBit

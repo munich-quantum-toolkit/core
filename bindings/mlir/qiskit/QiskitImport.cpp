@@ -578,9 +578,9 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
   case ClassicalType::Bool:
     return builder.getI1Type();
   case ClassicalType::Uint:
-    if (width == 0U || width > 64U) {
+    if (width == 0U) {
       throw std::runtime_error(
-          "Qiskit unsigned classical values must be between 1 and 64 bits");
+          "Qiskit unsigned classical values require a nonzero width");
     }
     return builder.getIntegerType(width);
   case ClassicalType::Float:
@@ -677,14 +677,14 @@ registerStorage(const llvm::ArrayRef<ClassicalBitRef> classicalBits,
 packRegister(mlir::qc::QCProgramBuilder& builder,
              const llvm::ArrayRef<ClassicalBitRef> classicalBits,
              const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg) {
-  if (reg.bits.empty() || reg.bits.size() > 64U) {
-    throw std::runtime_error(
-        "Qiskit classical registers must contain between 1 and 64 bits");
-  }
   const auto width = static_cast<uint32_t>(reg.bits.size());
   const auto type = builder.getIntegerType(width);
   if (auto storage = registerStorage(classicalBits, rootClbitMap, reg)) {
     return mlir::cbit::ReadOp::create(builder, type, storage).getResult();
+  }
+  if (reg.bits.empty() || reg.bits.size() > 64U) {
+    throw std::runtime_error("Qiskit wide register comparisons require one "
+                             "complete classical register");
   }
   llvm::SmallVector<mlir::Value> terms;
   terms.reserve(reg.bits.size());
@@ -717,63 +717,35 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
   return terms.front();
 }
 
-namespace {
-struct WideRegisterComparison {
-  const Expression* reg;
-  const Expression* expected;
-  mlir::arith::CmpIPredicate predicate;
-};
-} // namespace
-
-[[nodiscard]] static std::optional<WideRegisterComparison>
-matchWideRegisterComparison(const Expression& expression) {
-  if (expression.kind != ExpressionKind::Binary ||
-      expression.type != ClassicalType::Bool || expression.width != 1U ||
-      !expression.left || !expression.right) {
-    return std::nullopt;
+[[nodiscard]] static bool
+isWideRegisterComparison(const Expression& expression) {
+  if (expression.kind != ExpressionKind::Binary || !expression.left ||
+      !expression.right) {
+    return false;
   }
-  const bool reverse =
-      expression.left->kind == ExpressionKind::Value &&
-      expression.right->kind == ExpressionKind::ClassicalRegister;
-  const auto* reg = reverse ? expression.right.get() : expression.left.get();
-  const auto* expected =
-      reverse ? expression.left.get() : expression.right.get();
+  const auto* reg = expression.left.get();
+  const auto* expected = expression.right.get();
+  if (reg->kind == ExpressionKind::Value) {
+    std::swap(reg, expected);
+  }
   if (reg->kind != ExpressionKind::ClassicalRegister ||
-      reg->type != ClassicalType::Uint || reg->reg.bits.empty() ||
-      reg->width <= 64U || reg->width != reg->reg.bits.size() ||
+      reg->type != ClassicalType::Uint || reg->width <= 64U ||
+      reg->width != reg->reg.bits.size() ||
       expected->kind != ExpressionKind::Value ||
       expected->type != ClassicalType::Uint || expected->width != reg->width) {
-    return std::nullopt;
+    return false;
   }
-  mlir::arith::CmpIPredicate predicate;
   switch (expression.binaryOperation) {
   case BinaryOperation::Equal:
-    predicate = mlir::arith::CmpIPredicate::eq;
-    break;
   case BinaryOperation::NotEqual:
-    predicate = mlir::arith::CmpIPredicate::ne;
-    break;
   case BinaryOperation::Less:
-    predicate = reverse ? mlir::arith::CmpIPredicate::ugt
-                        : mlir::arith::CmpIPredicate::ult;
-    break;
   case BinaryOperation::LessEqual:
-    predicate = reverse ? mlir::arith::CmpIPredicate::uge
-                        : mlir::arith::CmpIPredicate::ule;
-    break;
   case BinaryOperation::Greater:
-    predicate = reverse ? mlir::arith::CmpIPredicate::ult
-                        : mlir::arith::CmpIPredicate::ugt;
-    break;
   case BinaryOperation::GreaterEqual:
-    predicate = reverse ? mlir::arith::CmpIPredicate::ule
-                        : mlir::arith::CmpIPredicate::uge;
-    break;
+    return true;
   default:
-    return std::nullopt;
+    return false;
   }
-  return WideRegisterComparison{
-      .reg = reg, .expected = expected, .predicate = predicate};
 }
 
 [[nodiscard]] static mlir::Value
@@ -885,24 +857,6 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     break;
   }
   case ExpressionKind::Binary: {
-    if (const auto direct = matchWideRegisterComparison(expression)) {
-      auto storage =
-          registerStorage(classicalBits, rootClbitMap, direct->reg->reg);
-      if (!storage) {
-        throw std::runtime_error(
-            "Qiskit wide register comparisons require one complete "
-            "classical register");
-      }
-      const auto width = direct->reg->width;
-      auto value = mlir::cbit::ReadOp::create(
-                       builder, builder.getIntegerType(width), storage)
-                       .getResult();
-      auto expected =
-          integerConstant(builder, width, direct->expected->uintValue);
-      return mlir::arith::CmpIOp::create(builder, direct->predicate, value,
-                                         expected)
-          .getResult();
-    }
     auto left =
         emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
     if (expression.binaryOperation == BinaryOperation::LogicAnd ||
@@ -1674,22 +1628,10 @@ static void validateCircuit(const CircuitReader& circuit,
                             size_t definitionDepth, size_t controlFlowDepth);
 
 static void validateExpression(const Expression& expression,
-                               const uint32_t rootClbits) {
-  if (const auto direct = matchWideRegisterComparison(expression)) {
-    if (direct->expected->uintValue.getActiveBits() > direct->expected->width) {
-      throw std::runtime_error(
-          "Qiskit Uint literal does not fit its declared width");
-    }
-    llvm::DenseSet<uint32_t> seen;
-    for (const auto bit : direct->reg->reg.bits) {
-      if (bit >= rootClbits || !seen.insert(bit).second) {
-        throw std::runtime_error(
-            "Qiskit classical-register expression has an invalid bit");
-      }
-    }
-    return;
-  }
-  if (expression.type == ClassicalType::Uint && expression.width > 64U) {
+                               const uint32_t rootClbits,
+                               bool allowWideLeaf = false) {
+  if (expression.type == ClassicalType::Uint && expression.width > 64U &&
+      !allowWideLeaf) {
     throw std::runtime_error(
         "Qiskit unsigned expressions wider than 64 bits require a direct "
         "register comparison");
@@ -1700,12 +1642,13 @@ static void validateExpression(const Expression& expression,
     throw std::runtime_error(
         "Qiskit classical expression has an invalid type width");
   }
+  const bool wideComparison = isWideRegisterComparison(expression);
   const auto requireOperand = [&](const std::unique_ptr<Expression>& operand) {
     if (!operand) {
       throw std::runtime_error(
           "Qiskit classical expression has a missing operand");
     }
-    validateExpression(*operand, rootClbits);
+    validateExpression(*operand, rootClbits, wideComparison);
   };
   const auto sameType = [](const Expression& first, const Expression& second) {
     return first.type == second.type && first.width == second.width;
@@ -1737,7 +1680,6 @@ static void validateExpression(const Expression& expression,
     return;
   case ExpressionKind::ClassicalRegister: {
     if (expression.type != ClassicalType::Uint || expression.reg.bits.empty() ||
-        expression.reg.bits.size() > 64U ||
         expression.width < expression.reg.bits.size()) {
       throw std::runtime_error(
           "Qiskit classical-register expression has an invalid type");

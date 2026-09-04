@@ -29,7 +29,6 @@
 
 #include <algorithm>
 #include <array>
-#include <bit>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -1491,28 +1490,29 @@ public:
       throw std::runtime_error("Qiskit control-flow condition has an invalid "
                                "shape");
     }
-    uint64_t expected = 0U;
-    if (!nb::try_cast(condition[1], expected)) {
-      throw std::runtime_error(
-          "Qiskit control-flow condition has an invalid value");
-    }
-
-    auto result = normalizePythonTarget(condition[0]);
-    if (result.kind == ClassicalTargetKind::ClassicalBit) {
-      if (expected > 1U) {
+    const auto expected = pythonUnsignedValue(
+        condition[1], std::numeric_limits<uint32_t>::max(),
+        "Qiskit control-flow condition has an invalid value");
+    auto result =
+        normalizePythonTarget(expressionModule.attr("lift")(condition[0]));
+    const auto& target = *result.expression;
+    if (target.kind == ExpressionKind::ClassicalBit) {
+      if (expected.getActiveBits() > 1U) {
         throw std::runtime_error(
             "Qiskit classical-bit condition must compare against zero or one");
       }
       return normalizePythonTarget(expressionModule.attr("equal")(
-          condition[0], nb::bool_(expected != 0U)));
+          condition[0], nb::bool_(!expected.isZero())));
     }
-    if (result.kind == ClassicalTargetKind::ClassicalRegister) {
-      if (std::bit_width(expected) > result.reg.bits.size()) {
+    if (target.kind == ExpressionKind::ClassicalRegister) {
+      if (expected.getActiveBits() > target.reg.bits.size()) {
         return normalizePythonTarget(
             expressionModule.attr("lift")(nb::bool_(false)));
       }
-      return normalizePythonTarget(
-          expressionModule.attr("equal")(condition[0], nb::int_(expected)));
+      return normalizePythonTarget(expressionModule.attr("equal")(
+          condition[0],
+          pythonInteger(expected,
+                        "Qiskit control-flow condition has an invalid value")));
     }
     throw std::runtime_error("Qiskit control flow has an unknown condition "
                              "target");
