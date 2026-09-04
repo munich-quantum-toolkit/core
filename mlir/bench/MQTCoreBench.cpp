@@ -194,7 +194,7 @@ programExtension(const std::string_view format) {
 [[nodiscard]] static int publish(mqt::bench::GeneratedBenchmark generated,
                                  const std::string_view format,
                                  const std::filesystem::path& directory) {
-  const auto extension = programExtension(format);
+  const auto* const extension = programExtension(format);
   std::error_code error;
   std::filesystem::create_directories(directory, error);
   if (error) {
