@@ -530,7 +530,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
 
   auto siteTuple = nb::class_<mlir::CompilerTarget::SiteTuple>(
       compilerTarget, "SiteTuple",
-      "Calibration data for an ordered tuple of target sites.");
+      "A supported ordered placement with optional calibration.");
   siteTuple
       .def(
           "__init__",
@@ -554,6 +554,9 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                    "The raw operation duration, if available.")
       .def_prop_ro("fidelity", &mlir::CompilerTarget::SiteTuple::fidelity,
                    "The operation fidelity, if available.");
+
+  nb::implicitly_convertible<std::vector<mlir::CompilerTarget::SiteId>,
+                             mlir::CompilerTarget::SiteTuple>();
 
   nb::enum_<mlir::CompilerTarget::Operation::Arity::Kind>(
       compilerTarget, "OperationArityKind",
@@ -580,7 +583,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
 
   auto targetOperation = nb::class_<mlir::CompilerTarget::Operation>(
       compilerTarget, "Operation",
-      "A homogeneous target-wide operation capability and its calibration.");
+      "A target operation capability, calibration, and ordered "
+      "applicability.");
   targetOperation
       .def(
           "__init__",
@@ -644,7 +648,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
             return std::vector<mlir::CompilerTarget::SiteTuple>(
                 operation.siteTuples().begin(), operation.siteTuples().end());
           },
-          "Ordered site-specific calibration data.")
+          "Supported ordered placements with optional calibration; empty means "
+          "general applicability.")
       .def_prop_ro("duration", &mlir::CompilerTarget::Operation::duration,
                    "The raw default duration, if available.")
       .def_prop_ro("fidelity", &mlir::CompilerTarget::Operation::fidelity,
@@ -905,11 +910,17 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .def(
           "supports_operation",
           [](const mlir::CompilerTarget& target, const std::string_view name,
-             const size_t arity, const std::optional<size_t> numParameters) {
+             const size_t arity, const std::optional<size_t> numParameters,
+             const std::optional<std::vector<mlir::CompilerTarget::SiteId>>&
+                 sites) {
+            if (sites) {
+              return target.supportsOperation(name, arity, numParameters,
+                                              *sites);
+            }
             return target.supportsOperation(name, arity, numParameters);
           },
           "name"_a, "arity"_a, "num_parameters"_a = nb::none(),
-          "Whether the target supports an operation.");
+          "sites"_a = nb::none(), "Whether the target supports an operation.");
 
   auto program = nb::class_<mlir::Program>(
       m, "Program", R"pb(Base class for a typed MLIR compiler program.

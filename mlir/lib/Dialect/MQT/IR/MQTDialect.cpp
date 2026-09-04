@@ -20,9 +20,9 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
 #include <llvm/Support/Casting.h>
@@ -182,19 +182,19 @@ LogicalResult NativeOperationAttr::verify(
            << "compiler target zero-arity operation cannot contain site tuples";
   }
 
-  SmallVector<ArrayRef<int64_t>> seen;
+  llvm::SmallDenseSet<ArrayRef<int64_t>> seen;
   seen.reserve(siteTuples.size());
   for (const SiteTupleAttr siteTuple : siteTuples) {
     if (siteTuple.getSites().size() != arity.getValue()) {
       return emitError()
              << "compiler target operation site tuple does not match its arity";
     }
-    if (llvm::is_contained(seen, siteTuple.getSites())) {
+    if (!seen.insert(siteTuple.getSites()).second) {
       return emitError()
              << "compiler target operation contains a duplicate site tuple";
     }
-    seen.emplace_back(siteTuple.getSites());
   }
+
   return success();
 }
 

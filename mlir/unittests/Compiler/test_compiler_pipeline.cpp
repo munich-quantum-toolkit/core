@@ -33,6 +33,7 @@
 
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Error.h>
@@ -1478,6 +1479,61 @@ gphase(0.5);
   EXPECT_EQ(controlledOperations.size(), 7U);
   EXPECT_EQ(rccxOperations, 2U);
   EXPECT_EQ(globalPhases, 1U);
+}
+
+TEST_F(CompilerPipelineTest, QCOProgramCompilesForOneWayEntangler) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+cx q[0], q[1];
+cx q[1], q[0];
+)qasm";
+  auto qc = QCProgram::fromQASMString(source.str());
+  ASSERT_TRUE(qc);
+  auto qco = std::move(*qc).intoQCO();
+  ASSERT_TRUE(qco);
+
+  using TargetOperation = CompilerTarget::Operation;
+  using SiteId = CompilerTarget::SiteId;
+  std::vector operations{
+      llvm::cantFail(TargetOperation::create("u", 1, 3)),
+      llvm::cantFail(TargetOperation::create(
+          "cx", 2, 0,
+          {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1}))}))};
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::fromCouplings({{0, 1}}),
+      CompilerTarget::NativeOperations::fromOperations(operations)));
+
+  ASSERT_TRUE(qco->compileForTarget(target));
+  auto compiled = parseRecordedModule(qco->str());
+  ASSERT_TRUE(compiled);
+  EXPECT_TRUE(verify(*compiled).succeeded());
+
+  llvm::DenseMap<Value, SiteId> sites;
+  size_t numTwoQubitOperations = 0;
+  for (Operation& operation :
+       ::mlir::mqt::getEntryPoint(compiled.get()).getFunctionBody().getOps()) {
+    if (auto staticOp = dyn_cast<qco::StaticOp>(operation)) {
+      sites.try_emplace(staticOp.getQubit(), staticOp.getIndex());
+      continue;
+    }
+    auto unitary = dyn_cast<qco::UnitaryOpInterface>(operation);
+    if (!unitary) {
+      continue;
+    }
+    if (unitary.getNumQubits() == 2) {
+      ++numTwoQubitOperations;
+      const llvm::SmallVector<SiteId, 2> orderedSites{
+          sites.at(unitary.getInputQubit(0)),
+          sites.at(unitary.getInputQubit(1))};
+      EXPECT_TRUE(target.supports(&operation, orderedSites));
+    }
+    for (const auto [input, output] :
+         llvm::zip_equal(unitary.getInputQubits(), unitary.getOutputQubits())) {
+      sites.try_emplace(output, sites.at(input));
+    }
+  }
+  EXPECT_GT(numTwoQubitOperations, 0U);
 }
 
 TEST_F(CompilerPipelineTest, QCOProgramCompilesDynamicRunForSupportedTargets) {

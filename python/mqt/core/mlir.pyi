@@ -140,7 +140,7 @@ class CompilerTarget:
             """The raw T2 coherence time, if available."""
 
     class SiteTuple:
-        """Calibration data for an ordered tuple of target sites."""
+        """A supported ordered placement with optional calibration."""
 
         def __init__(
             self, sites: Sequence[int], duration: int | None = None, fidelity: float | None = None
@@ -187,14 +187,14 @@ class CompilerTarget:
             """Whether this arity accepts a concrete width."""
 
     class Operation:
-        """A homogeneous target-wide operation capability and its calibration."""
+        """A target operation capability, calibration, and ordered applicability."""
 
         def __init__(
             self,
             name: str,
             arity: int | CompilerTarget.OperationArity,
             num_parameters: int,
-            site_tuples: Sequence[CompilerTarget.SiteTuple] | None = None,
+            site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
             duration: int | None = None,
             fidelity: float | None = None,
         ) -> None: ...
@@ -216,7 +216,7 @@ class CompilerTarget:
 
         @property
         def site_tuples(self) -> list[CompilerTarget.SiteTuple]:
-            """Ordered site-specific calibration data."""
+            """Supported ordered placements with optional calibration; empty means general applicability."""
 
         @property
         def duration(self) -> int | None:
@@ -385,7 +385,9 @@ class CompilerTarget:
     def synthesis_basis(self) -> CompilerTarget.SynthesisBasis | None:
         """A complete target-wide synthesis basis, if available."""
 
-    def supports_operation(self, name: str, arity: int, num_parameters: int | None = None) -> bool:
+    def supports_operation(
+        self, name: str, arity: int, num_parameters: int | None = None, sites: Sequence[int] | None = None
+    ) -> bool:
         """Whether the target supports an operation."""
 
 class Program:

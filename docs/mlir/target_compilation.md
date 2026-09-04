@@ -2,9 +2,9 @@
 
 An MLIR {code}`mlir::CompilerTarget` is an immutable snapshot of a circuit-model
 device. It contains the device sites, topology, native operations, and available
-calibration data. Compilation decomposes supported multi-qubit operations,
-optimizes and maps the program, synthesizes native gates, and verifies that the
-result conforms to the target.
+calibration and ordered-applicability data. Compilation decomposes supported
+multi-qubit operations, optimizes and maps the program, synthesizes native
+gates, and verifies that the result conforms to the target.
 
 The snapshot is independent of its originating QDMI session. It can therefore be
 stored, copied cheaply, and reused for multiple compilations.
@@ -41,7 +41,12 @@ target = CompilerTarget(
             num_parameters=1,
         ),
         CompilerTarget.Operation("u", arity=1, num_parameters=3),
-        CompilerTarget.Operation("cx", arity=2, num_parameters=0),
+        CompilerTarget.Operation(
+            "cx",
+            arity=2,
+            num_parameters=0,
+            site_tuples=[(1, 0), (1, 2)],
+        ),
         CompilerTarget.Operation("measure", arity=1, num_parameters=0),
         CompilerTarget.Operation("reset", arity=1, num_parameters=0),
     ]),
@@ -58,9 +63,25 @@ not provide a complete connectivity model and a representable native-operation
 set. An explicit operation arity is either fixed or variadic with a positive,
 inclusive minimum. Fixed zero represents a global-phase operation. A variadic
 capability accepts every total width from its minimum through the target's site
-count; site-specific calibration tuples are therefore available only for fixed,
-positive arities. Structural and program-format constructs are not
+count; site tuples are therefore available only for fixed, positive arities. An
+empty `site_tuples` list makes an operation available on every valid placement.
+A nonempty list contains all supported ordered placements. Each tuple may carry
+calibration values; omitted values inherit the operation-wide defaults. Retain
+placements without calibration in this list, and omit operations that are not
+available anywhere. Structural and program-format constructs are not
 compiler-target operations.
+
+Use plain tuples for placements without calibration. Use
+`CompilerTarget.SiteTuple([1, 0], duration=40, fidelity=0.99)` to attach
+calibration to a placement; both forms can appear in the same list.
+
+Routing uses undirected adjacency; native synthesis repairs unsupported operand
+directions. Target compilation requires a known static physical site for each
+qubit. Structured branch exits must agree on sites, and loop backedges must
+preserve the entry sites. Unsupported or inconsistent site transfers are
+diagnosed, including after all-to-all placement. A synthesis basis must provide
+the same one-qubit gate family on every site and an entangler on every routing
+edge in at least one direction.
 
 Target synthesis preserves a native `gphase`. If the target does not support
 `gphase`, target synthesis preserves relative phase effects and removes only the
@@ -136,9 +157,9 @@ if (!qco || !qco->compileForTarget(*target)) {
 }
 ```
 
-The adapter accepts circuit-model devices whose operations are available
-throughout the topology in both operand orientations. Operand-symmetric gates,
-such as CZ, may report each edge once. Operations with arity above two must
+The adapter accepts circuit-model devices whose two-qubit operations cover every
+topology edge in at least one operand orientation and preserves the exact
+ordered tuples reported by the device. Operations with arity above two must
 report every ordered tuple of distinct sites. Neutral-atom zone models require a
 different compilation model and are rejected with a diagnostic.
 

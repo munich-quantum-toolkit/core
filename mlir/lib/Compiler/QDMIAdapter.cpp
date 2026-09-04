@@ -15,7 +15,6 @@
 #include "qdmi/driver/Driver.hpp"
 
 #include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/CheckedArithmetic.h>
 #include <llvm/Support/Error.h>
@@ -125,15 +124,6 @@ allToAllCouplingCount(size_t numSites) {
   const auto first = numSites % 2 == 0 ? numSites / 2 : numSites;
   const auto second = numSites % 2 == 0 ? numSites - 1 : (numSites - 1) / 2;
   return llvm::checkedMulUnsigned(first, second);
-}
-
-[[nodiscard]] static bool
-isSwapInvariantOperation(llvm::StringRef operationName) {
-  const auto canonicalName = operationName.trim().lower();
-  return llvm::StringSwitch<bool>(canonicalName)
-      .Cases({"cz", "swap", "iswap"}, true)
-      .Cases({"rxx", "ryy", "rzz"}, true)
-      .Default(false);
 }
 
 [[nodiscard]] static llvm::Error validateHomogeneousSupport(
@@ -257,25 +247,10 @@ isSwapInvariantOperation(llvm::StringRef operationName) {
           return supportedCouplings.contains(coupling);
         });
   }
-  if (auto error = requireRepresentableOperation(
-          coversTarget, deviceName, operationName,
-          couplings ? "support is not homogeneous across all topology edges"
-                    : "support is not homogeneous across all-to-all site "
-                      "pairs")) {
-    return error;
-  }
-
   return requireRepresentableOperation(
-      isSwapInvariantOperation(operationName) ||
-          std::ranges::all_of(
-              supportedCouplings,
-              [&](const auto& coupling) {
-                return reportedTuples.contains(coupling) &&
-                       reportedTuples.contains(CompilerTarget::Coupling{
-                           coupling.second, coupling.first});
-              }),
-      deviceName, operationName,
-      "both orientations must be available on every supported site pair");
+      coversTarget, deviceName, operationName,
+      couplings ? "support is not homogeneous across all topology edges"
+                : "support is not homogeneous across all-to-all site pairs");
 }
 
 [[nodiscard]] static llvm::Expected<std::optional<CompilerTarget::DurationUnit>>
@@ -299,12 +274,12 @@ snapshotDurationUnit(const qdmi::Device& device) {
 }
 
 [[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::SiteTuple>>
-snapshotSiteTuples(const qdmi::Operation& operation, size_t arity,
-                   const std::vector<qdmi::Site>& flattenedSites,
-                   std::optional<uint64_t> defaultDuration,
-                   std::optional<double> defaultFidelity) {
-  std::vector<CompilerTarget::SiteTuple> siteTuples;
-  siteTuples.reserve(flattenedSites.size() / arity);
+snapshotOperationSites(const qdmi::Operation& operation, size_t arity,
+                       const std::vector<qdmi::Site>& flattenedSites,
+                       std::optional<uint64_t> defaultDuration,
+                       std::optional<double> defaultFidelity, bool variadic) {
+  std::vector<CompilerTarget::SiteTuple> result;
+  result.reserve(flattenedSites.size() / arity);
   for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
     std::vector<qdmi::Site> sites;
     std::vector<CompilerTarget::SiteId> siteIds;
@@ -322,16 +297,20 @@ snapshotSiteTuples(const qdmi::Operation& operation, size_t arity,
 
     const auto duration = operation.getDuration(sites);
     const auto fidelity = operation.getFidelity(sites);
-    if (duration != defaultDuration || fidelity != defaultFidelity) {
-      auto siteTuple = CompilerTarget::SiteTuple::create(std::move(siteIds),
-                                                         duration, fidelity);
+    const bool hasSiteCalibration =
+        duration != defaultDuration || fidelity != defaultFidelity;
+    if (!variadic || hasSiteCalibration) {
+      auto siteTuple = CompilerTarget::SiteTuple::create(
+          std::move(siteIds),
+          duration == defaultDuration ? std::nullopt : duration,
+          fidelity == defaultFidelity ? std::nullopt : fidelity);
       if (!siteTuple) {
         return siteTuple.takeError();
       }
-      siteTuples.emplace_back(std::move(*siteTuple));
+      result.emplace_back(std::move(*siteTuple));
     }
   }
-  return siteTuples;
+  return result;
 }
 
 [[nodiscard]] static llvm::Expected<CompilerTarget::NativeOperations>
@@ -363,6 +342,9 @@ snapshotOperations(
       return error;
     }
     const auto flattenedSites = operation.getSites();
+    if (*arity > 0 && flattenedSites && flattenedSites->empty()) {
+      continue;
+    }
     if (auto error = requireRepresentableOperation(
             *arity == 0 || flattenedSites || homogeneousOperationSupport,
             deviceName, operation.getName(),
@@ -385,8 +367,9 @@ snapshotOperations(
                                          deviceSites, couplings, deviceName)) {
         return error;
       }
-      auto tuples = snapshotSiteTuples(operation, *arity, *flattenedSites,
-                                       duration, fidelity);
+      auto tuples =
+          snapshotOperationSites(operation, *arity, *flattenedSites, duration,
+                                 fidelity, hasArbitraryPositiveControls);
       if (!tuples) {
         return tuples.takeError();
       }
