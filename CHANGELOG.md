@@ -17,6 +17,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⚡ Run PennyLane QDMI jobs concurrently and release the GIL during waits and
+  result retrieval ([#2349]) ([**@burgholzer**])
 - 💥 Raise the minimum Qiskit version from 1.1.0 to 2.1.0 ([#2358])
   ([**@burgholzer**])
 - 💥 Replace the QDMI-specific primitives with native Qiskit primitives and
@@ -816,6 +818,7 @@ for previous changelogs._
 
 [#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368
 [#2358]: https://github.com/munich-quantum-toolkit/core/pull/2358
+[#2349]: https://github.com/munich-quantum-toolkit/core/pull/2349
 [#2335]: https://github.com/munich-quantum-toolkit/core/pull/2335
 [#2314]: https://github.com/munich-quantum-toolkit/core/pull/2314
 [#2288]: https://github.com/munich-quantum-toolkit/core/pull/2288
