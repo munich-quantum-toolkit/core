@@ -127,7 +127,10 @@ def test_result_header_snapshot(recording_backend) -> None:
     result = job.result()
     assert result.get_memory("original") == ["0"] * 4
     assert result.results[0].header == {
-        "name": "original", "memory_slots": 1, "creg_sizes": [["c", 1]], "metadata": {"experiment": 1},
+        "name": "original",
+        "memory_slots": 1,
+        "creg_sizes": [["c", 1]],
+        "metadata": {"experiment": 1},
     }
 
 
@@ -215,7 +218,9 @@ def test_validation_before_submission(recording_backend) -> None:
     assert not jobs
 
 
-@pytest.mark.parametrize("options", [{"shots": 1.5}, {"shots": True}, {"memory": 1}, {"seed_simulator": 1}, {"unknown": None}])
+@pytest.mark.parametrize(
+    "options", [{"shots": 1.5}, {"shots": True}, {"memory": 1}, {"seed_simulator": 1}, {"unknown": None}]
+)
 def test_invalid_options(recording_backend, options) -> None:
     """Reject ineffective or lossy options before submission."""
     backend, jobs, _ = recording_backend
@@ -261,16 +266,16 @@ def test_sampler_batching_and_mixed_shots(recording_backend) -> None:
     assert result.metadata == {"version": 2}
 
 
-@pytest.mark.parametrize("grouping, expected_jobs", [(True, 2), (False, 4)])
+@pytest.mark.parametrize(("grouping", "expected_jobs"), [(True, 2), (False, 4)])
 def test_estimator_grouping_and_uncertainty(recording_backend, grouping: bool, expected_jobs: int) -> None:
     """Qiskit owns commuting groups, duplicate terms, identity, precision, and standard errors."""
     backend, jobs, events = recording_backend
     qc = QuantumCircuit(2)
     qc.metadata = {"experiment": "observable"}
-    observables = [SparsePauliOp(["ZI", "IZ", "XI", "II"], np.array([1, 2, 3, 4])), SparsePauliOp("ZI")]
+    observables = [SparsePauliOp(["ZI", "IS", "XI", "II"], np.array([1, 2, 3, 4])), SparsePauliOp("ZI")]
     result = backend.estimator(options={"abelian_grouping": grouping}).run([(qc, observables)], precision=0.5).result()
     assert len(jobs) == expected_jobs
-    assert events[:expected_jobs + 1] == ["formats"] + ["submit"] * expected_jobs
+    assert events[: expected_jobs + 1] == ["formats"] + ["submit"] * expected_jobs
     np.testing.assert_equal(result[0].data.evs, [10, 1])
     np.testing.assert_equal(result[0].data.stds, [0, 0])
     assert result[0].metadata == {"target_precision": 0.5, "shots": 4, "circuit_metadata": qc.metadata}
@@ -307,7 +312,7 @@ def test_estimator_nonzero_uncertainty(recording_backend, monkeypatch: pytest.Mo
         return job
 
     monkeypatch.setattr(backend, "run", run)
-    op = SparsePauliOp(["ZI", "IZ", "II"], np.array([2, 3, 4]))
+    op = SparsePauliOp(["ZI", "IS", "II"], np.array([2, 3, 4]))
     result = backend.estimator().run([(QuantumCircuit(2), [op, "ZI", "ZI"])], precision=0.5).result()[0]
     assert len(jobs) == 1
     np.testing.assert_equal(result.data["evs"], [4, 0, 0])

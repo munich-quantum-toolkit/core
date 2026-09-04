@@ -19,15 +19,15 @@ single-threaded. The backend submits a validated batch before collecting it.
   results, and cancel submitted jobs on failure. Query formats once per batch.
 - Use Qiskit 2.1 or newer: it includes native Sampler run options and removes
   the mandatory SymEngine dependency that prevents minimum-version installation
-  on Python 3.14. Raising the floor from 1.1.0 makes this a v4-only change;
-  it cannot be backported to v3.x. No compatibility branches are needed.
+  on Python 3.14. Raising the floor from 1.1.0 makes this a v4-only change; it
+  cannot be backported to v3.x. No compatibility branches are needed.
 
 ## Validation
 
-`uv run --no-sync pytest test/python/plugins/qiskit test/python/qdmi` passes
-414 checks with Qiskit 2.5.2. The same suites pass with Qiskit 2.1.0
-(413 passed, one compiler-translation check skipped because it requires
-Qiskit 2.5). Lint and documentation builds pass locally.
+`uv run --no-sync pytest test/python/plugins/qiskit test/python/qdmi` passes 414
+checks with Qiskit 2.5.2. The same suites pass with Qiskit 2.1.0 (413 passed,
+one compiler-translation check skipped because it requires Qiskit 2.5). Lint and
+documentation builds pass locally.
 
 Five offline recording runs of 400 circuits at 100 shots show native Sampler
 submits all 400 jobs before collection, compared with one for the custom
