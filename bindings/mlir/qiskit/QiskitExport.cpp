@@ -2328,6 +2328,9 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
     try {
       if (state.materializeScalars && operation.getNumResults() == 1U &&
           !operation.getResult(0).getType().isIndex() &&
+          !(llvm::isa<mlir::cbit::ReadOp>(operation) &&
+            mlir::cast<mlir::IntegerType>(operation.getResult(0).getType())
+                    .getWidth() > 64U) &&
           !operation.getResult(0).use_empty() &&
           (llvm::isa<mlir::cbit::LoadOp, mlir::cbit::ReadOp>(operation) ||
            operation.getDialect() ==

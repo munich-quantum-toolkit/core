@@ -39,12 +39,11 @@ swaps, unequal tuples, i8 overflow, f64, nested exits, range/list breaks,
 initialization, native captures, determinism, and contextual exceptions. The C++
 OpenQASM translation suite also checks buffered output on failure.
 
-All 20 focused loop tests, all 463 MLIR Python tests, and all 3,112 MLIR C++
-tests pass after simplification. `uvx nox -s lint`, `uvx nox -s stubs`, and C++
-lint pass; stub generation produces no public API diff. C++ lint also uses
-explicit changed-file selection because the nox session's commit comparison
-misses uncommitted edits. Routine build and check entry points are in
-[AGENTS.md](../../AGENTS.md).
+All 23 focused loop tests, all 493 MLIR Python tests, and all 3,113 MLIR C++
+tests pass. `uvx nox -s lint`, `uvx nox -s cpp-lint`, and `uvx nox -s stubs`
+pass; stub generation produces no public API diff. C++ lint also uses explicit
+changed-file selection for uncommitted edits. Routine build and check entry
+points are in [AGENTS.md](../../AGENTS.md).
 
 ## Implementation findings
 
@@ -72,3 +71,12 @@ misses uncommitted edits. Routine build and check entry points are in
   bits.
 - Symbolic gate expressions stay on the existing parameter path when a program
   also uses native scalar loop variables; runtime gate angles remain rejected.
+- Wide register comparisons retain direct register expressions, while scalar
+  locals remain limited to 64 bits. Snapshot materialization may read at its own
+  operation position; deferred reads still reject intervening writes.
+- QCO-to-jeff applies conversion patterns before folds, so reset folding cannot
+  inspect a source quantum operand after region cloning maps it to a target
+  type.
+- All Qiskit conditionals use the existing variable-aware branch construction.
+  This also lets invalid-capture exceptions reach Python without unwinding
+  through the exception-disabled QC builder callback.

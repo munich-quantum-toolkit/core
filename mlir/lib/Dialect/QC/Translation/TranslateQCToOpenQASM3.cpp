@@ -440,6 +440,9 @@ private:
     llvm::SaveAndRestore consumerGuard(expressionConsumer, &operation);
     if (materializeScalars && isInlineExpressionOperation(operation) &&
         !isa<arith::ConstantOp>(&operation) && operation.getNumResults() == 1 &&
+        !(isa<cbit::ReadOp>(operation) &&
+          cast<IntegerType>(operation.getResult(0).getType()).getWidth() >
+              64U) &&
         !operation.getResult(0).use_empty()) {
       return materialize(operation.getResult(0));
     }
@@ -582,7 +585,7 @@ private:
     }
     const auto readPosition = operationPositions.at(read);
     const auto consumerPosition = operationPositions.at(expressionConsumer);
-    if (readPosition >= consumerPosition) {
+    if (readPosition > consumerPosition) {
       return fail(read, "classical snapshot does not dominate its use");
     }
     const auto blockWrites = classicalWrites.find(read->getBlock());

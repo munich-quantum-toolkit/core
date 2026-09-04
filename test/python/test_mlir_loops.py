@@ -75,6 +75,52 @@ def test_do_while_round_trip(iterations: int) -> None:
     check_paths(program, iterations % 2)
 
 
+@pytest.mark.parametrize("stale", [False, True])
+def test_wide_register_condition_in_do_while(*, stale: bool) -> None:
+    """Preserve direct wide comparisons and reject snapshots read before a store."""
+    read = "%bits = cbit.read %out : !cbit.reg<65> -> i65"
+    program = QCProgram.from_mlir_str(f"""
+module {{
+  func.func @main() -> !cbit.reg<65> attributes {{mqt.entry_point}} {{
+    %q = qc.alloc : !qc.qubit
+    %out = cbit.alloc(#cbit.init<zero>) : !cbit.reg<65>
+    %highest = arith.constant 64 : index
+    %expected = arith.constant {1 << 64} : i65
+    scf.while : () -> () {{
+      qc.reset %q : !qc.qubit
+      qc.x %q : !qc.qubit
+      {read if stale else ""}
+      %measured = qc.measure %q : !qc.qubit -> i1
+      cbit.store %measured, %out[%highest] : !cbit.reg<65>
+      {"" if stale else read}
+      %continue = arith.cmpi ne, %bits, %expected : i65
+      scf.condition(%continue)
+    }} do {{
+      scf.yield
+    }}
+    qc.dealloc %q : !qc.qubit
+    return %out : !cbit.reg<65>
+  }}
+}}
+""")
+    if stale:
+        with pytest.raises(RuntimeError, match="stale classical snapshot"):
+            program.to_qiskit()
+        with pytest.raises(RuntimeError, match="stale classical snapshot"):
+            program.to_openqasm3()
+    else:
+        check_paths(program, 1 << 64)
+        assert program.to_qiskit().num_clbits == 65
+
+
+def test_unused_wide_qiskit_local_is_rejected() -> None:
+    """Wide register comparison support does not permit wide scalar locals."""
+    circuit = QuantumCircuit(1, 1)
+    circuit.add_uninitialized_var(expr.Var.new("wide", types.Uint(65)))
+    with pytest.raises(RuntimeError, match=r"local variables.*64"):
+        QCProgram.from_qiskit(circuit)
+
+
 def test_unequal_tuples_swaps_and_float_state() -> None:
     """Edge assignments use old values and preserve the exit tuple."""
     program = QCProgram.from_mlir_str("""

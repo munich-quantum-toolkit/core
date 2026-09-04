@@ -2480,9 +2480,12 @@ protected:
                  ConvertSCFWhileOpToJeff, ConvertQCOMainToJeff,
                  ConvertFuncReturnOpToJeff>(typeConverter, context, &state);
 
-    // Apply the conversion
-    if (applyPartialConversion(moduleOp, target, std::move(patterns))
-            .failed()) {
+    /// Cloned region arguments already have target types. Convert their users
+    /// before source folds inspect typed quantum operands.
+    ConversionConfig config;
+    config.foldingMode = DialectConversionFoldingMode::AfterPatterns;
+    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns),
+                                      config))) {
       signalPassFailure();
       return;
     }

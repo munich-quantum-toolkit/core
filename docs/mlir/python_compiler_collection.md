@@ -181,7 +181,7 @@ flow, so export uses Qiskit's public Python classes for these operations.
 | Constant Boolean, `Uint` up to 64 bits, and `Float` expressions      | Supported            | Supported                     |
 | Clbit and ClassicalRegister expression variables                     | Supported            | Supported                     |
 | Fixed-width bitwise operations, comparisons, and bounded shifts      | Supported            | Supported                     |
-| Direct complete-register comparisons wider than 64 bits | Supported | Supported |
+| Direct complete-register comparisons wider than 64 bits              | Supported            | Supported                     |
 | Clbit, indexed-register, and whole-register `Store` assignments      | Supported            | Supported                     |
 | Initialized local classical variables and enclosing captures         | Supported            | Native `expr.Var` and `Store` |
 | External runtime input variables                                     | Rejected             | Rejected                      |
@@ -248,22 +248,23 @@ comparison between one complete `ClassicalRegister` and one same-width literal;
 computed, packed, and signed wide values remain rejected. Both expression
 conditions and tuple conditions such as `if_test((register, value))` support
 this form. Tuple equalities with a value outside the register range become
-false. Standard `arith.cmpi` handles every comparison: signed ordering is encoded by XOR-biasing both operands' sign bits,
-including computed operands. Casts preserve truncation and sign/zero extension.
-Bitwise operations, modular arithmetic, integer selection, and shifts share
-these typed rules. Import guards runtime shifts so overshifts produce zero;
-export preserves the guards. Rotations and population count are expanded through
-the same bounded integer lowering used by jeff. Unsupported operations, invalid
-widths, non-finite constants, unsupported index uses, and dynamic for-loop
-bounds fail during validation. Core's constant-zero `i64` status return is not a
-classical output. Whole-register reads map to Qiskit `ClassicalRegister`
-expressions, and writes map to atomic Qiskit `Store` operations. Indexed stores
-assume that their runtime index is in bounds. The Qiskit C API does not expose
-`Store`, so the adapter inspects and constructs that instruction through
-Qiskit's public Python classes, as it already does for structured control flow.
-Internal entry-block CBit storage becomes additional Qiskit registers, ordered
-before returned registers; Qiskit exposes all circuit storage. OpenQASM remains
-the source interchange path for arbitrary register widths.
+false. Standard `arith.cmpi` handles every comparison: signed ordering is
+encoded by XOR-biasing both operands' sign bits, including computed operands.
+Casts preserve truncation and sign/zero extension. Bitwise operations, modular
+arithmetic, integer selection, and shifts share these typed rules. Import guards
+runtime shifts so overshifts produce zero; export preserves the guards.
+Rotations and population count are expanded through the same bounded integer
+lowering used by jeff. Unsupported operations, invalid widths, non-finite
+constants, unsupported index uses, and dynamic for-loop bounds fail during
+validation. Core's constant-zero `i64` status return is not a classical output.
+Whole-register reads map to Qiskit `ClassicalRegister` expressions, and writes
+map to atomic Qiskit `Store` operations. Indexed stores assume that their
+runtime index is in bounds. The Qiskit C API does not expose `Store`, so the
+adapter inspects and constructs that instruction through Qiskit's public Python
+classes, as it already does for structured control flow. Internal entry-block
+CBit storage becomes additional Qiskit registers, ordered before returned
+registers; Qiskit exposes all circuit storage. OpenQASM remains the source
+interchange path for arbitrary register widths.
 
 Every public CBit output is exported as a Qiskit `ClassicalRegister`; an unnamed
 allocation receives a collision-free `_mqt_cN` name. This preserves the CBit

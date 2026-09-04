@@ -805,11 +805,13 @@ struct ImportedVariables {
   void conditional(mlir::qc::QCProgramBuilder& builder, mlir::Value condition,
                    llvm::function_ref<void()> thenBody,
                    llvm::function_ref<void()> elseBody) {
-    if (mlir::matchPattern(condition, mlir::m_One())) {
+    if ((!variables.empty() || loop != nullptr) &&
+        mlir::matchPattern(condition, mlir::m_One())) {
       thenBody();
       return;
     }
-    if (mlir::matchPattern(condition, mlir::m_Zero())) {
+    if ((!variables.empty() || loop != nullptr) &&
+        mlir::matchPattern(condition, mlir::m_Zero())) {
       elseBody();
       return;
     }
@@ -1485,17 +1487,6 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
     const auto thenBlock = controlFlow.block(0);
     const auto elseBlock =
         controlFlow.numBlocks() == 2U ? controlFlow.block(1) : nullptr;
-    if (variables.variables.empty() && variables.loop == nullptr) {
-      if (elseBlock) {
-        builder.scfIf(
-            value, [&] { translateBlock(*thenBlock, localParameters); },
-            [&] { translateBlock(*elseBlock, localParameters); });
-      } else {
-        builder.scfIf(value,
-                      [&] { translateBlock(*thenBlock, localParameters); });
-      }
-      return;
-    }
     variables.conditional(
         builder, value, [&] { translateBlock(*thenBlock, localParameters); },
         [&] {
@@ -2426,6 +2417,10 @@ void validateCircuit(const CircuitReader& circuit,
                      const size_t definitionDepth,
                      const size_t controlFlowDepth) {
   for (const auto& variable : circuit.variables()) {
+    if (variable.type == ClassicalType::Uint && variable.width > 64U) {
+      throw std::runtime_error("Qiskit local variables support unsigned "
+                               "integers of at most 64 bits");
+    }
     if (variable.input) {
       throw std::runtime_error(
           "Qiskit external runtime input variables are not supported; use an "
