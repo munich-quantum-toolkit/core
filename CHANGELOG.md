@@ -94,10 +94,11 @@ releases may include breaking changes.
 
 ### Changed
 
-- 💥 Raise the minimum Qiskit version from 1.1.0 to 2.1.0 and replace the
-  QDMI-specific primitives with native Qiskit primitives. Sampler and
-  `memory=True` require genuine QDMI `SHOTS`. This breaking change is for MQT
-  Core v4 only and cannot be backported to v3.x ([#2358]) ([**@burgholzer**])
+- 💥 Raise the minimum Qiskit version from 1.1.0 to 2.1.0 ([#2358])
+  ([**@burgholzer**])
+- 💥 Replace the QDMI-specific primitives with native Qiskit primitives and
+  typed backend factories. Sampler and `memory=True` require genuine QDMI
+  `SHOTS` ([#2358]) ([**@burgholzer**])
 - 💥 Drop support for x86 macOS and stop publishing the respective wheels
   ([#2259]) ([**@denialhaag**])
 - ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++

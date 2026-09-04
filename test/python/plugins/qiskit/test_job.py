@@ -262,14 +262,31 @@ def test_backend_option_defaults_and_cancel(recording_backend: RecordingBackend)
     jobs[-1].cancel.assert_called_once()
 
 
-def test_counts_only_device() -> None:
-    """DDSIM supports native Estimator but must not silently fake native Sampler shots."""
-    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+@pytest.mark.parametrize("primitive", ["sampler", "estimator"])
+def test_primitive_seed_is_not_silently_ignored(recording_backend: RecordingBackend, primitive: str) -> None:
+    """Native seed options reach the generic backend, which has no portable seed mapping."""
+    backend, jobs, _ = recording_backend
     qc = QuantumCircuit(1, 1)
     qc.measure(0, 0)
-    assert backend.run(qc, shots=4).result().get_counts() == {"0": 4}
-    assert backend.estimator().run([(QuantumCircuit(1), "Z")], precision=0.5).result()[0].data["evs"] == 1
-    with pytest.raises(RuntimeError, match="Not supported") as caught:
+    if primitive == "sampler":
+        job = backend.sampler(seed_simulator=7).run([qc], shots=4)
+    else:
+        job = backend.estimator(seed_simulator=7).run([(qc, "Z")], precision=0.5)
+    with pytest.raises(CircuitValidationError, match="seed_simulator"):
+        job.result()
+    assert not jobs
+
+
+def test_counts_only_device() -> None:
+    """A counts-only device supports Estimator but must not fake Sampler shots."""
+    backend = QDMIBackend(cast("Device", MockQDMIDevice(operations=["measure"])))
+    qc = QuantumCircuit(1, 1)
+    qc.measure(0, 0)
+    assert sum(backend.run(qc, shots=4).result().get_counts().values()) == 4
+    result = backend.estimator().run([(QuantumCircuit(1), "Z")], precision=0.5).result()[0]
+    assert result.metadata["shots"] == 4
+    assert -1 <= result.data["evs"] <= 1
+    with pytest.raises(NotImplementedError) as caught:
         backend.sampler().run([qc], shots=4).result()
     assert "SHOTS" in caught.value.__notes__[0]
 
@@ -303,7 +320,7 @@ def test_estimator_grouping_and_uncertainty(
         SparsePauliOp(["ZI", "IZ", "XI", "II"], np.array([1, 2, 3, 4])),  # spellchecker:disable-line
         SparsePauliOp("ZI"),
     ]
-    result = backend.estimator(options={"abelian_grouping": grouping}).run([(qc, observables)], precision=0.5).result()
+    result = backend.estimator(abelian_grouping=grouping).run([(qc, observables)], precision=0.5).result()
     assert len(jobs) == expected_jobs
     assert events[: expected_jobs + 1] == ["formats"] + ["submit"] * expected_jobs
     np.testing.assert_equal(result[0].data["evs"], [10, 1])

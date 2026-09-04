@@ -457,25 +457,25 @@ resolve against the file that declares them. `MQT_CORE_QDMI_CONFIG_FILE`,
 `MQT_CORE_QDMI_CONFIG_JSON`, the system and user files, and the packaged
 `*.qdmi.json` fragments do not change.
 
-### Qiskit 2.1 minimum and native primitives (v4 only)
+### Qiskit 2.1 minimum
 
-MQT Core v4 raises the minimum Qiskit version from **1.1.0 to 2.1.0**, dropping
-support for all Qiskit 1.x releases and Qiskit 2.0. This breaking change cannot
-be backported to MQT Core v3.x. Upgrade Qiskit to 2.1.0 or newer before moving
-to v4; projects that must retain an older Qiskit must stay on `mqt-core>=3,<4`.
+The minimum Qiskit version increases from **1.1.0 to 2.1.0**, dropping support
+for all Qiskit 1.x releases and Qiskit 2.0. Upgrade Qiskit to 2.1.0 or newer.
+
+### Native QDMI Qiskit primitives
 
 `QDMISampler` and `QDMIEstimator` are removed. Use Qiskit's `BackendSamplerV2`
 and `BackendEstimatorV2`, or the backend factories with native options:
 
 ```python
-sampler = backend.sampler(options={"default_shots": 2048})
-estimator = backend.estimator(options={"default_precision": 0.01})
+sampler = backend.sampler(default_shots=2048)
+estimator = backend.estimator(default_precision=0.01)
 ```
 
 Estimator uses positive precision, not `default_shots`: its default is `1/64`
 (4096 shots). Grouping, metadata, broadcasting, and standard errors now follow
-Qiskit. Sampler requires genuine QDMI `SHOTS`; counts-only devices, including
-DDSIM, remain usable for Estimator but cannot run Sampler. No shot
+Qiskit. Sampler requires genuine QDMI `SHOTS`, which DDSIM supports. Counts-only
+devices remain usable for Estimator but cannot run Sampler. No shot
 reconstruction is available.
 
 `backend.run(memory=True)` preserves shot order. Results include classical

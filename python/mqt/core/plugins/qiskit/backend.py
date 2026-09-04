@@ -51,7 +51,7 @@ if TYPE_CHECKING:
     from qiskit.circuit import Instruction, Parameter
     from qiskit.circuit.parameterexpression import ParameterValueType
 
-    from ...typing import QDMISessionParameters
+    from ...typing import QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
     from .provider import QDMIProvider
 
     # Type alias for parameter values
@@ -357,21 +357,21 @@ class QDMIBackend(BackendV2):
         """Stable QDMI device ID, if known."""
         return self._device_id
 
-    def sampler(self, *, options: dict[str, Any] | None = None) -> BackendSamplerV2:
-        """Construct Qiskit's native sampler with native options.
+    def sampler(self, **options: Unpack[QiskitSamplerOptions]) -> BackendSamplerV2:
+        """Construct Qiskit's native sampler with typed keyword options.
 
         Returns:
             A sampler that executes on this backend.
         """
-        return BackendSamplerV2(backend=self, options=options)
+        return BackendSamplerV2(backend=self, options=dict(options))
 
-    def estimator(self, *, options: dict[str, Any] | None = None) -> BackendEstimatorV2:
-        """Construct Qiskit's native estimator with native options.
+    def estimator(self, **options: Unpack[QiskitEstimatorOptions]) -> BackendEstimatorV2:
+        """Construct Qiskit's native estimator with typed keyword options.
 
         Returns:
             An estimator that executes on this backend.
         """
-        return BackendEstimatorV2(backend=self, options=options)
+        return BackendEstimatorV2(backend=self, options=dict(options))
 
     @property
     def target(self) -> Target:

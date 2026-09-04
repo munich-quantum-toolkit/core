@@ -301,11 +301,12 @@ Use Qiskit's
 [BackendSamplerV2](https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.primitives.BackendSamplerV2)
 and
 [BackendEstimatorV2](https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.primitives.BackendEstimatorV2).
-The backend factories construct these native objects with native options:
+The backend factories construct these native objects with typed keyword options.
+Qiskit supplies the defaults and validates the options:
 
 ```python
-sampler = backend.sampler(options={"default_shots": 1024})
-estimator = backend.estimator(options={"default_precision": 0.1})
+sampler = backend.sampler(default_shots=1024)
+estimator = backend.estimator(default_precision=0.1, abelian_grouping=True)
 
 samples = sampler.run([measured_circuit]).result()[0]
 counts = samples.data.meas.get_counts()
@@ -328,10 +329,16 @@ an already-running backend call.
 | Counts-only execution and native Estimator | `HIST_KEYS` and `HIST_VALUES` |
 | `memory=True` and native Sampler           | `SHOTS`                       |
 
-Native Sampler requests memory automatically. Counts-only devices, including
-DDSIM, must add `SHOTS` support to run Sampler. The backend never reconstructs
-shots from counts; when memory is requested, it derives counts from those same
-genuine shots.
+Native Sampler requests memory automatically. DDSIM supports both primitives;
+counts-only devices must add `SHOTS` support to run Sampler. The backend never
+reconstructs shots from counts; when memory is requested, it derives counts from
+those same genuine shots.
+
+```{code-cell} ipython3
+sampler = backend.sampler(default_shots=100)
+samples = sampler.run([qc]).result()[0]
+print(samples.data.meas.get_counts())
+```
 
 A device must advertise its supported operations and accept OpenQASM 2, OpenQASM
 3, or a [registered program format](#program-serializers). Transpile circuits to
@@ -347,7 +354,10 @@ are rejected. Serializers and providers must preserve this mapping. Shot order
 is unchanged across registers, so joint samples and postselection remain valid.
 
 The backend accepts nonnegative integer `shots` and boolean `memory` options.
-Simulator seeds and other execution options are unsupported. It validates the
+QDMI has no standard seed parameter, so the generic backend rejects non-`None`
+`seed_simulator`. DDSIM's [custom seed parameter](ddsim_device.md) is available
+through direct QDMI job submission; other providers can define different custom
+parameters. Other execution options are unsupported. The backend validates the
 whole batch before submission, submits jobs in circuit order, and collects
 results in that order. Remote IDs are queried only when needed. Submission or
 collection failure triggers best-effort cancellation of submitted jobs;

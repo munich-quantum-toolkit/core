@@ -24,7 +24,7 @@ from mqt.core.plugins.qiskit import QDMIBackend
 @pytest.fixture
 def estimator() -> BackendEstimatorV2:
     """Returns a BackendEstimatorV2 based on the DDSIM backend."""
-    return BackendEstimatorV2(backend=QDMIBackend.from_device_id("mqt.ddsim.default"))
+    return QDMIBackend.from_device_id("mqt.ddsim.default").estimator()
 
 
 def test_estimator_run_simple_observable(estimator: BackendEstimatorV2) -> None:
@@ -89,9 +89,10 @@ def test_estimator_precision_handling(estimator: BackendEstimatorV2) -> None:
     assert result[0].metadata["shots"] == other_expected_shots
 
 
-def test_estimator_defaults(estimator: BackendEstimatorV2) -> None:
+def test_estimator_defaults() -> None:
     """Test explicit estimator shot and precision defaults."""
-    estimator2 = BackendEstimatorV2(backend=estimator.backend, options={"default_precision": 0.125})
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+    estimator2 = backend.estimator(default_precision=0.125)
     qc = QuantumCircuit(1)
     op = SparsePauliOp("Z")
 
@@ -100,7 +101,7 @@ def test_estimator_defaults(estimator: BackendEstimatorV2) -> None:
     assert result[0].metadata["shots"] == 64
 
     # Test the default precision.
-    estimator_prec = BackendEstimatorV2(backend=estimator.backend, options={"default_precision": 0.1})
+    estimator_prec = backend.estimator(default_precision=0.1)
     job = estimator_prec.run([(qc, op)])
     result = job.result()
     # Should use default_precision -> 100 shots
@@ -110,7 +111,7 @@ def test_estimator_defaults(estimator: BackendEstimatorV2) -> None:
 def test_backend_constructs_estimator() -> None:
     """A backend constructs an estimator that retains its identity and defaults."""
     backend = QDMIBackend.from_device_id("mqt.ddsim.default")
-    estimator = backend.estimator(options={"default_precision": 0.125})
+    estimator = backend.estimator(default_precision=0.125)
     qc = QuantumCircuit(1)
     op = SparsePauliOp("Z")
 

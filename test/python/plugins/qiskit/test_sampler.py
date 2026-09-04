@@ -10,25 +10,19 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, cast
-
 import numpy as np
 import pytest
 from qiskit import QuantumCircuit
 from qiskit.circuit import ClassicalRegister, Parameter
 from qiskit.primitives import BackendSamplerV2
-from test_mock_backend import ShotQDMIDevice
 
 from mqt.core.plugins.qiskit import QDMIBackend
-
-if TYPE_CHECKING:
-    from mqt.core.qdmi import Device
 
 
 @pytest.fixture
 def sampler() -> BackendSamplerV2:
-    """Return a native sampler using genuine reference-simulator shots."""
-    return BackendSamplerV2(backend=QDMIBackend(cast("Device", ShotQDMIDevice())))
+    """Return a native sampler using genuine DDSIM shots."""
+    return QDMIBackend.from_device_id("mqt.ddsim.default").sampler()
 
 
 def test_sampler_run_simple_circuit(sampler: BackendSamplerV2) -> None:
@@ -107,10 +101,10 @@ def test_sampler_run_multiple_cregs(sampler: BackendSamplerV2) -> None:
     assert c1_bits.get_counts() == {"1": 100}
 
 
-def test_sampler_shot_defaults(sampler: BackendSamplerV2) -> None:
+def test_sampler_shot_defaults() -> None:
     """Test sampler shot defaults."""
     # 1. Use default shots from init
-    sampler2 = BackendSamplerV2(backend=sampler.backend, options={"default_shots": 500})
+    sampler2 = QDMIBackend.from_device_id("mqt.ddsim.default").sampler(default_shots=500)
     qc = QuantumCircuit(1)
     qc.measure_all()
 
@@ -126,13 +120,14 @@ def test_sampler_shot_defaults(sampler: BackendSamplerV2) -> None:
 
 def test_backend_constructs_sampler() -> None:
     """A backend constructs a sampler that retains its identity and defaults."""
-    backend = QDMIBackend(cast("Device", ShotQDMIDevice()))
-    sampler = backend.sampler(options={"default_shots": 37})
+    backend = QDMIBackend.from_device_id("mqt.ddsim.default")
+    sampler = backend.sampler(default_shots=37, run_options={})
     qc = QuantumCircuit(1)
     qc.measure_all()
 
     assert isinstance(sampler, BackendSamplerV2)
     assert sampler.backend is backend
+    assert sampler.options.run_options == {}
     assert sampler.run([(qc,)]).result()[0].metadata["shots"] == 37
 
 
@@ -153,6 +148,20 @@ def test_sampler_unmeasured_bits_and_mapping(sampler: BackendSamplerV2) -> None:
     result = sampler.run([qc], shots=4).result()[0]
     assert result.data["a"].get_bitstrings() == ["00"] * 4
     assert result.data["b"].get_bitstrings() == ["010"] * 4
+
+
+def test_ddsim_sampler_joint_samples(sampler: BackendSamplerV2) -> None:
+    """DDSIM preserves Bell-pair correlations across separate classical registers."""
+    qc = QuantumCircuit(2)
+    qc.add_register(ClassicalRegister(1, "a"), ClassicalRegister(1, "b"))
+    qc.h(0)
+    qc.cx(0, 1)
+    qc.measure([0, 1], [0, 1])
+    result = sampler.run([qc], shots=100).result()[0]
+    a = result.data["a"].get_bitstrings()
+    b = result.data["b"].get_bitstrings()
+    assert len(a) == len(b) == 100
+    assert a == b
 
 
 def test_sampler_broadcasting(sampler: BackendSamplerV2) -> None:

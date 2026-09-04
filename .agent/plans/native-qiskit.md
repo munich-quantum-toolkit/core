@@ -1,6 +1,7 @@
 # Native Qiskit primitives
 
-Status: complete.
+Status: in progress; validate and publish DDSIM Sampler integration after the
+separate DDSIM ordered-shots change.
 
 ## Goal and scope
 
@@ -11,7 +12,8 @@ single-threaded. The backend submits a validated batch before collecting it.
 ## Decisions
 
 - Native Qiskit owns PUB grouping, broadcasting, statistics, and primitive jobs.
-  Backend factories accept native options without a compatibility layer.
+  Backend factories forward typed keyword options without a compatibility layer;
+  Qiskit retains ownership of defaults and validation.
 - Memory requires genuine `SHOTS`; counts for memory execution come from those
   same shots. Counts-only execution requires histogram results. Missing or
   malformed requested results raise instead of becoming zero samples.
@@ -19,8 +21,7 @@ single-threaded. The backend submits a validated batch before collecting it.
   results, and cancel submitted jobs on failure. Query formats once per batch.
 - Use Qiskit 2.1 or newer: it includes native Sampler run options and removes
   the mandatory SymEngine dependency that prevents minimum-version installation
-  on Python 3.14. Raising the floor from 1.1.0 makes this a v4-only change; it
-  cannot be backported to v3.x. No compatibility branches are needed.
+  on Python 3.14. No compatibility branches are needed.
 
 ## Validation
 
