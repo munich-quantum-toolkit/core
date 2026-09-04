@@ -764,6 +764,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getHistogram(
       if (size < reqSize) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
+      // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
       auto* dataPtr = static_cast<size_t*>(data);
       for (const auto& count : counts_ | std::views::values) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -836,6 +837,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
       if (size < reqSize) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
+      // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
       auto* dataPtr = static_cast<double*>(data);
       for (const auto& c : stateVecSparse_ | std::views::values) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -856,6 +858,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
       if (size < reqSize) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
+      // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
       auto* dataPtr = static_cast<double*>(data);
       for (const auto& c : stateVecSparse_ | std::views::values) {
         // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -884,6 +887,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProbabilities(const size_t size,
     if (size < reqSize) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
+    // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
     auto* dataPtr = static_cast<double*>(data);
     for (const auto& c : stateVec_) {
       // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
@@ -985,8 +989,7 @@ int MQT_DDSIM_QDMI_device_session_create_device_job(
 
 int MQT_DDSIM_QDMI_device_session_retrieve_device_job_by_id(
     [[maybe_unused]] MQT_DDSIM_QDMI_Device_Session session,
-    [[maybe_unused]] const char* jobId,
-    [[maybe_unused]] MQT_DDSIM_QDMI_Device_Job* job) {
+    [[maybe_unused]] const char* jobId, MQT_DDSIM_QDMI_Device_Job* /*job*/) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
 

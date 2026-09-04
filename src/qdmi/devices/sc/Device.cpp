@@ -299,7 +299,7 @@ int MQT_SC_QDMI_Device_Session_impl_d::queryOperationProperty(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (suppliedSites != nullptr) {
-    for (auto* const site : std::span{suppliedSites, numSites}) {
+    for (const auto* const site : std::span{suppliedSites, numSites}) {
       if (site == nullptr || site->owner != this) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
@@ -487,8 +487,7 @@ int MQT_SC_QDMI_device_session_create_device_job(
 }
 int MQT_SC_QDMI_device_session_retrieve_device_job_by_id(
     [[maybe_unused]] MQT_SC_QDMI_Device_Session session,
-    [[maybe_unused]] const char* jobId,
-    [[maybe_unused]] MQT_SC_QDMI_Device_Job* job) {
+    [[maybe_unused]] const char* jobId, MQT_SC_QDMI_Device_Job* /*job*/) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
 void MQT_SC_QDMI_device_job_free(MQT_SC_QDMI_Device_Job job) {

@@ -117,7 +117,7 @@ class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
     if (session == nullptr) {
       return;
     }
-    auto* const fakeSession = asSession(session);
+    const auto* const fakeSession = asSession(session);
     ++fakeSession->library->freedSessions;
     fakeSession->library->sessions_.erase(session);
   }
@@ -157,7 +157,7 @@ class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
     if (session == nullptr || (value != nullptr && size == 0)) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
-    auto* const fakeSession = asSession(session);
+    const auto* const fakeSession = asSession(session);
     if (!fakeSession->initialized) {
       return QDMI_ERROR_BADSTATE;
     }

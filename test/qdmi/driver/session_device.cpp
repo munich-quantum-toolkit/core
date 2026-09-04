@@ -108,7 +108,7 @@ namespace {
 
 [[nodiscard]] auto findCustomOperation(QDMI_Operation operation)
     -> const QDMI_Operation_impl_d* {
-  for (auto* const handle : customOperationHandles()) {
+  for (const auto* const handle : customOperationHandles()) {
     if (operation == handle) {
       return handle;
     }
@@ -242,7 +242,7 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
     if (size < required) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
-    auto* const child = childDeviceHandle();
+    const auto* const child = childDeviceHandle();
     std::memcpy(value, static_cast<const void*>(&child),
                 sizeof(QDMI_Child_Device));
     return QDMI_SUCCESS;
