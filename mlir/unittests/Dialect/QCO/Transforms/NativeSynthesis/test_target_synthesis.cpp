@@ -290,6 +290,8 @@ TEST_F(TargetSynthesisTest, TwoQubitGateFusionRequiresStrictImprovement) {
   const auto adjacentCx = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
+    // Reassigns existing SSA handles.
+    // NOLINTNEXTLINE(modernize-use-structured-binding)
     std::tie(q0, q1) = builder.cx(q0, q1);
     std::tie(q0, q1) = builder.cx(q0, q1);
     return builder.intConstant(0);
@@ -304,6 +306,8 @@ TEST_F(TargetSynthesisTest, TwoQubitGateFusionRequiresStrictImprovement) {
   auto nonImproving = build([](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
+    // Reassigns existing SSA handles.
+    // NOLINTNEXTLINE(modernize-use-structured-binding)
     std::tie(q0, q1) = builder.cx(q0, q1);
     std::tie(q1, q0) = builder.cx(q1, q0);
     std::tie(q0, q1) = builder.cx(q0, q1);
@@ -319,6 +323,8 @@ TEST_F(TargetSynthesisTest,
   const auto interleaved = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
+    // Reassigns existing SSA handles.
+    // NOLINTNEXTLINE(modernize-use-structured-binding)
     std::tie(q0, q1) = builder.cx(q0, q1);
     q1 = builder.x(q1);
     q0 = builder.z(q0);
@@ -358,6 +364,8 @@ TEST_F(TargetSynthesisTest, TwoQubitGateFusionEmitsSymmetricEntangler) {
   const auto reducible = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
+    // Reassigns existing SSA handles.
+    // NOLINTNEXTLINE(modernize-use-structured-binding)
     std::tie(q0, q1) = builder.cx(q0, q1);
     std::tie(q1, q0) = builder.cx(q1, q0);
     std::tie(q1, q0) = builder.cx(q1, q0);
@@ -378,6 +386,8 @@ TEST_F(TargetSynthesisTest, TwoQubitGateFusionLeavesIndividualOpsAlone) {
   auto module = build([](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
+    // Reassigns existing SSA handles.
+    // NOLINTNEXTLINE(modernize-use-structured-binding)
     std::tie(q0, q1) = builder.swap(q0, q1);
     return builder.intConstant(0);
   });
@@ -415,6 +425,8 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisRemovesOrdinarySwap) {
   const auto swap = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
+    // Reassigns existing SSA handles.
+    // NOLINTNEXTLINE(modernize-use-structured-binding)
     std::tie(q0, q1) = builder.swap(q0, q1);
     return builder.intConstant(0);
   };
@@ -885,6 +897,8 @@ TEST_F(TargetSynthesisTest, DenseUnitaryHasAsymmetricTwoQubitDDSemantics) {
   const auto cxReference = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
+    // Reassigns existing SSA handles.
+    // NOLINTNEXTLINE(modernize-use-structured-binding)
     std::tie(q0, q1) = builder.cx(q0, q1);
     return builder.intConstant(0);
   };
@@ -927,6 +941,8 @@ TEST_F(TargetSynthesisTest,
   const auto cxReference = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
+    // Reassigns existing SSA handles.
+    // NOLINTNEXTLINE(modernize-use-structured-binding)
     std::tie(q0, q1) = builder.cx(q0, q1);
     return builder.intConstant(0);
   };
@@ -945,6 +961,8 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisPreservesNativeSwap) {
   auto module = build([](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
+    // Reassigns existing SSA handles.
+    // NOLINTNEXTLINE(modernize-use-structured-binding)
     std::tie(q0, q1) = builder.swap(q0, q1);
     return builder.intConstant(0);
   });
@@ -1046,6 +1064,8 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisUsesHomogeneousCapability) {
   const auto swap = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
+    // Reassigns existing SSA handles.
+    // NOLINTNEXTLINE(modernize-use-structured-binding)
     std::tie(q0, q1) = builder.swap(q0, q1);
     return builder.intConstant(0);
   };
@@ -1317,6 +1337,8 @@ TEST_F(TargetSynthesisTest,
   auto unknownSite = build([](QCOProgramBuilder& builder) {
     auto q30 = builder.staticQubit(30);
     auto q20 = builder.staticQubit(20);
+    // Reassigns existing SSA handles.
+    // NOLINTNEXTLINE(modernize-use-structured-binding)
     std::tie(q30, q20) = builder.cx(q30, q20);
     return builder.intConstant(0);
   });

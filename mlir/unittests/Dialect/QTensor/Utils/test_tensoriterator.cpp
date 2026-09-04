@@ -79,6 +79,8 @@ TEST_F(TensorIteratorTest, Traversal) {
       1, n, 1, {tensor6}, [&builder](Value iv, ValueRange iterArgs) {
         Value loopTensor = iterArgs[0];
         Value q;
+        // Reassigns existing SSA handles.
+        // NOLINTNEXTLINE(modernize-use-structured-binding)
         std::tie(loopTensor, q) = builder.qtensorExtract(loopTensor, iv);
         q = builder.h(q);
         loopTensor = builder.qtensorInsert(q, loopTensor, 0);

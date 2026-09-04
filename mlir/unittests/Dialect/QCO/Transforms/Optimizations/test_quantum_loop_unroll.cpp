@@ -49,6 +49,8 @@ static OwningOpRef<ModuleOp> getGHZ(MLIRContext* context, int64_t n) {
 
   Value tensor = builder.qtensorAlloc(n);
   Value q0;
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
   q0 = builder.h(q0);
   tensor = builder.qtensorInsert(q0, tensor, 0);
@@ -151,6 +153,8 @@ TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
               lower, upper, step, outerArgs, [&](Value, ValueRange innerArgs) {
                 auto tensor = innerArgs.front();
                 Value qubit;
+                // Reassigns existing SSA handles.
+                // NOLINTNEXTLINE(modernize-use-structured-binding)
                 std::tie(tensor, qubit) = b.qtensorExtract(tensor, 0);
                 tensor = b.qtensorInsert(b.h(qubit), tensor, 0);
                 return SmallVector{tensor};

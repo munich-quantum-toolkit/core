@@ -139,9 +139,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
 
-  SmallVector<Value> q12;
-  SmallVector<Value> q0Vec;
-  std::tie(q12, q0Vec) =
+  auto [q12, q0Vec] =
       programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
         return SmallVector<Value>{programBuilder.x(target[0])};
       });
@@ -183,9 +181,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   Value cr1;
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
-  SmallVector<Value> r12;
-  SmallVector<Value> r0Vec;
-  std::tie(r12, r0Vec) =
+  auto [r12, r0Vec] =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
         return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
@@ -232,9 +228,7 @@ TEST_F(QCOMeasurementLiftingTest,
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
 
-  SmallVector<Value> q12;
-  SmallVector<Value> q0Vec;
-  std::tie(q12, q0Vec) =
+  auto [q12, q0Vec] =
       programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
         return SmallVector<Value>{programBuilder.x(target[0])};
       });
@@ -260,9 +254,7 @@ TEST_F(QCOMeasurementLiftingTest,
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
   std::tie(r2, cr2) = referenceBuilder.measure(r2);
 
-  SmallVector<Value> r12;
-  SmallVector<Value> r0Vec;
-  std::tie(r12, r0Vec) =
+  auto [r12, r0Vec] =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
         return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
@@ -290,6 +282,8 @@ TEST_F(QCOMeasurementLiftingTest,
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
 
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(q0, q1) = programBuilder.crx(std::numbers::pi / 2, q0, q1);
 
   Value c0;
@@ -411,6 +405,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r = referenceBuilder.allocQubit();
   Value cr;
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(r, cr) = referenceBuilder.measure(r);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
@@ -443,6 +439,8 @@ TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto r = referenceBuilder.h(referenceBuilder.allocQubit());
   Value referenceFirstOutcome;
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(r, referenceFirstOutcome) = referenceBuilder.measure(r);
   r = referenceBuilder.h(r);
   Value referenceSecondOutcome;
@@ -473,6 +471,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r = referenceBuilder.allocQubit();
   Value cr;
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(r, cr) = referenceBuilder.measure(r);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
@@ -493,6 +493,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
 
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(q0, q1) = programBuilder.cy(q0, q1);
   q0 = programBuilder.x(q0);
   std::tie(q0, q1) = programBuilder.cy(q0, q1);
@@ -536,6 +538,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
 
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(q0, q1) = programBuilder.cz(q0, q1);
 
   Value c0;
@@ -577,6 +581,8 @@ TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
   auto control = programBuilder.h(programBuilder.allocQubit());
   auto target = programBuilder.x(programBuilder.allocQubit());
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(control, target) = programBuilder.cz(control, target);
 
   Value targetOutcome;
@@ -593,6 +599,8 @@ TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
   auto referenceTarget = referenceBuilder.allocQubit();
   Value rawTargetOutcome;
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(referenceTarget, rawTargetOutcome) =
       referenceBuilder.measure(referenceTarget);
   referenceTarget = referenceBuilder.x(referenceTarget);
@@ -682,6 +690,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
   auto r = referenceBuilder.allocQubit();
   Value cr;
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(r, cr) = referenceBuilder.measure(r);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});

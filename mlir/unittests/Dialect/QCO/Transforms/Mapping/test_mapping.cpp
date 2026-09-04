@@ -488,6 +488,8 @@ TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
   builder.initialize({builder.getI1Type()});
   auto qubit = builder.h(builder.allocQubit());
   Value bit;
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(qubit, bit) = builder.measure(qubit);
   builder.sink(qubit);
   auto module = builder.finalize(bit);
@@ -620,6 +622,8 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
   SmallVector<Value> bits(2);
   Value q0 = builder.allocQubit();
   Value q1 = builder.allocQubit();
+  // Reassigns existing SSA handles.
+  // NOLINTNEXTLINE(modernize-use-structured-binding)
   std::tie(q0, q1) = builder.cx(q0, q1);
   std::tie(q0, bits[0]) = builder.measure(q0);
   std::tie(q1, bits[1]) = builder.measure(q1);
