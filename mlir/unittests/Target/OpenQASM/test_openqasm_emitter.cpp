@@ -2651,9 +2651,12 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
           .tripCounts = {},
           .whileLoops = 1,
           .operations = {.h = 2, .x = 0, .measurements = 3, .controls = 0},
-          .conditionals = {.semantic = 0,
-                           .dispatch = 0,
-                           .whileMeasurements = 0},
+          .conditionals =
+              {
+                  .semantic = 0,
+                  .dispatch = 0,
+                  .whileMeasurements = 0,
+              },
       },
       {
           .name = "condition-while-and",
@@ -2661,9 +2664,12 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
           .tripCounts = {},
           .whileLoops = 1,
           .operations = {.h = 3, .x = 0, .measurements = 6, .controls = 0},
-          .conditionals = {.semantic = 1,
-                           .dispatch = 0,
-                           .whileMeasurements = 0},
+          .conditionals =
+              {
+                  .semantic = 1,
+                  .dispatch = 0,
+                  .whileMeasurements = 0,
+              },
       },
   });
 

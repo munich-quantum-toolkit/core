@@ -703,8 +703,10 @@ template <class Benchmark>
                       {"type", "string"},
                   },
               },
-              {"method",
-               {{"default", "static"}, {"enum", {"static", "dynamic"}}}},
+              {
+                  "method",
+                  {{"default", "static"}, {"enum", {"static", "dynamic"}}},
+              },
           },
       },
       {"required", {"hidden_bitstring"}},
@@ -727,8 +729,10 @@ template <class Benchmark>
                       {"type", "integer"},
                   },
               },
-              {"topology",
-               {{"default", "linear"}, {"enum", {"linear", "star"}}}},
+              {
+                  "topology",
+                  {{"default", "linear"}, {"enum", {"linear", "star"}}},
+              },
           },
       },
       {"required", {"qubits"}},
@@ -748,8 +752,12 @@ template <class Benchmark>
               {
                   {
                       "properties",
-                      {{"qubits",
-                        {{"maximum", GHZOptions::MAX_X_BASIS_QUBITS}}}},
+                      {
+                          {
+                              "qubits",
+                              {{"maximum", GHZOptions::MAX_X_BASIS_QUBITS}},
+                          },
+                      },
                   },
               },
           },
@@ -817,8 +825,10 @@ template <class Benchmark>
           {
               {
                   "method",
-                  {{"default", "standard"},
-                   {"enum", {"standard", "semiclassical"}}},
+                  {
+                      {"default", "standard"},
+                      {"enum", {"standard", "semiclassical"}},
+                  },
               },
               {
                   "period_exponent",
@@ -851,8 +861,10 @@ template <class Benchmark>
           {
               {
                   "method",
-                  {{"default", "standard"},
-                   {"enum", {"standard", "iterative"}}},
+                  {
+                      {"default", "standard"},
+                      {"enum", {"standard", "iterative"}},
+                  },
               },
               {
                   "phase",
@@ -864,8 +876,10 @@ template <class Benchmark>
                               {
                                   "denominator",
                                   {
-                                      {"maximum",
-                                       std::numeric_limits<uint64_t>::max()},
+                                      {
+                                          "maximum",
+                                          std::numeric_limits<uint64_t>::max(),
+                                      },
                                       {"minimum", 1},
                                       {"type", "integer"},
                                   },
@@ -873,8 +887,10 @@ template <class Benchmark>
                               {
                                   "numerator",
                                   {
-                                      {"maximum",
-                                       std::numeric_limits<uint64_t>::max()},
+                                      {
+                                          "maximum",
+                                          std::numeric_limits<uint64_t>::max(),
+                                      },
                                       {"minimum", 0},
                                       {"type", "integer"},
                                   },
@@ -1057,8 +1073,10 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
       {
           "metrics",
           {
-              {"squared_hellinger_fidelity",
-               evaluation.squaredHellingerFidelity},
+              {
+                  "squared_hellinger_fidelity",
+                  evaluation.squaredHellingerFidelity,
+              },
               {"success_probability", std::move(success)},
               {"total_variation_distance", evaluation.totalVariationDistance},
           },
