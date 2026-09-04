@@ -34,6 +34,12 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove `CircuitOptimizer`. Move circuit flattening and final-measurement
+  removal to `QuantumComputation`, equivalence-checking transformations to
+  [MQT QCEC], and mapping transformations to [MQT QMAP]. Move single-qubit gate
+  fusion to both downstream packages. Remove the public circuit dependency graph
+  and transformations without production consumers ([#2262])
+  ([**@simon1hofmann**])
 - 💥 Remove test-only DD state generators, recursive functionality construction,
   and DD-specific named-gate helpers from MQT Core ([#2257], [#2335])
   ([**@simon1hofmann**])
@@ -795,6 +801,7 @@ for previous changelogs._
 [#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
 [#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
 [#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
+[#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
@@ -1040,7 +1047,6 @@ for previous changelogs._
 
 [Keep a Changelog]: https://keepachangelog.com/en/1.1.0/
 [Common Changelog]: https://common-changelog.org
-[MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
 [QDMI-on-IQM]: https://github.com/iqm-finland/QDMI-on-IQM
 [Semantic Versioning]: https://semver.org/spec/v2.0.0.html
 [munich-quantum-toolkit]: https://github.com/munich-quantum-toolkit
@@ -1048,3 +1054,5 @@ for previous changelogs._
 [PEP 735]: https://peps.python.org/pep-0735/
 [CMake presets]: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html
 [munich-quantum-toolkit/workflows]: https://github.com/munich-quantum-toolkit/workflows
+[MQT QMAP]: https://github.com/munich-quantum-toolkit/qmap
+[MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec

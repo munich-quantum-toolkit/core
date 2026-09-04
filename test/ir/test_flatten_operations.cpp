@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "circuit_optimizer/CircuitOptimizer.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
 #include "ir/operations/OpType.hpp"
@@ -23,6 +22,12 @@
 #include <vector>
 
 namespace qc {
+TEST(FlattenOperations, EmptyCircuit) {
+  QuantumComputation qc;
+  qc.flattenOperations();
+  EXPECT_TRUE(qc.empty());
+}
+
 TEST(FlattenOperations, FlattenRecursive) {
   const std::size_t nqubits = 1U;
 
@@ -36,7 +41,7 @@ TEST(FlattenOperations, FlattenRecursive) {
   qc.emplace_back(op2.asCompoundOperation());
   std::cout << qc << "\n";
 
-  CircuitOptimizer::flattenOperations(qc);
+  qc.flattenOperations();
   std::cout << qc << "\n";
 
   for (const auto& g : qc) {
@@ -67,7 +72,7 @@ TEST(FlattenOperations, FlattenCustomOnly) {
   qc.emplace_back(op2.asCompoundOperation());
   std::cout << qc << "\n";
 
-  CircuitOptimizer::flattenOperations(qc, true);
+  qc.flattenOperations(true);
   std::cout << qc << "\n";
 
   ASSERT_EQ(qc.getNops(), 1U);
@@ -81,7 +86,7 @@ TEST(FlattenOperations, FlattenCustomOnly) {
   qc2.emplace_back<CompoundOperation>(std::move(opsCompound), true);
   std::cout << qc2 << "\n";
 
-  CircuitOptimizer::flattenOperations(qc2, true);
+  qc2.flattenOperations(true);
   std::cout << qc2 << "\n";
 
   for (const auto& g : qc2) {
