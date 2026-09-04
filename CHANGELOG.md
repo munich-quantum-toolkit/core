@@ -97,6 +97,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- ⬆️ Update clang-tidy to version 23 and adapt the C++ sources to its
+  diagnostics ([#2328]) ([**@simon1hofmann**])
 - ⚡ Run PennyLane QDMI jobs concurrently and release the GIL during waits and
   result retrieval ([#2349]) ([**@burgholzer**])
 - 💥 Raise the minimum Qiskit version from 1.1.0 to 2.1.0 ([#2358])
@@ -887,6 +889,7 @@ for previous changelogs._
 [#2336]: https://github.com/munich-quantum-toolkit/core/pull/2336
 [#2335]: https://github.com/munich-quantum-toolkit/core/pull/2335
 [#2334]: https://github.com/munich-quantum-toolkit/core/pull/2334
+[#2328]: https://github.com/munich-quantum-toolkit/core/pull/2328
 [#2323]: https://github.com/munich-quantum-toolkit/core/pull/2323
 [#2315]: https://github.com/munich-quantum-toolkit/core/pull/2315
 [#2299]: https://github.com/munich-quantum-toolkit/core/pull/2299
