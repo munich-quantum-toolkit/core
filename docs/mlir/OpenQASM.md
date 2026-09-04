@@ -203,7 +203,7 @@ values are evaluated before any continuation updates.
 
 For example, this terminating do-while form executes its body three times:
 
-```openqasm
+```openqasm3
 OPENQASM 3.1;
 include "stdgates.inc";
 qubit q;
