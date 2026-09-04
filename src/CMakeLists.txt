@@ -71,9 +71,6 @@ add_subdirectory(circuit_optimizer)
 # add DD package library
 add_subdirectory(dd)
 
-# add ZX package library
-add_subdirectory(zx)
-
 # add QDMI package library
 add_subdirectory(qdmi)
 
@@ -86,7 +83,6 @@ if(MQT_CORE_INSTALL)
   configure_package_config_file(
     ${MQT_CORE_CMAKE_CONFIG_TEMPLATE} ${MQT_CORE_CMAKE_PROJECT_CONFIG_FILE}
     INSTALL_DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
-    PATH_VARS MQT_CORE_WITH_GMP
     NO_SET_AND_CHECK_MACRO NO_CHECK_REQUIRED_COMPONENTS_MACRO)
   write_basic_package_version_file(
     ${MQT_CORE_CMAKE_VERSION_CONFIG_FILE}
@@ -125,7 +121,6 @@ if(MQT_CORE_INSTALL)
     FILES ${PROJECT_SOURCE_DIR}/cmake/AddMQTPythonBinding.cmake
           ${PROJECT_SOURCE_DIR}/cmake/AddMQTQDMIDevice.cmake
           ${PROJECT_SOURCE_DIR}/cmake/Cache.cmake
-          ${PROJECT_SOURCE_DIR}/cmake/FindGMP.cmake
           ${PROJECT_SOURCE_DIR}/cmake/PackageAddTest.cmake
           ${PROJECT_SOURCE_DIR}/cmake/PreventInSourceBuilds.cmake
           ${PROJECT_SOURCE_DIR}/cmake/StandardProjectSettings.cmake

@@ -17,18 +17,6 @@ find_dependency(nlohmann_json)
 find_dependency(spdlog)
 find_dependency(qdmi)
 
-option(MQT_CORE_WITH_GMP "Library is configured to use GMP" @MQT_CORE_WITH_GMP@)
-if(MQT_CORE_WITH_GMP)
-  find_dependency(GMP)
-endif()
-
-option(MQT_CORE_ZX_SYSTEM_BOOST
-       "Library is configured to use system Boost instead of the bundled Boost::multiprecision"
-       @MQT_CORE_ZX_SYSTEM_BOOST@)
-if(MQT_CORE_ZX_SYSTEM_BOOST)
-  find_dependency(Boost @BOOST_MIN_VERSION@)
-endif()
-
 if(TARGET MQT::Core)
   return()
 endif()
