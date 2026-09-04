@@ -99,7 +99,7 @@ void TensorIterator::forward() {
 
   // Find the user-operation of the tensor SSA value.
   assert(tensor_.hasOneUse() && "expected linear typing");
-  op_ = *(tensor_.user_begin());
+  op_ = *tensor_.user_begin();
 
   // The following operations define the end of the tensor's life-chain. A
   // `func.call` ends it because the tensor is handed to the callee; the tensor
@@ -111,13 +111,13 @@ void TensorIterator::forward() {
   }
 
   // Find the output from the input tensor SSA value.
-  if (!(isa<AllocOp, FromElementsOp>(op_))) {
+  if (!isa<AllocOp, FromElementsOp>(op_)) {
     TypeSwitch<Operation*>(op_)
         .Case([&](ExtractOp op) { tensor_ = op.getOutTensor(); })
         .Case([&](InsertOp op) { tensor_ = op.getResult(); })
         .Case([&](scf::ForOp op) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
-              op.getTiedLoopResult(&*(tensor_.use_begin())));
+              op.getTiedLoopResult(&*tensor_.use_begin()));
         })
         .Case([&](scf::WhileOp op) {
           tensor_ = whileResultForInit(op, *tensor_.use_begin().getOperand());

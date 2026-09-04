@@ -122,7 +122,7 @@ TEST_F(QuantumLoopUnrollTest, NoOp) {
 
 TEST_F(QuantumLoopUnrollTest, UnrollFull) {
   auto m = getGHZ(context.get(), 3);
-  auto entry = *(m->getOps<func::FuncOp>().begin());
+  auto entry = *m->getOps<func::FuncOp>().begin();
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
@@ -193,7 +193,7 @@ TEST_F(QuantumLoopUnrollTest, PreservesYieldOnlyPermutation) {
 
 TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
   auto m = getGHZ(context.get(), 9);
-  auto entry = *(m->getOps<func::FuncOp>().begin());
+  auto entry = *m->getOps<func::FuncOp>().begin();
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
@@ -213,7 +213,7 @@ TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
 
-  Region& body = (*(entry.getOps<scf::ForOp>().begin())).getRegion();
+  Region& body = (*entry.getOps<scf::ForOp>().begin()).getRegion();
   EXPECT_EQ(range_size(body.getOps<qtensor::ExtractOp>()), 4);
   EXPECT_EQ(range_size(body.getOps<qtensor::InsertOp>()), 4);
 }

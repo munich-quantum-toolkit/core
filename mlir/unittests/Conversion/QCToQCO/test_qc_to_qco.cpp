@@ -1460,8 +1460,7 @@ buildInvalidCBitModifierProgram(MLIRContext* context,
             builder, arith::CmpIPredicate::eq,
             cbit::ReadOp::create(
                 builder,
-                (builder.getIntegerAttr(builder.getI1Type(), 0)).getType(),
-                reg),
+                builder.getIntegerAttr(builder.getI1Type(), 0).getType(), reg),
             arith::ConstantOp::create(
                 builder, builder.getIntegerAttr(builder.getI1Type(), 0)));
         break;

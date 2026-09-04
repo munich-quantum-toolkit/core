@@ -1069,7 +1069,7 @@ private:
     assert(!layouts.empty() && "expected at least one layout");
 
     FGraph f(*target);
-    Layout curr(*(layouts.begin()));
+    Layout curr(*layouts.begin());
 
     // Nudge curr towards target by applying a happy SWAP chain.
     const auto merge = [&](const Layout& target) {

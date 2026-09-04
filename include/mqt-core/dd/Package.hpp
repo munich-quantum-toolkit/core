@@ -224,7 +224,7 @@ private:
 
     /// @brief Add to respective root set.
     template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
-      ++(getRoots<Node>()[e]);
+      ++getRoots<Node>()[e];
     }
 
     /// @brief Remove from respective root set.
@@ -777,7 +777,7 @@ public:
     if (!x.isTerminal()) {
       var = x.p->v;
     }
-    if (!y.isTerminal() && (y.p->v) > var) {
+    if (!y.isTerminal() && y.p->v > var) {
       var = y.p->v;
     }
 

@@ -344,7 +344,7 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
   if (!main) {
     llvm::reportFatalInternalError("Main function not found");
   }
-  auto& firstBlock = *(main.getBlocks().begin());
+  auto& firstBlock = *main.getBlocks().begin();
   builder.setInsertionPointToStart(&firstBlock);
 
   auto addressOfOp = LLVM::AddressOfOp::create(
