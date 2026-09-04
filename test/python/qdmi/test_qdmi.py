@@ -521,8 +521,8 @@ def test_device_rejects_text_for_binary_format(ddsim_device: Device) -> None:
 
 
 def test_device_rejects_batch_jobs(ddsim_device: Device) -> None:
-    """State that MQT Core does not support batch jobs."""
-    with pytest.raises(ValueError, match="does not support batch jobs"):
+    """Distinguish legacy job-handle batches from native program lists."""
+    with pytest.raises(ValueError, match="legacy BATCHJOB"):
         ddsim_device.submit_job(b"", ProgramFormat.BATCH_JOB, num_shots=1)
 
 
@@ -540,7 +540,7 @@ def test_calibration_job_reaches_the_device(ddsim_device: Device, program: str |
     matters is that the client no longer refuses before asking, so the failure
     is a device error rather than a `ValueError` about the argument.
     """
-    with pytest.raises(RuntimeError, match="Setting program format"):
+    with pytest.raises(RuntimeError, match="Setting program"):
         ddsim_device.submit_calibration_job(program)
 
 

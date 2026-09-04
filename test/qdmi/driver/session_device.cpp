@@ -15,8 +15,11 @@
 #include <cstddef>
 #include <cstring>
 #include <new>
+#include <span>
 #include <string>
 #include <unordered_map>
+#include <utility>
+#include <vector>
 
 struct QDMI_Child_Device_impl_d {};
 
@@ -35,7 +38,11 @@ struct QDMI_Device_Session_impl_d {
 struct QDMI_Device_Job_impl_d {
   QDMI_Device_Session session = nullptr;
   bool retrieved = false;
+  bool submitted = false;
+  std::string id = "session-job";
   QDMI_Program_Format format = QDMI_PROGRAM_FORMAT_MAX;
+  size_t shots = 0U;
+  std::vector<std::vector<std::byte>> programs;
 };
 
 namespace {
@@ -145,6 +152,23 @@ auto queryValue(const T& result, const size_t size, void* value,
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   std::memcpy(value, &result, sizeof(T));
+  return QDMI_SUCCESS;
+}
+
+auto queryBytes(const std::span<const std::byte> result, const size_t size,
+                void* value, size_t* sizeRet) -> int {
+  if (sizeRet != nullptr) {
+    *sizeRet = result.size();
+  }
+  if (value == nullptr) {
+    return QDMI_SUCCESS;
+  }
+  if (size < result.size()) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (!result.empty()) {
+    std::memcpy(value, result.data(), result.size());
+  }
   return QDMI_SUCCESS;
 }
 } // namespace
@@ -353,71 +377,183 @@ extern "C" int TEST_SESSION_QDMI_device_session_retrieve_device_job_by_id(
   }
   // The QDMI C API transfers this allocation through an opaque raw handle.
   // NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
-  *job = new (std::nothrow)
+  auto* retrieved = new (std::nothrow)
       QDMI_Device_Job_impl_d{.session = session, .retrieved = true};
-  return *job == nullptr ? QDMI_ERROR_OUTOFMEM : QDMI_SUCCESS;
+  if (retrieved == nullptr) {
+    return QDMI_ERROR_OUTOFMEM;
+  }
+  retrieved->id = jobId;
+  retrieved->format = QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
+  retrieved->shots = 2U;
+  retrieved->programs = {
+      {std::byte{'x'}, std::byte{0}, std::byte{'y'}, std::byte{0}},
+      {
+          std::byte{'z'},
+          std::byte{0},
+      },
+  };
+  *job = retrieved;
+  return QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_set_parameter(
     QDMI_Device_Job job, const QDMI_Device_Job_Parameter parameter,
     const size_t size, const void* value) {
-  if (job == nullptr) {
+  if (job == nullptr || (value != nullptr && size == 0U)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  if (job->retrieved) {
+  if (job->retrieved || job->submitted) {
     return QDMI_ERROR_BADSTATE;
   }
   if (parameter == QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT) {
-    if (value == nullptr || size != sizeof(job->format)) {
+    if (value == nullptr || size != sizeof(QDMI_Program_Format)) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
-    std::memcpy(&job->format, value, size);
+    job->format = *static_cast<const QDMI_Program_Format*>(value);
+    return QDMI_SUCCESS;
   }
   if (parameter == QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM &&
       job->format == QDMI_PROGRAM_FORMAT_CUSTOM1) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
+  if (parameter == QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM) {
+    if (value == nullptr || size != sizeof(size_t)) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    job->shots = *static_cast<const size_t*>(value);
+    return QDMI_SUCCESS;
+  }
+  return QDMI_ERROR_NOTSUPPORTED;
+}
+
+extern "C" int TEST_SESSION_QDMI_device_job_set_programs(
+    QDMI_Device_Job job, const QDMI_Program_Format* format, const size_t count,
+    const size_t* sizes, const void* const* programs) {
+  if (job == nullptr || format == nullptr || count == 0U) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (job->retrieved || job->submitted) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  if (programs == nullptr) {
+    return QDMI_SUCCESS;
+  }
+  if (sizes == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  const std::span programSizes{sizes, count};
+  const std::span programPointers{programs, count};
+  std::vector<std::vector<std::byte>> copies;
+  copies.reserve(count);
+  for (size_t index = 0U; index < count; ++index) {
+    if (programSizes[index] == 0U || programPointers[index] == nullptr) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    const std::span bytes{static_cast<const std::byte*>(programPointers[index]),
+                          programSizes[index]};
+    copies.emplace_back(bytes.begin(), bytes.end());
+  }
+  job->format = *format;
+  job->programs = std::move(copies);
   return QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_query_property(
     QDMI_Device_Job job, const QDMI_Device_Job_Property prop, const size_t size,
     void* value, size_t* sizeRet) {
-  if (job == nullptr || job->session == nullptr ||
-      (prop != QDMI_DEVICE_JOB_PROPERTY_ID &&
-       prop != QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION)) {
+  if (job == nullptr || job->session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (prop == QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
-  return queryString("session-job", size, value, sizeRet);
+  if (prop == QDMI_DEVICE_JOB_PROPERTY_ID) {
+    return queryString(job->id, size, value, sizeRet);
+  }
+  if (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM) {
+    if (job->programs.empty()) {
+      return QDMI_ERROR_BADSTATE;
+    }
+    return queryValue(job->programs.size(), size, value, sizeRet);
+  }
+  if (prop == QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM) {
+    return queryValue(job->shots, size, value, sizeRet);
+  }
+  if (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT) {
+    return queryValue(job->format, size, value, sizeRet);
+  }
+  if (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAM) {
+    if (job->programs.size() != 1U) {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
+    return queryBytes(job->programs.front(), size, value, sizeRet);
+  }
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_submit(QDMI_Device_Job job) {
   if (job == nullptr || job->session == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return job->retrieved ? QDMI_ERROR_BADSTATE : QDMI_SUCCESS;
+  if (job->retrieved || job->submitted) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  if (job->programs.empty()) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  job->submitted = true;
+  return QDMI_SUCCESS;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_cancel(QDMI_Device_Job /*job*/) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
-extern "C" int TEST_SESSION_QDMI_device_job_check(QDMI_Device_Job /*job*/,
-                                                  QDMI_Job_Status* /*status*/) {
-  return QDMI_ERROR_NOTSUPPORTED;
+extern "C" int TEST_SESSION_QDMI_device_job_check(QDMI_Device_Job job,
+                                                  QDMI_Job_Status* status) {
+  if (job == nullptr || status == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  *status = job->submitted || job->retrieved ? QDMI_JOB_STATUS_DONE
+                                             : QDMI_JOB_STATUS_CREATED;
+  return QDMI_SUCCESS;
 }
 
-extern "C" int TEST_SESSION_QDMI_device_job_wait(QDMI_Device_Job /*job*/,
+extern "C" int TEST_SESSION_QDMI_device_job_wait(QDMI_Device_Job job,
                                                  size_t /*timeout*/) {
-  return QDMI_ERROR_NOTSUPPORTED;
+  return job != nullptr && (job->submitted || job->retrieved)
+             ? QDMI_SUCCESS
+             : QDMI_ERROR_BADSTATE;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_job_get_results(
-    QDMI_Device_Job /*job*/, QDMI_Job_Result /*result*/, size_t /*size*/,
-    void* /*value*/, size_t* /*sizeRet*/) {
+    QDMI_Device_Job job, const size_t programIndex,
+    const QDMI_Job_Result result, const size_t size, void* value,
+    size_t* sizeRet) {
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (!job->retrieved && !job->submitted) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  if (programIndex >= job->programs.size()) {
+    return QDMI_ERROR_OUTOFRANGE;
+  }
+  if (result == QDMI_JOB_RESULT_SHOTS) {
+    return queryString(programIndex == 0U ? "10,01" : "11,00", size, value,
+                       sizeRet);
+  }
+  if (result == QDMI_JOB_RESULT_HIST_KEYS) {
+    return queryString(programIndex == 0U ? "10,01" : "11,00", size, value,
+                       sizeRet);
+  }
+  if (result == QDMI_JOB_RESULT_HIST_VALUES) {
+    constexpr std::array<size_t, 2> VALUES{1U, 1U};
+    return queryBytes(std::as_bytes(std::span{VALUES}), size, value, sizeRet);
+  }
+  if (result == QDMI_JOB_RESULT_CUSTOM5) {
+    return queryBytes(job->programs[programIndex], size, value, sizeRet);
+  }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 

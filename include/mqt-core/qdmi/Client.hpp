@@ -705,6 +705,33 @@ public:
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
   /**
+   * @brief Submits an ordered list of textual programs as one job.
+   * @details QDMI copies the complete list atomically. Each submitted payload
+   * includes exactly one trailing null byte.
+   */
+  [[nodiscard]] Job submitPrograms(
+      std::span<const std::string> programs, QDMI_Program_Format format,
+      std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /**
+   * @brief Submits an ordered list of binary programs as one job.
+   * @details QDMI copies every payload byte atomically.
+   */
+  [[nodiscard]] Job submitPrograms(
+      std::span<const std::vector<std::byte>> programs,
+      QDMI_Program_Format format, std::optional<size_t> numShots = std::nullopt,
+      const std::optional<CustomJobParameter>& custom1 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom2 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom3 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom4 = std::nullopt,
+      const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
+
+  /**
    * @brief Retrieves an existing job by its device-provided ID.
    * @details Opening a job does not submit, clone, or modify the remote job.
    * The returned handle can be used to query its state and retrieve results.
@@ -803,6 +830,24 @@ private:
                 const std::optional<CustomJobParameter>& custom4,
                 const std::optional<CustomJobParameter>& custom5) const;
 
+  [[nodiscard]] Job
+  submitProgramsImpl(QDMI_Program_Format format, std::span<const size_t> sizes,
+                     std::span<const void* const> programs,
+                     std::optional<size_t> numShots,
+                     const std::optional<CustomJobParameter>& custom1,
+                     const std::optional<CustomJobParameter>& custom2,
+                     const std::optional<CustomJobParameter>& custom3,
+                     const std::optional<CustomJobParameter>& custom4,
+                     const std::optional<CustomJobParameter>& custom5) const;
+
+  static void
+  setCommonJobParameters(QDMI_Job job, std::optional<size_t> numShots,
+                         const std::optional<CustomJobParameter>& custom1,
+                         const std::optional<CustomJobParameter>& custom2,
+                         const std::optional<CustomJobParameter>& custom3,
+                         const std::optional<CustomJobParameter>& custom4,
+                         const std::optional<CustomJobParameter>& custom5);
+
   static void setCustomJobParam(QDMI_Job job, QDMI_Job_Parameter param,
                                 const CustomJobParameter& value);
 
@@ -866,6 +911,13 @@ public:
   /// Get the number of shots
   [[nodiscard]] size_t getNumShots() const;
 
+  /// Return the number of programs in the job.
+  [[nodiscard]] size_t getProgramsNum() const;
+
+  /// Return an indexed result without interpreting its bytes.
+  [[nodiscard]] std::vector<std::byte> getResults(size_t programIndex,
+                                                  QDMI_Job_Result result) const;
+
   /**
    * @brief Gets the current number of jobs ahead of this job in its queue.
    * @return The queue position, or `std::nullopt` if it is unavailable or not
@@ -907,12 +959,14 @@ public:
    */
   template <custom_property_value T>
   [[nodiscard]] std::optional<T>
-  getCustomResult(const CustomProperty property) const {
+  getCustomResult(const CustomProperty property,
+                  const size_t programIndex = 0U) const {
     const auto qdmiResult = detail::toJobResult(property);
     return detail::queryCustomValue<T>(
-        [this, qdmiResult](const size_t size, void* value, size_t* sizeRet) {
-          return QDMI_job_get_results(job_.get(), qdmiResult, size, value,
-                                      sizeRet);
+        [this, programIndex, qdmiResult](const size_t size, void* value,
+                                         size_t* sizeRet) {
+          return QDMI_job_get_results(job_.get(), programIndex, qdmiResult,
+                                      size, value, sizeRet);
         },
         "custom job result " + std::to_string(static_cast<unsigned>(property)));
   }
@@ -921,26 +975,30 @@ public:
    * @brief Returns the measurement shots as a vector of bitstrings.
    * @see QDMI_JOB_RESULT_SHOTS
    */
-  [[nodiscard]] std::vector<std::string> getShots() const;
+  [[nodiscard]] std::vector<std::string>
+  getShots(size_t programIndex = 0U) const;
 
   /**
    * @brief Returns a map of measurement outcomes to their respective counts.
    * @see QDMI_JOB_RESULT_HIST_KEYS
    * @see QDMI_JOB_RESULT_HIST_VALUES
    */
-  [[nodiscard]] std::map<std::string, size_t> getCounts() const;
+  [[nodiscard]] std::map<std::string, size_t>
+  getCounts(size_t programIndex = 0U) const;
 
   /**
    * @brief Returns the dense state vector as a vector of complex numbers.
    * @see QDMI_JOB_RESULT_STATEVECTOR_DENSE
    */
-  [[nodiscard]] std::vector<std::complex<double>> getDenseStateVector() const;
+  [[nodiscard]] std::vector<std::complex<double>>
+  getDenseStateVector(size_t programIndex = 0U) const;
 
   /**
    * @brief Returns the dense probabilities as a vector of doubles.
    * @see QDMI_JOB_RESULT_PROBABILITIES_DENSE
    */
-  [[nodiscard]] std::vector<double> getDenseProbabilities() const;
+  [[nodiscard]] std::vector<double>
+  getDenseProbabilities(size_t programIndex = 0U) const;
 
   /**
    * @brief Returns the sparse state vector as a map of bitstrings to complex
@@ -949,7 +1007,7 @@ public:
    * @see QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES
    */
   [[nodiscard]] std::map<std::string, std::complex<double>>
-  getSparseStateVector() const;
+  getSparseStateVector(size_t programIndex = 0U) const;
 
   /**
    * @brief Returns the sparse probabilities as a map of bitstrings to
@@ -957,7 +1015,8 @@ public:
    * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS
    * @see QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES
    */
-  [[nodiscard]] std::map<std::string, double> getSparseProbabilities() const;
+  [[nodiscard]] std::map<std::string, double>
+  getSparseProbabilities(size_t programIndex = 0U) const;
 
   auto operator<=>(const Job&) const noexcept = default;
 

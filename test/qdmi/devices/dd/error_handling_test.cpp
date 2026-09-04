@@ -26,8 +26,6 @@ protected:
   static auto TearDownTestSuite() -> void { MQT_DDSIM_QDMI_device_finalize(); }
 };
 
-} // namespace
-
 TEST_F(ErrorHandling, NullptrArguments) {
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_alloc(nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
@@ -58,8 +56,8 @@ TEST_F(ErrorHandling, NullptrArguments) {
             QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_wait(nullptr, 0),
             QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(nullptr, QDMI_JOB_RESULT_MAX,
-                                                  0, nullptr, nullptr),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                nullptr, 0U, QDMI_JOB_RESULT_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 
   const qdmi_test::SessionGuard s{};
@@ -71,6 +69,8 @@ TEST_F(ErrorHandling, NullptrArguments) {
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
+} // namespace
+
 TEST_F(ErrorHandling, GetResultsBeforeDone) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
@@ -80,13 +80,13 @@ TEST_F(ErrorHandling, GetResultsBeforeDone) {
   ASSERT_EQ(qdmi_test::setShots(j.job, 16384), QDMI_SUCCESS);
   // Before submit → invalid
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
             QDMI_ERROR_BADSTATE);
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j.job), QDMI_SUCCESS);
   // After submit but not necessarily done → still invalid or waits; contract
   // says invalid
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
             QDMI_ERROR_BADSTATE);
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
 }
@@ -131,8 +131,8 @@ TEST_F(ErrorHandling, MaxEnums) {
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 16), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, QDMI_JOB_RESULT_MAX, 0,
-                                                  nullptr, nullptr),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, 0U, QDMI_JOB_RESULT_MAX, 0, nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
 
@@ -244,19 +244,19 @@ TEST_F(ErrorHandling, CustomEnums) {
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_CUSTOM1, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_CUSTOM1, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_CUSTOM2, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_CUSTOM2, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_CUSTOM3, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_CUSTOM3, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_CUSTOM4, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_CUSTOM4, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_CUSTOM5, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_CUSTOM5, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
 }
 

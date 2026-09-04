@@ -56,6 +56,7 @@
 
 namespace {
 constexpr uintptr_t OFFSET = 0x10000U;
+
 template <typename T, std::size_t N> constexpr std::array<T, N> iotaArray() {
   std::array<T, N> result{};
   std::iota(result.begin(), result.end(), OFFSET);
@@ -248,7 +249,7 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
                             status_.load(), prop, size, value, sizeRet)
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_QUBITSNUM, size_t, qubitsNum_,
                             prop, size, value, sizeRet)
-  // This device never needs calibration
+  /// This device never needs calibration.
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION, size_t, 0,
                             prop, size, value, sizeRet)
   // This device does not support pulse-level control
@@ -421,6 +422,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
   switch (param) {
   case QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT:
     if (value != nullptr) {
+      if (size != sizeof(QDMI_Program_Format)) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
       const auto format = *static_cast<const QDMI_Program_Format*>(value);
       if (IS_INVALID_ARGUMENT(format, QDMI_PROGRAM_FORMAT)) {
         return QDMI_ERROR_INVALIDARGUMENT;
@@ -429,33 +433,11 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
           SUPPORTED_PROGRAM_FORMATS.end()) {
         return QDMI_ERROR_NOTSUPPORTED;
       }
-      format_ = format;
-    }
-    return QDMI_SUCCESS;
-  case QDMI_DEVICE_JOB_PARAMETER_PROGRAM:
-    if (value != nullptr) {
-      const bool isTextProgramFormat =
-          format_ == QDMI_PROGRAM_FORMAT_QASM2 ||
-          format_ == QDMI_PROGRAM_FORMAT_QASM3 ||
-          format_ == QDMI_PROGRAM_FORMAT_QIRBASESTRING ||
-          format_ == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
-      if (isTextProgramFormat) {
-        // Text payloads include the trailing '\0' in `size`.
-        // Strip it so it is not counted in the stored string's size.
-        const std::span text{static_cast<const char*>(value), size};
-        if (text.empty() || text.back() != '\0') {
-          return QDMI_ERROR_INVALIDARGUMENT;
-        }
-        const auto contents = text.first(text.size() - 1);
-        if (std::ranges::find(contents, '\0') != contents.end()) {
-          return QDMI_ERROR_INVALIDARGUMENT;
-        }
-        program_ = std::string(contents.begin(), contents.end());
-      } else {
-        // Binary payloads are stored exactly as received.
-        const std::span bytes(static_cast<const std::byte*>(value), size);
-        program_ = std::vector<std::byte>(bytes.begin(), bytes.end());
+      if (format_ != format) {
+        hasProgram_ = false;
       }
+      format_ = format;
+      hasFormat_ = true;
     }
     return QDMI_SUCCESS;
   case QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM:
@@ -476,6 +458,65 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
     return QDMI_ERROR_NOTSUPPORTED;
   }
 }
+
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::setPrograms(
+    const QDMI_Program_Format* const format, const size_t count,
+    const size_t* const sizes, const void* const* const programs)
+    -> QDMI_STATUS {
+  if (format == nullptr || count == 0U) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (status_.load() != QDMI_JOB_STATUS_CREATED) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  if (IS_INVALID_ARGUMENT(*format, QDMI_PROGRAM_FORMAT)) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (count != 1U || std::ranges::none_of(SUPPORTED_PROGRAM_FORMATS,
+                                          [&](const auto& supported) {
+                                            return (*format == supported);
+                                          })) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
+  if (programs == nullptr) {
+    return QDMI_SUCCESS;
+  }
+  if (sizes == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  const std::span programSizes{sizes, count};
+  const std::span programPointers{programs, count};
+  if (programSizes.front() == 0U || programPointers.front() == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+
+  std::variant<std::string, std::vector<std::byte>> program;
+  if ((*format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
+       *format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)) {
+    const std::span bytes{
+        static_cast<const std::byte*>(programPointers.front()),
+        programSizes.front()};
+    program = std::vector<std::byte>(bytes.begin(), bytes.end());
+  } else {
+    const std::span text{static_cast<const char*>(programPointers.front()),
+                         programSizes.front()};
+    if (text.back() != '\0') {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    const auto contents = text.first(text.size() - 1U);
+    if (std::ranges::find(contents, '\0') != contents.end()) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    program = std::string(contents.begin(), contents.end());
+  }
+
+  format_ = *format;
+  program_ = std::move(program);
+  hasFormat_ = true;
+  hasProgram_ = true;
+  return QDMI_SUCCESS;
+}
+
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
     // NOLINTNEXTLINE(readability-non-const-parameter)
     const QDMI_Device_Job_Property prop, const size_t size, void* value,
@@ -487,9 +528,17 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
   const auto str = std::to_string(id_);
   ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_ID, str.c_str(), prop, size,
                       value, sizeRet)
-  ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT,
-                            QDMI_Program_Format, format_, prop, size, value,
-                            sizeRet)
+  if (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT) {
+    if (!hasFormat_) {
+      return QDMI_ERROR_BADSTATE;
+    }
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMFORMAT,
+                              QDMI_Program_Format, format_, prop, size, value,
+                              sizeRet)
+  }
+  if (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAM && !hasProgram_) {
+    return QDMI_ERROR_BADSTATE;
+  }
   if (std::holds_alternative<std::string>(program_)) {
     const auto& text = std::get<std::string>(program_);
     ADD_STRING_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAM, text.c_str(), prop,
@@ -501,6 +550,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
   }
   ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_SHOTSNUM, size_t,
                             numShots_, prop, size, value, sizeRet)
+  if (prop == QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM) {
+    if (!hasProgram_) {
+      return QDMI_ERROR_BADSTATE;
+    }
+    constexpr size_t programsNum = 1U;
+    ADD_SINGLE_VALUE_PROPERTY(QDMI_DEVICE_JOB_PROPERTY_PROGRAMSNUM, size_t,
+                              programsNum, prop, size, value, sizeRet)
+  }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitProgramAsync(
@@ -611,8 +668,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
   // State extraction stops the entry point at its first irreversible operation.
   // This preserves Base Profile semantics because measurements are terminal,
   // whereas Adaptive Profile measurements may feed later quantum control.
-  if (format_ != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
-      format_ != QDMI_PROGRAM_FORMAT_QIRBASESTRING) {
+  if (!(format_ == QDMI_PROGRAM_FORMAT_QIRBASEMODULE) &&
+      !(format_ == QDMI_PROGRAM_FORMAT_QIRBASESTRING)) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
   return submitProgramAsync([this] {
@@ -641,9 +698,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   if (status_.load() != QDMI_JOB_STATUS_CREATED) {
     return QDMI_ERROR_BADSTATE;
   }
+  if (!hasFormat_ || !hasProgram_) {
+    return QDMI_ERROR_BADSTATE;
+  }
   status_.store(QDMI_JOB_STATUS_SUBMITTED);
-  if (format_ == QDMI_PROGRAM_FORMAT_QASM2 ||
-      format_ == QDMI_PROGRAM_FORMAT_QASM3) {
+  if ((format_ == QDMI_PROGRAM_FORMAT_QASM2) ||
+      (format_ == QDMI_PROGRAM_FORMAT_QASM3)) {
     return submitQASMProgram();
   }
   return submitQIRProgram();
@@ -899,10 +959,14 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProbabilities(const size_t size,
   }
   return QDMI_SUCCESS;
 }
-auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const size_t programIndex,
+                                                  const QDMI_Job_Result result,
                                                   const size_t size, void* data,
                                                   size_t* sizeRet)
     -> QDMI_STATUS {
+  if (programIndex != 0U) {
+    return QDMI_ERROR_OUTOFRANGE;
+  }
   if (IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
@@ -1015,6 +1079,17 @@ int MQT_DDSIM_QDMI_device_job_query_property(
   return job->queryProperty(prop, size, value, size_ret);
 }
 
+int MQT_DDSIM_QDMI_device_job_set_programs(MQT_DDSIM_QDMI_Device_Job job,
+                                           const QDMI_Program_Format* format,
+                                           const size_t count,
+                                           const size_t* sizes,
+                                           const void* const* programs) {
+  if (job == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return job->setPrograms(format, count, sizes, programs);
+}
+
 int MQT_DDSIM_QDMI_device_job_submit(MQT_DDSIM_QDMI_Device_Job job) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
@@ -1046,13 +1121,14 @@ int MQT_DDSIM_QDMI_device_job_wait(MQT_DDSIM_QDMI_Device_Job job,
 }
 
 int MQT_DDSIM_QDMI_device_job_get_results(MQT_DDSIM_QDMI_Device_Job job,
+                                          const size_t programIndex,
                                           QDMI_Job_Result result,
                                           const size_t size, void* data,
                                           size_t* size_ret) {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  return job->getResults(result, size, data, size_ret);
+  return job->getResults(programIndex, result, size, data, size_ret);
 }
 
 int MQT_DDSIM_QDMI_device_session_query_device_property(

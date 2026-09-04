@@ -6,6 +6,20 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QDMI multi-program job interface
+
+Native QDMI consumers must rebuild against QDMI 1.4. Replace the
+`QDMI_JOB_PARAMETER_PROGRAM` setter with `QDMI_job_set_programs`, including for
+one program. Device implementations provide `QDMI_device_job_set_programs` and
+accept a program index in result retrieval. The program-format enum remains
+unchanged. Calibration without a payload can still set only the format.
+
+Existing C++ and Python single-program submission and result calls remain valid.
+Use `submitPrograms` or `submit_programs` for native program lists; omit the
+shot count to preserve device defaults. A provider that cannot implement the
+aggregate lifecycle must reject larger lists. Concurrent single-program
+submission remains a separate fallback.
+
 ### Removal of the classic circuit representation
 
 MQT Core 4 removes the complete classic circuit surface. This includes the C++

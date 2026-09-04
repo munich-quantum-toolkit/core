@@ -45,7 +45,7 @@ TEST(Concurrency, ConcurrentStatevectorReads) {
   auto const worker = [&] {
     std::vector<double> buf(stateSize / sizeof(double));
     EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                  j.job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, stateSize,
+                  j.job, 0U, QDMI_JOB_RESULT_STATEVECTOR_DENSE, stateSize,
                   buf.data(), nullptr),
               QDMI_SUCCESS);
   };
@@ -76,17 +76,17 @@ TEST(Concurrency, ConcurrentHistogramReads) {
 
   auto const keysWorker = [&] {
     std::string buf(keysSize > 0 ? keysSize - 1 : 0, '\0');
-    EXPECT_EQ(
-        MQT_DDSIM_QDMI_device_job_get_results(j.job, QDMI_JOB_RESULT_HIST_KEYS,
-                                              keysSize, buf.data(), nullptr),
-        QDMI_SUCCESS);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                  j.job, 0U, QDMI_JOB_RESULT_HIST_KEYS, keysSize, buf.data(),
+                  nullptr),
+              QDMI_SUCCESS);
   };
   auto const valsWorker = [&] {
     std::vector<size_t> v(valsSize / sizeof(size_t));
-    EXPECT_EQ(
-        MQT_DDSIM_QDMI_device_job_get_results(
-            j.job, QDMI_JOB_RESULT_HIST_VALUES, valsSize, v.data(), nullptr),
-        QDMI_SUCCESS);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                  j.job, 0U, QDMI_JOB_RESULT_HIST_VALUES, valsSize, v.data(),
+                  nullptr),
+              QDMI_SUCCESS);
   };
 
   std::thread t1(keysWorker);

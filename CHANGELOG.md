@@ -92,6 +92,9 @@ releases may include breaking changes.
 
 - ✨ Expose ordered shots from DDSIM QDMI OpenQASM and QIR jobs, with matching
   histograms ([#2368]) ([**@burgholzer**])
+- ✨ Add native multi-program QDMI submissions and indexed results to the C++
+  and Python clients, independently of concurrent single-program execution
+  ([#2373]) ([**@burgholzer**])
 - 🐳 Add dev container configuration for a consistent local development
   environment ([#1786]) ([**@denialhaag**])
 
@@ -883,6 +886,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2380]: https://github.com/munich-quantum-toolkit/core/pull/2380
+[#2373]: https://github.com/munich-quantum-toolkit/core/pull/2373
 [#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368
 [#2358]: https://github.com/munich-quantum-toolkit/core/pull/2358
 [#2349]: https://github.com/munich-quantum-toolkit/core/pull/2349

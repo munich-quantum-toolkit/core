@@ -106,27 +106,42 @@ Returns:
 
   job.def("cancel", &qdmi::Job::cancel, "Cancels the job.");
 
-  job.def("get_shots", &qdmi::Job::getShots,
+  job.def(
+      "get_results",
+      [](const qdmi::Job& self, const size_t programIndex,
+         const QDMI_Job_Result result) {
+        const auto value = self.getResults(programIndex, result);
+        return nb::bytes(reinterpret_cast<const char*>(value.data()),
+                         value.size());
+      },
+      "program_index"_a, "result"_a, nb::call_guard<nb::gil_scoped_release>(),
+      "Returns one indexed result as exact bytes.");
+
+  job.def("get_shots", &qdmi::Job::getShots, "program_index"_a = 0U,
           nb::call_guard<nb::gil_scoped_release>(),
           "Returns the raw shot results from the job.");
 
-  job.def("get_counts", &qdmi::Job::getCounts,
+  job.def("get_counts", &qdmi::Job::getCounts, "program_index"_a = 0U,
           nb::call_guard<nb::gil_scoped_release>(),
           "Returns the measurement counts from the job.");
 
   job.def("get_dense_statevector", &qdmi::Job::getDenseStateVector,
+          "program_index"_a = 0U,
           "Returns the dense statevector from the job (typically only "
           "available from simulator devices).");
 
   job.def("get_dense_probabilities", &qdmi::Job::getDenseProbabilities,
+          "program_index"_a = 0U,
           "Returns the dense probabilities from the job (typically only "
           "available from simulator devices).");
 
   job.def("get_sparse_statevector", &qdmi::Job::getSparseStateVector,
+          "program_index"_a = 0U,
           "Returns the sparse statevector from the job (typically only "
           "available from simulator devices).");
 
   job.def("get_sparse_probabilities", &qdmi::Job::getSparseProbabilities,
+          "program_index"_a = 0U,
           "Returns the sparse probabilities from the job (typically only "
           "available from simulator devices).");
 
@@ -154,17 +169,19 @@ when the custom slot is unsupported.)pb");
   job.def(
       "get_custom_result",
       [](const qdmi::Job& self, const qdmi::CustomProperty customProperty,
-         const nb::handle valueType) {
+         const nb::handle valueType, const size_t programIndex) {
         return queryCustomValue(
-            [&self, customProperty]<qdmi::custom_property_value T> {
-              return self.getCustomResult<T>(customProperty);
+            [&self, customProperty,
+             programIndex]<qdmi::custom_property_value T> {
+              return self.getCustomResult<T>(customProperty, programIndex);
             },
             valueType);
       },
-      "custom_property"_a, "value_type"_a,
+      "custom_property"_a, "value_type"_a, "program_index"_a = 0U,
       nb::sig("def get_custom_result(self, custom_property: CustomProperty, "
               "value_type: type[str] | type[bool] | type[int] | type[float] | "
-              "type[bytes]) -> str | bool | int | float | bytes | None"),
+              "type[bytes], program_index: int = 0) -> str | bool | int | "
+              "float | bytes | None"),
       R"pb(Return an implementation-defined custom job result.
 
 The caller must provide the type documented by the device implementation.
@@ -185,6 +202,9 @@ when the custom slot is unsupported.)pb");
         return nb::bytes(program.data(), program.size());
       },
       "The exact bytes of the submitted program.");
+
+  job.def_prop_ro("programs_num", &qdmi::Job::getProgramsNum,
+                  "The number of programs in the job.");
 
   job.def_prop_ro("num_shots", &qdmi::Job::getNumShots, "The number of shots.");
 
@@ -209,6 +229,20 @@ when the custom slot is unsupported.)pb");
       .value("FAILED", QDMI_JOB_STATUS_FAILED);
 
   // ProgramFormat enum
+  nb::enum_<QDMI_Job_Result>(job, "Result", "One raw job result format.")
+      .value("SHOTS", QDMI_JOB_RESULT_SHOTS)
+      .value("HIST_KEYS", QDMI_JOB_RESULT_HIST_KEYS)
+      .value("HIST_VALUES", QDMI_JOB_RESULT_HIST_VALUES)
+      .value("STATEVECTOR_DENSE", QDMI_JOB_RESULT_STATEVECTOR_DENSE)
+      .value("PROBABILITIES_DENSE", QDMI_JOB_RESULT_PROBABILITIES_DENSE)
+      .value("STATEVECTOR_SPARSE_KEYS", QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS)
+      .value("STATEVECTOR_SPARSE_VALUES",
+             QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES)
+      .value("PROBABILITIES_SPARSE_KEYS",
+             QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS)
+      .value("PROBABILITIES_SPARSE_VALUES",
+             QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES);
+
   nb::enum_<QDMI_Program_Format>(qdmiModule, "ProgramFormat",
                                  "Enumeration of program formats.")
       .value("QASM2", QDMI_PROGRAM_FORMAT_QASM2)
@@ -435,6 +469,49 @@ QDMI does not require a program for a calibration run, so ``program`` is
 optional and may be a string or bytes. When it is given, the device defines
 what it means, which is usually a configuration for the run. A calibration run
 executes no circuit, so it takes no shot count.)pb");
+
+  device.def(
+      "submit_programs",
+      [](const qdmi::Device& self, const std::vector<std::string>& programs,
+         const QDMI_Program_Format format, const std::optional<size_t> numShots,
+         const std::optional<qdmi::CustomJobParameter>& custom1,
+         const std::optional<qdmi::CustomJobParameter>& custom2,
+         const std::optional<qdmi::CustomJobParameter>& custom3,
+         const std::optional<qdmi::CustomJobParameter>& custom4,
+         const std::optional<qdmi::CustomJobParameter>& custom5) {
+        return self.submitPrograms(programs, format, numShots, custom1, custom2,
+                                   custom3, custom4, custom5);
+      },
+      "programs"_a, "program_format"_a, "num_shots"_a = nb::none(),
+      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+      "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
+      "Submits an ordered list of text programs atomically.");
+
+  device.def(
+      "submit_programs",
+      [](const qdmi::Device& self, const std::vector<nb::bytes>& programs,
+         const QDMI_Program_Format format, const std::optional<size_t> numShots,
+         const std::optional<qdmi::CustomJobParameter>& custom1,
+         const std::optional<qdmi::CustomJobParameter>& custom2,
+         const std::optional<qdmi::CustomJobParameter>& custom3,
+         const std::optional<qdmi::CustomJobParameter>& custom4,
+         const std::optional<qdmi::CustomJobParameter>& custom5) {
+        std::vector<std::vector<std::byte>> bytes;
+        bytes.reserve(programs.size());
+        for (const auto& program : programs) {
+          const std::span value{static_cast<const std::byte*>(program.data()),
+                                program.size()};
+          bytes.emplace_back(value.begin(), value.end());
+        }
+        return self.submitPrograms(bytes, format, numShots, custom1, custom2,
+                                   custom3, custom4, custom5);
+      },
+      "programs"_a, "program_format"_a, "num_shots"_a = nb::none(),
+      nb::kw_only(), "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+      "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+      "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
+      "Submits an ordered list of exact byte programs atomically.");
 
   device.def(
       "retrieve_job_by_id",

@@ -67,3 +67,40 @@ for device_id in registered_device_ids():
     device = open_device(device_id)
     print(device.name())
 ```
+
+## Native multi-program jobs
+
+`Device.submit_programs` submits an ordered list of programs with one format and
+an optional shot count. A supporting provider returns one job ID and one
+lifecycle for the complete list. Result index `i` refers to input program `i`,
+regardless of execution order. Results are available only after every program
+succeeds. Cancellation and failure apply to the aggregate job.
+
+The list may contain one program. DDSIM supports this case; it does not yet
+support larger lists. The superconducting model device does not execute jobs.
+
+```{code-cell} ipython3
+from mqt.core.qdmi import ProgramFormat
+
+device = open_device("mqt.ddsim.default")
+program = 'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; x q; c = measure q;'
+job = device.submit_programs([program], ProgramFormat.QASM3, 32)
+assert job.wait()
+assert job.programs_num == 1
+assert job.get_counts(program_index=0) == {"1": 32}
+```
+
+Pass strings for text formats and bytes for binary formats. Binary payloads
+retain every byte, including embedded NULs. Omit `num_shots` to leave the device
+default unchanged. Existing single-program calls and result access without an
+index continue to work; the default index is zero.
+
+Native multi-program submission is not concurrent submission of independent
+jobs. A provider may reject lists with more than one program. Applications and
+SDK integrations must then retain their separate single-program workflow; they
+must not represent unrelated remote jobs as one native aggregate job.
+
+At the C interface, `QDMI_job_set_programs` replaces the program setter and
+copies the whole list atomically. A rejected update leaves the previous list
+unchanged. Result retrieval takes a program index. The C++ counterparts are
+`Device::submitPrograms`, `Job::getProgramsNum`, and the indexed result methods.
