@@ -2,9 +2,10 @@
 
 An MLIR {code}`mlir::CompilerTarget` is an immutable snapshot of a circuit-model
 device. It contains the device sites, topology, native operations, and available
-calibration and ordered-applicability data. Compilation decomposes supported
-multi-qubit operations, optimizes and maps the program, synthesizes native
-gates, and verifies that the result conforms to the target.
+calibration and ordered-applicability data. Compilation inlines reusable
+functions, decomposes supported multi-qubit operations, optimizes and maps the
+program, synthesizes native gates, and verifies that the result conforms to the
+target.
 
 The snapshot is independent of its originating QDMI session. It can therefore be
 stored, copied cheaply, and reused for multiple compilations.
@@ -95,7 +96,9 @@ benchmarking, the C++ API exposes separate factories for pre-routing
 optimization, deterministic placement, topology-aware mapping, native synthesis,
 and conformance verification. Target compilation uses compact placement on
 all-to-all targets and the mapper only when the target has an explicit coupling
-graph.
+graph. The high-level program API registers the required inliner extensions;
+callers that populate the low-level target pipeline directly must register
+inliner extensions for every callable dialect in their context.
 
 Target compilation preserves quantum operations even when their final qubit
 values are not measured or returned. This supports measurement-free programs,

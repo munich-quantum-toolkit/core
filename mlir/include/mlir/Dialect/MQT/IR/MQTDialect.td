@@ -32,8 +32,8 @@ def MQTDialect : Dialect {
     `mqt.register_name` records the source-level name of a quantum or classical
     register allocation. Input and register names share one function-wide
     namespace.
-    `mqt.entry_point` marks the single defined program entry function in a
-    module.
+    `mqt.entry_point` marks the single public, defined `func.func` program entry
+    in a module.
     `mqt.unitary` marks a private function that defines a unitary operation.
     `#mqt.compilation_target` records compiler-target facts as typed IR.
   }];

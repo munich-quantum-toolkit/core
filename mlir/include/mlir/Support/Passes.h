@@ -52,8 +52,7 @@ runPassPipeline(mlir::ModuleOp moduleOp, mlir::StringRef pipeline,
 
 /// Populate a QC-oriented cleanup pipeline on the given pass manager.
 ///
-/// Adds generic cleanup and QC qubit-register shrinking while
-/// preserving live function signatures.
+/// Adds generic cleanup, QC qubit-register shrinking, and dead-value removal.
 void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 
 /// Run QC cleanup that preserves defined values on every syntactic loop edge.
@@ -63,8 +62,7 @@ void populateQCExportPipeline(mlir::OpPassManager& pm);
 
 /// Populate a QCO-oriented cleanup pipeline on the given pass manager.
 ///
-/// Adds generic cleanup and qtensor shrink-to-fit while
-/// preserving live function signatures.
+/// Adds generic cleanup, qtensor shrink-to-fit, and dead-value removal.
 void populateQCOCleanupPipeline(mlir::OpPassManager& pm);
 
 /// Populate a QIR-oriented cleanup pipeline on the given pass manager.

@@ -261,12 +261,12 @@ private:
   }
 
   [[nodiscard]] LogicalResult orderGateFunctions() {
-    if (gateNames_.empty()) {
-      return success();
-    }
     const CallGraph callGraph(moduleOp);
-    for (auto component = llvm::scc_begin(&callGraph); !component.isAtEnd();
-         ++component) {
+    for (auto component =
+             llvm::scc_iterator<CallGraphNode*,
+                                llvm::GraphTraits<const CallGraphNode*>>::
+                 begin(callGraph.lookupNode(&function.getBody()));
+         !component.isAtEnd(); ++component) {
       auto* node = component->front();
       if (node->isExternal()) {
         continue;
@@ -275,8 +275,12 @@ private:
       if (component.hasCycle()) {
         return fail(current, "recursive gate function calls are not supported");
       }
-      if (gateNames_.contains(current)) {
-        gateFunctions_.push_back(cast<func::FuncOp>(current));
+      if (current != function) {
+        auto gate = dyn_cast<func::FuncOp>(current);
+        if (!gate) {
+          return fail(current, "gate calls must target func.func definitions");
+        }
+        gateFunctions_.push_back(gate);
       }
     }
     return success();
@@ -316,10 +320,10 @@ private:
       return failure();
     }
 
-    for (auto current : functions) {
-      if (current == function) {
-        continue;
-      }
+    if (failed(orderGateFunctions())) {
+      return failure();
+    }
+    for (auto current : gateFunctions_) {
       if (!current.isPrivate() || current.isExternal() ||
           !current.getBody().hasOneBlock() || current.getNumResults() != 0) {
         return fail(current, "gate functions must be private, defined, "
@@ -348,16 +352,22 @@ private:
                                           ? requested.str()
                                           : uniqueName("gate", nextHelper));
     }
-    const auto walkResult = moduleOp.walk([&](Operation* operation) {
-      if (isa<func::CallOp, qc::CallOp>(operation) &&
-          resolveGateCallee(operation) == nullptr) {
-        std::ignore = fail(operation, "call does not target an exportable gate "
-                                      "function");
-        return WalkResult::interrupt();
-      }
-      return WalkResult::advance();
-    });
-    if (walkResult.wasInterrupted()) {
+    const auto hasInvalidCall = [&](func::FuncOp current) {
+      return current
+          .walk([&](Operation* operation) {
+            if (isa<func::CallOp, qc::CallOp>(operation) &&
+                resolveGateCallee(operation) == nullptr) {
+              std::ignore =
+                  fail(operation,
+                       "call does not target an exportable gate function");
+              return WalkResult::interrupt();
+            }
+            return WalkResult::advance();
+          })
+          .wasInterrupted();
+    };
+    if (hasInvalidCall(function) ||
+        llvm::any_of(gateFunctions_, hasInvalidCall)) {
       return failure();
     }
     for (Operation& operation : moduleOp.getBody()->getOperations()) {
@@ -365,7 +375,7 @@ private:
         return fail(&operation, "only functions may appear at module scope");
       }
     }
-    return orderGateFunctions();
+    return success();
   }
 
   [[nodiscard]] LogicalResult collectProgramShape() {

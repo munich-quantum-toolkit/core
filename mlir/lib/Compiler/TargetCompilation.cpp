@@ -22,6 +22,7 @@ namespace mlir {
 
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const CompilerTarget& target) {
+  pm.addPass(createInlinerPass());
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createDecomposeMultiControlled(target));
   populateDefaultQCOOptimizationPipeline(pm);

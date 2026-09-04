@@ -891,7 +891,11 @@ TEST(OpenQASM3EmissionTest, OrdersLongReverseDeclaredGateGraph) {
     }
     stream << "return\n}\n";
   }
-  stream << "func.func @entry() attributes {mqt.entry_point} { return }\n}\n";
+  stream << "func.func @entry() attributes {mqt.entry_point} {\n"
+            "%qubit = qc.alloc : !qc.qubit\n"
+            "func.call @gate0(%qubit) : (!qc.qubit) -> ()\n"
+            "qc.dealloc %qubit : !qc.qubit\n"
+            "return\n}\n}\n";
   stream.flush();
   DialectRegistry registry = emissionDialects();
   MLIRContext context(registry);
@@ -911,7 +915,26 @@ TEST(OpenQASM3EmissionTest, OrdersLongReverseDeclaredGateGraph) {
             101);
   size_t calls = 0;
   roundTripped->walk([&](qc::CallOp) { ++calls; });
-  EXPECT_EQ(calls, 99);
+  EXPECT_EQ(calls, 100);
+}
+
+TEST(OpenQASM3EmissionTest, DropsUnreachableGateFunctions) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @unused(%qubit: !qc.qubit) attributes {mqt.unitary} {
+      qc.x %qubit : !qc.qubit
+      return
+    }
+    func.func @entry() attributes {mqt.entry_point} { return }
+  })mlir";
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_EQ(emitted->find("gate unused"), std::string::npos) << *emitted;
 }
 
 TEST(OpenQASM3EmissionTest, RejectsInvalidGateFunctions) {
@@ -921,14 +944,24 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidGateFunctions) {
           qc.reset %qubit : !qc.qubit
           return
         }
-        func.func @entry() attributes {mqt.entry_point} { return }
+        func.func @entry() attributes {mqt.entry_point} {
+          %qubit = qc.alloc : !qc.qubit
+          func.call @resetter(%qubit) : (!qc.qubit) -> ()
+          qc.dealloc %qubit : !qc.qubit
+          return
+        }
       })mlir"},
       llvm::StringLiteral{R"mlir(module {
         func.func private @left(%qubit: !qc.qubit) {
           func.call @right(%qubit) : (!qc.qubit) -> ()
           return
         }
-        func.func @entry() attributes {mqt.entry_point} { return }
+        func.func @entry() attributes {mqt.entry_point} {
+          %qubit = qc.alloc : !qc.qubit
+          func.call @left(%qubit) : (!qc.qubit) -> ()
+          qc.dealloc %qubit : !qc.qubit
+          return
+        }
         func.func private @right(%qubit: !qc.qubit) {
           func.call @left(%qubit) : (!qc.qubit) -> ()
           return
@@ -941,7 +974,12 @@ TEST(OpenQASM3EmissionTest, RejectsInvalidGateFunctions) {
           qc.rx(%angle) %qubit : !qc.qubit
           return
         }
-        func.func @entry() attributes {mqt.entry_point} { return }
+        func.func @entry() attributes {mqt.entry_point} {
+          %qubit = qc.alloc : !qc.qubit
+          func.call @invalid(%qubit) : (!qc.qubit) -> ()
+          qc.dealloc %qubit : !qc.qubit
+          return
+        }
       })mlir"},
       llvm::StringLiteral{R"mlir(module {
         func.func private @pair(%left: !qc.qubit, %right: !qc.qubit) {
