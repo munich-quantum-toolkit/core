@@ -328,6 +328,26 @@ TEST_F(TargetSynthesisTest,
   expectEquivalent(expected, optimized);
 }
 
+TEST_F(TargetSynthesisTest, TwoQubitGateFusionExposesEarlierRunContinuations) {
+  const auto adjacentRuns = [](QCOProgramBuilder& builder) {
+    auto q0 = builder.staticQubit(0);
+    auto q1 = builder.staticQubit(1);
+    auto q2 = builder.staticQubit(2);
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    std::tie(q0, q2) = builder.cx(q0, q2);
+    std::tie(q0, q2) = builder.cx(q0, q2);
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    return builder.intConstant(0);
+  };
+  auto expected = build(adjacentRuns);
+  auto optimized = build(adjacentRuns);
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*optimized, mlir::qco::createFuseTwoQubitGates())));
+  EXPECT_EQ(countOps<CtrlOp>(*optimized), 0U);
+  expectEquivalent(expected, optimized);
+}
+
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionEmitsSymmetricEntangler) {
   const auto reducible = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);

@@ -25,6 +25,11 @@ adjacent sites must not introduce routing SWAPs.
       Python.
 - [x] (2026-09-04) Remove synthesis planning and repeated matrix extraction.
 - [x] (2026-09-04) Validate the revised model and obtain adversarial review.
+- [x] (2026-09-04) Accept plain Python placements and positional MLIR tuple
+      sites.
+- [x] (2026-09-04) Consolidate target lookups and restore LLVM containers.
+- [ ] (2026-09-04) Validate compact syntax and the final synthesis
+      simplification.
 
 ## Decision Log
 
@@ -48,6 +53,10 @@ contains every supported ordered placement with optional calibration. Missing
 values inherit operation defaults. The QDMI adapter omits operations reported
 with no supported placements and retains uncalibrated supported tuples.
 
+Plain Python tuples and lists denote uncalibrated placements. Explicit
+`SiteTuple` values remain available for calibration. MLIR prints positional
+sites as `<[4, 7]>`, with named optional calibration fields.
+
 ## Surprises & Discoveries
 
 An executed two-site probe produced five native CXs with directional routing and
@@ -59,6 +68,11 @@ Explicit mapping realigns structured region exits to physical slots. All-to-all
 placement only replaces allocations, so site consistency must be checked rather
 than assumed. Runtime symmetric gates such as RXX need direct operand reordering
 because their matrix is unavailable at compile time.
+
+LLVM 23 dense maps track occupancy separately and no longer reserve sentinel
+keys. Standard LLVM dense containers therefore support the full nonnegative
+site-ID range without custom traits. One per-operation tuple set borrows keys
+from immutable target storage and replaces arity-specific lookup caches.
 
 ## Context and Orientation
 
@@ -119,6 +133,12 @@ producers, keeping original site facts valid while rewriting each operation
 immediately. Use the existing bounded site walk: generic control-flow interfaces
 prune known loop edges and require extra exceptions for this contract.
 
+Fusion also visits operations in reverse order. When a run head fuses its
+successors, those operations have already been visited. This removes the
+run-head snapshot and duplicate matrix extraction, and can expose earlier
+cancellations when a later run disappears. Each rewrite still strictly reduces
+the number of two-qubit operations.
+
 ## Idempotence and Recovery
 
 Builds and checks are repeatable. Preserve unrelated changes and keep generated
@@ -130,7 +150,11 @@ needed.
 The target model now has one tuple list with optional calibration. Its enum,
 duplicate lists, attributes, validators, and serialization paths are removed.
 Synthesis checks and rewrites each gate in reverse order, without a separate
-plan or repeated matrix extraction. This round removes 284 production lines.
+plan or repeated matrix extraction. The tuple-model round removed 284 production
+lines. The compact-syntax and lookup round removes another 91 production lines:
+a shared LLVM tuple cache, fewer single-use wrappers, and direct reverse fusion.
+Python accepts plain tuples or lists; explicit `SiteTuple` values add
+calibration. MLIR prints positional tuple sites.
 
 Specialist and adversarial review found no remaining blockers. Adversarial
 review retained a compact shared matrix guard for unsupported multi-target
@@ -138,13 +162,21 @@ control shells; its regression verifies that the input is valid and linear
 before checking the diagnostic. Ordinary dependent rewrites retain semantic
 equivalence.
 
-All 305 focused C++ tests pass: compiler 153, mapping 94, target synthesis 43,
-and MQT IR 15. All 49 Python MLIR tests pass. Python stubs are regenerated, and
+All 307 focused C++ tests pass: compiler 153, mapping 94, target synthesis 44,
+and MQT IR 16. All 51 Python MLIR tests pass. Python stubs are regenerated, and
 strict documentation and repository lint pass. Full C++ lint stops before
 analysis because unchanged QIR runtime test executables have unresolved QTensor
 symbols. Building the ten changed C++ translation units directly succeeds; the
 same whole-file linter reports zero findings across all ten files. No lint
 configuration or unrelated build wiring was changed.
+
+The final specialist, adversarial, and Ponytail reviews found no further useful
+deletion within the supported contract. The new fusion regression cancels
+`CX01, CX02, CX02, CX01` and checks decision-diagram equivalence. Compact syntax
+checks cover mixed calibrated placements and calibration roundtrips. Cache
+checks cover maximum site IDs and retained target copies. The initial Python run
+reused a package without the test device; rebuilding with
+`BUILD_MQT_CORE_QDMI_SC_DEVICE=ON` resolves both device fixture errors.
 
 Revision note: aligned the scope with the approved routing, site, and failure
 contracts while retaining exact device metadata.

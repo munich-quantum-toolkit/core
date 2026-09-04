@@ -97,11 +97,7 @@ oneQubitRunMemberMatrix(UnitaryOpInterface unitary) {
       !isWalkableUnitaryShell(unitary.getOperation())) {
     return std::nullopt;
   }
-  Matrix2x2 matrix;
-  if (!unitary.getUnitaryMatrix2x2(matrix)) {
-    return std::nullopt;
-  }
-  return matrix;
+  return unitary.getUnitaryMatrix<Matrix2x2>();
 }
 
 /// Return the constant matrix when `unitary` is a two-qubit run member.
@@ -544,24 +540,17 @@ static LogicalResult fuseTwoQubitGates(ModuleOp moduleOp) {
       .singleQubit = CompilerTarget::SingleQubitBasis::U,
       .entangler = CompilerTarget::GateKind::CZ};
 
-  SmallVector<Operation*> runHeads;
-  moduleOp.walk([&](Operation* operation) {
-    auto unitary = dyn_cast<UnitaryOpInterface>(operation);
-    const auto matrix = twoQubitRunMemberMatrix(unitary);
-    if (matrix && !feedsFromSameTwoQubitRun(unitary)) {
-      runHeads.emplace_back(operation);
-    }
-  });
-
   bool changed = false;
   IRRewriter rewriter(moduleOp.getContext());
-  for (Operation* operation : runHeads) {
-    auto unitary = cast<UnitaryOpInterface>(operation);
-    const auto matrix = twoQubitRunMemberMatrix(unitary);
-    if (matrix) {
-      changed |= fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis);
-    }
-  }
+  /// A run's successors have already been visited when its head erases them.
+  moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
+      [&](Operation* operation) {
+        auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+        const auto matrix = twoQubitRunMemberMatrix(unitary);
+        if (matrix && !feedsFromSameTwoQubitRun(unitary)) {
+          changed |= fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis);
+        }
+      });
   if (!changed) {
     return success();
   }

@@ -434,8 +434,6 @@ private:
   supportsImpl(::mlir::Operation* operation,
                std::optional<llvm::ArrayRef<SiteId>> sites) const;
 
-  [[nodiscard]] llvm::ArrayRef<size_t> explicitNeighbours(size_t vertex) const;
-
   std::shared_ptr<const Storage> storage_;
 };
 

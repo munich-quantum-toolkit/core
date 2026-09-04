@@ -555,6 +555,9 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .def_prop_ro("fidelity", &mlir::CompilerTarget::SiteTuple::fidelity,
                    "The operation fidelity, if available.");
 
+  nb::implicitly_convertible<std::vector<mlir::CompilerTarget::SiteId>,
+                             mlir::CompilerTarget::SiteTuple>();
+
   nb::enum_<mlir::CompilerTarget::Operation::Arity::Kind>(
       compilerTarget, "OperationArityKind",
       "How an operation capability accepts qubit widths.")

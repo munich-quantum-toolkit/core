@@ -512,6 +512,25 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     assert duration_unit.unit == "ns"
 
 
+@pytest.mark.parametrize("arity", [2, CompilerTarget.OperationArity.fixed(2)])
+def test_compiler_target_accepts_plain_site_tuples(arity: int | CompilerTarget.OperationArity) -> None:
+    """Mix plain placements and calibrated tuples without widening support."""
+    operation = CompilerTarget.Operation(
+        "cx", arity, 0, site_tuples=[(1, 0), [1, 2], CompilerTarget.SiteTuple([2, 0], fidelity=0.99)]
+    )
+    target = CompilerTarget(
+        3,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([operation]),
+    )
+    assert [entry.sites for entry in operation.site_tuples] == [[1, 0], [1, 2], [2, 0]]
+    assert [entry.fidelity for entry in operation.site_tuples] == [None, None, 0.99]
+    assert target.supports_operation("cx", 2, sites=[1, 0])
+    assert not target.supports_operation("cx", 2, sites=[0, 1])
+    with pytest.raises(ValueError, match="site tuple does not match its arity"):
+        CompilerTarget.Operation("cx", arity, 0, site_tuples=[(0,)])
+
+
 def test_compiler_target_construction_preserves_validation_errors() -> None:
     """Translate explicit C++ construction errors to Python ``ValueError``."""
     with pytest.raises(TypeError):

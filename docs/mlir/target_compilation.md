@@ -45,10 +45,7 @@ target = CompilerTarget(
             "cx",
             arity=2,
             num_parameters=0,
-            site_tuples=[
-                CompilerTarget.SiteTuple([1, 0]),
-                CompilerTarget.SiteTuple([1, 2]),
-            ],
+            site_tuples=[(1, 0), (1, 2)],
         ),
         CompilerTarget.Operation("measure", arity=1, num_parameters=0),
         CompilerTarget.Operation("reset", arity=1, num_parameters=0),
@@ -73,6 +70,10 @@ calibration values; omitted values inherit the operation-wide defaults. Retain
 placements without calibration in this list, and omit operations that are not
 available anywhere. Structural and program-format constructs are not
 compiler-target operations.
+
+Use plain tuples for placements without calibration. Use
+`CompilerTarget.SiteTuple([1, 0], duration=40, fidelity=0.99)` to attach
+calibration to a placement; both forms can appear in the same list.
 
 Routing uses undirected adjacency; native synthesis repairs unsupported operand
 directions. Target compilation requires a known static physical site for each

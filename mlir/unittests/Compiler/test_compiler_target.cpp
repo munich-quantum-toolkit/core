@@ -76,14 +76,14 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   operations.emplace_back(
       valid(Operation::create(" PRX ", 1, 2, std::move(siteTuples), 0, 0.97)));
 
-  const auto target = valid(
+  auto target = valid(
       Target::create("device", std::move(sites),
                      Connectivity::fromCouplings({{11, 2}, {2, 11}, {7, 2}}),
                      NativeOperations::fromOperations(operations),
                      valid(DurationUnit::create("ns", 0.5))));
-  // The copy itself is the behavior under test: both objects must share the
-  // immutable backing storage.
-  // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+  /// The copy itself is the behavior under test: both objects must share the
+  /// immutable backing storage.
+  /// NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
   const auto copy = target;
 
   ASSERT_TRUE(target.name());
@@ -110,6 +110,13 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   EXPECT_EQ(copy.sites().data(), target.sites().data());
   EXPECT_EQ(copy.couplings().data(), target.couplings().data());
   EXPECT_EQ(copy.operations().data(), target.operations().data());
+
+  operations.clear();
+  target = valid(Target::create(1, Connectivity::allToAll(),
+                                NativeOperations::unrestricted()));
+  EXPECT_TRUE(copy.supportsOperation("r", 1, 2, {7}));
+  EXPECT_TRUE(copy.supportsOperation("r", 1, 2, {2}));
+  EXPECT_TRUE(copy.supportsOperation("r", 1, 2, {11}));
 }
 
 TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
@@ -181,6 +188,8 @@ TEST(CompilerTargetTest, PreservesFullNonnegativeSiteIdDomain) {
             (llvm::ArrayRef<Coupling>{{nextSite, maxSite}}));
   EXPECT_EQ(target.operations().front().siteTuples().front().sites(),
             (llvm::ArrayRef<SiteId>{maxSite, nextSite}));
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {maxSite, nextSite}));
+  EXPECT_FALSE(target.supportsOperation("cx", 2, 0, {nextSite, maxSite}));
 }
 
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {

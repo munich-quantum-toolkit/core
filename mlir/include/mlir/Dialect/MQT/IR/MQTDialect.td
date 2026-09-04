@@ -127,13 +127,13 @@ def SiteTupleAttr : MQTAttr<"SiteTuple", "site_tuple"> {
     The tuple records one supported ordered placement and optional calibration
     overrides. Missing calibration values inherit the operation defaults.
     For example,
-    `#mqt.site_tuple<sites = [4, 7], duration = 40>` records an ordered
+    `#mqt.site_tuple<[4, 7], duration = 40>` records an ordered
     two-site placement with a raw duration of 40.
   }];
   let parameters = (ins MQTArrayRefParameter<"int64_t">:$sites,
       MQTOptionalUInt64Parameter<>:$duration,
       OptionalParameter<"FloatAttr">:$fidelity);
-  let assemblyFormat = "`<` struct(params) `>`";
+  let assemblyFormat = "`<` $sites (`,` struct($duration, $fidelity)^)? `>`";
   let genVerifyDecl = 1;
 }
 
@@ -162,7 +162,7 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
     ```mlir
     #mqt.native_operation<name = "cx",
         arity = #mqt.operation_arity<kind = fixed, value = 2>,
-        num_parameters = 0, site_tuples = [<sites = [4, 7]>]>
+        num_parameters = 0, site_tuples = [<[4, 7]>]>
     ```
   }];
   let parameters = (ins "StringAttr":$name, "OperationArityAttr":$arity,
@@ -191,7 +191,7 @@ def CompilationTargetAttr : MQTAttr<"CompilationTarget", "compilation_target"> {
         native_operations = explicit,
         operations = [<name = "cx",
             arity = #mqt.operation_arity<kind = fixed, value = 2>,
-            num_parameters = 0, site_tuples = [<sites = [4, 7]>]>]>
+            num_parameters = 0, site_tuples = [<[4, 7]>]>]>
     ```
   }];
   let parameters = (ins OptionalParameter<"StringAttr">:$name,

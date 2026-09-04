@@ -194,7 +194,7 @@ class CompilerTarget:
             name: str,
             arity: int | CompilerTarget.OperationArity,
             num_parameters: int,
-            site_tuples: Sequence[CompilerTarget.SiteTuple] | None = None,
+            site_tuples: Sequence[CompilerTarget.SiteTuple | Sequence[int]] | None = None,
             duration: int | None = None,
             fidelity: float | None = None,
         ) -> None: ...
