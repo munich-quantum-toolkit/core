@@ -12,7 +12,7 @@ adjacent sites must not introduce routing SWAPs.
 
 ## Progress
 
-- [x] (2026-09-03) Preserve independent applicability and calibration metadata.
+- [x] (2026-09-03) Preserve ordered operation support and calibration metadata.
 - [x] (2026-09-04) Remove directional routing and its dedicated wrapper.
 - [x] (2026-09-04) Replace ambiguous-site analysis with a checked staged walk.
 - [x] (2026-09-04) Remove whole-module cloning for failed synthesis.
@@ -21,6 +21,10 @@ adjacent sites must not introduce routing SWAPs.
 - [x] (2026-09-04) Pass 303 focused tests, documentation, and repository lint.
 - [x] (2026-09-04) Attempt full C++ lint and analyze changed sources directly;
       record the unrelated build blocker below.
+- [x] (2026-09-04) Unify site tuples across the target, attributes, QDMI, and
+      Python.
+- [x] (2026-09-04) Remove synthesis planning and repeated matrix extraction.
+- [x] (2026-09-04) Validate the revised model and obtain adversarial review.
 
 ## Decision Log
 
@@ -34,9 +38,15 @@ These conditions are checked, including for all-to-all placement and standalone
 passes. Ordinary structured control flow remains supported.
 
 On 2026-09-03 the maintainer approved removing synthesis rollback. Compilation
-runs in place; callers must not rely on program contents after failure.
-Independent applicability and calibration metadata, generic capability tuples,
-and constant-time ordered-pair support queries remain part of the target model.
+runs in place; callers must not rely on program contents after failure. Generic
+capability tuples and constant-time ordered-pair support queries remain part of
+the target model.
+
+On 2026-09-04 the maintainer approved one `site_tuples` list and no
+applicability enum. An empty list means general applicability; a nonempty list
+contains every supported ordered placement with optional calibration. Missing
+values inherit operation defaults. The QDMI adapter omits operations reported
+with no supported placements and retains uncalibrated supported tuples.
 
 ## Surprises & Discoveries
 
@@ -54,8 +64,8 @@ because their matrix is unavailable at compile time.
 
 `mlir/lib/Compiler/Target.cpp` owns immutable target capabilities and basis
 selection. A usable synthesis basis supplies one-qubit gates on every site and
-an entangler on every routing edge in at least one direction. Applicability is
-independent of sparse calibration records.
+an entangler on every routing edge in at least one direction. Each supported
+site tuple may carry calibration overrides.
 
 `mlir/lib/Dialect/QCO/Transforms/Mapping/Mapping.cpp` performs placement and
 routing. `mlir/lib/Dialect/QCO/Transforms/NativeSynthesis/TargetSynthesis.cpp`
@@ -89,6 +99,8 @@ Run from the repository root with the configured LLVM/MLIR 23 installation:
     build/release/mlir/unittests/Dialect/QCO/Transforms/Mapping/mqt-core-mlir-unittest-mapping
     build/release/mlir/unittests/Dialect/QCO/Transforms/NativeSynthesis/mqt-core-mlir-unittest-target-synthesis
     build/release/mlir/unittests/Dialect/MQT/IR/mqt-core-mlir-unittest-mqt-ir
+    uvx nox -s stubs
+    SKBUILD_CMAKE_ARGS=-DBUILD_MQT_CORE_QDMI_SC_DEVICE=ON uvx nox -s tests-3.13 -- test/python/test_mlir.py -q
     uvx nox -s cpp-lint
     uvx nox --non-interactive -s docs
     git diff --check
@@ -97,8 +109,15 @@ Run from the repository root with the configured LLVM/MLIR 23 installation:
 Successful output must verify, retain exact ordered target applicability and
 quantum semantics, and support consistent if/switch/for/while site transfers.
 Unknown sites, conflicting branch exits, and changing loop-backedge sites must
-be diagnosed. Failed compilation need not preserve input IR. No bindings or
-capability serialization interfaces change.
+be diagnosed. Failed compilation need not preserve input IR. C++, Python, and
+serialized targets use only `site_tuples` for ordered availability and
+calibration.
+
+The tuple simplification removes duplicate lists, attributes, and validation
+from C++, MLIR, QDMI, and Python. Native synthesis processes users before their
+producers, keeping original site facts valid while rewriting each operation
+immediately. Use the existing bounded site walk: generic control-flow interfaces
+prune known loop edges and require extra exceptions for this contract.
 
 ## Idempotence and Recovery
 
@@ -108,19 +127,23 @@ needed.
 
 ## Outcomes & Retrospective
 
-Independent specialists and the adversarial reviewer found no blocking defect in
-the staged transfer or target contracts. Their feedback removed duplicate
-site-lookup validation and added a while-result/backedge regression. Ponytail
-Review removed control-specific input selection and duplicate tuple-membership
-lambdas. Production code is 250 lines smaller than the reviewed head.
+The target model now has one tuple list with optional calibration. Its enum,
+duplicate lists, attributes, validators, and serialization paths are removed.
+Synthesis checks and rewrites each gate in reverse order, without a separate
+plan or repeated matrix extraction. This round removes 284 production lines.
 
-All 303 focused tests pass: compiler 152, mapping 94, target synthesis 42, and
-MQT IR 15. Strict documentation and repository lint pass. Full C++ lint stops
-before analysis because unchanged QIR runtime test executables have unresolved
-QTensor symbols. Building the changed translation units directly succeeds;
-whole-file clang-tidy reports no diagnostics in the 12 changed source files.
-Generated/header diagnostics are outside the repository lint scope, and the
-binding command produces a locationless macro-parentheses warning. No lint
+Specialist and adversarial review found no remaining blockers. Adversarial
+review retained a compact shared matrix guard for unsupported multi-target
+control shells; its regression verifies that the input is valid and linear
+before checking the diagnostic. Ordinary dependent rewrites retain semantic
+equivalence.
+
+All 305 focused C++ tests pass: compiler 153, mapping 94, target synthesis 43,
+and MQT IR 15. All 49 Python MLIR tests pass. Python stubs are regenerated, and
+strict documentation and repository lint pass. Full C++ lint stops before
+analysis because unchanged QIR runtime test executables have unresolved QTensor
+symbols. Building the ten changed C++ translation units directly succeeds; the
+same whole-file linter reports zero findings across all ten files. No lint
 configuration or unrelated build wiring was changed.
 
 Revision note: aligned the scope with the approved routing, site, and failure

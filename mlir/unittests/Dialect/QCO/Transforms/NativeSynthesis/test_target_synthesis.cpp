@@ -64,6 +64,7 @@ using Connectivity = Target::Connectivity;
 using NativeOperations = Target::NativeOperations;
 using Operation = Target::Operation;
 using Site = Target::Site;
+using SiteTuple = Target::SiteTuple;
 using mlir::ModuleOp;
 using mlir::OwningOpRef;
 using mlir::Value;
@@ -170,19 +171,17 @@ makeUCxTarget(std::optional<std::vector<Site>> sites = std::nullopt) {
 
 [[nodiscard]] static Target
 makeOneWayUCxTarget(Connectivity connectivity = Connectivity::allToAll()) {
-  std::vector operations{valid(Operation::create("u", 1, 3)),
-                         valid(Operation::create(
-                             "cx", 2, 0, {}, std::nullopt, std::nullopt,
-                             std::vector<std::vector<Target::SiteId>>{{1, 0}})),
-                         valid(Operation::create("gphase", 0, 1))};
+  std::vector operations{
+      valid(Operation::create("u", 1, 3)),
+      valid(Operation::create("cx", 2, 0, {valid(SiteTuple::create({1, 0}))})),
+      valid(Operation::create("gphase", 0, 1))};
   return valid(Target::create(2, std::move(connectivity),
                               NativeOperations::fromOperations(operations)));
 }
 
 [[nodiscard]] static Target makeOneWayRxxTarget() {
   std::vector operations{valid(
-      Operation::create("rxx", 2, 1, {}, std::nullopt, std::nullopt,
-                        std::vector<std::vector<Target::SiteId>>{{1, 0}}))};
+      Operation::create("rxx", 2, 1, {valid(SiteTuple::create({1, 0}))}))};
   return valid(Target::create(2, Connectivity::allToAll(),
                               NativeOperations::fromOperations(operations)));
 }
@@ -427,14 +426,16 @@ TEST_F(TargetSynthesisTest,
 
 TEST_F(TargetSynthesisTest,
        TargetNativeSynthesisReversesEntanglerWithoutChangingSemantics) {
-  const auto forwardCx = [](QCOProgramBuilder& builder) {
+  const auto circuit = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
+    q0 = builder.h(q0);
     std::tie(q0, q1) = builder.cx(q0, q1);
+    q1 = builder.h(q1);
     return builder.intConstant(0);
   };
-  auto expected = build(forwardCx);
-  auto synthesized = build(forwardCx);
+  auto expected = build(circuit);
+  auto synthesized = build(circuit);
   const auto before = printModule(*synthesized);
   const auto target = makeOneWayUCxTarget();
 
@@ -760,13 +761,11 @@ TEST_F(TargetSynthesisTest,
     qubit = builder.h(qubit);
     return builder.intConstant(0);
   });
-  const auto target = valid(
-      Target::create(2, Connectivity::allToAll(),
-                     NativeOperations::fromOperations(
-                         {valid(Operation::create(
-                              "u", 1, 3, {}, std::nullopt, std::nullopt,
-                              std::vector<std::vector<Target::SiteId>>{{0}})),
-                          valid(Operation::create("cx", 2, 0))})));
+  const auto target = valid(Target::create(
+      2, Connectivity::allToAll(),
+      NativeOperations::fromOperations(
+          {valid(Operation::create("u", 1, 3, {valid(SiteTuple::create({0}))})),
+           valid(Operation::create("cx", 2, 0))})));
 
   const auto diagnostics =
       expectFailure(*module, mlir::qco::createTargetNativeSynthesis(target));
@@ -786,9 +785,9 @@ TEST_F(TargetSynthesisTest,
       3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
       NativeOperations::fromOperations(
           {valid(Operation::create("u", 1, 3)),
-           valid(Operation::create(
-               "cx", 2, 0, {}, std::nullopt, std::nullopt,
-               std::vector<std::vector<Target::SiteId>>{{0, 1}, {1, 2}})),
+           valid(Operation::create("cx", 2, 0,
+                                   {valid(SiteTuple::create({0, 1})),
+                                    valid(SiteTuple::create({1, 2}))})),
            valid(Operation::create("gphase", 0, 1))})));
 
   const auto diagnostics =
@@ -1082,6 +1081,39 @@ TEST_F(TargetSynthesisTest, NativePowShellHidesItsImplementationBody) {
   ASSERT_TRUE(mlir::succeeded(
       runPass(*module, mlir::qco::createVerifyTargetConformance(powOnly))));
   EXPECT_EQ(printModule(*module), before);
+}
+
+TEST_F(TargetSynthesisTest, RejectsUnsupportedMultiTargetControlShell) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.static 1 : !qco.qubit
+        %r0, %r1 = "qco.ctrl"(%q0, %q1) <{
+          operandSegmentSizes = array<i32: 0, 2>,
+          resultSegmentSizes = array<i32: 0, 2>
+        }> ({
+        ^bb0(%a: !qco.qubit, %b: !qco.qubit):
+          %c, %t = qco.ctrl(%b) targets(%x = %a) {
+            %flipped = qco.x %x : !qco.qubit -> !qco.qubit
+            qco.yield %flipped : !qco.qubit
+          } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+          qco.yield %t, %c : !qco.qubit, !qco.qubit
+        }) : (!qco.qubit, !qco.qubit) -> (!qco.qubit, !qco.qubit)
+        qco.sink %r0 : !qco.qubit
+        qco.sink %r1 : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+  const auto diagnostics = expectFailure(
+      *moduleOp, mlir::qco::createTargetNativeSynthesis(makeUCxTarget()));
+  EXPECT_NE(diagnostics.find("unitary matrix is not available"),
+            std::string::npos);
 }
 
 TEST_F(TargetSynthesisTest, MissingBasisIsDiagnosedOnlyWhenLoweringIsNeeded) {

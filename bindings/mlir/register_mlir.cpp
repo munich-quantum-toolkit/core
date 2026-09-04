@@ -530,7 +530,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
 
   auto siteTuple = nb::class_<mlir::CompilerTarget::SiteTuple>(
       compilerTarget, "SiteTuple",
-      "Calibration data for an ordered tuple of target sites.");
+      "A supported ordered placement with optional calibration.");
   siteTuple
       .def(
           "__init__",
@@ -591,10 +591,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
                  siteTuples,
              const std::optional<uint64_t> duration,
-             const std::optional<double> fidelity,
-             std::optional<
-                 std::vector<std::vector<mlir::CompilerTarget::SiteId>>>
-                 applicableSiteTuples) {
+             const std::optional<double> fidelity) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::Operation::create(
@@ -602,11 +599,10 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity, std::move(applicableSiteTuples)));
+                    duration, fidelity));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
-          "duration"_a = nb::none(), "fidelity"_a = nb::none(),
-          "applicable_site_tuples"_a = nb::none())
+          "duration"_a = nb::none(), "fidelity"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget::Operation& self, std::string name,
@@ -614,10 +610,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
                  siteTuples,
              const std::optional<uint64_t> duration,
-             const std::optional<double> fidelity,
-             std::optional<
-                 std::vector<std::vector<mlir::CompilerTarget::SiteId>>>
-                 applicableSiteTuples) {
+             const std::optional<double> fidelity) {
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::Operation::create(
@@ -625,11 +618,10 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
-                    duration, fidelity, std::move(applicableSiteTuples)));
+                    duration, fidelity));
           },
           "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
-          "duration"_a = nb::none(), "fidelity"_a = nb::none(),
-          "applicable_site_tuples"_a = nb::none())
+          "duration"_a = nb::none(), "fidelity"_a = nb::none())
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget::Operation& operation) {
@@ -653,20 +645,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
             return std::vector<mlir::CompilerTarget::SiteTuple>(
                 operation.siteTuples().begin(), operation.siteTuples().end());
           },
-          "Ordered site-specific calibration data.")
-      .def_prop_ro(
-          "applicable_site_tuples",
-          [](const mlir::CompilerTarget::Operation& operation)
-              -> std::optional<
-                  std::vector<std::vector<mlir::CompilerTarget::SiteId>>> {
-            if (!operation.hasExplicitApplicability()) {
-              return std::nullopt;
-            }
-            return std::vector<std::vector<mlir::CompilerTarget::SiteId>>(
-                operation.applicableSiteTuples().begin(),
-                operation.applicableSiteTuples().end());
-          },
-          "The ordered target-site tuples, or None when unrestricted.")
+          "Supported ordered placements with optional calibration; empty means "
+          "general applicability.")
       .def_prop_ro("duration", &mlir::CompilerTarget::Operation::duration,
                    "The raw default duration, if available.")
       .def_prop_ro("fidelity", &mlir::CompilerTarget::Operation::fidelity,

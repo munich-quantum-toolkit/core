@@ -309,18 +309,15 @@ CompilerTarget::Operation::Arity::Arity(Kind kind, size_t value) noexcept
 llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
     std::string name, size_t arity, size_t numParameters,
     std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
-    std::optional<double> fidelity,
-    std::optional<std::vector<std::vector<SiteId>>> applicableSiteTuples) {
+    std::optional<double> fidelity) {
   return create(std::move(name), Arity::fixed(arity), numParameters,
-                std::move(siteTuples), duration, fidelity,
-                std::move(applicableSiteTuples));
+                std::move(siteTuples), duration, fidelity);
 }
 
 llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
     std::string name, Arity arity, size_t numParameters,
     std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
-    std::optional<double> fidelity,
-    std::optional<std::vector<std::vector<SiteId>>> applicableSiteTuples) {
+    std::optional<double> fidelity) {
   auto canonicalName = canonicalOperationName(name);
   if (canonicalName.empty()) {
     return invalidTarget("Compiler target operation name must not be empty");
@@ -356,54 +353,20 @@ llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
     uniqueSiteCombinations.emplace_back(siteTuple.sites());
   }
 
-  SmallVector<ArrayRef<SiteId>> uniqueApplicableSiteCombinations;
-  if (applicableSiteTuples) {
-    for (const auto& sites : *applicableSiteTuples) {
-      if (!arity.accepts(sites.size())) {
-        return invalidTarget("Compiler target operation applicable site tuple "
-                             "does not match its arity");
-      }
-      std::unordered_set<SiteId> uniqueSites;
-      for (const auto site : sites) {
-        if (site < 0) {
-          return invalidTarget("Compiler target operation applicable site "
-                               "tuple contains a negative site ID");
-        }
-        if (!uniqueSites.insert(site).second) {
-          return invalidTarget("Compiler target operation applicable site "
-                               "tuple contains a duplicate site");
-        }
-      }
-      if (llvm::is_contained(uniqueApplicableSiteCombinations,
-                             ArrayRef<SiteId>(sites))) {
-        return invalidTarget("Compiler target operation contains a duplicate "
-                             "applicable site tuple");
-      }
-      uniqueApplicableSiteCombinations.emplace_back(sites);
-    }
-    if (llvm::any_of(siteTuples, [&](const auto& siteTuple) {
-          return !llvm::is_contained(uniqueApplicableSiteCombinations,
-                                     siteTuple.sites());
-        })) {
-      return invalidTarget("Compiler target operation calibration references "
-                           "an inapplicable site tuple");
-    }
-  }
   return Operation(std::move(name), std::move(canonicalName), arity,
-                   numParameters, std::move(siteTuples), duration, fidelity,
-                   std::move(applicableSiteTuples));
+                   numParameters, std::move(siteTuples), duration, fidelity);
 }
 
-CompilerTarget::Operation::Operation(
-    std::string name, std::string canonicalName, Arity arity,
-    size_t numParameters, std::vector<SiteTuple> siteTuples,
-    std::optional<uint64_t> duration, std::optional<double> fidelity,
-    std::optional<std::vector<std::vector<SiteId>>> applicableSiteTuples)
+CompilerTarget::Operation::Operation(std::string name,
+                                     std::string canonicalName, Arity arity,
+                                     size_t numParameters,
+                                     std::vector<SiteTuple> siteTuples,
+                                     std::optional<uint64_t> duration,
+                                     std::optional<double> fidelity)
     : name_(std::move(name)), canonicalName_(std::move(canonicalName)),
       arity_(arity), numParameters_(numParameters),
       siteTuples_(std::move(siteTuples)), duration_(duration),
-      fidelity_(fidelity),
-      applicableSiteTuples_(std::move(applicableSiteTuples)) {}
+      fidelity_(fidelity) {}
 
 StringRef CompilerTarget::Operation::name() const noexcept { return name_; }
 
@@ -423,18 +386,6 @@ size_t CompilerTarget::Operation::numParameters() const noexcept {
 ArrayRef<CompilerTarget::SiteTuple>
 CompilerTarget::Operation::siteTuples() const noexcept {
   return siteTuples_;
-}
-
-bool CompilerTarget::Operation::hasExplicitApplicability() const noexcept {
-  return applicableSiteTuples_.has_value();
-}
-
-ArrayRef<std::vector<SiteId>>
-CompilerTarget::Operation::applicableSiteTuples() const noexcept {
-  if (!applicableSiteTuples_) {
-    return {};
-  }
-  return *applicableSiteTuples_;
 }
 
 std::optional<uint64_t> CompilerTarget::Operation::duration() const noexcept {
@@ -513,8 +464,8 @@ struct CompilerTarget::Storage {
   NativeOperations::Kind nativeOperationsKind;
   SmallVector<Operation> operations;
   llvm::StringMap<SmallVector<size_t, 1>> capabilities;
-  std::vector<std::optional<std::unordered_set<SiteId>>> explicitOneQubitSites;
-  std::vector<std::optional<llvm::DenseSet<Coupling>>> explicitTwoQubitSites;
+  std::vector<std::unordered_set<SiteId>> explicitOneQubitSites;
+  std::vector<llvm::DenseSet<Coupling>> explicitTwoQubitSites;
   SmallVector<GateKind> supportedGates;
   std::optional<SynthesisBasis> basis;
 };
@@ -639,32 +590,27 @@ llvm::Error CompilerTarget::Storage::initialize() {
         return invalidTarget(
             "Compiler target operation arity exceeds its site count");
       }
+      auto& oneQubitSites = explicitOneQubitSites[index];
+      auto& twoQubitSites = explicitTwoQubitSites[index];
+      if (!operation.siteTuples().empty()) {
+        if (operation.arity().value() == 1) {
+          oneQubitSites.reserve(operation.siteTuples().size());
+        } else if (operation.arity().value() == 2) {
+          twoQubitSites.reserve(operation.siteTuples().size());
+        }
+      }
       for (const auto& siteTuple : operation.siteTuples()) {
-        if (llvm::any_of(siteTuple.sites(), [&](const auto site) {
+        auto tupleSites = siteTuple.sites();
+        if (llvm::any_of(tupleSites, [&](const auto site) {
               return !siteToVertex.contains(site);
             })) {
           return invalidTarget("Compiler target operation site tuple "
                                "references an unknown site");
         }
-      }
-      if (operation.hasExplicitApplicability()) {
-        auto& oneQubitSites = explicitOneQubitSites[index].emplace();
-        auto& twoQubitSites = explicitTwoQubitSites[index].emplace();
-        oneQubitSites.reserve(operation.applicableSiteTuples().size());
-        twoQubitSites.reserve(operation.applicableSiteTuples().size());
-        for (const auto& applicableSites : operation.applicableSiteTuples()) {
-          if (llvm::any_of(applicableSites, [&](const auto site) {
-                return !siteToVertex.contains(site);
-              })) {
-            return invalidTarget("Compiler target operation applicable site "
-                                 "tuple references an unknown site");
-          }
-          if (applicableSites.size() == 1) {
-            oneQubitSites.insert(applicableSites.front());
-          } else if (applicableSites.size() == 2) {
-            twoQubitSites.insert(
-                {applicableSites.front(), applicableSites.back()});
-          }
+        if (tupleSites.size() == 1) {
+          oneQubitSites.insert(tupleSites.front());
+        } else if (tupleSites.size() == 2) {
+          twoQubitSites.insert({tupleSites.front(), tupleSites.back()});
         }
       }
       capabilities[operation.canonicalName()].emplace_back(index);
@@ -710,32 +656,19 @@ bool CompilerTarget::Storage::isApplicable(
     size_t operationIndex, size_t arity,
     std::optional<ArrayRef<SiteId>> orderedSites) const {
   const auto& operation = operations[operationIndex];
-  if (!operation.hasExplicitApplicability()) {
+  if (operation.siteTuples().empty() || !orderedSites) {
     return true;
   }
-  if (!orderedSites) {
-    if (arity == 1) {
-      return !explicitOneQubitSites[operationIndex]->empty();
-    }
-    if (arity == 2) {
-      return !explicitTwoQubitSites[operationIndex]->empty();
-    }
-    return llvm::any_of(operation.applicableSiteTuples(),
-                        [&](const auto& applicableSites) {
-                          return applicableSites.size() == arity;
-                        });
-  }
   if (arity == 1) {
-    return explicitOneQubitSites[operationIndex]->contains((*orderedSites)[0]);
+    return explicitOneQubitSites[operationIndex].contains((*orderedSites)[0]);
   }
   if (arity == 2) {
-    return explicitTwoQubitSites[operationIndex]->contains(
+    return explicitTwoQubitSites[operationIndex].contains(
         {(*orderedSites)[0], (*orderedSites)[1]});
   }
-  return llvm::any_of(
-      operation.applicableSiteTuples(), [&](const auto& applicableSites) {
-        return ArrayRef<SiteId>(applicableSites) == *orderedSites;
-      });
+  return llvm::any_of(operation.siteTuples(), [&](const auto& siteTuple) {
+    return siteTuple.sites() == *orderedSites;
+  });
 }
 
 bool CompilerTarget::Storage::supportsOperation(
@@ -807,7 +740,7 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
               operation.arity().kind() == Operation::Arity::Kind::Variadic) &&
              operation.arity().accepts(arity) &&
              operation.numParameters() == numParameters &&
-             !operation.hasExplicitApplicability();
+             operation.siteTuples().empty();
     });
   };
   const auto supportsOnEverySite = [&](GateKind gate) {
@@ -1017,21 +950,6 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
         siteTuples.emplace_back(std::move(*siteTuple));
       }
 
-      std::optional<std::vector<std::vector<SiteId>>> applicableSiteTuples;
-      if (operationAttr.getApplicability() ==
-          mqt::OperationApplicabilityKind::Explicit) {
-        applicableSiteTuples.emplace();
-        applicableSiteTuples->reserve(
-            operationAttr.getApplicableSiteTuples().size());
-        for (const auto tupleAttr : operationAttr.getApplicableSiteTuples()) {
-          applicableSiteTuples->emplace_back(tupleAttr.getSites().begin(),
-                                             tupleAttr.getSites().end());
-        }
-      } else if (!operationAttr.getApplicableSiteTuples().empty()) {
-        return invalidTarget("Compiler target applicable site tuples require "
-                             "explicit operation applicability");
-      }
-
       std::optional<double> fidelity;
       if (const auto fidelityAttr = operationAttr.getFidelity()) {
         fidelity = fidelityAttr.getValueAsDouble();
@@ -1045,8 +963,7 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
       auto operation = Operation::create(
           operationAttr.getName().getValue().str(), arity,
           static_cast<size_t>(operationAttr.getNumParameters()),
-          std::move(siteTuples), operationAttr.getDuration(), fidelity,
-          std::move(applicableSiteTuples));
+          std::move(siteTuples), operationAttr.getDuration(), fidelity);
       if (!operation) {
         return operation.takeError();
       }
@@ -1313,13 +1230,6 @@ CompilerTarget::materialize(MLIRContext& context) const {
           &context, siteTuple.sites(), siteTuple.duration(), fidelityAttr));
     }
 
-    SmallVector<mqt::ApplicableSiteTupleAttr> applicableSiteTupleAttrs;
-    applicableSiteTupleAttrs.reserve(operation.applicableSiteTuples().size());
-    for (const auto& applicableSites : operation.applicableSiteTuples()) {
-      applicableSiteTupleAttrs.emplace_back(
-          mqt::ApplicableSiteTupleAttr::get(&context, applicableSites));
-    }
-
     FloatAttr fidelityAttr;
     if (const auto fidelity = operation.fidelity()) {
       fidelityAttr = builder.getF64FloatAttr(*fidelity);
@@ -1330,14 +1240,10 @@ CompilerTarget::materialize(MLIRContext& context) const {
             : mqt::OperationArityKind::Variadic;
     const auto arityAttr = mqt::OperationArityAttr::get(
         &context, arityKind, operation.arity().value());
-    const auto applicability =
-        operation.hasExplicitApplicability()
-            ? mqt::OperationApplicabilityKind::Explicit
-            : mqt::OperationApplicabilityKind::Unrestricted;
     operationAttrs.emplace_back(mqt::NativeOperationAttr::get(
         &context, builder.getStringAttr(operation.name()), arityAttr,
         operation.numParameters(), siteTupleAttrs, operation.duration(),
-        fidelityAttr, applicability, applicableSiteTupleAttrs));
+        fidelityAttr));
   }
 
   const auto connectivity = connectivityKind() == Connectivity::Kind::AllToAll

@@ -273,27 +273,13 @@ snapshotDurationUnit(const qdmi::Device& device) {
   return std::optional<CompilerTarget::DurationUnit>(std::move(*durationUnit));
 }
 
-namespace {
-
-struct OperationSiteSnapshot {
-  std::vector<CompilerTarget::SiteTuple> calibration;
-  std::optional<std::vector<std::vector<CompilerTarget::SiteId>>> applicability;
-};
-
-} // namespace
-
-[[nodiscard]] static llvm::Expected<OperationSiteSnapshot>
+[[nodiscard]] static llvm::Expected<std::vector<CompilerTarget::SiteTuple>>
 snapshotOperationSites(const qdmi::Operation& operation, size_t arity,
                        const std::vector<qdmi::Site>& flattenedSites,
                        std::optional<uint64_t> defaultDuration,
-                       std::optional<double> defaultFidelity,
-                       bool preserveApplicability) {
-  OperationSiteSnapshot result;
-  result.calibration.reserve(flattenedSites.size() / arity);
-  if (preserveApplicability) {
-    result.applicability.emplace();
-    result.applicability->reserve(flattenedSites.size() / arity);
-  }
+                       std::optional<double> defaultFidelity, bool variadic) {
+  std::vector<CompilerTarget::SiteTuple> result;
+  result.reserve(flattenedSites.size() / arity);
   for (size_t offset = 0; offset < flattenedSites.size(); offset += arity) {
     std::vector<qdmi::Site> sites;
     std::vector<CompilerTarget::SiteId> siteIds;
@@ -313,18 +299,15 @@ snapshotOperationSites(const qdmi::Operation& operation, size_t arity,
     const auto fidelity = operation.getFidelity(sites);
     const bool hasSiteCalibration =
         duration != defaultDuration || fidelity != defaultFidelity;
-    if (hasSiteCalibration) {
-      if (result.applicability) {
-        result.applicability->emplace_back(siteIds);
-      }
-      auto siteTuple = CompilerTarget::SiteTuple::create(std::move(siteIds),
-                                                         duration, fidelity);
+    if (!variadic || hasSiteCalibration) {
+      auto siteTuple = CompilerTarget::SiteTuple::create(
+          std::move(siteIds),
+          duration == defaultDuration ? std::nullopt : duration,
+          fidelity == defaultFidelity ? std::nullopt : fidelity);
       if (!siteTuple) {
         return siteTuple.takeError();
       }
-      result.calibration.emplace_back(std::move(*siteTuple));
-    } else if (result.applicability) {
-      result.applicability->emplace_back(std::move(siteIds));
+      result.emplace_back(std::move(*siteTuple));
     }
   }
   return result;
@@ -359,6 +342,9 @@ snapshotOperations(
       return error;
     }
     const auto flattenedSites = operation.getSites();
+    if (*arity > 0 && flattenedSites && flattenedSites->empty()) {
+      continue;
+    }
     if (auto error = requireRepresentableOperation(
             *arity == 0 || flattenedSites || homogeneousOperationSupport,
             deviceName, operation.getName(),
@@ -368,8 +354,6 @@ snapshotOperations(
     const auto duration = operation.getDuration();
     const auto fidelity = operation.getFidelity();
     std::vector<CompilerTarget::SiteTuple> siteTuples;
-    std::optional<std::vector<std::vector<CompilerTarget::SiteId>>>
-        applicableSiteTuples;
     if (*arity == 0) {
       if (auto error = requireRepresentableOperation(
               !flattenedSites || flattenedSites->empty(), deviceName,
@@ -385,12 +369,11 @@ snapshotOperations(
       }
       auto tuples =
           snapshotOperationSites(operation, *arity, *flattenedSites, duration,
-                                 fidelity, !hasArbitraryPositiveControls);
+                                 fidelity, hasArbitraryPositiveControls);
       if (!tuples) {
         return tuples.takeError();
       }
-      siteTuples = std::move(tuples->calibration);
-      applicableSiteTuples = std::move(tuples->applicability);
+      siteTuples = std::move(*tuples);
     }
     if (auto error = requireRepresentableOperation(
             !hasArbitraryPositiveControls || siteTuples.empty(), deviceName,
@@ -404,8 +387,7 @@ snapshotOperations(
             : CompilerTarget::Operation::Arity::fixed(*arity);
     auto targetOperation = CompilerTarget::Operation::create(
         operation.getName(), targetArity, operation.getParametersNum(),
-        std::move(siteTuples), duration, fidelity,
-        std::move(applicableSiteTuples));
+        std::move(siteTuples), duration, fidelity);
     if (!targetOperation) {
       return targetOperation.takeError();
     }

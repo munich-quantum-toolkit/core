@@ -45,7 +45,10 @@ target = CompilerTarget(
             "cx",
             arity=2,
             num_parameters=0,
-            applicable_site_tuples=[(1, 0), (1, 2)],
+            site_tuples=[
+                CompilerTarget.SiteTuple([1, 0]),
+                CompilerTarget.SiteTuple([1, 2]),
+            ],
         ),
         CompilerTarget.Operation("measure", arity=1, num_parameters=0),
         CompilerTarget.Operation("reset", arity=1, num_parameters=0),
@@ -63,12 +66,13 @@ not provide a complete connectivity model and a representable native-operation
 set. An explicit operation arity is either fixed or variadic with a positive,
 inclusive minimum. Fixed zero represents a global-phase operation. A variadic
 capability accepts every total width from its minimum through the target's site
-count; site-specific calibration tuples are therefore available only for fixed,
-positive arities. An omitted `applicable_site_tuples` value makes an operation
-available on every valid placement. An explicit list restricts support to those
-ordered tuples; it is independent of the sparse calibration entries in
-`site_tuples`. Structural and program-format constructs are not compiler-target
-operations.
+count; site tuples are therefore available only for fixed, positive arities. An
+empty `site_tuples` list makes an operation available on every valid placement.
+A nonempty list contains all supported ordered placements. Each tuple may carry
+calibration values; omitted values inherit the operation-wide defaults. Retain
+placements without calibration in this list, and omit operations that are not
+available anywhere. Structural and program-format constructs are not
+compiler-target operations.
 
 Routing uses undirected adjacency; native synthesis repairs unsupported operand
 directions. Target compilation requires a known static physical site for each

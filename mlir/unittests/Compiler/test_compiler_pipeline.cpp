@@ -1493,10 +1493,11 @@ cx q[1], q[0];
 
   using TargetOperation = CompilerTarget::Operation;
   using SiteId = CompilerTarget::SiteId;
-  std::vector operations{llvm::cantFail(TargetOperation::create("u", 1, 3)),
-                         llvm::cantFail(TargetOperation::create(
-                             "cx", 2, 0, {}, std::nullopt, std::nullopt,
-                             std::vector<std::vector<SiteId>>{{0, 1}}))};
+  std::vector operations{
+      llvm::cantFail(TargetOperation::create("u", 1, 3)),
+      llvm::cantFail(TargetOperation::create(
+          "cx", 2, 0,
+          {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1}))}))};
   const auto target = llvm::cantFail(CompilerTarget::create(
       2, CompilerTarget::Connectivity::fromCouplings({{0, 1}}),
       CompilerTarget::NativeOperations::fromOperations(operations)));

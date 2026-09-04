@@ -140,7 +140,7 @@ class CompilerTarget:
             """The raw T2 coherence time, if available."""
 
     class SiteTuple:
-        """Calibration data for an ordered tuple of target sites."""
+        """A supported ordered placement with optional calibration."""
 
         def __init__(
             self, sites: Sequence[int], duration: int | None = None, fidelity: float | None = None
@@ -197,7 +197,6 @@ class CompilerTarget:
             site_tuples: Sequence[CompilerTarget.SiteTuple] | None = None,
             duration: int | None = None,
             fidelity: float | None = None,
-            applicable_site_tuples: Sequence[Sequence[int]] | None = None,
         ) -> None: ...
         @property
         def name(self) -> str:
@@ -217,11 +216,7 @@ class CompilerTarget:
 
         @property
         def site_tuples(self) -> list[CompilerTarget.SiteTuple]:
-            """Ordered site-specific calibration data."""
-
-        @property
-        def applicable_site_tuples(self) -> list[list[int]] | None:
-            """The ordered target-site tuples, or None when unrestricted."""
+            """Supported ordered placements with optional calibration; empty means general applicability."""
 
         @property
         def duration(self) -> int | None:

@@ -125,10 +125,10 @@ public:
     std::optional<uint64_t> t2_;
   };
 
-  /// Calibration data for an ordered tuple of hardware sites.
+  /// One supported ordered placement and its optional calibration data.
   class SiteTuple {
   public:
-    /// Create validated calibration data for a site tuple.
+    /// Create a validated site tuple with optional calibration overrides.
     [[nodiscard]] static llvm::Expected<SiteTuple>
     create(std::vector<SiteId> sites,
            std::optional<uint64_t> duration = std::nullopt,
@@ -137,10 +137,10 @@ public:
     /// Return the ordered target site identifiers.
     [[nodiscard]] llvm::ArrayRef<SiteId> sites() const noexcept;
 
-    /// Return the raw operation duration, if available.
+    /// Return the raw duration override; nullopt uses the operation default.
     [[nodiscard]] std::optional<uint64_t> duration() const noexcept;
 
-    /// Return the operation fidelity, if available.
+    /// Return the fidelity override; nullopt uses the operation default.
     [[nodiscard]] std::optional<double> fidelity() const noexcept;
 
   private:
@@ -156,9 +156,9 @@ public:
   ///
   /// The reported name is retained verbatim while
   /// @ref canonicalName contains its normalized compiler spelling. Operations
-  /// are available throughout the target unless explicit ordered applicable
-  /// site tuples restrict their placement. Site tuples carry optional
-  /// site-specific calibration data independently of applicability.
+  /// with no site tuples are generally applicable. A nonempty list gives all
+  /// supported ordered placements. Missing tuple calibration values inherit
+  /// the operation defaults.
   class Operation {
   public:
     /// The accepted number of qubits for an operation capability.
@@ -192,22 +192,18 @@ public:
     };
 
     /// Create a validated operation capability.
-    [[nodiscard]] static llvm::Expected<Operation> create(
-        std::string name, size_t arity, size_t numParameters,
-        std::vector<SiteTuple> siteTuples = {},
-        std::optional<uint64_t> duration = std::nullopt,
-        std::optional<double> fidelity = std::nullopt,
-        std::optional<std::vector<std::vector<SiteId>>> applicableSiteTuples =
-            std::nullopt);
+    [[nodiscard]] static llvm::Expected<Operation>
+    create(std::string name, size_t arity, size_t numParameters,
+           std::vector<SiteTuple> siteTuples = {},
+           std::optional<uint64_t> duration = std::nullopt,
+           std::optional<double> fidelity = std::nullopt);
 
     /// Create a validated operation capability.
-    [[nodiscard]] static llvm::Expected<Operation> create(
-        std::string name, Arity arity, size_t numParameters,
-        std::vector<SiteTuple> siteTuples = {},
-        std::optional<uint64_t> duration = std::nullopt,
-        std::optional<double> fidelity = std::nullopt,
-        std::optional<std::vector<std::vector<SiteId>>> applicableSiteTuples =
-            std::nullopt);
+    [[nodiscard]] static llvm::Expected<Operation>
+    create(std::string name, Arity arity, size_t numParameters,
+           std::vector<SiteTuple> siteTuples = {},
+           std::optional<uint64_t> duration = std::nullopt,
+           std::optional<double> fidelity = std::nullopt);
 
     /// Return the exact reported operation name.
     [[nodiscard]] llvm::StringRef name() const noexcept;
@@ -221,15 +217,8 @@ public:
     /// Return the number of real-valued operation parameters.
     [[nodiscard]] size_t numParameters() const noexcept;
 
-    /// Return ordered site-specific calibration data.
+    /// Return all supported ordered placements, or empty for general support.
     [[nodiscard]] llvm::ArrayRef<SiteTuple> siteTuples() const noexcept;
-
-    /// Return whether the operation defines explicit ordered applicability.
-    [[nodiscard]] bool hasExplicitApplicability() const noexcept;
-
-    /// Return the explicitly applicable ordered target-site tuples.
-    [[nodiscard]] llvm::ArrayRef<std::vector<SiteId>>
-    applicableSiteTuples() const noexcept;
 
     /// Return the raw default operation duration, if available.
     [[nodiscard]] std::optional<uint64_t> duration() const noexcept;
@@ -238,11 +227,9 @@ public:
     [[nodiscard]] std::optional<double> fidelity() const noexcept;
 
   private:
-    Operation(
-        std::string name, std::string canonicalName, Arity arity,
-        size_t numParameters, std::vector<SiteTuple> siteTuples,
-        std::optional<uint64_t> duration, std::optional<double> fidelity,
-        std::optional<std::vector<std::vector<SiteId>>> applicableSiteTuples);
+    Operation(std::string name, std::string canonicalName, Arity arity,
+              size_t numParameters, std::vector<SiteTuple> siteTuples,
+              std::optional<uint64_t> duration, std::optional<double> fidelity);
 
     std::string name_;
     std::string canonicalName_;
@@ -251,7 +238,6 @@ public:
     std::vector<SiteTuple> siteTuples_;
     std::optional<uint64_t> duration_;
     std::optional<double> fidelity_;
-    std::optional<std::vector<std::vector<SiteId>>> applicableSiteTuples_;
   };
 
   /// Native-operation support.

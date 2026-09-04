@@ -68,16 +68,12 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   EXPECT_EQ(cz.siteTuples().size(), 30);
   EXPECT_EQ(measure.siteTuples().size(), 20);
   for (const auto& operation : target.operations()) {
-    EXPECT_TRUE(operation.hasExplicitApplicability());
     EXPECT_FALSE(operation.duration());
     for (const auto& tuple : operation.siteTuples()) {
       EXPECT_FALSE(tuple.duration());
       EXPECT_TRUE(tuple.fidelity());
     }
   }
-  EXPECT_EQ(r.applicableSiteTuples().size(), 20);
-  EXPECT_EQ(cz.applicableSiteTuples().size(), 30);
-  EXPECT_EQ(measure.applicableSiteTuples().size(), 20);
 
   EXPECT_EQ(target.supportsOperation("r", 1, 2), true);
   EXPECT_EQ(target.supportsOperation("cz", 2, 0), true);
@@ -114,7 +110,7 @@ TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
               CompilerTarget::Operation::Arity::Kind::Variadic)
         << name.str();
     EXPECT_EQ(operation.arity().value(), minimum) << name.str();
-    EXPECT_FALSE(operation.hasExplicitApplicability()) << name.str();
+    EXPECT_TRUE(operation.siteTuples().empty()) << name.str();
     EXPECT_TRUE(
         target.supportsOperation(name, minimum, operation.numParameters()))
         << name.str();
@@ -183,15 +179,36 @@ TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
 
   ASSERT_EQ(target.couplings().size(), 1U);
   const auto& cx = findOperation(target, "cx");
-  EXPECT_TRUE(cx.hasExplicitApplicability());
-  ASSERT_EQ(cx.applicableSiteTuples().size(), 1U);
-  EXPECT_EQ(cx.applicableSiteTuples()[0],
-            (std::vector<CompilerTarget::SiteId>{0, 1}));
-  EXPECT_TRUE(cx.siteTuples().empty());
+  ASSERT_EQ(cx.siteTuples().size(), 1U);
+  EXPECT_EQ(cx.siteTuples()[0].sites(),
+            (llvm::ArrayRef<CompilerTarget::SiteId>{0, 1}));
+  EXPECT_FALSE(cx.siteTuples()[0].duration());
+  EXPECT_FALSE(cx.siteTuples()[0].fidelity());
   EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {0, 1}));
   EXPECT_FALSE(target.supportsOperation("cx", 2, 0, {1, 0}));
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CX);
+}
+
+TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
+  qdmi::DeviceSessionConfig overrides;
+  overrides.deviceConfiguration = qdmi::InlineDeviceConfiguration{.json = R"({
+    "schema-version": 1,
+    "name": "Unavailable operation",
+    "numQubits": 1,
+    "durationUnit": {"unit": "ns", "scaleFactor": 1},
+    "qubitProperties": {"defaults": {}, "overrides": []},
+    "couplings": [],
+    "operations": [
+      {"name": "x", "numQubits": 1, "numParameters": 0, "sites": []}
+    ]
+  })"};
+  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  EXPECT_EQ(target.nativeOperationsKind(),
+            CompilerTarget::NativeOperations::Kind::Explicit);
+  EXPECT_TRUE(target.operations().empty());
+  EXPECT_FALSE(target.supportsOperation("x", 1, 0, {0}));
 }
 
 TEST(CompilerQDMIAdapterTest,
@@ -204,12 +221,6 @@ TEST(CompilerQDMIAdapterTest,
 
   ASSERT_EQ(target.couplings().size(), 1);
   const auto& cx = findOperation(target, "cx");
-  EXPECT_TRUE(cx.hasExplicitApplicability());
-  ASSERT_EQ(cx.applicableSiteTuples().size(), 2U);
-  EXPECT_EQ(cx.applicableSiteTuples()[0],
-            (std::vector<CompilerTarget::SiteId>{0, 1}));
-  EXPECT_EQ(cx.applicableSiteTuples()[1],
-            (std::vector<CompilerTarget::SiteId>{1, 0}));
   EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {0, 1}));
   EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {1, 0}));
   ASSERT_EQ(cx.siteTuples().size(), 2);

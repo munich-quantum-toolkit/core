@@ -71,7 +71,8 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
 
   std::vector<Operation> operations;
   std::vector siteTuples{valid(SiteTuple::create({7}, 0, 0.99)),
-                         valid(SiteTuple::create({2}, 5, 0.98))};
+                         valid(SiteTuple::create({2}, 5, 0.98)),
+                         valid(SiteTuple::create({11}))};
   operations.emplace_back(
       valid(Operation::create(" PRX ", 1, 2, std::move(siteTuples), 0, 0.97)));
 
@@ -102,7 +103,7 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   EXPECT_EQ(target.operations()[0].numParameters(), 2);
   EXPECT_EQ(target.operations()[0].duration(), 0);
   EXPECT_EQ(target.operations()[0].fidelity(), 0.97);
-  ASSERT_EQ(target.operations()[0].siteTuples().size(), 2);
+  ASSERT_EQ(target.operations()[0].siteTuples().size(), 3);
   EXPECT_EQ(target.operations()[0].siteTuples()[0].duration(), 0);
   EXPECT_EQ(target.operations()[0].siteTuples()[0].fidelity(), 0.99);
 
@@ -265,27 +266,6 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
                                               valid(SiteTuple::create({0}))}),
                 "Compiler target operation contains a duplicate site tuple");
   expectInvalid(
-      Operation::create("x", 1, 0, {}, std::nullopt, std::nullopt,
-                        std::vector<std::vector<SiteId>>{{-1}}),
-      "Compiler target operation applicable site tuple contains a negative "
-      "site ID");
-  expectInvalid(
-      Operation::create("cx", 2, 0, {}, std::nullopt, std::nullopt,
-                        std::vector<std::vector<SiteId>>{{0, 0}}),
-      "Compiler target operation applicable site tuple contains a duplicate "
-      "site");
-  expectInvalid(
-      Operation::create("cx", 2, 0, {}, std::nullopt, std::nullopt,
-                        std::vector<std::vector<SiteId>>{{0}}),
-      "Compiler target operation applicable site tuple does not match its "
-      "arity");
-  expectInvalid(
-      Operation::create("x", 1, 0, std::vector{valid(SiteTuple::create({0}))},
-                        std::nullopt, std::nullopt,
-                        std::vector<std::vector<SiteId>>{{1}}),
-      "Compiler target operation calibration references an inapplicable site "
-      "tuple");
-  expectInvalid(
       Operation::create("x", 1, 0, {}, std::nullopt,
                         std::numeric_limits<double>::quiet_NaN()),
       "Compiler target operation fidelity must be finite and in [0, 1]");
@@ -332,13 +312,6 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
           NativeOperations::fromOperations({valid(Operation::create(
               "x", 1, 0, std::vector{valid(SiteTuple::create({2}))}))})),
       "Compiler target operation site tuple references an unknown site");
-  expectInvalid(
-      Target::create(2, Connectivity::allToAll(),
-                     NativeOperations::fromOperations({valid(Operation::create(
-                         "x", 1, 0, {}, std::nullopt, std::nullopt,
-                         std::vector<std::vector<SiteId>>{{2}}))})),
-      "Compiler target operation applicable site tuple references an unknown "
-      "site");
   expectInvalid(Target::create(1, Connectivity::allToAll(),
                                NativeOperations::fromOperations(
                                    {valid(Operation::create("cx", 2, 0))})),
@@ -396,8 +369,11 @@ TEST(CompilerTargetTest, DistinguishesOperationSupport) {
 TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   const std::vector<Coupling> chain{{0, 1}, {1, 2}};
   const auto globalU = valid(Operation::create("U3", 1, 3));
-  const auto cz = valid(Operation::create(
-      "cz", 2, 0, std::vector{valid(SiteTuple::create({1, 0}, 5, 0.99))}));
+  const auto cz = valid(
+      Operation::create("cz", 2, 0,
+                        std::vector{valid(SiteTuple::create({1, 0}, 5, 0.99)),
+                                    valid(SiteTuple::create({1, 2}))},
+                        7, 0.98));
   const auto target =
       valid(Target::create(3, Connectivity::fromCouplings(chain),
                            NativeOperations::fromOperations({globalU, cz}),
@@ -408,11 +384,17 @@ TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   EXPECT_EQ(target.supports(GateKind::CZ), true);
   EXPECT_TRUE(llvm::is_contained(target.supportedGates(), GateKind::CZ));
   ASSERT_EQ(target.operations().size(), 2U);
-  ASSERT_EQ(target.operations()[1].siteTuples().size(), 1U);
+  ASSERT_EQ(target.operations()[1].siteTuples().size(), 2U);
   EXPECT_EQ(target.operations()[1].siteTuples()[0].sites(),
             (llvm::ArrayRef<SiteId>{1, 0}));
   EXPECT_EQ(target.operations()[1].siteTuples()[0].duration(), 5);
   EXPECT_EQ(target.operations()[1].siteTuples()[0].fidelity(), 0.99);
+  EXPECT_FALSE(target.operations()[1].siteTuples()[1].duration());
+  EXPECT_FALSE(target.operations()[1].siteTuples()[1].fidelity());
+  EXPECT_EQ(target.operations()[1].duration(), 7);
+  EXPECT_EQ(target.operations()[1].fidelity(), 0.98);
+  EXPECT_TRUE(target.supports(GateKind::CZ, {1, 2}));
+  EXPECT_FALSE(target.supports(GateKind::CZ, {2, 1}));
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
   EXPECT_EQ(target.synthesisBasis()->entangler, GateKind::CZ);
@@ -426,13 +408,11 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
                     valid(Site::create(2, std::nullopt, 120, std::nullopt)),
                     valid(Site::create(11, "right"))};
   std::vector operations{
-      valid(Operation::create(
-          " PRX ", 1, 2,
-          std::vector{valid(SiteTuple::create({7}, 0, 0.99)),
-                      valid(SiteTuple::create({2}, 5, 0.98))},
-          0, 0.97, std::vector<std::vector<SiteId>>{{7}, {2}})),
-      valid(Operation::create("rx", 1, 1, {}, std::nullopt, std::nullopt,
-                              std::vector<std::vector<SiteId>>{})),
+      valid(
+          Operation::create(" PRX ", 1, 2,
+                            std::vector{valid(SiteTuple::create({7}, 0, 0.99)),
+                                        valid(SiteTuple::create({2}, 5, 0.98))},
+                            0, 0.97)),
       valid(Operation::create("gphase", Arity::fixed(0), 1)),
       valid(Operation::create("h", Arity::variadic(1), 0))};
   const auto target =
@@ -449,12 +429,10 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
   EXPECT_EQ(reconstructed.supportsOperation("r", 1, 2), true);
   EXPECT_TRUE(reconstructed.supportsOperation("r", 1, 2, {7}));
   EXPECT_FALSE(reconstructed.supportsOperation("r", 1, 2, {11}));
-  EXPECT_TRUE(reconstructed.operations()[1].hasExplicitApplicability());
-  EXPECT_TRUE(reconstructed.operations()[1].applicableSiteTuples().empty());
   EXPECT_EQ(reconstructed.supportsOperation("gphase", 0, 1), true);
   EXPECT_EQ(reconstructed.supportsOperation("h", 3, 0), true);
-  EXPECT_EQ(reconstructed.operations()[2].arity(), Arity::fixed(0));
-  EXPECT_EQ(reconstructed.operations()[3].arity(), Arity::variadic(1));
+  EXPECT_EQ(reconstructed.operations()[1].arity(), Arity::fixed(0));
+  EXPECT_EQ(reconstructed.operations()[2].arity(), Arity::variadic(1));
   EXPECT_EQ(reconstructed.synthesisBasis(), target.synthesisBasis());
 }
 
@@ -463,13 +441,12 @@ TEST(CompilerTargetTest, SupportsMaximumSiteIds) {
   constexpr auto nextSite = maxSite - 1;
   std::vector sites{valid(Site::create(nextSite)),
                     valid(Site::create(maxSite))};
-  const auto x = valid(Operation::create(
-      "x", 1, 0, std::vector{valid(SiteTuple::create({maxSite}))}, std::nullopt,
-      std::nullopt, std::vector<std::vector<SiteId>>{{nextSite}, {maxSite}}));
+  const auto x = valid(
+      Operation::create("x", 1, 0,
+                        std::vector{valid(SiteTuple::create({nextSite})),
+                                    valid(SiteTuple::create({maxSite}))}));
   const auto cx = valid(Operation::create(
-      "cx", 2, 0, std::vector{valid(SiteTuple::create({nextSite, maxSite}))},
-      std::nullopt, std::nullopt,
-      std::vector<std::vector<SiteId>>{{nextSite, maxSite}}));
+      "cx", 2, 0, std::vector{valid(SiteTuple::create({nextSite, maxSite}))}));
   const auto target =
       valid(Target::create(std::move(sites), Connectivity::allToAll(),
                            NativeOperations::fromOperations({x, cx})));
@@ -519,31 +496,25 @@ TEST(CompilerTargetTest, EnforcesExactOrderedOperationApplicability) {
   std::vector sites{valid(Site::create(10)), valid(Site::create(20)),
                     valid(Site::create(30))};
   const auto globalU = valid(Operation::create("u", 1, 3));
-  const auto restrictedX =
-      valid(Operation::create("x", 1, 0, {}, std::nullopt, std::nullopt,
-                              std::vector<std::vector<SiteId>>{{10}}));
-  const auto directionalCX = valid(
-      Operation::create("cx", 2, 0, {}, std::nullopt, std::nullopt,
-                        std::vector<std::vector<SiteId>>{{10, 20}, {20, 30}}));
-  const auto exactCZ =
-      valid(Operation::create("cz", 2, 0, {}, std::nullopt, std::nullopt,
-                              std::vector<std::vector<SiteId>>{{10, 20}}));
-  const auto unavailableECR =
-      valid(Operation::create("ecr", 2, 0, {}, std::nullopt, std::nullopt,
-                              std::vector<std::vector<SiteId>>{}));
-  const auto threeQubit = valid(Operation::create(
-      "device.operation", 3, 0, {}, std::nullopt, std::nullopt,
-      std::vector<std::vector<SiteId>>{{10, 20, 30}}));
+  const auto restrictedX = valid(Operation::create(
+      "x", 1, 0, std::vector{valid(SiteTuple::create({10}))}));
+  const auto directionalCX =
+      valid(Operation::create("cx", 2, 0,
+                              std::vector{valid(SiteTuple::create({10, 20})),
+                                          valid(SiteTuple::create({20, 30}))}));
+  const auto exactCZ = valid(Operation::create(
+      "cz", 2, 0, std::vector{valid(SiteTuple::create({10, 20}))}));
+  const auto threeQubit = valid(
+      Operation::create("device.operation", 3, 0,
+                        std::vector{valid(SiteTuple::create({10, 20, 30}))}));
   const auto target = valid(Target::create(
       std::move(sites), Connectivity::fromCouplings({{10, 20}, {20, 30}}),
-      NativeOperations::fromOperations({globalU, restrictedX, directionalCX,
-                                        exactCZ, unavailableECR, threeQubit})));
+      NativeOperations::fromOperations(
+          {globalU, restrictedX, directionalCX, exactCZ, threeQubit})));
 
-  EXPECT_FALSE(globalU.hasExplicitApplicability());
-  EXPECT_TRUE(restrictedX.hasExplicitApplicability());
-  EXPECT_TRUE(directionalCX.hasExplicitApplicability());
-  EXPECT_TRUE(unavailableECR.hasExplicitApplicability());
-  EXPECT_TRUE(unavailableECR.applicableSiteTuples().empty());
+  EXPECT_TRUE(globalU.siteTuples().empty());
+  EXPECT_FALSE(restrictedX.siteTuples().empty());
+  EXPECT_FALSE(directionalCX.siteTuples().empty());
 
   EXPECT_TRUE(target.supports(GateKind::U, {30}));
   EXPECT_TRUE(target.supports(GateKind::X, {10}));
@@ -699,9 +670,7 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
       valid(Operation::create("gphase", 0, 1)),
       valid(Operation::create("measure", 1, 0)),
       valid(Operation::create("reset", 1, 0)),
-      valid(Operation::create("cnot", 2, 0, std::move(directionalTuples),
-                              std::nullopt, std::nullopt,
-                              std::vector<std::vector<SiteId>>{{10, 20}})),
+      valid(Operation::create("cnot", 2, 0, std::move(directionalTuples))),
       valid(Operation::create("cz", 2, 0))};
   const auto target =
       valid(Target::create(std::move(sites), Connectivity::allToAll(),

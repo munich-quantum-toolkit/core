@@ -115,18 +115,14 @@ TEST_F(MQTIRTest, RoundTripsTypedCompilationTarget) {
             operations = [
                 <name = "cx",
                     arity = #mqt.operation_arity<kind = fixed, value = 2>,
-                    num_parameters = 0, site_tuples = [],
-                    applicability = explicit,
-                    applicable_site_tuples = [<sites = [4, 7]>]>,
+                    num_parameters = 0,
+                    site_tuples = [<sites = [4, 7], fidelity = 9.900000e-01 : f64>]>,
                 <name = "gphase",
                     arity = #mqt.operation_arity<kind = fixed, value = 0>,
-                    num_parameters = 1, site_tuples = [],
-                    applicability = explicit, applicable_site_tuples = []>,
+                    num_parameters = 1, site_tuples = []>,
                 <name = "h",
                     arity = #mqt.operation_arity<kind = variadic, value = 1>,
-                    num_parameters = 0, site_tuples = [],
-                    applicability = unrestricted,
-                    applicable_site_tuples = []>]>)mlir"));
+                    num_parameters = 0, site_tuples = []>]>)mlir"));
   ASSERT_TRUE(compilationTarget);
   EXPECT_EQ(compilationTarget.getName().getValue(), "device");
   ASSERT_EQ(compilationTarget.getSites().size(), 2U);
@@ -142,23 +138,12 @@ TEST_F(MQTIRTest, RoundTripsTypedCompilationTarget) {
   EXPECT_EQ(compilationTarget.getOperations()[1].getArity().getValue(), 0U);
   EXPECT_EQ(compilationTarget.getOperations()[2].getArity().getKind(),
             mqt::OperationArityKind::Variadic);
-  EXPECT_TRUE(
-      compilationTarget.getOperations().front().getSiteTuples().empty());
-  EXPECT_EQ(compilationTarget.getOperations()[0].getApplicability(),
-            mqt::OperationApplicabilityKind::Explicit);
-  ASSERT_EQ(
-      compilationTarget.getOperations()[0].getApplicableSiteTuples().size(),
-      1U);
-  EXPECT_EQ(compilationTarget.getOperations()[0]
-                .getApplicableSiteTuples()[0]
-                .getSites(),
-            (ArrayRef<int64_t>{4, 7}));
-  EXPECT_EQ(compilationTarget.getOperations()[1].getApplicability(),
-            mqt::OperationApplicabilityKind::Explicit);
-  EXPECT_TRUE(
-      compilationTarget.getOperations()[1].getApplicableSiteTuples().empty());
-  EXPECT_EQ(compilationTarget.getOperations()[2].getApplicability(),
-            mqt::OperationApplicabilityKind::Unrestricted);
+  ASSERT_EQ(compilationTarget.getOperations()[0].getSiteTuples().size(), 1U);
+  const auto tuple = compilationTarget.getOperations()[0].getSiteTuples()[0];
+  EXPECT_EQ(tuple.getSites(), (ArrayRef<int64_t>{4, 7}));
+  EXPECT_EQ(tuple.getFidelity().getValueAsDouble(), 0.99);
+  EXPECT_TRUE(compilationTarget.getOperations()[1].getSiteTuples().empty());
+  EXPECT_TRUE(compilationTarget.getOperations()[2].getSiteTuples().empty());
 
   EXPECT_EQ(roundTrip(compilationTarget), compilationTarget);
 }
@@ -172,10 +157,7 @@ TEST_F(MQTIRTest, RoundTripsMaximumSiteIds) {
           arity = #mqt.operation_arity<kind = fixed, value = 2>,
           num_parameters = 0,
           site_tuples = [<sites = [9223372036854775806,
-                                   9223372036854775807]>],
-          applicability = explicit,
-          applicable_site_tuples = [<sites = [9223372036854775806,
-                                              9223372036854775807]>]>]>)mlir");
+                                   9223372036854775807]>]>]>)mlir");
   ASSERT_TRUE(compilationTarget);
   EXPECT_EQ(roundTrip(compilationTarget), compilationTarget);
 }
@@ -205,10 +187,7 @@ TEST_F(MQTIRTest, RejectsInvalidTargetLeaves) {
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.site<id = 0, t2 =>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.coupling<source = 0, target = 0>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.site_tuple<sites = [0, 0]>)mlir"));
-  EXPECT_FALSE(
-      parseAttr(R"mlir(#mqt.applicable_site_tuple<sites = [-1]>)mlir"));
-  EXPECT_FALSE(
-      parseAttr(R"mlir(#mqt.applicable_site_tuple<sites = [0, 0]>)mlir"));
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.site_tuple<sites = [-1]>)mlir"));
   EXPECT_FALSE(
       parseAttr(R"mlir(#mqt.site_tuple<sites = [0], duration =>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.site_tuple<sites = [0],
@@ -217,46 +196,23 @@ TEST_F(MQTIRTest, RejectsInvalidTargetLeaves) {
       kind = variadic, value = 0>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "",
       arity = #mqt.operation_arity<kind = fixed, value = 1>,
-      num_parameters = 0, site_tuples = [], applicability = unrestricted,
-      applicable_site_tuples = []>)mlir"));
+      num_parameters = 0, site_tuples = []>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "gphase",
       arity = #mqt.operation_arity<kind = fixed, value = 0>,
-      num_parameters = 1, site_tuples = [<sites = [0]>],
-      applicability = unrestricted, applicable_site_tuples = []>)mlir"));
+      num_parameters = 1, site_tuples = [<sites = [0]>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "h",
       arity = #mqt.operation_arity<kind = variadic, value = 1>,
-      num_parameters = 0, site_tuples = [<sites = [0]>],
-      applicability = unrestricted, applicable_site_tuples = []>)mlir"));
+      num_parameters = 0, site_tuples = [<sites = [0]>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "cx",
       arity = #mqt.operation_arity<kind = fixed, value = 2>,
-      num_parameters = 0, site_tuples = [<sites = [0]>],
-      applicability = unrestricted, applicable_site_tuples = []>)mlir"));
+      num_parameters = 0, site_tuples = [<sites = [0]>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "x",
       arity = #mqt.operation_arity<kind = fixed, value = 1>,
       num_parameters = 0,
-      site_tuples = [<sites = [0]>, <sites = [0]>],
-      applicability = unrestricted, applicable_site_tuples = []>)mlir"));
+      site_tuples = [<sites = [0]>, <sites = [0]>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "x",
       arity = #mqt.operation_arity<kind = fixed, value = 1>,
-      num_parameters = 0, site_tuples = [], duration =>,
-      applicability = unrestricted, applicable_site_tuples = []>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "x",
-      arity = #mqt.operation_arity<kind = fixed, value = 1>,
-      num_parameters = 0, site_tuples = [], applicability = unrestricted,
-      applicable_site_tuples = [<sites = [0]>]>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "cx",
-      arity = #mqt.operation_arity<kind = fixed, value = 2>,
-      num_parameters = 0, site_tuples = [], applicability = explicit,
-      applicable_site_tuples = [<sites = [0]>]>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "x",
-      arity = #mqt.operation_arity<kind = fixed, value = 1>,
-      num_parameters = 0, site_tuples = [], applicability = explicit,
-      applicable_site_tuples = [<sites = [0]>, <sites = [0]>]>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "x",
-      arity = #mqt.operation_arity<kind = fixed, value = 1>,
-      num_parameters = 0, site_tuples = [<sites = [0]>],
-      applicability = explicit,
-      applicable_site_tuples = [<sites = [1]>]>)mlir"));
+      num_parameters = 0, site_tuples = [], duration =>>)mlir"));
 }
 
 TEST_F(MQTIRTest, RejectsInvalidCompilationTargets) {
@@ -278,8 +234,7 @@ TEST_F(MQTIRTest, RejectsInvalidCompilationTargets) {
       native_operations = unrestricted,
       operations = [<name = "x",
           arity = #mqt.operation_arity<kind = fixed, value = 1>,
-          num_parameters = 0, site_tuples = [], applicability = unrestricted,
-          applicable_site_tuples = []>]>)mlir"));
+          num_parameters = 0, site_tuples = []>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.compilation_target<
       sites = [<id = 0>, <id = 1>], connectivity = explicit,
       couplings = [<source = 0, target = 2>],
@@ -296,37 +251,25 @@ TEST_F(MQTIRTest, RejectsInvalidCompilationTargets) {
       native_operations = explicit,
       operations = [<name = "x",
           arity = #mqt.operation_arity<kind = fixed, value = 1>,
-          num_parameters = 0, site_tuples = [<sites = [1]>],
-          applicability = unrestricted, applicable_site_tuples = []>]>)mlir"));
+          num_parameters = 0, site_tuples = [<sites = [1]>]>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.compilation_target<
       sites = [<id = 0>], connectivity = all_to_all, couplings = [],
       native_operations = explicit,
       operations = [<name = "cx",
           arity = #mqt.operation_arity<kind = fixed, value = 2>,
-          num_parameters = 0, site_tuples = [], applicability = unrestricted,
-          applicable_site_tuples = []>]>)mlir"));
+          num_parameters = 0, site_tuples = []>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.compilation_target<
       sites = [<id = 0>], connectivity = all_to_all, couplings = [],
       native_operations = explicit,
       operations = [<name = "h",
           arity = #mqt.operation_arity<kind = variadic, value = 2>,
-          num_parameters = 0, site_tuples = [], applicability = unrestricted,
-          applicable_site_tuples = []>]>)mlir"));
+          num_parameters = 0, site_tuples = []>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.compilation_target<
       sites = [<id = 0>], connectivity = all_to_all, couplings = [],
       native_operations = explicit,
       operations = [<name = "x",
           arity = #mqt.operation_arity<kind = fixed, value = 1>,
-          num_parameters = 0, site_tuples = [], duration = 1,
-          applicability = unrestricted, applicable_site_tuples = []>]>)mlir"));
-
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.compilation_target<
-      sites = [<id = 0>], connectivity = all_to_all, couplings = [],
-      native_operations = explicit,
-      operations = [<name = "x",
-          arity = #mqt.operation_arity<kind = fixed, value = 1>,
-          num_parameters = 0, site_tuples = [], applicability = explicit,
-          applicable_site_tuples = [<sites = [1]>]>]>)mlir"));
+          num_parameters = 0, site_tuples = [], duration = 1>]>)mlir"));
 }
 
 TEST_F(MQTIRTest, ManagesAndFindsEntryPoint) {

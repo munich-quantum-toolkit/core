@@ -32,7 +32,7 @@ namespace mlir {
  * zone models are not supported. Explicit QDMI site lists must cover every
  * site for one-qubit operations, every undirected topology edge for two-qubit
  * operations, and every ordered tuple of distinct sites for higher arities.
- * Their ordered applicability and calibration data are preserved separately.
+ * Each supported ordered placement carries optional calibration data.
  */
 [[nodiscard]] llvm::Expected<CompilerTarget>
 compilerTargetFromDevice(const qdmi::Device& device);
