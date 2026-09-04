@@ -54,6 +54,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <string>
 #include <tuple>
 #include <type_traits>
 #include <utility>
@@ -131,12 +132,28 @@ public:
     builder.initialize();
     for (const auto& gate : program.gates) {
       customGateIndex.try_emplace(gate.name, &gate);
+      structuredGateCapabilities.try_emplace(
+          &gate, statementsRequireStructuredControlFlow(gate.body));
+    }
+    if (customGateIndex.contains("main")) {
+      std::string entryName = "_mqt_entry";
+      for (size_t suffix = 0; customGateIndex.contains(entryName); ++suffix) {
+        entryName = (Twine("_mqt_entry") + Twine(suffix)).str();
+      }
+      cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp())
+          .setName(entryName);
     }
   }
 
   OwningOpRef<ModuleOp> emit() {
     if (!preflight()) {
       return nullptr;
+    }
+    for (const auto& gate : program.gates) {
+      emitGateDefinition(gate);
+      if (emissionFailed || emissionBudget.isExhausted()) {
+        return nullptr;
+      }
     }
     for (const auto statement : program.body) {
       emitStatement(statement, {}, {});
@@ -198,6 +215,8 @@ private:
   DenseMap<const oq3::frontend::GateDefinition*, bool>
       structuredGateCapabilities;
   llvm::StringMap<const oq3::frontend::GateDefinition*> customGateIndex;
+  DenseMap<const oq3::frontend::GateDefinition*, func::FuncOp>
+      customGateFunctions_;
   bool emissionFailed = false;
   QCProgramBuilder::LoopBuilder* activeLoop = nullptr;
   SmallVector<frontend::ScalarId> breakSlots;
@@ -250,13 +269,11 @@ private:
   }
 
   [[nodiscard]] bool statementsRequireStructuredControlFlow(
-      const ArrayRef<oq3::frontend::StatementId> statements) {
+      const ArrayRef<oq3::frontend::StatementId> statements) const {
     return llvm::any_of(statements, [&](const auto id) {
       const auto& data = program.statements.at(id).data;
       if (std::holds_alternative<oq3::frontend::ForStatement>(data) ||
-          std::holds_alternative<oq3::frontend::WhileStatement>(data) ||
-          std::holds_alternative<oq3::frontend::IfStatement>(data) ||
-          std::holds_alternative<oq3::frontend::SwitchStatement>(data)) {
+          std::holds_alternative<oq3::frontend::WhileStatement>(data)) {
         return true;
       }
       const auto* application =
@@ -268,16 +285,9 @@ private:
     });
   }
 
-  [[nodiscard]] bool
-  gateRequiresStructuredControlFlow(const oq3::frontend::GateDefinition& gate) {
-    if (const auto it = structuredGateCapabilities.find(&gate);
-        it != structuredGateCapabilities.end()) {
-      return it->second;
-    }
-    const bool requiresStructuredControlFlow =
-        statementsRequireStructuredControlFlow(gate.body);
-    structuredGateCapabilities[&gate] = requiresStructuredControlFlow;
-    return requiresStructuredControlFlow;
+  [[nodiscard]] bool gateRequiresStructuredControlFlow(
+      const oq3::frontend::GateDefinition& gate) const {
+    return structuredGateCapabilities.lookup(&gate);
   }
 
   [[nodiscard]] std::optional<bool>
@@ -541,8 +551,8 @@ private:
                                     projectedEmission, source)) {
         return false;
       }
-      /// Each access emits an index value and a load. Semantic analysis has
-      /// already proved a nonconstant index's bounds and uniqueness.
+      // Each access emits an index value and a load. Semantic analysis has
+      // already proved a nonconstant index's bounds and uniqueness.
       if (!chargeScaledEmission(2, multiplicity, projectedEmission, source)) {
         return false;
       }
@@ -900,7 +910,7 @@ private:
         }
         continue;
       }
-      if (!chargeScaledEmission(modifierEmissionCost(*application),
+      if (!chargeScaledEmission(modifierEmissionCost(*application) + 1,
                                 multiplicity, projectedEmission,
                                 statement.location)) {
         return false;
@@ -910,9 +920,6 @@ private:
         emitError(getLocation(statement.location))
             << "OpenQASM QC emission error: modifiers on custom gates with "
                "structured control flow are not supported by the QC dialect";
-        return false;
-      }
-      if (!preflightStatements(gate->body, projectedEmission, multiplicity)) {
         return false;
       }
     }
@@ -959,6 +966,12 @@ private:
       }
     }
     size_t projectedEmission = program.registers.size() + 4;
+    for (const auto& gate : program.gates) {
+      if (!chargeProjectedEmission(2, projectedEmission, gate.location) ||
+          !preflightStatements(gate.body, projectedEmission)) {
+        return false;
+      }
+    }
     return preflightStatements(program.body, projectedEmission);
   }
 
@@ -1516,6 +1529,32 @@ private:
     return arith::MulFOp::create(opBuilder, loc, sum, negativeHalf);
   }
 
+  void emitGateDefinition(const frontend::GateDefinition& gate) {
+    SmallVector<Type> argumentTypes(gate.parameterCount, builder.getF64Type());
+    argumentTypes.append(gate.qubitCount, qc::QubitType::get(&context));
+    const auto emitBody = [&](ValueRange arguments) {
+      auto parameters = arguments.take_front(gate.parameterCount);
+      auto qubits = arguments.drop_front(gate.parameterCount);
+      for (const auto statement : gate.body) {
+        emitStatement(statement, parameters, qubits);
+      }
+    };
+
+    builder.setLoc(getLocation(gate.location));
+    func::FuncOp function;
+    if (gateRequiresStructuredControlFlow(gate)) {
+      function = builder.createFunction(gate.name, argumentTypes,
+                                        [&](ValueRange arguments) {
+                                          emitBody(arguments);
+                                          return SmallVector<Value>{};
+                                        });
+    } else {
+      function =
+          builder.createUnitaryFunction(gate.name, argumentTypes, emitBody);
+    }
+    customGateFunctions_.try_emplace(&gate, function);
+  }
+
   LogicalResult emitResolvedGate(OpBuilder& opBuilder,
                                  const frontend::GateApplication& application,
                                  const Location loc, ValueRange parameters,
@@ -1528,15 +1567,16 @@ private:
                "its verified declaration";
         return failure();
       }
+      auto function = customGateFunctions_.lookup(custom);
+      if (function == nullptr) {
+        return failure();
+      }
+      SmallVector<Value> operands(parameters);
+      llvm::append_range(operands, qubits);
       OpBuilder::InsertionGuard guard(builder);
       builder.setInsertionPoint(opBuilder.getInsertionBlock(),
                                 opBuilder.getInsertionPoint());
-      for (const auto statement : custom->body) {
-        emitStatement(statement, parameters, qubits);
-        if (emissionFailed || emissionBudget.isExhausted()) {
-          return failure();
-        }
-      }
+      std::ignore = builder.call(function, operands);
       return success();
     }
 
@@ -2485,8 +2525,8 @@ private:
       auto start = emitProvenIndexExpression(builder, loop.start);
       auto step = emitProvenIndexExpression(builder, loop.step);
       auto stop = emitProvenIndexExpression(builder, loop.stop);
-      auto exclusiveStop = arith::AddIOp::create(
-          builder, stop, arith::ConstantIndexOp::create(builder, 1));
+      auto exclusiveStop = builder.createOrFold<arith::AddIOp>(
+          stop, arith::ConstantIndexOp::create(builder, 1));
       auto forOp = scf::ForOp::create(builder, start, exclusiveStop, step,
                                       initialValues);
       {

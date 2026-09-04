@@ -595,10 +595,9 @@ inspectEntry(const llvm::StringRef ir) {
   return info;
 }
 
-[[nodiscard]] static testing::AssertionResult
-throughOptimizedQCO(const qasm::OpenQASMProgram& source,
-                    std::optional<QCProgram>& restored,
-                    std::vector<std::string>& resultTypes) {
+[[nodiscard]] static testing::AssertionResult throughOptimizedQCO(
+    const qasm::OpenQASMProgram& source, std::optional<QCProgram>& restored,
+    std::vector<std::string>& resultTypes, bool prepareForQIR = false) {
   auto qc = QCProgram::fromQASMString(source.source.str());
   if (!qc) {
     return testing::AssertionFailure()
@@ -611,7 +610,8 @@ throughOptimizedQCO(const qasm::OpenQASMProgram& source,
   }
   resultTypes = qcEntry->resultTypes;
   auto qco = std::move(*qc).intoQCO();
-  if (!qco || !qco->cleanup() || !qco->runPassPipeline("mqt-qco-default") ||
+  if (!qco || (prepareForQIR && !qco->runPassPipeline("inline")) ||
+      !qco->cleanup() || !qco->runPassPipeline("mqt-qco-default") ||
       !qco->cleanup()) {
     return testing::AssertionFailure()
            << source.name.str() << ": QC/QCO optimization";
@@ -920,7 +920,7 @@ TEST_P(OpenQASMCompilerPipelineTest, TraversesTheExplicitStandardPipeline) {
   const auto& source = GetParam();
   std::optional<QCProgram> restoredQC;
   std::vector<std::string> resultTypes;
-  ASSERT_TRUE(throughOptimizedQCO(source, restoredQC, resultTypes));
+  ASSERT_TRUE(throughOptimizedQCO(source, restoredQC, resultTypes, true));
   auto qir = std::move(*restoredQC).intoQIR(QIRProfile::Adaptive);
   ASSERT_TRUE(qir) << source.name.str() << ": QC to Adaptive QIR";
   expectQIRArtifacts(*qir, source.name, resultTypes,
@@ -980,7 +980,7 @@ TEST_P(OpenQASMBasePipelineTest, ReachesBaseAndAdaptiveQIR) {
   const auto& source = GetParam();
   std::optional<QCProgram> restoredQC;
   std::vector<std::string> resultTypes;
-  ASSERT_TRUE(throughOptimizedQCO(source, restoredQC, resultTypes));
+  ASSERT_TRUE(throughOptimizedQCO(source, restoredQC, resultTypes, true));
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
     auto input = restoredQC->copy();
     auto qir = std::move(input).intoQIR(profile);

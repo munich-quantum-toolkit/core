@@ -23,7 +23,9 @@
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/SCCIterator.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringExtras.h>
@@ -31,6 +33,7 @@
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/SaveAndRestore.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/Analysis/CallGraph.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -43,6 +46,7 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/IR/Visitors.h>
@@ -141,6 +145,11 @@ public:
         failed(collectProgramShape())) {
       return failure();
     }
+    for (auto gate : gateFunctions_) {
+      if (failed(emitGateDefinition(gate))) {
+        return failure();
+      }
+    }
 
     std::string body;
     llvm::raw_string_ostream bodyStream(body);
@@ -159,8 +168,8 @@ public:
     sourceStream << "OPENQASM 3.1;\n"
                     "include \"stdgates.inc\";\n\n";
     emitFixedHelpers(sourceStream);
-    for (const auto& helper : compositeHelpers) {
-      sourceStream << helper << "\n";
+    for (const auto& definition : gateDefinitions_) {
+      sourceStream << definition << "\n";
     }
     sourceStream << measurementDeclarations << body;
     return source;
@@ -175,9 +184,12 @@ private:
   DenseMap<Value, std::string> valueNames;
   DenseSet<Value> returnedRegisters;
   SmallVector<ScalarOutput> scalarOutputs;
+  SmallVector<func::FuncOp> gateFunctions_;
+  DenseMap<Operation*, std::string> gateNames_;
+  SymbolTableCollection symbolTables_;
   llvm::StringSet<> usedNames;
   llvm::StringSet<> fixedHelpers;
-  SmallVector<std::string> compositeHelpers;
+  SmallVector<std::string> gateDefinitions_;
   std::string measurementDeclarations;
   DenseMap<Operation*, size_t> operationPositions;
   DenseMap<Block*, DenseMap<Value, SmallVector<size_t>>> classicalWrites;
@@ -234,12 +246,52 @@ private:
     return uniqueName("q", nextQubit);
   }
 
+  [[nodiscard]] func::FuncOp resolveGateCallee(Operation* operation) {
+    FlatSymbolRefAttr callee;
+    if (auto call = dyn_cast<qc::CallOp>(operation)) {
+      callee = call.getCalleeAttr();
+    } else if (auto call = dyn_cast<func::CallOp>(operation)) {
+      callee = call.getCalleeAttr();
+    } else {
+      return nullptr;
+    }
+    auto target =
+        symbolTables_.lookupNearestSymbolFrom<func::FuncOp>(operation, callee);
+    return target != nullptr && gateNames_.contains(target) ? target : nullptr;
+  }
+
+  [[nodiscard]] LogicalResult orderGateFunctions() {
+    if (gateNames_.empty()) {
+      return success();
+    }
+    const CallGraph callGraph(moduleOp);
+    for (auto component = llvm::scc_begin(&callGraph); !component.isAtEnd();
+         ++component) {
+      auto* node = component->front();
+      if (node->isExternal()) {
+        continue;
+      }
+      auto* current = node->getCallableRegion()->getParentOp();
+      if (component.hasCycle()) {
+        return fail(current, "recursive gate function calls are not supported");
+      }
+      if (gateNames_.contains(current)) {
+        gateFunctions_.push_back(cast<func::FuncOp>(current));
+      }
+    }
+    return success();
+  }
+
   [[nodiscard]] LogicalResult preflight() {
     SmallVector<func::FuncOp> functions(moduleOp.getOps<func::FuncOp>());
-    if (functions.size() != 1) {
-      return fail(moduleOp, "expected exactly one function");
+    function = mqt::getEntryPoint(moduleOp);
+    if (function == nullptr) {
+      if (functions.size() != 1) {
+        return fail(moduleOp,
+                    "expected one mqt.entry_point in a multi-function module");
+      }
+      function = functions.front();
     }
-    function = functions.front();
     if (function.isExternal() || function.getBody().getBlocks().size() != 1) {
       return fail(function,
                   "expected one defined function with one entry block");
@@ -248,17 +300,60 @@ private:
       return fail(function, "function arguments and OpenQASM inputs are not "
                             "supported");
     }
-    const auto walkResult = function.walk([&](Operation* operation) {
-      if (isa<func::CallOp>(operation)) {
-        std::ignore = fail(operation, "function calls are not supported");
-        return WalkResult::interrupt();
-      }
-      for (Region& region : operation->getRegions()) {
-        if (!region.empty() && region.getBlocks().size() != 1) {
-          std::ignore =
-              fail(operation, "multi-block regions are not supported");
-          return WalkResult::interrupt();
+    const auto checkRegions = [&](func::FuncOp current) {
+      return current.walk([&](Operation* operation) {
+        for (Region& region : operation->getRegions()) {
+          if (!region.empty() && region.getBlocks().size() != 1) {
+            std::ignore =
+                fail(operation, "multi-block regions are not supported");
+            return WalkResult::interrupt();
+          }
         }
+        return WalkResult::advance();
+      });
+    };
+    if (checkRegions(function).wasInterrupted()) {
+      return failure();
+    }
+
+    for (auto current : functions) {
+      if (current == function) {
+        continue;
+      }
+      if (!current.isPrivate() || current.isExternal() ||
+          !current.getBody().hasOneBlock() || current.getNumResults() != 0) {
+        return fail(current, "gate functions must be private, defined, "
+                             "single-block, and return no values");
+      }
+      bool sawQubit = false;
+      for (Type type : current.getArgumentTypes()) {
+        if (!sawQubit && type.isF64()) {
+          continue;
+        }
+        if (!isa<qc::QubitType>(type)) {
+          return fail(current, "gate function arguments must be leading f64 "
+                               "parameters followed by scalar qubits");
+        }
+        sawQubit = true;
+      }
+      if (!sawQubit) {
+        return fail(current, "gate functions require a qubit argument");
+      }
+      if (checkRegions(current).wasInterrupted()) {
+        return failure();
+      }
+      const auto requested = current.getName();
+      gateNames_.try_emplace(current, isValidOutputName(requested) &&
+                                              usedNames.insert(requested).second
+                                          ? requested.str()
+                                          : uniqueName("gate", nextHelper));
+    }
+    const auto walkResult = moduleOp.walk([&](Operation* operation) {
+      if (isa<func::CallOp, qc::CallOp>(operation) &&
+          resolveGateCallee(operation) == nullptr) {
+        std::ignore = fail(operation, "call does not target an exportable gate "
+                                      "function");
+        return WalkResult::interrupt();
       }
       return WalkResult::advance();
     });
@@ -266,12 +361,11 @@ private:
       return failure();
     }
     for (Operation& operation : moduleOp.getBody()->getOperations()) {
-      if (&operation != function.getOperation()) {
-        return fail(&operation, "only the entry function may appear at module "
-                                "scope");
+      if (!isa<func::FuncOp>(operation)) {
+        return fail(&operation, "only functions may appear at module scope");
       }
     }
-    return success();
+    return orderGateFunctions();
   }
 
   [[nodiscard]] LogicalResult collectProgramShape() {
@@ -429,6 +523,50 @@ private:
     return success();
   }
 
+  [[nodiscard]] LogicalResult emitGateDefinition(func::FuncOp gate) {
+    std::string definition;
+    llvm::raw_string_ostream definitionStream(definition);
+    raw_indented_ostream definitionOutput(definitionStream);
+    definitionOutput << "gate " << gateNames_.at(gate);
+
+    SmallVector<std::string> parameters;
+    SmallVector<std::string> qubits;
+    for (Value argument : gate.getArguments()) {
+      std::string name;
+      if (argument.getType().isF64()) {
+        name = (Twine("p") + Twine(parameters.size())).str();
+        parameters.push_back(name);
+      } else {
+        name = (Twine("q") + Twine(qubits.size())).str();
+        qubits.push_back(name);
+      }
+      valueNames[argument] = std::move(name);
+    }
+    auto argumentGuard = llvm::make_scope_exit([&] {
+      for (Value argument : gate.getArguments()) {
+        valueNames.erase(argument);
+      }
+    });
+
+    if (!parameters.empty()) {
+      definitionOutput << '(' << llvm::join(parameters, ", ") << ')';
+    }
+    definitionOutput << ' ' << llvm::join(qubits, ", ") << " {\n";
+    definitionOutput.indent();
+
+    llvm::SaveAndRestore outputGuard(output, &definitionOutput);
+    llvm::SaveAndRestore functionGuard(function, gate);
+    if (failed(emitBlock(gate.getBody().front()))) {
+      return failure();
+    }
+    definitionOutput.unindent();
+    definitionOutput << "}\n";
+    definitionOutput.flush();
+
+    gateDefinitions_.push_back(std::move(definition));
+    return success();
+  }
+
   [[nodiscard]] LogicalResult emitBlock(Block& block) {
     for (Operation& operation : block.getOperations()) {
       if (isa<scf::YieldOp, scf::ConditionOp>(&operation)) {
@@ -443,6 +581,20 @@ private:
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
     llvm::SaveAndRestore consumerGuard(expressionConsumer, &operation);
+    if (gateNames_.contains(function) &&
+        (operation.getName().getDialectNamespace() ==
+             cbit::CBitDialect::getDialectNamespace() ||
+         isa<memref::LoadOp, memref::AllocOp, memref::DeallocOp, qc::AllocOp,
+             qc::DeallocOp, qc::StaticOp, qc::MeasureOp, qc::ResetOp,
+             qc::BarrierOp, scf::IfOp, scf::IndexSwitchOp, cf::AssertOp,
+             ub::PoisonOp>(&operation))) {
+      return fail(&operation,
+                  "operation is not supported in an OpenQASM gate function");
+    }
+    if (gateNames_.contains(function) && isa<arith::SelectOp>(&operation)) {
+      return fail(&operation,
+                  "arith.select is not supported in an OpenQASM gate function");
+    }
     if (materializeScalars && isInlineExpressionOperation(operation) &&
         !isa<arith::ConstantOp>(&operation) && operation.getNumResults() == 1 &&
         !(isa<cbit::ReadOp>(operation) &&
@@ -522,6 +674,13 @@ private:
     if (auto returnOp = dyn_cast<func::ReturnOp>(&operation)) {
       return emitReturn(returnOp);
     }
+    if (auto call = dyn_cast<func::CallOp>(&operation)) {
+      auto emitted = emitFunctionCall(call, call.getOperands());
+      if (failed(emitted)) {
+        return failure();
+      }
+      return emitGateStatement(*emitted, call, *output);
+    }
     if (auto unitary = dyn_cast<UnitaryOpInterface>(&operation)) {
       if (auto barrier = dyn_cast<BarrierOp>(&operation)) {
         SmallVector<std::string> qubits;
@@ -539,8 +698,7 @@ private:
       if (failed(call)) {
         return failure();
       }
-      emitGateStatement(*call, *output);
-      return success();
+      return emitGateStatement(*call, &operation, *output);
     }
     return fail(&operation, "unsupported operation '" +
                                 operation.getName().getStringRef() + "'");
@@ -921,6 +1079,13 @@ private:
                          : emitExpression(input);
       if (failed(operand)) {
         return failure();
+      }
+      if (gateNames_.contains(function) && name == "arith.sitofp") {
+        if (input.getType().isInteger(1)) {
+          return failExpression(value, "signed i1-to-float conversion is not "
+                                       "supported in gate functions");
+        }
+        return (Twine("(1.0 * ") + *operand + ")").str();
       }
       if (name == "arith.index_cast" &&
           (operation->getOperand(0).getType().isInteger(64) ||
@@ -1446,7 +1611,39 @@ private:
     return success();
   }
 
+  [[nodiscard]] FailureOr<GateCall> emitFunctionCall(Operation* operation,
+                                                     ValueRange operands) {
+    auto callee = resolveGateCallee(operation);
+    if (callee == nullptr) {
+      fail(operation, "call does not match an exportable gate function");
+      return failure();
+    }
+
+    GateCall call;
+    call.symbol = gateNames_.at(callee);
+    for (const auto [operand, type] :
+         llvm::zip_equal(operands, callee.getArgumentTypes())) {
+      if (type.isF64()) {
+        auto parameter = emitExpression(operand);
+        if (failed(parameter)) {
+          return failure();
+        }
+        call.parameters.push_back(std::move(*parameter));
+      } else {
+        auto qubit = emitQubit(operand);
+        if (failed(qubit)) {
+          return failure();
+        }
+        call.qubits.push_back(std::move(*qubit));
+      }
+    }
+    return call;
+  }
+
   [[nodiscard]] FailureOr<GateCall> emitGateCall(UnitaryOpInterface unitary) {
+    if (isa<qc::CallOp>(unitary.getOperation())) {
+      return emitFunctionCall(unitary.getOperation(), unitary->getOperands());
+    }
     if (auto ctrl = dyn_cast<CtrlOp>(unitary.getOperation())) {
       return emitModifier(ctrl);
     }
@@ -1636,21 +1833,20 @@ private:
     }
     definitionOutput << ' ' << llvm::join(qubitNames, ", ") << " {\n";
     definitionOutput.indent();
-    auto* savedOutput = output;
-    output = &definitionOutput;
+    llvm::SaveAndRestore outputGuard(output, &definitionOutput);
     for (auto* operation : unitaries) {
       auto call = emitGateCall(cast<UnitaryOpInterface>(operation));
       if (failed(call)) {
-        output = savedOutput;
         return failure();
       }
-      emitGateStatement(*call, definitionOutput);
+      if (failed(emitGateStatement(*call, operation, definitionOutput))) {
+        return failure();
+      }
     }
-    output = savedOutput;
     definitionOutput.unindent();
     definitionOutput << "}\n";
     definitionOutput.flush();
-    compositeHelpers.push_back(std::move(definition));
+    gateDefinitions_.push_back(std::move(definition));
 
     for (auto value : captures) {
       if (const auto found = savedNames.find(value);
@@ -1671,8 +1867,17 @@ private:
     return helperCall;
   }
 
-  static void emitGateStatement(const GateCall& call,
-                                raw_indented_ostream& stream) {
+  [[nodiscard]] LogicalResult emitGateStatement(const GateCall& call,
+                                                Operation* operation,
+                                                raw_indented_ostream& stream) {
+    StringSet<> qubits;
+    for (const auto& qubit : call.qubits) {
+      if (!qubits.insert(qubit).second) {
+        return fail(operation,
+                    "cannot prove that gate operands reference distinct "
+                    "qubits");
+      }
+    }
     stream << call.modifiers << call.symbol;
     if (!call.parameters.empty()) {
       stream << '(' << llvm::join(call.parameters, ", ") << ')';
@@ -1681,6 +1886,7 @@ private:
       stream << ' ' << llvm::join(call.qubits, ", ");
     }
     stream << ";\n";
+    return success();
   }
 
   [[nodiscard]] FailureOr<std::string>
