@@ -41,14 +41,6 @@ UPGRADING
 
 ```{toctree}
 :maxdepth: 1
-:caption: DD Package Evaluation
-:hidden:
-
-dd_package_evaluation
-```
-
-```{toctree}
-:maxdepth: 1
 :titlesonly:
 :caption: Developers
 :glob:

@@ -106,20 +106,9 @@ if(BUILD_MQT_CORE_TESTS)
   add_subdirectory(test)
 endif()
 
-option(BUILD_MQT_CORE_BENCHMARKS "Also build benchmarks for the MQT Core project" OFF)
-if(BUILD_MQT_CORE_BENCHMARKS)
-  add_subdirectory(eval)
-endif()
-
 if(BUILD_MQT_CORE_BINDINGS)
-  set(MQT_CORE_WHEEL_TARGETS
-      mqt-core-ir
-      mqt-core-algorithms
-      mqt-core-circuit-optimizer
-      mqt-core-dd
-      mqt-core-ir-bindings
-      mqt-core-dd-bindings
-      mqt-core-qdmi-bindings)
+  set(MQT_CORE_WHEEL_TARGETS mqt-core-ir mqt-core-circuit-optimizer mqt-core-dd
+                             mqt-core-ir-bindings mqt-core-dd-bindings mqt-core-qdmi-bindings)
   if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE)
     list(APPEND MQT_CORE_WHEEL_TARGETS mqt-core-qdmi-ddsim-device)
   endif()

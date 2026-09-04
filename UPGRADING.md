@@ -23,6 +23,14 @@ dependency instead.
 MQT Core no longer supports x86 macOS. Use Apple silicon with macOS 13.3 or
 newer. The new deployment target enables `std::format` in libc++.
 
+### Removal of CoreAlgorithms
+
+MQT Core no longer installs `MQT::CoreAlgorithms` or the headers below
+`algorithms/`. MQT Core provides no direct replacement for the removed circuit
+factories. Move required implementations to the package that uses them. The
+`BUILD_MQT_CORE_BENCHMARKS` option and its legacy DD evaluation target were also
+removed.
+
 ### Removal of the QIR stack
 
 MQT Core no longer provides the QIR runtime, JIT, or standalone runner. Remove

@@ -43,6 +43,9 @@ releases may include breaking changes.
 - 💥 Remove the `spdlog` dependency from MQT Core source builds, installed CMake
   packages, and Python wheels. QDMI diagnostics continue to be written to
   standard error ([#2270]) ([**@denialhaag**])
+- 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
+  DD package evaluation. MQT Core provides no direct replacement ([#2214])
+  ([**@burgholzer**])
 - 💥 Remove the unused decision-diagram approximation algorithm, including the
   `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
   `dd::approximate`. No replacement is provided ([#2154]) ([**@burgholzer**])
@@ -791,6 +794,7 @@ for previous changelogs._
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
+[#2214]: https://github.com/munich-quantum-toolkit/core/pull/2214
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
