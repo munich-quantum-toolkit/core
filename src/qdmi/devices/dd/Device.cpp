@@ -576,7 +576,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
     -> QDMI_STATUS {
   return submitProgramAsync([this] {
-    auto irBytes = std::visit(
+    auto const irBytes = std::visit(
         [](const auto& p) {
           return llvm::StringRef(reinterpret_cast<const char*>(p.data()),
                                  p.size());
@@ -616,7 +616,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
     return QDMI_ERROR_NOTSUPPORTED;
   }
   return submitProgramAsync([this] {
-    auto irBytes = std::visit(
+    auto const irBytes = std::visit(
         [](const auto& p) {
           return llvm::StringRef(reinterpret_cast<const char*>(p.data()),
                                  p.size());

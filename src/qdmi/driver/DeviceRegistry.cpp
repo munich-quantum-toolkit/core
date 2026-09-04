@@ -499,7 +499,7 @@ DeviceRegistry::DeviceRegistry() {
   std::map<std::string, DefinitionPatch> merged;
   const auto mergePatches = [&merged](std::vector<DefinitionPatch> patches) {
     for (auto& patch : patches) {
-      if (auto it = merged.find(patch.id); it != merged.end()) {
+      if (auto const it = merged.find(patch.id); it != merged.end()) {
         mergePatch(it->second, patch);
       } else {
         merged.emplace(patch.id, std::move(patch));

@@ -645,7 +645,7 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
 }
 fp Package::assignProbabilities(const vEdge& edge,
                                 std::unordered_map<const vNode*, fp>& probs) {
-  auto it = probs.find(edge.p);
+  auto const it = probs.find(edge.p);
   if (it != probs.end()) {
     return ComplexNumbers::mag2(edge.w) * it->second;
   }
@@ -804,7 +804,7 @@ mCachedEdge Package::conjugateTransposeRec(const mEdge& a) {
     }
   }
   // create new top node
-  auto res = makeDDNode(a.p->v, e);
+  auto const res = makeDDNode(a.p->v, e);
 
   // put it in the compute table
   conjugateMatrixTranspose.insert(a.p, res);
@@ -837,7 +837,7 @@ ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y) {
   const auto w = std::max(x.p->v, y.p->v);
   // Overall normalization factor needs to be conjugated
   // before input into recursive private function
-  auto xCopy = vEdge{.p = x.p, .w = ComplexNumbers::conj(x.w)};
+  auto const xCopy = vEdge{.p = x.p, .w = ComplexNumbers::conj(x.w)};
   return innerProduct(xCopy, y, w + 1U);
 }
 fp Package::fidelity(const vEdge& x, const vEdge& y) {
@@ -908,7 +908,7 @@ fp Package::fidelityOfMeasurementOutcomesRecursive(
       }
       idx = std::stoull(filteredString, nullptr, 2);
     }
-    if (auto it = probs.find(idx); it != probs.end()) {
+    if (auto const it = probs.find(idx); it != probs.end()) {
       return top * std::sqrt(it->second);
     }
     return 0.;
@@ -946,7 +946,7 @@ fp Package::expectationValue(const mEdge& x, const vEdge& y) {
 }
 mEdge Package::partialTrace(const mEdge& a,
                             const std::vector<bool>& eliminate) {
-  auto r = trace(a, eliminate, eliminate.size());
+  auto const r = trace(a, eliminate, eliminate.size());
   return {.p = r.p, .w = cn.lookup(r.w)};
 }
 ComplexValue Package::trace(const mEdge& a, const std::size_t numQubits) {

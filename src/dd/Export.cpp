@@ -71,7 +71,7 @@ void printPhaseFormatted(std::ostream& os, fp r) {
     return;
   }
 
-  auto abssqrt = absr / SQRT2_2;
+  auto const abssqrt = absr / SQRT2_2;
   fraction = ComplexValue::getLowestFraction(abssqrt);
   approx = static_cast<fp>(fraction.first) / static_cast<fp>(fraction.second);
   error = std::abs(abssqrt - approx);
@@ -89,7 +89,7 @@ void printPhaseFormatted(std::ostream& os, fp r) {
     return;
   }
 
-  auto abspi = absr / PI;
+  auto const abspi = absr / PI;
   fraction = ComplexValue::getLowestFraction(abspi);
   approx = static_cast<fp>(fraction.first) / static_cast<fp>(fraction.second);
   error = std::abs(abspi - approx);
