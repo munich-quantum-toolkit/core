@@ -65,11 +65,8 @@ add_subdirectory(qasm3)
 # add DD package library
 add_subdirectory(dd)
 
-# add QDMI package library
+# add QDMI libraries
 add_subdirectory(qdmi)
-
-# add FoMaC package library
-add_subdirectory(fomac)
 
 # Installation instructions for the main library
 if(MQT_CORE_INSTALL)

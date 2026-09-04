@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
+#include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <nanobind/nanobind.h>
@@ -42,15 +42,6 @@ void registerSlurm(nb::module_& qdmiModule);
 }
 
 namespace {
-void warnAboutLegacySession() {
-  constexpr auto message =
-      "mqt.core.qdmi.driver.Session is deprecated and will be removed in MQT "
-      "Core 4.0; use the module-level driver functions instead";
-  nb::module_::import_("warnings")
-      .attr("warn")(message, nb::builtins()["DeprecationWarning"],
-                    "stacklevel"_a = 1);
-}
-
 template <typename Query>
 [[nodiscard]] nb::object queryCustomValue(Query query,
                                           const nb::handle valueType) {
@@ -131,99 +122,14 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
       "driver", "Register, discover, and open QDMI devices through MQT Core.");
   bindings::registerSlurm(qdmiModule);
 
-  // Session class
-  auto session = nb::class_<fomac::Session>(driver, "Session",
-                                            R"pb(A legacy QDMI client session.
-
-This class is deprecated and will be removed in MQT Core 4.0. Use the module
-functions to register, inspect, and open devices.)pb");
-
-  session.def(
-      "__init__",
-      [](fomac::Session* self, std::optional<std::string> token,
-         std::optional<std::filesystem::path> authFile,
-         std::optional<std::string> authUrl,
-         std::optional<std::string> username,
-         std::optional<std::string> password,
-         std::optional<std::string> projectId,
-         std::optional<std::string> custom1, std::optional<std::string> custom2,
-         std::optional<std::string> custom3, std::optional<std::string> custom4,
-         std::optional<std::string> custom5) {
-        warnAboutLegacySession();
-        const fomac::SessionConfig config{.token = std::move(token),
-                                          .authFile = std::move(authFile),
-                                          .authUrl = std::move(authUrl),
-                                          .username = std::move(username),
-                                          .password = std::move(password),
-                                          .projectId = std::move(projectId),
-                                          .custom1 = std::move(custom1),
-                                          .custom2 = std::move(custom2),
-                                          .custom3 = std::move(custom3),
-                                          .custom4 = std::move(custom4),
-                                          .custom5 = std::move(custom5)};
-        new (self) fomac::Session(config);
-      },
-      nb::kw_only(), "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
-      "auth_url"_a = std::nullopt, "username"_a = std::nullopt,
-      "password"_a = std::nullopt, "project_id"_a = std::nullopt,
-      "custom1"_a = std::nullopt, "custom2"_a = std::nullopt,
-      "custom3"_a = std::nullopt, "custom4"_a = std::nullopt,
-      "custom5"_a = std::nullopt,
-      R"pb(Create a deprecated QDMI client session with optional authentication.
-
-Args:
-    token: Authentication token
-    auth_file: Path to file containing authentication information
-    auth_url: URL to authentication server
-    username: Username for authentication
-    password: Password for authentication
-    project_id: Project ID for session
-    custom1: Custom configuration parameter 1
-    custom2: Custom configuration parameter 2
-    custom3: Custom configuration parameter 3
-    custom4: Custom configuration parameter 4
-    custom5: Custom configuration parameter 5
-
-Raises:
-    RuntimeError: If auth_file does not exist
-    RuntimeError: If auth_url has invalid format
-
-Example:
-    >>> from mqt.core.qdmi.driver import Session
-    >>> # Session without authentication
-    >>> session = Session()
-    >>> devices = session.get_devices()
-    >>>
-    >>> # Session with token authentication
-    >>> session = Session(token="my_secret_token")
-    >>> devices = session.get_devices()
-    >>>
-    >>> # Session with file-based authentication
-    >>> session = Session(auth_file="/path/to/auth.json")
-    >>> devices = session.get_devices()
-    >>>
-    >>> # Session with multiple parameters
-    >>> session = Session(
-    ...     auth_url="https://auth.example.com", username="user", password="pass", project_id="project-123"
-    ... )
-    >>> devices = session.get_devices())pb");
-
-  session.def("get_devices", &fomac::Session::getDevices,
-              nb::rv_policy::reference_internal,
-              R"pb(Get available devices from this session.
-
-Returns:
-    List of available devices.)pb");
-
   // Job class
-  auto job = nb::class_<fomac::Job>(
+  auto job = nb::class_<qdmi::Job>(
       qdmiModule, "Job",
       "A job represents a submitted quantum program execution.");
 
-  job.def("check", &fomac::Job::check,
-          "Returns the current status of the job.");
+  job.def("check", &qdmi::Job::check, "Returns the current status of the job.");
 
-  job.def("wait", &fomac::Job::wait, "timeout"_a = 0,
+  job.def("wait", &qdmi::Job::wait, "timeout"_a = 0,
           R"pb(Waits for the job to complete.
 
 Args:
@@ -232,36 +138,36 @@ Args:
 Returns:
     True if the job completed within the timeout, False otherwise.)pb");
 
-  job.def("cancel", &fomac::Job::cancel, "Cancels the job.");
+  job.def("cancel", &qdmi::Job::cancel, "Cancels the job.");
 
-  job.def("get_shots", &fomac::Job::getShots,
+  job.def("get_shots", &qdmi::Job::getShots,
           "Returns the raw shot results from the job.");
 
-  job.def("get_counts", &fomac::Job::getCounts,
+  job.def("get_counts", &qdmi::Job::getCounts,
           "Returns the measurement counts from the job.");
 
-  job.def("get_dense_statevector", &fomac::Job::getDenseStateVector,
+  job.def("get_dense_statevector", &qdmi::Job::getDenseStateVector,
           "Returns the dense statevector from the job (typically only "
           "available from simulator devices).");
 
-  job.def("get_dense_probabilities", &fomac::Job::getDenseProbabilities,
+  job.def("get_dense_probabilities", &qdmi::Job::getDenseProbabilities,
           "Returns the dense probabilities from the job (typically only "
           "available from simulator devices).");
 
-  job.def("get_sparse_statevector", &fomac::Job::getSparseStateVector,
+  job.def("get_sparse_statevector", &qdmi::Job::getSparseStateVector,
           "Returns the sparse statevector from the job (typically only "
           "available from simulator devices).");
 
-  job.def("get_sparse_probabilities", &fomac::Job::getSparseProbabilities,
+  job.def("get_sparse_probabilities", &qdmi::Job::getSparseProbabilities,
           "Returns the sparse probabilities from the job (typically only "
           "available from simulator devices).");
 
   job.def(
       "query_custom_property",
-      [](const fomac::Job& self, const fomac::CustomProperty customProperty,
+      [](const qdmi::Job& self, const qdmi::CustomProperty customProperty,
          const nb::handle valueType) {
         return queryCustomValue(
-            [&self, customProperty]<fomac::custom_property_value T>() {
+            [&self, customProperty]<qdmi::custom_property_value T>() {
               return self.queryCustomProperty<T>(customProperty);
             },
             valueType);
@@ -279,10 +185,10 @@ when the custom slot is unsupported.)pb");
 
   job.def(
       "get_custom_result",
-      [](const fomac::Job& self, const fomac::CustomProperty customProperty,
+      [](const qdmi::Job& self, const qdmi::CustomProperty customProperty,
          const nb::handle valueType) {
         return queryCustomValue(
-            [&self, customProperty]<fomac::custom_property_value T>() {
+            [&self, customProperty]<qdmi::custom_property_value T>() {
               return self.getCustomResult<T>(customProperty);
             },
             valueType);
@@ -297,26 +203,25 @@ The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
 
-  job.def_prop_ro("id", &fomac::Job::getId, "The job ID.");
+  job.def_prop_ro("id", &qdmi::Job::getId, "The job ID.");
 
-  job.def_prop_ro("program_format", &fomac::Job::getProgramFormat,
+  job.def_prop_ro("program_format", &qdmi::Job::getProgramFormat,
                   "The format of the submitted program.");
 
-  job.def_prop_ro("program", &fomac::Job::getProgram, "The submitted program.");
+  job.def_prop_ro("program", &qdmi::Job::getProgram, "The submitted program.");
 
   job.def_prop_ro(
       "program_bytes",
-      [](const fomac::Job& self) {
+      [](const qdmi::Job& self) {
         const auto program = self.getProgramBytes();
         return nb::bytes(program.data(), program.size());
       },
       "The exact bytes of the submitted program.");
 
-  job.def_prop_ro("num_shots", &fomac::Job::getNumShots,
-                  "The number of shots.");
+  job.def_prop_ro("num_shots", &qdmi::Job::getNumShots, "The number of shots.");
 
   job.def_prop_ro(
-      "queue_position", &fomac::Job::getQueuePosition,
+      "queue_position", &qdmi::Job::getQueuePosition,
       "The number of jobs ahead in the queue, or None if unavailable or not "
       "applicable in the current state.");
 
@@ -354,7 +259,7 @@ when the custom slot is unsupported.)pb");
       .value("CUSTOM4", QDMI_PROGRAM_FORMAT_CUSTOM4)
       .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5);
 
-  qdmiModule.def("is_binary_program_format", &fomac::isBinaryProgramFormat,
+  qdmiModule.def("is_binary_program_format", &qdmi::isBinaryProgramFormat,
                  "program_format"_a,
                  R"pb(Returns whether a program format carries a binary payload.
 
@@ -369,17 +274,17 @@ Args:
 Returns:
     True if the format requires exact-byte submission.)pb");
 
-  nb::enum_<fomac::CustomProperty>(
+  nb::enum_<qdmi::CustomProperty>(
       qdmiModule, "CustomProperty",
       "An implementation-defined custom property or result slot.")
-      .value("CUSTOM1", fomac::CustomProperty::Custom1)
-      .value("CUSTOM2", fomac::CustomProperty::Custom2)
-      .value("CUSTOM3", fomac::CustomProperty::Custom3)
-      .value("CUSTOM4", fomac::CustomProperty::Custom4)
-      .value("CUSTOM5", fomac::CustomProperty::Custom5);
+      .value("CUSTOM1", qdmi::CustomProperty::Custom1)
+      .value("CUSTOM2", qdmi::CustomProperty::Custom2)
+      .value("CUSTOM3", qdmi::CustomProperty::Custom3)
+      .value("CUSTOM4", qdmi::CustomProperty::Custom4)
+      .value("CUSTOM5", qdmi::CustomProperty::Custom5);
 
   // Device class
-  auto device = nb::class_<fomac::Device>(
+  auto device = nb::class_<qdmi::Device>(
       qdmiModule, "Device",
       "A device represents a quantum device with its properties and "
       "capabilities.");
@@ -393,69 +298,68 @@ Returns:
       .value("MAINTENANCE", QDMI_DEVICE_STATUS_MAINTENANCE)
       .value("CALIBRATION", QDMI_DEVICE_STATUS_CALIBRATION);
 
-  device.def("name", &fomac::Device::getName,
-             "Returns the name of the device.");
+  device.def("name", &qdmi::Device::getName, "Returns the name of the device.");
 
-  device.def("version", &fomac::Device::getVersion,
+  device.def("version", &qdmi::Device::getVersion,
              "Returns the version of the device.");
 
-  device.def("status", &fomac::Device::getStatus,
+  device.def("status", &qdmi::Device::getStatus,
              "Returns the current status of the device.");
 
-  device.def("library_version", &fomac::Device::getLibraryVersion,
+  device.def("library_version", &qdmi::Device::getLibraryVersion,
              "Returns the version of the library used to define the device.");
 
-  device.def("qubits_num", &fomac::Device::getQubitsNum,
+  device.def("qubits_num", &qdmi::Device::getQubitsNum,
              "Returns the number of qubits available on the device.");
 
-  device.def("sites", &fomac::Device::getSites,
+  device.def("sites", &qdmi::Device::getSites,
              "Returns the list of all sites (zone and regular sites) available "
              "on the device.");
 
-  device.def("regular_sites", &fomac::Device::getRegularSites,
+  device.def("regular_sites", &qdmi::Device::getRegularSites,
              "Returns the list of regular sites (without zone sites) available "
              "on the device.");
 
-  device.def("zones", &fomac::Device::getZones,
+  device.def("zones", &qdmi::Device::getZones,
              "Returns the list of zone sites (without regular sites) available "
              "on the device.");
 
-  device.def("operations", &fomac::Device::getOperations,
+  device.def("operations", &qdmi::Device::getOperations,
              "Returns the list of operations supported by the device.");
 
-  device.def("coupling_map", &fomac::Device::getCouplingMap,
+  device.def("coupling_map", &qdmi::Device::getCouplingMap,
              "Returns the coupling map of the device as a list of site pairs.");
 
-  device.def("needs_calibration", &fomac::Device::getNeedsCalibration,
+  device.def("needs_calibration", &qdmi::Device::getNeedsCalibration,
              "Returns whether the device needs calibration.");
 
-  device.def("queue_length", &fomac::Device::getQueueLength,
+  device.def("queue_length", &qdmi::Device::getQueueLength,
              "Returns the current queue length, or None if unavailable.");
 
-  device.def("length_unit", &fomac::Device::getLengthUnit,
+  device.def("length_unit", &qdmi::Device::getLengthUnit,
              "Returns the unit of length used by the device.");
 
-  device.def("length_scale_factor", &fomac::Device::getLengthScaleFactor,
+  device.def("length_scale_factor", &qdmi::Device::getLengthScaleFactor,
              "Returns the scale factor for length used by the device.");
 
-  device.def("duration_unit", &fomac::Device::getDurationUnit,
+  device.def("duration_unit", &qdmi::Device::getDurationUnit,
              "Returns the unit of duration used by the device.");
 
-  device.def("duration_scale_factor", &fomac::Device::getDurationScaleFactor,
+  device.def("duration_scale_factor", &qdmi::Device::getDurationScaleFactor,
              "Returns the scale factor for duration used by the device.");
 
-  device.def("min_atom_distance", &fomac::Device::getMinAtomDistance,
+  device.def("min_atom_distance", &qdmi::Device::getMinAtomDistance,
              "Returns the minimum atom distance on the device.");
 
   device.def("supported_program_formats",
-             &fomac::Device::getSupportedProgramFormats,
+             &qdmi::Device::getSupportedProgramFormats,
              "Returns the list of program formats supported by the device.");
 
-  device.def("child_devices", &fomac::Device::getChildDevices,
+  device.def("child_devices", &qdmi::Device::getChildDevices,
              "Returns the direct child devices managed by this device.");
 
   device.def(
-      "query_custom_operations", &fomac::Device::queryCustomOperations,
+      "query_custom_operations", &qdmi::Device::queryCustomOperations,
       "custom_property"_a,
       R"pb(Query a custom device property that contains operation handles.
 
@@ -464,10 +368,10 @@ slot is unsupported. A supported empty list is returned as an empty list.)pb");
 
   device.def(
       "query_custom_property",
-      [](const fomac::Device& self, const fomac::CustomProperty customProperty,
+      [](const qdmi::Device& self, const qdmi::CustomProperty customProperty,
          const nb::handle valueType) {
         return queryCustomValue(
-            [&self, customProperty]<fomac::custom_property_value T>() {
+            [&self, customProperty]<qdmi::custom_property_value T>() {
               return self.queryCustomProperty<T>(customProperty);
             },
             valueType);
@@ -485,13 +389,13 @@ when the custom slot is unsupported.)pb");
 
   device.def(
       "submit_job",
-      [](const fomac::Device& self, const std::string& program,
+      [](const qdmi::Device& self, const std::string& program,
          const QDMI_Program_Format format, const std::optional<size_t> numShots,
-         const std::optional<fomac::CustomJobParameter>& custom1,
-         const std::optional<fomac::CustomJobParameter>& custom2,
-         const std::optional<fomac::CustomJobParameter>& custom3,
-         const std::optional<fomac::CustomJobParameter>& custom4,
-         const std::optional<fomac::CustomJobParameter>& custom5) {
+         const std::optional<qdmi::CustomJobParameter>& custom1,
+         const std::optional<qdmi::CustomJobParameter>& custom2,
+         const std::optional<qdmi::CustomJobParameter>& custom3,
+         const std::optional<qdmi::CustomJobParameter>& custom4,
+         const std::optional<qdmi::CustomJobParameter>& custom5) {
         if (numShots.has_value()) {
           return self.submitJob(program, format, *numShots, custom1, custom2,
                                 custom3, custom4, custom5);
@@ -507,13 +411,13 @@ when the custom slot is unsupported.)pb");
 
   device.def(
       "submit_job",
-      [](const fomac::Device& self, const nb::bytes& program,
+      [](const qdmi::Device& self, const nb::bytes& program,
          const QDMI_Program_Format format, const std::optional<size_t> numShots,
-         const std::optional<fomac::CustomJobParameter>& custom1,
-         const std::optional<fomac::CustomJobParameter>& custom2,
-         const std::optional<fomac::CustomJobParameter>& custom3,
-         const std::optional<fomac::CustomJobParameter>& custom4,
-         const std::optional<fomac::CustomJobParameter>& custom5) {
+         const std::optional<qdmi::CustomJobParameter>& custom1,
+         const std::optional<qdmi::CustomJobParameter>& custom2,
+         const std::optional<qdmi::CustomJobParameter>& custom3,
+         const std::optional<qdmi::CustomJobParameter>& custom4,
+         const std::optional<qdmi::CustomJobParameter>& custom5) {
         const auto bytes = std::span{
             static_cast<const std::byte*>(program.data()), program.size()};
         if (numShots.has_value()) {
@@ -531,13 +435,13 @@ when the custom slot is unsupported.)pb");
 
   device.def(
       "submit_calibration_job",
-      [](const fomac::Device& self,
+      [](const qdmi::Device& self,
          const std::optional<std::variant<std::string, nb::bytes>>& program,
-         const std::optional<fomac::CustomJobParameter>& custom1,
-         const std::optional<fomac::CustomJobParameter>& custom2,
-         const std::optional<fomac::CustomJobParameter>& custom3,
-         const std::optional<fomac::CustomJobParameter>& custom4,
-         const std::optional<fomac::CustomJobParameter>& custom5) {
+         const std::optional<qdmi::CustomJobParameter>& custom1,
+         const std::optional<qdmi::CustomJobParameter>& custom2,
+         const std::optional<qdmi::CustomJobParameter>& custom3,
+         const std::optional<qdmi::CustomJobParameter>& custom4,
+         const std::optional<qdmi::CustomJobParameter>& custom5) {
         if (!program.has_value()) {
           return self.submitCalibrationJob(std::nullopt, custom1, custom2,
                                            custom3, custom4, custom5);
@@ -566,13 +470,13 @@ executes no circuit, so it takes no shot count.)pb");
 
   device.def(
       "retrieve_job_by_id",
-      [](const fomac::Device& self, const std::string& jobId) {
+      [](const qdmi::Device& self, const std::string& jobId) {
         return self.retrieveJobById(jobId);
       },
       "job_id"_a, nb::rv_policy::reference_internal,
       "Retrieves an existing job by its device-provided ID.");
 
-  device.def("__repr__", [](const fomac::Device& dev) {
+  device.def("__repr__", [](const qdmi::Device& dev) {
     return "<Device name=\"" + dev.getName() + "\">";
   });
 
@@ -582,53 +486,53 @@ executes no circuit, so it takes no shot count.)pb");
              nb::sig("def __ne__(self, arg: object, /) -> bool"));
 
   // Site class
-  auto site = nb::class_<fomac::Site>(
+  auto site = nb::class_<qdmi::Site>(
       device, "Site",
       "A site represents a potential qubit location on a quantum device.");
 
-  site.def("index", &fomac::Site::getIndex, "Returns the index of the site.");
+  site.def("index", &qdmi::Site::getIndex, "Returns the index of the site.");
 
-  site.def("t1", &fomac::Site::getT1,
+  site.def("t1", &qdmi::Site::getT1,
            "Returns the T1 coherence time of the site.");
 
-  site.def("t2", &fomac::Site::getT2,
+  site.def("t2", &qdmi::Site::getT2,
            "Returns the T2 coherence time of the site.");
 
-  site.def("name", &fomac::Site::getName, "Returns the name of the site.");
+  site.def("name", &qdmi::Site::getName, "Returns the name of the site.");
 
-  site.def("x_coordinate", &fomac::Site::getXCoordinate,
+  site.def("x_coordinate", &qdmi::Site::getXCoordinate,
            "Returns the x coordinate of the site.");
 
-  site.def("y_coordinate", &fomac::Site::getYCoordinate,
+  site.def("y_coordinate", &qdmi::Site::getYCoordinate,
            "Returns the y coordinate of the site.");
 
-  site.def("z_coordinate", &fomac::Site::getZCoordinate,
+  site.def("z_coordinate", &qdmi::Site::getZCoordinate,
            "Returns the z coordinate of the site.");
 
-  site.def("is_zone", &fomac::Site::isZone,
+  site.def("is_zone", &qdmi::Site::isZone,
            "Returns whether the site is a zone.");
 
-  site.def("x_extent", &fomac::Site::getXExtent,
+  site.def("x_extent", &qdmi::Site::getXExtent,
            "Returns the x extent of the site.");
 
-  site.def("y_extent", &fomac::Site::getYExtent,
+  site.def("y_extent", &qdmi::Site::getYExtent,
            "Returns the y extent of the site.");
 
-  site.def("z_extent", &fomac::Site::getZExtent,
+  site.def("z_extent", &qdmi::Site::getZExtent,
            "Returns the z extent of the site.");
 
-  site.def("module_index", &fomac::Site::getModuleIndex,
+  site.def("module_index", &qdmi::Site::getModuleIndex,
            "Returns the index of the module the site belongs to.");
 
-  site.def("submodule_index", &fomac::Site::getSubmoduleIndex,
+  site.def("submodule_index", &qdmi::Site::getSubmoduleIndex,
            "Returns the index of the submodule the site belongs to.");
 
   site.def(
       "query_custom_property",
-      [](const fomac::Site& self, const fomac::CustomProperty customProperty,
+      [](const qdmi::Site& self, const qdmi::CustomProperty customProperty,
          const nb::handle valueType) {
         return queryCustomValue(
-            [&self, customProperty]<fomac::custom_property_value T>() {
+            [&self, customProperty]<qdmi::custom_property_value T>() {
               return self.queryCustomProperty<T>(customProperty);
             },
             valueType);
@@ -644,7 +548,7 @@ The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
 
-  site.def("__repr__", [](const fomac::Site& s) {
+  site.def("__repr__", [](const qdmi::Site& s) {
     return "<Site index=" + std::to_string(s.getIndex()) + ">";
   });
 
@@ -653,82 +557,80 @@ when the custom slot is unsupported.)pb");
   site.def(nb::self != nb::self,
            nb::sig("def __ne__(self, arg: object, /) -> bool"));
   // Operation class
-  auto operation = nb::class_<fomac::Operation>(
+  auto operation = nb::class_<qdmi::Operation>(
       device, "Operation",
       "An operation represents a quantum operation that can be performed on a "
       "quantum device.");
 
-  operation.def("name", &fomac::Operation::getName,
-                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+  operation.def("name", &qdmi::Operation::getName,
+                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the name of the operation.");
 
-  operation.def("qubits_num", &fomac::Operation::getQubitsNum,
-                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+  operation.def("qubits_num", &qdmi::Operation::getQubitsNum,
+                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the number of qubits the operation acts on.");
 
-  operation.def("parameters_num", &fomac::Operation::getParametersNum,
-                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+  operation.def("parameters_num", &qdmi::Operation::getParametersNum,
+                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the number of parameters the operation has.");
 
-  operation.def("duration", &fomac::Operation::getDuration,
-                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+  operation.def("duration", &qdmi::Operation::getDuration,
+                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the duration of the operation.");
 
-  operation.def("fidelity", &fomac::Operation::getFidelity,
-                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+  operation.def("fidelity", &qdmi::Operation::getFidelity,
+                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the fidelity of the operation.");
 
-  operation.def("interaction_radius", &fomac::Operation::getInteractionRadius,
-                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+  operation.def("interaction_radius", &qdmi::Operation::getInteractionRadius,
+                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the interaction radius of the operation.");
 
-  operation.def("blocking_radius", &fomac::Operation::getBlockingRadius,
-                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+  operation.def("blocking_radius", &qdmi::Operation::getBlockingRadius,
+                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the blocking radius of the operation.");
 
-  operation.def("idling_fidelity", &fomac::Operation::getIdlingFidelity,
-                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+  operation.def("idling_fidelity", &qdmi::Operation::getIdlingFidelity,
+                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the idling fidelity of the operation.");
 
-  operation.def("is_zoned", &fomac::Operation::isZoned,
+  operation.def("is_zoned", &qdmi::Operation::isZoned,
                 "Returns whether the operation is zoned.");
 
-  operation.def("sites", &fomac::Operation::getSites,
+  operation.def("sites", &qdmi::Operation::getSites,
                 "Returns the list of sites the operation can be performed on.");
 
-  operation.def("site_pairs", &fomac::Operation::getSitePairs,
+  operation.def("site_pairs", &qdmi::Operation::getSitePairs,
                 "Returns the list of site pairs the local 2-qubit operation "
                 "can be performed on.");
 
-  operation.def("mean_shuttling_speed",
-                &fomac::Operation::getMeanShuttlingSpeed,
-                "sites"_a.sig("...") = std::vector<fomac::Site>{},
+  operation.def("mean_shuttling_speed", &qdmi::Operation::getMeanShuttlingSpeed,
+                "sites"_a.sig("...") = std::vector<qdmi::Site>{},
                 "params"_a.sig("...") = std::vector<double>{},
                 "Returns the mean shuttling speed of the operation.");
 
   operation.def(
       "query_custom_property",
-      [](const fomac::Operation& self,
-         const fomac::CustomProperty customProperty, const nb::handle valueType,
-         const std::vector<fomac::Site>& sites,
+      [](const qdmi::Operation& self, const qdmi::CustomProperty customProperty,
+         const nb::handle valueType, const std::vector<qdmi::Site>& sites,
          const std::vector<double>& params) {
         return queryCustomValue(
             [&self, customProperty, &sites,
-             &params]<fomac::custom_property_value T>() {
+             &params]<qdmi::custom_property_value T>() {
               return self.queryCustomProperty<T>(customProperty, sites, params);
             },
             valueType);
       },
       "custom_property"_a, "value_type"_a,
-      "sites"_a.sig("...") = std::vector<fomac::Site>{},
+      "sites"_a.sig("...") = std::vector<qdmi::Site>{},
       "params"_a.sig("...") = std::vector<double>{},
       nb::sig("def query_custom_property(self, custom_property: "
               "CustomProperty, "
@@ -742,7 +644,7 @@ The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
 
-  operation.def("__repr__", [](const fomac::Operation& op) {
+  operation.def("__repr__", [](const qdmi::Operation& op) {
     return "<Operation name=\"" + op.getName() + "\">";
   });
 
@@ -879,7 +781,7 @@ libraries or expose their definitions.)pb");
             std::move(deviceConfig), std::move(deviceConfigFile),
             std::move(custom1), std::move(custom2), std::move(custom3),
             std::move(custom4), std::move(custom5));
-        return fomac::Session::openDevice(deviceId, overrides);
+        return qdmi::Session::openDevice(deviceId, overrides);
       },
       "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
       "token"_a = std::nullopt, "auth_file"_a = std::nullopt,

@@ -106,6 +106,31 @@ configurations.
 The bundled DDSIM QDMI device no longer accepts QIR Base or Adaptive Profile
 programs in string or module form. Use QASM2 or QASM3 with this device.
 
+### Removal of the FoMaC compatibility APIs
+
+MQT Core no longer provides `mqt.core.fomac` or `mqt.core.qdmi.driver.Session`.
+Import QDMI entities such as `Device`, `Job`, and `ProgramFormat` from
+`mqt.core.qdmi`. Import `DeviceDefinition` and the module-level registry
+functions from `mqt.core.qdmi.driver`. Use `registered_device_ids()` to discover
+devices and `open_device()` to open a fresh device session. Pass provider
+configuration overrides to `open_device()` when a device needs per-open
+configuration.
+
+MQT Core also removes the FoMaC name from its C++ API. Apply these replacements:
+
+- `fomac::` becomes `qdmi::`.
+- `fomac/FoMaC.hpp` becomes `qdmi/Client.hpp`.
+- `fomac/Slurm.hpp` becomes `qdmi/Slurm.hpp`.
+- `MQT::CoreFoMaC` becomes `MQT::CoreQDMI`.
+
+The class and function names do not change. For example:
+
+```cpp
+#include "qdmi/Client.hpp"
+
+auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+```
+
 ### Private `nlohmann_json` dependency
 
 MQT Core uses `nlohmann_json` only inside its implementation. It no longer

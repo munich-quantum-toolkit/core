@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Client.hpp
+ * @brief QDMI C++ device-management interface.
+ */
+
 #pragma once
 
 #include "qdmi/common/Common.hpp"
@@ -37,7 +41,7 @@
 #include <variant>
 #include <vector>
 
-namespace fomac {
+namespace qdmi {
 using CustomJobParameter = std::variant<std::string, bool, int, double>;
 
 /**
@@ -571,7 +575,7 @@ public:
   /**
    * @brief Queries a custom device property containing operation handles.
    * @param property Custom property slot to query.
-   * @return Normal FoMaC operation wrappers, or `std::nullopt` if the slot is
+   * @return Normal QDMI operation wrappers, or `std::nullopt` if the slot is
    * unsupported. A supported empty list is returned as an engaged optional.
    * @throws std::invalid_argument If the returned byte count is not a multiple
    * of `sizeof(QDMI_Operation)`.
@@ -1282,4 +1286,4 @@ private:
 
   friend class Device;
 };
-} // namespace fomac
+} // namespace qdmi

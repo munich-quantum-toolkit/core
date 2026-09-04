@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/FoMaC.hpp"
+#include "qdmi/Client.hpp"
 
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/Diagnostics.hpp"
@@ -36,7 +36,7 @@
 #include <variant>
 #include <vector>
 
-namespace fomac {
+namespace qdmi {
 namespace {
 /// Rejects the formats that `submitJob` cannot carry.
 /// A batch job's program is a list of job handles rather than a byte blob, so
@@ -981,4 +981,4 @@ std::vector<Device> Session::getDevices() {
       [](QDMI_Device_impl_d* const& dev) -> Device { return Device(dev); });
   return devices;
 }
-} // namespace fomac
+} // namespace qdmi

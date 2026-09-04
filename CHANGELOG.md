@@ -72,6 +72,10 @@ releases may include breaking changes.
 - 💥 Remove the random-number generator, seed, and `getGenerator()` method from
   `QuantumComputation`; randomized algorithms now own generators initialized
   from their seed arguments ([#2111]) ([**@simon1hofmann**])
+- 💥 Remove the FoMaC compatibility name from the C++ and Python QDMI APIs. Use
+  the `qdmi` C++ namespace, headers, library, and CMake target; the
+  `mqt.core.qdmi` Python module; and module-level functions in
+  `mqt.core.qdmi.driver` ([#2115]) ([**@burgholzer**])
 - 💥 Remove the ZX-calculus library, including the `mqt-core-zx` target,
   `MQT::CoreZX` alias, `zx` headers and namespace, and its Boost.Multiprecision
   and GMP build support. Equivalence-checking users should use [MQT QCEC]; its
@@ -822,6 +826,7 @@ for previous changelogs._
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
+[#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
 [#2114]: https://github.com/munich-quantum-toolkit/core/pull/2114
 [#2112]: https://github.com/munich-quantum-toolkit/core/pull/2112
 [#2111]: https://github.com/munich-quantum-toolkit/core/pull/2111

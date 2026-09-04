@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "fomac/Slurm.hpp"
+#include "qdmi/Slurm.hpp"
 
 #include <nanobind/nanobind.h>
 
@@ -20,7 +20,7 @@ namespace mqt::bindings {
 void registerSlurm(nb::module_& qdmiModule) {
   auto slurm = qdmiModule.def_submodule(
       "slurm", "Open a QDMI device named by the Slurm license environment.");
-  slurm.def("open_device_from_license", &fomac::slurm::openDeviceFromLicense,
+  slurm.def("open_device_from_license", &qdmi::slurm::openDeviceFromLicense,
             R"pb(Open the QDMI device named by the Slurm license environment.
 
 ``SLURM_JOB_LICENSES`` must contain one local license whose name equals a

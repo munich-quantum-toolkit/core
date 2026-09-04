@@ -10,9 +10,6 @@
 add_subdirectory(dd)
 add_subdirectory(ir)
 add_subdirectory(qdmi)
-if(BUILD_MQT_CORE_QDMI_DDSIM_DEVICE AND BUILD_MQT_CORE_QDMI_SC_DEVICE)
-  add_subdirectory(fomac)
-endif()
 
 # copy test circuits to build directory
 file(COPY ${PROJECT_SOURCE_DIR}/test/circuits DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
