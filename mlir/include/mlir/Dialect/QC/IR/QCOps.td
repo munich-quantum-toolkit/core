@@ -16,6 +16,8 @@ include "mlir/Dialect/QC/IR/QCTypes.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/RegionKindInterface.td"
+include "mlir/IR/SymbolInterfaces.td"
+include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
 
@@ -955,6 +957,64 @@ def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
         static OperandRange getParameters() { return {nullptr, 0}; }
         static StringRef getBaseSymbol() { return "barrier"; }
     }];
+}
+
+def CallOp
+    : QCOp<"call", traits = [CallOpInterface, UnitaryOpInterface,
+                             DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+                             MemoryEffects<[MemRead, MemWrite]>]> {
+  let summary = "Call a unitary QC function";
+  let description = [{
+    Calls a private `func.func` marked with `mqt.unitary`. The operands match
+    the callee arguments: zero or more `f64` parameters followed by scalar
+    qubits. QC reference semantics make the call resultless.
+
+    Example:
+    ```mlir
+    qc.call @bell(%q0, %q1) : !qc.qubit, !qc.qubit
+    ```
+  }];
+
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands,
+      OptionalAttr<DictArrayAttr>:$arg_attrs,
+      OptionalAttr<DictArrayAttr>:$res_attrs);
+
+  let assemblyFormat = [{
+    $callee `(` $operands `)` attr-dict `:` type($operands)
+  }];
+
+  let builders = [OpBuilder<
+      (ins "FlatSymbolRefAttr":$callee, "ValueRange":$operands), [{
+    $_state.addAttribute("callee", callee);
+    $_state.addOperands(operands);
+  }]>];
+
+  let extraClassDeclaration = [{
+    size_t getNumQubits();
+    size_t getNumTargets() { return getNumQubits(); }
+    static size_t getNumControls() { return 0; }
+    Value getQubit(size_t i) { return getTarget(i); }
+    Value getTarget(size_t i) { return getQubits()[i]; }
+    static Value getControl(size_t i) {
+      llvm::reportFatalUsageError("CallOp does not have controls");
+    }
+    OperandRange getQubits();
+    OperandRange getTargets() { return getQubits(); }
+    static OperandRange getControls() { return {nullptr, 0}; }
+    size_t getNumParams();
+    Value getParameter(size_t i) { return getParameters()[i]; }
+    OperandRange getParameters();
+    StringRef getBaseSymbol() { return getCallee(); }
+
+    ::mlir::Operation::operand_range getArgOperands() { return getOperands(); }
+    MutableOperandRange getArgOperandsMutable() { return getOperandsMutable(); }
+    ::mlir::CallInterfaceCallable getCallableForCallee() {
+      return getCalleeAttr();
+    }
+    void setCalleeFromCallable(::mlir::CallInterfaceCallable callee) {
+      setCalleeAttr(cast<FlatSymbolRefAttr>(cast<SymbolRefAttr>(callee)));
+    }
+  }];
 }
 
 //===----------------------------------------------------------------------===//

@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file test_mqt_ir.cpp
- * @brief Unit tests for the MQT metadata dialect.
- */
+/// @file test_mqt_ir.cpp
+/// Unit tests for the MQT metadata dialect.
 
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/MQT/IR/MQTAttributes.h"
@@ -29,6 +27,7 @@
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -97,6 +96,36 @@ TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
       }
       func.func @lowered_cbit() {
         %reg = memref.alloc() {mqt.register_name = "lowered"} : memref<2xi1>
+        return
+      }
+    }
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, AcceptsSourceFunctionName) {
+  EXPECT_TRUE(parse(R"mlir(
+    module {
+      func.func private @unique() attributes {mqt.source_name = "source"}
+    }
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, RejectsInvalidSourceFunctionNames) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func private @empty() attributes {mqt.source_name = ""}
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func private @null() attributes {mqt.source_name = "a\00b"}
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %c0 = "arith.constant"() {mqt.source_name = "source", value = 0 : i64}
+            : () -> i64
         return
       }
     }
@@ -337,6 +366,164 @@ TEST_F(MQTIRTest, RejectsInvalidEntryPoints) {
       }
     }
   )mlir"));
+}
+
+TEST_F(MQTIRTest, RejectsMutuallyRecursiveUnitaryFunctions) {
+  for (StringRef source : {
+           R"mlir(
+             func.func private @first(%q: !qc.qubit) attributes {mqt.unitary} {
+               qc.call @second(%q) : !qc.qubit
+               return
+             }
+             func.func private @second(%q: !qc.qubit) attributes {mqt.unitary} {
+               qc.call @first(%q) : !qc.qubit
+               return
+             }
+           )mlir",
+           R"mlir(
+             func.func private @first(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = qco.call @second(%q) : (!qco.qubit) -> !qco.qubit
+               return %out : !qco.qubit
+             }
+             func.func private @second(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = qco.call @first(%q) : (!qco.qubit) -> !qco.qubit
+               return %out : !qco.qubit
+             }
+           )mlir"}) {
+    SCOPED_TRACE(source.str());
+    bool sawRecursion = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawRecursion |= StringRef(diagnostic.str())
+                          .contains("unitary function must not be recursive");
+      return success();
+    });
+    EXPECT_FALSE(parse(source));
+    EXPECT_TRUE(sawRecursion);
+  }
+}
+
+TEST_F(MQTIRTest, RejectsEmptyUnitaryBodies) {
+  for (StringRef source : {
+           R"mlir(
+             func.func private @empty(!qc.qubit) attributes {mqt.unitary} {
+             ^bb0(%q: !qc.qubit):
+             }
+           )mlir",
+           R"mlir(
+             func.func private @empty(!qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+             ^bb0(%q: !qco.qubit):
+             }
+           )mlir"}) {
+    SCOPED_TRACE(source.str());
+    bool sawEmptyBody = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawEmptyBody |= StringRef(diagnostic.str())
+                          .contains("unitary function body must not be empty");
+      return success();
+    });
+    EXPECT_FALSE(parse(source));
+    EXPECT_TRUE(sawEmptyBody);
+  }
+}
+
+TEST_F(MQTIRTest, RejectsCyclicUnitaryQubitFlow) {
+  bool sawCycle = false;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    sawCycle |= StringRef(diagnostic.str())
+                    .contains("unitary QCO result has cyclic qubit flow");
+    return success();
+  });
+  EXPECT_FALSE(parse(R"mlir(
+    func.func private @cyclic(%q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %a = qco.h %b : !qco.qubit -> !qco.qubit
+      %b = qco.h %a : !qco.qubit -> !qco.qubit
+      return %b : !qco.qubit
+    }
+  )mlir"));
+  EXPECT_TRUE(sawCycle);
+}
+
+TEST_F(MQTIRTest, RejectsMalformedUnitaryBodyOperations) {
+  for (StringRef source : {
+           R"mlir(
+             func.func private @malformed(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = "qco.h"() : () -> !qco.qubit
+               return %out : !qco.qubit
+             }
+           )mlir",
+           R"mlir(
+             func.func private @malformed(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = qco.inv (%arg = %q) {
+                 %h = "qco.h"() : () -> !qco.qubit
+                 qco.yield %h : !qco.qubit
+               } : {!qco.qubit} -> {!qco.qubit}
+               return %out : !qco.qubit
+             }
+           )mlir",
+           R"mlir(
+             func.func private @malformed(%q: !qc.qubit)
+                 attributes {mqt.unitary} {
+               %value = "memref.load"() : () -> f64
+               return
+             }
+           )mlir",
+           R"mlir(
+             func.func private @malformed(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %value = "memref.load"() : () -> f64
+               return %q : !qco.qubit
+             }
+           )mlir"}) {
+    SCOPED_TRACE(source.str());
+    bool sawOperandError = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawOperandError |= StringRef(diagnostic.str()).contains("operand");
+      return success();
+    });
+    EXPECT_FALSE(parse(source));
+    EXPECT_TRUE(sawOperandError);
+  }
+}
+
+TEST_F(MQTIRTest, RejectsMalformedCallsInUnitaryCallees) {
+  for (StringRef source : {
+           R"mlir(
+             func.func private @first(%q: !qc.qubit) attributes {mqt.unitary} {
+               qc.call @second(%q) : !qc.qubit
+               return
+             }
+             func.func private @second(%q: !qc.qubit) attributes {mqt.unitary} {
+               "qc.call"(%q) : (!qc.qubit) -> ()
+               return
+             }
+           )mlir",
+           R"mlir(
+             func.func private @first(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = qco.call @second(%q) : (!qco.qubit) -> !qco.qubit
+               return %out : !qco.qubit
+             }
+             func.func private @second(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = "qco.call"(%q) : (!qco.qubit) -> !qco.qubit
+               return %out : !qco.qubit
+             }
+           )mlir"}) {
+    SCOPED_TRACE(source.str());
+    bool sawMissingCallee = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawMissingCallee |= StringRef(diagnostic.str()).contains("callee");
+      return success();
+    });
+    EXPECT_FALSE(parse(source));
+    EXPECT_TRUE(sawMissingCallee);
+  }
 }
 
 TEST_F(MQTIRTest, RejectsInvalidInputNames) {

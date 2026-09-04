@@ -19,7 +19,11 @@ target_link_libraries(
           MLIRMQTDialect
           MLIRParser
           MLIRPass
+          MLIRQCPrograms
+          MLIRQCProgramBuilder
           MLIRQCDialect
+          MLIRQCOPrograms
+          MLIRQCOProgramBuilder
           MLIRQCODialect
           MLIRSCFDialect
           MLIRSupportMQT

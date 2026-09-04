@@ -58,7 +58,7 @@ pennylane = [
   "pennylane>=0.45.1,<0.46",
 ]
 qiskit = [
-  "qiskit[qasm3-import]>=1.1.0",
+  "qiskit[qasm3-import]>=2.1.0",
 ]
 
 [project.entry-points."pennylane.plugins"]
@@ -356,7 +356,7 @@ docs = [
   "sphinx-llm>=0.4.1",
   "sphinxcontrib-bibtex>=2.6.5",
   "sphinxext-opengraph>=0.13.0",
-  "qiskit[visualization]>=1.1.0",
+  "qiskit[visualization]>=2.1.0",
   "openqasm-pygments>=0.2.0",
   "pennylane>=0.45.1,<0.46",
   "qirrunner~=0.9.6",
@@ -371,7 +371,7 @@ test-base = [
   "pytest-sugar>=1.1.1",
   "pytest-xdist>=3.8.0",
   "pennylane>=0.45.1,<0.46",
-  "qiskit[qasm3-import]>=1.1.0",
+  "qiskit[qasm3-import]>=2.1.0",
   "numpy>=2.1; python_version >= '3.13'",
   "numpy>=2.3.2; python_version >= '3.14'",
 ]

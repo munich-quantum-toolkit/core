@@ -35,6 +35,7 @@
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -162,7 +163,9 @@ struct ClassicalEnv {
       return op->emitError()
              << "classical SSA value is not mapped for QCO DD simulation";
     }
-    values[dest] = it->second;
+    /// Inserting the destination can grow the map and invalidate the iterator.
+    auto value = it->second;
+    values[dest] = value;
     return success();
   }
 };
@@ -586,44 +589,42 @@ static LogicalResult loadRegister(cbit::LoadOp load, ClassicalEnv& classical) {
                      classical);
 }
 
-static LogicalResult compareRegister(cbit::CompareOp compare,
-                                     ClassicalEnv& classical) {
-  const auto regIt = classical.registers.find(compare.getReg());
+static LogicalResult readRegister(cbit::ReadOp read, ClassicalEnv& classical) {
+  const auto regIt = classical.registers.find(read.getReg());
   if (regIt == classical.registers.end()) {
-    return compare.emitError()
+    return read.emitError()
            << "CBit register is not mapped for QCO DD simulation";
   }
-  llvm::APInt actual(compare.getRhs().getBitWidth(), 0);
+  llvm::APInt value(read.getResult().getType().getWidth(), 0);
   for (const auto [index, cell] : llvm::enumerate(*regIt->second)) {
     if (cell.deferredWire && classical.deferredMeasurementUse != nullptr) {
-      *classical.deferredMeasurementUse = compare.getOperation();
+      *classical.deferredMeasurementUse = read.getOperation();
       return failure();
     }
     if (!cell.value) {
-      return compare.emitError()
-             << "read from an undefined CBit register element";
+      return read.emitError() << "read from an undefined CBit register element";
     }
-    actual.setBitVal(static_cast<unsigned>(index), *cell.value);
+    value.setBitVal(static_cast<unsigned>(index), *cell.value);
   }
-  const auto result = [&] {
-    switch (compare.getPredicate()) {
-    case cbit::ComparisonPredicate::Equal:
-      return actual.eq(compare.getRhs());
-    case cbit::ComparisonPredicate::NotEqual:
-      return actual.ne(compare.getRhs());
-    case cbit::ComparisonPredicate::Less:
-      return actual.ult(compare.getRhs());
-    case cbit::ComparisonPredicate::LessEqual:
-      return actual.ule(compare.getRhs());
-    case cbit::ComparisonPredicate::Greater:
-      return actual.ugt(compare.getRhs());
-    case cbit::ComparisonPredicate::GreaterEqual:
-      return actual.uge(compare.getRhs());
-    }
-    llvm_unreachable("unknown CBit comparison predicate");
-  }();
-  return bindInteger(compare.getResult(),
-                     llvm::APInt(1, static_cast<uint64_t>(result)), classical);
+  return bindInteger(read.getResult(), value, classical);
+}
+
+static LogicalResult writeRegister(cbit::WriteOp write,
+                                   ClassicalEnv& classical) {
+  const auto regIt = classical.registers.find(write.getReg());
+  if (regIt == classical.registers.end()) {
+    return write.emitError()
+           << "CBit register is not mapped for QCO DD simulation";
+  }
+  auto value = lookupInteger(write.getValue(), classical, write);
+  if (failed(value)) {
+    return failure();
+  }
+  for (auto&& [index, bit] : llvm::enumerate(*regIt->second)) {
+    bit.value.emplace((*value)[static_cast<unsigned>(index)]);
+    bit.deferredWire.reset();
+  }
+  return success();
 }
 
 static FailureOr<Attribute*> lookupMemRefSlot(Value memref, ValueRange indices,
@@ -821,10 +822,26 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
             arith::MinSIOp, arith::MaxUIOp, arith::MinUIOp, arith::MaximumFOp,
             arith::MinimumFOp, arith::MaxNumFOp, arith::MinNumFOp, math::AbsFOp,
             math::CeilOp, math::CosOp, math::ExpOp, math::FloorOp, math::LogOp,
-            math::SinOp, math::SqrtOp, math::TanOp, math::PowFOp>(
-          [&](Operation* foldable) {
-            return foldClassicalOp(*foldable, classical);
-          })
+            math::SinOp, math::SqrtOp, math::TanOp, math::PowFOp,
+            math::CtPopOp>([&](Operation* foldable) {
+        return foldClassicalOp(*foldable, classical);
+      })
+      .Case<LLVM::FshlOp, LLVM::FshrOp>([&](Operation* shift) -> LogicalResult {
+        auto lhs = lookupInteger(shift->getOperand(0), classical, shift);
+        auto rhs = lookupInteger(shift->getOperand(1), classical, shift);
+        auto distance = lookupInteger(shift->getOperand(2), classical, shift);
+        if (failed(lhs) || failed(rhs) || failed(distance)) {
+          return failure();
+        }
+        const auto width = lhs->getBitWidth();
+        const auto amount = static_cast<unsigned>(distance->urem(width));
+        const bool left = isa<LLVM::FshlOp>(shift);
+        auto value = amount == 0
+                         ? (left ? *lhs : *rhs)
+                         : lhs->shl(left ? amount : width - amount) |
+                               rhs->lshr(left ? width - amount : amount);
+        return bindInteger(shift->getResult(0), value, classical);
+      })
       .Case<arith::DivUIOp>([&](arith::DivUIOp value) {
         return applyDivision(
             value, classical,
@@ -1253,8 +1270,11 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .template Case<cbit::LoadOp>([&](cbit::LoadOp load) {
         return loadRegister(load, *walk.classical);
       })
-      .template Case<cbit::CompareOp>([&](cbit::CompareOp compare) {
-        return compareRegister(compare, *walk.classical);
+      .template Case<cbit::ReadOp>([&](cbit::ReadOp read) {
+        return readRegister(read, *walk.classical);
+      })
+      .template Case<cbit::WriteOp>([&](cbit::WriteOp write) {
+        return writeRegister(write, *walk.classical);
       })
       .template Case<cbit::StoreOp>([&](cbit::StoreOp store) {
         return storeRegister(store, *walk.classical);
@@ -1524,7 +1544,8 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       .Default([&](Operation* unsupported) -> LogicalResult {
         const StringRef dialect = unsupported->getName().getDialectNamespace();
         if (dialect == arith::ArithDialect::getDialectNamespace() ||
-            dialect == math::MathDialect::getDialectNamespace()) {
+            dialect == math::MathDialect::getDialectNamespace() ||
+            isa<LLVM::FshlOp, LLVM::FshrOp>(unsupported)) {
           return applyClassicalOp(*unsupported, *walk.classical);
         }
         return unsupported->emitError()
@@ -1867,7 +1888,8 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
 
 static FailureOr<std::map<std::string, size_t>>
 sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
-           size_t shots, std::mt19937_64& rng, const PreparedState& prepared) {
+           size_t shots, std::mt19937_64& rng, const PreparedState& prepared,
+           std::vector<std::string>* shotResults) {
   const auto inputGuard = llvm::make_scope_exit([&] { dd.decRef(in); });
   auto plan = getSamplingPlan(func);
   if (failed(plan)) {
@@ -1894,6 +1916,9 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
       return failure();
     }
     ++counts[*outcome];
+    if (shotResults != nullptr) {
+      shotResults->push_back(std::move(*outcome));
+    }
     return success();
   };
 
@@ -1940,7 +1965,12 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed,
-       const DDArgumentBindings& argumentBindings) {
+       const DDArgumentBindings& argumentBindings,
+       std::vector<std::string>* shotResults) {
+  if (shotResults != nullptr) {
+    shotResults->clear();
+    shotResults->reserve(shots);
+  }
   auto dd = std::make_unique<dd::Package>();
   std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
   auto prepared = prepare(func, *dd, argumentBindings);
@@ -1948,7 +1978,7 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
     return failure();
   }
   return sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, *dd),
-                    *dd, shots, rng, *prepared);
+                    *dd, shots, rng, *prepared, shotResults);
 }
 
 } // namespace mlir::qco

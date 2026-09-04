@@ -18,7 +18,6 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
@@ -29,16 +28,11 @@
 #include <mlir/IR/Matchers.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
-#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/Passes.h>
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <string>
-#include <vector>
 
 namespace mlir::oq3::test {
 
@@ -171,64 +165,6 @@ inline SmallVector<std::optional<Value>> returnedBitValues(ModuleOp moduleOp) {
     llvm::append_range(values, registerValues);
   }
   return values;
-}
-
-inline std::vector<bool> canonicalizedBitOutputs(const StringRef source) {
-  MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  if (!moduleOp) {
-    ADD_FAILURE() // NOLINT(readability-implicit-bool-conversion)
-        << "translation failed";
-    return {};
-  }
-  if (failed(verify(*moduleOp))) {
-    ADD_FAILURE() // NOLINT(readability-implicit-bool-conversion)
-        << "translation produced an invalid module";
-    return {};
-  }
-  PassManager canonicalizer(&context);
-  canonicalizer.addPass(createCanonicalizerPass());
-  if (failed(canonicalizer.run(*moduleOp))) {
-    ADD_FAILURE() // NOLINT(readability-implicit-bool-conversion)
-        << "canonicalization failed";
-    return {};
-  }
-
-  const auto returned = returnedBitValues(*moduleOp);
-  std::vector<bool> outputs;
-  outputs.reserve(returned.size());
-  for (const auto operand : returned) {
-    if (!operand) {
-      outputs.push_back(false);
-      continue;
-    }
-    const auto value = evaluateConstantInteger(*operand);
-    if (!value) {
-      std::string description;
-      llvm::raw_string_ostream stream(description);
-      operand->print(stream);
-      ADD_FAILURE() << "canonicalized output is not constant: " << description;
-      return {};
-    }
-    outputs.push_back(!value->isZero());
-  }
-  return outputs;
-}
-
-inline std::vector<bool> rotateBits(const std::array<bool, 5>& bits,
-                                    const int64_t distance, const bool left) {
-  constexpr int64_t width = 5;
-  auto normalized = distance % width;
-  if (normalized < 0) {
-    normalized += width;
-  }
-  std::vector<bool> result(width);
-  for (int64_t bit = 0; bit < width; ++bit) {
-    const auto source =
-        left ? (bit + width - normalized) % width : (bit + normalized) % width;
-    result[bit] = bits[static_cast<size_t>(source)];
-  }
-  return result;
 }
 
 } // namespace mlir::oq3::test

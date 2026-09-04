@@ -16,11 +16,12 @@ add_mlir_dialect_library(
   DEPENDS
   MLIRQTensorOpsIncGen
   LINK_LIBS
-  PUBLIC
-  MLIRQCODialect
   PRIVATE
+  MLIRQTensorDialect
   MLIRFuncDialect
-  MLIRSCFDialect)
+  MLIRSCFDialect
+  PUBLIC
+  MLIRQCODialect)
 
 mqt_mlir_target_use_project_options(MLIRQTensorUtils)
 

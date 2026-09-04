@@ -926,19 +926,24 @@ TEST_F(QCODDFunctionalityTest, SimulateCBitConditionAndMeasurementUpdate) {
 
 TEST_F(QCODDFunctionalityTest, SimulateCBitRegisterComparisons) {
   constexpr std::array comparisons{
-      std::pair{cbit::ComparisonPredicate::Equal, false},
-      std::pair{cbit::ComparisonPredicate::NotEqual, true},
-      std::pair{cbit::ComparisonPredicate::Less, true},
-      std::pair{cbit::ComparisonPredicate::LessEqual, true},
-      std::pair{cbit::ComparisonPredicate::Greater, false},
-      std::pair{cbit::ComparisonPredicate::GreaterEqual, false},
+      std::pair{arith::CmpIPredicate::eq, false},
+      std::pair{arith::CmpIPredicate::ne, true},
+      std::pair{arith::CmpIPredicate::ult, true},
+      std::pair{arith::CmpIPredicate::ule, true},
+      std::pair{arith::CmpIPredicate::ugt, false},
+      std::pair{arith::CmpIPredicate::uge, false},
+      std::pair{arith::CmpIPredicate::slt, false},
+      std::pair{arith::CmpIPredicate::sle, false},
+      std::pair{arith::CmpIPredicate::sgt, true},
+      std::pair{arith::CmpIPredicate::sge, true},
   };
   for (const auto [predicate, expected] : comparisons) {
     auto mod = buildModule([&](QCOProgramBuilder& b) {
       auto reg = b.allocClassicalBitRegister(2, "c");
-      auto rhs = b.getIntegerAttr(b.getIntegerType(2), 1);
-      auto condition =
-          cbit::CompareOp::create(b, b.getI1Type(), predicate, reg, rhs);
+      auto rhs = b.getIntegerAttr(b.getIntegerType(2), 3);
+      auto condition = arith::CmpIOp::create(
+          b, predicate, cbit::ReadOp::create(b, rhs.getType(), reg),
+          arith::ConstantOp::create(b, rhs));
       auto q = b.staticQubit(0);
       q = b.qcoIf(
           condition, q, [&](Value arg) { return b.x(arg); },
@@ -975,8 +980,10 @@ TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitRegisterComparison) {
     auto reg =
         b.allocClassicalBitRegister(1, "c", cbit::Initialization::Undefined);
     auto rhs = b.getIntegerAttr(b.getIntegerType(1), 0);
-    auto condition = cbit::CompareOp::create(
-        b, b.getI1Type(), cbit::ComparisonPredicate::Equal, reg, rhs);
+    auto condition =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq,
+                              cbit::ReadOp::create(b, rhs.getType(), reg),
+                              arith::ConstantOp::create(b, rhs));
     auto q = b.staticQubit(0);
     q = b.qcoIf(
         condition, q, [&](Value arg) { return arg; },
@@ -990,6 +997,27 @@ TEST_F(QCODDFunctionalityTest, RejectsUndefinedCBitRegisterComparison) {
   std::mt19937_64 rng(1);
   EXPECT_TRUE(
       failed(simulate(mainFunc(*mod), dd::makeZeroState(1, *dd), *dd, rng)));
+}
+
+TEST_F(QCODDFunctionalityTest, SimulateWholeCBitRegisterReadAndWrite) {
+  auto mod = buildModule([](QCOProgramBuilder& b) {
+    auto reg = b.allocClassicalBitRegister(3, "c");
+    auto five = arith::ConstantIntOp::create(b, 5, 3).getResult();
+    cbit::WriteOp::create(b, five, reg);
+    auto value = cbit::ReadOp::create(b, b.getIntegerType(3), reg).getResult();
+    auto condition =
+        arith::CmpIOp::create(b, arith::CmpIPredicate::eq, value, five)
+            .getResult();
+    auto q = b.staticQubit(0);
+    q = b.qcoIf(
+        condition, q, [&](Value arg) { return b.x(arg); },
+        [&](Value arg) { return arg; });
+    b.sink(q);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+
+  expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {
@@ -2133,6 +2161,16 @@ TEST_F(QCODDFunctionalityTest,
   const auto histogram = sample(mainFunc(*mod), 64, 11);
   ASSERT_TRUE(succeeded(histogram));
   EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{"1", 64}}));
+
+  std::vector<std::string> shots{"stale output"};
+  const auto withShots =
+      sample(mainFunc(*mod), 64, 11, DDArgumentBindings{}, &shots);
+  ASSERT_TRUE(succeeded(withShots));
+  EXPECT_EQ(*withShots, *histogram);
+  EXPECT_EQ(shots, std::vector<std::string>(64, "1"));
+  EXPECT_TRUE(
+      succeeded(sample(mainFunc(*mod), 0, 11, DDArgumentBindings{}, &shots)));
+  EXPECT_TRUE(shots.empty());
 }
 
 TEST_F(QCODDFunctionalityTest, SampleDefersAllocatedQubitMeasurement) {

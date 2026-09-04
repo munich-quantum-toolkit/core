@@ -25,6 +25,9 @@
 #include "mlir/Dialect/QC/IR/QCInterfaces.h"
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/IR/SymbolTable.h>
+#include <mlir/Interfaces/CallInterfaces.h>
+#include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
 #include <variant>

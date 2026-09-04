@@ -10,6 +10,7 @@ file(GLOB_RECURSE OPERATIONS "${CMAKE_CURRENT_SOURCE_DIR}/Operations/*.cpp")
 
 add_mlir_dialect_library(
   MLIRQTensorDialect
+  QTensorCanonicalization.cpp
   QTensorOps.cpp
   ${OPERATIONS}
   ADDITIONAL_HEADER_DIRS
@@ -18,7 +19,6 @@ add_mlir_dialect_library(
   MLIRQTensorOpsIncGen
   LINK_LIBS
   PRIVATE
-  MLIRQTensorUtils
   MLIRIR
   MLIRDialectUtils
   MLIRArithDialect
