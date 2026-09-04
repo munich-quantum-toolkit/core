@@ -68,9 +68,6 @@ add_subdirectory(algorithms)
 # add the circuit_optimizer package
 add_subdirectory(circuit_optimizer)
 
-# add datastructures package
-add_subdirectory(datastructures)
-
 # add DD package library
 add_subdirectory(dd)
 
