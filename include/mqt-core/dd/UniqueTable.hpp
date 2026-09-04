@@ -91,11 +91,7 @@ public:
 
   template <class Node>
   [[nodiscard]] static bool nodesAreEqual(const Node& p, const Node& q) {
-    if constexpr (std::is_same_v<Node, dNode>) {
-      return (p.e == q.e && (p.flags == q.flags));
-    } else {
-      return p.e == q.e;
-    }
+    return p.e == q.e;
   }
 
   // Lookup a node in the unique table for the appropriate variable and insert

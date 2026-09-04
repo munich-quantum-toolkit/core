@@ -18,5 +18,4 @@ class Package;
 
 using VectorDD = Edge<vNode>;
 using MatrixDD = Edge<mNode>;
-using DensityMatrixDD = Edge<dNode>;
 } // namespace dd
