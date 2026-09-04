@@ -17,14 +17,6 @@ categories:
     when:
       labels:
         - "QDMI"
-  - title: "🏼 MQT Core NA Package"
-    when:
-      labels:
-        - "NA"
-  - title: "🕸️ MQT Core ZX Package"
-    when:
-      labels:
-        - "ZX"
   - title: "🚀 Features and Enhancements"
     when:
       labels:
