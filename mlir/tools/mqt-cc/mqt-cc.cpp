@@ -46,8 +46,10 @@
 #include <mlir/Bytecode/BytecodeWriter.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
+#include <mlir/Dialect/Func/Extensions/InlinerExtension.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -63,6 +65,7 @@
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Export.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cstdint>
 #include <cstdlib>
@@ -461,6 +464,8 @@ static int runCompiler(int argc, char** argv) {
               tensor::TensorDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
+  func::registerInlinerExtension(registry);
+  LLVM::registerInlinerInterface(registry);
 
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
@@ -534,6 +539,10 @@ static int runCompiler(int argc, char** argv) {
       *parsedOutputFormat != OutputFormat::QCImport &&
       *parsedOutputFormat != OutputFormat::QCO;
   if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
+        if (*parsedOutputFormat == OutputFormat::QIRBase ||
+            *parsedOutputFormat == OutputFormat::QIRAdaptive) {
+          pm.addPass(createInlinerPass());
+        }
         if (compilerTarget) {
           populateTargetCompilationPipeline(pm, *compilerTarget);
           return success();
@@ -583,7 +592,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::QIRBase &&
       failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(mqt::createUnrollModifiers());
+        populateQIRPreparationPipeline(pm);
         pm.addPass(createQCToQIRBase());
         populateQIRCleanupPipeline(pm, false);
         return success();
@@ -593,7 +602,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::QIRAdaptive &&
       failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(mqt::createUnrollModifiers());
+        populateQIRPreparationPipeline(pm);
         pm.addPass(createQCToQIRAdaptive());
         populateQIRCleanupPipeline(pm, true);
         return success();
