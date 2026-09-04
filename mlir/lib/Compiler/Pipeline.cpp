@@ -457,6 +457,8 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
   }
 
   auto qco = std::visit(
+      // Every consuming branch below explicitly forwards the value.
+      // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
       []<typename T>(T&& value) -> std::optional<QCOProgram> {
         using ProgramType = std::remove_cvref_t<T>;
         if constexpr (std::is_same_v<ProgramType, QCOProgram>) {
