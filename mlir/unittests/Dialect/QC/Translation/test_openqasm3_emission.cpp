@@ -108,7 +108,7 @@ TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  const auto measurement = emitted->find("bit _mqt_b0 = measure _mqt_q0;");
+  const auto measurement = emitted->find("_mqt_b0 = measure _mqt_q0;");
   const auto gate = emitted->find("x _mqt_q0;");
   const auto store = emitted->find("c[0] = _mqt_b0;");
   ASSERT_NE(measurement, std::string::npos) << *emitted;
@@ -1215,6 +1215,60 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
           return %value : f32
         }
       })mlir"},
+
+      Fixture{.name = "dynamic-index", .source = R"mlir(module {
+        func.func @main() -> i1 {
+          %bits = memref.alloc() : memref<2xi1>
+          %index = arith.constant 0 : i64
+          %dynamic = arith.index_cast %index : i64 to index
+          %value = memref.load %bits[%dynamic] : memref<2xi1>
+          return %value : i1
+        }
+      })mlir"},
+      Fixture{.name = "dynamic-loop-range", .source = R"mlir(module {
+        func.func @main() {
+          %zero = arith.constant 0 : index
+          %integer = arith.constant 1 : i64
+          %upper = arith.index_cast %integer : i64 to index
+          %one = arith.constant 1 : index
+          scf.for %i = %zero to %upper step %one {
+          }
+          return
+        }
+      })mlir"},
+      Fixture{.name = "rank-two-memory", .source = R"mlir(module {
+        func.func @main() {
+          %memory = memref.alloc() : memref<2x2xi1>
+          return
+        }
+      })mlir"},
+      Fixture{.name = "function-argument", .source = R"mlir(module {
+        func.func @main(%value: i64) {
+          return
+        }
+      })mlir"},
+  };
+
+  DialectRegistry registry = emissionDialects();
+  MLIRContext context(registry);
+  for (const auto& fixture : fixtures) {
+    SCOPED_TRACE(fixture.name.str());
+    auto moduleOp = parseSourceString<ModuleOp>(fixture.source, &context);
+    ASSERT_TRUE(moduleOp);
+    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+    std::string buffered = "existing output";
+    llvm::raw_string_ostream stream(buffered);
+    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp, stream)));
+    EXPECT_EQ(buffered, "existing output");
+  }
+}
+
+TEST(OpenQASM3EmissionTest, SupportsScalarRegionResults) {
+  struct Fixture {
+    llvm::StringLiteral name;
+    llvm::StringLiteral source;
+  };
+  constexpr std::array fixtures{
       Fixture{.name = "if-result", .source = R"mlir(module {
         func.func @main() -> i64 {
           %condition = arith.constant true
@@ -1263,47 +1317,77 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
           return %value : i64
         }
       })mlir"},
-      Fixture{.name = "dynamic-index", .source = R"mlir(module {
-        func.func @main() -> i1 {
-          %bits = memref.alloc() : memref<2xi1>
-          %index = arith.constant 0 : i64
-          %dynamic = arith.index_cast %index : i64 to index
-          %value = memref.load %bits[%dynamic] : memref<2xi1>
-          return %value : i1
-        }
-      })mlir"},
-      Fixture{.name = "dynamic-loop-range", .source = R"mlir(module {
-        func.func @main() {
-          %zero = arith.constant 0 : index
-          %integer = arith.constant 1 : i64
-          %upper = arith.index_cast %integer : i64 to index
-          %one = arith.constant 1 : index
-          scf.for %i = %zero to %upper step %one {
-          }
-          return
-        }
-      })mlir"},
-      Fixture{.name = "rank-two-memory", .source = R"mlir(module {
-        func.func @main() {
-          %memory = memref.alloc() : memref<2x2xi1>
-          return
-        }
-      })mlir"},
-      Fixture{.name = "function-argument", .source = R"mlir(module {
-        func.func @main(%value: i64) {
-          return
-        }
-      })mlir"},
   };
-
-  DialectRegistry registry = emissionDialects();
+  auto registry = emissionDialects();
   MLIRContext context(registry);
   for (const auto& fixture : fixtures) {
     SCOPED_TRACE(fixture.name.str());
     auto moduleOp = parseSourceString<ModuleOp>(fixture.source, &context);
     ASSERT_TRUE(moduleOp);
-    EXPECT_TRUE(failed(qc::translateQCToOpenQASM3(*moduleOp)));
+    auto source = qc::translateQCToOpenQASM3(*moduleOp);
+    ASSERT_TRUE(succeeded(source));
+    EXPECT_TRUE(qc::translateQASM3ToQC(*source, &context));
   }
+}
+
+TEST(OpenQASM3EmissionTest, CanonicalDoWhileBreakRoundTrip) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+output int count;
+int i = 0;
+while (true) {
+  x q;
+  i += 1;
+  count = i;
+  if (!(i < 3)) { break; }
+}
+)qasm";
+  MLIRContext context;
+  auto imported = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(imported);
+  size_t loops = 0;
+  size_t conditionals = 0;
+  imported->walk([&](scf::WhileOp loop) {
+    ++loops;
+    EXPECT_TRUE(loop.getAfter().front().without_terminator().empty());
+  });
+  imported->walk([&](scf::IfOp) { ++conditionals; });
+  EXPECT_EQ(loops, 1);
+  EXPECT_EQ(conditionals, 0);
+  auto exported = qc::translateQCToOpenQASM3(*imported);
+  ASSERT_TRUE(succeeded(exported));
+  auto roundTrip = qc::translateQASM3ToQC(*exported, &context);
+  ASSERT_TRUE(roundTrip);
+  loops = 0;
+  conditionals = 0;
+  roundTrip->walk([&](scf::WhileOp) { ++loops; });
+  roundTrip->walk([&](scf::IfOp) { ++conditionals; });
+  EXPECT_EQ(loops, 1);
+  EXPECT_EQ(conditionals, 0);
+}
+
+TEST(OpenQASM3EmissionTest, MultipleAndNestedBreaks) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+output int result;
+result = 0;
+for int i in [0:5] {
+  if (i == 1) { result = 10; break; }
+  while (true) {
+    result += 1;
+    switch (result) {
+      case 1 { break; }
+      default { result += 2; break; }
+    }
+    result = 100;
+  }
+  if (result > 9) { break; }
+}
+)qasm";
+  MLIRContext context;
+  auto imported = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(imported);
+  EXPECT_TRUE(succeeded(verify(*imported)));
 }
 
 } // namespace

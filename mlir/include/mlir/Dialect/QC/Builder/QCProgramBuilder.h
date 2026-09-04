@@ -15,6 +15,7 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/SetVector.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -63,6 +64,28 @@ namespace qc {
 /// ```
 class QCProgramBuilder final : public ImplicitLocOpBuilder {
 public:
+  /// Build a reference-semantic loop with early exits, then lift its CFG to
+  /// SCF. All exit and continuation edges carry the current values of the same
+  /// slots.
+  class LoopBuilder {
+  public:
+    LoopBuilder(QCProgramBuilder& builder, ValueRange initialState,
+                Value step = {});
+    ValueRange arguments();
+    void enterBody(Value condition, ValueRange state);
+    void branch(bool continuing, ValueRange state);
+    FailureOr<SmallVector<Value>> finish();
+
+  private:
+    OpBuilder& builder_;
+    Location location_;
+    scf::ExecuteRegionOp regionOp_;
+    Block* header_;
+    Block* decision_;
+    Block* exit_;
+    Value step_;
+  };
+
   /// Construct a new QCProgramBuilder
   /// @param context The MLIR context to use for building operations
   explicit QCProgramBuilder(MLIRContext* context);

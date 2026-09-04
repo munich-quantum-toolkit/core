@@ -299,6 +299,46 @@ TEST(QCOToQCRegressionTest, RejectsMissingPositionalQubitResults) {
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
 }
 
+TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                  arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
+                  scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main(%condition: i1) attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %c2 = arith.constant 2 : index
+      %indices:2 = scf.if %condition -> (index, index) {
+        scf.yield %c0, %c1 : index, index
+      } else {
+        scf.yield %c1, %c0 : index, index
+      }
+      %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+      %t1, %left = qtensor.extract %tensor[%indices#0] : tensor<2x!qco.qubit>
+      %t2, %right = qtensor.extract %t1[%indices#1] : tensor<2x!qco.qubit>
+      %flipped = qco.x %left : !qco.qubit -> !qco.qubit
+      %t3 = qtensor.insert %flipped into %t2[%indices#1] : tensor<2x!qco.qubit>
+      %t4 = qtensor.insert %right into %t3[%indices#0] : tensor<2x!qco.qubit>
+      qtensor.dealloc %t4 : tensor<2x!qco.qubit>
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  /// Both stores are required to exchange the register slots.
+  EXPECT_EQ(
+      llvm::range_size(function.getBody().front().getOps<memref::StoreOp>()),
+      2U);
+}
+
 TEST(QCOToQCRegressionTest, PreservesDynamicQTensorSlotSwapAcrossLoop) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
@@ -315,7 +355,8 @@ module {
     %c2 = arith.constant 2 : index
     %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
     %tensor1, %before = qtensor.extract %tensor0[%c0] : tensor<2x!qco.qubit>
-    %tensor2 = qtensor.insert %before into %tensor1[%c0] : tensor<2x!qco.qubit>
+    %another_c0 = arith.constant 0 : index
+    %tensor2 = qtensor.insert %before into %tensor1[%another_c0] : tensor<2x!qco.qubit>
     %tensor3 = scf.for %iv = %c0 to %c1 step %c1
         iter_args(%tensor = %tensor2) -> (tensor<2x!qco.qubit>) {
       %tensor4, %left = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
@@ -341,6 +382,7 @@ module {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  EXPECT_TRUE(function.getBody().front().getOps<memref::StoreOp>().empty());
   auto loops = llvm::to_vector(function.getBody().getOps<scf::ForOp>());
   ASSERT_EQ(loops.size(), 1U);
   EXPECT_EQ(llvm::range_size(loops[0].getBody()->getOps<memref::StoreOp>()),

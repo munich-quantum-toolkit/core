@@ -338,6 +338,9 @@ struct ForStatement {
   std::vector<StatementId> body;
 };
 
+struct BreakStatement {};
+struct ContinueStatement {};
+
 struct WhileStatement {
   ConditionId condition = 0;
   std::vector<StatementId> body;
@@ -359,7 +362,8 @@ using StatementData =
                  ScalarAssignmentStatement, BitAssignmentStatement,
                  BitVectorAssignmentStatement, GateApplication,
                  MeasurementStatement, ResetStatement, BarrierStatement,
-                 IfStatement, ForStatement, WhileStatement, SwitchStatement>;
+                 IfStatement, ForStatement, WhileStatement, SwitchStatement,
+                 BreakStatement, ContinueStatement>;
 
 struct Statement {
   StatementData data;

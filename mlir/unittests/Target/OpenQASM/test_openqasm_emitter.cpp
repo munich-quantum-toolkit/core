@@ -58,6 +58,52 @@ using namespace mlir::oq3::test;
 
 namespace {
 
+TEST(OpenQASMTargetTest, FirstIterationInitializationHasRepresentableState) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.0;
+output bit result;
+bool value;
+for int i in [0:0] {
+  value = true;
+  continue;
+}
+result = value;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  moduleOp->walk([&](Operation* operation) {
+    EXPECT_NE(operation->getName().getStringRef(), "ub.poison");
+  });
+}
+
+TEST(OpenQASMTargetTest, ContinueSkipsUnreachableQuantumOperations) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+for int i in [0:2] {
+  x q;
+  continue;
+  h q;
+}
+bool again = true;
+while (again) {
+  again = false;
+  continue;
+  h q;
+}
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t unreachableGates = 0;
+  moduleOp->walk([&](qc::HOp) { ++unreachableGates; });
+  EXPECT_EQ(unreachableGates, 0);
+}
+
 TEST(OpenQASMTargetTest, EmitsVerifiedQCDirectly) {
   MLIRContext context;
   auto moduleOp = qc::translateQASM3ToQC(BROADCAST_PROGRAM, &context);

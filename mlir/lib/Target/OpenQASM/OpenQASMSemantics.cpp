@@ -420,6 +420,44 @@ private:
   };
   using BitInitialization = std::vector<bool>;
   using DynamicBitFactSet = std::vector<DynamicBitFact>;
+  struct InitializationState {
+    std::vector<std::shared_ptr<BitInitialization>> bits;
+    std::vector<bool> scalars;
+    std::vector<uint64_t> scalarGenerations;
+    std::vector<uint64_t> bitGenerations;
+    bool continuing = false;
+  };
+  SmallVector<SmallVector<InitializationState>> loopExits;
+  bool reachable = true;
+  bool activePath = true;
+
+  void mergeExitGenerations(ArrayRef<InitializationState> exits, size_t scalars,
+                            size_t registers) {
+    for (const auto& exit : exits) {
+      for (size_t scalar = 0; scalar < scalars; ++scalar) {
+        scalarGenerations[scalar] =
+            std::max(scalarGenerations[scalar], exit.scalarGenerations[scalar]);
+      }
+      for (size_t reg = 0; reg < registers; ++reg) {
+        bitGenerations[reg] =
+            std::max(bitGenerations[reg], exit.bitGenerations[reg]);
+      }
+    }
+  }
+
+  void intersectInitialization(const InitializationState& state,
+                               size_t registers, size_t scalars) {
+    for (size_t reg = 0; reg < registers; ++reg) {
+      auto& bits = mutableBitInitialization(static_cast<RegisterId>(reg));
+      for (size_t bit = 0; bit < bits.size(); ++bit) {
+        bits[bit] = bits[bit] && (*state.bits[reg])[bit];
+      }
+    }
+    for (size_t scalar = 0; scalar < scalars; ++scalar) {
+      initializedScalars[scalar] =
+          initializedScalars[scalar] && state.scalars[scalar];
+    }
+  }
 
   // The analyzed syntax and source manager are mandatory and outlive this run.
   const SyntaxProgram& syntax;
@@ -3133,6 +3171,9 @@ private:
                                           std::vector<StatementId>& destination,
                                           const bool global) {
     for (const auto id : source) {
+      if (!reachable) {
+        break;
+      }
       if (failed(
               analyzeStatement(syntax.statements[id], destination, global))) {
         return failure();
@@ -3204,6 +3245,28 @@ private:
             return success();
           } else if constexpr (std::is_same_v<T, SyntaxFor>) {
             MQT_OQ3_TRY_ASSIGN(analyzed, analyzeFor(statement.location, data));
+            destination.push_back(analyzed);
+            return success();
+          } else if constexpr (std::is_same_v<T, SyntaxBreak> ||
+                               std::is_same_v<T, SyntaxContinue>) {
+            constexpr bool continuing = std::is_same_v<T, SyntaxContinue>;
+            if (loopExits.empty()) {
+              return fail(
+                  statement.location,
+                  continuing
+                      ? "continue requires an enclosing for or while loop"
+                      : "break requires an enclosing for or while loop");
+            }
+            if (activePath) {
+              loopExits.back().push_back({initializedBits, initializedScalars,
+                                          scalarGenerations, bitGenerations,
+                                          continuing});
+            }
+            reachable = false;
+            using Jump = std::conditional_t<continuing, ContinueStatement,
+                                            BreakStatement>;
+            MQT_OQ3_TRY_ASSIGN(analyzed,
+                               addStatement(statement.location, Jump{}));
             destination.push_back(analyzed);
             return success();
           } else if constexpr (std::is_same_v<T, SyntaxWhile>) {
@@ -3736,6 +3799,12 @@ private:
                                                  const SyntaxIf& conditional) {
     MQT_OQ3_TRY_ASSIGN(condition, analyzeCondition(conditional.condition));
     IfStatement result{.condition = condition};
+    MQT_OQ3_TRY_ASSIGN(knownCondition,
+                       constantCondition(conditional.condition));
+    const bool entryReachable = reachable;
+    const bool entryActive = activePath;
+    activePath = entryActive && (!knownCondition || *knownCondition);
+    reachable = entryReachable;
     const auto beforeBitsInitialized = initializedBits;
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
@@ -3750,6 +3819,8 @@ private:
       scopes.pop_back();
       return failure();
     }
+    const bool thenReachable =
+        reachable && (!knownCondition || *knownCondition);
     const auto afterThenBitsInitialized = initializedBits;
     const auto afterThenInitialized = initializedScalars;
     const auto afterThenGenerations = scalarGenerations;
@@ -3762,6 +3833,8 @@ private:
                        beforeGenerations, beforeBitGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
     restoreDynamicFactsPrefix(beforeDynamicBitFacts);
+    activePath = entryActive && (!knownCondition || !*knownCondition);
+    reachable = entryReachable;
     scopes.emplace_back();
     const auto elseResult =
         analyzeBody(conditional.elseStatements, result.elseStatements,
@@ -3770,6 +3843,10 @@ private:
       scopes.pop_back();
       return failure();
     }
+    const bool elseReachable =
+        reachable && (!knownCondition || !*knownCondition);
+    activePath = entryActive;
+    reachable = thenReachable || elseReachable;
     const auto afterElseBitsInitialized = initializedBits;
     const auto afterElseInitialized = initializedScalars;
     const auto afterElseGenerations = scalarGenerations;
@@ -3778,8 +3855,16 @@ private:
     const auto afterElseDynamicBitFacts = dynamicBitFacts;
     scopes.pop_back();
 
-    MQT_OQ3_TRY_ASSIGN(knownCondition,
-                       constantCondition(conditional.condition));
+    if (!thenReachable && elseReachable) {
+      return addStatement(location, std::move(result));
+    }
+    if (thenReachable && !elseReachable) {
+      restoreStatePrefix(afterThenBitsInitialized, afterThenInitialized,
+                         afterThenGenerations, afterThenBitGenerations);
+      restoreAffineScalarValuesPrefix(afterThenAffineScalarValues);
+      restoreDynamicFactsPrefix(afterThenDynamicBitFacts);
+      return addStatement(location, std::move(result));
+    }
     if (knownCondition) {
       const auto& knownBitsInitialized =
           *knownCondition ? afterThenBitsInitialized : afterElseBitsInitialized;
@@ -3879,7 +3964,7 @@ private:
     result.provenPositiveRange =
         startForm && stopForm && endpointValuesPreserved && positiveStep &&
         *positiveStep <= signedMaximum() &&
-        provesUpperBound(*stopForm, signedMaximum() - 1);
+        provesUpperBound(*stopForm, signedMaximum() - *positiveStep);
     if (result.provenPositiveRange) {
       const auto expandedStart = expandAffineScalarValues(result.start);
       const auto expandedStep = expandAffineScalarValues(result.step);
@@ -3932,8 +4017,13 @@ private:
           affineConstraint(addAffineForms(upper, negateAffineForm(induction))));
       activeInductions.insert({scalar, affineDomain.getNumDimVars() - 1});
     }
+    const bool entryReachable = reachable;
+    loopExits.emplace_back();
     const auto bodyResult =
         analyzeBody(loop.body, result.body, /*global=*/false);
+    auto exits = std::move(loopExits.back());
+    loopExits.pop_back();
+    reachable = entryReachable;
     if (failed(bodyResult)) {
       activeInductions.erase(scalar);
       affineDomain = outerDomain;
@@ -3943,6 +4033,8 @@ private:
     }
     const auto afterBodyBitsInitialized = initializedBits;
     const auto afterBodyInitialized = initializedScalars;
+    mergeExitGenerations(exits, beforeGenerations.size(),
+                         beforeBitGenerations.size());
     const auto afterBodyGenerations = scalarGenerations;
     const auto afterBodyBitGenerations = bitGenerations;
     const auto afterBodyDynamicBitFacts = dynamicBitFacts;
@@ -4015,6 +4107,12 @@ private:
         }
       }
     }
+    if (rangeMayExecute) {
+      for (const auto& state : exits) {
+        intersectInitialization(state, beforeBitsInitialized.size(),
+                                beforeInitialized.size());
+      }
+    }
     return addStatement(location, std::move(result));
   }
 
@@ -4032,13 +4130,20 @@ private:
     const auto outerLoopVariantScalars = loopVariantScalars;
     llvm::DenseSet<StringRef> blockLocalScalars;
     collectLoopMutations(loop.body, loopVariantScalars, blockLocalScalars);
+    const bool entryReachable = reachable;
+    loopExits.emplace_back();
     const auto bodyResult =
         analyzeBody(loop.body, result.body, /*global=*/false);
+    auto exits = std::move(loopExits.back());
+    loopExits.pop_back();
+    reachable = entryReachable;
     loopVariantScalars = outerLoopVariantScalars;
     scopes.pop_back();
     if (failed(bodyResult)) {
       return failure();
     }
+    mergeExitGenerations(exits, beforeGenerations.size(),
+                         beforeBitGenerations.size());
     const auto afterBodyGenerations = scalarGenerations;
     const auto afterBodyBitGenerations = bitGenerations;
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
@@ -4056,6 +4161,20 @@ private:
       bitGenerations[reg] =
           std::max(beforeBitGenerations[reg], afterBodyBitGenerations[reg]);
     }
+    llvm::erase_if(exits, [](const auto& state) { return state.continuing; });
+    MQT_OQ3_TRY_ASSIGN(knownCondition, constantCondition(loop.condition));
+    if (knownCondition && *knownCondition && !exits.empty()) {
+      for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
+        initializedBits[reg] = exits.front().bits[reg];
+      }
+      for (size_t scalar = 0; scalar < beforeInitialized.size(); ++scalar) {
+        initializedScalars[scalar] = exits.front().scalars[scalar];
+      }
+      for (const auto& state : exits) {
+        intersectInitialization(state, beforeBitsInitialized.size(),
+                                beforeInitialized.size());
+      }
+    }
     return addStatement(location, std::move(result));
   }
 
@@ -4063,6 +4182,8 @@ private:
   analyzeSwitch(SMLoc location, const SyntaxSwitch& switchSyntax) {
     MQT_OQ3_TRY_ASSIGN(control, analyzeExpression(switchSyntax.control));
     SwitchStatement result{.control = control};
+    const bool entryReachable = reachable;
+    bool anyFallthrough = false;
     if (!isInteger(program.expressions[result.control].type)) {
       return fail(location, "switch control expression must have integer type");
     }
@@ -4088,6 +4209,7 @@ private:
                          beforeGenerations, beforeBitGenerations);
       restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
       restoreDynamicFactsPrefix(beforeDynamicBitFacts);
+      reachable = entryReachable;
       scopes.emplace_back();
       const auto branchResult =
           analyzeBody(syntaxStatements, statements, /*global=*/false);
@@ -4095,6 +4217,10 @@ private:
       if (failed(branchResult)) {
         return failure();
       }
+      if (!reachable) {
+        return success();
+      }
+      anyFallthrough = true;
       branchBitsInitialized.push_back(initializedBits);
       branchScalarsInitialized.push_back(initializedScalars);
       branchAffineScalarValues.push_back(affineScalarValues);
@@ -4166,7 +4292,9 @@ private:
       initializedScalars[scalar] =
           llvm::all_of(branchScalarsInitialized,
                        [&](const auto& branch) { return branch[scalar]; });
-      const auto& first = branchAffineScalarValues.front()[scalar];
+      const auto first = branchAffineScalarValues.empty()
+                             ? beforeAffineScalarValues[scalar]
+                             : branchAffineScalarValues.front()[scalar];
       if (first &&
           llvm::all_of(branchAffineScalarValues, [&](const auto& branch) {
             return branch[scalar] && sameAffineValue(*first, *branch[scalar]);
@@ -4176,6 +4304,7 @@ private:
         affineScalarValues[scalar].reset();
       }
     }
+    reachable = anyFallthrough;
     return addStatement(location, std::move(result));
   }
 

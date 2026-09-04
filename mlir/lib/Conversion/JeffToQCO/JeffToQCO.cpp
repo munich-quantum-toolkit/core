@@ -283,16 +283,21 @@ static bool needsArrayCopy(Value value, Operation* update) {
  * @brief Moves a region from a jeff operation to a QCO/SCF operation
  */
 template <typename YieldOpType>
-static LogicalResult
-moveRegion(Region& source, Region& dest, ConversionPatternRewriter& rewriter,
-           const TypeConverter* typeConverter, ValueRange inValues) {
+static void moveRegion(Region& source, Region& dest,
+                       ConversionPatternRewriter& rewriter,
+                       const TypeConverter* typeConverter, ValueRange inValues,
+                       ArrayRef<unsigned> yieldIndices,
+                       ArrayRef<bool> capturedArguments = {}) {
   auto* oldBlock = &source.back();
   auto* newBlock = &dest.emplaceBlock();
   rewriter.setInsertionPointToEnd(newBlock);
 
   IRMapping mapping;
-  for (auto [oldArg, adapted] : llvm::zip(oldBlock->getArguments(), inValues)) {
-    if (isLinearType(oldArg.getType())) {
+  for (auto [oldArg, adapted] :
+       llvm::zip_equal(oldBlock->getArguments(), inValues)) {
+    if (isLinearType(oldArg.getType()) ||
+        (!capturedArguments.empty() && !getCBitType(oldArg.getType()) &&
+         !capturedArguments[oldArg.getArgNumber()])) {
       auto newArg = newBlock->addArgument(
           typeConverter->convertType(oldArg.getType()), oldArg.getLoc());
       mapping.map(oldArg, newArg);
@@ -307,10 +312,9 @@ moveRegion(Region& source, Region& dest, ConversionPatternRewriter& rewriter,
 
   auto* oldTerminator = oldBlock->getTerminator();
   SmallVector<Value> yields;
-  for (auto value : oldTerminator->getOperands()) {
-    if (isLinearType(value.getType())) {
-      yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
-    }
+  for (auto index : yieldIndices) {
+    auto value = oldTerminator->getOperand(index);
+    yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
   }
 
   if constexpr (std::is_same_v<YieldOpType, scf::ConditionOp>) {
@@ -320,8 +324,20 @@ moveRegion(Region& source, Region& dest, ConversionPatternRewriter& rewriter,
   } else {
     rewriter.replaceOpWithNewOp<YieldOpType>(oldTerminator, yields);
   }
+}
 
-  return success();
+/// Resolve the reference represented by a forwarded or updated CBit array.
+static Value forwardedRegister(Value value, Block& block, ValueRange inputs,
+                               ConversionPatternRewriter& rewriter) {
+  while (auto update = value.getDefiningOp<jeff::IntArraySetIndexOp>()) {
+    value = update.getInArray();
+  }
+  if (auto argument = dyn_cast<BlockArgument>(value);
+      argument && argument.getOwner() == &block) {
+    return inputs[argument.getArgNumber()];
+  }
+  auto mapped = rewriter.getRemappedValue(value);
+  return mapped && isa<cbit::RegisterType>(mapped.getType()) ? mapped : Value{};
 }
 
 namespace {
@@ -1001,6 +1017,9 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
 struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  /// Cloning a region exposes nested operations of the same kind.
+  void initialize() { setHasBoundedRewriteRecursion(); }
+
   LogicalResult
   matchAndRewrite(jeff::SwitchOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
@@ -1011,12 +1030,6 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
       return rewriter.notifyMatchFailure(op,
                                          "qco.if requires a default branch");
     }
-    if (op.getDefault().front().getOperations().size() != 1 &&
-        !llvm::all_of(op.getResultTypes(),
-                      [](Type type) { return isa<IntegerType>(type); })) {
-      return rewriter.notifyMatchFailure(
-          op, "qco.if requires a trivial default branch");
-    }
     if (op.getBranches().size() != 2) {
       return rewriter.notifyMatchFailure(
           op, "qco.if requires exactly two branches");
@@ -1025,21 +1038,21 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
     auto inValues = adaptor.getInValues();
 
     /// Pure selections are ordinary SSA values, not mutable register aliases.
-    if (llvm::all_of(op.getResultTypes(),
-                     [](Type type) { return isa<IntegerType>(type); })) {
+    const bool pureSelection =
+        llvm::all_of(op.getBranches(), [](Region& region) {
+          return llvm::all_of(
+              region.front().without_terminator(), [](Operation& nested) {
+                return isa<jeff::IntConst1Op, jeff::IntConst8Op,
+                           jeff::IntConst16Op, jeff::IntConst32Op,
+                           jeff::IntConst64Op, arith::ConstantOp>(nested);
+              });
+        });
+    if (pureSelection && llvm::all_of(op.getResultTypes(), [](Type type) {
+          return isa<IntegerType>(type);
+        })) {
       SmallVector<Value> falseValues;
       SmallVector<Value> trueValues;
       for (auto [index, region] : llvm::enumerate(op.getBranches())) {
-        if (llvm::any_of(
-                region.front().without_terminator(), [](Operation& nested) {
-                  return !isa<jeff::IntConst1Op, jeff::IntConst8Op,
-                              jeff::IntConst16Op, jeff::IntConst32Op,
-                              jeff::IntConst64Op, arith::ConstantOp>(nested);
-                })) {
-          return rewriter.notifyMatchFailure(
-              op,
-              "integer switches require expression-only selection branches");
-        }
         auto yield = cast<jeff::YieldOp>(region.front().getTerminator());
         auto& values = index == 0 ? falseValues : trueValues;
         for (auto value : yield.getOperands()) {
@@ -1069,34 +1082,52 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
       return success();
     }
 
-    // The operands may already carry converted types, which `isLinearType` does
-    // not recognize. The results still carry jeff types and correspond to the
-    // in-values positionally, so they decide which in-values are qubits.
     SmallVector<Value> qubits;
-    for (auto [type, adapted] : llvm::zip(op.getResultTypes(), inValues)) {
-      if (isLinearType(type)) {
+    for (auto [argument, adapted] : llvm::zip_equal(
+             op.getBranches()[0].front().getArguments(), inValues)) {
+      if (isLinearType(argument.getType())) {
         qubits.push_back(adapted);
       }
     }
-
-    auto qcoIf =
-        IfOp::create(rewriter, op.getLoc(), adaptor.getSelection(), qubits);
-
-    if (failed(moveRegion<YieldOp>(op.getBranches()[0], qcoIf.getElseRegion(),
-                                   rewriter, typeConverter, inValues))) {
-      return failure();
+    SmallVector<Type> classicalTypes, linearTypes;
+    SmallVector<unsigned> classicalIndices, linearIndices;
+    SmallVector<Value> results(op.getNumResults());
+    for (auto [index, type] : llvm::enumerate(op.getResultTypes())) {
+      if (isLinearType(type)) {
+        linearTypes.push_back(typeConverter->convertType(type));
+        linearIndices.push_back(index);
+      } else if (getCBitType(type)) {
+        for (auto& region : op.getBranches()) {
+          auto reference = forwardedRegister(
+              region.front().getTerminator()->getOperand(index), region.front(),
+              inValues, rewriter);
+          if (!reference || (results[index] && results[index] != reference)) {
+            return rewriter.notifyMatchFailure(
+                op, "conditional CBit results must refer to the same enclosing "
+                    "register");
+          }
+          results[index] = reference;
+        }
+      } else {
+        classicalTypes.push_back(typeConverter->convertType(type));
+        classicalIndices.push_back(index);
+      }
     }
-    if (failed(moveRegion<YieldOp>(op.getBranches()[1], qcoIf.getThenRegion(),
-                                   rewriter, typeConverter, inValues))) {
-      return failure();
+    if (linearTypes.size() != qubits.size()) {
+      return rewriter.notifyMatchFailure(op,
+                                         "conditional quantum allocations and "
+                                         "deallocations are not supported");
     }
-
-    SmallVector<Value> results;
-    size_t index = 0;
-    for (auto [value, adapted] : llvm::zip(op.getResults(), inValues)) {
-      results.push_back(isLinearType(value.getType())
-                            ? qcoIf.getResults()[index++]
-                            : adapted);
+    auto qcoIf = IfOp::create(rewriter, op.getLoc(), classicalTypes,
+                              linearTypes, adaptor.getSelection(), qubits);
+    SmallVector<unsigned> yielded = classicalIndices;
+    llvm::append_range(yielded, linearIndices);
+    moveRegion<YieldOp>(op.getBranches()[0], qcoIf.getElseRegion(), rewriter,
+                        typeConverter, inValues, yielded);
+    moveRegion<YieldOp>(op.getBranches()[1], qcoIf.getThenRegion(), rewriter,
+                        typeConverter, inValues, yielded);
+    for (auto [index, result] : llvm::zip_equal(yielded, qcoIf.getResults())) {
+      results[index] = result;
     }
     rewriter.replaceOp(op, results);
 
@@ -1196,43 +1227,81 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
 struct ConvertJeffWhileOpToQCO final : OpConversionPattern<jeff::WhileOp> {
   using OpConversionPattern::OpConversionPattern;
 
+  /// Cloning a region exposes nested operations of the same kind.
+  void initialize() { setHasBoundedRewriteRecursion(); }
+
   LogicalResult
   matchAndRewrite(jeff::WhileOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto inValues = adaptor.getInValues();
 
-    // The operands may already carry converted types, which `isLinearType` does
-    // not recognize. The results still carry jeff types and correspond to the
-    // in-values positionally, so they decide which in-values are qubits.
-    SmallVector<Value> qubits;
-    SmallVector<Type> outTypes;
-    for (auto [type, adapted] : llvm::zip(op.getResultTypes(), inValues)) {
-      if (isLinearType(type)) {
-        qubits.push_back(adapted);
-        outTypes.push_back(adapted.getType());
+    SmallVector<Value> inits;
+    SmallVector<unsigned> yieldIndices, conditionIndices;
+    auto& before = op.getBefore().front();
+    auto& after = op.getAfter().front();
+    SmallVector<bool> capturedInputs(inValues.size(), false);
+    SmallVector<bool> capturedOutputs(op.getNumResults(), false);
+    SmallVector<Value> results(op.getNumResults());
+    for (auto [index, input] : llvm::enumerate(before.getArguments())) {
+      if (isLinearType(input.getType()) || getCBitType(input.getType())) {
+        continue;
+      }
+      auto afterArgument =
+          dyn_cast<BlockArgument>(after.getTerminator()->getOperand(index));
+      if (!afterArgument || afterArgument.getOwner() != &after) {
+        continue;
+      }
+      const auto output = afterArgument.getArgNumber();
+      if (before.getTerminator()->getOperand(output + 1) == input) {
+        capturedInputs[index] = true;
+        capturedOutputs[output] = true;
+        results[output] = inValues[index];
       }
     }
-
+    for (auto [index, pair] :
+         llvm::enumerate(llvm::zip_equal(before.getArguments(), inValues))) {
+      auto [argument, adapted] = pair;
+      if (!getCBitType(argument.getType()) && !capturedInputs[index]) {
+        inits.push_back(adapted);
+        yieldIndices.push_back(index);
+      }
+    }
+    SmallVector<Type> outTypes;
+    for (auto [index, type] : llvm::enumerate(op.getResultTypes())) {
+      if (getCBitType(type)) {
+        results[index] =
+            forwardedRegister(before.getTerminator()->getOperand(index + 1),
+                              before, inValues, rewriter);
+        if (!results[index]) {
+          return rewriter.notifyMatchFailure(
+              op, "while CBit exit value must refer to an enclosing register");
+        }
+      } else if (!capturedOutputs[index]) {
+        outTypes.push_back(typeConverter->convertType(type));
+        conditionIndices.push_back(index + 1);
+      }
+    }
+    for (auto [index, input] : llvm::enumerate(before.getArguments())) {
+      if (getCBitType(input.getType()) &&
+          forwardedRegister(after.getTerminator()->getOperand(index), after,
+                            results, rewriter) != inValues[index]) {
+        return rewriter.notifyMatchFailure(
+            op, "while CBit backedge must update the same enclosing register");
+      }
+    }
     auto scfWhile =
-        scf::WhileOp::create(rewriter, op.getLoc(), outTypes, qubits);
-
-    if (failed(moveRegion<scf::ConditionOp>(op.getBefore(),
-                                            scfWhile.getBefore(), rewriter,
-                                            typeConverter, inValues))) {
-      return failure();
+        scf::WhileOp::create(rewriter, op.getLoc(), outTypes, inits);
+    for (auto [index, result] :
+         llvm::zip_equal(conditionIndices, scfWhile.getResults())) {
+      results[index - 1] = result;
     }
-    if (failed(moveRegion<scf::YieldOp>(op.getAfter(), scfWhile.getAfter(),
-                                        rewriter, typeConverter, inValues))) {
-      return failure();
-    }
-
-    SmallVector<Value> results;
-    size_t index = 0;
-    for (auto [value, adapted] : llvm::zip(op.getResults(), inValues)) {
-      results.push_back(isLinearType(value.getType())
-                            ? scfWhile.getResults()[index++]
-                            : adapted);
-    }
+    /// Each region has its own argument tuple; CBit references remain captures.
+    moveRegion<scf::ConditionOp>(op.getBefore(), scfWhile.getBefore(), rewriter,
+                                 typeConverter, inValues, conditionIndices,
+                                 capturedInputs);
+    moveRegion<scf::YieldOp>(op.getAfter(), scfWhile.getAfter(), rewriter,
+                             typeConverter, results, yieldIndices,
+                             capturedOutputs);
     rewriter.replaceOp(op, results);
 
     return success();

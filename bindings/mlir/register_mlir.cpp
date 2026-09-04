@@ -159,9 +159,10 @@ entryFunc(const mlir::QCOProgram& program) {
   return std::mt19937_64(seed);
 }
 
-/// Run @p fn under a diagnostic handler and raise `ValueError` on failure,
+/// Run @p fn under a diagnostic handler and raise the chosen Python exception,
 /// appending any emitted MLIR diagnostics to @p message.
-template <typename Fn>
+template <nb::exception_type Exception = nb::exception_type::value_error,
+          typename Fn>
 [[nodiscard]] static auto takeFailureOr(mlir::MLIRContext* context,
                                         const char* message, Fn&& fn) {
   std::string diagnostics;
@@ -171,6 +172,9 @@ template <typename Fn>
           diagnostics.push_back('\n');
         }
         llvm::raw_string_ostream os(diagnostics);
+        if (!llvm::isa<mlir::UnknownLoc>(diag.getLocation())) {
+          os << diag.getLocation() << ": ";
+        }
         os << diag;
         return mlir::success();
       });
@@ -180,7 +184,7 @@ template <typename Fn>
     if (!diagnostics.empty()) {
       full.append(": ").append(diagnostics);
     }
-    throw nb::value_error(full.c_str());
+    throw nb::builtin_exception(Exception, full.c_str());
   }
   return *std::move(result);
 }
@@ -983,10 +987,23 @@ before conversion to QCO.)pb");
       .def("normalize_global_phases",
            &BooleanMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
            "Normalize scoped global phases in place.")
-      .def("to_openqasm3",
-           &OptionalMemberAdapter<&mlir::QCProgram::toOpenQASM3>::call,
-           "Clean up and emit this QC program as OpenQASM 3 without QCO "
-           "optimization.")
+      .def(
+          "to_openqasm3",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return takeFailureOr<nb::exception_type::runtime_error>(
+                program.module().getContext(),
+                "cannot export QC program to OpenQASM 3",
+                [&]() -> mlir::FailureOr<mlir::OpenQASMProgram> {
+                  auto result = program.toOpenQASM3();
+                  if (!result) {
+                    return mlir::failure();
+                  }
+                  return std::move(*result);
+                });
+          },
+          "Clean up and emit this QC program as OpenQASM 3 without QCO "
+          "optimization.")
       .def(
           "to_qiskit",
           [](const mlir::QCProgram& program,

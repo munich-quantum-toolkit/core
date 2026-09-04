@@ -24,12 +24,12 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringExtras.h>
 #include <llvm/ADT/StringSet.h>
 #include <llvm/ADT/StringSwitch.h>
+#include <llvm/Support/SaveAndRestore.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
@@ -162,7 +162,7 @@ public:
     for (const auto& helper : compositeHelpers) {
       sourceStream << helper << "\n";
     }
-    sourceStream << body;
+    sourceStream << measurementDeclarations << body;
     return source;
   }
 
@@ -178,6 +178,7 @@ private:
   llvm::StringSet<> usedNames;
   llvm::StringSet<> fixedHelpers;
   SmallVector<std::string> compositeHelpers;
+  std::string measurementDeclarations;
   DenseMap<Operation*, size_t> operationPositions;
   DenseMap<Block*, DenseMap<Value, SmallVector<size_t>>> classicalWrites;
   Operation* expressionConsumer = nullptr;
@@ -186,6 +187,7 @@ private:
   size_t nextScalar = 0;
   size_t nextLoop = 0;
   size_t nextHelper = 0;
+  bool materializeScalars = false;
   size_t expressionNesting = 0;
   size_t expressionWork = 0;
   size_t numClassicalBits = 0;
@@ -196,13 +198,15 @@ private:
 
   [[nodiscard]] static LogicalResult fail(Operation* operation,
                                           const Twine& message) {
-    operation->emitError() << "OpenQASM emission error: " << message;
+    operation->emitError() << "OpenQASM emission error: " << message
+                           << " (operation " << operation->getName() << ")";
     return failure();
   }
 
   [[nodiscard]] static FailureOr<std::string>
   failExpression(Value value, const Twine& message) {
-    emitError(value.getLoc()) << "OpenQASM emission error: " << message;
+    emitError(value.getLoc()) << "OpenQASM emission error: " << message
+                              << " (value type " << value.getType() << ")";
     return failure();
   }
 
@@ -422,7 +426,7 @@ private:
 
   [[nodiscard]] LogicalResult emitBlock(Block& block) {
     for (Operation& operation : block.getOperations()) {
-      if (isa<scf::YieldOp>(&operation)) {
+      if (isa<scf::YieldOp, scf::ConditionOp>(&operation)) {
         return success();
       }
       if (failed(emitOperation(operation))) {
@@ -433,9 +437,20 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitOperation(Operation& operation) {
-    auto* previousConsumer = std::exchange(expressionConsumer, &operation);
-    auto consumerGuard =
-        llvm::make_scope_exit([&] { expressionConsumer = previousConsumer; });
+    llvm::SaveAndRestore consumerGuard(expressionConsumer, &operation);
+    if (materializeScalars && isInlineExpressionOperation(operation) &&
+        !isa<arith::ConstantOp>(&operation) && operation.getNumResults() == 1 &&
+        !(isa<cbit::ReadOp>(operation) &&
+          cast<IntegerType>(operation.getResult(0).getType()).getWidth() >
+              64U) &&
+        !operation.getResult(0).use_empty()) {
+      return materialize(operation.getResult(0));
+    }
+    if (isa<qc::AllocOp, memref::AllocOp, cbit::AllocOp>(&operation) &&
+        operation.getBlock() != &function.getBody().front()) {
+      return fail(&operation, "resource allocation inside control flow is not "
+                              "supported; allocate resources before the loop");
+    }
     if (isa<arith::ConstantOp, cbit::LoadOp, cbit::ReadOp, cbit::AllocOp,
             memref::LoadOp, memref::AllocOp, memref::DeallocOp, qc::AllocOp,
             qc::DeallocOp, qc::StaticOp>(&operation)) {
@@ -570,7 +585,7 @@ private:
     }
     const auto readPosition = operationPositions.at(read);
     const auto consumerPosition = operationPositions.at(expressionConsumer);
-    if (readPosition >= consumerPosition) {
+    if (readPosition > consumerPosition) {
       return fail(read, "classical snapshot does not dominate its use");
     }
     const auto blockWrites = classicalWrites.find(read->getBlock());
@@ -645,9 +660,8 @@ private:
     if (expressionNesting == 0) {
       expressionWork = 0;
     }
-    ++expressionNesting;
+    llvm::SaveAndRestore depthGuard(expressionNesting, expressionNesting + 1);
     ++expressionWork;
-    auto depthGuard = llvm::make_scope_exit([&] { --expressionNesting; });
     if (expressionNesting > MAX_EXPRESSION_NESTING) {
       return failExpression(value, "expression nesting exceeds the supported "
                                    "maximum of " +
@@ -1132,28 +1146,111 @@ private:
     }
     const auto name = uniqueName("b", nextBit);
     valueNames.try_emplace(measurement.getResult(), name);
-    *output << "bit " << name << " = measure " << *qubit << ";\n";
+    measurementDeclarations += "bit " + name + ";\n";
+    *output << name << " = measure " << *qubit << ";\n";
     return success();
   }
 
-  [[nodiscard]] LogicalResult emitIf(scf::IfOp ifOp) {
-    if (ifOp.getNumResults() != 0) {
-      return fail(ifOp, "scf.if results are not supported");
+  [[nodiscard]] FailureOr<std::string> localType(Value value) {
+    auto kind = inferScalarKind(value);
+    if (kind == "bit") {
+      kind = "bool";
     }
+    if (kind.empty()) {
+      auto* operation = value.getDefiningOp();
+      if (auto argument = dyn_cast<BlockArgument>(value)) {
+        operation = argument.getOwner()->getParentOp();
+      }
+      std::string type;
+      llvm::raw_string_ostream stream(type);
+      stream << value.getType();
+      static_cast<void>(
+          fail(operation, "unsupported carried scalar type " + type +
+                              "; OpenQASM locals support bool, integers of "
+                              "width 1-64, index, and f64"));
+      return failure();
+    }
+    return kind;
+  }
+
+  [[nodiscard]] LogicalResult declareLocals(ValueRange values) {
+    for (auto value : values) {
+      auto type = localType(value);
+      if (failed(type)) {
+        return failure();
+      }
+      auto name = uniqueName("v", nextScalar);
+      valueNames[value] = name;
+      *output << *type << ' ' << name << ";\n";
+    }
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult materialize(Value value) {
+    auto type = localType(value);
+    auto expression = emitExpression(value);
+    if (failed(type) || failed(expression)) {
+      return failure();
+    }
+    auto name = uniqueName("v", nextScalar);
+    *output << *type << ' ' << name << " = " << *expression << ";\n";
+    valueNames[value] = std::move(name);
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult assignEdge(ValueRange destinations,
+                                         ValueRange values,
+                                         Operation* terminator) {
+    llvm::SaveAndRestore guard(expressionConsumer, terminator);
+    SmallVector<std::string> temporaries;
+    for (auto value : values) {
+      auto type = localType(value);
+      auto expression = emitExpression(value);
+      if (failed(type) || failed(expression)) {
+        return failure();
+      }
+      auto name = uniqueName("tmp", nextScalar);
+      *output << *type << ' ' << name << " = " << *expression << ";\n";
+      temporaries.push_back(std::move(name));
+    }
+    for (auto [destination, temporary] :
+         llvm::zip_equal(destinations, temporaries)) {
+      *output << valueNames.at(destination) << " = " << temporary << ";\n";
+    }
+    return success();
+  }
+
+  [[nodiscard]] LogicalResult emitResultBlock(Block& block,
+                                              ValueRange results) {
+    if (failed(emitBlock(block))) {
+      return failure();
+    }
+    return assignEdge(results, block.getTerminator()->getOperands(),
+                      block.getTerminator());
+  }
+
+  [[nodiscard]] LogicalResult emitIf(scf::IfOp ifOp) {
+    if (failed(declareLocals(ifOp.getResults()))) {
+      return failure();
+    }
+    llvm::SaveAndRestore materializeGuard(
+        materializeScalars, materializeScalars || ifOp.getNumResults() != 0);
     auto condition = emitExpression(ifOp.getCondition());
     if (failed(condition)) {
       return failure();
     }
     *output << "if (" << *condition << ") {\n";
     output->indent();
-    if (failed(emitBlock(ifOp.getThenRegion().front()))) {
+    if (failed(
+            emitResultBlock(ifOp.getThenRegion().front(), ifOp.getResults()))) {
       return failure();
     }
     output->unindent();
     if (!ifOp.getElseRegion().empty()) {
       *output << "} else {\n";
       output->indent();
-      if (failed(emitBlock(ifOp.getElseRegion().front()))) {
+      if (failed(emitResultBlock(ifOp.getElseRegion().front(),
+                                 ifOp.getResults()))) {
         return failure();
       }
       output->unindent();
@@ -1163,9 +1260,16 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitFor(scf::ForOp forOp) {
-    if (!forOp.getInitArgs().empty() || forOp.getNumResults() != 0) {
-      return fail(forOp, "scf.for loop-carried values are not supported");
+    if (failed(declareLocals(forOp.getResults())) ||
+        failed(assignEdge(forOp.getResults(), forOp.getInitArgs(), forOp))) {
+      return failure();
     }
+    for (auto [argument, result] :
+         llvm::zip_equal(forOp.getRegionIterArgs(), forOp.getResults())) {
+      valueNames[argument] = valueNames.at(result);
+    }
+    llvm::SaveAndRestore materializeGuard(
+        materializeScalars, materializeScalars || forOp.getNumResults() != 0);
     const auto lower = getConstantInteger(forOp.getLowerBound());
     const auto upper = getConstantInteger(forOp.getUpperBound());
     const auto step = getConstantInteger(forOp.getStep());
@@ -1192,7 +1296,7 @@ private:
     }
     *output << ':' << last << "] {\n";
     output->indent();
-    if (failed(emitBlock(*forOp.getBody()))) {
+    if (failed(emitResultBlock(*forOp.getBody(), forOp.getResults()))) {
       return failure();
     }
     output->unindent();
@@ -1205,23 +1309,58 @@ private:
     auto& after = whileOp.getAfter().front();
     auto conditionOp = cast<scf::ConditionOp>(before.getTerminator());
     auto yieldOp = cast<scf::YieldOp>(after.getTerminator());
-    if (!whileOp.getInits().empty() || whileOp.getNumResults() != 0 ||
-        before.getNumArguments() != 0 || after.getNumArguments() != 0 ||
-        !conditionOp.getArgs().empty() || yieldOp.getNumOperands() != 0) {
-      return fail(whileOp, "scf.while loop-carried values are not supported");
-    }
-    for (Operation& operation : before.without_terminator()) {
-      if (!isInlineExpressionOperation(operation) ||
-          (!isa<cbit::LoadOp, cbit::ReadOp>(&operation) &&
-           !isMemoryEffectFree(&operation))) {
-        return fail(&operation,
-                    "scf.while condition region must be side-effect free");
+    const bool ordinary =
+        whileOp.getInits().empty() && whileOp.getNumResults() == 0 &&
+        llvm::all_of(before.without_terminator(), [](Operation& operation) {
+          return isInlineExpressionOperation(operation) &&
+                 (isa<cbit::LoadOp, cbit::ReadOp>(&operation) ||
+                  isMemoryEffectFree(&operation));
+        });
+    if (!ordinary) {
+      if (failed(declareLocals(before.getArguments())) ||
+          failed(declareLocals(whileOp.getResults())) ||
+          failed(
+              assignEdge(before.getArguments(), whileOp.getInits(), whileOp))) {
+        return failure();
       }
+      for (auto [argument, result] :
+           llvm::zip_equal(after.getArguments(), whileOp.getResults())) {
+        valueNames[argument] = valueNames.at(result);
+      }
+      llvm::SaveAndRestore materializeGuard(materializeScalars, true);
+      *output << "while (true) {\n";
+      output->indent();
+      if (failed(emitBlock(before))) {
+        return failure();
+      }
+      llvm::SaveAndRestore consumerGuard(expressionConsumer,
+                                         conditionOp.getOperation());
+      auto condition = emitExpression(conditionOp.getCondition());
+      if (failed(condition)) {
+        return failure();
+      }
+      const auto conditionName = uniqueName("cond", nextScalar);
+      *output << "bool " << conditionName << " = " << *condition << ";\n";
+      if (failed(assignEdge(whileOp.getResults(), conditionOp.getArgs(),
+                            conditionOp))) {
+        return failure();
+      }
+      *output << "if (!" << conditionName << ") {\n";
+      output->indent();
+      *output << "break;\n";
+      output->unindent();
+      *output << "}\n";
+      if (failed(emitBlock(after)) ||
+          failed(assignEdge(before.getArguments(), yieldOp.getResults(),
+                            yieldOp))) {
+        return failure();
+      }
+      output->unindent();
+      *output << "}\n";
+      return success();
     }
-    auto* previousConsumer =
-        std::exchange(expressionConsumer, conditionOp.getOperation());
-    auto consumerGuard =
-        llvm::make_scope_exit([&] { expressionConsumer = previousConsumer; });
+    llvm::SaveAndRestore consumerGuard(expressionConsumer,
+                                       conditionOp.getOperation());
     auto condition = emitExpression(conditionOp.getCondition());
     if (failed(condition)) {
       return failure();
@@ -1237,9 +1376,12 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitIndexSwitch(scf::IndexSwitchOp switchOp) {
-    if (switchOp.getNumResults() != 0) {
-      return fail(switchOp, "scf.index_switch results are not supported");
+    if (failed(declareLocals(switchOp.getResults()))) {
+      return failure();
     }
+    llvm::SaveAndRestore materializeGuard(materializeScalars,
+                                          materializeScalars ||
+                                              switchOp.getNumResults() != 0);
     auto argument = emitExpression(switchOp.getArg());
     if (failed(argument)) {
       return failure();
@@ -1247,15 +1389,16 @@ private:
 
     const auto cases = switchOp.getCases();
     if (cases.empty()) {
-      return emitBlock(switchOp.getDefaultBlock());
+      return emitResultBlock(switchOp.getDefaultBlock(), switchOp.getResults());
     }
     *output << "switch (" << *argument << ") {\n";
     output->indent();
     for (const auto [index, caseValue] : llvm::enumerate(cases)) {
       *output << "case " << caseValue << " {\n";
       output->indent();
-      if (failed(
-              emitBlock(switchOp.getCaseBlock(static_cast<unsigned>(index))))) {
+      if (failed(emitResultBlock(
+              switchOp.getCaseBlock(static_cast<unsigned>(index)),
+              switchOp.getResults()))) {
         return failure();
       }
       output->unindent();
@@ -1263,7 +1406,8 @@ private:
     }
     *output << "default {\n";
     output->indent();
-    if (failed(emitBlock(switchOp.getDefaultBlock()))) {
+    if (failed(emitResultBlock(switchOp.getDefaultBlock(),
+                               switchOp.getResults()))) {
       return failure();
     }
     output->unindent();

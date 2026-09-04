@@ -34,6 +34,22 @@ using namespace mlir::oq3::test;
 
 namespace {
 
+TEST(OpenQASMFrontendTest, ContinuePreservesDefiniteInitialization) {
+  for (const auto* source :
+       {"OPENQASM 3.0; continue;",
+        "OPENQASM 3.0; int x; for int i in [0:1] { "
+        "continue; x = 1; } int y = x;",
+        "OPENQASM 3.0; bool c = true; int x; while (c) { c "
+        "= false; continue; x = 1; } int y = x;"}) {
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    EXPECT_FALSE(analyzed);
+  }
+  auto analyzed =
+      oq3::frontend::analyzeOpenQASM("OPENQASM 3.0; int x; for int i in [0:1] "
+                                     "{ x = 1; continue; } int y = x;");
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
 TEST(OpenQASMFrontendTest, SemanticAnalysisIsIndependentOfMLIR) {
   auto parsed = oq3::frontend::parseOpenQASM(BROADCAST_PROGRAM);
   ASSERT_TRUE(parsed) << parsed.diagnostics.front().message;

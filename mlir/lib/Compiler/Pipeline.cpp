@@ -107,7 +107,8 @@ bool QCProgram::normalizeGlobalPhases() {
 
 std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
   auto cleaned = copy();
-  if (!cleaned.cleanup()) {
+  if (failed(runPasses(cleaned.mod(), populateQCExportPipeline,
+                       "failed to prepare QC for OpenQASM export"))) {
     return std::nullopt;
   }
   auto source = qc::translateQCToOpenQASM3(cleaned.mod());

@@ -520,6 +520,16 @@ static LogicalResult moveRegion(Region& source, Region& dest,
                                 const TypeConverter* typeConverter,
                                 const SetVector<Value>& aboveValues,
                                 LoweringState& state) {
+  if (source.empty()) {
+    auto* block = &dest.emplaceBlock();
+    for (auto value : aboveValues) {
+      block->addArgument(typeConverter->convertType(value.getType()),
+                         value.getLoc());
+    }
+    rewriter.setInsertionPointToEnd(block);
+    jeff::YieldOp::create(rewriter, dest.getLoc(), block->getArguments());
+    return success();
+  }
   auto* oldBlock = &source.back();
   auto* newBlock = &dest.emplaceBlock();
   rewriter.setInsertionPointToEnd(newBlock);
@@ -1841,18 +1851,16 @@ struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
  * }
  * ```
  */
-struct ConvertQCOIfOpToJeff final : RegionMovingConversionPattern<IfOp> {
-  using RegionMovingConversionPattern::RegionMovingConversionPattern;
+template <typename IfOpType>
+struct ConvertIfOpToJeff final : RegionMovingConversionPattern<IfOpType> {
+  using RegionMovingConversionPattern<IfOpType>::RegionMovingConversionPattern;
+  using typename RegionMovingConversionPattern<IfOpType>::OpAdaptor;
+  using RegionMovingConversionPattern<IfOpType>::getTypeConverter;
+  using RegionMovingConversionPattern<IfOpType>::getState;
 
   LogicalResult
-  matchAndRewrite(IfOp op, OpAdaptor adaptor,
+  matchAndRewrite(IfOpType op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!op.getClassicalResults().empty()) {
-      op.emitError("classical qco.if results are not supported by the "
-                   "QCO-to-Jeff conversion");
-      return failure();
-    }
-
     auto loc = op.getLoc();
 
     SetVector<Value> aboveValues;
@@ -1860,11 +1868,17 @@ struct ConvertQCOIfOpToJeff final : RegionMovingConversionPattern<IfOp> {
     getUsedValuesDefinedAbove(op.getThenRegion(), aboveValues);
 
     SmallVector<Value> initArgs;
-    llvm::append_range(initArgs, adaptor.getQubits());
+    ValueRange qubits;
+    TypeRange classicalTypes = op.getResultTypes();
+    if constexpr (std::is_same_v<IfOpType, IfOp>) {
+      qubits = adaptor.getQubits();
+      classicalTypes = op.getClassicalResults().getTypes();
+    }
+    llvm::append_range(initArgs, qubits);
 
     SmallVector<Type> outTypes;
-    if (failed(getTypeConverter()->convertTypes(
-            op.getLinearResults().getTypes(), outTypes))) {
+    if (failed(
+            getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
       return failure();
     }
 
@@ -1898,15 +1912,29 @@ struct ConvertQCOIfOpToJeff final : RegionMovingConversionPattern<IfOp> {
     // Add trivial default case
     {
       auto* block = &jeffSwitch.getDefault().emplaceBlock();
-      for (auto value : adaptor.getQubits()) {
+      for (auto value : qubits) {
         block->addArgument(value.getType(), loc);
       }
       for (auto value : aboveValues) {
-        block->addArgument(typeConverter->convertType(value.getType()), loc);
+        block->addArgument(getTypeConverter()->convertType(value.getType()),
+                           loc);
       }
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(block);
-      jeff::YieldOp::create(rewriter, loc, block->getArguments());
+      /// Both Boolean cases are explicit, so the default cannot execute.
+      SmallVector<Value> values;
+      for (auto type : classicalTypes) {
+        auto converted = getTypeConverter()->convertType(type);
+        auto zero = rewriter.getZeroAttr(converted);
+        if (!zero) {
+          return rewriter.notifyMatchFailure(
+              op, "unsupported classical conditional result type");
+        }
+        values.push_back(
+            arith::ConstantOp::create(rewriter, loc, converted, zero));
+      }
+      llvm::append_range(values, block->getArguments());
+      jeff::YieldOp::create(rewriter, loc, values);
     }
 
     // Update tensor values
@@ -2447,14 +2475,17 @@ protected:
 
     patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
                  ConvertQCOInvOpToJeff, ConvertQCOPowOpToJeff,
-                 ConvertQCOYieldOpToJeff, ConvertQCOIfOpToJeff,
-                 ConvertSCFForOpToJeff, ConvertSCFWhileOpToJeff,
-                 ConvertQCOMainToJeff, ConvertFuncReturnOpToJeff>(
-        typeConverter, context, &state);
+                 ConvertQCOYieldOpToJeff, ConvertIfOpToJeff<IfOp>,
+                 ConvertIfOpToJeff<scf::IfOp>, ConvertSCFForOpToJeff,
+                 ConvertSCFWhileOpToJeff, ConvertQCOMainToJeff,
+                 ConvertFuncReturnOpToJeff>(typeConverter, context, &state);
 
-    // Apply the conversion
-    if (applyPartialConversion(moduleOp, target, std::move(patterns))
-            .failed()) {
+    /// Cloned region arguments already have target types. Convert their users
+    /// before source folds inspect typed quantum operands.
+    ConversionConfig config;
+    config.foldingMode = DialectConversionFoldingMode::AfterPatterns;
+    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns),
+                                      config))) {
       signalPassFailure();
       return;
     }
