@@ -789,9 +789,8 @@ private:
                                     statement.location)) {
             return false;
           }
-        } else if (const auto* declaration =
-                       std::get_if<frontend::DeclarationStatement>(
-                           &statement.data)) {
+        } else if (std::holds_alternative<frontend::DeclarationStatement>(
+                       statement.data)) {
           if (!chargeScaledEmission(1, multiplicity, projectedEmission,
                                     statement.location)) {
             return false;

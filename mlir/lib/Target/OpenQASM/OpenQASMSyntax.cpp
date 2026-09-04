@@ -105,6 +105,8 @@ SyntaxExpressionId SyntaxBuilder::copyExpression(const Expr& expression) {
         .identifier = current->identifier,
         .wideInteger = current->wideInteger,
         .hardwareQubit = current->hardwareQubit,
+        .lhs = std::nullopt,
+        .rhs = std::nullopt,
     };
     if (current->lhs != nullptr) {
       copy.lhs = copies.lookup(current->lhs);
@@ -123,6 +125,7 @@ SyntaxOperand SyntaxBuilder::copyOperand(const Operand& operand) {
   SyntaxOperand copy{
       .location = operand.loc,
       .identifier = operand.identifier,
+      .index = std::nullopt,
       .hardwareQubit = operand.hardwareQubit,
   };
   if (operand.index != nullptr) {
@@ -136,6 +139,7 @@ SyntaxBuilder::copyBitReference(const BitReference& reference) {
   SyntaxBitReference copy{
       .location = reference.loc,
       .identifier = reference.identifier,
+      .index = std::nullopt,
   };
   if (reference.index != nullptr) {
     copy.index = copyExpression(*reference.index);
@@ -144,10 +148,19 @@ SyntaxBuilder::copyBitReference(const BitReference& reference) {
 }
 
 SyntaxGateCall SyntaxBuilder::copyGateCall(const GateCall& call) {
-  SyntaxGateCall copy{.location = call.loc, .identifier = call.identifier};
+  SyntaxGateCall copy{
+      .location = call.loc,
+      .identifier = call.identifier,
+      .modifiers = {},
+      .parameters = {},
+      .operands = {},
+  };
   copy.modifiers.reserve(call.modifiers.size());
   for (const auto& modifier : call.modifiers) {
-    SyntaxModifier converted{.kind = modifier.kind};
+    SyntaxModifier converted{
+        .kind = modifier.kind,
+        .argument = std::nullopt,
+    };
     if (modifier.argument != nullptr) {
       converted.argument = copyExpression(*modifier.argument);
     }
@@ -170,6 +183,8 @@ LogicalResult SyntaxBuilder::scalarDecl(SMLoc location, const ScalarKind kind,
   SyntaxScalarDeclaration declaration{
       .kind = kind,
       .identifier = identifier,
+      .size = std::nullopt,
+      .initializer = std::nullopt,
       .isConst = isConst,
       .output = output,
   };
@@ -195,7 +210,10 @@ LogicalResult SyntaxBuilder::assignment(SMLoc location,
 
 LogicalResult SyntaxBuilder::qubitRegister(SMLoc location, StringRef identifier,
                                            const Expr* size) {
-  SyntaxQubitDeclaration declaration{.identifier = identifier};
+  SyntaxQubitDeclaration declaration{
+      .identifier = identifier,
+      .size = std::nullopt,
+  };
   if (size != nullptr) {
     declaration.size = copyExpression(*size);
   }
@@ -208,7 +226,12 @@ LogicalResult SyntaxBuilder::classicalRegister(SMLoc location,
                                                const Expr* size,
                                                const Expr* initializer,
                                                const bool output) {
-  SyntaxBitDeclaration declaration{.identifier = identifier, .output = output};
+  SyntaxBitDeclaration declaration{
+      .identifier = identifier,
+      .size = std::nullopt,
+      .initializer = std::nullopt,
+      .output = output,
+  };
   if (size != nullptr) {
     declaration.size = copyExpression(*size);
   }
@@ -221,7 +244,10 @@ LogicalResult SyntaxBuilder::classicalRegister(SMLoc location,
 
 LogicalResult SyntaxBuilder::measure(SMLoc location, const BitReference* target,
                                      const Operand& source) {
-  SyntaxMeasurement measurement{.source = copyOperand(source)};
+  SyntaxMeasurement measurement{
+      .target = std::nullopt,
+      .source = copyOperand(source),
+  };
   if (target != nullptr) {
     measurement.target = copyBitReference(*target);
   }
@@ -257,6 +283,7 @@ LogicalResult SyntaxBuilder::gateDefinition(
       .identifier = identifier,
       .parameters = parameters.vec(),
       .qubits = qubits.vec(),
+      .body = {},
   };
   auto body = parseNestedBody(continuation);
   if (failed(body)) {
@@ -349,7 +376,11 @@ SyntaxBuilder::whileStmt(SMLoc location, const Expr& condition,
 LogicalResult
 SyntaxBuilder::switchStmt(SMLoc location, const Expr& control,
                           function_ref<LogicalResult()> continuation) {
-  SyntaxSwitch statement{.control = copyExpression(control)};
+  SyntaxSwitch statement{
+      .control = copyExpression(control),
+      .cases = {},
+      .defaultStatements = {},
+  };
   switchStack.push_back(&statement);
   const auto result = continuation();
   switchStack.pop_back();

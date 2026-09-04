@@ -1491,17 +1491,16 @@ private:
     for (Operation& operation : body.without_terminator()) {
       if (!isa<UnitaryOpInterface>(&operation) &&
           !isInlineExpressionOperation(operation)) {
-        fail(&operation, "modifier bodies may only contain unitary operations "
-                         "and scalar expressions");
-        return failure();
+        return fail(&operation,
+                    "modifier bodies may only contain unitary operations "
+                    "and scalar expressions");
       }
       if (isa<UnitaryOpInterface>(&operation)) {
         unitaries.push_back(&operation);
       }
     }
     if (unitaries.empty()) {
-      fail(modifier, "modifier body contains no unitary operation");
-      return failure();
+      return fail(modifier, "modifier body contains no unitary operation");
     }
 
     SmallVector<std::string> targets;
@@ -1513,8 +1512,7 @@ private:
       targets.push_back(std::move(*qubit));
     }
     if (body.getNumArguments() != targets.size()) {
-      fail(modifier, "modifier target and body argument counts differ");
-      return failure();
+      return fail(modifier, "modifier target and body argument counts differ");
     }
     for (const auto [argument, target] :
          llvm::zip_equal(body.getArguments(), targets)) {
@@ -1572,8 +1570,7 @@ private:
                         const ArrayRef<Operation*> unitaries) {
     auto& body = modifier.getRegion().front();
     if (body.getNumArguments() == 0) {
-      fail(modifier, "multi-operation modifiers require a target qubit");
-      return failure();
+      return fail(modifier, "multi-operation modifiers require a target qubit");
     }
     const auto helperName = uniqueName("gate", nextHelper);
 
@@ -1593,9 +1590,9 @@ private:
       }
     });
     if (capturedQubit) {
-      fail(modifier,
-           "multi-operation modifier bodies cannot capture extra qubits");
-      return failure();
+      return fail(
+          modifier,
+          "multi-operation modifier bodies cannot capture extra qubits");
     }
 
     GateCall helperCall;

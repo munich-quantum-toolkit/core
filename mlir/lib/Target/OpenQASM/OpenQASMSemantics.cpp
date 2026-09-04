@@ -405,9 +405,15 @@ public:
         failed(analyzeTopLevelBody()) || failed(validateGateCallGraph()) ||
         failed(finalizeOutputs())) {
       assert(failureDiagnostic.has_value());
-      return {.diagnostics = {std::move(*failureDiagnostic)}};
+      return {
+          .program = nullptr,
+          .diagnostics = {std::move(*failureDiagnostic)},
+      };
     }
-    return {.program = std::make_unique<TypedProgram>(std::move(program))};
+    return {
+        .program = std::make_unique<TypedProgram>(std::move(program)),
+        .diagnostics = {},
+    };
   }
 
 private:
@@ -1517,6 +1523,8 @@ private:
       return addCondition({
           .kind = ConditionKind::BitVectorComparison,
           .location = getSourceLocation(syntax.expressions[syntaxId].location),
+          .bit = {},
+          .measurement = {},
           .bitVectorComparisonLhs = value,
           .bitVectorComparisonRhs = zero,
           .comparison = ComparisonKind::NotEqual,
@@ -1532,6 +1540,8 @@ private:
           .location =
               sourceLocation(sources, syntax.expressions[syntaxId].location),
           .literal = asDouble(constant) != 0.0,
+          .bit = {},
+          .measurement = {},
       });
     }
     MQT_OQ3_TRY_ASSIGN(value, analyzeExpression(syntaxId));
@@ -1548,6 +1558,8 @@ private:
         .kind = ConditionKind::Comparison,
         .location =
             sourceLocation(sources, syntax.expressions[syntaxId].location),
+        .bit = {},
+        .measurement = {},
         .comparisonLhs = value,
         .comparisonRhs = zero,
         .comparison = ComparisonKind::NotEqual,
@@ -2595,8 +2607,9 @@ private:
                     "bit-vector operand widths must match");
       }
       for (uint64_t bit = 0; bit < width; ++bit) {
-        if (failed(ensureBitInitialized({.reg = reg, .index = bit},
-                                        expression.location))) {
+        if (failed(ensureBitInitialized(
+                {.reg = reg, .index = bit, .dynamicIndex = std::nullopt},
+                expression.location))) {
           return failure();
         }
       }
@@ -3350,9 +3363,13 @@ private:
                       : "break requires an enclosing for or while loop");
             }
             if (activePath) {
-              loopExits.back().push_back({initializedBits, initializedScalars,
-                                          scalarGenerations, bitGenerations,
-                                          continuing});
+              loopExits.back().push_back({
+                  .bits = initializedBits,
+                  .scalars = initializedScalars,
+                  .scalarGenerations = scalarGenerations,
+                  .bitGenerations = bitGenerations,
+                  .continuing = continuing,
+              });
             }
             reachable = false;
             using Jump = std::conditional_t<continuing, ContinueStatement,
@@ -3486,6 +3503,7 @@ private:
                            .kind = SymbolKind::Scalar,
                            .type = type,
                            .id = id,
+                           .constant = std::nullopt,
                            .integerWidth = integerWidth,
                        }))) {
       return failure();
@@ -3497,7 +3515,11 @@ private:
         explicitOutputs.push_back(output);
       }
     }
-    ScalarDeclarationStatement typed{.scalar = id};
+    ScalarDeclarationStatement typed{
+        .scalar = id,
+        .initializer = std::nullopt,
+        .conditionInitializer = std::nullopt,
+    };
     if (declaration.initializer) {
       if (type == ScalarType::Bool) {
         MQT_OQ3_TRY_ASSIGN(conditionInitializer,
@@ -3531,7 +3553,10 @@ private:
       mutableBitInitialization(target.reg)[target.index] = true;
       return;
     }
-    DynamicBitFact fact{.expression = *target.dynamicIndex};
+    DynamicBitFact fact{
+        .expression = *target.dynamicIndex,
+        .dependencies = {},
+    };
     collectDependencies(*target.dynamicIndex, fact.dependencies);
     auto& facts = mutableDynamicBitFacts(target.reg);
     if (llvm::none_of(facts, [&](const auto& existing) {
@@ -3550,7 +3575,11 @@ private:
       if (assignment.target.index) {
         return fail(location, "scalar assignments cannot have an index");
       }
-      ScalarAssignmentStatement typed{.scalar = symbol->id};
+      ScalarAssignmentStatement typed{
+          .scalar = symbol->id,
+          .value = std::nullopt,
+          .condition = std::nullopt,
+      };
       if (symbol->type == ScalarType::Bool) {
         MQT_OQ3_TRY_ASSIGN(condition, analyzeBoolValue(assignment.value));
         typed.condition = condition;
@@ -3585,7 +3614,11 @@ private:
           bitVector, analyzeBitVectorExpression(
                          assignment.value, program.registers[targetReg].width));
       for (uint64_t bit = 0; bit < program.registers[targetReg].width; ++bit) {
-        markBitInitialized({.reg = targetReg, .index = bit});
+        markBitInitialized({
+            .reg = targetReg,
+            .index = bit,
+            .dynamicIndex = std::nullopt,
+        });
       }
       MQT_OQ3_TRY_ASSIGN(
           statement,
@@ -3644,7 +3677,11 @@ private:
     dynamicBitFacts.push_back(std::make_shared<DynamicBitFactSet>());
     bitGenerations.push_back(0);
     if (failed(declare(location, identifier,
-                       {.kind = SymbolKind::Register, .id = id}))) {
+                       {
+                           .kind = SymbolKind::Register,
+                           .id = id,
+                           .constant = std::nullopt,
+                       }))) {
       return failure();
     }
     if (!isQubit && global) {
@@ -3667,6 +3704,7 @@ private:
                                        SyntaxBitReference{
                                            .location = location,
                                            .identifier = identifier,
+                                           .index = std::nullopt,
                                        },
                                    .value = *initializer,
                                },
@@ -3734,6 +3772,7 @@ private:
         .name = declaration.identifier.str(),
         .parameterCount = declaration.parameters.size(),
         .qubitCount = declaration.qubits.size(),
+        .body = {},
         .location = getSourceLocation(location),
     };
     scopes.emplace_back();
@@ -3744,6 +3783,7 @@ private:
                              .kind = SymbolKind::GateParameter,
                              .type = ScalarType::Angle,
                              .id = static_cast<uint32_t>(index),
+                             .constant = std::nullopt,
                          }))) {
         scopes.pop_back();
         return failure();
@@ -3754,6 +3794,7 @@ private:
                          {
                              .kind = SymbolKind::GateQubit,
                              .id = static_cast<uint32_t>(index),
+                             .constant = std::nullopt,
                          }))) {
         scopes.pop_back();
         return failure();
@@ -3775,8 +3816,10 @@ private:
   analyzeMeasurement(SMLoc location, const SyntaxMeasurement& measurement) {
     MQT_OQ3_TRY_ASSIGN(qubits, resolveQubitOperand(measurement.source));
     if (!measurement.target) {
-      return addStatement(location,
-                          MeasurementStatement{.qubits = std::move(qubits)});
+      return addStatement(location, MeasurementStatement{
+                                        .targets = {},
+                                        .qubits = std::move(qubits),
+                                    });
     }
     const auto* destination = lookup(measurement.target->identifier);
     if (destination != nullptr && destination->kind == SymbolKind::Scalar) {
@@ -3824,12 +3867,16 @@ private:
               .kind = QubitReferenceKind::Register,
               .symbol = static_cast<RegisterId>(registerId),
               .index = index,
+              .provenIndex = std::nullopt,
           });
         }
       }
       for (const auto index : hardwareQubits) {
-        qubits.push_back(
-            {.kind = QubitReferenceKind::Hardware, .index = index});
+        qubits.push_back({
+            .kind = QubitReferenceKind::Hardware,
+            .index = index,
+            .provenIndex = std::nullopt,
+        });
       }
     }
     for (const auto& operand : barrier.operands) {
@@ -3914,7 +3961,11 @@ private:
   [[nodiscard]] FailureOr<StatementId> analyzeIf(SMLoc location,
                                                  const SyntaxIf& conditional) {
     MQT_OQ3_TRY_ASSIGN(condition, analyzeCondition(conditional.condition));
-    IfStatement result{.condition = condition};
+    IfStatement result{
+        .condition = condition,
+        .thenStatements = {},
+        .elseStatements = {},
+    };
     MQT_OQ3_TRY_ASSIGN(knownCondition,
                        constantCondition(conditional.condition));
     const bool entryReachable = reachable;
@@ -4053,7 +4104,12 @@ private:
     MQT_OQ3_TRY_ASSIGN(start, analyzeExpression(loop.start));
     MQT_OQ3_TRY_ASSIGN(step, analyzeExpression(loop.step));
     MQT_OQ3_TRY_ASSIGN(stop, analyzeExpression(loop.stop));
-    ForStatement result{.start = start, .step = step, .stop = stop};
+    ForStatement result{
+        .start = start,
+        .step = step,
+        .stop = stop,
+        .body = {},
+    };
     for (const auto expression : {result.start, result.step, result.stop}) {
       if (!isInteger(program.expressions[expression].type)) {
         return fail(location, "for-loop ranges require integer expressions");
@@ -4101,8 +4157,11 @@ private:
     scopes.emplace_back();
     const auto scalar = static_cast<ScalarId>(program.scalars.size());
     const auto type = loop.isUnsigned ? ScalarType::Uint : ScalarType::Int;
-    program.scalars.push_back(
-        {.type = type, .name = loop.inductionVariable.str()});
+    program.scalars.push_back({
+        .type = type,
+        .name = loop.inductionVariable.str(),
+        .location = {},
+    });
     initializedScalars.push_back(true);
     scalarGenerations.push_back(0);
     affineScalarValues.emplace_back();
@@ -4112,6 +4171,7 @@ private:
                                               : SymbolKind::Scalar,
                            .type = type,
                            .id = scalar,
+                           .constant = std::nullopt,
                        }))) {
       scopes.pop_back();
       return failure();
@@ -4237,7 +4297,10 @@ private:
   [[nodiscard]] FailureOr<StatementId> analyzeWhile(SMLoc location,
                                                     const SyntaxWhile& loop) {
     MQT_OQ3_TRY_ASSIGN(condition, analyzeCondition(loop.condition));
-    WhileStatement result{.condition = condition};
+    WhileStatement result{
+        .condition = condition,
+        .body = {},
+    };
     const auto beforeBitsInitialized = initializedBits;
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
@@ -4299,7 +4362,11 @@ private:
   [[nodiscard]] FailureOr<StatementId>
   analyzeSwitch(SMLoc location, const SyntaxSwitch& switchSyntax) {
     MQT_OQ3_TRY_ASSIGN(control, analyzeExpression(switchSyntax.control));
-    SwitchStatement result{.control = control};
+    SwitchStatement result{
+        .control = control,
+        .cases = {},
+        .defaultStatements = {},
+    };
     const bool entryReachable = reachable;
     bool anyFallthrough = false;
     if (!isInteger(program.expressions[result.control].type)) {
@@ -4466,9 +4533,8 @@ private:
   [[nodiscard]] FailureOr<ConditionId>
   analyzeCondition(const SyntaxExpressionId syntaxId) {
     const auto& condition = syntax.expressions[syntaxId];
-    ConditionExpression typed{
-        .location = getSourceLocation(condition.location),
-    };
+    ConditionExpression typed{};
+    typed.location = getSourceLocation(condition.location);
     if (isConstantExpression(syntaxId)) {
       MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(syntaxId));
       if (constant.type != ScalarType::Bool) {
@@ -4508,9 +4574,9 @@ private:
         return fail(condition.location, "identifier '" + condition.identifier +
                                             "' is not bool or a classical bit");
       }
-      MQT_OQ3_TRY_ASSIGN(bits,
-                         resolveBits({.location = condition.location,
-                                      .identifier = condition.identifier}));
+      MQT_OQ3_TRY_ASSIGN(bits, resolveBits({.location = condition.location,
+                                            .identifier = condition.identifier,
+                                            .index = std::nullopt}));
       if (bits.size() != 1) {
         return fail(condition.location,
                     "condition must select exactly one classical bit");
@@ -4593,7 +4659,8 @@ private:
       if (directRegisterComparison) {
         MQT_OQ3_TRY_ASSIGN(
             bits, resolveBits({.location = registerSyntax->location,
-                               .identifier = registerSyntax->identifier}));
+                               .identifier = registerSyntax->identifier,
+                               .index = std::nullopt}));
         if (!program.openQASM2) {
           for (const auto& bit : bits) {
             if (failed(ensureBitInitialized(bit, condition.location))) {
@@ -4636,6 +4703,8 @@ private:
               .kind = ConditionKind::Literal,
               .location = getSourceLocation(condition.location),
               .literal = result,
+              .bit = {},
+              .measurement = {},
           });
         }
         if (expectedBits.getBitWidth() < bits.size()) {
@@ -4646,6 +4715,8 @@ private:
         return addCondition({
             .kind = ConditionKind::RegisterComparison,
             .location = getSourceLocation(condition.location),
+            .bit = {},
+            .measurement = {},
             .reg = registerSymbol->id,
             .expected = std::move(expectedBits),
             .comparison = registerComparison,
@@ -4674,6 +4745,8 @@ private:
         return addCondition({
             .kind = ConditionKind::BitVectorComparison,
             .location = getSourceLocation(condition.location),
+            .bit = {},
+            .measurement = {},
             .bitVectorComparisonLhs = *lhs,
             .bitVectorComparisonRhs = *rhs,
             .comparison = typed.comparison,
@@ -4757,6 +4830,9 @@ private:
     case Expr::Kind::BitXor:
     case Expr::Kind::ShiftLeft:
     case Expr::Kind::ShiftRight:
+    case Expr::Kind::PopCount:
+    case Expr::Kind::RotateLeft:
+    case Expr::Kind::RotateRight:
     case Expr::Kind::Sin:
     case Expr::Kind::Sqrt:
     case Expr::Kind::Tan:
@@ -4832,7 +4908,10 @@ private:
     for (const auto& modifier : call.modifiers) {
       switch (modifier.kind) {
       case Modifier::Kind::Inv:
-        modifiers.push_back({.kind = ModifierKind::Inv});
+        modifiers.push_back({
+            .kind = ModifierKind::Inv,
+            .operand = std::nullopt,
+        });
         break;
       case Modifier::Kind::Pow:
         if (!modifier.argument) {
@@ -4952,6 +5031,7 @@ private:
       GateApplication application{
           .callee = callee,
           .parameters = parameters,
+          .qubits = {},
           .modifiers = modifiers,
       };
       for (const auto& selection :
@@ -4986,6 +5066,7 @@ private:
           {
               .kind = QubitReferenceKind::Hardware,
               .index = *operand.hardwareQubit,
+              .provenIndex = std::nullopt,
           },
       };
     }
@@ -4999,7 +5080,11 @@ private:
         return fail(operand.location, "gate-local qubits cannot be indexed");
       }
       return std::vector<QubitReference>{
-          {.kind = QubitReferenceKind::GateArgument, .symbol = symbol->id},
+          {
+              .kind = QubitReferenceKind::GateArgument,
+              .symbol = symbol->id,
+              .provenIndex = std::nullopt,
+          },
       };
     }
     if (symbol == nullptr || symbol->kind != SymbolKind::Register ||
@@ -5017,6 +5102,7 @@ private:
             .kind = QubitReferenceKind::Register,
             .symbol = reg,
             .index = index,
+            .provenIndex = std::nullopt,
         });
       }
       return selection;
@@ -5033,6 +5119,7 @@ private:
               .kind = QubitReferenceKind::Register,
               .symbol = reg,
               .index = *constant,
+              .provenIndex = std::nullopt,
           },
       };
     }
@@ -5060,6 +5147,7 @@ private:
               .kind = QubitReferenceKind::Register,
               .symbol = reg,
               .index = static_cast<uint64_t>(value),
+              .provenIndex = std::nullopt,
           },
       };
     }
@@ -5095,7 +5183,11 @@ private:
       std::vector<frontend::BitReference> result;
       result.reserve(width);
       for (uint64_t index = 0; index < width; ++index) {
-        result.push_back({.reg = reg, .index = index});
+        result.push_back({
+            .reg = reg,
+            .index = index,
+            .dynamicIndex = std::nullopt,
+        });
       }
       return result;
     }
@@ -5106,7 +5198,7 @@ private:
         return fail(reference.location, "classical bit index is out of bounds");
       }
       return std::vector<frontend::BitReference>{
-          {.reg = reg, .index = *constant},
+          {.reg = reg, .index = *constant, .dynamicIndex = std::nullopt},
       };
     }
     MQT_OQ3_TRY_ASSIGN(dynamic, analyzeExpression(*reference.index));
@@ -5187,6 +5279,7 @@ SourceLocation sourceLocation(const llvm::SourceMgr& sources,
       .filename = buffer->getBufferIdentifier().str(),
       .line = line,
       .column = column,
+      .includeStack = {},
   };
   auto parent = sources.getParentIncludeLoc(bufferId);
   while (parent.isValid()) {

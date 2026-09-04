@@ -1109,18 +1109,29 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
     llvm::StringLiteral source;
   };
   constexpr std::array fixtures{
-      Fixture{.name = "missing-function", .source = R"mlir(module {
-      })mlir"},
-      Fixture{.name = "external-function", .source = R"mlir(module {
+      Fixture{
+          .name = "missing-function",
+          .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "external-function",
+          .source = R"mlir(module {
         func.func private @main()
-      })mlir"},
-      Fixture{.name = "function-call", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "function-call",
+          .source = R"mlir(module {
         func.func @main() {
           func.call @main() : () -> ()
           return
         }
-      })mlir"},
-      Fixture{.name = "nested-multiblock-region", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "nested-multiblock-region",
+          .source = R"mlir(module {
         func.func @main() {
           scf.execute_region {
             cf.br ^next
@@ -1129,46 +1140,67 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
           }
           return
         }
-      })mlir"},
-      Fixture{.name = "extra-module-scope-operation", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "extra-module-scope-operation",
+          .source = R"mlir(module {
         module @extra {}
         func.func @main() {
           return
         }
-      })mlir"},
-      Fixture{.name = "unsupported-memory-element", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "unsupported-memory-element",
+          .source = R"mlir(module {
         func.func @main() {
           %memory = memref.alloc() : memref<1xi64>
           return
         }
-      })mlir"},
-      Fixture{.name = "returned-memory-view", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "returned-memory-view",
+          .source = R"mlir(module {
         func.func @main() -> memref<?xi1> {
           %memory = memref.alloc() : memref<1xi1>
           %view = memref.cast %memory : memref<1xi1> to memref<?xi1>
           return %view : memref<?xi1>
         }
-      })mlir"},
-      Fixture{.name = "returned-qubit-memory", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "returned-qubit-memory",
+          .source = R"mlir(module {
         func.func @main() -> memref<1x!qc.qubit> {
           %memory = memref.alloc() : memref<1x!qc.qubit>
           return %memory : memref<1x!qc.qubit>
         }
-      })mlir"},
-      Fixture{.name = "unordered-float-comparison", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "unordered-float-comparison",
+          .source = R"mlir(module {
         func.func @main() -> i1 {
           %one = arith.constant 1.0 : f64
           %value = arith.cmpf uno, %one, %one : f64
           return %value : i1
         }
-      })mlir"},
-      Fixture{.name = "non-finite-float", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "non-finite-float",
+          .source = R"mlir(module {
         func.func @main() -> f64 {
           %value = arith.constant 0x7FF0000000000000 : f64
           return %value : f64
         }
-      })mlir"},
-      Fixture{.name = "while-condition-side-effect", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "while-condition-side-effect",
+          .source = R"mlir(module {
         func.func @main() {
           %memory = memref.alloc() : memref<1xi1>
           %zero = arith.constant 0 : index
@@ -1181,8 +1213,11 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
           }
           return
         }
-      })mlir"},
-      Fixture{.name = "out-of-bounds-qubit", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "out-of-bounds-qubit",
+          .source = R"mlir(module {
         func.func @main() {
           %memory = memref.alloc() : memref<1x!qc.qubit>
           %one = arith.constant 1 : index
@@ -1190,8 +1225,11 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
           qc.x %qubit : !qc.qubit
           return
         }
-      })mlir"},
-      Fixture{.name = "out-of-bounds-measurement", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "out-of-bounds-measurement",
+          .source = R"mlir(module {
         func.func @main() -> i1 {
           %memory = memref.alloc() : memref<1x!qc.qubit>
           %one = arith.constant 1 : index
@@ -1199,8 +1237,11 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
           %result = qc.measure %qubit : !qc.qubit -> i1
           return %result : i1
         }
-      })mlir"},
-      Fixture{.name = "out-of-bounds-store", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "out-of-bounds-store",
+          .source = R"mlir(module {
         func.func @main() {
           %memory = memref.alloc() : memref<1xi1>
           %one = arith.constant 1 : index
@@ -1208,15 +1249,21 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
           memref.store %value, %memory[%one] : memref<1xi1>
           return
         }
-      })mlir"},
-      Fixture{.name = "unsupported-output", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "unsupported-output",
+          .source = R"mlir(module {
         func.func @main() -> f32 {
           %value = arith.constant 1.0 : f32
           return %value : f32
         }
-      })mlir"},
+      })mlir",
+      },
 
-      Fixture{.name = "dynamic-index", .source = R"mlir(module {
+      Fixture{
+          .name = "dynamic-index",
+          .source = R"mlir(module {
         func.func @main() -> i1 {
           %bits = memref.alloc() : memref<2xi1>
           %index = arith.constant 0 : i64
@@ -1224,8 +1271,11 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
           %value = memref.load %bits[%dynamic] : memref<2xi1>
           return %value : i1
         }
-      })mlir"},
-      Fixture{.name = "dynamic-loop-range", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "dynamic-loop-range",
+          .source = R"mlir(module {
         func.func @main() {
           %zero = arith.constant 0 : index
           %integer = arith.constant 1 : i64
@@ -1235,18 +1285,25 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
           }
           return
         }
-      })mlir"},
-      Fixture{.name = "rank-two-memory", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "rank-two-memory",
+          .source = R"mlir(module {
         func.func @main() {
           %memory = memref.alloc() : memref<2x2xi1>
           return
         }
-      })mlir"},
-      Fixture{.name = "function-argument", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "function-argument",
+          .source = R"mlir(module {
         func.func @main(%value: i64) {
           return
         }
-      })mlir"},
+      })mlir",
+      },
   };
 
   DialectRegistry registry = emissionDialects();
@@ -1269,7 +1326,9 @@ TEST(OpenQASM3EmissionTest, SupportsScalarRegionResults) {
     llvm::StringLiteral source;
   };
   constexpr std::array fixtures{
-      Fixture{.name = "if-result", .source = R"mlir(module {
+      Fixture{
+          .name = "if-result",
+          .source = R"mlir(module {
         func.func @main() -> i64 {
           %condition = arith.constant true
           %one = arith.constant 1 : i64
@@ -1280,8 +1339,11 @@ TEST(OpenQASM3EmissionTest, SupportsScalarRegionResults) {
           }
           return %value : i64
         }
-      })mlir"},
-      Fixture{.name = "for-iterated-state", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "for-iterated-state",
+          .source = R"mlir(module {
         func.func @main() -> i64 {
           %zero = arith.constant 0 : index
           %one = arith.constant 1 : index
@@ -1292,8 +1354,11 @@ TEST(OpenQASM3EmissionTest, SupportsScalarRegionResults) {
           }
           return %value : i64
         }
-      })mlir"},
-      Fixture{.name = "while-state", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "while-state",
+          .source = R"mlir(module {
         func.func @main() {
           %initial = arith.constant 0 : i64
           %value = scf.while (%state = %initial) : (i64) -> i64 {
@@ -1305,8 +1370,11 @@ TEST(OpenQASM3EmissionTest, SupportsScalarRegionResults) {
           }
           return
         }
-      })mlir"},
-      Fixture{.name = "switch-result", .source = R"mlir(module {
+      })mlir",
+      },
+      Fixture{
+          .name = "switch-result",
+          .source = R"mlir(module {
         func.func @main() -> i64 {
           %index = arith.constant 0 : index
           %one = arith.constant 1 : i64
@@ -1316,7 +1384,8 @@ TEST(OpenQASM3EmissionTest, SupportsScalarRegionResults) {
           }
           return %value : i64
         }
-      })mlir"},
+      })mlir",
+      },
   };
   auto registry = emissionDialects();
   MLIRContext context(registry);

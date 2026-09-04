@@ -270,7 +270,12 @@ Token Lexer::lexNumber(const char* start) {
     Token token{
         .kind = TokenKind::IntegerLiteral,
         .loc = SMLoc::getFromPointer(start),
+        .identifier = {},
+        .stringValue = {},
         .spelling = text,
+        .intValue = 0,
+        .floatValue = 0.0,
+        .wideInteger = false,
     };
     llvm::SmallString<32> normalized;
     for (const char value : digitText) {
