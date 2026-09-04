@@ -23,7 +23,10 @@ def QTensorDialect : Dialect {
     In addition, alloc/dealloc operations are added to the dialect to support the bulk allocation and deallocation of qubit tensors with linear types.
   }];
 
-  let dependentDialects = ["::mlir::qco::QCODialect"];
+  let dependentDialects = ["::mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect"];
+
+  let hasCanonicalizer = 1;
 
   let cppNamespace = "::mlir::qtensor";
 }

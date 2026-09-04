@@ -169,23 +169,26 @@ This compiler route is the Qiskit circuit interface in MQT Core v4.
 Qiskit 2.5's C API cannot construct classical expressions or structured control
 flow, so export uses Qiskit's public Python classes for these operations.
 
-| Circuit feature                                                   | Import               | Export         |
-| ----------------------------------------------------------------- | -------------------- | -------------- |
-| Standard gates, constructible numeric modifiers, and global phase | Supported            | Supported      |
-| Other finite numeric modifiers                                    | Supported            | Rejected       |
-| Measurement, reset, and barrier                                   | Supported            | Supported      |
-| Canonical named registers and leading loose bits                  | Supported            | Supported      |
-| Custom instructions with finite, acyclic definitions              | Recursively expanded | Not applicable |
-| Nested `if`/`else`, `for`, `while`, and `switch`                  | Supported            | Supported      |
-| Classical-bit and register conditions                             | Supported            | Supported      |
-| Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Supported      |
-| Clbit and ClassicalRegister expression variables                  | Supported            | Supported      |
-| Standalone classical runtime variables                            | Rejected             | Rejected       |
-| Free symbols and supported real parameter expressions             | Supported            | Supported      |
-| Parameter-vector elements                                         | Supported            | Supported      |
-| Dense numeric unitaries up to eight qubits                        | Supported            | Supported      |
-| Register aliases or interleaved membership                        | Rejected             | Rejected       |
-| Transpiler layout metadata                                        | Accepted and ignored | Not emitted    |
+| Circuit feature                                                   | Import               | Export             |
+| ----------------------------------------------------------------- | -------------------- | ------------------ |
+| Standard gates, constructible numeric modifiers, and global phase | Supported            | Supported          |
+| Other finite numeric modifiers                                    | Supported            | Rejected           |
+| Measurement, reset, and barrier                                   | Supported            | Supported          |
+| Canonical named registers and leading loose bits                  | Supported            | Explicit registers |
+| Custom instructions with finite, acyclic definitions              | Recursively expanded | Not applicable     |
+| Nested `if`/`else`, `for`, `while`, and `switch`                  | Supported            | Supported          |
+| Classical-bit and register conditions                             | Supported            | Supported          |
+| Constant Boolean, `Uint` up to 64 bits, and `Float` expressions   | Supported            | Supported          |
+| Clbit and ClassicalRegister expression variables                  | Supported            | Supported          |
+| Fixed-width bitwise operations, comparisons, and bounded shifts   | Supported            | Supported          |
+| Direct complete-register comparisons wider than 64 bits           | Supported            | Supported          |
+| Clbit, indexed-register, and whole-register `Store` assignments   | Supported            | Supported          |
+| Standalone classical runtime variables                            | Rejected             | Rejected           |
+| Free symbols and supported real parameter expressions             | Supported            | Supported          |
+| Parameter-vector elements                                         | Supported            | Supported          |
+| Dense numeric unitaries up to eight qubits                        | Supported            | Supported          |
+| Register aliases or interleaved membership                        | Rejected             | Rejected           |
+| Transpiler layout metadata                                        | Accepted and ignored | Not emitted        |
 
 Classical-expression variables may refer to Clbits or ClassicalRegisters in the
 containing circuit. This includes values used only by the condition or switch
@@ -225,27 +228,51 @@ Switch labels must be nonnegative constants that fit the target width.
 
 Nested blocks may capture existing qubits and classical bits but may not
 allocate or release circuit resources. Control flow and classical expressions
-may nest up to 64 levels, and expression trees may contain at most 4,096 nodes.
-Boolean, unsigned-integer up to 64 bits, and floating-point expression
-operations must have a direct Qiskit equivalent. Unsupported operations, signed
-interpretations, invalid widths, non-finite constants, dynamic bounds,
-loop-carried values, and other SSA results fail during validation. The sole
-exception is Core's canonical constant-zero `i64` exit-code sentinel for a
-circuit without classical outputs.
+may nest up to 64 levels, and classical expression trees may contain at most
+16,384 nodes (parameter-expression limits are unchanged). Integer values use
+exact widths from 1 through 64. The only wider form is a direct unsigned
+comparison between one complete `ClassicalRegister` and one same-width literal;
+computed, packed, and signed wide values remain rejected. Both expression
+conditions and tuple conditions such as `if_test((register, value))` support
+this form. Tuple equalities with a value outside the register range become
+false. Standard `arith.cmpi` handles every comparison: signed ordering is
+encoded by XOR-biasing both operands' sign bits, including computed operands.
+Casts preserve truncation and sign/zero extension. Bitwise operations, modular
+arithmetic, integer selection, and shifts share these typed rules. Import guards
+runtime shifts so overshifts produce zero; export preserves the guards.
+Rotations and population count are expanded through the same bounded integer
+lowering used by jeff. Unsupported operations, invalid widths, non-finite
+constants, dynamic bounds, loop-carried values, and other SSA results fail
+during validation. Core's constant-zero `i64` status return is not a classical
+output. Whole-register reads map to Qiskit `ClassicalRegister` expressions, and
+writes map to atomic Qiskit `Store` operations. Indexed stores assume that their
+runtime index is in bounds. The Qiskit C API does not expose `Store`, so the
+adapter inspects and constructs that instruction through Qiskit's public Python
+classes, as it already does for structured control flow. Internal entry-block
+CBit storage becomes additional Qiskit registers, ordered before returned
+registers; Qiskit exposes all circuit storage. OpenQASM remains the source
+interchange path for arbitrary register widths.
 
-Conditions and switch targets may read a zero-initialized public CBit register.
-An undefined public CBit may be read only after an unconditional top-level
-measurement write to that bit, and every bit of an undefined returned register
-must be written unconditionally. Branch-local writes do not establish definite
-initialization. A captured classical snapshot must not cross a later CBit write
-or a nested write to the same register.
+Every public CBit output is exported as a Qiskit `ClassicalRegister`; an unnamed
+allocation receives a collision-free `_mqt_cN` name. This preserves the CBit
+register boundary and gives whole-register writes a valid Qiskit lvalue. Loose
+input Clbits therefore round trip semantically, but not as loose output bits.
+
+Conditions and switch targets may read a zero-initialized CBit register. An
+undefined CBit may be read only after an unconditional top-level write to that
+bit, and every bit of an undefined returned register must be written
+unconditionally. Branch-local writes do not establish definite initialization. A
+captured classical snapshot must not cross a later CBit write or a nested write
+to the same register.
 
 Each exported measurement must write to one static public CBit in the same
-block, and destinations must be unique. Its destination store must follow the
-measurement directly, apart from constant operations. A conditional or otherwise
-delayed destination store is rejected because Qiskit cannot preserve it as one
-measurement instruction. The measurement result may feed supported classical
-expressions after that store and is exported as the destination CBit.
+block. Destinations may be reused; later measurements overwrite earlier values
+in program order. A measurement's destination store must follow it directly,
+apart from constant operations. A conditional or otherwise delayed destination
+store is rejected because Qiskit cannot preserve it as one measurement
+instruction. The measurement result may feed supported classical expressions
+after that store and before any overwrite of the destination register. It is
+exported as the destination CBit.
 
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to
@@ -357,6 +384,12 @@ pipeline. It is applied when compilation proceeds beyond the raw
 
 {code}`jeff` is a serializable representation that can be stored and compiled
 again in a later process.
+
+Integer expressions support widths through 64 bits. Integer absolute value and
+power require jeff's native widths: 1, 8, 16, 32, or 64. Import preserves
+straight-line array snapshots, but rejects live old array values across mutating
+control flow and shared array updates inside switch or while regions. Integer
+selection branches must contain only constants and their yielded values.
 
 ```{code-cell} ipython3
 from pathlib import Path

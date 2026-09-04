@@ -1885,6 +1885,45 @@ TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
+TEST_F(MappingPassFixture, ProduceStableOutputForFixedSeed) {
+  constexpr size_t repetitions = 4;
+  const auto target = getSquareGridTarget(10);
+  SmallVector<OwningOpRef<ModuleOp>> modules;
+  size_t expectedSwaps = 0;
+  std::string expectedModule;
+
+  for (size_t repetition = 0; repetition < repetitions; ++repetition) {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+
+    SmallVector<Value> qubits((target.numSites() + 1) / 2);
+    for (Value& qubit : qubits) {
+      qubit = builder.allocQubit();
+    }
+    cxcz(builder, qubits);
+    for (Value qubit : qubits) {
+      builder.sink(qubit);
+    }
+
+    auto module = builder.finalize();
+    ASSERT_TRUE(runPass(module.get(), target,
+                        MappingPassOptions{.ntrials = 4, .seed = 42})
+                    .succeeded());
+
+    size_t swaps = 0;
+    module->walk([&](SWAPOp) { ++swaps; });
+    const auto printed = printModule(module.get());
+    if (repetition == 0) {
+      expectedSwaps = swaps;
+      expectedModule = printed;
+    } else {
+      EXPECT_EQ(swaps, expectedSwaps);
+      EXPECT_EQ(printed, expectedModule);
+    }
+    modules.emplace_back(std::move(module));
+  }
+}
+
 TEST_P(MappingPassTest, MapCircuitWithQubitPairBlock) {
   const auto& target = GetParam();
 
@@ -1911,6 +1950,88 @@ TEST_P(MappingPassTest, MapCircuitWithQubitPairBlock) {
   ASSERT_TRUE(runPass(m.get(), target,
                       MappingPassOptions{.nlookahead = 15, .ntrials = 1})
                   .succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+}
+
+TEST_P(MappingPassTest, MapClassicalResultCapturedByNestedRegion) {
+  const auto& target = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i1 attributes {mqt.entry_point} {
+        %b0 = arith.constant 0 : i1
+        %b1 = arith.constant 1 : i1
+
+        %q0_0 = qco.alloc : !qco.qubit
+        %q1_0 = qco.alloc : !qco.qubit
+        %q2_0 = qco.alloc : !qco.qubit
+
+        %q2_1, %classical = qco.measure %q2_0 : !qco.qubit
+
+        %cond = arith.cmpi "eq", %classical, %b1 : i1
+        %result, %q0_1, %q1_1 = qco.if %cond
+            args(%arg0 = %q0_0, %arg1 = %q1_0)
+            -> (i1, !qco.qubit, !qco.qubit) {
+          %local_classical = arith.addi %classical, %b0 : i1
+          %then0, %then1 = qco.swap %arg0, %arg1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %local_classical, %then0, %then1 : i1, !qco.qubit, !qco.qubit
+        } else args(%arg0 = %q0_0, %arg1 = %q1_0) {
+          %else0, %else1 = qco.swap %arg0, %arg1 : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+          qco.yield %b0, %else0, %else1 : i1, !qco.qubit, !qco.qubit
+        }
+
+        qco.sink %q0_1 : !qco.qubit
+        qco.sink %q1_1 : !qco.qubit
+        qco.sink %q2_1 : !qco.qubit
+
+        return %result : i1
+      }
+    }
+  )mlir";
+
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*m)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
+}
+
+TEST_P(MappingPassTest, MapOpsWithClassicalDependencyChain) {
+  const auto& target = GetParam();
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> i1 attributes {mqt.entry_point} {
+        %qx = qco.alloc : !qco.qubit
+        %q0_0 = qco.alloc : !qco.qubit
+        %q1_0 = qco.alloc : !qco.qubit
+
+        %q1_1, %classical = qco.measure %q1_0 : !qco.qubit
+
+        %b0 = arith.constant 0 : i1
+        %cond = arith.cmpi "eq", %classical, %b0 : i1
+        %q0_1 = qco.if %cond
+            args(%arg0 = %q0_0) -> (!qco.qubit) {
+          qco.yield %arg0 : !qco.qubit
+        } else args(%arg0 = %q0_0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+
+        qco.sink %qx : !qco.qubit
+        qco.sink %q0_1 : !qco.qubit
+        qco.sink %q1_1 : !qco.qubit
+
+        return %cond : i1
+      }
+    }
+  )mlir";
+
+  auto m = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(m);
+  ASSERT_TRUE(succeeded(verify(*m)));
+  ASSERT_TRUE(
+      runPass(m.get(), target, MappingPassOptions{.ntrials = 1}).succeeded());
   ASSERT_TRUE(succeeded(verify(*m)));
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }

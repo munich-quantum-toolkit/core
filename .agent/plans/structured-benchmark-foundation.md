@@ -1,13 +1,11 @@
 # Complete the structured-benchmark foundation
 
-This ExecPlan is a living document. The sections `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
-be kept up to date as work proceeds.
+Status: historical implementation record.
 
-This ExecPlan must be maintained in accordance with `.agent/PLANS.md` from the
-repository root.
+The two family lists were later replaced by
+[one family catalog](centralize-benchmark-families.md).
 
-## Purpose / Big Picture
+## Goal and scope
 
 MQT Core needs structured quantum workloads whose inputs, expected outputs, and
 generated programs describe the same exact instance. After this work, C++,
@@ -21,118 +19,91 @@ programs. It keeps his original commits in the branch history and does not copy
 simulator support from the pull-request stack that starts at
 [#2077](https://github.com/munich-quantum-toolkit/core/pull/2077).
 
-### Progress
+## Constraints
 
-- [x] (2026-08-22 09:24Z) Preserved Daniel's commits and merged main without
-      rebasing his work.
-- [x] (2026-08-23 10:58Z) Extracted and merged the independent dependency,
-      deterministic-builder, legacy-library removal, and loop-unroll changes.
-- [x] (2026-08-23 15:35Z) Merged current main and removed this branch's
-      changelog delta.
-- [x] (2026-08-23 16:20Z) Renamed the public component to singular `bench` and
-      added typed BV and QFT semantics, schemas, manifests, references, and
-      private registry entries.
-- [x] (2026-08-23 16:55Z) Added structured BV and QFT emitters, removed
-      allocation-adjacent resets and QPE swaps, combined Fourier emission, and
-      switched CLI and MLIR Python generation to generic private dispatch.
-- [x] (2026-08-23 17:10Z) Added singular Python bindings and executable notebook
-      documentation. Focused C++, emitter, `jeff`, CLI, and Python checks pass.
-- [x] (2026-08-23 23:20Z) Rebuilt the semantic-test branch above #2077 and added
-      BV and QFT distribution checks without copying simulator code into this
-      branch.
-- [x] (2026-08-23 23:35Z) Ran installation, wheel, notebook, full release, and
-      lint validation and completed the stale-name audit.
-- [x] (2026-08-27 16:37Z) Merged current main and reread the expanded root,
-      MLIR, and binding guidance.
-- [x] (2026-08-27 17:20Z) Addressed Damian Rovara's documentation feedback with
-      a clearer benchmark definition, direct notebook CLI cells, and method
-      documentation. Regenerated stubs; the full release build, all 3,899 native
-      tests, the warning-as-error documentation build, and repository lint pass.
-- [x] (2026-08-31 10:34Z) Renamed the JSON and CLI configuration surface to
-      instance specifications while keeping the resolved typed values as
-      benchmark instances.
+- The current `jeff-mlir` pin already lowers both BV methods and both QFT
+  methods. Evidence: focused generation produced nonempty `jeff` files for all
+  four cases. The draft pull request #44 is not needed.
 
-### Surprises & Discoveries
+- Loading MLIR objects from two Python extensions creates incompatible
+  process-local MLIR type IDs. Evidence: the semantic extension passes canonical
+  instance specification JSON to the existing `mqt.core.mlir` extension, so one
+  extension owns every returned `QCProgram`.
 
-- Observation: The current `jeff-mlir` pin already lowers both BV methods and
-  both QFT methods. Evidence: focused generation produced nonempty `jeff` files
-  for all four cases. The draft pull request #44 is not needed.
-- Observation: Loading MLIR objects from two Python extensions creates
-  incompatible process-local MLIR type IDs. Evidence: the semantic extension
-  passes canonical instance specification JSON to the existing `mqt.core.mlir`
-  extension, so one extension owns every returned `QCProgram`.
-- Observation: Exact QPE powers stay finite above 1,024 bits when rational turns
-  are reduced before conversion to `double`. Evidence: the precision-1,025
-  emitter test keeps the module below 150 operations.
-- Observation: The stack that starts at #2077 already owns structured DD
-  execution. The benchmark branch therefore owns instances, emission, and
-  references only.
-- Observation: The combined DD check exposed a shared QFT ordering error in both
-  methods. Evidence: the old emitters gave total variation distance above 0.28
-  for QFT `(3, 1)`; descending physical targets and matching feed-forward
-  reduced it below 0.05 for both methods.
-- Observation: The full Python matrix reaches all 570 or 581 tests per version,
-  but six unrelated QDMI tests fail because the test installs do not register
-  the built-in `mqt.sc.default` and `mqt.sc.iqm.garnet` devices. The focused
+- Exact QPE powers stay finite above 1,024 bits when rational turns are reduced
+  before conversion to `double`. Evidence: the precision-1,025 emitter test
+  keeps the module below 150 operations.
+
+- The stack that starts at #2077 already owns structured DD execution. The
+  benchmark branch therefore owns instances, emission, and references only.
+
+- The combined DD check exposed a shared QFT ordering error in both methods.
+  Evidence: the old emitters gave total variation distance above 0.28 for QFT
+  `(3, 1)`; descending physical targets and matching feed-forward reduced it
+  below 0.05 for both methods.
+
+- The full Python matrix reaches all 570 or 581 tests per version, but six
+  unrelated QDMI tests fail because the test installs do not register the
+  built-in `mqt.sc.default` and `mqt.sc.iqm.garnet` devices. The focused
   benchmark and CLI tests pass for Python 3.11 through 3.14 with minimum direct
   dependencies.
 
-### Decision Log
+## Decisions
 
-- Decision: Use the singular public names `mqt::bench`, `mqt.core.bench`,
+- Use the singular public names `mqt::bench`, `mqt.core.bench`,
   `mqt-core/bench/`, and `MQT::CoreBench`. Rationale: the CLI and component name
-  use `bench`, and the old public API is unreleased. Date/Author: 2026-08-23 /
-  Lukas Burgholzer and Codex.
-- Decision: Ship typed GHZ, Grover, QPE, BV, and QFT families. Standard and
-  dynamic or iterative circuit forms are methods of one semantic family.
-  Rationale: method changes must not duplicate the instance reference.
-  Date/Author: 2026-08-23 / Lukas Burgholzer and Codex.
-- Decision: Keep one private semantic registry and one private MLIR registry.
-  Rationale: generic JSON dispatch needs a fixed ID table, while public C++ and
-  Python remain typed and do not expose a base class, variant, or option map.
-  Date/Author: 2026-08-23 / Lukas Burgholzer and Codex.
-- Decision: Install only `MQT::CoreBench`. Expose typed generation through the
+  use `bench`, and the old public API is unreleased.
+
+- Ship typed GHZ, Grover, QPE, BV, and QFT families. Standard and dynamic or
+  iterative circuit forms are methods of one semantic family. Rationale: method
+  changes must not duplicate the instance reference.
+
+- Keep one private semantic registry and one private MLIR registry. Rationale:
+  generic JSON dispatch needs a fixed ID table, while public C++ and Python
+  remain typed and do not expose a base class, variant, or option map.
+
+- Install only `MQT::CoreBench`. Expose typed generation through the
   source-build target `MQT::CoreBenchGenerate`. Rationale: the wider MLIR C++
-  package is not installed yet. Date/Author: 2026-08-23 / Lukas Burgholzer and
-  Codex.
-- Decision: Qubit allocation establishes the initial zero state. Emitters reset
-  only qubits that they reuse after measurement. Rationale: allocation-adjacent
-  resets add work without changing the program. Date/Author: 2026-08-23 / Lukas
-  Burgholzer and Codex.
-- Decision: Mirror QPE inverse-QFT operands and QFT result indices instead of
-  emitting final swaps. Rationale: result mapping is cheaper than quantum swaps.
-  Date/Author: 2026-08-23 / Lukas Burgholzer and Codex.
-- Decision: Never overwrite CLI outputs. Rationale: case-ID paths are stable;
-  atomic no-clobber publication and a manifest-last completion marker are
-  enough. Date/Author: 2026-08-23 / Lukas Burgholzer and Codex.
-- Decision: Keep DD execution changes above #2077. Rationale: the simulator owns
-  execution and returned-register sampling. Date/Author: 2026-08-22 / Lukas
-  Burgholzer and Codex.
-- Decision: Do not add a benchmark option that expands registers into separate
-  scalar allocations. Rationale: storage representation does not change the
-  benchmark instance or reference, indexed loops require an indexable value, and
-  scalar expansion would make large structured programs linear in the qubit
-  count. A reusable compiler transformation is the correct owner if a concrete
-  consumer needs this representation. Date/Author: 2026-08-27 / Lukas Burgholzer
-  and Codex.
-- Decision: Call the strict JSON configuration a benchmark instance
-  specification and reserve benchmark instance for a resolved typed value.
-  Rationale: the JSON specifies the configuration used to construct an instance;
-  it does not request generation or execution. Date/Author: 2026-08-31 / Daniel
-  Haag, Lukas Burgholzer, and Codex.
+  package is not installed yet.
 
-### Outcomes & Retrospective
+- Qubit allocation establishes the initial zero state. Emitters reset only
+  qubits that they reuse after measurement. Rationale: allocation-adjacent
+  resets add work without changing the program.
 
-The implementation has one semantic owner and one structured emitter path for
-five families. After the current-main merge, the complete release build and all
-3,899 configured native tests pass. The warning-as-error documentation build,
-including the executable notebook, also passes. The installed C++ consumer,
-fresh wheel, launcher, and minimum-version Python benchmark tests pass. The
-separate semantic branch validates every family against the #2077-based DD
-stack. The full Python matrix is blocked only by the unrelated missing QDMI
-device registrations recorded above.
+- Mirror QPE inverse-QFT operands and QFT result indices instead of emitting
+  final swaps. Rationale: result mapping is cheaper than quantum swaps.
 
-### Context and Orientation
+- Never overwrite CLI outputs. Rationale: case-ID paths are stable; atomic
+  no-clobber publication and a manifest-last completion marker are enough.
+
+- Keep DD execution changes above #2077. Rationale: the simulator owns execution
+  and returned-register sampling.
+
+- Do not add a benchmark option that expands registers into separate scalar
+  allocations. Rationale: storage representation does not change the benchmark
+  instance or reference, indexed loops require an indexable value, and scalar
+  expansion would make large structured programs linear in the qubit count. A
+  reusable compiler transformation is the correct owner if a concrete consumer
+  needs this representation.
+
+- Call the strict JSON configuration a benchmark instance specification and
+  reserve benchmark instance for a resolved typed value. Rationale: the JSON
+  specifies the configuration used to construct an instance; it does not request
+  generation or execution.
+
+## Outcome and validation
+
+Typed semantic models and structured emitters cover GHZ, Grover, QPE, BV, and
+QFT. Analytic references, canonical instance specifications, manifests, and
+stable case IDs describe the same instance. The separate DD integration checks
+each family against those references.
+
+The release/native suites, installed C++ consumer, wheel/launcher checks,
+focused Python minimums, and executable documentation passed. The full Python
+matrix did not pass because of unrelated provider-registration failures. Family
+metadata was later centralized in the linked catalog record.
+
+## Code and ownership
 
 Public C++ types live under `include/mqt-core/bench/`; their implementations
 live under `src/bench/`. These files own option validation, resolved defaults,
@@ -163,58 +134,7 @@ assigns probability `2^-k` to outcomes whose final `n-k` bits are zero. GHZ,
 Grover, and QPE retain their analytic state, search, and phase-estimation
 references.
 
-### Plan of Work
-
-Finish the singular rename without compatibility aliases. Keep semantic JSON
-dispatch private, strict, and fixed to the same five IDs as MLIR generation.
-Expose each family through typed C++ and explicit Python classes.
-
-Emit BV with one query qubit per hidden bit in static mode and one reused query
-qubit in dynamic mode. Emit QFT from the periodic input with a full register in
-standard mode and one measured, reset, and reused qubit in semiclassical mode.
-Keep loop bodies structured. Do not add allocation/reset canonicalization or a
-new helper collection.
-
-Make the notebook discover the catalog through the CLI and execute typed
-configuration, instance specification and manifest inspection, reference
-evaluation, IR generation, and a temporary-directory CLI round trip. Document
-the five explicit extension points for later families.
-
-After the feature branch passes independently, apply only the semantic-test
-commit above #2077 and its returned-register sampling follow-up. Add small BV
-and QFT distribution cases there. Do not move DD interpreter code into this
-branch.
-
-### Concrete Steps
-
-Run focused semantic and emitter checks from the repository root:
-
-    cmake --preset release
-    cmake --build --preset release --target mqt-core-bench-test mqt-core-mlir-unittests-benchmark mqt-core-bench
-    ./build/release/test/bench/mqt-core-bench-test
-    ./build/release/mlir/unittests/bench/mqt-core-mlir-unittests-benchmark
-    ctest --test-dir build/release -R '^mqt-core-mlir-benchmark-cli$' --output-on-failure
-
-Regenerate and test Python:
-
-    uv sync --inexact --no-dev --no-build-isolation-package mqt-core
-    uvx nox -s stubs
-    uv run --no-sync pytest test/python/test_bench.py test/python/test_cli.py
-
-Build the executable notebook and package surfaces:
-
-    uvx nox --non-interactive -s docs
-    cmake --build --preset release
-    ctest --preset release
-    uvx nox -s tests
-    uvx nox -s minimums
-    uvx nox -s lint
-
-Finish with `git diff --check`, `git status --short`, an installed C++ consumer
-of `MQT::CoreBench`, a source-build consumer of `MQT::CoreBenchGenerate`, a
-fresh wheel/launcher smoke test, and a search for stale plural public names.
-
-### Validation and Acceptance
+## Acceptance
 
 All five families must round-trip through typed C++, strict instance
 specification JSON, Python, and the CLI with one case ID per resolved semantic
@@ -239,16 +159,7 @@ The combined #2077 stack must sample small BV and QFT programs according to the
 same references. Those simulator-dependent test commits must remain outside this
 feature branch.
 
-### Idempotence and Recovery
-
-Build, test, stub, and documentation commands are repeatable. CLI tests write
-below `build/`, and the notebook uses a temporary directory. Existing generated
-files are never replaced. Restore Daniel-authored code from its reachable Git
-commits rather than reconstructing it. Do not rewrite or push remote history
-without a backup ref, a current remote SHA, an exact force-with-lease, and
-explicit human authorization.
-
-### Interfaces and Dependencies
+## Interfaces
 
 The installed semantic target is `MQT::CoreBench`. Public family and option
 types use namespace `mqt::bench` and C++20 standard-library types. nlohmann JSON

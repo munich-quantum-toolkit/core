@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/Graph.h"
 #include "mlir/Dialect/QCO/Utils/Layout.h"
+#include "mlir/Dialect/QCO/Utils/Sorting.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
@@ -636,8 +637,8 @@ protected:
     const auto stats = *routeRes;
     numSwaps += stats.nswaps;
 
-    // Fix SSA Dominance issues.
-    llvm::for_each(body.getBlocks(), [](Block& b) { sortTopologically(&b); });
+    // Fix SSA dominance errors.
+    reorderTopologically(body.front(), rewriter);
   }
 
 private:
@@ -1247,6 +1248,9 @@ private:
                     [](auto&) { return Direction == WireDirection::Backward; })
                 .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
                     [&](auto&) {
+                      if (indices.size() == 1) {
+                        return true;
+                      }
                       if (visited.insert(op).second) {
                         composites.emplace_back(op, indices);
                       }
@@ -1613,7 +1617,8 @@ private:
 
         // Sort topologically to fix any occurring SSA dominance errors.
 
-        sortTopologically(block);
+        // Fix SSA dominance errors.
+        reorderTopologically(*block, *rewriter);
       }
     }
 

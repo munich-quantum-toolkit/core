@@ -20,28 +20,9 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 // Attributes and types
 //===----------------------------------------------------------------------===//
 
-def CBit_Initialization
-    : I32EnumAttr<"Initialization", "Classical-bit register initialization",
-                  [I32EnumAttrCase<"Zero", 0, "zero">,
-                   I32EnumAttrCase<"Undefined", 1, "undefined">]> {
-  let cppNamespace = "::mlir::cbit";
-  let genSpecializedAttr = 0;
-}
-
 def CBit_InitializationAttr
     : EnumAttr<CBitDialect, CBit_Initialization, "init"> {
   let assemblyFormat = "`<` $value `>`";
-}
-
-def CBit_ComparisonPredicate
-    : I64EnumAttr<"ComparisonPredicate", "unsigned comparison predicate",
-                  [I64EnumAttrCase<"Equal", 0, "eq">,
-                   I64EnumAttrCase<"NotEqual", 1, "ne">,
-                   I64EnumAttrCase<"Less", 2, "ult">,
-                   I64EnumAttrCase<"LessEqual", 3, "ule">,
-                   I64EnumAttrCase<"Greater", 4, "ugt">,
-                   I64EnumAttrCase<"GreaterEqual", 5, "uge">]> {
-  let cppNamespace = "::mlir::cbit";
 }
 
 def CBit_RegisterType : TypeDef<CBitDialect, "Register"> {
@@ -107,25 +88,46 @@ def LoadOp : CBitOp<"load"> {
   let hasVerifier = 1;
 }
 
-def CompareOp : CBitOp<"cmp"> {
-  let summary = "Compare a classical-bit register with an integer";
+def ReadOp : CBitOp<"read"> {
+  let summary = "Read a classical-bit register as an integer";
   let description = [{
-    Compares the complete register with an unsigned integer of the same width.
-    The predicate must be `eq`, `ne`, `ult`, `ule`, `ugt`, or `uge`.
+    Reads the complete register as an exact-width integer bit pattern. Register
+    element zero is the least-significant result bit, and the result width must
+    equal the static register width.
 
     Example:
     ```mlir
-    %matches = cbit.cmp eq, %c, 1 : i2 : !cbit.reg<2>
+    %value = cbit.read %c : !cbit.reg<3> -> i3
     ```
   }];
 
-  let arguments = (ins CBit_ComparisonPredicate:$predicate,
-      Arg<CBit_RegisterType, "register", [MemRead]>:$reg, APIntAttr:$rhs);
-  let results = (outs I1:$result);
+  let arguments = (ins Arg<CBit_RegisterType, "register", [MemRead]>:$reg);
+  let results = (outs AnySignlessInteger:$result);
   let assemblyFormat = [{
-    $predicate `,` $reg `,` $rhs attr-dict `:` qualified(type($reg))
+    $reg attr-dict `:` qualified(type($reg)) `->` qualified(type($result))
   }];
-  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
+def WriteOp : CBitOp<"write"> {
+  let summary = "Write an integer to a classical-bit register";
+  let description = [{
+    Writes a fixed-width integer to the complete register. Integer bit zero is
+    stored in register element zero, and the value width must equal the static
+    register width.
+
+    Example:
+    ```mlir
+    cbit.write %value, %c : i3, !cbit.reg<3>
+    ```
+  }];
+
+  let arguments = (ins AnySignlessInteger:$value,
+      Arg<CBit_RegisterType, "register", [MemWrite]>:$reg);
+  let assemblyFormat = [{
+    $value `,` $reg attr-dict `:` qualified(type($value)) `,`
+        qualified(type($reg))
+  }];
   let hasVerifier = 1;
 }
 

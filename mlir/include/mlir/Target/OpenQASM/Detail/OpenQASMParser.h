@@ -66,6 +66,10 @@ struct Expr {
     Float,
     Bool,
     Identifier,
+    IntCast,
+    BoolCast,
+    BitCast,
+    UintCast,
     AngleCast,
     Index,
     Neg,
@@ -537,18 +541,14 @@ private:
     advance(); // type
 
     const Expr* size = nullptr;
-    if (kind == TokenKind::Angle && current().kind == TokenKind::LBracket) {
+    if ((kind == TokenKind::Angle || kind == TokenKind::Int ||
+         kind == TokenKind::Uint) &&
+        current().kind == TokenKind::LBracket) {
       auto designator = parseDesignator();
       if (failed(designator)) {
         return failure();
       }
       size = *designator;
-    }
-    if ((kind == TokenKind::Int || kind == TokenKind::Uint) &&
-        current().kind == TokenKind::LBracket) {
-      return sink.error(current().loc,
-                        "Integer declarations currently require the default "
-                        "64-bit width");
     }
     if (current().kind != TokenKind::Identifier) {
       return expectedIdentifier("expected identifier");
@@ -1604,7 +1604,12 @@ private:
       }
       advance();
       return expr;
+    case TokenKind::Bool:
+    case TokenKind::Bit:
+    case TokenKind::Int:
+    case TokenKind::Uint:
     case TokenKind::Angle: {
+      const auto type = current().kind;
       advance();
       const Expr* size = nullptr;
       if (current().kind == TokenKind::LBracket) {
@@ -1621,7 +1626,11 @@ private:
       if (failed(operand) || failed(expect(TokenKind::RParen))) {
         return failure();
       }
-      expr->kind = Expr::Kind::AngleCast;
+      expr->kind = type == TokenKind::Int    ? Expr::Kind::IntCast
+                   : type == TokenKind::Uint ? Expr::Kind::UintCast
+                   : type == TokenKind::Bool ? Expr::Kind::BoolCast
+                   : type == TokenKind::Bit  ? Expr::Kind::BitCast
+                                             : Expr::Kind::AngleCast;
       expr->lhs = size;
       expr->rhs = *operand;
       return expr;

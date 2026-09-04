@@ -12,14 +12,17 @@
 
 #include "mlir/Conversion/ConversionUtils.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -30,6 +33,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -47,25 +51,25 @@ using namespace qc;
 
 namespace {
 
-/** @brief Qubit allocation mode */
+/// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
   Unset,  //!< No allocation mode has been established yet.
   Static, //!< The module uses static qubit allocation.
   Dynamic //!< The module uses dynamic qubit allocation.
 };
 
-/**
- * @brief State object for tracking qubit allocation mode.
- *
- * @details
- * Used to track whether a function uses static or dynamic qubit allocation.
- * This is used to determine whether to convert `qco.sink` to `qc.dealloc` (for
- * dynamic qubits) or simply erase it (for static qubits). This is also used to
- * catch cases of mixed allocation modes being used, which is not supported.
- */
+/// State object for tracking qubit allocation mode.
+///
+/// Used to track whether a function uses static or dynamic qubit allocation.
+/// This is used to determine whether to convert `qco.sink` to `qc.dealloc` (for
+/// dynamic qubits) or simply erase it (for static qubits). This is also used to
+/// catch cases of mixed allocation modes being used, which is not supported.
 struct LoweringState {
   /// Per-region map from a register's indices to its loaded qubit values.
   DenseMap<Region*, DenseMap<Value, DenseMap<Value, Value>>> qubitValues;
+  /// Original qubit argument positions, retained while signatures are
+  /// rewritten.
+  DenseMap<Operation*, SmallVector<unsigned>> qubitArguments;
   /// The qubit allocation mode used in the module
   AllocationMode allocationMode = AllocationMode::Unset;
 
@@ -84,14 +88,11 @@ struct LoweringState {
   }
 };
 
-/**
- * @brief Base class for conversion patterns that need access to lowering state
- *
- * @details
- * Extends OpConversionPattern to provide access to a shared LoweringState
- * object, which is used to track the allocation mode of the module.
- * @tparam OpType The QCO operation type to be converted.
- */
+/// Base class for conversion patterns that need access to lowering state
+///
+/// Extends OpConversionPattern to provide access to a shared LoweringState
+/// object, which is used to track the allocation mode of the module.
+/// @tparam OpType The QCO operation type to be converted.
 template <typename OpType>
 class StatefulOpConversionPattern : public OpConversionPattern<OpType> {
 
@@ -108,31 +109,29 @@ private:
 };
 } // namespace
 
-/**
- * @brief Moves the operations from one region into another.
- *
- * @details Moves the operations from the source region into the target region.
- * The target region replaces the uses of the old block arguments with the
- * @p replacementValues and erases the unused block arguments.
- *
- * @param sourceRegion Source region where the operations are moved from
- * @param targetRegion Target region where the operations are moved to
- * @param offset Offset to the arguments that are dropped
- * @param replacementValues Values to replace the uses of the arguments
- * @param rewriter PatternRewriter of the current conversion pass
- */
+/// Moves the operations from one region into another.
+///
+/// Moves the operations from the source region into the target region.
+/// The target region replaces the uses of the old block arguments with the
+/// @p replacementValues and erases the unused block arguments.
+///
+/// @param sourceRegion Source region where the operations are moved from
+/// @param targetRegion Target region where the operations are moved to
+/// @param replacementValues Values to replace the uses of the arguments
+/// @param rewriter PatternRewriter of the current conversion pass
 static void inlineRegion(Region& sourceRegion, Region& targetRegion,
-                         unsigned int offset, ValueRange replacementValues,
+                         ValueRange replacementValues,
                          ConversionPatternRewriter& rewriter) {
   rewriter.inlineRegionBefore(sourceRegion, targetRegion, targetRegion.end());
   auto& block = targetRegion.front();
-  assert(block.getNumArguments() == offset + replacementValues.size() &&
+  assert(block.getNumArguments() == replacementValues.size() &&
          "Number of replacement values must match number of block arguments");
-  for (auto [arg, replacementVal] : llvm::zip_equal(
-           block.getArguments().drop_front(offset), replacementValues)) {
-    arg.replaceAllUsesWith(replacementVal);
+  TypeConverter::SignatureConversion signature(block.getNumArguments());
+  for (auto [arg, replacementVal] :
+       llvm::zip_equal(block.getArguments(), replacementValues)) {
+    signature.remapInput(arg.getArgNumber(), replacementVal);
   }
-  block.eraseArguments(offset, replacementValues.size());
+  rewriter.applySignatureConversion(&block, signature);
 }
 
 [[nodiscard]] static bool isQuantumStateType(const Type type) {
@@ -169,23 +168,23 @@ static void inlineSCFRegion(Region& sourceRegion, Region& targetRegion,
   assert(block.getNumArguments() == offset + originalState.size() &&
          "region arguments must match the original loop state");
 
-  SmallVector<unsigned int> quantumArguments;
+  TypeConverter::SignatureConversion signature(block.getNumArguments());
+  for (auto arg : block.getArguments().take_front(offset)) {
+    signature.addInputs(arg.getArgNumber(), arg.getType());
+  }
   size_t quantumIndex = 0;
   for (const auto [index, original] : llvm::enumerate(originalState)) {
     if (!isQuantumStateType(original.getType())) {
+      signature.addInputs(offset + index, original.getType());
       continue;
     }
     assert(quantumIndex < quantumReplacements.size() &&
            "missing replacement for quantum loop state");
-    block.getArgument(offset + index)
-        .replaceAllUsesWith(quantumReplacements[quantumIndex++]);
-    quantumArguments.push_back(static_cast<unsigned int>(offset + index));
+    signature.remapInput(offset + index, quantumReplacements[quantumIndex++]);
   }
   assert(quantumIndex == quantumReplacements.size() &&
          "unused replacement for quantum loop state");
-  for (const auto argument : llvm::reverse(quantumArguments)) {
-    block.eraseArgument(argument);
-  }
+  rewriter.applySignatureConversion(&block, signature);
 }
 
 [[nodiscard]] static SmallVector<Value>
@@ -214,21 +213,18 @@ combineConvertedResults(TypeRange originalTypes, ValueRange classicalResults,
 
 namespace {
 
-/**
- * @brief Type converter for QCO-to-QC conversion
- *
- * @details
- * Handles type conversion between the QCO and QC dialects.
- * The primary conversion is from !qco.qubit to !qc.qubit, which
- * represents the semantic shift from value types to reference types.
- *
- * Qubit tensor types preserve their shape during conversion: a statically
- * shaped `tensor<Nx!qco.qubit>` becomes `memref<Nx!qc.qubit>`, while a
- * dynamically shaped `tensor<?x!qco.qubit>` becomes `memref<?x!qc.qubit>`.
- *
- * Other types (integers, booleans, etc.) pass through unchanged via
- * the identity conversion.
- */
+/// Type converter for QCO-to-QC conversion
+///
+/// Handles type conversion between the QCO and QC dialects.
+/// The primary conversion is from !qco.qubit to !qc.qubit, which
+/// represents the semantic shift from value types to reference types.
+///
+/// Qubit tensor types preserve their shape during conversion: a statically
+/// shaped `tensor<Nx!qco.qubit>` becomes `memref<Nx!qc.qubit>`, while a
+/// dynamically shaped `tensor<?x!qco.qubit>` becomes `memref<?x!qc.qubit>`.
+///
+/// Other types (integers, booleans, etc.) pass through unchanged via
+/// the identity conversion.
 class QCOToQCTypeConverter final : public TypeConverter {
 public:
   explicit QCOToQCTypeConverter(MLIRContext* ctx) {
@@ -249,18 +245,199 @@ public:
   }
 };
 
-/**
- * @brief Converts qtensor.alloc to memref.alloc
- *
- * @par Example:
- * ```mlir
- * %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
- * ```
- * is converted to
- * ```mlir
- * %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
- * ```
- */
+} // namespace
+
+[[nodiscard]] static LogicalResult
+collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state) {
+  for (auto function : moduleOp.getOps<func::FuncOp>()) {
+    auto& qubitArguments = state.qubitArguments[function];
+    for (auto [index, type] : llvm::enumerate(function.getArgumentTypes())) {
+      if (isa<qco::QubitType>(type)) {
+        qubitArguments.emplace_back(index);
+      }
+    }
+    if (qubitArguments.empty()) {
+      continue;
+    }
+    if (function.getNumResults() < qubitArguments.size() ||
+        llvm::any_of(function.getResultTypes().take_back(qubitArguments.size()),
+                     [](Type type) { return !isa<qco::QubitType>(type); })) {
+      return function.emitOpError()
+             << "must return one trailing qubit for each qubit argument";
+    }
+    const auto firstQubitResult =
+        function.getNumResults() - qubitArguments.size();
+    for (unsigned index = firstQubitResult; index < function.getNumResults();
+         ++index) {
+      if (auto attrs = function.getResultAttrDict(index);
+          attrs && !attrs.empty()) {
+        return function.emitOpError(
+            "cannot preserve attributes on pass-through qubit results in QC");
+      }
+    }
+    if (function.isDeclaration()) {
+      continue;
+    }
+    if (!function.getBody().hasOneBlock()) {
+      return function.emitOpError()
+             << "with qubit arguments must have one outer block";
+    }
+    auto returnOp = dyn_cast<func::ReturnOp>(function.getBody().front().back());
+    if (!returnOp) {
+      return function.emitOpError("must terminate with func.return");
+    }
+    auto returnedQubits =
+        returnOp.getOperands().take_back(qubitArguments.size());
+    for (auto [argument, value] :
+         llvm::zip_equal(qubitArguments, returnedQubits)) {
+      auto origin = qco::traceQubitArgument(function, value);
+      if (failed(origin) || *origin != argument) {
+        return function.emitOpError()
+               << "must return its qubit arguments positionally";
+      }
+    }
+  }
+  return success();
+}
+
+namespace {
+
+struct ConvertFuncOp final : StatefulOpConversionPattern<func::FuncOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::FuncOp op, OpAdaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    TypeConverter::SignatureConversion signature(op.getNumArguments());
+    if (failed(getTypeConverter()->convertSignatureArgs(op.getArgumentTypes(),
+                                                        signature))) {
+      return failure();
+    }
+    SmallVector<Type> inputs;
+    if (failed(
+            getTypeConverter()->convertTypes(op.getArgumentTypes(), inputs))) {
+      return failure();
+    }
+
+    const auto& qubitArguments = getState().qubitArguments[op];
+    const auto firstQubitResult = op.getNumResults() - qubitArguments.size();
+    SmallVector<Type> results;
+    if (failed(getTypeConverter()->convertTypes(
+            op.getResultTypes().take_front(firstQubitResult), results))) {
+      return failure();
+    }
+    SmallVector<DictionaryAttr> resultAttrs;
+    for (unsigned index = 0; index < firstQubitResult; ++index) {
+      resultAttrs.emplace_back(op.getResultAttrDict(index));
+    }
+
+    rewriter.modifyOpInPlace(op, [&] {
+      op.setType(rewriter.getFunctionType(inputs, results));
+      function_interface_impl::setAllResultAttrDicts(op, resultAttrs);
+    });
+    if (!op.isExternal() &&
+        failed(rewriter.convertRegionTypes(&op.getBody(), *getTypeConverter(),
+                                           &signature))) {
+      return failure();
+    }
+    return success();
+  }
+};
+
+struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::ReturnOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto function = op->getParentOfType<func::FuncOp>();
+    const auto numQubitArguments = getState().qubitArguments[function].size();
+    rewriter.replaceOpWithNewOp<func::ReturnOp>(
+        op, adaptor.getOperands().drop_back(numQubitArguments));
+    return success();
+  }
+};
+
+struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+        op, op.getCalleeAttr());
+    if (!callee) {
+      return rewriter.notifyMatchFailure(op, "callee is not defined");
+    }
+    const auto& qubitArguments = getState().qubitArguments[callee];
+    const auto firstQubitResult = op.getNumResults() - qubitArguments.size();
+    auto resultAttrs = op.getResAttrsAttr();
+    if (resultAttrs &&
+        llvm::any_of(resultAttrs.getValue().take_back(qubitArguments.size()),
+                     [](Attribute attr) {
+                       return !cast<DictionaryAttr>(attr).empty();
+                     })) {
+      return op.emitOpError(
+          "cannot preserve attributes on pass-through qubit results in QC");
+    }
+
+    SmallVector<Type> keptResultTypes(op.getResultTypes());
+    keptResultTypes.resize(firstQubitResult);
+    SmallVector<Type> resultTypes;
+    if (failed(
+            getTypeConverter()->convertTypes(keptResultTypes, resultTypes))) {
+      return failure();
+    }
+    auto call = func::CallOp::create(rewriter, op.getLoc(), op.getCallee(),
+                                     resultTypes, adaptor.getOperands());
+    call->setAttrs(op->getAttrs());
+    if (resultAttrs) {
+      call.setResAttrsAttr(rewriter.getArrayAttr(
+          resultAttrs.getValue().take_front(firstQubitResult)));
+    }
+
+    SmallVector<Value> replacements;
+    llvm::append_range(replacements, call.getResults());
+    for (const auto argument : qubitArguments) {
+      replacements.emplace_back(adaptor.getOperands()[argument]);
+    }
+    rewriter.replaceOp(op, replacements);
+    return success();
+  }
+};
+
+struct ConvertQCOCallOp final : OpConversionPattern<qco::CallOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(qco::CallOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (auto attrs = op.getResAttrsAttr();
+        attrs && llvm::any_of(attrs, [](Attribute attr) {
+          return !cast<DictionaryAttr>(attr).empty();
+        })) {
+      return op.emitOpError(
+          "cannot preserve unitary call result attributes in QC");
+    }
+    auto call = qc::CallOp::create(rewriter, op.getLoc(), op.getCalleeAttr(),
+                                   adaptor.getOperands());
+    call->setAttrs(op->getAttrs());
+    call.removeResAttrsAttr();
+    rewriter.replaceOp(op, adaptor.getOperands().take_back(op.getNumResults()));
+    return success();
+  }
+};
+
+/// Converts qtensor.alloc to memref.alloc
+///
+/// @par Example:
+/// ```mlir
+/// %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
+/// ```
+/// is converted to
+/// ```mlir
+/// %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
+/// ```
 struct ConvertQTensorAllocOp final
     : StatefulOpConversionPattern<qtensor::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -291,18 +468,16 @@ struct ConvertQTensorAllocOp final
   }
 };
 
-/**
- * @brief Converts qtensor.extract to memref.load
- *
- * @par Example:
- * ```mlir
- * %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
- * ```
- * is converted to
- * ```mlir
- * %q = memref.load %memref[%c0] : memref<3x!qc.qubit>
- * ```
- */
+/// Converts qtensor.extract to memref.load
+///
+/// @par Example:
+/// ```mlir
+/// %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
+/// ```
+/// is converted to
+/// ```mlir
+/// %q = memref.load %memref[%c0] : memref<3x!qc.qubit>
+/// ```
 struct ConvertQTensorExtractOp final
     : StatefulOpConversionPattern<qtensor::ExtractOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -326,7 +501,7 @@ struct ConvertQTensorExtractOp final
   }
 };
 
-/** Converts qtensor.insert to an in-place memref.store. */
+/// Converts qtensor.insert to an in-place memref.store.
 struct ConvertQTensorInsertOp final
     : StatefulOpConversionPattern<qtensor::InsertOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -354,18 +529,16 @@ struct ConvertQTensorInsertOp final
   }
 };
 
-/**
- * @brief Converts qtensor.dealloc to memref.dealloc
- *
- * @par Example:
- * ```mlir
- * qtensor.dealloc %tensor : tensor<3x!qco.qubit>
- * ```
- * is converted to
- * ```mlir
- * memref.dealloc %memref : memref<3x!qc.qubit>
- * ```
- */
+/// Converts qtensor.dealloc to memref.dealloc
+///
+/// @par Example:
+/// ```mlir
+/// qtensor.dealloc %tensor : tensor<3x!qco.qubit>
+/// ```
+/// is converted to
+/// ```mlir
+/// memref.dealloc %memref : memref<3x!qc.qubit>
+/// ```
 struct ConvertQTensorDeallocOp final : OpConversionPattern<qtensor::DeallocOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -382,32 +555,29 @@ template <typename QCOOpType, typename QCOpType, std::size_t NumTargets,
 struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
-  /**
-   * @brief Generic QCO gate conversion helper (value semantics -> reference).
-   *
-   * @details
-   * This helper relies on a strict operand ordering contract provided by the
-   * dialect conversion framework:
-   * - `adaptor.getOperands()` is expected to be ordered as
-   *   `targets...` followed by `parameters...`.
-   * - The first @p NumTargets operands are the (type-converted) QC target
-   * qubits.
-   * - The remaining @p NumParams operands are the gate parameters.
-   *
-   * `matchAndRewrite` passes the full adapted operand list to `createGate`,
-   * which forwards the first @p NumTargets values (converted targets) and the
-   * following @p NumParams values (parameters, unchanged type through the
-   * converter) to `QCOpType::create(...)`. It then replaces the original QCO op
-   * with the created QC targets via `rewriter.replaceOp(op, qcTargets)`.
-   *
-   * The values of @p NumTargets and @p NumParams are compile-time constants and
-   * define this contract for each instantiation.
-   *
-   * @see ConvertQCOGateToQC
-   * @see createGate
-   * @see matchAndRewrite
-   * @see addGatePattern
-   */
+  /// Generic QCO gate conversion helper (value semantics -> reference).
+  ///
+  /// This helper relies on a strict operand ordering contract provided by the
+  /// dialect conversion framework:
+  /// - `adaptor.getOperands()` is expected to be ordered as
+  ///   `targets...` followed by `parameters...`.
+  /// - The first @p NumTargets operands are the (type-converted) QC target
+  /// qubits.
+  /// - The remaining @p NumParams operands are the gate parameters.
+  ///
+  /// `matchAndRewrite` passes the full adapted operand list to `createGate`,
+  /// which forwards the first @p NumTargets values (converted targets) and the
+  /// following @p NumParams values (parameters, unchanged type through the
+  /// converter) to `QCOpType::create(...)`. It then replaces the original QCO
+  /// op with the created QC targets via `rewriter.replaceOp(op, qcTargets)`.
+  ///
+  /// The values of @p NumTargets and @p NumParams are compile-time constants
+  /// and define this contract for each instantiation.
+  ///
+  /// @see ConvertQCOGateToQC
+  /// @see createGate
+  /// @see matchAndRewrite
+  /// @see addGatePattern
   template <std::size_t... TargetIndices, std::size_t... ParamIndices>
   static void createGate(ConversionPatternRewriter& rewriter, Location loc,
                          ValueRange qcOperands,
@@ -433,7 +603,7 @@ struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   }
 };
 
-/** Converts a variadic dense qco.unitary to its reference-semantics form. */
+/// Converts a variadic dense qco.unitary to its reference-semantics form.
 struct ConvertQCOUnitaryOp final : OpConversionPattern<qco::UnitaryOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -459,18 +629,16 @@ static void addGatePattern(RewritePatternSet& patterns,
 
 namespace {
 
-/**
- * @brief Converts qco.alloc to qc.alloc
- *
- * @par Example:
- * ```mlir
- * %q = qco.alloc : !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %q = qc.alloc : !qc.qubit
- * ```
- */
+/// Converts qco.alloc to qc.alloc
+///
+/// @par Example:
+/// ```mlir
+/// %q = qco.alloc : !qco.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// %q = qc.alloc : !qc.qubit
+/// ```
 struct ConvertQCOAllocOp final : StatefulOpConversionPattern<qco::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -489,26 +657,23 @@ struct ConvertQCOAllocOp final : StatefulOpConversionPattern<qco::AllocOp> {
   }
 };
 
-/**
- * @brief Converts qco.sink to qc.dealloc.
- *
- * @details
- * In QCO, qubits have value/linear semantics and must be consumed explicitly
- * (via `qco.sink`). In QC, qubits have reference semantics; for dynamic qubits
- * we materialize this end-of-lifetime as `qc.dealloc`. Static qubits do not
- * need explicit deallocation, so we simply erase the `qco.sink` operation.
- *
- * The OpAdaptor automatically provides the type-converted qubit operand
- * (`!qc.qubit` instead of `!qco.qubit`), so we simply pass it through to the
- * new operation when needed.
- *
- * Example transformation:
- * ```mlir
- * qco.sink %q_qco : !qco.qubit
- * // becomes:
- * qc.dealloc %q_qc : !qc.qubit
- * ```
- */
+/// Converts qco.sink to qc.dealloc.
+///
+/// In QCO, qubits have value/linear semantics and must be consumed explicitly
+/// (via `qco.sink`). In QC, qubits have reference semantics; for dynamic qubits
+/// we materialize this end-of-lifetime as `qc.dealloc`. Static qubits do not
+/// need explicit deallocation, so we simply erase the `qco.sink` operation.
+///
+/// The OpAdaptor automatically provides the type-converted qubit operand
+/// (`!qc.qubit` instead of `!qco.qubit`), so we simply pass it through to the
+/// new operation when needed.
+///
+/// Example transformation:
+/// ```mlir
+/// qco.sink %q_qco : !qco.qubit
+/// // becomes:
+/// qc.dealloc %q_qc : !qc.qubit
+/// ```
 struct ConvertQCOSinkOp final : StatefulOpConversionPattern<SinkOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -530,21 +695,18 @@ struct ConvertQCOSinkOp final : StatefulOpConversionPattern<SinkOp> {
   }
 };
 
-/**
- * @brief Converts qco.static to qc.static
- *
- * @details
- * Static qubits represent references to hardware-mapped or fixed-position
- * qubits identified by an index. The conversion preserves the index attribute
- * and creates the corresponding qc.static operation.
- *
- * Example transformation:
- * ```mlir
- * %q0 = qco.static 0 : !qco.qubit
- * // becomes:
- * %q = qc.static 0 : !qc.qubit
- * ```
- */
+/// Converts qco.static to qc.static
+///
+/// Static qubits represent references to hardware-mapped or fixed-position
+/// qubits identified by an index. The conversion preserves the index attribute
+/// and creates the corresponding qc.static operation.
+///
+/// Example transformation:
+/// ```mlir
+/// %q0 = qco.static 0 : !qco.qubit
+/// // becomes:
+/// %q = qc.static 0 : !qc.qubit
+/// ```
 struct ConvertQCOStaticOp final : StatefulOpConversionPattern<qco::StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -562,30 +724,28 @@ struct ConvertQCOStaticOp final : StatefulOpConversionPattern<qco::StaticOp> {
   }
 };
 
-/**
- * @brief Converts qco.measure to qc.measure
- *
- * @details
- * Measurement demonstrates the key semantic difference between the dialects:
- * - QCO (value semantics): Consumes input qubit, returns both output qubit
- *   and classical bit result
- * - QC (reference semantics): Measures qubit in-place, returns only the
- *   classical bit result
- *
- * The OpAdaptor provides the input qubit already converted to !qc.qubit.
- * Since QC operations are in-place, we return the same qubit reference
- * alongside the measurement bit. MLIR's conversion infrastructure automatically
- * routes subsequent uses of the QCO output qubit to this QC reference.
- *
- * @par Example:
- * ```mlir
- * %q_out, %c = qco.measure %q_in : !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * %c = qc.measure %q : !qc.qubit -> i1
- * ```
- */
+/// Converts qco.measure to qc.measure
+///
+/// Measurement demonstrates the key semantic difference between the dialects:
+/// - QCO (value semantics): Consumes input qubit, returns both output qubit
+///   and classical bit result
+/// - QC (reference semantics): Measures qubit in-place, returns only the
+///   classical bit result
+///
+/// The OpAdaptor provides the input qubit already converted to !qc.qubit.
+/// Since QC operations are in-place, we return the same qubit reference
+/// alongside the measurement bit. MLIR's conversion infrastructure
+/// automatically routes subsequent uses of the QCO output qubit to this QC
+/// reference.
+///
+/// @par Example:
+/// ```mlir
+/// %q_out, %c = qco.measure %q_in : !qco.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// %c = qc.measure %q : !qc.qubit -> i1
+/// ```
 struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -607,27 +767,24 @@ struct ConvertQCOMeasureOp final : OpConversionPattern<qco::MeasureOp> {
   }
 };
 
-/**
- * @brief Converts qco.reset to qc.reset
- *
- * @details
- * Reset operations force a qubit to the |0⟩ state:
- * - QCO (value semantics): Consumes input qubit, returns reset output qubit
- * - QC (reference semantics): Resets qubit in-place, no result value
- *
- * The OpAdaptor provides the input qubit already converted to !qc.qubit.
- * Since QC's reset is in-place, we return the same qubit reference.
- * MLIR's conversion infrastructure automatically routes subsequent uses of
- * the QCO output qubit to this QC reference.
- *
- * Example transformation:
- * ```mlir
- * %q_out = qco.reset %q_in : !qco.qubit -> !qco.qubit
- * // becomes:
- * qc.reset %q : !qc.qubit
- * // %q_out uses are replaced with %q (the adaptor-converted input)
- * ```
- */
+/// Converts qco.reset to qc.reset
+///
+/// Reset operations force a qubit to the |0⟩ state:
+/// - QCO (value semantics): Consumes input qubit, returns reset output qubit
+/// - QC (reference semantics): Resets qubit in-place, no result value
+///
+/// The OpAdaptor provides the input qubit already converted to !qc.qubit.
+/// Since QC's reset is in-place, we return the same qubit reference.
+/// MLIR's conversion infrastructure automatically routes subsequent uses of
+/// the QCO output qubit to this QC reference.
+///
+/// Example transformation:
+/// ```mlir
+/// %q_out = qco.reset %q_in : !qco.qubit -> !qco.qubit
+/// // becomes:
+/// qc.reset %q : !qc.qubit
+/// // %q_out uses are replaced with %q (the adaptor-converted input)
+/// ```
 struct ConvertQCOResetOp final : OpConversionPattern<qco::ResetOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -647,21 +804,19 @@ struct ConvertQCOResetOp final : OpConversionPattern<qco::ResetOp> {
   }
 };
 
-/**
- * @brief Converts a zero-target, one-parameter QCO gate to QC
- *
- * @tparam QCOOpType The operation type of the QCO gate
- * @tparam QCOpType The operation type of the QC gate
- *
- * @par Example:
- * ```mlir
- * qco.gphase(%theta)
- * ```
- * is converted to
- * ```mlir
- * qc.gphase(%theta)
- * ```
- */
+/// Converts a zero-target, one-parameter QCO gate to QC
+///
+/// @tparam QCOOpType The operation type of the QCO gate
+/// @tparam QCOpType The operation type of the QC gate
+///
+/// @par Example:
+/// ```mlir
+/// qco.gphase(%theta)
+/// ```
+/// is converted to
+/// ```mlir
+/// qc.gphase(%theta)
+/// ```
 template <typename QCOOpType, typename QCOpType>
 struct ConvertQCOZeroTargetOneParameterToQC final
     : OpConversionPattern<QCOOpType> {
@@ -676,19 +831,17 @@ struct ConvertQCOZeroTargetOneParameterToQC final
   }
 };
 
-/**
- * @brief Converts qco.barrier to qc.barrier
- *
- * @par Example:
- * ```mlir
- * %q_out:2 = qco.barrier %q0_in, %q1_in : !qco.qubit, !qco.qubit -> !qco.qubit,
- * !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * qc.barrier %q0, %q1 : !qc.qubit, !qc.qubit
- * ```
- */
+/// Converts qco.barrier to qc.barrier
+///
+/// @par Example:
+/// ```mlir
+/// %q_out:2 = qco.barrier %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
+/// !qco.qubit, !qco.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// qc.barrier %q0, %q1 : !qc.qubit, !qc.qubit
+/// ```
 struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -708,23 +861,21 @@ struct ConvertQCOBarrierOp final : OpConversionPattern<qco::BarrierOp> {
   }
 };
 
-/**
- * @brief Converts qco.ctrl to qc.ctrl
- *
- * @par Example:
- * ```mlir
- * %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%a_in = %q1_in) {
- *   %a_res = qco.x %a_in : !qco.qubit -> !qco.qubit
- *   qco.yield %a_res : !qco.qubit
- * } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
- * ```
- * is converted to
- * ```mlir
- * qc.ctrl(%q0) targets(%a0 = %q1) {
- *   qc.x %a0 : !qc.qubit
- * } : !qc.qubit
- * ```
- */
+/// Converts qco.ctrl to qc.ctrl
+///
+/// @par Example:
+/// ```mlir
+/// %controls_out, %targets_out = qco.ctrl(%q0_in) targets(%a_in = %q1_in) {
+///   %a_res = qco.x %a_in : !qco.qubit -> !qco.qubit
+///   qco.yield %a_res : !qco.qubit
+/// } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+/// ```
+/// is converted to
+/// ```mlir
+/// qc.ctrl(%q0) targets(%a0 = %q1) {
+///   qc.x %a0 : !qc.qubit
+/// } : !qc.qubit
+/// ```
 struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -747,23 +898,21 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
   }
 };
 
-/**
- * @brief Converts qco.inv to qc.inv
- *
- * @par Example:
- * ```mlir
- * %q0_out = qco.inv (%a_in = %q0_in) {
- *   %a_res = qco.s %a_in : !qco.qubit -> !qco.qubit
- *   qco.yield %a_res : !qco.qubit
- * } : {!qco.qubit} -> {!qco.qubit}
- * ```
- * is converted to
- * ```mlir
- * qc.inv {
- *   qc.s %q0 : !qc.qubit
- * }
- * ```
- */
+/// Converts qco.inv to qc.inv
+///
+/// @par Example:
+/// ```mlir
+/// %q0_out = qco.inv (%a_in = %q0_in) {
+///   %a_res = qco.s %a_in : !qco.qubit -> !qco.qubit
+///   qco.yield %a_res : !qco.qubit
+/// } : {!qco.qubit} -> {!qco.qubit}
+/// ```
+/// is converted to
+/// ```mlir
+/// qc.inv {
+///   qc.s %q0 : !qc.qubit
+/// }
+/// ```
 struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -785,23 +934,21 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
   }
 };
 
-/**
- * @brief Converts qco.pow to qc.pow
- *
- * @par Example:
- * ```mlir
- * %q0_out = qco.pow(%exponent) (%a_in = %q0_in) {
- *   %a_res = qco.s %a_in : !qco.qubit -> !qco.qubit
- *   qco.yield %a_res
- * } : {!qco.qubit} -> {!qco.qubit}
- * ```
- * is converted to
- * ```mlir
- * qc.pow(%exponent) (%a0 = %q0) {
- *   qc.s %a0 : !qc.qubit
- * } : !qc.qubit
- * ```
- */
+/// Converts qco.pow to qc.pow
+///
+/// @par Example:
+/// ```mlir
+/// %q0_out = qco.pow(%exponent) (%a_in = %q0_in) {
+///   %a_res = qco.s %a_in : !qco.qubit -> !qco.qubit
+///   qco.yield %a_res
+/// } : {!qco.qubit} -> {!qco.qubit}
+/// ```
+/// is converted to
+/// ```mlir
+/// qc.pow(%exponent) (%a0 = %q0) {
+///   qc.s %a0 : !qc.qubit
+/// } : !qc.qubit
+/// ```
 struct ConvertQCOPowOp final : OpConversionPattern<qco::PowOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -824,19 +971,17 @@ struct ConvertQCOPowOp final : OpConversionPattern<qco::PowOp> {
   }
 };
 
-/**
- * @brief Converts qco.yield to qc.yield or to scf.yield if the parent is a
- * scf::IfOp or scf::IndexSwitchOp.
- *
- * @par Example:
- * ```mlir
- * qco.yield %targets : !qco.qubit
- * ```
- * is converted to
- * ```mlir
- * qc.yield
- * ```
- */
+/// Converts qco.yield to qc.yield or to scf.yield if the parent is a
+/// scf::IfOp or scf::IndexSwitchOp.
+///
+/// @par Example:
+/// ```mlir
+/// qco.yield %targets : !qco.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// qc.yield
+/// ```
 struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -858,28 +1003,26 @@ struct ConvertQCOYieldOp final : OpConversionPattern<qco::YieldOp> {
   }
 };
 
-/**
- * @brief Converts scf.for with value semantics to scf.for with memory
- * semantics for qubit values while preserving classical loop-carried state.
- *
- * @par Example:
- * ```mlir
- * %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 =
- * %qtensor) -> (tensor<3x!qco.qubit) {
- *   %t0, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
- *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
- *   %insert = qtensor.insert %q1 into %t1[%iv] : tensor<3x!qco.qubit>
- *   scf.yield %t1 : tensor<3x!qco.qubit>
- * }
- * ```
- * is converted to
- * ```mlir
- * scf.for %iv = %lb to %ub step %step {
- *   %q0 = qc.load %memref[%iv] : !memref<3x!qc.qubit>
- *   qc.h %q0 : !qc.qubit
- * }
- * ```
- */
+/// Converts scf.for with value semantics to scf.for with memory
+/// semantics for qubit values while preserving classical loop-carried state.
+///
+/// @par Example:
+/// ```mlir
+/// %targets_out = scf.for %iv = %lb to %ub step %step iter_args(%arg0 =
+/// %qtensor) -> (tensor<3x!qco.qubit) {
+///   %t0, %q0 = qtensor.extract %arg0[%iv] : tensor<3x!qco.qubit>
+///   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+///   %insert = qtensor.insert %q1 into %t1[%iv] : tensor<3x!qco.qubit>
+///   scf.yield %t1 : tensor<3x!qco.qubit>
+/// }
+/// ```
+/// is converted to
+/// ```mlir
+/// scf.for %iv = %lb to %ub step %step {
+///   %q0 = qc.load %memref[%iv] : !memref<3x!qc.qubit>
+///   qc.h %q0 : !qc.qubit
+/// }
+/// ```
 struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -910,32 +1053,30 @@ struct ConvertQCOSCFForOp final : OpConversionPattern<scf::ForOp> {
   }
 };
 
-/**
- * @brief Converts scf.while with value semantics to scf.while with memory
- * semantics for qubit values while preserving classical loop-carried state.
- *
- * @par Example:
- * ```mlir
- * %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
- *   %q1, %cond = qco.measure %arg0 : !qco.qubit
- *   scf.condition(%cond) %q1 : !qco.qubit
- * } do {
- * ^bb0(%arg0: !qco.qubit):
- *   %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
- *   scf.yield %q2 : !qco.qubit
- * }
- * ```
- * is converted to
- * ```mlir
- * scf.while : () -> () {
- *   %cond = qc.measure %q0 : !qc.qubit -> i1
- *   scf.condition(%cond)
- * } do {
- *   qc.h %q0 : !qc.qubit
- *   scf.yield
- * }
- * ```
- */
+/// Converts scf.while with value semantics to scf.while with memory
+/// semantics for qubit values while preserving classical loop-carried state.
+///
+/// @par Example:
+/// ```mlir
+/// %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
+///   %q1, %cond = qco.measure %arg0 : !qco.qubit
+///   scf.condition(%cond) %q1 : !qco.qubit
+/// } do {
+/// ^bb0(%arg0: !qco.qubit):
+///   %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+///   scf.yield %q2 : !qco.qubit
+/// }
+/// ```
+/// is converted to
+/// ```mlir
+/// scf.while : () -> () {
+///   %cond = qc.measure %q0 : !qc.qubit -> i1
+///   scf.condition(%cond)
+/// } do {
+///   qc.h %q0 : !qc.qubit
+///   scf.yield
+/// }
+/// ```
 struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -971,25 +1112,23 @@ struct ConvertQCOSCFWhileOp final : OpConversionPattern<scf::WhileOp> {
   }
 };
 
-/**
- * @brief Converts qco.if to scf.if
- *
- * @par Example:
- * ```mlir
- * %targets_out = qco.if %cond args(%arg0 = %q0) -> (!qco.qubit) {
- *   %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
- *   qco.yield %q1 : !qco.qubit
- * } else args(%arg0 = %q0) {
- *   qco.yield %arg0 : !qco.qubit
- * }
- * ```
- * is converted to
- * ```mlir
- * scf.if %cond {
- *   qc.h %q0 : !qc.qubit
- * }
- * ```
- */
+/// Converts qco.if to scf.if
+///
+/// @par Example:
+/// ```mlir
+/// %targets_out = qco.if %cond args(%arg0 = %q0) -> (!qco.qubit) {
+///   %q1 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+///   qco.yield %q1 : !qco.qubit
+/// } else args(%arg0 = %q0) {
+///   qco.yield %arg0 : !qco.qubit
+/// }
+/// ```
+/// is converted to
+/// ```mlir
+/// scf.if %cond {
+///   qc.h %q0 : !qc.qubit
+/// }
+/// ```
 struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1014,14 +1153,14 @@ struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
     rewriter.eraseBlock(&newThenRegion.front());
 
     // Inline the region and replace the block arguments
-    inlineRegion(op.getThenRegion(), newThenRegion, 0, adaptor.getQubits(),
+    inlineRegion(op.getThenRegion(), newThenRegion, adaptor.getQubits(),
                  rewriter);
 
     // Inline the else block when it has observable operations or must produce
     // classical results.
     if (keepElseRegion) {
       rewriter.eraseBlock(&newIf.getElseRegion().front());
-      inlineRegion(oldElseRegion, newIf.getElseRegion(), 0, adaptor.getQubits(),
+      inlineRegion(oldElseRegion, newIf.getElseRegion(), adaptor.getQubits(),
                    rewriter);
     }
 
@@ -1033,32 +1172,30 @@ struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
   }
 };
 
-/**
- * @brief Converts qco.index_switch to scf.index_switch
- *
- * @par Example:
- * ```mlir
- * %result = qco.index_switch %condition -> !qco.qubit
- * case 0 args(%arg0 = %q0) {
- *   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
- *   qco.yield %q1 : !qco.qubit
- * }
- * default args(%arg0 = %q0) {
- *   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
- *   qco.yield %q2 : !qco.qubit
- * }
- * ```
- * is converted to
- * ```mlir
- * scf.index_switch %condition
- * case 0 {
- *   qc.x %q0 : !qc.qubit
- * }
- * default {
- *   qc.z %q0 : !qc.qubit
- * }
- * ```
- */
+/// Converts qco.index_switch to scf.index_switch
+///
+/// @par Example:
+/// ```mlir
+/// %result = qco.index_switch %condition -> !qco.qubit
+/// case 0 args(%arg0 = %q0) {
+///   %q1 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+///   qco.yield %q1 : !qco.qubit
+/// }
+/// default args(%arg0 = %q0) {
+///   %q2 = qco.z %arg0 : !qco.qubit -> !qco.qubit
+///   qco.yield %q2 : !qco.qubit
+/// }
+/// ```
+/// is converted to
+/// ```mlir
+/// scf.index_switch %condition
+/// case 0 {
+///   qc.x %q0 : !qc.qubit
+/// }
+/// default {
+///   qc.z %q0 : !qc.qubit
+/// }
+/// ```
 struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1077,11 +1214,11 @@ struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
     const auto oldRegions = op.getCaseRegions();
     const auto newCaseRegions = newOp.getCaseRegions();
     for (size_t i = 0; i < op.getNumCases(); ++i) {
-      inlineRegion(oldRegions[i], newCaseRegions[i], 0, adaptor.getTargets(),
+      inlineRegion(oldRegions[i], newCaseRegions[i], adaptor.getTargets(),
                    rewriter);
     }
 
-    inlineRegion(op.getDefaultRegion(), newOp.getDefaultRegion(), 0,
+    inlineRegion(op.getDefaultRegion(), newOp.getDefaultRegion(),
                  adaptor.getTargets(), rewriter);
 
     SmallVector<Value> replacements(newOp.getResults());
@@ -1092,19 +1229,17 @@ struct ConvertQCOIndexSwitchOp final : OpConversionPattern<IndexSwitchOp> {
   }
 };
 
-/**
- * @brief Converts scf.yield with value semantics to scf.yield with memory
- * semantics for qubit values while retaining classical yielded values.
- *
- * @par Example:
- * ```mlir
- * scf.yield %targets
- * ```
- * is converted to
- * ```mlir
- * scf.yield
- * ```
- */
+/// Converts scf.yield with value semantics to scf.yield with memory
+/// semantics for qubit values while retaining classical yielded values.
+///
+/// @par Example:
+/// ```mlir
+/// scf.yield %targets
+/// ```
+/// is converted to
+/// ```mlir
+/// scf.yield
+/// ```
 struct ConvertQCOSCFYieldOp final : OpConversionPattern<scf::YieldOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1117,19 +1252,17 @@ struct ConvertQCOSCFYieldOp final : OpConversionPattern<scf::YieldOp> {
   }
 };
 
-/**
- * @brief Converts scf.condition with value semantics to scf.condition with
- * memory semantics for qubit values while retaining classical state
- *
- * @par Example:
- * ```mlir
- * scf.condition(%cond) %targets
- * ```
- * is converted to
- * ```mlir
- * scf.condition(%cond)
- * ```
- */
+/// Converts scf.condition with value semantics to scf.condition with
+/// memory semantics for qubit values while retaining classical state
+///
+/// @par Example:
+/// ```mlir
+/// scf.condition(%cond) %targets
+/// ```
+/// is converted to
+/// ```mlir
+/// scf.condition(%cond)
+/// ```
 struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1144,33 +1277,30 @@ struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
   }
 };
 
-/**
- * @brief Pass implementation for QCO-to-QC conversion
- *
- * @details
- * This pass converts QCO dialect operations (value semantics) to
- * QC dialect operations (reference semantics). The conversion is useful
- * for lowering optimized SSA-form code back to a hardware-oriented
- * representation suitable for backend code generation.
- *
- * The conversion leverages MLIR's built-in type conversion infrastructure:
- * The TypeConverter handles !qco.qubit → !qc.qubit transformations,
- * and the OpAdaptor automatically provides type-converted operands to each
- * conversion pattern. This eliminates the need for manual state tracking.
- *
- * Key semantic transformation:
- * - QCO operations form explicit SSA chains where each operation consumes
- *   inputs and produces new outputs
- * - QC operations modify qubits in-place using references
- * - The conversion maps each QCO SSA chain to a single QC reference,
- *   with MLIR's conversion framework automatically handling the plumbing
- *
- * The pass operates through:
- * 1. Type conversion: !qco.qubit → !qc.qubit
- * 2. Operation conversion: Each QCO op converted to its QC equivalent
- * 3. Automatic operand mapping: OpAdaptors provide converted operands
- * 4. Function/control-flow adaptation: Signatures updated to use QC types
- */
+/// Pass implementation for QCO-to-QC conversion
+///
+/// This pass converts QCO dialect operations (value semantics) to
+/// QC dialect operations (reference semantics). The conversion is useful
+/// for lowering optimized SSA-form code back to a hardware-oriented
+/// representation suitable for backend code generation.
+///
+/// The conversion leverages MLIR's built-in type conversion infrastructure:
+/// The TypeConverter handles !qco.qubit → !qc.qubit transformations,
+/// and the OpAdaptor automatically provides type-converted operands to each
+/// conversion pattern. This eliminates the need for manual state tracking.
+///
+/// Key semantic transformation:
+/// - QCO operations form explicit SSA chains where each operation consumes
+///   inputs and produces new outputs
+/// - QC operations modify qubits in-place using references
+/// - The conversion maps each QCO SSA chain to a single QC reference,
+///   with MLIR's conversion framework automatically handling the plumbing
+///
+/// The pass operates through:
+/// 1. Type conversion: !qco.qubit → !qc.qubit
+/// 2. Operation conversion: Each QCO op converted to its QC equivalent
+/// 3. Automatic operand mapping: OpAdaptors provide converted operands
+/// 4. Function/control-flow adaptation: Signatures updated to use QC types
 struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
   using QCOToQCBase::QCOToQCBase;
 
@@ -1181,6 +1311,23 @@ protected:
 
     // Create state object to track the qubit addressing mode
     LoweringState state;
+    if (failed(collectFunctionQubitArguments(moduleOp, state))) {
+      signalPassFailure();
+      return;
+    }
+
+    SmallVector<func::FuncOp> unitaryFunctions;
+    for (auto function : moduleOp.getOps<func::FuncOp>()) {
+      if (mqt::isUnitaryFunction(function)) {
+        unitaryFunctions.emplace_back(function);
+        function->removeAttr(mqt::MQTDialect::UnitaryAttrHelper::getNameStr());
+      }
+    }
+    auto unitaryGuard = llvm::make_scope_exit([&] {
+      for (auto function : unitaryFunctions) {
+        mqt::setUnitaryFunction(function);
+      }
+    });
 
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
@@ -1192,7 +1339,8 @@ protected:
         .addLegalDialect<cbit::CBitDialect, QCDialect, memref::MemRefDialect>();
 
     target.addDynamicallyLegalDialect<scf::SCFDialect>([](Operation* op) {
-      // Some types are not converted yet so QC and QCO types have to be checked
+      // Some types are not converted yet so QC and QCO types have to be
+      // checked.
       auto isQubitType = [](Type t) {
         return TypeSwitch<Type, bool>(t)
             .Case<qc::QubitType, qco::QubitType>([](auto) { return true; })
@@ -1215,7 +1363,7 @@ protected:
              ConvertQCOZeroTargetOneParameterToQC<qco::GPhaseOp, qc::GPhaseOp>>(
             typeConverter, context);
 
-#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   addGatePattern<qco::KEY##Op, qc::KEY##Op, (TARGETS), (PARAMS)>(              \
       patterns, typeConverter, context);
 #include "mlir/Conversion/GateTable.def"
@@ -1231,31 +1379,30 @@ protected:
                  ConvertQTensorAllocOp, ConvertQCOAllocOp, ConvertQCOStaticOp,
                  ConvertQCOSinkOp>(typeConverter, context, &state);
 
-    // Conversion of qco types in func.func signatures
-    // Note: This currently has limitations with signature changes
-    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
-        patterns, typeConverter);
+    // QCO qubit arguments are returned positionally and become in-place QC
+    // references again.
+    patterns.add<ConvertFuncOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
       return typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });
 
-    // Conversion of qco types in func.return
-    populateReturnOpTypeConversionPattern(patterns, typeConverter);
+    patterns.add<ConvertFuncReturnOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::ReturnOp>(
         [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
 
-    // Conversion of qco types in func.call
-    populateCallOpTypeConversionPattern(patterns, typeConverter);
+    patterns.add<ConvertFuncCallOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::CallOp>(
         [&](func::CallOp op) { return typeConverter.isLegal(op); });
+
+    patterns.add<ConvertQCOCallOp>(typeConverter, context);
 
     // Conversion of qco types in control-flow ops (e.g., cf.br, cf.cond_br)
     populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
-    // Apply the conversion
     if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
       signalPassFailure();
+      return;
     }
   }
 };

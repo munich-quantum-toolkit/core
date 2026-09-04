@@ -10,11 +10,68 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import numpy as np
 import pytest
+import qiskit
+from packaging import version
+from qiskit import QuantumCircuit
 
 from mqt.core.dd import DDPackage
-from mqt.core.mlir import OutputFormat, QCOProgram, compile_program
+from mqt.core.mlir import (
+    JeffProgram,
+    OpenQASMProgram,
+    OutputFormat,
+    QCOProgram,
+    QCProgram,
+    build_functionality,
+    compile_program,
+    sample,
+    simulate,
+)
+
+requires_qiskit_translation = pytest.mark.skipif(
+    not (
+        version.parse("2.5") <= version.parse(qiskit.__version__) < version.parse("2.6")
+        or qiskit.__version__ == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
+    ),
+    reason=f"no Qiskit translation is registered for {qiskit.__version__}",
+)
+
+UNITARY_QASM = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+x q;
+"""
+
+CompilerInput = str | Path | QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram
+
+
+def _compiler_input(kind: str, tmp_path: Path) -> CompilerInput:
+    """Construct each compiler input supported by the simulation helpers.
+
+    Returns:
+        The requested compiler input.
+    """
+    if kind == "source":
+        return UNITARY_QASM
+    if kind == "path":
+        path = tmp_path / "program.qasm"
+        path.write_text(UNITARY_QASM, encoding="utf-8")
+        return path
+    if kind == "qc":
+        return QCProgram.from_qasm_str(UNITARY_QASM)
+    if kind == "qco":
+        return QCProgram.from_qasm_str(UNITARY_QASM).to_qco()
+    if kind == "jeff":
+        return compile_program(UNITARY_QASM, output=OutputFormat.JEFF)
+    if kind == "openqasm":
+        return QCProgram.from_qasm_str(UNITARY_QASM).to_openqasm3()
+    circuit = QuantumCircuit(1)
+    circuit.x(0)
+    return circuit
 
 
 def _x_program() -> QCOProgram:
@@ -126,6 +183,81 @@ module {
     package = DDPackage(1)
     with pytest.raises(ValueError, match=r"no func\.func"):
         program.build_functionality(package)
+    with pytest.raises(ValueError, match=r"no func\.func"):
+        build_functionality(program)
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "source",
+        "path",
+        "qc",
+        "qco",
+        "jeff",
+        "openqasm",
+        pytest.param("qiskit", marks=requires_qiskit_translation),
+    ],
+)
+def test_sample_accepts_compiler_inputs(kind: str, tmp_path: Path) -> None:
+    """Sample each input form through its direct QCO conversion path."""
+    program = _compiler_input(kind, tmp_path)
+
+    assert sample(program, shots=8, seed=7) == {"1": 8}
+
+
+def test_build_and_simulate_return_dense_arrays() -> None:
+    """Top-level helpers own the DD package and return NumPy arrays."""
+    matrix = build_functionality(_x_program())
+    assert isinstance(matrix, np.ndarray)
+    assert matrix.dtype == np.complex128
+    assert matrix.flags.c_contiguous
+    assert matrix.base is not None
+    assert np.allclose(matrix, [[0, 1], [1, 0]])
+
+    state = simulate(_x_program())
+    assert isinstance(state, np.ndarray)
+    assert state.dtype == np.complex128
+    assert state.flags.c_contiguous
+    assert state.base is not None
+    assert np.allclose(state, [0, 1])
+
+    assert np.allclose(build_functionality(UNITARY_QASM), matrix)
+    assert np.allclose(simulate(UNITARY_QASM), state)
+
+
+def test_dense_results_handle_zero_qubits_and_address_space() -> None:
+    """Dense results handle scalars and reject unaddressable arrays."""
+    empty = QCOProgram.from_mlir_str("""
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %theta = arith.constant 0.0 : f64
+    qco.gphase(%theta)
+    return
+  }
+}
+""")
+    assert np.array_equal(build_functionality(empty), [[1]])
+
+    too_wide = QCOProgram.from_mlir_str("""
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qco.static 63 : !qco.qubit
+    qco.sink %q : !qco.qubit
+    return
+  }
+}
+""")
+    with pytest.raises(ValueError, match=r"addressable memory"):
+        build_functionality(too_wide)
+    with pytest.raises(ValueError, match=r"addressable memory"):
+        simulate(too_wide)
+
+
+def test_dense_simulate_rejects_measurement_feedback() -> None:
+    """Top-level statevector simulation rejects nonterminal measurements."""
+    with pytest.raises(ValueError, match=r"measurement result or measured qubit"):
+        simulate(_measure_program())
 
 
 @pytest.mark.parametrize(

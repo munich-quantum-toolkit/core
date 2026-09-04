@@ -23,6 +23,7 @@
 #include <map>
 #include <random>
 #include <string>
+#include <vector>
 
 namespace mlir::qco {
 
@@ -40,6 +41,10 @@ using DDArgumentBindings = DenseMap<Value, Attribute>;
 /// qubit arguments when no static values exist, set the wire map. Entry-block
 /// `qco.alloc` operations add subsequent wires. Measurements, resets, symbolic
 /// control, and other runtime allocation are not supported.
+///
+/// Runtime-bound parameters are supported for standard gates and for a sole
+/// standard gate inside `qco.ctrl`. Custom matrices and composite modifiers
+/// must have a compile-time-known matrix.
 ///
 /// The containing module must pass MLIR verification and
 /// `qco::verifyLinearity`.
@@ -102,8 +107,11 @@ FailureOr<dd::VectorDD> simulateStatevector(
 /// @param shots Number of samples.
 /// @param seed RNG seed. Zero selects nondeterministic seeding.
 /// @param argumentBindings Scalar values and dynamic QTensor argument sizes.
+/// @param shotResults Optional output, cleared then filled in sampling order.
+/// On failure, it may contain an incomplete sequence.
 /// @return Outcome counts, or failure for an unsupported program.
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed = 0,
-       const DDArgumentBindings& argumentBindings = DDArgumentBindings());
+       const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
+       std::vector<std::string>* shotResults = nullptr);
 } // namespace mlir::qco
