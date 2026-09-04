@@ -40,6 +40,10 @@ releases may include breaking changes.
 - 💥 Remove the unused decision-diagram approximation algorithm, including the
   `dd/Approximation.hpp` header, `dd::ApproximationMetadata`, and
   `dd::approximate`. No replacement is provided ([#2154]) ([**@burgholzer**])
+- 💥 Remove `nlohmann_json` from the public package contract. MQT Core no longer
+  installs or exports the library, no installed header exposes a `nlohmann`
+  type, and the decision-diagram statistics report through strings and streams
+  ([#2138]) ([**@denialhaag**])
 - 💥 Remove the neutral-atom stack, which moves to MQT QMAP. This drops the
   neutral-atom computation model, the neutral-atom FoMaC device session, the
   neutral-atom QDMI device and its configuration, the `mqt.core.na` Python
@@ -785,6 +789,7 @@ for previous changelogs._
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
 [#2141]: https://github.com/munich-quantum-toolkit/core/pull/2141
+[#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
 [#2137]: https://github.com/munich-quantum-toolkit/core/pull/2137
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116

@@ -87,7 +87,7 @@ benchmarkSimulate(const qc::QuantumComputation& qc) {
   const auto end = std::chrono::high_resolution_clock::now();
   exp->runtime =
       std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
-  exp->stats = getStatistics(*exp->dd);
+  exp->stats = nlohmann::basic_json<>::parse(getStatisticsString(*exp->dd));
   return exp;
 }
 
@@ -101,7 +101,7 @@ benchmarkFunctionalityConstruction(const qc::QuantumComputation& qc) {
   const auto end = std::chrono::high_resolution_clock::now();
   exp->runtime =
       std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
-  exp->stats = getStatistics(*exp->dd);
+  exp->stats = nlohmann::basic_json<>::parse(getStatisticsString(*exp->dd));
   return exp;
 }
 
@@ -142,7 +142,7 @@ benchmarkSimulateGrover(const qc::Qubit nq,
   const auto end = std::chrono::high_resolution_clock::now();
   exp->runtime =
       std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
-  exp->stats = getStatistics(*exp->dd);
+  exp->stats = nlohmann::basic_json<>::parse(getStatisticsString(*exp->dd));
   return exp;
 }
 
@@ -190,7 +190,7 @@ benchmarkFunctionalityConstructionGrover(
   const auto end = std::chrono::high_resolution_clock::now();
   exp->runtime =
       std::chrono::duration_cast<std::chrono::duration<double>>(end - start);
-  exp->stats = getStatistics(*exp->dd);
+  exp->stats = nlohmann::basic_json<>::parse(getStatisticsString(*exp->dd));
   return exp;
 }
 

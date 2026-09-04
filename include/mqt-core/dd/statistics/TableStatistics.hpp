@@ -12,9 +12,8 @@
 
 #include "dd/statistics/Statistics.hpp"
 
-#include <nlohmann/json_fwd.hpp>
-
 #include <cstddef>
+#include <string>
 
 namespace dd {
 
@@ -73,8 +72,8 @@ struct TableStatistics : Statistics {
   /// Get the amount of memory required for the table in MiB
   [[nodiscard]] double getMemoryMiB() const noexcept;
 
-  /// Get a JSON representation of the statistics
-  [[nodiscard]] nlohmann::json json() const override;
+  /// Get a JSON-formatted string representation of the statistics
+  [[nodiscard]] std::string toString() const override;
 };
 
 } // namespace dd
