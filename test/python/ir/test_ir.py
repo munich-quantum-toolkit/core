@@ -39,3 +39,12 @@ def test_bell_state_circuit() -> None:
     """
     # Remove all whitespace from both strings before comparison
     assert "".join(qasm.split()) == "".join(expected.split())
+
+
+def test_num_output_qubits_excludes_garbage() -> None:
+    """Test that the output count reflects the circuit's garbage metadata."""
+    qc = QuantumComputation(3)
+    assert qc.num_output_qubits == 3
+
+    qc.set_circuit_qubit_garbage(1)
+    assert qc.num_output_qubits == 2

@@ -80,10 +80,7 @@ public:
   [[nodiscard]] const std::string& getName() const { return name; }
   [[nodiscard]] virtual OpType getType() const { return type; }
 
-  [[nodiscard]] virtual auto
-  getUsedQubitsPermuted(const Permutation& perm) const -> std::set<Qubit>;
-
-  [[nodiscard]] auto getUsedQubits() const -> std::set<Qubit>;
+  [[nodiscard]] virtual auto getUsedQubits() const -> std::set<Qubit>;
 
   [[nodiscard]] std::unique_ptr<Operation> getInverted() const {
     auto op = clone();
@@ -181,12 +178,7 @@ public:
 
   virtual void addDepthContribution(std::vector<std::size_t>& depths) const;
 
-  [[nodiscard]] virtual bool equals(const Operation& op,
-                                    const Permutation& perm1,
-                                    const Permutation& perm2) const;
-  [[nodiscard]] virtual bool equals(const Operation& op) const {
-    return equals(op, {}, {});
-  }
+  [[nodiscard]] virtual bool equals(const Operation& op) const;
 
   virtual std::ostream& printParameters(std::ostream& os) const;
   std::ostream& print(std::ostream& os, const std::size_t nqubits) const {

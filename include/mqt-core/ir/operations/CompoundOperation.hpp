@@ -70,8 +70,6 @@ public:
 
   Controls::iterator removeControl(Controls::iterator it) override;
 
-  [[nodiscard]] bool equals(const Operation& op, const Permutation& perm1,
-                            const Permutation& perm2) const override;
   [[nodiscard]] bool equals(const Operation& operation) const override;
 
   std::ostream& print(std::ostream& os, const Permutation& permutation,
@@ -94,8 +92,7 @@ public:
     return ops;
   }
 
-  [[nodiscard]] auto getUsedQubitsPermuted(const Permutation& perm) const
-      -> std::set<Qubit> override;
+  [[nodiscard]] auto getUsedQubits() const -> std::set<Qubit> override;
 
   [[nodiscard]] auto commutesAtQubit(const Operation& other,
                                      const Qubit& qubit) const -> bool override;

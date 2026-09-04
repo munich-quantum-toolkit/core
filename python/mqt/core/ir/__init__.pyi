@@ -96,10 +96,9 @@ class QuantumComputation(MutableSequence[operations.Operation]):
     Args:
         nq: The number of qubits in the quantum computation.
         nc: The number of classical bits in the quantum computation.
-        seed: The seed to use for the internal random number generator.
     """
 
-    def __init__(self, nq: int = 0, nc: int = 0, seed: int = 0) -> None: ...
+    def __init__(self, nq: int = 0, nc: int = 0) -> None: ...
     @staticmethod
     def from_qasm_str(qasm: str) -> QuantumComputation:
         """Create a QuantumComputation object from an OpenQASM string.
@@ -149,10 +148,10 @@ class QuantumComputation(MutableSequence[operations.Operation]):
         """
 
     @property
-    def num_measured_qubits(self) -> int:
-        """The number of qubits that are measured in the quantum computation.
+    def num_output_qubits(self) -> int:
+        """The number of logical output qubits in the quantum computation.
 
-        Computed as :math:`| \\text{qubits} | - | \\text{garbage} |`.
+        Output qubits are the qubits that are not marked as garbage.
         """
 
     @property

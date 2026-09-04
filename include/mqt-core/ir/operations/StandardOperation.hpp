@@ -108,14 +108,6 @@ public:
     return controls.erase(it);
   }
 
-  [[nodiscard]] bool equals(const Operation& op, const Permutation& perm1,
-                            const Permutation& perm2) const override {
-    return Operation::equals(op, perm1, perm2);
-  }
-  [[nodiscard]] bool equals(const Operation& operation) const override {
-    return equals(operation, {}, {});
-  }
-
   void dumpOpenQASM(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
                     const BitIndexToRegisterMap& bitMap, size_t indent,
                     bool openQASM3) const override;

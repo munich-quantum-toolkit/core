@@ -110,6 +110,31 @@ algorithm had no production owner in the MQT ecosystem. Remove uses of the
 `dd/Approximation.hpp` header, the `dd::ApproximationMetadata` type, and the
 `dd::approximate` function. MQT Core does not provide a replacement.
 
+### CoreIR API cleanup
+
+The CoreIR API cleanup requires the following migrations:
+
+- Replace `getNmeasuredQubits()` and `num_measured_qubits` with
+  `getNoutputQubits()` and `num_output_qubits`, respectively.
+- Replace permutation-aware `Operation::equals()` and `getUsedQubitsPermuted()`
+  calls by applying the permutation to cloned operations before comparing them.
+- Replace `getHighestLogicalQubitIndex()`, `printStatistics()`, and
+  `printPermutation()` with `initialLayout.maxValue()`, the individual count
+  accessors, and direct `Permutation` iteration, respectively.
+- Construct output-permutation measurements explicitly instead of calling
+  `appendMeasurementsAccordingToOutputPermutation()`.
+
+The register lookup helpers `getQubitRegister()`, `getPhysicalQubitIndex()`, and
+`physicalQubitIsAncillary()` are now private implementation details.
+
+### QuantumComputation random-number generator
+
+`QuantumComputation` no longer stores a random-number generator or seed. Remove
+the third `seed` argument from C++ and Python constructor calls. C++ callers
+that used `QuantumComputation::getGenerator()` must create and own a
+random-number generator instead. Randomized circuit generators continue to
+accept a seed and now own a separate generator for each call.
+
 ### Removal of the `datastructures` (sub)library
 
 MQT Core no longer provides the `datastructures` (`ds`) sublibrary. [MQT QMAP]

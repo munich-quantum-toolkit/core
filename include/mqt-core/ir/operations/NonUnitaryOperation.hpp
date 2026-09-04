@@ -70,11 +70,7 @@ public:
         "Cannot remove controls from non-unitary operation.");
   }
 
-  [[nodiscard]] bool equals(const Operation& op, const Permutation& perm1,
-                            const Permutation& perm2) const override;
-  [[nodiscard]] bool equals(const Operation& operation) const override {
-    return equals(operation, {}, {});
-  }
+  [[nodiscard]] bool equals(const Operation& operation) const override;
 
   std::ostream& print(std::ostream& os, const Permutation& permutation,
                       std::size_t prefixWidth,

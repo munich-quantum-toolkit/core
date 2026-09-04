@@ -23,10 +23,9 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <iostream>
 #include <memory>
 #include <optional>
-#include <random>
+#include <ostream>
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
@@ -61,16 +60,12 @@ protected:
   std::vector<bool> ancillary;
   std::vector<bool> garbage;
 
-  std::mt19937_64 mt;
-  std::size_t seed = 0;
-
   fp globalPhase = 0.;
 
   std::unordered_set<sym::Variable> occurringVariables;
 
 public:
-  explicit QuantumComputation(std::size_t nq = 0, std::size_t nc = 0U,
-                              std::size_t s = 0);
+  explicit QuantumComputation(std::size_t nq = 0, std::size_t nc = 0U);
   QuantumComputation(QuantumComputation&& qc) noexcept = default;
   QuantumComputation& operator=(QuantumComputation&& qc) noexcept = default;
   QuantumComputation(const QuantumComputation& qc);
@@ -122,8 +117,6 @@ public:
   [[nodiscard]] const auto& getAncillaRegisters() const noexcept {
     return ancillaRegisters;
   }
-  [[nodiscard]] decltype(mt)& getGenerator() noexcept { return mt; }
-
   [[nodiscard]] fp getGlobalPhase() const noexcept { return globalPhase; }
   [[nodiscard]] bool hasGlobalPhase() const noexcept {
     return std::abs(getGlobalPhase()) > 0;
@@ -134,7 +127,8 @@ public:
     return occurringVariables;
   }
 
-  [[nodiscard]] std::size_t getNmeasuredQubits() const noexcept;
+  /// Returns the number of logical output qubits that are not marked garbage.
+  [[nodiscard]] std::size_t getNoutputQubits() const noexcept;
   [[nodiscard]] std::size_t getNgarbageQubits() const;
 
   void setName(const std::string& n) noexcept { name = n; }
@@ -143,23 +137,9 @@ public:
   [[nodiscard]] std::size_t getNsingleQubitOps() const;
   [[nodiscard]] std::size_t getDepth() const;
 
-  [[nodiscard]] QuantumRegister& getQubitRegister(Qubit physicalQubitIndex);
-  /// Returns the highest qubit index used as a value in the initial layout
-  [[nodiscard]] Qubit getHighestLogicalQubitIndex() const;
   /// Returns the highest qubit index used as a key in the initial layout
   [[nodiscard]] Qubit getHighestPhysicalQubitIndex() const;
-  /**
-   * @brief Returns the physical qubit index of the given logical qubit index
-   * @details Iterates over the initial layout dictionary and returns the key
-   * corresponding to the given value.
-   * @param logicalQubitIndex The logical qubit index to look for
-   * @return The physical qubit index of the given logical qubit index
-   */
-  [[nodiscard]] Qubit getPhysicalQubitIndex(Qubit logicalQubitIndex) const;
   [[nodiscard]] bool isIdleQubit(Qubit physicalQubit) const;
-  [[nodiscard]] bool isLastOperationOnQubit(const const_iterator& opIt,
-                                            const const_iterator& end) const;
-  [[nodiscard]] bool physicalQubitIsAncillary(Qubit physicalQubitIndex) const;
   [[nodiscard]] bool
   logicalQubitIsAncillary(const Qubit logicalQubitIndex) const {
     return ancillary[logicalQubitIndex];
@@ -387,10 +367,6 @@ public:
    * non-empty output permutation.
    */
   void initializeIOMapping();
-  // append measurements to the end of the circuit according to the tracked
-  // output permutation
-  void appendMeasurementsAccordingToOutputPermutation(
-      const std::string& registerName = "c");
 
   // this function augments a given circuit by additional registers
   const QuantumRegister& addQubitRegister(std::size_t nq,
@@ -459,11 +435,6 @@ public:
     return qc.print(os);
   }
 
-  std::ostream& printStatistics(std::ostream& os) const;
-
-  static std::ostream& printPermutation(const Permutation& permutation,
-                                        std::ostream& os = std::cout);
-
   void dump(const std::string& filename,
             Format format = Format::OpenQASM3) const;
 
@@ -527,10 +498,13 @@ protected:
     }
     return garbage.size();
   }
-  [[nodiscard]] bool isLastOperationOnQubit(const const_iterator& opIt) const {
-    const auto end = ops.cend();
-    return isLastOperationOnQubit(opIt, end);
-  }
+
+private:
+  [[nodiscard]] QuantumRegister& getQubitRegister(Qubit physicalQubitIndex);
+  [[nodiscard]] Qubit getPhysicalQubitIndex(Qubit logicalQubitIndex) const;
+  [[nodiscard]] bool physicalQubitIsAncillary(Qubit physicalQubitIndex) const;
+
+protected:
   void checkQubitRange(Qubit qubit) const;
   void checkQubitRange(Qubit qubit, const Controls& controls) const;
   void checkQubitRange(Qubit qubit0, Qubit qubit1,
