@@ -12,7 +12,6 @@
 #include "Qiskit.h" // IWYU pragma: keep
 #include "QiskitTranslation.h"
 #include "QiskitVersion.h"
-#include "jeff/IR/JeffDialect.h"
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
@@ -21,8 +20,6 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/IntegerExpressions.h"
 
 #include <llvm/ADT/APInt.h>
@@ -42,7 +39,6 @@
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -51,15 +47,11 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
-#include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <nanobind/nanobind.h>
 
 #include <algorithm>
@@ -88,6 +80,18 @@ using ParameterValue = std::variant<double, mlir::Value>;
 using LocalParameters = llvm::StringMap<mlir::Value>;
 using GlobalParameters = llvm::StringMap<mlir::Value>;
 using ValidationParameters = llvm::StringMap<Parameter>;
+
+namespace {
+struct GateImportState {
+  explicit GateImportState(ParameterGroupRegistry& groups)
+      : parameterGroups(groups) {}
+
+  llvm::DenseMap<uintptr_t, mlir::func::FuncOp> gates;
+  llvm::StringSet<> functionNames;
+  llvm::StringMap<size_t> nextFunctionSuffix;
+  ParameterGroupRegistry& parameterGroups;
+};
+} // namespace
 
 constexpr size_t MAX_DEFINITION_DEPTH = 64U;
 constexpr size_t MAX_CONTROL_FLOW_DEPTH = 64U;
@@ -124,22 +128,6 @@ parameterGroupAttribute(mlir::Builder& builder, const ParameterGroup& group) {
   throw std::runtime_error(
       "Qiskit parameter expression exceeds the supported " +
       std::to_string(MAX_PARAMETER_EXPRESSION_DEPTH) + "-level nesting depth");
-}
-
-[[nodiscard]] static std::shared_ptr<mlir::MLIRContext> createContext() {
-  mlir::DialectRegistry registry;
-  registry.insert<mlir::cbit::CBitDialect, mlir::mqt::MQTDialect,
-                  mlir::qc::QCDialect, mlir::qco::QCODialect,
-                  mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
-                  mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
-                  mlir::math::MathDialect, mlir::scf::SCFDialect,
-                  mlir::ub::UBDialect, mlir::LLVM::LLVMDialect,
-                  mlir::memref::MemRefDialect, mlir::jeff::JeffDialect>();
-  mlir::registerBuiltinDialectTranslation(registry);
-  mlir::registerLLVMDialectTranslation(registry);
-  auto context = std::make_shared<mlir::MLIRContext>(registry);
-  context->loadAllAvailableDialects();
-  return context;
 }
 
 static void validateParameterImpl(const Parameter& parameter,
@@ -242,7 +230,7 @@ parameterValueImpl(mlir::qc::QCProgramBuilder& builder,
 
   if (const auto* unary = parameter.getUnary()) {
     if (unary->operation == UnaryParameterKind::Conjugate) {
-      /// QC scalar parameters are real-valued, so conjugation is the identity.
+      // QC scalar parameters are real-valued, so conjugation is the identity.
       return parameterValueImpl(builder, *unary->operand, localParameters,
                                 globalParameters, depth + 1U, nodes);
     }
@@ -1292,7 +1280,8 @@ static void translateCircuit(mlir::qc::QCProgramBuilder& builder,
                              llvm::ArrayRef<ClassicalBitRef> classicalBits,
                              const LocalParameters& localParameters,
                              const GlobalParameters& globalParameters,
-                             size_t definitionDepth, size_t controlFlowDepth,
+                             GateImportState& gateState, size_t definitionDepth,
+                             size_t controlFlowDepth,
                              ImportedVariables& variables);
 
 [[nodiscard]] static int64_t rangeLength(const Loop& loop) {
@@ -1375,6 +1364,7 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
                                  llvm::ArrayRef<uint32_t> rootClbitMap,
                                  const LocalParameters& localParameters,
                                  const GlobalParameters& globalParameters,
+                                 GateImportState& gateState,
                                  const size_t definitionDepth,
                                  const size_t controlFlowDepth,
                                  ImportedVariables& variables) {
@@ -1404,8 +1394,8 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
                                   const LocalParameters& parameters) {
     translateCircuit(builder, block, qubitMap, clbitMap, rootQubitMap,
                      rootClbitMap, allQubits, classicalBits, parameters,
-                     globalParameters, definitionDepth, controlFlowDepth + 1U,
-                     variables);
+                     globalParameters, gateState, definitionDepth,
+                     controlFlowDepth + 1U, variables);
   };
 
   const auto translateLoopWithJumps =
@@ -1782,7 +1772,7 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
                       const llvm::ArrayRef<ClassicalBitRef> classicalBits,
                       const LocalParameters& localParameters,
                       const GlobalParameters& globalParameters,
-                      const size_t definitionDepth,
+                      GateImportState& gateState, const size_t definitionDepth,
                       const size_t controlFlowDepth,
                       ImportedVariables& variables) {
   std::vector<std::string> declared;
@@ -1805,8 +1795,8 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
         throw std::runtime_error(
             "Qiskit variable is declared more than once in an enclosing scope");
       }
-      /// Definite initialization rejects reads until a store; the initial loop
-      /// state still needs a representable, unobservable scalar placeholder.
+      // Definite initialization rejects reads until a store. The initial loop
+      // state still needs a representable, unobservable scalar placeholder.
       variables.variables.emplace(
           variable.identity, ImportedVariables::Entry{
                                  .value = mlir::arith::ConstantOp::create(
@@ -1864,7 +1854,96 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
     translateCircuit(builder, *definition, definitionQubits, definitionClbits,
                      definitionQubits, definitionClbits, allQubits,
                      classicalBits, localParameters, globalParameters,
-                     definitionDepth + 1U, controlFlowDepth, variables);
+                     gateState, definitionDepth + 1U, controlFlowDepth,
+                     variables);
+  };
+  const auto translateGate = [&](size_t index, const Instruction& instruction) {
+    auto definition = circuit.definition(index);
+    const auto definitionParameters = definition->parameters();
+    const auto identity = circuit.definitionIdentity(index);
+    auto known = gateState.gates.find(identity);
+    auto function =
+        known == gateState.gates.end() ? mlir::func::FuncOp{} : known->second;
+    if (!function) {
+      llvm::SmallVector<mlir::Type> argumentTypes(definitionParameters.size(),
+                                                  builder.getF64Type());
+      argumentTypes.append(definition->numQubits(),
+                           mlir::qc::QubitType::get(builder.getContext()));
+      std::string symbol = instruction.name;
+      if (!gateState.functionNames.insert(symbol).second) {
+        auto& suffix = gateState.nextFunctionSuffix[instruction.name];
+        do {
+          symbol = instruction.name + "_" + std::to_string(suffix++);
+        } while (!gateState.functionNames.insert(symbol).second);
+      }
+      function = builder.createUnitaryFunction(
+          symbol, argumentTypes, [&](mlir::ValueRange arguments) {
+            LocalParameters formalParameters;
+            for (const auto [parameterIndex, parameter] :
+                 llvm::enumerate(definitionParameters)) {
+              const auto* symbol = parameter.getSymbol();
+              if (symbol == nullptr || symbol->name.empty()) {
+                throw std::runtime_error(
+                    "Qiskit Gate definition has an invalid formal parameter");
+              }
+              formalParameters[symbol->name] = arguments[parameterIndex];
+            }
+            llvm::SmallVector<mlir::Value> definitionQubits(
+                arguments.drop_front(definitionParameters.size()));
+            std::vector<uint32_t> definitionQubitMap(definitionQubits.size());
+            std::iota(definitionQubitMap.begin(), definitionQubitMap.end(), 0U);
+            ImportedVariables gateVariables;
+            translateCircuit(builder, *definition, definitionQubitMap, {},
+                             definitionQubitMap, {}, definitionQubits, {},
+                             formalParameters, {}, gateState,
+                             definitionDepth + 1U, controlFlowDepth,
+                             gateVariables);
+          });
+      if (symbol != instruction.name) {
+        function->setAttr(
+            mlir::mqt::MQTDialect::SourceNameAttrHelper::getNameStr(),
+            builder.getStringAttr(instruction.name));
+      }
+      for (const auto [parameterIndex, parameter] :
+           llvm::enumerate(definitionParameters)) {
+        const auto* symbol = parameter.getSymbol();
+        function.setArgAttr(
+            parameterIndex,
+            mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
+            builder.getStringAttr(symbol->name));
+        if (symbol->group) {
+          gateState.parameterGroups.add(*symbol->group);
+          function.setArgAttr(
+              parameterIndex,
+              mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr(),
+              parameterGroupAttribute(builder, *symbol->group));
+        }
+      }
+      gateState.gates.insert({identity, function});
+    }
+
+    llvm::SmallVector<mlir::Value> qubits;
+    qubits.reserve(instruction.qubits.size());
+    for (const auto qubit : instruction.qubits) {
+      qubits.push_back(getQubit(qubit));
+    }
+    llvm::SmallVector<mlir::Value> parameters;
+    for (const auto& parameter : definitionParameters) {
+      auto value =
+          parameterValue(builder, parameter, localParameters, globalParameters);
+      parameters.push_back(std::holds_alternative<double>(value)
+                               ? floatConstant(builder, std::get<double>(value))
+                               : std::get<mlir::Value>(value));
+    }
+    emitModifiedOperation(
+        builder, instruction, qubits,
+        modifiedQubitArity(instruction, definition->numQubits()),
+        localParameters, globalParameters,
+        [&](mlir::ValueRange targetArguments) {
+          llvm::SmallVector<mlir::Value> operands(parameters);
+          llvm::append_range(operands, targetArguments);
+          builder.call(function, operands);
+        });
   };
 
   for (size_t index = 0; index < circuit.numInstructions(); ++index) {
@@ -1878,7 +1957,7 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
         emitGate(builder, instruction, allQubits, qubitMap, localParameters,
                  globalParameters);
       } else {
-        translateDefinition(index, instruction);
+        translateGate(index, instruction);
       }
       break;
     case OperationKind::Barrier: {
@@ -1933,8 +2012,8 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
       const auto controlFlow = circuit.controlFlow(index);
       translateControlFlow(builder, *controlFlow, allQubits, classicalBits,
                            rootQubitMap, rootClbitMap, localParameters,
-                           globalParameters, definitionDepth, controlFlowDepth,
-                           variables);
+                           globalParameters, gateState, definitionDepth,
+                           controlFlowDepth, variables);
       break;
     }
     case OperationKind::Delay:
@@ -1956,6 +2035,8 @@ struct ExpansionSummary {
 struct ExpansionCountState {
   llvm::DenseMap<uintptr_t, ExpansionSummary> definitions;
   llvm::DenseSet<uintptr_t> activeDefinitions;
+  llvm::DenseSet<uintptr_t> materializedGateDefinitions;
+  size_t materializedDefinitionOperations = 0U;
 };
 } // namespace
 
@@ -1984,10 +2065,11 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
   for (size_t index = 0; index < circuit.numInstructions(); ++index) {
     addExpandedOperations(result.operations, 1U);
     const auto instruction = circuit.instruction(index);
-    if ((instruction.kind == OperationKind::Gate &&
-         !instruction.standardGate) ||
-        instruction.kind == OperationKind::Unknown) {
-      if (!instruction.modifiers.empty()) {
+    const bool customGate =
+        instruction.kind == OperationKind::Gate && !instruction.standardGate;
+    if (customGate || instruction.kind == OperationKind::Unknown) {
+      if (instruction.kind == OperationKind::Unknown &&
+          !instruction.modifiers.empty()) {
         throw std::runtime_error(
             "Qiskit circuit import does not support modifiers on custom "
             "instructions");
@@ -2002,16 +2084,26 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
             "Qiskit instruction definitions contain a cycle");
       }
       ExpansionSummary definitionSummary;
+      bool materializeGate = false;
       try {
         if (definitionDepth >= MAX_DEFINITION_DEPTH) {
           throw std::runtime_error(
               "Qiskit instruction definitions exceed the nesting limit of 64");
         }
         const auto definition = circuit.definition(index);
-        if (definition->numQubits() != instruction.qubits.size() ||
+        const auto controls =
+            customGate ? modifierControlCount(instruction) : 0U;
+        if (definition->numQubits() + controls != instruction.qubits.size() ||
             definition->numClbits() != instruction.clbits.size()) {
           throw std::runtime_error("Qiskit instruction '" + instruction.name +
                                    "' does not match its definition arity");
+        }
+        if (customGate) {
+          if (instruction.name.empty()) {
+            throw std::runtime_error("Qiskit Gate has an empty name");
+          }
+          materializeGate =
+              state.materializedGateDefinitions.insert(identity).second;
         }
         if (const auto cached = state.definitions.find(identity);
             cached != state.definitions.end()) {
@@ -2040,7 +2132,14 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
       }
       result.controlFlowDepth =
           std::max(result.controlFlowDepth, definitionSummary.controlFlowDepth);
-      addExpandedOperations(result.operations, definitionSummary.operations);
+      if (customGate) {
+        if (materializeGate) {
+          addExpandedOperations(state.materializedDefinitionOperations,
+                                definitionSummary.operations);
+        }
+      } else {
+        addExpandedOperations(result.operations, definitionSummary.operations);
+      }
       continue;
     }
     if (instruction.kind != OperationKind::ControlFlow) {
@@ -2079,8 +2178,10 @@ static void validateCircuit(const CircuitReader& circuit,
                             const ValidationParameters& localParameters,
                             const ValidationParameters& freeParameters,
                             llvm::StringSet<>& parameterNames,
+                            llvm::DenseSet<uintptr_t>& validatedGateDefinitions,
                             uint32_t rootQubits, uint32_t rootClbits,
-                            size_t definitionDepth, size_t controlFlowDepth);
+                            size_t definitionDepth, size_t controlFlowDepth,
+                            bool gateDefinition);
 
 static void validateExpression(const Expression& expression,
                                const uint32_t rootClbits,
@@ -2267,14 +2368,12 @@ static void validateTarget(const ClassicalTarget& target,
   }
 }
 
-static void validateControlFlow(const ControlFlowReader& controlFlow,
-                                ValidationParameters localParameters,
-                                const ValidationParameters& freeParameters,
-                                llvm::StringSet<>& parameterNames,
-                                const uint32_t rootQubits,
-                                const uint32_t rootClbits,
-                                const size_t definitionDepth,
-                                const size_t controlFlowDepth) {
+static void validateControlFlow(
+    const ControlFlowReader& controlFlow, ValidationParameters localParameters,
+    const ValidationParameters& freeParameters,
+    llvm::StringSet<>& parameterNames,
+    llvm::DenseSet<uintptr_t>& validatedGateDefinitions, uint32_t rootQubits,
+    uint32_t rootClbits, size_t definitionDepth, size_t controlFlowDepth) {
   if (controlFlowDepth >= MAX_CONTROL_FLOW_DEPTH) {
     throw std::runtime_error(
         "Qiskit control flow exceeds the nesting limit of 64");
@@ -2399,35 +2498,68 @@ static void validateControlFlow(const ControlFlowReader& controlFlow,
           "Qiskit control-flow block operands do not match its bit mapping");
     }
     validateCircuit(*block, localParameters, freeParameters, parameterNames,
-                    rootQubits, rootClbits, definitionDepth,
-                    controlFlowDepth + 1U);
+                    validatedGateDefinitions, rootQubits, rootClbits,
+                    definitionDepth, controlFlowDepth + 1U, false);
   }
 }
 
-static void validateDefinition(const CircuitReader& circuit, const size_t index,
-                               const ValidationParameters& localParameters,
-                               const ValidationParameters& freeParameters,
-                               llvm::StringSet<>& parameterNames,
-                               const size_t definitionDepth,
-                               const size_t controlFlowDepth) {
+static void
+validateDefinition(const CircuitReader& circuit, size_t index,
+                   const ValidationParameters& localParameters,
+                   const ValidationParameters& freeParameters,
+                   llvm::StringSet<>& parameterNames,
+                   llvm::DenseSet<uintptr_t>& validatedGateDefinitions,
+                   size_t definitionDepth, size_t controlFlowDepth,
+                   bool gateDefinition) {
   if (definitionDepth >= MAX_DEFINITION_DEPTH) {
     throw std::runtime_error(
         "Qiskit instruction definitions exceed the nesting limit of 64");
   }
   const auto definition = circuit.definition(index);
-  validateCircuit(*definition, localParameters, freeParameters, parameterNames,
-                  definition->numQubits(), definition->numClbits(),
-                  definitionDepth + 1U, controlFlowDepth);
+  if (!gateDefinition) {
+    validateCircuit(*definition, localParameters, freeParameters,
+                    parameterNames, validatedGateDefinitions,
+                    definition->numQubits(), definition->numClbits(),
+                    definitionDepth + 1U, controlFlowDepth, false);
+    return;
+  }
+  if (definition->numClbits() != 0U) {
+    throw std::runtime_error(
+        "Qiskit Gate definitions must not contain classical bits");
+  }
+  ValidationParameters formalParameters;
+  for (const auto& parameter : definition->parameters()) {
+    validateParameter(parameter, localParameters, freeParameters);
+    const auto* symbol = parameter.getSymbol();
+    if (symbol == nullptr || symbol->name.empty() ||
+        !formalParameters.try_emplace(symbol->name, parameter).second) {
+      throw std::runtime_error(
+          "Qiskit Gate definition has invalid formal parameters");
+    }
+  }
+  if (!validatedGateDefinitions.insert(circuit.definitionIdentity(index))
+           .second) {
+    return;
+  }
+  validateCircuit(*definition, formalParameters, {}, parameterNames,
+                  validatedGateDefinitions, definition->numQubits(), 0U,
+                  definitionDepth + 1U, controlFlowDepth, true);
 }
 
 void validateCircuit(const CircuitReader& circuit,
                      const ValidationParameters& localParameters,
                      const ValidationParameters& freeParameters,
                      llvm::StringSet<>& parameterNames,
+                     llvm::DenseSet<uintptr_t>& validatedGateDefinitions,
                      const uint32_t rootQubits, const uint32_t rootClbits,
-                     const size_t definitionDepth,
-                     const size_t controlFlowDepth) {
-  for (const auto& variable : circuit.variables()) {
+                     size_t definitionDepth, size_t controlFlowDepth,
+                     bool gateDefinition) {
+  const auto variables = circuit.variables();
+  if (gateDefinition && !variables.empty()) {
+    throw std::runtime_error(
+        "Qiskit Gate definitions must not contain classical variables");
+  }
+  for (const auto& variable : variables) {
     if (variable.type == ClassicalType::Uint && variable.width > 64U) {
       throw std::runtime_error("Qiskit local variables support unsigned "
                                "integers of at most 64 bits");
@@ -2463,8 +2595,18 @@ void validateCircuit(const CircuitReader& circuit,
     }
     for (const auto& modifier : instruction.modifiers) {
       if (modifier.kind == GateModifierKind::Power) {
-        validateParameter(modifier.exponent, localParameters, freeParameters);
+        const auto* number = modifier.exponent.getNumber();
+        if (number == nullptr || !std::isfinite(number->value)) {
+          throw std::runtime_error(
+              "Qiskit Gate power must have a finite numeric exponent");
+        }
       }
+    }
+    if (gateDefinition && instruction.kind != OperationKind::Gate &&
+        instruction.kind != OperationKind::Unitary) {
+      throw std::runtime_error(
+          "Qiskit Gate definitions may contain only Gate and unitary "
+          "operations");
     }
 
     switch (instruction.kind) {
@@ -2487,13 +2629,9 @@ void validateCircuit(const CircuitReader& circuit,
         }
         break;
       }
-      if (!instruction.modifiers.empty()) {
-        throw std::runtime_error(
-            "Qiskit circuit import does not support modifiers on custom "
-            "instructions");
-      }
       validateDefinition(circuit, index, localParameters, freeParameters,
-                         parameterNames, definitionDepth, controlFlowDepth);
+                         parameterNames, validatedGateDefinitions,
+                         definitionDepth, controlFlowDepth, true);
       break;
     case OperationKind::Unknown:
       if (!instruction.modifiers.empty()) {
@@ -2502,7 +2640,8 @@ void validateCircuit(const CircuitReader& circuit,
             "instructions");
       }
       validateDefinition(circuit, index, localParameters, freeParameters,
-                         parameterNames, definitionDepth, controlFlowDepth);
+                         parameterNames, validatedGateDefinitions,
+                         definitionDepth, controlFlowDepth, false);
       break;
     case OperationKind::Barrier:
       if (!instruction.parameters.empty() || !instruction.clbits.empty()) {
@@ -2578,8 +2717,8 @@ void validateCircuit(const CircuitReader& circuit,
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);
       validateControlFlow(*controlFlow, localParameters, freeParameters,
-                          parameterNames, rootQubits, rootClbits,
-                          definitionDepth, controlFlowDepth);
+                          parameterNames, validatedGateDefinitions, rootQubits,
+                          rootClbits, definitionDepth, controlFlowDepth);
       break;
     }
     case OperationKind::Delay:
@@ -2618,9 +2757,13 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   }
 
   ExpansionCountState expansion;
-  static_cast<void>(expansionSummary(*view, expansion));
+  auto expanded = expansionSummary(*view, expansion);
+  addExpandedOperations(expanded.operations,
+                        expansion.materializedDefinitionOperations);
+  llvm::DenseSet<uintptr_t> validatedGateDefinitions;
   validateCircuit(*view, {}, freeParameterSymbols, parameterNames,
-                  view->numQubits(), view->numClbits(), 0U, 0U);
+                  validatedGateDefinitions, view->numQubits(),
+                  view->numClbits(), 0U, 0U, false);
   const auto quantumRegisters = circuitRegisters(*view, true);
   const auto classicalRegisters = circuitRegisters(*view, false);
   for (const auto& reg :
@@ -2635,7 +2778,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   const auto looseClbits = validateRegisterLayout(
       classicalRegisters, view->numClbits(), "classical");
 
-  auto context = createContext();
+  auto context = mlir::createCompilerContext();
   mlir::qc::QCProgramBuilder builder(context.get());
   llvm::SmallVector<mlir::Type> resultTypes;
   if (view->numClbits() == 0U) {
@@ -2667,9 +2810,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
           parameterGroupAttribute(builder, *symbol->group)));
     }
     const auto index = function.getNumArguments();
-    // MLIR types are handles. Converting FloatType to Type keeps the same
-    // storage and does not slice object state.
-    const mlir::Type parameterType = builder.getF64Type();
+    mlir::Type parameterType = builder.getF64Type();
     if (failed(function.insertArgument(
             index, parameterType, builder.getDictionaryAttr(argumentAttributes),
             builder.getLoc()))) {
@@ -2717,9 +2858,11 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   std::iota(qubitMap.begin(), qubitMap.end(), 0U);
   std::iota(clbitMap.begin(), clbitMap.end(), 0U);
   ImportedVariables variables;
+  GateImportState gateState(parameterGroups);
+  gateState.functionNames.insert(function.getName());
   translateCircuit(builder, *view, qubitMap, clbitMap, qubitMap, clbitMap,
-                   qubits, classicalBits, {}, globalParameters, 0U, 0U,
-                   variables);
+                   qubits, classicalBits, {}, globalParameters, gateState, 0U,
+                   0U, variables);
 
   auto moduleOp = classicalStorage.empty() ? builder.finalize()
                                            : builder.finalize(classicalStorage);
