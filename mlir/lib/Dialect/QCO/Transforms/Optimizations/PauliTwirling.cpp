@@ -186,7 +186,7 @@ static void twirlGate(IRRewriter& rewriter, UnitaryOpInterface gate,
       createPauli(rewriter, op->getLoc(), twirl.beforeFirst, firstIn);
   auto newSecondIn =
       createPauli(rewriter, op->getLoc(), twirl.beforeSecond, secondIn);
-  rewriter.modifyOpInPlace(op, [&]() {
+  rewriter.modifyOpInPlace(op, [&] {
     op->setOperand(0, newFirstIn);
     op->setOperand(1, newSecondIn);
   });

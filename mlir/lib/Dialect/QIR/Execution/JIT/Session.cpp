@@ -398,7 +398,7 @@ auto JitSession::runtime() -> Runtime& { return *runtime_; }
 
 void JitSession::initNativeTargets() {
   static std::once_flag flag;
-  std::call_once(flag, []() {
+  std::call_once(flag, [] {
     static const llvm::codegen::RegisterCodeGenFlags CGF;
 
     // If we have a native target, initialize it to ensure it is linked in and

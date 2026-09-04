@@ -196,7 +196,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     auto h2 = HOp::create(rewriter, cnotGate->getLoc(), origCtrlIn);
 
     // Rewire the CNOT operands in-place so that the roles are swapped
-    rewriter.modifyOpInPlace(cnotGate, [&]() {
+    rewriter.modifyOpInPlace(cnotGate, [&] {
       cnotGate->setOperand(controlIndex, h1.getOutputTarget(0));
       cnotGate->setOperand(cnotGate.getNumControls(), h2.getOutputTarget(0));
     });
@@ -206,7 +206,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     rewriter.moveOpAfter(hadamardGate, cnotGate);
 
     // Feed the MeasureOp directly from origCtrlOut (the new control output).
-    rewriter.modifyOpInPlace(op, [&]() { op->setOperand(0, origCtrlOut); });
+    rewriter.modifyOpInPlace(op, [&] { op->setOperand(0, origCtrlOut); });
 
     // Every other downstream user of origCtrlOut except for the MeasureOp
     // should now see hadamardGate's output.

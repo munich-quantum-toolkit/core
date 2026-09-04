@@ -486,7 +486,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::queryProperty(
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitProgramAsync(
     std::function<bool()> body) -> QDMI_STATUS {
-  jobHandle_ = std::async(std::launch::async, [this, body = std::move(body)]() {
+  jobHandle_ = std::async(std::launch::async, [this, body = std::move(body)] {
     qdmi::dd::Device::get().increaseRunningJobs();
     status_.store(QDMI_JOB_STATUS_RUNNING);
     try {
@@ -505,7 +505,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgram() -> QDMI_STATUS {
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
     -> QDMI_STATUS {
-  return submitProgramAsync([this]() {
+  return submitProgramAsync([this] {
     const auto& text = std::get<std::string>(program_);
     auto qcoProgram = parseQASMToQCO(text);
     if (!qcoProgram) {
@@ -529,7 +529,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
     -> QDMI_STATUS {
-  return submitProgramAsync([this]() {
+  return submitProgramAsync([this] {
     const auto& text = std::get<std::string>(program_);
     auto qcoProgram = parseQASMToQCO(text);
     if (!qcoProgram) {
@@ -556,7 +556,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgram() -> QDMI_STATUS {
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
     -> QDMI_STATUS {
-  return submitProgramAsync([this]() {
+  return submitProgramAsync([this] {
     auto irBytes = std::visit(
         [](const auto& p) {
           return llvm::StringRef(reinterpret_cast<const char*>(p.data()),
@@ -596,7 +596,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
       format_ != QDMI_PROGRAM_FORMAT_QIRBASESTRING) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
-  return submitProgramAsync([this]() {
+  return submitProgramAsync([this] {
     auto irBytes = std::visit(
         [](const auto& p) {
           return llvm::StringRef(reinterpret_cast<const char*>(p.data()),
@@ -762,7 +762,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
     return reportEmptyResult(sizeRet);
   }
   std::call_once(stateVecOnce_,
-                 [this]() { stateVec_ = stateVecDD_.getVector(); });
+                 [this] { stateVec_ = stateVecDD_.getVector(); });
   const size_t reqSize = stateVec_.size() * 2 * sizeof(double);
   if (data != nullptr) {
     if (size < reqSize) {
@@ -782,7 +782,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
     return reportEmptyResult(sizeRet);
   }
   std::call_once(stateVecSparseOnce_,
-                 [this]() { stateVecSparse_ = stateVecDD_.getSparseVector(); });
+                 [this] { stateVecSparse_ = stateVecDD_.getSparseVector(); });
   const size_t numQubits = static_cast<size_t>(stateVecDD_.p->v) + 1U;
   switch (result) {
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS:

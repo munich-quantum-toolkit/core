@@ -1018,7 +1018,7 @@ struct ImportedVariables {
         throw std::runtime_error(
             "Qiskit logical operation requires Boolean operands");
       }
-      const auto emitRight = [&]() {
+      const auto emitRight = [&] {
         auto right = emitExpression(builder, *expression.right, classicalBits,
                                     rootClbitMap, variables);
         if (!right.getType().isInteger(1)) {

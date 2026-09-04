@@ -2186,7 +2186,7 @@ public:
   addControlFlow(const ControlFlowKind kind, ClassicalTarget target, Loop loop,
                  std::vector<SwitchCase> switchCases,
                  std::vector<std::unique_ptr<CircuitWriter>> blocks) override {
-    const bool validBlockCount = [&]() {
+    const bool validBlockCount = [&] {
       switch (kind) {
       case ControlFlowKind::IfElse:
         return blocks.size() == 1U || blocks.size() == 2U;
@@ -2693,7 +2693,7 @@ private:
 std::unique_ptr<VersionedTranslation>
 MQT_QISKIT_VERSION_FACTORY() { // NOLINT(misc-use-internal-linkage): declared in
                                // the version registry.
-  static const auto VERSION = []() {
+  static const auto VERSION = [] {
     if (qk_import() < 0) {
       throwPythonError(
           "failed to initialize the Qiskit " MQT_QISKIT_VERSION_LABEL " C API");

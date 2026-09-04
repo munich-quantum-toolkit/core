@@ -104,12 +104,12 @@ static Matrix4x4 randomUnitary4x4(std::mt19937& rng) {
 }
 
 static auto productMatrixCases() {
-  return ::testing::Values([]() { return Matrix4x4::identity(); },
-                           []() {
+  return ::testing::Values([] { return Matrix4x4::identity(); },
+                           [] {
                              return Matrix4x4::kron(RZOp::unitaryMatrix(1.0),
                                                     RYOp::unitaryMatrix(3.1));
                            },
-                           []() {
+                           [] {
                              return Matrix4x4::kron(Matrix2x2::identity(),
                                                     RXOp::unitaryMatrix(0.1));
                            });
@@ -117,22 +117,22 @@ static auto productMatrixCases() {
 
 static auto entangledMatrixCases() {
   return ::testing::Values(
-      []() { return RZZOp::unitaryMatrix(2.0); },
-      []() {
+      [] { return RZZOp::unitaryMatrix(2.0); },
+      [] {
         return RYYOp::unitaryMatrix(1.0) * RZZOp::unitaryMatrix(3.0) *
                RXXOp::unitaryMatrix(2.0);
       },
-      []() {
+      [] {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(1.5, -0.2, 0.0) *
                Matrix4x4::kron(RXOp::unitaryMatrix(1.0), Matrix2x2::identity());
       },
-      []() {
+      [] {
         return Matrix4x4::kron(RXOp::unitaryMatrix(1.0),
                                RYOp::unitaryMatrix(1.0)) *
                TwoQubitWeylDecomposition::getCanonicalMatrix(1.1, 0.2, 3.0) *
                Matrix4x4::kron(RXOp::unitaryMatrix(1.0), Matrix2x2::identity());
       },
-      []() {
+      [] {
         return Matrix4x4::kron(HOp::getUnitaryMatrix(),
                                qco::Complex{0.0, 1.0} *
                                    ZOp::getUnitaryMatrix()) *
@@ -144,30 +144,30 @@ static auto entangledMatrixCases() {
 }
 
 static auto cxBasisCases() {
-  return ::testing::Values([]() { return TWO_QUBIT_CONTROLLED_X01; },
-                           []() { return TWO_QUBIT_CONTROLLED_X10; });
+  return ::testing::Values([] { return TWO_QUBIT_CONTROLLED_X01; },
+                           [] { return TWO_QUBIT_CONTROLLED_X10; });
 }
 
 static auto specializedMatrixCases() {
   return ::testing::Values(
-      []() {
+      [] {
         return TWO_QUBIT_CONTROLLED_X01 * TWO_QUBIT_CONTROLLED_X10 *
                TWO_QUBIT_CONTROLLED_X01;
       },
-      []() {
+      [] {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.5);
       },
-      []() {
+      [] {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, -0.5);
       },
-      []() { return TWO_QUBIT_CONTROLLED_X01 * TWO_QUBIT_CONTROLLED_X10; },
-      []() {
+      [] { return TWO_QUBIT_CONTROLLED_X01 * TWO_QUBIT_CONTROLLED_X10; },
+      [] {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.5, 0.1);
       },
-      []() {
+      [] {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, 0.1);
       },
-      []() {
+      [] {
         return TwoQubitWeylDecomposition::getCanonicalMatrix(0.5, 0.1, -0.1);
       });
 }

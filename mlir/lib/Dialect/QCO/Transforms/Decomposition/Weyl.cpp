@@ -770,7 +770,7 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
     wire = synthesized->qubit;
     globalPhase += synthesized->globalPhase;
   };
-  const auto emitEntangler = [&]() {
+  const auto emitEntangler = [&] {
     if (basis.entangler == CompilerTarget::GateKind::RXX) {
       auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
       wire0 = rxxOp.getOutputQubit(0);

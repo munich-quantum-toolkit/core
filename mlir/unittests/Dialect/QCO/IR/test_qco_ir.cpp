@@ -1515,7 +1515,7 @@ TEST_F(QCOTest, ExtendsMixedResultIndexSwitchTargets) {
 }
 
 TEST_F(QCOTest, EquivalentTensorIndexSwitches) {
-  const auto build = [&]() {
+  const auto build = [&] {
     QCOProgramBuilder builder(context.get());
     builder.initialize();
 

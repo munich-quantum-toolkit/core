@@ -314,7 +314,7 @@ TEST_F(GlobalPhaseNormalizationTest,
   EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(1)));
   EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(2)));
 
-  const auto countOperations = [&moduleOp]() {
+  const auto countOperations = [&moduleOp] {
     size_t count = 0;
     moduleOp->walk([&count](Operation*) { ++count; });
     return count;
