@@ -766,7 +766,7 @@ TEST(OpenQASMFrontendTest, BoundsExpressionAndBlockDepth) {
   for (size_t index = 0; index < 256; ++index) {
     flatExpression += " + 1";
   }
-  flatExpression += ";";
+  flatExpression += ';';
   auto flat = oq3::frontend::analyzeOpenQASM(flatExpression);
   ASSERT_FALSE(flat);
   ASSERT_FALSE(flat.diagnostics.empty());
@@ -775,9 +775,9 @@ TEST(OpenQASMFrontendTest, BoundsExpressionAndBlockDepth) {
 
   std::string nestedExpression = "OPENQASM 3.1; int value = ";
   nestedExpression.append(257, '(');
-  nestedExpression += "1";
+  nestedExpression += '1';
   nestedExpression.append(257, ')');
-  nestedExpression += ";";
+  nestedExpression += ';';
   auto nested = oq3::frontend::parseOpenQASM(nestedExpression);
   ASSERT_FALSE(nested);
   ASSERT_FALSE(nested.diagnostics.empty());
