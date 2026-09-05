@@ -33,7 +33,7 @@ class QCOProgram;
 class JeffProgram;
 class OpenQASMProgram;
 class QIRProgram;
-class CompilerTarget;
+class TargetEnvironment;
 
 /**
  * @brief The QIR profile represented by a QIR program.
@@ -285,7 +285,7 @@ public:
   /// Compile this program for a target in place.
   ///
   /// Do not rely on the program contents if compilation fails.
-  [[nodiscard]] bool compileForTarget(const CompilerTarget& target,
+  [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
                                       bool enableTiming = false,
                                       bool enableStatistics = false);
 
@@ -385,8 +385,16 @@ using CompilerProgram = std::variant<QCProgram, QCOProgram, JeffProgram,
  */
 [[nodiscard]] std::optional<CompilerProgram>
 runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
-                   const CompilerTarget* target = nullptr,
                    std::string_view qcoPipeline = "mqt-qco-default",
+                   bool enableTiming = false, bool enableStatistics = false);
+
+/// Run the coordinated default compiler pipeline for a target.
+///
+/// The supplied program is consumed. Call `copy()` before this function
+/// when the source program must remain available for another pipeline branch.
+[[nodiscard]] std::optional<CompilerProgram>
+runDefaultPipeline(CompilerInput&& program,
+                   const TargetEnvironment& environment,
                    bool enableTiming = false, bool enableStatistics = false);
 
 } // namespace mlir

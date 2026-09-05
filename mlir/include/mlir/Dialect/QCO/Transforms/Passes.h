@@ -19,7 +19,7 @@
 
 namespace mlir {
 class CompilerTarget;
-} // namespace mlir
+}
 
 namespace mlir::qco {
 
@@ -46,16 +46,5 @@ namespace mlir::qco {
 [[nodiscard]] std::unique_ptr<Pass>
 createDecomposeMultiControlled(const CompilerTarget& target,
                                uint64_t minQubits = 3);
-
-/// Create post-routing synthesis for one immutable compiler target.
-/// Each qubit must have a known static site. Structured branch exits must agree
-/// on sites and loop backedges must preserve their entry sites.
-/// The input may be modified on failure.
-[[nodiscard]] std::unique_ptr<Pass>
-createTargetNativeSynthesis(const CompilerTarget& target);
-
-/// Create the final mapped-operation verifier, requiring known static sites.
-[[nodiscard]] std::unique_ptr<Pass>
-createVerifyTargetConformance(const CompilerTarget& target);
 
 } // namespace mlir::qco

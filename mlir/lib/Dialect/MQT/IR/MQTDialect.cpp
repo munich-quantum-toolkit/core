@@ -26,6 +26,8 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/VersionTuple.h>
+#include <mlir/Dialect/DLTI/DLTI.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -38,6 +40,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Interfaces/DataLayoutInterfaces.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
@@ -64,6 +67,89 @@ void MQTDialect::initialize() {
 
 #define GET_ATTRDEF_CLASSES
 #include "mlir/Dialect/MQT/IR/MQTAttributes.cpp.inc"
+
+[[nodiscard]] static bool isCanonicalPayloadVersion(const StringRef version) {
+  llvm::VersionTuple parsed;
+  return !parsed.tryParse(version) && parsed.getMinor() &&
+         parsed.getSubminor() && !parsed.getBuild() &&
+         parsed.getAsString() == version;
+}
+
+LogicalResult
+PayloadFormatAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                          const StringAttr id, const StringAttr version,
+                          const StringAttr profile,
+                          const PayloadEncoding /*encoding*/) {
+  if (id.getValue().empty() || version.getValue().empty()) {
+    return emitError() << "payload format requires an ID and version";
+  }
+  if (id.getValue().contains('\0') || version.getValue().contains('\0') ||
+      profile.getValue().contains('\0')) {
+    return emitError()
+           << "payload format fields must not contain null characters";
+  }
+  if (!isCanonicalPayloadVersion(version.getValue())) {
+    return emitError()
+           << "payload format version must use canonical major.minor.patch";
+  }
+  return success();
+}
+
+LogicalResult ProgramConstraintAttr::verify(
+    const function_ref<InFlightDiagnostic()> emitError, const StringAttr id,
+    const uint64_t /*value*/) {
+  if (id.getValue().empty()) {
+    return emitError() << "program constraint ID must not be empty";
+  }
+  if (id.getValue().contains('\0')) {
+    return emitError() << "program constraint ID must not contain a null "
+                          "character";
+  }
+  return success();
+}
+
+LogicalResult ProgramCapabilityAttr::verify(
+    const function_ref<InFlightDiagnostic()> emitError, const StringAttr id,
+    const uint64_t /*value*/,
+    const ArrayRef<ProgramConstraintAttr> constraints) {
+  if (id.getValue().empty()) {
+    return emitError() << "program capability ID must not be empty";
+  }
+  if (id.getValue().contains('\0')) {
+    return emitError()
+           << "program capability ID must not contain a null character";
+  }
+
+  llvm::SmallDenseSet<StringRef> seen;
+  seen.reserve(constraints.size());
+  for (const ProgramConstraintAttr constraint : constraints) {
+    if (!seen.insert(constraint.getId().getValue()).second) {
+      return emitError() << "program capability contains duplicate constraint '"
+                         << constraint.getId().getValue() << "'";
+    }
+  }
+  return success();
+}
+
+LogicalResult
+PayloadSpecAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                        const PayloadFormatAttr /*format*/,
+                        const ArrayRef<ProgramCapabilityAttr> capabilities,
+                        const bool /*optionalCapabilitiesKnown*/) {
+  llvm::SmallDenseSet<std::pair<StringRef, uint64_t>> seen;
+  seen.reserve(capabilities.size());
+  for (const ProgramCapabilityAttr capability : capabilities) {
+    const auto key =
+        std::pair(capability.getId().getValue(), capability.getValue());
+    if (!seen.insert(key).second) {
+      return emitError()
+             << "payload specification contains duplicate capability '"
+             << capability.getId().getValue() << "' with value "
+             << capability.getValue();
+    }
+  }
+  return success();
+}
 
 LogicalResult
 DurationUnitAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
@@ -283,6 +369,59 @@ LogicalResult CompilationTargetAttr::verify(
            << "compiler target timing metadata requires a duration unit";
   }
   return success();
+}
+
+[[nodiscard]] static bool isNamespacedExtensionKey(const StringRef key) {
+  SmallVector<StringRef, 4> components;
+  key.split(components, '.');
+  return components.size() > 1 &&
+         llvm::none_of(components, [](const StringRef component) {
+           return component.empty();
+         });
+}
+
+LogicalResult
+TargetEnvAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                      const CompilationTargetAttr /*compilationTarget*/,
+                      const PayloadSpecAttr /*payloadSpecification*/,
+                      const MapAttr extensions) {
+  if (!extensions) {
+    return success();
+  }
+  for (const DataLayoutEntryInterface entry : extensions.getEntries()) {
+    const auto key = entry.getKey().dyn_cast<StringAttr>();
+    if (!key) {
+      return emitError()
+             << "target environment extension keys must be identifiers";
+    }
+    const auto value = key.getValue();
+    if (!isNamespacedExtensionKey(value)) {
+      return emitError() << "target environment extension key '" << value
+                         << "' must be provider or dialect namespaced";
+    }
+    if (value == kCompilationTargetKey || value == kPayloadSpecificationKey) {
+      return emitError() << "target environment extension key '" << value
+                         << "' is reserved by MQT";
+    }
+  }
+  return success();
+}
+
+FailureOr<Attribute> TargetEnvAttr::query(const DataLayoutEntryKey key) const {
+  const auto identifier = key.dyn_cast<StringAttr>();
+  if (!identifier) {
+    return failure();
+  }
+  if (identifier.getValue() == kCompilationTargetKey) {
+    return getCompilationTarget();
+  }
+  if (identifier.getValue() == kPayloadSpecificationKey) {
+    return getPayloadSpecification();
+  }
+  if (MapAttr extensions = getExtensions()) {
+    return extensions.query(key);
+  }
+  return failure();
 }
 
 [[nodiscard]] static LogicalResult
@@ -631,6 +770,19 @@ verifyRegisterName(Operation* operation, const NamedAttribute attribute) {
 LogicalResult
 MQTDialect::verifyOperationAttribute(Operation* operation,
                                      const NamedAttribute attribute) {
+  if (attribute.getName() == TargetEnvAttr::name) {
+    if (!isa<ModuleOp>(operation)) {
+      return operation->emitError()
+             << "attribute '" << attribute.getName().getValue()
+             << "' is only valid on a module";
+    }
+    if (!isa<TargetEnvAttr>(attribute.getValue())) {
+      return operation->emitError()
+             << "attribute '" << attribute.getName().getValue()
+             << "' must be an mqt target environment";
+    }
+    return success();
+  }
   if (attribute.getName() == EntryPointAttrHelper::getNameStr()) {
     return verifyEntryPoint(operation, attribute);
   }

@@ -41,7 +41,15 @@ from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
 from qiskit.circuit.parametervector import ParameterVectorElement
 from qiskit.quantum_info import Operator, random_unitary
 
-from mqt.core.mlir import CompilerTarget, QCProgram, compile_program
+from mqt.core.mlir import (
+    CompilerTarget,
+    PayloadEncoding,
+    PayloadFormat,
+    PayloadSpecification,
+    QCProgram,
+    TargetEnvironment,
+    compile_program,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -53,6 +61,20 @@ if not (Version("2.5.0") <= installed_qiskit < Version("2.6.0") or qiskit.__vers
         f"Qiskit circuit translation tests require Qiskit 2.5.x (installed: {qiskit.__version__})",
         allow_module_level=True,
     )
+
+
+def _test_payload_specification() -> PayloadSpecification:
+    """Return the selected payload contract for target tests."""
+    return PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.BINARY))
+
+
+def _test_target_environment(target: CompilerTarget) -> TargetEnvironment:
+    """Pair a compiler target with the test payload specification.
+
+    Returns:
+        The complete target environment.
+    """
+    return TargetEnvironment(target, _test_payload_specification())
 
 
 STANDARD_GATES = (
@@ -234,7 +256,7 @@ def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
     )
     program = QCProgram.from_qiskit(circuit).to_qco(copy=True)
 
-    program.compile_for_target(target)
+    program.compile_for_target(_test_target_environment(target))
     restored = program.to_qc(copy=True).to_qiskit(target=target)
 
     assert "qco.unitary" not in program.ir
@@ -549,7 +571,7 @@ measure q[0] -> c[1];
 """
     )
     mapped = program.to_qco(copy=True)
-    mapped.compile_for_target(target)
+    mapped.compile_for_target(_test_target_environment(target))
 
     restored = mapped.to_qc(copy=True).to_qiskit(target=target)
 

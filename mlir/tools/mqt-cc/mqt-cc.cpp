@@ -8,8 +8,11 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
+#include "mlir/Compiler/Target.h"
 #include "mlir/Compiler/TargetCompilation.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
 #include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
 #include "mlir/Conversion/QCOToQC/QCOToQC.h"
@@ -17,6 +20,7 @@
 #include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
@@ -43,6 +47,7 @@
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/ToolOutputFile.h>
 #include <llvm/Support/raw_ostream.h>
+#include <mlir/AsmParser/AsmParser.h>
 #include <mlir/Bytecode/BytecodeWriter.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -85,12 +90,12 @@ static llvm::cl::opt<std::string> inputFormat(
     llvm::cl::desc("Input format: auto, jeff, mlir, or qasm (default: auto)"),
     llvm::cl::value_desc("format"), llvm::cl::init("auto"));
 
-static llvm::cl::opt<std::string>
-    outputFilename("o",
-                   llvm::cl::desc("Output filename (for QIR, - and .ll write "
-                                  "textual LLVM IR; .bc and other names write "
-                                  "LLVM bitcode)"),
-                   llvm::cl::value_desc("filename"), llvm::cl::init("-"));
+static llvm::cl::opt<std::string> outputFilename(
+    "o",
+    llvm::cl::desc("Output filename (for untargeted QIR, - and .ll write "
+                   "textual LLVM IR; .bc and other names write LLVM "
+                   "bitcode)"),
+    llvm::cl::value_desc("filename"), llvm::cl::init("-"));
 
 static llvm::cl::opt<std::string> outputFormat(
     "emit",
@@ -108,6 +113,11 @@ static llvm::cl::opt<std::string> qdmiDevice(
     "qdmi-device",
     llvm::cl::desc("Compile for the QDMI device with this stable ID"),
     llvm::cl::value_desc("id"), llvm::cl::init(""));
+
+static llvm::cl::opt<std::string> payloadSpecification(
+    "payload-spec",
+    llvm::cl::desc("Selected payload as a typed #mqt.payload_spec attribute"),
+    llvm::cl::value_desc("attribute"), llvm::cl::init(""));
 
 static llvm::cl::opt<std::string> qdmiConfig(
     "qdmi-config",
@@ -337,7 +347,9 @@ static LogicalResult writeJeffOutput(ModuleOp mod, const StringRef filename) {
  * @brief Write a module to an output file.
  */
 template <typename ModuleType>
-static LogicalResult writeOutput(ModuleType mod, StringRef filename) {
+static LogicalResult
+writeOutput(ModuleType mod, StringRef filename,
+            const std::optional<PayloadEncoding> qirEncoding = std::nullopt) {
   std::string errorMessage;
   const auto output = openOutputFile(filename, &errorMessage);
   if (!output) {
@@ -352,7 +364,11 @@ static LogicalResult writeOutput(ModuleType mod, StringRef filename) {
       writeBytecodeToFile(mod, output->os());
     }
   } else if constexpr (std::is_same_v<ModuleType, llvm::Module*>) {
-    if (filename == "-" || llvm::sys::path::extension(filename) == ".ll") {
+    const auto writeText =
+        qirEncoding
+            ? *qirEncoding == PayloadEncoding::Text
+            : filename == "-" || llvm::sys::path::extension(filename) == ".ll";
+    if (writeText) {
       mod->print(output->os(), nullptr);
     } else {
       llvm::WriteBitcodeToFile(*mod, output->os());
@@ -391,6 +407,15 @@ static int runCompiler(int argc, char** argv) {
           "--qdmi-list-devices cannot be combined with --qdmi-device.")
           .failed() ||
       reportQDMIErrorIf(
+          qdmiDevice.empty() != payloadSpecification.empty(),
+          "--qdmi-device and --payload-spec must be provided together.")
+          .failed() ||
+      reportQDMIErrorIf(
+          !qdmiDevice.empty() && outputFormat.getNumOccurrences() != 0,
+          "--emit cannot be combined with --qdmi-device; --payload-spec "
+          "selects the output.")
+          .failed() ||
+      reportQDMIErrorIf(
           !qdmiConfig.empty() && !qdmiListDevices && qdmiDevice.empty(),
           "--qdmi-config requires --qdmi-device or --qdmi-list-devices.")
           .failed()) {
@@ -415,7 +440,7 @@ static int runCompiler(int argc, char** argv) {
                  << inputFilename << "'. Use --input-format.\n";
     return 1;
   }
-  const auto parsedOutputFormat = parseOutputFormat(outputFormat);
+  auto parsedOutputFormat = parseOutputFormat(outputFormat);
   if (!parsedOutputFormat) {
     llvm::errs() << "Unknown output format '" << outputFormat << "'.\n";
     return 1;
@@ -423,14 +448,7 @@ static int runCompiler(int argc, char** argv) {
 
   std::optional<CompilerTarget> compilerTarget;
   if (!qdmiDevice.empty()) {
-    if (reportQDMIErrorIf(
-            *parsedOutputFormat == OutputFormat::QCImport ||
-                *parsedOutputFormat == OutputFormat::QCO ||
-                *parsedOutputFormat == OutputFormat::Jeff,
-            "--qdmi-device requires qco-optimized, qc/mlir, qir-base, or "
-            "qir-adaptive output.")
-            .failed() ||
-        reportQDMIErrorIf(passPipeline.hasAnyOccurrences(),
+    if (reportQDMIErrorIf(passPipeline.hasAnyOccurrences(),
                           "--qdmi-device cannot be combined with --passes.")
             .failed() ||
         reportQDMIErrorIf(
@@ -464,6 +482,49 @@ static int runCompiler(int argc, char** argv) {
 
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
+
+  std::optional<PayloadSpecification> selectedPayload;
+  if (!payloadSpecification.empty()) {
+    const auto attribute = parseAttribute(payloadSpecification, &context);
+    const auto payloadAttr =
+        dyn_cast_if_present<mqt::PayloadSpecAttr>(attribute);
+    if (!payloadAttr) {
+      llvm::errs()
+          << "--payload-spec must be a valid #mqt.payload_spec attribute.\n";
+      return 1;
+    }
+    auto payload = PayloadSpecification::create(payloadAttr);
+    if (!payload) {
+      llvm::errs() << "Invalid --payload-spec: "
+                   << llvm::toString(payload.takeError()) << '\n';
+      return 1;
+    }
+    selectedPayload.emplace(std::move(*payload));
+  }
+
+  std::optional<TargetEnvironment> targetEnvironment;
+  if (compilerTarget) {
+    auto compilerOutput = selectedPayload->compilerOutput();
+    if (!compilerOutput) {
+      llvm::errs() << llvm::toString(compilerOutput.takeError()) << '\n';
+      return 1;
+    }
+    switch (*compilerOutput) {
+    case ProgramFormat::OpenQASM3:
+      parsedOutputFormat = OutputFormat::OpenQASM3;
+      break;
+    case ProgramFormat::QIRBase:
+      parsedOutputFormat = OutputFormat::QIRBase;
+      break;
+    case ProgramFormat::QIRAdaptive:
+      parsedOutputFormat = OutputFormat::QIRAdaptive;
+      break;
+    default:
+      llvm_unreachable("Unsupported target compiler output");
+    }
+    targetEnvironment.emplace(std::move(*compilerTarget),
+                              std::move(*selectedPayload));
+  }
 
   ParsedProgram program;
   switch (*parsedInputFormat) {
@@ -534,8 +595,9 @@ static int runCompiler(int argc, char** argv) {
       *parsedOutputFormat != OutputFormat::QCImport &&
       *parsedOutputFormat != OutputFormat::QCO;
   if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
-        if (compilerTarget) {
-          populateTargetCompilationPipeline(pm, *compilerTarget);
+        if (targetEnvironment) {
+          attachTargetEnvironment(*program.mod, *targetEnvironment);
+          populateTargetCompilationPipeline(pm, targetEnvironment->target());
           return success();
         }
         populateQCOCleanupPipeline(pm);
@@ -628,7 +690,13 @@ static int runCompiler(int argc, char** argv) {
       return 1;
     }
     qir::normalizeQIRModuleFlags(*llvmMod, *program.mod);
-    if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename).failed()) {
+    const auto qirEncoding =
+        targetEnvironment
+            ? std::optional(
+                  targetEnvironment->payloadSpecification().format().encoding)
+            : std::nullopt;
+    if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename, qirEncoding)
+            .failed()) {
       return 1;
     }
   } else if (writeOutput<ModuleOp>(program.mod.get(), outputFilename)
