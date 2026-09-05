@@ -175,10 +175,20 @@ void TypeCheckPass::visitAssignmentStatement(
     return;
   }
 
-  if (!idTy->second.type->fits(*exprTy.type)) {
+  auto targetTy = idTy->second.type;
+  if (!assignmentStatement->identifier->indices.empty()) {
+    if (const auto designatedTy =
+            std::dynamic_pointer_cast<DesignatedType<uint64_t>>(targetTy)) {
+      targetTy =
+          std::make_shared<DesignatedType<uint64_t>>(designatedTy->type, 1);
+    }
+  }
+
+  if (!targetTy->fits(*exprTy.type) &&
+      !(targetTy->isConvertibleToBool() && exprTy.type->isBool())) {
     std::stringstream ss;
     ss << "Type mismatch in assignment. Expected '";
-    ss << idTy->second.type->toString();
+    ss << targetTy->toString();
     ss << "', found '";
     ss << exprTy.type->toString();
     ss << "'.";

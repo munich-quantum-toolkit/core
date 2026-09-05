@@ -414,6 +414,16 @@ void Importer::visitAssignmentStatement(
     return;
   }
 
+  if (const auto constant = std::dynamic_pointer_cast<Constant>(
+          assignmentStatement->expression->expression);
+      assignmentStatement->type == AssignmentStatement::Assignment &&
+      constant && constant->isBool() && !constant->getBool() && qc->empty()) {
+    std::vector<qc::Bit> bits;
+    translateBitOperand(assignmentStatement->identifier, bits,
+                        assignmentStatement->debugInfo);
+    return;
+  }
+
   // In the future, handle classical computation.
   throw CompilerError("Classical computation not supported.",
                       assignmentStatement->debugInfo);
