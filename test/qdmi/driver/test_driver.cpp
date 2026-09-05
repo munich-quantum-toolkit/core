@@ -9,6 +9,7 @@
  */
 
 #include "qdmi/Client.hpp"
+#include "qdmi/ProgramFormat.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <gmock/gmock-matchers.h>
@@ -19,6 +20,7 @@
 #include <algorithm>
 #include <array>
 #include <barrier>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -459,10 +461,7 @@ TEST_P(DriverTest, JobSetParameter) {
 }
 
 TEST_P(DriverJobTest, JobSetParameter) {
-  EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAM,
-                                     sizeof(QDMI_Program_Format), nullptr),
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
-  const QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
+  const QDMI_Program_Format value = qdmi::OPENQASM2;
   EXPECT_THAT(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                      sizeof(QDMI_Program_Format), &value),
               testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
@@ -479,6 +478,10 @@ TEST_P(DriverJobTest, JobSetParameter) {
     EXPECT_THAT(QDMI_job_set_parameter(job, param, 0, nullptr),
                 testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   }
+  constexpr auto unnamedCustom =
+      std::bit_cast<QDMI_Job_Parameter>(QDMI_CUSTOM_ENUM_VALUE_MIN + 42);
+  EXPECT_EQ(QDMI_job_set_parameter(job, unnamedCustom, 0, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_MAX, 0, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
@@ -496,19 +499,19 @@ TEST_P(DriverJobTest, JobQueryProperty) {
 
   EXPECT_THAT(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAM, 0,
                                       nullptr, nullptr),
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+              testing::AnyOf(QDMI_ERROR_BADSTATE, QDMI_ERROR_NOTSUPPORTED));
 
-  QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
+  QDMI_Program_Format value = qdmi::OPENQASM2;
   auto result = QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_PROGRAMFORMAT,
                                        sizeof(QDMI_Program_Format), &value);
   EXPECT_THAT(result, testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
   if (result == QDMI_SUCCESS) {
-    value = QDMI_PROGRAM_FORMAT_MAX;
+    value = {};
     EXPECT_EQ(QDMI_job_query_property(job, QDMI_JOB_PROPERTY_PROGRAMFORMAT,
                                       sizeof(QDMI_Program_Format), &value,
                                       nullptr),
               QDMI_SUCCESS);
-    EXPECT_EQ(value, QDMI_PROGRAM_FORMAT_QASM2);
+    EXPECT_TRUE(qdmi::equal(value, qdmi::OPENQASM2));
   }
   size_t numShots = 1;
   result = QDMI_job_set_parameter(job, QDMI_JOB_PARAMETER_SHOTSNUM,
@@ -535,6 +538,10 @@ TEST_P(DriverJobTest, JobQueryProperty) {
     EXPECT_EQ(QDMI_job_query_property(job, property, 0, nullptr, nullptr),
               QDMI_ERROR_NOTSUPPORTED);
   }
+  constexpr auto unnamedCustom =
+      std::bit_cast<QDMI_Job_Property>(QDMI_CUSTOM_ENUM_VALUE_MIN + 42);
+  EXPECT_EQ(QDMI_job_query_property(job, unnamedCustom, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
 }
 
 TEST_P(DriverTest, JobSubmit) {
@@ -543,7 +550,7 @@ TEST_P(DriverTest, JobSubmit) {
 
 TEST_P(DriverJobTest, JobSubmit) {
   EXPECT_THAT(QDMI_job_submit(job),
-              testing::AnyOf(QDMI_SUCCESS, QDMI_ERROR_NOTSUPPORTED));
+              testing::AnyOf(QDMI_ERROR_BADSTATE, QDMI_ERROR_NOTSUPPORTED));
 }
 
 TEST_P(DriverTest, JobCancel) {
@@ -1391,8 +1398,7 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   std::optional<qdmi::Job> job;
   {
     auto const device = qdmi::Session::openDevice("test.session-overrides");
-    job.emplace(
-        device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2, 1));
+    job.emplace(device.submitJob("OPENQASM 2.0;", qdmi::OPENQASM2, 1));
   }
 
   ASSERT_TRUE(job.has_value());
@@ -1409,9 +1415,9 @@ TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {
   constexpr std::array payload{std::byte{0}, std::byte{1}};
 
   EXPECT_NO_THROW(std::ignore =
-                      device.submitJob(payload, QDMI_PROGRAM_FORMAT_CUSTOM1));
-  EXPECT_THROW(std::ignore = device.submitJob(
-                   payload, QDMI_PROGRAM_FORMAT_CUSTOM1, size_t{1}),
+                      device.submitJob(payload, qdmi::QIR21_BASE_BINARY));
+  EXPECT_THROW(std::ignore = device.submitJob(payload, qdmi::QIR21_BASE_BINARY,
+                                              size_t{1}),
                std::runtime_error);
 }
 
@@ -1419,10 +1425,10 @@ TEST(DeviceRegistrationTest, TextJobDoesNotRequireShots) {
   registerSessionTestDevice();
   const auto device = qdmi::Session::openDevice("test.session-overrides");
 
-  EXPECT_NO_THROW(std::ignore = device.submitJob("OPENQASM 2.0;",
-                                                 QDMI_PROGRAM_FORMAT_QASM2));
+  EXPECT_NO_THROW(std::ignore =
+                      device.submitJob("OPENQASM 2.0;", qdmi::OPENQASM2));
   EXPECT_THROW(std::ignore = device.submitJob(std::string{"binary"},
-                                              QDMI_PROGRAM_FORMAT_QPY),
+                                              qdmi::QIR21_BASE_BINARY),
                std::invalid_argument);
 }
 
@@ -1490,6 +1496,27 @@ TEST(DeviceRegistrationTest, RetrievesExistingJobs) {
 
   const auto retrievedJob = device.retrieveJobById("session-job");
   EXPECT_EQ(retrievedJob.getId(), "session-job");
+  EXPECT_THROW(std::ignore = retrievedJob.getNumShots(), std::runtime_error);
+  EXPECT_EQ(retrievedJob.getShots(), (std::vector<std::string>{"10", "01"}));
+  EXPECT_EQ(retrievedJob.getProgramOutput(),
+            (std::vector<std::byte>{std::byte{'x'}, std::byte{0},
+                                    std::byte{'y'}, std::byte{0}}));
+}
+
+TEST(DeviceRegistrationTest, RejectsMalformedTextResultFraming) {
+  registerSessionTestDevice();
+  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto job = device.retrieveJobById("session-job");
+
+  EXPECT_THROW(std::ignore = job.getCounts(), std::invalid_argument);
+}
+
+TEST(DeviceRegistrationTest, RejectsEmbeddedNullInTextProgram) {
+  registerSessionTestDevice();
+  const auto device = qdmi::Session::openDevice("test.session-overrides");
+  const auto job = device.retrieveJobById("malformed-text-job");
+
+  EXPECT_THROW(std::ignore = job.getProgram(), std::invalid_argument);
 }
 
 TEST(DeviceRegistrationTest, FreshChildDeviceRetainsItsRootSession) {

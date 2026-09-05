@@ -34,14 +34,13 @@ from mqt.core.qdmi import (
     CustomProperty,
     Device,
     Job,
+    ProgramEncoding,
     ProgramFormat,
     is_binary_program_format,
 )
 from mqt.core.qdmi.driver import (
     DeviceDefinition,
     open_device,
-    register_device,
-    register_device_if_absent,
     registered_device_ids,
 )
 
@@ -176,10 +175,11 @@ def test_device_coupling_map(device: Device) -> None:
 
 
 def test_device_needs_calibration(device: Device) -> None:
-    """Test that the device needs calibration is an integer."""
-    needs_cal = device.needs_calibration()
-    if needs_cal is not None:
-        assert isinstance(needs_cal, int)
+    """Test that the optional calibration age is a non-negative integer."""
+    needs_calibration = device.needs_calibration()
+    if needs_calibration is not None:
+        assert isinstance(needs_calibration, int)
+        assert needs_calibration >= 0
 
 
 def test_device_queue_length(device: Device) -> None:
@@ -492,12 +492,12 @@ cx q[0], q[1];
 c = measure q;
 """
 
-    job = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
+    job = ddsim_device.submit_job(qasm3_program, ProgramFormat.OPENQASM3, num_shots=100)
 
     # Job should have a non-empty ID
     assert len(job.id) > 0
     # The program format should be preserved
-    assert job.program_format == ProgramFormat.QASM3
+    assert job.program_format == ProgramFormat.OPENQASM3
     # The program should be preserved
     assert job.program == qasm3_program
     assert job.program_bytes == qasm3_program.encode() + b"\0"
@@ -505,53 +505,61 @@ c = measure q;
     assert job.num_shots == 100
 
 
-def test_program_format_includes_batch_job() -> None:
-    """Expose every standard QDMI program format."""
-    assert ProgramFormat.BATCH_JOB.value == 9
+def test_program_format_is_an_immutable_exact_value() -> None:
+    """Treat every program-format field as immutable exact identity."""
+    qasm3 = ProgramFormat("openqasm", (3, 0, 0))
+    assert qasm3 == ProgramFormat.OPENQASM3
+    assert qasm3 != object()
+    assert hash(qasm3) == hash(ProgramFormat.OPENQASM3)
+    assert qasm3.format_id == "openqasm"
+    assert qasm3.version == (3, 0, 0)
+    assert not qasm3.profile
+    assert qasm3.encoding == ProgramEncoding.TEXT
+    with pytest.raises(ValueError, match="version must not be zero"):
+        ProgramFormat("example.invalid", (0, 0, 0))
+    with pytest.raises(AttributeError):
+        qasm3.profile = "other"  # ty: ignore[invalid-assignment]
 
 
 def test_is_binary_program_format() -> None:
     """Classify the program formats that require exact-byte submission."""
-    binary = {ProgramFormat.QIR_BASE_MODULE, ProgramFormat.QIR_ADAPTIVE_MODULE, ProgramFormat.QPY}
-    for fmt in ProgramFormat:
-        assert is_binary_program_format(fmt) == (fmt in binary), fmt.name
+    formats = (
+        ProgramFormat.OPENQASM2,
+        ProgramFormat.OPENQASM3,
+        ProgramFormat.QIR21_BASE_TEXT,
+        ProgramFormat.QIR21_BASE_BINARY,
+        ProgramFormat.QIR21_ADAPTIVE_TEXT,
+        ProgramFormat.QIR21_ADAPTIVE_BINARY,
+    )
+    binary = {ProgramFormat.QIR21_BASE_BINARY, ProgramFormat.QIR21_ADAPTIVE_BINARY}
+    for fmt in formats:
+        assert is_binary_program_format(fmt) == (fmt in binary)
+
+
+def test_program_features_are_scoped_to_an_exact_payload(ddsim_device: Device) -> None:
+    """Keep optional execution features separate for each accepted payload."""
+    features = ddsim_device.try_program_features(ProgramFormat.OPENQASM3)
+    assert features is not None
+    assert "forward-branching" in {feature.id for feature in features}
+    assert all(not feature.constraint_id for feature in features)
+    assert all(feature.constraint_value == 0 for feature in features)
+    assert features[0] != object()
+    with pytest.raises(AttributeError):
+        features[0].value = 1  # ty: ignore[invalid-assignment]
+    assert ddsim_device.try_program_features(ProgramFormat("openqasm", (3, 1, 0))) is None
 
 
 @pytest.mark.parametrize("program", [b"OPENQASM 3.0;", b"OPENQASM 3.0;\0garbage\0", "OPENQASM 3.0;\0garbage"])
 def test_device_rejects_invalid_text_payloads(ddsim_device: Device, program: str | bytes) -> None:
     """Reject payloads that do not satisfy QDMI's text contract."""
     with pytest.raises(ValueError, match=r"Setting program: Invalid argument\."):
-        ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=1)
+        ddsim_device.submit_job(program, ProgramFormat.OPENQASM3, num_shots=1)
 
 
 def test_device_rejects_text_for_binary_format(ddsim_device: Device) -> None:
     """Require exact byte submission for known binary formats."""
     with pytest.raises(ValueError, match="require exact-byte submission"):
-        ddsim_device.submit_job("not bitcode", ProgramFormat.QIR_BASE_MODULE, num_shots=1)
-
-
-def test_device_rejects_batch_jobs(ddsim_device: Device) -> None:
-    """State that MQT Core does not support batch jobs."""
-    with pytest.raises(ValueError, match="does not support batch jobs"):
-        ddsim_device.submit_job(b"", ProgramFormat.BATCH_JOB, num_shots=1)
-
-
-def test_device_sends_calibration_runs_elsewhere(ddsim_device: Device) -> None:
-    """Point a calibration run at its own entry point."""
-    with pytest.raises(ValueError, match="submit_calibration_job"):
-        ddsim_device.submit_job(b"", ProgramFormat.CALIBRATION, num_shots=1)
-
-
-@pytest.mark.parametrize("program", [None, "configuration", b"", b"\x01\x02"])
-def test_calibration_job_reaches_the_device(ddsim_device: Device, program: str | bytes | None) -> None:
-    """Let the device decide about a calibration run, with or without a payload.
-
-    The DD simulator needs no calibration and declines the format itself. What
-    matters is that the client no longer refuses before asking, so the failure
-    is a device error rather than a `ValueError` about the argument.
-    """
-    with pytest.raises(RuntimeError, match="Setting program format"):
-        ddsim_device.submit_calibration_job(program)
+        ddsim_device.submit_job("not bitcode", ProgramFormat.QIR21_BASE_BINARY, num_shots=1)
 
 
 def test_device_executes_qir_program(ddsim_device: Device) -> None:
@@ -570,9 +578,9 @@ c = measure q;
     program = compile_program(qasm3_program, target_environment=TargetEnvironment(target, payload))
     assert isinstance(program, QIRProgram)
     assert program.profile == QIRProfile.BASE
-    assert ProgramFormat.QIR_BASE_STRING in ddsim_device.supported_program_formats()
+    assert ProgramFormat.QIR21_BASE_TEXT in ddsim_device.supported_program_formats()
 
-    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=1024)
+    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR21_BASE_TEXT, num_shots=1024)
     job.wait()
 
     assert job.check() == Job.Status.DONE
@@ -609,7 +617,7 @@ def test_device_executes_controlled_qir_with_exact_phase(ddsim_device: Device) -
     payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.TEXT))
     program = compile_program(circuit, target_environment=TargetEnvironment(target, payload))
     assert isinstance(program, QIRProgram)
-    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=0)
+    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR21_BASE_TEXT, num_shots=0)
     job.wait()
 
     assert job.get_dense_statevector() == pytest.approx(expected)
@@ -628,9 +636,9 @@ c = measure q;
 """
     program = compile_program(qasm3_program, output=OutputFormat.QIR_BASE)
     program_bytes = program.to_bitcode()
-    assert ProgramFormat.QIR_BASE_MODULE in ddsim_device.supported_program_formats()
+    assert ProgramFormat.QIR21_BASE_BINARY in ddsim_device.supported_program_formats()
 
-    job = ddsim_device.submit_job(program_bytes, ProgramFormat.QIR_BASE_MODULE, num_shots=10)
+    job = ddsim_device.submit_job(program_bytes, ProgramFormat.QIR21_BASE_BINARY, num_shots=10)
     assert job.program_bytes == program_bytes
     with pytest.raises(ValueError, match="binary program"):
         _ = job.program
@@ -642,20 +650,20 @@ c = measure q;
 
 def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> None:
     """Test that submit_job forwards custom job parameters to DDSIM."""
-    job = ddsim_device.submit_job("OPENQASM 3.0; qubit q; bit c = measure q;", ProgramFormat.QASM3, 1, custom1=7)
+    job = ddsim_device.submit_job("OPENQASM 3.0; qubit q; bit c = measure q;", ProgramFormat.OPENQASM3, 1, custom1=7)
     job.wait()
     assert job.check() == Job.Status.DONE
 
     with pytest.raises(ValueError, match=r"Setting custom parameter: Invalid argument\."):
-        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1="value")
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.OPENQASM3, 1, custom1="value")
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
-        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom2="value")
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.OPENQASM3, 1, custom2="value")
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
-        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom3="value")
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.OPENQASM3, 1, custom3="value")
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
-        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom4="value")
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.OPENQASM3, 1, custom4="value")
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
-        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom5="value")
+        ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.OPENQASM3, 1, custom5="value")
 
 
 def test_device_submit_job_preserves_num_shots(ddsim_device: Device) -> None:
@@ -668,9 +676,9 @@ c[0] = measure q[0];
 """
 
     # Submit jobs with different shot counts
-    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
-    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
-    job3 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=1000)
+    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.OPENQASM3, num_shots=10)
+    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.OPENQASM3, num_shots=100)
+    job3 = ddsim_device.submit_job(qasm3_program, ProgramFormat.OPENQASM3, num_shots=1000)
 
     assert job1.num_shots == 10
     assert job2.num_shots == 100
@@ -686,7 +694,7 @@ bit[1] c;
 c[0] = measure q[0];
 """
 
-    job = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3)
+    job = ddsim_device.submit_job(qasm3_program, ProgramFormat.OPENQASM3)
 
     assert job.num_shots == 1024
 
@@ -712,7 +720,7 @@ qubit[1] q;
 bit[1] c;
 c[0] = measure q[0];
 """
-    return ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    return ddsim_device.submit_job(qasm3_program, ProgramFormat.OPENQASM3, num_shots=10)
 
 
 def test_job_ids_are_unique(ddsim_device: Device) -> None:
@@ -724,8 +732,8 @@ bit[1] c;
 c[0] = measure q[0];
 """
 
-    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
-    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
+    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.OPENQASM3, num_shots=10)
+    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.OPENQASM3, num_shots=10)
 
     assert job1.id != job2.id
 
@@ -748,6 +756,14 @@ def test_job_custom_property_and_result_unsupported(submitted_job: Job) -> None:
     assert submitted_job.wait()
     result_value: bytes | None = submitted_job.get_custom_result(CustomProperty.CUSTOM1, bytes)
     assert result_value is None
+
+
+def test_job_raw_results_are_exact_bytes(submitted_job: Job) -> None:
+    """Expose the C result bytes without interpretation."""
+    assert submitted_job.wait()
+    values = submitted_job.get_results(Job.Result.HIST_VALUES)
+    assert isinstance(values, bytes)
+    assert values
 
 
 def test_job_status_progresses(submitted_job: Job) -> None:
@@ -813,7 +829,7 @@ def test_job_shots_match_counts(submitted_job: Job) -> None:
 
 def test_empty_program_has_empty_shot_strings(ddsim_device: Device) -> None:
     """Preserve shot cardinality when the program has no output bits."""
-    job = ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, num_shots=4)
+    job = ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.OPENQASM3, num_shots=4)
     job.wait()
     assert job.get_shots() == [""] * 4
 
@@ -831,18 +847,18 @@ qubit[2] q;
 h q[0];
 cx q[0], q[1];
 """
-    return ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=0)
+    return ddsim_device.submit_job(qasm3_program, ProgramFormat.OPENQASM3, num_shots=0)
 
 
 def test_empty_qasm_program_has_empty_results(ddsim_device: Device) -> None:
     """Return empty results for an empty QASM program."""
     program = "OPENQASM 3.0;"
 
-    sample_job = ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=4)
+    sample_job = ddsim_device.submit_job(program, ProgramFormat.OPENQASM3, num_shots=4)
     sample_job.wait()
     assert sample_job.get_counts() == {}
 
-    state_job = ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=0)
+    state_job = ddsim_device.submit_job(program, ProgramFormat.OPENQASM3, num_shots=0)
     state_job.wait()
     assert state_job.get_dense_statevector() == []
     assert state_job.get_dense_probabilities() == []
@@ -906,40 +922,6 @@ def test_simulator_job_get_sparse_probabilities_returns_valid_probabilities(simu
 
     assert "11" in sparse_probabilities
     assert sparse_probabilities["11"] == pytest.approx(0.5)
-
-
-def test_register_device_does_not_load_nonexistent_library() -> None:
-    """Registration stores metadata and opening performs native loading."""
-    library_path = Path("/nonexistent/lib.so")
-    definition = DeviceDefinition("python.missing", library_path, "PREFIX")
-    assert definition.device_id == "python.missing"
-    assert definition.library_path == library_path
-    assert definition.prefix == "PREFIX"
-    register_device(definition)
-    with pytest.raises(RuntimeError):
-        open_device("python.missing")
-
-
-def test_register_device_if_absent_only_ignores_existing_id() -> None:
-    """Idempotent registration still validates duplicate definitions."""
-    definition = DeviceDefinition("python.if-absent", "/nonexistent/device.so", "PREFIX")
-    assert register_device_if_absent(definition)
-    assert not register_device_if_absent(definition)
-    with pytest.raises(ValueError, match="library must not be empty"):
-        register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
-
-
-def test_registered_device_ids_include_runtime_registrations_in_order() -> None:
-    """Stable-ID enumeration is ordered and does not load native libraries."""
-    ids_before = registered_device_ids()
-    register_device(DeviceDefinition("python.enumeration.first", "/nonexistent/first.so", "FIRST"))
-    register_device(DeviceDefinition("python.enumeration.second", "/nonexistent/second.so", "SECOND"))
-
-    assert registered_device_ids() == [
-        *ids_before,
-        "python.enumeration.first",
-        "python.enumeration.second",
-    ]
 
 
 def test_open_device_rejects_unknown_id() -> None:

@@ -40,17 +40,10 @@ if TYPE_CHECKING or HAS_QISKIT:
     )
     from .job import QDMIJob
     from .provider import QDMIProvider
-    from .serializers import (
-        ProgramSerializer,
-        program_serializer,
-        register_program_serializer,
-        unregister_program_serializer,
-    )
 
     __all__ += [
         "CircuitValidationError",
         "JobSubmissionError",
-        "ProgramSerializer",
         "QDMIBackend",
         "QDMIJob",
         "QDMIProvider",
@@ -58,7 +51,4 @@ if TYPE_CHECKING or HAS_QISKIT:
         "TranslationError",
         "UnsupportedFormatError",
         "UnsupportedOperationError",
-        "program_serializer",
-        "register_program_serializer",
-        "unregister_program_serializer",
     ]

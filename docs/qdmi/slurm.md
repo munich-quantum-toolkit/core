@@ -131,7 +131,7 @@ measure q -> c;
 """
 
 device = slurm.open_device_from_license()
-job = device.submit_job(program, ProgramFormat.QASM2, num_shots=256)
+job = device.submit_job(program, ProgramFormat.OPENQASM2, num_shots=256)
 if not job.wait(60):
     raise RuntimeError("DDSIM did not finish within 60 seconds")
 

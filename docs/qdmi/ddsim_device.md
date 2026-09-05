@@ -79,7 +79,7 @@ program = compile_program(
 
 job = device.submit_job(
     program.to_bitcode(),
-    ProgramFormat.QIR_BASE_MODULE,
+    ProgramFormat.QIR21_BASE_BINARY,
     num_shots=1024,
     custom1=7,
 )
