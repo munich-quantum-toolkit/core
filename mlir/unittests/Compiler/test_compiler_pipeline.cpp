@@ -34,6 +34,7 @@
 #include <gtest/gtest.h>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
+#include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringMap.h>
@@ -53,6 +54,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
@@ -1208,6 +1210,123 @@ TEST_F(CompilerPipelineTest, TypedProgramsNormalizeGlobalPhases) {
   EXPECT_EQ(StringRef(textual->str()).count("qco.gphase"), 1);
 }
 
+// Test: typed QC-to-QIR conversion expands reusable unitary functions.
+TEST_F(CompilerPipelineTest, QCProgramPreparesNestedUnitaryCallsForQIR) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @phased_rotation(%q: !qc.qubit) attributes {mqt.unitary} {
+      %phase = arith.constant 0.25 : f64
+      %theta = arith.constant 0.3 : f64
+      %phi = arith.constant 2.0 : f64
+      %lambda = arith.constant 5.0 : f64
+      qc.gphase(%phase)
+      qc.u(%theta, %phi, %lambda) %q : !qc.qubit
+      return
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %exponent = arith.constant 4.0 : f64
+      %control = qc.alloc : !qc.qubit
+      %target = qc.alloc : !qc.qubit
+      qc.ctrl(%control) targets(%ctrl_arg = %target) {
+        qc.pow(%exponent) (%pow_arg = %ctrl_arg) {
+          qc.call @phased_rotation(%pow_arg) : !qc.qubit
+          qc.yield
+        } : !qc.qubit
+        qc.yield
+      } : {!qc.qubit}, {!qc.qubit}
+      qc.dealloc %target : !qc.qubit
+      qc.dealloc %control : !qc.qubit
+      return
+    }
+  })mlir";
+
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, QCDialect, arith::ArithDialect,
+                  func::FuncDialect, LLVM::LLVMDialect>();
+  auto ownedContext = std::make_shared<MLIRContext>(registry);
+  ownedContext->loadAllAvailableDialects();
+  auto moduleOp = parseSourceString<ModuleOp>(source, ownedContext.get());
+  ASSERT_TRUE(moduleOp);
+  auto program = QCProgram::fromModule(ownedContext, std::move(moduleOp));
+  ASSERT_TRUE(program);
+
+  for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
+    auto qir = std::move(program->copy()).intoQIR(profile);
+    ASSERT_TRUE(qir);
+    EXPECT_NE(qir->str().find("llvm.call @__quantum__qis__cu3__body"),
+              std::string::npos);
+    size_t relativePhaseCalls = 0;
+    qir->module().walk([&](LLVM::CallOp call) {
+      if (call.getCallee() != "__quantum__qis__p__body") {
+        return;
+      }
+      llvm::APFloat angle(0.0);
+      ASSERT_TRUE(matchPattern(call.getOperand(0), m_ConstantFloat(&angle)));
+      if (angle.convertToDouble() == 1.0) {
+        ++relativePhaseCalls;
+      }
+    });
+    EXPECT_EQ(relativePhaseCalls, 1U);
+  }
+}
+
+TEST_F(CompilerPipelineTest, CallerOwnedContextSupportsTextualInlining) {
+  constexpr StringLiteral source = R"mlir(module {
+    func.func private @flip(%q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %out = qco.x %q : !qco.qubit -> !qco.qubit
+      return %out : !qco.qubit
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qco.alloc : !qco.qubit
+      %out = qco.call @flip(%q) : (!qco.qubit) -> !qco.qubit
+      qco.sink %out : !qco.qubit
+      return
+    }
+  })mlir";
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, QCODialect, func::FuncDialect,
+                  LLVM::LLVMDialect>();
+  auto ownedContext = std::make_shared<MLIRContext>(registry);
+  ownedContext->loadAllAvailableDialects();
+  auto moduleOp = parseSourceString<ModuleOp>(source, ownedContext.get());
+  ASSERT_TRUE(moduleOp);
+  auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->runPassPipeline("inline"));
+  size_t calls = 0;
+  program->module().walk([&](qco::CallOp) { ++calls; });
+  EXPECT_EQ(calls, 0U);
+  EXPECT_TRUE(succeeded(verify(program->module())));
+}
+
+// Test: QIR output exposes reusable functions to QCO optimization.
+TEST_F(CompilerPipelineTest, DefaultQIRPipelineInlinesBeforeQCOOptimization) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @hs(%q: !qc.qubit) attributes {mqt.unitary} {
+      qc.h %q : !qc.qubit
+      qc.s %q : !qc.qubit
+      return
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %two = arith.constant 2.0 : f64
+      %q = qc.alloc : !qc.qubit
+      qc.pow(%two) (%arg = %q) {
+        qc.call @hs(%arg) : !qc.qubit
+        qc.yield
+      } : !qc.qubit
+      qc.dealloc %q : !qc.qubit
+      return
+    }
+  })mlir";
+
+  auto input = QCProgram::fromMLIRString(source);
+  ASSERT_TRUE(input);
+  auto output = runDefaultPipeline(CompilerInput{std::move(*input)},
+                                   ProgramFormat::QIRAdaptive);
+  ASSERT_TRUE(output);
+  EXPECT_TRUE(std::holds_alternative<QIRProgram>(*output));
+}
+
 // Test: typed QCO-to-jeff conversion expands reusable unitary functions.
 TEST_F(CompilerPipelineTest, QCOProgramInlinesNestedUnitaryCallsIntoJeff) {
   constexpr llvm::StringLiteral source = R"mlir(module {
@@ -1313,6 +1432,12 @@ TEST_F(CompilerPipelineTest, JeffBinaryRoundTripPreservesReusableFunctions) {
   EXPECT_EQ(std::distance(main.getOps<func::CallOp>().begin(),
                           main.getOps<func::CallOp>().end()),
             3);
+  for (const auto format :
+       {ProgramFormat::QIRBase, ProgramFormat::QIRAdaptive}) {
+    auto output = runDefaultPipeline(CompilerInput{restored->copy()}, format);
+    ASSERT_TRUE(output);
+    EXPECT_TRUE(std::get<QIRProgram>(*output).llvmIR());
+  }
   auto qc = std::move(*restored).intoQC();
   ASSERT_TRUE(qc);
   EXPECT_TRUE(succeeded(verify(qc->module())));

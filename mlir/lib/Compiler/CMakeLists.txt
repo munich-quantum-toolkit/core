@@ -61,9 +61,11 @@ add_mlir_library(
   MLIRCBitDialect
   MLIRControlFlowDialect
   MLIRFuncDialect
+  MLIRFuncInlinerExtension
   MLIRIR
   MLIRJeff
   MLIRLLVMDialect
+  MLIRLLVMIRTransforms
   MLIRLLVMToLLVMIRTranslation
   MLIRMathDialect
   MLIRMemRefDialect
