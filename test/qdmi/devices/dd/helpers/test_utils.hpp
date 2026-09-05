@@ -22,7 +22,49 @@
 #include <utility>
 #include <vector>
 
+[[nodiscard]] inline bool operator==(const QDMI_Program_Format& lhs,
+                                     const QDMI_Program_Format& rhs) noexcept {
+  return QDMI_program_format_equal(&lhs, &rhs) != 0;
+}
+
 namespace qdmi_test {
+
+inline constexpr QDMI_Program_Format OPENQASM2{
+    .version = QDMI_MAKE_VERSION(2, 0, 0),
+    .encoding = QDMI_PROGRAM_ENCODING_TEXT,
+    .id = "openqasm",
+    .profile = "",
+};
+inline constexpr QDMI_Program_Format OPENQASM3{
+    .version = QDMI_MAKE_VERSION(3, 0, 0),
+    .encoding = QDMI_PROGRAM_ENCODING_TEXT,
+    .id = "openqasm",
+    .profile = "",
+};
+inline constexpr QDMI_Program_Format QIR21_BASE_TEXT{
+    .version = QDMI_MAKE_VERSION(2, 1, 0),
+    .encoding = QDMI_PROGRAM_ENCODING_TEXT,
+    .id = "qir",
+    .profile = "base",
+};
+inline constexpr QDMI_Program_Format QIR21_BASE_BINARY{
+    .version = QDMI_MAKE_VERSION(2, 1, 0),
+    .encoding = QDMI_PROGRAM_ENCODING_BINARY,
+    .id = "qir",
+    .profile = "base",
+};
+inline constexpr QDMI_Program_Format QIR21_ADAPTIVE_TEXT{
+    .version = QDMI_MAKE_VERSION(2, 1, 0),
+    .encoding = QDMI_PROGRAM_ENCODING_TEXT,
+    .id = "qir",
+    .profile = "adaptive",
+};
+inline constexpr QDMI_Program_Format QIR21_ADAPTIVE_BINARY{
+    .version = QDMI_MAKE_VERSION(2, 1, 0),
+    .encoding = QDMI_PROGRAM_ENCODING_BINARY,
+    .id = "qir",
+    .profile = "adaptive",
+};
 
 struct SessionGuard {
   MQT_DDSIM_QDMI_Device_Session session{nullptr};

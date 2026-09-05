@@ -17,6 +17,7 @@
 #include "mqt_sc_qdmi/constants.h"
 #include "mqt_sc_qdmi/device.h"
 #include "mqt_sc_qdmi/types.h"
+#include "qdmi/ProgramFormat.hpp"
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/DeviceConfiguration.hpp"
 #include "qdmi/common/Diagnostics.hpp"
@@ -422,6 +423,7 @@ int MQT_SC_QDMI_Device_Job_impl_d::setParameter(
   return QDMI_ERROR_NOTSUPPORTED;
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 int MQT_SC_QDMI_Device_Job_impl_d::queryProperty(
     const QDMI_Device_Job_Property property, const size_t size, void* value,
     size_t* /*sizeRet*/) {
@@ -534,6 +536,25 @@ int MQT_SC_QDMI_device_session_query_device_property(
   return session == nullptr
              ? QDMI_ERROR_INVALIDARGUMENT
              : session->queryDeviceProperty(property, size, value, sizeRet);
+}
+int MQT_SC_QDMI_device_session_query_program_features(
+    MQT_SC_QDMI_Device_Session session, const QDMI_Program_Format* format,
+    [[maybe_unused]] const size_t size,
+    // NOLINTNEXTLINE(misc-const-correctness): QDMI C ABI output.
+    [[maybe_unused]] QDMI_Program_Feature* value,
+    // NOLINTNEXTLINE(misc-const-correctness): QDMI C ABI output.
+    [[maybe_unused]] size_t* sizeRet) {
+  if (session == nullptr || format == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (!qdmi::isValidProgramFormat(*format)) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  if (session->status !=
+      MQT_SC_QDMI_Device_Session_impl_d::Status::INITIALIZED) {
+    return QDMI_ERROR_BADSTATE;
+  }
+  return QDMI_ERROR_NOTSUPPORTED;
 }
 int MQT_SC_QDMI_device_session_query_site_property(
     MQT_SC_QDMI_Device_Session session, MQT_SC_QDMI_Site site,

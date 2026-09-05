@@ -137,14 +137,64 @@ TEST(DeviceProperties, SupportedProgramFormats) {
             QDMI_SUCCESS);
 
   const std::vector<QDMI_Program_Format> expected = {
-      QDMI_PROGRAM_FORMAT_QASM2,
-      QDMI_PROGRAM_FORMAT_QASM3,
-      QDMI_PROGRAM_FORMAT_QIRBASESTRING,
-      QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
-      QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
-      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+      qdmi_test::OPENQASM2,           qdmi_test::OPENQASM3,
+      qdmi_test::QIR21_BASE_TEXT,     qdmi_test::QIR21_BASE_BINARY,
+      qdmi_test::QIR21_ADAPTIVE_TEXT, qdmi_test::QIR21_ADAPTIVE_BINARY,
   };
   EXPECT_EQ(formats, expected);
+}
+
+TEST(DeviceProperties, ProgramFeaturesValidateFormatStateAndBuffer) {
+  MQT_DDSIM_QDMI_Device_Session uninitialized = nullptr;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_alloc(&uninitialized), QDMI_SUCCESS);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_program_features(
+                uninitialized, &qdmi_test::OPENQASM3, 0, nullptr, nullptr),
+            QDMI_ERROR_BADSTATE);
+  MQT_DDSIM_QDMI_device_session_free(uninitialized);
+
+  const qdmi_test::SessionGuard session{};
+  constexpr QDMI_Program_Format invalid{};
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_program_features(
+                session.session, &invalid, 0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+
+  constexpr QDMI_Program_Format unsupported{
+      .version = QDMI_MAKE_VERSION(1, 0, 0),
+      .encoding = QDMI_PROGRAM_ENCODING_BINARY,
+      .id = "qiskit.qpy",
+      .profile = "",
+  };
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_program_features(
+                session.session, &unsupported, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+
+  auto noncanonical = qdmi_test::OPENQASM3;
+  noncanonical.profile[1] = 'x';
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_program_features(
+                session.session, &noncanonical, 0, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+
+  size_t size = 1U;
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_session_query_program_features(
+          session.session, &qdmi_test::QIR21_BASE_BINARY, 0, nullptr, &size),
+      QDMI_SUCCESS);
+  EXPECT_EQ(size, 0U);
+
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_session_query_program_features(
+                session.session, &qdmi_test::OPENQASM3, 0, nullptr, &size),
+            QDMI_SUCCESS);
+  ASSERT_GT(size, sizeof(QDMI_Program_Feature));
+  std::vector<QDMI_Program_Feature> features(size /
+                                             sizeof(QDMI_Program_Feature));
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_program_features(
+                session.session, &qdmi_test::OPENQASM3,
+                size - sizeof(QDMI_Program_Feature), features.data(), nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_program_features(
+                session.session, &qdmi_test::OPENQASM3, size, features.data(),
+                nullptr),
+            QDMI_SUCCESS);
 }
 
 TEST(DeviceProperties, QubitsNumAvailable) {

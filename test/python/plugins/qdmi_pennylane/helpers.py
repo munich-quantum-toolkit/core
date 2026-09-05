@@ -13,6 +13,7 @@ from __future__ import annotations
 import math
 import re
 from collections import Counter
+from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 from unittest.mock import Mock
 
@@ -55,7 +56,7 @@ def operation(
 
 def _standard_operations(program_format: ProgramFormat) -> list[QDMIDevice.Operation]:
     """Return the gate set used by execution tests."""
-    qasm2 = program_format == ProgramFormat.QASM2
+    qasm2 = program_format == ProgramFormat.OPENQASM2
     return [
         operation("id" if qasm2 else "i", 1),
         operation("x", 1),
@@ -104,6 +105,7 @@ class StubDevice:
         coupling_map: Sequence[tuple[int, int]] | None = None,
         result_factory: Callable[[str, int], Sequence[str]] = bell_results,
         expose_shots: bool = True,
+        program_features: Sequence[object] | None = (),
     ) -> None:
         """Store the advertised capabilities and result behavior."""
         self._operations = list(operations)
@@ -112,6 +114,7 @@ class StubDevice:
         self._coupling_map = coupling_map
         self._result_factory = result_factory
         self._expose_shots = expose_shots
+        self._program_features = program_features
         self.submissions: list[tuple[str, ProgramFormat, int, Mapping[str, object]]] = []
         self.events: list[str] = []
 
@@ -127,6 +130,17 @@ class StubDevice:
     def supported_program_formats(self) -> list[ProgramFormat]:
         """Return the advertised program formats."""
         return self._formats
+
+    def try_program_features(self, _program_format: ProgramFormat) -> list[object] | None:
+        """Return known feature records, or unknown metadata."""
+        if self._program_features is None:
+            return None
+        return [
+            SimpleNamespace(id=feature, value=0, constraint_id="", constraint_value=0)
+            if isinstance(feature, str)
+            else feature
+            for feature in self._program_features
+        ]
 
     def qubits_num(self) -> int:
         """Return the device width."""
@@ -177,11 +191,12 @@ class StubDevice:
 
 def stub_device(
     *,
-    program_format: ProgramFormat = ProgramFormat.QASM3,
+    program_format: ProgramFormat = ProgramFormat.OPENQASM3,
     operations: Sequence[QDMIDevice.Operation] | None = None,
     qubits: int = 2,
     result_factory: Callable[[str, int], Sequence[str]] = bell_results,
     expose_shots: bool = True,
+    program_features: Sequence[object] | None = (),
 ) -> StubDevice:
     """Return a stub with the ordinary execution-test gate set."""
     return StubDevice(
@@ -190,6 +205,7 @@ def stub_device(
         qubits=qubits,
         result_factory=result_factory,
         expose_shots=expose_shots,
+        program_features=program_features,
     )
 
 

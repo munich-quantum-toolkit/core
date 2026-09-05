@@ -37,7 +37,7 @@ def main() -> None:
 
     job_id = os.environ["SLURM_JOB_ID"]
     device = slurm.open_device_from_license()
-    job = device.submit_job(BELL_PROGRAM, ProgramFormat.QASM2, SHOTS)
+    job = device.submit_job(BELL_PROGRAM, ProgramFormat.OPENQASM2, SHOTS)
     if not job.wait(60):
         msg = "DDSIM did not complete the Bell circuit within 60 seconds"
         raise RuntimeError(msg)

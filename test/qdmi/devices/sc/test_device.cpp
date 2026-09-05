@@ -503,7 +503,12 @@ TEST_F(ScQDMISpecificationTest, JobSetParameter) {
 }
 
 TEST_F(ScQDMIJobSpecificationTest, JobSetParameter) {
-  QDMI_Program_Format value = QDMI_PROGRAM_FORMAT_QASM2;
+  QDMI_Program_Format value{
+      .version = QDMI_MAKE_VERSION(2, 0, 0),
+      .encoding = QDMI_PROGRAM_ENCODING_TEXT,
+      .id = "openqasm",
+      .profile = "",
+  };
   EXPECT_THAT(MQT_SC_QDMI_device_job_set_parameter(
                   job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
                   sizeof(QDMI_Program_Format), &value),
@@ -616,6 +621,41 @@ TEST_F(ScQDMISpecificationTest, QueryDeviceProperty) {
   EXPECT_EQ(MQT_SC_QDMI_device_session_query_device_property(
                 session, QDMI_DEVICE_PROPERTY_COUPLINGMAP, 0, nullptr, nullptr),
             QDMI_SUCCESS);
+  MQT_SC_QDMI_device_session_free(uninitializedSession);
+}
+
+TEST_F(ScQDMISpecificationTest, QueryProgramFeatures) {
+  constexpr QDMI_Program_Format format{
+      .version = QDMI_MAKE_VERSION(2, 0, 0),
+      .encoding = QDMI_PROGRAM_ENCODING_TEXT,
+      .id = "openqasm",
+      .profile = "",
+  };
+  MQT_SC_QDMI_Device_Session uninitializedSession = nullptr;
+  ASSERT_EQ(MQT_SC_QDMI_device_session_alloc(&uninitializedSession),
+            QDMI_SUCCESS);
+  EXPECT_EQ(MQT_SC_QDMI_device_session_query_program_features(
+                nullptr, &format, 0U, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_SC_QDMI_device_session_query_program_features(
+                session, nullptr, 0U, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_SC_QDMI_device_session_query_program_features(
+                session, &format, 0U, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_EQ(MQT_SC_QDMI_device_session_query_program_features(
+                uninitializedSession, &format, 0U, nullptr, nullptr),
+            QDMI_ERROR_BADSTATE);
+
+  constexpr QDMI_Program_Format malformed{};
+  EXPECT_EQ(MQT_SC_QDMI_device_session_query_program_features(
+                session, &malformed, 0U, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  auto noncanonical = format;
+  noncanonical.id[sizeof("openqasm")] = 'x';
+  EXPECT_EQ(MQT_SC_QDMI_device_session_query_program_features(
+                session, &noncanonical, 0U, nullptr, nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
   MQT_SC_QDMI_device_session_free(uninitializedSession);
 }
 

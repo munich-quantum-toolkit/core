@@ -37,7 +37,7 @@ TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
 
   // Submit a job to force BUSY, then wait for the return to IDLE.
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
+  ASSERT_EQ(qdmi_test::setProgram(j.job, qdmi_test::OPENQASM3,
                                   qdmi_test::QASM3_HEAVY_SAMPLING),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 16384), QDMI_SUCCESS);

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import math
 from collections import Counter
+from types import SimpleNamespace
 from typing import cast
 
 import numpy as np
@@ -35,7 +36,7 @@ from mqt.core.qdmi import Device as QDMIDeviceHandle
 from mqt.core.qdmi import Job as QDMIJobHandle
 from mqt.core.qdmi import ProgramFormat
 
-from .helpers import StubDevice, patch_open_device, rotation_results, stub_device
+from .helpers import StubDevice, operation, patch_open_device, rotation_results, stub_device
 
 
 def test_uses_already_open_qdmi_device(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -248,7 +249,7 @@ def test_hamiltonian_and_non_commuting_measurements_split(monkeypatch: pytest.Mo
 
 def test_qasm2_diagonalizes_observable_once(monkeypatch: pytest.MonkeyPatch) -> None:
     """Do not duplicate the X-basis rotation in PennyLane's QASM2 serializer."""
-    qdmi = stub_device(program_format=ProgramFormat.QASM2)
+    qdmi = stub_device(program_format=ProgramFormat.OPENQASM2)
     patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2, shots=10)
 
@@ -257,8 +258,73 @@ def test_qasm2_diagonalizes_observable_once(monkeypatch: pytest.MonkeyPatch) -> 
         return qp.expval(qp.PauliX(0))
 
     assert np.isfinite(circuit())
-    assert qdmi.submissions[0][1] == ProgramFormat.QASM2
+    assert qdmi.submissions[0][1] == ProgramFormat.OPENQASM2
     assert qdmi.submissions[0][0].count("ry(") == 1
+
+
+def test_one_shot_executes_measurement_feedback(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reconstruct terminal and raw mid-circuit samples from one output vector."""
+    features = (
+        "mid-circuit-measurement",
+        "measured-qubit-reuse",
+        "measurement-result-use",
+        "boolean-computation",
+        "forward-branching",
+    )
+    qdmi = stub_device(
+        operations=[operation("measure", 1), operation("reset", 1), operation("x", 1)],
+        result_factory=lambda _program, shots: ["110"] * shots,
+        program_features=features,
+    )
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2, shots=4)
+
+    @qp.qnode(device, mcm_method="one-shot")
+    def circuit():
+        measurement = qp.measure(0, reset=True)
+        qp.cond(measurement, qp.PauliX)(1)
+        return qp.sample(wires=[0, 1]), qp.sample(measurement)
+
+    terminal, mid_circuit = circuit()
+
+    np.testing.assert_array_equal(terminal, np.tile([0, 1], (4, 1)))
+    np.testing.assert_array_equal(mid_circuit, np.ones(4, dtype=np.int8))
+    assert len(qdmi.submissions) == 4
+    assert all("c[2] = measure q[0];" in submission[0] for submission in qdmi.submissions)
+
+
+@pytest.mark.parametrize(
+    "invalid_features",
+    [
+        [SimpleNamespace(id="forward-branching", value=1, constraint_id="", constraint_value=0)],
+        [SimpleNamespace(id="forward-branching", value=0, constraint_id="max-depth", constraint_value=1)],
+        [
+            SimpleNamespace(id="forward-branching", value=0, constraint_id="", constraint_value=0),
+            SimpleNamespace(id="forward-branching", value=0, constraint_id="", constraint_value=0),
+        ],
+        [
+            SimpleNamespace(id="forward-branching", value=0, constraint_id="", constraint_value=0),
+            SimpleNamespace(id="forward-branching", value=0, constraint_id="max-depth", constraint_value=1),
+        ],
+    ],
+)
+def test_one_shot_rejects_non_boolean_feature_records(
+    monkeypatch: pytest.MonkeyPatch, invalid_features: list[object]
+) -> None:
+    """Ignore feature records whose representation the device does not understand."""
+    features: list[object] = [
+        "mid-circuit-measurement",
+        "measured-qubit-reuse",
+        "measurement-result-use",
+        "boolean-computation",
+        *invalid_features,
+    ]
+    qdmi = stub_device(operations=[operation("measure", 1), operation("reset", 1)], program_features=features)
+    patch_open_device(monkeypatch, qdmi)
+
+    device = QDMIDevice("fake.qdmi", wires=2, shots=4)
+
+    assert device.capabilities.supported_mcm_methods == []
 
 
 def test_rejects_analytic_execution_before_submission(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -305,7 +371,7 @@ def test_validates_configuration_and_width(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_rejects_device_without_openqasm(monkeypatch: pytest.MonkeyPatch) -> None:
     """Reject unsupported program formats during construction."""
-    qdmi = StubDevice([], [ProgramFormat.QIR_BASE_STRING])
+    qdmi = StubDevice([], [ProgramFormat.QIR21_BASE_TEXT])
     patch_open_device(monkeypatch, qdmi)
 
     with pytest.raises(PennyLaneUnsupportedFormatError, match="neither OpenQASM 3 nor OpenQASM 2"):

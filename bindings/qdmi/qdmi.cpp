@@ -9,28 +9,37 @@
  */
 
 #include "qdmi/Client.hpp"
+#include "qdmi/ProgramFormat.hpp"
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
 #include <nanobind/nanobind.h>
 #include <nanobind/operators.h>
-#include <nanobind/stl/complex.h>    // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/filesystem.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/map.h>        // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/optional.h>   // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/pair.h>       // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h>     // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/variant.h>    // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>     // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/complex.h>     // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/filesystem.h>  // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/map.h>         // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/optional.h>    // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/pair.h>        // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string.h>      // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/string_view.h> // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/tuple.h>       // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/variant.h>     // NOLINT(misc-include-cleaner)
+#include <nanobind/stl/vector.h>      // NOLINT(misc-include-cleaner)
 #include <qdmi/client.h>
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
+#include <functional>
+#include <iterator>
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
+#include <tuple>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace mqt {
@@ -43,6 +52,56 @@ void registerSlurm(nb::module_& qdmiModule);
 }
 
 namespace {
+void copyProgramFormatField(char (&destination)[64],
+                            const std::string_view value,
+                            const std::string_view field) {
+  if (value.size() >= std::size(destination) ||
+      value.find('\0') != std::string_view::npos) {
+    throw nb::value_error(
+        (std::string(field) + " must contain fewer than 64 non-NUL bytes")
+            .c_str());
+  }
+  std::ranges::copy(value, std::span{destination}.begin());
+}
+
+template <size_t N>
+[[nodiscard]] std::string_view decodeFixedField(const char (&value)[N],
+                                                const std::string_view field) {
+  if (!qdmi::detail::isCanonicalFixedString(value)) {
+    throw nb::value_error(
+        (std::string(field) + " is not a canonical fixed string").c_str());
+  }
+  const auto begin = std::cbegin(value);
+  const auto terminator = std::find(begin, std::cend(value), '\0');
+  return {begin, static_cast<size_t>(terminator - begin)};
+}
+
+QDMI_Program_Format makeProgramFormat(const std::string_view id,
+                                      const uint32_t major,
+                                      const uint32_t minor,
+                                      const uint32_t patch,
+                                      const std::string_view profile,
+                                      const QDMI_Program_Encoding encoding) {
+  if (id.empty()) {
+    throw nb::value_error("id must not be empty");
+  }
+  if (major > 0x3FFU || minor > 0x3FFU || patch > 0xFFFU) {
+    throw nb::value_error("version components exceed the QDMI packed range");
+  }
+  if (major == 0U && minor == 0U && patch == 0U) {
+    throw nb::value_error("version must not be zero");
+  }
+  QDMI_Program_Format format{
+      .version = QDMI_MAKE_VERSION(major, minor, patch),
+      .encoding = static_cast<uint32_t>(encoding),
+      .id = {},
+      .profile = {},
+  };
+  copyProgramFormatField(format.id, id, "id");
+  copyProgramFormatField(format.profile, profile, "profile");
+  return format;
+}
+
 template <typename Query>
 [[nodiscard]] nb::object queryCustomValue(Query query,
                                           const nb::handle valueType) {
@@ -114,6 +173,24 @@ Returns:
           nb::call_guard<nb::gil_scoped_release>(),
           "Returns the measurement counts from the job.");
 
+  job.def(
+      "get_results",
+      [](const qdmi::Job& self, const QDMI_Job_Result result) {
+        const auto value = self.getResults(result);
+        return nb::bytes(reinterpret_cast<const char*>(value.data()),
+                         value.size());
+      },
+      "result"_a, "Returns one result as exact bytes.");
+
+  job.def(
+      "get_program_output",
+      [](const qdmi::Job& self) {
+        const auto output = self.getProgramOutput();
+        return nb::bytes(reinterpret_cast<const char*>(output.data()),
+                         output.size());
+      },
+      "Returns the exact format-defined program output bytes.");
+
   job.def("get_dense_statevector", &qdmi::Job::getDenseStateVector,
           "Returns the dense statevector from the job (typically only "
           "available from simulator devices).");
@@ -164,7 +241,8 @@ when the custom slot is unsupported.)pb");
       "custom_property"_a, "value_type"_a,
       nb::sig("def get_custom_result(self, custom_property: CustomProperty, "
               "value_type: type[str] | type[bool] | type[int] | type[float] | "
-              "type[bytes]) -> str | bool | int | float | bytes | None"),
+              "type[bytes]) -> str | bool | int | "
+              "float | bytes | None"),
       R"pb(Return an implementation-defined custom job result.
 
 The caller must provide the type documented by the device implementation.
@@ -208,33 +286,149 @@ when the custom slot is unsupported.)pb");
       .value("CANCELED", QDMI_JOB_STATUS_CANCELED)
       .value("FAILED", QDMI_JOB_STATUS_FAILED);
 
-  // ProgramFormat enum
-  nb::enum_<QDMI_Program_Format>(qdmiModule, "ProgramFormat",
-                                 "Enumeration of program formats.")
-      .value("QASM2", QDMI_PROGRAM_FORMAT_QASM2)
-      .value("QASM3", QDMI_PROGRAM_FORMAT_QASM3)
-      .value("QIR_BASE_STRING", QDMI_PROGRAM_FORMAT_QIRBASESTRING)
-      .value("QIR_BASE_MODULE", QDMI_PROGRAM_FORMAT_QIRBASEMODULE)
-      .value("QIR_ADAPTIVE_STRING", QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING)
-      .value("QIR_ADAPTIVE_MODULE", QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)
-      .value("CALIBRATION", QDMI_PROGRAM_FORMAT_CALIBRATION)
-      .value("QPY", QDMI_PROGRAM_FORMAT_QPY)
-      .value("IQM_JSON", QDMI_PROGRAM_FORMAT_IQMJSON)
-      .value("BATCH_JOB", QDMI_PROGRAM_FORMAT_BATCHJOB)
-      .value("CUSTOM1", QDMI_PROGRAM_FORMAT_CUSTOM1)
-      .value("CUSTOM2", QDMI_PROGRAM_FORMAT_CUSTOM2)
-      .value("CUSTOM3", QDMI_PROGRAM_FORMAT_CUSTOM3)
-      .value("CUSTOM4", QDMI_PROGRAM_FORMAT_CUSTOM4)
-      .value("CUSTOM5", QDMI_PROGRAM_FORMAT_CUSTOM5);
+  nb::enum_<QDMI_Job_Result>(job, "Result", "One raw job result format.")
+      .value("SHOTS", QDMI_JOB_RESULT_SHOTS)
+      .value("HIST_KEYS", QDMI_JOB_RESULT_HIST_KEYS)
+      .value("HIST_VALUES", QDMI_JOB_RESULT_HIST_VALUES)
+      .value("STATEVECTOR_DENSE", QDMI_JOB_RESULT_STATEVECTOR_DENSE)
+      .value("PROBABILITIES_DENSE", QDMI_JOB_RESULT_PROBABILITIES_DENSE)
+      .value("STATEVECTOR_SPARSE_KEYS", QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS)
+      .value("STATEVECTOR_SPARSE_VALUES",
+             QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES)
+      .value("PROBABILITIES_SPARSE_KEYS",
+             QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS)
+      .value("PROBABILITIES_SPARSE_VALUES",
+             QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES)
+      .value("PROGRAM_OUTPUT", QDMI_JOB_RESULT_PROGRAMOUTPUT);
+
+  nb::enum_<QDMI_Program_Encoding>(qdmiModule, "ProgramEncoding",
+                                   "Program payload encoding.")
+      .value("TEXT", QDMI_PROGRAM_ENCODING_TEXT)
+      .value("BINARY", QDMI_PROGRAM_ENCODING_BINARY);
+
+  auto programFormat = nb::class_<QDMI_Program_Format>(
+      qdmiModule, "ProgramFormat",
+      "The exact format, version, profile, and encoding of a payload.");
+  programFormat
+      .def(
+          "__init__",
+          [](QDMI_Program_Format* self, const std::string_view id,
+             const std::tuple<uint32_t, uint32_t, uint32_t>& version,
+             const std::string_view profile,
+             const QDMI_Program_Encoding encoding) {
+            new (self) QDMI_Program_Format(makeProgramFormat(
+                id, std::get<0>(version), std::get<1>(version),
+                std::get<2>(version), profile, encoding));
+          },
+          "format_id"_a, "version"_a, "profile"_a = "",
+          "encoding"_a = QDMI_PROGRAM_ENCODING_TEXT)
+      .def_prop_ro("format_id",
+                   [](const QDMI_Program_Format& self) {
+                     return std::string(
+                         decodeFixedField(self.id, "program format ID"));
+                   })
+      .def_prop_ro("version",
+                   [](const QDMI_Program_Format& self) {
+                     return std::tuple{QDMI_VERSION_MAJOR(self.version),
+                                       QDMI_VERSION_MINOR(self.version),
+                                       QDMI_VERSION_PATCH(self.version)};
+                   })
+      .def_prop_ro("profile",
+                   [](const QDMI_Program_Format& self) {
+                     return std::string(
+                         decodeFixedField(self.profile, "program profile"));
+                   })
+      .def_prop_ro("encoding",
+                   [](const QDMI_Program_Format& self) {
+                     return static_cast<QDMI_Program_Encoding>(self.encoding);
+                   })
+      .def(
+          "__eq__",
+          [](const QDMI_Program_Format& self, const nb::handle other) {
+            return nb::isinstance<QDMI_Program_Format>(other) &&
+                   qdmi::equal(self, nb::cast<QDMI_Program_Format>(other));
+          },
+          nb::sig("def __eq__(self, arg: object, /) -> bool"))
+      .def("__hash__", [](const QDMI_Program_Format& self) {
+        size_t hash = std::hash<std::string_view>{}(
+            decodeFixedField(self.id, "program format ID"));
+        hash ^= static_cast<size_t>(self.version) << 1U;
+        hash ^= static_cast<size_t>(self.encoding) << 3U;
+        hash ^= std::hash<std::string_view>{}(
+                    decodeFixedField(self.profile, "program profile"))
+                << 5U;
+        return hash;
+      });
+  programFormat
+      .def_prop_ro_static(
+          "OPENQASM2", [](nb::handle) { return qdmi::OPENQASM2; },
+          "The canonical OpenQASM 2.0 text format.")
+      .def_prop_ro_static(
+          "OPENQASM3", [](nb::handle) { return qdmi::OPENQASM3; },
+          "The canonical OpenQASM 3.0 text format.")
+      .def_prop_ro_static(
+          "QIR21_BASE_TEXT", [](nb::handle) { return qdmi::QIR21_BASE_TEXT; },
+          "The canonical QIR 2.1 Base Profile text format.")
+      .def_prop_ro_static(
+          "QIR21_BASE_BINARY",
+          [](nb::handle) { return qdmi::QIR21_BASE_BINARY; },
+          "The canonical QIR 2.1 Base Profile binary format.")
+      .def_prop_ro_static(
+          "QIR21_ADAPTIVE_TEXT",
+          [](nb::handle) { return qdmi::QIR21_ADAPTIVE_TEXT; },
+          "The canonical QIR 2.1 Adaptive Profile text format.")
+      .def_prop_ro_static(
+          "QIR21_ADAPTIVE_BINARY",
+          [](nb::handle) { return qdmi::QIR21_ADAPTIVE_BINARY; },
+          "The canonical QIR 2.1 Adaptive Profile binary "
+          "format.");
+
+  nb::class_<QDMI_Program_Feature>(
+      qdmiModule, "ProgramFeature",
+      "One exact feature or constraint record for a program format.")
+      .def_prop_ro("id",
+                   [](const QDMI_Program_Feature& self) {
+                     return std::string(
+                         decodeFixedField(self.id, "program feature ID"));
+                   })
+      .def_ro("value", &QDMI_Program_Feature::value)
+      .def_prop_ro("constraint_id",
+                   [](const QDMI_Program_Feature& self) {
+                     return std::string(decodeFixedField(
+                         self.constraint_id, "program constraint ID"));
+                   })
+      .def_ro("constraint_value", &QDMI_Program_Feature::constraint_value)
+      .def(
+          "__eq__",
+          [](const QDMI_Program_Feature& self, const nb::handle other) {
+            if (!nb::isinstance<QDMI_Program_Feature>(other)) {
+              return false;
+            }
+            const auto value = nb::cast<QDMI_Program_Feature>(other);
+            return std::ranges::equal(self.id, value.id) &&
+                   self.value == value.value &&
+                   std::ranges::equal(self.constraint_id,
+                                      value.constraint_id) &&
+                   self.constraint_value == value.constraint_value;
+          },
+          nb::sig("def __eq__(self, arg: object, /) -> bool"))
+      .def("__hash__", [](const QDMI_Program_Feature& self) {
+        size_t hash = std::hash<std::string_view>{}(
+            decodeFixedField(self.id, "program feature ID"));
+        hash ^= static_cast<size_t>(self.value) << 1U;
+        hash ^= std::hash<std::string_view>{}(decodeFixedField(
+                    self.constraint_id, "program constraint ID"))
+                << 3U;
+        hash ^= static_cast<size_t>(self.constraint_value) << 5U;
+        return hash;
+      });
 
   qdmiModule.def("is_binary_program_format", &qdmi::isBinaryProgramFormat,
                  "program_format"_a,
                  R"pb(Returns whether a program format carries a binary payload.
 
-``QIR_BASE_MODULE``, ``QIR_ADAPTIVE_MODULE``, and ``QPY`` hold bitcode or
-another serialized object. Such a payload may contain a null byte and is not
-text, so the device must receive it as exact bytes. Pass ``bytes`` to
-:meth:`Device.submit_job` for these formats and ``str`` for the others.
+Binary payloads may contain null bytes. Pass ``bytes`` to
+:meth:`Device.submit_job` for binary descriptors and ``str`` for text.
 
 Args:
     program_format: The program format to classify.
@@ -323,6 +517,11 @@ Returns:
              &qdmi::Device::getSupportedProgramFormats,
              "Returns the list of program formats supported by the device.");
 
+  device.def("try_program_features", &qdmi::Device::tryGetProgramFeatures,
+             "program_format"_a,
+             "Returns the complete optional capability list for an exact "
+             "payload, or None when the metadata is unknown.");
+
   device.def("child_devices", &qdmi::Device::getChildDevices,
              "Returns the direct child devices managed by this device.");
 
@@ -400,41 +599,6 @@ when the custom slot is unsupported.)pb");
       "custom3"_a = nb::none(), "custom4"_a = nb::none(),
       "custom5"_a = nb::none(), nb::rv_policy::reference_internal,
       "Submits an exact byte payload to the device.");
-
-  device.def(
-      "submit_calibration_job",
-      [](const qdmi::Device& self,
-         const std::optional<std::variant<std::string, nb::bytes>>& program,
-         const std::optional<qdmi::CustomJobParameter>& custom1,
-         const std::optional<qdmi::CustomJobParameter>& custom2,
-         const std::optional<qdmi::CustomJobParameter>& custom3,
-         const std::optional<qdmi::CustomJobParameter>& custom4,
-         const std::optional<qdmi::CustomJobParameter>& custom5) {
-        if (!program.has_value()) {
-          return self.submitCalibrationJob(std::nullopt, custom1, custom2,
-                                           custom3, custom4, custom5);
-        }
-        if (const auto* text = std::get_if<std::string>(&*program);
-            text != nullptr) {
-          return self.submitCalibrationJob(*text, custom1, custom2, custom3,
-                                           custom4, custom5);
-        }
-        const auto& payload = std::get<nb::bytes>(*program);
-        const auto bytes = std::span{
-            static_cast<const std::byte*>(payload.data()), payload.size()};
-        return self.submitCalibrationJob(bytes, custom1, custom2, custom3,
-                                         custom4, custom5);
-      },
-      "program"_a = nb::none(), nb::kw_only(), "custom1"_a = nb::none(),
-      "custom2"_a = nb::none(), "custom3"_a = nb::none(),
-      "custom4"_a = nb::none(), "custom5"_a = nb::none(),
-      nb::rv_policy::reference_internal,
-      R"pb(Triggers a calibration run on the device.
-
-QDMI does not require a program for a calibration run, so ``program`` is
-optional and may be a string or bytes. When it is given, the device defines
-what it means, which is usually a configuration for the run. A calibration run
-executes no circuit, so it takes no shot count.)pb");
 
   device.def(
       "retrieve_job_by_id",

@@ -15,10 +15,21 @@
 #pragma once
 
 #include <qdmi/client.h>
+#include <qdmi/constants.h>
 
+#include <cstdint>
 #include <string>
 
 namespace qdmi {
+namespace detail {
+/// Returns whether @p value is in QDMI's provider-defined enum range.
+constexpr auto isCustomValue(const auto value) noexcept -> bool {
+  const auto numericValue = static_cast<int64_t>(value);
+  return numericValue >= QDMI_CUSTOM_ENUM_VALUE_MIN &&
+         numericValue <= QDMI_CUSTOM_ENUM_VALUE_MAX;
+}
+} // namespace detail
+
 template <class Concrete> class Singleton {
 protected:
   /// @brief Protected constructor to enforce the singleton pattern.
@@ -131,9 +142,8 @@ public:
   }
 
 #define IS_INVALID_ARGUMENT(prop, prefix)                                      \
-  ((prop) >= prefix##_MAX && (prop) != prefix##_CUSTOM1 &&                     \
-   (prop) != prefix##_CUSTOM2 && (prop) != prefix##_CUSTOM3 &&                 \
-   (prop) != prefix##_CUSTOM4 && (prop) != prefix##_CUSTOM5)
+  (static_cast<int64_t>(prop) < 0 ||                                           \
+   ((prop) >= prefix##_MAX && !::qdmi::detail::isCustomValue(prop)))
 // NOLINTEND(bugprone-macro-parentheses)
 
 /// Returns the string representation of the given status code @p result.
@@ -208,6 +218,9 @@ constexpr auto toString(const QDMI_Session_Parameter param) -> const char* {
   case QDMI_SESSION_PARAMETER_CUSTOM5:
     return "CUSTOM5";
   }
+  if (detail::isCustomValue(param)) {
+    return "CUSTOM";
+  }
   unreachable();
 }
 
@@ -228,6 +241,9 @@ constexpr auto toString(const QDMI_Session_Property prop) -> const char* {
     return "CUSTOM4";
   case QDMI_SESSION_PROPERTY_CUSTOM5:
     return "CUSTOM5";
+  }
+  if (detail::isCustomValue(prop)) {
+    return "CUSTOM";
   }
   unreachable();
 }
@@ -263,6 +279,9 @@ constexpr auto toString(const QDMI_Device_Session_Parameter param) -> const
     return "CUSTOM4";
   case QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5:
     return "CUSTOM5";
+  }
+  if (detail::isCustomValue(param)) {
+    return "CUSTOM";
   }
   unreachable();
 }
@@ -309,6 +328,9 @@ constexpr auto toString(const QDMI_Site_Property prop) -> const char* {
   case QDMI_SITE_PROPERTY_CUSTOM5:
     return "CUSTOM5";
   }
+  if (detail::isCustomValue(prop)) {
+    return "CUSTOM";
+  }
   unreachable();
 }
 
@@ -350,6 +372,9 @@ constexpr auto toString(const QDMI_Operation_Property prop) -> const char* {
   case QDMI_OPERATION_PROPERTY_CUSTOM5:
     return "CUSTOM5";
   }
+  if (detail::isCustomValue(prop)) {
+    return "CUSTOM";
+  }
   unreachable();
 }
 
@@ -372,8 +397,6 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
     return "OPERATIONS";
   case QDMI_DEVICE_PROPERTY_COUPLINGMAP:
     return "COUPLING MAP";
-  case QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION:
-    return "NEEDS CALIBRATION";
   case QDMI_DEVICE_PROPERTY_LENGTHUNIT:
     return "LENGTH UNIT";
   case QDMI_DEVICE_PROPERTY_LENGTHSCALEFACTOR:
@@ -392,6 +415,8 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
     return "CHILD DEVICES";
   case QDMI_DEVICE_PROPERTY_QUEUELENGTH:
     return "QUEUE LENGTH";
+  case QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION:
+    return "NEEDS CALIBRATION";
   case QDMI_DEVICE_PROPERTY_MAX:
     return "MAX";
   case QDMI_DEVICE_PROPERTY_CUSTOM1:
@@ -404,6 +429,9 @@ constexpr auto toString(const QDMI_Device_Property prop) -> const char* {
     return "CUSTOM4";
   case QDMI_DEVICE_PROPERTY_CUSTOM5:
     return "CUSTOM5";
+  }
+  if (detail::isCustomValue(prop)) {
+    return "CUSTOM";
   }
   unreachable();
 }

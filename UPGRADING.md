@@ -6,6 +6,20 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QDMI program capabilities
+
+Program formats are exact descriptors rather than enum members. Use
+`ProgramFormat.OPENQASM3`, for example, or construct a vendor-namespaced
+descriptor with its version, profile and text/binary encoding. A format's
+optional execution features are queried separately. Unknown metadata is distinct
+from a successful empty feature list.
+
+Single-program submission still accepts `str` or exact `bytes`, and omitting the
+shot count still leaves it to the device. Native multi-program submission is a
+separate API workstream and is not introduced by this capability change. The
+calibration and batch pseudo-formats are no longer payload descriptors;
+`submit_calibration_job` is removed, while calibration status remains available.
+
 ### Removal of the classic circuit representation
 
 MQT Core 4 removes the complete classic circuit surface. This includes the C++
@@ -150,6 +164,52 @@ to recompile anything.
 The Python bindings depend on `nanobind-backend`, which supplies the
 interpreter-specific nanobind runtime. This dependency does not change the C++
 API or the Python import paths.
+
+### Program serialization for QDMI Qiskit backends
+
+`QDMIBackend` now serializes only the exact OpenQASM 3 and OpenQASM 2 formats.
+The backend tries supported formats in the order reported by the device. MQT
+Core no longer provides a global serializer registry or loads serializers from
+the `mqt.core.qiskit.program_serializers` entry point group.
+
+A package that owns a vendor format must also own the backend that serializes
+and decodes it. Override the two protected hooks:
+
+```python
+class MyBackend(QDMIBackend):
+    def _program_serializer(self, program_format):
+        if program_format == IQM_JSON:
+            return qiskit_to_iqm_json
+        return super()._program_serializer(program_format)
+
+    def _decode_counts(self, job):
+        if self.payload_descriptor == IQM_JSON:
+            return decode_iqm_counts(job)
+        return super()._decode_counts(job)
+```
+
+A serializer takes the circuit and the backend. It returns `str` for a text
+format and `bytes` for a binary format. The backend checks the returned type
+against the exact format.
+
+A backend subclass that must represent a device-native operation outside
+Qiskit's standard gate library sets `_EXTRA_GATES`:
+
+```python
+class MyBackend(QDMIBackend):
+    _EXTRA_GATES = {"move": MoveGate()}
+```
+
+MQT Core no longer provides `qiskit_to_iqm_json` or `MoveGate`.
+[QDMI-on-IQM](https://github.com/iqm-finland/QDMI-on-IQM) owns both. Import them
+from `iqm.qdmi` instead:
+
+```python
+from iqm.qdmi.serializers import qiskit_to_iqm_json
+from iqm.qdmi.gates import MoveGate
+```
+
+Use the `IQMBackend` from `iqm-qdmi` to submit IQM JSON and decode IQM results.
 
 ### Removal of DD approximation and density-matrix support
 
