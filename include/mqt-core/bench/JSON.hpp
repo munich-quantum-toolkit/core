@@ -16,6 +16,7 @@
 #include "bench/Grover.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
+#include "bench/QFTAdderQuantum.hpp"
 #include "bench/QPE.hpp"
 #include "bench/Teleportation.hpp"
 #include "bench/mqt_core_bench_export.h"
