@@ -176,10 +176,12 @@ linkcheck_anchors_ignore_for_url = [
 
 
 cpp_api_tagfile = ("_build/doxygen/mqt-core.tag", "cpp/", "_build/doxygen/xml")
+_qdmi_api_base = "https://munich-quantum-software-stack.github.io/QDMI/pr-preview/pr-513/"
 qdmi_api_tagfile = (
     "_build/qdmi.tag",
-    "https://munich-quantum-software-stack.github.io/QDMI/v1.3.3/",
+    _qdmi_api_base,
 )
+qdmi_api_tagfile_url = f"{_qdmi_api_base}qdmi.tag"
 
 # -- Options for HTML output -------------------------------------------------
 

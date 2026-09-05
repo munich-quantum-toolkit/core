@@ -6,6 +6,16 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QDMI 1.4 metadata removal
+
+MQT Core removes `Device::getNeedsCalibration` and `Device.needs_calibration`
+after QDMI removes its calibration advisory. Bundled devices no longer report
+pulse-support metadata. The `CALIBRATION` status and calibration-job submission
+remain available; this change does not alter program formats or job APIs.
+
+Rebuild clients, drivers, and devices against matching QDMI 1.4 headers because
+the remaining regular device-property values are renumbered.
+
 ### Removal of the classic circuit representation
 
 MQT Core 4 removes the complete classic circuit surface. This includes the C++

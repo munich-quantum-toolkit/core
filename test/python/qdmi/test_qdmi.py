@@ -165,13 +165,6 @@ def test_device_coupling_map(device: Device) -> None:
         assert all(isinstance(site, Device.Site) for pair in cm for site in pair)
 
 
-def test_device_needs_calibration(device: Device) -> None:
-    """Test that the device needs calibration is an integer."""
-    needs_cal = device.needs_calibration()
-    if needs_cal is not None:
-        assert isinstance(needs_cal, int)
-
-
 def test_device_queue_length(device: Device) -> None:
     """Test that the optional device queue length is a non-negative integer."""
     queue_length = device.queue_length()

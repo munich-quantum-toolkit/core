@@ -298,9 +298,6 @@ Returns:
   device.def("coupling_map", &qdmi::Device::getCouplingMap,
              "Returns the coupling map of the device as a list of site pairs.");
 
-  device.def("needs_calibration", &qdmi::Device::getNeedsCalibration,
-             "Returns whether the device needs calibration.");
-
   device.def("queue_length", &qdmi::Device::getQueueLength,
              "Returns the current queue length, or None if unavailable.");
 
