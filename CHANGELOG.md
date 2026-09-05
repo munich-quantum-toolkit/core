@@ -10,6 +10,10 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-09-05
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3100)._
+
 ### Added
 
 - ✨ Expose ordered shots from DDSIM QDMI OpenQASM jobs, with matching
@@ -24,15 +28,15 @@ releases may include breaking changes.
 - 💥 Replace the QDMI-specific primitives with native Qiskit primitives and
   typed backend factories. Sampler and `memory=True` require genuine QDMI
   `SHOTS` ([#2358]) ([**@burgholzer**])
+- ⬆️ Update `nanobind` to version 3.0.1 ([#2209], [#2283]) ([**@denialhaag**],
+  [**@burgholzer**])
+- 💥 Move circuit IR OpenQASM serialization from operation subclasses to
+  `qasm3::Serializer` in `qasm3/Serializer.hpp` ([#2249]) ([**@simon1hofmann**])
 - 💥 Drop support for x86 macOS and stop publishing the respective wheels
   ([#2259]) ([**@denialhaag**])
 - ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
   ([#2259]) ([**@denialhaag**])
-- 💥 Move circuit IR OpenQASM serialization from operation subclasses to
-  `qasm3::Serializer` in `qasm3/Serializer.hpp` ([#2249]) ([**@simon1hofmann**])
 - 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
-  [**@burgholzer**])
-- ⬆️ Update `nanobind` to version 3.0.1 ([#2209], [#2283]) ([**@denialhaag**],
   [**@burgholzer**])
 - 📦 Publish one split-mode `cp311-abi3` wheel for GIL-enabled CPython 3.11 and
   newer ([#2209]) ([**@denialhaag**], [**@burgholzer**])
@@ -48,24 +52,24 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove test-only DD state generators, recursive functionality construction,
+  and DD-specific named-gate helpers from MQT Core ([#2257], [#2335])
+  ([**@simon1hofmann**])
+- 💥 Remove MQT Core's optional MLIR stack, including its dialects, conversions,
+  passes, tools, build integration, tests, documentation, and dependency on LLVM
+  ([#2314]) ([**@denialhaag**], [**@burgholzer**])
+- 💥 Remove the entire MQT Core QIR stack, including its runtime, JIT,
+  standalone runner, DDSIM integration, build integration, tests, and
+  documentation ([#2314]) ([**@denialhaag**], [**@burgholzer**])
+- 💥 Remove the `spdlog` dependency from MQT Core source builds, installed CMake
+  packages, and Python wheels. QDMI diagnostics continue to be written to
+  standard error ([#2270]) ([**@denialhaag**])
 - 💥 Remove `CircuitOptimizer`. Move circuit flattening and final-measurement
   removal to `QuantumComputation`, equivalence-checking transformations to
   [MQT QCEC], and mapping transformations to [MQT QMAP]. Move single-qubit gate
   fusion to both downstream packages. Remove the public circuit dependency graph
   and transformations without production consumers ([#2262])
   ([**@simon1hofmann**])
-- 💥 Remove test-only DD state generators, recursive functionality construction,
-  and DD-specific named-gate helpers from MQT Core ([#2257], [#2335])
-  ([**@simon1hofmann**])
-- 💥 Remove MQT Core's optional MLIR stack, including its dialects, conversions,
-  passes, tools, build integration, tests, documentation, and dependency on
-  LLVM. ([#2314]) ([**@denialhaag**])
-- 💥 Remove the entire MQT Core QIR stack, including its runtime, JIT,
-  standalone runner, DDSIM integration, build integration, tests, and
-  documentation. ([#2314]) ([**@denialhaag**])
-- 💥 Remove the `spdlog` dependency from MQT Core source builds, installed CMake
-  packages, and Python wheels. QDMI diagnostics continue to be written to
-  standard error ([#2270]) ([**@denialhaag**])
 - 💥 Remove `MQT::CoreAlgorithms`, its fixed-circuit factories, and the legacy
   DD package evaluation. MQT Core provides no direct replacement ([#2214])
   ([**@burgholzer**])
@@ -793,7 +797,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...HEAD
+[3.10.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.0

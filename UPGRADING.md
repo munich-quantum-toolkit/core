@@ -6,6 +6,16 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+## [3.10.0]
+
+### Shared-library ABI version
+
+The shared-library ABI version (`SOVERSION`) changes from `3.9` to `3.10`.
+Rebuild downstream C++ libraries against MQT Core 3.10.0. In `cibuildwheel`
+configurations that exclude bundled MQT Core libraries from wheel repair,
+replace each `libmqt-core-*.so.3.9` entry with the corresponding
+`libmqt-core-*.so.3.10` entry.
+
 ### Removal of the `spdlog` dependency
 
 MQT Core no longer discovers, downloads, builds, installs, or exports `spdlog`.
@@ -281,22 +291,22 @@ MQT Core no longer provides the `datastructures` (`ds`) sublibrary. [MQT QMAP]
 `MQT::QMapDS` CMake target. Downstream users must depend on MQT QMAP or provide
 the required data structures directly.
 
-### Python 3.11 and split-mode wheels
+### Python 3.11 and Stable ABI wheels
 
 MQT Core now requires Python 3.11 or newer. Upgrade the Python environment
 before installing this release.
 
-MQT Core now uses nanobind 3 split mode. One `cp311-abi3` wheel supports
-GIL-enabled CPython 3.11 and newer. Free-threaded support starts with CPython
-3.15 and uses a separate `cp315-abi3t` wheel. MQT Core no longer publishes
-free-threaded CPython 3.13 or 3.14 wheels.
+MQT Core now publishes one `cp311-abi3` wheel for GIL-enabled CPython 3.11 and
+newer. Free-threaded support starts with CPython 3.15 in a separate
+`cp315-abi3t` wheel. MQT Core no longer publishes free-threaded CPython 3.13 or
+3.14 wheels.
 
-nanobind 3 changes the nanobind ABI. Rebuild downstream native Python extensions
-that use MQT Core's nanobind-bound C++ types. Pure Python consumers do not need
-to recompile anything.
+This release updates `nanobind` to 3.0.1, which changes the `nanobind` ABI.
+Rebuild downstream native Python extensions that use MQT Core's `nanobind`-bound
+C++ types. Pure Python consumers do not need to recompile anything.
 
 The Python bindings depend on `nanobind-backend`, which supplies the
-interpreter-specific nanobind runtime. This dependency does not change the C++
+interpreter-specific `nanobind` runtime. This dependency does not change the C++
 API or the Python import paths.
 
 ## [3.9.2]
@@ -961,7 +971,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...HEAD
+[3.10.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...v3.9.0
