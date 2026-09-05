@@ -14,6 +14,7 @@
 #include "bench/Evaluation.hpp"
 
 #include <cmath>
+#include <cstddef>
 #include <stdexcept>
 #include <string_view>
 
