@@ -14,12 +14,14 @@
 #include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h" // IWYU pragma: associated
 
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/OpImplementation.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/InliningUtils.h>
 
 // The following headers are needed for some template instantiations.
 // IWYU pragma: begin_keep
@@ -29,6 +31,32 @@
 
 using namespace mlir;
 using namespace mlir::qc;
+
+namespace {
+
+struct QCInlinerInterface final : DialectInlinerInterface {
+  using DialectInlinerInterface::DialectInlinerInterface;
+
+  bool isLegalToInline(Operation* call, Operation* callable,
+                       bool /*wouldBeCloned*/) const final {
+    auto callee = dyn_cast<func::FuncOp>(callable);
+    return isa<CallOp>(call) && callee && !callee.getNoInline();
+  }
+
+  bool isLegalToInline(Region* destination, Region* source,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return destination->hasOneBlock() && source->hasOneBlock();
+  }
+
+  bool isLegalToInline(Operation* /*operation*/, Region* /*destination*/,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return true;
+  }
+};
+
+} // namespace
 
 static ParseResult
 parseTargetAliasing(OpAsmParser& parser, Region& region,
@@ -48,6 +76,8 @@ static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
 #include "mlir/Dialect/QC/IR/QCOpsDialect.cpp.inc"
 
 void QCDialect::initialize() {
+  addInterfaces<QCInlinerInterface>();
+
   // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   addTypes<
 #define GET_TYPEDEF_LIST
