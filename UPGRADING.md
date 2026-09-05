@@ -6,6 +6,8 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+## [3.10.0]
+
 ### Removal of the `spdlog` dependency
 
 MQT Core no longer discovers, downloads, builds, installs, or exports `spdlog`.
@@ -961,7 +963,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...HEAD
+[3.10.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...v3.9.0

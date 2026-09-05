@@ -10,6 +10,10 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+## [3.10.0] - 2026-09-05
+
+_If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3100)._
+
 ### Added
 
 - ✨ Expose ordered shots from DDSIM QDMI OpenQASM jobs, with matching
@@ -790,7 +794,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...HEAD
+[3.10.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.0
