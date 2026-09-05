@@ -45,8 +45,9 @@ unsignedIntegerConstant(qc::QCProgramBuilder& builder, StringRef bits) {
 [[nodiscard]] static Value
 unsignedIntegerConstant(qc::QCProgramBuilder& builder, IntegerType type,
                         uint64_t value) {
-  return arith::ConstantOp::create(builder,
-                                   builder.getIntegerAttr(type, value));
+  return arith::ConstantOp::create(
+      builder,
+      builder.getIntegerAttr(type, llvm::APInt(type.getWidth(), value)));
 }
 
 static void phaseAdd(qc::QCProgramBuilder& builder, Value accumulator,
@@ -169,8 +170,10 @@ SmallVector<Value> controlledMultiplicationModuloN(
     builder.setInsertionPointToStart(multiplierLoop.getBody());
     auto index = multiplierLoop.getInductionVar();
     auto currentAddend = multiplierLoop.getRegionIterArg(0);
-    SmallVector<Value, 2> controls{control,
-                                   builder.loadQubit(multiplicand, index)};
+    SmallVector<Value, 2> controls{
+        control,
+        builder.loadQubit(multiplicand, index),
+    };
     modularAdd(builder, accumulator, width, currentAddend, modulus, controls,
                work);
 

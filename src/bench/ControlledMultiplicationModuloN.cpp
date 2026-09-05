@@ -22,14 +22,15 @@
 #include <utility>
 
 namespace mqt::bench {
+namespace {
 
-[[nodiscard]] static bool isBitstring(const std::string_view value) {
+[[nodiscard]] bool isBitstring(const std::string_view value) {
   return std::ranges::all_of(
       value, [](const char bit) { return bit == '0' || bit == '1'; });
 }
 
-[[nodiscard]] static std::string subtract(const std::string_view minuend,
-                                          const std::string_view subtrahend) {
+[[nodiscard]] std::string subtract(const std::string_view minuend,
+                                   const std::string_view subtrahend) {
   auto difference = std::string(minuend);
   auto borrow = 0;
   for (size_t index = difference.size(); index > 0; --index) {
@@ -47,17 +48,17 @@ namespace mqt::bench {
   return difference;
 }
 
-[[nodiscard]] static std::string addModulo(const std::string_view lhs,
-                                           const std::string_view rhs,
-                                           const std::string_view modulus) {
+[[nodiscard]] std::string addModulo(const std::string_view lhs,
+                                    const std::string_view rhs,
+                                    const std::string_view modulus) {
   const auto width = lhs.size();
   auto sum = std::string(width + 1U, '0');
   auto carry = 0;
   for (size_t index = width; index > 0; --index) {
     const auto position = index - 1U;
     const auto bit = (lhs[position] - '0') + (rhs[position] - '0') + carry;
-    sum[index] = static_cast<char>('0' + (bit & 1));
-    carry = bit >> 1;
+    sum[index] = static_cast<char>('0' + (bit % 2));
+    carry = bit / 2;
   }
   sum[0] = static_cast<char>('0' + carry);
 
@@ -68,10 +69,9 @@ namespace mqt::bench {
   return sum.substr(1);
 }
 
-[[nodiscard]] static std::string
-multiplyModulo(const std::string_view multiplier,
-               const std::string_view multiplicand,
-               const std::string_view modulus) {
+[[nodiscard]] std::string multiplyModulo(const std::string_view multiplier,
+                                         const std::string_view multiplicand,
+                                         const std::string_view modulus) {
   auto result = std::string(multiplier.size(), '0');
   for (const auto bit : multiplicand) {
     result = addModulo(result, result, modulus);
@@ -82,10 +82,13 @@ multiplyModulo(const std::string_view multiplier,
   return result;
 }
 
+} // namespace
+
 ControlledMultiplicationModuloN::ControlledMultiplicationModuloN(
     ControlledMultiplicationModuloNOptions options)
     : options_(std::move(options)),
-      output_{.name = "result", .width = 2U * options_.multiplier.size() + 2U} {
+      output_{.name = "result",
+              .width = (2U * options_.multiplier.size()) + 2U} {
   const auto width = options_.multiplier.size();
   if (width < 2U || width > ControlledMultiplicationModuloNOptions::MAX_BITS) {
     throw std::invalid_argument(

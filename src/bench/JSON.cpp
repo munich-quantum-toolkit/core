@@ -857,8 +857,10 @@ controlledMultiplicationModuloNInstanceSpecificationSchema() {
               {
                   "modulus",
                   {
-                      {"maxLength",
-                       ControlledMultiplicationModuloNOptions::MAX_BITS},
+                      {
+                          "maxLength",
+                          ControlledMultiplicationModuloNOptions::MAX_BITS,
+                      },
                       {"minLength", 2},
                       {"pattern", "^1[01]+$"},
                       {"type", "string"},
@@ -867,8 +869,10 @@ controlledMultiplicationModuloNInstanceSpecificationSchema() {
               {
                   "multiplier",
                   {
-                      {"maxLength",
-                       ControlledMultiplicationModuloNOptions::MAX_BITS},
+                      {
+                          "maxLength",
+                          ControlledMultiplicationModuloNOptions::MAX_BITS,
+                      },
                       {"minLength", 2},
                       {"pattern", "^[01]+$"},
                       {"type", "string"},
