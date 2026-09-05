@@ -1,7 +1,6 @@
 # Add a repeat-until-success benchmark
 
-Status: implementation complete on the controlled modular multiplication branch;
-the draft pull request and changelog reference remain.
+Status: complete.
 
 ## Goal and scope
 
@@ -56,6 +55,6 @@ tracker's unversioned arXiv link.
 - [x] Generate and structurally test the exact Figure 8 loop and readout.
 - [x] Document the source, loop semantics, and output distribution.
 - [x] Validate focused native, MLIR, CLI, and Python behavior.
-- [ ] Create a draft pull request on the controlled modular multiplication
+- [x] Create a draft pull request on the controlled modular multiplication
       branch and add its number to the rolling structured-benchmark changelog
       entry.
