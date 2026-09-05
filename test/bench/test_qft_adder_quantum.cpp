@@ -40,8 +40,16 @@ TEST(QFTAdderQuantum, ValidatesTheConfiguredInstance) {
 
 TEST(QFTAdderQuantum, GivesUniformWeightToCorrelatedSums) {
   const QFTAdderQuantum benchmark{{.qubits = 3}};
-  for (const auto* outcome : {"000001", "001010", "010011", "011100", "100101",
-                              "101110", "110111", "111000"}) {
+  for (const auto* outcome : {
+           "000001",
+           "001010",
+           "010011",
+           "011100",
+           "100101",
+           "101110",
+           "110111",
+           "111000",
+       }) {
     EXPECT_DOUBLE_EQ(benchmark.probability(outcome), 1. / 8.);
   }
 

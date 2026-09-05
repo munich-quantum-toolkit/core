@@ -37,13 +37,20 @@ using namespace mlir;
 
 namespace {
 
-void expectConstantIndex(Value value, int64_t expected) {
+struct ControlledPhase {
+  qc::CtrlOp control;
+  qc::POp phase;
+};
+
+} // namespace
+
+static void expectConstantIndex(Value value, int64_t expected) {
   auto constant = value.getDefiningOp<arith::ConstantIndexOp>();
   ASSERT_TRUE(constant);
   EXPECT_EQ(constant.value(), expected);
 }
 
-void expectConstantFloat(Value value, double expected) {
+static void expectConstantFloat(Value value, double expected) {
   auto constant = value.getDefiningOp<arith::ConstantOp>();
   ASSERT_TRUE(constant);
   auto attribute = dyn_cast<FloatAttr>(constant.getValue());
@@ -51,13 +58,13 @@ void expectConstantFloat(Value value, double expected) {
   EXPECT_DOUBLE_EQ(attribute.getValueAsDouble(), expected);
 }
 
-void expectStaticLoop(scf::ForOp loop, int64_t lower, int64_t upper) {
+static void expectStaticLoop(scf::ForOp loop, int64_t lower, int64_t upper) {
   expectConstantIndex(loop.getLowerBound(), lower);
   expectConstantIndex(loop.getUpperBound(), upper);
   expectConstantIndex(loop.getStep(), 1);
 }
 
-[[nodiscard]] SmallVector<scf::ForOp> topLevelLoops(ModuleOp moduleOp) {
+[[nodiscard]] static SmallVector<scf::ForOp> topLevelLoops(ModuleOp moduleOp) {
   SmallVector<scf::ForOp> loops;
   moduleOp.walk([&](scf::ForOp loop) {
     if (!loop->getParentOfType<scf::ForOp>()) {
@@ -67,7 +74,7 @@ void expectStaticLoop(scf::ForOp loop, int64_t lower, int64_t upper) {
   return loops;
 }
 
-[[nodiscard]] SmallVector<scf::ForOp> nestedLoops(scf::ForOp outer) {
+[[nodiscard]] static SmallVector<scf::ForOp> nestedLoops(scf::ForOp outer) {
   SmallVector<scf::ForOp> loops;
   outer.walk([&](scf::ForOp loop) {
     if (loop != outer) {
@@ -77,7 +84,8 @@ void expectStaticLoop(scf::ForOp loop, int64_t lower, int64_t upper) {
   return loops;
 }
 
-void expectAngleRecurrence(scf::ForOp loop, Value initialAngle, double factor) {
+static void expectAngleRecurrence(scf::ForOp loop, Value initialAngle,
+                                  double factor) {
   ASSERT_EQ(loop.getInitArgs().size(), 1U);
   EXPECT_EQ(loop.getInitArgs().front(), initialAngle);
   auto angle = loop.getRegionIterArg(0);
@@ -91,12 +99,7 @@ void expectAngleRecurrence(scf::ForOp loop, Value initialAngle, double factor) {
   expectConstantFloat(scale.getRhs(), factor);
 }
 
-struct ControlledPhase {
-  qc::CtrlOp control;
-  qc::POp phase;
-};
-
-[[nodiscard]] ControlledPhase controlledPhase(scf::ForOp loop) {
+[[nodiscard]] static ControlledPhase controlledPhase(scf::ForOp loop) {
   ControlledPhase result;
   size_t controls = 0;
   size_t phases = 0;
@@ -116,8 +119,6 @@ struct ControlledPhase {
   }
   return result;
 }
-
-} // namespace
 
 TEST(GenerateProgramTest, EmitsExactQuantumQFTAdderSchedule) {
   constexpr int64_t qubits = 3;
