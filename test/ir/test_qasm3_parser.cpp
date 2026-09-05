@@ -76,6 +76,32 @@ TEST_F(Qasm3ParserTest, ImportQasm3MeasureSingleQubit) {
   EXPECT_EQ(qc.front()->getType(), qc::Measure);
 }
 
+TEST_F(Qasm3ParserTest, ImportQasm3ClassicalBitInitialization) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "qubit[2] q;\n"
+                               "bit[2] c;\n"
+                               "c[0] = false;\n"
+                               "c[1] = false;\n"
+                               "c[0] = measure q[0];";
+  const auto qc = qasm3::Importer::imports(testfile);
+
+  EXPECT_EQ(qc.getNcbits(), 2);
+  ASSERT_EQ(qc.getNindividualOps(), 1);
+  EXPECT_EQ(qc.front()->getType(), qc::Measure);
+}
+
+TEST_F(Qasm3ParserTest, ImportQasm3RejectsClassicalBitReset) {
+  const std::string testfile = "OPENQASM 3.0;\n"
+                               "qubit q;\n"
+                               "bit c;\n"
+                               "c = measure q;\n"
+                               "c = false;";
+
+  EXPECT_THROW(
+      { const auto qc = qasm3::Importer::imports(testfile); },
+      qasm3::CompilerError);
+}
+
 TEST_F(Qasm3ParserTest, ImportQasm3RejectsIndexingSingleQubit) {
   const std::string testfile = "OPENQASM 3.0;\n"
                                "include \"stdgates.inc\";\n"
@@ -1783,7 +1809,7 @@ TEST_F(Qasm3ParserTest, ImportQasmAssignmentIndexType) {
           const auto qc = qasm3::Importer::imports(testfile);
         } catch (const qasm3::CompilerError& e) {
           EXPECT_EQ(e.message, "Type Check Error: Type mismatch in assignment. "
-                               "Expected 'bit[16]', found 'uint[32]'.");
+                               "Expected 'bit[1]', found 'uint[32]'.");
           throw;
         }
       },
