@@ -232,7 +232,9 @@ static CompilerTarget getSquareGridTarget(size_t rows, size_t cols) {
     }
   }
 
-  return llvm::cantFail(CompilerTarget::create(numSites, std::move(couplings)));
+  return llvm::cantFail(CompilerTarget::create(
+      numSites, CompilerTarget::Connectivity::fromCouplings(couplings),
+      CompilerTarget::NativeOperations::fromOperations({})));
 }
 
 /// Return a structured program implementing Grover's algorithm using
@@ -609,7 +611,6 @@ static OwningOpRef<ModuleOp> vqe(MLIRContext* context, const int64_t nqubits,
   builder.qtensorDealloc(tensor);
 
   return builder.finalize(whileArgs[0]);
-  ;
 }
 
 /// Run the mapping pass and collect timing statistics.
@@ -621,11 +622,15 @@ static AggregateBenchmarkResult runBenchmark(MLIRContext* context,
   AggregateBenchmarkResult aggStats;
   aggStats.name = entry.name;
 
+  std::random_device rd;
+  std::mt19937 gen(rd());
+  std::uniform_int_distribution<uint64_t> seedDist;
+
   for (size_t r = 0; r < numRepeats; ++r) {
     BenchmarkResult stats;
     BenchmarkPassInstrumentation instrumentation(stats);
     MappingPassOptions options{
-        .nlookahead = 20, .lambda = 0.5, .niterations = 1, .ntrials = 18};
+        .nlookahead = 20, .lambda = 0.5, .niterations = 1, .ntrials = 18, .seed=seedDist(gen)};
 
     PassManager pm(context);
     pm.addInstrumentation(
@@ -750,7 +755,7 @@ int main(int argc, char** argv) {
   SmallVector<AggregateBenchmarkResult> allAggStats;
   for (const auto& entry : entries) {
     llvm::dbgs() << "[benchmark] " << entry.name << " qubits!\n";
-    allAggStats.emplace_back(runBenchmark(&context, entry, target, 5));
+    allAggStats.emplace_back(runBenchmark(&context, entry, target));
   }
 
   printCSV(allAggStats);
