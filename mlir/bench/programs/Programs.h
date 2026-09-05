@@ -23,6 +23,7 @@ class GHZ;
 class Grover;
 class Multiplexer;
 class QFT;
+class QFTAdderClassical;
 class QFTAdderQuantum;
 class QPE;
 class Teleportation;
@@ -48,6 +49,10 @@ SmallVector<Value> multiplexer(qc::QCProgramBuilder& builder,
 
 /// Emit one configured QFT benchmark.
 SmallVector<Value> qft(qc::QCProgramBuilder& builder, const QFT& benchmark);
+
+/// Emit one configured classical-input QFT adder benchmark.
+SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& builder,
+                                     const QFTAdderClassical& benchmark);
 
 /// Emit one configured quantum-input QFT adder benchmark.
 SmallVector<Value> qftAdderQuantum(qc::QCProgramBuilder& builder,
