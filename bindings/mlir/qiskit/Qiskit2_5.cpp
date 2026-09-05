@@ -2474,7 +2474,8 @@ private:
       data[pending.instructionIndex] =
           pythonAttribute(placeholder, "replace",
                           "Qiskit Store placeholder cannot be replaced")(
-              nb::arg("operation") = operation);
+              nb::arg("operation") = operation, nb::arg("qubits") = nb::tuple(),
+              nb::arg("clbits") = nb::tuple());
     }
   }
 
