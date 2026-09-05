@@ -1,7 +1,6 @@
 # Add a classical-input QFT adder benchmark
 
-Status: implementation complete. The stacked draft pull request and changelog
-reference remain to be completed.
+Status: complete.
 
 ## Goal and scope
 
@@ -44,5 +43,5 @@ combines each wire's classically known rotations into one single-qubit phase.
 - [x] Generate and structurally test the complete Figure 3 circuit.
 - [x] Document the source, harness, bit order, phase convention, and output.
 - [x] Validate the focused native, MLIR, and Python behavior.
-- [ ] Create the draft pull request on the quantum-input QFT-adder branch and
+- [x] Create the draft pull request on the quantum-input QFT-adder branch and
       add its number to the rolling structured-benchmark changelog entry.
