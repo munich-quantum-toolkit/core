@@ -40,14 +40,16 @@ TEST(Teleportation, HasTheExactUniformReference) {
 
 TEST(Teleportation, EvaluatesTheReferenceWithoutASuccessOutcome) {
   const Teleportation benchmark;
-  const auto exact = benchmark.evaluate({{"000", 1},
-                                         {"001", 1},
-                                         {"010", 1},
-                                         {"011", 1},
-                                         {"100", 1},
-                                         {"101", 1},
-                                         {"110", 1},
-                                         {"111", 1}});
+  const auto exact = benchmark.evaluate({
+      {"000", 1},
+      {"001", 1},
+      {"010", 1},
+      {"011", 1},
+      {"100", 1},
+      {"101", 1},
+      {"110", 1},
+      {"111", 1},
+  });
   EXPECT_DOUBLE_EQ(exact.totalVariationDistance, 0.);
   EXPECT_DOUBLE_EQ(exact.squaredHellingerFidelity, 1.);
   EXPECT_FALSE(exact.successProbability);
