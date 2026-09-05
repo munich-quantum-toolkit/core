@@ -53,6 +53,18 @@ print("Width:", benchmark.output.width)
 Each family validates its instance when it creates one. Fixed families need no
 options.
 
+## Classical-input QFT adder
+
+The `qft-adder-classical` family implements the classical-input QFT adder from
+[Beauregard's circuit for Shor's algorithm](https://arxiv.org/abs/quant-ph/0205095).
+The `addend` parameter is a big-endian binary string. Leading zeros define the
+input width. The benchmark prepares an accumulator in state |1>, applies the
+exact no-swap QFT, one combined phase gate for each Fourier qubit, and the
+inverse QFT.
+
+For an `n`-bit addend, the result has `n + 1` bits. The extra qubit retains the
+carry, so the deterministic result is the zero-extended addend plus one.
+
 ## Quantum-input QFT adder
 
 The `qft-adder-quantum` family implements Draper's

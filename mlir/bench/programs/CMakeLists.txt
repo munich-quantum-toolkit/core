@@ -13,6 +13,7 @@ add_library(
   Grover.cpp
   Multiplexer.cpp
   QFT.cpp
+  QFTAdderClassical.cpp
   QFTAdderQuantum.cpp
   QFTAdderUtils.cpp
   QPE.cpp

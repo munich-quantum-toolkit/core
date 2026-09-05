@@ -14,6 +14,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
       register_grover.cpp
       register_multiplexer.cpp
       register_qft.cpp
+      register_qft_adder_classical.cpp
       register_qft_adder_quantum.cpp
       register_qpe.cpp
       register_teleportation.cpp)
