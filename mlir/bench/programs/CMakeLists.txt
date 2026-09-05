@@ -13,6 +13,8 @@ add_library(
   Grover.cpp
   Multiplexer.cpp
   QFT.cpp
+  QFTAdderQuantum.cpp
+  QFTAdderUtils.cpp
   QPE.cpp
   Teleportation.cpp)
 target_link_libraries(MQTBenchmarkPrograms PUBLIC MQT::CoreBench MLIRQCProgramBuilder

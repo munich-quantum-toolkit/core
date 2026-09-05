@@ -16,12 +16,19 @@ from fractions import Fraction
 import pytest
 
 from mqt.core import bench, mlir
-from mqt.core.bench import bv, ghz, grover, multiplexer, qft, qpe, teleportation
+from mqt.core.bench import bv, ghz, grover, multiplexer, qft, qft_adder_quantum, qpe, teleportation
 
 
 def assert_generates(
     benchmark: (
-        bv.BV | ghz.GHZ | grover.Grover | multiplexer.Multiplexer | qft.QFT | qpe.QPE | teleportation.Teleportation
+        bv.BV
+        | ghz.GHZ
+        | grover.Grover
+        | multiplexer.Multiplexer
+        | qft.QFT
+        | qft_adder_quantum.QFTAdderQuantum
+        | qpe.QPE
+        | teleportation.Teleportation
     ),
 ) -> None:
     """Exercise the shared Python-to-MLIR generation boundary."""
@@ -127,6 +134,37 @@ def test_qft_methods_share_the_periodic_reference() -> None:
             qft.QFT.from_instance_specification_json(benchmark.instance_specification_json).case_id == benchmark.case_id
         )
         assert_generates(benchmark)
+
+
+def test_quantum_qft_adder_reference_json_and_generation() -> None:
+    """Expose the correlated addend and sum distribution."""
+    benchmark = qft_adder_quantum.QFTAdderQuantum(qft_adder_quantum.Options(qubits=2))
+    assert benchmark.output.name == "result"
+    assert benchmark.output.width == 4
+    assert benchmark.probability("0001") == pytest.approx(0.25)
+    assert benchmark.probability("0110") == pytest.approx(0.25)
+    assert benchmark.probability("1011") == pytest.approx(0.25)
+    assert benchmark.probability("1100") == pytest.approx(0.25)
+    assert benchmark.probability("0000") == 0
+
+    evaluation = benchmark.evaluate({"0001": 1, "0110": 1, "1011": 1, "1100": 1})
+    assert evaluation.total_variation_distance == pytest.approx(0)
+    assert evaluation.squared_hellinger_fidelity == pytest.approx(1)
+    assert evaluation.success_probability is None
+    assert json.loads(benchmark.instance_specification_json)["parameters"] == {"qubits": 2}
+
+    instance_copy = qft_adder_quantum.QFTAdderQuantum.from_instance_specification_json(
+        benchmark.instance_specification_json
+    )
+    manifest_copy = qft_adder_quantum.QFTAdderQuantum.from_manifest_json(benchmark.manifest_json)
+    assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
+
+    sampled = qft_adder_quantum.QFTAdderQuantum(qft_adder_quantum.Options(qubits=3))
+    shots = 16_384
+    counts = sampled.generate().to_qco().sample(shots=shots, seed=17)
+    assert sum(counts.values()) == shots
+    assert sampled.evaluate(counts).total_variation_distance < 0.03
+    assert_generates(benchmark)
 
 
 def test_qpe_accepts_fraction_and_native_phase() -> None:
