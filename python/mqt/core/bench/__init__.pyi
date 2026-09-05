@@ -9,6 +9,7 @@
 """Typed benchmark instances and analytic references."""
 
 from mqt.core.bench import bv as bv
+from mqt.core.bench import controlled_multiplication_modulo_n as controlled_multiplication_modulo_n
 from mqt.core.bench import ghz as ghz
 from mqt.core.bench import grover as grover
 from mqt.core.bench import multiplexer as multiplexer

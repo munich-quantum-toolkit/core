@@ -10,6 +10,7 @@
 
 #include "TestUtils.h"
 #include "bench/BV.hpp"
+#include "bench/ControlledMultiplicationModuloN.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
 #include "bench/Multiplexer.hpp"
@@ -41,6 +42,8 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
   expectValidQCAndJeff(BV{{.hiddenBitstring = "101"}});
   expectValidQCAndJeff(
       BV{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}});
+  expectValidQCAndJeff(
+      ControlledMultiplicationModuloN{{.multiplier = "011", .modulus = "101"}});
   expectValidQCAndJeff(GHZ{{.qubits = 3}});
   expectValidQCAndJeff(Grover{{.markedBitstring = "101"}});
   expectValidQCAndJeff(Multiplexer{{.qubits = 3}});
@@ -66,6 +69,11 @@ TEST(GenerateProgramTest, OmitsAllocationAdjacentResets) {
             0U);
   EXPECT_EQ(test::countOps<qc::ResetOp>(
                 generate(BV{{.hiddenBitstring = "101"}})->module()),
+            0U);
+  EXPECT_EQ(test::countOps<qc::ResetOp>(
+                generate(ControlledMultiplicationModuloN{
+                             {.multiplier = "011", .modulus = "101"}})
+                    ->module()),
             0U);
   EXPECT_EQ(test::countOps<qc::ResetOp>(
                 generate(QFT{{.qubits = 3, .periodExponent = 1}})->module()),

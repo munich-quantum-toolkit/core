@@ -10,6 +10,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
   set(BENCH_SOURCES
       register_bench.cpp
       register_bv.cpp
+      register_controlled_multiplication_modulo_n.cpp
       register_ghz.cpp
       register_grover.cpp
       register_multiplexer.cpp

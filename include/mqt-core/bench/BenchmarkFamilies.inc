@@ -26,6 +26,9 @@
 #endif
 
 MQT_BENCHMARK_FAMILY(BV, bv, "bv", 1)
+MQT_BENCHMARK_FAMILY(ControlledMultiplicationModuloN,
+                     controlledMultiplicationModuloN,
+                     "controlled-multiplication-modulo-n", 1)
 MQT_BENCHMARK_FAMILY(GHZ, ghz, "ghz", 1)
 MQT_BENCHMARK_FAMILY(Grover, grover, "grover", 1)
 MQT_BENCHMARK_FAMILY(Multiplexer, multiplexer, "multiplexer", 1)

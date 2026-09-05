@@ -12,6 +12,7 @@
 
 #include "SHA256.hpp"
 #include "bench/BV.hpp"
+#include "bench/ControlledMultiplicationModuloN.hpp"
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
@@ -425,6 +426,25 @@ parseMultiplexerParameters(const Json& parameters,
   }
 }
 
+[[nodiscard]] ControlledMultiplicationModuloN
+parseControlledMultiplicationModuloNParameters(const Json& parameters,
+                                               const std::string_view source) {
+  rejectUnknownKeys(parameters, {"multiplier", "modulus"}, source,
+                    "$/parameters");
+  try {
+    return ControlledMultiplicationModuloN({
+        .multiplier = stringValue(
+            required(parameters, "multiplier", source, "$/parameters"), source,
+            "$/parameters/multiplier"),
+        .modulus =
+            stringValue(required(parameters, "modulus", source, "$/parameters"),
+                        source, "$/parameters/modulus"),
+    });
+  } catch (const std::invalid_argument& error) {
+    fail(source, "$/parameters", error.what());
+  }
+}
+
 [[nodiscard]] QFTAdderClassical
 parseQFTAdderClassicalParameters(const Json& parameters,
                                  const std::string_view source) {
@@ -529,6 +549,15 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
+[[nodiscard]] Json
+parametersJSON(const ControlledMultiplicationModuloN& benchmark) {
+  const auto& options = benchmark.options();
+  return {
+      {"modulus", options.modulus},
+      {"multiplier", options.multiplier},
+  };
+}
+
 [[nodiscard]] Json parametersJSON(const GHZ& benchmark) {
   const auto& options = benchmark.options();
   return {
@@ -593,6 +622,17 @@ parseTeleportationParameters(const Json& parameters,
       {"outcome_order", "big_endian"},
       {"output", benchmark.output().name},
       {"success_outcome", benchmark.options().hiddenBitstring},
+      {"version", 1},
+  };
+}
+
+[[nodiscard]] Json
+referenceJSON(const ControlledMultiplicationModuloN& benchmark) {
+  return {
+      {"kind", "analytic"},
+      {"model", "controlled_multiplication_modulo_n"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
       {"version", 1},
   };
 }
@@ -793,6 +833,44 @@ template <class Benchmark>
           },
       },
       {"required", {"hidden_bitstring"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json
+controlledMultiplicationModuloNInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<ControlledMultiplicationModuloN>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "modulus",
+                  {
+                      {
+                          "maxLength",
+                          ControlledMultiplicationModuloNOptions::MAX_BITS,
+                      },
+                      {"minLength", 2},
+                      {"pattern", "^1[01]+$"},
+                      {"type", "string"},
+                  },
+              },
+              {
+                  "multiplier",
+                  {
+                      {
+                          "maxLength",
+                          ControlledMultiplicationModuloNOptions::MAX_BITS,
+                      },
+                      {"minLength", 2},
+                      {"pattern", "^[01]+$"},
+                      {"type", "string"},
+                  },
+              },
+          },
+      },
+      {"required", {"multiplier", "modulus"}},
       {"type", "object"},
   });
 }
