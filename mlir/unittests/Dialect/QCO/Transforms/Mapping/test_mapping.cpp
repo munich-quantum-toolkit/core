@@ -9,6 +9,8 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -307,8 +309,9 @@ class MappingPassFixture : public testing::Test {
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<mqt::MQTDialect, QCODialect, qtensor::QTensorDialect,
-                    scf::SCFDialect, arith::ArithDialect, func::FuncDialect>();
+    registry.insert<cbit::CBitDialect, mqt::MQTDialect, QCODialect,
+                    qtensor::QTensorDialect, scf::SCFDialect,
+                    arith::ArithDialect, func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -431,6 +434,165 @@ TEST_F(MappingPassFixture,
   ASSERT_TRUE(measurement);
   ASSERT_TRUE(measurement.getQubitOut().hasOneUse());
   EXPECT_TRUE(isa<SWAPOp>(*measurement.getQubitOut().getUsers().begin()));
+}
+
+TEST_F(MappingPassFixture, RouteBeforeLaterClassicalControl) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, Connectivity::fromCouplings({{0, 1}, {0, 2}, {0, 3}}),
+      NativeOperations::unrestricted()));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+  auto q2 = builder.allocQubit();
+  auto ancilla = builder.allocQubit();
+
+  std::tie(q0, ancilla) = builder.cx(q0, ancilla);
+  std::tie(q1, ancilla) = builder.cx(q1, ancilla);
+  std::tie(q0, q2) = builder.cx(q0, q2);
+
+  Value condition;
+  std::tie(ancilla, condition) = builder.measure(ancilla);
+  q0 = builder.qcoIf(condition, q0,
+                     [&](Value qubit) { return builder.x(qubit); });
+
+  builder.sink(q0);
+  builder.sink(q1);
+  builder.sink(q2);
+  builder.sink(ancilla);
+
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(runPass(moduleOp.get(), target,
+                      MappingPassOptions{.ntrials = 4, .seed = 42})
+                  .succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));
+
+  size_t numSwaps = 0;
+  IfOp conditional;
+  size_t numControlledGates = 0;
+  moduleOp->walk([&](SWAPOp) { ++numSwaps; });
+  moduleOp->walk([&](IfOp candidate) { conditional = candidate; });
+  ASSERT_TRUE(conditional);
+  conditional->walk([&](XOp) { ++numControlledGates; });
+  EXPECT_GT(numSwaps, 0);
+  EXPECT_EQ(numControlledGates, 1);
+}
+
+TEST_F(MappingPassFixture, KeepMeasurementDestinationAdjacentDuringRouting) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}}),
+      NativeOperations::unrestricted()));
+
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  const auto reg = builder.allocClassicalBitRegister(1);
+  SmallVector<Value> qubits(4);
+  for (Value& qubit : qubits) {
+    qubit = builder.allocQubit();
+  }
+
+  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
+  std::tie(qubits[3], qubits[2]) = builder.cx(qubits[3], qubits[2]);
+  std::tie(qubits[1], std::ignore) = builder.measure(qubits[1], reg, 0);
+  std::tie(qubits[3], qubits[1]) = builder.cx(qubits[3], qubits[1]);
+
+  for (Value qubit : qubits) {
+    builder.sink(qubit);
+  }
+
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(
+      runPass(moduleOp.get(), target, MappingPassOptions{}).succeeded());
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));
+
+  cbit::StoreOp store;
+  moduleOp->walk([&](cbit::StoreOp candidate) { store = candidate; });
+  ASSERT_TRUE(store);
+  auto measurement = store.getValue().getDefiningOp<MeasureOp>();
+  ASSERT_TRUE(measurement);
+  EXPECT_EQ(store->getPrevNode(), measurement.getOperation());
+
+  size_t numSwaps = 0;
+  moduleOp->walk([&](SWAPOp) { ++numSwaps; });
+  EXPECT_GT(numSwaps, 0);
+}
+
+TEST_F(MappingPassFixture, PreserveStoredRegisterControlDuringRouting) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q2 = qco.alloc : !qco.qubit
+        %measured, %bit = qco.measure %q0 : !qco.qubit
+        cbit.store %bit, %reg[%c0] : !cbit.reg<1>
+        %one = arith.constant 1 : i64
+        %two = arith.addi %one, %one : i64
+        %condition = cbit.cmp eq, %reg, 1 : i1 : !cbit.reg<1>
+        %controlled1 = qco.if %condition args(%arg = %q1) -> (!qco.qubit) {
+          %flipped = qco.x %arg : !qco.qubit -> !qco.qubit
+          qco.yield %flipped : !qco.qubit
+        } else args(%arg = %q1) {
+          qco.yield %arg : !qco.qubit
+        }
+        %next1, %next2 = qco.swap %controlled1, %q2
+            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        qco.sink %measured : !qco.qubit
+        qco.sink %next1 : !qco.qubit
+        qco.sink %next2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
+  PassManager mappingPm(context.get());
+  mappingPm.addPass(
+      createMappingPass(target, MappingPassOptions{.ntrials = 1}));
+  ASSERT_TRUE(succeeded(mappingPm.run(moduleOp.get())));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));
+
+  cbit::StoreOp mappedStore;
+  moduleOp->walk([&](cbit::StoreOp candidate) { mappedStore = candidate; });
+  ASSERT_TRUE(mappedStore);
+  auto mappedMeasurement = mappedStore.getValue().getDefiningOp<MeasureOp>();
+  ASSERT_TRUE(mappedMeasurement);
+  EXPECT_EQ(mappedStore->getPrevNode(), mappedMeasurement.getOperation());
+
+  PassManager cleanupPm(context.get());
+  cleanupPm.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(cleanupPm.run(moduleOp.get())));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  cbit::StoreOp store;
+  cbit::CompareOp comparison;
+  IfOp conditional;
+  size_t numControlledGates = 0;
+  moduleOp->walk([&](cbit::StoreOp candidate) { store = candidate; });
+  moduleOp->walk([&](cbit::CompareOp candidate) { comparison = candidate; });
+  moduleOp->walk([&](IfOp candidate) { conditional = candidate; });
+  moduleOp->walk([&](XOp) { ++numControlledGates; });
+
+  ASSERT_TRUE(store);
+  ASSERT_TRUE(comparison);
+  ASSERT_TRUE(conditional);
+  EXPECT_TRUE(store->isBeforeInBlock(comparison));
+  EXPECT_EQ(comparison.getResult(), conditional.getCondition());
+  EXPECT_EQ(numControlledGates, 1);
 }
 
 TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
