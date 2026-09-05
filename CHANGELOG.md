@@ -16,6 +16,8 @@ releases may include breaking changes.
   ([#2259]) ([**@denialhaag**])
 - ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
   ([#2259]) ([**@denialhaag**])
+- 💥 Move circuit IR OpenQASM serialization from operation subclasses to
+  `qasm3::Serializer` in `qasm3/Serializer.hpp` ([#2249]) ([**@simon1hofmann**])
 - 💥 Require Python 3.11 or newer ([#2209]) ([**@denialhaag**],
   [**@burgholzer**])
 - ⬆️ Update `nanobind` to version 3.0.1 ([#2209], [#2283]) ([**@denialhaag**],
@@ -805,6 +807,7 @@ for previous changelogs._
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
+[#2249]: https://github.com/munich-quantum-toolkit/core/pull/2249
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2214]: https://github.com/munich-quantum-toolkit/core/pull/2214
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209

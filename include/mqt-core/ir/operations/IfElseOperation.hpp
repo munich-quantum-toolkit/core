@@ -96,10 +96,6 @@ public:
                               std::size_t prefixWidth,
                               std::size_t nqubits) const override;
 
-  void dumpOpenQASM(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
-                    const BitIndexToRegisterMap& bitMap, std::size_t indent,
-                    bool openQASM3) const override;
-
   void invert() override {
     throw std::runtime_error("An IfElseOperation cannot be inverted.");
   }

@@ -12,7 +12,6 @@
 
 #include "ir/Definitions.hpp"
 #include "ir/Permutation.hpp"
-#include "ir/Register.hpp"
 #include "ir/operations/Control.hpp"
 #include "ir/operations/OpType.hpp"
 #include "ir/operations/Operation.hpp"
@@ -75,10 +74,6 @@ public:
   std::ostream& print(std::ostream& os, const Permutation& permutation,
                       std::size_t prefixWidth,
                       std::size_t nqubits) const override;
-
-  void dumpOpenQASM(std::ostream& of, const QubitIndexToRegisterMap& qubitMap,
-                    const BitIndexToRegisterMap& bitMap, std::size_t indent,
-                    bool openQASM3) const override;
 
   void invert() override {
     throw std::runtime_error(

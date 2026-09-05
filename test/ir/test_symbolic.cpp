@@ -322,12 +322,25 @@ TEST_F(SymbolicTest, TestU2SymPhi) {
 
 TEST_F(SymbolicTest, failPrintingQASM2) {
   symQc.u(xMonom, yMonom, zMonom, 0);
-  EXPECT_THROW(std::ignore = symQc.toQASM(false), std::runtime_error);
+  try {
+    std::ignore = symQc.toQASM(false);
+    FAIL() << "Expected OpenQASM 2 serialization to fail.";
+  } catch (const std::runtime_error& error) {
+    EXPECT_STREQ(error.what(),
+                 "OpenQASM 2.0 doesn't support parameterized gates!");
+  }
 }
 
 TEST_F(SymbolicTest, failPrintingQASM3) {
   symQc.u(xMonom, yMonom, zMonom, 0);
-  EXPECT_THROW(std::ignore = symQc.toQASM(true), std::runtime_error);
+  try {
+    std::ignore = symQc.toQASM(true);
+    FAIL() << "Expected OpenQASM 3 serialization to fail.";
+  } catch (const std::runtime_error& error) {
+    EXPECT_STREQ(
+        error.what(),
+        "Printing OpenQASM 3.0 parameterized gates is not supported yet!");
+  }
 }
 
 TEST_F(SymbolicTest, Constructor) {
