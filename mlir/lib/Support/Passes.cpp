@@ -132,6 +132,7 @@ void populateQCExportPipeline(OpPassManager& pm) {
 
 void populateQCCleanupPipeline(OpPassManager& pm) {
   populateQCExportPipeline(pm);
+  pm.addPass(createSymbolDCEPass());
 }
 
 void populateQCOCleanupPipeline(OpPassManager& pm) {
@@ -140,6 +141,7 @@ void populateQCOCleanupPipeline(OpPassManager& pm) {
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  pm.addPass(createSymbolDCEPass());
 }
 
 void populateQIRCleanupPipeline(OpPassManager& pm, bool useAdaptive) {

@@ -482,7 +482,8 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
     return CompilerProgram(std::move(*qco));
   }
 
-  if ((output == ProgramFormat::QIRBase ||
+  if (target == nullptr &&
+      (output == ProgramFormat::QIRBase ||
        output == ProgramFormat::QIRAdaptive) &&
       failed(runQCOTransformPasses(
           qco->module(),

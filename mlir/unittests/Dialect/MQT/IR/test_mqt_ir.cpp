@@ -353,6 +353,11 @@ TEST_F(MQTIRTest, RejectsInvalidEntryPoints) {
   )mlir"));
   EXPECT_FALSE(parse(R"mlir(
     module {
+      func.func private @main() attributes {mqt.entry_point} { return }
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
       func.func @first() attributes {mqt.entry_point} { return }
       func.func @second() attributes {mqt.entry_point} { return }
     }
