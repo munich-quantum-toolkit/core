@@ -25,8 +25,8 @@ releases may include breaking changes.
   [#1807], [#1808], [#1815], [#1824], [#1869], [#1872], [#1914], [#1925],
   [#1927], [#1935], [#1936], [#1938], [#1975], [#1976], [#2006], [#2014],
   [#2015], [#2017], [#2026], [#2028], [#2054], [#2058], [#2125], [#2136],
-  [#2149], [#2150], [#2158], [#2194], [#2210], [#2211], [#2215], [#2218],
-  [#2220], [#2323], [#2336]) ([**@burgholzer**], [**@denialhaag**],
+  [#2149], [#2150], [#2158], [#2162], [#2194], [#2210], [#2211], [#2215],
+  [#2218], [#2220], [#2323], [#2336]) ([**@burgholzer**], [**@denialhaag**],
   [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
   [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 - ✨ Add a library for typed structured quantum benchmarks with versioned
@@ -933,6 +933,7 @@ for previous changelogs._
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
 [#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
+[#2162]: https://github.com/munich-quantum-toolkit/core/pull/2162
 [#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156

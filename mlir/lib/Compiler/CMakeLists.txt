@@ -105,6 +105,7 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   LLVMBitWriter
+  MLIRControlFlowToSCF
   MLIRPass
   MLIRTransforms
   MLIRTransformUtils
