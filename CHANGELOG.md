@@ -34,6 +34,9 @@ releases may include breaking changes.
 
 ### Removed
 
+- 💥 Remove test-only DD state generators, recursive functionality construction,
+  and DD-specific named-gate helpers from MQT Core ([#2257], [#2335])
+  ([**@simon1hofmann**])
 - 💥 Remove MQT Core's optional MLIR stack, including its dialects, conversions,
   passes, tools, build integration, tests, documentation, and dependency on
   LLVM. ([#2314]) ([**@denialhaag**])
@@ -787,12 +790,14 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2335]: https://github.com/munich-quantum-toolkit/core/pull/2335
 [#2314]: https://github.com/munich-quantum-toolkit/core/pull/2314
 [#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
 [#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
 [#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
+[#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2214]: https://github.com/munich-quantum-toolkit/core/pull/2214
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209

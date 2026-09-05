@@ -18,6 +18,30 @@ themselves. Stop passing `MQT_CORE_SPDLOG_INSTALL` or `SPDLOG_*` cache variables
 when configuring MQT Core. Configure the downstream project's own `spdlog`
 dependency instead.
 
+### Pruned DD construction helpers
+
+MQT Core no longer provides `dd::GenerationWireStrategy`,
+`dd::generateExponentialState`, or `dd::generateRandomState`. These APIs
+generated decision diagrams with selected shapes for tests and have no direct
+replacement.
+
+MQT Core also removed `dd::buildFunctionalityRecursive`. The Python
+`mqt.core.dd.build_unitary` and `mqt.core.dd.build_functionality` functions no
+longer accept the `recursive` argument and always use sequential construction.
+Use MQT DDSIM's unitary simulator when recursive pairwise construction is
+required.
+
+MQT Core also removed `dd/GateMatrixDefinitions.hpp`,
+`dd::opToSingleQubitGateMatrix`, `dd::opToTwoQubitGateMatrix`,
+`dd::opToThreeQubitGateMatrix`, `dd::getStandardOperationDD`,
+`dd::MEAS_ZERO_MAT`, and `dd::MEAS_ONE_MAT`. Low-level consumers must pass raw
+matrices to `dd::Package::makeGateDD`, `makeTwoQubitGateDD`,
+`makeThreeQubitGateDD`, or `makeDDFromMatrix`. Circuit-facing DD functions
+continue to translate CoreIR operations internally.
+
+The zero, basis, GHZ, W, dense-vector, dense-matrix, raw gate-matrix, and
+sequential circuit constructors remain available.
+
 ### macOS support
 
 MQT Core no longer supports x86 macOS. Use Apple silicon with macOS 13.3 or
