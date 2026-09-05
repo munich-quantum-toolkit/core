@@ -10,24 +10,19 @@
 
 #pragma once
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
 
-#include <cstdint>
 #include <iterator>
 
 namespace mlir::qtensor {
 
 /// A bidirectional iterator traversing the tensor chain.
+///
+/// `func.call` operations end traversal; clients manage callee traversal.
 class [[nodiscard]] TensorIterator {
 public:
   using iterator_category = std::bidirectional_iterator_tag;
@@ -93,34 +88,4 @@ private:
   bool isSentinel_;
 };
 
-/// Resolves how qubit tensors flow across call boundaries.
-///
-/// The mapping follows each tensor argument through the callee instead of
-/// assuming positional correspondence. Results are cached per callee. Mapping
-/// fails for declarations, recursion, and non-straight-line bodies.
-class CallTensorMapping {
-public:
-  /// Gets the result continuing @p operand's tensor chain.
-  ///
-  /// Returns a null value when the callee keeps the tensor and failure when the
-  /// correspondence cannot be derived.
-  [[nodiscard]] FailureOr<Value> getResultForOperand(func::CallOp callOp,
-                                                     Value operand);
-
-private:
-  // Marks a tensor argument that never reaches a result.
-  static constexpr int64_t KEPT = -1;
-
-  // Returns each tensor argument's call-result index, or KEPT.
-  FailureOr<ArrayRef<int64_t>> mappingFor(func::CallOp callOp);
-
-  // Derives a mapping by threading every tensor argument through the callee.
-  FailureOr<SmallVector<int64_t>> computeMapping(func::FuncOp callee);
-
-  // Follows an argument to a return operand, hopping over calls.
-  FailureOr<int64_t> threadToResult(Value arg, func::ReturnOp returnOp);
-
-  DenseMap<Operation*, SmallVector<int64_t>> cache;
-  DenseSet<Operation*> inProgress;
-};
 } // namespace mlir::qtensor

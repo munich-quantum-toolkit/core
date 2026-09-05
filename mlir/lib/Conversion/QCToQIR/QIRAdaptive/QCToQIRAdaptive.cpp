@@ -44,6 +44,7 @@
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Transforms/WalkPatternRewriteDriver.h>
 
 #include <cassert>
 #include <cstdint>
@@ -66,8 +67,8 @@ constexpr unsigned MIXED_CBIT_REGISTER =
 
 } // namespace
 
-static LogicalResult prepareCBitRegisterReads(Operation* moduleOp,
-                                              LoweringState& state) {
+static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
+                                                 LoweringState& state) {
   DenseMap<Value, SmallVector<Value>> forwardedRegisters;
   moduleOp->walk([&](Operation* operation) {
     for (auto& region : operation->getRegions()) {
@@ -140,24 +141,35 @@ static LogicalResult prepareCBitRegisterReads(Operation* moduleOp,
     }
   }
 
-  bool hasMixedRepresentation = false;
+  bool hasInvalidAccess = false;
   const auto prepareRead = [&](Operation* operation, Value reg) {
     const auto representation = representations.lookup(reg);
     if (representation == MIXED_CBIT_REGISTER) {
       operation->emitOpError(
           "adaptive QIR conversion cannot merge returned and local CBit "
           "registers");
-      hasMixedRepresentation = true;
+      hasInvalidAccess = true;
     } else if (representation == RETURNED_CBIT_REGISTER) {
       state.returnedCBitReads.insert(operation);
     }
   };
   moduleOp->walk(
       [&](cbit::LoadOp loadOp) { prepareRead(loadOp, loadOp.getReg()); });
-  moduleOp->walk([&](cbit::CompareOp compareOp) {
-    prepareRead(compareOp, compareOp.getReg());
+  moduleOp->walk([&](cbit::StoreOp storeOp) {
+    const auto representation = representations.lookup(storeOp.getReg());
+    if (representation == MIXED_CBIT_REGISTER) {
+      storeOp.emitOpError(
+          "adaptive QIR conversion cannot merge returned and local CBit "
+          "registers");
+      hasInvalidAccess = true;
+    } else if (representation == RETURNED_CBIT_REGISTER) {
+      storeOp.emitOpError(
+          "adaptive QIR conversion does not support non-measurement writes "
+          "to returned CBit registers");
+      hasInvalidAccess = true;
+    }
   });
-  return success(!hasMixedRepresentation);
+  return success(!hasInvalidAccess);
 }
 
 /**
@@ -327,28 +339,6 @@ struct ConvertCBitLoadOp final : StatefulOpConversionPattern<cbit::LoadOp> {
         getState().returnedCBitReads.contains(op.getOperation());
     rewriter.replaceOp(op, loadCBit(op, adaptor.getReg(), adaptor.getIndex(),
                                     rewriter, returnedRegister));
-    return success();
-  }
-};
-
-struct ConvertCBitCompareOp final
-    : StatefulOpConversionPattern<cbit::CompareOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
-
-  LogicalResult
-  matchAndRewrite(cbit::CompareOp op, OpAdaptor adaptor,
-                  ConversionPatternRewriter& rewriter) const override {
-    const auto returnedRegister =
-        getState().returnedCBitReads.contains(op.getOperation());
-    auto result = cbit::buildComparison(
-        rewriter, op.getLoc(), op.getPredicate(), op.getRhs(),
-        [&](const int64_t index) -> Value {
-          auto indexValue = LLVM::ConstantOp::create(
-              rewriter, op.getLoc(), rewriter.getI64Type(), index);
-          return loadCBit(op, adaptor.getReg(), indexValue, rewriter,
-                          returnedRegister);
-        });
-    rewriter.replaceOp(op, result);
     return success();
   }
 };
@@ -677,8 +667,8 @@ static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
                                             MLIRContext* ctx,
                                             LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
-  patterns.add<ConvertCBitAllocOp, ConvertCBitCompareOp, ConvertCBitLoadOp,
-               ConvertCBitStoreOp, ConvertMemRefAllocOp, ConvertMemRefLoadOp,
+  patterns.add<ConvertCBitAllocOp, ConvertCBitLoadOp, ConvertCBitStoreOp,
+               ConvertMemRefAllocOp, ConvertMemRefLoadOp,
                ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
                ConvertQCMeasureOp, ConvertQCResetOp>(typeConverter, ctx,
                                                      &state);
@@ -858,7 +848,13 @@ protected:
       signalPassFailure();
       return;
     }
-    if (failed(prepareCBitRegisterReads(moduleOp, state))) {
+    {
+      RewritePatternSet patterns(ctx);
+      cbit::populateCBitDecompositionPatterns(patterns);
+      const FrozenRewritePatternSet frozen(std::move(patterns));
+      walkAndApplyPatterns(moduleOp, frozen);
+    }
+    if (failed(prepareCBitRegisterAccesses(moduleOp, state))) {
       signalPassFailure();
       return;
     }

@@ -21,8 +21,10 @@
 
 #include <cassert>
 #include <initializer_list>
+#include <numeric>
 #include <string>
 #include <utility>
+#include <vector>
 
 using mlir::CompilerTarget;
 
@@ -108,11 +110,17 @@ TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
               CompilerTarget::Operation::Arity::Kind::Variadic)
         << name.str();
     EXPECT_EQ(operation.arity().value(), minimum) << name.str();
+    EXPECT_TRUE(operation.siteTuples().empty()) << name.str();
     EXPECT_TRUE(
         target.supportsOperation(name, minimum, operation.numParameters()))
         << name.str();
     EXPECT_TRUE(
         target.supportsOperation(name, minimum + 4, operation.numParameters()))
+        << name.str();
+    std::vector<CompilerTarget::SiteId> sites(minimum + 4);
+    std::iota(sites.begin(), sites.end(), 0);
+    EXPECT_TRUE(target.supportsOperation(name, minimum + 4,
+                                         operation.numParameters(), sites))
         << name.str();
   }
   EXPECT_TRUE(target.supportsOperation("gphase", 0, 1));
@@ -157,17 +165,50 @@ TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0));
+  EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0, {0, 1, 2}));
+  EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0, {2, 1, 0}));
+  EXPECT_FALSE(target.supportsOperation("ccnot", 3, 0, {0, 1, 3}));
 }
 
-TEST(CompilerQDMIAdapterTest, RejectsDirectionalOperationWithoutReverseSites) {
+TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
       MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG};
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
-  auto target = mlir::compilerTargetFromDevice(device);
-  ASSERT_FALSE(target);
-  const auto message = llvm::toString(target.takeError());
-  EXPECT_NE(message.find("both orientations"), std::string::npos);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+
+  ASSERT_EQ(target.couplings().size(), 1U);
+  const auto& cx = findOperation(target, "cx");
+  ASSERT_EQ(cx.siteTuples().size(), 1U);
+  EXPECT_EQ(cx.siteTuples()[0].sites(),
+            (llvm::ArrayRef<CompilerTarget::SiteId>{0, 1}));
+  EXPECT_FALSE(cx.siteTuples()[0].duration());
+  EXPECT_FALSE(cx.siteTuples()[0].fidelity());
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {0, 1}));
+  EXPECT_FALSE(target.supportsOperation("cx", 2, 0, {1, 0}));
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CX);
+}
+
+TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
+  qdmi::DeviceSessionConfig overrides;
+  overrides.deviceConfiguration = qdmi::InlineDeviceConfiguration{.json = R"({
+    "schema-version": 1,
+    "name": "Unavailable operation",
+    "numQubits": 1,
+    "durationUnit": {"unit": "ns", "scaleFactor": 1},
+    "qubitProperties": {"defaults": {}, "overrides": []},
+    "couplings": [],
+    "operations": [
+      {"name": "x", "numQubits": 1, "numParameters": 0, "sites": []}
+    ]
+  })"};
+  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  EXPECT_EQ(target.nativeOperationsKind(),
+            CompilerTarget::NativeOperations::Kind::Explicit);
+  EXPECT_TRUE(target.operations().empty());
+  EXPECT_FALSE(target.supportsOperation("x", 1, 0, {0}));
 }
 
 TEST(CompilerQDMIAdapterTest,
@@ -180,6 +221,8 @@ TEST(CompilerQDMIAdapterTest,
 
   ASSERT_EQ(target.couplings().size(), 1);
   const auto& cx = findOperation(target, "cx");
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {0, 1}));
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {1, 0}));
   ASSERT_EQ(cx.siteTuples().size(), 2);
   EXPECT_EQ(cx.siteTuples()[0].sites(),
             (llvm::ArrayRef<CompilerTarget::SiteId>{0, 1}));

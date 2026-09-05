@@ -561,6 +561,9 @@ OPENQASM 3.1;
 const uint WIDTH = 8;
 const angle[WIDTH] fixed = angle[WIDTH](pi / 2);
 angle machine = angle(tau / 4);
+bit[2] value;
+if (uint[2](value) == 3) {}
+if (int[2](value) == -1) {}
 )qasm";
 
   auto parsed = oq3::frontend::parseOpenQASM(source);
@@ -569,10 +572,10 @@ angle machine = angle(tau / 4);
 
 TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
   constexpr auto reservedWords = std::to_array<llvm::StringLiteral>({
-      "defcalgrammar", "def",        "cal",      "defcal",  "extern", "box",
-      "let",           "break",      "continue", "end",     "return", "pragma",
-      "input",         "readonly",   "mutable",  "complex", "array",  "void",
-      "stretch",       "durationof", "delay",    "im",      "#dim",   "#pragma",
+      "defcalgrammar", "def",     "cal",    "defcal",  "extern",  "box",
+      "let",           "end",     "return", "pragma",  "input",   "readonly",
+      "mutable",       "complex", "array",  "void",    "stretch", "durationof",
+      "delay",         "im",      "#dim",   "#pragma",
   });
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());

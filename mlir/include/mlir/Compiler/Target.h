@@ -125,10 +125,10 @@ public:
     std::optional<uint64_t> t2_;
   };
 
-  /// Calibration data for an ordered tuple of hardware sites.
+  /// One supported ordered placement and its optional calibration data.
   class SiteTuple {
   public:
-    /// Create validated calibration data for a site tuple.
+    /// Create a validated site tuple with optional calibration overrides.
     [[nodiscard]] static llvm::Expected<SiteTuple>
     create(std::vector<SiteId> sites,
            std::optional<uint64_t> duration = std::nullopt,
@@ -137,10 +137,10 @@ public:
     /// Return the ordered target site identifiers.
     [[nodiscard]] llvm::ArrayRef<SiteId> sites() const noexcept;
 
-    /// Return the raw operation duration, if available.
+    /// Return the raw duration override; nullopt uses the operation default.
     [[nodiscard]] std::optional<uint64_t> duration() const noexcept;
 
-    /// Return the operation fidelity, if available.
+    /// Return the fidelity override; nullopt uses the operation default.
     [[nodiscard]] std::optional<double> fidelity() const noexcept;
 
   private:
@@ -156,8 +156,9 @@ public:
   ///
   /// The reported name is retained verbatim while
   /// @ref canonicalName contains its normalized compiler spelling. Operations
-  /// are available throughout the target; site tuples carry optional
-  /// site-specific calibration data only.
+  /// with no site tuples are generally applicable. A nonempty list gives all
+  /// supported ordered placements. Missing tuple calibration values inherit
+  /// the operation defaults.
   class Operation {
   public:
     /// The accepted number of qubits for an operation capability.
@@ -216,7 +217,7 @@ public:
     /// Return the number of real-valued operation parameters.
     [[nodiscard]] size_t numParameters() const noexcept;
 
-    /// Return ordered site-specific calibration data.
+    /// Return all supported ordered placements, or empty for general support.
     [[nodiscard]] llvm::ArrayRef<SiteTuple> siteTuples() const noexcept;
 
     /// Return the raw default operation duration, if available.
@@ -390,11 +391,24 @@ public:
   supportsOperation(llvm::StringRef name, size_t arity,
                     std::optional<size_t> numParameters = std::nullopt) const;
 
+  /// Return whether an operation capability is supported on ordered sites.
+  [[nodiscard]] bool supportsOperation(llvm::StringRef name, size_t arity,
+                                       std::optional<size_t> numParameters,
+                                       llvm::ArrayRef<SiteId> sites) const;
+
   /// Return whether a QCO operation is supported.
   [[nodiscard]] bool supports(::mlir::Operation* operation) const;
 
-  /// Return whether a recognized gate is supported.
+  /// Return whether a QCO operation is supported on ordered target sites.
+  [[nodiscard]] bool supports(::mlir::Operation* operation,
+                              llvm::ArrayRef<SiteId> sites) const;
+
+  /// Return whether a recognized gate is supported by the target.
   [[nodiscard]] bool supports(GateKind gate) const;
+
+  /// Return whether a recognized gate is supported on ordered target sites.
+  [[nodiscard]] bool supports(GateKind gate,
+                              llvm::ArrayRef<SiteId> sites) const;
 
   /// Return the recognized gates supported by the target.
   [[nodiscard]] llvm::ArrayRef<GateKind> supportedGates() const noexcept;
@@ -416,7 +430,9 @@ private:
              Connectivity connectivity, NativeOperations nativeOperations,
              std::optional<DurationUnit> durationUnit);
 
-  [[nodiscard]] llvm::ArrayRef<size_t> explicitNeighbours(size_t vertex) const;
+  [[nodiscard]] bool
+  supportsImpl(::mlir::Operation* operation,
+               std::optional<llvm::ArrayRef<SiteId>> sites) const;
 
   std::shared_ptr<const Storage> storage_;
 };

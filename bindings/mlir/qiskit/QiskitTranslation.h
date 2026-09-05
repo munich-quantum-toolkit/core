@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 
+#include <llvm/ADT/APInt.h>
 #include <llvm/ADT/StringMap.h>
 #include <nanobind/nanobind.h>
 
@@ -37,6 +38,7 @@ enum class OperationKind : uint8_t {
   Measure,
   Reset,
   Unitary,
+  Store,
   ControlFlow,
   Unknown,
 };
@@ -217,6 +219,7 @@ enum class ExpressionKind : uint8_t {
   Index,
   ClassicalBit,
   ClassicalRegister,
+  Variable,
 };
 enum class BinaryOperation : uint8_t {
   BitAnd,
@@ -243,6 +246,15 @@ enum class UnaryOperation : uint8_t {
   Negate,
 };
 
+struct ClassicalVariable {
+  std::string identity;
+  std::string name;
+  ClassicalType type = ClassicalType::Bool;
+  uint32_t width = 1;
+  bool captured = false;
+  bool input = false;
+};
+
 /** One normalized Qiskit classical-expression tree. */
 struct Expression {
   ExpressionKind kind = ExpressionKind::Value;
@@ -251,10 +263,11 @@ struct Expression {
   BinaryOperation binaryOperation = BinaryOperation::Equal;
   UnaryOperation unaryOperation = UnaryOperation::LogicNot;
   bool boolValue = false;
-  uint64_t uintValue = 0;
+  llvm::APInt uintValue;
   double floatValue = 0.0;
   uint32_t bit = 0;
   Register reg;
+  std::string variable;
   std::unique_ptr<Expression> left;
   std::unique_ptr<Expression> right;
 };
@@ -280,6 +293,11 @@ struct ClassicalTarget {
   Register reg;
   uint32_t width = 1;
   std::unique_ptr<Expression> expression;
+};
+
+struct ClassicalAssignment {
+  ClassicalTarget target;
+  std::unique_ptr<Expression> value;
 };
 
 struct Loop {
@@ -312,13 +330,14 @@ public:
   [[nodiscard]] virtual size_t numInstructions() const = 0;
   [[nodiscard]] virtual size_t numQuantumRegisters() const = 0;
   [[nodiscard]] virtual size_t numClassicalRegisters() const = 0;
-  [[nodiscard]] virtual bool hasClassicalVariables() const = 0;
+  [[nodiscard]] virtual std::vector<ClassicalVariable> variables() const = 0;
   [[nodiscard]] virtual Register quantumRegister(size_t index) const = 0;
   [[nodiscard]] virtual Register classicalRegister(size_t index) const = 0;
   /** Return the circuit's free scalar parameters in a stable order. */
   [[nodiscard]] virtual std::vector<Parameter> parameters() const = 0;
   [[nodiscard]] virtual Parameter globalPhase() const = 0;
   [[nodiscard]] virtual Instruction instruction(size_t index) const = 0;
+  [[nodiscard]] virtual ClassicalAssignment store(size_t index) const = 0;
   [[nodiscard]] virtual std::vector<std::complex<double>>
   unitary(size_t index) const = 0;
   [[nodiscard]] virtual std::unique_ptr<ControlFlowReader>
@@ -360,6 +379,7 @@ public:
 
   virtual void addQuantumRegister(std::string_view name, uint32_t size) = 0;
   virtual void addClassicalRegister(std::string_view name, uint32_t size) = 0;
+  virtual void declareVariable(ClassicalVariable variable) = 0;
   virtual void setGlobalPhase(const Parameter& phase) = 0;
   virtual void addGate(StandardGateMapping gate,
                        const std::vector<uint32_t>& qubits,
@@ -367,6 +387,8 @@ public:
   virtual void addMeasure(uint32_t qubit, uint32_t clbit) = 0;
   virtual void addReset(uint32_t qubit) = 0;
   virtual void addBarrier(const std::vector<uint32_t>& qubits) = 0;
+  virtual void addStore(ClassicalTarget target,
+                        std::unique_ptr<Expression> value) = 0;
   virtual void addUnitary(const std::vector<std::complex<double>>& matrix,
                           const std::vector<uint32_t>& qubits,
                           uint32_t numControls) = 0;

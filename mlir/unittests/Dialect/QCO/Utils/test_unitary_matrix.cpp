@@ -30,6 +30,7 @@ namespace mlir::qco {
 static_assert(SupportedMatrix<Matrix1x1>);
 static_assert(SupportedMatrix<Matrix2x2>);
 static_assert(SupportedMatrix<Matrix4x4>);
+static_assert(SupportedMatrix<Matrix8x8>);
 static_assert(SupportedMatrix<DynamicMatrix>);
 static_assert(!SupportedMatrix<int>);
 
@@ -589,6 +590,22 @@ TEST(Matrix4x4, AssignFromDynamicMatrix) {
   EXPECT_TRUE(out.assignFrom(dynamic));
   EXPECT_TRUE(out.isApprox(swap));
   EXPECT_FALSE(out.assignFrom(DynamicMatrix::identity(2)));
+}
+
+TEST(Matrix8x8, AccessAdjointAndDynamicRoundtrip) {
+  auto matrix = Matrix8x8::identity();
+  matrix(1, 7) = {0.25, -0.5};
+  const auto& readOnly = matrix;
+  EXPECT_EQ(readOnly(1, 7), Complex(0.25, -0.5));
+  EXPECT_EQ(matrix.entries()[15], readOnly(1, 7));
+  EXPECT_EQ(matrix.adjoint()(7, 1), Complex(0.25, 0.5));
+
+  const DynamicMatrix dynamic{matrix};
+  Matrix8x8 copy;
+  ASSERT_TRUE(copy.assignFrom(dynamic));
+  EXPECT_TRUE(copy.isApprox(matrix));
+  EXPECT_FALSE(copy.assignFrom(DynamicMatrix::identity(4)));
+  EXPECT_TRUE(copy.isApprox(matrix));
 }
 
 TEST(UnitaryMatrix2x2, TransposeAndIsIdentity) {

@@ -85,6 +85,27 @@ static Value measureAndReturn(QCOProgramBuilder& b, ValueRange qubits) {
 
 Value emptyQCO(QCOProgramBuilder& b) { return b.intConstant(0); }
 
+Value reusableUnitaryFunction(QCOProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto rotate = b.createUnitaryFunction(
+      "rotate", TypeRange{b.getF64Type(), qubit.getType()},
+      [&](ValueRange arguments) {
+        return SmallVector<Value>{b.rx(arguments[0], arguments[1])};
+      });
+  qubit = b.call(rotate, {b.floatConstant(0.5), qubit}).back();
+  return b.measure(qubit).second;
+}
+
+Value reusableResetFunction(QCOProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto reset = b.createFunction(
+      "reset", TypeRange{qubit.getType()}, [&](ValueRange arguments) {
+        return SmallVector<Value>{b.reset(arguments[0])};
+      });
+  qubit = b.call(reset, {qubit}).back();
+  return b.measure(qubit).second;
+}
+
 Value allocQubit(QCOProgramBuilder& b) {
   auto q = b.allocQubit();
   return measureToRegister(b, q);

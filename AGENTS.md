@@ -27,12 +27,22 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - Preserve user changes and inspect the working tree before editing. Never
   discard or overwrite changes that are outside the task.
 - Follow the repository's documented development policies and the nearest scoped
-  `AGENTS.md`. Use neighboring code as evidence of established practice, not as
-  authority when it conflicts with current policy.
+  `AGENTS.md`. Before working under `mlir/`, read
+  [`mlir/AGENTS.md`](mlir/AGENTS.md). Use neighboring code as evidence of
+  established practice, not as authority when it conflicts with current policy.
 - Prefer the smallest change that fully solves the problem.
+- Before designing a change, trace the behavior through its producers, shared
+  helpers, and consumers. Reuse existing code or dependency facilities and fix
+  the owning layer. Do not reconstruct a shared contract separately in each
+  frontend, exporter, or caller.
+- State the supported inputs, failure behavior, and ownership boundary before
+  expanding an API. Preserve runtime efficiency and correctness when reducing
+  code; fewer lines alone do not establish a simpler design.
 - Write code comments, documentation, tests, changelog entries, and public text
-  for the final design. Never preserve prompts, review chronology, former names,
-  or abandoned approaches unless they remain necessary user-facing context.
+  for the final design. Omit prompts, review chronology, former names, and
+  abandoned approaches unless needed to explain current behavior. Plans and
+  audits follow their own rules for retaining durable decisions and rejected
+  alternatives.
 - Apply
   [Orwell's six rules for writing](https://www.orwellfoundation.com/the-orwell-foundation/orwell/essays-and-other-works/politics-and-the-english-language/)
   to every category of prose, including reasoning, descriptions, commit
@@ -70,6 +80,10 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - Add tests that protect intended behavior or reproduce a concrete regression.
   Never test provisional implementation choices that are not part of the
   supported contract.
+- Missing prose documentation does not make a test unnecessary. Check regression
+  history, public and downstream uses, invariants, and numerical or resource
+  limits before weakening it. One shared failure or equal line coverage does not
+  prove that two tests are redundant.
 - Place tests in the corresponding test tree, organized by the subsystem that
   owns the behavior. Within MLIR, keep tests under `mlir/unittests/` or another
   established test root; never place them under `mlir/tools/` or another
@@ -81,6 +95,11 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - Remove obsolete scaffolding and diagnostic suppressions before handoff. Keep a
   workaround or suppression only when it is still necessary, scope it as
   narrowly as possible, and document the technical reason.
+- Diagnose a failed check before changing production code or build policy.
+  Distinguish a product defect from stale build output, a dependency mismatch,
+  and a temporary service failure. Use supported presets and keep machine setup
+  in local configuration. Retain a repository workaround only with a reproducer
+  and a condition for removing it.
 - Until MQT Core v4 is released, do not add standalone changelog entries for
   changes to unreleased v4 functionality. Fold such changes into the existing
   feature entry or defer them to a dedicated changelog update.
@@ -116,7 +135,11 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 
 The C++ code targets C++20 and uses GoogleTest. Follow these rules:
 
-- Write Doxygen comments with `///`.
+- Write Doxygen API and `@file` descriptions with `///`, preserving their
+  content. Keep `//!<` or `///<` for trailing member documentation and block
+  documentation inside continued macros.
+- Use `//` for ordinary code comments and namespace closing comments. Keep
+  inline `/* ... */` comments, including unused parameter names.
 - Use `#pragma once` in headers and use existing project abstractions.
 - Prefer C++20 standard-library facilities over custom equivalents.
 - Within the `mlir` namespace and its nested namespaces, prefer LLVM types such
@@ -128,6 +151,7 @@ The C++ code targets C++20 and uses GoogleTest. Follow these rules:
   the header that provides each type.
 - Do not use `module` as a C++ variable or parameter name because it conflicts
   with the C++20 keyword. Use `moduleOp` for `mlir::ModuleOp` values.
+- Generally give non-public data members a trailing underscore.
 - Follow the canonical general and MLIR-specific coding policies in
   [`docs/development.md`](docs/development.md) and
   [`docs/mlir/development.md`](docs/mlir/development.md).
@@ -174,23 +198,30 @@ Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
   `prek` hook set, including formatting, spelling, type, and metadata checks.
 - Inspect the final diff and working-tree status. Report every check run and
   clearly distinguish passes, failures, and checks that could not be run.
+- Tie validation to the code tested. A pass before a later edit is not proof for
+  that edit; queued, skipped, cancelled, or infrastructure-failed CI is not a
+  pass. Rerun affected checks and required gates, then stop unless a concrete
+  remaining risk warrants broader validation.
 
 ## ExecPlans
 
 When writing complex features or significant refactors, use an ExecPlan (as
 described in [`.agent/PLANS.md`](.agent/PLANS.md)) from design to
 implementation. Keep one ExecPlan per independently implemented task and store
-it under `.agent/plans/<task-slug>.md`; the plan is a living record of that
-task's decisions and progress.
+it under `.agent/plans/<task-slug>.md`. Keep its current scope, decisions,
+remaining work, and validation concise. At completion, retain a decision record
+and remove iteration history, obsolete recipes, and temporary failures. Small
+tasks do not need a plan merely to record activity.
 
 ## Spec Audits
 
-When a subsystem accumulates tests that pin implementation choices instead of
-the supported contract, audit it with a SpecAudit (as described in
-[`.agent/AUDITS.md`](.agent/AUDITS.md)). Keep one audit per audited scope under
-`.agent/audits/<scope-slug>.md`. An audit produces ranked verdicts with executed
-evidence and stops there; a human decides which verdicts to apply, and each one
-lands as its own pull request.
+Use a SpecAudit (as described in [`.agent/AUDITS.md`](.agent/AUDITS.md)) to
+investigate a concrete concern about tests and the code they constrain. Keep one
+record per bounded scope under `.agent/audits/<scope-slug>.md`. Report
+actionable findings with contract evidence, benefits, and limits; distinguish
+unresolved candidates from confirmed findings. Apply findings only within the
+user's authorized scope. Group related fixes for review rather than requiring
+one pull request per finding.
 
 ## Git and GitHub Actions
 
@@ -210,8 +241,8 @@ lands as its own pull request.
   accountable and must review agent-assisted work before it is accepted or
   merged.
 - Every public text body authored or edited by an agent—including issue and
-  pull-request descriptions, comments, and reviews—must visibly include the
-  exact disclosure `🤖 *AI text below* 🤖`. Titles are exempt.
+  pull-request descriptions, comments, and reviews—must begin with the exact
+  disclosure `🤖 *AI text below* 🤖`. Titles are exempt.
 - Never use an agent to work on an issue labeled `good first issue`, and never
   generate spam, repetitive reviews, or unreviewed contributions.
 - Do not push, open or merge a pull request, post on GitHub, or otherwise change

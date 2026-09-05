@@ -44,6 +44,8 @@ enum class TokenKind : uint8_t {
   Else,
   For,
   While,
+  Break,
+  Continue,
   Switch,
   Case,
   Default,

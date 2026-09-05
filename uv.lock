@@ -1605,7 +1605,7 @@ test-base = [
 requires-dist = [
     { name = "nanobind-backend", specifier = ">=1.0" },
     { name = "pennylane", marker = "extra == 'pennylane'", specifier = ">=0.45.1,<0.46" },
-    { name = "qiskit", extras = ["qasm3-import"], marker = "extra == 'qiskit'", specifier = ">=1.1.0" },
+    { name = "qiskit", extras = ["qasm3-import"], marker = "extra == 'qiskit'", specifier = ">=2.1.0" },
 ]
 provides-extras = ["pennylane", "qiskit"]
 
@@ -1634,7 +1634,7 @@ dev = [
     { name = "pytest-sugar", specifier = ">=1.1.1" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "qirrunner", specifier = "~=0.9.6" },
-    { name = "qiskit", extras = ["qasm3-import"], specifier = ">=1.1.0" },
+    { name = "qiskit", extras = ["qasm3-import"], specifier = ">=2.1.0" },
     { name = "scikit-build-core", specifier = ">=1.0.3" },
     { name = "vcs-versioning", specifier = ">=2.3.0" },
 ]
@@ -1646,7 +1646,7 @@ docs = [
     { name = "openqasm-pygments", specifier = ">=0.2.0" },
     { name = "pennylane", specifier = ">=0.45.1,<0.46" },
     { name = "qirrunner", specifier = "~=0.9.6" },
-    { name = "qiskit", extras = ["visualization"], specifier = ">=1.1.0" },
+    { name = "qiskit", extras = ["visualization"], specifier = ">=2.1.0" },
     { name = "sphinx", specifier = ">=9.0" },
     { name = "sphinx-autoapi", specifier = ">=3.6.1" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
@@ -1665,7 +1665,7 @@ test = [
     { name = "pytest-sugar", specifier = ">=1.1.1" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "qirrunner", specifier = "~=0.9.6" },
-    { name = "qiskit", extras = ["qasm3-import"], specifier = ">=1.1.0" },
+    { name = "qiskit", extras = ["qasm3-import"], specifier = ">=2.1.0" },
 ]
 test-base = [
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1" },
@@ -1676,7 +1676,7 @@ test-base = [
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-sugar", specifier = ">=1.1.1" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
-    { name = "qiskit", extras = ["qasm3-import"], specifier = ">=1.1.0" },
+    { name = "qiskit", extras = ["qasm3-import"], specifier = ">=2.1.0" },
 ]
 
 [[package]]

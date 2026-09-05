@@ -116,11 +116,15 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
   return pm.run(mod);
 }
 
-void populateQCCleanupPipeline(OpPassManager& pm) {
+void populateQCExportPipeline(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
+}
+
+void populateQCCleanupPipeline(OpPassManager& pm) {
+  populateQCExportPipeline(pm);
   pm.addPass(createRemoveDeadValuesPass());
 }
 

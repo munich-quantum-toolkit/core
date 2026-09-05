@@ -71,18 +71,19 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
 
   std::vector<Operation> operations;
   std::vector siteTuples{valid(SiteTuple::create({7}, 0, 0.99)),
-                         valid(SiteTuple::create({2}, 5, 0.98))};
+                         valid(SiteTuple::create({2}, 5, 0.98)),
+                         valid(SiteTuple::create({11}))};
   operations.emplace_back(
       valid(Operation::create(" PRX ", 1, 2, std::move(siteTuples), 0, 0.97)));
 
-  const auto target = valid(
+  auto target = valid(
       Target::create("device", std::move(sites),
                      Connectivity::fromCouplings({{11, 2}, {2, 11}, {7, 2}}),
                      NativeOperations::fromOperations(operations),
                      valid(DurationUnit::create("ns", 0.5))));
-  // The copy itself is the behavior under test: both objects must share the
-  // immutable backing storage.
-  // NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
+  /// The copy itself is the behavior under test: both objects must share the
+  /// immutable backing storage.
+  /// NOLINTNEXTLINE(performance-unnecessary-copy-initialization)
   const auto copy = target;
 
   ASSERT_TRUE(target.name());
@@ -102,13 +103,20 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   EXPECT_EQ(target.operations()[0].numParameters(), 2);
   EXPECT_EQ(target.operations()[0].duration(), 0);
   EXPECT_EQ(target.operations()[0].fidelity(), 0.97);
-  ASSERT_EQ(target.operations()[0].siteTuples().size(), 2);
+  ASSERT_EQ(target.operations()[0].siteTuples().size(), 3);
   EXPECT_EQ(target.operations()[0].siteTuples()[0].duration(), 0);
   EXPECT_EQ(target.operations()[0].siteTuples()[0].fidelity(), 0.99);
 
   EXPECT_EQ(copy.sites().data(), target.sites().data());
   EXPECT_EQ(copy.couplings().data(), target.couplings().data());
   EXPECT_EQ(copy.operations().data(), target.operations().data());
+
+  operations.clear();
+  target = valid(Target::create(1, Connectivity::allToAll(),
+                                NativeOperations::unrestricted()));
+  EXPECT_TRUE(copy.supportsOperation("r", 1, 2, {7}));
+  EXPECT_TRUE(copy.supportsOperation("r", 1, 2, {2}));
+  EXPECT_TRUE(copy.supportsOperation("r", 1, 2, {11}));
 }
 
 TEST(CompilerTargetTest, ConstructsDenseUnnamedAllToAllTarget) {
@@ -180,6 +188,8 @@ TEST(CompilerTargetTest, PreservesFullNonnegativeSiteIdDomain) {
             (llvm::ArrayRef<Coupling>{{nextSite, maxSite}}));
   EXPECT_EQ(target.operations().front().siteTuples().front().sites(),
             (llvm::ArrayRef<SiteId>{maxSite, nextSite}));
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {maxSite, nextSite}));
+  EXPECT_FALSE(target.supportsOperation("cx", 2, 0, {nextSite, maxSite}));
 }
 
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
@@ -368,8 +378,11 @@ TEST(CompilerTargetTest, DistinguishesOperationSupport) {
 TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   const std::vector<Coupling> chain{{0, 1}, {1, 2}};
   const auto globalU = valid(Operation::create("U3", 1, 3));
-  const auto cz = valid(Operation::create(
-      "cz", 2, 0, std::vector{valid(SiteTuple::create({1, 0}, 5, 0.99))}));
+  const auto cz = valid(
+      Operation::create("cz", 2, 0,
+                        std::vector{valid(SiteTuple::create({1, 0}, 5, 0.99)),
+                                    valid(SiteTuple::create({1, 2}))},
+                        7, 0.98));
   const auto target =
       valid(Target::create(3, Connectivity::fromCouplings(chain),
                            NativeOperations::fromOperations({globalU, cz}),
@@ -380,11 +393,17 @@ TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   EXPECT_EQ(target.supports(GateKind::CZ), true);
   EXPECT_TRUE(llvm::is_contained(target.supportedGates(), GateKind::CZ));
   ASSERT_EQ(target.operations().size(), 2U);
-  ASSERT_EQ(target.operations()[1].siteTuples().size(), 1U);
+  ASSERT_EQ(target.operations()[1].siteTuples().size(), 2U);
   EXPECT_EQ(target.operations()[1].siteTuples()[0].sites(),
             (llvm::ArrayRef<SiteId>{1, 0}));
   EXPECT_EQ(target.operations()[1].siteTuples()[0].duration(), 5);
   EXPECT_EQ(target.operations()[1].siteTuples()[0].fidelity(), 0.99);
+  EXPECT_FALSE(target.operations()[1].siteTuples()[1].duration());
+  EXPECT_FALSE(target.operations()[1].siteTuples()[1].fidelity());
+  EXPECT_EQ(target.operations()[1].duration(), 7);
+  EXPECT_EQ(target.operations()[1].fidelity(), 0.98);
+  EXPECT_TRUE(target.supports(GateKind::CZ, {1, 2}));
+  EXPECT_FALSE(target.supports(GateKind::CZ, {2, 1}));
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
   EXPECT_EQ(target.synthesisBasis()->entangler, GateKind::CZ);
@@ -417,11 +436,38 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
   EXPECT_EQ(reconstructed.materialize(context), attribute);
   EXPECT_EQ(reconstructed.couplings(), target.couplings());
   EXPECT_EQ(reconstructed.supportsOperation("r", 1, 2), true);
+  EXPECT_TRUE(reconstructed.supportsOperation("r", 1, 2, {7}));
+  EXPECT_FALSE(reconstructed.supportsOperation("r", 1, 2, {11}));
   EXPECT_EQ(reconstructed.supportsOperation("gphase", 0, 1), true);
   EXPECT_EQ(reconstructed.supportsOperation("h", 3, 0), true);
   EXPECT_EQ(reconstructed.operations()[1].arity(), Arity::fixed(0));
   EXPECT_EQ(reconstructed.operations()[2].arity(), Arity::variadic(1));
   EXPECT_EQ(reconstructed.synthesisBasis(), target.synthesisBasis());
+}
+
+TEST(CompilerTargetTest, SupportsMaximumSiteIds) {
+  constexpr auto maxSite = std::numeric_limits<SiteId>::max();
+  constexpr auto nextSite = maxSite - 1;
+  std::vector sites{valid(Site::create(nextSite)),
+                    valid(Site::create(maxSite))};
+  const auto x = valid(
+      Operation::create("x", 1, 0,
+                        std::vector{valid(SiteTuple::create({nextSite})),
+                                    valid(SiteTuple::create({maxSite}))}));
+  const auto cx = valid(Operation::create(
+      "cx", 2, 0, std::vector{valid(SiteTuple::create({nextSite, maxSite}))}));
+  const auto target =
+      valid(Target::create(std::move(sites), Connectivity::allToAll(),
+                           NativeOperations::fromOperations({x, cx})));
+
+  EXPECT_TRUE(target.supports(GateKind::X, {nextSite}));
+  EXPECT_TRUE(target.supports(GateKind::X, {maxSite}));
+  EXPECT_TRUE(target.supports(GateKind::CX, {nextSite, maxSite}));
+
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto attribute = target.materialize(context);
+  EXPECT_EQ(valid(Target::create(attribute)).materialize(context), attribute);
 }
 
 TEST(CompilerTargetTest, RoundTripsSupportedTargetStates) {
@@ -453,6 +499,50 @@ TEST(CompilerTargetTest, RoundTripsSupportedTargetStates) {
                     mlir::mqt::ConnectivityKind::Explicit, {},
                     mlir::mqt::NativeOperationsKind::Unrestricted, {})),
                 "Compiler target topology must be connected");
+}
+
+TEST(CompilerTargetTest, EnforcesExactOrderedOperationApplicability) {
+  std::vector sites{valid(Site::create(10)), valid(Site::create(20)),
+                    valid(Site::create(30))};
+  const auto globalU = valid(Operation::create("u", 1, 3));
+  const auto restrictedX = valid(Operation::create(
+      "x", 1, 0, std::vector{valid(SiteTuple::create({10}))}));
+  const auto directionalCX =
+      valid(Operation::create("cx", 2, 0,
+                              std::vector{valid(SiteTuple::create({10, 20})),
+                                          valid(SiteTuple::create({20, 30}))}));
+  const auto exactCZ = valid(Operation::create(
+      "cz", 2, 0, std::vector{valid(SiteTuple::create({10, 20}))}));
+  const auto threeQubit = valid(
+      Operation::create("device.operation", 3, 0,
+                        std::vector{valid(SiteTuple::create({10, 20, 30}))}));
+  const auto target = valid(Target::create(
+      std::move(sites), Connectivity::fromCouplings({{10, 20}, {20, 30}}),
+      NativeOperations::fromOperations(
+          {globalU, restrictedX, directionalCX, exactCZ, threeQubit})));
+
+  EXPECT_TRUE(globalU.siteTuples().empty());
+  EXPECT_FALSE(restrictedX.siteTuples().empty());
+  EXPECT_FALSE(directionalCX.siteTuples().empty());
+
+  EXPECT_TRUE(target.supports(GateKind::U, {30}));
+  EXPECT_TRUE(target.supports(GateKind::X, {10}));
+  EXPECT_FALSE(target.supports(GateKind::X, {20}));
+  EXPECT_TRUE(target.supports(GateKind::CX, {10, 20}));
+  EXPECT_FALSE(target.supports(GateKind::CX, {20, 10}));
+  EXPECT_TRUE(target.supports(GateKind::CX, {20, 30}));
+  EXPECT_FALSE(target.supports(GateKind::CX, {30, 20}));
+  EXPECT_FALSE(target.supports(GateKind::CX, {10, 30}));
+  EXPECT_TRUE(target.supports(GateKind::CZ, {10, 20}));
+  EXPECT_FALSE(target.supports(GateKind::CZ, {20, 10}));
+  EXPECT_FALSE(target.supports(GateKind::ECR));
+  EXPECT_FALSE(target.supports(GateKind::ECR, {10, 20}));
+  EXPECT_FALSE(target.supports(GateKind::CX, {10}));
+  EXPECT_FALSE(target.supports(GateKind::CX, {10, 10}));
+  EXPECT_FALSE(target.supports(GateKind::CX, {10, 40}));
+  EXPECT_TRUE(target.supportsOperation("device.operation", 3, 0, {10, 20, 30}));
+  EXPECT_FALSE(
+      target.supportsOperation("device.operation", 3, 0, {30, 20, 10}));
 }
 
 TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
@@ -504,6 +594,19 @@ TEST(CompilerTargetTest, DerivesControlledEntanglersFromVariadicBases) {
               Target::SingleQubitBasis::U);
     EXPECT_EQ(target.synthesisBasis()->entangler, entangler);
   }
+}
+
+TEST(CompilerTargetTest, ResolvesLargeAllToAllVariadicBasis) {
+  constexpr size_t numSites = 65'535;
+  const auto target = valid(Target::create(
+      numSites, Connectivity::allToAll(),
+      NativeOperations::fromOperations(
+          {valid(Operation::create("u", 1, 3)),
+           valid(Operation::create("x", Arity::variadic(1), 0))})));
+
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
+  EXPECT_EQ(target.synthesisBasis()->entangler, GateKind::CX);
 }
 
 TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
@@ -570,8 +673,7 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
   ASSERT_NE(gphase, nullptr);
 
   std::vector sites{valid(Site::create(10)), valid(Site::create(20))};
-  std::vector directionalTuples{valid(SiteTuple::create({10, 20})),
-                                valid(SiteTuple::create({20, 10}))};
+  std::vector directionalTuples{valid(SiteTuple::create({10, 20}))};
   std::vector operations{
       valid(Operation::create("x", 1, 0)),
       valid(Operation::create("gphase", 0, 1)),
@@ -582,14 +684,20 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
   const auto target =
       valid(Target::create(std::move(sites), Connectivity::allToAll(),
                            NativeOperations::fromOperations(operations)));
-  EXPECT_EQ(target.supports(x), true);
-  EXPECT_EQ(target.supports(cx), true);
-  EXPECT_EQ(target.supports(cz), true);
-  EXPECT_EQ(target.supports(measure), true);
-  EXPECT_EQ(target.supports(reset), true);
-  EXPECT_EQ(target.supports(barrier), true);
-  EXPECT_EQ(target.supports(gphase), true);
-  EXPECT_EQ(target.supports(nullptr), false);
+  EXPECT_TRUE(target.supports(x));
+  EXPECT_TRUE(target.supports(cx));
+  EXPECT_TRUE(target.supports(cz));
+  EXPECT_TRUE(target.supports(measure));
+  EXPECT_TRUE(target.supports(reset));
+  EXPECT_TRUE(target.supports(barrier));
+  EXPECT_TRUE(target.supports(gphase));
+  EXPECT_TRUE(target.supports(cx, {10, 20}));
+  EXPECT_FALSE(target.supports(cx, {20, 10}));
+  EXPECT_TRUE(target.supports(measure, {10}));
+  EXPECT_TRUE(target.supports(reset, {10}));
+  EXPECT_FALSE(target.supports(nullptr));
+  EXPECT_FALSE(target.supports(nullptr, {10}));
+  EXPECT_FALSE(target.supports(moduleOp->getOperation(), {10}));
 
   const auto closed = valid(Target::create(
       2, Connectivity::allToAll(), NativeOperations::fromOperations({})));

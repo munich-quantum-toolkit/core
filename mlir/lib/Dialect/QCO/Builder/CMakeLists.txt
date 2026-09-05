@@ -19,7 +19,8 @@ add_mlir_library(
   MLIRQCODialect
   MLIRQTensorDialect
   PRIVATE
-  MLIRMQTUtils)
+  MLIRMQTUtils
+  MLIRQCOUtils)
 
 mqt_mlir_target_use_project_options(MLIRQCOProgramBuilder)
 

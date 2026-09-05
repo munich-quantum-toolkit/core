@@ -10,7 +10,7 @@
 
 #include "ModifierUtils.h"
 
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -33,9 +33,10 @@ namespace mlir::qco::detail {
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   const auto hasNonUnitaryOperation =
       body.walk([](Operation* operation) {
-            return isa<cbit::AllocOp, cbit::CompareOp, cbit::LoadOp,
-                       cbit::StoreOp, AllocOp, SinkOp, StaticOp, MeasureOp,
-                       ResetOp>(operation)
+            return operation->getName().getDialectNamespace() ==
+                               cbit::CBitDialect::getDialectNamespace() ||
+                           isa<AllocOp, SinkOp, StaticOp, MeasureOp, ResetOp>(
+                               operation)
                        ? WalkResult::interrupt()
                        : WalkResult::advance();
           })

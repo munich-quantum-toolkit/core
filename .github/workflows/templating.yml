@@ -31,7 +31,7 @@ jobs:
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
           permission-contents: write # Needed to push the templating branch
           permission-pull-requests: write # Needed to open the templating pull request
-      - uses: munich-quantum-toolkit/templates@f87a5f152d33b64e3cc4fad41c402bf7ce892f5d # v1.4.3
+      - uses: munich-quantum-toolkit/templates@8caeb0bd8d0e2ebf906e7c3a826c06f72844a83b # v1.5.0
         with:
           token: ${{ steps.create-token.outputs.token }}
           name: Core
@@ -39,4 +39,5 @@ jobs:
           project-type: c++-mlir-python
           repository: ${{ github.event.repository.name }}
           synchronize-agents-md: false
+          synchronize-gitignore: false
           release-drafter-categories: ${{ steps.read-release-drafter-categories.outputs.release_drafter_categories }}

@@ -1,13 +1,8 @@
 # Move circuit IR OpenQASM serialization into one serializer
 
-This ExecPlan is a living document. The sections `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
-be kept up to date as work proceeds.
+Status: historical implementation record.
 
-This ExecPlan must be maintained in accordance with `.agent/PLANS.md` from the
-repository root.
-
-## Purpose / Big Picture
+## Goal and scope
 
 MQT Core currently makes every circuit IR operation format itself as OpenQASM.
 After this change, `QuantumComputation::dumpOpenQASM` and
@@ -21,107 +16,70 @@ The existing exact-output and import/export round-trip tests demonstrate that
 the public circuit behavior remains unchanged. A focused serializer test
 demonstrates the replacement for direct operation dumping.
 
-## Progress
+## Constraints
 
-- [x] (2026-08-26 09:58Z) Read `AGENTS.md`, `.agent/PLANS.md`,
-  `docs/ai_usage.md`, and the ponytail coding guidance.
-- [x] (2026-08-26 09:58Z) Traced the current circuit and operation formatting
-  flow and identified all in-repository implementations.
-- [x] (2026-08-26 09:58Z) Found the direct downstream operation-level callers in
-      MQT Debugger and QMAP that require a public replacement.
-- [x] (2026-08-26 10:18Z) Created `codex/2098-openqasm-serializer` from
-      `origin/main` and confirmed the focused pre-change compatibility suite
-      passes apart from two tests whose relative fixture path requires the IR
-      build directory as the working directory.
-- [x] (2026-08-26 10:20Z) Added `OpenQASMSerializer`, centralized the existing
-  formatting behavior, and made `QuantumComputation` delegate to it.
-- [x] (2026-08-26 10:20Z) Removed OpenQASM methods and formatting helpers from
-  the operation hierarchy and moved the register-map aliases into the
-  serializer header.
-- [x] (2026-08-26 10:20Z) Added exact direct-operation coverage plus Python
-  string/file parity coverage; retained all existing golden, round-trip, and
-  symbolic-error behavior.
-- [x] (2026-08-26 10:20Z) Documented the direct-caller and custom-operation
-  migration in the v4 upgrade guide.
-- [x] (2026-08-26 10:20Z) Built the release IR target and Python bindings, ran
-      all 281 IR tests, the focused Python tests, full lint, standalone checks
-      for all changed public headers, and final whitespace checks.
-- [x] (2026-08-26 10:48Z) Built the downstream Debugger draft against the local
-      Core source. This exposed and fixed a missing direct `<iomanip>` include
-      in `NonUnitaryOperation.cpp`; the full 281-test IR suite still passes.
-- [x] (2026-08-26 11:03Z) Applied the final Ponytail review: unified the two
-      whole-register predicates and inlined compound dispatch, removing 16
-      source lines. The 52 focused tests and full lint pass.
-- [x] (2026-08-26 11:11Z) Added the required changelog entry with the pull
-      request number and author.
-- [x] (2026-08-26 12:01Z) Addressed review feedback on nested indentation and
-      multi-target OpenQASM 3 measurement assignments. All 283 IR tests pass.
-- [x] (2026-08-26 14:45Z) Added an optional custom-leaf serializer callback so
-      downstream formats reuse Core's recursive traversal. All 287 IR tests and
-      the QMAP integration tests pass.
+- The register-map aliases in `include/mqt-core/ir/Register.hpp` are used only
+  by OpenQASM operation formatting inside Core. Evidence: repository-wide search
+  finds their Core uses only in the current dump methods and
+  `QuantumComputation::dumpOpenQASM`.
 
-## Surprises & Discoveries
-
-- Observation: The register-map aliases in `include/mqt-core/ir/Register.hpp`
-  are used only by OpenQASM operation formatting inside Core. Evidence:
-  repository-wide search finds their Core uses only in the current dump methods
-  and `QuantumComputation::dumpOpenQASM`.
-- Observation: Direct operation formatting is a real downstream contract, not
-  dead API. Evidence: MQT Debugger formats inverted operations with
+- Direct operation formatting is a real downstream contract, not dead API.
+  Evidence: MQT Debugger formats inverted operations with
   `Operation::dumpOpenQASM2`, and QMAP's superconducting data logger formats a
   `CompoundOperation` with `dumpOpenQASM3`.
-- Observation: `SymbolicOperation` currently rejects both OpenQASM 2 and 3
-  serialization with distinct error messages. The serializer must keep these
-  failures unchanged.
-- Observation: QMAP draft PR #1111 adds operation subclasses with their own
-  extended OpenQASM syntax and routes mixed circuits through Core's exporter.
-  Evidence: the draft adds `NeutralAtomOperation::dumpOpenQASM` and
-  `AodOperation::dumpOpenQASM`. QMAP must instead own serialization for those
-  extensions; Core's serializer deliberately handles only Core operation
-  classes.
-- Observation: Running the pre-change `IO.*` tests from the repository root
-  produces two fixture lookup failures for `../circuits/test.qasm`; the other 49
-  selected tests pass. The final IR suite must be run from
-  `build/release/test/ir` so the existing relative fixture paths resolve.
-- Observation: CMake's aggregate header-set verification target also treats
-  `OpType.inc` as a standalone header and fails on its required `HANDLE_OP_TYPE`
-  macro. This is unrelated to the refactor. Every changed public header,
-  including `OpenQASMSerializer.hpp`, was compiled through its individual
-  generated header-set object target successfully.
-- Observation: Debugger's build enables `_LIBCPP_REMOVE_TRANSITIVE_INCLUDES`.
-  Its local Core integration build revealed that `NonUnitaryOperation.cpp` uses
-  `std::setw` without directly including `<iomanip>` after the serialization
-  includes were removed. Adding that standard-library include makes the
-  downstream integration build self-contained.
 
-## Decision Log
+- `SymbolicOperation` currently rejects both OpenQASM 2 and 3 serialization with
+  distinct error messages. The serializer must keep these failures unchanged.
 
-- Decision: Add one concrete `qc::OpenQASMSerializer` in
+- QMAP draft PR #1111 adds operation subclasses with their own extended OpenQASM
+  syntax and routes mixed circuits through Core's exporter. Evidence: the draft
+  adds `NeutralAtomOperation::dumpOpenQASM` and `AodOperation::dumpOpenQASM`.
+  QMAP must instead own serialization for those extensions; Core's serializer
+  deliberately handles only Core operation classes.
+
+- CMake's aggregate header-set verification target also treats `OpType.inc` as a
+  standalone header and fails on its required `HANDLE_OP_TYPE` macro. This is
+  unrelated to the refactor. Every changed public header, including
+  `OpenQASMSerializer.hpp`, was compiled through its individual generated
+  header-set object target successfully.
+
+- Debugger's build enables `_LIBCPP_REMOVE_TRANSITIVE_INCLUDES`. Its local Core
+  integration build revealed that `NonUnitaryOperation.cpp` uses `std::setw`
+  without directly including `<iomanip>` after the serialization includes were
+  removed. Adding that standard-library include makes the downstream integration
+  build self-contained.
+
+## Decisions
+
+- Add one concrete `qc::OpenQASMSerializer` in
   `include/mqt-core/ir/OpenQASMSerializer.hpp` and
   `src/ir/OpenQASMSerializer.cpp`. It stores the destination stream, selected
   format, and an optional callback for otherwise unsupported leaf operations;
   register maps are supplied to the callback and are never retained. Rationale:
   One serializer removes formatting from the operation hierarchy while letting
   downstream formats reuse Core's compound and conditional traversal without a
-  visitor hierarchy or extension registry. Date/Author: 2026-08-26 / Codex.
-- Decision: Keep an operation-level serializer entry point that accepts the
-  existing register maps. Rationale: MQT Debugger and QMAP need to format
-  operations without exporting a complete `QuantumComputation`. Date/Author:
-  2026-08-26 / Codex.
-- Decision: Make register-map entries own their register metadata instead of
-  retaining references. Rationale: QMAP stores its qubit map beyond the lifetime
-  of the local combined-register map used to build it. Owning the small
-  descriptors removes that dangling-reference hazard without changing how
-  callers construct or access map entries. Date/Author: 2026-08-26 / Codex.
-- Decision: Dispatch built-in operations in the serializer, then offer otherwise
+  visitor hierarchy or extension registry.
+
+- Keep an operation-level serializer entry point that accepts the existing
+  register maps. Rationale: MQT Debugger and QMAP need to format operations
+  without exporting a complete `QuantumComputation`.
+
+- Make register-map entries own their register metadata instead of retaining
+  references. Rationale: QMAP stores its qubit map beyond the lifetime of the
+  local combined-register map used to build it. Owning the small descriptors
+  removes that dangling-reference hazard without changing how callers construct
+  or access map entries.
+
+- Dispatch built-in operations in the serializer, then offer otherwise
   unsupported leaves to the optional callback. Rationale: This avoids friends
   and new virtual methods while keeping built-in formatting in one file and
-  supporting downstream operation types. Date/Author: 2026-08-26 / Codex.
-- Decision: Preserve emitted bytes, warnings, and exceptions before improving
-  any OpenQASM behavior. Rationale: Issue #2098 is an ownership refactor, not a
-  syntax or feature change. Date/Author: 2026-08-26 / Codex.
+  supporting downstream operation types.
 
-## Outcomes & Retrospective
+- Preserve emitted bytes, warnings, and exceptions before improving any OpenQASM
+  behavior. Rationale: Issue #2098 is an ownership refactor, not a syntax or
+  feature change.
+
+## Outcome and validation
 
 Core now has one concrete serializer with two entry points:
 
@@ -149,7 +107,7 @@ inverted clone it already creates). QMAP's superconducting logger can use the
 Core operation entry point, while QMAP draft PR #1111 must move neutral-atom and
 AOD circuit serialization into QMAP.
 
-## Context and Orientation
+## Code and ownership
 
 Circuit IR means the `qc::QuantumComputation` circuit representation and the
 operation classes under `include/mqt-core/ir/operations/`; it is separate from
@@ -177,67 +135,7 @@ The relevant behavior tests are in `test/ir/test_io.cpp`,
 `test/ir/test_qasm3_parser.cpp`, and `test/ir/test_symbolic.cpp`. The IR test
 binary is `build/release/test/ir/mqt-core-ir-test`.
 
-## Plan of Work
-
-Add `include/mqt-core/ir/OpenQASMSerializer.hpp`. Move the two register-map
-aliases from `Register.hpp` into this header. Declare a concrete serializer
-whose two `serialize` overloads accept a complete circuit or one operation. The
-instance stores only a reference to the output stream and the selected OpenQASM
-version. Keep implementation-only dispatch in the source file.
-
-Add `src/ir/OpenQASMSerializer.cpp`. Move the existing register sorting, layout
-comment, header, register declaration, gate, measurement, reset, compound,
-if/else, and symbolic-error logic into this file without changing emitted text.
-Dispatch to the known concrete operation types. Keep recursive compound and
-if/else serialization inside the serializer.
-
-Replace the body of `QuantumComputation::dumpOpenQASM` with a delegation to the
-serializer. Remove `dumpOpenQASM`, `dumpOpenQASM2`, and `dumpOpenQASM3` from
-`Operation` and every subclass. Remove the now-unused formatting helpers and
-includes from the operation headers and source files. Remove the register-map
-aliases from `Register.hpp`.
-
-Add a focused test in `test/ir/test_io.cpp` that constructs register maps,
-serializes an operation through `OpenQASMSerializer`, and checks the exact text.
-Run all existing IO, parser, and symbolic tests so their golden output, round
-trips, conditions, compounds, measurements, layout comments, and error messages
-continue to pass.
-
-Update the existing v4 cleanup entry in `UPGRADING.md`. Name the removed
-operation methods and register-map include move. Document `OpenQASMSerializer`
-as the direct-operation replacement. Defer the matching `CHANGELOG.md` entry
-until a pull request number is available, because the project requires that
-reference. Do not change Python stubs because the Python-facing
-`QuantumComputation` API does not change.
-
-## Concrete Steps
-
-Run all commands from the repository root.
-
-Inspect the focused diff while implementing:
-
-    git diff -- include/mqt-core/ir src/ir test/ir/test_io.cpp CHANGELOG.md UPGRADING.md
-
-Configure and build the release IR test target after adding the new source:
-
-    cmake --preset release
-    cmake --build --preset release --target mqt-core-ir-test
-
-Run the narrow serializer and output tests first, followed by all IR tests:
-
-    ./build/release/test/ir/mqt-core-ir-test --gtest_filter='IO.*:SymbolicTest.failPrintingQASM*'
-    ./build/release/test/ir/mqt-core-ir-test
-
-Run repository checks at completion:
-
-    uvx nox -s lint
-    git diff --check
-    git status --short
-
-Expected test output reports all selected tests as passed. Lint and
-`git diff --check` must exit with status zero.
-
-## Validation and Acceptance
+## Acceptance
 
 `QuantumComputation::toQASM(false)` and `toQASM(true)` must match all existing
 exact expected strings. Exported OpenQASM must still import to an equivalent
@@ -254,26 +152,7 @@ in any operation header or source file.
 The public `QuantumComputation` methods must remain source compatible. The
 upgrade guide must give direct operation callers one exact replacement call.
 
-## Idempotence and Recovery
-
-All source edits and test commands are repeatable. CMake configuration may be
-rerun safely when the glob discovers the new source and header. If a behavior
-test changes output, compare the serializer code with the deleted operation
-implementation and restore the old byte sequence rather than updating the golden
-expectation. Preserve unrelated work and revert only task-owned lines if an
-experiment is discarded.
-
-## Artifacts and Notes
-
-The initial direct-consumer audit found these old calls:
-
-    MQT Debugger: Operation::dumpOpenQASM2(stream, qubitMap, {})
-    QMAP DataLogger: CompoundOperation::dumpOpenQASM3(stream, qregs, cregs)
-
-The planned replacement is an `OpenQASMSerializer` constructed with the output
-stream and version, followed by `serialize(operation, qubitMap, bitMap)`.
-
-## Interfaces and Dependencies
+## Interfaces
 
 The final public header `include/mqt-core/ir/OpenQASMSerializer.hpp` must define
 `qc::QubitIndexToRegisterMap`, `qc::BitIndexToRegisterMap`, and
@@ -286,8 +165,3 @@ No operation class may declare an OpenQASM formatting method. No new virtual
 interface, generic visitor framework, factory, extension registry, or external
 dependency is part of this change. The serializer may accept one optional
 custom-leaf callback.
-
-Revision note: Created the initial self-contained plan after tracing the current
-implementation and downstream direct callers. Updated it after the compiling
-milestone with the final API, compatibility evidence, downstream coordination,
-changelog completion, and review follow-ups.

@@ -45,7 +45,7 @@ if(NOT TARGET ${TARGET_NAME})
     # LLVM's process-wide registries when it loads this device.
     target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
   endif()
-  target_link_libraries(${TARGET_NAME} PRIVATE MLIRQCODDFunctionality MQTCompilerPipeline
+  target_link_libraries(${TARGET_NAME} PRIVATE MLIRQCODDFunctionality MQTCompilerPrograms
                                                MQT::CoreQIRJIT MQT::CoreQIRRuntime)
 
   mqt_configure_qdmi_device(${TARGET_NAME} ID mqt.ddsim.default PREFIX ${QDMI_PREFIX})

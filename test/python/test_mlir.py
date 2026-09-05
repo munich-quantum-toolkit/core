@@ -449,7 +449,14 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
         CompilerTarget.Site(20, "q1"),
     ]
     site_tuple = CompilerTarget.SiteTuple([10, 20], duration=10, fidelity=0.99)
-    operation = CompilerTarget.Operation("cx", 2, 0, site_tuples=[site_tuple], duration=20, fidelity=0.98)
+    operation = CompilerTarget.Operation(
+        "cx",
+        2,
+        0,
+        site_tuples=[site_tuple],
+        duration=20,
+        fidelity=0.98,
+    )
     fixed_zero = CompilerTarget.OperationArity.fixed(0)
     variadic = CompilerTarget.OperationArity.variadic(2)
     global_phase = CompilerTarget.Operation("gphase", fixed_zero, 1)
@@ -486,6 +493,11 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     assert site_tuple.sites == [10, 20]
     assert len(operation.site_tuples) == 1
     assert operation.site_tuples[0].sites == [10, 20]
+    assert not CompilerTarget.Operation("x", 1, 0).site_tuples
+    assert targets[0].supports_operation("ecr", 2, sites=[0, 1])
+    assert not targets[2].supports_operation("ecr", 2, sites=[10, 20])
+    assert targets[2].supports_operation("cx", 2, sites=[10, 20])
+    assert not targets[2].supports_operation("cx", 2, sites=[20, 10])
     assert operation.arity.kind == CompilerTarget.OperationArityKind.FIXED
     assert operation.arity.value == 2
     assert global_phase.arity.kind == CompilerTarget.OperationArityKind.FIXED
@@ -498,6 +510,25 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     assert variadic.accepts(2)
     assert variadic.accepts(5)
     assert duration_unit.unit == "ns"
+
+
+@pytest.mark.parametrize("arity", [2, CompilerTarget.OperationArity.fixed(2)])
+def test_compiler_target_accepts_plain_site_tuples(arity: int | CompilerTarget.OperationArity) -> None:
+    """Mix plain placements and calibrated tuples without widening support."""
+    operation = CompilerTarget.Operation(
+        "cx", arity, 0, site_tuples=[(1, 0), [1, 2], CompilerTarget.SiteTuple([2, 0], fidelity=0.99)]
+    )
+    target = CompilerTarget(
+        3,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([operation]),
+    )
+    assert [entry.sites for entry in operation.site_tuples] == [[1, 0], [1, 2], [2, 0]]
+    assert [entry.fidelity for entry in operation.site_tuples] == [None, None, 0.99]
+    assert target.supports_operation("cx", 2, sites=[1, 0])
+    assert not target.supports_operation("cx", 2, sites=[0, 1])
+    with pytest.raises(ValueError, match="site tuple does not match its arity"):
+        CompilerTarget.Operation("cx", arity, 0, site_tuples=[(0,)])
 
 
 def test_compiler_target_construction_preserves_validation_errors() -> None:
@@ -533,6 +564,8 @@ def test_compiler_target_construction_preserves_validation_errors() -> None:
             0,
             site_tuples=[CompilerTarget.SiteTuple([0, 1])],
         )
+    with pytest.raises(ValueError, match="site tuple does not match its arity"):
+        CompilerTarget.Operation("cx", 2, 0, site_tuples=[CompilerTarget.SiteTuple([0])])
 
 
 def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) -> None:

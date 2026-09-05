@@ -16,175 +16,20 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Operation.h>
-#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
 #include <cstddef>
-#include <cstdint>
 #include <iterator>
-#include <optional>
-#include <utility>
 
 namespace mlir::qco {
-
-// Returns the position of a qubit among the qubit-typed values in a range.
-template <typename RangeT>
-static std::optional<size_t> qubitPositionIn(RangeT range, Value qubit) {
-  size_t position = 0;
-  for (Value value : range) {
-    if (!isa<QubitType>(value.getType())) {
-      continue;
-    }
-    if (value == qubit) {
-      return position;
-    }
-    ++position;
-  }
-  return std::nullopt;
-}
-
-// Returns the qubit-typed value at a position, or null if none exists.
-template <typename RangeT>
-static Value nthQubitOf(RangeT range, size_t position) {
-  size_t seen = 0;
-  for (Value value : range) {
-    if (!isa<QubitType>(value.getType())) {
-      continue;
-    }
-    if (seen == position) {
-      return value;
-    }
-    ++seen;
-  }
-  return nullptr;
-}
-
-FailureOr<SmallVector<int64_t>>
-CallQubitMapping::computeMapping(func::FuncOp callee) {
-  if (callee.isExternal()) {
-    return failure();
-  }
-
-  // Threading a callee already in progress would not terminate.
-  if (!inProgress.insert(callee.getOperation()).second) {
-    return failure();
-  }
-  auto progressGuard =
-      llvm::make_scope_exit([&] { inProgress.erase(callee.getOperation()); });
-
-  // A body under construction may not have a terminator yet.
-  if (!callee.getBody().hasOneBlock() ||
-      !callee.getBody().front().mightHaveTerminator()) {
-    return failure();
-  }
-  auto returnOp =
-      dyn_cast<func::ReturnOp>(callee.getBody().front().getTerminator());
-  if (!returnOp) {
-    return failure();
-  }
-
-  SmallVector<int64_t> mapping;
-  for (BlockArgument arg : callee.getArguments()) {
-    if (!isa<QubitType>(arg.getType())) {
-      continue;
-    }
-
-    int64_t resultIndex = KEPT;
-    {
-      // Follow the argument to the end of its wire.
-      Value last = arg;
-      Operation* lastOp = nullptr;
-      WireIterator it(arg, this);
-      for (; it != std::default_sentinel; ++it) {
-        last = it.qubit();
-        lastOp = it.operation();
-      }
-      if (it.mappingFailed_) {
-        return failure();
-      }
-
-      if (isa_and_nonnull<func::ReturnOp>(lastOp)) {
-        for (const auto& [index, operand] :
-             llvm::enumerate(returnOp.getOperands())) {
-          if (operand == last) {
-            resultIndex = static_cast<int64_t>(index);
-            break;
-          }
-        }
-      }
-    }
-    mapping.emplace_back(resultIndex);
-  }
-
-  return mapping;
-}
-
-void CallQubitMapping::invalidate() { cache.clear(); }
-
-FailureOr<ArrayRef<int64_t>> CallQubitMapping::mappingFor(func::CallOp callOp) {
-  auto callee = dyn_cast_or_null<func::FuncOp>(
-      SymbolTable::lookupNearestSymbolFrom(callOp, callOp.getCalleeAttr()));
-  if (!callee) {
-    return failure();
-  }
-
-  auto* const key = callee.getOperation();
-  if (const auto it = cache.find(key); it != cache.end()) {
-    return ArrayRef<int64_t>(it->second);
-  }
-  // Compute before caching so recursion is detected through inProgress.
-  auto mapping = computeMapping(callee);
-  if (failed(mapping)) {
-    return failure();
-  }
-  return ArrayRef<int64_t>(
-      cache.insert_or_assign(key, std::move(*mapping)).first->second);
-}
-
-FailureOr<Value> CallQubitMapping::getResultForOperand(func::CallOp callOp,
-                                                       Value operand) {
-  const auto position = qubitPositionIn(callOp.getOperands(), operand);
-  assert(position && "expected a qubit operand of the call");
-  auto mappingOr = mappingFor(callOp);
-  if (failed(mappingOr)) {
-    return failure();
-  }
-  ArrayRef<int64_t> mapping = *mappingOr;
-  assert(*position < mapping.size() && "expected matching call signature");
-  const auto resultIndex = mapping[*position];
-  if (resultIndex == KEPT) {
-    return Value{};
-  }
-  return callOp.getResult(static_cast<unsigned>(resultIndex));
-}
-
-FailureOr<Value> CallQubitMapping::getOperandForResult(func::CallOp callOp,
-                                                       Value result) {
-  auto opResult = cast<OpResult>(result);
-  assert(opResult.getOwner() == callOp.getOperation() &&
-         "expected a result of the call");
-  const auto resultIndex = static_cast<int64_t>(opResult.getResultNumber());
-  auto mappingOr = mappingFor(callOp);
-  if (failed(mappingOr)) {
-    return failure();
-  }
-  ArrayRef<int64_t> mapping = *mappingOr;
-  for (const auto& [position, index] : llvm::enumerate(mapping)) {
-    if (index == resultIndex) {
-      return nthQubitOf(callOp.getOperands(), position);
-    }
-  }
-  return Value{};
-}
 
 bool WireIterator::isTail(Operation* op) {
   // `qtensor.from_elements` takes qubits into a tensor just like
@@ -203,20 +48,6 @@ Operation* WireIterator::operation() const {
   }
 
   return op_;
-}
-
-FailureOr<Value> WireIterator::resultForOperand(func::CallOp callOp,
-                                                Value operand) const {
-  CallQubitMapping local;
-  auto& mapping = mapping_ == nullptr ? local : *mapping_;
-  return mapping.getResultForOperand(callOp, operand);
-}
-
-Value WireIterator::operandForResult(func::CallOp callOp, Value result) const {
-  CallQubitMapping local;
-  auto& mapping = mapping_ == nullptr ? local : *mapping_;
-  auto operand = mapping.getOperandForResult(callOp, result);
-  return succeeded(operand) ? *operand : Value{};
 }
 
 Value WireIterator::qubit() const {
@@ -278,26 +109,7 @@ void WireIterator::forward() {
       .Case<IndexSwitchOp>([&](IndexSwitchOp op) {
         qubit_ = op.getTiedResult(&(*qubit_.use_begin()));
       })
-      .Case<func::CallOp>([&](func::CallOp op) {
-        // A call threads the qubit through to the matching result. When the
-        // callee keeps it, the wire ends here.
-
-        auto result = resultForOperand(op, qubit_);
-        if (failed(result)) {
-          mappingFailed_ = true;
-          pos_ = Position::Tail;
-          return;
-        }
-        if (!*result) {
-          pos_ = Position::Tail;
-          return;
-        }
-        qubit_ = *result;
-      })
-      .Default([&](Operation*) {
-        mappingFailed_ = true;
-        pos_ = Position::Tail;
-      });
+      .Default([&](Operation*) { pos_ = Position::Tail; });
 }
 
 void WireIterator::backward() {
@@ -365,14 +177,6 @@ void WireIterator::backward() {
             return;
           }
           llvm::reportFatalInternalError("expected result lookup");
-        })
-        .Case<func::CallOp>([&](func::CallOp callOp) {
-          Value operand = operandForResult(callOp, qubit_);
-          if (!operand) {
-            unknown = true;
-            return;
-          }
-          qubit_ = operand;
         })
         .Default([&](Operation*) { unknown = true; });
 

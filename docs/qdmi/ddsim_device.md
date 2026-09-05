@@ -46,8 +46,11 @@ partially initialized output register fail during import. The Qiskit backend
 preserves Qiskit's zero-initialized classical-bit semantics by writing every
 classical bit before submitting its generated OpenQASM 3 program.
 
-The device implements the full QDMI job interface (except for the
-`QDMI_JOB_RESULT_SHOTS` result format not supported by the simulator).
+Sampling returns ordered bitstrings through `QDMI_JOB_RESULT_SHOTS` and their
+histogram through `QDMI_JOB_RESULT_HIST_KEYS` and `QDMI_JOB_RESULT_HIST_VALUES`.
+Both results come from the same samples, including mid-circuit measurements.
+OpenQASM classical registers use reverse declaration order, with each register
+most-significant-bit first. QIR samples follow the program's recorded outputs.
 
 ## Compile and execute QIR
 
@@ -75,4 +78,5 @@ job = device.submit_job(
 )
 job.wait()
 print(job.get_counts())
+print(job.get_shots())
 ```

@@ -407,7 +407,7 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,
                              MLIRContext* ctx, LoweringState& state) {
-#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   patterns.add<ConvertQCUnitaryOpQIR<qc::KEY##Op, (TARGETS), (PARAMS),         \
                                      &getFnName##GETTER>>(typeConverter, ctx,  \
                                                           &state);
@@ -433,6 +433,24 @@ Value getResultPtr(LoweringState& state, Operation* op,
 LogicalResult prepareClassicalResults(Operation* moduleOp,
                                       LoweringState& state) {
   bool hasInvalidMemory = false;
+  moduleOp->walk([&](Operation* operation) {
+    if (!isa<func::CallOp, func::CallIndirectOp>(operation)) {
+      return;
+    }
+    const auto isRegister = [](Type type) {
+      return isa<cbit::RegisterType>(type);
+    };
+    if (llvm::any_of(operation->getOperandTypes(), isRegister) ||
+        llvm::any_of(operation->getResultTypes(), isRegister)) {
+      operation->emitError(
+          "QIR conversion does not support CBit registers in calls; "
+          "read or write scalar values before the call");
+      hasInvalidMemory = true;
+    }
+  });
+  if (hasInvalidMemory) {
+    return failure();
+  }
   SmallVector<cbit::StoreOp> consumedStores;
   moduleOp->walk([&](func::FuncOp funcOp) {
     if (!mqt::isEntryPoint(funcOp)) {

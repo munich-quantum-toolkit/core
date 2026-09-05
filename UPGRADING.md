@@ -26,10 +26,14 @@ qco_program = compile_program(qc_program, output=OutputFormat.QCO_OPTIMIZED)
 
 Use `QCProgram.from_qasm_str` for source text, `QCProgram.from_qiskit` for a
 Qiskit `QuantumCircuit`, and `QCProgram.to_qiskit` for conversion back to
-Qiskit. For decision-diagram simulation, lower to a `QCOProgram` and use its
-`sample`, `simulate`, or `build_functionality` methods. The circuit-taking
-functions in `mqt.core.dd` and the operation-taking `DDPackage` methods have
-been removed; the raw vector and matrix DD constructors remain available.
+Qiskit. For decision-diagram simulation, pass any compiler input to the
+`sample`, `simulate`, or `build_functionality` function in `mqt.core.mlir`. The
+top-level `simulate` function runs a closed program from the all-zero state.
+Lower to a `QCOProgram` and call the corresponding method when the compiled
+program is reused, a custom initial state is required, or the result should
+remain a DD. The circuit-taking functions in `mqt.core.dd` and the
+operation-taking `DDPackage` methods have been removed; the raw vector and
+matrix DD constructors remain available.
 
 The MQT Core v3 release series continues to provide the classic circuit
 interfaces for repositories that have not migrated. Pin `mqt-core>=3,<4` and
@@ -83,7 +87,7 @@ The `MQT::CoreCircuitOptimizer` CMake target and the
 `circuit_optimizer/mqt_core_circuit_optimizer_export.h` header is no longer
 generated or installed.
 
-### Pruned DD construction helpers
+### Pruned DD helpers
 
 MQT Core no longer provides `dd::GenerationWireStrategy`,
 `dd::generateExponentialState`, or `dd::generateRandomState`. These APIs
@@ -93,9 +97,21 @@ replacement.
 MQT Core also removed `dd::buildFunctionalityRecursive`. The Python
 `mqt.core.dd.sample`, `simulate_statevector`, `build_unitary`, `simulate`, and
 `build_functionality` functions were removed together with the classic circuit
-representation. Compile to a `mqt.core.mlir.QCOProgram` and call its `sample`,
-`simulate`, or `build_functionality` method instead. Use MQT DDSIM's unitary
-simulator when recursive pairwise construction is required.
+representation. Use the `mqt.core.mlir.sample`, `simulate`, or
+`build_functionality` function instead. Compile to a `mqt.core.mlir.QCOProgram`
+and call the corresponding method for custom initial states, DD results, or
+program reuse. Use MQT DDSIM's unitary simulator when recursive pairwise
+construction is required.
+
+MQT Core also removed `dd/GateMatrixDefinitions.hpp` and the named-gate dispatch
+from `dd/Operations.hpp`. This removes `dd::GateType`, the
+`dd::isSingleQubitGate`, `dd::isTwoQubitGate`, and `dd::isThreeQubitGate`
+classifiers, `dd::opToSingleQubitGateMatrix`, `dd::opToTwoQubitGateMatrix`,
+`dd::opToThreeQubitGateMatrix`, `dd::getGateDD`, and the `dd::MEAS_ZERO_MAT` and
+`dd::MEAS_ONE_MAT` constants. Low-level consumers must pass raw matrices to
+`dd::Package::makeGateDD`, `makeTwoQubitGateDD`, `makeThreeQubitGateDD`, or
+`makeDDFromMatrix`. Compiler-backed paths use QCO operations as the canonical
+source of named-gate matrices.
 
 The zero, basis, GHZ, W, dense-vector, dense-matrix, and raw gate-matrix DD
 constructors remain available.
@@ -441,20 +457,31 @@ resolve against the file that declares them. `MQT_CORE_QDMI_CONFIG_FILE`,
 `MQT_CORE_QDMI_CONFIG_JSON`, the system and user files, and the packaged
 `*.qdmi.json` fragments do not change.
 
-### QDMI Qiskit primitive options
+### Qiskit 2.1 minimum
 
-`QDMISampler` and `QDMIEstimator` no longer accept the MQT-specific `options`
-mapping. Pass shot and precision defaults directly, preferably through the
-backend factories:
+The minimum Qiskit version increases from **1.1.0 to 2.1.0**, dropping support
+for all Qiskit 1.x releases and Qiskit 2.0. Upgrade Qiskit to 2.1.0 or newer.
+
+### Native QDMI Qiskit primitives
+
+`QDMISampler` and `QDMIEstimator` are removed. Use Qiskit's `BackendSamplerV2`
+and `BackendEstimatorV2`, or the backend factories with native options:
 
 ```python
 sampler = backend.sampler(default_shots=2048)
-estimator = backend.estimator(default_precision=0.01, default_shots=2048)
+estimator = backend.estimator(default_precision=0.01)
 ```
 
-Replace `QDMIEstimator(..., options={"default_shots": shots})` with
-`QDMIEstimator(..., default_shots=shots)`. The sampler ignored its former
-`options` mapping, so remove that argument without replacement.
+Estimator uses positive precision, not `default_shots`: its default is `1/64`
+(4096 shots). Grouping, metadata, broadcasting, and standard errors now follow
+Qiskit. Sampler requires genuine QDMI `SHOTS`, which DDSIM supports. Counts-only
+devices remain usable for Estimator but cannot run Sampler. No shot
+reconstruction is available.
+
+`backend.run(memory=True)` preserves shot order. Results include classical
+register boundaries; failed jobs and invalid results raise on collection, and
+unsupported execution options are rejected. See the
+[backend requirements](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qdmi_backend.html#backend-requirements).
 
 ### Runtime-configurable SC QDMI device
 

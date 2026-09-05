@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file test_mqt_ir.cpp
- * @brief Unit tests for the MQT metadata dialect.
- */
+/// @file test_mqt_ir.cpp
+/// Unit tests for the MQT metadata dialect.
 
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/MQT/IR/MQTAttributes.h"
@@ -29,12 +27,14 @@
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
 #include <memory>
 #include <string>
 
@@ -102,6 +102,36 @@ TEST_F(MQTIRTest, AcceptsProgramInputAndRegisterNames) {
   )mlir"));
 }
 
+TEST_F(MQTIRTest, AcceptsSourceFunctionName) {
+  EXPECT_TRUE(parse(R"mlir(
+    module {
+      func.func private @unique() attributes {mqt.source_name = "source"}
+    }
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, RejectsInvalidSourceFunctionNames) {
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func private @empty() attributes {mqt.source_name = ""}
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func private @null() attributes {mqt.source_name = "a\00b"}
+    }
+  )mlir"));
+  EXPECT_FALSE(parse(R"mlir(
+    module {
+      func.func @main() {
+        %c0 = "arith.constant"() {mqt.source_name = "source", value = 0 : i64}
+            : () -> i64
+        return
+      }
+    }
+  )mlir"));
+}
+
 TEST_F(MQTIRTest, RoundTripsTypedCompilationTarget) {
   const auto compilationTarget =
       dyn_cast_if_present<mqt::CompilationTargetAttr>(
@@ -114,7 +144,8 @@ TEST_F(MQTIRTest, RoundTripsTypedCompilationTarget) {
             operations = [
                 <name = "cx",
                     arity = #mqt.operation_arity<kind = fixed, value = 2>,
-                    num_parameters = 0, site_tuples = []>,
+                    num_parameters = 0,
+                    site_tuples = [<[4, 7], fidelity = 9.900000e-01 : f64>]>,
                 <name = "gphase",
                     arity = #mqt.operation_arity<kind = fixed, value = 0>,
                     num_parameters = 1, site_tuples = []>,
@@ -136,10 +167,44 @@ TEST_F(MQTIRTest, RoundTripsTypedCompilationTarget) {
   EXPECT_EQ(compilationTarget.getOperations()[1].getArity().getValue(), 0U);
   EXPECT_EQ(compilationTarget.getOperations()[2].getArity().getKind(),
             mqt::OperationArityKind::Variadic);
-  EXPECT_TRUE(
-      compilationTarget.getOperations().front().getSiteTuples().empty());
+  ASSERT_EQ(compilationTarget.getOperations()[0].getSiteTuples().size(), 1U);
+  const auto tuple = compilationTarget.getOperations()[0].getSiteTuples()[0];
+  EXPECT_EQ(tuple.getSites(), (ArrayRef<int64_t>{4, 7}));
+  EXPECT_EQ(tuple.getFidelity().getValueAsDouble(), 0.99);
+  EXPECT_TRUE(compilationTarget.getOperations()[1].getSiteTuples().empty());
+  EXPECT_TRUE(compilationTarget.getOperations()[2].getSiteTuples().empty());
 
   EXPECT_EQ(roundTrip(compilationTarget), compilationTarget);
+}
+
+TEST_F(MQTIRTest, RoundTripsMaximumSiteIds) {
+  const auto compilationTarget = parseAttr(R"mlir(#mqt.compilation_target<
+      sites = [<id = 9223372036854775806>, <id = 9223372036854775807>],
+      connectivity = all_to_all, couplings = [],
+      native_operations = explicit,
+      operations = [<name = "cx",
+          arity = #mqt.operation_arity<kind = fixed, value = 2>,
+          num_parameters = 0,
+          site_tuples = [<[9223372036854775806,
+                           9223372036854775807]>]>]>)mlir");
+  ASSERT_TRUE(compilationTarget);
+  EXPECT_EQ(roundTrip(compilationTarget), compilationTarget);
+}
+
+TEST_F(MQTIRTest, RoundTripsSiteTupleCalibration) {
+  const auto durationOnly = dyn_cast_if_present<mqt::SiteTupleAttr>(
+      parseAttr(R"mlir(#mqt.site_tuple<[4, 7], duration = 0>)mlir"));
+  ASSERT_TRUE(durationOnly);
+  EXPECT_EQ(durationOnly.getDuration(), 0U);
+  EXPECT_FALSE(durationOnly.getFidelity());
+  EXPECT_EQ(roundTrip(durationOnly), durationOnly);
+
+  const auto calibrated = dyn_cast_if_present<mqt::SiteTupleAttr>(parseAttr(
+      R"mlir(#mqt.site_tuple<[4, 7], fidelity = 9.900000e-01 : f64, duration = 40>)mlir"));
+  ASSERT_TRUE(calibrated);
+  EXPECT_EQ(calibrated.getDuration(), 40U);
+  EXPECT_EQ(calibrated.getFidelity().getValueAsDouble(), 0.99);
+  EXPECT_EQ(roundTrip(calibrated), calibrated);
 }
 
 TEST_F(MQTIRTest, RepresentsUnrestrictedTargetFacts) {
@@ -166,10 +231,10 @@ TEST_F(MQTIRTest, RejectsInvalidTargetLeaves) {
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.site<id = 0, t1 =>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.site<id = 0, t2 =>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.coupling<source = 0, target = 0>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.site_tuple<sites = [0, 0]>)mlir"));
-  EXPECT_FALSE(
-      parseAttr(R"mlir(#mqt.site_tuple<sites = [0], duration =>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.site_tuple<sites = [0],
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.site_tuple<[0, 0]>)mlir"));
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.site_tuple<[-1]>)mlir"));
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.site_tuple<[0], duration =>)mlir"));
+  EXPECT_FALSE(parseAttr(R"mlir(#mqt.site_tuple<[0],
       fidelity = 1.100000e+00 : f64>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.operation_arity<
       kind = variadic, value = 0>)mlir"));
@@ -178,20 +243,20 @@ TEST_F(MQTIRTest, RejectsInvalidTargetLeaves) {
       num_parameters = 0, site_tuples = []>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "gphase",
       arity = #mqt.operation_arity<kind = fixed, value = 0>,
-      num_parameters = 1, site_tuples = [<sites = [0]>]>)mlir"));
+      num_parameters = 1, site_tuples = [<[0]>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "h",
       arity = #mqt.operation_arity<kind = variadic, value = 1>,
-      num_parameters = 0, site_tuples = [<sites = [0]>]>)mlir"));
+      num_parameters = 0, site_tuples = [<[0]>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "cx",
       arity = #mqt.operation_arity<kind = fixed, value = 2>,
-      num_parameters = 0, site_tuples = [<sites = [0]>]>)mlir"));
+      num_parameters = 0, site_tuples = [<[0]>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "x",
       arity = #mqt.operation_arity<kind = fixed, value = 1>,
       num_parameters = 0,
-      site_tuples = [<sites = [0]>, <sites = [0]>]>)mlir"));
+      site_tuples = [<[0]>, <[0]>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.native_operation<name = "x",
       arity = #mqt.operation_arity<kind = fixed, value = 1>,
-      num_parameters = 0, site_tuples = [], duration =>)mlir"));
+      num_parameters = 0, site_tuples = [], duration =>>)mlir"));
 }
 
 TEST_F(MQTIRTest, RejectsInvalidCompilationTargets) {
@@ -230,7 +295,7 @@ TEST_F(MQTIRTest, RejectsInvalidCompilationTargets) {
       native_operations = explicit,
       operations = [<name = "x",
           arity = #mqt.operation_arity<kind = fixed, value = 1>,
-          num_parameters = 0, site_tuples = [<sites = [1]>]>]>)mlir"));
+          num_parameters = 0, site_tuples = [<[1]>]>]>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.compilation_target<
       sites = [<id = 0>], connectivity = all_to_all, couplings = [],
       native_operations = explicit,
@@ -301,6 +366,164 @@ TEST_F(MQTIRTest, RejectsInvalidEntryPoints) {
       }
     }
   )mlir"));
+}
+
+TEST_F(MQTIRTest, RejectsMutuallyRecursiveUnitaryFunctions) {
+  for (StringRef source : {
+           R"mlir(
+             func.func private @first(%q: !qc.qubit) attributes {mqt.unitary} {
+               qc.call @second(%q) : !qc.qubit
+               return
+             }
+             func.func private @second(%q: !qc.qubit) attributes {mqt.unitary} {
+               qc.call @first(%q) : !qc.qubit
+               return
+             }
+           )mlir",
+           R"mlir(
+             func.func private @first(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = qco.call @second(%q) : (!qco.qubit) -> !qco.qubit
+               return %out : !qco.qubit
+             }
+             func.func private @second(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = qco.call @first(%q) : (!qco.qubit) -> !qco.qubit
+               return %out : !qco.qubit
+             }
+           )mlir"}) {
+    SCOPED_TRACE(source.str());
+    bool sawRecursion = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawRecursion |= StringRef(diagnostic.str())
+                          .contains("unitary function must not be recursive");
+      return success();
+    });
+    EXPECT_FALSE(parse(source));
+    EXPECT_TRUE(sawRecursion);
+  }
+}
+
+TEST_F(MQTIRTest, RejectsEmptyUnitaryBodies) {
+  for (StringRef source : {
+           R"mlir(
+             func.func private @empty(!qc.qubit) attributes {mqt.unitary} {
+             ^bb0(%q: !qc.qubit):
+             }
+           )mlir",
+           R"mlir(
+             func.func private @empty(!qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+             ^bb0(%q: !qco.qubit):
+             }
+           )mlir"}) {
+    SCOPED_TRACE(source.str());
+    bool sawEmptyBody = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawEmptyBody |= StringRef(diagnostic.str())
+                          .contains("unitary function body must not be empty");
+      return success();
+    });
+    EXPECT_FALSE(parse(source));
+    EXPECT_TRUE(sawEmptyBody);
+  }
+}
+
+TEST_F(MQTIRTest, RejectsCyclicUnitaryQubitFlow) {
+  bool sawCycle = false;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    sawCycle |= StringRef(diagnostic.str())
+                    .contains("unitary QCO result has cyclic qubit flow");
+    return success();
+  });
+  EXPECT_FALSE(parse(R"mlir(
+    func.func private @cyclic(%q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %a = qco.h %b : !qco.qubit -> !qco.qubit
+      %b = qco.h %a : !qco.qubit -> !qco.qubit
+      return %b : !qco.qubit
+    }
+  )mlir"));
+  EXPECT_TRUE(sawCycle);
+}
+
+TEST_F(MQTIRTest, RejectsMalformedUnitaryBodyOperations) {
+  for (StringRef source : {
+           R"mlir(
+             func.func private @malformed(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = "qco.h"() : () -> !qco.qubit
+               return %out : !qco.qubit
+             }
+           )mlir",
+           R"mlir(
+             func.func private @malformed(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = qco.inv (%arg = %q) {
+                 %h = "qco.h"() : () -> !qco.qubit
+                 qco.yield %h : !qco.qubit
+               } : {!qco.qubit} -> {!qco.qubit}
+               return %out : !qco.qubit
+             }
+           )mlir",
+           R"mlir(
+             func.func private @malformed(%q: !qc.qubit)
+                 attributes {mqt.unitary} {
+               %value = "memref.load"() : () -> f64
+               return
+             }
+           )mlir",
+           R"mlir(
+             func.func private @malformed(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %value = "memref.load"() : () -> f64
+               return %q : !qco.qubit
+             }
+           )mlir"}) {
+    SCOPED_TRACE(source.str());
+    bool sawOperandError = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawOperandError |= StringRef(diagnostic.str()).contains("operand");
+      return success();
+    });
+    EXPECT_FALSE(parse(source));
+    EXPECT_TRUE(sawOperandError);
+  }
+}
+
+TEST_F(MQTIRTest, RejectsMalformedCallsInUnitaryCallees) {
+  for (StringRef source : {
+           R"mlir(
+             func.func private @first(%q: !qc.qubit) attributes {mqt.unitary} {
+               qc.call @second(%q) : !qc.qubit
+               return
+             }
+             func.func private @second(%q: !qc.qubit) attributes {mqt.unitary} {
+               "qc.call"(%q) : (!qc.qubit) -> ()
+               return
+             }
+           )mlir",
+           R"mlir(
+             func.func private @first(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = qco.call @second(%q) : (!qco.qubit) -> !qco.qubit
+               return %out : !qco.qubit
+             }
+             func.func private @second(%q: !qco.qubit) -> !qco.qubit
+                 attributes {mqt.unitary} {
+               %out = "qco.call"(%q) : (!qco.qubit) -> !qco.qubit
+               return %out : !qco.qubit
+             }
+           )mlir"}) {
+    SCOPED_TRACE(source.str());
+    bool sawMissingCallee = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      sawMissingCallee |= StringRef(diagnostic.str()).contains("callee");
+      return success();
+    });
+    EXPECT_FALSE(parse(source));
+    EXPECT_TRUE(sawMissingCallee);
+  }
 }
 
 TEST_F(MQTIRTest, RejectsInvalidInputNames) {

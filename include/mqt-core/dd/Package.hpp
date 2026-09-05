@@ -32,6 +32,7 @@
 
 #include <array>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -40,6 +41,7 @@
 #include <random>
 #include <ranges>
 #include <regex>
+#include <span>
 #include <stack>
 #include <stdexcept>
 #include <string>
@@ -359,6 +361,10 @@ public:
   mEdge makeGateDD(const GateMatrix& mat, const Controls& controls,
                    Qubit target);
 
+  /// Construct a single-qubit gate DD from a row-major matrix view.
+  mEdge makeGateDD(std::span<const std::complex<fp>, NEDGE> mat,
+                   const Controls& controls, Qubit target);
+
   /**
    * @brief Creates the DD for a two-qubit gate
    * @param mat Matrix representation of the gate
@@ -398,6 +404,12 @@ public:
   mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
                            const Controls& controls, Qubit target0,
                            Qubit target1);
+
+  /// Construct a two-qubit gate DD from a row-major matrix view.
+  mEdge makeTwoQubitGateDD(
+      std::span<const std::complex<fp>, static_cast<std::size_t>(NEDGE) * NEDGE>
+          mat,
+      const Controls& controls, Qubit target0, Qubit target1);
 
   /**
    * @brief Creates the DD for a three-qubit gate
@@ -441,6 +453,14 @@ public:
   mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
                              const Controls& controls, Qubit target0,
                              Qubit target1, Qubit target2);
+
+  /// Construct a three-qubit gate DD from a row-major matrix view.
+  mEdge makeThreeQubitGateDD(
+      std::span<const std::complex<fp>,
+                static_cast<std::size_t>(THREE_QUBIT_GATE_DIM) *
+                    THREE_QUBIT_GATE_DIM>
+          mat,
+      const Controls& controls, Qubit target0, Qubit target1, Qubit target2);
 
   /**
    * @brief Converts a given matrix to a decision diagram

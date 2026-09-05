@@ -9,9 +9,9 @@
 """Shared public typing helpers for MQT Core."""
 
 import os  # ruff: ignore[typing-only-standard-library-import]
-from typing import TypedDict
+from typing import Any, TypedDict
 
-__all__ = ["QDMIJobParameters", "QDMISessionParameters"]
+__all__ = ["QDMIJobParameters", "QDMISessionParameters", "QiskitEstimatorOptions", "QiskitSamplerOptions"]
 
 
 def __dir__() -> list[str]:
@@ -44,3 +44,19 @@ class QDMIJobParameters(TypedDict, total=False):
     custom3: str | bool | float | None
     custom4: str | bool | float | None
     custom5: str | bool | float | None
+
+
+class QiskitSamplerOptions(TypedDict, total=False):
+    """Native options accepted by ``QDMIBackend.sampler``."""
+
+    default_shots: int
+    seed_simulator: int | None
+    run_options: dict[str, Any] | None
+
+
+class QiskitEstimatorOptions(TypedDict, total=False):
+    """Native options accepted by ``QDMIBackend.estimator``."""
+
+    default_precision: float
+    abelian_grouping: bool
+    seed_simulator: int | None

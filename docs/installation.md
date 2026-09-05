@@ -401,7 +401,7 @@ the [`setup-mlir`] scripts as described below.
 ### Downloading the MLIR Distribution
 
 The [`setup-mlir`] repository provides installation scripts for all supported
-operating systems. You must pass the LLVM version (e.g., `22.1.0`) and the
+operating systems. You must pass the LLVM version (e.g., `23.1.0`) and the
 installation prefix (directory) where MLIR should be extracted. The scripts
 download a platform-specific archive. The only requirement is that the `tar`
 command is available on the system.
@@ -421,11 +421,11 @@ versions, you can install it, for example, via
 Run the Bash script with the desired LLVM version and installation path:
 
 ```console
-curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.sh | bash -s -- -v 22.1.0 -p /path/to/installation
+curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.sh | bash -s -- -v 23.1.0 -p /path/to/installation
 ```
 
 Replace `/path/to/installation` with the directory where the LLVM distribution
-should be installed (e.g., `/opt/llvm-22.1.0`).
+should be installed (e.g., `/opt/llvm-23.1.0`).
 
 :::
 
@@ -434,11 +434,11 @@ should be installed (e.g., `/opt/llvm-22.1.0`).
 Run the PowerShell script with the desired LLVM version and installation path:
 
 ```console
-powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.ps1))) -llvm_version 22.1.0 -install_prefix \path\to\installation"
+powershell -ExecutionPolicy ByPass -c "& ([scriptblock]::Create((irm https://github.com/munich-quantum-software/setup-mlir/releases/latest/download/setup-mlir.ps1))) -llvm_version 23.1.0 -install_prefix \path\to\installation"
 ```
 
 Replace `\path\to\installation` with the directory where the LLVM distribution
-should be installed (e.g., `C:\llvm-22.1.0`). For debug builds on Windows, add
+should be installed (e.g., `C:\llvm-23.1.0`). For debug builds on Windows, add
 the `-use_debug` flag to the script invocation.
 
 :::

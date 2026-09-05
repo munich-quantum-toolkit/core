@@ -517,7 +517,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
       return false;
     }
     auto counts = mlir::qco::sample(entryPoint, numShots_,
-                                    static_cast<uint64_t>(seed_.value_or(0)));
+                                    static_cast<uint64_t>(seed_.value_or(0)),
+                                    mlir::qco::DDArgumentBindings{}, &shots_);
     if (mlir::failed(counts)) {
       std::cerr << "Error: failed to sample the QCO program\n";
       return false;
@@ -570,6 +571,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
     std::ostringstream output;
     runtime.setOstream(output);
     runtime.outputProgramHeader();
+    shots_.reserve(numShots_);
     for (size_t i = 0; i < numShots_; ++i) {
       runtime.reset();
       runtime.outputShotStart();
@@ -579,8 +581,8 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
         std::cerr << "Error: QIR program failed with error: " << rc << '\n';
         return false;
       }
-      // Update the measurement counts.
-      ++counts_[runtime.getMeasurements()];
+      shots_.push_back(runtime.getMeasurements());
+      ++counts_[shots_.back()];
     }
     return true;
   });
@@ -675,6 +677,33 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::wait(const size_t timeout) const
     }
   } else {
     jobHandle_.wait();
+  }
+  return QDMI_SUCCESS;
+}
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::getShots(const size_t size, void* data,
+                                                size_t* sizeRet) const
+    -> QDMI_STATUS {
+  const size_t required =
+      std::accumulate(shots_.begin(), shots_.end(), size_t{0},
+                      [](const size_t total, const auto& shot) {
+                        return total + shot.size() + 1;
+                      });
+  if (sizeRet != nullptr) {
+    *sizeRet = required;
+  }
+  if (data != nullptr) {
+    if (size < required) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    auto output = std::span(static_cast<char*>(data), required);
+    for (const auto& shot : shots_) {
+      std::ranges::copy(shot, output.begin());
+      output[shot.size()] = ',';
+      output = output.subspan(shot.size() + 1);
+    }
+    if (required > 0) {
+      std::span(static_cast<char*>(data), required).back() = '\0';
+    }
   }
   return QDMI_SUCCESS;
 }
@@ -858,6 +887,11 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
     return QDMI_ERROR_BADSTATE;
   }
   switch (result) {
+  case QDMI_JOB_RESULT_SHOTS:
+    if (numShots_ == 0) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    return getShots(size, data, sizeRet);
   case QDMI_JOB_RESULT_HIST_KEYS:
   case QDMI_JOB_RESULT_HIST_VALUES:
     if (numShots_ == 0) {

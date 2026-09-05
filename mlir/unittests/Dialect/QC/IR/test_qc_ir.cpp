@@ -133,17 +133,17 @@ TEST_P(QCTest, ProgramEquivalence) {
 }
 
 TEST_F(QCTest, QubitIsVectorElement) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @f(%arg: vector<2x!qc.qubit>) {
         return
       }
     }
   )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
 
-  auto function = *module->getOps<func::FuncOp>().begin();
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
   const auto vectorType =
       dyn_cast<VectorType>(function.getArgument(0).getType());
   ASSERT_TRUE(vectorType);
@@ -151,7 +151,7 @@ TEST_F(QCTest, QubitIsVectorElement) {
 }
 
 TEST_F(QCTest, CleanupHoistsAndCoalescesStaticQubits) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @main(%condition: i1) {
         scf.if %condition {
@@ -167,14 +167,14 @@ TEST_F(QCTest, CleanupHoistsAndCoalescesStaticQubits) {
       }
     }
   )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*module)));
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
 
-  auto main = module->lookupSymbol<func::FuncOp>("main");
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
   ASSERT_TRUE(main);
   size_t staticOps = 0;
-  module->walk([&](StaticOp op) {
+  moduleOp->walk([&](StaticOp op) {
     ++staticOps;
     EXPECT_EQ(op->getBlock(), &main.getBody().front());
   });
@@ -182,7 +182,7 @@ TEST_F(QCTest, CleanupHoistsAndCoalescesStaticQubits) {
 }
 
 TEST_F(QCTest, CleanupDoesNotHoistStaticQubitsAcrossIsolationBoundaries) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @main() {
         "builtin.module"() ({
@@ -193,14 +193,14 @@ TEST_F(QCTest, CleanupDoesNotHoistStaticQubitsAcrossIsolationBoundaries) {
       }
     }
   )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   StaticOp staticOp;
-  module->walk([&](StaticOp op) { staticOp = op; });
+  moduleOp->walk([&](StaticOp op) { staticOp = op; });
   ASSERT_TRUE(staticOp);
   EXPECT_TRUE(isa<ModuleOp>(staticOp->getParentOp()));
 }
@@ -219,6 +219,30 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
         QCProgramBuilder builder(context.get());
         builder.initialize();
         mixedDynamicRegisterThenStaticQubit(builder);
+      },
+      "Cannot mix dynamic and static qubit allocation modes");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.allocQubit();
+        builder.createFunction("static_helper", {}, [&](ValueRange) {
+          builder.staticQubit(0);
+          return SmallVector<Value>{};
+        });
+      },
+      "Cannot mix dynamic and static qubit allocation modes");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.createFunction("dynamic_helper", {}, [&](ValueRange) {
+          builder.allocQubit();
+          return SmallVector<Value>{};
+        });
+        builder.staticQubit(0);
       },
       "Cannot mix dynamic and static qubit allocation modes");
 }
@@ -369,6 +393,238 @@ TEST_F(QCTest, BuilderCanAllocateQubitRegisterStorageWithoutEagerLoads) {
   EXPECT_EQ(qubitLoads, 0U);
 }
 
+TEST_F(QCTest, BuilderCreatesGenericAndUnitaryFunctions) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+
+  auto generic = builder.createFunction(
+      "identity", TypeRange{builder.getI1Type()},
+      [](ValueRange arguments) { return SmallVector<Value>{arguments[0]}; });
+  auto unitary = builder.createUnitaryFunction(
+      "flip", TypeRange{QubitType::get(context.get())},
+      [&](ValueRange arguments) { builder.x(arguments[0]); });
+
+  auto bit = builder.boolConstant(true);
+  auto genericResults = builder.call(generic, bit);
+  auto qubit = builder.allocQubit();
+  EXPECT_TRUE(builder.call(unitary, qubit).empty());
+  builder.inv(qubit, [&](Value argument) { builder.call(unitary, argument); });
+  builder.retype(ValueRange(genericResults).getTypes());
+  auto moduleOp = builder.finalize(genericResults);
+
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(generic.isPrivate());
+  EXPECT_FALSE(mlir::mqt::isUnitaryFunction(generic));
+  EXPECT_TRUE(mlir::mqt::isUnitaryFunction(unitary));
+  EXPECT_EQ(generic.getNumResults(), 1U);
+  EXPECT_EQ(unitary.getNumResults(), 0U);
+
+  auto mainFunc = mlir::mqt::getEntryPoint(*moduleOp);
+  ASSERT_TRUE(mainFunc);
+  EXPECT_EQ(llvm::range_size(mainFunc.getBody().getOps<func::CallOp>()), 1U);
+  EXPECT_EQ(llvm::range_size(mainFunc.getBody().getOps<CallOp>()), 1U);
+  auto directCall = *mainFunc.getBody().getOps<CallOp>().begin();
+  ASSERT_EQ(directCall.getQubits().size(), 1U);
+  EXPECT_EQ(directCall.getQubits().front(), qubit);
+  auto inverse = *mainFunc.getBody().getOps<InvOp>().begin();
+  auto nestedCall = *inverse.getRegion().getOps<CallOp>().begin();
+  EXPECT_TRUE(isa<UnitaryOpInterface>(nestedCall.getOperation()));
+}
+
+TEST_F(QCTest, BuilderFinalizesRenamedEntryPoint) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto entry = cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp());
+  entry.setName("entry");
+
+  auto moduleOp = builder.finalize();
+
+  ASSERT_TRUE(moduleOp);
+  EXPECT_EQ(mlir::mqt::getEntryPoint(*moduleOp).getName(), "entry");
+}
+
+TEST_F(QCTest, BuilderCreatesFunctionLocalStaticQubits) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto helper = builder.createFunction("helper", {}, [&](ValueRange) {
+    builder.x(builder.staticQubit(0));
+    return SmallVector<Value>{};
+  });
+  auto mainQubit = builder.staticQubit(0);
+  builder.x(mainQubit);
+  auto moduleOp = builder.finalize();
+
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto main = mlir::mqt::getEntryPoint(*moduleOp);
+  ASSERT_TRUE(main);
+  EXPECT_EQ(llvm::range_size(helper.getOps<StaticOp>()), 1U);
+  EXPECT_EQ(llvm::range_size(main.getOps<StaticOp>()), 1U);
+}
+
+TEST_F(QCTest, BuilderRejectsInvalidCalls) {
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        auto function = builder.createFunction(
+            "identity", TypeRange{builder.getI1Type()},
+            [](ValueRange arguments) {
+              return SmallVector<Value>{arguments.front()};
+            });
+        builder.call(function, builder.intConstant(0));
+      },
+      "Call operands must match a function in the current module");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder first(context.get());
+        first.initialize();
+        QCProgramBuilder second(context.get());
+        second.initialize();
+        auto function = second.createFunction(
+            "identity", TypeRange{second.getI1Type()},
+            [](ValueRange arguments) {
+              return SmallVector<Value>{arguments.front()};
+            });
+        first.call(function, first.boolConstant(true));
+      },
+      "Call operands must match a function in the current module");
+}
+
+TEST_F(QCTest, UnitaryFunctionMarkerRejectsNonUnitaryBody) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto function = builder.createFunction(
+      "measure", TypeRange{QubitType::get(context.get())},
+      [&](ValueRange arguments) {
+        builder.measure(arguments[0]);
+        return SmallVector<Value>{};
+      });
+  mlir::mqt::setUnitaryFunction(function);
+  auto moduleOp = builder.finalize();
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains(
+                "unitary QC function body contains a non-unitary operation");
+    return success();
+  });
+  EXPECT_TRUE(failed(verify(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCTest, UnitaryFunctionMarkerRequiresFunctionReturn) {
+  QCProgramBuilder builder(context.get());
+  builder.initialize();
+  auto function = builder.createUnitaryFunction(
+      "flip", TypeRange{QubitType::get(context.get())},
+      [&](ValueRange arguments) { builder.x(arguments[0]); });
+  auto moduleOp = builder.finalize();
+
+  auto returnOp = cast<func::ReturnOp>(function.getBody().front().back());
+  OpBuilder rewriter(returnOp);
+  YieldOp::create(rewriter, returnOp.getLoc());
+  returnOp.erase();
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("unitary QC function must end in an empty func.return");
+    return success();
+  });
+  EXPECT_TRUE(failed(verify(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect>();
+  context->appendDialectRegistry(registry);
+  context->getOrLoadDialect<mlir::mqt::MQTDialect>();
+
+  constexpr std::array<StringLiteral, 9> invalidPrograms{
+      R"mlir(module {
+        func.func private @bad(%q: !qc.qubit)
+            attributes {mqt.unitary = true} { return }
+      })mlir",
+      R"mlir(module {
+        func.func @bad(%q: !qc.qubit) attributes {mqt.unitary} { return }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad() attributes {mqt.unitary} { return }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qc.qubit, %theta: f64)
+            attributes {mqt.unitary} { return }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qc.qubit) -> i1
+            attributes {mqt.unitary} {
+          %value = arith.constant true
+          return %value : i1
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qc.qubit) attributes {mqt.unitary} {
+          qc.call @bad(%q) : !qc.qubit
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @bad(%q: !qc.qubit) attributes {mqt.unitary} {
+          qc.call @missing(%q) : !qc.qubit
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @plain(%q: !qc.qubit) { return }
+        func.func @main(%q: !qc.qubit) attributes {mqt.entry_point} {
+          qc.call @plain(%q) : !qc.qubit
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @flip(%q: !qc.qubit) attributes {mqt.unitary} {
+          qc.x %q : !qc.qubit
+          return
+        }
+        func.func @main(%theta: f64, %q: !qc.qubit)
+            attributes {mqt.entry_point} {
+          qc.call @flip(%theta, %q) : f64, !qc.qubit
+          return
+        }
+      })mlir",
+  };
+
+  ParserConfig config(context.get(), false);
+  for (const auto source : invalidPrograms) {
+    auto moduleOp = parseSourceString<ModuleOp>(source, config);
+    ASSERT_TRUE(moduleOp);
+    EXPECT_TRUE(failed(verify(*moduleOp)));
+  }
+
+  auto resultModule = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @bad(%q: !qc.qubit) -> i1 attributes {mqt.unitary}
+    func.func @main(%q: !qc.qubit) attributes {mqt.entry_point} {
+      qc.call @bad(%q) : !qc.qubit
+      return
+    }
+  })mlir",
+                                                  config);
+  ASSERT_TRUE(resultModule);
+  auto call = *mlir::mqt::getEntryPoint(*resultModule)
+                   .getBody()
+                   .getOps<CallOp>()
+                   .begin();
+  SymbolTableCollection symbols;
+  EXPECT_TRUE(failed(call.verifySymbolUses(symbols)));
+}
+
 TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
@@ -441,16 +697,16 @@ TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
   builder.initialize();
   auto qubit = builder.allocQubit();
   builder.unitary(ValueRange{qubit}, xMatrix);
-  auto module = builder.finalize();
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-  auto function = *module->getOps<func::FuncOp>().begin();
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
   auto unitaries = llvm::to_vector(function.getBody().getOps<UnitaryOp>());
   ASSERT_EQ(unitaries.size(), 1U);
   EXPECT_EQ(unitaries.front().getMatrix(), xMatrix);
 
-  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*module)));
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
   unitaries = llvm::to_vector(function.getBody().getOps<UnitaryOp>());
   ASSERT_EQ(unitaries.size(), 1U);
   EXPECT_EQ(unitaries.front().getMatrix(), xMatrix);
@@ -461,7 +717,7 @@ TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
       "matrix",
       DenseElementsAttr::get(
           matrixType, llvm::ArrayRef<std::complex<double>>(identityValues)));
-  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*module)));
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
   EXPECT_TRUE(function.getBody().getOps<UnitaryOp>().empty());
 }
 
@@ -622,7 +878,7 @@ enum class ForbiddenModifierBodyOp : std::uint8_t {
   QubitRegisterLoad,
   QubitRegisterStore,
   CBitAlloc,
-  CBitCompare,
+  CBitRead,
   CBitLoad,
   CBitStore
 };
@@ -657,8 +913,8 @@ static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
     return "qubit-register-store";
   case ForbiddenModifierBodyOp::CBitAlloc:
     return "cbit.alloc";
-  case ForbiddenModifierBodyOp::CBitCompare:
-    return "cbit.cmp";
+  case ForbiddenModifierBodyOp::CBitRead:
+    return "cbit.read";
   case ForbiddenModifierBodyOp::CBitLoad:
     return "cbit.load";
   case ForbiddenModifierBodyOp::CBitStore:
@@ -696,10 +952,8 @@ static void emitForbiddenModifierBodyOperation(QCProgramBuilder& builder,
                           cbit::RegisterType::get(builder.getContext(), 1),
                           cbit::Initialization::Zero);
     return;
-  case ForbiddenModifierBodyOp::CBitCompare:
-    cbit::CompareOp::create(builder, builder.getI1Type(),
-                            cbit::ComparisonPredicate::Equal, cbitReg,
-                            builder.getIntegerAttr(builder.getI1Type(), 0));
+  case ForbiddenModifierBodyOp::CBitRead:
+    cbit::ReadOp::create(builder, builder.getI1Type(), cbitReg);
     return;
   case ForbiddenModifierBodyOp::CBitLoad:
     cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg, index);
@@ -757,7 +1011,7 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
       ForbiddenModifierBodyOp::QubitRegisterLoad,
       ForbiddenModifierBodyOp::QubitRegisterStore,
       ForbiddenModifierBodyOp::CBitAlloc,
-      ForbiddenModifierBodyOp::CBitCompare,
+      ForbiddenModifierBodyOp::CBitRead,
       ForbiddenModifierBodyOp::CBitLoad,
       ForbiddenModifierBodyOp::CBitStore};
 
@@ -846,8 +1100,7 @@ TEST_F(QCTest, ModifiersRejectDirectAndNestedQubitCaptures) {
   }
 }
 
-/// \name QC/Modifiers/CtrlOp.cpp
-/// @{
+// QC/Modifiers/CtrlOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCCtrlOpTest, QCTest,
     testing::Values(
@@ -869,7 +1122,6 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"ModifierBodyReuseReordered",
                    MQT_NAMED_BUILDER(modifierBodyReuseReordered),
                    MQT_NAMED_BUILDER(modifierBodyReuseReorderedRef)}));
-/// @}
 
 /// A power modifier with a qubit that its body does not use.
 static Value powWithUnusedQubit(QCProgramBuilder& b) {
@@ -878,8 +1130,7 @@ static Value powWithUnusedQubit(QCProgramBuilder& b) {
   return measureRegister(b, q.qubits);
 }
 
-/// \name QC/Modifiers/PowOp.cpp
-/// @{
+// QC/Modifiers/PowOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCPowOpTest, QCTest,
     testing::Values(
@@ -920,7 +1171,6 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(ctrlPowSxRef)},
         QCTestCase{"PowWithUnusedQubit", MQT_NAMED_BUILDER(powWithUnusedQubit),
                    MQT_NAMED_BUILDER(twoQubitsOneBarrier)}));
-/// @}
 
 TEST_F(QCTest, PowExponentIsUnitaryParameter) {
   auto program =
@@ -1002,8 +1252,8 @@ TEST_F(QCTest, NestedPowAcrossBranchCutDoesNotMerge) {
   EXPECT_EQ(xCount, 0);
 }
 
-/// pow(-0.5) { h } cannot fold a negative fractional exponent
-/// into H (no angle to scale). Verify that PowOp survives.
+// pow(-0.5) { h } cannot fold a negative fractional exponent
+// into H (no angle to scale). Verify that PowOp survives.
 TEST_F(QCTest, NegPowHNoFold) {
   auto program =
       ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(negPowH));
@@ -1017,8 +1267,8 @@ TEST_F(QCTest, NegPowHNoFold) {
   EXPECT_EQ(powCount, 1) << "PowOp around h must survive the pipeline";
 }
 
-/// A multi-unitary pow body (pow(2){x; rxx}) is left untouched by the cleanup
-/// pipeline. Verify the pow and both body unitaries survive.
+// A multi-unitary pow body (pow(2){x; rxx}) is left untouched by the cleanup
+// pipeline. Verify the pow and both body unitaries survive.
 TEST_F(QCTest, PowTwoSurvives) {
   auto program =
       ::mqt::test::buildMLIRProgram(context.get(), MQT_NAMED_BUILDER(powTwo));
@@ -1037,8 +1287,7 @@ TEST_F(QCTest, PowTwoSurvives) {
   EXPECT_EQ(bodyUnitaries, 2U) << "both body unitaries must be preserved";
 }
 
-/// \name QC/Modifiers/InvOp.cpp
-/// @{
+// QC/Modifiers/InvOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCInvOpTest, QCTest,
     testing::Values(QCTestCase{"EmptyInv", MQT_NAMED_BUILDER(emptyInv),
@@ -1053,10 +1302,8 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(singleControlledRxx)},
                     QCTestCase{"InverseT", MQT_NAMED_BUILDER(inverseT),
                                MQT_NAMED_BUILDER(tdg)}));
-/// @}
 
-/// \name QC/Operations/MeasureOp.cpp
-/// @{
+// QC/Operations/MeasureOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCMeasureOpTest, QCTest,
     testing::Values(
@@ -1073,10 +1320,8 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(multipleClassicalRegistersAndMeasurements)}));
-/// @}
 
-/// \name QC/Operations/ResetOp.cpp
-/// @{
+// QC/Operations/ResetOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCResetOpTest, QCTest,
     testing::Values(QCTestCase{"ResetQubitWithoutOp",
@@ -1098,10 +1343,8 @@ INSTANTIATE_TEST_SUITE_P(
                     QCTestCase{"RepeatedResetAfterSingleOp",
                                MQT_NAMED_BUILDER(repeatedResetAfterSingleOp),
                                MQT_NAMED_BUILDER(repeatedResetAfterSingleOp)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/BarrierOp.cpp
-/// @{
+// QC/Operations/StandardGates/BarrierOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCBarrierOpTest, QCTest,
     testing::Values(QCTestCase{"Barrier", MQT_NAMED_BUILDER(barrier),
@@ -1120,10 +1363,8 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(barrier)},
                     QCTestCase{"PowBarrier", MQT_NAMED_BUILDER(powBarrier),
                                MQT_NAMED_BUILDER(barrier)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/DcxOp.cpp
-/// @{
+// QC/Operations/StandardGates/DcxOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCDCXOpTest, QCTest,
     testing::Values(QCTestCase{"DCX", MQT_NAMED_BUILDER(dcx),
@@ -1145,10 +1386,8 @@ INSTANTIATE_TEST_SUITE_P(
                     QCTestCase{"InverseMultipleControlledDCX",
                                MQT_NAMED_BUILDER(inverseMultipleControlledDcx),
                                MQT_NAMED_BUILDER(multipleControlledDcx)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/EcrOp.cpp
-/// @{
+// QC/Operations/StandardGates/EcrOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCECROpTest, QCTest,
     testing::Values(QCTestCase{"ECR", MQT_NAMED_BUILDER(ecr),
@@ -1174,10 +1413,8 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(allocQubitRegister)},
                     QCTestCase{"PowOddECR", MQT_NAMED_BUILDER(powOddEcr),
                                MQT_NAMED_BUILDER(ecr)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/GphaseOp.cpp
-/// @{
+// QC/Operations/StandardGates/GphaseOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCGPhaseOpTest, QCTest,
     testing::Values(
@@ -1204,10 +1441,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(powGphaseScaledRef)},
         QCTestCase{"NegPowGphase", MQT_NAMED_BUILDER(negPowGphase),
                    MQT_NAMED_BUILDER(negPowGphaseRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/HOp.cpp
-/// @{
+// QC/Operations/StandardGates/HOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCHOpTest, QCTest,
     testing::Values(
@@ -1230,10 +1465,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(alloc1QubitRegister)},
         QCTestCase{"PowOddH", MQT_NAMED_BUILDER(powOddH),
                    MQT_NAMED_BUILDER(h)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/IdOp.cpp
-/// @{
+// QC/Operations/StandardGates/IdOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCIDOpTest, QCTest,
     testing::Values(
@@ -1258,10 +1491,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(threeQubitsOneIdentity)},
         QCTestCase{"PowId", MQT_NAMED_BUILDER(powId),
                    MQT_NAMED_BUILDER(identity)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/IswapOp.cpp
-/// @{
+// QC/Operations/StandardGates/IswapOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCiSWAPOpTest, QCTest,
     testing::Values(
@@ -1285,10 +1516,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(inverseMultipleControlledIswap)},
         QCTestCase{"PowHalfiSWAP", MQT_NAMED_BUILDER(powHalfIswap),
                    MQT_NAMED_BUILDER(powHalfIswapRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/POp.cpp
-/// @{
+// QC/Operations/StandardGates/POp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCPOpTest, QCTest,
     testing::Values(
@@ -1307,10 +1536,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"InverseMultipleControlledP",
                    MQT_NAMED_BUILDER(inverseMultipleControlledP),
                    MQT_NAMED_BUILDER(multipleControlledP)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/RCCXOp.cpp
-/// @{
+// QC/Operations/StandardGates/RCCXOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRCCXOpTest, QCTest,
     testing::Values(QCTestCase{"RCCX", MQT_NAMED_BUILDER(rccx),
@@ -1336,10 +1563,8 @@ INSTANTIATE_TEST_SUITE_P(
                     QCTestCase{"InverseMultipleControlledRCCX",
                                MQT_NAMED_BUILDER(inverseMultipleControlledRccx),
                                MQT_NAMED_BUILDER(multipleControlledRccx)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/ROp.cpp
-/// @{
+// QC/Operations/StandardGates/ROp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCROpTest, QCTest,
     testing::Values(
@@ -1360,10 +1585,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(multipleControlledR)},
         QCTestCase{"PowRScaled", MQT_NAMED_BUILDER(powRScaled),
                    MQT_NAMED_BUILDER(powRScaledRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/RxOp.cpp
-/// @{
+// QC/Operations/StandardGates/RxOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRXOpTest, QCTest,
     testing::Values(
@@ -1385,10 +1608,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(multipleControlledRx)},
         QCTestCase{"PowRxScaled", MQT_NAMED_BUILDER(powRxScaled),
                    MQT_NAMED_BUILDER(rxScaled)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/RxxOp.cpp
-/// @{
+// QC/Operations/StandardGates/RxxOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRXXOpTest, QCTest,
     testing::Values(QCTestCase{"RXX", MQT_NAMED_BUILDER(rxx),
@@ -1410,10 +1631,8 @@ INSTANTIATE_TEST_SUITE_P(
                     QCTestCase{"InverseMultipleControlledRXX",
                                MQT_NAMED_BUILDER(inverseMultipleControlledRxx),
                                MQT_NAMED_BUILDER(multipleControlledRxx)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/RyOp.cpp
-/// @{
+// QC/Operations/StandardGates/RyOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRYOpTest, QCTest,
     testing::Values(
@@ -1433,10 +1652,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"InverseMultipleControlledRY",
                    MQT_NAMED_BUILDER(inverseMultipleControlledRy),
                    MQT_NAMED_BUILDER(multipleControlledRy)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/RyyOp.cpp
-/// @{
+// QC/Operations/StandardGates/RyyOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRYYOpTest, QCTest,
     testing::Values(QCTestCase{"RYY", MQT_NAMED_BUILDER(ryy),
@@ -1458,10 +1675,8 @@ INSTANTIATE_TEST_SUITE_P(
                     QCTestCase{"InverseMultipleControlledRYY",
                                MQT_NAMED_BUILDER(inverseMultipleControlledRyy),
                                MQT_NAMED_BUILDER(multipleControlledRyy)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/RzOp.cpp
-/// @{
+// QC/Operations/StandardGates/RzOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRZOpTest, QCTest,
     testing::Values(
@@ -1481,10 +1696,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"InverseMultipleControlledRZ",
                    MQT_NAMED_BUILDER(inverseMultipleControlledRz),
                    MQT_NAMED_BUILDER(multipleControlledRz)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/RzxOp.cpp
-/// @{
+// QC/Operations/StandardGates/RzxOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRZXOpTest, QCTest,
     testing::Values(QCTestCase{"RZX", MQT_NAMED_BUILDER(rzx),
@@ -1506,10 +1719,8 @@ INSTANTIATE_TEST_SUITE_P(
                     QCTestCase{"InverseMultipleControlledRZX",
                                MQT_NAMED_BUILDER(inverseMultipleControlledRzx),
                                MQT_NAMED_BUILDER(multipleControlledRzx)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/RzzOp.cpp
-/// @{
+// QC/Operations/StandardGates/RzzOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRZZOpTest, QCTest,
     testing::Values(QCTestCase{"RZZ", MQT_NAMED_BUILDER(rzz),
@@ -1531,10 +1742,8 @@ INSTANTIATE_TEST_SUITE_P(
                     QCTestCase{"InverseMultipleControlledRZZ",
                                MQT_NAMED_BUILDER(inverseMultipleControlledRzz),
                                MQT_NAMED_BUILDER(multipleControlledRzz)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/SOp.cpp
-/// @{
+// QC/Operations/StandardGates/SOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCSOpTest, QCTest,
     testing::Values(
@@ -1560,10 +1769,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(t_)},
         QCTestCase{"PowThirdSToP", MQT_NAMED_BUILDER(powThirdS),
                    MQT_NAMED_BUILDER(powThirdSRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/SdgOp.cpp
-/// @{
+// QC/Operations/StandardGates/SdgOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCSdgOpTest, QCTest,
     testing::Values(QCTestCase{"Sdg", MQT_NAMED_BUILDER(sdg),
@@ -1591,10 +1798,8 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(tdg)},
                     QCTestCase{"PowThirdSdgToP", MQT_NAMED_BUILDER(powThirdSdg),
                                MQT_NAMED_BUILDER(powThirdSdgRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/SwapOp.cpp
-/// @{
+// QC/Operations/StandardGates/SwapOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCSWAPOpTest, QCTest,
     testing::Values(QCTestCase{"SWAP", MQT_NAMED_BUILDER(swap),
@@ -1620,10 +1825,8 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(allocQubitRegister)},
                     QCTestCase{"PowOddSWAP", MQT_NAMED_BUILDER(powOddSwap),
                                MQT_NAMED_BUILDER(swap)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/SxOp.cpp
-/// @{
+// QC/Operations/StandardGates/SxOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCSXOpTest, QCTest,
     testing::Values(
@@ -1647,10 +1850,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(powTwoSxRef)},
         QCTestCase{"PowThirdSxGeneral", MQT_NAMED_BUILDER(powThirdSx),
                    MQT_NAMED_BUILDER(powThirdSxRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/SxdgOp.cpp
-/// @{
+// QC/Operations/StandardGates/SxdgOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCSXdgOpTest, QCTest,
     testing::Values(
@@ -1676,10 +1877,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(powTwoSxdgRef)},
         QCTestCase{"PowThirdSxdgGeneral", MQT_NAMED_BUILDER(powThirdSxdg),
                    MQT_NAMED_BUILDER(powThirdSxdgRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/TOp.cpp
-/// @{
+// QC/Operations/StandardGates/TOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCTOpTest, QCTest,
     testing::Values(
@@ -1701,10 +1900,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"PowTwoT", MQT_NAMED_BUILDER(powTwoT), MQT_NAMED_BUILDER(s)},
         QCTestCase{"PowThirdTToP", MQT_NAMED_BUILDER(powThirdT),
                    MQT_NAMED_BUILDER(powThirdTRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/TdgOp.cpp
-/// @{
+// QC/Operations/StandardGates/TdgOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCTdgOpTest, QCTest,
     testing::Values(QCTestCase{"Tdg", MQT_NAMED_BUILDER(tdg),
@@ -1730,10 +1927,8 @@ INSTANTIATE_TEST_SUITE_P(
                                MQT_NAMED_BUILDER(sdg)},
                     QCTestCase{"PowThirdTdgToP", MQT_NAMED_BUILDER(powThirdTdg),
                                MQT_NAMED_BUILDER(powThirdTdgRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/U2Op.cpp
-/// @{
+// QC/Operations/StandardGates/U2Op.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCU2OpTest, QCTest,
     testing::Values(
@@ -1753,10 +1948,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"InverseMultipleControlledU2",
                    MQT_NAMED_BUILDER(inverseMultipleControlledU2),
                    MQT_NAMED_BUILDER(multipleControlledU2)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/UOp.cpp
-/// @{
+// QC/Operations/StandardGates/UOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCUOpTest, QCTest,
     testing::Values(
@@ -1775,10 +1968,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCTestCase{"InverseMultipleControlledU",
                    MQT_NAMED_BUILDER(inverseMultipleControlledU),
                    MQT_NAMED_BUILDER(multipleControlledU)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/XOp.cpp
-/// @{
+// QC/Operations/StandardGates/XOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCXOpTest, QCTest,
     testing::Values(
@@ -1803,10 +1994,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(sxdg)},
         QCTestCase{"PowThirdXGeneral", MQT_NAMED_BUILDER(powThirdX),
                    MQT_NAMED_BUILDER(powThirdXRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/XxMinusYyOp.cpp
-/// @{
+// QC/Operations/StandardGates/XxMinusYyOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCXXMinusYYOpTest, QCTest,
     testing::Values(
@@ -1831,10 +2020,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(multipleControlledXxMinusYY)},
         QCTestCase{"PowXxMinusYYScaled", MQT_NAMED_BUILDER(powXxMinusYYScaled),
                    MQT_NAMED_BUILDER(powXxMinusYYScaledRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/XxPlusYyOp.cpp
-/// @{
+// QC/Operations/StandardGates/XxPlusYyOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCXXPlusYYOpTest, QCTest,
     testing::Values(
@@ -1859,10 +2046,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(multipleControlledXxPlusYY)},
         QCTestCase{"PowXxPlusYYScaled", MQT_NAMED_BUILDER(powXxPlusYYScaled),
                    MQT_NAMED_BUILDER(powXxPlusYYScaledRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/YOp.cpp
-/// @{
+// QC/Operations/StandardGates/YOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCYOpTest, QCTest,
     testing::Values(
@@ -1883,10 +2068,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(multipleControlledY)},
         QCTestCase{"PowHalfY", MQT_NAMED_BUILDER(powHalfY),
                    MQT_NAMED_BUILDER(powHalfYRef)}));
-/// @}
 
-/// \name QC/Operations/StandardGates/ZOp.cpp
-/// @{
+// QC/Operations/StandardGates/ZOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCZOpTest, QCTest,
     testing::Values(
@@ -1911,10 +2094,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(sdg)},
         QCTestCase{"PowThirdZToP", MQT_NAMED_BUILDER(powThirdZ),
                    MQT_NAMED_BUILDER(powThirdZRef)}));
-/// @}
 
-/// \name QC/QubitManagement/QubitManagement.cpp
-/// @{
+// QC/QubitManagement/QubitManagement.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCQubitManagementTest, QCTest,
     testing::Values(
@@ -1944,10 +2125,8 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(staticQubitsCanonical)},
         QCTestCase{"AllocDeallocPair", MQT_NAMED_BUILDER(allocDeallocPair),
                    MQT_NAMED_BUILDER(emptyQC)}));
-/// @}
 
-/// \name UnrollModifiers
-/// @{
+// UnrollModifiers
 static LogicalResult runUnrollModifiers(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
@@ -2138,4 +2317,3 @@ TEST_F(QCTest, UnrollModifiersLeavesNonIntegerPowUntouched) {
   expectUnrollsTo(context.get(), powHalfDisjoint, powHalfDisjoint,
                   checkPreservedPowStructure);
 }
-/// @}

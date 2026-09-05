@@ -18,7 +18,6 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/DDpackageConfig.hpp"
 #include "dd/Edge.hpp"
-#include "dd/GateMatrixDefinitions.hpp"
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
@@ -40,6 +39,7 @@
 #include <queue>
 #include <random>
 #include <set>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <tuple>
@@ -49,6 +49,11 @@
 #include <vector>
 
 namespace dd {
+namespace {
+constexpr GateMatrix MEAS_ZERO_MAT{1, 0, 0, 0};
+constexpr GateMatrix MEAS_ONE_MAT{0, 0, 0, 1};
+} // namespace
+
 Package::Package(const std::size_t nq, const DDPackageConfig& config)
     : nqubits(nq), config_(config) {
   resize(nq);
@@ -170,7 +175,7 @@ namespace {
 
 void ensureGateQubitsInRange(const std::size_t nqubits,
                              const Controls& controls,
-                             const std::initializer_list<Qubit> targets) {
+                             const std::span<const Qubit> targets) {
   if (nqubits == 0U ||
       std::ranges::any_of(controls,
                           [nqubits](const auto& c) {
@@ -206,8 +211,26 @@ void fillTerminalMatrix(
   }
 }
 
+template <std::size_t Dim>
+void fillTerminalMatrix(
+    std::array<std::array<mCachedEdge, Dim>, Dim>& em,
+    const std::span<const std::complex<fp>, Dim * Dim> mat) {
+  for (std::size_t row = 0; row < Dim; ++row) {
+    for (std::size_t col = 0; col < Dim; ++col) {
+      em[row][col] = mCachedEdge::terminal(mat[(row * Dim) + col]);
+    }
+  }
+}
+
 void fillTerminalVector(std::array<mCachedEdge, NEDGE>& em,
                         const GateMatrix& mat) {
+  for (std::size_t i = 0; i < NEDGE; ++i) {
+    em[i] = mCachedEdge::terminal(mat[i]);
+  }
+}
+
+void fillTerminalVector(std::array<mCachedEdge, NEDGE>& em,
+                        const std::span<const std::complex<fp>, NEDGE> mat) {
   for (std::size_t i = 0; i < NEDGE; ++i) {
     em[i] = mCachedEdge::terminal(mat[i]);
   }
@@ -273,49 +296,35 @@ void wrapControlsAbove(Package& dd, Controls::const_iterator& it,
   return {.p = e.p, .w = dd.cn.lookup(e.w)};
 }
 
-} // namespace
-
-mEdge Package::makeGateDD(const GateMatrix& mat, const Qubit target) {
-  return makeGateDD(mat, Controls{}, target);
-}
-mEdge Package::makeGateDD(const GateMatrix& mat, const Control& control,
-                          const Qubit target) {
-  return makeGateDD(mat, Controls{control}, target);
-}
-mEdge Package::makeGateDD(const GateMatrix& mat, const Controls& controls,
-                          const Qubit target) {
-  ensureGateQubitsInRange(nqubits, controls, {target});
+template <typename Matrix>
+[[nodiscard]] mEdge buildSingleQubitGateDD(Package& dd, const Matrix& mat,
+                                           const Controls& controls,
+                                           const Qubit target) {
+  const std::array targets{target};
+  ensureGateQubitsInRange(dd.qubits(), controls, targets);
 
   std::array<mCachedEdge, NEDGE> em{};
   fillTerminalVector(em, mat);
 
   if (controls.empty()) {
-    // Single qubit operation
-    return toMatrixDD(*this, makeDDNode(static_cast<Qubit>(target), em));
+    return toMatrixDD(dd, dd.makeDDNode(target, em));
   }
 
   auto it = controls.begin();
   const auto endIt = controls.end();
-  wrapControlsUntil(*this, it, endIt, target, em);
+  wrapControlsUntil(dd, it, endIt, target, em);
 
-  // target line
-  auto e = makeDDNode(static_cast<Qubit>(target), em);
-  wrapControlsAbove(*this, it, endIt, e);
-  return toMatrixDD(*this, e);
+  auto e = dd.makeDDNode(target, em);
+  wrapControlsAbove(dd, it, endIt, e);
+  return toMatrixDD(dd, e);
 }
-mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                  const Qubit target0, const Qubit target1) {
-  return makeTwoQubitGateDD(mat, Controls{}, target0, target1);
-}
-mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                  const Control& control, const Qubit target0,
-                                  const Qubit target1) {
-  return makeTwoQubitGateDD(mat, Controls{control}, target0, target1);
-}
-mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                                  const Controls& controls, const Qubit target0,
-                                  const Qubit target1) {
-  ensureGateQubitsInRange(nqubits, controls, {target0, target1});
+
+template <typename Matrix>
+[[nodiscard]] mEdge
+buildTwoQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
+                    const Qubit target0, const Qubit target1) {
+  const std::array targets{target0, target1};
+  ensureGateQubitsInRange(dd.qubits(), controls, targets);
 
   std::array<std::array<mCachedEdge, NEDGE>, NEDGE> em{};
   fillTerminalMatrix(em, mat);
@@ -323,10 +332,8 @@ mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
   auto it = controls.begin();
   const auto endIt = controls.end();
   const auto smallerTarget = std::min(target0, target1);
-  wrapControlsUntil(*this, it, endIt, smallerTarget, em);
+  wrapControlsUntil(dd, it, endIt, smallerTarget, em);
 
-  // process the smaller target by taking the 16 submatrices and appropriately
-  // combining them into four DDs.
   std::array<mCachedEdge, NEDGE> em0{};
   for (std::size_t row = 0; row < RADIX; ++row) {
     for (std::size_t col = 0; col < RADIX; ++col) {
@@ -346,48 +353,34 @@ mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
           }
         }
       }
-      em0.at((row * RADIX) + col) =
-          makeDDNode(static_cast<Qubit>(smallerTarget), local);
+      em0.at((row * RADIX) + col) = dd.makeDDNode(smallerTarget, local);
     }
   }
 
   const auto largerTarget = std::max(target0, target1);
-  wrapControlsUntil(*this, it, endIt, largerTarget, em0);
+  wrapControlsUntil(dd, it, endIt, largerTarget, em0);
 
-  // process the larger target by combining the four DDs from the smaller
-  // target
-  auto e = makeDDNode(static_cast<Qubit>(largerTarget), em0);
-  wrapControlsAbove(*this, it, endIt, e);
-  return toMatrixDD(*this, e);
+  auto e = dd.makeDDNode(largerTarget, em0);
+  wrapControlsAbove(dd, it, endIt, e);
+  return toMatrixDD(dd, e);
 }
-mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                                    const Qubit target0, const Qubit target1,
-                                    const Qubit target2) {
-  return makeThreeQubitGateDD(mat, Controls{}, target0, target1, target2);
-}
-mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                                    const Control& control, const Qubit target0,
-                                    const Qubit target1, const Qubit target2) {
-  return makeThreeQubitGateDD(mat, Controls{control}, target0, target1,
-                              target2);
-}
-mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                                    const Controls& controls,
-                                    const Qubit target0, const Qubit target1,
-                                    const Qubit target2) {
-  // Bottom-up construction analogous to makeTwoQubitGateDD: materialize the
-  // 8×8 as terminals in MSB-first order (targets[0] = high bit), sort targets
-  // by qubit index, then reduce 8×8 → 4×4 → 4 edges → root while inserting
-  // controls on the free lines between those levels.
-  ensureGateQubitsInRange(nqubits, controls, {target0, target1, target2});
+
+template <typename Matrix>
+[[nodiscard]] mEdge
+buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
+                      const Qubit target0, const Qubit target1,
+                      const Qubit target2) {
+  /// Reduce 8x8 terminals to 4x4, then four edges, then the root, inserting
+  /// controls between target levels. Matrix bits are MSB-first; DD levels
+  /// follow ascending qubit indices.
+  const std::array targets{target0, target1, target2};
+  ensureGateQubitsInRange(dd.qubits(), controls, targets);
 
   std::array<std::array<mCachedEdge, THREE_QUBIT_GATE_DIM>,
              THREE_QUBIT_GATE_DIM>
       em{};
   fillTerminalMatrix(em, mat);
 
-  // process targets in ascending qubit order; matrix bits are MSB-first
-  // (2 -> target0, 1 -> target1, 0 -> target2)
   std::array<std::pair<Qubit, std::uint8_t>, 3> ordered{
       {{target0, 2}, {target1, 1}, {target2, 0}}};
   std::ranges::sort(ordered, {}, &std::pair<Qubit, std::uint8_t>::first);
@@ -400,10 +393,9 @@ mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
 
   auto it = controls.begin();
   const auto endIt = controls.end();
-  wrapControlsUntil(*this, it, endIt, qLow, em);
+  wrapControlsUntil(dd, it, endIt, qLow, em);
 
-  // process the lowest target: reduce 8×8 to a 4×4 over the remaining bits
-  // (index = bit(mid) + 2 * bit(high))
+  /// Remaining-bit index: bit(mid) + 2 * bit(high).
   std::array<std::array<mCachedEdge, NEDGE>, NEDGE> emMid{};
   for (std::size_t rMH = 0; rMH < NEDGE; ++rMH) {
     for (std::size_t cMH = 0; cMH < NEDGE; ++cMH) {
@@ -421,13 +413,12 @@ mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
           local.at((i * RADIX) + j) = em.at(rowIdx).at(colIdx);
         }
       }
-      emMid.at(rMH).at(cMH) = makeDDNode(static_cast<Qubit>(qLow), local);
+      emMid.at(rMH).at(cMH) = dd.makeDDNode(qLow, local);
     }
   }
 
-  wrapControlsUntil(*this, it, endIt, qMid, emMid);
+  wrapControlsUntil(dd, it, endIt, qMid, emMid);
 
-  // process the middle target: reduce 4×4 to four DDs over the highest bit
   std::array<mCachedEdge, NEDGE> emHigh{};
   for (std::size_t row = 0; row < RADIX; ++row) {
     for (std::size_t col = 0; col < RADIX; ++col) {
@@ -438,17 +429,80 @@ mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
               emMid.at(i + (row * RADIX)).at(j + (col * RADIX));
         }
       }
-      emHigh.at((row * RADIX) + col) =
-          makeDDNode(static_cast<Qubit>(qMid), local);
+      emHigh.at((row * RADIX) + col) = dd.makeDDNode(qMid, local);
     }
   }
 
-  wrapControlsUntil(*this, it, endIt, qHigh, emHigh);
+  wrapControlsUntil(dd, it, endIt, qHigh, emHigh);
 
-  // process the highest target
-  auto e = makeDDNode(static_cast<Qubit>(qHigh), emHigh);
-  wrapControlsAbove(*this, it, endIt, e);
-  return toMatrixDD(*this, e);
+  auto e = dd.makeDDNode(qHigh, emHigh);
+  wrapControlsAbove(dd, it, endIt, e);
+  return toMatrixDD(dd, e);
+}
+
+} // namespace
+
+mEdge Package::makeGateDD(const GateMatrix& mat, const Qubit target) {
+  return makeGateDD(mat, Controls{}, target);
+}
+mEdge Package::makeGateDD(const GateMatrix& mat, const Control& control,
+                          const Qubit target) {
+  return makeGateDD(mat, Controls{control}, target);
+}
+mEdge Package::makeGateDD(const GateMatrix& mat, const Controls& controls,
+                          const Qubit target) {
+  return buildSingleQubitGateDD(*this, mat, controls, target);
+}
+mEdge Package::makeGateDD(const std::span<const std::complex<fp>, NEDGE> mat,
+                          const Controls& controls, const Qubit target) {
+  return buildSingleQubitGateDD(*this, mat, controls, target);
+}
+mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                  const Qubit target0, const Qubit target1) {
+  return makeTwoQubitGateDD(mat, Controls{}, target0, target1);
+}
+mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                  const Control& control, const Qubit target0,
+                                  const Qubit target1) {
+  return makeTwoQubitGateDD(mat, Controls{control}, target0, target1);
+}
+mEdge Package::makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
+                                  const Controls& controls, const Qubit target0,
+                                  const Qubit target1) {
+  return buildTwoQubitGateDD(*this, mat, controls, target0, target1);
+}
+mEdge Package::makeTwoQubitGateDD(
+    const std::span<const std::complex<fp>,
+                    static_cast<std::size_t>(NEDGE) * NEDGE>
+        mat,
+    const Controls& controls, const Qubit target0, const Qubit target1) {
+  return buildTwoQubitGateDD(*this, mat, controls, target0, target1);
+}
+mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                                    const Qubit target0, const Qubit target1,
+                                    const Qubit target2) {
+  return makeThreeQubitGateDD(mat, Controls{}, target0, target1, target2);
+}
+mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                                    const Control& control, const Qubit target0,
+                                    const Qubit target1, const Qubit target2) {
+  return makeThreeQubitGateDD(mat, Controls{control}, target0, target1,
+                              target2);
+}
+mEdge Package::makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                                    const Controls& controls,
+                                    const Qubit target0, const Qubit target1,
+                                    const Qubit target2) {
+  return buildThreeQubitGateDD(*this, mat, controls, target0, target1, target2);
+}
+mEdge Package::makeThreeQubitGateDD(
+    const std::span<const std::complex<fp>,
+                    static_cast<std::size_t>(THREE_QUBIT_GATE_DIM) *
+                        THREE_QUBIT_GATE_DIM>
+        mat,
+    const Controls& controls, const Qubit target0, const Qubit target1,
+    const Qubit target2) {
+  return buildThreeQubitGateDD(*this, mat, controls, target0, target1, target2);
 }
 
 mEdge Package::makeDDFromMatrix(const CMat& matrix) {

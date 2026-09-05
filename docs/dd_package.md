@@ -28,13 +28,13 @@ to work with decision diagrams in MQT Core from Python.
 
 ## Quickstart
 
-The MQT Compiler Collection uses the DD package to simulate optimized
+The MQT Compiler Collection uses the DD package to simulate
 {py:class}`~mqt.core.mlir.QCOProgram` objects. The simulator supports
 mid-circuit measurements, resets, and classically controlled operations. This
 example compiles and samples a Bell-state program:
 
 ```{code-cell} ipython3
-from mqt.core.mlir import OutputFormat, compile_program
+from mqt.core.mlir import sample
 
 bell_qasm = """OPENQASM 3.0;
 include "stdgates.inc";
@@ -45,21 +45,28 @@ cx q[0], q[1];
 result = measure q;
 """
 
-sample_program = compile_program(bell_qasm, output=OutputFormat.QCO_OPTIMIZED)
-counts = sample_program.sample(shots=1024, seed=1)
+counts = sample(bell_qasm, shots=1024, seed=1)
 print(counts)
 ```
 
-Use {py:meth}`~mqt.core.mlir.QCOProgram.simulate` to obtain a state DD and
-{py:meth}`~mqt.core.mlir.QCOProgram.build_functionality` to obtain a matrix DD.
-These methods avoid constructing an exponentially large dense array unless the
-result is explicitly converted with {py:meth}`~mqt.core.dd.VectorDD.get_vector`
-or {py:meth}`~mqt.core.dd.MatrixDD.get_matrix`.
+The {py:func}`~mqt.core.mlir.sample`, {py:func}`~mqt.core.mlir.simulate`, and
+{py:func}`~mqt.core.mlir.build_functionality` functions accept source text,
+paths, Qiskit circuits, and typed compiler programs. They lower each input
+directly to QCO. The corresponding {py:class}`~mqt.core.mlir.QCOProgram` methods
+provide the DD-native interface for reusable compiled programs, custom initial
+states, and dynamic simulation. The top-level `simulate` function starts a
+closed program in the all-zero state. It and `build_functionality` manage the DD
+package internally and materialize their results directly into NumPy arrays.
+
+The `QCOProgram` methods avoid constructing exponentially large dense arrays
+unless the result is explicitly converted with
+{py:meth}`~mqt.core.dd.VectorDD.get_vector` or
+{py:meth}`~mqt.core.dd.MatrixDD.get_matrix`.
 
 ```{code-cell} ipython3
 import numpy as np
 from mqt.core.dd import DDPackage
-from mqt.core.mlir import QCOProgram
+from mqt.core.mlir import QCOProgram, build_functionality, simulate
 
 unitary_program = QCOProgram.from_mlir_str("""
 module {
@@ -77,6 +84,9 @@ module {
   }
 }
 """)
+
+vec = simulate(unitary_program)
+unitary = build_functionality(unitary_program)
 
 dd = DDPackage(2)
 zero_state_dd = dd.zero_state(2)

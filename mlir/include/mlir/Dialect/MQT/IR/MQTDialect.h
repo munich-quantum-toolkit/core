@@ -35,6 +35,15 @@ void setEntryPoint(Operation* operation);
 /// Remove the program entry-point marker from an operation.
 void removeEntryPoint(Operation* operation);
 
+/// Return whether an operation defines a unitary function.
+[[nodiscard]] inline bool isUnitaryFunction(Operation* operation) {
+  return operation != nullptr &&
+         operation->hasAttr(MQTDialect::UnitaryAttrHelper::getNameStr());
+}
+
+/// Mark a function as unitary.
+void setUnitaryFunction(Operation* operation);
+
 /// Return the program entry point, or null if the module has none.
 [[nodiscard]] inline func::FuncOp getEntryPoint(ModuleOp moduleOp) {
   for (auto function : moduleOp.getOps<func::FuncOp>()) {

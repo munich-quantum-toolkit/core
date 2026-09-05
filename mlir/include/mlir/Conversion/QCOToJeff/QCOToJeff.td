@@ -21,5 +21,6 @@ def QCOToJeff : Pass<"qco-to-jeff", "mlir::ModuleOp"> {
     As the index is not preserved in `jeff`, it is not possible to round-tripping static qubits.
   }];
 
-  let dependentDialects = ["mlir::jeff::JeffDialect"];
+  let dependentDialects = ["mlir::jeff::JeffDialect",
+                           "mlir::arith::ArithDialect"];
 }

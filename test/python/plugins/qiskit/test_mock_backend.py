@@ -143,7 +143,7 @@ class MockQDMIDevice:
 
         def __init__(self, num_clbits: int, shots: int) -> None:
             """Initialize mock job with number of classical bits and shots."""
-            self._num_clbits = num_clbits
+            self.num_clbits = num_clbits
             self._shots = shots
             alphabet = string.ascii_lowercase + string.digits
             self._id = "mock-job-" + "".join(secrets.choice(alphabet) for _ in range(8))
@@ -173,13 +173,13 @@ class MockQDMIDevice:
             Returns:
                 Dictionary mapping measurement outcomes to counts.
             """
-            if self._num_clbits == 0:
+            if self.num_clbits == 0:
                 return {"": self._shots}
 
             if self._counts is None:
                 # Generate random counts with uniform distribution
-                num_outcomes = 2**self._num_clbits
-                outcomes = [format(i, f"0{self._num_clbits}b") for i in range(num_outcomes)]
+                num_outcomes = 2**self.num_clbits
+                outcomes = [format(i, f"0{self.num_clbits}b") for i in range(num_outcomes)]
 
                 # Distribute shots randomly among outcomes
                 counts_list = [0] * num_outcomes
@@ -195,6 +195,14 @@ class MockQDMIDevice:
 
         def cancel(self) -> None:
             """Cancel job (no-op for mock)."""
+
+        def get_shots(self) -> list[str]:
+            """Raise unless the test device implements ordered shots.
+
+            Raises:
+                NotImplementedError: This device only supports counts.
+            """
+            raise NotImplementedError
 
     def __init__(
         self,

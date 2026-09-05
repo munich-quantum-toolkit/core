@@ -15,6 +15,7 @@
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
@@ -30,9 +31,8 @@ namespace mlir::cbit {
 void validateStaticRegisterIndex(Value reg,
                                  const std::variant<int64_t, Value>& index);
 
-/// Builds an equivalent comparison from individual register bits.
-Value buildComparison(OpBuilder& builder, Location location,
-                      ComparisonPredicate predicate, const llvm::APInt& rhs,
-                      llvm::function_ref<Value(int64_t)> loadBit);
+/// Populates patterns that decompose whole-register operations into static
+/// bit loads, stores, and ordinary integer arithmetic.
+void populateCBitDecompositionPatterns(RewritePatternSet& patterns);
 
 } // namespace mlir::cbit

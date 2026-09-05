@@ -137,15 +137,40 @@ TEST_F(CBitToMemRefTest, LargeZeroInitializationProducesBoundedIR) {
 TEST_F(CBitToMemRefTest, LowersRegisterComparisons) {
   auto moduleOp = convert(R"mlir(
     module {
-      func.func @main() -> (i1, i1, i1, i1, i1, i1) {
+      func.func @main() -> (i1, i1, i1, i1, i1, i1, i1, i1, i1, i1) {
         %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
-        %eq = cbit.cmp eq, %reg, 5 : i3 : !cbit.reg<3>
-        %ne = cbit.cmp ne, %reg, 5 : i3 : !cbit.reg<3>
-        %ult = cbit.cmp ult, %reg, 5 : i3 : !cbit.reg<3>
-        %ule = cbit.cmp ule, %reg, 5 : i3 : !cbit.reg<3>
-        %ugt = cbit.cmp ugt, %reg, 5 : i3 : !cbit.reg<3>
-        %uge = cbit.cmp uge, %reg, 5 : i3 : !cbit.reg<3>
-        return %eq, %ne, %ult, %ule, %ugt, %uge : i1, i1, i1, i1, i1, i1
+        %eq_read = cbit.read %reg : !cbit.reg<3> -> i3
+        %eq_rhs = arith.constant 5 : i3
+        %eq = arith.cmpi eq, %eq_read, %eq_rhs : i3
+        %ne_read = cbit.read %reg : !cbit.reg<3> -> i3
+        %ne_rhs = arith.constant 5 : i3
+        %ne = arith.cmpi ne, %ne_read, %ne_rhs : i3
+        %ult_read = cbit.read %reg : !cbit.reg<3> -> i3
+        %ult_rhs = arith.constant 5 : i3
+        %ult = arith.cmpi ult, %ult_read, %ult_rhs : i3
+        %ule_read = cbit.read %reg : !cbit.reg<3> -> i3
+        %ule_rhs = arith.constant 5 : i3
+        %ule = arith.cmpi ule, %ule_read, %ule_rhs : i3
+        %ugt_read = cbit.read %reg : !cbit.reg<3> -> i3
+        %ugt_rhs = arith.constant 5 : i3
+        %ugt = arith.cmpi ugt, %ugt_read, %ugt_rhs : i3
+        %uge_read = cbit.read %reg : !cbit.reg<3> -> i3
+        %uge_rhs = arith.constant 5 : i3
+        %uge = arith.cmpi uge, %uge_read, %uge_rhs : i3
+        %slt_read = cbit.read %reg : !cbit.reg<3> -> i3
+        %slt_rhs = arith.constant 5 : i3
+        %slt = arith.cmpi slt, %slt_read, %slt_rhs : i3
+        %sle_read = cbit.read %reg : !cbit.reg<3> -> i3
+        %sle_rhs = arith.constant 5 : i3
+        %sle = arith.cmpi sle, %sle_read, %sle_rhs : i3
+        %sgt_read = cbit.read %reg : !cbit.reg<3> -> i3
+        %sgt_rhs = arith.constant 5 : i3
+        %sgt = arith.cmpi sgt, %sgt_read, %sgt_rhs : i3
+        %sge_read = cbit.read %reg : !cbit.reg<3> -> i3
+        %sge_rhs = arith.constant 5 : i3
+        %sge = arith.cmpi sge, %sge_read, %sge_rhs : i3
+        return %eq, %ne, %ult, %ule, %ugt, %uge, %slt, %sle, %sgt, %sge
+            : i1, i1, i1, i1, i1, i1, i1, i1, i1, i1
       }
     }
   )mlir");
@@ -159,7 +184,35 @@ TEST_F(CBitToMemRefTest, LowersRegisterComparisons) {
   EXPECT_FALSE(containsCBit);
   size_t loads = 0;
   moduleOp->walk([&](memref::LoadOp) { ++loads; });
-  EXPECT_EQ(loads, 18);
+  EXPECT_GT(loads, 0);
+}
+
+TEST_F(CBitToMemRefTest, LowersWholeRegisterReadsAndWrites) {
+  auto moduleOp = convert(R"mlir(
+    module {
+      func.func @main() -> i3 {
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
+        %value = cbit.read %reg : !cbit.reg<3> -> i3
+        cbit.write %value, %reg : i3, !cbit.reg<3>
+        return %value : i3
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t loads = 0;
+  size_t stores = 0;
+  bool containsRead = false;
+  bool containsWrite = false;
+  moduleOp->walk([&](memref::LoadOp) { ++loads; });
+  moduleOp->walk([&](memref::StoreOp) { ++stores; });
+  moduleOp->walk([&](cbit::ReadOp) { containsRead = true; });
+  moduleOp->walk([&](cbit::WriteOp) { containsWrite = true; });
+  EXPECT_GT(loads, 0);
+  EXPECT_GT(stores, 0);
+  EXPECT_FALSE(containsRead);
+  EXPECT_FALSE(containsWrite);
 }
 
 TEST_F(CBitToMemRefTest, ConvertsFunctionSignaturesCallsAndReturns) {

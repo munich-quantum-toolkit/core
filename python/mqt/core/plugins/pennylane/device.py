@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import operator
+from contextlib import suppress
 from time import monotonic
 from typing import TYPE_CHECKING, Any, cast
 
@@ -253,7 +254,7 @@ class QDMIDevice(Device):
 
     @staticmethod
     def _shot_copies(shots: Shots) -> tuple[int, ...]:
-        """Expand a PennyLane shot vector into sequential QDMI job sizes.
+        """Expand a PennyLane shot vector into individual QDMI job sizes.
 
         Returns:
             One positive shot count per required QDMI job.
@@ -331,13 +332,13 @@ class QDMIDevice(Device):
             raise ExecutionError(msg)
 
     def _submit(self, converted: _ConvertedProgram, shots: int) -> QDMIJobHandle:
-        """Submit and wait for one QDMI job.
+        """Submit one QDMI job.
 
         Returns:
-            The successfully completed job.
+            The submitted job.
 
         Raises:
-            PennyLaneExecutionError: If submission, waiting, or execution fails.
+            PennyLaneExecutionError: If submission fails.
         """
         try:
             job = self._qdmi_device.submit_job(
@@ -347,46 +348,69 @@ class QDMIDevice(Device):
                 **self._job_parameters,
             )
             self._submitted_jobs += 1
+        except (RuntimeError, ValueError) as exc:
+            msg = f"QDMI execution on '{self._device_name}' failed: {exc}"
+            raise ExecutionError(msg) from exc
+        return job
+
+    def _result(self, job: QDMIJobHandle, converted: _ConvertedProgram, shots: int) -> np.ndarray:
+        """Wait for and decode one QDMI job.
+
+        Returns:
+            Raw samples from the completed job.
+
+        Raises:
+            PennyLaneExecutionError: If waiting or execution fails.
+        """
+        try:
             job.wait()
         except (RuntimeError, ValueError) as exc:
             msg = f"QDMI execution on '{self._device_name}' failed: {exc}"
             raise ExecutionError(msg) from exc
         self._require_done(job)
-        return job
-
-    def _execute_tape(self, tape: QuantumScript) -> np.ndarray | tuple[np.ndarray, ...]:
-        """Execute one preprocessed tape, including every shot-vector partition.
-
-        Returns:
-            Raw samples, partitioned when a shot vector was requested.
-        """
-        converted = self._converter.convert(tape)
-        results: list[np.ndarray] = []
-        for shots in self._shot_copies(tape.shots):
-            started = monotonic()
-            try:
-                results.append(self._samples(self._submit(converted, shots), converted, shots))
-            finally:
-                self._execution_time += monotonic() - started
-
-        if tape.shots.has_partitioned_shots:
-            return tuple(results)
-        return results[0]
+        return self._samples(job, converted, shots)
 
     def execute(
         self,
         circuits: QuantumScriptOrBatch,
         execution_config: ExecutionConfig | None = None,
     ) -> Result | ResultBatch:
-        """Execute a batch sequentially through QDMI.
+        """Submit a batch to QDMI before collecting its ordered results.
 
         Returns:
             One result for every preprocessed input tape.
         """
         del execution_config
-        if isinstance(circuits, qp.tape.QuantumScript):
-            return cast("Result", self._execute_tape(circuits))
-        return cast("ResultBatch", tuple(self._execute_tape(tape) for tape in circuits))
+        single = isinstance(circuits, qp.tape.QuantumScript)
+        tapes = (circuits,) if single else tuple(circuits)
+        prepared = tuple((self._converter.convert(tape), self._shot_copies(tape.shots)) for tape in tapes)
+        if not prepared:
+            return cast("ResultBatch", ())
+
+        submitted: list[tuple[int, _ConvertedProgram, int, QDMIJobHandle]] = []
+        started = monotonic()
+        try:
+            for index, (converted, shot_copies) in enumerate(prepared):
+                submitted.extend((index, converted, shots, self._submit(converted, shots)) for shots in shot_copies)
+
+            tape_results: list[list[np.ndarray]] = [[] for _ in tapes]
+            for index, converted, shots, job in submitted:
+                tape_results[index].append(self._result(job, converted, shots))
+        except BaseException:
+            for *_unused, job in submitted:
+                with suppress(BaseException):
+                    job.cancel()
+            raise
+        finally:
+            self._execution_time += monotonic() - started
+
+        results = tuple(
+            tuple(samples) if tape.shots.has_partitioned_shots else samples[0]
+            for tape, samples in zip(tapes, tape_results, strict=True)
+        )
+        if single:
+            return cast("Result", results[0])
+        return cast("ResultBatch", results)
 
 
 class DDSIMDevice(QDMIDevice):
