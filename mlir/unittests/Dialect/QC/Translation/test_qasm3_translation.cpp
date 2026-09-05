@@ -715,11 +715,14 @@ static Value nestedPowX(qc::QCProgramBuilder& b) {
 }
 
 static Value customPowHS(qc::QCProgramBuilder& b) {
+  auto hs = b.createUnitaryFunction(
+      "hs", TypeRange{qc::QubitType::get(b.getContext())},
+      [&](ValueRange arguments) {
+        b.h(arguments[0]);
+        b.s(arguments[0]);
+      });
   auto q = b.allocQubit();
-  b.pow(2.0, q, [&](Value qubit) {
-    b.h(qubit);
-    b.s(qubit);
-  });
+  b.pow(2.0, q, [&](Value qubit) { b.call(hs, qubit); });
   return measureToRegister(b, {q});
 }
 
@@ -743,15 +746,58 @@ static SmallVector<Value> broadcastRegisterAndQubit(qc::QCProgramBuilder& b) {
 }
 
 static SmallVector<Value> broadcastCompoundGate(qc::QCProgramBuilder& b) {
+  auto compound =
+      b.createUnitaryFunction("compound",
+                              TypeRange{
+                                  qc::QubitType::get(b.getContext()),
+                                  qc::QubitType::get(b.getContext()),
+                              },
+                              [&](ValueRange arguments) {
+                                b.x(arguments[0]);
+                                b.cx(arguments[0], arguments[1]);
+                              });
   auto reg = b.allocQubitRegister(3);
   auto q = b.allocQubit();
   for (auto qubit : reg.qubits) {
-    b.x(qubit);
-    b.cx(qubit, q);
+    b.call(compound, {qubit, q});
   }
   auto left = measureToRegister(b, {reg[0], reg[1], reg[2]});
   auto right = measureToRegister(b, {q});
   return {left, right};
+}
+
+static Value ctrlTwoCalls(qc::QCProgramBuilder& b) {
+  auto compound =
+      b.createUnitaryFunction("compound",
+                              TypeRange{
+                                  qc::QubitType::get(b.getContext()),
+                                  qc::QubitType::get(b.getContext()),
+                              },
+                              [&](ValueRange arguments) {
+                                b.x(arguments[0]);
+                                b.rxx(0.123, arguments[0], arguments[1]);
+                              });
+  auto q = b.allocQubitRegister(4);
+  b.ctrl({q[0], q[1]}, {q[2], q[3]},
+         [&](ValueRange targets) { b.call(compound, targets); });
+  return measureToRegister(b, q.qubits);
+}
+
+static Value ctrlTwoMixedCalls(qc::QCProgramBuilder& b) {
+  auto compound =
+      b.createUnitaryFunction("compound",
+                              TypeRange{
+                                  qc::QubitType::get(b.getContext()),
+                                  qc::QubitType::get(b.getContext()),
+                              },
+                              [&](ValueRange arguments) {
+                                b.cx(arguments[0], arguments[1]);
+                                b.rxx(0.123, arguments[0], arguments[1]);
+                              });
+  auto q = b.allocQubitRegister(4);
+  b.ctrl({q[0], q[1]}, {q[2], q[3]},
+         [&](ValueRange targets) { b.call(compound, targets); });
+  return measureToRegister(b, q.qubits);
 }
 
 static Value expressionArithmetic(qc::QCProgramBuilder& b) {
@@ -1447,9 +1493,9 @@ INSTANTIATE_TEST_SUITE_P(
                                  qasm::barrierMultipleQubits,
                                  MQT_NAMED_BUILDER(qc::barrierMultipleQubits)},
         QASM3TranslationTestCase{"CtrlTwo", qasm::ctrlTwo,
-                                 MQT_NAMED_BUILDER(qc::ctrlTwo)},
+                                 MQT_NAMED_BUILDER(ctrlTwoCalls)},
         QASM3TranslationTestCase{"CtrlTwoMixed", qasm::ctrlTwoMixed,
-                                 MQT_NAMED_BUILDER(qc::ctrlTwoMixed)},
+                                 MQT_NAMED_BUILDER(ctrlTwoMixedCalls)},
         QASM3TranslationTestCase{"SimpleIf", qasm::simpleIf,
                                  MQT_NAMED_BUILDER(qc::simpleIf)},
         QASM3TranslationTestCase{"IfElse", qasm::ifElse,
