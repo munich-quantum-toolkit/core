@@ -53,15 +53,14 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3100)._
 ### Removed
 
 - 💥 Remove test-only DD state generators, recursive functionality construction,
-  and DD-specific named-gate helpers from MQT Core ([#2257], [#2335])
-  ([**@simon1hofmann**])
-- 💥 Remove MQT Core's optional MLIR stack, including its dialects, conversions,
+  and DD-specific named-gate helpers ([#2257], [#2335]) ([**@simon1hofmann**])
+- 💥 Remove the optional MLIR stack, including its dialects, conversions,
   passes, tools, build integration, tests, documentation, and dependency on LLVM
   ([#2314]) ([**@denialhaag**], [**@burgholzer**])
-- 💥 Remove the entire MQT Core QIR stack, including its runtime, JIT,
-  standalone runner, DDSIM integration, build integration, tests, and
-  documentation ([#2314]) ([**@denialhaag**], [**@burgholzer**])
-- 💥 Remove the `spdlog` dependency from MQT Core source builds, installed CMake
+- 💥 Remove the entire QIR stack, including its runtime, JIT, standalone runner,
+  DDSIM integration, build integration, tests, and documentation ([#2314])
+  ([**@denialhaag**], [**@burgholzer**])
+- 💥 Remove the `spdlog` dependency from source builds, installed CMake
   packages, and Python wheels. QDMI diagnostics continue to be written to
   standard error ([#2270]) ([**@denialhaag**])
 - 💥 Remove `CircuitOptimizer`. Move circuit flattening and final-measurement
@@ -80,7 +79,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3100)._
   installs or exports the library, no installed header exposes a `nlohmann`
   type, and the decision-diagram statistics report through strings and streams
   ([#2138]) ([**@denialhaag**])
-- 💥 Remove the neutral-atom stack, which moves to MQT QMAP. This drops the
+- 💥 Remove the neutral-atom stack, which moves to [MQT QMAP]. This drops the
   neutral-atom computation model, the neutral-atom FoMaC device session, the
   neutral-atom QDMI device and its configuration, the `mqt.core.na` Python
   module, `AodOperation`, and the `Move`, `Bridge`, `AodActivate`,
@@ -99,7 +98,7 @@ _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3100)._
   ([#2082]) ([**@burgholzer**])
 - 🔥 Remove density matrix support from the DD package ([#1466])
   ([**@burgholzer**])
-- 🔥 Remove `datastructures` (`ds`) (sub)library from MQT Core ([#1458])
+- 🔥 Remove `datastructures` (`ds`) (sub)library ([#1458])
   ([**@burgholzer**])
 
 ### Fixed
