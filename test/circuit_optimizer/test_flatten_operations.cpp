@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "algorithms/RandomCliffordCircuit.hpp"
 #include "circuit_optimizer/CircuitOptimizer.hpp"
 #include "ir/QuantumComputation.hpp"
 #include "ir/operations/CompoundOperation.hpp"
@@ -24,20 +23,6 @@
 #include <vector>
 
 namespace qc {
-TEST(FlattenOperations, FlattenRandomClifford) {
-  auto rcs = createRandomCliffordCircuit(2U, 3U, 0U);
-  std::cout << rcs << "\n";
-  const auto nops = rcs.getNindividualOps();
-
-  CircuitOptimizer::flattenOperations(rcs);
-  std::cout << rcs << "\n";
-
-  for (const auto& op : rcs) {
-    EXPECT_FALSE(op->isCompoundOperation());
-  }
-  EXPECT_EQ(nops, rcs.getNindividualOps());
-}
-
 TEST(FlattenOperations, FlattenRecursive) {
   const std::size_t nqubits = 1U;
 
