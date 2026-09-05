@@ -97,6 +97,22 @@ has probability `2^-n` when `sum = addend + 1 mod 2^n` and probability zero
 otherwise. Keeping both registers in the result exposes the correlation that
 defines the addition; the sum alone would be uniform.
 
+## Repeat until success
+
+The fixed `repeat-until-success` family implements the two-T-gate circuit from
+Figure 8 of Paetznick and Svore's
+[repeat-until-success decomposition](https://arxiv.org/abs/1311.1074v2). Each
+attempt measures an ancilla. Outcome zero applies `(I + i sqrt(2) X) / sqrt(3)`
+to the data qubit. Outcome one leaves the data
+qubit unchanged, restores the ancilla to |0>, and repeats the attempt. The
+structured program represents this post-test retry with an unbounded
+`scf.while`.
+
+The benchmark applies S-dagger and H to the data qubit after a successful
+attempt. The one-bit result has probabilities `P(0) = 1/2 + sqrt(2)/3` and
+`P(1) = 1/2 - sqrt(2)/3`. This readout tests the relative phase of the
+implemented unitary.
+
 ## Inspect the canonical instance specification and manifest
 
 A canonical instance specification records every resolved default. A manifest

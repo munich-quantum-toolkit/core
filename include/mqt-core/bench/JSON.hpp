@@ -20,6 +20,7 @@
 #include "bench/QFTAdderClassical.hpp"
 #include "bench/QFTAdderQuantum.hpp"
 #include "bench/QPE.hpp"
+#include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
 #include "bench/mqt_core_bench_export.h"
 

@@ -27,6 +27,7 @@ class QFT;
 class QFTAdderClassical;
 class QFTAdderQuantum;
 class QPE;
+class RepeatUntilSuccess;
 class Teleportation;
 } // namespace mqt::bench
 
@@ -66,6 +67,10 @@ SmallVector<Value> qftAdderQuantum(qc::QCProgramBuilder& builder,
 
 /// Emit one configured QPE benchmark.
 SmallVector<Value> qpe(qc::QCProgramBuilder& builder, const QPE& benchmark);
+
+/// Emit the fixed repeat-until-success benchmark.
+SmallVector<Value> repeatUntilSuccess(qc::QCProgramBuilder& builder,
+                                      const RepeatUntilSuccess& benchmark);
 
 /// Emit the quantum teleportation benchmark.
 SmallVector<Value> teleportation(qc::QCProgramBuilder& builder,

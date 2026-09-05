@@ -37,6 +37,8 @@ MQT_BENCHMARK_FAMILY(QFTAdderClassical, qftAdderClassical,
                      "qft-adder-classical", 1)
 MQT_BENCHMARK_FAMILY(QFTAdderQuantum, qftAdderQuantum, "qft-adder-quantum", 1)
 MQT_BENCHMARK_FAMILY(QPE, qpe, "qpe", 1)
+MQT_BENCHMARK_FAMILY(RepeatUntilSuccess, repeatUntilSuccess,
+                     "repeat-until-success", 1)
 MQT_BENCHMARK_FAMILY(Teleportation, teleportation, "teleportation", 1)
 
 #undef MQT_BENCHMARK_FAMILY

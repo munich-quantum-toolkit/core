@@ -28,6 +28,7 @@ void registerQFT(const nb::module_& m);
 void registerQFTAdderClassical(const nb::module_& m);
 void registerQFTAdderQuantum(const nb::module_& m);
 void registerQPE(const nb::module_& m);
+void registerRepeatUntilSuccess(const nb::module_& m);
 void registerTeleportation(const nb::module_& m);
 
 // The nanobind module macro requires its module handle by value.
@@ -89,6 +90,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   const nb::module_ qpe =
       m.def_submodule("qpe", "QPE benchmark instances and options.");
   registerQPE(qpe);
+
+  const nb::module_ repeatUntilSuccess = m.def_submodule(
+      "repeat_until_success", "Fixed repeat-until-success benchmark.");
+  registerRepeatUntilSuccess(repeatUntilSuccess);
 
   const nb::module_ teleportation =
       m.def_submodule("teleportation", "Quantum teleportation benchmarks.");

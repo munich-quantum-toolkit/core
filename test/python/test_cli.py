@@ -127,6 +127,7 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     assert '"qft-adder-classical"' in ret.stdout
     assert '"qft-adder-quantum"' in ret.stdout
     assert '"qpe"' in ret.stdout
+    assert '"repeat-until-success"' in ret.stdout
     assert '"teleportation"' in ret.stdout
 
 

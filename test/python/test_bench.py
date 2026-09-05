@@ -26,6 +26,7 @@ from mqt.core.bench import (
     qft_adder_classical,
     qft_adder_quantum,
     qpe,
+    repeat_until_success,
     teleportation,
 )
 
@@ -41,6 +42,7 @@ def assert_generates(
         | qft_adder_classical.QFTAdderClassical
         | qft_adder_quantum.QFTAdderQuantum
         | qpe.QPE
+        | repeat_until_success.RepeatUntilSuccess
         | teleportation.Teleportation
     ),
 ) -> None:
@@ -315,6 +317,31 @@ def test_qpe_normalizes_arbitrary_fraction() -> None:
 
     with pytest.raises(ValueError, match="denominator must fit in 64 bits"):
         qpe.Options(precision=3, phase=Fraction(1, 2**80 + 1))
+
+
+def test_repeat_until_success_reference_json_and_generation() -> None:
+    """Expose the fixed repeat-until-success benchmark without options."""
+    benchmark = repeat_until_success.RepeatUntilSuccess()
+    assert benchmark.output.name == "result"
+    assert benchmark.output.width == 1
+    assert benchmark.probability("0") == pytest.approx(0.5 + 2**0.5 / 3)
+    assert benchmark.probability("1") == pytest.approx(0.5 - 2**0.5 / 3)
+
+    shots = 8192
+    counts = benchmark.generate().to_qco().sample(shots=shots, seed=31)
+    assert sum(counts.values()) == shots
+    evaluation = benchmark.evaluate(counts)
+    assert evaluation.total_variation_distance < 0.015
+    assert evaluation.squared_hellinger_fidelity > 0.999
+    assert evaluation.success_probability is None
+    assert json.loads(benchmark.instance_specification_json)["parameters"] == {}
+
+    instance_copy = repeat_until_success.RepeatUntilSuccess.from_instance_specification_json(
+        benchmark.instance_specification_json
+    )
+    manifest_copy = repeat_until_success.RepeatUntilSuccess.from_manifest_json(benchmark.manifest_json)
+    assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
+    assert_generates(benchmark)
 
 
 def test_teleportation_reference_json_and_generation() -> None:

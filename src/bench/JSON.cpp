@@ -21,6 +21,7 @@
 #include "bench/QFTAdderClassical.hpp"
 #include "bench/QFTAdderQuantum.hpp"
 #include "bench/QPE.hpp"
+#include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
@@ -514,6 +515,13 @@ parseQFTAdderQuantumParameters(const Json& parameters,
   }
 }
 
+[[nodiscard]] RepeatUntilSuccess
+parseRepeatUntilSuccessParameters(const Json& parameters,
+                                  const std::string_view source) {
+  rejectUnknownKeys(parameters, {}, source, "$/parameters");
+  return RepeatUntilSuccess{};
+}
+
 [[nodiscard]] Teleportation
 parseTeleportationParameters(const Json& parameters,
                              const std::string_view source) {
@@ -611,6 +619,10 @@ parametersJSON(const ControlledMultiplicationModuloN& benchmark) {
   };
 }
 
+[[nodiscard]] Json parametersJSON(const RepeatUntilSuccess& /*unused*/) {
+  return Json::object();
+}
+
 [[nodiscard]] Json parametersJSON(const Teleportation& /*unused*/) {
   return Json::object();
 }
@@ -703,6 +715,16 @@ referenceJSON(const ControlledMultiplicationModuloN& benchmark) {
   return {
       {"kind", "analytic"},
       {"model", "qpe_dirichlet"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"version", 1},
+  };
+}
+
+[[nodiscard]] Json referenceJSON(const RepeatUntilSuccess& benchmark) {
+  return {
+      {"kind", "analytic"},
+      {"model", "repeat_until_success"},
       {"outcome_order", "big_endian"},
       {"output", benchmark.output().name},
       {"version", 1},
@@ -1116,6 +1138,14 @@ controlledMultiplicationModuloNInstanceSpecificationSchema() {
           },
       },
       {"required", {"precision", "phase"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json repeatUntilSuccessInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<RepeatUntilSuccess>({
+      {"additionalProperties", false},
+      {"properties", Json::object()},
       {"type", "object"},
   });
 }
