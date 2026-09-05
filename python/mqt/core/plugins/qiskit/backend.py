@@ -122,6 +122,19 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     Returns:
         The OpenQASM 3 program.
     """
+    # Qiskit classical bits start at zero, while OpenQASM 3 bits are
+    # uninitialized. Preserve Qiskit's semantics and make every output valid
+    # even when the circuit measures only part of a register.
+    if circuit.num_clbits:
+        initialization = circuit.copy_empty_like(vars_mode="drop")
+        initialization.global_phase = 0
+        for clbit in initialization.clbits:
+            initialization.store(
+                clbit,
+                False,  # ruff: ignore[boolean-positional-value-in-call] Qiskit store arguments are positional-only.
+            )
+        circuit = circuit.compose(initialization, front=True, inplace=False)
+
     # Qiskit's OpenQASM3 exporter is fairly limited in terms of which gates it supports natively.
     # So it needs some help from us.
     exclusion_list = set()

@@ -100,6 +100,9 @@ releases may include breaking changes.
 
 ### Fixed
 
+- 🐛 Initialize Qiskit classical bits before OpenQASM 3 serialization so
+  partially measured circuits preserve their zero values ([#2399])
+  ([**@burgholzer**])
 - 🐛 Handle empty DDSIM results and NUL-terminated QDMI result buffers ([#2288])
   ([**@simon1hofmann**])
 - 🐛 Validate output permutations before I/O mapping initialization ([#2278])
@@ -816,6 +819,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2399]: https://github.com/munich-quantum-toolkit/core/pull/2399
 [#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368
 [#2358]: https://github.com/munich-quantum-toolkit/core/pull/2358
 [#2349]: https://github.com/munich-quantum-toolkit/core/pull/2349
