@@ -34,22 +34,25 @@ class Job:
     def cancel(self) -> None:
         """Cancels the job."""
 
-    def get_shots(self) -> list[str]:
+    def get_results(self, program_index: int, result: Job.Result) -> bytes:
+        """Returns one indexed result as exact bytes."""
+
+    def get_shots(self, program_index: int = 0) -> list[str]:
         """Returns the raw shot results from the job."""
 
-    def get_counts(self) -> dict[str, int]:
+    def get_counts(self, program_index: int = 0) -> dict[str, int]:
         """Returns the measurement counts from the job."""
 
-    def get_dense_statevector(self) -> list[complex]:
+    def get_dense_statevector(self, program_index: int = 0) -> list[complex]:
         """Returns the dense statevector from the job (typically only available from simulator devices)."""
 
-    def get_dense_probabilities(self) -> list[float]:
+    def get_dense_probabilities(self, program_index: int = 0) -> list[float]:
         """Returns the dense probabilities from the job (typically only available from simulator devices)."""
 
-    def get_sparse_statevector(self) -> dict[str, complex]:
+    def get_sparse_statevector(self, program_index: int = 0) -> dict[str, complex]:
         """Returns the sparse statevector from the job (typically only available from simulator devices)."""
 
-    def get_sparse_probabilities(self) -> dict[str, float]:
+    def get_sparse_probabilities(self, program_index: int = 0) -> dict[str, float]:
         """Returns the sparse probabilities from the job (typically only available from simulator devices)."""
 
     @overload
@@ -111,6 +114,10 @@ class Job:
         """The exact bytes of the submitted program."""
 
     @property
+    def programs_num(self) -> int:
+        """The number of programs in the job."""
+
+    @property
     def num_shots(self) -> int:
         """The number of shots."""
 
@@ -137,6 +144,27 @@ class Job:
         CANCELED = 5
 
         FAILED = 6
+
+    class Result(enum.Enum):
+        """One raw job result format."""
+
+        SHOTS = 0
+
+        HIST_KEYS = 1
+
+        HIST_VALUES = 2
+
+        STATEVECTOR_DENSE = 3
+
+        PROBABILITIES_DENSE = 4
+
+        STATEVECTOR_SPARSE_KEYS = 5
+
+        STATEVECTOR_SPARSE_VALUES = 6
+
+        PROBABILITIES_SPARSE_KEYS = 7
+
+        PROBABILITIES_SPARSE_VALUES = 8
 
 class ProgramFormat(enum.Enum):
     """Enumeration of program formats."""
@@ -349,6 +377,36 @@ class Device:
         what it means, which is usually a configuration for the run. A calibration run
         executes no circuit, so it takes no shot count.
         """
+
+    @overload
+    def submit_programs(
+        self,
+        programs: Sequence[str],
+        program_format: ProgramFormat,
+        num_shots: int | None = None,
+        *,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
+    ) -> Job:
+        """Submits an ordered list of text programs atomically."""
+
+    @overload
+    def submit_programs(
+        self,
+        programs: Sequence[bytes],
+        program_format: ProgramFormat,
+        num_shots: int | None = None,
+        *,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
+    ) -> Job:
+        """Submits an ordered list of exact byte programs atomically."""
 
     def retrieve_job_by_id(self, job_id: str) -> Job:
         """Retrieves an existing job by its device-provided ID."""

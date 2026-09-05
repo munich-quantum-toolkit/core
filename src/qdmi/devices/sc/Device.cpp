@@ -422,6 +422,16 @@ int MQT_SC_QDMI_Device_Job_impl_d::setParameter(
   return QDMI_ERROR_NOTSUPPORTED;
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
+int MQT_SC_QDMI_Device_Job_impl_d::setPrograms(
+    const QDMI_Program_Format* const format, const size_t count,
+    [[maybe_unused]] const size_t* const sizes,
+    [[maybe_unused]] const void* const* const programs) {
+  if (format == nullptr || count == 0U) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  return QDMI_ERROR_NOTSUPPORTED;
+}
+// NOLINTNEXTLINE(readability-convert-member-functions-to-static)
 int MQT_SC_QDMI_Device_Job_impl_d::queryProperty(
     const QDMI_Device_Job_Property property, const size_t size, void* value,
     size_t* /*sizeRet*/) {
@@ -445,7 +455,8 @@ int MQT_SC_QDMI_Device_Job_impl_d::wait(size_t /*timeout*/) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
 // NOLINTNEXTLINE(readability-convert-member-functions-to-static)
-int MQT_SC_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
+int MQT_SC_QDMI_Device_Job_impl_d::getResults(const size_t /*programIndex*/,
+                                              const QDMI_Job_Result result,
                                               const size_t size, void* data,
                                               size_t* /*sizeRet*/) {
   if ((data != nullptr && size == 0) ||
@@ -501,6 +512,13 @@ int MQT_SC_QDMI_device_job_set_parameter(
   return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT
                         : job->setParameter(parameter, size, value);
 }
+int MQT_SC_QDMI_device_job_set_programs(MQT_SC_QDMI_Device_Job job,
+                                        const QDMI_Program_Format* format,
+                                        const size_t count, const size_t* sizes,
+                                        const void* const* programs) {
+  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT
+                        : job->setPrograms(format, count, sizes, programs);
+}
 int MQT_SC_QDMI_device_job_query_property(
     MQT_SC_QDMI_Device_Job job, const QDMI_Device_Job_Property property,
     const size_t size, void* value, size_t* sizeRet) {
@@ -522,11 +540,13 @@ int MQT_SC_QDMI_device_job_wait(MQT_SC_QDMI_Device_Job job,
   return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT : job->wait(timeout);
 }
 int MQT_SC_QDMI_device_job_get_results(MQT_SC_QDMI_Device_Job job,
+                                       const size_t programIndex,
                                        const QDMI_Job_Result result,
                                        const size_t size, void* data,
                                        size_t* sizeRet) {
-  return job == nullptr ? QDMI_ERROR_INVALIDARGUMENT
-                        : job->getResults(result, size, data, sizeRet);
+  return job == nullptr
+             ? QDMI_ERROR_INVALIDARGUMENT
+             : job->getResults(programIndex, result, size, data, sizeRet);
 }
 int MQT_SC_QDMI_device_session_query_device_property(
     MQT_SC_QDMI_Device_Session session, const QDMI_Device_Property property,

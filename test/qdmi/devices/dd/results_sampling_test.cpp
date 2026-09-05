@@ -41,8 +41,8 @@ namespace {
 std::vector<std::string> getShots(MQT_DDSIM_QDMI_Device_Job job) {
   const size_t size = qdmi_test::querySize(job, QDMI_JOB_RESULT_SHOTS);
   std::string result(size, '\0');
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_SHOTS,
-                                                  size, result.data(), nullptr),
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                job, 0U, QDMI_JOB_RESULT_SHOTS, size, result.data(), nullptr),
             QDMI_SUCCESS);
   EXPECT_FALSE(result.empty());
   if (!result.empty()) {
@@ -291,12 +291,12 @@ TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
   char dummy{};
   for (const auto result : results) {
     size_t size = 1;
-    EXPECT_EQ(
-        MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, nullptr, &size),
-        QDMI_SUCCESS);
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, 0U, result, 0,
+                                                    nullptr, &size),
+              QDMI_SUCCESS);
     EXPECT_EQ(size, 0U);
-    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, &dummy,
-                                                    nullptr),
+    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, 0U, result, 0,
+                                                    &dummy, nullptr),
               QDMI_SUCCESS);
   }
 }
@@ -314,7 +314,7 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
   ASSERT_EQ(shotsSize, 512U * 3U);
   std::vector<char> shotsTooSmall(shotsSize - 1);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_SHOTS, shotsTooSmall.size(),
+                j.job, 0U, QDMI_JOB_RESULT_SHOTS, shotsTooSmall.size(),
                 shotsTooSmall.data(), nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 
@@ -322,7 +322,7 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
       ks > 0) {
     std::vector<char> tooSmall(ks - 1);
     EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                  j.job, QDMI_JOB_RESULT_HIST_KEYS, tooSmall.size(),
+                  j.job, 0U, QDMI_JOB_RESULT_HIST_KEYS, tooSmall.size(),
                   tooSmall.data(), nullptr),
               QDMI_ERROR_INVALIDARGUMENT);
   }
@@ -332,7 +332,7 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
       vs > 0) {
     std::vector<char> tooSmall(vs - 1);
     EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                  j.job, QDMI_JOB_RESULT_HIST_VALUES, tooSmall.size(),
+                  j.job, 0U, QDMI_JOB_RESULT_HIST_VALUES, tooSmall.size(),
                   tooSmall.data(), nullptr),
               QDMI_ERROR_INVALIDARGUMENT);
   }
@@ -347,27 +347,28 @@ TEST(ResultsSampling, StateAndProbRequestsAreInvalidWhenShotsPositive) {
   ASSERT_EQ(qdmi_test::setShots(j.job, 32), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_get_results(
+          j.job, 0U, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0, nullptr, nullptr),
+      QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0, nullptr, nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 0, nullptr,
+                nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, 0U, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, 0,
+                nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(
       MQT_DDSIM_QDMI_device_job_get_results(
-          j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 0, nullptr, nullptr),
+          j.job, 0U, QDMI_JOB_RESULT_PROBABILITIES_DENSE, 0, nullptr, nullptr),
       QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, 0, nullptr,
-                nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(
-      MQT_DDSIM_QDMI_device_job_get_results(
-          j.job, QDMI_JOB_RESULT_PROBABILITIES_DENSE, 0, nullptr, nullptr),
-      QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS, 0, nullptr,
-                nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS, 0,
+                nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
-                j.job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, 0, nullptr,
-                nullptr),
+                j.job, 0U, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, 0,
+                nullptr, nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }

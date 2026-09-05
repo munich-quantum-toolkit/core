@@ -130,6 +130,8 @@ struct DeviceLibrary {
   decltype(QDMI_device_job_free)* device_job_free{};
   /// Function pointer to @ref QDMI_device_job_set_parameter.
   decltype(QDMI_device_job_set_parameter)* device_job_set_parameter{};
+  /// Function pointer to @ref QDMI_device_job_set_programs.
+  decltype(QDMI_device_job_set_programs)* device_job_set_programs{};
   /// Function pointer to @ref QDMI_device_job_query_property.
   decltype(QDMI_device_job_query_property)* device_job_query_property{};
   /// Function pointer to @ref QDMI_device_job_submit.
@@ -346,6 +348,11 @@ public:
   auto setParameter(QDMI_Job_Parameter param, size_t size,
                     const void* value) const -> int;
 
+  /// @see QDMI_job_set_programs
+  auto setPrograms(const QDMI_Program_Format* format, size_t count,
+                   const size_t* sizes, const void* const* programs) const
+      -> int;
+
   /**
    * @brief Queries a property of the job.
    * @see QDMI_job_query_property
@@ -382,8 +389,8 @@ public:
    * @brief Gets the results of the job.
    * @see QDMI_job_get_results
    */
-  auto getResults(QDMI_Job_Result result, size_t size, void* data,
-                  size_t* sizeRet) const -> int;
+  auto getResults(size_t programIndex, QDMI_Job_Result result, size_t size,
+                  void* data, size_t* sizeRet) const -> int;
 
   /**
    * @brief Frees the job.
