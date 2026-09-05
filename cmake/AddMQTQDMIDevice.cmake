@@ -147,7 +147,33 @@ function(mqt_get_qdmi_device_targets result)
       PARENT_SCOPE)
 endfunction()
 
-# Copy in-tree QDMI runtime libraries and manifests beside a runtime consumer.
+function(_mqt_qdmi_runtime_files result target)
+  set(runtime_files "$<TARGET_FILE:${target}>")
+  if(WIN32)
+    get_target_property(concrete_target ${target} ALIASED_TARGET)
+    if(NOT concrete_target)
+      set(concrete_target ${target})
+    endif()
+    get_target_property(imported ${concrete_target} IMPORTED)
+    if(imported)
+      string(MAKE_C_IDENTIFIER "${concrete_target}-runtime-closure" runtime_closure_target)
+      if(NOT TARGET ${runtime_closure_target})
+        add_library(${runtime_closure_target} MODULE EXCLUDE_FROM_ALL
+                    "${CMAKE_CURRENT_FUNCTION_LIST_FILE}")
+        set_property(TARGET ${runtime_closure_target} PROPERTY LINKER_LANGUAGE CXX)
+        target_link_libraries(${runtime_closure_target} PRIVATE ${target})
+      endif()
+      set(runtime_files "$<TARGET_RUNTIME_DLLS:${runtime_closure_target}>")
+    else()
+      list(APPEND runtime_files "$<TARGET_RUNTIME_DLLS:${target}>")
+    endif()
+  endif()
+  set(${result}
+      ${runtime_files}
+      PARENT_SCOPE)
+endfunction()
+
+# Copy the QDMI Client library, driver, device libraries, and manifests beside a runtime consumer.
 function(mqt_copy_qdmi_runtime target)
   if(NOT TARGET ${target})
     message(FATAL_ERROR "Unknown QDMI runtime consumer target: ${target}")
@@ -163,19 +189,22 @@ function(mqt_copy_qdmi_runtime target)
       if(NOT runtime_concrete_target)
         set(runtime_concrete_target ${runtime_target})
       endif()
-      get_target_property(runtime_imported ${runtime_concrete_target} IMPORTED)
-      if(NOT runtime_imported AND NOT consumer_target STREQUAL runtime_concrete_target)
-        add_dependencies(${consumer_target} ${runtime_concrete_target})
-        set(runtime_files "$<TARGET_FILE:${runtime_target}>")
-        if(WIN32)
-          list(APPEND runtime_files "$<TARGET_RUNTIME_DLLS:${runtime_target}>")
+      if(NOT consumer_target STREQUAL runtime_concrete_target)
+        string(MAKE_C_IDENTIFIER "${consumer_target}-${runtime_target}-copy" runtime_copy_target)
+        if(NOT TARGET ${runtime_copy_target})
+          get_target_property(runtime_imported ${runtime_concrete_target} IMPORTED)
+          _mqt_qdmi_runtime_files(runtime_files ${runtime_target})
+          add_custom_target(
+            ${runtime_copy_target}
+            COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:${consumer_target}>"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different ${runtime_files}
+                    "$<TARGET_FILE_DIR:${consumer_target}>"
+            COMMAND_EXPAND_LISTS)
+          if(NOT runtime_imported)
+            add_dependencies(${runtime_copy_target} ${runtime_concrete_target})
+          endif()
         endif()
-        add_custom_command(
-          TARGET ${consumer_target}
-          POST_BUILD
-          COMMAND ${CMAKE_COMMAND} -E copy_if_different ${runtime_files}
-                  "$<TARGET_FILE_DIR:${consumer_target}>"
-          COMMAND_EXPAND_LISTS)
+        add_dependencies(${consumer_target} ${runtime_copy_target})
       endif()
     endif()
   endforeach()
@@ -222,10 +251,7 @@ function(mqt_copy_qdmi_runtime target)
     if(NOT device_imported)
       add_dependencies(${target} ${device})
     endif()
-    set(device_files "$<TARGET_FILE:${device}>")
-    if(WIN32 AND NOT device_imported)
-      list(APPEND device_files "$<TARGET_RUNTIME_DLLS:${device}>")
-    endif()
+    _mqt_qdmi_runtime_files(device_files ${device})
     add_custom_command(
       TARGET ${target}
       POST_BUILD
