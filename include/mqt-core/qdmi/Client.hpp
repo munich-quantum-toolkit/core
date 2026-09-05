@@ -8,6 +8,10 @@
  * Licensed under the MIT License
  */
 
+/** @file Client.hpp
+ * @brief QDMI C++ device-management interface.
+ */
+
 #pragma once
 
 #include "qdmi/common/Common.hpp"
@@ -37,7 +41,7 @@
 #include <variant>
 #include <vector>
 
-namespace fomac {
+namespace qdmi {
 using CustomJobParameter = std::variant<std::string, bool, int, double>;
 
 /**
@@ -72,6 +76,32 @@ queuePositionFromResult(const int result, const size_t queuePosition) {
   }
   qdmi::throwIfError(result, "Querying job queue position");
   return queuePosition;
+}
+
+[[nodiscard]] inline std::vector<std::string>
+parseShots(const std::string_view shots, const size_t numShots) {
+  if (numShots == 0) {
+    if (!shots.empty()) {
+      throw std::runtime_error("Number of shots mismatch");
+    }
+    return {};
+  }
+
+  std::vector<std::string> parsed;
+  parsed.reserve(numShots);
+  size_t start = 0;
+  while (true) {
+    const auto end = shots.find(',', start);
+    parsed.emplace_back(shots.substr(start, end - start));
+    if (end == std::string_view::npos) {
+      break;
+    }
+    start = end + 1;
+  }
+  if (parsed.size() != numShots) {
+    throw std::runtime_error("Number of shots mismatch");
+  }
+  return parsed;
 }
 
 template <custom_property_value T, typename Query>
@@ -571,7 +601,7 @@ public:
   /**
    * @brief Queries a custom device property containing operation handles.
    * @param property Custom property slot to query.
-   * @return Normal FoMaC operation wrappers, or `std::nullopt` if the slot is
+   * @return Normal QDMI operation wrappers, or `std::nullopt` if the slot is
    * unsupported. A supported empty list is returned as an engaged optional.
    * @throws std::invalid_argument If the returned byte count is not a multiple
    * of `sizeof(QDMI_Operation)`.
@@ -1282,4 +1312,4 @@ private:
 
   friend class Device;
 };
-} // namespace fomac
+} // namespace qdmi

@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <map>
 #include <string>
+#include <vector>
 
 namespace qc {
 class QuantumComputation;
@@ -71,11 +72,14 @@ VectorDD simulate(const qc::QuantumComputation& qc, const VectorDD& in,
  * @param qc The quantum computation to simulate
  * @param shots The number of shots to sample
  * @param seed The seed for the random number generator
+ * @param shotResults Optional output for the measurement results in sampling
+ * order. The vector is cleared before simulation and can contain partial
+ * results if simulation throws an exception.
  * @return A histogram of the measurement results
  */
-std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
-                                          std::size_t shots = 1024U,
-                                          std::size_t seed = 0U);
+std::map<std::string, std::size_t>
+sample(const qc::QuantumComputation& qc, std::size_t shots = 1024U,
+       std::size_t seed = 0U, std::vector<std::string>* shotResults = nullptr);
 
 /**
  * @brief Sample from the output distribution of a quantum computation
@@ -89,10 +93,13 @@ std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
  * @param dd The DD package to use for the simulation
  * @param shots The number of shots to sample
  * @param seed The seed for the random number generator
+ * @param shotResults Optional output for the measurement results in sampling
+ * order. The vector is cleared before simulation and can contain partial
+ * results if simulation throws an exception.
  * @return A histogram of the measurement results
  */
-std::map<std::string, std::size_t> sample(const qc::QuantumComputation& qc,
-                                          const VectorDD& in, Package& dd,
-                                          std::size_t shots,
-                                          std::size_t seed = 0U);
+std::map<std::string, std::size_t>
+sample(const qc::QuantumComputation& qc, const VectorDD& in, Package& dd,
+       std::size_t shots, std::size_t seed = 0U,
+       std::vector<std::string>* shotResults = nullptr);
 } // namespace dd

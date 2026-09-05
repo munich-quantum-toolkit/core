@@ -106,6 +106,57 @@ configurations.
 The bundled DDSIM QDMI device no longer accepts QIR Base or Adaptive Profile
 programs in string or module form. Use QASM2 or QASM3 with this device.
 
+### Removal of the FoMaC compatibility APIs
+
+MQT Core no longer provides `mqt.core.fomac` or `mqt.core.qdmi.driver.Session`.
+Import QDMI entities such as `Device`, `Job`, and `ProgramFormat` from
+`mqt.core.qdmi`. Import `DeviceDefinition` and the module-level registry
+functions from `mqt.core.qdmi.driver`. Use `registered_device_ids()` to discover
+devices and `open_device()` to open a fresh device session. Pass provider
+configuration overrides to `open_device()` when a device needs per-open
+configuration.
+
+MQT Core also removes the FoMaC name from its C++ API. Apply these replacements:
+
+- `fomac::` becomes `qdmi::`.
+- `fomac/FoMaC.hpp` becomes `qdmi/Client.hpp`.
+- `fomac/Slurm.hpp` becomes `qdmi/Slurm.hpp`.
+- `MQT::CoreFoMaC` becomes `MQT::CoreQDMI`.
+
+The class and function names do not change. For example:
+
+```cpp
+#include "qdmi/Client.hpp"
+
+auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+```
+
+### Qiskit 2.1 minimum
+
+The minimum Qiskit version increases from **1.1.0 to 2.1.0**, dropping support
+for all Qiskit 1.x releases and Qiskit 2.0. Upgrade Qiskit to 2.1.0 or newer.
+
+### Native QDMI Qiskit primitives
+
+`QDMISampler` and `QDMIEstimator` are removed. Use Qiskit's `BackendSamplerV2`
+and `BackendEstimatorV2`, or the backend factories with native options:
+
+```python
+sampler = backend.sampler(default_shots=2048)
+estimator = backend.estimator(default_precision=0.01)
+```
+
+Estimator uses positive precision, not `default_shots`: its default is `1/64`
+(4096 shots). Grouping, metadata, broadcasting, and standard errors now follow
+Qiskit. Sampler requires genuine QDMI `SHOTS`, which DDSIM supports. Counts-only
+devices remain usable for Estimator but cannot run Sampler. No shot
+reconstruction is available.
+
+`backend.run(memory=True)` preserves shot order. Results include classical
+register boundaries; failed jobs and invalid results raise on collection, and
+unsupported execution options are rejected. See the
+[backend requirements](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qdmi_backend.html#backend-requirements).
+
 ### Private `nlohmann_json` dependency
 
 MQT Core uses `nlohmann_json` only inside its implementation. It no longer

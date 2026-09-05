@@ -137,6 +137,13 @@ constexpr auto OPERATION_ADDRESSES = makeOperationAddresses(OPERATIONS);
 constexpr std::array SUPPORTED_PROGRAM_FORMATS = {QDMI_PROGRAM_FORMAT_QASM2,
                                                   QDMI_PROGRAM_FORMAT_QASM3};
 
+[[nodiscard]] auto reportEmptyResult(size_t* sizeRet) -> QDMI_STATUS {
+  if (sizeRet != nullptr) {
+    *sizeRet = 0;
+  }
+  return QDMI_SUCCESS;
+}
+
 } // namespace
 
 namespace qdmi::dd {
@@ -418,7 +425,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
     -> QDMI_STATUS {
   return submitProgramAsync([this]() {
     const auto qc = qasm3::Importer::imports(program_);
-    counts_ = dd::sample(qc, numShots_);
+    counts_ = dd::sample(qc, numShots_, 0U, &shots_);
   });
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramStateExtraction()
@@ -490,9 +497,39 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::wait(const size_t timeout) const
   }
   return QDMI_SUCCESS;
 }
+auto MQT_DDSIM_QDMI_Device_Job_impl_d::getShots(const size_t size, void* data,
+                                                size_t* sizeRet) const
+    -> QDMI_STATUS {
+  const size_t required =
+      std::accumulate(shots_.begin(), shots_.end(), size_t{0},
+                      [](const size_t total, const auto& shot) {
+                        return total + shot.size() + 1;
+                      });
+  if (sizeRet != nullptr) {
+    *sizeRet = required;
+  }
+  if (data != nullptr) {
+    if (size < required) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    auto output = std::span(static_cast<char*>(data), required);
+    for (const auto& shot : shots_) {
+      std::ranges::copy(shot, output.begin());
+      output[shot.size()] = ',';
+      output = output.subspan(shot.size() + 1);
+    }
+    if (required > 0) {
+      std::span(static_cast<char*>(data), required).back() = '\0';
+    }
+  }
+  return QDMI_SUCCESS;
+}
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::getHistogram(
     const QDMI_Job_Result result, const size_t size, void* data,
     size_t* sizeRet) -> QDMI_STATUS {
+  if (counts_.size() == 1 && counts_.begin()->first.empty()) {
+    return reportEmptyResult(sizeRet);
+  }
   if (result == QDMI_JOB_RESULT_HIST_KEYS) {
     const size_t bitstringSize =
         counts_.empty() ? 0 : counts_.begin()->first.length();
@@ -538,6 +575,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
                                                       void* data,
                                                       size_t* sizeRet)
     -> QDMI_STATUS {
+  if (stateVecDD_.isTerminal()) {
+    return reportEmptyResult(sizeRet);
+  }
   std::call_once(stateVecOnce_,
                  [this]() { stateVec_ = stateVecDD_.getVector(); });
   const size_t reqSize = stateVec_.size() * 2 * sizeof(double);
@@ -555,9 +595,12 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
     const QDMI_Job_Result result, const size_t size, void* data,
     size_t* sizeRet) -> QDMI_STATUS {
+  if (stateVecDD_.isTerminal()) {
+    return reportEmptyResult(sizeRet);
+  }
   std::call_once(stateVecSparseOnce_,
                  [this]() { stateVecSparse_ = stateVecDD_.getSparseVector(); });
-  const size_t numQubits = stateVecDD_.p->v + 1;
+  const size_t numQubits = static_cast<size_t>(stateVecDD_.p->v) + 1U;
   switch (result) {
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS:
   case QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS: {
@@ -628,6 +671,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProbabilities(const size_t size,
                                                         void* data,
                                                         size_t* sizeRet)
     -> QDMI_STATUS {
+  if (stateVecDD_.isTerminal()) {
+    return reportEmptyResult(sizeRet);
+  }
   if (stateVec_.empty()) {
     stateVec_ = stateVecDD_.getVector();
   }
@@ -651,14 +697,18 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
                                                   const size_t size, void* data,
                                                   size_t* sizeRet)
     -> QDMI_STATUS {
-  if ((data != nullptr && size == 0) ||
-      IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
+  if (IS_INVALID_ARGUMENT(result, QDMI_JOB_RESULT)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_.load() != QDMI_JOB_STATUS_DONE) {
     return QDMI_ERROR_BADSTATE;
   }
   switch (result) {
+  case QDMI_JOB_RESULT_SHOTS:
+    if (numShots_ == 0) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    return getShots(size, data, sizeRet);
   case QDMI_JOB_RESULT_HIST_KEYS:
   case QDMI_JOB_RESULT_HIST_VALUES:
     if (numShots_ == 0) {

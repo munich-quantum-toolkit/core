@@ -27,6 +27,7 @@
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <random>
 #include <stdexcept>
@@ -477,6 +478,34 @@ TEST_F(DDFunctionality, IfElseOperationElseBranch) {
   EXPECT_EQ(key, "0");
 }
 
+TEST_F(DDFunctionality, SamplingPreservesOrderedShots) {
+  QuantumComputation qc(2U, 2U);
+  qc.h(0);
+  qc.cx(0, 1);
+  qc.measure(0, 1);
+  qc.measure(1, 0);
+
+  constexpr auto shots = 128U;
+  constexpr auto seed = 7U;
+  std::vector<std::string> first{"stale"};
+  const auto histogram = sample(qc, shots, seed, &first);
+  ASSERT_EQ(first.size(), shots);
+
+  std::map<std::string, std::size_t> reconstructed;
+  for (const auto& shot : first) {
+    ++reconstructed[shot];
+  }
+  EXPECT_EQ(reconstructed, histogram);
+
+  std::vector<std::string> second;
+  EXPECT_EQ(sample(qc, shots, seed, &second), histogram);
+  EXPECT_EQ(second, first);
+  EXPECT_FALSE(std::ranges::is_sorted(first));
+
+  EXPECT_TRUE(sample(qc, 0U, seed, &second).empty());
+  EXPECT_TRUE(second.empty());
+}
+
 TEST_F(DDFunctionality, VectorKroneckerWithTerminal) {
   constexpr std::size_t nq = 1;
   constexpr auto root = vEdge::one();
@@ -505,9 +534,11 @@ TEST_F(DDFunctionality, DynamicCircuitSimulationWithSWAP) {
   qc.measure(0, 1);
 
   constexpr auto shots = 16U;
-  const auto hist = sample(qc, shots);
+  std::vector<std::string> shotResults;
+  const auto hist = sample(qc, shots, 0U, &shotResults);
   EXPECT_EQ(hist.size(), 1);
   const auto& [key, value] = *hist.begin();
   EXPECT_EQ(value, shots);
   EXPECT_EQ(key, "11");
+  EXPECT_EQ(shotResults, std::vector<std::string>(shots, "11"));
 }

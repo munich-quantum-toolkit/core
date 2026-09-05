@@ -256,10 +256,7 @@ def test_backend_runs_multiple_circuits(ddsim_backend: QDMIBackend) -> None:
     for idx, expected_name in enumerate(["bell_state", "x_then_measure", "hadamard_all"]):
         exp_result = result.results[idx]
         assert exp_result.success is True
-        # Support both dict-style (Qiskit 2.x) and object-style (Qiskit 1.x) header access
-        header = exp_result.header
-        circuit_name = header["name"] if isinstance(header, dict) else header.name
-        assert circuit_name == expected_name
+        assert exp_result.header["name"] == expected_name
         assert exp_result.shots == 500
 
         # Check counts for this circuit
@@ -567,10 +564,7 @@ def test_backend_named_circuit_results_queryable_by_name(ddsim_backend: QDMIBack
 
     # Circuit name should be preserved in metadata
     assert result.results is not None
-    header = result.results[0].header
-    # Support both dict-style (pre-Qiskit 2.0) and object-style (post-Qiskit 2.0) access
-    circuit_name = header["name"] if isinstance(header, dict) else header.name
-    assert circuit_name == "my_circuit"
+    assert result.results[0].header["name"] == "my_circuit"
 
     # Should be able to query results by circuit name
     counts = result.get_counts("my_circuit")
@@ -589,13 +583,8 @@ def test_backend_unnamed_circuit_results_queryable_by_generated_name(ddsim_backe
     # Should have a generated name
     assert result.results is not None
     header = result.results[0].header
-    # Support both dict-style (pre-Qiskit 2.0) and object-style (post-Qiskit 2.0) access
-    if isinstance(header, dict):
-        assert "name" in header
-        circuit_name = header["name"]
-    else:
-        assert hasattr(header, "name")
-        circuit_name = header.name
+    assert header["name"] == qc.name
+    circuit_name = header["name"]
 
     # Should be able to query results by the generated name
     counts = result.get_counts(circuit_name)

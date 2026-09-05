@@ -161,7 +161,7 @@ The equivalent C++ registration operation is
 `replace` is true, and an opened definition cannot be replaced.
 {cpp:func}`qdmi::Driver::registeredDeviceIds` provides the same load-free
 enumeration, and {cpp:func}`qdmi::Driver::open` returns the cached device.
-{cpp:func}`fomac::Session::openDevice` returns a fresh device session and does
+{cpp:func}`qdmi::Session::openDevice` returns a fresh device session and does
 not add it to the QDMI client catalog. Runtime registrations and explicit opens
 are not added to that catalog.
 
@@ -173,7 +173,8 @@ session parameters, for every definition.
 
 MQT Core provides a mechanism-specific adapter for jobs that use local Slurm
 licenses for cluster-wide admission. The license name must equal one registered
-QDMI device ID. Each job must request one license. For example:
+QDMI device ID. Register one definition per separately licensed machine. Each
+job must request one license. For example:
 
 ```bash
 sbatch --licenses=mqt.ddsim.default:1 simulation.sh
@@ -187,8 +188,8 @@ from mqt.core.qdmi import slurm
 device = slurm.open_device_from_license()
 ```
 
-The equivalent C++ function is `fomac::slurm::openDeviceFromLicense()` from
-`fomac/Slurm.hpp`. Both functions read `SLURM_JOB_LICENSES`. They accept only
+The equivalent C++ function is `qdmi::slurm::openDeviceFromLicense()` from
+`qdmi/Slurm.hpp`. Both functions read `SLURM_JOB_LICENSES`. They accept only
 `<registered-device-id>` or `<registered-device-id>:1`. They reject remote,
 compound, and non-unit license values.
 
@@ -233,7 +234,7 @@ device libraries and manifests with an executable:
 ```cmake
 find_package(mqt-core CONFIG REQUIRED)
 add_executable(my-application main.cpp)
-target_link_libraries(my-application PRIVATE MQT::CoreFoMaC)
+target_link_libraries(my-application PRIVATE MQT::CoreQDMI)
 mqt_copy_qdmi_runtime(
   my-application
   MQT::CoreQDMIScDevice

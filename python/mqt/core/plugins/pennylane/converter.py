@@ -198,6 +198,7 @@ class _ProgramConverter:
         self._wire_map: Mapping[Hashable, int] = MappingProxyType({
             wire: index for index, wire in enumerate(device_wires)
         })
+        self._validated_loci: set[tuple[str, tuple[int, ...]]] = set()
 
     def supports(self, operation: Operator) -> bool:
         """Return whether an operation can stop PennyLane decomposition.
@@ -337,7 +338,12 @@ class _ProgramConverter:
             except KeyError as exc:
                 msg = f"Operation '{operation.name}' uses wire {exc.args[0]!r}, which is not a device wire."
                 raise ValidationError(msg) from exc
-            self._validate_qdmi_contract(operation, spec, qdmi_operation, indices)
+            # Capabilities are fixed for this converter's device session. Only
+            # cache successful metadata checks; validate each gate's inputs above.
+            locus = (operation.name, indices)
+            if locus not in self._validated_loci:
+                self._validate_qdmi_contract(operation, spec, qdmi_operation, indices)
+                self._validated_loci.add(locus)
 
             # repr gives the shortest literal that reads back as the same double.
             parameters = ",".join(
