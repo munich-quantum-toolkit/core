@@ -1031,10 +1031,11 @@ def test_qiskit_custom_gate_named_store_remains_a_gate() -> None:
     """Use the Store type, not its public name, to classify assignments."""
     definition = QuantumCircuit(1)
     definition.x(0)
-    gate = Gate("store", 1, [])
+    gate = Gate("mqt_store_test", 1, [])
     gate.definition = definition
     circuit = QuantumCircuit(1)
     circuit.append(gate, [0])
+    circuit.data[0].operation.name = "store"
 
     assert "qc.x" in QCProgram.from_qiskit(circuit).ir
 
