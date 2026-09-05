@@ -106,6 +106,10 @@ releases may include breaking changes.
 - 💥 Replace the QDMI-specific primitives with native Qiskit primitives and
   typed backend factories. Sampler and `memory=True` require genuine QDMI
   `SHOTS` ([#2358]) ([**@burgholzer**])
+- 💥 Load one replaceable QDMI 1.4 Client driver through a validated function
+  table, split `MQT::CoreQDMI` from the packaged `MQT::CoreQDMIDriver`, and use
+  stable Client device IDs across C++, Python, MLIR, Qiskit, PennyLane, and
+  Slurm ([#2229]) ([**@burgholzer**])
 - 💥 Drop support for x86 macOS and stop publishing the respective wheels
   ([#2259]) ([**@denialhaag**])
 - ⬆️ Raise the macOS deployment target to 13.3 to enable `std::format` in libc++
@@ -907,6 +911,7 @@ for previous changelogs._
 [#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2240]: https://github.com/munich-quantum-toolkit/core/pull/2240
+[#2229]: https://github.com/munich-quantum-toolkit/core/pull/2229
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2228]: https://github.com/munich-quantum-toolkit/core/pull/2228
 [#2224]: https://github.com/munich-quantum-toolkit/core/pull/2224

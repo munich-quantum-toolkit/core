@@ -6,6 +6,38 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### QDMI Client driver boundary
+
+`MQT::CoreQDMI` and `MQT::CoreQDMIDriver` are now separate shared libraries.
+`MQT::CoreQDMI` loads one implementation of the standard QDMI 1.4 Client
+interface. It no longer links to MQT Core's packaged Driver. Set
+`qdmi::SessionConfig::driverPath`, pass Python `driver_path`, or set the UTF-8
+`MQT_CORE_QDMI_DRIVER` environment value to select another Driver. The first
+Driver that passes validation and allocates a raw session fixes the selection
+for the process. A failed load or raw-session allocation can be retried.
+
+Python no longer exposes the `mqt.core.qdmi.driver` registry submodule. Import
+`ClientSession` and `open_device` from `mqt.core.qdmi`:
+
+```python
+from mqt.core.qdmi import ClientSession, open_device
+
+device_ids = [device.id for device in ClientSession().devices]
+device = open_device(device_ids[0], token="access-token")
+```
+
+`Device.id` and `Device::getId()` return the stable ID reported by the Driver.
+The generic session parameters are `token`, `auth_file`, `auth_url`, `username`,
+`password`, `project_id`, and `custom1` through `custom5`. The selected Driver
+owns their validation and meaning. The former Python `base_url`,
+`device_config`, and `device_config_file` keywords were tied to MQT Core's
+Driver and are not part of the generic Client boundary. Use persistent Driver
+configuration when that Driver supports these settings.
+
+The MLIR `from_device_id` helpers and the Qiskit and PennyLane adapters accept
+the same generic session parameters. Device, site, operation, and job wrappers
+keep their originating Client session alive.
+
 ### Removal of the classic circuit representation
 
 MQT Core 4 removes the complete classic circuit surface. This includes the C++
@@ -210,13 +242,11 @@ MQT Core removed the following names:
 
 MQT Core 4 removes the deprecated FoMaC names that MQT Core 3.9 kept as
 compatibility aliases. Replace Python imports of QDMI entities from
-`mqt.core.fomac` with imports from `mqt.core.qdmi`. Import registry functions
-and `DeviceDefinition` from `mqt.core.qdmi.driver`.
+`mqt.core.fomac` with imports from `mqt.core.qdmi`.
 
-MQT Core 4 also removes `mqt.core.qdmi.driver.Session`. Use
-`registered_device_ids()` to discover devices and `open_device()` to open a
-fresh device session. Pass provider configuration overrides to `open_device()`
-when a device needs per-open configuration.
+MQT Core 4 also removes `mqt.core.qdmi.driver.Session` and the remaining
+`mqt.core.qdmi.driver` registry API. Use `ClientSession().devices` to discover
+devices and top-level `open_device()` to open a fresh Client session.
 
 Apply these replacements to C++ and MLIR code:
 

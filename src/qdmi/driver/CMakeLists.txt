@@ -10,7 +10,11 @@ set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-driver)
 
 if(NOT TARGET ${TARGET_NAME})
   # Add driver library
-  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver)
+  add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIDriver FORCE_SHARED)
+  set_target_properties(
+    ${TARGET_NAME} PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/.."
+                              RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/..")
+  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_driver_EXPORTS)
 
   # Add sources to target
   target_sources(${TARGET_NAME} PRIVATE DeviceRegistry.cpp Driver.cpp)
@@ -37,15 +41,7 @@ if(NOT TARGET ${TARGET_NAME})
 
   # Ensure the driver can find the device libraries at runtime
   if(QDMI_DEVICE_TARGETS)
-    if(WIN32)
-      mqt_copy_qdmi_runtime(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
-    else()
-      add_dependencies(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
-      foreach(device IN LISTS QDMI_DEVICE_TARGETS)
-        target_link_options(${TARGET_NAME} INTERFACE
-                            $<BUILD_INTERFACE:-Wl,-rpath,$<TARGET_FILE_DIR:${device}>>)
-      endforeach()
-    endif()
+    mqt_copy_qdmi_runtime(${TARGET_NAME} ${QDMI_DEVICE_TARGETS})
   endif()
 
   # add to list of MQT core targets

@@ -1,0 +1,22 @@
+{
+  "schema-version": 1,
+  "name": "Unavailable operation",
+  "numQubits": 1,
+  "durationUnit": {
+    "unit": "ns",
+    "scaleFactor": 1
+  },
+  "qubitProperties": {
+    "defaults": {},
+    "overrides": []
+  },
+  "couplings": [],
+  "operations": [
+    {
+      "name": "x",
+      "numQubits": 1,
+      "numParameters": 0,
+      "sites": []
+    }
+  ]
+}

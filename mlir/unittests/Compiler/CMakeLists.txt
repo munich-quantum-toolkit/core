@@ -28,14 +28,15 @@ target_link_libraries(
 
 mqt_copy_qdmi_runtime(mqt-core-mlir-unittests-compiler MQT::CoreQDMIScDevice
                       MQT::CoreQDMI_DDSIM_Device)
-target_compile_definitions(
-  mqt-core-mlir-unittests-compiler
-  PRIVATE
-    MQT_CORE_MLIR_HETEROGENEOUS_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/heterogeneous-sc.json"
-    MQT_CORE_MLIR_HIGHER_ARITY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/higher-arity-sc.json"
-    MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-one-way-sc.json"
-    MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-two-way-sc.json"
+set(qdmi_test_config "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/qdmi-adapter-devices.json")
+file(
+  GENERATE
+  OUTPUT "${qdmi_test_config}"
+  CONTENT
+    "{\n  \"schema-version\": 1,\n  \"qdmi\": {\n    \"devices\": [\n      {\"id\": \"test.mlir.heterogeneous\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${CMAKE_CURRENT_SOURCE_DIR}/Inputs/heterogeneous-sc.json\"}}},\n      {\"id\": \"test.mlir.higher-arity\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${CMAKE_CURRENT_SOURCE_DIR}/Inputs/higher-arity-sc.json\"}}},\n      {\"id\": \"test.mlir.directional-one-way\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-one-way-sc.json\"}}},\n      {\"id\": \"test.mlir.directional-two-way\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-two-way-sc.json\"}}},\n      {\"id\": \"test.mlir.unavailable-operation\", \"library\": \"$<TARGET_FILE:MQT::CoreQDMIScDevice>\", \"prefix\": \"MQT_SC\", \"session\": {\"device-config\": {\"file\": \"${CMAKE_CURRENT_SOURCE_DIR}/Inputs/unavailable-operation-sc.json\"}}}\n    ]\n  }\n}\n"
 )
+target_compile_definitions(mqt-core-mlir-unittests-compiler
+                           PRIVATE MQT_CORE_MLIR_QDMI_TEST_CONFIG="${qdmi_test_config}")
 
 mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler REQUIRES_EH)
 

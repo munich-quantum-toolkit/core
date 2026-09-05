@@ -11,7 +11,6 @@
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
 #include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/ArrayRef.h>
@@ -20,6 +19,7 @@
 #include <llvm/Support/Error.h>
 
 #include <cassert>
+#include <cstdlib>
 #include <initializer_list>
 #include <numeric>
 #include <string>
@@ -27,6 +27,26 @@
 #include <vector>
 
 using mlir::CompilerTarget;
+
+namespace {
+struct ConfiguredClientEnvironment {
+  ConfiguredClientEnvironment() noexcept {
+#ifdef _WIN32
+    if (_putenv_s("MQT_CORE_QDMI_CONFIG_FILE",
+                  MQT_CORE_MLIR_QDMI_TEST_CONFIG) != 0) {
+      std::abort();
+    }
+#else
+    if (setenv("MQT_CORE_QDMI_CONFIG_FILE", MQT_CORE_MLIR_QDMI_TEST_CONFIG,
+               1) != 0) {
+      std::abort();
+    }
+#endif
+  }
+};
+
+const ConfiguredClientEnvironment CONFIGURED_CLIENT_ENVIRONMENT;
+} // namespace
 
 [[nodiscard]] static const CompilerTarget::Operation&
 findOperation(const CompilerTarget& target, const llvm::StringRef name) {
@@ -144,14 +164,10 @@ TEST(CompilerQDMIAdapterTest, ConvertsUnknownDeviceFailureToError) {
   ASSERT_FALSE(target);
   const auto message = llvm::toString(target.takeError());
   EXPECT_NE(message.find("mqt.unknown.device"), std::string::npos);
-  EXPECT_NE(message.find("Unknown QDMI device ID"), std::string::npos);
 }
 
 TEST(CompilerQDMIAdapterTest, RejectsNonhomogeneousOperationSupport) {
-  qdmi::DeviceSessionConfig overrides;
-  overrides.deviceConfiguration =
-      qdmi::FileDeviceConfiguration{MQT_CORE_MLIR_HETEROGENEOUS_SC_CONFIG};
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device = qdmi::Session::openDevice("test.mlir.heterogeneous");
   auto target = mlir::compilerTargetFromDevice(device);
   ASSERT_FALSE(target);
   const auto message = llvm::toString(target.takeError());
@@ -160,10 +176,7 @@ TEST(CompilerQDMIAdapterTest, RejectsNonhomogeneousOperationSupport) {
 }
 
 TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
-  qdmi::DeviceSessionConfig overrides;
-  overrides.deviceConfiguration =
-      qdmi::FileDeviceConfiguration{MQT_CORE_MLIR_HIGHER_ARITY_SC_CONFIG};
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device = qdmi::Session::openDevice("test.mlir.higher-arity");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0));
@@ -173,11 +186,8 @@ TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
 }
 
 TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
-  qdmi::DeviceSessionConfig overrides;
-  overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
-      MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG,
-  };
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device =
+      qdmi::Session::openDevice("test.mlir.directional-one-way");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   ASSERT_EQ(target.couplings().size(), 1U);
@@ -194,21 +204,8 @@ TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
 }
 
 TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
-  qdmi::DeviceSessionConfig overrides;
-  overrides.deviceConfiguration = qdmi::InlineDeviceConfiguration{
-      .json = R"({
-    "schema-version": 1,
-    "name": "Unavailable operation",
-    "numQubits": 1,
-    "durationUnit": {"unit": "ns", "scaleFactor": 1},
-    "qubitProperties": {"defaults": {}, "overrides": []},
-    "couplings": [],
-    "operations": [
-      {"name": "x", "numQubits": 1, "numParameters": 0, "sites": []}
-    ]
-  })",
-  };
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device =
+      qdmi::Session::openDevice("test.mlir.unavailable-operation");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
   EXPECT_EQ(target.nativeOperationsKind(),
             CompilerTarget::NativeOperations::Kind::Explicit);
@@ -218,11 +215,8 @@ TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
 
 TEST(CompilerQDMIAdapterTest,
      PreservesDirectionalCalibrationWhenBothOrientationsExist) {
-  qdmi::DeviceSessionConfig overrides;
-  overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
-      MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG,
-  };
-  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto device =
+      qdmi::Session::openDevice("test.mlir.directional-two-way");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   ASSERT_EQ(target.couplings().size(), 1);

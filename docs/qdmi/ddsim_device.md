@@ -59,8 +59,7 @@ program to QIR, and submit the resulting bitcode to the same device:
 
 ```python
 from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
-from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
+from mqt.core.qdmi import ProgramFormat, open_device
 
 device = open_device("mqt.ddsim.default")
 target = CompilerTarget.from_device(device)

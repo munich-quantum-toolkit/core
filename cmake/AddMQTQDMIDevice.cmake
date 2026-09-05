@@ -147,16 +147,43 @@ function(mqt_get_qdmi_device_targets result)
       PARENT_SCOPE)
 endfunction()
 
-# Copy QDMI device libraries and their manifests beside a static consumer executable.
+# Copy in-tree QDMI runtime libraries and manifests beside a runtime consumer.
 function(mqt_copy_qdmi_runtime target)
   if(NOT TARGET ${target})
     message(FATAL_ERROR "Unknown QDMI runtime consumer target: ${target}")
   endif()
+  set_property(TARGET ${target} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
+  get_target_property(consumer_target ${target} ALIASED_TARGET)
+  if(NOT consumer_target)
+    set(consumer_target ${target})
+  endif()
+  foreach(runtime_target IN ITEMS MQT::CoreQDMI MQT::CoreQDMIDriver)
+    if(TARGET ${runtime_target})
+      get_target_property(runtime_concrete_target ${runtime_target} ALIASED_TARGET)
+      if(NOT runtime_concrete_target)
+        set(runtime_concrete_target ${runtime_target})
+      endif()
+      get_target_property(runtime_imported ${runtime_concrete_target} IMPORTED)
+      if(NOT runtime_imported AND NOT consumer_target STREQUAL runtime_concrete_target)
+        add_dependencies(${consumer_target} ${runtime_concrete_target})
+        set(runtime_files "$<TARGET_FILE:${runtime_target}>")
+        if(WIN32)
+          list(APPEND runtime_files "$<TARGET_RUNTIME_DLLS:${runtime_target}>")
+        endif()
+        add_custom_command(
+          TARGET ${consumer_target}
+          POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E copy_if_different ${runtime_files}
+                  "$<TARGET_FILE_DIR:${consumer_target}>"
+          COMMAND_EXPAND_LISTS)
+      endif()
+    endif()
+  endforeach()
   set(devices ${ARGN})
   if(NOT devices)
     mqt_get_qdmi_device_targets(devices)
   endif()
-  if(NOT devices)
+  if(NOT devices AND NOT TARGET MQT::CoreQDMIDriver)
     message(FATAL_ERROR "mqt_copy_qdmi_runtime requires at least one QDMI device target")
   endif()
   foreach(device IN LISTS devices)
@@ -195,13 +222,17 @@ function(mqt_copy_qdmi_runtime target)
     if(NOT device_imported)
       add_dependencies(${target} ${device})
     endif()
+    set(device_files "$<TARGET_FILE:${device}>")
+    if(WIN32 AND NOT device_imported)
+      list(APPEND device_files "$<TARGET_RUNTIME_DLLS:${device}>")
+    endif()
     add_custom_command(
       TARGET ${target}
       POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${device}>"
-              "$<TARGET_FILE_DIR:${target}>"
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different ${device_files} "$<TARGET_FILE_DIR:${target}>"
       COMMAND ${CMAKE_COMMAND} -E copy_if_different "${manifest}"
-              "$<TARGET_FILE_DIR:${target}>/${manifest_name}")
+              "$<TARGET_FILE_DIR:${target}>/${manifest_name}"
+      COMMAND_EXPAND_LISTS)
     get_target_property(runtime_files ${device_target} QDMI_RUNTIME_FILES)
     if(runtime_files)
       foreach(runtime_file IN LISTS runtime_files)

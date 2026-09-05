@@ -31,8 +31,7 @@ from qiskit.transpiler import InstructionProperties, Target
 
 from ...qdmi import Device as QDMIDevice
 from ...qdmi import Job as QDMIJobHandle
-from ...qdmi import ProgramFormat, is_binary_program_format
-from ...qdmi.driver import open_device
+from ...qdmi import ProgramFormat, is_binary_program_format, open_device
 from .exceptions import (
     CircuitValidationError,
     JobSubmissionError,
@@ -227,9 +226,9 @@ class QDMIBackend(BackendV2):
     It automatically introspects device capabilities and constructs a
     :class:`~qiskit.transpiler.Target` object with supported operations.
 
-    Use :meth:`from_device_id` to open one registered device. Use
+    Use :meth:`from_device_id` to open one Client-visible device. Use
     :class:`~mqt.core.plugins.qiskit.provider.QDMIProvider` to enumerate
-    registered devices.
+    Client-visible devices.
 
     Args:
         device: QDMI device wrapper.
@@ -307,7 +306,7 @@ class QDMIBackend(BackendV2):
         Args:
             device: QDMI device wrapper.
             provider: Provider instance that created this backend.
-            device_id: Stable registry ID for the opened device, if known.
+            device_id: Stable ID for the opened device, if known.
 
         Raises:
             UnsupportedDeviceError: If the device cannot be represented in Qiskit's Target model.
@@ -331,12 +330,12 @@ class QDMIBackend(BackendV2):
         provider: QDMIProvider | None = None,
         **session_parameters: Unpack[QDMISessionParameters],
     ) -> QDMIBackend:
-        """Open a registered QDMI device and adapt it for Qiskit.
+        """Open a Client-visible QDMI device and adapt it for Qiskit.
 
         Args:
-            device_id: Stable ID from the QDMI device registry.
+            device_id: Stable ID reported by the QDMI Driver.
             provider: Provider to associate with the backend.
-            session_parameters: Optional overrides for this device session.
+            session_parameters: Optional parameters for this Client session.
 
         Returns:
             A Qiskit backend for a fresh QDMI device session.

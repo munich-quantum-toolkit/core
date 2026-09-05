@@ -38,7 +38,8 @@ namespace mlir {
 compilerTargetFromDevice(const qdmi::Device& device);
 
 /**
- * @brief Open a registered QDMI device and snapshot it as a compiler target.
+ * @brief Open a Client-visible QDMI device and snapshot it as a compiler
+ * target.
  *
  * @details This adapter contains exceptions from the QDMI C++ API and returns
  * them as LLVM errors. The returned target owns all queried metadata.
@@ -47,9 +48,9 @@ compilerTargetFromDevice(const qdmi::Device& device);
 compilerTargetFromDeviceId(std::string_view deviceId);
 
 /**
- * @brief List the stable IDs of registered QDMI devices.
+ * @brief List the stable IDs visible to a fresh QDMI Client session.
  *
- * @details This adapter contains exceptions from QDMI registry discovery and
+ * @details This adapter contains exceptions from QDMI Client discovery and
  * returns them as LLVM errors.
  */
 [[nodiscard]] llvm::Expected<std::vector<std::string>>

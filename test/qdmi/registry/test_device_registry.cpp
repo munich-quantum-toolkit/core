@@ -138,6 +138,20 @@ TEST(DeviceRegistry, RejectsDuplicateIdsAndUnsupportedKeys) {
   }
 }
 
+TEST(DeviceRegistry, RejectsIdsWithEmbeddedNul) {
+  const TemporaryDirectory directory;
+  const auto configFile = emptyConfig(directory);
+  const ScopedEnvironmentVariable configJson("MQT_CORE_QDMI_CONFIG_JSON", R"({
+    "schema-version": 1,
+    "qdmi": {"devices": [{
+      "id": "test.alias\u0000hidden", "library": "device", "prefix": "TEST"
+    }]}
+  })");
+
+  EXPECT_THROW(static_cast<void>(qdmi::detail::DeviceRegistry()),
+               std::invalid_argument);
+}
+
 TEST(DeviceRegistry, MergesEnvironmentJsonOverExplicitFile) {
   const TemporaryDirectory directory;
   const auto path = directory.write("environment.json", R"({

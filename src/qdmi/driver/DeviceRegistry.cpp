@@ -36,6 +36,15 @@
 #endif
 
 namespace qdmi::detail {
+void validateDeviceId(const std::string_view id) {
+  if (id.empty()) {
+    throw std::invalid_argument("Device definition ID must not be empty");
+  }
+  if (id.find('\0') != std::string_view::npos) {
+    throw std::invalid_argument("Device definition ID must not contain NUL");
+  }
+}
+
 namespace {
 using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
 
@@ -201,6 +210,7 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
     throw std::invalid_argument(sourceLabel(source, path + ".id") +
                                 " must be a non-empty string");
   }
+  validateDeviceId(*id);
   DefinitionPatch patch;
   patch.id = *id;
   patch.source = source;
