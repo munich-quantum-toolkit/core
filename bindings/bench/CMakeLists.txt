@@ -18,6 +18,7 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
       register_qft_adder_classical.cpp
       register_qft_adder_quantum.cpp
       register_qpe.cpp
+      register_repeat_until_success.cpp
       register_teleportation.cpp)
 
   add_mqt_python_binding(
