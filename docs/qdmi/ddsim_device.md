@@ -59,10 +59,6 @@ program to QIR, and submit the resulting bitcode to the same device:
 
 ```python
 from mqt.core.mlir import (
-    CompilerTarget,
-    PayloadFormat,
-    PayloadEncoding,
-    PayloadSpecification,
     TargetEnvironment,
     compile_program,
 )
@@ -70,11 +66,10 @@ from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
 device = open_device("mqt.ddsim.default")
-target = CompilerTarget.from_device(device)
-payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.BINARY))
+environment = TargetEnvironment.from_device(device, ProgramFormat.QIR21_BASE_BINARY)
 program = compile_program(
     "bell.qasm",
-    target_environment=TargetEnvironment(target, payload),
+    target_environment=environment,
 )
 
 job = device.submit_job(

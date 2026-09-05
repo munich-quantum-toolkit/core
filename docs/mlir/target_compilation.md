@@ -15,34 +15,27 @@ Open a configured QDMI device and snapshot it as a compiler target:
 
 ```python
 from mqt.core.mlir import (
-    CompilerTarget,
-    PayloadFormat,
-    PayloadEncoding,
-    PayloadSpecification,
     TargetEnvironment,
     compile_program,
 )
+from mqt.core.qdmi import ProgramFormat
 
-target = CompilerTarget.from_device_id("mqt.sc.iqm.garnet")
-payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.BINARY))
-environment = TargetEnvironment(target, payload)
+environment = TargetEnvironment.from_device_id(
+    "mqt.ddsim.default",
+    ProgramFormat.QIR21_BASE_BINARY,
+)
 compiled = compile_program(
     "bell.qasm",
     target_environment=environment,
 )
 ```
 
-The payload specification identifies the exact representation selected for the
-device. MQT Core derives the compiler output from that specification and uses
+The QDMI adapter checks that the device accepts the exact program format. It
+groups program-feature records by ID and value, adds the selected format's
+normative baseline, and preserves whether the optional feature list is known.
+MQT Core derives the compiler output from this payload specification and uses
 the canonical QCO pipeline. The targeted overload therefore accepts one
-`TargetEnvironment` and no independent output or custom pipeline. MQT Core's
-QDMI adapter does not yet translate QDMI program-format and feature metadata, so
-callers must construct the payload specification from the device documentation.
-
-The example has no reported execution capabilities. A producer must add every
-effective capability, including the selected format's baseline. Set
-`optional_capabilities_known=True` only when the producer also knows that the
-list contains every optional device capability.
+`TargetEnvironment` and no independent output or custom pipeline.
 
 The target can also be constructed directly. Connectivity and native-operation
 support are required:
@@ -157,35 +150,24 @@ device ID and the compiler-owned target:
 ```cpp
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Programs.h"
-#include "mlir/Compiler/TargetEnvironment.h"
+#include "qdmi/ProgramFormat.hpp"
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 
-auto target = mlir::compilerTargetFromDeviceId("mqt.sc.iqm.garnet");
-if (!target) {
-  llvm::errs() << "Failed to create compiler target: "
-               << llvm::toString(target.takeError()) << '\n';
+auto environment = mlir::targetEnvironmentFromDeviceId(
+    "mqt.ddsim.default", qdmi::QIR21_BASE_BINARY);
+if (!environment) {
+  llvm::errs() << "Failed to create target environment: "
+               << llvm::toString(environment.takeError()) << '\n';
   return 1;
 }
-
-auto payload = mlir::PayloadSpecification::create({
-    .id = "qir",
-    .version = "2.1.0",
-    .profile = "base",
-    .encoding = mlir::PayloadEncoding::Binary,
-});
-if (!payload) {
-  llvm::errs() << llvm::toString(payload.takeError()) << '\n';
-  return 1;
-}
-mlir::TargetEnvironment environment(*target, *payload);
 
 auto qc = mlir::QCProgram::fromQASMFile("input.qasm");
 if (!qc) {
   return 1;
 }
 auto qco = std::move(*qc).intoQCO();
-if (!qco || !qco->compileForTarget(environment)) {
+if (!qco || !qco->compileForTarget(*environment)) {
   return 1;
 }
 ```

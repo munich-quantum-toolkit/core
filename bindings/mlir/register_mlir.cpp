@@ -39,6 +39,7 @@
 #include <nanobind/stl/string_view.h>
 #include <nanobind/stl/variant.h>
 #include <nanobind/stl/vector.h>
+#include <qdmi/constants.h>
 
 #include <cctype>
 #include <complex>
@@ -188,6 +189,31 @@ template <nb::exception_type Exception = nb::exception_type::value_error,
     throw nb::builtin_exception(Exception, full.c_str());
   }
   return *std::move(result);
+}
+
+[[nodiscard]] static qdmi::Device openQDMIDevice(
+    const std::string& deviceId, std::optional<std::string> baseUrl,
+    std::optional<std::string> token,
+    std::optional<std::filesystem::path> authFile,
+    std::optional<std::string> authUrl, std::optional<std::string> username,
+    std::optional<std::string> password,
+    std::optional<std::string> deviceConfig,
+    std::optional<std::filesystem::path> deviceConfigFile,
+    std::optional<std::string> custom1, std::optional<std::string> custom2,
+    std::optional<std::string> custom3, std::optional<std::string> custom4,
+    std::optional<std::string> custom5) {
+  /// Validate before crossing the extension boundary for consistent ValueError.
+  if (deviceConfig && deviceConfigFile) {
+    throw nb::value_error(
+        "device_config and device_config_file are mutually exclusive");
+  }
+  const auto overrides = qdmi::makeDeviceSessionConfig(
+      std::move(baseUrl), std::move(token), std::move(authFile),
+      std::move(authUrl), std::move(username), std::move(password),
+      std::move(deviceConfig), std::move(deviceConfigFile), std::move(custom1),
+      std::move(custom2), std::move(custom3), std::move(custom4),
+      std::move(custom5));
+  return qdmi::Session::openDevice(deviceId, overrides);
 }
 
 template <class ProgramType>
@@ -918,21 +944,13 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              std::optional<std::string> custom3,
              std::optional<std::string> custom4,
              std::optional<std::string> custom5) {
-            // Keep this preflight at the Python boundary so the public
-            // ValueError does not depend on cross-extension exception
-            // translation.
-            if (deviceConfig && deviceConfigFile) {
-              throw nb::value_error(
-                  "device_config and device_config_file are mutually "
-                  "exclusive");
-            }
-            const auto overrides = qdmi::makeDeviceSessionConfig(
-                std::move(baseUrl), std::move(token), std::move(authFile),
-                std::move(authUrl), std::move(username), std::move(password),
-                std::move(deviceConfig), std::move(deviceConfigFile),
-                std::move(custom1), std::move(custom2), std::move(custom3),
-                std::move(custom4), std::move(custom5));
-            auto device = qdmi::Session::openDevice(deviceId, overrides);
+            auto device = openQDMIDevice(
+                deviceId, std::move(baseUrl), std::move(token),
+                std::move(authFile), std::move(authUrl), std::move(username),
+                std::move(password), std::move(deviceConfig),
+                std::move(deviceConfigFile), std::move(custom1),
+                std::move(custom2), std::move(custom3), std::move(custom4),
+                std::move(custom5));
             return takeResult(mlir::compilerTargetFromDevice(device));
           },
           "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
@@ -1010,6 +1028,51 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       "A compiler target and its selected payload specification.")
       .def(nb::init<mlir::CompilerTarget, mlir::PayloadSpecification>(),
            "target"_a, "payload_specification"_a)
+      .def_static(
+          "from_device",
+          [](const qdmi::Device& device,
+             const QDMI_Program_Format& programFormat) {
+            return takeResult(
+                mlir::targetEnvironmentFromDevice(device, programFormat));
+          },
+          "device"_a, "program_format"_a,
+          "Snapshot a QDMI device and one accepted payload.")
+      .def_static(
+          "from_device_id",
+          [](const std::string& deviceId,
+             const QDMI_Program_Format& programFormat,
+             std::optional<std::string> baseUrl,
+             std::optional<std::string> token,
+             std::optional<std::filesystem::path> authFile,
+             std::optional<std::string> authUrl,
+             std::optional<std::string> username,
+             std::optional<std::string> password,
+             std::optional<std::string> deviceConfig,
+             std::optional<std::filesystem::path> deviceConfigFile,
+             std::optional<std::string> custom1,
+             std::optional<std::string> custom2,
+             std::optional<std::string> custom3,
+             std::optional<std::string> custom4,
+             std::optional<std::string> custom5) {
+            auto device = openQDMIDevice(
+                deviceId, std::move(baseUrl), std::move(token),
+                std::move(authFile), std::move(authUrl), std::move(username),
+                std::move(password), std::move(deviceConfig),
+                std::move(deviceConfigFile), std::move(custom1),
+                std::move(custom2), std::move(custom3), std::move(custom4),
+                std::move(custom5));
+            return takeResult(
+                mlir::targetEnvironmentFromDevice(device, programFormat));
+          },
+          "device_id"_a, "program_format"_a, nb::kw_only(),
+          "base_url"_a = std::nullopt, "token"_a = std::nullopt,
+          "auth_file"_a = std::nullopt, "auth_url"_a = std::nullopt,
+          "username"_a = std::nullopt, "password"_a = std::nullopt,
+          "device_config"_a = std::nullopt,
+          "device_config_file"_a = std::nullopt, "custom1"_a = std::nullopt,
+          "custom2"_a = std::nullopt, "custom3"_a = std::nullopt,
+          "custom4"_a = std::nullopt, "custom5"_a = std::nullopt,
+          "Open a registered device and snapshot one accepted payload.")
       .def_prop_ro("target", &mlir::TargetEnvironment::target,
                    "The compiler target.")
       .def_prop_ro("payload_specification",
