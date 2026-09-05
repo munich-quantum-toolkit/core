@@ -35,6 +35,8 @@ MQT_BENCHMARK_FAMILY(Multiplexer, multiplexer, "multiplexer", 1)
 MQT_BENCHMARK_FAMILY(QFT, qft, "qft", 1)
 MQT_BENCHMARK_FAMILY(QFTAdder, qftAdder, "qft-adder", 1)
 MQT_BENCHMARK_FAMILY(QPE, qpe, "qpe", 1)
+MQT_BENCHMARK_FAMILY(RepeatUntilSuccess, repeatUntilSuccess,
+                     "repeat-until-success", 1)
 MQT_BENCHMARK_FAMILY(Teleportation, teleportation, "teleportation", 1)
 
 #undef MQT_BENCHMARK_FAMILY

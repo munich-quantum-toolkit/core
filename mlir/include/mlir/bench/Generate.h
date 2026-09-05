@@ -25,6 +25,7 @@ class Multiplexer;
 class QFT;
 class QFTAdder;
 class QPE;
+class RepeatUntilSuccess;
 class Teleportation;
 
 /// A generated program and the normalized semantic instance that produced it.
@@ -61,6 +62,10 @@ generate(const QFTAdder& benchmark);
 
 /// Generate the QC program for a configured QPE benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const QPE& benchmark);
+
+/// Generate the fixed repeat-until-success benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generate(const RepeatUntilSuccess& benchmark);
 
 /// Generate the quantum teleportation benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>

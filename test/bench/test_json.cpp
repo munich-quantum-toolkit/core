@@ -18,6 +18,7 @@
 #include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
+#include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
 
 #include <gtest/gtest.h>
@@ -73,6 +74,9 @@ using mqt::bench::QPE;
 using mqt::bench::qpeFromInstanceSpecificationJSON;
 using mqt::bench::qpeFromManifestJSON;
 using mqt::bench::QPEMethod;
+using mqt::bench::RepeatUntilSuccess;
+using mqt::bench::repeatUntilSuccessFromInstanceSpecificationJSON;
+using mqt::bench::repeatUntilSuccessFromManifestJSON;
 using mqt::bench::Teleportation;
 using mqt::bench::teleportationFromInstanceSpecificationJSON;
 using mqt::bench::teleportationFromManifestJSON;
@@ -190,6 +194,12 @@ TEST(BenchmarkJSON,
       toInstanceSpecificationJSON(qpe),
       R"({"benchmark":"qpe","parameters":{"method":"iterative","phase":{"denominator":4,"numerator":1},"precision":4},"schema_version":1})");
 
+  const auto repeatUntilSuccess = repeatUntilSuccessFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{}})");
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(repeatUntilSuccess),
+      R"({"benchmark":"repeat-until-success","parameters":{},"schema_version":1})");
+
   const auto teleportation = teleportationFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"teleportation","parameters":{}})");
   EXPECT_EQ(
@@ -214,6 +224,7 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const QFTAdder qftAdder{{.addend = "+++", .accumulator = "001"}};
   const QPE qpe{
       {.precision = 5, .phase = Phase(1, 3), .method = QPEMethod::Iterative}};
+  const RepeatUntilSuccess repeatUntilSuccess;
   const Teleportation teleportation;
 
   const auto bvManifest = toManifestJSON(bv);
@@ -224,6 +235,7 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const auto qftManifest = toManifestJSON(qft);
   const auto qftAdderManifest = toManifestJSON(qftAdder);
   const auto qpeManifest = toManifestJSON(qpe);
+  const auto repeatUntilSuccessManifest = toManifestJSON(repeatUntilSuccess);
   const auto teleportationManifest = toManifestJSON(teleportation);
   EXPECT_EQ(toManifestJSON(bvFromManifestJSON(bvManifest)), bvManifest);
   EXPECT_EQ(toManifestJSON(
@@ -238,6 +250,9 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   EXPECT_EQ(toManifestJSON(qftAdderFromManifestJSON(qftAdderManifest)),
             qftAdderManifest);
   EXPECT_EQ(toManifestJSON(qpeFromManifestJSON(qpeManifest)), qpeManifest);
+  EXPECT_EQ(toManifestJSON(
+                repeatUntilSuccessFromManifestJSON(repeatUntilSuccessManifest)),
+            repeatUntilSuccessManifest);
   EXPECT_EQ(
       toManifestJSON(teleportationFromManifestJSON(teleportationManifest)),
       teleportationManifest);
@@ -250,6 +265,8 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   EXPECT_EQ(benchmarkIdFromManifestJSON(qftManifest), "qft");
   EXPECT_EQ(benchmarkIdFromManifestJSON(qftAdderManifest), "qft-adder");
   EXPECT_EQ(benchmarkIdFromManifestJSON(qpeManifest), "qpe");
+  EXPECT_EQ(benchmarkIdFromManifestJSON(repeatUntilSuccessManifest),
+            "repeat-until-success");
   EXPECT_EQ(benchmarkIdFromManifestJSON(teleportationManifest),
             "teleportation");
   EXPECT_NE(ghzManifest.find("\"case_id\":\"" + caseId(ghz) + "\""),
@@ -265,6 +282,11 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
             std::string::npos);
   EXPECT_NE(qftAdderManifest.find("\"width\":6"), std::string::npos);
   EXPECT_EQ(qpeManifest.find("0.333"), std::string::npos);
+  EXPECT_NE(
+      repeatUntilSuccessManifest.find("\"model\":\"repeat_until_success\""),
+      std::string::npos);
+  EXPECT_NE(repeatUntilSuccessManifest.find("\"parameters\":{}"),
+            std::string::npos);
   EXPECT_NE(teleportationManifest.find("\"model\":\"teleportation\""),
             std::string::npos);
   EXPECT_NE(teleportationManifest.find("\"parameters\":{}"), std::string::npos);
@@ -306,6 +328,9 @@ TEST(BenchmarkJSON, UsesStableSemanticCaseIds) {
             caseId(Multiplexer{{.qubits = 7}}));
   EXPECT_NE(caseId(Multiplexer{{.qubits = 7}}),
             caseId(Multiplexer{{.qubits = 6}}));
+  EXPECT_EQ(caseId(RepeatUntilSuccess{}),
+            "sha256-3ff9fff1db965d838e4d0e3078cebe17"
+            "f5ff18cdf6a63610e9fdb3159080a4fc");
   EXPECT_EQ(caseId(Teleportation{}), "sha256-de1348477e2604539b963a28bc19f5d3"
                                      "ed27ed86fc6608366bbc6eb9b55855f6");
   EXPECT_EQ(caseId(linear), "sha256-a222c0c57bcecb4f5e7ea72bab439683"
@@ -425,6 +450,12 @@ TEST(BenchmarkJSON,
   }
   expectInvalid(
       [] {
+        static_cast<void>(repeatUntilSuccessFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"attempts":1}})"));
+      },
+      "unknown key 'attempts'");
+  expectInvalid(
+      [] {
         static_cast<void>(teleportationFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"teleportation","parameters":{"qubits":3}})"));
       },
@@ -489,7 +520,7 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifestData) {
 TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_EQ(
       listBenchmarksJSON(),
-      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"modular-multiplier"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"teleportation"}],"schema_version":1})");
+      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"modular-multiplier"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"repeat-until-success"},{"definition_version":1,"id":"teleportation"}],"schema_version":1})");
   const auto bv = describeBenchmarkJSON("bv");
   const auto modularMultiplier = describeBenchmarkJSON("modular-multiplier");
   const auto ghz = describeBenchmarkJSON("ghz");
@@ -498,6 +529,7 @@ TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   const auto qft = describeBenchmarkJSON("qft");
   const auto qftAdder = describeBenchmarkJSON("qft-adder");
   const auto qpe = describeBenchmarkJSON("qpe");
+  const auto repeatUntilSuccess = describeBenchmarkJSON("repeat-until-success");
   const auto teleportation = describeBenchmarkJSON("teleportation");
   EXPECT_NE(ghz.find("https://json-schema.org/draft/2020-12/schema"),
             std::string::npos);
@@ -515,6 +547,10 @@ TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_NE(qftAdder.find("\"maxLength\":1024"), std::string::npos);
   EXPECT_NE(qftAdder.find("\"minLength\":1"), std::string::npos);
   EXPECT_NE(qpe.find("\"iterative\""), std::string::npos);
+  EXPECT_NE(
+      repeatUntilSuccess.find(
+          R"("parameters":{"additionalProperties":false,"properties":{},"type":"object"})"),
+      std::string::npos);
   EXPECT_NE(
       teleportation.find(
           R"("parameters":{"additionalProperties":false,"properties":{},"type":"object"})"),
@@ -601,6 +637,15 @@ TEST(BenchmarkJSON, ParsesCountsAndSerializesEvaluations) {
   EXPECT_NE(teleportationEvaluation.find("\"total_variation_distance\":0.0"),
             std::string::npos);
   EXPECT_NE(teleportationEvaluation.find("\"squared_hellinger_fidelity\":1.0"),
+            std::string::npos);
+
+  const RepeatUntilSuccess repeatUntilSuccess;
+  const auto repeatUntilSuccessEvaluation =
+      evaluateJSON(toManifestJSON(repeatUntilSuccess),
+                   R"({"schema_version":1,"counts":{"0":993,"1":7}})");
+  EXPECT_NE(repeatUntilSuccessEvaluation.find("\"success_probability\":null"),
+            std::string::npos);
+  EXPECT_NE(repeatUntilSuccessEvaluation.find("\"total_variation_distance\":"),
             std::string::npos);
 
   expectInvalid(
