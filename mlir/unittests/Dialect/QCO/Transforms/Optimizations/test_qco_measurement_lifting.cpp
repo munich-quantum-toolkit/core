@@ -710,6 +710,21 @@ module {
     qco.sink %measured : !qco.qubit
     return
   }
+  func.func @controlled() {
+    %control = qco.static 0 : !qco.qubit
+    %target = qco.static 1 : !qco.qubit
+    %control_out, %target_out = qco.ctrl(%control)
+        targets(%arg = %target) {
+      %x = qco.x %arg : !qco.qubit -> !qco.qubit
+      func.call @observe() : () -> ()
+      qco.yield %x : !qco.qubit
+    } : ({!qco.qubit}, {!qco.qubit})
+        -> ({!qco.qubit}, {!qco.qubit})
+    %measured, %bit = qco.measure %control_out : !qco.qubit
+    qco.sink %measured : !qco.qubit
+    qco.sink %target_out : !qco.qubit
+    return
+  }
 }
 )mlir",
                                             &context);
