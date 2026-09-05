@@ -6,13 +6,14 @@
 #
 # Licensed under the MIT License
 
-"""QDMI Client entities."""
+"""QDMI Client entities and MQT Core's default driver."""
 
 import enum
 import os
 from collections.abc import Sequence
 from typing import overload
 
+from mqt.core.qdmi import default_driver as default_driver
 from mqt.core.qdmi import slurm as slurm
 
 class ClientSession:

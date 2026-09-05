@@ -36,6 +36,45 @@ different Driver fails. A failed load, ABI check, symbol check, or raw-session
 allocation does not select a Driver, so a later call can retry. MQT Core keeps
 the selected shared library loaded while its function pointers can be used.
 
+## Optional Packaged-Driver Extension
+
+MQT Core's packaged Driver adds two private symbols to the same shared library
+that exports the standard Client interface:
+
+- `MQT_CORE_QDMI_driver_add_manifest_v1` stages a trusted package manifest.
+- `MQT_CORE_QDMI_driver_session_alloc_for_device_v1` allocates a session for one
+  configured stable ID.
+
+These symbols are an MQT Core extension. They are not part of a public QDMI
+header, and another Client driver can omit them. MQT Core resolves them as
+optional symbols and calls them only through the extension API. Missing
+extension symbols do not prevent standard Client sessions. Generic
+{cpp-api:func}`qdmi::Session::openDevice` and Python
+{py:func}`mqt.core.qdmi.open_device` enumerate the standard Client device list
+and never use the private targeted-session symbol.
+
+Use {cpp-api:func}`qdmi::default_driver::addManifest` or Python
+{py:func}`mqt.core.qdmi.default_driver.add_manifest` before the packaged Driver
+freezes its registry. Staging the packaged library does not select it as the
+generic Client driver. The first successful raw standard or targeted session
+allocation selects a Client driver. A later targeted-session initialization or
+device query failure does not undo that selection.
+
+By default, the `default_driver` extension resolves MQT Core's packaged Driver
+and ignores `MQT_CORE_QDMI_DRIVER`. An explicit `driver_path` overrides that
+default for a compatible extension. The process selection rule still prevents
+switching Drivers after a successful raw allocation. Standard Client sessions
+use the selection order above, including the environment override.
+
+Use {cpp-api:func}`qdmi::default_driver::openDevice` or Python
+{py:func}`mqt.core.qdmi.default_driver.open_device` when an application
+deliberately depends on the packaged Driver. The targeted call merges manifest
+defaults with the supplied JSON or Python overrides. It rejects unsupported
+parameters and malformed configuration, propagates device-library status codes,
+and requires the session to expose exactly one device. Each call creates an
+independent session. The returned device and its derived wrappers retain that
+session until the last wrapper is destroyed.
+
 ## Building the Bundled Devices
 
 Standalone MQT Core builds include the DDSIM and superconducting QDMI device

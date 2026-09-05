@@ -39,6 +39,40 @@ void setDriverEnvironment(const std::optional<std::string>& value) {
 }
 
 TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
+  const std::string nulPath{"driver\0alias", 12};
+  EXPECT_THROW(static_cast<void>(Session{SessionConfig{
+                   .driverPath = std::filesystem::path{nulPath}}}),
+               std::invalid_argument);
+  EXPECT_THROW(default_driver::addManifest(std::filesystem::path{nulPath}),
+               std::invalid_argument);
+
+  default_driver::addManifest(MQT_CORE_QDMI_RUNTIME_EXTENSION_MANIFEST);
+  EXPECT_THAT(
+      [] {
+        return default_driver::openDevice(
+            "unused", {},
+            std::optional<std::filesystem::path>{MQT_CORE_QDMI_TEST_DRIVER});
+      },
+      testing::ThrowsMessage<std::runtime_error>(
+          testing::HasSubstr("does not support targeted sessions")));
+  EXPECT_THROW(static_cast<void>(default_driver::openDevice(
+                   "unused", {},
+                   std::optional<std::filesystem::path>{
+                       MQT_CORE_QDMI_TARGETED_FAILURE_DRIVER})),
+               std::bad_alloc);
+  testing::internal::CaptureStderr();
+  EXPECT_THAT(
+      [] {
+        return default_driver::openDevice(
+            "warning-null", {},
+            std::optional<std::filesystem::path>{
+                MQT_CORE_QDMI_TARGETED_FAILURE_DRIVER});
+      },
+      testing::ThrowsMessage<std::runtime_error>(
+          testing::HasSubstr("returned a null session")));
+  EXPECT_THAT(testing::internal::GetCapturedStderr(),
+              testing::Not(testing::HasSubstr("Warning: Allocating")));
+
   const auto missing =
       std::filesystem::path(MQT_CORE_QDMI_TEST_DRIVER).parent_path() /
       "missing-client-driver";
@@ -91,6 +125,23 @@ TEST(ClientRuntimeTest, ValidatesThenFreezesOneDriverAndRetainsSessions) {
           testing::HasSubstr("missing symbol QDMI_session_alloc")));
 
   Session first(firstConfig);
+  EXPECT_THAT(
+      [] {
+        default_driver::addManifest(MQT_CORE_QDMI_RUNTIME_EXTENSION_MANIFEST);
+      },
+      testing::ThrowsMessage<std::runtime_error>(
+          testing::HasSubstr("does not support package manifests")));
+  EXPECT_THAT([] { return default_driver::openDevice("unused"); },
+              testing::ThrowsMessage<std::runtime_error>(
+                  testing::HasSubstr("does not support targeted sessions")));
+  EXPECT_THAT(
+      [] {
+        return default_driver::openDevice("unused", {},
+                                          std::optional<std::filesystem::path>{
+                                              MQT_CORE_QDMI_INCOMPLETE_DRIVER});
+      },
+      testing::ThrowsMessage<std::runtime_error>(
+          testing::HasSubstr("already selected")));
   {
     const mqt::test::ScopedEnvironmentVariable nullAllocation{
         "MQT_CORE_QDMI_FAKE_FAIL_ALLOCATION", "success-null"};

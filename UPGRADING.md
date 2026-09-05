@@ -31,8 +31,17 @@ The generic session parameters are `token`, `auth_file`, `auth_url`, `username`,
 `password`, `project_id`, and `custom1` through `custom5`. The selected Driver
 owns their validation and meaning. The former Python `base_url`,
 `device_config`, and `device_config_file` keywords were tied to MQT Core's
-Driver and are not part of the generic Client boundary. Use persistent Driver
-configuration when that Driver supports these settings.
+Driver and are not part of the generic Client boundary. Code that deliberately
+requires MQT Core's packaged Driver can use
+`mqt.core.qdmi.default_driver.open_device` for these settings. Otherwise, use
+persistent Driver configuration.
+
+The `mqt.core.qdmi.default_driver` submodule is an optional MQT Core extension,
+not a standard QDMI Client API. Its `add_manifest` function stages trusted
+package manifests, and its `open_device` function opens one configured stable ID
+without enumerating other devices. Generic `ClientSession` and `open_device`
+calls never require or use this extension. Third-party Client drivers may omit
+it.
 
 The MLIR `from_device_id` helpers and the Qiskit and PennyLane adapters accept
 the same generic session parameters. Device, site, operation, and job wrappers
