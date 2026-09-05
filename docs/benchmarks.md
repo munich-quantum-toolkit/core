@@ -53,6 +53,20 @@ print("Width:", benchmark.output.width)
 Each family validates its instance when it creates one. Fixed families need no
 options.
 
+## Quantum-input QFT adder
+
+The `qft-adder-quantum` family implements Draper's
+[QFT adder](https://arxiv.org/abs/quant-ph/0008033). For a configured width `n`,
+the benchmark prepares an `n`-qubit addend register in the uniform
+superposition and an `n`-qubit accumulator in state |1>. It applies the exact
+no-swap QFT to the accumulator, the complete controlled-phase addition, and the
+inverse QFT.
+
+The `2n`-bit result is the big-endian concatenation `addend || sum`. An outcome
+has probability `2^-n` when `sum = addend + 1 mod 2^n` and probability zero
+otherwise. Keeping both registers in the result exposes the correlation that
+defines the addition; the sum alone would be uniform.
+
 ## Inspect the canonical instance specification and manifest
 
 A canonical instance specification records every resolved default. A manifest

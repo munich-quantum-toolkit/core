@@ -14,6 +14,7 @@ add_executable(
   test_benchmark_generate_grover.cpp
   test_benchmark_generate_multiplexer.cpp
   test_benchmark_generate_qft.cpp
+  test_benchmark_generate_qft_adder_quantum.cpp
   test_benchmark_generate_qpe.cpp
   test_benchmark_generate_teleportation.cpp)
 

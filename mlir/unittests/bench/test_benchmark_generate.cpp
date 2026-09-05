@@ -14,6 +14,7 @@
 #include "bench/Grover.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
+#include "bench/QFTAdderQuantum.hpp"
 #include "bench/QPE.hpp"
 #include "bench/Teleportation.hpp"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -45,6 +46,7 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
   expectValidQCAndJeff(QFT{{.qubits = 3, .periodExponent = 1}});
   expectValidQCAndJeff(QFT{
       {.qubits = 3, .periodExponent = 1, .method = QFTMethod::Semiclassical}});
+  expectValidQCAndJeff(QFTAdderQuantum{{.qubits = 3}});
   expectValidQCAndJeff(QPE{{.precision = 3, .phase = Phase(3, 8)}});
   expectValidQCAndJeff(QPE{
       {.precision = 3, .phase = Phase(3, 8), .method = QPEMethod::Iterative}});
@@ -65,6 +67,9 @@ TEST(GenerateProgramTest, OmitsAllocationAdjacentResets) {
             0U);
   EXPECT_EQ(test::countOps<qc::ResetOp>(
                 generate(QFT{{.qubits = 3, .periodExponent = 1}})->module()),
+            0U);
+  EXPECT_EQ(test::countOps<qc::ResetOp>(
+                generate(QFTAdderQuantum{{.qubits = 3}})->module()),
             0U);
   EXPECT_EQ(
       test::countOps<qc::ResetOp>(
