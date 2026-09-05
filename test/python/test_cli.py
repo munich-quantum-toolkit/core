@@ -120,6 +120,7 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     """Run the bundled benchmark driver through its console script."""
     ret = script_runner.run(["mqt-core-bench", "list"])
     assert ret.success
+    assert '"controlled-multiplication-modulo-n"' in ret.stdout
     assert '"ghz"' in ret.stdout
     assert '"grover"' in ret.stdout
     assert '"multiplexer"' in ret.stdout

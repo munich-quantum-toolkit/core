@@ -11,6 +11,7 @@
 #pragma once
 
 #include "bench/BV.hpp"
+#include "bench/ControlledMultiplicationModuloN.hpp"
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
