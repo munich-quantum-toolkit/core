@@ -23,31 +23,37 @@
 #include "mlir/Dialect/QC/Translation/StandardGate.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mlir/Support/IntegerExpressions.h"
 
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringSet.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/LogicalResult.h>
+#include <llvm/Support/SaveAndRestore.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/UB/IR/UBOps.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
@@ -63,6 +69,7 @@
 #include <cstdint>
 #include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -126,8 +133,8 @@ parameterGroupAttribute(mlir::Builder& builder, const ParameterGroup& group) {
                   mlir::qtensor::QTensorDialect, mlir::arith::ArithDialect,
                   mlir::cf::ControlFlowDialect, mlir::func::FuncDialect,
                   mlir::math::MathDialect, mlir::scf::SCFDialect,
-                  mlir::LLVM::LLVMDialect, mlir::memref::MemRefDialect,
-                  mlir::jeff::JeffDialect>();
+                  mlir::ub::UBDialect, mlir::LLVM::LLVMDialect,
+                  mlir::memref::MemRefDialect, mlir::jeff::JeffDialect>();
   mlir::registerBuiltinDialectTranslation(registry);
   mlir::registerLLVMDialectTranslation(registry);
   auto context = std::make_shared<mlir::MLIRContext>(registry);
@@ -577,9 +584,9 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
   case ClassicalType::Bool:
     return builder.getI1Type();
   case ClassicalType::Uint:
-    if (width == 0U || width > 64U) {
+    if (width == 0U) {
       throw std::runtime_error(
-          "Qiskit unsigned classical values must be between 1 and 64 bits");
+          "Qiskit unsigned classical values require a nonzero width");
     }
     return builder.getIntegerType(width);
   case ClassicalType::Float:
@@ -590,11 +597,20 @@ circuitRegisters(const CircuitReader& circuit, const bool quantum) {
 
 [[nodiscard]] static mlir::Value
 integerConstant(mlir::ImplicitLocOpBuilder& builder, const uint32_t width,
-                const uint64_t value) {
+                const llvm::APInt& value) {
+  if (value.getActiveBits() > width) {
+    throw std::runtime_error(
+        "Qiskit Uint literal does not fit its declared width");
+  }
   const auto type = builder.getIntegerType(width);
-  const auto attribute =
-      builder.getIntegerAttr(type, llvm::APInt(width, value, false));
+  const auto attribute = builder.getIntegerAttr(type, value.zextOrTrunc(width));
   return mlir::arith::ConstantOp::create(builder, attribute).getResult();
+}
+
+[[nodiscard]] static mlir::Value
+integerConstant(mlir::ImplicitLocOpBuilder& builder, const uint32_t width,
+                const uint64_t value) {
+  return integerConstant(builder, width, llvm::APInt(width, value, false));
 }
 
 [[nodiscard]] static mlir::Value
@@ -641,11 +657,10 @@ loadClassicalBit(mlir::qc::QCProgramBuilder& builder,
   return builder.loadClassicalBit(bit.storage, bit.index);
 }
 
-[[nodiscard]] static mlir::Value emitRegisterComparison(
-    mlir::qc::QCProgramBuilder& builder,
-    const llvm::ArrayRef<ClassicalBitRef> classicalBits,
-    const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg,
-    mlir::cbit::ComparisonPredicate predicate, uint64_t expected) {
+[[nodiscard]] static mlir::Value
+registerStorage(const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+                const llvm::ArrayRef<uint32_t> rootClbitMap,
+                const Register& reg) {
   mlir::Value storage;
   for (size_t index = 0U; index < reg.bits.size(); ++index) {
     const auto& bit =
@@ -656,30 +671,27 @@ loadClassicalBit(mlir::qc::QCProgramBuilder& builder,
     }
     storage = bit.storage;
   }
-  if (!storage) {
+  if (!storage ||
+      llvm::cast<mlir::cbit::RegisterType>(storage.getType()).getWidth() !=
+          static_cast<int64_t>(reg.bits.size())) {
     return {};
   }
-  const auto width = static_cast<unsigned>(reg.bits.size());
-  if (llvm::cast<mlir::cbit::RegisterType>(storage.getType()).getWidth() !=
-      width) {
-    return {};
-  }
-  const auto rhs = builder.getIntegerAttr(builder.getIntegerType(width),
-                                          llvm::APInt(width, expected, false));
-  return mlir::cbit::CompareOp::create(builder, builder.getI1Type(), predicate,
-                                       storage, rhs);
+  return storage;
 }
 
 [[nodiscard]] static mlir::Value
 packRegister(mlir::qc::QCProgramBuilder& builder,
              const llvm::ArrayRef<ClassicalBitRef> classicalBits,
              const llvm::ArrayRef<uint32_t> rootClbitMap, const Register& reg) {
-  if (reg.bits.empty() || reg.bits.size() > 64U) {
-    throw std::runtime_error(
-        "Qiskit classical registers must contain between 1 and 64 bits");
-  }
   const auto width = static_cast<uint32_t>(reg.bits.size());
   const auto type = builder.getIntegerType(width);
+  if (auto storage = registerStorage(classicalBits, rootClbitMap, reg)) {
+    return mlir::cbit::ReadOp::create(builder, type, storage).getResult();
+  }
+  if (reg.bits.empty() || reg.bits.size() > 64U) {
+    throw std::runtime_error("Qiskit wide register comparisons require one "
+                             "complete classical register");
+  }
   llvm::SmallVector<mlir::Value> terms;
   terms.reserve(reg.bits.size());
   for (size_t index = 0; index < reg.bits.size(); ++index) {
@@ -711,39 +723,192 @@ packRegister(mlir::qc::QCProgramBuilder& builder,
   return terms.front();
 }
 
-[[nodiscard]] static std::optional<mlir::cbit::ComparisonPredicate>
-registerComparisonPredicate(const BinaryOperation operation,
-                            const bool reverse) {
-  switch (operation) {
+[[nodiscard]] static bool
+isWideRegisterComparison(const Expression& expression) {
+  if (expression.kind != ExpressionKind::Binary || !expression.left ||
+      !expression.right) {
+    return false;
+  }
+  const auto* reg = expression.left.get();
+  const auto* expected = expression.right.get();
+  if (reg->kind == ExpressionKind::Value) {
+    std::swap(reg, expected);
+  }
+  if (reg->kind != ExpressionKind::ClassicalRegister ||
+      reg->type != ClassicalType::Uint || reg->width <= 64U ||
+      reg->width != reg->reg.bits.size() ||
+      expected->kind != ExpressionKind::Value ||
+      expected->type != ClassicalType::Uint || expected->width != reg->width) {
+    return false;
+  }
+  switch (expression.binaryOperation) {
   case BinaryOperation::Equal:
-    return mlir::cbit::ComparisonPredicate::Equal;
   case BinaryOperation::NotEqual:
-    return mlir::cbit::ComparisonPredicate::NotEqual;
   case BinaryOperation::Less:
-    return reverse ? mlir::cbit::ComparisonPredicate::Greater
-                   : mlir::cbit::ComparisonPredicate::Less;
   case BinaryOperation::LessEqual:
-    return reverse ? mlir::cbit::ComparisonPredicate::GreaterEqual
-                   : mlir::cbit::ComparisonPredicate::LessEqual;
   case BinaryOperation::Greater:
-    return reverse ? mlir::cbit::ComparisonPredicate::Less
-                   : mlir::cbit::ComparisonPredicate::Greater;
   case BinaryOperation::GreaterEqual:
-    return reverse ? mlir::cbit::ComparisonPredicate::LessEqual
-                   : mlir::cbit::ComparisonPredicate::GreaterEqual;
+    return true;
   default:
-    return std::nullopt;
+    return false;
   }
 }
 
-[[nodiscard]] static mlir::Value
-emitExpression(mlir::qc::QCProgramBuilder& builder,
-               const Expression& expression,
-               const llvm::ArrayRef<ClassicalBitRef> classicalBits,
-               const llvm::ArrayRef<uint32_t> rootClbitMap) {
+namespace {
+
+struct ImportedVariables {
+  struct Entry {
+    mlir::Value value;
+    bool initialized = false;
+  };
+  using Environment = std::map<std::string, Entry>;
+  Environment variables;
+  mlir::qc::QCProgramBuilder::LoopBuilder* loop = nullptr;
+  std::vector<std::string> loopSlots;
+  llvm::SmallVector<mlir::Value> loopPrefix;
+  std::vector<Environment> exits;
+  std::vector<Environment> continues;
+  bool reachable = true;
+  bool structuringLoop = false;
+
+  std::vector<std::string> slots() const {
+    std::vector<std::string> result;
+    for (const auto& [identity, entry] : variables) {
+      result.push_back(identity);
+    }
+    return result;
+  }
+  llvm::SmallVector<mlir::Value>
+  values(const std::vector<std::string>& keys) const {
+    llvm::SmallVector<mlir::Value> result;
+    for (const auto& key : keys) {
+      result.push_back(variables.at(key).value);
+    }
+    return result;
+  }
+  void assign(const std::vector<std::string>& keys, mlir::ValueRange values) {
+    for (auto [key, value] : llvm::zip_equal(keys, values)) {
+      variables.at(key).value = value;
+    }
+  }
+  void jumpLoop(bool continuing) {
+    if (loop == nullptr) {
+      throw std::runtime_error(
+          continuing
+              ? "Qiskit ContinueLoopOp must be inside a for or while loop"
+              : "Qiskit BreakLoopOp must be inside a for or while loop");
+    }
+    auto state = loopPrefix;
+    llvm::append_range(state, values(loopSlots));
+    loop->branch(continuing, state);
+    (continuing ? continues : exits).push_back(variables);
+    reachable = false;
+  }
+  void conditional(mlir::qc::QCProgramBuilder& builder, mlir::Value condition,
+                   llvm::function_ref<void()> thenBody,
+                   llvm::function_ref<void()> elseBody) {
+    if ((!variables.empty() || loop != nullptr) &&
+        mlir::matchPattern(condition, mlir::m_One())) {
+      thenBody();
+      return;
+    }
+    if ((!variables.empty() || loop != nullptr) &&
+        mlir::matchPattern(condition, mlir::m_Zero())) {
+      elseBody();
+      return;
+    }
+    const auto saved = variables;
+    const auto keys = slots();
+    const auto initial = values(keys);
+    Environment thenValues, elseValues;
+    bool thenReachable = true, elseReachable = true;
+    const auto emitBranch =
+        [&](mlir::Block* block, llvm::function_ref<void()> body,
+            Environment& output, bool& fallsThrough, mlir::Block* join) {
+          variables = saved;
+          reachable = true;
+          builder.setInsertionPointToEnd(block);
+          if (!block->empty() &&
+              block->back().hasTrait<mlir::OpTrait::IsTerminator>()) {
+            block->back().erase();
+          }
+          body();
+          output = variables;
+          fallsThrough = reachable;
+          if (reachable) {
+            if (join) {
+              mlir::cf::BranchOp::create(builder, join, values(keys));
+            } else {
+              mlir::scf::YieldOp::create(builder, values(keys));
+            }
+          }
+        };
+    llvm::SmallVector<mlir::Value> results;
+    if (loop != nullptr) {
+      auto* entry = builder.getInsertionBlock();
+      auto* region = entry->getParent();
+      auto* thenBlock = builder.createBlock(region);
+      auto* elseBlock = builder.createBlock(region);
+      auto* join = builder.createBlock(
+          region, {}, mlir::ValueRange(initial).getTypes(),
+          llvm::SmallVector<mlir::Location>(keys.size(), builder.getLoc()));
+      builder.setInsertionPointToEnd(entry);
+      mlir::cf::CondBranchOp::create(builder, condition, thenBlock, elseBlock);
+      emitBranch(thenBlock, thenBody, thenValues, thenReachable, join);
+      emitBranch(elseBlock, elseBody, elseValues, elseReachable, join);
+      builder.setInsertionPointToEnd(join);
+      llvm::append_range(results, join->getArguments());
+      if (!thenReachable && !elseReachable) {
+        variables = saved;
+        auto state = loopPrefix;
+        llvm::append_range(state, values(loopSlots));
+        loop->branch(false, state);
+      }
+    } else {
+      auto ifOp = mlir::scf::IfOp::create(
+          builder, mlir::ValueRange(initial).getTypes(), condition, true);
+      emitBranch(&ifOp.getThenRegion().front(), thenBody, thenValues,
+                 thenReachable, nullptr);
+      emitBranch(&ifOp.getElseRegion().front(), elseBody, elseValues,
+                 elseReachable, nullptr);
+      builder.setInsertionPointAfter(ifOp);
+      llvm::append_range(results, ifOp.getResults());
+    }
+    variables = saved;
+    assign(keys, results);
+    for (auto& [key, entry] : variables) {
+      entry.initialized = (!thenReachable || thenValues.at(key).initialized) &&
+                          (!elseReachable || elseValues.at(key).initialized);
+    }
+    reachable = thenReachable || elseReachable;
+  }
+};
+
+} // namespace
+
+[[nodiscard]] static mlir::Value emitExpression(
+    mlir::qc::QCProgramBuilder& builder, const Expression& expression,
+    const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+    const llvm::ArrayRef<uint32_t> rootClbitMap, ImportedVariables& variables) {
   const auto resultType =
       expressionType(builder, expression.type, expression.width);
   switch (expression.kind) {
+  case ExpressionKind::Variable: {
+    const auto found = variables.variables.find(expression.variable);
+    if (found == variables.variables.end()) {
+      throw std::runtime_error(
+          "Qiskit expression refers to an invalid local variable capture");
+    }
+    if (!found->second.initialized) {
+      throw std::runtime_error(
+          "Qiskit local variable is read before initialization");
+    }
+    if (found->second.value.getType() != resultType) {
+      throw std::runtime_error(
+          "Qiskit variable reference has an inconsistent type");
+    }
+    return found->second.value;
+  }
   case ExpressionKind::Value:
     switch (expression.type) {
     case ClassicalType::Bool:
@@ -769,17 +934,8 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
         target);
   }
   case ExpressionKind::Cast: {
-    if (expression.type == ClassicalType::Bool &&
-        expression.left->kind == ExpressionKind::ClassicalRegister &&
-        expression.left->width == expression.left->reg.bits.size()) {
-      if (auto comparison = emitRegisterComparison(
-              builder, classicalBits, rootClbitMap, expression.left->reg,
-              mlir::cbit::ComparisonPredicate::NotEqual, 0U)) {
-        return comparison;
-      }
-    }
-    auto operand =
-        emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
+    auto operand = emitExpression(builder, *expression.left, classicalBits,
+                                  rootClbitMap, variables);
     if (operand.getType() == resultType) {
       return operand;
     }
@@ -814,8 +970,8 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     throw std::runtime_error("unsupported Qiskit classical-expression cast");
   }
   case ExpressionKind::Unary: {
-    auto operand =
-        emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
+    auto operand = emitExpression(builder, *expression.left, classicalBits,
+                                  rootClbitMap, variables);
     switch (expression.unaryOperation) {
     case UnaryOperation::BitNot: {
       const auto type = llvm::dyn_cast<mlir::IntegerType>(operand.getType());
@@ -854,29 +1010,8 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     break;
   }
   case ExpressionKind::Binary: {
-    const auto reverse =
-        expression.left->kind == ExpressionKind::Value &&
-        expression.right->kind == ExpressionKind::ClassicalRegister;
-    const auto& registerExpression =
-        reverse ? *expression.right : *expression.left;
-    const auto& expected = reverse ? *expression.left : *expression.right;
-    if (const auto predicate =
-            registerComparisonPredicate(expression.binaryOperation, reverse);
-        predicate &&
-        registerExpression.kind == ExpressionKind::ClassicalRegister &&
-        registerExpression.type == ClassicalType::Uint &&
-        registerExpression.width == registerExpression.reg.bits.size() &&
-        expected.kind == ExpressionKind::Value &&
-        expected.type == ClassicalType::Uint &&
-        expected.width == registerExpression.width) {
-      if (auto comparison = emitRegisterComparison(
-              builder, classicalBits, rootClbitMap, registerExpression.reg,
-              *predicate, expected.uintValue)) {
-        return comparison;
-      }
-    }
-    auto left =
-        emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
+    auto left = emitExpression(builder, *expression.left, classicalBits,
+                               rootClbitMap, variables);
     if (expression.binaryOperation == BinaryOperation::LogicAnd ||
         expression.binaryOperation == BinaryOperation::LogicOr) {
       if (!left.getType().isInteger(1)) {
@@ -885,7 +1020,7 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
       }
       const auto emitRight = [&]() {
         auto right = emitExpression(builder, *expression.right, classicalBits,
-                                    rootClbitMap);
+                                    rootClbitMap, variables);
         if (!right.getType().isInteger(1)) {
           throw std::runtime_error(
               "Qiskit logical operation requires Boolean operands");
@@ -908,11 +1043,11 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
                  })
           .getResult(0);
     }
-    auto right =
-        emitExpression(builder, *expression.right, classicalBits, rootClbitMap);
+    auto right = emitExpression(builder, *expression.right, classicalBits,
+                                rootClbitMap, variables);
     const auto comparison = [&]() -> std::optional<mlir::Value> {
-      std::optional<mlir::arith::CmpIPredicate> integerPredicate;
-      std::optional<mlir::arith::CmpFPredicate> floatPredicate;
+      mlir::arith::CmpIPredicate integerPredicate;
+      mlir::arith::CmpFPredicate floatPredicate;
       switch (expression.binaryOperation) {
       case BinaryOperation::Equal:
         integerPredicate = mlir::arith::CmpIPredicate::eq;
@@ -942,8 +1077,7 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
         return std::nullopt;
       }
       if (left.getType().isF64() && right.getType().isF64()) {
-        return mlir::arith::CmpFOp::create(builder, *floatPredicate, left,
-                                           right)
+        return mlir::arith::CmpFOp::create(builder, floatPredicate, left, right)
             .getResult();
       }
       if (left.getType() != right.getType() ||
@@ -951,8 +1085,7 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
         throw std::runtime_error(
             "Qiskit classical comparison has incompatible operand types");
       }
-      return mlir::arith::CmpIOp::create(builder, *integerPredicate, left,
-                                         right)
+      return mlir::arith::CmpIOp::create(builder, integerPredicate, left, right)
           .getResult();
     }();
     if (comparison) {
@@ -981,11 +1114,13 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     if (expression.binaryOperation == BinaryOperation::ShiftLeft ||
         expression.binaryOperation == BinaryOperation::ShiftRight) {
       const auto shiftType = llvm::dyn_cast<mlir::IntegerType>(right.getType());
-      if (!shiftType || shiftType.getWidth() > integerType.getWidth()) {
+      if (!shiftType) {
         throw std::runtime_error(
-            "Qiskit circuit import does not support a shift amount wider "
-            "than its integer operand");
+            "Qiskit shift distance must have integer type");
       }
+      return mlir::mqt::buildZeroFillingShift(
+          builder, builder.getUnknownLoc(), left, right,
+          expression.binaryOperation == BinaryOperation::ShiftLeft);
     }
     right = castInteger(builder, right, integerType);
     switch (expression.binaryOperation) {
@@ -995,10 +1130,6 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
       return mlir::arith::OrIOp::create(builder, left, right).getResult();
     case BinaryOperation::BitXor:
       return mlir::arith::XOrIOp::create(builder, left, right).getResult();
-    case BinaryOperation::ShiftLeft:
-      return mlir::arith::ShLIOp::create(builder, left, right).getResult();
-    case BinaryOperation::ShiftRight:
-      return mlir::arith::ShRUIOp::create(builder, left, right).getResult();
     case BinaryOperation::Add:
       return mlir::arith::AddIOp::create(builder, left, right).getResult();
     case BinaryOperation::Subtract:
@@ -1013,10 +1144,10 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
     throw std::runtime_error("unsupported Qiskit classical binary operation");
   }
   case ExpressionKind::Index: {
-    auto target =
-        emitExpression(builder, *expression.left, classicalBits, rootClbitMap);
-    auto index =
-        emitExpression(builder, *expression.right, classicalBits, rootClbitMap);
+    auto target = emitExpression(builder, *expression.left, classicalBits,
+                                 rootClbitMap, variables);
+    auto index = emitExpression(builder, *expression.right, classicalBits,
+                                rootClbitMap, variables);
     const auto targetType = llvm::dyn_cast<mlir::IntegerType>(target.getType());
     if (!targetType) {
       throw std::runtime_error(
@@ -1042,17 +1173,84 @@ emitExpression(mlir::qc::QCProgramBuilder& builder,
   throw std::runtime_error("unsupported normalized Qiskit expression");
 }
 
-[[nodiscard]] static mlir::Value
-emitCondition(mlir::qc::QCProgramBuilder& builder,
-              const ClassicalTarget& target,
-              const llvm::ArrayRef<ClassicalBitRef> classicalBits,
-              const llvm::ArrayRef<uint32_t> rootClbitMap) {
+static void emitStore(mlir::qc::QCProgramBuilder& builder,
+                      const ClassicalAssignment& assignment,
+                      const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+                      const llvm::ArrayRef<uint32_t> clbitMap,
+                      ImportedVariables& variables) {
+  if (!assignment.value) {
+    throw std::runtime_error("Qiskit Store has no rvalue");
+  }
+  auto value = emitExpression(builder, *assignment.value, classicalBits,
+                              clbitMap, variables);
+  switch (assignment.target.kind) {
+  case ClassicalTargetKind::ClassicalBit: {
+    if (!value.getType().isInteger(1)) {
+      throw std::runtime_error("Qiskit Clbit Store requires a Boolean rvalue");
+    }
+    const auto& bit =
+        classicalBitRef(classicalBits, clbitMap, assignment.target.bit);
+    builder.storeClassicalBit(value, bit.storage, bit.index);
+    return;
+  }
+  case ClassicalTargetKind::ClassicalRegister: {
+    auto storage =
+        registerStorage(classicalBits, clbitMap, assignment.target.reg);
+    if (!storage || value.getType() != builder.getIntegerType(
+                                           assignment.target.reg.bits.size())) {
+      throw std::runtime_error(
+          "Qiskit register Store requires a matching canonical register");
+    }
+    mlir::cbit::WriteOp::create(builder, value, storage);
+    return;
+  }
+  case ClassicalTargetKind::Expression:
+    break;
+  }
+  const auto* target = assignment.target.expression.get();
+  if (target != nullptr && target->kind == ExpressionKind::Variable) {
+    const auto found = variables.variables.find(target->variable);
+    if (found == variables.variables.end() ||
+        found->second.value.getType() != value.getType()) {
+      throw std::runtime_error(
+          "Qiskit Store refers to an invalid local variable or capture type");
+    }
+    found->second = {.value = value, .initialized = true};
+    return;
+  }
+  if (target == nullptr || target->kind != ExpressionKind::Index ||
+      target->left == nullptr || target->right == nullptr ||
+      target->left->kind != ExpressionKind::ClassicalRegister ||
+      !value.getType().isInteger(1)) {
+    throw std::runtime_error(
+        "Qiskit Store supports only register-index lvalue expressions");
+  }
+  auto storage = registerStorage(classicalBits, clbitMap, target->left->reg);
+  if (!storage) {
+    throw std::runtime_error(
+        "Qiskit indexed Store requires a canonical classical register");
+  }
+  auto index = emitExpression(builder, *target->right, classicalBits, clbitMap,
+                              variables);
+  if (!llvm::isa<mlir::IntegerType>(index.getType())) {
+    throw std::runtime_error("Qiskit Store index must have Uint type");
+  }
+  index =
+      mlir::arith::IndexCastUIOp::create(builder, builder.getIndexType(), index)
+          .getResult();
+  builder.storeClassicalBit(value, storage, index);
+}
+
+[[nodiscard]] static mlir::Value emitCondition(
+    mlir::qc::QCProgramBuilder& builder, const ClassicalTarget& target,
+    const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+    const llvm::ArrayRef<uint32_t> rootClbitMap, ImportedVariables& variables) {
   if (target.kind != ClassicalTargetKind::Expression || !target.expression) {
     throw std::runtime_error(
         "Qiskit control-flow condition has no classical expression");
   }
-  auto condition =
-      emitExpression(builder, *target.expression, classicalBits, rootClbitMap);
+  auto condition = emitExpression(builder, *target.expression, classicalBits,
+                                  rootClbitMap, variables);
   if (!condition.getType().isInteger(1)) {
     throw std::runtime_error(
         "Qiskit control-flow condition expression must have Boolean type");
@@ -1060,11 +1258,10 @@ emitCondition(mlir::qc::QCProgramBuilder& builder,
   return condition;
 }
 
-[[nodiscard]] static mlir::Value
-emitSwitchTarget(mlir::qc::QCProgramBuilder& builder,
-                 const ClassicalTarget& target,
-                 const llvm::ArrayRef<ClassicalBitRef> classicalBits,
-                 const llvm::ArrayRef<uint32_t> rootClbitMap) {
+[[nodiscard]] static mlir::Value emitSwitchTarget(
+    mlir::qc::QCProgramBuilder& builder, const ClassicalTarget& target,
+    const llvm::ArrayRef<ClassicalBitRef> classicalBits,
+    const llvm::ArrayRef<uint32_t> rootClbitMap, ImportedVariables& variables) {
   mlir::Value value;
   switch (target.kind) {
   case ClassicalTargetKind::ClassicalBit:
@@ -1075,15 +1272,13 @@ emitSwitchTarget(mlir::qc::QCProgramBuilder& builder,
     break;
   case ClassicalTargetKind::Expression:
     value = emitExpression(builder, *target.expression, classicalBits,
-                           rootClbitMap);
+                           rootClbitMap, variables);
     break;
   }
   if (!llvm::isa<mlir::IntegerType>(value.getType())) {
     throw std::runtime_error("Qiskit switch targets must be Boolean or Uint");
   }
-  return mlir::arith::IndexCastUIOp::create(builder, builder.getIndexType(),
-                                            value)
-      .getResult();
+  return value;
 }
 
 static void translateCircuit(mlir::qc::QCProgramBuilder& builder,
@@ -1096,7 +1291,8 @@ static void translateCircuit(mlir::qc::QCProgramBuilder& builder,
                              llvm::ArrayRef<ClassicalBitRef> classicalBits,
                              const LocalParameters& localParameters,
                              const GlobalParameters& globalParameters,
-                             size_t definitionDepth, size_t controlFlowDepth);
+                             size_t definitionDepth, size_t controlFlowDepth,
+                             ImportedVariables& variables);
 
 [[nodiscard]] static int64_t rangeLength(const Loop& loop) {
   if (loop.step == 0) {
@@ -1132,9 +1328,11 @@ static void requireExactLoopParameter(const int64_t value) {
 [[nodiscard]] static mlir::Value
 loopParameterValue(mlir::qc::QCProgramBuilder& builder, mlir::Value iteration,
                    const Loop& loop) {
-  auto counter =
-      mlir::arith::IndexCastOp::create(builder, builder.getI64Type(), iteration)
-          .getResult();
+  auto counter = iteration;
+  if (iteration.getType().isIndex()) {
+    counter = mlir::arith::IndexCastOp::create(builder, builder.getI64Type(),
+                                               iteration);
+  }
   auto offset = mlir::arith::MulIOp::create(builder, counter,
                                             builder.intConstant(loop.step))
                     .getResult();
@@ -1143,6 +1341,29 @@ loopParameterValue(mlir::qc::QCProgramBuilder& builder, mlir::Value iteration,
                    .getResult();
   return mlir::arith::SIToFPOp::create(builder, builder.getF64Type(), value)
       .getResult();
+}
+
+[[nodiscard]] static bool containsLoopJump(const CircuitReader& circuit) {
+  for (size_t index = 0; index < circuit.numInstructions(); ++index) {
+    if (circuit.instruction(index).kind != OperationKind::ControlFlow) {
+      continue;
+    }
+    auto control = circuit.controlFlow(index);
+    if (control->kind() == ControlFlowKind::Break ||
+        control->kind() == ControlFlowKind::Continue) {
+      return true;
+    }
+    if (control->kind() == ControlFlowKind::For ||
+        control->kind() == ControlFlowKind::While) {
+      continue;
+    }
+    for (size_t block = 0; block < control->numBlocks(); ++block) {
+      if (containsLoopJump(*control->block(block))) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
@@ -1154,7 +1375,8 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
                                  const LocalParameters& localParameters,
                                  const GlobalParameters& globalParameters,
                                  const size_t definitionDepth,
-                                 const size_t controlFlowDepth) {
+                                 const size_t controlFlowDepth,
+                                 ImportedVariables& variables) {
   if (controlFlowDepth >= MAX_CONTROL_FLOW_DEPTH) {
     throw std::runtime_error(
         "Qiskit control flow exceeds the nesting limit of 64");
@@ -1181,33 +1403,105 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
                                   const LocalParameters& parameters) {
     translateCircuit(builder, block, qubitMap, clbitMap, rootQubitMap,
                      rootClbitMap, allQubits, classicalBits, parameters,
-                     globalParameters, definitionDepth, controlFlowDepth + 1U);
+                     globalParameters, definitionDepth, controlFlowDepth + 1U,
+                     variables);
   };
+
+  const auto translateLoopWithJumps =
+      [&](mlir::Value initialCounter,
+          llvm::function_ref<mlir::Value(mlir::Value)> condition,
+          llvm::function_ref<void(mlir::Value)> body, bool guaranteedFirst) {
+        const auto keys = variables.slots();
+        const auto saved = variables.variables;
+        llvm::SmallVector<mlir::Value> initial;
+        if (initialCounter) {
+          initial.push_back(initialCounter);
+        }
+        llvm::append_range(initial, variables.values(keys));
+        mlir::qc::QCProgramBuilder::LoopBuilder cfg(
+            builder, initial,
+            initialCounter ? mlir::Value(mlir::arith::ConstantIntOp::create(
+                                 builder, 1, 64))
+                           : mlir::Value{});
+        llvm::SaveAndRestore loopScope(variables.loop, &cfg);
+        llvm::SaveAndRestore structuringScope(variables.structuringLoop, true);
+        llvm::SaveAndRestore slotsScope(variables.loopSlots,
+                                        std::vector<std::string>(keys));
+        llvm::SaveAndRestore prefixScope(variables.loopPrefix,
+                                         llvm::SmallVector<mlir::Value>{});
+        llvm::SaveAndRestore exitsScope(
+            variables.exits, std::vector<ImportedVariables::Environment>{});
+        llvm::SaveAndRestore continuesScope(
+            variables.continues, std::vector<ImportedVariables::Environment>{});
+        auto arguments = cfg.arguments();
+        mlir::Value counter;
+        if (initialCounter) {
+          counter = arguments.front();
+          variables.loopPrefix.push_back(counter);
+          variables.assign(keys, arguments.drop_front());
+        } else {
+          variables.assign(keys, arguments);
+        }
+        cfg.enterBody(condition(counter), arguments);
+        body(counter);
+        if (variables.reachable) {
+          auto state = variables.loopPrefix;
+          llvm::append_range(state, variables.values(keys));
+          cfg.branch(true, state);
+        }
+        auto finalVariables = variables.variables;
+        auto exits = std::move(variables.exits);
+        if (initialCounter) {
+          llvm::append_range(exits, variables.continues);
+        }
+        auto results = cfg.finish();
+        if (mlir::failed(results)) {
+          throw std::runtime_error(
+              "Qiskit loop CFG could not be normalized to SCF");
+        }
+        variables.variables = saved;
+        variables.assign(keys, initialCounter
+                                   ? mlir::ValueRange(*results).drop_front()
+                                   : mlir::ValueRange(*results));
+        if (guaranteedFirst && (!exits.empty() || initialCounter)) {
+          for (auto& [key, entry] : variables.variables) {
+            entry.initialized = (!initialCounter || !variables.reachable ||
+                                 finalVariables.at(key).initialized) &&
+                                llvm::all_of(exits, [&](const auto& exit) {
+                                  return exit.at(key).initialized;
+                                });
+          }
+        }
+        variables.reachable = true;
+      };
 
   switch (controlFlow.kind()) {
   case ControlFlowKind::Box:
     throw std::runtime_error("Qiskit box instructions are not supported");
   case ControlFlowKind::Break:
-    throw std::runtime_error("Qiskit break instructions are not supported");
+    variables.jumpLoop(false);
+    return;
   case ControlFlowKind::Continue:
-    throw std::runtime_error("Qiskit continue instructions are not supported");
+    variables.jumpLoop(true);
+    return;
   case ControlFlowKind::IfElse: {
     if (controlFlow.numBlocks() < 1U || controlFlow.numBlocks() > 2U) {
       throw std::runtime_error(
           "Qiskit if/else has an invalid number of blocks");
     }
     const auto condition = controlFlow.condition();
-    auto value = emitCondition(builder, condition, classicalBits, rootClbitMap);
+    auto value = emitCondition(builder, condition, classicalBits, rootClbitMap,
+                               variables);
     const auto thenBlock = controlFlow.block(0);
-    if (controlFlow.numBlocks() == 1U) {
-      builder.scfIf(value,
-                    [&] { translateBlock(*thenBlock, localParameters); });
-      return;
-    }
-    const auto elseBlock = controlFlow.block(1);
-    builder.scfIf(
-        value, [&] { translateBlock(*thenBlock, localParameters); },
-        [&] { translateBlock(*elseBlock, localParameters); });
+    const auto elseBlock =
+        controlFlow.numBlocks() == 2U ? controlFlow.block(1) : nullptr;
+    variables.conditional(
+        builder, value, [&] { translateBlock(*thenBlock, localParameters); },
+        [&] {
+          if (elseBlock) {
+            translateBlock(*elseBlock, localParameters);
+          }
+        });
     return;
   }
   case ControlFlowKind::While: {
@@ -1216,12 +1510,52 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
     }
     const auto condition = controlFlow.condition();
     const auto body = controlFlow.block(0);
-    builder.scfWhile(
-        [&] {
-          builder.scfCondition(
-              emitCondition(builder, condition, classicalBits, rootClbitMap));
+    if (containsLoopJump(*body)) {
+      const bool always = condition.kind == ClassicalTargetKind::Expression &&
+                          condition.expression &&
+                          condition.expression->kind == ExpressionKind::Value &&
+                          condition.expression->boolValue;
+      translateLoopWithJumps(
+          {},
+          [&](mlir::Value) {
+            return emitCondition(builder, condition, classicalBits,
+                                 rootClbitMap, variables);
+          },
+          [&](mlir::Value) { translateBlock(*body, localParameters); }, always);
+      return;
+    }
+    llvm::SaveAndRestore<mlir::qc::QCProgramBuilder::LoopBuilder*> loopScope(
+        variables.loop, nullptr);
+    const auto keys = variables.slots();
+    const auto saved = variables.variables;
+    auto initial = variables.values(keys);
+    auto loop = mlir::scf::WhileOp::create(
+        builder, mlir::ValueRange(initial).getTypes(), initial,
+        [&](mlir::OpBuilder& nested, mlir::Location,
+            mlir::ValueRange arguments) {
+          mlir::OpBuilder::InsertionGuard guard(builder);
+          builder.setInsertionPoint(nested.getInsertionBlock(),
+                                    nested.getInsertionPoint());
+          variables.variables = saved;
+          variables.assign(keys, arguments);
+          mlir::scf::ConditionOp::create(builder,
+                                         emitCondition(builder, condition,
+                                                       classicalBits,
+                                                       rootClbitMap, variables),
+                                         arguments);
         },
-        [&] { translateBlock(*body, localParameters); });
+        [&](mlir::OpBuilder& nested, mlir::Location,
+            mlir::ValueRange arguments) {
+          mlir::OpBuilder::InsertionGuard guard(builder);
+          builder.setInsertionPoint(nested.getInsertionBlock(),
+                                    nested.getInsertionPoint());
+          variables.variables = saved;
+          variables.assign(keys, arguments);
+          translateBlock(*body, localParameters);
+          mlir::scf::YieldOp::create(builder, variables.values(keys));
+        });
+    variables.variables = saved;
+    variables.assign(keys, loop.getResults());
     return;
   }
   case ControlFlowKind::For: {
@@ -1230,6 +1564,58 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
     }
     const auto loop = controlFlow.loop();
     const auto body = controlFlow.block(0);
+    if (containsLoopJump(*body)) {
+      const auto count = loop.isRange
+                             ? rangeLength(loop)
+                             : static_cast<int64_t>(loop.values.size());
+      auto limit = mlir::arith::ConstantIntOp::create(builder, count, 64);
+      translateLoopWithJumps(
+          mlir::arith::ConstantIntOp::create(builder, 0, 64),
+          [&](mlir::Value counter) {
+            return mlir::arith::CmpIOp::create(
+                       builder, mlir::arith::CmpIPredicate::slt, counter, limit)
+                .getResult();
+          },
+          [&](mlir::Value counter) {
+            if (loop.isRange || !loop.parameter) {
+              auto parameters = localParameters;
+              if (loop.parameter) {
+                requireExactLoopParameter(loop.start);
+                requireExactLoopParameter(loop.step > 0 ? loop.stop - 1
+                                                        : loop.stop + 1);
+                parameters[loop.parameter->getSymbol()->name] =
+                    loopParameterValue(builder, counter, loop);
+              }
+              translateBlock(*body, parameters);
+            } else {
+              const auto emitElement = [&](auto&& self, size_t index) -> void {
+                if (index == loop.values.size()) {
+                  return;
+                }
+                auto match = mlir::arith::CmpIOp::create(
+                    builder, mlir::arith::CmpIPredicate::eq, counter,
+                    mlir::arith::ConstantIntOp::create(
+                        builder, static_cast<int64_t>(index), 64));
+                variables.conditional(
+                    builder, match,
+                    [&] {
+                      requireExactLoopParameter(loop.values[index]);
+                      auto parameters = localParameters;
+                      parameters[loop.parameter->getSymbol()->name] =
+                          floatConstant(
+                              builder, static_cast<double>(loop.values[index]));
+                      translateBlock(*body, parameters);
+                    },
+                    [&] { self(self, index + 1); });
+              };
+              emitElement(emitElement, 0);
+            }
+          },
+          count > 0);
+      return;
+    }
+    llvm::SaveAndRestore<mlir::qc::QCProgramBuilder::LoopBuilder*> loopScope(
+        variables.loop, nullptr);
     if (!loop.isRange) {
       for (const auto value : loop.values) {
         auto parameters = localParameters;
@@ -1252,25 +1638,43 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
       requireExactLoopParameter(loop.start);
       requireExactLoopParameter(loop.step > 0 ? loop.stop - 1 : loop.stop + 1);
     }
-    auto* const containingBlock = builder.getInsertionBlock();
-    builder.scfFor(0, count, 1, [&](mlir::Value iteration) {
+    const auto keys = variables.slots();
+    const auto saved = variables.variables;
+    auto initial = variables.values(keys);
+    auto forOp = mlir::scf::ForOp::create(
+        builder, mlir::arith::ConstantIndexOp::create(builder, 0),
+        mlir::arith::ConstantIndexOp::create(builder, count),
+        mlir::arith::ConstantIndexOp::create(builder, 1), initial);
+    {
+      mlir::OpBuilder::InsertionGuard guard(builder);
+      auto* block = forOp.getBody();
+      if (!block->empty()) {
+        block->back().erase();
+      }
+      builder.setInsertionPointToEnd(block);
+      variables.assign(keys, forOp.getRegionIterArgs());
       auto parameters = localParameters;
       if (loop.parameter) {
         const auto* symbol = loop.parameter->getSymbol();
         if (symbol == nullptr) {
           throw std::runtime_error("Qiskit for-loop parameter is not a symbol");
         }
-        parameters[symbol->name] = loopParameterValue(builder, iteration, loop);
+        parameters[symbol->name] =
+            loopParameterValue(builder, forOp.getInductionVar(), loop);
       }
       translateBlock(*body, parameters);
-    });
+      mlir::scf::YieldOp::create(builder, variables.values(keys));
+    }
+    if (count == 0) {
+      variables.variables = saved;
+    }
+    variables.assign(keys, forOp.getResults());
     if (loop.parameter) {
       const auto* symbol = loop.parameter->getSymbol();
       if (symbol != nullptr && symbol->group) {
-        mlir::cast<mlir::scf::ForOp>(&containingBlock->back())
-            ->setAttr(
-                mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr(),
-                parameterGroupAttribute(builder, *symbol->group));
+        forOp->setAttr(
+            mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr(),
+            parameterGroupAttribute(builder, *symbol->group));
       }
     }
     return;
@@ -1282,11 +1686,48 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
           "Qiskit switch case metadata does not match its blocks");
     }
     auto target = emitSwitchTarget(builder, controlFlow.switchTarget(),
-                                   classicalBits, rootClbitMap);
+                                   classicalBits, rootClbitMap, variables);
     std::vector<std::unique_ptr<CircuitReader>> blocks;
     blocks.reserve(controlFlow.numBlocks());
     for (size_t index = 0; index < controlFlow.numBlocks(); ++index) {
       blocks.push_back(controlFlow.block(index));
+    }
+    if (variables.loop != nullptr || !variables.variables.empty()) {
+      const auto emitCase = [&](auto&& self, size_t index) -> void {
+        if (index == cases.size()) {
+          for (size_t fallback = 0; fallback < cases.size(); ++fallback) {
+            if (cases[fallback].isDefault) {
+              translateBlock(*blocks[fallback], localParameters);
+            }
+          }
+          return;
+        }
+        if (cases[index].isDefault) {
+          self(self, index + 1);
+          return;
+        }
+        mlir::Value match = builder.boolConstant(false);
+        for (const auto label : cases[index].labels) {
+          const auto width =
+              mlir::cast<mlir::IntegerType>(target.getType()).getWidth();
+          if (width < 64U && (label >> width) != 0U) {
+            throw std::runtime_error(
+                "Qiskit switch label does not fit the target type");
+          }
+          auto equal = mlir::arith::CmpIOp::create(
+              builder, mlir::arith::CmpIPredicate::eq, target,
+              mlir::arith::ConstantOp::create(
+                  builder, builder.getIntegerAttr(
+                               target.getType(), static_cast<int64_t>(label))));
+          match = mlir::arith::OrIOp::create(builder, match, equal);
+        }
+        variables.conditional(
+            builder, match,
+            [&] { translateBlock(*blocks[index], localParameters); },
+            [&] { self(self, index + 1); });
+      };
+      emitCase(emitCase, 0);
+      return;
     }
     llvm::SmallVector<int64_t> labels;
     llvm::SmallVector<std::function<void()>> ownedBodies;
@@ -1322,7 +1763,9 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
       }
     };
     const llvm::function_ref<void()> defaultBody(ownedDefault);
-    builder.scfIndexSwitch(target, labels, bodies, defaultBody);
+    auto index = mlir::arith::IndexCastUIOp::create(
+        builder, builder.getIndexType(), target);
+    builder.scfIndexSwitch(index, labels, bodies, defaultBody);
     return;
   }
   }
@@ -1339,9 +1782,49 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
                       const LocalParameters& localParameters,
                       const GlobalParameters& globalParameters,
                       const size_t definitionDepth,
-                      const size_t controlFlowDepth) {
-  builder.gphase(parameterValue(builder, circuit.globalPhase(), localParameters,
-                                globalParameters));
+                      const size_t controlFlowDepth,
+                      ImportedVariables& variables) {
+  std::vector<std::string> declared;
+  for (const auto& variable : circuit.variables()) {
+    if (variable.input) {
+      throw std::runtime_error(
+          "Qiskit external runtime input variables are not supported; use an "
+          "initialized local variable");
+    }
+    auto found = variables.variables.find(variable.identity);
+    auto type = expressionType(builder, variable.type, variable.width);
+    if (variable.captured) {
+      if (found == variables.variables.end() ||
+          found->second.value.getType() != type) {
+        throw std::runtime_error(
+            "Qiskit circuit has an invalid capture from its enclosing circuit");
+      }
+    } else {
+      if (found != variables.variables.end()) {
+        throw std::runtime_error(
+            "Qiskit variable is declared more than once in an enclosing scope");
+      }
+      /// Definite initialization rejects reads until a store; the initial loop
+      /// state still needs a representable, unobservable scalar placeholder.
+      variables.variables.emplace(
+          variable.identity,
+          ImportedVariables::Entry{
+              .value = mlir::arith::ConstantOp::create(
+                  builder, type, builder.getZeroAttr(type))});
+      declared.push_back(variable.identity);
+    }
+  }
+  auto scope = llvm::make_scope_exit([&] {
+    for (const auto& identity : declared) {
+      variables.variables.erase(identity);
+    }
+  });
+  const auto phase = circuit.globalPhase();
+  if (const auto* number = phase.getNumber();
+      number == nullptr || number->value != 0.0 || !variables.structuringLoop) {
+    builder.gphase(
+        parameterValue(builder, phase, localParameters, globalParameters));
+  }
   const auto getQubit = [&](const uint32_t local) {
     if (local >= qubitMap.size() || qubitMap[local] >= allQubits.size()) {
       throw std::runtime_error(
@@ -1380,10 +1863,13 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
     translateCircuit(builder, *definition, definitionQubits, definitionClbits,
                      definitionQubits, definitionClbits, allQubits,
                      classicalBits, localParameters, globalParameters,
-                     definitionDepth + 1U, controlFlowDepth);
+                     definitionDepth + 1U, controlFlowDepth, variables);
   };
 
   for (size_t index = 0; index < circuit.numInstructions(); ++index) {
+    if (!variables.reachable) {
+      break;
+    }
     const auto instruction = circuit.instruction(index);
     switch (instruction.kind) {
     case OperationKind::Gate:
@@ -1438,11 +1924,16 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
                               builder.unitary(targetArguments, matrix);
                             });
     } break;
+    case OperationKind::Store:
+      emitStore(builder, circuit.store(index), classicalBits, clbitMap,
+                variables);
+      break;
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);
       translateControlFlow(builder, *controlFlow, allQubits, classicalBits,
                            rootQubitMap, rootClbitMap, localParameters,
-                           globalParameters, definitionDepth, controlFlowDepth);
+                           globalParameters, definitionDepth, controlFlowDepth,
+                           variables);
       break;
     }
     case OperationKind::Delay:
@@ -1591,20 +2082,27 @@ static void validateCircuit(const CircuitReader& circuit,
                             size_t definitionDepth, size_t controlFlowDepth);
 
 static void validateExpression(const Expression& expression,
-                               const uint32_t rootClbits) {
+                               const uint32_t rootClbits,
+                               bool allowWideLeaf = false) {
+  if (expression.type == ClassicalType::Uint && expression.width > 64U &&
+      !allowWideLeaf) {
+    throw std::runtime_error(
+        "Qiskit unsigned expressions wider than 64 bits require a direct "
+        "register comparison");
+  }
   if ((expression.type == ClassicalType::Bool && expression.width != 1U) ||
-      (expression.type == ClassicalType::Uint &&
-       (expression.width == 0U || expression.width > 64U)) ||
+      (expression.type == ClassicalType::Uint && expression.width == 0U) ||
       (expression.type == ClassicalType::Float && expression.width != 64U)) {
     throw std::runtime_error(
         "Qiskit classical expression has an invalid type width");
   }
+  const bool wideComparison = isWideRegisterComparison(expression);
   const auto requireOperand = [&](const std::unique_ptr<Expression>& operand) {
     if (!operand) {
       throw std::runtime_error(
           "Qiskit classical expression has a missing operand");
     }
-    validateExpression(*operand, rootClbits);
+    validateExpression(*operand, rootClbits, wideComparison);
   };
   const auto sameType = [](const Expression& first, const Expression& second) {
     return first.type == second.type && first.width == second.width;
@@ -1620,7 +2118,17 @@ static void validateExpression(const Expression& expression,
     }
   };
   switch (expression.kind) {
+  case ExpressionKind::Variable:
+    if (expression.variable.empty()) {
+      throw std::runtime_error("Qiskit variable reference has no identity");
+    }
+    return;
   case ExpressionKind::Value:
+    if (expression.type == ClassicalType::Uint &&
+        expression.uintValue.getActiveBits() > expression.width) {
+      throw std::runtime_error(
+          "Qiskit Uint literal does not fit its declared width");
+    }
     return;
   case ExpressionKind::ClassicalBit:
     if (expression.type != ClassicalType::Bool || expression.width != 1U ||
@@ -1631,7 +2139,6 @@ static void validateExpression(const Expression& expression,
     return;
   case ExpressionKind::ClassicalRegister: {
     if (expression.type != ClassicalType::Uint || expression.reg.bits.empty() ||
-        expression.reg.bits.size() > 64U ||
         expression.width < expression.reg.bits.size()) {
       throw std::runtime_error(
           "Qiskit classical-register expression has an invalid type");
@@ -1776,9 +2283,12 @@ static void validateControlFlow(const ControlFlowReader& controlFlow,
   case ControlFlowKind::Box:
     throw std::runtime_error("Qiskit box instructions are not supported");
   case ControlFlowKind::Break:
-    throw std::runtime_error("Qiskit break instructions are not supported");
   case ControlFlowKind::Continue:
-    throw std::runtime_error("Qiskit continue instructions are not supported");
+    if (blockCount != 0U) {
+      throw std::runtime_error(
+          "Qiskit break/continue instructions must not contain blocks");
+    }
+    break;
   case ControlFlowKind::IfElse: {
     if (blockCount < 1U || blockCount > 2U) {
       throw std::runtime_error("Qiskit if/else has an invalid block count");
@@ -1916,10 +2426,16 @@ void validateCircuit(const CircuitReader& circuit,
                      const uint32_t rootQubits, const uint32_t rootClbits,
                      const size_t definitionDepth,
                      const size_t controlFlowDepth) {
-  if (circuit.hasClassicalVariables()) {
-    throw std::runtime_error(
-        "Qiskit circuit import does not support standalone classical "
-        "variables");
+  for (const auto& variable : circuit.variables()) {
+    if (variable.type == ClassicalType::Uint && variable.width > 64U) {
+      throw std::runtime_error("Qiskit local variables support unsigned "
+                               "integers of at most 64 bits");
+    }
+    if (variable.input) {
+      throw std::runtime_error(
+          "Qiskit external runtime input variables are not supported; use an "
+          "initialized local variable");
+    }
   }
   static_cast<void>(validateRegisterLayout(circuitRegisters(circuit, true),
                                            circuit.numQubits(), "quantum"));
@@ -2008,6 +2524,56 @@ void validateCircuit(const CircuitReader& circuit,
     case OperationKind::Unitary:
       static_cast<void>(denseUnitaryArity(instruction));
       break;
+    case OperationKind::Store: {
+      if (!instruction.qubits.empty() || !instruction.clbits.empty() ||
+          !instruction.parameters.empty() || !instruction.modifiers.empty()) {
+        throw std::runtime_error("Qiskit Store has an invalid operand arity");
+      }
+      const auto assignment = circuit.store(index);
+      if (!assignment.value) {
+        throw std::runtime_error("Qiskit Store has no rvalue");
+      }
+      validateTarget(assignment.target, circuit.numClbits());
+      validateExpression(*assignment.value, circuit.numClbits());
+      switch (assignment.target.kind) {
+      case ClassicalTargetKind::ClassicalBit:
+        if (assignment.value->type != ClassicalType::Bool) {
+          throw std::runtime_error(
+              "Qiskit Clbit Store requires a Boolean rvalue");
+        }
+        break;
+      case ClassicalTargetKind::ClassicalRegister:
+        if (assignment.value->type != ClassicalType::Uint ||
+            assignment.value->width != assignment.target.reg.bits.size()) {
+          throw std::runtime_error(
+              "Qiskit register Store requires a matching Uint rvalue");
+        }
+        break;
+      case ClassicalTargetKind::Expression: {
+        const auto* target = assignment.target.expression.get();
+        if (target != nullptr && target->kind == ExpressionKind::Variable) {
+          if (target->type != assignment.value->type ||
+              target->width != assignment.value->width) {
+            throw std::runtime_error(
+                "Qiskit variable Store requires a matching rvalue type");
+          }
+          break;
+        }
+        if (target == nullptr || target->kind != ExpressionKind::Index ||
+            target->left == nullptr || target->right == nullptr ||
+            target->left->kind != ExpressionKind::ClassicalRegister ||
+            target->left->type != ClassicalType::Uint ||
+            target->left->width != target->left->reg.bits.size() ||
+            target->right->type != ClassicalType::Uint ||
+            assignment.value->type != ClassicalType::Bool) {
+          throw std::runtime_error(
+              "Qiskit Store supports only register-index lvalues");
+        }
+        break;
+      }
+      }
+      break;
+    }
     case OperationKind::ControlFlow: {
       const auto controlFlow = circuit.controlFlow(index);
       validateControlFlow(*controlFlow, localParameters, freeParameters,
@@ -2148,8 +2714,10 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   std::vector<uint32_t> clbitMap(view->numClbits());
   std::iota(qubitMap.begin(), qubitMap.end(), 0U);
   std::iota(clbitMap.begin(), clbitMap.end(), 0U);
+  ImportedVariables variables;
   translateCircuit(builder, *view, qubitMap, clbitMap, qubitMap, clbitMap,
-                   qubits, classicalBits, {}, globalParameters, 0U, 0U);
+                   qubits, classicalBits, {}, globalParameters, 0U, 0U,
+                   variables);
 
   auto moduleOp = classicalStorage.empty() ? builder.finalize()
                                            : builder.finalize(classicalStorage);

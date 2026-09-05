@@ -150,7 +150,7 @@ void __quantum__rt__qubit_release(Qubit*);
                                             Qubit*);                           \
   void __quantum__qis__##NAME##__##CTL_SUFFIX(Array*, Tuple*);
 
-#define MQT_GATE(KEY, NAME, OP, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)   \
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   MQT_QIR_DECLARE_##TARGETS##_##PARAMS(NAME, SUFFIX, CTL_SUFFIX)
 #include "mlir/Conversion/GateTable.def"
 

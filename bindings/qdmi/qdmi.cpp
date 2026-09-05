@@ -95,6 +95,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, qdmiModule) {
   job.def("check", &qdmi::Job::check, "Returns the current status of the job.");
 
   job.def("wait", &qdmi::Job::wait, "timeout"_a = 0,
+          nb::call_guard<nb::gil_scoped_release>(),
           R"pb(Waits for the job to complete.
 
 Args:
@@ -106,9 +107,11 @@ Returns:
   job.def("cancel", &qdmi::Job::cancel, "Cancels the job.");
 
   job.def("get_shots", &qdmi::Job::getShots,
+          nb::call_guard<nb::gil_scoped_release>(),
           "Returns the raw shot results from the job.");
 
   job.def("get_counts", &qdmi::Job::getCounts,
+          nb::call_guard<nb::gil_scoped_release>(),
           "Returns the measurement counts from the job.");
 
   job.def("get_dense_statevector", &qdmi::Job::getDenseStateVector,

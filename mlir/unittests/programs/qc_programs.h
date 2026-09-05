@@ -19,6 +19,12 @@ class QCProgramBuilder;
 /// Creates an empty QC Program.
 Value emptyQC(QCProgramBuilder& b);
 
+/// Calls a reusable unitary rotation.
+Value reusableUnitaryFunction(QCProgramBuilder& b);
+
+/// Calls a reusable reset function.
+Value reusableResetFunction(QCProgramBuilder& b);
+
 // --- Qubit Management ----------------------------------------------------- //
 
 /// Allocates a single qubit.

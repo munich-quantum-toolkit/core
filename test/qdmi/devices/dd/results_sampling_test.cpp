@@ -24,7 +24,9 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
+#include <map>
 #include <memory>
 #include <numeric>
 #include <optional>
@@ -36,6 +38,20 @@
 
 namespace {
 
+std::vector<std::string> getShots(MQT_DDSIM_QDMI_Device_Job job) {
+  const size_t size = qdmi_test::querySize(job, QDMI_JOB_RESULT_SHOTS);
+  std::string result(size, '\0');
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job, QDMI_JOB_RESULT_SHOTS,
+                                                  size, result.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_FALSE(result.empty());
+  if (!result.empty()) {
+    EXPECT_EQ(result.back(), '\0');
+    result.pop_back();
+  }
+  return qdmi_test::splitCSV(result);
+}
+
 class HistogramTest : public ::testing::Test {
 protected:
   using Histogram = std::pair<std::vector<std::string>, std::vector<size_t>>;
@@ -44,7 +60,8 @@ protected:
 
   static Histogram runProgram(const QDMI_Program_Format format,
                               const std::string_view program,
-                              const std::optional<int> seed = std::nullopt) {
+                              const std::optional<int> seed = std::nullopt,
+                              std::vector<std::string>* samples = nullptr) {
     const qdmi_test::SessionGuard s{};
     const qdmi_test::JobGuard j{s.session};
     EXPECT_EQ(qdmi_test::setProgram(j.job, format, program), QDMI_SUCCESS);
@@ -53,7 +70,24 @@ protected:
       EXPECT_EQ(qdmi_test::setSeed(j.job, *seed), QDMI_SUCCESS);
     }
     EXPECT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-    return qdmi_test::getHistogram(j.job);
+    auto shots = getShots(j.job);
+    EXPECT_EQ(shots.size(), NUM_SHOTS);
+    EXPECT_EQ(shots, getShots(j.job));
+    std::map<std::string, size_t> counts;
+    for (const auto& shot : shots) {
+      ++counts[shot];
+    }
+    const auto histogram = qdmi_test::getHistogram(j.job);
+    const auto& [keys, values] = histogram;
+    EXPECT_EQ(keys.size(), counts.size());
+    EXPECT_EQ(keys.size(), values.size());
+    for (size_t i = 0; i < keys.size(); ++i) {
+      EXPECT_EQ(counts.at(keys[i]), values.at(i));
+    }
+    if (samples != nullptr) {
+      *samples = std::move(shots);
+    }
+    return histogram;
   }
 
   static void checkHistogram(const Histogram& hist) {
@@ -201,13 +235,44 @@ TEST_F(QIRHistogramTestString, AdaptiveRecordOutputs) {
 TEST_F(HistogramTest, SeedReproducesQASMSampling) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QASM3;
   constexpr std::string_view program = qdmi_test::QASM3_BELL_SAMPLING;
-  EXPECT_EQ(runProgram(format, program, 7), runProgram(format, program, 7));
+  std::vector<std::string> first;
+  std::vector<std::string> second;
+  EXPECT_EQ(runProgram(format, program, 7, &first),
+            runProgram(format, program, 7, &second));
+  EXPECT_EQ(first, second);
+  EXPECT_FALSE(std::ranges::is_sorted(first));
 }
 
 TEST_F(QIRHistogramTestString, SeedReproducesQIRSampling) {
   constexpr auto format = QDMI_PROGRAM_FORMAT_QIRBASESTRING;
   const auto program = qdmi_test::getQIRProgram("BellPairStatic.ll");
-  EXPECT_EQ(runProgram(format, program, 7), runProgram(format, program, 7));
+  std::vector<std::string> first;
+  std::vector<std::string> second;
+  EXPECT_EQ(runProgram(format, program, 7, &first),
+            runProgram(format, program, 7, &second));
+  EXPECT_EQ(first, second);
+  EXPECT_FALSE(std::ranges::is_sorted(first));
+}
+
+TEST_F(HistogramTest, QASM3DynamicShotsPreserveClassicalMapping) {
+  constexpr std::string_view program = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] a;
+bit[2] b;
+a[0] = false;
+a[1] = false;
+b[0] = false;
+b[1] = false;
+h q[0];
+a[1] = measure q[0];
+if (a[1]) { x q[1]; }
+b[0] = measure q[1];
+)qasm";
+  const auto [keys, values] = runProgram(QDMI_PROGRAM_FORMAT_QASM3, program, 7);
+  EXPECT_EQ(keys, (std::vector<std::string>{"0000", "0110"}));
+  EXPECT_EQ(std::accumulate(values.begin(), values.end(), size_t{0}),
+            NUM_SHOTS);
 }
 
 TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
@@ -219,8 +284,8 @@ TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
   ASSERT_EQ(qdmi_test::setShots(j.job, 4), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-  constexpr QDMI_Job_Result results[]{QDMI_JOB_RESULT_HIST_KEYS,
-                                      QDMI_JOB_RESULT_HIST_VALUES};
+  constexpr std::array results{QDMI_JOB_RESULT_HIST_KEYS,
+                               QDMI_JOB_RESULT_HIST_VALUES};
   char dummy{};
   for (const auto result : results) {
     size_t size = 1;
@@ -242,6 +307,14 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 512), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+
+  const size_t shotsSize = qdmi_test::querySize(j.job, QDMI_JOB_RESULT_SHOTS);
+  ASSERT_EQ(shotsSize, 512U * 3U);
+  std::vector<char> shotsTooSmall(shotsSize - 1);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                j.job, QDMI_JOB_RESULT_SHOTS, shotsTooSmall.size(),
+                shotsTooSmall.data(), nullptr),
+            QDMI_ERROR_INVALIDARGUMENT);
 
   if (const size_t ks = qdmi_test::querySize(j.job, QDMI_JOB_RESULT_HIST_KEYS);
       ks > 0) {

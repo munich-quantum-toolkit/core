@@ -20,17 +20,23 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
 #include <mlir/Dialect/Math/IR/Math.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/IRMapping.h>
+#include <mlir/IR/Iterators.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Support/LLVM.h>
@@ -38,10 +44,12 @@
 #include <mlir/Support/TypeID.h>
 #include <mlir/Support/WalkResult.h>
 
+#include <array>
 #include <cassert>
 #include <cstddef>
 #include <memory>
 #include <optional>
+#include <utility>
 
 namespace mlir::qco {
 
@@ -76,22 +84,10 @@ static bool isWalkableUnitaryShell(Operation* op) {
          !isExcludedFromTopLevelUnitaryWalk(op);
 }
 
-/// Builds the constant 4x4 matrix for a two-qubit op (bare or single-target
-/// `CtrlOp`). Returns false for a `CtrlOp` that is not
-/// single-control/single-target, or an op whose matrix is not known at compile
-/// time.
-static bool assignTwoQubitOpMatrix(Operation* op, Matrix4x4& matrix) {
-  if (auto ctrl = dyn_cast<CtrlOp>(op)) {
-    if (ctrl.getNumControls() != 1 || ctrl.getNumTargets() != 1) {
-      return false;
-    }
-    return cast<UnitaryOpInterface>(ctrl.getOperation())
-        .getUnitaryMatrix4x4(matrix);
-  }
-  auto unitary = cast<UnitaryOpInterface>(op);
-  assert(unitary.isTwoQubit() &&
-         "only two-qubit unitary shells are passed to assignTwoQubitOpMatrix");
-  return unitary.getUnitaryMatrix4x4(matrix);
+/// Multi-target control bodies lack a supported operand-to-matrix mapping.
+static bool assignTwoQubitOpMatrix(UnitaryOpInterface op, Matrix4x4& matrix) {
+  return (!isa<CtrlOp>(op) || op.getNumControls() == 1) &&
+         op.getUnitaryMatrix4x4(matrix);
 }
 
 /// Return the constant matrix when `unitary` is a single-qubit run member.
@@ -101,11 +97,7 @@ oneQubitRunMemberMatrix(UnitaryOpInterface unitary) {
       !isWalkableUnitaryShell(unitary.getOperation())) {
     return std::nullopt;
   }
-  Matrix2x2 matrix;
-  if (!unitary.getUnitaryMatrix2x2(matrix)) {
-    return std::nullopt;
-  }
-  return matrix;
+  return unitary.getUnitaryMatrix<Matrix2x2>();
 }
 
 /// Return the constant matrix when `unitary` is a two-qubit run member.
@@ -116,7 +108,7 @@ twoQubitRunMemberMatrix(UnitaryOpInterface unitary) {
     return std::nullopt;
   }
   Matrix4x4 matrix;
-  if (!assignTwoQubitOpMatrix(unitary.getOperation(), matrix)) {
+  if (!assignTwoQubitOpMatrix(unitary, matrix)) {
     return std::nullopt;
   }
   return matrix;
@@ -271,7 +263,7 @@ static void eraseFusableRun(RewriterBase& rewriter,
 /// its two-qubit operation count.
 static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
                                 const Matrix4x4& headMatrix,
-                                const CompilerTarget::SynthesisBasis basis) {
+                                CompilerTarget::SynthesisBasis basis) {
   FusableTwoQubitRun run = scanFusableTwoQubitRun(head, headMatrix);
   if (run.ops.size() < 2) {
     return false;
@@ -295,9 +287,126 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
   return true;
 }
 
-static bool requiresTargetSynthesis(Operation* operation,
-                                    const CompilerTarget& target) {
-  return !target.supports(operation);
+namespace {
+
+using SiteId = CompilerTarget::SiteId;
+using SiteMap = DenseMap<Value, SiteId>;
+
+} // namespace
+
+static SmallVector<Value> getQubitValues(ValueRange values) {
+  return llvm::to_vector(llvm::make_filter_range(
+      values, [](Value value) { return isa<QubitType>(value.getType()); }));
+}
+
+/// Propagate exact sites, rejecting unknown inputs or inconsistent joins.
+static LogicalResult propagateSites(ValueRange inputs, ValueRange outputs,
+                                    SiteMap& sites) {
+  auto inputQubits = getQubitValues(inputs);
+  auto outputQubits = getQubitValues(outputs);
+  if (inputQubits.size() != outputQubits.size()) {
+    return failure();
+  }
+  for (auto [input, output] : llvm::zip_equal(inputQubits, outputQubits)) {
+    auto found = sites.find(input);
+    if (found == sites.end()) {
+      return failure();
+    }
+    const auto site = found->second;
+    const auto [position, inserted] = sites.try_emplace(output, site);
+    if (!inserted && position->second != site) {
+      return failure();
+    }
+  }
+  return success();
+}
+
+/// Visit each region once. Branches must agree and loop backedges must retain
+/// the entry sites; neither rule is implied by all-to-all placement.
+static FailureOr<SiteMap> collectStaticSites(Operation* root) {
+  SiteMap sites;
+  auto result = root->walk([&](Operation* operation, const WalkStage& stage) {
+    const auto propagate = [&](ValueRange inputs, ValueRange outputs) {
+      if (succeeded(propagateSites(inputs, outputs, sites))) {
+        return WalkResult::advance();
+      }
+      operation->emitError("target compilation requires known, consistent "
+                           "static sites across branches and loop backedges");
+      return WalkResult::interrupt();
+    };
+    if (auto function = dyn_cast<FunctionOpInterface>(operation);
+        function &&
+        llvm::any_of(function.getArgumentTypes(), [](const auto type) {
+          if (isa<QubitType>(type)) {
+            return true;
+          }
+          const auto tensor = dyn_cast<RankedTensorType>(type);
+          return tensor && isa<QubitType>(tensor.getElementType());
+        })) {
+      function.emitError()
+          << "target compilation requires quantum function inputs to be "
+             "assigned to qco.static target sites";
+      return WalkResult::interrupt();
+    }
+    if (isa<AllocOp, qtensor::AllocOp>(operation)) {
+      operation->emitError()
+          << "target compilation requires qubits to be assigned to "
+             "qco.static target sites";
+      return WalkResult::interrupt();
+    }
+    if (auto staticOp = dyn_cast<StaticOp>(operation)) {
+      sites.try_emplace(staticOp.getQubit(), staticOp.getIndex());
+    } else if (isa<UnitaryOpInterface, ResetOp, MeasureOp>(operation)) {
+      if (propagate(operation->getOperands(), operation->getResults())
+              .wasInterrupted()) {
+        return WalkResult::interrupt();
+      }
+      return WalkResult::skip();
+    } else if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(operation)) {
+      if (!stage.isBeforeAllRegions()) {
+        auto& region = operation->getRegion(stage.getNextRegion() - 1);
+        auto yielded = region.front().getTerminator()->getOperands();
+        if (isa<scf::ForOp>(operation) &&
+            propagate(yielded, region.getArguments()).wasInterrupted()) {
+          return WalkResult::interrupt();
+        }
+        auto outputs = isa<scf::WhileOp>(operation) && stage.isAfterRegion(1)
+                           ? ValueRange(operation->getRegion(0).getArguments())
+                           : ValueRange(operation->getResults());
+        if (propagate(yielded, outputs).wasInterrupted()) {
+          return WalkResult::interrupt();
+        }
+      }
+      if (!stage.isAfterAllRegions()) {
+        auto& region = operation->getRegion(stage.getNextRegion());
+        if (!region.hasOneBlock()) {
+          operation->emitError("target compilation requires single-block "
+                               "structured control flow");
+          return WalkResult::interrupt();
+        }
+        auto inputs =
+            isa<scf::WhileOp>(operation) && stage.isBeforeRegion(1)
+                ? operation->getRegion(0).front().getTerminator()->getOperands()
+                : operation->getOperands();
+        return propagate(inputs, region.getArguments());
+      }
+    }
+    return WalkResult::advance();
+  });
+  if (result.wasInterrupted()) {
+    return failure();
+  }
+  return sites;
+}
+
+/// Collection has validated the inputs of every unitary, reset, and measure.
+static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
+                                                const SiteMap& sites) {
+  SmallVector<SiteId, 2> result;
+  for (Value qubit : getQubitValues(operation->getOperands())) {
+    result.push_back(sites.at(qubit));
+  }
+  return result;
 }
 
 /// Normalize relative phase effects and discard only the unobservable global
@@ -322,66 +431,67 @@ static LogicalResult prepareGlobalPhases(ModuleOp moduleOp,
   return success();
 }
 
-namespace {
-
-struct SynthesisPlan {
-  Operation* firstNeed = nullptr;
-  Operation* matrixUnavailable = nullptr;
-  SmallVector<Operation*> operations;
-};
-
-} // namespace
-
-static SynthesisPlan planTargetSynthesis(Operation* root,
-                                         const CompilerTarget& target) {
-  SynthesisPlan plan;
-  root->walk([&](Operation* operation) {
-    auto unitary = dyn_cast<UnitaryOpInterface>(operation);
-    if (!unitary || !isWalkableUnitaryShell(operation) ||
-        (unitary.getNumQubits() != 1 && unitary.getNumQubits() != 2)) {
-      return WalkResult::advance();
-    }
-    if (!requiresTargetSynthesis(operation, target)) {
-      return WalkResult::advance();
-    }
-    if (plan.firstNeed == nullptr) {
-      plan.firstNeed = operation;
-    }
-
-    if (unitary.isSingleQubit()) {
-      Matrix2x2 matrix;
-      if (unitary.getUnitaryMatrix2x2(matrix) ||
-          decomposition::canSynthesizeParameterizedUnitary1Q(operation)) {
-        plan.operations.emplace_back(operation);
-        return WalkResult::advance();
-      }
-    } else {
-      Matrix4x4 matrix;
-      if (assignTwoQubitOpMatrix(operation, matrix)) {
-        plan.operations.emplace_back(operation);
-        return WalkResult::advance();
-      }
-    }
-    plan.matrixUnavailable = operation;
-    return WalkResult::interrupt();
-  });
-  return plan;
+static bool isOperandSwapInvariant(UnitaryOpInterface unitary) {
+  Operation* operation = unitary.getOperation();
+  if (isa<SWAPOp, iSWAPOp, RXXOp, RYYOp, RZZOp>(operation)) {
+    return true;
+  }
+  auto controlled = dyn_cast<CtrlOp>(operation);
+  return controlled && controlled.getNumControls() == 1 &&
+         controlled.getNumTargets() == 1 &&
+         controlled.getNumBodyUnitaries() == 1 &&
+         isa<ZOp>(controlled.getBodyUnitary(0).getOperation());
 }
 
-static void lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
-                                 const CompilerTarget::SynthesisBasis basis) {
+static void reorderTwoQubitOperation(IRRewriter& rewriter,
+                                     UnitaryOpInterface unitary) {
+  IRMapping mapping;
+  mapping.map(unitary.getInputQubit(0), unitary.getInputQubit(1));
+  mapping.map(unitary.getInputQubit(1), unitary.getInputQubit(0));
+  rewriter.setInsertionPoint(unitary);
+  auto reordered = cast<UnitaryOpInterface>(
+      rewriter.clone(*unitary.getOperation(), mapping));
+  rewriter.replaceOp(
+      unitary.getOperation(),
+      ValueRange{reordered.getOutputQubit(1), reordered.getOutputQubit(0)});
+}
+
+static LogicalResult synthesizeTargetOperation(
+    IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
+    const std::optional<CompilerTarget::SynthesisBasis>& basis,
+    ArrayRef<SiteId> sites) {
   Operation* const operation = op.getOperation();
+  if (target.supports(operation, sites)) {
+    return success();
+  }
+  if (op.isTwoQubit() && isOperandSwapInvariant(op) &&
+      target.supports(operation, std::array{sites[1], sites[0]})) {
+    reorderTwoQubitOperation(rewriter, op);
+    return success();
+  }
+  const auto unsupported = [&](StringRef reason) -> LogicalResult {
+    return operation->emitError()
+           << "target-native synthesis cannot lower operation '"
+           << operation->getName() << "': " << reason;
+  };
+  if (!basis) {
+    return unsupported("the target has no usable synthesis basis");
+  }
   rewriter.setInsertionPoint(operation);
   if (op.isSingleQubit()) {
     Matrix2x2 matrix;
     if (!op.getUnitaryMatrix2x2(matrix)) {
+      if (!decomposition::canSynthesizeParameterizedUnitary1Q(operation)) {
+        return unsupported(
+            "its unitary matrix is not available at compile time");
+      }
       decomposition::synthesizeParameterizedUnitary1Q(rewriter, operation,
-                                                      basis.singleQubit);
-      return;
+                                                      basis->singleQubit);
+      return success();
     }
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
         rewriter, operation->getLoc(), op.getInputQubit(0), matrix,
-        /*runSize=*/1, /*hasNonBasisGate=*/true, basis.singleQubit);
+        /*runSize=*/1, /*hasNonBasisGate=*/true, basis->singleQubit);
     if (!synthesized) {
       llvm::reportFatalInternalError(
           "target single-qubit basis failed to synthesize a unitary matrix");
@@ -389,28 +499,40 @@ static void lowerTargetOperation(IRRewriter& rewriter, UnitaryOpInterface op,
     decomposition::emitGPhaseIfNeeded(rewriter, operation->getLoc(),
                                       synthesized->globalPhase);
     rewriter.replaceOp(operation, synthesized->qubit);
-    return;
+    return success();
   }
 
   Matrix4x4 matrix;
-  assignTwoQubitOpMatrix(operation, matrix);
-  Value input0;
-  Value input1;
-  if (auto ctrl = dyn_cast<CtrlOp>(operation)) {
-    input0 = ctrl.getInputControl(0);
-    input1 = ctrl.getInputTarget(0);
-  } else {
-    input0 = op.getInputQubit(0);
-    input1 = op.getInputQubit(1);
+  if (!assignTwoQubitOpMatrix(op, matrix)) {
+    return unsupported("its unitary matrix is not available at compile time");
   }
+  const bool reverseEntangler = !target.supports(basis->entangler, sites);
+  if (reverseEntangler &&
+      !target.supports(basis->entangler, std::array{sites[1], sites[0]})) {
+    return operation->emitError()
+           << "no supported synthesis-basis placement is known for its "
+              "static sites";
+  }
+  Value input0 = op.getInputQubit(0);
+  Value input1 = op.getInputQubit(1);
 
-  const auto native = decomposeUnitary2QWeyl(matrix, basis.entangler);
+  if (reverseEntangler) {
+    matrix = matrix.reorderForQubits(1, 0);
+    std::swap(input0, input1);
+  }
+  const auto native = decomposeUnitary2QWeyl(matrix, basis->entangler);
   const auto synthesized = emitUnitary2QWeyl(rewriter, operation->getLoc(),
-                                             input0, input1, native, basis);
+                                             input0, input1, native, *basis);
   decomposition::emitGPhaseIfNeeded(rewriter, operation->getLoc(),
                                     synthesized.globalPhase);
-  rewriter.replaceOp(operation,
-                     ValueRange{synthesized.qubit0, synthesized.qubit1});
+  if (reverseEntangler) {
+    rewriter.replaceOp(operation,
+                       ValueRange{synthesized.qubit1, synthesized.qubit0});
+  } else {
+    rewriter.replaceOp(operation,
+                       ValueRange{synthesized.qubit0, synthesized.qubit1});
+  }
+  return success();
 }
 
 static LogicalResult fuseTwoQubitGates(ModuleOp moduleOp) {
@@ -418,24 +540,17 @@ static LogicalResult fuseTwoQubitGates(ModuleOp moduleOp) {
       .singleQubit = CompilerTarget::SingleQubitBasis::U,
       .entangler = CompilerTarget::GateKind::CZ};
 
-  SmallVector<Operation*> runHeads;
-  moduleOp.walk([&](Operation* operation) {
-    auto unitary = dyn_cast<UnitaryOpInterface>(operation);
-    const auto matrix = twoQubitRunMemberMatrix(unitary);
-    if (matrix && !feedsFromSameTwoQubitRun(unitary)) {
-      runHeads.emplace_back(operation);
-    }
-  });
-
   bool changed = false;
   IRRewriter rewriter(moduleOp.getContext());
-  for (Operation* operation : runHeads) {
-    auto unitary = cast<UnitaryOpInterface>(operation);
-    const auto matrix = twoQubitRunMemberMatrix(unitary);
-    if (matrix) {
-      changed |= fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis);
-    }
-  }
+  /// A run's successors have already been visited when its head erases them.
+  moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
+      [&](Operation* operation) {
+        auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+        const auto matrix = twoQubitRunMemberMatrix(unitary);
+        if (matrix && !feedsFromSameTwoQubitRun(unitary)) {
+          changed |= fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis);
+        }
+      });
   if (!changed) {
     return success();
   }
@@ -479,36 +594,36 @@ protected:
       return;
     }
     ModuleOp moduleOp = getOperation();
+    const auto targetBasis = target.synthesisBasis();
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
       return;
     }
-    const auto plan = planTargetSynthesis(moduleOp, target);
-    if (plan.firstNeed == nullptr) {
-      return;
-    }
-    const auto targetBasis = target.synthesisBasis();
-    if (!targetBasis) {
-      plan.firstNeed->emitError()
-          << "target-native synthesis cannot lower operation '"
-          << plan.firstNeed->getName()
-          << "': the target has no usable synthesis basis";
-      signalPassFailure();
-      return;
-    }
-    if (plan.matrixUnavailable != nullptr) {
-      plan.matrixUnavailable->emitError()
-          << "target-native synthesis cannot lower operation '"
-          << plan.matrixUnavailable->getName()
-          << "': its unitary matrix is not available at compile time";
+    auto sites = collectStaticSites(moduleOp);
+    if (failed(sites)) {
       signalPassFailure();
       return;
     }
 
     IRRewriter rewriter(&getContext());
-    for (Operation* operation : plan.operations) {
-      lowerTargetOperation(rewriter, cast<UnitaryOpInterface>(operation),
-                           *targetBasis);
+    /// Rewrite users before producers so each unvisited operation retains its
+    /// original operands and their collected sites.
+    const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
+        [&](Operation* operation) {
+          auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+          if (!unitary || !isWalkableUnitaryShell(operation) ||
+              (!unitary.isSingleQubit() && !unitary.isTwoQubit())) {
+            return WalkResult::advance();
+          }
+          return failed(synthesizeTargetOperation(
+                     rewriter, unitary, target, targetBasis,
+                     getOperationSites(operation, *sites)))
+                     ? WalkResult::interrupt()
+                     : WalkResult::advance();
+        });
+    if (result.wasInterrupted()) {
+      signalPassFailure();
+      return;
     }
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
@@ -527,21 +642,12 @@ struct VerifyTargetConformancePass final
 
 protected:
   void runOnOperation() override {
+    auto sites = collectStaticSites(getOperation());
+    if (failed(sites)) {
+      signalPassFailure();
+      return;
+    }
     WalkResult result = getOperation()->walk([&](Operation* operation) {
-      if (auto function = dyn_cast<FunctionOpInterface>(operation);
-          function &&
-          llvm::any_of(function.getArgumentTypes(), [](const auto type) {
-            if (isa<QubitType>(type)) {
-              return true;
-            }
-            const auto tensor = dyn_cast<RankedTensorType>(type);
-            return tensor && isa<QubitType>(tensor.getElementType());
-          })) {
-        function.emitError()
-            << "target conformance requires quantum function inputs to be "
-               "assigned to qco.static target sites";
-        return WalkResult::interrupt();
-      }
       if (auto staticOp = dyn_cast<StaticOp>(operation)) {
         const auto site =
             static_cast<CompilerTarget::SiteId>(staticOp.getIndex());
@@ -549,12 +655,6 @@ protected:
           return WalkResult::advance();
         }
         staticOp.emitError() << "target does not contain static site " << site;
-        return WalkResult::interrupt();
-      }
-      if (isa<AllocOp, qtensor::AllocOp>(operation)) {
-        operation->emitError()
-            << "target conformance requires qubits to be assigned to "
-               "qco.static target sites";
         return WalkResult::interrupt();
       }
 
@@ -570,7 +670,8 @@ protected:
         return WalkResult::advance();
       }
 
-      if (target.supports(operation)) {
+      auto operationSites = getOperationSites(operation, *sites);
+      if (target.supports(operation, operationSites)) {
         return WalkResult::advance();
       }
 

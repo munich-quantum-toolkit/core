@@ -10,7 +10,6 @@
 
 #include "ExactUnitaryTest.h"
 #include "TestCaseUtils.h"
-#include "dd/GateMatrixDefinitions.hpp"
 #include "mlir/Dialect/MQT/Utils/GatePowering.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -53,20 +52,6 @@
 
 using namespace mlir;
 using namespace qco;
-
-[[nodiscard]] static Matrix2x2 matrix2FromFlat(const dd::GateMatrix& def) {
-  return Matrix2x2::fromElements(def[0], def[1], def[2], def[3]);
-}
-
-template <typename Definition>
-[[nodiscard]] static Matrix4x4
-matrix4FromDefinition(const Definition& definition) {
-  return Matrix4x4::fromElements(
-      definition[0][0], definition[0][1], definition[0][2], definition[0][3],
-      definition[1][0], definition[1][1], definition[1][2], definition[1][3],
-      definition[2][0], definition[2][1], definition[2][2], definition[2][3],
-      definition[3][0], definition[3][1], definition[3][2], definition[3][3]);
-}
 
 [[nodiscard]] static DynamicMatrix controlledMatrix(const Matrix2x2& body) {
   DynamicMatrix result = DynamicMatrix::identity(4);
@@ -981,13 +966,11 @@ TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
 /// \name QCO/Operations/StandardGates/DcxOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, DCXOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = DCXOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToTwoQubitGateMatrix(dd::GateType::DCX);
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  const auto expected = Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
+                                                0, 0, 1, 0,  // row 1
+                                                0, 0, 0, 1,  // row 2
+                                                0, 1, 0, 0); // row 3
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -996,13 +979,14 @@ TEST_F(QCOMatrixTest, DCXOpMatrix) {
 /// \name QCO/Operations/StandardGates/EcrOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, ECROpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = ECROp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToTwoQubitGateMatrix(dd::GateType::ECR);
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  constexpr auto s = 1.0 / std::numbers::sqrt2;
+  constexpr qco::Complex is{0.0, s};
+  const auto expected = Matrix4x4::fromElements(0, 0, s, is,  // row 0
+                                                0, 0, is, s,  // row 1
+                                                s, -is, 0, 0, // row 2
+                                                -is, s, 0, 0  // row 3
+  );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1031,13 +1015,10 @@ TEST_F(QCOMatrixTest, GPhaseOpMatrix) {
 /// \name QCO/Operations/StandardGates/HOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, HOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = HOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToSingleQubitGateMatrix(dd::GateType::H);
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  constexpr auto s = 1.0 / std::numbers::sqrt2;
+  const auto expected = Matrix2x2::fromElements(s, s,   // row 0
+                                                s, -s); // row 1
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1046,13 +1027,8 @@ TEST_F(QCOMatrixTest, HOpMatrix) {
 /// \name QCO/Operations/StandardGates/IdOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, IdOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = IdOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToSingleQubitGateMatrix(dd::GateType::I);
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  const auto expected = Matrix2x2::identity();
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1061,13 +1037,12 @@ TEST_F(QCOMatrixTest, IdOpMatrix) {
 /// \name QCO/Operations/StandardGates/IswapOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, iSWAPOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = iSWAPOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToTwoQubitGateMatrix(dd::GateType::iSWAP);
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  constexpr qco::Complex i{0.0, 1.0};
+  const auto expected = Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
+                                                0, 0, i, 0,  // row 1
+                                                0, i, 0, 0,  // row 2
+                                                0, 0, 0, 1); // row 3
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1084,11 +1059,9 @@ TEST_F(QCOMatrixTest, POpMatrix) {
   auto pOp = *funcOp.getBody().getOps<POp>().begin();
   const auto matrix = *pOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToSingleQubitGateMatrix(dd::GateType::P, {0.123});
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  const auto expected =
+      Matrix2x2::fromElements(1, 0,                       // row 0
+                              0, std::polar(1.0, 0.123)); // row 1
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1097,21 +1070,36 @@ TEST_F(QCOMatrixTest, POpMatrix) {
 /// \name QCO/Operations/StandardGates/RCCXOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, RCCXOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = RCCXOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToThreeQubitGateMatrix(dd::GateType::RCCX);
-
-  DynamicMatrix expected(static_cast<int64_t>(dd::THREE_QUBIT_GATE_DIM));
-  for (std::size_t row = 0; row < dd::THREE_QUBIT_GATE_DIM; ++row) {
-    for (std::size_t col = 0; col < dd::THREE_QUBIT_GATE_DIM; ++col) {
-      expected(static_cast<int64_t>(row), static_cast<int64_t>(col)) =
-          definition[row][col];
-    }
-  }
+  auto expected = Matrix8x8::identity();
+  expected(5, 5) = -1.0;
+  expected(6, 6) = 0.0;
+  expected(7, 7) = 0.0;
+  expected(6, 7) = {0.0, -1.0};
+  expected(7, 6) = {0.0, 1.0};
 
   ASSERT_TRUE(matrix.isApprox(expected));
+
+  auto moduleOp = QCOProgramBuilder::build(context.get(), rccx);
+  ASSERT_TRUE(moduleOp);
+  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+  auto rccxOp = *funcOp.getBody().getOps<RCCXOp>().begin();
+  auto unitary = cast<UnitaryOpInterface>(rccxOp.getOperation());
+  const auto fixed = unitary.getUnitaryMatrix<Matrix8x8>();
+  ASSERT_TRUE(fixed);
+  EXPECT_TRUE(fixed->isApprox(expected));
+  const auto dynamic = unitary.getUnitaryMatrix<DynamicMatrix>();
+  ASSERT_TRUE(dynamic);
+  EXPECT_TRUE(dynamic->isApprox(DynamicMatrix{expected}));
+  EXPECT_FALSE(unitary.getUnitaryMatrix<Matrix4x4>());
+
+  auto inverseModule = QCOProgramBuilder::build(context.get(), inverseRccx);
+  ASSERT_TRUE(inverseModule);
+  auto inverse =
+      cast<UnitaryOpInterface>(firstInvOp(*inverseModule).getOperation());
+  const auto inverseFixed = inverse.getUnitaryMatrix<Matrix8x8>();
+  ASSERT_TRUE(inverseFixed);
+  EXPECT_TRUE(inverseFixed->isApprox(expected.adjoint()));
 }
 /// @}
 
@@ -1126,10 +1114,14 @@ TEST_F(QCOMatrixTest, ROpMatrix) {
   auto rOp = *funcOp.getBody().getOps<ROp>().begin();
   const auto matrix = *rOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToSingleQubitGateMatrix(dd::GateType::R, {0.123, 0.456});
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  constexpr double theta = 0.123;
+  constexpr double phi = 0.456;
+  const auto c = std::cos(theta / 2);
+  const auto s = std::sin(theta / 2);
+  const auto expected = Matrix2x2::fromElements(
+      c, qco::Complex{-s * std::sin(phi), -s * std::cos(phi)}, // row 0
+      qco::Complex{s * std::sin(phi), -s * std::cos(phi)}, c   // row 1
+  );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1146,11 +1138,11 @@ TEST_F(QCOMatrixTest, RXOpMatrix) {
   auto rxOp = *funcOp.getBody().getOps<RXOp>().begin();
   const auto matrix = *rxOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToSingleQubitGateMatrix(dd::GateType::RX, {0.123});
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  constexpr double theta = 0.123;
+  const auto c = std::cos(theta / 2);
+  const qco::Complex minusIS{0.0, -std::sin(theta / 2)};
+  const auto expected = Matrix2x2::fromElements(c, minusIS,  // row 0
+                                                minusIS, c); // row 1
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1167,11 +1159,14 @@ TEST_F(QCOMatrixTest, RXXOpMatrix) {
   auto rxxOp = *funcOp.getBody().getOps<RXXOp>().begin();
   const auto matrix = *rxxOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToTwoQubitGateMatrix(dd::GateType::RXX, {0.123});
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  constexpr double theta = 0.123;
+  const auto c = std::cos(theta / 2);
+  const qco::Complex minusIS{0.0, -std::sin(theta / 2)};
+  const auto expected = Matrix4x4::fromElements(c, 0, 0, minusIS, // row 0
+                                                0, c, minusIS, 0, // row 1
+                                                0, minusIS, c, 0, // row 2
+                                                minusIS, 0, 0, c  // row 3
+  );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1188,11 +1183,11 @@ TEST_F(QCOMatrixTest, RYOpMatrix) {
   auto ryOp = *funcOp.getBody().getOps<RYOp>().begin();
   const auto matrix = *ryOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToSingleQubitGateMatrix(dd::GateType::RY, {0.456});
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  constexpr double theta = 0.456;
+  const auto c = std::cos(theta / 2);
+  const auto s = std::sin(theta / 2);
+  const auto expected = Matrix2x2::fromElements(c, -s, // row 0
+                                                s, c); // row 1
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1209,11 +1204,14 @@ TEST_F(QCOMatrixTest, RYYOpMatrix) {
   auto ryyOp = *funcOp.getBody().getOps<RYYOp>().begin();
   const auto matrix = *ryyOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToTwoQubitGateMatrix(dd::GateType::RYY, {0.123});
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  constexpr double theta = 0.123;
+  const auto c = std::cos(theta / 2);
+  const qco::Complex is{0.0, std::sin(theta / 2)};
+  const auto expected = Matrix4x4::fromElements(c, 0, 0, is,  // row 0
+                                                0, c, -is, 0, // row 1
+                                                0, -is, c, 0, // row 2
+                                                is, 0, 0, c   // row 3
+  );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1230,11 +1228,11 @@ TEST_F(QCOMatrixTest, RZOpMatrix) {
   auto rzOp = *funcOp.getBody().getOps<RZOp>().begin();
   const auto matrix = *rzOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToSingleQubitGateMatrix(dd::GateType::RZ, {0.789});
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  constexpr double theta = 0.789;
+  const auto expected =
+      Matrix2x2::fromElements(std::polar(1.0, -theta / 2), 0, // row 0
+                              0, std::polar(1.0, theta / 2)   // row 1
+      );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1251,11 +1249,14 @@ TEST_F(QCOMatrixTest, RZXOpMatrix) {
   auto rzxOp = *funcOp.getBody().getOps<RZXOp>().begin();
   const auto matrix = *rzxOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToTwoQubitGateMatrix(dd::GateType::RZX, {0.123});
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  constexpr double theta = 0.123;
+  const auto c = std::cos(theta / 2);
+  const qco::Complex is{0.0, std::sin(theta / 2)};
+  const auto expected = Matrix4x4::fromElements(c, -is, 0, 0, // row 0
+                                                -is, c, 0, 0, // row 1
+                                                0, 0, c, is,  // row 2
+                                                0, 0, is, c   // row 3
+  );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1272,11 +1273,14 @@ TEST_F(QCOMatrixTest, RZZOpMatrix) {
   auto rzzOp = *funcOp.getBody().getOps<RZZOp>().begin();
   const auto matrix = *rzzOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToTwoQubitGateMatrix(dd::GateType::RZZ, {0.123});
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  constexpr double theta = 0.123;
+  const auto plus = std::polar(1.0, theta / 2);
+  const auto minus = std::polar(1.0, -theta / 2);
+  const auto expected = Matrix4x4::fromElements(minus, 0, 0, 0, // row 0
+                                                0, plus, 0, 0,  // row 1
+                                                0, 0, plus, 0,  // row 2
+                                                0, 0, 0, minus  // row 3
+  );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1285,13 +1289,9 @@ TEST_F(QCOMatrixTest, RZZOpMatrix) {
 /// \name QCO/Operations/StandardGates/SOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, SOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = SOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToSingleQubitGateMatrix(dd::GateType::S);
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  const auto expected = Matrix2x2::fromElements(1, 0,           // row 0
+                                                0, {0.0, 1.0}); // row 1
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1300,13 +1300,9 @@ TEST_F(QCOMatrixTest, SOpMatrix) {
 /// \name QCO/Operations/StandardGates/SdgOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, SdgOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = SdgOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToSingleQubitGateMatrix(dd::GateType::Sdg);
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  const auto expected = Matrix2x2::fromElements(1, 0,            // row 0
+                                                0, {0.0, -1.0}); // row 1
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1315,13 +1311,11 @@ TEST_F(QCOMatrixTest, SdgOpMatrix) {
 /// \name QCO/Operations/StandardGates/SwapOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, SWAPOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = SWAPOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToTwoQubitGateMatrix(dd::GateType::SWAP);
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  const auto expected = Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
+                                                0, 0, 1, 0,  // row 1
+                                                0, 1, 0, 0,  // row 2
+                                                0, 0, 0, 1); // row 3
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1330,13 +1324,11 @@ TEST_F(QCOMatrixTest, SWAPOpMatrix) {
 /// \name QCO/Operations/StandardGates/SxOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, SXOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = SXOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToSingleQubitGateMatrix(dd::GateType::SX);
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  const auto expected = Matrix2x2::fromElements(
+      qco::Complex{0.5, 0.5}, qco::Complex{0.5, -0.5}, // row 0
+      qco::Complex{0.5, -0.5}, qco::Complex{0.5, 0.5}  // row 1
+  );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1345,13 +1337,11 @@ TEST_F(QCOMatrixTest, SXOpMatrix) {
 /// \name QCO/Operations/StandardGates/SxdgOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, SXdgOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = SXdgOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToSingleQubitGateMatrix(dd::GateType::SXdg);
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  const auto expected = Matrix2x2::fromElements(
+      qco::Complex{0.5, -0.5}, qco::Complex{0.5, 0.5}, // row 0
+      qco::Complex{0.5, 0.5}, qco::Complex{0.5, -0.5}  // row 1
+  );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1360,13 +1350,11 @@ TEST_F(QCOMatrixTest, SXdgOpMatrix) {
 /// \name QCO/Operations/StandardGates/TOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, TOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = TOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToSingleQubitGateMatrix(dd::GateType::T);
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  const auto expected =
+      Matrix2x2::fromElements(1, 0,                                    // row 0
+                              0, std::polar(1.0, std::numbers::pi / 4) // row 1
+      );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1375,13 +1363,11 @@ TEST_F(QCOMatrixTest, TOpMatrix) {
 /// \name QCO/Operations/StandardGates/TdgOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, TdgOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = TdgOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToSingleQubitGateMatrix(dd::GateType::Tdg);
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  const auto expected =
+      Matrix2x2::fromElements(1, 0,                                     // row 0
+                              0, std::polar(1.0, -std::numbers::pi / 4) // row 1
+      );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1398,11 +1384,12 @@ TEST_F(QCOMatrixTest, U2OpMatrix) {
   auto u2Op = *funcOp.getBody().getOps<U2Op>().begin();
   const auto matrix = *u2Op.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToSingleQubitGateMatrix(dd::GateType::U2, {0.234, 0.567});
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  constexpr double phi = 0.234;
+  constexpr double lambda = 0.567;
+  constexpr auto s = 1.0 / std::numbers::sqrt2;
+  const auto expected = Matrix2x2::fromElements(
+      s, std::polar(s, lambda + std::numbers::pi),      // row 0
+      std::polar(s, phi), std::polar(s, phi + lambda)); // row 1
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1419,11 +1406,14 @@ TEST_F(QCOMatrixTest, UOpMatrix) {
   auto uOp = *funcOp.getBody().getOps<UOp>().begin();
   const auto matrix = *uOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToSingleQubitGateMatrix(dd::GateType::U, {0.1, 0.2, 0.3});
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  constexpr double theta = 0.1;
+  constexpr double phi = 0.2;
+  constexpr double lambda = 0.3;
+  const auto c = std::cos(theta / 2);
+  const auto s = std::sin(theta / 2);
+  const auto expected = Matrix2x2::fromElements(
+      c, std::polar(s, lambda + std::numbers::pi),      // row 0
+      std::polar(s, phi), std::polar(c, phi + lambda)); // row 1
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1432,13 +1422,9 @@ TEST_F(QCOMatrixTest, UOpMatrix) {
 /// \name QCO/Operations/StandardGates/XOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, XOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = XOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToSingleQubitGateMatrix(dd::GateType::X);
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  const auto expected = Matrix2x2::fromElements(0, 1,  // row 0
+                                                1, 0); // row 1
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1455,11 +1441,16 @@ TEST_F(QCOMatrixTest, XXMinusYYOpMatrix) {
   auto xxMinusYYOp = *funcOp.getBody().getOps<XXMinusYYOp>().begin();
   const auto matrix = *xxMinusYYOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToTwoQubitGateMatrix(dd::GateType::XXminusYY, {0.123, 0.456});
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  constexpr double theta = 0.123;
+  constexpr double beta = 0.456;
+  const auto c = std::cos(theta / 2);
+  const auto s = std::sin(theta / 2);
+  const auto expected = Matrix4x4::fromElements(
+      c, 0, 0, std::polar(s, -beta - std::numbers::pi / 2), // row 0
+      0, 1, 0, 0,                                           // row 1
+      0, 0, 1, 0,                                           // row 2
+      std::polar(s, beta - std::numbers::pi / 2), 0, 0, c   // row 3
+  );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1476,11 +1467,16 @@ TEST_F(QCOMatrixTest, XXPlusYYOp) {
   auto xxPlusYYOp = *funcOp.getBody().getOps<XXPlusYYOp>().begin();
   const auto matrix = *xxPlusYYOp.getUnitaryMatrix();
 
-  // Get the definition of the matrix from the DD library
-  const auto definition =
-      dd::opToTwoQubitGateMatrix(dd::GateType::XXplusYY, {0.123, 0.456});
-
-  const Matrix4x4 expected = matrix4FromDefinition(definition);
+  constexpr double theta = 0.123;
+  constexpr double beta = 0.456;
+  const auto c = std::cos(theta / 2);
+  const auto s = std::sin(theta / 2);
+  const auto expected = Matrix4x4::fromElements(
+      1, 0, 0, 0,                                           // row 0
+      0, c, std::polar(s, beta - std::numbers::pi / 2), 0,  // row 1
+      0, std::polar(s, -beta - std::numbers::pi / 2), c, 0, // row 2
+      0, 0, 0, 1                                            // row 3
+  );
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1489,13 +1485,10 @@ TEST_F(QCOMatrixTest, XXPlusYYOp) {
 /// \name QCO/Operations/StandardGates/YOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, YOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = YOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToSingleQubitGateMatrix(dd::GateType::Y);
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  const auto expected =
+      Matrix2x2::fromElements(0, qco::Complex{0.0, -1.0}, // row 0
+                              qco::Complex{0.0, 1.0}, 0); // row 1
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }
@@ -1504,13 +1497,9 @@ TEST_F(QCOMatrixTest, YOpMatrix) {
 /// \name QCO/Operations/StandardGates/ZOp.cpp
 /// @{
 TEST_F(QCOMatrixTest, ZOpMatrix) {
-  // Get the (static) matrix from the operation
   const auto matrix = ZOp::getUnitaryMatrix();
-
-  // Get the definition of the matrix from the DD library
-  const auto definition = dd::opToSingleQubitGateMatrix(dd::GateType::Z);
-
-  const Matrix2x2 expected = matrix2FromFlat(definition);
+  const auto expected = Matrix2x2::fromElements(1, 0,   // row 0
+                                                0, -1); // row 1
 
   ASSERT_TRUE(matrix.isApprox(expected));
 }

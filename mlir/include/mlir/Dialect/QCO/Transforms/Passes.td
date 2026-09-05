@@ -146,15 +146,17 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     - `f(n) = g(n) + h(n)`
     - `g(n) = alpha * depth(n)`
-    - `h(n) = sum(pow(lambda, i) * h(L, p) for [i, L] in enumerate(layers))`
+    - `h(n) = sum(pow(lambda, i) * h(gate, p) for [i, gate] in enumerate(window))`
 
     Where:
 
     - `p` is the dynamic-to-static mapping associated with search node `n`.
-    - `layers` is an array of layers with size `1 + nlookahead`.
+    - `window` contains at most `1 + nlookahead` two-qubit operations in program order.
     - `depth(n)` returns the distance from the node `n` to the root node.
     - `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
-    - `h(L, p) := sum(dist(p[gate.first], p[gate.second]) for gate in L)`
+    - `h(gate, p)` is `dist(p[gate.first], p[gate.second]) - 1`.
+
+    Routing uses undirected target connectivity. Target-native synthesis realizes operations and inserted SWAPs in a supported operand direction.
 
     To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions

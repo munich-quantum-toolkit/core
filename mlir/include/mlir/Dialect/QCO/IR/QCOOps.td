@@ -15,6 +15,8 @@ include "mlir/Dialect/QCO/IR/QCOTypes.td"
 
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
+include "mlir/IR/SymbolInterfaces.td"
+include "mlir/Interfaces/CallInterfaces.td"
 include "mlir/Interfaces/ControlFlowInterfaces.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
@@ -1020,7 +1022,7 @@ def RCCXOp : QCOOp<"rccx", traits = [UnitaryOpInterface,
 
   let extraClassDeclaration = [{
         [[nodiscard]] static StringRef getBaseSymbol() { return "rccx"; }
-        [[nodiscard]] static DynamicMatrix getUnitaryMatrix();
+        [[nodiscard]] static Matrix8x8 getUnitaryMatrix();
     }];
 
   let hasCanonicalizer = 1;
@@ -1133,6 +1135,78 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
   let hasCanonicalizer = 1;
 }
 
+def CallOp
+    : QCOOp<"call",
+            traits = [CallOpInterface, UnitaryOpInterface,
+                      DeclareOpInterfaceMethods<SymbolUserOpInterface>, Pure]> {
+  let summary = "Call a unitary QCO function";
+  let description = [{
+    Calls a private `func.func` marked with `mqt.unitary`. Parameters precede
+    qubit operands. Each qubit result continues the corresponding qubit input.
+
+    Example:
+    ```mlir
+    %q1 = qco.call @rotate(%theta, %q0)
+        : (f64, !qco.qubit) -> !qco.qubit
+    ```
+  }];
+
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands,
+      OptionalAttr<DictArrayAttr>:$arg_attrs,
+      OptionalAttr<DictArrayAttr>:$res_attrs);
+  let results = (outs Variadic<QubitType>:$qubits_out);
+  let assemblyFormat = [{
+    $callee `(` $operands `)` attr-dict `:`
+    functional-type($operands, $qubits_out)
+  }];
+
+  let builders = [OpBuilder<(ins "FlatSymbolRefAttr":$callee,
+      "ValueRange":$operands)>];
+
+  let hasVerifier = 1;
+
+  let extraClassDeclaration = [{
+    size_t getNumQubits() { return getQubitsOut().size(); }
+    size_t getNumTargets() { return getNumQubits(); }
+    static size_t getNumControls() { return 0; }
+    Value getInputQubit(size_t i) { return getInputTarget(i); }
+    OperandRange getInputQubits();
+    Value getOutputQubit(size_t i) { return getOutputTarget(i); }
+    ResultRange getOutputQubits() { return getQubitsOut(); }
+    Value getInputTarget(size_t i) { return getInputQubits()[i]; }
+    OperandRange getInputTargets() { return getInputQubits(); }
+    Value getOutputTarget(size_t i) { return getQubitsOut()[i]; }
+    ResultRange getOutputTargets() { return getQubitsOut(); }
+    static Value getInputControl(size_t i) {
+      llvm::reportFatalUsageError("CallOp does not have controls");
+    }
+    static OperandRange getInputControls() { return {nullptr, 0}; }
+    static Value getOutputControl(size_t i) {
+      llvm::reportFatalUsageError("CallOp does not have controls");
+    }
+    static ResultRange getOutputControls() { return {nullptr, 0}; }
+    Value getInputForOutput(Value output);
+    Value getOutputForInput(Value input);
+    size_t getNumParams();
+    Value getParameter(size_t i) { return getParameters()[i]; }
+    OperandRange getParameters();
+    StringRef getBaseSymbol() { return getCallee(); }
+    static bool hasCompileTimeKnownUnitaryMatrix() { return false; }
+    static std::optional<DynamicMatrix> getUnitaryMatrix() {
+      return std::nullopt;
+    }
+
+    ::mlir::Operation::operand_range getArgOperands() { return getOperands(); }
+    MutableOperandRange getArgOperandsMutable() { return getOperandsMutable(); }
+    ::mlir::CallInterfaceCallable getCallableForCallee() {
+      return getCalleeAttr();
+    }
+    void setCalleeFromCallable(::mlir::CallInterfaceCallable callee) {
+      setCalleeAttr(cast<FlatSymbolRefAttr>(cast<SymbolRefAttr>(callee)));
+    }
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Modifiers
 //===----------------------------------------------------------------------===//
@@ -1177,8 +1251,7 @@ def CtrlOp : QCOOp<"ctrl",
         The operation takes a variadic number of control and target qubits as inputs and produces corresponding output qubits.
         Control qubits are not modified by the operation and simply pass through to the outputs.
 
-        The body region may contain unitary operations and pure, speculatable
-        classical support operations.
+        The body region may contain an arbitrary amount of unitary and classical operations.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
@@ -1263,8 +1336,7 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
 
         The operation takes a variadic number of qubits as inputs and produces corresponding output qubits.
 
-        The body region may contain unitary operations and pure, speculatable
-        classical support operations.
+        The body region may contain an arbitrary amount of unitary and classical operations.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
@@ -1347,8 +1419,7 @@ def PowOp
         - r = 0: identity (no-op).
         - r < 0: equivalent to inv @ pow(-r) @ g.
 
-        The body region may contain unitary operations and pure, speculatable
-        classical support operations.
+        The body region may contain an arbitrary amount of unitary and classical operations.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.

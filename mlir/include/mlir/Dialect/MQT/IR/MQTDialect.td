@@ -24,6 +24,8 @@ def MQTDialect : Dialect {
     across quantum dialect conversions. It defines no operations or types.
 
     `mqt.input_name` records the source-level name of a function input.
+    `mqt.source_name` records a source-level function name when the IR symbol
+    must be uniquified.
     `mqt.parameter_group` optionally preserves the source-level vector
     identity, name, element index, and size of a function input or a lexically
     bound `scf.for` parameter.
@@ -32,12 +34,15 @@ def MQTDialect : Dialect {
     namespace.
     `mqt.entry_point` marks the single defined program entry function in a
     module.
+    `mqt.unitary` marks a private function that defines a unitary operation.
     `#mqt.compilation_target` records compiler-target facts as typed IR.
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
+      "::mlir::StringAttr":$source_name,
       "::mlir::DictionaryAttr":$parameter_group,
-      "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point);
+      "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
+      "::mlir::UnitAttr":$unitary);
 
   let hasOperationAttrVerify = 1;
   let hasRegionArgAttrVerify = 1;
@@ -122,16 +127,18 @@ def CouplingAttr : MQTAttr<"Coupling", "coupling"> {
 }
 
 def SiteTupleAttr : MQTAttr<"SiteTuple", "site_tuple"> {
-  let summary = "Calibration data for an ordered site tuple";
+  let summary = "One supported ordered placement with optional calibration";
   let description = [{
-    The tuple defines one placement of a native operation. For example,
-    `#mqt.site_tuple<sites = [4, 7], duration = 40>` records an ordered
+    The tuple records one supported ordered placement and optional calibration
+    overrides. Missing calibration values inherit the operation defaults.
+    For example,
+    `#mqt.site_tuple<[4, 7], duration = 40>` records an ordered
     two-site placement with a raw duration of 40.
   }];
   let parameters = (ins MQTArrayRefParameter<"int64_t">:$sites,
       MQTOptionalUInt64Parameter<>:$duration,
       OptionalParameter<"FloatAttr">:$fidelity);
-  let assemblyFormat = "`<` struct(params) `>`";
+  let assemblyFormat = "`<` $sites (`,` struct($duration, $fidelity)^)? `>`";
   let genVerifyDecl = 1;
 }
 
@@ -153,13 +160,14 @@ def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
   let summary = "One native compiler-target operation";
   let description = [{
     The operation records its spelling, arity, parameter count, and optional
-    global or site-specific calibration data. The following example records a
-    placed controlled-X operation:
+    global or site-specific calibration data. An empty site-tuple list means
+    general applicability; a nonempty list gives all supported ordered
+    placements. The following example records a directional controlled-X operation:
 
     ```mlir
     #mqt.native_operation<name = "cx",
         arity = #mqt.operation_arity<kind = fixed, value = 2>,
-        num_parameters = 0, site_tuples = [<sites = [4, 7]>]>
+        num_parameters = 0, site_tuples = [<[4, 7]>]>
     ```
   }];
   let parameters = (ins "StringAttr":$name, "OperationArityAttr":$arity,
@@ -188,7 +196,7 @@ def CompilationTargetAttr : MQTAttr<"CompilationTarget", "compilation_target"> {
         native_operations = explicit,
         operations = [<name = "cx",
             arity = #mqt.operation_arity<kind = fixed, value = 2>,
-            num_parameters = 0, site_tuples = []>]>
+            num_parameters = 0, site_tuples = [<[4, 7]>]>]>
     ```
   }];
   let parameters = (ins OptionalParameter<"StringAttr">:$name,
