@@ -29,11 +29,13 @@
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/SCCIterator.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringSet.h>
 #include <llvm/Support/Casting.h>
+#include <mlir/Analysis/CallGraph.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Math/IR/Math.h>
@@ -72,8 +74,9 @@ namespace mqt::bindings::qiskit {
 
 constexpr size_t MAX_EXPORT_CONTROL_FLOW_DEPTH = 64U;
 constexpr size_t MAX_EXPORT_EXPRESSION_DEPTH = 64U;
-/// Bounded bit-based casts between jeff native widths expand expression trees.
+// Bounded bit-based casts between jeff native widths expand expression trees.
 constexpr size_t MAX_EXPORT_EXPRESSION_NODES = 16384U;
+constexpr size_t MAX_EXPORT_GATE_CALL_DEPTH = 64U;
 
 namespace {
 struct ExportedControlFlow;
@@ -81,6 +84,7 @@ struct ExportedControlFlow;
 struct ExportedInstruction {
   enum class Kind : uint8_t {
     Gate,
+    CustomGate,
     Measure,
     Reset,
     Barrier,
@@ -90,10 +94,12 @@ struct ExportedInstruction {
   };
   Kind kind = Kind::Gate;
   StandardGateMapping gate;
+  std::string customGate;
   std::vector<uint32_t> qubits;
   std::vector<uint32_t> clbits;
   std::vector<Parameter> parameters;
   std::vector<std::complex<double>> matrix;
+  std::vector<GateModifier> modifiers;
   uint32_t unitaryControls = 0;
   ClassicalTarget target;
   std::unique_ptr<Expression> value;
@@ -106,6 +112,14 @@ struct ExportedCircuit {
   Parameter globalPhase = Parameter::number(0.0);
   std::vector<ClassicalVariable> variables;
   std::vector<ExportedInstruction> instructions;
+};
+
+struct ExportedGateDefinition {
+  std::string symbol;
+  std::string name;
+  std::vector<std::string> formalParameters;
+  uint32_t numQubits = 0U;
+  ExportedCircuit circuit;
 };
 
 struct ExportedControlFlow {
@@ -470,9 +484,10 @@ static void validateExportParameters(const ExportedCircuit& circuit,
   }
 }
 
-static void collectParameters(mlir::func::FuncOp function, ExportState& state) {
-  for (const auto [index, argument] :
-       llvm::enumerate(function.getArguments())) {
+static void collectParameters(mlir::func::FuncOp function, ExportState& state,
+                              size_t count) {
+  for (size_t index = 0U; index < count; ++index) {
+    auto argument = function.getArgument(index);
     const auto name = function.getArgAttrOfType<mlir::StringAttr>(
         index, mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr());
     if (!argument.getType().isF64() || !name) {
@@ -675,6 +690,17 @@ static void invertGate(ExportedInstruction& instruction) {
 collectUnitaryInstruction(mlir::Operation& operation,
                           const llvm::DenseMap<mlir::Value, uint32_t>& qubits,
                           ExportedParameters& parameters) {
+  if (auto call = llvm::dyn_cast<mlir::qc::CallOp>(operation)) {
+    ExportedInstruction result{
+        .kind = ExportedInstruction::Kind::CustomGate,
+        .customGate = call.getCallee().str(),
+        .qubits = mapQubits(call.getQubits(), qubits),
+    };
+    for (auto parameter : call.getParameters()) {
+      result.parameters.push_back(exportParameter(parameter, parameters));
+    }
+    return result;
+  }
   if (auto control = llvm::dyn_cast<mlir::qc::CtrlOp>(operation)) {
     auto bodyOperations = modifierBodyOperations(control.getRegion());
     const auto controls = mapQubits(control.getControls(), qubits);
@@ -703,10 +729,20 @@ collectUnitaryInstruction(mlir::Operation& operation,
     }
     if (bodyOperations.size() != 1U) {
       throw std::runtime_error(
-          "QC control export requires one standard gate in the modifier body");
+          "QC control export requires one gate in the modifier body");
     }
     auto result = collectUnitaryInstruction(*bodyOperations.front(), nestedMap,
                                             parameters);
+    if (result.kind == ExportedInstruction::Kind::CustomGate) {
+      result.modifiers.push_back({
+          .kind = GateModifierKind::Control,
+          .numControls =
+              checkedIndex(static_cast<uint64_t>(controls.size()), "control"),
+      });
+      result.qubits.insert(result.qubits.begin(), controls.begin(),
+                           controls.end());
+      return result;
+    }
     auto& numControls = result.kind == ExportedInstruction::Kind::Unitary
                             ? result.unitaryControls
                             : result.gate.controls;
@@ -723,31 +759,45 @@ collectUnitaryInstruction(mlir::Operation& operation,
     auto bodyOperations = modifierBodyOperations(inverse.getRegion());
     if (bodyOperations.size() != 1U) {
       throw std::runtime_error(
-          "QC inverse export requires one standard gate in the modifier body");
+          "QC inverse export requires one gate in the modifier body");
     }
     auto nestedMap = modifierQubitMap(qubits, inverse.getRegion().front(),
                                       inverse.getQubits());
     auto result = collectUnitaryInstruction(*bodyOperations.front(), nestedMap,
                                             parameters);
-    invertGate(result);
+    if (result.kind == ExportedInstruction::Kind::CustomGate) {
+      result.modifiers.push_back({.kind = GateModifierKind::Inverse});
+    } else {
+      invertGate(result);
+    }
     return result;
   }
   if (auto power = llvm::dyn_cast<mlir::qc::PowOp>(operation)) {
     auto bodyOperations = modifierBodyOperations(power.getRegion());
     if (bodyOperations.size() != 1U) {
       throw std::runtime_error(
-          "QC power export requires one standard gate in the modifier body");
+          "QC power export requires one gate in the modifier body");
     }
     const auto exponent = exportParameter(power.getExponent(), parameters);
     const auto* number = exponent.getNumber();
-    if (number == nullptr || (number->value != 1.0 && number->value != -1.0)) {
-      throw std::runtime_error(
-          "QC power export supports only constant exponents 1 and -1");
-    }
     auto nestedMap =
         modifierQubitMap(qubits, power.getRegion().front(), power.getQubits());
     auto result = collectUnitaryInstruction(*bodyOperations.front(), nestedMap,
                                             parameters);
+    if (result.kind == ExportedInstruction::Kind::CustomGate) {
+      if (number == nullptr || !std::isfinite(number->value)) {
+        throw std::runtime_error(
+            "Qiskit custom Gate power must have a finite numeric exponent");
+      }
+      result.modifiers.push_back(
+          {.kind = GateModifierKind::Power, .exponent = exponent});
+      return result;
+    }
+    if (number == nullptr || (number->value != 1.0 && number->value != -1.0)) {
+      throw std::runtime_error(
+          "QC power export supports only constant exponents 1 and -1 for "
+          "standard gates and dense unitaries");
+    }
     if (number->value == -1.0) {
       invertGate(result);
     }
@@ -915,8 +965,8 @@ static void collectResources(mlir::func::FuncOp function, ExportState& state,
     }
   }
   llvm::append_range(registers, returnedValues);
-  /// Qiskit exposes all register storage; put observable outputs last in count
-  /// order.
+  // Qiskit exposes all register storage. Put observable outputs last in count
+  // order.
   for (auto result : registers) {
     if (auto alloc = result.getDefiningOp<mlir::cbit::AllocOp>()) {
       if (const auto name = alloc->getAttrOfType<mlir::StringAttr>(
@@ -1305,7 +1355,7 @@ exportExpressionImpl(mlir::Value value, ExportState& state,
       return operand;
     }
     if (operand->kind == ExpressionKind::ClassicalRegister) {
-      /// Qiskit's OpenQASM exporter needs a matching-width register cast first.
+      // Qiskit's OpenQASM exporter needs a matching-width register cast first.
       countExpressionNode(nodeCount);
       auto exact = std::make_unique<Expression>();
       exact->kind = ExpressionKind::Cast;
@@ -2631,6 +2681,19 @@ validateConstructibleGates(const ExportedCircuit& circuit,
           descriptor.operationSymbol.str() + "' with " +
           std::to_string(instruction.gate.controls) + " controls");
     }
+    if (instruction.kind == ExportedInstruction::Kind::CustomGate) {
+      llvm::DenseSet<uint32_t> qubits;
+      if (instruction.customGate.empty()) {
+        throw std::runtime_error("Qiskit custom Gate has an empty name");
+      }
+      for (const auto qubit : instruction.qubits) {
+        if (!qubits.insert(qubit).second) {
+          throw std::runtime_error("Qiskit custom Gate '" +
+                                   instruction.customGate +
+                                   "' uses the same qubit more than once");
+        }
+      }
+    }
     if (instruction.kind != ExportedInstruction::Kind::ControlFlow) {
       continue;
     }
@@ -2652,6 +2715,10 @@ static void emitCircuit(ExportedCircuit& circuit, CircuitWriter& writer,
     case ExportedInstruction::Kind::Gate:
       writer.addGate(instruction.gate, instruction.qubits,
                      instruction.parameters);
+      break;
+    case ExportedInstruction::Kind::CustomGate:
+      writer.addCustomGate(instruction.customGate, instruction.qubits,
+                           instruction.parameters, instruction.modifiers);
       break;
     case ExportedInstruction::Kind::Measure:
       writer.addMeasure(instruction.qubits.at(0), instruction.clbits.at(0));
@@ -2688,32 +2755,138 @@ static void emitCircuit(ExportedCircuit& circuit, CircuitWriter& writer,
   }
 }
 
+[[nodiscard]] static size_t gateParameterCount(mlir::func::FuncOp function) {
+  size_t numParameters = 0U;
+  while (numParameters < function.getNumArguments() &&
+         function.getArgument(numParameters).getType().isF64()) {
+    ++numParameters;
+  }
+  return numParameters;
+}
+
+static void validateGateFunction(mlir::func::FuncOp function) {
+  if (!mlir::mqt::isUnitaryFunction(function)) {
+    throw std::runtime_error(
+        "Qiskit custom Gates require private, defined, single-block unitary "
+        "functions with no results");
+  }
+  if (function
+          .walk(
+              [](mlir::qc::BarrierOp) { return mlir::WalkResult::interrupt(); })
+          .wasInterrupted()) {
+    throw std::runtime_error(
+        "Qiskit custom Gate definitions cannot contain barriers");
+  }
+}
+
+[[nodiscard]] static std::vector<mlir::func::FuncOp>
+collectGateFunctions(mlir::ModuleOp moduleOp, mlir::func::FuncOp entryPoint) {
+  const mlir::CallGraph graph(moduleOp);
+  llvm::DenseMap<mlir::CallGraphNode*, size_t> gateCallDepths;
+  std::vector<mlir::func::FuncOp> ordered;
+  for (auto component =
+           llvm::scc_iterator<mlir::CallGraphNode*,
+                              llvm::GraphTraits<const mlir::CallGraphNode*>>::
+               begin(graph.lookupNode(&entryPoint.getBody()));
+       !component.isAtEnd(); ++component) {
+    auto* node = component->front();
+    if (node->isExternal() || component.hasCycle()) {
+      throw std::runtime_error(
+          "Qiskit custom Gates require defined, non-recursive functions");
+    }
+    auto function = mlir::dyn_cast<mlir::func::FuncOp>(
+        node->getCallableRegion()->getParentOp());
+    if (!function) {
+      throw std::runtime_error(
+          "Qiskit custom Gates require func.func definitions");
+    }
+    const auto ownDepth = function == entryPoint ? 0U : 1U;
+    size_t depth = ownDepth;
+    for (const auto& edge : *node) {
+      depth =
+          std::max(depth, gateCallDepths.lookup(edge.getTarget()) + ownDepth);
+    }
+    if (depth > MAX_EXPORT_GATE_CALL_DEPTH) {
+      throw std::runtime_error(
+          "Qiskit custom Gate calls exceed the nesting limit of 64");
+    }
+    gateCallDepths[node] = depth;
+    if (function != entryPoint) {
+      validateGateFunction(function);
+      ordered.push_back(function);
+    }
+  }
+  for (auto function : moduleOp.getOps<mlir::func::FuncOp>()) {
+    if (!gateCallDepths.contains(graph.lookupNode(&function.getBody()))) {
+      throw std::runtime_error("Qiskit circuit export cannot preserve "
+                               "function '" +
+                               function.getName().str() + "'");
+    }
+  }
+  return ordered;
+}
+
+[[nodiscard]] static ExportedGateDefinition
+collectGateDefinition(mlir::func::FuncOp function) {
+  const auto numParameters = gateParameterCount(function);
+  ExportState state;
+  collectParameters(function, state, numParameters);
+  const auto numQubits = function.getNumArguments() - numParameters;
+  state.numQubits = checkedIndex(static_cast<uint64_t>(numQubits), "qubit");
+  for (auto [index, argument] :
+       llvm::enumerate(function.getArguments().drop_front(numParameters))) {
+    state.qubits[argument] =
+        checkedIndex(static_cast<uint64_t>(index), "qubit");
+  }
+  auto circuit = collectBlock(function.getBody().front(), state, 0U);
+  validateExportParameters(circuit, state.inputParameters);
+  std::vector<std::string> formalParameters;
+  formalParameters.reserve(state.inputParameters.size());
+  for (const auto& parameter : state.inputParameters) {
+    formalParameters.push_back(parameter.getSymbol()->name);
+  }
+  auto sourceName = function->getAttrOfType<mlir::StringAttr>(
+      mlir::mqt::MQTDialect::SourceNameAttrHelper::getNameStr());
+  return {
+      .symbol = function.getName().str(),
+      .name = sourceName ? sourceName.str() : function.getName().str(),
+      .formalParameters = std::move(formalParameters),
+      .numQubits = state.numQubits,
+      .circuit = std::move(circuit),
+  };
+}
+
 nb::object exportCircuit(const mlir::QCProgram& program,
                          const mlir::CompilerTarget* const target) {
   mlir::OwningOpRef<mlir::ModuleOp> expanded = program.module().clone();
   auto moduleOp = *expanded;
   mlir::RewritePatternSet patterns(moduleOp.getContext());
   mlir::mqt::populateIntegerExpansionPatterns(patterns);
-  /// Expand missing operations and eliminate dead expressions, without folding
-  /// unrelated control flow or changing the source program.
+  // Expand missing operations and eliminate dead expressions without folding
+  // unrelated control flow or changing the source program.
   if (mlir::failed(mlir::applyPatternsGreedily(
           moduleOp, std::move(patterns),
           mlir::GreedyRewriteConfig().enableFolding(false)))) {
     throw std::runtime_error("failed to expand integer operations for Qiskit");
   }
-  const auto functions = moduleOp.getOps<mlir::func::FuncOp>();
-  if (functions.empty() || !llvm::hasSingleElement(functions)) {
+  auto function = mlir::mqt::getEntryPoint(moduleOp);
+  if (!function) {
     throw std::runtime_error(
-        "QC to Qiskit export requires exactly one entry function");
+        "QC to Qiskit export requires an mqt.entry_point function");
   }
-  auto function = *functions.begin();
   if (function.getBody().empty() ||
       !llvm::hasSingleElement(function.getBody())) {
     throw std::runtime_error(
         "QC to Qiskit export requires a single-block entry function");
   }
+  const auto gateFunctions = collectGateFunctions(moduleOp, function);
+  std::vector<ExportedGateDefinition> gateDefinitions;
+  gateDefinitions.reserve(gateFunctions.size());
+  for (auto gateFunction : gateFunctions) {
+    gateDefinitions.push_back(collectGateDefinition(gateFunction));
+  }
   ExportState state;
-  collectParameters(function, state);
+  collectParameters(function, state, function.getNumArguments());
   if (target != nullptr) {
     state.numQubits = checkedIndex(static_cast<uint64_t>(target->numSites()),
                                    "target qubit count");
@@ -2756,7 +2929,19 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                                                   state.numClbits, "classical");
 
   auto translation = selectTranslation();
+  for (const auto& definition : gateDefinitions) {
+    validateConstructibleGates(definition.circuit, *translation);
+  }
   validateConstructibleGates(circuit, *translation);
+  for (auto& definition : gateDefinitions) {
+    auto definitionWriter =
+        translation->createCircuit(definition.numQubits, 0U);
+    emitCircuit(definition.circuit, *definitionWriter, *translation,
+                definition.numQubits, 0U);
+    translation->registerCustomGate(definition.symbol, definition.name,
+                                    definition.formalParameters,
+                                    std::move(definitionWriter));
+  }
   auto writer = translation->createCircuit(looseQubits, looseClbits);
   for (const auto& reg : state.quantumRegisters) {
     writer->addQuantumRegister(reg.name,

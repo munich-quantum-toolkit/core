@@ -40,6 +40,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -597,6 +598,21 @@ static void appendControlModifier(const nb::handle object,
                         nb::module_::import_("qiskit.circuit").attr("Store"));
 }
 
+[[nodiscard]] static bool isPythonGate(nb::handle operation) {
+  const auto terminal = terminalPythonGate(operation);
+  return nb::isinstance(terminal,
+                        nb::module_::import_("qiskit.circuit").attr("Gate"));
+}
+
+[[nodiscard]] static bool isPythonStandardGate(nb::handle operation) {
+  const auto terminal = terminalPythonGate(operation);
+  const auto baseClass = pythonAttribute(
+      terminal, "base_class", "Qiskit Gate does not expose its base class");
+  return !pythonAttribute(baseClass, "_standard_gate",
+                          "Qiskit Gate base class has no standard identity")
+              .is_none();
+}
+
 static void normalizePythonModifier(const nb::handle modifier,
                                     std::vector<GateModifier>& modifiers) {
   const auto type = pythonAttribute(modifier, "__class__",
@@ -811,14 +827,56 @@ standardGateMapping(const std::string_view name) {
 namespace {
 class NativeControlFlowReader;
 
+class DefinitionRegistry final {
+public:
+  [[nodiscard]] uintptr_t identify(nb::handle definition,
+                                   const std::string_view name,
+                                   nb::handle parameters) {
+    const nb::tuple parameterTuple(parameters);
+    const auto parameterHash = PyObject_Hash(parameterTuple.ptr());
+    if (parameterHash == -1) {
+      throwPythonError("Qiskit Gate parameters are not hashable");
+    }
+    // ponytail: use a structural circuit hash if many same-signature Gate
+    // definitions become common.
+    auto& bucket =
+        definitions_[llvm::StringRef(name.data(), name.size())][parameterHash];
+    for (const auto& entry : bucket) {
+      if (entry.definition.is(definition) ||
+          entry.definition.equal(definition)) {
+        return entry.identity;
+      }
+    }
+    const auto identity = nextIdentity_++;
+    bucket.push_back({
+        .definition = nb::borrow<nb::object>(definition),
+        .identity = identity,
+    });
+    return identity;
+  }
+
+private:
+  struct Definition {
+    nb::object definition;
+    uintptr_t identity;
+  };
+
+  using ParameterBuckets =
+      std::unordered_map<Py_hash_t, std::vector<Definition>>;
+  llvm::StringMap<ParameterBuckets> definitions_;
+  uintptr_t nextIdentity_ = 1U;
+};
+
 class NativeCircuitReader final : public CircuitReader {
 public:
-  explicit NativeCircuitReader(const nb::handle circuit)
+  NativeCircuitReader(nb::handle circuit,
+                      std::shared_ptr<DefinitionRegistry> definitions)
       : pythonCircuit_(nb::borrow<nb::object>(circuit)),
         data_(pythonAttribute(
             circuit, "_data",
             "expected a Qiskit QuantumCircuit with native CircuitData")),
-        circuit_(qk_circuit_borrow_from_python(data_.ptr())) {
+        circuit_(qk_circuit_borrow_from_python(data_.ptr())),
+        definitions_(std::move(definitions)) {
     if (circuit_ == nullptr) {
       throwPythonError("Qiskit rejected QuantumCircuit._data");
     }
@@ -827,12 +885,14 @@ public:
 
   NativeCircuitReader(nb::object pythonCircuit, const QkCircuit* circuit,
                       const QkCircuit* rootCircuit,
-                      const QkControlFlowInstruction* parent)
+                      const QkControlFlowInstruction* parent,
+                      std::shared_ptr<DefinitionRegistry> definitions)
       : pythonCircuit_(std::move(pythonCircuit)),
         data_(pythonAttribute(
             pythonCircuit_, "_data",
             "Qiskit control-flow block has no native CircuitData")),
-        circuit_(circuit), rootCircuit_(rootCircuit), parent_(parent) {}
+        circuit_(circuit), rootCircuit_(rootCircuit), parent_(parent),
+        definitions_(std::move(definitions)) {}
 
   [[nodiscard]] uint32_t numQubits() const override {
     return qk_circuit_num_qubits(circuit_);
@@ -966,6 +1026,9 @@ public:
       }
       normalizedUnknown.emplace();
       normalizePythonGate(operation, *normalizedUnknown);
+      if (isPythonGate(operation)) {
+        normalizedUnknown->kind = OperationKind::Gate;
+      }
     }
     QkCircuitInstruction native{};
     qk_circuit_get_instruction(circuit_, index, &native);
@@ -1008,14 +1071,14 @@ public:
         result.parameters.emplace_back(normalizeParameter(parameter));
       }
     }
-    if (result.kind == OperationKind::Unknown) {
+    if (kind == OperationKind::Unknown) {
       result.name = std::move(normalizedUnknown->name);
       result.modifiers = std::move(normalizedUnknown->modifiers);
-      if (!result.modifiers.empty()) {
-        result.kind = OperationKind::Gate;
-      }
+      result.kind = normalizedUnknown->kind;
     }
-    result.standardGate = standardGateMapping(result.name);
+    if (kind != OperationKind::Unknown || isPythonStandardGate(operation)) {
+      result.standardGate = standardGateMapping(result.name);
+    }
     return result;
   }
 
@@ -1101,7 +1164,7 @@ public:
 
   [[nodiscard]] std::unique_ptr<CircuitReader>
   definition(const size_t index) const override {
-    const auto operation = pythonOperation(index);
+    const auto operation = terminalPythonGate(pythonOperation(index));
     const auto definition = pythonAttribute(
         operation, "definition",
         "Qiskit instruction does not expose a circuit definition");
@@ -1110,18 +1173,23 @@ public:
                                instruction(index).name +
                                "' has no circuit definition");
     }
-    return std::make_unique<NativeCircuitReader>(definition);
+    return std::make_unique<NativeCircuitReader>(definition, definitions_);
   }
 
   [[nodiscard]] uintptr_t
   definitionIdentity(const size_t index) const override {
+    const auto operation = terminalPythonGate(pythonOperation(index));
     const auto definition = pythonAttribute(
-        pythonOperation(index), "definition",
+        operation, "definition",
         "Qiskit instruction does not expose a circuit definition");
     if (definition.is_none()) {
       return 0U;
     }
-    return reinterpret_cast<uintptr_t>(definition.ptr());
+    const auto name = pythonStringAttribute(
+        operation, "name", "Qiskit instruction has no valid name");
+    const auto parameters = pythonAttribute(
+        operation, "params", "Qiskit instruction has no parameter list");
+    return definitions_->identify(definition, name, parameters);
   }
 
 private:
@@ -1164,6 +1232,7 @@ private:
   const QkCircuit* circuit_ = nullptr;
   const QkCircuit* rootCircuit_ = circuit_;
   const QkControlFlowInstruction* parent_ = nullptr;
+  std::shared_ptr<DefinitionRegistry> definitions_;
 };
 } // namespace
 
@@ -1437,13 +1506,15 @@ public:
                           const QkCircuit* circuit, const size_t index,
                           const QkControlFlowInstruction* parent,
                           nb::object instruction,
-                          nb::object containingPythonCircuit)
+                          nb::object containingPythonCircuit,
+                          std::shared_ptr<DefinitionRegistry> definitions)
       : rootCircuit_(rootCircuit), circuit_(circuit), parent_(parent),
         instruction_(std::move(instruction)),
         operation_(pythonAttribute(
             instruction_, "operation",
             "Qiskit circuit instruction has no control-flow operation")),
         containingPythonCircuit_(std::move(containingPythonCircuit)),
+        definitions_(std::move(definitions)),
         controlFlow_(
             qk_circuit_get_control_flow_instruction(circuit, index, parent)) {
     if (controlFlow_ == nullptr) {
@@ -1490,7 +1561,7 @@ public:
     const auto block = nb::borrow<nb::object>(blocks[index]);
     return std::make_unique<NativeCircuitReader>(
         block, qk_control_flow_block_circuit(controlFlow_, index), rootCircuit_,
-        controlFlow_);
+        controlFlow_, definitions_);
   }
 
   [[nodiscard]] std::vector<uint32_t> qubitMap() const override {
@@ -1726,6 +1797,7 @@ private:
   nb::object instruction_;
   nb::object operation_;
   nb::object containingPythonCircuit_;
+  std::shared_ptr<DefinitionRegistry> definitions_;
   QkControlFlowInstruction* controlFlow_ = nullptr;
 };
 } // namespace
@@ -1811,7 +1883,7 @@ std::unique_ptr<ControlFlowReader>
 NativeCircuitReader::controlFlow(const size_t index) const {
   return std::make_unique<NativeControlFlowReader>(
       rootCircuit_, circuit_, index, parent_,
-      nb::borrow<nb::object>(data_[index]), pythonCircuit_);
+      nb::borrow<nb::object>(data_[index]), pythonCircuit_, definitions_);
 }
 
 namespace {
@@ -2091,13 +2163,17 @@ struct NativeSymbol {
 
 using NativeSymbolTable = llvm::StringMap<NativeSymbol>;
 using PythonParameterGroups = llvm::StringMap<nb::object>;
+using PythonSymbols = llvm::StringMap<nb::object>;
+
+using NativeGateRegistry = llvm::StringMap<nb::object>;
 
 class NativeCircuitWriter final : public CircuitWriter {
 public:
   NativeCircuitWriter(const uint32_t looseQubits, const uint32_t looseClbits,
-                      std::shared_ptr<NativeSymbolTable> symbols)
+                      std::shared_ptr<NativeSymbolTable> symbols,
+                      std::shared_ptr<NativeGateRegistry> gates)
       : circuit_(qk_circuit_new(looseQubits, looseClbits)),
-        symbols_(std::move(symbols)) {
+        symbols_(std::move(symbols)), gates_(std::move(gates)) {
     if (circuit_ == nullptr) {
       throwPythonError("Qiskit failed to allocate a circuit");
     }
@@ -2170,6 +2246,21 @@ public:
     checkExitCode(addParameterizedGate(circuit_, gate->native, qubits.data(),
                                        nativeParameters.data()),
                   "adding parameterized gate");
+  }
+
+  void addCustomGate(std::string_view name, const std::vector<uint32_t>& qubits,
+                     const std::vector<Parameter>& parameters,
+                     const std::vector<GateModifier>& modifiers) override {
+    const auto instructionIndex = qk_circuit_num_instructions(circuit_);
+    checkExitCode(qk_circuit_barrier(circuit_, nullptr, 0U),
+                  "adding custom-gate placeholder");
+    pendingCustomGates_.push_back({
+        .instructionIndex = instructionIndex,
+        .name = std::string(name),
+        .qubits = qubits,
+        .parameters = parameters,
+        .modifiers = modifiers,
+    });
   }
 
   void addMeasure(const uint32_t qubit, const uint32_t clbit) override {
@@ -2290,8 +2381,9 @@ public:
 
   [[nodiscard]] nb::object finish() override {
     PythonParameterGroups groups;
+    PythonSymbols symbols;
     return finishImpl(false, nb::none(), nb::none(), nb::none(), nb::none(),
-                      groups, {});
+                      groups, symbols, {});
   }
 
 private:
@@ -2299,7 +2391,7 @@ private:
   finishImpl(const bool rebase, const nb::handle exactQubits,
              const nb::handle exactClbits, const nb::handle exactQregs,
              const nb::handle exactCregs, PythonParameterGroups& groups,
-             PythonVariables variables) {
+             PythonSymbols& symbols, PythonVariables variables) {
     if (circuit_ == nullptr) {
       throw std::runtime_error(
           "Qiskit circuit writer has already been finalized");
@@ -2316,6 +2408,8 @@ private:
                                       exactQregs, exactCregs);
       }
       replacePendingControlledUnitaries(pythonCircuit);
+      synchronizePythonSymbols(pythonCircuit, symbols);
+      replacePendingCustomGates(pythonCircuit, symbols);
       restoreParameterGroups(pythonCircuit, *symbols_, groups);
       const PythonClassicalBuilder classical(pythonCircuit, variables);
       for (const auto& variable : variables_) {
@@ -2331,7 +2425,7 @@ private:
         }
       }
       replacePendingStores(pythonCircuit, variables);
-      replacePendingControlFlow(pythonCircuit, groups, variables);
+      replacePendingControlFlow(pythonCircuit, groups, symbols, variables);
     } catch (const nb::python_error& error) {
       throwPythonError("Qiskit failed to construct deferred instructions",
                        error);
@@ -2349,6 +2443,14 @@ private:
     size_t instructionIndex = 0U;
     ClassicalTarget target;
     std::unique_ptr<Expression> value;
+  };
+
+  struct PendingCustomGate {
+    size_t instructionIndex = 0U;
+    std::string name;
+    std::vector<uint32_t> qubits;
+    std::vector<Parameter> parameters;
+    std::vector<GateModifier> modifiers;
   };
 
   struct PendingControlFlow {
@@ -2431,6 +2533,223 @@ private:
                           "Qiskit unitary placeholder cannot be replaced")(
               nb::arg("operation") = controlled, nb::arg("qubits") = qargs);
       data[pending.instructionIndex] = replacement;
+    }
+  }
+
+  static void synchronizePythonSymbols(nb::handle circuit,
+                                       PythonSymbols& symbols) {
+    nb::dict replacements;
+    const auto parameters = pythonAttribute(
+        circuit, "parameters", "Qiskit circuit has no parameter collection");
+    for (const nb::handle parameter : nb::iter(parameters)) {
+      const auto name = pythonStringAttribute(
+          parameter, "name", "Qiskit circuit parameter has no name");
+      const auto [symbol, inserted] =
+          symbols.try_emplace(name, nb::borrow<nb::object>(parameter));
+      if (!inserted && !symbol->second.equal(parameter)) {
+        replacements[parameter] = symbol->second;
+      }
+    }
+    if (nb::len(replacements) != 0U) {
+      pythonAttribute(circuit, "assign_parameters",
+                      "Qiskit circuit cannot unify output parameters")(
+          replacements, nb::arg("inplace") = true,
+          nb::arg("flat_input") = true);
+    }
+  }
+
+  [[nodiscard]] nb::object pythonParameter(const Parameter& parameter,
+                                           PythonSymbols& symbols,
+                                           size_t& nodeCount, size_t depth) {
+    countParameterExpressionNode(nodeCount);
+    if (depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
+      throwParameterExpressionDepthError();
+    }
+    if (const auto* number = parameter.getNumber()) {
+      return nb::float_(number->value);
+    }
+    if (const auto* symbol = parameter.getSymbol()) {
+      symbols_->try_emplace(symbol->name, symbol->name, symbol->group);
+      auto pythonSymbol = symbols.find(symbol->name);
+      if (pythonSymbol == symbols.end()) {
+        pythonSymbol = symbols
+                           .try_emplace(symbol->name,
+                                        nb::module_::import_("qiskit.circuit")
+                                            .attr("Parameter")(symbol->name))
+                           .first;
+      }
+      return nb::borrow<nb::object>(pythonSymbol->second);
+    }
+    if (const auto* unary = parameter.getUnary()) {
+      auto operand =
+          pythonParameter(*unary->operand, symbols, nodeCount, depth + 1U);
+      if (nb::isinstance<nb::float_>(operand)) {
+        auto numeric = nb::cast<double>(operand);
+        switch (unary->operation) {
+        case UnaryParameterKind::Negate:
+          numeric = -numeric;
+          break;
+        case UnaryParameterKind::Sin:
+          numeric = std::sin(numeric);
+          break;
+        case UnaryParameterKind::Cos:
+          numeric = std::cos(numeric);
+          break;
+        case UnaryParameterKind::Tan:
+          numeric = std::tan(numeric);
+          break;
+        case UnaryParameterKind::ArcSin:
+          numeric = std::asin(numeric);
+          break;
+        case UnaryParameterKind::ArcCos:
+          numeric = std::acos(numeric);
+          break;
+        case UnaryParameterKind::ArcTan:
+          numeric = std::atan(numeric);
+          break;
+        case UnaryParameterKind::Exp:
+          numeric = std::exp(numeric);
+          break;
+        case UnaryParameterKind::Log:
+          numeric = std::log(numeric);
+          break;
+        case UnaryParameterKind::Abs:
+          numeric = std::abs(numeric);
+          break;
+        case UnaryParameterKind::Conjugate:
+          break;
+        }
+        if (!std::isfinite(numeric)) {
+          throw std::runtime_error(
+              "cannot construct a non-finite Qiskit parameter");
+        }
+        return nb::float_(numeric);
+      }
+      switch (unary->operation) {
+      case UnaryParameterKind::Negate:
+        return -operand;
+      case UnaryParameterKind::Sin:
+        return operand.attr("sin")();
+      case UnaryParameterKind::Cos:
+        return operand.attr("cos")();
+      case UnaryParameterKind::Tan:
+        return operand.attr("tan")();
+      case UnaryParameterKind::ArcSin:
+        return operand.attr("arcsin")();
+      case UnaryParameterKind::ArcCos:
+        return operand.attr("arccos")();
+      case UnaryParameterKind::ArcTan:
+        return operand.attr("arctan")();
+      case UnaryParameterKind::Exp:
+        return operand.attr("exp")();
+      case UnaryParameterKind::Log:
+        return operand.attr("log")();
+      case UnaryParameterKind::Abs:
+        return operand.attr("abs")();
+      case UnaryParameterKind::Conjugate:
+        return operand.attr("conjugate")();
+      }
+    }
+    if (const auto* binary = parameter.getBinary()) {
+      auto left =
+          pythonParameter(*binary->left, symbols, nodeCount, depth + 1U);
+      auto right =
+          pythonParameter(*binary->right, symbols, nodeCount, depth + 1U);
+      switch (binary->operation) {
+      case BinaryParameterKind::Add:
+        return left + right;
+      case BinaryParameterKind::Subtract:
+        return left - right;
+      case BinaryParameterKind::Multiply:
+        return left * right;
+      case BinaryParameterKind::Divide:
+        return left / right;
+      case BinaryParameterKind::Power:
+        return nb::module_::import_("builtins").attr("pow")(left, right);
+      }
+    }
+    throw std::runtime_error("unknown normalized parameter expression");
+  }
+
+  [[nodiscard]] nb::object pythonParameter(const Parameter& parameter,
+                                           PythonSymbols& symbols) {
+    size_t nodeCount = 0U;
+    return pythonParameter(parameter, symbols, nodeCount, 1U);
+  }
+
+  void replacePendingCustomGates(nb::handle pythonCircuit,
+                                 PythonSymbols& symbols) {
+    auto data = pythonAttribute(pythonCircuit, "data",
+                                "Qiskit circuit has no instruction data");
+    const auto circuitQubits = pythonAttribute(pythonCircuit, "qubits",
+                                               "Qiskit circuit has no qubits");
+    const auto circuitModule = nb::module_::import_("qiskit.circuit");
+    for (const auto& pending : pendingCustomGates_) {
+      if (pending.instructionIndex >= nb::len(data)) {
+        throw std::runtime_error("Qiskit custom-gate placeholder is missing");
+      }
+      const auto gate = gates_->find(pending.name);
+      if (gate == gates_->end()) {
+        throw std::runtime_error("Qiskit custom Gate '" + pending.name +
+                                 "' has no registered definition");
+      }
+      const nb::object formalParameters = gate->second.attr("params");
+      if (nb::len(formalParameters) != pending.parameters.size()) {
+        throw std::runtime_error("Qiskit custom Gate '" + pending.name +
+                                 "' has incompatible parameters");
+      }
+      nb::dict parameterMap;
+      for (size_t index = 0U; index < pending.parameters.size(); ++index) {
+        parameterMap[formalParameters[index]] =
+            pythonParameter(pending.parameters[index], symbols);
+      }
+      nb::object operation = gate->second;
+      if (!pending.parameters.empty()) {
+        operation =
+            pythonAttribute(operation.attr("definition"), "to_gate",
+                            "Qiskit custom definition cannot become a Gate")(
+                nb::arg("parameter_map") = parameterMap);
+      }
+      if (!pending.modifiers.empty()) {
+        nb::list modifiers;
+        for (const auto& modifier : pending.modifiers) {
+          switch (modifier.kind) {
+          case GateModifierKind::Inverse:
+            modifiers.append(circuitModule.attr("InverseModifier")());
+            break;
+          case GateModifierKind::Control:
+            modifiers.append(
+                circuitModule.attr("ControlModifier")(modifier.numControls));
+            break;
+          case GateModifierKind::Power: {
+            const auto* exponent = modifier.exponent.getNumber();
+            if (exponent == nullptr) {
+              throw std::runtime_error(
+                  "Qiskit custom Gate power must be numeric");
+            }
+            modifiers.append(
+                circuitModule.attr("PowerModifier")(exponent->value));
+            break;
+          }
+          }
+        }
+        operation =
+            circuitModule.attr("AnnotatedOperation")(operation, modifiers);
+      }
+      nb::list qargs;
+      for (const auto qubit : pending.qubits) {
+        if (qubit >= nb::len(circuitQubits)) {
+          throw std::runtime_error(
+              "Qiskit custom Gate references an invalid qubit");
+        }
+        qargs.append(circuitQubits[qubit]);
+      }
+      const auto placeholder =
+          nb::borrow<nb::object>(data[pending.instructionIndex]);
+      data[pending.instructionIndex] =
+          pythonAttribute(placeholder, "replace",
+                          "Qiskit custom-gate placeholder cannot be replaced")(
+              nb::arg("operation") = operation, nb::arg("qubits") = qargs);
     }
   }
 
@@ -2555,6 +2874,7 @@ private:
 
   void replacePendingControlFlow(const nb::handle pythonCircuit,
                                  PythonParameterGroups& groups,
+                                 PythonSymbols& symbols,
                                  const PythonVariables& variables) {
     auto data = pythonAttribute(pythonCircuit, "data",
                                 "Qiskit circuit has no instruction data");
@@ -2584,7 +2904,7 @@ private:
         }
         blocks.emplace_back(
             writer->finishImpl(true, circuitQubits, circuitClbits, circuitQregs,
-                               circuitCregs, groups, variables));
+                               circuitCregs, groups, symbols, variables));
         for (auto captured :
              nb::iter(blocks.back().attr("iter_captured_vars")())) {
           if (!nb::cast<bool>(pythonCircuit.attr("has_var")(captured))) {
@@ -2716,15 +3036,18 @@ private:
   std::vector<PendingControlledUnitary> pendingControlledUnitaries_;
   std::vector<PendingStore> pendingStores_;
   std::vector<ClassicalVariable> variables_;
+  std::vector<PendingCustomGate> pendingCustomGates_;
   std::vector<PendingControlFlow> pendingControlFlow_;
   std::shared_ptr<NativeSymbolTable> symbols_;
+  std::shared_ptr<NativeGateRegistry> gates_;
 };
 
 class NativeTranslation final : public VersionedTranslation {
 public:
   [[nodiscard]] std::unique_ptr<CircuitReader>
   openCircuit(const nb::handle circuit) const override {
-    return std::make_unique<NativeCircuitReader>(circuit);
+    return std::make_unique<NativeCircuitReader>(
+        circuit, std::make_shared<DefinitionRegistry>());
   }
   [[nodiscard]] bool
   supportsGate(const StandardGateMapping gate) const override {
@@ -2735,12 +3058,42 @@ public:
   createCircuit(const uint32_t looseQubits,
                 const uint32_t looseClbits) const override {
     return std::make_unique<NativeCircuitWriter>(looseQubits, looseClbits,
-                                                 symbols_);
+                                                 symbols_, gates_);
+  }
+
+  void registerCustomGate(std::string_view symbol, std::string_view name,
+                          const std::vector<std::string>& formalParameters,
+                          std::unique_ptr<CircuitWriter> definition) override {
+    if (gates_->contains(symbol)) {
+      throw std::runtime_error("Qiskit custom Gate '" + std::string(symbol) +
+                               "' is already registered");
+    }
+    auto circuit = definition->finish();
+    circuit.attr("name") = nb::str(name.data(), name.size());
+    nb::list parameters;
+    try {
+      for (const auto& parameter : formalParameters) {
+        parameters.append(pythonAttribute(
+            circuit, "get_parameter",
+            "Qiskit custom definition cannot resolve a formal parameter")(
+            parameter));
+      }
+    } catch (const nb::python_error& error) {
+      throwPythonError(
+          "Qiskit custom definition cannot resolve a formal parameter", error);
+    }
+    auto gate = nb::module_::import_("qiskit.circuit")
+                    .attr("Gate")(nb::str(name.data(), name.size()),
+                                  circuit.attr("num_qubits"), parameters);
+    gate.attr("definition") = circuit;
+    gates_->try_emplace(symbol, std::move(gate));
   }
 
 private:
   std::shared_ptr<NativeSymbolTable> symbols_ =
       std::make_shared<NativeSymbolTable>();
+  std::shared_ptr<NativeGateRegistry> gates_ =
+      std::make_shared<NativeGateRegistry>();
 };
 
 } // namespace
