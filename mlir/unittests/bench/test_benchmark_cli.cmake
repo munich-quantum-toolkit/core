@@ -45,8 +45,8 @@ endif()
 
 run_success("benchmark listing" list_output "${CLI}" list)
 string(JSON benchmark_count LENGTH "${list_output}" benchmarks)
-if(NOT benchmark_count EQUAL 6)
-  message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 6")
+if(NOT benchmark_count EQUAL 7)
+  message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 7")
 endif()
 
 run_success("multiplexer description" describe_output "${CLI}" describe multiplexer)

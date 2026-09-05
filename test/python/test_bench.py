@@ -16,11 +16,13 @@ from fractions import Fraction
 import pytest
 
 from mqt.core import bench, mlir
-from mqt.core.bench import bv, ghz, grover, multiplexer, qft, qpe
+from mqt.core.bench import bv, ghz, grover, multiplexer, qft, qpe, teleportation
 
 
 def assert_generates(
-    benchmark: bv.BV | ghz.GHZ | grover.Grover | multiplexer.Multiplexer | qft.QFT | qpe.QPE,
+    benchmark: (
+        bv.BV | ghz.GHZ | grover.Grover | multiplexer.Multiplexer | qft.QFT | qpe.QPE | teleportation.Teleportation
+    ),
 ) -> None:
     """Exercise the shared Python-to-MLIR generation boundary."""
     program = benchmark.generate()
@@ -175,3 +177,23 @@ def test_qpe_normalizes_arbitrary_fraction() -> None:
 
     with pytest.raises(ValueError, match="denominator must fit in 64 bits"):
         qpe.Options(precision=3, phase=Fraction(1, 2**80 + 1))
+
+
+def test_teleportation_reference_json_and_generation() -> None:
+    """Expose the fixed quantum teleportation benchmark without options."""
+    benchmark = teleportation.Teleportation()
+    assert benchmark.output.name == "result"
+    assert benchmark.output.width == 3
+    assert benchmark.probability("000") == pytest.approx(0.125)
+    assert benchmark.probability("111") == pytest.approx(0.125)
+
+    evaluation = benchmark.evaluate({f"{outcome:03b}": 1 for outcome in range(8)})
+    assert evaluation.total_variation_distance == pytest.approx(0)
+    assert evaluation.squared_hellinger_fidelity == pytest.approx(1)
+    assert evaluation.success_probability is None
+    assert json.loads(benchmark.instance_specification_json)["parameters"] == {}
+
+    instance_copy = teleportation.Teleportation.from_instance_specification_json(benchmark.instance_specification_json)
+    manifest_copy = teleportation.Teleportation.from_manifest_json(benchmark.manifest_json)
+    assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
+    assert_generates(benchmark)

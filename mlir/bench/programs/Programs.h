@@ -24,6 +24,7 @@ class Grover;
 class Multiplexer;
 class QFT;
 class QPE;
+class Teleportation;
 } // namespace mqt::bench
 
 namespace mqt::bench {
@@ -49,5 +50,9 @@ SmallVector<Value> qft(qc::QCProgramBuilder& builder, const QFT& benchmark);
 
 /// Emit one configured QPE benchmark.
 SmallVector<Value> qpe(qc::QCProgramBuilder& builder, const QPE& benchmark);
+
+/// Emit the quantum teleportation benchmark.
+SmallVector<Value> teleportation(qc::QCProgramBuilder& builder,
+                                 const Teleportation& benchmark);
 
 } // namespace mqt::bench

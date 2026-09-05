@@ -14,7 +14,8 @@ if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
       register_grover.cpp
       register_multiplexer.cpp
       register_qft.cpp
-      register_qpe.cpp)
+      register_qpe.cpp
+      register_teleportation.cpp)
 
   add_mqt_python_binding(
     CORE
