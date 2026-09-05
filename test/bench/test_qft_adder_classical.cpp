@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "bench/Evaluation.hpp"
 #include "bench/QFTAdderClassical.hpp"
 
 #include <gtest/gtest.h>

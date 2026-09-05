@@ -21,8 +21,9 @@
 #include <utility>
 
 namespace mqt::bench {
+namespace {
 
-[[nodiscard]] static std::string increment(const std::string_view addend) {
+[[nodiscard]] std::string increment(const std::string_view addend) {
   auto result = std::string{"0"} + std::string{addend};
   auto carry = true;
   for (size_t index = result.size(); index > 0 && carry; --index) {
@@ -32,6 +33,8 @@ namespace mqt::bench {
   }
   return result;
 }
+
+} // namespace
 
 QFTAdderClassical::QFTAdderClassical(QFTAdderClassicalOptions options)
     : options_(std::move(options)),
