@@ -1305,15 +1305,6 @@ wheels = [
 ]
 
 [[package]]
-name = "lit"
-version = "23.1.0"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f3/37/be14bf2cabacc40557a03cf4789d9a3335bf515b0ec3a655fdc84cae4779/lit-23.1.0.tar.gz", hash = "sha256:6fd50e0ca6fac61f4a672e9f30154edcab3d17c98aeb8202ac709bc353fe331f", size = 199907, upload-time = "2026-08-25T19:24:32.805Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/3e/67/27b6051432c4cc016e50d4b5acb82116b608dd0132de1dd1d6967263588e/lit-23.1.0-py3-none-any.whl", hash = "sha256:6361af7f311092f23f874a45d2db001f3f07dcbf438275809c2fc29d1c1196cc", size = 111215, upload-time = "2026-08-25T19:24:31.022Z" },
-]
-
-[[package]]
 name = "markdown-it-py"
 version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1546,7 +1537,6 @@ cpp-lint = [
 ]
 dev = [
     { name = "cmake" },
-    { name = "lit" },
     { name = "nanobind" },
     { name = "nox" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.13'" },
@@ -1622,7 +1612,6 @@ cpp-lint = [
 ]
 dev = [
     { name = "cmake", specifier = ">=4.4.1" },
-    { name = "lit", specifier = ">=18.1.8" },
     { name = "nanobind", specifier = "~=3.0.1" },
     { name = "nox", specifier = ">=2025.11.12" },
     { name = "numpy", marker = "python_full_version >= '3.13'", specifier = ">=2.1" },
