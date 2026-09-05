@@ -17,6 +17,7 @@
 #include "bench/Grover.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
+#include "bench/QFTAdderClassical.hpp"
 #include "bench/QFTAdderQuantum.hpp"
 #include "bench/QPE.hpp"
 #include "bench/Teleportation.hpp"
@@ -424,6 +425,21 @@ parseMultiplexerParameters(const Json& parameters,
   }
 }
 
+[[nodiscard]] QFTAdderClassical
+parseQFTAdderClassicalParameters(const Json& parameters,
+                                 const std::string_view source) {
+  rejectUnknownKeys(parameters, {"addend"}, source, "$/parameters");
+  try {
+    return QFTAdderClassical({
+        .addend =
+            stringValue(required(parameters, "addend", source, "$/parameters"),
+                        source, "$/parameters/addend"),
+    });
+  } catch (const std::invalid_argument& error) {
+    fail(source, "$/parameters", error.what());
+  }
+}
+
 [[nodiscard]] QFTAdderQuantum
 parseQFTAdderQuantumParameters(const Json& parameters,
                                const std::string_view source) {
@@ -543,6 +559,10 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
+[[nodiscard]] Json parametersJSON(const QFTAdderClassical& benchmark) {
+  return {{"addend", benchmark.options().addend}};
+}
+
 [[nodiscard]] Json parametersJSON(const QFTAdderQuantum& benchmark) {
   return {{"qubits", benchmark.options().qubits}};
 }
@@ -614,6 +634,17 @@ parseTeleportationParameters(const Json& parameters,
       {"model", "qft_power_of_two_period"},
       {"outcome_order", "big_endian"},
       {"output", benchmark.output().name},
+      {"version", 1},
+  };
+}
+
+[[nodiscard]] Json referenceJSON(const QFTAdderClassical& benchmark) {
+  return {
+      {"kind", "analytic"},
+      {"model", "qft_adder_classical"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"success_outcome", benchmark.expectedResult()},
       {"version", 1},
   };
 }
@@ -901,6 +932,28 @@ template <class Benchmark>
           },
       },
       {"required", {"qubits", "period_exponent"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json qftAdderClassicalInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<QFTAdderClassical>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "addend",
+                  {
+                      {"maxLength", QFTAdderClassicalOptions::MAX_ADDEND_BITS},
+                      {"minLength", 1},
+                      {"pattern", "^[01]+$"},
+                      {"type", "string"},
+                  },
+              },
+          },
+      },
+      {"required", {"addend"}},
       {"type", "object"},
   });
 }

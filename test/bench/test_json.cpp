@@ -15,6 +15,7 @@
 #include "bench/JSON.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
+#include "bench/QFTAdderClassical.hpp"
 #include "bench/QFTAdderQuantum.hpp"
 #include "bench/QPE.hpp"
 #include "bench/Teleportation.hpp"
@@ -57,6 +58,9 @@ using mqt::bench::multiplexerFromInstanceSpecificationJSON;
 using mqt::bench::multiplexerFromManifestJSON;
 using mqt::bench::Phase;
 using mqt::bench::QFT;
+using mqt::bench::QFTAdderClassical;
+using mqt::bench::qftAdderClassicalFromInstanceSpecificationJSON;
+using mqt::bench::qftAdderClassicalFromManifestJSON;
 using mqt::bench::QFTAdderQuantum;
 using mqt::bench::qftAdderQuantumFromInstanceSpecificationJSON;
 using mqt::bench::qftAdderQuantumFromManifestJSON;
@@ -123,6 +127,14 @@ TEST(BenchmarkJSON,
       toInstanceSpecificationJSON(qft),
       R"({"benchmark":"qft","parameters":{"method":"standard","period_exponent":2,"qubits":4},"schema_version":1})");
 
+  const auto qftAdderClassical = qftAdderClassicalFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"qft-adder-classical","parameters":{"addend":"001"}})");
+  EXPECT_EQ(qftAdderClassical.options().addend, "001");
+  EXPECT_EQ(qftAdderClassical.expectedResult(), "0010");
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(qftAdderClassical),
+      R"({"benchmark":"qft-adder-classical","parameters":{"addend":"001"},"schema_version":1})");
+
   const auto qftAdderQuantum = qftAdderQuantumFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"qft-adder-quantum","parameters":{"qubits":3}})");
   EXPECT_EQ(qftAdderQuantum.options().qubits, 3);
@@ -153,6 +165,7 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const Multiplexer multiplexer{{.qubits = 7}};
   const QFT qft{
       {.qubits = 4, .periodExponent = 2, .method = QFTMethod::Semiclassical}};
+  const QFTAdderClassical qftAdderClassical{{.addend = "110"}};
   const QFTAdderQuantum qftAdderQuantum{{.qubits = 3}};
   const QPE qpe{
       {.precision = 5, .phase = Phase(1, 3), .method = QPEMethod::Iterative}};
@@ -163,6 +176,7 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const auto groverManifest = toManifestJSON(grover);
   const auto multiplexerManifest = toManifestJSON(multiplexer);
   const auto qftManifest = toManifestJSON(qft);
+  const auto qftAdderClassicalManifest = toManifestJSON(qftAdderClassical);
   const auto qftAdderQuantumManifest = toManifestJSON(qftAdderQuantum);
   const auto qpeManifest = toManifestJSON(qpe);
   const auto teleportationManifest = toManifestJSON(teleportation);
@@ -173,6 +187,9 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   EXPECT_EQ(toManifestJSON(multiplexerFromManifestJSON(multiplexerManifest)),
             multiplexerManifest);
   EXPECT_EQ(toManifestJSON(qftFromManifestJSON(qftManifest)), qftManifest);
+  EXPECT_EQ(toManifestJSON(
+                qftAdderClassicalFromManifestJSON(qftAdderClassicalManifest)),
+            qftAdderClassicalManifest);
   EXPECT_EQ(
       toManifestJSON(qftAdderQuantumFromManifestJSON(qftAdderQuantumManifest)),
       qftAdderQuantumManifest);
@@ -185,6 +202,8 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   EXPECT_EQ(benchmarkIdFromManifestJSON(groverManifest), "grover");
   EXPECT_EQ(benchmarkIdFromManifestJSON(multiplexerManifest), "multiplexer");
   EXPECT_EQ(benchmarkIdFromManifestJSON(qftManifest), "qft");
+  EXPECT_EQ(benchmarkIdFromManifestJSON(qftAdderClassicalManifest),
+            "qft-adder-classical");
   EXPECT_EQ(benchmarkIdFromManifestJSON(qftAdderQuantumManifest),
             "qft-adder-quantum");
   EXPECT_EQ(benchmarkIdFromManifestJSON(qpeManifest), "qpe");
@@ -196,6 +215,11 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
             std::string::npos);
   EXPECT_NE(multiplexerManifest.find("\"model\":\"multiplexer\""),
             std::string::npos);
+  EXPECT_NE(qftAdderClassicalManifest.find("\"model\":\"qft_adder_classical\""),
+            std::string::npos);
+  EXPECT_NE(qftAdderClassicalManifest.find("\"success_outcome\":\"0111\""),
+            std::string::npos);
+  EXPECT_NE(qftAdderClassicalManifest.find("\"width\":4"), std::string::npos);
   EXPECT_NE(qftAdderQuantumManifest.find("\"model\":\"qft_adder_quantum\""),
             std::string::npos);
   EXPECT_NE(qftAdderQuantumManifest.find("\"width\":6"), std::string::npos);
@@ -217,6 +241,10 @@ TEST(BenchmarkJSON, UsesStableSemanticCaseIds) {
             caseId(QFT{{.qubits = 3,
                         .periodExponent = 1,
                         .method = QFTMethod::Semiclassical}}));
+  EXPECT_EQ(caseId(QFTAdderClassical{{.addend = "001"}}),
+            caseId(QFTAdderClassical{{.addend = "001"}}));
+  EXPECT_NE(caseId(QFTAdderClassical{{.addend = "001"}}),
+            caseId(QFTAdderClassical{{.addend = "1"}}));
   EXPECT_EQ(caseId(QFTAdderQuantum{{.qubits = 3}}),
             caseId(QFTAdderQuantum{{.qubits = 3}}));
   EXPECT_NE(caseId(QFTAdderQuantum{{.qubits = 3}}),
@@ -302,6 +330,24 @@ TEST(BenchmarkJSON,
       "unknown key 'angles'");
   expectInvalid(
       [] {
+        static_cast<void>(qftAdderClassicalFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qft-adder-classical","parameters":{"addend":""}})"));
+      },
+      "between 1 and 1023 bits");
+  expectInvalid(
+      [] {
+        static_cast<void>(qftAdderClassicalFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qft-adder-classical","parameters":{"addend":"01x"}})"));
+      },
+      "only '0' and '1'");
+  expectInvalid(
+      [] {
+        static_cast<void>(qftAdderClassicalFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"qft-adder-classical","parameters":{"addend":"1","qubits":2}})"));
+      },
+      "unknown key 'qubits'");
+  expectInvalid(
+      [] {
         static_cast<void>(qftAdderQuantumFromInstanceSpecificationJSON(
             R"({"schema_version":1,"benchmark":"qft-adder-quantum","parameters":{"qubits":0}})"));
       },
@@ -378,12 +424,13 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifestData) {
 TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_EQ(
       listBenchmarksJSON(),
-      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder-quantum"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"teleportation"}],"schema_version":1})");
+      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder-classical"},{"definition_version":1,"id":"qft-adder-quantum"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"teleportation"}],"schema_version":1})");
   const auto bv = describeBenchmarkJSON("bv");
   const auto ghz = describeBenchmarkJSON("ghz");
   const auto grover = describeBenchmarkJSON("grover");
   const auto multiplexer = describeBenchmarkJSON("multiplexer");
   const auto qft = describeBenchmarkJSON("qft");
+  const auto qftAdderClassical = describeBenchmarkJSON("qft-adder-classical");
   const auto qftAdderQuantum = describeBenchmarkJSON("qft-adder-quantum");
   const auto qpe = describeBenchmarkJSON("qpe");
   const auto teleportation = describeBenchmarkJSON("teleportation");
@@ -397,6 +444,9 @@ TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_NE(multiplexer.find("\"maximum\":1024"), std::string::npos);
   EXPECT_NE(multiplexer.find("\"minimum\":2"), std::string::npos);
   EXPECT_NE(qft.find("\"period_exponent\""), std::string::npos);
+  EXPECT_NE(qftAdderClassical.find("\"maxLength\":1023"), std::string::npos);
+  EXPECT_NE(qftAdderClassical.find("\"pattern\":\"^[01]+$\""),
+            std::string::npos);
   EXPECT_NE(qftAdderQuantum.find("\"maximum\":1024"), std::string::npos);
   EXPECT_NE(qftAdderQuantum.find("\"minimum\":1"), std::string::npos);
   EXPECT_NE(qpe.find("\"iterative\""), std::string::npos);
@@ -444,6 +494,15 @@ TEST(BenchmarkJSON, ParsesCountsAndSerializesEvaluations) {
   EXPECT_NE(qftAdderQuantumEvaluation.find("\"success_probability\":null"),
             std::string::npos);
   EXPECT_NE(qftAdderQuantumEvaluation.find("\"total_variation_distance\":0.0"),
+            std::string::npos);
+
+  const QFTAdderClassical qftAdderClassical{{.addend = "110"}};
+  const auto qftAdderClassicalEvaluation =
+      evaluateJSON(toManifestJSON(qftAdderClassical),
+                   R"({"schema_version":1,"counts":{"0111":8,"0110":2}})");
+  EXPECT_NE(qftAdderClassicalEvaluation.find("\"success_probability\":0.8"),
+            std::string::npos);
+  EXPECT_NE(qftAdderClassicalEvaluation.find("\"total_variation_distance\":"),
             std::string::npos);
 
   const Teleportation teleportation;

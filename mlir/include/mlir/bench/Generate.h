@@ -22,6 +22,7 @@ class GHZ;
 class Grover;
 class Multiplexer;
 class QFT;
+class QFTAdderClassical;
 class QFTAdderQuantum;
 class QPE;
 class Teleportation;
@@ -49,6 +50,10 @@ generate(const Multiplexer& benchmark);
 
 /// Generate a configured quantum Fourier-transform benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const QFT& benchmark);
+
+/// Generate a configured classical-input QFT adder benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generate(const QFTAdderClassical& benchmark);
 
 /// Generate a configured quantum-input QFT adder benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>

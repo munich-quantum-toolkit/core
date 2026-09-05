@@ -16,7 +16,17 @@ from fractions import Fraction
 import pytest
 
 from mqt.core import bench, mlir
-from mqt.core.bench import bv, ghz, grover, multiplexer, qft, qft_adder_quantum, qpe, teleportation
+from mqt.core.bench import (
+    bv,
+    ghz,
+    grover,
+    multiplexer,
+    qft,
+    qft_adder_classical,
+    qft_adder_quantum,
+    qpe,
+    teleportation,
+)
 
 
 def assert_generates(
@@ -26,6 +36,7 @@ def assert_generates(
         | grover.Grover
         | multiplexer.Multiplexer
         | qft.QFT
+        | qft_adder_classical.QFTAdderClassical
         | qft_adder_quantum.QFTAdderQuantum
         | qpe.QPE
         | teleportation.Teleportation
@@ -164,6 +175,34 @@ def test_quantum_qft_adder_reference_json_and_generation() -> None:
     counts = sampled.generate().to_qco().sample(shots=shots, seed=17)
     assert sum(counts.values()) == shots
     assert sampled.evaluate(counts).total_variation_distance < 0.03
+    assert_generates(benchmark)
+
+
+def test_classical_qft_adder_reference_json_and_generation() -> None:
+    """Expose exact classical addition without truncating a carry."""
+    benchmark = qft_adder_classical.QFTAdderClassical(qft_adder_classical.Options(addend="110"))
+    assert benchmark.options.addend == "110"
+    assert benchmark.output.name == "result"
+    assert benchmark.output.width == 4
+    assert benchmark.expected_result == "0111"
+    assert benchmark.probability("0111") == 1
+    assert benchmark.probability("0110") == 0
+
+    evaluation = benchmark.evaluate({"0111": 8, "0110": 2})
+    assert evaluation.total_variation_distance == pytest.approx(0.2)
+    assert evaluation.squared_hellinger_fidelity == pytest.approx(0.8)
+    assert evaluation.success_probability == pytest.approx(0.8)
+    assert json.loads(benchmark.instance_specification_json)["parameters"] == {"addend": "110"}
+
+    instance_copy = qft_adder_classical.QFTAdderClassical.from_instance_specification_json(
+        benchmark.instance_specification_json
+    )
+    manifest_copy = qft_adder_classical.QFTAdderClassical.from_manifest_json(benchmark.manifest_json)
+    assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
+
+    shots = 1_024
+    counts = benchmark.generate().to_qco().sample(shots=shots, seed=17)
+    assert counts == {"0111": shots}
     assert_generates(benchmark)
 
 
