@@ -180,13 +180,13 @@ public:
     /// @param value The underlying qubit SSA value
     /// @param regId ID of the register containing the qubit, or `-1`
     /// @param regIndex Index of the qubit within its register, if applicable
-    // NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(misc-explicit-constructor)
     Qubit(Value value, int64_t regId = -1, Value regIndex = {})
         : value(value), regId(regId), regIndex(regIndex) {}
 
     /// Implicitly convert this tracked qubit to its underlying SSA value.
     /// @return The underlying `Value`
-    // NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(misc-explicit-constructor)
     operator Value() const { return value; }
 
     /// Get the type of the underlying SSA value.
@@ -216,13 +216,13 @@ public:
     /// Implicitly construct a tracked tensor from an SSA value.
     /// @param value The underlying tensor SSA value
     /// @param regId ID of the corresponding register, or `-1`
-    // NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(misc-explicit-constructor)
     Tensor(Value value, int64_t regId = -1) : value(value), regId(regId) {}
 
     /// Implicitly convert this tracked tensor to its underlying SSA
     /// value.
     /// @return The underlying `Value`
-    // NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(misc-explicit-constructor)
     operator Value() const { return value; }
 
     /// Get the type of the underlying SSA value.

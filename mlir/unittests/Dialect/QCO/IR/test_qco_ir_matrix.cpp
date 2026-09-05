@@ -191,7 +191,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryBuilderExposesMatrixAndFoldsIdentity) {
   const auto matrixType =
       RankedTensorType::get({2, 2}, ComplexType::get(builder.getF64Type()));
   const std::array<std::complex<double>, 4> xValues{
-      {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}}};
+      {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}},
+  };
   builder.unitary(
       ValueRange{qubit},
       DenseElementsAttr::get(matrixType,
@@ -225,7 +226,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryBuilderExposesMatrixAndFoldsIdentity) {
                             "Given qubit is not an input of UnitaryOp");
 
   const std::array<std::complex<double>, 4> identityValues{
-      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}},
+  };
   unitaries.front()->setAttr(
       "matrix",
       DenseElementsAttr::get(
@@ -240,24 +242,26 @@ TEST_F(QCOMatrixTest, DenseUnitaryVerifierRejectsRepeatedQubit) {
   const auto qubit = builder.allocQubit();
   const auto matrixType =
       RankedTensorType::get({4, 4}, ComplexType::get(builder.getF64Type()));
-  const std::array<std::complex<double>, 16> identityValues{{
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-  }};
+  const std::array<std::complex<double>, 16> identityValues{
+      {
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+      },
+  };
   const auto identity = DenseElementsAttr::get(
       matrixType, llvm::ArrayRef<std::complex<double>>(identityValues));
   auto unitary = UnitaryOp::create(builder, ValueRange{qubit, qubit}, identity);
@@ -295,7 +299,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryVerifierRejectsOutputArityMismatch) {
   const auto matrixType =
       RankedTensorType::get({2, 2}, ComplexType::get(builder.getF64Type()));
   const std::array<std::complex<double>, 4> identityValues{
-      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}},
+  };
   const auto identity = DenseElementsAttr::get(
       matrixType, llvm::ArrayRef<std::complex<double>>(identityValues));
   OperationState state(builder.getLoc(), UnitaryOp::getOperationName());
@@ -313,7 +318,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryComposesThroughModifiers) {
   const auto matrixType = RankedTensorType::get(
       {2, 2}, ComplexType::get(Float64Type::get(context.get())));
   const std::array<std::complex<double>, 4> sValues{
-      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.0, 1.0}}};
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.0, 1.0}},
+  };
   const auto sMatrix = DenseElementsAttr::get(
       matrixType, llvm::ArrayRef<std::complex<double>>(sValues));
 
@@ -670,10 +676,12 @@ TEST_F(QCOMatrixTest, CanonicalizedPowThirdSxdgPreservesFullMatrix) {
 }
 
 TEST_F(QCOMatrixTest, PhaseProducingPowFoldsPreserveFullMatrixUnderControl) {
-  for (const auto& [gate, exponent] :
-       {std::pair{"x", "0.3333333333333333"}, std::pair{"y", "0.5"},
-        std::pair{"sx", "0.3333333333333333"},
-        std::pair{"sxdg", "0.3333333333333333"}}) {
+  for (const auto& [gate, exponent] : {
+           std::pair{"x", "0.3333333333333333"},
+           std::pair{"y", "0.5"},
+           std::pair{"sx", "0.3333333333333333"},
+           std::pair{"sxdg", "0.3333333333333333"},
+       }) {
     SCOPED_TRACE(gate);
     const std::string source = std::string{R"mlir(module {
           func.func @test(%control: !qco.qubit, %target: !qco.qubit)
@@ -710,13 +718,15 @@ TEST_F(QCOMatrixTest, PhaseProducingPowFoldsPreserveFullMatrixUnderControl) {
 }
 
 TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
-  for (const auto& [theta, phi, lambda, exponent] :
-       {std::tuple{0.1, 0.2, 0.3, 2.0}, std::tuple{1.7, -2.1, 0.4, 3.0},
-        std::tuple{std::numbers::pi, 0.7, -1.2, 8.0},
-        std::tuple{0.0, 0.3, 0.8, 17.0},
-        std::tuple{
-            0.1, 0.2, 0.3,
-            static_cast<double>(mlir::mqt::MAX_SAFE_U_POWER_EXPONENT)}}) {
+  for (const auto& [theta, phi, lambda, exponent] : {
+           std::tuple{0.1, 0.2, 0.3, 2.0},
+           std::tuple{1.7, -2.1, 0.4, 3.0},
+           std::tuple{std::numbers::pi, 0.7, -1.2, 8.0},
+           std::tuple{0.0, 0.3, 0.8, 17.0},
+           std::tuple{
+               0.1, 0.2, 0.3,
+               static_cast<double>(mlir::mqt::MAX_SAFE_U_POWER_EXPONENT)},
+       }) {
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
@@ -766,11 +776,12 @@ TEST_F(QCOMatrixTest, PowUBeyondSafeExponentRemainsUnchanged) {
 }
 
 TEST_F(QCOMatrixTest, NumericallyUnstableIntegralPowURemainsUnchanged) {
-  for (const auto& [theta, phi, lambda, exponent] :
-       {std::tuple{-4.7851911486806245, -18.3028077007916, -18.79029150092365,
-                   1017.0},
-        std::tuple{1123.1619760536523, -8607.999542206799, -9908.553022954226,
-                   2.0}}) {
+  for (const auto& [theta, phi, lambda, exponent] : {
+           std::tuple{-4.7851911486806245, -18.3028077007916,
+                      -18.79029150092365, 1017.0},
+           std::tuple{1123.1619760536523, -8607.999542206799,
+                      -9908.553022954226, 2.0},
+       }) {
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
@@ -810,8 +821,11 @@ TEST_F(QCOMatrixTest, FractionalPowURemainsUnchanged) {
 }
 
 TEST_F(QCOMatrixTest, FractionalParameterizedPowDoesNotFold) {
-  for (const double angle : {std::numbers::pi - 1e-12, std::numbers::pi + 1e-12,
-                             3.0 * std::numbers::pi}) {
+  for (const double angle : {
+           std::numbers::pi - 1e-12,
+           std::numbers::pi + 1e-12,
+           3.0 * std::numbers::pi,
+       }) {
     SCOPED_TRACE(angle);
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
       auto q = b.allocQubit();

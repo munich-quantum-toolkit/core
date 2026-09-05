@@ -129,7 +129,7 @@ protected:
     const std::string text = qdmi_test::getQIRProgram(file);
     llvm::LLVMContext context;
     llvm::SMDiagnostic err;
-    auto llvmModule = llvm::parseAssemblyString(text, err, context);
+    auto const llvmModule = llvm::parseAssemblyString(text, err, context);
     EXPECT_NE(llvmModule, nullptr)
         << "parseAssemblyString failed: " << err.getMessage().str();
     if (llvmModule == nullptr) {
@@ -284,8 +284,10 @@ TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
   ASSERT_EQ(qdmi_test::setShots(j.job, 4), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
-  constexpr std::array results{QDMI_JOB_RESULT_HIST_KEYS,
-                               QDMI_JOB_RESULT_HIST_VALUES};
+  constexpr std::array results{
+      QDMI_JOB_RESULT_HIST_KEYS,
+      QDMI_JOB_RESULT_HIST_VALUES,
+  };
   char dummy{};
   for (const auto result : results) {
     size_t size = 1;

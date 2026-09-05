@@ -194,7 +194,7 @@ private:
 
   static constexpr size_t MAX_EXPRESSION_NESTING = 256;
   static constexpr size_t MAX_EXPRESSION_WORK = 4096;
-  static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20;
+  static constexpr size_t MAX_CLASSICAL_BITS = 1U << 20U;
 
   [[nodiscard]] static LogicalResult fail(Operation* operation,
                                           const Twine& message) {
@@ -301,10 +301,12 @@ private:
     for (Operation& operation : function.getBody().front().getOperations()) {
       if (auto alloc = dyn_cast<qc::AllocOp>(&operation)) {
         const auto name = uniqueName("q", nextQubit);
-        Resource resource{.kind = ResourceKind::Qubit,
-                          .name = name,
-                          .width = 1,
-                          .scalar = true};
+        Resource resource{
+            .kind = ResourceKind::Qubit,
+            .name = name,
+            .width = 1,
+            .scalar = true,
+        };
         resources.try_emplace(alloc.getResult(), resource);
         resourceOrder.push_back(alloc.getResult());
         valueNames.try_emplace(alloc.getResult(), name);
@@ -324,12 +326,13 @@ private:
         const auto name = alloc->getAttrOfType<StringAttr>(
             mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
         const auto requested = name ? name.getValue() : StringRef{};
-        Resource resource{.kind = ResourceKind::Bit,
-                          .name = isOutput ? outputName(requested)
-                                           : uniqueName("c", nextBit),
-                          .width = width,
-                          .output = isOutput,
-                          .initialization = alloc.getInitialization()};
+        Resource resource{
+            .kind = ResourceKind::Bit,
+            .name = isOutput ? outputName(requested) : uniqueName("c", nextBit),
+            .width = width,
+            .output = isOutput,
+            .initialization = alloc.getInitialization(),
+        };
         resources.try_emplace(alloc.getResult(), std::move(resource));
         resourceOrder.push_back(alloc.getResult());
         continue;
@@ -338,7 +341,7 @@ private:
       if (!alloc) {
         continue;
       }
-      const auto type = dyn_cast<MemRefType>(alloc.getType());
+      const auto type = alloc.getType();
       if (!type || !type.hasStaticShape() || type.getRank() != 1 ||
           type.getDimSize(0) <= 0) {
         return fail(alloc, "only non-empty static rank-one memrefs are "
@@ -352,9 +355,11 @@ private:
               mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
         requested = attr.getValue();
       }
-      Resource resource{.kind = ResourceKind::Qubit,
-                        .name = qubitRegisterName(requested),
-                        .width = type.getDimSize(0)};
+      Resource resource{
+          .kind = ResourceKind::Qubit,
+          .name = qubitRegisterName(requested),
+          .width = type.getDimSize(0),
+      };
       resources.try_emplace(alloc.getResult(), resource);
       resourceOrder.push_back(alloc.getResult());
     }
@@ -1486,17 +1491,16 @@ private:
     for (Operation& operation : body.without_terminator()) {
       if (!isa<UnitaryOpInterface>(&operation) &&
           !isInlineExpressionOperation(operation)) {
-        fail(&operation, "modifier bodies may only contain unitary operations "
-                         "and scalar expressions");
-        return failure();
+        return fail(&operation,
+                    "modifier bodies may only contain unitary operations "
+                    "and scalar expressions");
       }
       if (isa<UnitaryOpInterface>(&operation)) {
         unitaries.push_back(&operation);
       }
     }
     if (unitaries.empty()) {
-      fail(modifier, "modifier body contains no unitary operation");
-      return failure();
+      return fail(modifier, "modifier body contains no unitary operation");
     }
 
     SmallVector<std::string> targets;
@@ -1508,8 +1512,7 @@ private:
       targets.push_back(std::move(*qubit));
     }
     if (body.getNumArguments() != targets.size()) {
-      fail(modifier, "modifier target and body argument counts differ");
-      return failure();
+      return fail(modifier, "modifier target and body argument counts differ");
     }
     for (const auto [argument, target] :
          llvm::zip_equal(body.getArguments(), targets)) {
@@ -1567,8 +1570,7 @@ private:
                         const ArrayRef<Operation*> unitaries) {
     auto& body = modifier.getRegion().front();
     if (body.getNumArguments() == 0) {
-      fail(modifier, "multi-operation modifiers require a target qubit");
-      return failure();
+      return fail(modifier, "multi-operation modifiers require a target qubit");
     }
     const auto helperName = uniqueName("gate", nextHelper);
 
@@ -1588,9 +1590,9 @@ private:
       }
     });
     if (capturedQubit) {
-      fail(modifier,
-           "multi-operation modifier bodies cannot capture extra qubits");
-      return failure();
+      return fail(
+          modifier,
+          "multi-operation modifier bodies cannot capture extra qubits");
     }
 
     GateCall helperCall;

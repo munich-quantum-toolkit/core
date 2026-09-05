@@ -369,8 +369,11 @@ computeOrderedWeylCoordinates(const Matrix4x4& u) {
   order = {order[1], order[2], order[0]};
   cs = {cs[order[0]], cs[order[1]], cs[order[2]]};
   {
-    const std::array<double, 3> reordered{dReal[order[0]], dReal[order[1]],
-                                          dReal[order[2]]};
+    const std::array<double, 3> reordered{
+        dReal[order[0]],
+        dReal[order[1]],
+        dReal[order[2]],
+    };
     dReal[0] = reordered[0];
     dReal[1] = reordered[1];
     dReal[2] = reordered[2];
@@ -770,7 +773,7 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
     wire = synthesized->qubit;
     globalPhase += synthesized->globalPhase;
   };
-  const auto emitEntangler = [&]() {
+  const auto emitEntangler = [&] {
     if (basis.entangler == CompilerTarget::GateKind::RXX) {
       auto rxxOp = RXXOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
       wire0 = rxxOp.getOutputQubit(0);
@@ -831,7 +834,10 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
   }
 
   return SynthesizedUnitary2Q{
-      .qubit0 = wire0, .qubit1 = wire1, .globalPhase = globalPhase};
+      .qubit0 = wire0,
+      .qubit1 = wire1,
+      .globalPhase = globalPhase,
+  };
 }
 
 } // namespace mlir::qco::decomposition

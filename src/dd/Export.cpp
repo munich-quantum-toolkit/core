@@ -71,7 +71,7 @@ void printPhaseFormatted(std::ostream& os, fp r) {
     return;
   }
 
-  auto abssqrt = absr / SQRT2_2;
+  auto const abssqrt = absr / SQRT2_2;
   fraction = ComplexValue::getLowestFraction(abssqrt);
   approx = static_cast<fp>(fraction.first) / static_cast<fp>(fraction.second);
   error = std::abs(abssqrt - approx);
@@ -89,7 +89,7 @@ void printPhaseFormatted(std::ostream& os, fp r) {
     return;
   }
 
-  auto abspi = absr / PI;
+  auto const abspi = absr / PI;
   fraction = ComplexValue::getLowestFraction(abspi);
   approx = static_cast<fp>(fraction.first) / static_cast<fp>(fraction.second);
   error = std::abs(abspi - approx);
@@ -489,7 +489,7 @@ void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
     do {
       while (node != nullptr && !node->isTerminal()) {
         for (auto i = static_cast<std::size_t>(RADIX - 1); i > 0; --i) {
-          auto& edge = node->p->e.at(i);
+          auto const& edge = node->p->e.at(i);
           if (edge.isTerminal()) {
             continue;
           }
@@ -511,7 +511,7 @@ void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
 
       bool hasChild = false;
       for (auto i = 1U; i < RADIX && !hasChild; ++i) {
-        auto& edge = node->p->e.at(i);
+        auto const& edge = node->p->e.at(i);
         if (edge.w.approximatelyZero()) {
           continue;
         }
@@ -544,7 +544,7 @@ void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
 
           // iterate over edges in reverse to guarantee correct processing order
           for (auto i = 0U; i < RADIX; ++i) {
-            auto& edge = node->p->e.at(i);
+            auto const& edge = node->p->e.at(i);
             std::int64_t edgeIdx = edge.isTerminal() ? -1 : nodeIndex[edge.p];
             os.write(reinterpret_cast<const char*>(&edgeIdx),
                      sizeof(decltype(edgeIdx)));
@@ -557,7 +557,7 @@ void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
           // iterate over edges in reverse to guarantee correct processing order
           for (auto i = 0U; i < RADIX; ++i) {
             os << " (";
-            auto& edge = node->p->e.at(i);
+            auto const& edge = node->p->e.at(i);
             if (!edge.w.approximatelyZero()) {
               const std::int64_t edgeIdx =
                   edge.isTerminal() ? -1 : nodeIndex[edge.p];
@@ -577,7 +577,7 @@ void serializeMatrix(const mEdge& basic, std::int64_t& idx,
                      std::unordered_set<mNode*>& visited, std::ostream& os,
                      const bool writeBinary) {
   if (!basic.isTerminal()) {
-    for (auto& e : basic.p->e) {
+    for (auto const& e : basic.p->e) {
       if (visited.insert(e.p).second) {
         serializeMatrix(e, idx, nodeIndex, visited, os, writeBinary);
       }
@@ -595,7 +595,7 @@ void serializeMatrix(const mEdge& basic, std::int64_t& idx,
                sizeof(decltype(basic.p->v)));
 
       // iterate over edges in reverse to guarantee correct processing order
-      for (auto& edge : basic.p->e) {
+      for (auto const& edge : basic.p->e) {
         std::int64_t edgeIdx = edge.isTerminal() ? -1 : nodeIndex[edge.p];
         os.write(reinterpret_cast<const char*>(&edgeIdx),
                  sizeof(decltype(edgeIdx)));
@@ -605,7 +605,7 @@ void serializeMatrix(const mEdge& basic, std::int64_t& idx,
       os << nodeIndex[basic.p] << " " << static_cast<std::size_t>(basic.p->v);
 
       // iterate over edges in reverse to guarantee correct processing order
-      for (auto& edge : basic.p->e) {
+      for (auto const& edge : basic.p->e) {
         os << " (";
         if (!edge.w.approximatelyZero()) {
           const std::int64_t edgeIdx =

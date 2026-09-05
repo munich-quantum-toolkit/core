@@ -135,7 +135,7 @@ Returns:
       [](const qdmi::Job& self, const qdmi::CustomProperty customProperty,
          const nb::handle valueType) {
         return queryCustomValue(
-            [&self, customProperty]<qdmi::custom_property_value T>() {
+            [&self, customProperty]<qdmi::custom_property_value T> {
               return self.queryCustomProperty<T>(customProperty);
             },
             valueType);
@@ -156,7 +156,7 @@ when the custom slot is unsupported.)pb");
       [](const qdmi::Job& self, const qdmi::CustomProperty customProperty,
          const nb::handle valueType) {
         return queryCustomValue(
-            [&self, customProperty]<qdmi::custom_property_value T>() {
+            [&self, customProperty]<qdmi::custom_property_value T> {
               return self.getCustomResult<T>(customProperty);
             },
             valueType);
@@ -339,7 +339,7 @@ slot is unsupported. A supported empty list is returned as an empty list.)pb");
       [](const qdmi::Device& self, const qdmi::CustomProperty customProperty,
          const nb::handle valueType) {
         return queryCustomValue(
-            [&self, customProperty]<qdmi::custom_property_value T>() {
+            [&self, customProperty]<qdmi::custom_property_value T> {
               return self.queryCustomProperty<T>(customProperty);
             },
             valueType);
@@ -500,7 +500,7 @@ executes no circuit, so it takes no shot count.)pb");
       [](const qdmi::Site& self, const qdmi::CustomProperty customProperty,
          const nb::handle valueType) {
         return queryCustomValue(
-            [&self, customProperty]<qdmi::custom_property_value T>() {
+            [&self, customProperty]<qdmi::custom_property_value T> {
               return self.queryCustomProperty<T>(customProperty);
             },
             valueType);
@@ -592,7 +592,7 @@ when the custom slot is unsupported.)pb");
          const std::vector<double>& params) {
         return queryCustomValue(
             [&self, customProperty, &sites,
-             &params]<qdmi::custom_property_value T>() {
+             &params]<qdmi::custom_property_value T> {
               return self.queryCustomProperty<T>(customProperty, sites, params);
             },
             valueType);
@@ -649,7 +649,8 @@ when the custom slot is unsupported.)pb");
                 .session = qdmi::makeDeviceSessionConfig(
                     baseUrl, token, authFile, authUrl, username, password,
                     deviceConfig, deviceConfigFile, custom1, custom2, custom3,
-                    custom4, custom5)};
+                    custom4, custom5),
+            };
           },
           "device_id"_a, "library_path"_a, "prefix"_a, nb::kw_only(),
           "base_url"_a = std::nullopt, "token"_a = std::nullopt,

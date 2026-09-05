@@ -294,10 +294,12 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
         "Qiskit parameter-vector element has invalid group metadata");
   }
   return Parameter::symbol(std::move(name),
-                           ParameterGroup{.identity = std::move(groupIdentity),
-                                          .name = std::move(groupName),
-                                          .index = groupIndex,
-                                          .size = groupSize});
+                           ParameterGroup{
+                               .identity = std::move(groupIdentity),
+                               .name = std::move(groupName),
+                               .index = groupIndex,
+                               .size = groupSize,
+                           });
 }
 
 namespace {
@@ -517,10 +519,12 @@ normalizePythonParameter(const nb::handle parameter) {
       if (depth > MAX_PARAMETER_EXPRESSION_DEPTH) {
         throwParameterExpressionDepthError();
       }
-      stack.push_back({.value = makeBinaryParameter(binaryParameterKind(opcode),
-                                                    std::move(left.value),
-                                                    std::move(right.value)),
-                       .depth = depth});
+      stack.push_back({
+          .value = makeBinaryParameter(binaryParameterKind(opcode),
+                                       std::move(left.value),
+                                       std::move(right.value)),
+          .depth = depth,
+      });
     }
   } catch (const nb::python_error& error) {
     throwPythonError("Qiskit parameter expression replay is not iterable",
@@ -553,8 +557,11 @@ static void appendControlModifier(const nb::handle object,
     throw std::runtime_error(
         "Qiskit circuit import does not support open-control modifiers");
   }
-  modifiers.push_back({.kind = GateModifierKind::Control,
-                       .numControls = static_cast<uint32_t>(controls)});
+  modifiers.push_back({
+      .kind = GateModifierKind::Control,
+      .numControls = static_cast<uint32_t>(controls),
+      .exponent = {},
+  });
 }
 
 [[nodiscard]] static nb::object terminalPythonGate(const nb::handle operation,
@@ -597,7 +604,11 @@ static void normalizePythonModifier(const nb::handle modifier,
   const auto name = pythonStringAttribute(
       type, "__name__", "Qiskit modifier has an invalid type name");
   if (name == "InverseModifier") {
-    modifiers.push_back({.kind = GateModifierKind::Inverse});
+    modifiers.push_back({
+        .kind = GateModifierKind::Inverse,
+        .numControls = 0,
+        .exponent = {},
+    });
     return;
   }
   if (name == "ControlModifier") {
@@ -607,8 +618,10 @@ static void normalizePythonModifier(const nb::handle modifier,
   if (name == "PowerModifier") {
     auto power = pythonAttribute(modifier, "power",
                                  "Qiskit power modifier has no exponent");
-    modifiers.push_back({.kind = GateModifierKind::Power,
-                         .exponent = normalizePythonParameter(power)});
+    modifiers.push_back({
+        .kind = GateModifierKind::Power,
+        .exponent = normalizePythonParameter(power),
+    });
     return;
   }
   throw std::runtime_error("unsupported Qiskit operation modifier '" + name +
@@ -846,7 +859,7 @@ public:
     if (name == nullptr) {
       throwPythonError("Qiskit failed to read a quantum-register name");
     }
-    Register result{.name = name};
+    Register result{.name = name, .bits = {}};
     qk_str_free(name);
     result.bits.resize(qk_quantum_register_num_bits(reg));
     if (!result.bits.empty()) {
@@ -863,7 +876,7 @@ public:
     if (name == nullptr) {
       throwPythonError("Qiskit failed to read a classical-register name");
     }
-    Register result{.name = name};
+    Register result{.name = name, .bits = {}};
     qk_str_free(name);
     result.bits.resize(qk_classical_register_num_bits(reg));
     if (!result.bits.empty()) {
@@ -898,22 +911,54 @@ public:
     const auto kind =
         normalizeKind(qk_circuit_instruction_kind(circuit_, index));
     if (kind == OperationKind::Delay) {
-      return {.kind = kind, .name = "delay"};
+      return {
+          .kind = kind,
+          .name = "delay",
+          .qubits = {},
+          .clbits = {},
+          .parameters = {},
+          .modifiers = {},
+          .standardGate = {},
+      };
     }
     if (kind == OperationKind::ControlFlow) {
-      return {.kind = kind, .name = "control_flow"};
+      return {
+          .kind = kind,
+          .name = "control_flow",
+          .qubits = {},
+          .clbits = {},
+          .parameters = {},
+          .modifiers = {},
+          .standardGate = {},
+      };
     }
     const auto operation = pythonOperation(index);
     if (pythonStringAttribute(operation, "name",
                               "Qiskit operation has an invalid name") ==
             "store" &&
         isPythonStore(operation)) {
-      return {.kind = OperationKind::Store, .name = "store"};
+      return {
+          .kind = OperationKind::Store,
+          .name = "store",
+          .qubits = {},
+          .clbits = {},
+          .parameters = {},
+          .modifiers = {},
+          .standardGate = {},
+      };
     }
     std::optional<Instruction> normalizedUnknown;
     if (kind == OperationKind::Unknown) {
       if (isPythonUnitaryGate(operation)) {
-        Instruction result{.kind = OperationKind::Unitary, .name = "unitary"};
+        Instruction result{
+            .kind = OperationKind::Unitary,
+            .name = "unitary",
+            .qubits = {},
+            .clbits = {},
+            .parameters = {},
+            .modifiers = {},
+            .standardGate = {},
+        };
         normalizePythonGate(operation, result);
         result.name = "unitary";
         result.qubits = pythonInstructionQubits(index);
@@ -1605,8 +1650,10 @@ public:
       }
       auto native =
           qk_control_flow_switch_case_labels_uint(controlFlow_, index);
-      SwitchCase entry{.isDefault = qk_control_flow_switch_is_case_default(
-                           controlFlow_, index)};
+      SwitchCase entry{
+          .isDefault =
+              qk_control_flow_switch_is_case_default(controlFlow_, index),
+      };
       if (native.num_labels != 0U) {
         entry.labels.resize(native.num_labels);
         std::copy_n(native.labels, native.num_labels, entry.labels.begin());
@@ -1696,13 +1743,15 @@ std::vector<ClassicalVariable> NativeCircuitReader::variables() const {
         throw std::runtime_error(
             "Qiskit local variable has no stable identity");
       }
-      result.push_back({.identity = normalized->variable,
-                        .name = pythonStringAttribute(
-                            variable, "name", "Qiskit variable has no name"),
-                        .type = normalized->type,
-                        .width = normalized->width,
-                        .captured = captured,
-                        .input = input});
+      result.push_back({
+          .identity = normalized->variable,
+          .name = pythonStringAttribute(variable, "name",
+                                        "Qiskit variable has no name"),
+          .type = normalized->type,
+          .width = normalized->width,
+          .captured = captured,
+          .input = input,
+      });
     }
   };
   append("iter_declared_vars", false, false);
@@ -2146,9 +2195,11 @@ public:
     const auto instructionIndex = qk_circuit_num_instructions(circuit_);
     checkExitCode(qk_circuit_barrier(circuit_, nullptr, 0U),
                   "adding Store placeholder");
-    pendingStores_.push_back({.instructionIndex = instructionIndex,
-                              .target = std::move(target),
-                              .value = std::move(value)});
+    pendingStores_.push_back({
+        .instructionIndex = instructionIndex,
+        .target = std::move(target),
+        .value = std::move(value),
+    });
   }
 
   void addUnitary(const std::vector<std::complex<double>>& matrix,
@@ -2171,10 +2222,11 @@ public:
     if (numControls != 0U) {
       // The Qiskit C API can append only a bare unitary. Defer its control
       // wrapper until finish() exposes the Python operation.
-      pendingControlledUnitaries_.push_back(
-          {.instructionIndex = instructionIndex,
-           .numControls = numControls,
-           .qubits = qubits});
+      pendingControlledUnitaries_.push_back({
+          .instructionIndex = instructionIndex,
+          .numControls = numControls,
+          .qubits = qubits,
+      });
     }
   }
 
@@ -2186,7 +2238,7 @@ public:
   addControlFlow(const ControlFlowKind kind, ClassicalTarget target, Loop loop,
                  std::vector<SwitchCase> switchCases,
                  std::vector<std::unique_ptr<CircuitWriter>> blocks) override {
-    const bool validBlockCount = [&]() {
+    const bool validBlockCount = [&] {
       switch (kind) {
       case ControlFlowKind::IfElse:
         return blocks.size() == 1U || blocks.size() == 2U;
@@ -2226,12 +2278,14 @@ public:
     const auto instructionIndex = qk_circuit_num_instructions(circuit_);
     checkExitCode(qk_circuit_barrier(circuit_, nullptr, 0U),
                   "adding control-flow placeholder");
-    pendingControlFlow_.push_back({.instructionIndex = instructionIndex,
-                                   .kind = kind,
-                                   .target = std::move(target),
-                                   .loop = std::move(loop),
-                                   .switchCases = std::move(switchCases),
-                                   .blockWriters = std::move(blocks)});
+    pendingControlFlow_.push_back({
+        .instructionIndex = instructionIndex,
+        .kind = kind,
+        .target = std::move(target),
+        .loop = std::move(loop),
+        .switchCases = std::move(switchCases),
+        .blockWriters = std::move(blocks),
+    });
   }
 
   [[nodiscard]] nb::object finish() override {
@@ -2693,7 +2747,7 @@ private:
 std::unique_ptr<VersionedTranslation>
 MQT_QISKIT_VERSION_FACTORY() { // NOLINT(misc-use-internal-linkage): declared in
                                // the version registry.
-  static const auto VERSION = []() {
+  static const auto VERSION = [] {
     if (qk_import() < 0) {
       throwPythonError(
           "failed to initialize the Qiskit " MQT_QISKIT_VERSION_LABEL " C API");
@@ -2704,7 +2758,10 @@ MQT_QISKIT_VERSION_FACTORY() { // NOLINT(misc-use-internal-linkage): declared in
   const auto minor = (VERSION >> 16U) & 0xffU;
   if (major != MQT_QISKIT_VERSION_EXPECTED_MAJOR ||
       minor != MQT_QISKIT_VERSION_EXPECTED_MINOR ||
-      (MQT_QISKIT_VERSION_EXACT_API != 0 && VERSION != QISKIT_VERSION_HEX)) {
+      (MQT_QISKIT_VERSION_EXACT_API != 0 &&
+       // QISKIT_VERSION_HEX uses signed bitwise operations in Qiskit's header.
+       // NOLINTNEXTLINE(bugprone-signed-bitwise)
+       VERSION != QISKIT_VERSION_HEX)) {
     throw std::runtime_error("Qiskit C API capsule version does not match the "
                              "selected " MQT_QISKIT_VERSION_LABEL
                              " translation");

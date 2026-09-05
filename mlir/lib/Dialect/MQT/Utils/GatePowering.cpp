@@ -59,7 +59,8 @@ std::optional<UPowerParameters> powerUParameters(const double theta,
       cosTheta * ((cosPhi * cosLambda) - (sinPhi * sinLambda)),
       sinTheta * ((cosPhi * sinLambda) - (sinPhi * cosLambda)),
       sinTheta * ((cosPhi * cosLambda) + (sinPhi * sinLambda)),
-      cosTheta * ((cosPhi * sinLambda) + (sinPhi * cosLambda))};
+      cosTheta * ((cosPhi * sinLambda) + (sinPhi * cosLambda)),
+  };
   const double quaternionNorm =
       std::hypot(std::hypot(quaternion[0], quaternion[1]),
                  std::hypot(quaternion[2], quaternion[3]));
@@ -83,8 +84,11 @@ std::optional<UPowerParameters> powerUParameters(const double theta,
         std::remainder(exponent * axisAngle, 2.0 * std::numbers::pi);
     const double vectorScale = std::sin(poweredAxisAngle) / vectorNorm;
     poweredQuaternion = {
-        std::cos(poweredAxisAngle), quaternion[1] * vectorScale,
-        quaternion[2] * vectorScale, quaternion[3] * vectorScale};
+        std::cos(poweredAxisAngle),
+        quaternion[1] * vectorScale,
+        quaternion[2] * vectorScale,
+        quaternion[3] * vectorScale,
+    };
   }
   const double poweredNorm =
       std::hypot(std::hypot(poweredQuaternion[0], poweredQuaternion[1]),
@@ -136,17 +140,20 @@ std::optional<UPowerParameters> powerUParameters(const double theta,
                            const double matrixLambda) {
     const double matrixCos = std::cos(matrixTheta / 2.0);
     const double matrixSin = std::sin(matrixTheta / 2.0);
-    return Matrix{matrixCos,
-                  matrixSin *
-                      std::exp(imaginary * (matrixLambda + std::numbers::pi)),
-                  matrixSin * std::exp(imaginary * matrixPhi),
-                  matrixCos * std::exp(imaginary * (matrixPhi + matrixLambda))};
+    return Matrix{
+        matrixCos,
+        matrixSin * std::exp(imaginary * (matrixLambda + std::numbers::pi)),
+        matrixSin * std::exp(imaginary * matrixPhi),
+        matrixCos * std::exp(imaginary * (matrixPhi + matrixLambda)),
+    };
   };
   const auto multiply = [](const Matrix& lhs, const Matrix& rhs) {
-    return Matrix{(lhs[0] * rhs[0]) + (lhs[1] * rhs[2]),
-                  (lhs[0] * rhs[1]) + (lhs[1] * rhs[3]),
-                  (lhs[2] * rhs[0]) + (lhs[3] * rhs[2]),
-                  (lhs[2] * rhs[1]) + (lhs[3] * rhs[3])};
+    return Matrix{
+        (lhs[0] * rhs[0]) + (lhs[1] * rhs[2]),
+        (lhs[0] * rhs[1]) + (lhs[1] * rhs[3]),
+        (lhs[2] * rhs[0]) + (lhs[3] * rhs[2]),
+        (lhs[2] * rhs[1]) + (lhs[3] * rhs[3]),
+    };
   };
   Matrix base = uMatrix(theta, phi, lambda);
   Matrix sourcePower{1.0, 0.0, 0.0, 1.0};
@@ -171,10 +178,12 @@ std::optional<UPowerParameters> powerUParameters(const double theta,
       return std::nullopt;
     }
   }
-  return UPowerParameters{.theta = resultTheta,
-                          .phi = resultPhi,
-                          .lambda = resultLambda,
-                          .phase = resultPhase};
+  return UPowerParameters{
+      .theta = resultTheta,
+      .phi = resultPhi,
+      .lambda = resultLambda,
+      .phase = resultPhase,
+  };
 }
 
 } // namespace mlir::mqt

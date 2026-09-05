@@ -253,13 +253,16 @@ TEST(ScConfigurationTest, AcceptsExplicitHigherAritySites) {
   root["numQubits"] = 3;
   root["couplings"] = Json::array();
   root["qubitProperties"]["overrides"] = Json::array();
-  root["operations"] = Json::array(
-      {{{"name", "three"},
-        {"numParameters", 1},
-        {"numQubits", 3},
-        {"sites", {{2, 0, 1}}},
-        {"duration", 0},
-        {"siteOverrides", {{{"sites", {2, 0, 1}}, {"fidelity", 0.75}}}}}});
+  root["operations"] = Json::array({
+      {
+          {"name", "three"},
+          {"numParameters", 1},
+          {"numQubits", 3},
+          {"sites", {{2, 0, 1}}},
+          {"duration", 0},
+          {"siteOverrides", {{{"sites", {2, 0, 1}}, {"fidelity", 0.75}}}},
+      },
+  });
   const auto parsed = readJSON(root.dump(), "higher-arity");
   ASSERT_EQ(parsed.operations.size(), 1);
   ASSERT_TRUE(parsed.operations[0].sites.has_value());

@@ -25,7 +25,7 @@ enum class BVMethod : uint8_t {
   /// Allocate one query qubit for each hidden bit.
   Static,
   /// Measure, reset, and reuse one query qubit for every hidden bit.
-  Dynamic
+  Dynamic,
 };
 
 /// Parameters for one Bernstein--Vazirani benchmark instance.

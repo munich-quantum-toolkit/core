@@ -23,6 +23,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
+#include <cstdint>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -113,5 +114,6 @@ void BarrierOp::getCanonicalizationPatterns(RewritePatternSet& results,
 
 DynamicMatrix BarrierOp::getUnitaryMatrix() {
   const auto numQubits = getQubitsIn().size();
-  return DynamicMatrix::identity(1LL << numQubits);
+  return DynamicMatrix::identity(
+      static_cast<int64_t>(uint64_t{1} << numQubits));
 }

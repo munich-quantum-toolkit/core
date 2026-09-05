@@ -128,11 +128,13 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
     if (failed(parser.parseProgram())) {
       failedParsing = true;
     }
-    parsedSources.try_emplace(
-        bufferId, ParsedSource{.bodyBegin = bodyBegin,
-                               .bodyEnd = builder.getBody().size(),
-                               .includeBegin = includeBegin,
-                               .includeEnd = builder.getIncludes().size()});
+    parsedSources.try_emplace(bufferId,
+                              ParsedSource{
+                                  .bodyBegin = bodyBegin,
+                                  .bodyEnd = builder.getBody().size(),
+                                  .includeBegin = includeBegin,
+                                  .includeEnd = builder.getIncludes().size(),
+                              });
   };
   parseSource(mainBufferId);
 
@@ -284,9 +286,10 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
 
   if (failedParsing) {
     for (const auto& diagnostic : builder.getDiagnostics()) {
-      result.diagnostics.push_back(
-          {.location = detail::sourceLocation(*sources, diagnostic.location),
-           .message = diagnostic.message});
+      result.diagnostics.push_back({
+          .location = detail::sourceLocation(*sources, diagnostic.location),
+          .message = diagnostic.message,
+      });
     }
     if (result.diagnostics.empty()) {
       result.diagnostics.push_back({.message = "OpenQASM parsing failed"});
@@ -311,8 +314,10 @@ ParseResult parseOpenQASM(llvm::SourceMgr& sourceMgr) {
   auto implementation = std::make_unique<ParsedProgram::Impl>();
   implementation->sources = std::move(parsed.sources);
   implementation->syntax = std::move(parsed.syntax);
-  return {.program = std::unique_ptr<ParsedProgram>(
-              new ParsedProgram(std::move(implementation)))};
+  return {
+      .program = std::unique_ptr<ParsedProgram>(
+          new ParsedProgram(std::move(implementation))),
+  };
 }
 
 ParseResult parseOpenQASM(const llvm::StringRef source) {
@@ -324,8 +329,10 @@ ParseResult parseOpenQASM(const llvm::StringRef source) {
   auto implementation = std::make_unique<ParsedProgram::Impl>();
   implementation->sources = std::move(parsed.sources);
   implementation->syntax = std::move(parsed.syntax);
-  return {.program = std::unique_ptr<ParsedProgram>(
-              new ParsedProgram(std::move(implementation)))};
+  return {
+      .program = std::unique_ptr<ParsedProgram>(
+          new ParsedProgram(std::move(implementation))),
+  };
 }
 
 AnalysisResult analyzeOpenQASM(const ParsedProgram& parsedProgram,

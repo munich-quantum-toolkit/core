@@ -771,14 +771,14 @@ struct ImportedVariables {
   bool reachable = true;
   bool structuringLoop = false;
 
-  std::vector<std::string> slots() const {
+  [[nodiscard]] std::vector<std::string> slots() const {
     std::vector<std::string> result;
     for (const auto& [identity, entry] : variables) {
       result.push_back(identity);
     }
     return result;
   }
-  llvm::SmallVector<mlir::Value>
+  [[nodiscard]] llvm::SmallVector<mlir::Value>
   values(const std::vector<std::string>& keys) const {
     llvm::SmallVector<mlir::Value> result;
     for (const auto& key : keys) {
@@ -1018,7 +1018,7 @@ struct ImportedVariables {
         throw std::runtime_error(
             "Qiskit logical operation requires Boolean operands");
       }
-      const auto emitRight = [&]() {
+      const auto emitRight = [&] {
         auto right = emitExpression(builder, *expression.right, classicalBits,
                                     rootClbitMap, variables);
         if (!right.getType().isInteger(1)) {
@@ -1196,8 +1196,9 @@ static void emitStore(mlir::qc::QCProgramBuilder& builder,
   case ClassicalTargetKind::ClassicalRegister: {
     auto storage =
         registerStorage(classicalBits, clbitMap, assignment.target.reg);
-    if (!storage || value.getType() != builder.getIntegerType(
-                                           assignment.target.reg.bits.size())) {
+    if (!storage ||
+        value.getType() != builder.getIntegerType(static_cast<unsigned>(
+                               assignment.target.reg.bits.size()))) {
       throw std::runtime_error(
           "Qiskit register Store requires a matching canonical register");
     }
@@ -1807,14 +1808,14 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
       /// Definite initialization rejects reads until a store; the initial loop
       /// state still needs a representable, unobservable scalar placeholder.
       variables.variables.emplace(
-          variable.identity,
-          ImportedVariables::Entry{
-              .value = mlir::arith::ConstantOp::create(
-                  builder, type, builder.getZeroAttr(type))});
+          variable.identity, ImportedVariables::Entry{
+                                 .value = mlir::arith::ConstantOp::create(
+                                     builder, type, builder.getZeroAttr(type)),
+                             });
       declared.push_back(variable.identity);
     }
   }
-  auto scope = llvm::make_scope_exit([&] {
+  llvm::scope_exit scope([&] {
     for (const auto& identity : declared) {
       variables.variables.erase(identity);
     }
@@ -1912,7 +1913,7 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
       const auto arity = denseUnitaryArity(instruction);
       auto targets = std::span{operands}.subspan(arity.controls);
       std::ranges::reverse(targets);
-      const auto dimension = int64_t{1} << arity.targets;
+      const auto dimension = static_cast<int64_t>(uint64_t{1} << arity.targets);
       const auto type = mlir::RankedTensorType::get(
           {dimension, dimension}, mlir::ComplexType::get(builder.getF64Type()));
       const auto values = circuit.unitary(index);
@@ -2658,7 +2659,8 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
     llvm::SmallVector<mlir::NamedAttribute> argumentAttributes{
         builder.getNamedAttr(
             mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
-            builder.getStringAttr(symbol->name))};
+            builder.getStringAttr(symbol->name)),
+    };
     if (symbol->group) {
       argumentAttributes.push_back(builder.getNamedAttr(
           mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr(),

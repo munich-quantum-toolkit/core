@@ -135,7 +135,7 @@ createSibling(const std::filesystem::path& finalPath,
     const auto error = llvm::sys::fs::openFileForWrite(
         path.string(), descriptor, llvm::sys::fs::CD_CreateNew);
     if (!error) {
-      return {std::move(path), descriptor};
+      return {.path = std::move(path), .descriptor = descriptor};
     }
     if (error != std::errc::file_exists) {
       throw std::runtime_error("failed to create a " + std::string(purpose) +
@@ -179,7 +179,7 @@ static void removeIfPresent(const std::optional<std::filesystem::path>& path) {
   }
 }
 
-[[nodiscard]] static std::string
+[[nodiscard]] static const char*
 programExtension(const std::string_view format) {
   if (format == "qc") {
     return ".qc.mlir";
@@ -194,7 +194,7 @@ programExtension(const std::string_view format) {
 [[nodiscard]] static int publish(mqt::bench::GeneratedBenchmark generated,
                                  const std::string_view format,
                                  const std::filesystem::path& directory) {
-  const auto extension = programExtension(format);
+  const auto* const extension = programExtension(format);
   std::error_code error;
   std::filesystem::create_directories(directory, error);
   if (error) {
@@ -268,12 +268,14 @@ programExtension(const std::string_view format) {
   temporaryProgram.reset();
   temporaryManifest.reset();
 
-  llvm::json::Object response{{"benchmark", generated.benchmarkId},
-                              {"case_id", generated.caseId},
-                              {"format", std::string(format)},
-                              {"manifest_path", manifestPath.string()},
-                              {"program_path", programPath.string()},
-                              {"schema_version", 1}};
+  llvm::json::Object response{
+      {.K = "benchmark", .V = generated.benchmarkId},
+      {.K = "case_id", .V = generated.caseId},
+      {.K = "format", .V = std::string(format)},
+      {.K = "manifest_path", .V = manifestPath.string()},
+      {.K = "program_path", .V = programPath.string()},
+      {.K = "schema_version", .V = 1},
+  };
   llvm::outs() << llvm::json::Value(std::move(response)) << '\n';
   return 0;
 }

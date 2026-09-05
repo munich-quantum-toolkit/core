@@ -24,7 +24,7 @@ enum class GHZTopology : uint8_t {
   /// Entangle each qubit with its next neighbor.
   Linear,
   /// Entangle every other qubit directly with the first qubit.
-  Star
+  Star,
 };
 
 /// Measurement basis used to verify the prepared GHZ state.
@@ -32,7 +32,7 @@ enum class GHZBasis : uint8_t {
   /// Measure the two computational-basis outcomes.
   Z,
   /// Measure the uniform distribution over even-parity outcomes.
-  X
+  X,
 };
 
 /// Parameters for one GHZ benchmark instance.

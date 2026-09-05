@@ -733,11 +733,17 @@ TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
 
 TEST_F(QIRRuntimeTest, GHZ4Static) {
   const std::array q = {
-      reinterpret_cast<Qubit*>(0UL), reinterpret_cast<Qubit*>(1UL),
-      reinterpret_cast<Qubit*>(2UL), reinterpret_cast<Qubit*>(3UL)};
+      reinterpret_cast<Qubit*>(0UL),
+      reinterpret_cast<Qubit*>(1UL),
+      reinterpret_cast<Qubit*>(2UL),
+      reinterpret_cast<Qubit*>(3UL),
+  };
   const std::array r = {
-      reinterpret_cast<Result*>(0UL), reinterpret_cast<Result*>(1UL),
-      reinterpret_cast<Result*>(2UL), reinterpret_cast<Result*>(3UL)};
+      reinterpret_cast<Result*>(0UL),
+      reinterpret_cast<Result*>(1UL),
+      reinterpret_cast<Result*>(2UL),
+      reinterpret_cast<Result*>(3UL),
+  };
   __quantum__rt__initialize(nullptr);
   __quantum__qis__h__body(q[0]);
   __quantum__qis__cx__body(q[0], q[1]);
@@ -775,8 +781,11 @@ TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
   __quantum__qis__mz__body(q[2], r[2]);
   __quantum__qis__mz__body(q[3], r[3]);
   const std::array m = {
-      __quantum__rt__read_result(r[0]), __quantum__rt__read_result(r[1]),
-      __quantum__rt__read_result(r[2]), __quantum__rt__read_result(r[3])};
+      __quantum__rt__read_result(r[0]),
+      __quantum__rt__read_result(r[1]),
+      __quantum__rt__read_result(r[2]),
+      __quantum__rt__read_result(r[3]),
+  };
   EXPECT_EQ(m[0], m[1]);
   EXPECT_EQ(m[1], m[2]);
   EXPECT_EQ(m[2], m[3]);

@@ -49,7 +49,7 @@ struct Control {
     /// Positive controls trigger on \f$\ket{1}\f$.
     Pos = true,
     /// Negative controls trigger on \f$\ket{0}\f$.
-    Neg = false
+    Neg = false,
   };
 
   /// Control qubit index.
@@ -58,9 +58,9 @@ struct Control {
   Type type = Type::Pos;
 
   /// Allow implicit conversion from a qubit index.
-  /// NOLINTBEGIN(google-explicit-constructor)
+  /// NOLINTBEGIN(misc-explicit-constructor)
   Control(const Qubit q = {}, const Type t = Type::Pos) : qubit(q), type(t) {}
-  /// NOLINTEND(google-explicit-constructor)
+  /// NOLINTEND(misc-explicit-constructor)
 
   [[nodiscard]] std::string toString() const {
     std::ostringstream oss{};
@@ -119,7 +119,7 @@ enum class BasisStates : std::uint8_t {
   plus,  // NOLINT(readability-identifier-naming)
   minus, // NOLINT(readability-identifier-naming)
   right, // NOLINT(readability-identifier-naming)
-  left   // NOLINT(readability-identifier-naming)
+  left,  // NOLINT(readability-identifier-naming)
 };
 
 static constexpr auto SQRT2_2 = static_cast<fp>(
@@ -131,7 +131,7 @@ static constexpr fp PI_4 = PI / 4;
 /// Combine two hashes with the Boost hash-combine formula.
 [[nodiscard]] constexpr std::size_t
 combineHash(const std::size_t lhs, const std::size_t rhs) noexcept {
-  return lhs ^ (rhs + 0x9e3779b97f4a7c15ULL + (lhs << 6) + (lhs >> 2));
+  return lhs ^ (rhs + 0x9e3779b97f4a7c15ULL + (lhs << 6U) + (lhs >> 2U));
 }
 
 /// Add an integer to a hash.
@@ -208,11 +208,11 @@ intToBinaryString(const std::size_t value, const std::size_t nbits) {
  * @see https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
  */
 [[nodiscard]] constexpr std::size_t murmur64(std::size_t k) noexcept {
-  k ^= k >> 33;
+  k ^= k >> 33U;
   k *= 0xff51afd7ed558ccdULL;
-  k ^= k >> 33;
+  k ^= k >> 33U;
   k *= 0xc4ceb9fe1a85ec53ULL;
-  k ^= k >> 33;
+  k ^= k >> 33U;
   return k;
 }
 

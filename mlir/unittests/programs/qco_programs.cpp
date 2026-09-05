@@ -177,16 +177,16 @@ Value staticQubitsWithParametricOps(QCOProgramBuilder& b) {
 }
 
 Value staticQubitsWithTwoTargetOps(QCOProgramBuilder& b) {
-  auto q0 = b.staticQubit(0);
-  auto q1 = b.staticQubit(1);
-  std::tie(q0, q1) = b.rzz(0.123, q0, q1);
+  const auto q0Input = b.staticQubit(0);
+  const auto q1Input = b.staticQubit(1);
+  auto [q0, q1] = b.rzz(0.123, q0Input, q1Input);
   return measureAndReturn(b, {q0, q1});
 }
 
 Value staticQubitsWithCtrl(QCOProgramBuilder& b) {
-  auto q0 = b.staticQubit(0);
-  auto q1 = b.staticQubit(1);
-  std::tie(q0, q1) = b.cx(q0, q1);
+  const auto q0Input = b.staticQubit(0);
+  const auto q1Input = b.staticQubit(1);
+  auto [q0, q1] = b.cx(q0Input, q1Input);
   return measureAndReturn(b, {q0, q1});
 }
 
@@ -3569,16 +3569,20 @@ Value ctrlTwoUnrolled(QCOProgramBuilder& b) {
                          auto [t0, t1] = b.rxx(0.123, targets[0], targets[1]);
                          return {t0, t1};
                        });
-  return measureAndReturn(b, {second.first[0], second.first[1],
-                              second.second[0], second.second[1]});
+  return measureAndReturn(b, {
+                                 second.first[0],
+                                 second.first[1],
+                                 second.second[0],
+                                 second.second[1],
+                             });
 }
 
 Value ctrlTwoMixed(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   auto res = b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
-    auto i0 = targets[0];
-    auto i1 = targets[1];
-    std::tie(i0, i1) = b.cx(i0, i1);
+    const auto i0Input = targets[0];
+    const auto i1Input = targets[1];
+    auto [i0, i1] = b.cx(i0Input, i1Input);
     std::tie(i0, i1) = b.rxx(0.123, i0, i1);
     return SmallVector{i0, i1};
   });
@@ -3769,8 +3773,11 @@ Value modifierBodyReuseReordered(QCOProgramBuilder& b) {
                          b.rzx(0.123, innerTargets[0], innerTargets[1]);
                      return SmallVector{q0, q1};
                    });
-        return SmallVector{innerTargetsOut[1], innerTargetsOut[0],
-                           innerControlsOut[0]};
+        return SmallVector{
+            innerTargetsOut[1],
+            innerTargetsOut[0],
+            innerControlsOut[0],
+        };
       });
   q[0] = outerControlsOut[0];
   q[1] = outerTargetsOut[0];
@@ -4206,8 +4213,10 @@ SmallVector<Value> simpleIfCompleteTensorState(QCOProgramBuilder& b) {
                                    [&](Value qubit) { return b.h(qubit); });
   tensor = measureQTensorElement(b, tensor, 0, c0, 0);
   tensor = b.qcoIf(c0, 0, tensor, [&](ValueRange branchArgs) {
-    return SmallVector{transformQTensorElement(
-        b, branchArgs[0], 0, [&](Value qubit) { return b.x(qubit); })};
+    return SmallVector{
+        transformQTensorElement(b, branchArgs[0], 0,
+                                [&](Value qubit) { return b.x(qubit); }),
+    };
   })[0];
   measureQTensorElement(b, tensor, 0, c1, 0);
   return {c0, c1};
@@ -4223,12 +4232,16 @@ SmallVector<Value> ifElseCompleteTensorState(QCOProgramBuilder& b) {
   tensor = b.qcoIf(
       c0, 0, tensor,
       [&](ValueRange branchArgs) {
-        return SmallVector{transformQTensorElement(
-            b, branchArgs[0], 0, [&](Value qubit) { return b.x(qubit); })};
+        return SmallVector{
+            transformQTensorElement(b, branchArgs[0], 0,
+                                    [&](Value qubit) { return b.x(qubit); }),
+        };
       },
       [&](ValueRange branchArgs) {
-        return SmallVector{transformQTensorElement(
-            b, branchArgs[0], 0, [&](Value qubit) { return b.z(qubit); })};
+        return SmallVector{
+            transformQTensorElement(b, branchArgs[0], 0,
+                                    [&](Value qubit) { return b.z(qubit); }),
+        };
       })[0];
   measureQTensorElement(b, tensor, 0, c1, 0);
   return {c0, c1};
@@ -4244,8 +4257,10 @@ SmallVector<Value> ifTwoQubitsCompleteTensorState(QCOProgramBuilder& b) {
   tensor = b.qcoIf(c0, 0, tensor, [&](ValueRange branchArgs) {
     auto branchTensor = transformQTensorElement(
         b, branchArgs[0], 0, [&](Value qubit) { return b.x(qubit); });
-    return SmallVector{transformQTensorElement(
-        b, branchTensor, 1, [&](Value qubit) { return b.x(qubit); })};
+    return SmallVector{
+        transformQTensorElement(b, branchTensor, 1,
+                                [&](Value qubit) { return b.x(qubit); }),
+    };
   })[0];
   tensor = measureQTensorElement(b, tensor, 0, c1, 0);
   measureQTensorElement(b, tensor, 1, c1, 1);
@@ -4385,7 +4400,8 @@ SmallVector<Value> simpleIndexSwitch(QCOProgramBuilder& b) {
   c0 = arith::IndexCastUIOp::create(b, b.getIndexType(), bit0).getOut();
   q = b.qcoIndexSwitch(c0, q, SmallVector<int64_t>{0},
                        SmallVector<function_ref<Value(Value)>>{
-                           [&](Value arg) { return b.x(arg); }},
+                           [&](Value arg) { return b.x(arg); },
+                       },
                        [&](Value arg) { return b.z(arg); });
 
   std::tie(q, bit1) = b.measure(q);
@@ -4431,7 +4447,8 @@ Value indexSwitchMultiCase(QCOProgramBuilder& b) {
             qs[0] = b.x(qs[0]);
             qs[1] = b.x(qs[1]);
             return qs;
-          }},
+          },
+      },
       [&](ValueRange args) { return args; });
 
   return measureAndReturn(b, reg.qubits);
@@ -4445,10 +4462,12 @@ SmallVector<Value> simpleIndexSwitchCompleteTensorState(QCOProgramBuilder& b) {
   auto index = arith::IndexCastUIOp::create(b, b.getIndexType(), bit0).getOut();
   tensor = b.qcoIndexSwitch(
       index, measuredTensor, SmallVector<int64_t>{0},
-      SmallVector<function_ref<Value(Value)>>{[&](Value branchTensor) {
-        return transformQTensorElement(b, branchTensor, 0,
-                                       [&](Value qubit) { return b.x(qubit); });
-      }},
+      SmallVector<function_ref<Value(Value)>>{
+          [&](Value branchTensor) {
+            return transformQTensorElement(
+                b, branchTensor, 0, [&](Value qubit) { return b.x(qubit); });
+          },
+      },
       [&](Value branchTensor) {
         return transformQTensorElement(b, branchTensor, 0,
                                        [&](Value qubit) { return b.z(qubit); });
@@ -4493,7 +4512,8 @@ Value indexSwitchMultiCaseCompleteTensorState(QCOProgramBuilder& b) {
                 b, branchTensor, 0, [&](Value qubit) { return b.x(qubit); });
             return transformQTensorElement(
                 b, branchTensor, 1, [&](Value qubit) { return b.x(qubit); });
-          }},
+          },
+      },
       [&](Value branchTensor) { return branchTensor; });
 
   return measureAndReturnQTensor(b, tensor, size);
@@ -4699,8 +4719,10 @@ Value nestedForLoopWhileOpCompleteTensorState(QCOProgramBuilder& b) {
   constexpr int64_t size = 2;
   auto tensor = b.qtensorAlloc(size);
   tensor = b.scfFor(0, size, 1, tensor, [&](Value iv, ValueRange iterArgs) {
-    return SmallVector{transformQTensorElement(
-        b, iterArgs[0], iv, [&](Value qubit) { return b.h(qubit); })};
+    return SmallVector{
+        transformQTensorElement(b, iterArgs[0], iv,
+                                [&](Value qubit) { return b.h(qubit); }),
+    };
   })[0];
   tensor = b.scfFor(0, size, 1, tensor, [&](Value iv, ValueRange iterArgs) {
     auto whileResult = b.scfWhile(
@@ -4715,7 +4737,8 @@ Value nestedForLoopWhileOpCompleteTensorState(QCOProgramBuilder& b) {
         [&](ValueRange innerIterArgs) {
           return SmallVector{
               transformQTensorElement(b, innerIterArgs[0], iv,
-                                      [&](Value qubit) { return b.h(qubit); })};
+                                      [&](Value qubit) { return b.h(qubit); }),
+          };
         });
     return SmallVector{whileResult[0]};
   })[0];
@@ -4748,7 +4771,8 @@ Value nestedForLoopSwitchOp(QCOProgramBuilder& b) {
               qs[0] = b.x(qs[0]);
               qs[0] = b.y(qs[0]);
               return qs;
-            }},
+            },
+        },
         [&](ValueRange args) { return args; })[0];
     auto insert = b.qtensorInsert(q, t, iv);
     return SmallVector{insert};
@@ -4778,7 +4802,8 @@ Value nestedForLoopSwitchOpCompleteTensorState(QCOProgramBuilder& b) {
               return transformQTensorElement(
                   b, branchTensor, iv,
                   [&](Value qubit) { return b.y(b.x(qubit)); });
-            }},
+            },
+        },
         [&](Value branchTensor) { return branchTensor; });
     return SmallVector{result};
   })[0];
@@ -4885,9 +4910,9 @@ Value inverseTwoRxRy(QCOProgramBuilder& b) {
 Value inverseCxThenRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange targets) {
-    auto w0 = targets[0];
-    auto w1 = targets[1];
-    std::tie(w0, w1) = b.cx(w0, w1);
+    const auto w0Input = targets[0];
+    const auto w1Input = targets[1];
+    auto [w0, w1] = b.cx(w0Input, w1Input);
     w1 = b.rz(0.4, w1);
     return SmallVector{w0, w1};
   });
@@ -4897,9 +4922,9 @@ Value inverseCxThenRz(QCOProgramBuilder& b) {
 Value inverseDcxThenRz(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   auto res = b.inv({q[0], q[1]}, [&](ValueRange targets) {
-    auto w0 = targets[0];
-    auto w1 = targets[1];
-    std::tie(w0, w1) = b.dcx(w0, w1);
+    const auto w0Input = targets[0];
+    const auto w1Input = targets[1];
+    auto [w0, w1] = b.dcx(w0Input, w1Input);
     w1 = b.rz(0.4, w1);
     return SmallVector{w0, w1};
   });

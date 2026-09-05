@@ -511,39 +511,67 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
   };
   const auto fixtures = std::to_array<InvalidSource>({
       {.name = "unterminated-comment", .source = "OPENQASM 3.1; /*"},
-      {.name = "unterminated-string",
-       .source = "OPENQASM 3.1; include \"missing.inc;"},
-      {.name = "missing-include",
-       .source = "OPENQASM 3.1; include \"missing.inc\";"},
-      {.name = "invalid-hardware-qubit",
-       .source = "OPENQASM 3.1; qubit q; x $;"},
-      {.name = "float-overflow",
-       .source = "OPENQASM 3.1; float value = 1e99999;"},
-      {.name = "unsupported-duration",
-       .source = "OPENQASM 3.1; duration delay;"},
-      {.name = "unsupported-opaque",
-       .source = "OPENQASM 3.1; opaque custom q;"},
+      {
+          .name = "unterminated-string",
+          .source = "OPENQASM 3.1; include \"missing.inc;",
+      },
+      {
+          .name = "missing-include",
+          .source = "OPENQASM 3.1; include \"missing.inc\";",
+      },
+      {
+          .name = "invalid-hardware-qubit",
+          .source = "OPENQASM 3.1; qubit q; x $;",
+      },
+      {
+          .name = "float-overflow",
+          .source = "OPENQASM 3.1; float value = 1e99999;",
+      },
+      {
+          .name = "unsupported-duration",
+          .source = "OPENQASM 3.1; duration delay;",
+      },
+      {
+          .name = "unsupported-opaque",
+          .source = "OPENQASM 3.1; opaque custom q;",
+      },
       {.name = "output-qubit", .source = "OPENQASM 3.1; output qubit q;"},
       {.name = "const-qubit", .source = "OPENQASM 3.1; const qubit q;"},
       {.name = "duplicate-version", .source = "OPENQASM 3.1; OPENQASM 3.1;"},
-      {.name = "non-string-include",
-       .source = "OPENQASM 3.1; include stdgates.inc;"},
-      {.name = "gate-designator",
-       .source = "OPENQASM 3.1; gate custom[2] q {}"},
-      {.name = "missing-range-members",
-       .source = "OPENQASM 3.1; for int i in [:] {}"},
-      {.name = "missing-while-condition",
-       .source = "OPENQASM 3.1; while () {}"},
-      {.name = "switch-without-cases",
-       .source = "OPENQASM 3.1; int value = 0; switch (value) {}"},
-      {.name = "switch-case-after-default",
-       .source = "OPENQASM 3.1; int value = 0; switch (value) { "
-                 "default {} case 0 {} }"},
-      {.name = "switch-with-repeated-default",
-       .source = "OPENQASM 3.1; int value = 0; switch (value) { "
-                 "case 0 {} default {} default {} }"},
-      {.name = "const-without-initializer",
-       .source = "OPENQASM 3.1; const int value;"},
+      {
+          .name = "non-string-include",
+          .source = "OPENQASM 3.1; include stdgates.inc;",
+      },
+      {
+          .name = "gate-designator",
+          .source = "OPENQASM 3.1; gate custom[2] q {}",
+      },
+      {
+          .name = "missing-range-members",
+          .source = "OPENQASM 3.1; for int i in [:] {}",
+      },
+      {
+          .name = "missing-while-condition",
+          .source = "OPENQASM 3.1; while () {}",
+      },
+      {
+          .name = "switch-without-cases",
+          .source = "OPENQASM 3.1; int value = 0; switch (value) {}",
+      },
+      {
+          .name = "switch-case-after-default",
+          .source = "OPENQASM 3.1; int value = 0; switch (value) { "
+                    "default {} case 0 {} }",
+      },
+      {
+          .name = "switch-with-repeated-default",
+          .source = "OPENQASM 3.1; int value = 0; switch (value) { "
+                    "case 0 {} default {} default {} }",
+      },
+      {
+          .name = "const-without-initializer",
+          .source = "OPENQASM 3.1; const int value;",
+      },
   });
 
   for (const auto& fixture : fixtures) {

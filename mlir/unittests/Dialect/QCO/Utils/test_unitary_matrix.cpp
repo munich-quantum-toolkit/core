@@ -75,9 +75,12 @@ static void verifyMatrix2x2FixedMatchesDynamic() {
 }
 
 static void verifyMatrix4x4FixedMatchesDynamic() {
-  const Matrix4x4 gate =
-      Matrix4x4::fromDiagonal({std::exp(1i * 0.2), std::exp(1i * 0.5),
-                               std::exp(1i * 1.1), std::exp(1i * -0.7)});
+  const Matrix4x4 gate = Matrix4x4::fromDiagonal({
+      std::exp(1i * 0.2),
+      std::exp(1i * 0.5),
+      std::exp(1i * 1.1),
+      std::exp(1i * -0.7),
+  });
   const std::optional<EigenDecomposition4x4> fixed = gate.eigenDecomposition();
   const std::optional<EigenDecomposition> dynamic =
       DynamicMatrix(gate).eigenDecomposition();
@@ -431,24 +434,26 @@ TEST(DynamicMatrix, PremultiplyByEmbeddedMatchesDense) {
   const Matrix4x4 swap = swapMatrix();
   for (const size_t numQubits : {2U, 3U}) {
     for (size_t wire = 0; wire < numQubits; ++wire) {
-      DynamicMatrix dense =
-          DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+      DynamicMatrix dense = DynamicMatrix::identity(
+          static_cast<int64_t>(uint64_t{1} << numQubits));
       dense.premultiplyBy(x.embedInNqubit(numQubits, wire));
-      DynamicMatrix structured =
-          DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+      DynamicMatrix structured = DynamicMatrix::identity(
+          static_cast<int64_t>(uint64_t{1} << numQubits));
       structured.premultiplyByEmbedded1Q(x, numQubits, wire);
       EXPECT_TRUE(dense.isApprox(structured));
     }
   }
-  for (const std::array<size_t, 2> wires :
-       {std::array<size_t, 2>{0, 1}, std::array<size_t, 2>{0, 2},
-        std::array<size_t, 2>{1, 2}}) {
+  for (const std::array<size_t, 2> wires : {
+           std::array<size_t, 2>{0, 1},
+           std::array<size_t, 2>{0, 2},
+           std::array<size_t, 2>{1, 2},
+       }) {
     constexpr size_t numQubits = 3;
     DynamicMatrix dense =
-        DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+        DynamicMatrix::identity(static_cast<int64_t>(uint64_t{1} << numQubits));
     dense.premultiplyBy(swap.embedInNqubit(numQubits, wires[0], wires[1]));
     DynamicMatrix structured =
-        DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+        DynamicMatrix::identity(static_cast<int64_t>(uint64_t{1} << numQubits));
     structured.premultiplyByEmbedded2Q(swap, numQubits, wires[0], wires[1]);
     EXPECT_TRUE(dense.isApprox(structured));
   }
@@ -835,9 +840,12 @@ TEST(SymmetricEigensolver, ReconstructsRandomSymmetric) {
     EXPECT_TRUE((v.transpose() * v).isIdentity());
 
     // Reconstruction: V D V^T == A.
-    const Matrix4x4 d =
-        Matrix4x4::fromDiagonal({result.eigenvalues[0], result.eigenvalues[1],
-                                 result.eigenvalues[2], result.eigenvalues[3]});
+    const Matrix4x4 d = Matrix4x4::fromDiagonal({
+        result.eigenvalues[0],
+        result.eigenvalues[1],
+        result.eigenvalues[2],
+        result.eigenvalues[3],
+    });
     const Matrix4x4 reconstructed = v * d * v.transpose();
     const Matrix4x4 original =
         Matrix4x4::fromElements(a[0], a[1], a[2], a[3],      // row 0

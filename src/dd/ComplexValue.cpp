@@ -75,9 +75,9 @@ ComplexValue::getLowestFraction(const fp x,
 
   while ((lowerBound.second <= maxDenominator) &&
          (upperBound.second <= maxDenominator)) {
-    auto num = lowerBound.first + upperBound.first;
-    auto den = lowerBound.second + upperBound.second;
-    auto median = static_cast<fp>(num) / static_cast<fp>(den);
+    auto const num = lowerBound.first + upperBound.first;
+    auto const den = lowerBound.second + upperBound.second;
+    auto const median = static_cast<fp>(num) / static_cast<fp>(den);
     if (std::abs(x - median) <= RealNumber::eps) {
       if (den <= maxDenominator) {
         return std::pair{num, den};

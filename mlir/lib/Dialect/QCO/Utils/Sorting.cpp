@@ -31,8 +31,8 @@ static Operation* findParentInBlock(Operation* op, Block& block) {
 
 /// Return the vector of locations for each block argument.
 static SmallVector<Location> getArgumentLocs(Block& block) {
-  return to_vector(map_range(block.getArguments(),
-                             [](BlockArgument& arg) { return arg.getLoc(); }));
+  return map_to_vector(block.getArguments(),
+                       [](BlockArgument& arg) { return arg.getLoc(); });
 }
 
 namespace mlir::qco {

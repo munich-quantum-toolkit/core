@@ -84,9 +84,9 @@ struct SeenRegisterIndices {
 
 /// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
-  Unset,  //!< No allocation mode has been established yet.
-  Static, //!< The module uses static qubit allocation.
-  Dynamic //!< The module uses dynamic qubit allocation.
+  Unset,   //!< No allocation mode has been established yet.
+  Static,  //!< The module uses static qubit allocation.
+  Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
 /// State object for tracking qubit value flow during conversion
@@ -310,9 +310,9 @@ template <typename Range>
 [[nodiscard]] static SmallVector<Value>
 resolveMappedQubits(LoweringState& state, Operation* anchor,
                     const Range& qcQubits) {
-  return llvm::to_vector(llvm::map_range(qcQubits, [&](Value qcQubit) {
+  return llvm::map_to_vector(qcQubits, [&](Value qcQubit) {
     return lookupMappedQubit(state, anchor, qcQubit);
-  }));
+  });
 }
 
 /// Resolves a range of QC memrefs to their latest QTensor values.
@@ -320,9 +320,9 @@ template <typename Range>
 [[nodiscard]] static SmallVector<Value>
 resolveMappedTensors(LoweringState& state, Operation* anchor,
                      const Range& registers) {
-  return llvm::to_vector(llvm::map_range(registers, [&](RegisterId reg) {
+  return llvm::map_to_vector(registers, [&](RegisterId reg) {
     return lookupMappedTensor(state, anchor, reg);
-  }));
+  });
 }
 
 /// Updates mappings for matching QC and QCO qubit ranges.
@@ -1635,8 +1635,10 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
 
     SmallVector<Value> qubits(qubitMap.begin(), qubitMap.end());
     SmallVector<RegisterId> registers(registerMap.begin(), registerMap.end());
-    state.structuredValues[newForOp] = {.qubits = qubits,
-                                        .registers = registers};
+    state.structuredValues[newForOp] = {
+        .qubits = qubits,
+        .registers = registers,
+    };
     seedRegionMappings(state, newForOp.getRegion(), qubits, registers,
                        dstBlock.getArguments().take_back(numQubits),
                        dstBlock.getArguments()
@@ -1741,8 +1743,10 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
 
     SmallVector<Value> qubits(qubitMap.begin(), qubitMap.end());
     SmallVector<RegisterId> registers(registerMap.begin(), registerMap.end());
-    state.structuredValues[newWhileOp] = {.qubits = qubits,
-                                          .registers = registers};
+    state.structuredValues[newWhileOp] = {
+        .qubits = qubits,
+        .registers = registers,
+    };
     seedRegionMappings(state, newWhileOp.getBefore(), qubits, registers,
                        newBeforeBlock->getArguments().take_back(numQubits),
                        newBeforeBlock->getArguments()
@@ -1819,8 +1823,10 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
     SmallVector<Value> qubits(qubitMap.begin(), qubitMap.end());
     SmallVector<RegisterId> registers(registerMap.begin(), registerMap.end());
-    state.structuredValues[newIfOp] = {.qubits = qubits,
-                                       .registers = registers};
+    state.structuredValues[newIfOp] = {
+        .qubits = qubits,
+        .registers = registers,
+    };
 
     if (!op.getElseRegion().empty()) {
       elseBlock->getOperations().splice(

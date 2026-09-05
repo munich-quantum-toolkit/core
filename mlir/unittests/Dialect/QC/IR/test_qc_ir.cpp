@@ -670,7 +670,8 @@ TEST_F(QCTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
             return
           }
         }
-      )mlir"};
+      )mlir",
+  };
 
   for (const auto source : invalidPrograms) {
     bool sawExpectedDiagnostic = false;
@@ -689,7 +690,8 @@ TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
   const auto matrixType = RankedTensorType::get(
       {2, 2}, ComplexType::get(Float64Type::get(context.get())));
   const std::array<std::complex<double>, 4> xValues{
-      {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}}};
+      {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}},
+  };
   const auto xMatrix = DenseElementsAttr::get(
       matrixType, llvm::ArrayRef<std::complex<double>>(xValues));
 
@@ -712,7 +714,8 @@ TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
   EXPECT_EQ(unitaries.front().getMatrix(), xMatrix);
 
   const std::array<std::complex<double>, 4> identityValues{
-      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}},
+  };
   unitaries.front()->setAttr(
       "matrix",
       DenseElementsAttr::get(
@@ -737,16 +740,19 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsNonUnitaryMatrix) {
   };
 
   const std::array<std::complex<double>, 4> nonUnitaryValues{
-      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.5, 0.0}}};
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.5, 0.0}},
+  };
   expectRejected(nonUnitaryValues);
 
   const std::array<std::complex<double>, 4> nonOrthogonalValues{
-      {{1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}}};
+      {{1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}},
+  };
   expectRejected(nonOrthogonalValues);
 
   const auto maximum = std::numeric_limits<double>::max();
   const std::array<std::complex<double>, 4> overflowingValues{
-      {{maximum, maximum}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+      {{maximum, maximum}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}},
+  };
   expectRejected(overflowingValues);
 }
 
@@ -820,24 +826,26 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsRepeatedQubit) {
   auto qubit = builder.allocQubit();
   const auto matrixType =
       RankedTensorType::get({4, 4}, ComplexType::get(builder.getF64Type()));
-  const std::array<std::complex<double>, 16> identityValues{{
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-  }};
+  const std::array<std::complex<double>, 16> identityValues{
+      {
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+      },
+  };
   const auto identity = DenseElementsAttr::get(
       matrixType, llvm::ArrayRef<std::complex<double>>(identityValues));
   auto unitary = UnitaryOp::create(builder, identity, ValueRange{qubit, qubit});
@@ -880,7 +888,7 @@ enum class ForbiddenModifierBodyOp : std::uint8_t {
   CBitAlloc,
   CBitRead,
   CBitLoad,
-  CBitStore
+  CBitStore,
 };
 
 } // namespace
@@ -1000,9 +1008,11 @@ buildInvalidNestedModifierProgram(MLIRContext* context,
 }
 
 TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
-  constexpr std::array modifiers{VerifierModifierKind::Inv,
-                                 VerifierModifierKind::Ctrl,
-                                 VerifierModifierKind::Pow};
+  constexpr std::array modifiers{
+      VerifierModifierKind::Inv,
+      VerifierModifierKind::Ctrl,
+      VerifierModifierKind::Pow,
+  };
   constexpr std::array forbiddenOperations{
       ForbiddenModifierBodyOp::Alloc,
       ForbiddenModifierBodyOp::Dealloc,
@@ -1013,7 +1023,8 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
       ForbiddenModifierBodyOp::CBitAlloc,
       ForbiddenModifierBodyOp::CBitRead,
       ForbiddenModifierBodyOp::CBitLoad,
-      ForbiddenModifierBodyOp::CBitStore};
+      ForbiddenModifierBodyOp::CBitStore,
+  };
 
   for (auto modifier : modifiers) {
     for (const auto forbiddenOperation : forbiddenOperations) {
@@ -1072,9 +1083,11 @@ buildInvalidModifierCaptureProgram(MLIRContext* context,
 }
 
 TEST_F(QCTest, ModifiersRejectDirectAndNestedQubitCaptures) {
-  constexpr std::array modifiers{VerifierModifierKind::Inv,
-                                 VerifierModifierKind::Ctrl,
-                                 VerifierModifierKind::Pow};
+  constexpr std::array modifiers{
+      VerifierModifierKind::Inv,
+      VerifierModifierKind::Ctrl,
+      VerifierModifierKind::Pow,
+  };
 
   for (const auto modifier : modifiers) {
     for (const bool nested : {false, true}) {

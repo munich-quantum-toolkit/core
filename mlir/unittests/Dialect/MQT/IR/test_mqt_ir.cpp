@@ -391,7 +391,8 @@ TEST_F(MQTIRTest, RejectsMutuallyRecursiveUnitaryFunctions) {
                %out = qco.call @first(%q) : (!qco.qubit) -> !qco.qubit
                return %out : !qco.qubit
              }
-           )mlir"}) {
+           )mlir",
+       }) {
     SCOPED_TRACE(source.str());
     bool sawRecursion = false;
     ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
@@ -416,7 +417,8 @@ TEST_F(MQTIRTest, RejectsEmptyUnitaryBodies) {
                  attributes {mqt.unitary} {
              ^bb0(%q: !qco.qubit):
              }
-           )mlir"}) {
+           )mlir",
+       }) {
     SCOPED_TRACE(source.str());
     bool sawEmptyBody = false;
     ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
@@ -479,7 +481,8 @@ TEST_F(MQTIRTest, RejectsMalformedUnitaryBodyOperations) {
                %value = "memref.load"() : () -> f64
                return %q : !qco.qubit
              }
-           )mlir"}) {
+           )mlir",
+       }) {
     SCOPED_TRACE(source.str());
     bool sawOperandError = false;
     ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
@@ -514,7 +517,8 @@ TEST_F(MQTIRTest, RejectsMalformedCallsInUnitaryCallees) {
                %out = "qco.call"(%q) : (!qco.qubit) -> !qco.qubit
                return %out : !qco.qubit
              }
-           )mlir"}) {
+           )mlir",
+       }) {
     SCOPED_TRACE(source.str());
     bool sawMissingCallee = false;
     ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {

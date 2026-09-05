@@ -162,9 +162,11 @@ makeUCxTarget(std::optional<std::vector<Site>> sites = std::nullopt) {
   if (!sites) {
     sites = std::vector{valid(Site::create(0)), valid(Site::create(1))};
   }
-  std::vector operations{valid(Operation::create("u", 1, 3)),
-                         valid(Operation::create("cx", 2, 0)),
-                         valid(Operation::create("gphase", 0, 1))};
+  std::vector operations{
+      valid(Operation::create("u", 1, 3)),
+      valid(Operation::create("cx", 2, 0)),
+      valid(Operation::create("gphase", 0, 1)),
+  };
   return valid(Target::create(std::move(*sites), Connectivity::allToAll(),
                               NativeOperations::fromOperations(operations)));
 }
@@ -174,14 +176,16 @@ makeOneWayUCxTarget(Connectivity connectivity = Connectivity::allToAll()) {
   std::vector operations{
       valid(Operation::create("u", 1, 3)),
       valid(Operation::create("cx", 2, 0, {valid(SiteTuple::create({1, 0}))})),
-      valid(Operation::create("gphase", 0, 1))};
+      valid(Operation::create("gphase", 0, 1)),
+  };
   return valid(Target::create(2, std::move(connectivity),
                               NativeOperations::fromOperations(operations)));
 }
 
 [[nodiscard]] static Target makeOneWayRxxTarget() {
-  std::vector operations{valid(
-      Operation::create("rxx", 2, 1, {valid(SiteTuple::create({1, 0}))}))};
+  std::vector operations{
+      valid(Operation::create("rxx", 2, 1, {valid(SiteTuple::create({1, 0}))})),
+  };
   return valid(Target::create(2, Connectivity::allToAll(),
                               NativeOperations::fromOperations(operations)));
 }
@@ -194,32 +198,36 @@ denseMatrix(QCOProgramBuilder& builder, const int64_t dimension,
   return mlir::DenseElementsAttr::get(type, values);
 }
 
-constexpr std::array<std::complex<double>, 4> X_MATRIX{{
-    {0.0, 0.0},
-    {1.0, 0.0},
-    {1.0, 0.0},
-    {0.0, 0.0},
-}};
+constexpr std::array<std::complex<double>, 4> X_MATRIX{
+    {
+        {0.0, 0.0},
+        {1.0, 0.0},
+        {1.0, 0.0},
+        {0.0, 0.0},
+    },
+};
 
 // CX with operand 0 as the most-significant (control) qubit.
-constexpr std::array<std::complex<double>, 16> CX_MATRIX{{
-    {1.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {1.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {1.0, 0.0},
-    {0.0, 0.0},
-    {0.0, 0.0},
-    {1.0, 0.0},
-    {0.0, 0.0},
-}};
+constexpr std::array<std::complex<double>, 16> CX_MATRIX{
+    {
+        {1.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {1.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {1.0, 0.0},
+        {0.0, 0.0},
+        {0.0, 0.0},
+        {1.0, 0.0},
+        {0.0, 0.0},
+    },
+};
 
 namespace {
 
@@ -282,9 +290,9 @@ TEST(TargetSynthesisPassContract, FactoriesAreIndependentlyConstructible) {
 
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionRequiresStrictImprovement) {
   const auto adjacentCx = [](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.cx(q0, q1);
+    const auto q0Input = builder.staticQubit(0);
+    const auto q1Input = builder.staticQubit(1);
+    auto [q0, q1] = builder.cx(q0Input, q1Input);
     std::tie(q0, q1) = builder.cx(q0, q1);
     return builder.intConstant(0);
   };
@@ -296,9 +304,9 @@ TEST_F(TargetSynthesisTest, TwoQubitGateFusionRequiresStrictImprovement) {
   expectEquivalent(expected, optimized);
 
   auto nonImproving = build([](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.cx(q0, q1);
+    const auto q0Input = builder.staticQubit(0);
+    const auto q1Input = builder.staticQubit(1);
+    auto [q0, q1] = builder.cx(q0Input, q1Input);
     std::tie(q1, q0) = builder.cx(q1, q0);
     std::tie(q0, q1) = builder.cx(q0, q1);
     return builder.intConstant(0);
@@ -311,9 +319,9 @@ TEST_F(TargetSynthesisTest, TwoQubitGateFusionRequiresStrictImprovement) {
 TEST_F(TargetSynthesisTest,
        TwoQubitGateFusionFusesInterleavedSingleQubitGates) {
   const auto interleaved = [](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.cx(q0, q1);
+    const auto q0Input = builder.staticQubit(0);
+    const auto q1Input = builder.staticQubit(1);
+    auto [q0, q1] = builder.cx(q0Input, q1Input);
     q1 = builder.x(q1);
     q0 = builder.z(q0);
     std::tie(q0, q1) = builder.cx(q0, q1);
@@ -350,9 +358,9 @@ TEST_F(TargetSynthesisTest, TwoQubitGateFusionExposesEarlierRunContinuations) {
 
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionEmitsSymmetricEntangler) {
   const auto reducible = [](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.cx(q0, q1);
+    const auto q0Input = builder.staticQubit(0);
+    const auto q1Input = builder.staticQubit(1);
+    auto [q0, q1] = builder.cx(q0Input, q1Input);
     std::tie(q1, q0) = builder.cx(q1, q0);
     std::tie(q1, q0) = builder.cx(q1, q0);
     return builder.intConstant(0);
@@ -370,9 +378,9 @@ TEST_F(TargetSynthesisTest, TwoQubitGateFusionEmitsSymmetricEntangler) {
 
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionLeavesIndividualOpsAlone) {
   auto module = build([](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.swap(q0, q1);
+    const auto q0Input = builder.staticQubit(0);
+    const auto q1Input = builder.staticQubit(1);
+    [[maybe_unused]] auto [q0, q1] = builder.swap(q0Input, q1Input);
     return builder.intConstant(0);
   });
   const auto before = printModule(*module);
@@ -407,9 +415,9 @@ TEST_F(TargetSynthesisTest,
 
 TEST_F(TargetSynthesisTest, TargetNativeSynthesisRemovesOrdinarySwap) {
   const auto swap = [](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.swap(q0, q1);
+    const auto q0Input = builder.staticQubit(0);
+    const auto q1Input = builder.staticQubit(1);
+    [[maybe_unused]] auto [q0, q1] = builder.swap(q0Input, q1Input);
     return builder.intConstant(0);
   };
   auto expected = build(swap);
@@ -470,9 +478,9 @@ TEST_F(TargetSynthesisTest,
 
 TEST_F(TargetSynthesisTest, MappingLeavesDirectionRepairToSynthesis) {
   auto moduleOp = build([](QCOProgramBuilder& builder) {
-    auto q0 = builder.allocQubit();
-    auto q1 = builder.allocQubit();
-    std::tie(q0, q1) = builder.cx(q0, q1);
+    const auto q0Input = builder.allocQubit();
+    const auto q1Input = builder.allocQubit();
+    auto [q0, q1] = builder.cx(q0Input, q1Input);
     std::tie(q1, q0) = builder.cx(q1, q0);
     return builder.intConstant(0);
   });
@@ -484,8 +492,7 @@ TEST_F(TargetSynthesisTest, MappingLeavesDirectionRepairToSynthesis) {
                   target, mlir::qco::MappingPassOptions{
                               .niterations = 1, .ntrials = 1, .seed = 42}))));
   EXPECT_EQ(countOps<SWAPOp>(*moduleOp), 0U);
-  auto expected =
-      mlir::OwningOpRef<ModuleOp>(mlir::cast<ModuleOp>(moduleOp->clone()));
+  auto expected = mlir::OwningOpRef<ModuleOp>(moduleOp->clone());
   ASSERT_TRUE(mlir::succeeded(
       runPass(*moduleOp, mlir::qco::createTargetNativeSynthesis(target))));
   EXPECT_EQ(countOps<CtrlOp>(*moduleOp), 2U);
@@ -528,9 +535,9 @@ TEST_F(TargetSynthesisTest, RejectsUnknownSitesWithoutWideningNativeSupport) {
 
 TEST_F(TargetSynthesisTest, ConformanceRejectsUnsupportedEntanglerDirection) {
   auto module = build([](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.cx(q0, q1);
+    const auto q0Input = builder.staticQubit(0);
+    const auto q1Input = builder.staticQubit(1);
+    [[maybe_unused]] const auto [q0, q1] = builder.cx(q0Input, q1Input);
     return builder.intConstant(0);
   });
   const auto diagnostics = expectFailure(
@@ -543,14 +550,12 @@ TEST_F(TargetSynthesisTest, ConformanceRejectsUnsupportedEntanglerDirection) {
 TEST_F(TargetSynthesisTest,
        TargetNativeSynthesisTracksSitesThroughStructuredControlFlow) {
   auto module = build([](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
+    const auto q0 = builder.staticQubit(0);
+    const auto q1 = builder.staticQubit(1);
     const auto outputs =
         builder.qcoIf(true, ValueRange{q0, q1}, [&](ValueRange arguments) {
-          auto first = arguments[0];
-          auto second = arguments[1];
-          std::tie(first, second) = builder.cx(first, second);
-          return mlir::SmallVector{first, second};
+          const auto [first, second] = builder.cx(arguments[0], arguments[1]);
+          return mlir::SmallVector<Value>{first, second};
         });
     for (Value output : outputs) {
       builder.sink(output);
@@ -629,10 +634,10 @@ TEST_F(TargetSynthesisTest,
     const auto outputs = builder.qcoIf(
         true, ValueRange{q0, q1},
         [](ValueRange arguments) {
-          return mlir::SmallVector{arguments[0], arguments[1]};
+          return mlir::SmallVector<Value>{arguments[0], arguments[1]};
         },
         [](ValueRange arguments) {
-          return mlir::SmallVector{arguments[1], arguments[0]};
+          return mlir::SmallVector<Value>{arguments[1], arguments[0]};
         });
     auto h = builder.h(outputs[0]);
     builder.sink(h);
@@ -695,7 +700,8 @@ TEST_F(TargetSynthesisTest, RejectsLoopCarriedSitePermutations) {
         ^bb0(%a: !qco.qubit, %b: !qco.qubit):
           scf.yield %b, %a : !qco.qubit, !qco.qubit
         }
-      )mlir"};
+      )mlir",
+  };
   for (const auto* loop : loops) {
     const std::string source = std::string{R"mlir(
       module {
@@ -761,7 +767,7 @@ TEST_F(TargetSynthesisTest, AcceptsMatchingBranchSitePermutations) {
     auto q0 = builder.staticQubit(0);
     auto q1 = builder.staticQubit(1);
     const auto swap = [](ValueRange args) {
-      return mlir::SmallVector{args[1], args[0]};
+      return mlir::SmallVector<Value>{args[1], args[0]};
     };
     auto outputs = builder.qcoIf(true, ValueRange{q0, q1}, swap, swap);
     std::tie(q0, q1) = builder.cx(outputs[0], outputs[1]);
@@ -783,9 +789,10 @@ TEST_F(TargetSynthesisTest,
   });
   const auto target = valid(Target::create(
       2, Connectivity::allToAll(),
-      NativeOperations::fromOperations(
-          {valid(Operation::create("u", 1, 3, {valid(SiteTuple::create({0}))})),
-           valid(Operation::create("cx", 2, 0))})));
+      NativeOperations::fromOperations({
+          valid(Operation::create("u", 1, 3, {valid(SiteTuple::create({0}))})),
+          valid(Operation::create("cx", 2, 0)),
+      })));
 
   const auto diagnostics =
       expectFailure(*module, mlir::qco::createTargetNativeSynthesis(target));
@@ -796,19 +803,22 @@ TEST_F(TargetSynthesisTest,
 TEST_F(TargetSynthesisTest,
        TargetNativeSynthesisRejectsNonadjacentSynthesisPlacement) {
   auto module = build([](QCOProgramBuilder& builder) {
-    auto q1 = builder.staticQubit(0);
-    auto q2 = builder.staticQubit(2);
-    std::tie(q1, q2) = builder.swap(q1, q2);
+    const auto q1Input = builder.staticQubit(0);
+    const auto q2Input = builder.staticQubit(2);
+    [[maybe_unused]] const auto [q1, q2] = builder.swap(q1Input, q2Input);
     return builder.intConstant(0);
   });
   const auto target = valid(Target::create(
       3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
-      NativeOperations::fromOperations(
-          {valid(Operation::create("u", 1, 3)),
-           valid(Operation::create("cx", 2, 0,
-                                   {valid(SiteTuple::create({0, 1})),
-                                    valid(SiteTuple::create({1, 2}))})),
-           valid(Operation::create("gphase", 0, 1))})));
+      NativeOperations::fromOperations({
+          valid(Operation::create("u", 1, 3)),
+          valid(Operation::create("cx", 2, 0,
+                                  {
+                                      valid(SiteTuple::create({0, 1})),
+                                      valid(SiteTuple::create({1, 2})),
+                                  })),
+          valid(Operation::create("gphase", 0, 1)),
+      })));
 
   const auto diagnostics =
       expectFailure(*module, mlir::qco::createTargetNativeSynthesis(target));
@@ -877,9 +887,9 @@ TEST_F(TargetSynthesisTest, DenseUnitaryHasAsymmetricTwoQubitDDSemantics) {
     return builder.intConstant(0);
   };
   const auto cxReference = [](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.cx(q0, q1);
+    const auto q0Input = builder.staticQubit(0);
+    const auto q1Input = builder.staticQubit(1);
+    [[maybe_unused]] auto [q0, q1] = builder.cx(q0Input, q1Input);
     return builder.intConstant(0);
   };
   auto expected = build(cxReference);
@@ -919,9 +929,9 @@ TEST_F(TargetSynthesisTest,
     return builder.intConstant(0);
   };
   const auto cxReference = [](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.cx(q0, q1);
+    const auto q0Input = builder.staticQubit(0);
+    const auto q1Input = builder.staticQubit(1);
+    [[maybe_unused]] auto [q0, q1] = builder.cx(q0Input, q1Input);
     return builder.intConstant(0);
   };
   auto expectedCx = build(cxReference);
@@ -937,9 +947,9 @@ TEST_F(TargetSynthesisTest,
 
 TEST_F(TargetSynthesisTest, TargetNativeSynthesisPreservesNativeSwap) {
   auto module = build([](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.swap(q0, q1);
+    const auto q0Input = builder.staticQubit(0);
+    const auto q1Input = builder.staticQubit(1);
+    [[maybe_unused]] auto [q0, q1] = builder.swap(q0Input, q1Input);
     return builder.intConstant(0);
   });
   const auto swapTarget =
@@ -968,9 +978,10 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisPreservesNativeGlobalPhase) {
   auto synthesized = build(phasedX);
   const auto target =
       valid(Target::create(1, Connectivity::allToAll(),
-                           NativeOperations::fromOperations(
-                               {valid(Operation::create("x", 1, 0)),
-                                valid(Operation::create("gphase", 0, 1))})));
+                           NativeOperations::fromOperations({
+                               valid(Operation::create("x", 1, 0)),
+                               valid(Operation::create("gphase", 0, 1)),
+                           })));
 
   ASSERT_TRUE(mlir::succeeded(
       runPass(*synthesized, mlir::qco::createTargetNativeSynthesis(target))));
@@ -1037,19 +1048,20 @@ TEST_F(TargetSynthesisTest,
 
 TEST_F(TargetSynthesisTest, TargetNativeSynthesisUsesHomogeneousCapability) {
   const auto swap = [](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.swap(q0, q1);
+    const auto q0Input = builder.staticQubit(0);
+    const auto q1Input = builder.staticQubit(1);
+    [[maybe_unused]] auto [q0, q1] = builder.swap(q0Input, q1Input);
     return builder.intConstant(0);
   };
   auto expected = build(swap);
   auto synthesized = build(swap);
   const auto target =
       valid(Target::create(2, Connectivity::allToAll(),
-                           NativeOperations::fromOperations(
-                               {valid(Operation::create("u", 1, 3)),
-                                valid(Operation::create("cz", 2, 0)),
-                                valid(Operation::create("gphase", 0, 1))})));
+                           NativeOperations::fromOperations({
+                               valid(Operation::create("u", 1, 3)),
+                               valid(Operation::create("cz", 2, 0)),
+                               valid(Operation::create("gphase", 0, 1)),
+                           })));
   ASSERT_TRUE(target.synthesisBasis());
   ASSERT_EQ(target.synthesisBasis()->entangler, Target::GateKind::CZ);
 
@@ -1184,9 +1196,10 @@ TEST_F(TargetSynthesisTest, SupportedRuntimeParameterizedGateStaysUntouched) {
   ASSERT_TRUE(module);
   const auto target =
       valid(Target::create(2, Connectivity::allToAll(),
-                           NativeOperations::fromOperations(
-                               {valid(Operation::create("u", 1, 3)),
-                                valid(Operation::create("rxx", 2, 1))})));
+                           NativeOperations::fromOperations({
+                               valid(Operation::create("u", 1, 3)),
+                               valid(Operation::create("rxx", 2, 1)),
+                           })));
   const auto before = printModule(*module);
 
   ASSERT_TRUE(mlir::succeeded(
@@ -1306,9 +1319,9 @@ TEST_F(TargetSynthesisTest,
       runPass(*reversed, mlir::qco::createVerifyTargetConformance(target))));
 
   auto unknownSite = build([](QCOProgramBuilder& builder) {
-    auto q30 = builder.staticQubit(30);
-    auto q20 = builder.staticQubit(20);
-    std::tie(q30, q20) = builder.cx(q30, q20);
+    const auto q30Input = builder.staticQubit(30);
+    const auto q20Input = builder.staticQubit(20);
+    [[maybe_unused]] auto [q30, q20] = builder.cx(q30Input, q20Input);
     return builder.intConstant(0);
   });
   const auto diagnostics = expectFailure(

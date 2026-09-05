@@ -54,9 +54,9 @@ namespace {
 
 /// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
-  Unset,  //!< No allocation mode has been established yet.
-  Static, //!< The module uses static qubit allocation.
-  Dynamic //!< The module uses dynamic qubit allocation.
+  Unset,   //!< No allocation mode has been established yet.
+  Static,  //!< The module uses static qubit allocation.
+  Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
 /// State object for tracking qubit allocation mode.
@@ -451,7 +451,7 @@ struct ConvertQTensorAllocOp final
       return failure();
     }
     auto qubitType = qc::QubitType::get(op.getContext());
-    auto tensorType = cast<RankedTensorType>(op.getResult().getType());
+    auto tensorType = op.getResult().getType();
     auto memrefType = MemRefType::get(tensorType.getShape(), qubitType);
 
     memref::AllocOp alloc;
@@ -1342,7 +1342,7 @@ protected:
         function->removeAttr(mqt::MQTDialect::UnitaryAttrHelper::getNameStr());
       }
     }
-    auto unitaryGuard = llvm::make_scope_exit([&] {
+    llvm::scope_exit unitaryGuard([&] {
       for (auto function : unitaryFunctions) {
         mqt::setUnitaryFunction(function);
       }
@@ -1363,10 +1363,10 @@ protected:
       auto isQubitType = [](Type t) {
         return TypeSwitch<Type, bool>(t)
             .Case<qc::QubitType, qco::QubitType>([](auto) { return true; })
-            .Case<MemRefType>([](MemRefType t) {
+            .Case([](MemRefType t) {
               return isa<qc::QubitType>(t.getElementType());
             })
-            .Case<RankedTensorType>([](RankedTensorType t) {
+            .Case([](RankedTensorType t) {
               return isa<qco::QubitType>(t.getElementType());
             })
             .Default([](auto) { return false; });

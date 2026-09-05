@@ -41,8 +41,10 @@ Complex ComplexNumbers::conj(const Complex& a) noexcept {
 }
 
 Complex ComplexNumbers::neg(const Complex& a) noexcept {
-  return {.r = RealNumber::flipPointerSign(a.r),
-          .i = RealNumber::flipPointerSign(a.i)};
+  return {
+      .r = RealNumber::flipPointerSign(a.r),
+      .i = RealNumber::flipPointerSign(a.i),
+  };
 }
 
 Complex ComplexNumbers::lookup(const Complex& c) {

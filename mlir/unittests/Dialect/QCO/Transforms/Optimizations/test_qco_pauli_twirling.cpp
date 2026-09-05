@@ -111,19 +111,19 @@ class AllPauliTwirlSeedsTest : public PauliTwirlingTest,
 
 TEST_P(AllPauliTwirlRowsTest, PreservesExactUnitary) {
   const auto [gate, seed] = GetParam();
-  auto module = buildGate(gate);
-  const OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
+  auto moduleOp = buildGate(gate);
+  const OwningOpRef<ModuleOp> original = moduleOp->clone();
 
-  ASSERT_TRUE(succeeded(runPass(*module, seed)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-  EXPECT_EQ(getTopLevelPaulis(*module).size(), 4);
-  ::mqt::test::expectFullUnitaryEqual(*original, *module, 2);
+  ASSERT_TRUE(succeeded(runPass(*moduleOp, seed)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(getTopLevelPaulis(*moduleOp).size(), 4);
+  ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 2);
 }
 
 TEST_F(PauliTwirlingTest, SameSeedProducesSameProgram) {
   auto source = buildGate(GateKind::CX);
-  const OwningOpRef<ModuleOp> first = cast<ModuleOp>(source->clone());
-  const OwningOpRef<ModuleOp> second = cast<ModuleOp>(source->clone());
+  const OwningOpRef<ModuleOp> first = source->clone();
+  const OwningOpRef<ModuleOp> second = source->clone();
 
   ASSERT_TRUE(succeeded(runPass(*first, 12345)));
   ASSERT_TRUE(succeeded(runPass(*second, 12345)));
@@ -132,22 +132,22 @@ TEST_F(PauliTwirlingTest, SameSeedProducesSameProgram) {
 
 TEST_F(PauliTwirlingTest, PreservesExistingPhaseWhenRewriting) {
   builder.gphase(0.25);
-  auto module = buildGate(GateKind::CX);
-  const OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
+  auto moduleOp = buildGate(GateKind::CX);
+  const OwningOpRef<ModuleOp> original = moduleOp->clone();
 
   GPhaseOp initialPhase = nullptr;
-  module->walk([&](GPhaseOp op) { initialPhase = op; });
+  moduleOp->walk([&](GPhaseOp op) { initialPhase = op; });
   ASSERT_TRUE(initialPhase);
   Operation* const initialPhaseOp = initialPhase.getOperation();
   Value initialTheta = initialPhase.getTheta();
 
-  ASSERT_TRUE(succeeded(runPass(*module, 4)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-  EXPECT_EQ(getTopLevelPaulis(*module).size(), 4);
-  ::mqt::test::expectFullUnitaryEqual(*original, *module, 2);
+  ASSERT_TRUE(succeeded(runPass(*moduleOp, 4)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(getTopLevelPaulis(*moduleOp).size(), 4);
+  ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 2);
 
   bool initialPhaseUnchanged = false;
-  module->walk([&](GPhaseOp op) {
+  moduleOp->walk([&](GPhaseOp op) {
     if (op.getOperation() == initialPhaseOp) {
       initialPhaseUnchanged = op.getTheta() == initialTheta;
     }
@@ -200,17 +200,18 @@ TEST_F(PauliTwirlingTest, LeavesUnsupportedModifiedGatesAndPhasesUnchanged) {
   builder.gphase(0.25);
   builder.gphase(0.5);
 
-  auto module = builder.finalize();
-  const auto original = print(*module);
+  auto moduleOp = builder.finalize();
+  const auto original = print(*moduleOp);
 
-  ASSERT_TRUE(succeeded(runPass(*module, 42)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(getTopLevelPaulis(*module).empty());
-  EXPECT_EQ(print(*module), original);
+  ASSERT_TRUE(succeeded(runPass(*moduleOp, 42)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(getTopLevelPaulis(*moduleOp).empty());
+  EXPECT_EQ(print(*moduleOp), original);
 }
 
 constexpr std::array<uint64_t, 16> SEEDS_FOR_EACH_TWIRL = {
-    6, 16, 10, 11, 12, 18, 5, 4, 1, 8, 62, 3, 2, 94, 0, 13};
+    6, 16, 10, 11, 12, 18, 5, 4, 1, 8, 62, 3, 2, 94, 0, 13,
+};
 
 TEST_P(AllPauliTwirlSeedsTest, CoversEveryTwirl) {
   using PauliTuple =
@@ -219,9 +220,9 @@ TEST_P(AllPauliTwirlSeedsTest, CoversEveryTwirl) {
   auto source = buildGate(GetParam());
   std::set<PauliTuple> emittedTwirlRows;
   for (const auto seed : SEEDS_FOR_EACH_TWIRL) {
-    const OwningOpRef<ModuleOp> module = cast<ModuleOp>(source->clone());
-    ASSERT_TRUE(succeeded(runPass(*module, seed)));
-    const auto paulis = getTopLevelPaulis(*module);
+    const OwningOpRef<ModuleOp> moduleOp = source->clone();
+    ASSERT_TRUE(succeeded(runPass(*moduleOp, seed)));
+    const auto paulis = getTopLevelPaulis(*moduleOp);
     ASSERT_EQ(paulis.size(), 4);
     emittedTwirlRows.emplace(paulis[0], paulis[1], paulis[2], paulis[3]);
   }

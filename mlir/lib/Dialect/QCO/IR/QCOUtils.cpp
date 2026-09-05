@@ -164,11 +164,11 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
   for (Operation& op : block.without_terminator()) {
     const bool handled =
         TypeSwitch<Operation*, bool>(&op)
-            .Case<BarrierOp>([&](BarrierOp barrier) {
+            .Case([&](BarrierOp barrier) {
               propagateWireIds(barrier, wireIds);
               return true;
             })
-            .Case<GPhaseOp>([&](GPhaseOp gphase) {
+            .Case([&](GPhaseOp gphase) {
               const auto matrix = gphase.getUnitaryMatrix();
               if (!matrix) {
                 return false;
@@ -177,7 +177,7 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
               found = true;
               return true;
             })
-            .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
+            .Case([&](UnitaryOpInterface unitary) {
               auto embedded = embedUnitaryInBody(unitary, numTargets, wireIds);
               if (!embedded.has_value()) {
                 return false;

@@ -213,17 +213,17 @@ public:
           llvm::any_of(operation->getResultTypes(), isQubitTensor);
       EXPECT_TRUE(hasTensorOperand);
       EXPECT_TRUE(hasTensorResult);
-      const auto tensorOperands = llvm::to_vector(
-          llvm::make_filter_range(operation->getOperandTypes(), isQubitTensor));
-      const auto tensorResults = llvm::to_vector(
-          llvm::make_filter_range(operation->getResultTypes(), isQubitTensor));
+      const auto tensorOperands =
+          llvm::filter_to_vector(operation->getOperandTypes(), isQubitTensor);
+      const auto tensorResults =
+          llvm::filter_to_vector(operation->getResultTypes(), isQubitTensor);
       EXPECT_EQ(tensorOperands, tensorResults);
       for (Region& region : operation->getRegions()) {
         if (region.empty()) {
           continue;
         }
-        const auto tensorArguments = llvm::to_vector(llvm::make_filter_range(
-            region.front().getArgumentTypes(), isQubitTensor));
+        const auto tensorArguments = llvm::filter_to_vector(
+            region.front().getArgumentTypes(), isQubitTensor);
         EXPECT_EQ(tensorArguments, tensorResults);
       }
       sawStructuredQuantumState = true;
@@ -1057,13 +1057,14 @@ module {
   });
   constexpr std::array<StringLiteral, 2> diagnostics{
       "cannot return a borrowed qubit argument explicitly",
-      "cannot return the same qubit more than once"};
+      "cannot return the same qubit more than once",
+  };
 
   for (auto [source, expected] : llvm::zip_equal(sources, diagnostics)) {
     auto moduleOp = parseSourceString<ModuleOp>(source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    OwningOpRef<ModuleOp> original = cast<ModuleOp>(moduleOp->clone());
+    OwningOpRef<ModuleOp> original = moduleOp->clone();
     bool sawExpectedDiagnostic = false;
     ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
       sawExpectedDiagnostic |= StringRef(diagnostic.str()).contains(expected);
@@ -1389,8 +1390,11 @@ buildInvalidNestedRegisterLoadProgram(MLIRContext* context,
 
 TEST_F(QCToQCORegressionTest,
        PreflightRejectsNestedRegisterLoadsInEveryModifier) {
-  constexpr std::array modifiers{ModifierKind::Inv, ModifierKind::Ctrl,
-                                 ModifierKind::Pow};
+  constexpr std::array modifiers{
+      ModifierKind::Inv,
+      ModifierKind::Ctrl,
+      ModifierKind::Pow,
+  };
 
   for (const auto modifier : modifiers) {
     SCOPED_TRACE(testing::Message()
@@ -1456,8 +1460,7 @@ buildInvalidCBitModifierProgram(MLIRContext* context,
             builder, arith::CmpIPredicate::eq,
             cbit::ReadOp::create(
                 builder,
-                (builder.getIntegerAttr(builder.getI1Type(), 0)).getType(),
-                reg),
+                builder.getIntegerAttr(builder.getI1Type(), 0).getType(), reg),
             arith::ConstantOp::create(
                 builder, builder.getIntegerAttr(builder.getI1Type(), 0)));
         break;
@@ -1488,11 +1491,17 @@ buildInvalidCBitModifierProgram(MLIRContext* context,
 
 TEST_F(QCToQCORegressionTest,
        PreflightRejectsEveryCBitOperationInEveryModifier) {
-  constexpr std::array modifiers{ModifierKind::Inv, ModifierKind::Ctrl,
-                                 ModifierKind::Pow};
+  constexpr std::array modifiers{
+      ModifierKind::Inv,
+      ModifierKind::Ctrl,
+      ModifierKind::Pow,
+  };
   constexpr std::array operations{
-      CBitModifierBodyOp::Alloc, CBitModifierBodyOp::Compare,
-      CBitModifierBodyOp::Load, CBitModifierBodyOp::Store};
+      CBitModifierBodyOp::Alloc,
+      CBitModifierBodyOp::Compare,
+      CBitModifierBodyOp::Load,
+      CBitModifierBodyOp::Store,
+  };
 
   for (const auto modifier : modifiers) {
     for (const auto operation : operations) {
@@ -1563,8 +1572,11 @@ static OwningOpRef<ModuleOp> buildInvalidModifierCaptureProgram(
 
 TEST_F(QCToQCORegressionTest,
        PreflightRejectsEveryUnsupportedModifierQubitCapture) {
-  constexpr std::array modifiers{ModifierKind::Inv, ModifierKind::Ctrl,
-                                 ModifierKind::Pow};
+  constexpr std::array modifiers{
+      ModifierKind::Inv,
+      ModifierKind::Ctrl,
+      ModifierKind::Pow,
+  };
 
   for (const auto modifier : modifiers) {
     for (const bool registerBacked : {false, true}) {
@@ -1623,8 +1635,11 @@ buildClassicalCaptureProgram(MLIRContext* context,
 }
 
 TEST_F(QCToQCORegressionTest, ModifiersPermitClassicalCaptures) {
-  constexpr std::array modifiers{ModifierKind::Inv, ModifierKind::Ctrl,
-                                 ModifierKind::Pow};
+  constexpr std::array modifiers{
+      ModifierKind::Inv,
+      ModifierKind::Ctrl,
+      ModifierKind::Pow,
+  };
 
   for (const auto modifier : modifiers) {
     SCOPED_TRACE(testing::Message()

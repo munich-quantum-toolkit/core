@@ -789,9 +789,8 @@ private:
                                     statement.location)) {
             return false;
           }
-        } else if (const auto* declaration =
-                       std::get_if<frontend::DeclarationStatement>(
-                           &statement.data)) {
+        } else if (std::holds_alternative<frontend::DeclarationStatement>(
+                       statement.data)) {
           if (!chargeScaledEmission(1, multiplicity, projectedEmission,
                                     statement.location)) {
             return false;
@@ -839,10 +838,12 @@ private:
         } else if (const auto* barrier =
                        std::get_if<frontend::BarrierStatement>(
                            &statement.data)) {
-          if (!chargeQubitAccesses(barrier->qubits, multiplicity,
-                                   projectedEmission, statement.location) ||
-              !chargeScaledEmission(1, multiplicity, projectedEmission,
-                                    statement.location)) {
+          const bool canEmitBarrier =
+              chargeQubitAccesses(barrier->qubits, multiplicity,
+                                  projectedEmission, statement.location) &&
+              chargeScaledEmission(1, multiplicity, projectedEmission,
+                                   statement.location);
+          if (!canEmitBarrier) {
             return false;
           }
         }
@@ -1108,7 +1109,7 @@ private:
     case frontend::BitVectorExpressionKind::Register: {
       auto reg = classicalRegisters.at(expression.reg);
       assert(reg && "semantic analysis must declare bit registers before use");
-      return cbit::ReadOp::create(opBuilder, loc, type, reg);
+      return {cbit::ReadOp::create(opBuilder, loc, type, reg)};
     }
     case frontend::BitVectorExpressionKind::Not: {
       auto operand = emitBitVectorExpression(opBuilder, expression.operand);
@@ -2577,7 +2578,8 @@ private:
             emitStatement(statement, gateParameters, gateQubits);
           }
           SmallVector<Value> yielded{
-              arith::AddIOp::create(builder, arguments.front(), stepWide)};
+              arith::AddIOp::create(builder, arguments.front(), stepWide),
+          };
           llvm::append_range(yielded, stateValues(slots));
           scf::YieldOp::create(builder, yielded);
         });

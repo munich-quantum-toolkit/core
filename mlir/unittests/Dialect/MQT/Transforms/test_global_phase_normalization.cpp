@@ -314,7 +314,7 @@ TEST_F(GlobalPhaseNormalizationTest,
   EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(1)));
   EXPECT_TRUE(dependsOn(phases.front().getTheta(), func.getArgument(2)));
 
-  const auto countOperations = [&moduleOp]() {
+  const auto countOperations = [&moduleOp] {
     size_t count = 0;
     moduleOp->walk([&count](Operation*) { ++count; });
     return count;
@@ -874,8 +874,13 @@ TEST_F(GlobalPhaseNormalizationTest,
                                        builder.getFunctionType({}, {}));
   auto* entry = function.addEntryBlock();
   builder.setInsertionPointToStart(entry);
-  for (const double angle : {0.0, std::numbers::pi, -std::numbers::pi,
-                             2.0 * std::numbers::pi, -2.0 * std::numbers::pi}) {
+  for (const double angle : {
+           0.0,
+           std::numbers::pi,
+           -std::numbers::pi,
+           2.0 * std::numbers::pi,
+           -2.0 * std::numbers::pi,
+       }) {
     qco::GPhaseOp::create(builder, loc,
                           mlir::mqt::constantFromScalar(builder, loc, angle));
   }
@@ -935,13 +940,14 @@ TEST_F(GlobalPhaseNormalizationTest, VerifiesPracticalConstantAngleRange) {
     SCOPED_TRACE(useQCO ? "QCO" : "QC");
     EXPECT_TRUE(
         succeeded(verifyAngle(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE, useQCO)));
-    for (const double angle :
-         {std::nextafter(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE,
-                         std::numeric_limits<double>::infinity()),
-          -std::nextafter(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE,
-                          std::numeric_limits<double>::infinity()),
-          std::numeric_limits<double>::quiet_NaN(),
-          std::numeric_limits<double>::infinity()}) {
+    for (const double angle : {
+             std::nextafter(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE,
+                            std::numeric_limits<double>::infinity()),
+             -std::nextafter(mlir::mqt::MAX_GLOBAL_PHASE_ANGLE,
+                             std::numeric_limits<double>::infinity()),
+             std::numeric_limits<double>::quiet_NaN(),
+             std::numeric_limits<double>::infinity(),
+         }) {
       EXPECT_TRUE(failed(verifyAngle(angle, useQCO)));
     }
   }

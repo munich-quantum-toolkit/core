@@ -99,7 +99,7 @@ void TensorIterator::forward() {
 
   // Find the user-operation of the tensor SSA value.
   assert(tensor_.hasOneUse() && "expected linear typing");
-  op_ = *(tensor_.user_begin());
+  op_ = *tensor_.user_begin();
 
   // The following operations define the end of the tensor's life-chain. A
   // `func.call` ends it because the tensor is handed to the callee; the tensor
@@ -111,22 +111,22 @@ void TensorIterator::forward() {
   }
 
   // Find the output from the input tensor SSA value.
-  if (!(isa<AllocOp, FromElementsOp>(op_))) {
+  if (!isa<AllocOp, FromElementsOp>(op_)) {
     TypeSwitch<Operation*>(op_)
-        .Case<ExtractOp>([&](ExtractOp op) { tensor_ = op.getOutTensor(); })
-        .Case<InsertOp>([&](InsertOp op) { tensor_ = op.getResult(); })
-        .Case<scf::ForOp>([&](scf::ForOp op) {
+        .Case([&](ExtractOp op) { tensor_ = op.getOutTensor(); })
+        .Case([&](InsertOp op) { tensor_ = op.getResult(); })
+        .Case([&](scf::ForOp op) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
-              op.getTiedLoopResult(&*(tensor_.use_begin())));
+              op.getTiedLoopResult(&*tensor_.use_begin()));
         })
-        .Case<scf::WhileOp>([&](scf::WhileOp op) {
+        .Case([&](scf::WhileOp op) {
           tensor_ = whileResultForInit(op, *tensor_.use_begin().getOperand());
         })
-        .Case<qco::IfOp>([&](qco::IfOp op) {
+        .Case([&](qco::IfOp op) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
               op.getTiedResult(&(*tensor_.use_begin())));
         })
-        .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp op) {
+        .Case([&](qco::IndexSwitchOp op) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
               op.getTiedResult(&(*tensor_.use_begin())));
         })
@@ -174,9 +174,9 @@ void TensorIterator::backward() {
 
   // Find the input from the output tensor SSA value.
   TypeSwitch<Operation*>(op_)
-      .Case<ExtractOp>([&](ExtractOp op) { tensor_ = op.getTensor(); })
-      .Case<InsertOp>([&](InsertOp op) { tensor_ = op.getDest(); })
-      .Case<scf::ForOp>([&](scf::ForOp op) {
+      .Case([&](ExtractOp op) { tensor_ = op.getTensor(); })
+      .Case([&](InsertOp op) { tensor_ = op.getDest(); })
+      .Case([&](scf::ForOp op) {
         if (auto res = dyn_cast<OpResult>(tensor_)) {
           OpOperand* operand = op.getTiedLoopInit(res);
           tensor_ = cast<TypedValue<RankedTensorType>>(operand->get());
@@ -186,7 +186,7 @@ void TensorIterator::backward() {
         llvm::reportFatalInternalError(
             "expected scf.for result for tied init lookup");
       })
-      .Case<scf::WhileOp>([&](scf::WhileOp op) {
+      .Case([&](scf::WhileOp op) {
         if (auto result = dyn_cast<OpResult>(tensor_)) {
           tensor_ = whileInitForResult(op, result);
           return;
@@ -195,7 +195,7 @@ void TensorIterator::backward() {
         llvm::reportFatalInternalError(
             "expected scf.while result for tied init lookup");
       })
-      .Case<qco::IfOp>([&](qco::IfOp op) {
+      .Case([&](qco::IfOp op) {
         if (auto res = dyn_cast<OpResult>(tensor_)) {
           tensor_ =
               cast<TypedValue<RankedTensorType>>(op.getTiedQubit(res)->get());
@@ -205,7 +205,7 @@ void TensorIterator::backward() {
         llvm::reportFatalInternalError(
             "expected scf.for result for tied init lookup");
       })
-      .Case<qco::IndexSwitchOp>([&](qco::IndexSwitchOp op) {
+      .Case([&](qco::IndexSwitchOp op) {
         if (auto result = dyn_cast<OpResult>(tensor_)) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
               op.getTiedTarget(result)->get());

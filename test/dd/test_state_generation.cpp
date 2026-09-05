@@ -54,7 +54,7 @@ TEST(StateGenerationTest, MakeZero) {
   vec[0] = {1., 0};
 
   auto dd = std::make_unique<Package>(nq);
-  auto zero = makeZeroState(nq, *dd);
+  auto const zero = makeZeroState(nq, *dd);
 
   EXPECT_EQ(zero.getVector(), vec);
 
@@ -79,7 +79,7 @@ TEST(StateGenerationTest, MakeBasis) {
   vec[13] = {1., 0};
 
   auto dd = std::make_unique<Package>(nq);
-  auto basis = makeBasisState(nq, state, *dd);
+  auto const basis = makeBasisState(nq, state, *dd);
 
   EXPECT_EQ(basis.getVector(), vec);
 
@@ -97,8 +97,12 @@ TEST(StateGenerationTest, MakeBasisDifficult) {
 
   constexpr std::size_t nq = 4;
 
-  const std::vector<BasisStates> state{BasisStates::plus, BasisStates::minus,
-                                       BasisStates::right, BasisStates::left};
+  const std::vector<BasisStates> state{
+      BasisStates::plus,
+      BasisStates::minus,
+      BasisStates::right,
+      BasisStates::left,
+  };
 
   const CVec vec{
       {.25, 0},  {.25, 0},  {-.25, 0}, {-.25, 0}, {0, .25}, {0, .25},
@@ -107,7 +111,7 @@ TEST(StateGenerationTest, MakeBasisDifficult) {
   };
 
   auto dd = std::make_unique<Package>(nq);
-  auto basis = makeBasisState(nq, state, *dd);
+  auto const basis = makeBasisState(nq, state, *dd);
 
   expectStateVectorNear(basis.getVector(), vec);
 
@@ -131,7 +135,7 @@ TEST(StateGenerationTest, MakeGHZ) {
   vec[len - 1] = {SQRT2_2, 0};
 
   auto dd = std::make_unique<Package>(nq);
-  auto ghz = makeGHZState(nq, *dd);
+  auto const ghz = makeGHZState(nq, *dd);
 
   expectStateVectorNear(ghz.getVector(), vec);
 
@@ -149,7 +153,7 @@ TEST(StateGenerationTest, MakeGHZZeroQubits) {
   constexpr std::size_t nq = 1;
 
   auto dd = std::make_unique<Package>(nq);
-  auto ghz = makeGHZState(0, *dd);
+  auto const ghz = makeGHZState(0, *dd);
 
   EXPECT_EQ(ghz, vEdge::one());
 }
@@ -162,17 +166,19 @@ TEST(StateGenerationTest, MakeW) {
 
   constexpr std::size_t nq = 3;
 
-  const CVec vec{0,
-                 std::numbers::inv_sqrt3,
-                 std::numbers::inv_sqrt3,
-                 0,
-                 std::numbers::inv_sqrt3,
-                 0,
-                 0,
-                 0};
+  const CVec vec{
+      0,
+      std::numbers::inv_sqrt3,
+      std::numbers::inv_sqrt3,
+      0,
+      std::numbers::inv_sqrt3,
+      0,
+      0,
+      0,
+  };
 
   auto dd = std::make_unique<Package>(nq);
-  auto w = makeWState(nq, *dd);
+  auto const w = makeWState(nq, *dd);
 
   expectStateVectorNear(w.getVector(), vec);
 
@@ -190,7 +196,7 @@ TEST(StateGenerationTest, MakeWZeroQubits) {
   constexpr std::size_t nq = 1;
 
   auto dd = std::make_unique<Package>(nq);
-  auto w = makeWState(0, *dd);
+  auto const w = makeWState(0, *dd);
 
   EXPECT_EQ(w, vEdge::one());
 }
@@ -205,7 +211,7 @@ TEST(StateGenerationTest, FromVectorZero) {
   const CVec vec{};
 
   auto dd = std::make_unique<Package>(nq);
-  auto psi = makeStateFromVector(vec, *dd);
+  auto const psi = makeStateFromVector(vec, *dd);
 
   EXPECT_EQ(psi, vEdge::one());
 }
@@ -221,7 +227,7 @@ TEST(StateGenerationTest, FromVectorScalar) {
   const CVec vec{alpha};
 
   auto dd = std::make_unique<Package>(nq);
-  auto psi = makeStateFromVector(vec, *dd);
+  auto const psi = makeStateFromVector(vec, *dd);
 
   EXPECT_TRUE(psi.isTerminal());
   EXPECT_TRUE(psi.w.approximatelyEquals(dd->cn.lookup(alpha)));
@@ -242,12 +248,16 @@ TEST(StateGenerationTest, FromVector) {
       {.25, 0},  {.25, 0},  {-.25, 0}, {-.25, 0},
   };
 
-  const std::vector<BasisStates> state{BasisStates::plus, BasisStates::minus,
-                                       BasisStates::right, BasisStates::left};
+  const std::vector<BasisStates> state{
+      BasisStates::plus,
+      BasisStates::minus,
+      BasisStates::right,
+      BasisStates::left,
+  };
 
   auto dd = std::make_unique<Package>(nq);
-  auto ref = makeBasisState(nq, state, *dd);
-  auto psi = makeStateFromVector(vec, *dd);
+  auto const ref = makeBasisState(nq, state, *dd);
+  auto const psi = makeStateFromVector(vec, *dd);
 
   EXPECT_EQ(psi, ref);
 

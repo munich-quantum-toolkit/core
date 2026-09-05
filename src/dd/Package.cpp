@@ -146,9 +146,11 @@ bool Package::garbageCollect(bool force) {
 
 Package::ActiveCounts Package::computeActiveCounts() {
   const auto count = [this]() -> ActiveCounts {
-    return {.vector = vUniqueTable.countMarkedEntries(),
-            .matrix = mUniqueTable.countMarkedEntries(),
-            .reals = cUniqueTable.countMarkedEntries()};
+    return {
+        .vector = vUniqueTable.countMarkedEntries(),
+        .matrix = mUniqueTable.countMarkedEntries(),
+        .reals = cUniqueTable.countMarkedEntries(),
+    };
   };
   return roots.execute<ActiveCounts>(count);
 }
@@ -241,9 +243,12 @@ void fillTerminalVector(std::array<mCachedEdge, NEDGE>& em,
                                              const Control::Type type,
                                              const mCachedEdge& gate,
                                              const bool identity) {
-  std::array<mCachedEdge, NEDGE> edges{mCachedEdge::zero(), mCachedEdge::zero(),
-                                       mCachedEdge::zero(),
-                                       mCachedEdge::zero()};
+  std::array<mCachedEdge, NEDGE> edges{
+      mCachedEdge::zero(),
+      mCachedEdge::zero(),
+      mCachedEdge::zero(),
+      mCachedEdge::zero(),
+  };
   const auto idEdge = identity ? mCachedEdge::one() : mCachedEdge::zero();
   if (type == Control::Type::Neg) {
     edges[0] = gate;
@@ -382,7 +387,8 @@ buildThreeQubitGateDD(Package& dd, const Matrix& mat, const Controls& controls,
   fillTerminalMatrix(em, mat);
 
   std::array<std::pair<Qubit, std::uint8_t>, 3> ordered{
-      {{target0, 2}, {target1, 1}, {target2, 0}}};
+      {{target0, 2}, {target1, 1}, {target2, 0}},
+  };
   std::ranges::sort(ordered, {}, &std::pair<Qubit, std::uint8_t>::first);
   const auto qLow = ordered[0].first;
   const auto qMid = ordered[1].first;
@@ -538,10 +544,12 @@ mCachedEdge Package::makeDDFromMatrix(const CMat& matrix, const Qubit level,
     assert(rowEnd - rowStart == 2);
     assert(colEnd - colStart == 2);
     return makeDDNode<mNode, CachedEdge>(
-        0U, {mCachedEdge::terminal(matrix[rowStart][colStart]),
-             mCachedEdge::terminal(matrix[rowStart][colStart + 1]),
-             mCachedEdge::terminal(matrix[rowStart + 1][colStart]),
-             mCachedEdge::terminal(matrix[rowStart + 1][colStart + 1])});
+        0U, {
+                mCachedEdge::terminal(matrix[rowStart][colStart]),
+                mCachedEdge::terminal(matrix[rowStart][colStart + 1]),
+                mCachedEdge::terminal(matrix[rowStart + 1][colStart]),
+                mCachedEdge::terminal(matrix[rowStart + 1][colStart + 1]),
+            });
   }
 
   // recursively call the function on all quadrants
@@ -550,10 +558,13 @@ mCachedEdge Package::makeDDFromMatrix(const CMat& matrix, const Qubit level,
   const auto l = static_cast<Qubit>(level - 1U);
 
   return makeDDNode<mNode, CachedEdge>(
-      level, {makeDDFromMatrix(matrix, l, rowStart, rowMid, colStart, colMid),
-              makeDDFromMatrix(matrix, l, rowStart, rowMid, colMid, colEnd),
-              makeDDFromMatrix(matrix, l, rowMid, rowEnd, colStart, colMid),
-              makeDDFromMatrix(matrix, l, rowMid, rowEnd, colMid, colEnd)});
+      level,
+      {
+          makeDDFromMatrix(matrix, l, rowStart, rowMid, colStart, colMid),
+          makeDDFromMatrix(matrix, l, rowStart, rowMid, colMid, colEnd),
+          makeDDFromMatrix(matrix, l, rowMid, rowEnd, colStart, colMid),
+          makeDDFromMatrix(matrix, l, rowMid, rowEnd, colMid, colEnd),
+      });
 }
 void Package::clearComputeTables() {
   vectorAdd.clear();
@@ -634,7 +645,7 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
 }
 fp Package::assignProbabilities(const vEdge& edge,
                                 std::unordered_map<const vNode*, fp>& probs) {
-  auto it = probs.find(edge.p);
+  auto const it = probs.find(edge.p);
   if (it != probs.end()) {
     return ComplexNumbers::mag2(edge.w) * it->second;
   }
@@ -793,7 +804,7 @@ mCachedEdge Package::conjugateTransposeRec(const mEdge& a) {
     }
   }
   // create new top node
-  auto res = makeDDNode(a.p->v, e);
+  auto const res = makeDDNode(a.p->v, e);
 
   // put it in the compute table
   conjugateMatrixTranspose.insert(a.p, res);
@@ -826,7 +837,7 @@ ComplexValue Package::innerProduct(const vEdge& x, const vEdge& y) {
   const auto w = std::max(x.p->v, y.p->v);
   // Overall normalization factor needs to be conjugated
   // before input into recursive private function
-  auto xCopy = vEdge{.p = x.p, .w = ComplexNumbers::conj(x.w)};
+  auto const xCopy = vEdge{.p = x.p, .w = ComplexNumbers::conj(x.w)};
   return innerProduct(xCopy, y, w + 1U);
 }
 fp Package::fidelity(const vEdge& x, const vEdge& y) {
@@ -897,7 +908,7 @@ fp Package::fidelityOfMeasurementOutcomesRecursive(
       }
       idx = std::stoull(filteredString, nullptr, 2);
     }
-    if (auto it = probs.find(idx); it != probs.end()) {
+    if (auto const it = probs.find(idx); it != probs.end()) {
       return top * std::sqrt(it->second);
     }
     return 0.;
@@ -935,7 +946,7 @@ fp Package::expectationValue(const mEdge& x, const vEdge& y) {
 }
 mEdge Package::partialTrace(const mEdge& a,
                             const std::vector<bool>& eliminate) {
-  auto r = trace(a, eliminate, eliminate.size());
+  auto const r = trace(a, eliminate, eliminate.size());
   return {.p = r.p, .w = cn.lookup(r.w)};
 }
 ComplexValue Package::trace(const mEdge& a, const std::size_t numQubits) {
@@ -1130,9 +1141,12 @@ mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
 
   for (std::size_t i = e.p->v + 1; i < ancillary.size(); ++i) {
     if (ancillary[i]) {
-      g = makeDDNode(static_cast<Qubit>(i),
-                     std::array{g, mCachedEdge::zero(), mCachedEdge::zero(),
-                                mCachedEdge::zero()});
+      g = makeDDNode(static_cast<Qubit>(i), std::array{
+                                                g,
+                                                mCachedEdge::zero(),
+                                                mCachedEdge::zero(),
+                                                mCachedEdge::zero(),
+                                            });
     }
   }
   const auto res = mEdge{.p = g.p, .w = cn.lookup(g.w * e.w)};
@@ -1245,11 +1259,10 @@ mCachedEdge Package::reduceAncillaeRecursion(mNode* p,
   std::array<mCachedEdge, NEDGE> edges{};
   std::bitset<NEDGE> handled{};
   for (auto i = 0U; i < NEDGE; ++i) {
-    if (ancillary[p->v]) {
-      // no need to reduce ancillaries for entries that will be zeroed anyway
-      if ((i == 3) || (i == 1 && regular) || (i == 2 && !regular)) {
-        continue;
-      }
+    // no need to reduce ancillaries for entries that will be zeroed anyway
+    if (ancillary[p->v] &&
+        ((i == 3) || (i == 1 && regular) || (i == 2 && !regular))) {
+      continue;
     }
     if (handled.test(i)) {
       continue;
@@ -1265,9 +1278,12 @@ mCachedEdge Package::reduceAncillaeRecursion(mNode* p,
       auto g = mCachedEdge::one();
       for (auto j = lowerbound; j < p->v; ++j) {
         if (ancillary[j]) {
-          g = makeDDNode(j,
-                         std::array{g, mCachedEdge::zero(), mCachedEdge::zero(),
-                                    mCachedEdge::zero()});
+          g = makeDDNode(j, std::array{
+                                g,
+                                mCachedEdge::zero(),
+                                mCachedEdge::zero(),
+                                mCachedEdge::zero(),
+                            });
         }
       }
       edges[i] = {g.p, p->e[i].w};
@@ -1279,9 +1295,12 @@ mCachedEdge Package::reduceAncillaeRecursion(mNode* p,
         reduceAncillaeRecursion(p->e[i].p, ancillary, lowerbound, regular);
     for (Qubit j = p->e[i].p->v + 1U; j < p->v; ++j) {
       if (ancillary[j]) {
-        edges[i] =
-            makeDDNode(j, std::array{edges[i], mCachedEdge::zero(),
-                                     mCachedEdge::zero(), mCachedEdge::zero()});
+        edges[i] = makeDDNode(j, std::array{
+                                     edges[i],
+                                     mCachedEdge::zero(),
+                                     mCachedEdge::zero(),
+                                     mCachedEdge::zero(),
+                                 });
       }
     }
 
@@ -1301,11 +1320,19 @@ mCachedEdge Package::reduceAncillaeRecursion(mNode* p,
 
   // something to reduce for this qubit
   if (regular) {
-    return makeDDNode(p->v, std::array{edges[0], mCachedEdge::zero(), edges[2],
-                                       mCachedEdge::zero()});
+    return makeDDNode(p->v, std::array{
+                                edges[0],
+                                mCachedEdge::zero(),
+                                edges[2],
+                                mCachedEdge::zero(),
+                            });
   }
-  return makeDDNode(p->v, std::array{edges[0], edges[1], mCachedEdge::zero(),
-                                     mCachedEdge::zero()});
+  return makeDDNode(p->v, std::array{
+                              edges[0],
+                              edges[1],
+                              mCachedEdge::zero(),
+                              mCachedEdge::zero(),
+                          });
 }
 vCachedEdge Package::reduceGarbageRecursion(vNode* p,
                                             const std::vector<bool>& garbage,
@@ -1349,9 +1376,10 @@ vCachedEdge Package::reduceGarbageRecursion(vNode* p,
     return makeDDNode(p->v, edges);
   }
   // something to reduce for this qubit
-  return makeDDNode(p->v,
-                    std::array{addMagnitudes(edges[0], edges[1], p->v - 1),
-                               vCachedEdge::zero()});
+  return makeDDNode(p->v, std::array{
+                              addMagnitudes(edges[0], edges[1], p->v - 1),
+                              vCachedEdge::zero(),
+                          });
 }
 mCachedEdge Package::reduceGarbageRecursion(mNode* p,
                                             const std::vector<bool>& garbage,
@@ -1380,12 +1408,19 @@ mCachedEdge Package::reduceGarbageRecursion(mNode* p,
       for (auto j = lowerbound; j < p->v; ++j) {
         if (garbage[j]) {
           if (regular) {
-            edges[i] = makeDDNode(j, std::array{edges[i], edges[i],
-                                                mCachedEdge::zero(),
-                                                mCachedEdge::zero()});
+            edges[i] = makeDDNode(j, std::array{
+                                         edges[i],
+                                         edges[i],
+                                         mCachedEdge::zero(),
+                                         mCachedEdge::zero(),
+                                     });
           } else {
-            edges[i] = makeDDNode(j, std::array{edges[i], mCachedEdge::zero(),
-                                                edges[i], mCachedEdge::zero()});
+            edges[i] = makeDDNode(j, std::array{
+                                         edges[i],
+                                         mCachedEdge::zero(),
+                                         edges[i],
+                                         mCachedEdge::zero(),
+                                     });
           }
         }
       }
@@ -1403,12 +1438,19 @@ mCachedEdge Package::reduceGarbageRecursion(mNode* p,
     for (Qubit j = p->e[i].p->v + 1U; j < p->v; ++j) {
       if (garbage[j]) {
         if (regular) {
-          edges[i] =
-              makeDDNode(j, std::array{edges[i], edges[i], mCachedEdge::zero(),
-                                       mCachedEdge::zero()});
+          edges[i] = makeDDNode(j, std::array{
+                                       edges[i],
+                                       edges[i],
+                                       mCachedEdge::zero(),
+                                       mCachedEdge::zero(),
+                                   });
         } else {
-          edges[i] = makeDDNode(j, std::array{edges[i], mCachedEdge::zero(),
-                                              edges[i], mCachedEdge::zero()});
+          edges[i] = makeDDNode(j, std::array{
+                                       edges[i],
+                                       mCachedEdge::zero(),
+                                       edges[i],
+                                       mCachedEdge::zero(),
+                                   });
         }
       }
     }
@@ -1434,15 +1476,18 @@ mCachedEdge Package::reduceGarbageRecursion(mNode* p,
   }
 
   if (regular) {
-    return makeDDNode(p->v,
-                      std::array{addMagnitudes(edges[0], edges[2], p->v - 1),
-                                 addMagnitudes(edges[1], edges[3], p->v - 1),
-                                 mCachedEdge::zero(), mCachedEdge::zero()});
+    return makeDDNode(p->v, std::array{
+                                addMagnitudes(edges[0], edges[2], p->v - 1),
+                                addMagnitudes(edges[1], edges[3], p->v - 1),
+                                mCachedEdge::zero(),
+                                mCachedEdge::zero(),
+                            });
   }
-  return makeDDNode(p->v,
-                    std::array{addMagnitudes(edges[0], edges[1], p->v - 1),
-                               mCachedEdge::zero(),
-                               addMagnitudes(edges[2], edges[3], p->v - 1),
-                               mCachedEdge::zero()});
+  return makeDDNode(p->v, std::array{
+                              addMagnitudes(edges[0], edges[1], p->v - 1),
+                              mCachedEdge::zero(),
+                              addMagnitudes(edges[2], edges[3], p->v - 1),
+                              mCachedEdge::zero(),
+                          });
 }
 } // namespace dd

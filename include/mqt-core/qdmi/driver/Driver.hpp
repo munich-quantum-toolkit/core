@@ -199,8 +199,8 @@ public:
  * library. A session can be either allocated or initialized.
  */
 enum class SessionStatus : uint8_t {
-  ALLOCATED,  ///< The session has been allocated but not initialized
-  INITIALIZED ///< The session has been initialized and is ready for use
+  ALLOCATED,   ///< The session has been allocated but not initialized
+  INITIALIZED, ///< The session has been initialized and is ready for use
 };
 } // namespace qdmi
 

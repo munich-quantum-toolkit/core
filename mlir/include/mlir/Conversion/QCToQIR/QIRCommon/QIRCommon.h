@@ -30,9 +30,9 @@ namespace mlir {
 
 /// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
-  Unset,  //!< No allocation mode has been established yet.
-  Static, //!< The module uses static qubit allocation.
-  Dynamic //!< The module uses dynamic qubit allocation.
+  Unset,   //!< No allocation mode has been established yet.
+  Static,  //!< The module uses static qubit allocation.
+  Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
 /// State object for tracking lowering information during QIR conversion

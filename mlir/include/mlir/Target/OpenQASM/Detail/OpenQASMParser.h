@@ -494,8 +494,10 @@ private:
         minor > std::numeric_limits<uint32_t>::max()) {
       return sink.error(current().loc, "invalid OpenQASM version string");
     }
-    const Version version{.major = static_cast<uint32_t>(major),
-                          .minor = static_cast<uint32_t>(minor)};
+    const Version version{
+        .major = static_cast<uint32_t>(major),
+        .minor = static_cast<uint32_t>(minor),
+    };
     advance();
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();

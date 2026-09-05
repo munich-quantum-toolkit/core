@@ -82,8 +82,10 @@ decodeCodePoint(const char* position, const char* end) {
                                 llvm::strictConversion) != llvm::conversionOK) {
     return std::nullopt;
   }
-  return DecodedCodePoint{.value = codePoint,
-                          .width = static_cast<size_t>(source - begin)};
+  return DecodedCodePoint{
+      .value = codePoint,
+      .width = static_cast<size_t>(source - begin),
+  };
 }
 
 [[nodiscard]] static TokenKind keywordKind(StringRef text) {
@@ -265,9 +267,16 @@ Token Lexer::lexNumber(const char* start) {
     }
     const StringRef text(start, static_cast<size_t>(cur - start));
     const StringRef digitText(digits, static_cast<size_t>(cur - digits));
-    Token token{.kind = TokenKind::IntegerLiteral,
-                .loc = SMLoc::getFromPointer(start),
-                .spelling = text};
+    Token token{
+        .kind = TokenKind::IntegerLiteral,
+        .loc = SMLoc::getFromPointer(start),
+        .identifier = {},
+        .stringValue = {},
+        .spelling = text,
+        .intValue = 0,
+        .floatValue = 0.0,
+        .wideInteger = false,
+    };
     llvm::SmallString<32> normalized;
     for (const char value : digitText) {
       if (!isSeparator(value)) {

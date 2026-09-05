@@ -74,9 +74,9 @@ namespace {
 
 /** @brief Qubit allocation mode */
 enum class AllocationMode : std::uint8_t {
-  Unset,  //!< No allocation mode has been established yet.
-  Static, //!< The module uses static qubit allocation.
-  Dynamic //!< The module uses dynamic qubit allocation.
+  Unset,   //!< No allocation mode has been established yet.
+  Static,  //!< The module uses static qubit allocation.
+  Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
 /// Tracks the current jeff array value for each mutable CBit register.
@@ -664,15 +664,15 @@ static Value integerConstant(OpBuilder& builder, Location loc, IntegerType type,
       builder.getIntegerAttr(type, value.zextOrTrunc(type.getWidth()));
   switch (type.getWidth()) {
   case 1:
-    return jeff::IntConst1Op::create(builder, loc, attribute);
+    return {jeff::IntConst1Op::create(builder, loc, attribute)};
   case 8:
-    return jeff::IntConst8Op::create(builder, loc, attribute);
+    return {jeff::IntConst8Op::create(builder, loc, attribute)};
   case 16:
-    return jeff::IntConst16Op::create(builder, loc, attribute);
+    return {jeff::IntConst16Op::create(builder, loc, attribute)};
   case 32:
-    return jeff::IntConst32Op::create(builder, loc, attribute);
+    return {jeff::IntConst32Op::create(builder, loc, attribute)};
   case 64:
-    return jeff::IntConst64Op::create(builder, loc, attribute);
+    return {jeff::IntConst64Op::create(builder, loc, attribute)};
   default:
     llvm_unreachable("unsupported jeff integer width");
   }
@@ -835,7 +835,7 @@ struct ConvertCBitWriteOpToJeff final
   LogicalResult
   matchAndRewrite(cbit::WriteOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    const auto width = cast<IntegerType>(op.getValue().getType()).getWidth();
+    const auto width = op.getValue().getType().getWidth();
     if (width > 64) {
       return op.emitError(
           "jeff supports general integer expressions only up to 64 bits");
@@ -1091,9 +1091,9 @@ struct LowerRegisterComparison final : OpRewritePattern<arith::CmpIOp> {
         [&](int64_t index) -> Value {
           auto position =
               arith::ConstantIndexOp::create(rewriter, read.getLoc(), index);
-          return cbit::LoadOp::create(rewriter, read.getLoc(),
-                                      rewriter.getI1Type(), read.getReg(),
-                                      position);
+          return {cbit::LoadOp::create(rewriter, read.getLoc(),
+                                       rewriter.getI1Type(), read.getReg(),
+                                       position)};
         });
     rewriter.replaceOp(op, result);
     if (read->use_empty()) {

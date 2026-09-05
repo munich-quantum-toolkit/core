@@ -137,15 +137,17 @@ public:
                                        Parameter operand) {
     return Parameter(Unary{
         .operation = operation,
-        .operand = std::make_shared<const Parameter>(std::move(operand))});
+        .operand = std::make_shared<const Parameter>(std::move(operand)),
+    });
   }
 
   [[nodiscard]] static Parameter binary(const BinaryParameterKind operation,
                                         Parameter left, Parameter right) {
-    return Parameter(
-        Binary{.operation = operation,
-               .left = std::make_shared<const Parameter>(std::move(left)),
-               .right = std::make_shared<const Parameter>(std::move(right))});
+    return Parameter(Binary{
+        .operation = operation,
+        .left = std::make_shared<const Parameter>(std::move(left)),
+        .right = std::make_shared<const Parameter>(std::move(right)),
+    });
   }
 
   [[nodiscard]] const Number* getNumber() const {

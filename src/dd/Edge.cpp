@@ -72,7 +72,8 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
 template <class Node> auto Edge<Node>::size() const -> std::size_t {
   static constexpr std::size_t NODECOUNT_BUCKETS = 200000U;
   static thread_local std::unordered_set<const Node*> visited{
-      NODECOUNT_BUCKETS};
+      NODECOUNT_BUCKETS,
+  };
   visited.max_load_factor(10);
   visited.clear();
   return size(visited);
@@ -145,8 +146,10 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
     return r;
   }
 
-  const auto weights = std::array{static_cast<ComplexValue>(e[0].w),
-                                  static_cast<ComplexValue>(e[1].w)};
+  const auto weights = std::array{
+      static_cast<ComplexValue>(e[0].w),
+      static_cast<ComplexValue>(e[1].w),
+  };
 
   const auto mag2 = std::array{weights[0].mag2(), weights[1].mag2()};
 
@@ -315,8 +318,12 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
   requires IsMatrix<Node>
 {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
-  const auto zero = std::array{e[0].w.exactlyZero(), e[1].w.exactlyZero(),
-                               e[2].w.exactlyZero(), e[3].w.exactlyZero()};
+  const auto zero = std::array{
+      e[0].w.exactlyZero(),
+      e[1].w.exactlyZero(),
+      e[2].w.exactlyZero(),
+      e[3].w.exactlyZero(),
+  };
 
   if (std::all_of(zero.begin(), zero.end(), [](auto b) { return b; })) {
     mm.returnEntry(*p);
@@ -324,8 +331,11 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
   }
 
   const auto weights = std::array{
-      static_cast<ComplexValue>(e[0].w), static_cast<ComplexValue>(e[1].w),
-      static_cast<ComplexValue>(e[2].w), static_cast<ComplexValue>(e[3].w)};
+      static_cast<ComplexValue>(e[0].w),
+      static_cast<ComplexValue>(e[1].w),
+      static_cast<ComplexValue>(e[2].w),
+      static_cast<ComplexValue>(e[3].w),
+  };
 
   std::optional<std::size_t> argMax = std::nullopt;
   fp maxMag2 = 0.;
@@ -494,7 +504,7 @@ void Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
   const auto coords = {std::pair{i, j}, {i, y}, {x, j}, {x, y}};
   std::size_t k = 0U;
   for (const auto& [a, b] : coords) {
-    if (auto& e = p->e[k++]; !e.w.exactlyZero()) {
+    if (auto const& e = p->e[k++]; !e.w.exactlyZero()) {
       e.traverseMatrix(c, a, b, f, nextLevel, threshold);
     }
   }

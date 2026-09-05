@@ -46,7 +46,7 @@ TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
   // Poll while running to observe BUSY at least once.
   std::atomic<bool> sawBusy{false};
   std::atomic<bool> done{false};
-  std::thread poller([&]() {
+  std::thread poller([&] {
     while (!done.load(std::memory_order_acquire)) {
       if (const auto st = queryStatus(s.session);
           st == QDMI_DEVICE_STATUS_BUSY) {

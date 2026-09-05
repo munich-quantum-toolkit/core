@@ -582,7 +582,7 @@ verifyInputGroup(FunctionOpInterface function, Operation* operation,
                                    type.getElementType().isInteger(1));
   }
   if (auto alloc = dyn_cast<qtensor::AllocOp>(operation)) {
-    const auto type = cast<RankedTensorType>(alloc.getType());
+    const auto type = alloc.getType();
     return type.getRank() == 1 && isa<qco::QubitType>(type.getElementType());
   }
   return false;

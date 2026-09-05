@@ -130,16 +130,16 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPositiveControl) {
  * a controlled gate.
  */
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
 
-  SmallVector<Value> q12;
-  SmallVector<Value> q0Vec;
-  std::tie(q12, q0Vec) =
+  auto [q12, q0Vec] =
       programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
         return SmallVector<Value>{programBuilder.x(target[0])};
       });
@@ -169,9 +169,11 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
 
   program = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
   auto r2 = referenceBuilder.allocQubit();
@@ -179,9 +181,7 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverOneOfMultipleControls) {
   Value cr1;
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
 
-  SmallVector<Value> r12;
-  SmallVector<Value> r0Vec;
-  std::tie(r12, r0Vec) =
+  auto [r12, r0Vec] =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
         return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
@@ -228,9 +228,7 @@ TEST_F(QCOMeasurementLiftingTest,
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
 
-  SmallVector<Value> q12;
-  SmallVector<Value> q0Vec;
-  std::tie(q12, q0Vec) =
+  auto [q12, q0Vec] =
       programBuilder.ctrl({q1, q2}, {q0}, [&](ValueRange target) {
         return SmallVector<Value>{programBuilder.x(target[0])};
       });
@@ -256,9 +254,7 @@ TEST_F(QCOMeasurementLiftingTest,
   std::tie(r1, cr1) = referenceBuilder.measure(r1);
   std::tie(r2, cr2) = referenceBuilder.measure(r2);
 
-  SmallVector<Value> r12;
-  SmallVector<Value> r0Vec;
-  std::tie(r12, r0Vec) =
+  auto [r12, r0Vec] =
       referenceBuilder.ctrl({r1, r2}, {r0}, [&](ValueRange target) {
         return SmallVector<Value>{referenceBuilder.x(target[0])};
       });
@@ -283,10 +279,9 @@ TEST_F(QCOMeasurementLiftingTest,
        liftMeasurementOverControlledParametrizedGate) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.allocQubit();
-
-  std::tie(q0, q1) = programBuilder.crx(std::numbers::pi / 2, q0, q1);
+  const auto q0Input = programBuilder.allocQubit();
+  const auto q1Input = programBuilder.allocQubit();
+  auto [q0, q1] = programBuilder.crx(std::numbers::pi / 2, q0Input, q1Input);
 
   Value c0;
   Value c1;
@@ -405,9 +400,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverPhaseGates) {
   program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.allocQubit();
-  Value cr;
-  std::tie(r, cr) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.allocQubit();
+  auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
@@ -437,9 +431,8 @@ TEST_F(QCOMeasurementLiftingTest, removeRZBeforeObservedMeasurement) {
 
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.h(referenceBuilder.allocQubit());
-  Value referenceFirstOutcome;
-  std::tie(r, referenceFirstOutcome) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.h(referenceBuilder.allocQubit());
+  auto [r, referenceFirstOutcome] = referenceBuilder.measure(rInput);
   r = referenceBuilder.h(r);
   Value referenceSecondOutcome;
   std::tie(r, referenceSecondOutcome) = referenceBuilder.measure(r);
@@ -467,9 +460,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
   program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.allocQubit();
-  Value cr;
-  std::tie(r, cr) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.allocQubit();
+  auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 
@@ -486,10 +478,9 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverMultipleXY) {
  */
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
   programBuilder.initialize({programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.allocQubit();
-
-  std::tie(q0, q1) = programBuilder.cy(q0, q1);
+  const auto q0Input = programBuilder.allocQubit();
+  const auto q1Input = programBuilder.allocQubit();
+  auto [q0, q1] = programBuilder.cy(q0Input, q1Input);
   q0 = programBuilder.x(q0);
   std::tie(q0, q1) = programBuilder.cy(q0, q1);
   q0 = programBuilder.x(q0);
@@ -529,10 +520,9 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverXAndControlledGates) {
 TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto q0 = programBuilder.allocQubit();
-  auto q1 = programBuilder.allocQubit();
-
-  std::tie(q0, q1) = programBuilder.cz(q0, q1);
+  const auto q0Input = programBuilder.allocQubit();
+  const auto q1Input = programBuilder.allocQubit();
+  auto [q0, q1] = programBuilder.cz(q0Input, q1Input);
 
   Value c0;
   Value c1;
@@ -571,9 +561,9 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverDiagonalGateInControl) {
 TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
   programBuilder.initialize(
       {programBuilder.getI1Type(), programBuilder.getI1Type()});
-  auto control = programBuilder.h(programBuilder.allocQubit());
-  auto target = programBuilder.x(programBuilder.allocQubit());
-  std::tie(control, target) = programBuilder.cz(control, target);
+  const auto controlInput = programBuilder.h(programBuilder.allocQubit());
+  const auto targetInput = programBuilder.x(programBuilder.allocQubit());
+  auto [control, target] = programBuilder.cz(controlInput, targetInput);
 
   Value targetOutcome;
   std::tie(target, targetOutcome) = programBuilder.measure(target);
@@ -587,10 +577,9 @@ TEST_F(QCOMeasurementLiftingTest, preserveControlledPhaseKickback) {
   referenceBuilder.initialize(
       {referenceBuilder.getI1Type(), referenceBuilder.getI1Type()});
   auto referenceControl = referenceBuilder.h(referenceBuilder.allocQubit());
-  auto referenceTarget = referenceBuilder.allocQubit();
-  Value rawTargetOutcome;
-  std::tie(referenceTarget, rawTargetOutcome) =
-      referenceBuilder.measure(referenceTarget);
+  const auto referenceTargetInput = referenceBuilder.allocQubit();
+  auto [referenceTarget, rawTargetOutcome] =
+      referenceBuilder.measure(referenceTargetInput);
   referenceTarget = referenceBuilder.x(referenceTarget);
   std::tie(referenceControl, referenceTarget) =
       referenceBuilder.cz(referenceControl, referenceTarget);
@@ -676,9 +665,8 @@ TEST_F(QCOMeasurementLiftingTest, liftMeasurementOverInvertedPhaseGates) {
   program = programBuilder.finalize({c});
 
   referenceBuilder.initialize({referenceBuilder.getI1Type()});
-  auto r = referenceBuilder.allocQubit();
-  Value cr;
-  std::tie(r, cr) = referenceBuilder.measure(r);
+  const auto rInput = referenceBuilder.allocQubit();
+  auto [r, cr] = referenceBuilder.measure(rInput);
   referenceBuilder.sink(r);
   reference = referenceBuilder.finalize({cr});
 

@@ -478,8 +478,11 @@ TEST_F(QIRTest, DerivesAdaptiveClassicalCapabilities) {
   EXPECT_EQ(cast<StringAttr>(floatingTypes[0]).getValue(), "double");
   EXPECT_EQ(cast<StringAttr>(floatingTypes[1]).getValue(), "float");
 
-  for (const auto* const flag : {"ir_functions", "multiple_target_branching",
-                                 "multiple_return_points"}) {
+  for (const auto* const flag : {
+           "ir_functions",
+           "multiple_target_branching",
+           "multiple_return_points",
+       }) {
     const auto moduleFlag = findModuleFlag(moduleOp, flag);
     ASSERT_TRUE(moduleFlag) << flag;
     EXPECT_EQ(moduleFlag.getValue(), builder.getI32IntegerAttr(1)) << flag;
@@ -523,8 +526,11 @@ TEST(QIRModuleFlagsTest, RecordsAdaptiveClassicalCapabilities) {
   EXPECT_EQ(
       llvm::cast<llvm::MDString>(floatingTypes->getOperand(0))->getString(),
       "double");
-  for (const auto* const flag : {"ir_functions", "multiple_target_branching",
-                                 "multiple_return_points"}) {
+  for (const auto* const flag : {
+           "ir_functions",
+           "multiple_target_branching",
+           "multiple_return_points",
+       }) {
     const auto* metadata =
         llvm::dyn_cast<llvm::ConstantAsMetadata>(moduleOp.getModuleFlag(flag));
     ASSERT_NE(metadata, nullptr) << flag;

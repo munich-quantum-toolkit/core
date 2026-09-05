@@ -82,10 +82,13 @@ dd::mCachedEdge makeDDFromMatrix(dd::Package& p, const Matrix& m,
   const auto colHalf = colStart + ((colEnd - colStart) / 2);
   return p.makeDDNode<dd::mNode, dd::CachedEdge>(
       level,
-      {makeDDFromMatrix(p, m, rowStart, rowHalf, colStart, colHalf, level - 1),
-       makeDDFromMatrix(p, m, rowStart, rowHalf, colHalf, colEnd, level - 1),
-       makeDDFromMatrix(p, m, rowHalf, rowEnd, colStart, colHalf, level - 1),
-       makeDDFromMatrix(p, m, rowHalf, rowEnd, colHalf, colEnd, level - 1)});
+      {
+          makeDDFromMatrix(p, m, rowStart, rowHalf, colStart, colHalf,
+                           level - 1),
+          makeDDFromMatrix(p, m, rowStart, rowHalf, colHalf, colEnd, level - 1),
+          makeDDFromMatrix(p, m, rowHalf, rowEnd, colStart, colHalf, level - 1),
+          makeDDFromMatrix(p, m, rowHalf, rowEnd, colHalf, colEnd, level - 1),
+      });
 }
 } // namespace
 
@@ -407,10 +410,12 @@ Returns:
       [](dd::Package& p, const TwoQubitMatrix& mat, const dd::Qubit target0,
          const dd::Qubit target1) {
         return p.makeTwoQubitGateDD(
-            {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
-             {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
-             {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
-             {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)}},
+            {
+                std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
+                {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
+                {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
+                {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)},
+            },
             target0, target1);
       },
       "matrix"_a, "target0"_a, "target1"_a,
@@ -430,10 +435,12 @@ Returns:
       [](dd::Package& p, const TwoQubitMatrix& mat, const dd::Control& control,
          const dd::Qubit target0, const dd::Qubit target1) {
         return p.makeTwoQubitGateDD(
-            {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
-             {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
-             {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
-             {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)}},
+            {
+                std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
+                {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
+                {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
+                {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)},
+            },
             control, target0, target1);
       },
       "matrix"_a, "control"_a, "target0"_a, "target1"_a,
@@ -461,10 +468,12 @@ Returns:
          const dd::Controls& controls, const dd::Qubit target0,
          const dd::Qubit target1) {
         return p.makeTwoQubitGateDD(
-            {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
-             {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
-             {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
-             {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)}},
+            {
+                std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
+                {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
+                {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
+                {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)},
+            },
             controls, target0, target1);
       },
       "matrix"_a, "controls"_a, "target0"_a, "target1"_a,

@@ -50,18 +50,20 @@ namespace qdmi {
     configuration =
         FileDeviceConfiguration{.path = std::move(*deviceConfigFile)};
   }
-  return {.baseUrl = std::move(baseUrl),
-          .token = std::move(token),
-          .authFile = std::move(authFile),
-          .authUrl = std::move(authUrl),
-          .username = std::move(username),
-          .password = std::move(password),
-          .deviceConfiguration = std::move(configuration),
-          .custom1 = std::move(custom1),
-          .custom2 = std::move(custom2),
-          .custom3 = std::move(custom3),
-          .custom4 = std::move(custom4),
-          .custom5 = std::move(custom5)};
+  return {
+      .baseUrl = std::move(baseUrl),
+      .token = std::move(token),
+      .authFile = std::move(authFile),
+      .authUrl = std::move(authUrl),
+      .username = std::move(username),
+      .password = std::move(password),
+      .deviceConfiguration = std::move(configuration),
+      .custom1 = std::move(custom1),
+      .custom2 = std::move(custom2),
+      .custom3 = std::move(custom3),
+      .custom4 = std::move(custom4),
+      .custom5 = std::move(custom5),
+  };
 }
 
 } // namespace qdmi

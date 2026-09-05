@@ -318,7 +318,8 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsRegisterCallsAtTheSharedBoundary) {
           %c = func.call_indirect %callee() : () -> !cbit.reg<1>
           return %c : !cbit.reg<1>
         }
-      })mlir"};
+      })mlir",
+  };
   for (const auto* source : sources) {
     SCOPED_TRACE(source);
     MLIRContext context;

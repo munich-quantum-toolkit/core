@@ -586,7 +586,8 @@ TEST_F(QCOTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
             return
           }
         }
-      )mlir"};
+      )mlir",
+  };
 
   for (const auto source : invalidPrograms) {
     bool sawExpectedDiagnostic = false;
@@ -609,7 +610,7 @@ enum class ForbiddenModifierBodyOp : uint8_t {
   CBitAlloc,
   CBitRead,
   CBitLoad,
-  CBitStore
+  CBitStore,
 };
 
 } // namespace
@@ -726,13 +727,16 @@ buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
 }
 
 TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
-  constexpr std::array modifiers{VerifierModifierKind::Inv,
-                                 VerifierModifierKind::Ctrl,
-                                 VerifierModifierKind::Pow};
+  constexpr std::array modifiers{
+      VerifierModifierKind::Inv,
+      VerifierModifierKind::Ctrl,
+      VerifierModifierKind::Pow,
+  };
   constexpr std::array forbiddenOperations{
-      ForbiddenModifierBodyOp::Measure, ForbiddenModifierBodyOp::CBitAlloc,
-      ForbiddenModifierBodyOp::CBitRead, ForbiddenModifierBodyOp::CBitLoad,
-      ForbiddenModifierBodyOp::CBitStore};
+      ForbiddenModifierBodyOp::Measure,   ForbiddenModifierBodyOp::CBitAlloc,
+      ForbiddenModifierBodyOp::CBitRead,  ForbiddenModifierBodyOp::CBitLoad,
+      ForbiddenModifierBodyOp::CBitStore,
+  };
 
   for (const auto modifier : modifiers) {
     for (const auto forbiddenOperation : forbiddenOperations) {
@@ -760,9 +764,11 @@ TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
 }
 
 TEST_F(QCOTest, ModifiersRejectDirectAndNestedQubitCaptures) {
-  constexpr std::array modifiers{VerifierModifierKind::Inv,
-                                 VerifierModifierKind::Ctrl,
-                                 VerifierModifierKind::Pow};
+  constexpr std::array modifiers{
+      VerifierModifierKind::Inv,
+      VerifierModifierKind::Ctrl,
+      VerifierModifierKind::Pow,
+  };
 
   for (const auto modifier : modifiers) {
     for (const bool nested : {false, true}) {
@@ -1515,13 +1521,14 @@ TEST_F(QCOTest, ExtendsMixedResultIndexSwitchTargets) {
 }
 
 TEST_F(QCOTest, EquivalentTensorIndexSwitches) {
-  const auto build = [&]() {
+  const auto build = [&] {
     QCOProgramBuilder builder(context.get());
     builder.initialize();
 
     const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
     const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
-        identity};
+        identity,
+    };
 
     auto tensor = builder.qtensorAlloc(1);
     auto result = builder.qcoIndexSwitch(0, tensor, SmallVector<int64_t>{0},
@@ -1570,7 +1577,8 @@ TEST_F(QCOTest, NonEquivalentTensorIndexSwitches) {
 
     const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
     const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
-        identity};
+        identity,
+    };
 
     auto first = builder.qtensorAlloc(1);
     auto second = builder.qtensorAlloc(1);

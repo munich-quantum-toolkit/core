@@ -99,12 +99,14 @@ TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
             CompilerTarget::Operation::Arity::Kind::Fixed);
   EXPECT_EQ(gphase.arity().value(), 0);
   for (const auto [name, minimum] :
-       std::initializer_list<std::pair<llvm::StringRef, size_t>>{{"id", 1},
-                                                                 {"h", 1},
-                                                                 {"rx", 1},
-                                                                 {"swap", 2},
-                                                                 {"rxx", 2},
-                                                                 {"rccx", 3}}) {
+       std::initializer_list<std::pair<llvm::StringRef, size_t>>{
+           {"id", 1},
+           {"h", 1},
+           {"rx", 1},
+           {"swap", 2},
+           {"rxx", 2},
+           {"rccx", 3},
+       }) {
     const auto& operation = findOperation(target, name);
     EXPECT_EQ(operation.arity().kind(),
               CompilerTarget::Operation::Arity::Kind::Variadic)
@@ -173,7 +175,8 @@ TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
 TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
-      MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG};
+      MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG,
+  };
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
@@ -192,7 +195,8 @@ TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
 
 TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
   qdmi::DeviceSessionConfig overrides;
-  overrides.deviceConfiguration = qdmi::InlineDeviceConfiguration{.json = R"({
+  overrides.deviceConfiguration = qdmi::InlineDeviceConfiguration{
+      .json = R"({
     "schema-version": 1,
     "name": "Unavailable operation",
     "numQubits": 1,
@@ -202,7 +206,8 @@ TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
     "operations": [
       {"name": "x", "numQubits": 1, "numParameters": 0, "sites": []}
     ]
-  })"};
+  })",
+  };
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
   EXPECT_EQ(target.nativeOperationsKind(),
@@ -215,7 +220,8 @@ TEST(CompilerQDMIAdapterTest,
      PreservesDirectionalCalibrationWhenBothOrientationsExist) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
-      MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG};
+      MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG,
+  };
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 

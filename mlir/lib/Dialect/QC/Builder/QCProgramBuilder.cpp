@@ -90,7 +90,8 @@ void QCProgramBuilder::LoopBuilder::enterBody(Value condition,
     cf::BranchOp::create(builder_, location_, body);
   } else {
     SmallVector<Value> exitValues{
-        arith::ConstantIntOp::create(builder_, location_, 0, 1)};
+        arith::ConstantIntOp::create(builder_, location_, 0, 1),
+    };
     llvm::append_range(exitValues, state);
     cf::CondBranchOp::create(builder_, location_, condition, body, ValueRange{},
                              decision_, exitValues);
@@ -100,7 +101,8 @@ void QCProgramBuilder::LoopBuilder::enterBody(Value condition,
 
 void QCProgramBuilder::LoopBuilder::branch(bool continuing, ValueRange state) {
   SmallVector<Value> values{
-      arith::ConstantIntOp::create(builder_, location_, continuing ? 1 : 0, 1)};
+      arith::ConstantIntOp::create(builder_, location_, continuing ? 1 : 0, 1),
+  };
   llvm::append_range(values, state);
   cf::BranchOp::create(builder_, location_, decision_, values);
 }
@@ -200,7 +202,7 @@ func::FuncOp QCProgramBuilder::createFunction(
   auto savedAllocatedQubits = std::move(allocatedQubits);
   auto savedAllocatedQregs = std::move(allocatedQregs);
   auto savedStaticQubits = std::move(staticQubits);
-  auto stateGuard = llvm::make_scope_exit([&] {
+  auto stateGuard = llvm::scope_exit([&] {
     allocatedQubits = std::move(savedAllocatedQubits);
     allocatedQregs = std::move(savedAllocatedQregs);
     staticQubits = std::move(savedStaticQubits);
@@ -895,7 +897,7 @@ QCProgramBuilder::scfIndexSwitch(const std::variant<int64_t, Value>& arg,
 
   const InsertionGuard guard(*this);
   const auto buildRegion = [&](Region& region, const function_ref<void()>& f) {
-    Block* block = createBlock(&region); // Implicitly sets the insertion point.
+    createBlock(&region); // Implicitly sets the insertion point.
     f();
     scf::YieldOp::create(*this, getLoc());
   };

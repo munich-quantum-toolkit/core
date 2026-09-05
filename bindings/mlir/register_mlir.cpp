@@ -392,16 +392,16 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
       std::numeric_limits<size_t>::max() / sizeof(std::complex<dd::fp>) / dim) {
     throw nb::value_error("dense unitary dimensions exceed addressable memory");
   }
-  auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(dim * dim);
+  auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
   matrix.traverseMatrix(
       std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
       [&dataPtr, dim](size_t i, size_t j, const std::complex<dd::fp>& value) {
-        dataPtr[(i * dim) + j] = value;
+        (*dataPtr)[(i * dim) + j] = value;
       },
       numQubits);
-  auto* const data = dataPtr.get();
-  const nb::capsule owner(data, [](void* ptr) noexcept {
-    delete[] static_cast<std::complex<dd::fp>*>(ptr);
+  auto* const data = dataPtr->data();
+  const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
+    delete static_cast<dd::CVec*>(ptr);
   });
   [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
   return DenseMatrix(data, {dim, dim}, owner);
