@@ -525,6 +525,8 @@ def test_flat_export_preserves_classical_store_order(late_value: str) -> None:
     restored = program.to_qiskit()
 
     assert [instruction.operation.name for instruction in restored.data] == ["store", "x", "store"]
+    stores = (restored.data[0], restored.data[2])
+    assert all(not instruction.qubits and not instruction.clbits for instruction in stores)
     assert not restored.data[0].operation.rvalue.value
     assert bool(restored.data[2].operation.rvalue.value) is (late_value == "true")
 
