@@ -9,6 +9,7 @@
  */
 
 #include "bench/BV.hpp"
+#include "bench/ControlledMultiplicationModuloN.hpp"
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
@@ -39,6 +40,9 @@ using mqt::bench::bvFromInstanceSpecificationJSON;
 using mqt::bench::bvFromManifestJSON;
 using mqt::bench::BVMethod;
 using mqt::bench::caseId;
+using mqt::bench::ControlledMultiplicationModuloN;
+using mqt::bench::controlledMultiplicationModuloNFromInstanceSpecificationJSON;
+using mqt::bench::controlledMultiplicationModuloNFromManifestJSON;
 using mqt::bench::countsFromJSON;
 using mqt::bench::describeBenchmarkJSON;
 using mqt::bench::evaluateJSON;
@@ -96,6 +100,15 @@ TEST(BenchmarkJSON,
   EXPECT_EQ(
       toInstanceSpecificationJSON(bv),
       R"({"benchmark":"bv","parameters":{"hidden_bitstring":"101","method":"static"},"schema_version":1})");
+
+  const auto controlledMultiplicationModuloN =
+      controlledMultiplicationModuloNFromInstanceSpecificationJSON(
+          R"({"schema_version":1,"benchmark":"controlled-multiplication-modulo-n","parameters":{"multiplier":"011","modulus":"101"}})");
+  EXPECT_EQ(controlledMultiplicationModuloN.options().multiplier, "011");
+  EXPECT_EQ(controlledMultiplicationModuloN.options().modulus, "101");
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(controlledMultiplicationModuloN),
+      R"({"benchmark":"controlled-multiplication-modulo-n","parameters":{"modulus":"101","multiplier":"011"},"schema_version":1})");
 
   const auto ghz = ghzFromInstanceSpecificationJSON(
       R"({"parameters":{"qubits":3},"benchmark":"ghz","schema_version":1})");
@@ -159,6 +172,8 @@ TEST(BenchmarkJSON,
 
 TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const BV bv{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}};
+  const ControlledMultiplicationModuloN controlledMultiplicationModuloN{
+      {.multiplier = "011", .modulus = "101"}};
   const GHZ ghz{
       {.qubits = 4, .topology = GHZTopology::Star, .basis = GHZBasis::X}};
   const Grover grover{{.markedBitstring = "001", .iterations = 2}};
@@ -172,6 +187,8 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const Teleportation teleportation;
 
   const auto bvManifest = toManifestJSON(bv);
+  const auto controlledMultiplicationModuloNManifest =
+      toManifestJSON(controlledMultiplicationModuloN);
   const auto ghzManifest = toManifestJSON(ghz);
   const auto groverManifest = toManifestJSON(grover);
   const auto multiplexerManifest = toManifestJSON(multiplexer);
@@ -181,6 +198,9 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const auto qpeManifest = toManifestJSON(qpe);
   const auto teleportationManifest = toManifestJSON(teleportation);
   EXPECT_EQ(toManifestJSON(bvFromManifestJSON(bvManifest)), bvManifest);
+  EXPECT_EQ(toManifestJSON(controlledMultiplicationModuloNFromManifestJSON(
+                controlledMultiplicationModuloNManifest)),
+            controlledMultiplicationModuloNManifest);
   EXPECT_EQ(toManifestJSON(ghzFromManifestJSON(ghzManifest)), ghzManifest);
   EXPECT_EQ(toManifestJSON(groverFromManifestJSON(groverManifest)),
             groverManifest);
@@ -198,6 +218,9 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
       toManifestJSON(teleportationFromManifestJSON(teleportationManifest)),
       teleportationManifest);
   EXPECT_EQ(benchmarkIdFromManifestJSON(bvManifest), "bv");
+  EXPECT_EQ(
+      benchmarkIdFromManifestJSON(controlledMultiplicationModuloNManifest),
+      "controlled-multiplication-modulo-n");
   EXPECT_EQ(benchmarkIdFromManifestJSON(ghzManifest), "ghz");
   EXPECT_EQ(benchmarkIdFromManifestJSON(groverManifest), "grover");
   EXPECT_EQ(benchmarkIdFromManifestJSON(multiplexerManifest), "multiplexer");
@@ -212,6 +235,11 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   EXPECT_NE(ghzManifest.find("\"case_id\":\"" + caseId(ghz) + "\""),
             std::string::npos);
   EXPECT_NE(groverManifest.find("\"success_outcome\":\"001\""),
+            std::string::npos);
+  EXPECT_NE(controlledMultiplicationModuloNManifest.find(
+                "\"model\":\"controlled_multiplication_modulo_n\""),
+            std::string::npos);
+  EXPECT_NE(controlledMultiplicationModuloNManifest.find("\"width\":8"),
             std::string::npos);
   EXPECT_NE(multiplexerManifest.find("\"model\":\"multiplexer\""),
             std::string::npos);
@@ -237,6 +265,14 @@ TEST(BenchmarkJSON, UsesStableSemanticCaseIds) {
   EXPECT_NE(caseId(linear), caseId(star));
   EXPECT_NE(caseId(BV{{.hiddenBitstring = "1"}}),
             caseId(BV{{.hiddenBitstring = "1", .method = BVMethod::Dynamic}}));
+  EXPECT_EQ(caseId(ControlledMultiplicationModuloN{
+                {.multiplier = "011", .modulus = "101"}}),
+            caseId(ControlledMultiplicationModuloN{
+                {.multiplier = "011", .modulus = "101"}}));
+  EXPECT_NE(caseId(ControlledMultiplicationModuloN{
+                {.multiplier = "011", .modulus = "101"}}),
+            caseId(ControlledMultiplicationModuloN{
+                {.multiplier = "001", .modulus = "101"}}));
   EXPECT_NE(caseId(QFT{{.qubits = 3, .periodExponent = 1}}),
             caseId(QFT{{.qubits = 3,
                         .periodExponent = 1,
@@ -328,6 +364,34 @@ TEST(BenchmarkJSON,
             R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7,"angles":[]}})"));
       },
       "unknown key 'angles'");
+  expectInvalid(
+      [] {
+        static_cast<
+            void>(controlledMultiplicationModuloNFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"controlled-multiplication-modulo-n","parameters":{"multiplier":"011","modulus":"101","control":true}})"));
+      },
+      "unknown key 'control'");
+  expectInvalid(
+      [] {
+        static_cast<
+            void>(controlledMultiplicationModuloNFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"controlled-multiplication-modulo-n","parameters":{"multiplier":"011","modulus":"1001"}})"));
+      },
+      "equal widths");
+  expectInvalid(
+      [] {
+        static_cast<
+            void>(controlledMultiplicationModuloNFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"controlled-multiplication-modulo-n","parameters":{"multiplier":"011","modulus":"010"}})"));
+      },
+      "canonical");
+  expectInvalid(
+      [] {
+        static_cast<
+            void>(controlledMultiplicationModuloNFromInstanceSpecificationJSON(
+            R"({"schema_version":1,"benchmark":"controlled-multiplication-modulo-n","parameters":{"multiplier":"101","modulus":"101"}})"));
+      },
+      "0 < a < N");
   expectInvalid(
       [] {
         static_cast<void>(qftAdderClassicalFromInstanceSpecificationJSON(
@@ -424,8 +488,10 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifestData) {
 TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_EQ(
       listBenchmarksJSON(),
-      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder-classical"},{"definition_version":1,"id":"qft-adder-quantum"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"teleportation"}],"schema_version":1})");
+      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"controlled-multiplication-modulo-n"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder-classical"},{"definition_version":1,"id":"qft-adder-quantum"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"teleportation"}],"schema_version":1})");
   const auto bv = describeBenchmarkJSON("bv");
+  const auto controlledMultiplicationModuloN =
+      describeBenchmarkJSON("controlled-multiplication-modulo-n");
   const auto ghz = describeBenchmarkJSON("ghz");
   const auto grover = describeBenchmarkJSON("grover");
   const auto multiplexer = describeBenchmarkJSON("multiplexer");
@@ -440,6 +506,10 @@ TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_NE(ghz.find("\"maximum\":1000000"), std::string::npos);
   EXPECT_NE(ghz.find("\"maximum\":1075"), std::string::npos);
   EXPECT_NE(bv.find("\"dynamic\""), std::string::npos);
+  EXPECT_NE(controlledMultiplicationModuloN.find("\"maxLength\":63"),
+            std::string::npos);
+  EXPECT_NE(controlledMultiplicationModuloN.find("\"pattern\":\"^1[01]+$\""),
+            std::string::npos);
   EXPECT_NE(grover.find("\"maxLength\":62"), std::string::npos);
   EXPECT_NE(multiplexer.find("\"maximum\":1024"), std::string::npos);
   EXPECT_NE(multiplexer.find("\"minimum\":2"), std::string::npos);
@@ -485,6 +555,18 @@ TEST(BenchmarkJSON, ParsesCountsAndSerializesEvaluations) {
   EXPECT_NE(multiplexerEvaluation.find("\"success_probability\":null"),
             std::string::npos);
   EXPECT_NE(multiplexerEvaluation.find("\"total_variation_distance\":"),
+            std::string::npos);
+
+  const ControlledMultiplicationModuloN controlledMultiplicationModuloN{
+      {.multiplier = "011", .modulus = "101"}};
+  const auto controlledMultiplicationModuloNEvaluation = evaluateJSON(
+      toManifestJSON(controlledMultiplicationModuloN),
+      R"({"schema_version":1,"counts":{"00000000":1,"10000000":1,"00010000":1,"10010011":1,"00100000":1,"10100001":1,"00110000":1,"10110100":1,"01000000":1,"11000010":1,"01010000":1,"11010000":1,"01100000":1,"11100011":1,"01110000":1,"11110001":1}})");
+  EXPECT_NE(controlledMultiplicationModuloNEvaluation.find(
+                "\"success_probability\":null"),
+            std::string::npos);
+  EXPECT_NE(controlledMultiplicationModuloNEvaluation.find(
+                "\"total_variation_distance\":0.0"),
             std::string::npos);
 
   const QFTAdderQuantum qftAdderQuantum{{.qubits = 2}};

@@ -9,6 +9,7 @@
 add_library(
   MQTBenchmarkPrograms STATIC
   BV.cpp
+  ControlledMultiplicationModuloN.cpp
   GHZ.cpp
   Grover.cpp
   Multiplexer.cpp

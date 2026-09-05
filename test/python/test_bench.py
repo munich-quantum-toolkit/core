@@ -18,6 +18,7 @@ import pytest
 from mqt.core import bench, mlir
 from mqt.core.bench import (
     bv,
+    controlled_multiplication_modulo_n,
     ghz,
     grover,
     multiplexer,
@@ -32,6 +33,7 @@ from mqt.core.bench import (
 def assert_generates(
     benchmark: (
         bv.BV
+        | controlled_multiplication_modulo_n.ControlledMultiplicationModuloN
         | ghz.GHZ
         | grover.Grover
         | multiplexer.Multiplexer
@@ -47,6 +49,65 @@ def assert_generates(
     assert isinstance(program, mlir.QCProgram)
     assert "qc." in program.ir
     assert isinstance(program.to_qco(), mlir.QCOProgram)
+
+
+def test_controlled_multiplication_modulo_n_reference_json_and_generation() -> None:
+    """Expose the control, multiplicand, and exact modular product."""
+    benchmark = controlled_multiplication_modulo_n.ControlledMultiplicationModuloN(
+        controlled_multiplication_modulo_n.Options(multiplier="011", modulus="101")
+    )
+    assert benchmark.options.multiplier == "011"
+    assert benchmark.options.modulus == "101"
+    assert benchmark.output.name == "result"
+    assert benchmark.output.width == 8
+
+    products = ("000", "011", "001", "100", "010", "000", "011", "001")
+    exact: dict[str, int] = {}
+    for multiplicand, product in zip((f"{value:03b}" for value in range(8)), products, strict=True):
+        inactive = f"0{multiplicand}0000"
+        active = f"1{multiplicand}0{product}"
+        assert benchmark.probability(inactive) == pytest.approx(1 / 16)
+        assert benchmark.probability(active) == pytest.approx(1 / 16)
+        exact[inactive] = 1
+        exact[active] = 1
+
+    evaluation = benchmark.evaluate(exact)
+    assert evaluation.total_variation_distance == pytest.approx(0)
+    assert evaluation.squared_hellinger_fidelity == pytest.approx(1)
+    assert evaluation.success_probability is None
+    assert json.loads(benchmark.instance_specification_json)["parameters"] == {
+        "modulus": "101",
+        "multiplier": "011",
+    }
+
+    instance_copy = controlled_multiplication_modulo_n.ControlledMultiplicationModuloN.from_instance_specification_json(
+        benchmark.instance_specification_json
+    )
+    manifest_copy = controlled_multiplication_modulo_n.ControlledMultiplicationModuloN.from_manifest_json(
+        benchmark.manifest_json
+    )
+    assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
+
+    shots = 16_384
+    counts = benchmark.generate().to_qco().sample(shots=shots, seed=17)
+    assert sum(counts.values()) == shots
+    assert benchmark.evaluate(counts).total_variation_distance < 0.04
+    assert_generates(benchmark)
+
+
+def test_controlled_multiplication_modulo_n_executes_non_coprime_case() -> None:
+    """Keep exact products when the multiplier and modulus are not coprime."""
+    benchmark = controlled_multiplication_modulo_n.ControlledMultiplicationModuloN(
+        controlled_multiplication_modulo_n.Options(multiplier="010", modulus="100")
+    )
+    counts = benchmark.generate().to_qco().sample(shots=8192, seed=23)
+    for outcome in counts:
+        control = int(outcome[0])
+        multiplicand = int(outcome[1:4], 2)
+        accumulator = int(outcome[4:], 2)
+        expected = (2 * multiplicand) % 4 if control else 0
+        assert accumulator == expected
+    assert benchmark.evaluate(counts).total_variation_distance < 0.05
 
 
 def test_bv_methods_share_the_hidden_string_reference() -> None:

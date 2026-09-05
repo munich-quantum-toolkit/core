@@ -53,6 +53,24 @@ print("Width:", benchmark.output.width)
 Each family validates its instance when it creates one. Fixed families need no
 options.
 
+## Controlled multiplication modulo N
+
+The `controlled-multiplication-modulo-n` family implements the controlled
+modular multiplication circuit from Figures 5 and 6 of
+[Beauregard's circuit for Shor's algorithm](https://arxiv.org/abs/quant-ph/0205095).
+The `multiplier` and `modulus` parameters are equal-width big-endian binary
+strings. The modulus uses its canonical representation, and the multiplier
+satisfies `0 < multiplier < modulus`. Each input can contain between 2 and 63
+bits.
+
+For a configured width `n`, the benchmark prepares the control and multiplicand
+in a uniform superposition. It leaves the `n + 1` accumulator qubits at zero.
+The result is the big-endian concatenation
+`control || multiplicand || accumulator`. When the control is zero, the
+accumulator remains zero. When the control is one, the accumulator contains
+`multiplier * multiplicand mod modulus`. Every valid outcome has probability
+`2^-(n + 1)`.
+
 ## Classical-input QFT adder
 
 The `qft-adder-classical` family implements the classical-input QFT adder from
