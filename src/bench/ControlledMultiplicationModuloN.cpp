@@ -87,8 +87,10 @@ namespace {
 ControlledMultiplicationModuloN::ControlledMultiplicationModuloN(
     ControlledMultiplicationModuloNOptions options)
     : options_(std::move(options)),
-      output_{.name = "result",
-              .width = (2U * options_.multiplier.size()) + 2U} {
+      output_{
+          .name = "result",
+          .width = (2U * options_.multiplier.size()) + 2U,
+      } {
   const auto width = options_.multiplier.size();
   if (width < 2U || width > ControlledMultiplicationModuloNOptions::MAX_BITS) {
     throw std::invalid_argument(
