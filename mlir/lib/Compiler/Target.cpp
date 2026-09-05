@@ -700,12 +700,11 @@ bool CompilerTarget::Storage::supportsGate(
        supportsOperation("z", 2, 0, orderedSites, /*variadicOnly=*/true))) {
     return true;
   }
-  const auto* const specificationEnd =
-      GATE_SPECIFICATIONS.data() + GATE_SPECIFICATIONS.size();
-  const auto* const specification =
-      std::ranges::find(GATE_SPECIFICATIONS.data(), specificationEnd, gate,
-                        &GateSpecification::kind);
-  assert(specification != specificationEnd && "unknown compiler target gate");
+  /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
+  const auto specification =
+      std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
+  assert(specification != GATE_SPECIFICATIONS.end() &&
+         "unknown compiler target gate");
   return supportsOperation(specification->name, specification->arity,
                            specification->numParameters, orderedSites);
 }
@@ -764,12 +763,11 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
         (gate == GateKind::CZ && supportsEveryPlacement("z", 2, 0, true))) {
       return true;
     }
-    const auto* const specificationEnd =
-        GATE_SPECIFICATIONS.data() + GATE_SPECIFICATIONS.size();
-    const auto* const specification =
-        std::ranges::find(GATE_SPECIFICATIONS.data(), specificationEnd, gate,
-                          &GateSpecification::kind);
-    assert(specification != specificationEnd && "unknown compiler target gate");
+    /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
+    const auto specification =
+        std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
+    assert(specification != GATE_SPECIFICATIONS.end() &&
+           "unknown compiler target gate");
     if (supportsEveryPlacement(specification->name, specification->arity,
                                specification->numParameters)) {
       return true;
@@ -798,11 +796,10 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
       GateKind::RXX,   GateKind::RYY, GateKind::RZX, GateKind::RZZ,
       GateKind::ISWAP, GateKind::CZ,  GateKind::CX,  GateKind::ECR,
   };
-  const auto* const entanglerEnd =
-      entanglerPreference.data() + entanglerPreference.size();
-  const auto* const entangler = std::ranges::find_if(
-      entanglerPreference.data(), entanglerEnd, supportsOnEveryCoupling);
-  if (!singleQubit || entangler == entanglerEnd) {
+  /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
+  const auto entangler =
+      std::ranges::find_if(entanglerPreference, supportsOnEveryCoupling);
+  if (!singleQubit || entangler == entanglerPreference.end()) {
     return std::nullopt;
   }
   return SynthesisBasis{.singleQubit = *singleQubit, .entangler = *entangler};
