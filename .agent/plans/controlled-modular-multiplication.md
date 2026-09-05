@@ -1,7 +1,6 @@
 # Add a controlled modular multiplication benchmark
 
-Status: implementation complete on top of the staged classical-input QFT adder;
-the draft pull request and changelog reference remain.
+Status: complete.
 
 ## Goal and scope
 
@@ -79,5 +78,5 @@ and invalid-input tests and a jeff round trip.
 - [x] Generate and structurally test the exact Figures 5 and 6 circuit.
 - [x] Document the source, harness, bit order, validation, and output.
 - [x] Validate focused native, MLIR, CLI, and Python behavior.
-- [ ] Create a draft pull request on the classical-input QFT-adder branch and
+- [x] Create a draft pull request on the classical-input QFT-adder branch and
       add its number to the rolling structured-benchmark changelog entry.
