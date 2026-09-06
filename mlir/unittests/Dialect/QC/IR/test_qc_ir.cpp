@@ -89,8 +89,8 @@ protected:
 void QCTest::SetUp() {
   // Register all necessary dialects
   DialectRegistry registry;
-  registry.insert<QCDialect, arith::ArithDialect, func::FuncDialect,
-                  memref::MemRefDialect, scf::SCFDialect>();
+  registry.insert<mlir::mqt::MQTDialect, QCDialect, arith::ArithDialect,
+                  func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
@@ -542,11 +542,6 @@ TEST_F(QCTest, UnitaryFunctionMarkerRequiresFunctionReturn) {
 }
 
 TEST_F(QCTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
-  DialectRegistry registry;
-  registry.insert<mlir::mqt::MQTDialect>();
-  context->appendDialectRegistry(registry);
-  context->getOrLoadDialect<mlir::mqt::MQTDialect>();
-
   constexpr std::array<StringLiteral, 9> invalidPrograms{
       R"mlir(module {
         func.func private @bad(%q: !qc.qubit)
@@ -623,6 +618,54 @@ TEST_F(QCTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
                    .begin();
   SymbolTableCollection symbols;
   EXPECT_TRUE(failed(call.verifySymbolUses(symbols)));
+}
+
+TEST_F(QCTest, CleanupPrunesUnitaryFunctionsAndSignatures) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @used(%theta: f64, %unusedTheta: f64,
+                            %q: !qc.qubit, %unusedQubit: !qc.qubit)
+        attributes {mqt.unitary} {
+      qc.rz(%theta) %q : !qc.qubit
+      return
+    }
+    func.func private @unused(%q: !qc.qubit) attributes {mqt.unitary} {
+      qc.h %q : !qc.qubit
+      return
+    }
+    func.func private @conditional(%q: !qc.qubit) attributes {mqt.unitary} {
+      qc.z %q : !qc.qubit
+      return
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %theta = arith.constant 1.0 : f64
+      %unusedTheta = arith.constant 2.0 : f64
+      %q = qc.alloc : !qc.qubit
+      %unusedQubit = qc.alloc : !qc.qubit
+      %false = arith.constant false
+      scf.if %false {
+        qc.call @conditional(%q) : !qc.qubit
+      }
+      qc.call @used(%theta, %unusedTheta, %q, %unusedQubit)
+          : f64, f64, !qc.qubit, !qc.qubit
+      qc.dealloc %q : !qc.qubit
+      qc.dealloc %unusedQubit : !qc.qubit
+      return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  auto used = moduleOp->lookupSymbol<func::FuncOp>("used");
+  ASSERT_TRUE(used);
+  EXPECT_EQ(used.getNumArguments(), 2);
+  auto call =
+      *mlir::mqt::getEntryPoint(*moduleOp).getBody().getOps<CallOp>().begin();
+  EXPECT_EQ(call.getNumOperands(), 2);
+  EXPECT_FALSE(moduleOp->lookupSymbol<func::FuncOp>("unused"));
+  EXPECT_FALSE(moduleOp->lookupSymbol<func::FuncOp>("conditional"));
+  EXPECT_TRUE(mlir::mqt::getEntryPoint(*moduleOp));
 }
 
 TEST_F(QCTest, DirectSingleQubitPowBuilder) {

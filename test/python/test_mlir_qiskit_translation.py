@@ -1354,8 +1354,8 @@ def test_custom_gate_export_rejects_duplicate_qargs() -> None:
         program.to_qiskit()
 
 
-def test_custom_gate_export_rejects_unreferenced_functions() -> None:
-    """Reject helper definitions that a Qiskit circuit cannot retain."""
+def test_custom_gate_export_drops_unreferenced_functions() -> None:
+    """Drop helper definitions that the exported circuit does not use."""
     program = QCProgram.from_mlir_str(
         """module {
   func.func private @unused(%q: !qc.qubit) attributes {mqt.unitary} {
@@ -1369,8 +1369,11 @@ def test_custom_gate_export_rejects_unreferenced_functions() -> None:
 """
     )
 
-    with pytest.raises(RuntimeError, match="cannot preserve function 'unused'"):
-        program.to_qiskit()
+    source_ir = program.ir
+    restored = program.to_qiskit()
+
+    assert not restored.data
+    assert program.ir == source_ir
 
 
 def test_generic_instruction_with_clbits_remains_flattened() -> None:

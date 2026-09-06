@@ -2816,13 +2816,6 @@ collectGateFunctions(mlir::ModuleOp moduleOp, mlir::func::FuncOp entryPoint) {
       ordered.push_back(function);
     }
   }
-  for (auto function : moduleOp.getOps<mlir::func::FuncOp>()) {
-    if (!gateCallDepths.contains(graph.lookupNode(&function.getBody()))) {
-      throw std::runtime_error("Qiskit circuit export cannot preserve "
-                               "function '" +
-                               function.getName().str() + "'");
-    }
-  }
   return ordered;
 }
 

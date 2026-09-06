@@ -293,14 +293,13 @@ verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
            << "' must be a unit attribute";
   }
 
-  auto function = dyn_cast<FunctionOpInterface>(operation);
+  auto function = dyn_cast<func::FuncOp>(operation);
   auto moduleOp = operation->getParentOfType<ModuleOp>();
-  if (!function || !moduleOp ||
-      operation->getParentOp() != moduleOp.getOperation() ||
-      function.getFunctionBody().empty()) {
+  if (!function || !function.isPublic() || function.isExternal() || !moduleOp ||
+      operation->getParentOp() != moduleOp.getOperation()) {
     return operation->emitError()
            << "attribute '" << attribute.getName().getValue()
-           << "' requires a defined module-level function";
+           << "' requires a public, defined module-level function";
   }
 
   for (Operation& candidate : moduleOp.getBody()->getOperations()) {
