@@ -40,7 +40,7 @@ mqt-cc --input-format=qasm program.txt
 | Versions and includes      | Versionless input and versions 3.0 and 3.1 use the maintained OpenQASM profile. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                                                                                                  |
 | Classical types            | `bit`, `bool`, `int`, `uint`, and `float` declarations are supported, including integer widths 1–64. Initialized compile-time `angle[N]` values support widths 1–52. Other sized numeric declarations, general arrays, complex values, and aliases are not yet supported. |
 | Outputs                    | Explicit `output` declarations are preserved in source order. Without any explicit output, global classical variables become outputs.                                                                                                                                     |
-| Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Recursive custom gates are rejected.                                                                                                 |
+| Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Custom definitions remain private QC functions instead of being expanded at every use. Recursive custom gates are rejected.          |
 | Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC target rejects programs that mix logical allocation with physical qubits.                                                                                                          |
 | Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. Initialized bit registers support `~`, `&`, `\|`, `^`, `<<`, `>>`, `popcount`, `rotl`, and `rotr`.                                             |
 | Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop; `continue` advances to its next iteration. Both may appear inside conditional and switch bodies.                                                                    |
@@ -189,6 +189,7 @@ bypasses that QCO optimization round trip.
 | ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Qubits and classical bits | Logical and physical qubits, scalar qubit allocations, static rank-one qubit memrefs, and CBit registers. Qubit memory indices must resolve statically. CBit indices can be dynamic.                                         |
 | Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u2` uses the standard compatibility alias. |
+| Reusable gates            | Private functions with leading `f64` parameters followed by scalar qubit arguments and no results. Straight-line `mqt.unitary` functions use `qc.call`; loop-containing gate functions use `func.call`.                      |
 | Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body with target qubits becomes a private generated gate.                                                                                                        |
 | Scalar values             | Integers of widths 1–64, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                    |
 | Structured control        | `scf.if`, `scf.index_switch`, constant-range `scf.for`, and general two-region `scf.while`, including supported scalar arguments and results. Index switches use native `switch`, `case`, and `default` statements.          |
@@ -264,14 +265,20 @@ and expressions emitted by the exporter, including Boolean/integer conversions.
 
 ### Export limitations
 
-Export accepts exactly one defined, argument-free function. It rejects calls,
-arbitrary CFGs, multi-block SCF regions, dynamic qubit indices or ranges,
-general memrefs, unsupported integer widths, unknown operations, and non-unitary
-content inside modifier regions. CBit loads, stores, whole-register reads and
-writes, fixed-width bitwise operations, and dynamic indices are supported. SCF
-results, loop-carried values, and nonempty `scf.yield` are outside the export
-subset. Multi-operation modifier bodies must have a target qubit and cannot
-capture additional qubits from an enclosing scope.
+Export requires one defined, argument-free entry function. Additional functions
+must be private, defined gate functions with leading `f64` parameters followed
+by scalar qubit arguments and no results. Gate functions may contain supported
+scalar expressions, quantum operations, calls, and loops. Measurement, reset,
+barrier, allocation, classical storage, conditionals, switches, and
+`arith.select` are rejected in gate functions.
+
+The exporter rejects arbitrary CFGs, multi-block SCF regions, recursive or
+unresolved calls, dynamic qubit indices or ranges, general memrefs, unsupported
+integer widths, unknown operations, and non-unitary content inside modifier
+regions. CBit loads, stores, whole-register reads and writes, fixed-width
+bitwise operations, dynamic bit indices, SCF results, and loop-carried values
+are supported in the entry function. Multi-operation modifier bodies must have a
+target qubit and cannot capture additional qubits from an enclosing scope.
 
 OpenQASM export supports arbitrary bit-register widths for bitwise operations,
 unsigned comparisons, `popcount`, `rotl`, and `rotr`. Scalar arithmetic, integer
