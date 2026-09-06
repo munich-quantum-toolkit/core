@@ -97,6 +97,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Require CMake 3.28 or newer for source builds and embedded projects, use
+  native dependency exclusions and system include handling, and disable unused
+  C++ module scanning ([#2421]) ([**@burgholzer**])
 - ⬆️ Update clang-tidy to version 23 and adapt the C++ sources to its
   diagnostics ([#2328]) ([**@simon1hofmann**])
 - 💥 Update QIR execution for QIR 2.1, isolated runtimes, deterministic QDMI
@@ -923,6 +926,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2421]: https://github.com/munich-quantum-toolkit/core/pull/2421
 [#2399]: https://github.com/munich-quantum-toolkit/core/pull/2399
 [#2380]: https://github.com/munich-quantum-toolkit/core/pull/2380
 [#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368
