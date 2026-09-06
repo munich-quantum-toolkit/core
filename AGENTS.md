@@ -119,6 +119,8 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 
 ## Build and Test
 
+Use CMake 3.28 or newer for all C++ builds.
+
 ### C++
 
 - Configure a release build with `cmake --preset release`.

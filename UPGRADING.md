@@ -6,6 +6,11 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### CMake 3.28 minimum
+
+MQT Core now requires CMake 3.28 or newer. Upgrade CMake before configuring a
+source build or embedding MQT Core with `FetchContent`.
+
 ### Removal of the classic circuit representation
 
 MQT Core 4 removes the complete classic circuit surface. This includes the C++
