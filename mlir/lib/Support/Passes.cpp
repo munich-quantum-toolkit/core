@@ -79,6 +79,13 @@ void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
 }
 
+void populateQIRPreparationPipeline(OpPassManager& pm) {
+  pm.addPass(createInlinerPass());
+  pm.addPass(mqt::createNormalizeGlobalPhases());
+  pm.addPass(mqt::createUnrollModifiers());
+  pm.addPass(createCanonicalizerPass());
+}
+
 void populateQubitReusePipeline(OpPassManager& pm) {
   pm.addPass(qco::createMeasurementLifting());
   pm.addPass(qco::createReplaceClassicalControls());

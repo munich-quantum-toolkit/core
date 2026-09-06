@@ -32,6 +32,9 @@ void registerMQTCompilerPasses();
 /// Populate the default QCO optimization pipeline.
 void populateDefaultQCOOptimizationPipeline(mlir::OpPassManager& pm);
 
+/// Prepare reusable QC functions and modifiers for QIR conversion.
+void populateQIRPreparationPipeline(mlir::OpPassManager& pm);
+
 /// Populate the qubit reuse pipeline including its preparation passes.
 void populateQubitReusePipeline(mlir::OpPassManager& pm);
 
