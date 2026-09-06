@@ -94,13 +94,13 @@ jobs:
         include:
           - runs-on: windows-2025
             compiler: msvc
-            preset: release-windows
+            preset: release
             run-on-draft: true
           - runs-on: windows-11-arm
             compiler: msvc
-            preset: release-windows
+            preset: release
             run-on-draft: false
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@ae4c1005796fedc123c3c70cdba94ce643c9fcae # v2.3.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@4e1a050439717695ca078f11a41ce066144df257
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -108,6 +108,7 @@ jobs:
       llvm-version: 23.1.0
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
+      use-sccache-gha: true
     permissions:
       contents: read
 
@@ -152,11 +153,12 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [ubuntu-24.04, ubuntu-24.04-arm, macos-26, windows-2025]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@ae4c1005796fedc123c3c70cdba94ce643c9fcae # v2.3.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@4e1a050439717695ca078f11a41ce066144df257
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
       llvm-version: 23.1.0
+      use-sccache-gha: ${{ startsWith(matrix.runs-on, 'windows') }}
     permissions:
       contents: read
 
@@ -206,11 +208,12 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@ae4c1005796fedc123c3c70cdba94ce643c9fcae # v2.3.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@4e1a050439717695ca078f11a41ce066144df257
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
       llvm-version: 23.1.0
+      use-sccache-gha: ${{ startsWith(matrix.runs-on, 'windows') }}
     permissions:
       contents: read
 
