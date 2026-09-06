@@ -48,7 +48,7 @@ struct Register {
   std::vector<uint32_t> bits;
 };
 
-/** Validate canonical register membership and return the leading loose bits. */
+/// Validate canonical register membership and return the leading loose bits.
 [[nodiscard]] uint32_t
 validateRegisterLayout(const std::vector<Register>& registers, uint32_t total,
                        std::string_view kind);
@@ -57,7 +57,7 @@ inline constexpr size_t MAX_PARAMETER_EXPRESSION_DEPTH = 64U;
 inline constexpr size_t MAX_PARAMETER_EXPRESSION_NODES = 4096U;
 inline constexpr uint64_t MAX_PARAMETER_GROUP_SIZE = 65'536U;
 
-/** Source-level vector metadata for one scalar parameter. */
+/// Source-level vector metadata for one scalar parameter.
 struct ParameterGroup {
   std::string identity;
   std::string name;
@@ -98,7 +98,7 @@ enum class BinaryParameterKind : uint8_t {
   Power,
 };
 
-/** One normalized scalar parameter-expression tree. */
+/// One normalized scalar parameter-expression tree.
 class Parameter {
 public:
   struct Number {
@@ -151,27 +151,27 @@ public:
   }
 
   [[nodiscard]] const Number* getNumber() const {
-    return std::get_if<Number>(&storage);
+    return std::get_if<Number>(&storage_);
   }
 
   [[nodiscard]] const Symbol* getSymbol() const {
-    return std::get_if<Symbol>(&storage);
+    return std::get_if<Symbol>(&storage_);
   }
 
   [[nodiscard]] const Unary* getUnary() const {
-    return std::get_if<Unary>(&storage);
+    return std::get_if<Unary>(&storage_);
   }
 
   [[nodiscard]] const Binary* getBinary() const {
-    return std::get_if<Binary>(&storage);
+    return std::get_if<Binary>(&storage_);
   }
 
 private:
   using Value = std::variant<Number, Symbol, Unary, Binary>;
 
-  explicit Parameter(Value value) : storage(std::move(value)) {}
+  explicit Parameter(Value value) : storage_(std::move(value)) {}
 
-  Value storage = Number{0.0};
+  Value storage_ = Number{0.0};
 };
 
 enum class GateModifierKind : uint8_t {
@@ -257,7 +257,7 @@ struct ClassicalVariable {
   bool input = false;
 };
 
-/** One normalized Qiskit classical-expression tree. */
+/// One normalized Qiskit classical-expression tree.
 struct Expression {
   ExpressionKind kind = ExpressionKind::Value;
   ClassicalType type = ClassicalType::Bool;
@@ -335,7 +335,7 @@ public:
   [[nodiscard]] virtual std::vector<ClassicalVariable> variables() const = 0;
   [[nodiscard]] virtual Register quantumRegister(size_t index) const = 0;
   [[nodiscard]] virtual Register classicalRegister(size_t index) const = 0;
-  /** Return the circuit's free scalar parameters in a stable order. */
+  /// Return the circuit's free scalar parameters in a stable order.
   [[nodiscard]] virtual std::vector<Parameter> parameters() const = 0;
   [[nodiscard]] virtual Parameter globalPhase() const = 0;
   [[nodiscard]] virtual Instruction instruction(size_t index) const = 0;
@@ -386,6 +386,10 @@ public:
   virtual void addGate(StandardGateMapping gate,
                        const std::vector<uint32_t>& qubits,
                        const std::vector<Parameter>& parameters) = 0;
+  virtual void addCustomGate(std::string_view name,
+                             const std::vector<uint32_t>& qubits,
+                             const std::vector<Parameter>& parameters,
+                             const std::vector<GateModifier>& modifiers) = 0;
   virtual void addMeasure(uint32_t qubit, uint32_t clbit) = 0;
   virtual void addReset(uint32_t qubit) = 0;
   virtual void addBarrier(const std::vector<uint32_t>& qubits) = 0;
@@ -398,7 +402,7 @@ public:
   addControlFlow(ControlFlowKind kind, ClassicalTarget target, Loop loop,
                  std::vector<SwitchCase> switchCases,
                  std::vector<std::unique_ptr<CircuitWriter>> blocks) = 0;
-  /** Transfer the native circuit to a new owned Python QuantumCircuit. */
+  /// Transfer the native circuit to a new owned Python QuantumCircuit.
   [[nodiscard]] virtual nb::object finish() = 0;
 };
 
@@ -416,6 +420,10 @@ public:
   [[nodiscard]] virtual bool supportsGate(StandardGateMapping gate) const = 0;
   [[nodiscard]] virtual std::unique_ptr<CircuitWriter>
   createCircuit(uint32_t looseQubits, uint32_t looseClbits) const = 0;
+  virtual void
+  registerCustomGate(std::string_view symbol, std::string_view name,
+                     const std::vector<std::string>& formalParameters,
+                     std::unique_ptr<CircuitWriter> definition) = 0;
 };
 
 #define MQT_QISKIT_DECLARE_VERSION_IMPL(suffix)                                \

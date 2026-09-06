@@ -27,6 +27,7 @@ from qiskit.circuit import (
     Clbit,
     ControlModifier,
     Gate,
+    Instruction,
     InverseModifier,
     Parameter,
     ParameterExpression,
@@ -45,6 +46,8 @@ from mqt.core.mlir import CompilerTarget, QCProgram, compile_program
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+
+    from qiskit.circuit.annotated_operation import Modifier
 
 installed_qiskit = Version(qiskit.__version__)
 candidate_version = os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
@@ -1264,24 +1267,127 @@ def test_layout_is_accepted_and_ignored() -> None:
     assert np.allclose(Operator(restored).data, Operator(laid_out).data)
 
 
-def test_nested_numeric_custom_definitions_are_inlined() -> None:
-    """Bind numeric call parameters and recursively inline definitions."""
+def test_nested_numeric_custom_definitions_are_preserved() -> None:
+    """Keep nested custom Gates as reusable functions after binding."""
     theta = Parameter("theta")
-    definition = QuantumCircuit(1)
+    definition = QuantumCircuit(1, name="inner")
     definition.rx(theta, 0)
-    inner = definition.to_gate(label="inner")
-    middle_definition = QuantumCircuit(1)
+    inner = definition.to_gate()
+    middle_definition = QuantumCircuit(1, name="outer")
     middle_definition.append(inner, [0])
-    outer = middle_definition.to_gate(label="outer")
+    outer = middle_definition.to_gate()
     circuit = QuantumCircuit(1)
     circuit.append(outer, [0])
     circuit.assign_parameters({theta: 0.25}, inplace=True)
 
     program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
 
+    assert program.ir.count("mqt.unitary") == 2
+    assert "qc.call @inner" in program.ir
+    assert "qc.call @outer" in program.ir
     assert "qc.rx" in program.ir
     assert "2.500000e-01" in program.ir
     assert circuit.parameters == set()
+    assert restored.data[0].operation.name == "outer"
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_custom_gate_definitions_are_interned_by_name_and_body() -> None:
+    """Reuse copied definitions and unique distinct same-named bodies."""
+    definition = QuantumCircuit(1, name="shared")
+    definition.h(0)
+    gate = definition.to_gate()
+    circuit = QuantumCircuit(1)
+    circuit.append(gate, [0])
+    circuit.append(gate, [0])
+
+    assert QCProgram.from_qiskit(circuit).ir.count("mqt.unitary") == 1
+
+    conflicting_definition = QuantumCircuit(1, name="shared")
+    conflicting_definition.x(0)
+    circuit.append(conflicting_definition.to_gate(), [0])
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert program.ir.count("mqt.unitary") == 2
+    assert 'mqt.source_name = "shared"' in program.ir
+    assert [item.operation.name for item in restored.data] == ["shared", "shared", "shared"]
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_custom_gate_with_standard_name_is_not_mistranslated() -> None:
+    """Classify standard gates by Qiskit identity rather than by name."""
+    definition = QuantumCircuit(1)
+    definition.h(0)
+    custom = Gate("x", 1, [])
+    custom.definition = definition
+    circuit = QuantumCircuit(1)
+    circuit.append(custom, [0])
+
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert "func.func private @x" in program.ir
+    assert "qc.h" in program.ir
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_custom_gate_export_rejects_duplicate_qargs() -> None:
+    """Reject a call Qiskit cannot apply to distinct Gate inputs."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func private @pair(%a: !qc.qubit, %b: !qc.qubit) attributes {mqt.unitary} {
+    return
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    qc.call @pair(%q, %q) : !qc.qubit, !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="uses the same qubit more than once"):
+        program.to_qiskit()
+
+
+def test_custom_gate_export_rejects_unreferenced_functions() -> None:
+    """Reject helper definitions that a Qiskit circuit cannot retain."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func private @unused(%q: !qc.qubit) attributes {mqt.unitary} {
+    qc.x %q : !qc.qubit
+    return
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    return
+  }
+}
+"""
+    )
+
+    with pytest.raises(RuntimeError, match="cannot preserve function 'unused'"):
+        program.to_qiskit()
+
+
+def test_generic_instruction_with_clbits_remains_flattened() -> None:
+    """Keep classical Instruction definitions outside the unitary call ABI."""
+    definition = QuantumCircuit(1, 1)
+    definition.measure(0, 0)
+    instruction = Instruction("observe", 1, 1, [])
+    instruction.definition = definition
+    circuit = QuantumCircuit(1, 1)
+    circuit.append(instruction, [0], [0])
+
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert "mqt.unitary" not in program.ir
+    assert "qc.measure" in program.ir
+    assert restored.data[0].operation.name == "measure"
 
 
 def test_ambiguous_custom_parameter_binding_is_rejected() -> None:
@@ -1296,7 +1402,7 @@ def test_ambiguous_custom_parameter_binding_is_rejected() -> None:
     circuit = QuantumCircuit(1)
     circuit.append(gate, [0])
 
-    with pytest.raises(RuntimeError, match="parameter symbol 'z' is not defined"):
+    with pytest.raises(RuntimeError, match=r"parameter symbol '[az]' is not defined"):
         QCProgram.from_qiskit(circuit)
 
 
@@ -1319,18 +1425,56 @@ def test_custom_definition_uses_call_parameter_order_after_binding() -> None:
 
 
 @pytest.mark.parametrize("modifier", [InverseModifier(), PowerModifier(0.5), ControlModifier(1)])
-def test_modified_custom_definitions_are_rejected(
+def test_modified_custom_definitions_round_trip(
     modifier: InverseModifier | PowerModifier | ControlModifier,
 ) -> None:
-    """Reject modifiers whose semantics cannot be preserved while inlining."""
-    definition = QuantumCircuit(1)
+    """Preserve supported modifiers around reusable custom Gates."""
+    definition = QuantumCircuit(1, name="custom")
     definition.h(0)
-    custom = definition.to_gate(label="custom")
+    custom = definition.to_gate()
     operation = AnnotatedOperation(custom, modifier)
     circuit = QuantumCircuit(operation.num_qubits)
     circuit.append(operation, circuit.qubits)
 
-    with pytest.raises(RuntimeError, match="does not support modifiers on custom instructions"):
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert "qc.call @custom" in program.ir
+    assert isinstance(restored.data[0].operation, AnnotatedOperation)
+    assert restored.data[0].operation.modifiers == [modifier]
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_mixed_custom_gate_modifiers_are_canonicalized() -> None:
+    """Preserve semantics while combining commuting closed controls."""
+    definition = QuantumCircuit(1, name="custom")
+    definition.h(0)
+    source_modifiers: list[Modifier] = [
+        ControlModifier(1),
+        InverseModifier(),
+        PowerModifier(0.5),
+        ControlModifier(2),
+    ]
+    operation = AnnotatedOperation(definition.to_gate(), source_modifiers)
+    circuit = QuantumCircuit(operation.num_qubits)
+    circuit.append(operation, circuit.qubits)
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+    restored_operation = restored.data[0].operation
+
+    assert isinstance(restored_operation, AnnotatedOperation)
+    assert restored_operation.modifiers == [InverseModifier(), PowerModifier(0.5), ControlModifier(3)]
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_symbolic_power_modifier_is_rejected() -> None:
+    """Reject symbolic modifier state that Qiskit does not track or bind."""
+    theta = Parameter("theta")
+    operation = AnnotatedOperation(library.XGate(), PowerModifier(theta))
+    circuit = QuantumCircuit(1)
+    circuit.append(operation, [0])
+
+    with pytest.raises(RuntimeError, match="power must have a finite numeric exponent"):
         QCProgram.from_qiskit(circuit)
 
 
@@ -1373,13 +1517,14 @@ def test_cyclic_and_excessively_nested_definitions_are_rejected() -> None:
         QCProgram.from_qiskit(too_deep)
 
 
-def test_exponential_definition_expansion_is_rejected_by_budget() -> None:
-    """Count repeated definitions without materializing their full expansion."""
+def test_repeated_definition_graph_remains_compact() -> None:
+    """Keep a branching Gate graph compact through import and export."""
     leaf_definition = QuantumCircuit(1)
     leaf_definition.h(0)
     nested = Gate("leaf", 1, [])
     nested.definition = leaf_definition
-    for level in range(22):
+    levels = 25
+    for level in range(levels):
         definition = QuantumCircuit(1)
         definition.append(nested, [0])
         definition.append(nested, [0])
@@ -1388,28 +1533,203 @@ def test_exponential_definition_expansion_is_rejected_by_budget() -> None:
     circuit = QuantumCircuit(1)
     circuit.append(nested, [0])
 
-    with pytest.raises(RuntimeError, match="expansion exceeds 10000000 operations"):
-        QCProgram.from_qiskit(circuit)
+    program = QCProgram.from_qiskit(circuit)
+
+    assert program.ir.count("mqt.unitary") == levels + 1
+    assert program.ir.count("qc.call") == (2 * levels) + 1
+    restored = QCProgram.from_qiskit(program.to_qiskit())
+    assert restored.ir.count("mqt.unitary") == levels + 1
+    assert restored.ir.count("qc.call") == (2 * levels) + 1
 
 
-def test_value_list_loop_expansion_counts_each_iteration() -> None:
-    """Apply the expansion budget to every statically unrolled loop value."""
+def test_custom_gate_export_reuses_a_long_call_chain() -> None:
+    """Export repeated calls after visiting enough helpers to grow the graph."""
+    functions = [
+        """  func.func private @leaf(%q: !qc.qubit) attributes {mqt.unitary} {
+    qc.h %q : !qc.qubit
+    return
+  }"""
+    ]
+    callee = "leaf"
+    for level in range(59):
+        name = f"level_{level}"
+        functions.append(
+            f"""  func.func private @{name}(%q: !qc.qubit) attributes {{mqt.unitary}} {{
+    qc.call @{callee}(%q) : !qc.qubit
+    return
+  }}"""
+        )
+        callee = name
+    functions.append(
+        f"""  func.func @main() attributes {{mqt.entry_point}} {{
+    %q = qc.alloc : !qc.qubit
+    qc.call @{callee}(%q) : !qc.qubit
+    qc.call @{callee}(%q) : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }}"""
+    )
+    program = QCProgram.from_mlir_str("module {\n" + "\n".join(functions) + "\n}\n")
+
+    restored = program.to_qiskit()
+
+    assert np.allclose(Operator(restored).data, np.eye(2))
+    assert QCProgram.from_qiskit(restored).ir.count("mqt.unitary") == 60
+
+
+def test_custom_gate_export_checks_longest_shared_call_path() -> None:
+    """Reject a deep path even when its shared leaf was already visited."""
+    functions = [
+        """  func.func private @leaf(%q: !qc.qubit) attributes {mqt.unitary} {
+    qc.h %q : !qc.qubit
+    return
+  }"""
+    ]
+    callee = "leaf"
+    for level in range(64):
+        name = f"level_{level}"
+        functions.append(
+            f"""  func.func private @{name}(%q: !qc.qubit) attributes {{mqt.unitary}} {{
+    qc.call @{callee}(%q) : !qc.qubit
+    return
+  }}"""
+        )
+        callee = name
+    functions.append(
+        f"""  func.func @main() attributes {{mqt.entry_point}} {{
+    %q = qc.alloc : !qc.qubit
+    qc.call @leaf(%q) : !qc.qubit
+    qc.call @{callee}(%q) : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }}"""
+    )
+    program = QCProgram.from_mlir_str("module {\n" + "\n".join(functions) + "\n}\n")
+
+    with pytest.raises(RuntimeError, match="custom Gate calls exceed the nesting limit of 64"):
+        program.to_qiskit()
+
+
+def test_constant_unary_custom_gate_argument_is_folded() -> None:
+    """Fold constant expressions before reconstructing Python parameters."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func private @custom(%theta: f64 {mqt.input_name = "theta"}, %q: !qc.qubit) attributes {mqt.unitary} {
+    qc.rx(%theta) %q : !qc.qubit
+    return
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %constant = arith.constant 5.000000e-01 : f64
+    %angle = math.sin %constant : f64
+    qc.call @custom(%angle, %q) : f64, !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+"""
+    )
+
+    restored = program.to_qiskit()
+
+    assert restored.data[0].operation.params == [pytest.approx(np.sin(0.5))]
+
+
+def test_float_castable_custom_gate_argument_keeps_its_symbol() -> None:
+    """Do not fold a unary expression whose operand still tracks a symbol."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func private @custom(%angle: f64 {mqt.input_name = "angle"}, %q: !qc.qubit) attributes {mqt.unitary} {
+    qc.rx(%angle) %q : !qc.qubit
+    return
+  }
+  func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %zero = arith.subf %theta, %theta : f64
+    %angle = math.sin %zero : f64
+    qc.call @custom(%angle, %q) : f64, !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+"""
+    )
+
+    restored = program.to_qiskit()
+
+    assert {parameter.name for parameter in restored.parameters} == {"theta"}
+    assert restored.data[0].operation.params[0].parameters == restored.parameters
+
+
+def test_distinct_custom_gate_specializations_round_trip() -> None:
+    """Preserve same-named numeric and symbolic specializations."""
+    theta = Parameter("theta")
+    x = Parameter("x")
+    y = Parameter("y")
+    definition = QuantumCircuit(1, name="custom")
+    definition.rx(theta, 0)
+    circuit = QuantumCircuit(1)
+    for actual in (0.1, 0.2, x + 0.25, y * 2):
+        circuit.append(definition.to_gate(parameter_map={theta: actual}), [0])
+
+    program = QCProgram.from_qiskit(circuit)
+    restored = program.to_qiskit()
+
+    assert program.ir.count("mqt.unitary") == 4
+    assert 'mqt.source_name = "custom"' in program.ir
+    assert [item.operation.name for item in restored.data] == ["custom"] * 4
+    values = {"x": 0.3, "y": -0.2}
+    assert np.allclose(
+        Operator(_assign_parameter_values(restored, values)).data,
+        Operator(_assign_parameter_values(circuit, values)).data,
+    )
+
+
+def test_parameterized_helper_specializes_across_qiskit_round_trip() -> None:
+    """Retain semantics and source names when Qiskit erases a shared ABI."""
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func private @custom(%theta: f64 {mqt.input_name = "theta"}, %q: !qc.qubit) attributes {mqt.unitary} {
+    qc.rx(%theta) %q : !qc.qubit
+    return
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %first = arith.constant 1.000000e-01 : f64
+    %second = arith.constant 2.000000e-01 : f64
+    qc.call @custom(%first, %q) : f64, !qc.qubit
+    qc.call @custom(%second, %q) : f64, !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+"""
+    )
+
+    qiskit_circuit = program.to_qiskit()
+    restored_program = QCProgram.from_qiskit(qiskit_circuit)
+    restored_circuit = restored_program.to_qiskit()
+
+    assert restored_program.ir.count("mqt.unitary") == 2
+    assert 'mqt.source_name = "custom"' in restored_program.ir
+    assert [item.operation.name for item in restored_circuit.data] == ["custom", "custom"]
+    assert np.allclose(Operator(restored_circuit).data, Operator(qiskit_circuit).data)
+
+
+def test_custom_gate_in_value_list_loop_is_reused() -> None:
+    """Reuse one custom Gate across a statically unrolled value-list loop."""
     leaf_definition = QuantumCircuit(1)
     leaf_definition.h(0)
     nested = Gate("leaf", 1, [])
     nested.definition = leaf_definition
-    for level in range(20):
-        definition = QuantumCircuit(1)
-        definition.append(nested, [0])
-        definition.append(nested, [0])
-        nested = Gate(f"branch_{level}", 1, [])
-        nested.definition = definition
     circuit = QuantumCircuit(1)
     with circuit.for_loop([0, 2, 5, 9], None, None, None, None, label=None):
         circuit.append(nested, [0])
 
-    with pytest.raises(RuntimeError, match="expansion exceeds 10000000 operations"):
-        QCProgram.from_qiskit(circuit)
+    program = QCProgram.from_qiskit(circuit)
+
+    assert program.ir.count("mqt.unitary") == 1
+    assert program.ir.count("qc.call @leaf") == 4
 
 
 def test_rejections_do_not_modify_source_circuits() -> None:
@@ -2942,7 +3262,7 @@ def test_float_castable_symbolic_expression_keeps_parameter_identity() -> None:
 
 
 def test_parameterized_custom_definition_round_trip() -> None:
-    """Substitute symbolic call parameters while recursively inlining a definition."""
+    """Substitute symbolic call parameters while preserving its definition."""
     formal = Parameter("formal")
     definition = QuantumCircuit(1)
     definition.rx(formal + 1, 0)
