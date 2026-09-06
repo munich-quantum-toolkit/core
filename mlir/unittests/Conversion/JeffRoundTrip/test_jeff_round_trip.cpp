@@ -369,6 +369,60 @@ static LogicalResult convertJeffToQCO(ModuleOp moduleOp) {
   return pm.run(moduleOp);
 }
 
+TEST(JeffRoundTripRegressionTest, PreservesPhaseOfControlledFunctionCall) {
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect, func::FuncDialect,
+                  qco::QCODialect, jeff::JeffDialect>();
+  MLIRContext context(registry);
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @phased_x(%q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %phase = arith.constant 0.25 : f64
+      qco.gphase(%phase)
+      %out = qco.call @flip(%q) : (!qco.qubit) -> !qco.qubit
+      return %out : !qco.qubit
+    }
+    func.func private @flip(%q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %out = qco.x %q : !qco.qubit -> !qco.qubit
+      return %out : !qco.qubit
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %control = qco.alloc : !qco.qubit
+      %target = qco.alloc : !qco.qubit
+      %c, %q = qco.ctrl(%control) targets(%arg = %target) {
+        %out = qco.call @phased_x(%arg) : (!qco.qubit) -> !qco.qubit
+        qco.yield %out : !qco.qubit
+      } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+      qco.sink %c : !qco.qubit
+      qco.sink %q : !qco.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto phases = llvm::to_vector(main.getOps<jeff::R1Op>());
+  ASSERT_EQ(phases.size(), 1);
+  auto angle =
+      phases.front().getRotation().getDefiningOp<jeff::FloatConst64Op>();
+  ASSERT_TRUE(angle);
+  EXPECT_DOUBLE_EQ(angle.getVal().convertToDouble(), 0.25);
+  EXPECT_EQ(phases.front().getNumCtrls(), 0);
+  EXPECT_FALSE(phases.front().getIsAdjoint());
+  auto gates = llvm::to_vector(main.getOps<jeff::XOp>());
+  ASSERT_EQ(gates.size(), 1);
+  EXPECT_EQ(gates.front().getNumCtrls(), 1);
+  EXPECT_TRUE(main.getOps<func::CallOp>().empty());
+  auto restored = deserialize(&context, serialize(*moduleOp).asPtr());
+  ASSERT_TRUE(restored);
+  EXPECT_TRUE(succeeded(verify(*restored)));
+}
+
 TEST(JeffRoundTripRegressionTest, RejectsInvalidJeffModuleMetadata) {
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, func::FuncDialect, jeff::JeffDialect,
@@ -396,8 +450,6 @@ TEST(JeffRoundTripRegressionTest, RejectsInvalidJeffModuleMetadata) {
   const auto uint16Type = builder.getIntegerType(16, false);
   const auto entryPoint = builder.getNamedAttr(
       "jeff.entrypoint", builder.getIntegerAttr(uint16Type, 0));
-  const auto strings =
-      builder.getNamedAttr("jeff.strings", builder.getStrArrayAttr({"main"}));
   rejects({}, "requires an unsigned integer 'jeff.entrypoint' attribute");
   rejects(
       {builder.getNamedAttr("jeff.entrypoint", builder.getStringAttr("main"))},
@@ -405,22 +457,13 @@ TEST(JeffRoundTripRegressionTest, RejectsInvalidJeffModuleMetadata) {
   rejects(
       {builder.getNamedAttr("jeff.entrypoint", builder.getI16IntegerAttr(0))},
       "requires an unsigned integer 'jeff.entrypoint' attribute");
-  rejects({entryPoint}, "requires an array 'jeff.strings' attribute");
+  rejects({entryPoint}, "'jeff.entrypoint' function index is out of bounds");
   rejects(
       {
           builder.getNamedAttr("jeff.entrypoint",
                                builder.getIntegerAttr(uint16Type, 1)),
-          strings,
       },
-      "'jeff.entrypoint' index is out of bounds");
-  rejects(
-      {
-          entryPoint,
-          builder.getNamedAttr(
-              "jeff.strings",
-              builder.getArrayAttr({builder.getI32IntegerAttr(0)})),
-      },
-      "'jeff.entrypoint' must index a string");
+      "'jeff.entrypoint' function index is out of bounds");
 }
 
 TEST(JeffRoundTripRegressionTest, RestoresStatusResultAtEndOfEntryPoint) {
@@ -730,15 +773,15 @@ module {
 }
 )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-  ASSERT_TRUE(succeeded(convertQCOToJeff(*module)));
-  ASSERT_TRUE(succeeded(verify(*module)));
-  ASSERT_TRUE(succeeded(convertJeffToQCO(*module)));
-  EXPECT_TRUE(succeeded(verify(*module)));
-  auto function = *module->getOps<func::FuncOp>().begin();
+  ASSERT_TRUE(succeeded(convertQCOToJeff(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(convertJeffToQCO(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
   EXPECT_TRUE(function.getResultTypes().front().isInteger(64));
 }
 
@@ -759,10 +802,10 @@ module {
   }
 }
 )mlir";
-  auto module = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  EXPECT_TRUE(failed(convertQCOToJeff(*module)));
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(failed(convertQCOToJeff(*moduleOp)));
 }
 
 TEST_P(JeffRoundTripTest, ProgramEquivalence) {

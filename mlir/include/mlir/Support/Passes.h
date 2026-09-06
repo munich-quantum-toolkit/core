@@ -20,11 +20,9 @@ class OpPassManager;
 class PassManager;
 } // namespace mlir
 
-/**
- * @brief Populate the pass manager and run it on the module.
- */
+/// Populate the pass manager and run it on the module.
 mlir::LogicalResult runWithPassManager(
-    mlir::ModuleOp module,
+    mlir::ModuleOp moduleOp,
     mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
     mlir::StringRef errorMessage);
 
@@ -46,13 +44,13 @@ void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
 
 /// Parse and run a module-level MLIR textual pass pipeline.
 [[nodiscard]] mlir::LogicalResult
-runPassPipeline(mlir::ModuleOp module, mlir::StringRef pipeline,
+runPassPipeline(mlir::ModuleOp moduleOp, mlir::StringRef pipeline,
                 bool enableTiming = false, bool enableStatistics = false);
 
-/**
- * @brief Populate a QC-oriented cleanup pipeline on the given pass manager.
- * @details Adds generic cleanup and QC qubit-register shrinking.
- */
+/// Populate a QC-oriented cleanup pipeline on the given pass manager.
+///
+/// Adds generic cleanup and QC qubit-register shrinking while
+/// preserving live function signatures.
 void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 
 /// Run QC cleanup that preserves defined values on every syntactic loop edge.
@@ -60,44 +58,34 @@ void populateQCCleanupPipeline(mlir::OpPassManager& pm);
 /// RemoveDeadValues, even when those edges are unreachable.
 void populateQCExportPipeline(mlir::OpPassManager& pm);
 
-/**
- * @brief Populate a QCO-oriented cleanup pipeline on the given pass manager.
- * @details Adds generic cleanup and qtensor shrink-to-fit.
- */
+/// Populate a QCO-oriented cleanup pipeline on the given pass manager.
+///
+/// Adds generic cleanup and qtensor shrink-to-fit while
+/// preserving live function signatures.
 void populateQCOCleanupPipeline(mlir::OpPassManager& pm);
 
-/**
- * @brief Populate a QIR-oriented cleanup pipeline on the given pass manager.
- * @details Adds generic cleanup and QIR-specific simplifications. Updates the
- * meta data accordingly.
- */
+/// Populate a QIR-oriented cleanup pipeline on the given pass manager.
+///
+/// Adds generic cleanup and QIR-specific simplifications. Updates the
+/// metadata accordingly.
 void populateQIRCleanupPipeline(mlir::OpPassManager& pm, bool useAdaptive);
 
-/**
- * @brief Populate a `jeff`-oriented cleanup pipeline on the given pass manager.
- * @details Adds generic cleanup and dead-value removal. This matches the QCO
- * cleanup minus the QTensor-specific shrink pass, as QTensor operations no
- * longer exist once lowered into the `jeff` dialect.
- */
+/// Populate a `jeff`-oriented cleanup pipeline on the given pass manager.
+///
+/// Adds generic cleanup and dead-value removal after lowering to jeff.
 void populateJeffCleanupPipeline(mlir::OpPassManager& pm);
 
-/**
- * @brief Run the QC-oriented cleanup pipeline on a module.
- */
-[[nodiscard]] mlir::LogicalResult runQCCleanupPipeline(mlir::ModuleOp module);
+/// Run the QC-oriented cleanup pipeline on a module.
+[[nodiscard]] mlir::LogicalResult runQCCleanupPipeline(mlir::ModuleOp moduleOp);
 
-/**
- * @brief Run the QCO-oriented cleanup pipeline on a module.
- */
-[[nodiscard]] mlir::LogicalResult runQCOCleanupPipeline(mlir::ModuleOp module);
+/// Run the QCO-oriented cleanup pipeline on a module.
+[[nodiscard]] mlir::LogicalResult
+runQCOCleanupPipeline(mlir::ModuleOp moduleOp);
 
-/**
- * @brief Run the QIR-oriented cleanup pipeline on a module.
- */
-[[nodiscard]] mlir::LogicalResult runQIRCleanupPipeline(mlir::ModuleOp module,
+/// Run the QIR-oriented cleanup pipeline on a module.
+[[nodiscard]] mlir::LogicalResult runQIRCleanupPipeline(mlir::ModuleOp moduleOp,
                                                         bool useAdaptive);
 
-/**
- * @brief Run the `jeff`-oriented cleanup pipeline on a module.
- */
-[[nodiscard]] mlir::LogicalResult runJeffCleanupPipeline(mlir::ModuleOp module);
+/// Run the `jeff`-oriented cleanup pipeline on a module.
+[[nodiscard]] mlir::LogicalResult
+runJeffCleanupPipeline(mlir::ModuleOp moduleOp);

@@ -2146,6 +2146,37 @@ static LogicalResult runUnrollModifiers(ModuleOp moduleOp) {
   return pm.run(moduleOp);
 }
 
+TEST_F(QCTest, UnrollModifiersInlinesUnitaryCalls) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @flip(%q: !qc.qubit) attributes {mqt.unitary} {
+      qc.x %q : !qc.qubit
+      return
+    }
+    func.func @main(%q: !qc.qubit) {
+      %two = arith.constant 2.0 : f64
+      qc.pow(%two) (%arg = %q) {
+        qc.call @flip(%arg) : !qc.qubit
+        qc.yield
+      } : !qc.qubit
+      return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runUnrollModifiers(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  size_t calls = 0;
+  size_t xGates = 0;
+  main.walk([&](Operation* op) {
+    calls += isa<CallOp>(op);
+    xGates += isa<XOp>(op);
+  });
+  EXPECT_EQ(calls, 0);
+  EXPECT_EQ(xGates, 1);
+}
+
 /// Unrolls @p program and checks that it matches @p reference.
 static void
 expectUnrollsTo(MLIRContext* context,

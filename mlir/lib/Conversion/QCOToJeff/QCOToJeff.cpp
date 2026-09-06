@@ -59,6 +59,7 @@
 #include <iterator>
 #include <limits>
 #include <numbers>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
@@ -474,25 +475,30 @@ static LogicalResult cleanUp(ModuleOp moduleOp, LoweringState& state) {
     return failure();
   }
 
-  for (auto funcOp : moduleOp.getOps<func::FuncOp>()) {
-    state.strings.emplace_back(funcOp.getSymName());
+  std::optional<uint16_t> entryPoint;
+  for (auto [index, function] :
+       llvm::enumerate(moduleOp.getOps<func::FuncOp>())) {
+    if (index > std::numeric_limits<uint16_t>::max()) {
+      return moduleOp.emitError(
+          "too many functions for the jeff function table");
+    }
+    state.strings.emplace_back(function.getSymName());
+    if (function.getSymName() == state.entryPointName) {
+      entryPoint = static_cast<uint16_t>(index);
+    }
   }
-
-  auto* const it = llvm::find(state.strings, state.entryPointName);
-  if (it == state.strings.end()) {
+  if (!entryPoint) {
     return failure();
   }
-  const auto distance = std::distance(state.strings.begin(), it);
-  if (std::cmp_greater(distance, std::numeric_limits<uint16_t>::max())) {
-    return failure();
+  if (state.strings.size() > size_t{std::numeric_limits<uint16_t>::max()} + 1) {
+    return moduleOp.emitError("too many strings for the jeff string table");
   }
-  const auto entryPoint = static_cast<uint16_t>(distance);
 
   OpBuilder builder(moduleOp.getContext());
   auto uint16Type = builder.getIntegerType(16, false);
 
   moduleOp->setAttr("jeff.entrypoint",
-                    builder.getIntegerAttr(uint16Type, entryPoint));
+                    builder.getIntegerAttr(uint16Type, *entryPoint));
 
   SmallVector<StringRef> stringRefs;
   stringRefs.reserve(state.strings.size());
@@ -2124,61 +2130,28 @@ struct ConvertSCFWhileOpToJeff final
   }
 };
 
-/**
- * @brief Converts the QCO-style main function to a `jeff`-style main function
- *
- * @par Example:
- * ```mlir
- * func.func @main() -> i64 attributes {mqt.entry_point} { ... }
- * ```
- * is converted to
- * ```mlir
- * func.func @main() -> i64 { ... }
- * ```
- */
-struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
+/// Preserve a unitary call as a native jeff function call.
+struct ConvertQCOCallToJeff final : StatefulOpConversionPattern<qco::CallOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(qco::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!mqt::isEntryPoint(op)) {
-      return failure();
+    if (getState().inModifier()) {
+      return rewriter.notifyMatchFailure(
+          op, "modified calls must be expanded first");
     }
-
-    if (op.getBlocks().size() != 1) {
-      return failure();
-    }
-    auto* block = &op.getBlocks().front();
-
-    auto* returnOp = block->getTerminator();
-    if (!isa<func::ReturnOp>(returnOp)) {
-      return failure();
-    }
-
-    getState().entryPointName = op.getSymName();
-
-    auto funcType = op.getFunctionType();
-    SmallVector<Type> newInputs;
-    if (failed(getTypeConverter()->convertTypes(funcType.getInputs(),
-                                                newInputs))) {
-      return failure();
-    }
-    SmallVector<Type> newResults;
-    if (failed(getTypeConverter()->convertTypes(funcType.getResults(),
-                                                newResults))) {
-      return failure();
-    }
-
+    SmallVector<Type> results;
     if (failed(
-            rewriter.convertRegionTypes(&op.getBody(), *getTypeConverter()))) {
+            getTypeConverter()->convertTypes(op.getResultTypes(), results))) {
       return failure();
     }
-    rewriter.startOpModification(op);
-    op.setType(rewriter.getFunctionType(newInputs, newResults));
-    mqt::removeEntryPoint(op);
-    rewriter.finalizeOpModification(op);
-
+    auto argAttrs = op.getArgAttrsAttr();
+    auto resAttrs = op.getResAttrsAttr();
+    auto call = rewriter.replaceOpWithNewOp<func::CallOp>(
+        op, op.getCallee(), results, adaptor.getOperands());
+    call.setArgAttrsAttr(argAttrs);
+    call.setResAttrsAttr(resAttrs);
     return success();
   }
 };
@@ -2378,6 +2351,26 @@ protected:
     QCOToJeffTypeConverter typeConverter(context);
 
     LoweringState state;
+    for (auto function : moduleOp.getOps<func::FuncOp>()) {
+      if (function.isExternal() || !function.getBody().hasOneBlock() ||
+          !isa<func::ReturnOp>(function.getBody().front().getTerminator())) {
+        function.emitError("jeff export requires single-block definitions "
+                           "ending in func.return");
+        signalPassFailure();
+        return;
+      }
+      if (mqt::isEntryPoint(function)) {
+        state.entryPointName = function.getSymName();
+        mqt::removeEntryPoint(function);
+      } else if (llvm::any_of(function.getArgumentTypes(),
+                              llvm::IsaPred<cbit::RegisterType>)) {
+        function.emitError("classical register arguments in helper functions "
+                           "are not supported");
+        signalPassFailure();
+        return;
+      }
+      function->removeAttr(mqt::MQTDialect::UnitaryAttrHelper::getNameStr());
+    }
     state.cbitState.recordRegisterUses(moduleOp);
 
     // Configure conversion target
@@ -2389,15 +2382,14 @@ protected:
     target.addIllegalOp<LLVM::FshlOp, LLVM::FshrOp>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return !mqt::isEntryPoint(op) &&
-             typeConverter.isSignatureLegal(op.getFunctionType()) &&
+      return typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });
-    target.addDynamicallyLegalOp<func::ReturnOp>([&](func::ReturnOp op) {
-      return typeConverter.isLegal(op.getOperandTypes());
-    });
+    target.addDynamicallyLegalOp<func::CallOp, func::ReturnOp>(
+        [&](Operation* op) { return typeConverter.isLegal(op); });
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
+    populateCallOpTypeConversionPattern(patterns, typeConverter);
 
     // Register operation conversion patterns
     jeff::populateNativeToJeffConversionPatterns(patterns);
@@ -2477,7 +2469,7 @@ protected:
                  ConvertQCOInvOpToJeff, ConvertQCOPowOpToJeff,
                  ConvertQCOYieldOpToJeff, ConvertIfOpToJeff<IfOp>,
                  ConvertIfOpToJeff<scf::IfOp>, ConvertSCFForOpToJeff,
-                 ConvertSCFWhileOpToJeff, ConvertQCOMainToJeff,
+                 ConvertSCFWhileOpToJeff, ConvertQCOCallToJeff,
                  ConvertFuncReturnOpToJeff>(typeConverter, context, &state);
 
     /// Cloned region arguments already have target types. Convert their users

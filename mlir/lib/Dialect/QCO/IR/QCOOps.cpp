@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
 
 #include <llvm/ADT/STLExtras.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OpImplementation.h>
@@ -23,6 +24,7 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/InliningUtils.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -35,6 +37,32 @@
 
 using namespace mlir;
 using namespace mlir::qco;
+
+namespace {
+
+struct QCOInlinerInterface final : DialectInlinerInterface {
+  using DialectInlinerInterface::DialectInlinerInterface;
+
+  bool isLegalToInline(Operation* call, Operation* callable,
+                       bool /*wouldBeCloned*/) const final {
+    auto callee = dyn_cast<func::FuncOp>(callable);
+    return isa<CallOp>(call) && callee && !callee.getNoInline();
+  }
+
+  bool isLegalToInline(Region* destination, Region* source,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return destination->hasOneBlock() && source->hasOneBlock();
+  }
+
+  bool isLegalToInline(Operation* /*operation*/, Region* /*destination*/,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return true;
+  }
+};
+
+} // namespace
 
 static bool isQCOLinearType(Type type) {
   if (isa<QubitType>(type)) {
@@ -498,6 +526,8 @@ void QCODialect::initialize() {
 #include "mlir/Dialect/QCO/IR/QCOOps.cpp.inc"
 
       >();
+
+  addInterfaces<QCOInlinerInterface>();
 }
 
 //===----------------------------------------------------------------------===//

@@ -15,12 +15,16 @@ def QCOToJeff : Pass<"qco-to-jeff", "mlir::ModuleOp"> {
     This pass converts all operations from the QCO dialect to their equivalent operations in the `jeff` dialect.
     It ensures that the returned module is a valid `jeff` module that can be serialized.
 
+    Defined single-block functions and their calls are preserved. Mutable
+    classical-register arguments in helpers are not supported. Unitary calls
+    inside quantum modifiers must be expanded with `unroll-modifiers` first.
+
     Note that this pass is still in development as QCO and `jeff` do not have full feature parity yet.
 
     `qco.static` is currently converted to `jeff.qubit_alloc` because `jeff` does not yet represent static (index-based) qubits.
     As the index is not preserved in `jeff`, it is not possible to round-tripping static qubits.
   }];
 
-  let dependentDialects = ["mlir::jeff::JeffDialect",
+  let dependentDialects = ["mlir::func::FuncDialect", "mlir::jeff::JeffDialect",
                            "mlir::arith::ArithDialect"];
 }
