@@ -19,7 +19,19 @@ requires = [
 name = "mqt-core"
 description = "The Backbone of the Munich Quantum Toolkit"
 readme = "README.md"
-keywords = [ "decision-diagrams", "design-automation", "MQT", "quantum-computing" ]
+keywords = [
+  "compilation",
+  "decision-diagrams",
+  "design-automation",
+  "HPCQC",
+  "MLIR",
+  "MQT",
+  "OpenQASM",
+  "QDMI",
+  "QIR",
+  "Qiskit",
+  "quantum-computing",
+]
 license = "MIT"
 license-files = [ "LICENSE" ]
 requires-python = ">=3.11"
