@@ -1,7 +1,7 @@
 # Independent compiler capability prototype
 
-Status: independently rebased and locally validated; contract design remains
-gated.
+Status: independently rebased and locally validated; ready for human contract
+review.
 
 ## Scope and release boundary
 
@@ -11,10 +11,10 @@ the QDMI 1.4 adoption branch. Core PR #2162 adds control-flow legalization. Core
 PR #2227 is the separate QDMI integration layer. Settled compiler-target and
 typed attribute support already landed through #2218, #2323, and #2215.
 
-The remaining payload model is a non-blocking Core 4.1 candidate. Core #2365 and
-QDMI #523 must record the contract decisions before this prototype is considered
-merge-ready. Rebase mechanics do not settle format identity, operation sets,
-execution guarantees, classical capabilities, or opaque-program semantics.
+The compiler-only payload model targets Core 4.0. Core #2365 and QDMI #523 track
+the separate QDMI 1.4 adaptation for Core 4.1 and do not gate this prototype.
+Rebase mechanics do not settle format identity, operation sets, execution
+guarantees, classical capabilities, or opaque-program semantics.
 
 ## Preserved behavior
 
@@ -50,6 +50,7 @@ lint, and C++ lint. Explicitly cover missing environments, invalidation after
 metadata changes, variadic gates and global phase, unsupported output without
 consuming input, and preservation of current linearity checks.
 
-The release build passes, with 3,879 native tests passing and one existing
-optional-device test skipping. All 558 targeted Python tests pass with the
-superconducting reference device enabled. Stub generation and C++ lint pass.
+The prior capability-snapshot validation passed the release build and 3,879
+native tests, with one existing optional-device skip. All 558 targeted Python
+tests passed with the superconducting reference device enabled. Stub generation
+and C++ lint passed.
