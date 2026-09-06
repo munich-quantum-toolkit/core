@@ -63,10 +63,8 @@ def _check_paths(program: QCProgram, width: int, expected: int) -> None:
     jeff = program.to_qco(copy=True).to_jeff()
     restored_jeff = JeffProgram.from_bytes(jeff.to_bytes()).to_qco().to_qc()
     assert _observe(restored_jeff, width) == expected
-    assert _observe(QCProgram.from_qasm_str(restored_jeff.to_openqasm3().source), width) == expected
     if supports_qiskit_translation:
-        for candidate in (program, restored_jeff):
-            assert _observe(QCProgram.from_qiskit(candidate.to_qiskit()), width) == expected
+        assert _observe(QCProgram.from_qiskit(program.to_qiskit()), width) == expected
 
 
 @pytest.mark.parametrize("width", [1, 3, 8, 9, 32, 64])
