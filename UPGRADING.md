@@ -47,11 +47,6 @@ MQT Core 4 provides the separate `MQT::CoreBench` library and `mqt-core-bench`
 CLI for typed structured benchmarks. These interfaces are not drop-in
 replacements for the circuit factories removed in MQT Core 3.10.
 
-### QDMI names in compiler APIs
-
-Replace `mlir/Compiler/FoMaCAdapter.h` and `MQTCompilerFoMaCAdapter` with
-`mlir/Compiler/QDMIAdapter.h` and `MQTCompilerQDMIAdapter`, respectively.
-
 ### DD named-gate APIs
 
 MQT Core 4 removes `dd::GateType`, `dd::isSingleQubitGate`,
