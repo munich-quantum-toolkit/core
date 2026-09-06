@@ -54,6 +54,34 @@ dependencies = [
 name = "Lukas Burgholzer"
 email = "burgholzer@me.com"
 
+[[project.authors]]
+name = "Daniel Haag"
+email = "daniel@mq.sc"
+
+[[project.authors]]
+name = "Simon Hofmann"
+email = "simon@mq.sc"
+
+[[project.authors]]
+name = "Yannick Stade"
+email = "yannick.stade@tum.de"
+
+[[project.authors]]
+name = "Damian Rovara"
+email = "damian.rovara@tum.de"
+
+[[project.authors]]
+name = "Matthias Reumann"
+email = "matthias.reumann@tum.de"
+
+[[project.authors]]
+name = "Patrick Hopf"
+email = "patrick.hopf@tum.de"
+
+[[project.authors]]
+name = "Marcel Walter"
+email = "marcel@mq.sc"
+
 [project.optional-dependencies]
 pennylane = [
   "pennylane>=0.45.1,<0.46",
