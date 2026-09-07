@@ -511,39 +511,67 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
   };
   const auto fixtures = std::to_array<InvalidSource>({
       {.name = "unterminated-comment", .source = "OPENQASM 3.1; /*"},
-      {.name = "unterminated-string",
-       .source = "OPENQASM 3.1; include \"missing.inc;"},
-      {.name = "missing-include",
-       .source = "OPENQASM 3.1; include \"missing.inc\";"},
-      {.name = "invalid-hardware-qubit",
-       .source = "OPENQASM 3.1; qubit q; x $;"},
-      {.name = "float-overflow",
-       .source = "OPENQASM 3.1; float value = 1e99999;"},
-      {.name = "unsupported-duration",
-       .source = "OPENQASM 3.1; duration delay;"},
-      {.name = "unsupported-opaque",
-       .source = "OPENQASM 3.1; opaque custom q;"},
+      {
+          .name = "unterminated-string",
+          .source = "OPENQASM 3.1; include \"missing.inc;",
+      },
+      {
+          .name = "missing-include",
+          .source = "OPENQASM 3.1; include \"missing.inc\";",
+      },
+      {
+          .name = "invalid-hardware-qubit",
+          .source = "OPENQASM 3.1; qubit q; x $;",
+      },
+      {
+          .name = "float-overflow",
+          .source = "OPENQASM 3.1; float value = 1e99999;",
+      },
+      {
+          .name = "unsupported-duration",
+          .source = "OPENQASM 3.1; duration delay;",
+      },
+      {
+          .name = "unsupported-opaque",
+          .source = "OPENQASM 3.1; opaque custom q;",
+      },
       {.name = "output-qubit", .source = "OPENQASM 3.1; output qubit q;"},
       {.name = "const-qubit", .source = "OPENQASM 3.1; const qubit q;"},
       {.name = "duplicate-version", .source = "OPENQASM 3.1; OPENQASM 3.1;"},
-      {.name = "non-string-include",
-       .source = "OPENQASM 3.1; include stdgates.inc;"},
-      {.name = "gate-designator",
-       .source = "OPENQASM 3.1; gate custom[2] q {}"},
-      {.name = "missing-range-members",
-       .source = "OPENQASM 3.1; for int i in [:] {}"},
-      {.name = "missing-while-condition",
-       .source = "OPENQASM 3.1; while () {}"},
-      {.name = "switch-without-cases",
-       .source = "OPENQASM 3.1; int value = 0; switch (value) {}"},
-      {.name = "switch-case-after-default",
-       .source = "OPENQASM 3.1; int value = 0; switch (value) { "
-                 "default {} case 0 {} }"},
-      {.name = "switch-with-repeated-default",
-       .source = "OPENQASM 3.1; int value = 0; switch (value) { "
-                 "case 0 {} default {} default {} }"},
-      {.name = "const-without-initializer",
-       .source = "OPENQASM 3.1; const int value;"},
+      {
+          .name = "non-string-include",
+          .source = "OPENQASM 3.1; include stdgates.inc;",
+      },
+      {
+          .name = "gate-designator",
+          .source = "OPENQASM 3.1; gate custom[2] q {}",
+      },
+      {
+          .name = "missing-range-members",
+          .source = "OPENQASM 3.1; for int i in [:] {}",
+      },
+      {
+          .name = "missing-while-condition",
+          .source = "OPENQASM 3.1; while () {}",
+      },
+      {
+          .name = "switch-without-cases",
+          .source = "OPENQASM 3.1; int value = 0; switch (value) {}",
+      },
+      {
+          .name = "switch-case-after-default",
+          .source = "OPENQASM 3.1; int value = 0; switch (value) { "
+                    "default {} case 0 {} }",
+      },
+      {
+          .name = "switch-with-repeated-default",
+          .source = "OPENQASM 3.1; int value = 0; switch (value) { "
+                    "case 0 {} default {} default {} }",
+      },
+      {
+          .name = "const-without-initializer",
+          .source = "OPENQASM 3.1; const int value;",
+      },
   });
 
   for (const auto& fixture : fixtures) {
@@ -561,6 +589,9 @@ OPENQASM 3.1;
 const uint WIDTH = 8;
 const angle[WIDTH] fixed = angle[WIDTH](pi / 2);
 angle machine = angle(tau / 4);
+bit[2] value;
+if (uint[2](value) == 3) {}
+if (int[2](value) == -1) {}
 )qasm";
 
   auto parsed = oq3::frontend::parseOpenQASM(source);
@@ -569,10 +600,10 @@ angle machine = angle(tau / 4);
 
 TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
   constexpr auto reservedWords = std::to_array<llvm::StringLiteral>({
-      "defcalgrammar", "def",        "cal",      "defcal",  "extern", "box",
-      "let",           "break",      "continue", "end",     "return", "pragma",
-      "input",         "readonly",   "mutable",  "complex", "array",  "void",
-      "stretch",       "durationof", "delay",    "im",      "#dim",   "#pragma",
+      "defcalgrammar", "def",     "cal",    "defcal",  "extern",  "box",
+      "let",           "end",     "return", "pragma",  "input",   "readonly",
+      "mutable",       "complex", "array",  "void",    "stretch", "durationof",
+      "delay",         "im",      "#dim",   "#pragma",
   });
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());

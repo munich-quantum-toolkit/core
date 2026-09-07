@@ -15,6 +15,7 @@
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/Sequence.h>
+#include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Attributes.h>
@@ -31,6 +32,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cassert>
+#include <cstddef>
 #include <cstdint>
 
 using namespace mlir;
@@ -153,19 +155,9 @@ void IfOp::getRegionInvocationBounds(
   }
 }
 
-/**
- * @brief Replace operation with the contents of a region
- *
- * @details
- * Replaces the given op with the contents of the given single-block region,
- * using the operands of the block terminator to replace operation results.
- *
- * @param rewriter The used rewriter
- * @param op The operation that is replcaed
- * @param region The region with the replacement content
- * @param blockArgs The block arguments of the region
- *
- */
+/// Replace an operation with the contents of a single-block region.
+///
+/// Use the block terminator operands to replace the operation results.
 static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
                                 Region& region, ValueRange blockArgs = {}) {
   assert(llvm::hasSingleElement(region) && "expected single-region block");
@@ -179,14 +171,7 @@ static void replaceOpWithRegion(PatternRewriter& rewriter, Operation* op,
 
 namespace {
 
-/**
- * @brief Remove static conditions
- *
- * @details
- * Removes a qco.if operation with a static condition and replace it with the
- * contents of the selected branch.
- *
- */
+/// Replace an if with a static condition by its selected branch.
 struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -207,22 +192,7 @@ struct RemoveStaticCondition : public OpRewritePattern<IfOp> {
   }
 };
 
-/**
- * @brief Propagate the condition into the branches
- *
- * @details
- * Allow the true region of an if to assume the condition is true
- * and vice versa. For example:
- *
- *   qco.if %cmp args(%arg0 = %q0) -> (!qco.qubit) {
- *      print(true)
- *      ...
- *   } else args(%arg = %q0) {
- *      print(false)
- *      ...
- *   }
- *
- */
+/// Let each branch use the condition value known inside that branch.
 struct ConditionPropagation : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -252,7 +222,7 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
         }
 
         rewriter.modifyOpInPlace(use.getOwner(),
-                                 [&]() { use.set(constantTrue); });
+                                 [&] { use.set(constantTrue); });
       } else if (op.getElseRegion().isAncestor(
                      use.getOwner()->getParentRegion())) {
         changed = true;
@@ -263,7 +233,7 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
         }
 
         rewriter.modifyOpInPlace(use.getOwner(),
-                                 [&]() { use.set(constantFalse); });
+                                 [&] { use.set(constantFalse); });
       }
     }
 
@@ -271,16 +241,11 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
   }
 };
 
-/**
- * @brief Forward redundant classical results
- *
- * @details
- * Replaces a classical result with a value yielded by both branches or with an
- * earlier classical result whose pair of yielded values is identical. A
- * separate pattern removes the result and its yield operands once they become
- * unused. Linear results are intentionally excluded because their explicit
- * branch threading is part of QCO's quantum dataflow.
- */
+/// Forward redundant classical results.
+///
+/// Replace a result with a value yielded by both branches or with an earlier
+/// result whose pair of yielded values is identical. A separate pattern removes
+/// unused results. Linear results retain their explicit quantum dataflow.
 struct ForwardClassicalResults : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -320,14 +285,9 @@ struct ForwardClassicalResults : public OpRewritePattern<IfOp> {
   }
 };
 
-/**
- * @brief Remove unused classical results
- *
- * @details
- * Removes unused classical results and the corresponding operands from both
- * branch terminators. The result segment property is updated on the replacement
- * operation. The linear result suffix and all quantum dataflow remain intact.
- */
+/// Remove unused classical results and their branch yield operands.
+///
+/// Update the result segments while preserving the linear result suffix.
 struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
   using OpRewritePattern<IfOp>::OpRewritePattern;
 
@@ -353,22 +313,24 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
         yieldOperandsToErase.set(result.getResultNumber());
       }
     }
-    rewriter.modifyOpInPlace(op.thenYield(), [&]() {
+    rewriter.modifyOpInPlace(op.thenYield(), [&] {
       op.thenYield()->eraseOperands(yieldOperandsToErase);
     });
-    rewriter.modifyOpInPlace(op.elseYield(), [&]() {
+    rewriter.modifyOpInPlace(op.elseYield(), [&] {
       op.elseYield()->eraseOperands(yieldOperandsToErase);
     });
 
     auto replacement = cast<IfOp>(rewriter.eraseOpResults(op, resultsToErase));
-    rewriter.modifyOpInPlace(replacement, [&]() {
-      replacement.getProperties().setResultSegmentSizes(
-          ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
-                             static_cast<int32_t>(numLinearResults)}));
+    rewriter.modifyOpInPlace(replacement, [&] {
+      replacement.getProperties().setResultSegmentSizes(ArrayRef<int32_t>({
+          static_cast<int32_t>(numClassicalResults),
+          static_cast<int32_t>(numLinearResults),
+      }));
     });
     return success();
   }
 };
+
 } // namespace
 
 void IfOp::getCanonicalizationPatterns(RewritePatternSet& results,

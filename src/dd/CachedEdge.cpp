@@ -17,7 +17,6 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
-#include "ir/Definitions.hpp"
 
 #include <algorithm>
 #include <array>
@@ -101,9 +100,12 @@ auto CachedEdge<Node>::normalize(Node* p,
   requires IsMatrix<Node>
 {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
-  const auto zero =
-      std::array{e[0].w.approximatelyZero(), e[1].w.approximatelyZero(),
-                 e[2].w.approximatelyZero(), e[3].w.approximatelyZero()};
+  const auto zero = std::array{
+      e[0].w.approximatelyZero(),
+      e[1].w.approximatelyZero(),
+      e[2].w.approximatelyZero(),
+      e[3].w.approximatelyZero(),
+  };
 
   if (std::all_of(zero.begin(), zero.end(), [](auto b) { return b; })) {
     mm.returnEntry(*p);
@@ -167,7 +169,7 @@ auto std::hash<dd::CachedEdge<Node>>::operator()(
     const dd::CachedEdge<Node>& e) const noexcept -> std::size_t {
   const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(e.p));
   const auto h2 = std::hash<dd::ComplexValue>{}(e.w);
-  return qc::combineHash(h1, h2);
+  return dd::combineHash(h1, h2);
 }
 
 // NOLINTNEXTLINE(bugprone-std-namespace-modification)

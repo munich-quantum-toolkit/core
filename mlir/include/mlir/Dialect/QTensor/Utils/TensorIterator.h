@@ -14,14 +14,15 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
+#include <mlir/Support/LLVM.h>
 
 #include <iterator>
 
 namespace mlir::qtensor {
 
-/**
- * @brief A bidirectional_iterator traversing the tensor chain.
- **/
+/// A bidirectional iterator traversing the tensor chain.
+///
+/// `func.call` operations end traversal; clients manage callee traversal.
 class [[nodiscard]] TensorIterator {
 public:
   using iterator_category = std::bidirectional_iterator_tag;
@@ -75,10 +76,10 @@ public:
   }
 
 private:
-  /// @brief Move to the next operation on the tensor def-use chain.
+  // Moves to the next operation on the tensor def-use chain.
   void forward();
 
-  /// @brief Move to the previous operation on the tensor def-use chain.
+  // Moves to the previous operation on the tensor def-use chain.
   void backward();
 
   Operation* op_;
@@ -86,4 +87,5 @@ private:
   bool isFinal_;
   bool isSentinel_;
 };
+
 } // namespace mlir::qtensor

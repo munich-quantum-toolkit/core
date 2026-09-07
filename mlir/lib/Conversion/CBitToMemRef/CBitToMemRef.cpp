@@ -24,6 +24,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Transforms/WalkPatternRewriteDriver.h>
 
 #include <utility>
 
@@ -110,6 +111,13 @@ protected:
     auto moduleOp = getOperation();
     CBitTypeConverter typeConverter;
     ConversionTarget target(*context);
+
+    {
+      RewritePatternSet patterns(context);
+      cbit::populateCBitDecompositionPatterns(patterns);
+      const FrozenRewritePatternSet frozen(std::move(patterns));
+      walkAndApplyPatterns(moduleOp, frozen);
+    }
     RewritePatternSet patterns(context);
 
     target.addIllegalDialect<cbit::CBitDialect>();

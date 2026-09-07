@@ -82,9 +82,11 @@ evaluate(const Output& output, const Counts& counts,
                                              static_cast<double>(totalShots)}
                      : std::nullopt;
   // NOLINTEND(google-runtime-float)
-  return {.totalVariationDistance = static_cast<double>(totalVariation),
-          .squaredHellingerFidelity = static_cast<double>(fidelity),
-          .successProbability = success};
+  return {
+      .totalVariationDistance = static_cast<double>(totalVariation),
+      .squaredHellingerFidelity = static_cast<double>(fidelity),
+      .successProbability = success,
+  };
 }
 
 } // namespace mqt::bench::detail

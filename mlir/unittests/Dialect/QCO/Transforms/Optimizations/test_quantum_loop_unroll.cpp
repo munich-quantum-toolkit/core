@@ -26,8 +26,6 @@
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
@@ -49,9 +47,8 @@ static OwningOpRef<ModuleOp> getGHZ(MLIRContext* context, int64_t n) {
   QCOProgramBuilder builder(context);
   builder.initialize();
 
-  Value tensor = builder.qtensorAlloc(n);
-  Value q0;
-  std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
+  const auto inputTensor = builder.qtensorAlloc(n);
+  auto [tensor, q0] = builder.qtensorExtract(inputTensor, 0);
   q0 = builder.h(q0);
   tensor = builder.qtensorInsert(q0, tensor, 0);
 
@@ -111,112 +108,6 @@ TEST_F(QuantumLoopUnrollTest, InvalidUnrollFactor) {
   ASSERT_TRUE(res.failed());
 }
 
-TEST_F(QuantumLoopUnrollTest, ExcessiveExplicitFactorFailureIsAtomic) {
-  auto module = getGHZ(context.get(), 2);
-  OwningOpRef<ModuleOp> original(module->clone());
-
-  EXPECT_TRUE(
-      failed(runPass(module, QuantumLoopUnrollOptions{.unrollFactor = 4097})));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
-TEST_F(QuantumLoopUnrollTest,
-       ExcessiveExplicitFactorRejectsIdentityLoopWithoutMutation) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main() attributes {mqt.entry_point} {
-    %q = qco.static 0 : !qco.qubit
-    %lb = arith.constant 0 : index
-    %ub = arith.constant 2 : index
-    %step = arith.constant 1 : index
-    %out = scf.for %iv = %lb to %ub step %step
-        iter_args(%arg = %q) -> (!qco.qubit) {
-      scf.yield %arg : !qco.qubit
-    }
-    qco.sink %out : !qco.qubit
-    return
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-
-  EXPECT_TRUE(
-      failed(runPass(module, QuantumLoopUnrollOptions{.unrollFactor = 4097})));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
-TEST_F(QuantumLoopUnrollTest, ExcessiveStaticTripCountFailureIsAtomic) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main() attributes {mqt.entry_point} {
-    %q = qco.static 0 : !qco.qubit
-    %lb = arith.constant 0 : index
-    %ub = arith.constant 4097 : index
-    %step = arith.constant 1 : index
-    %out = scf.for %iv = %lb to %ub step %step
-        iter_args(%arg = %q) -> (!qco.qubit) {
-      %next = qco.x %arg : !qco.qubit -> !qco.qubit
-      scf.yield %next : !qco.qubit
-    }
-    qco.sink %out : !qco.qubit
-    return
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-
-  EXPECT_TRUE(failed(runPass(module, QuantumLoopUnrollOptions{})));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
-TEST_F(QuantumLoopUnrollTest, NestedExpansionBudgetFailureIsAtomic) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main() attributes {mqt.entry_point} {
-    %q = qco.static 0 : !qco.qubit
-    %lb = arith.constant 0 : index
-    %ub = arith.constant 400 : index
-    %step = arith.constant 1 : index
-    %out = scf.for %outer = %lb to %ub step %step
-        iter_args(%outer_arg = %q) -> (!qco.qubit) {
-      %inner_out = scf.for %inner = %lb to %ub step %step
-          iter_args(%inner_arg = %outer_arg) -> (!qco.qubit) {
-        %next = qco.x %inner_arg : !qco.qubit -> !qco.qubit
-        scf.yield %next : !qco.qubit
-      }
-      scf.yield %inner_out : !qco.qubit
-    }
-    qco.sink %out : !qco.qubit
-    return
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-
-  EXPECT_TRUE(failed(runPass(module, QuantumLoopUnrollOptions{})));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
 TEST_F(QuantumLoopUnrollTest, NoOp) {
   auto m = getGHZ(context.get(), 2);
   auto mClone = m->clone();
@@ -228,46 +119,9 @@ TEST_F(QuantumLoopUnrollTest, NoOp) {
       mlir::OperationEquivalence::Flags::None));
 }
 
-TEST_F(QuantumLoopUnrollTest, DynamicTripCountFailureIsAtomic) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main(%upper: index) attributes {mqt.entry_point} {
-    %q0 = qco.static 0 : !qco.qubit
-    %q1 = qco.static 1 : !qco.qubit
-    %lb = arith.constant 0 : index
-    %static_ub = arith.constant 2 : index
-    %step = arith.constant 1 : index
-    %out0 = scf.for %iv = %lb to %static_ub step %step
-        iter_args(%q = %q0) -> (!qco.qubit) {
-      %next = qco.x %q : !qco.qubit -> !qco.qubit
-      scf.yield %next : !qco.qubit
-    }
-    %out1 = scf.for %iv = %lb to %upper step %step
-        iter_args(%q = %q1) -> (!qco.qubit) {
-      %next = qco.h %q : !qco.qubit -> !qco.qubit
-      scf.yield %next : !qco.qubit
-    }
-    qco.sink %out0 : !qco.qubit
-    qco.sink %out1 : !qco.qubit
-    return
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-  OwningOpRef<ModuleOp> original(module->clone());
-
-  EXPECT_TRUE(failed(runPass(module, QuantumLoopUnrollOptions{})));
-  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
-      module->getOperation(), original->getOperation(),
-      OperationEquivalence::Flags::None));
-}
-
 TEST_F(QuantumLoopUnrollTest, UnrollFull) {
   auto m = getGHZ(context.get(), 3);
-  auto entry = *(m->getOps<func::FuncOp>().begin());
+  auto entry = *m->getOps<func::FuncOp>().begin();
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
@@ -284,40 +138,6 @@ TEST_F(QuantumLoopUnrollTest, UnrollFull) {
   EXPECT_EQ(range_size(entry.getOps<qtensor::InsertOp>()), 5);
 }
 
-TEST_F(QuantumLoopUnrollTest, UnrollsFunctionWithSiblingSymbolReference) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func private @helper()
-  func.func @main() attributes {mqt.entry_point} {
-    %q = qco.static 0 : !qco.qubit
-    %lb = arith.constant 0 : index
-    %ub = arith.constant 2 : index
-    %step = arith.constant 1 : index
-    %out = scf.for %iv = %lb to %ub step %step
-        iter_args(%arg = %q) -> (!qco.qubit) {
-      func.call @helper() : () -> ()
-      %next = qco.x %arg : !qco.qubit -> !qco.qubit
-      scf.yield %next : !qco.qubit
-    }
-    qco.sink %out : !qco.qubit
-    return
-  }
-}
-)mlir";
-
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  ASSERT_TRUE(succeeded(runPass(module, QuantumLoopUnrollOptions{})));
-  ASSERT_TRUE(succeeded(verify(*module)));
-
-  auto main = module->lookupSymbol<func::FuncOp>("main");
-  ASSERT_TRUE(main);
-  EXPECT_TRUE(main.getOps<scf::ForOp>().empty());
-  EXPECT_EQ(llvm::range_size(main.getOps<func::CallOp>()), 2U);
-}
-
 TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
   auto m = QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& b) {
     auto tensor = b.qtensorAlloc(2);
@@ -328,9 +148,7 @@ TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
           auto lower = arith::AddIOp::create(b, outer, step).getResult();
           return b.scfFor(
               lower, upper, step, outerArgs, [&](Value, ValueRange innerArgs) {
-                auto tensor = innerArgs.front();
-                Value qubit;
-                std::tie(tensor, qubit) = b.qtensorExtract(tensor, 0);
+                auto [tensor, qubit] = b.qtensorExtract(innerArgs.front(), 0);
                 tensor = b.qtensorInsert(b.h(qubit), tensor, 0);
                 return SmallVector{tensor};
               });
@@ -346,9 +164,33 @@ TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
   EXPECT_EQ(range_size(entry.getOps<HOp>()), 1);
 }
 
+TEST_F(QuantumLoopUnrollTest, PreservesYieldOnlyPermutation) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+
+  Value q0 = builder.allocQubit();
+  Value q1 = builder.allocQubit();
+  const auto results =
+      builder.scfFor(0, 1, 1, {q0, q1}, [](Value, ValueRange iterArgs) {
+        return SmallVector{iterArgs[1], iterArgs[0]};
+      });
+  builder.sink(results[0]);
+  builder.sink(results[1]);
+  auto m = builder.finalize();
+
+  ASSERT_TRUE(succeeded(runPass(m, QuantumLoopUnrollOptions{})));
+  auto entry = *m->getOps<func::FuncOp>().begin();
+  EXPECT_TRUE(entry.getOps<scf::ForOp>().empty());
+
+  auto sinks = llvm::to_vector(entry.getOps<SinkOp>());
+  ASSERT_EQ(sinks.size(), 2);
+  EXPECT_EQ(sinks[0].getQubit(), q1);
+  EXPECT_EQ(sinks[1].getQubit(), q0);
+}
+
 TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
   auto m = getGHZ(context.get(), 9);
-  auto entry = *(m->getOps<func::FuncOp>().begin());
+  auto entry = *m->getOps<func::FuncOp>().begin();
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
@@ -368,7 +210,7 @@ TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
 
-  Region& body = (*(entry.getOps<scf::ForOp>().begin())).getRegion();
+  Region& body = (*entry.getOps<scf::ForOp>().begin()).getRegion();
   EXPECT_EQ(range_size(body.getOps<qtensor::ExtractOp>()), 4);
   EXPECT_EQ(range_size(body.getOps<qtensor::InsertOp>()), 4);
 }

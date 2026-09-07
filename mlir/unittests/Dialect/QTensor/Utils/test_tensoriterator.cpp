@@ -25,6 +25,7 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
@@ -53,6 +54,10 @@ protected:
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
   }
+
+  [[nodiscard]] OwningOpRef<ModuleOp> parseModule(StringRef source) const {
+    return parseSourceString<ModuleOp>(source, context.get());
+  }
 };
 } // namespace
 
@@ -72,9 +77,7 @@ TEST_F(TensorIteratorTest, Traversal) {
   auto tensor6 = builder.qtensorInsert(q11, tensor5, 1);
   auto tensor7 = builder.scfFor(
       1, n, 1, {tensor6}, [&builder](Value iv, ValueRange iterArgs) {
-        Value loopTensor = iterArgs[0];
-        Value q;
-        std::tie(loopTensor, q) = builder.qtensorExtract(loopTensor, iv);
+        auto [loopTensor, q] = builder.qtensorExtract(iterArgs[0], iv);
         q = builder.h(q);
         loopTensor = builder.qtensorInsert(q, loopTensor, 0);
         return SmallVector{loopTensor};
@@ -108,7 +111,8 @@ TEST_F(TensorIteratorTest, Traversal) {
       })[0];
   const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
   const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
-      identity};
+      identity,
+  };
   auto tensor9 = builder.qcoIndexSwitch(0, tensor8, SmallVector<int64_t>{0},
                                         caseBodies, identity)[0];
   builder.qtensorDealloc(tensor9);
@@ -261,17 +265,8 @@ TEST_F(TensorIteratorTest, Traversal) {
   ASSERT_EQ(recIt.tensor(), tensorElse0);
 }
 
-/**
- * @brief A tensor returned by a call starts its own life-chain.
- *
- * @details
- * A call sits on both sides of a chain: it consumes the caller's tensor and
- * hands back a fresh one. Walking backward from the result therefore stops at
- * the call, the same way it stops at an allocation, instead of continuing into
- * the tensor that was passed in.
- */
 TEST_F(TensorIteratorTest, CallResultStartsALifeChain) {
-  auto module = parseSourceString<ModuleOp>(R"mlir(
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
 func.func private @relabel(%t: tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
   return %t : tensor<2x!qco.qubit>
 }
@@ -287,12 +282,12 @@ func.func @main() {
   return
 }
 )mlir",
-                                            context.get());
-  ASSERT_TRUE(module);
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
 
   func::CallOp call;
   ExtractOp extract;
-  module->walk([&](Operation* op) {
+  moduleOp->walk([&](Operation* op) {
     if (auto c = dyn_cast<func::CallOp>(op)) {
       call = c;
     }
@@ -347,12 +342,12 @@ TEST_F(TensorIteratorTest, TraversesMixedResultConditionals) {
     }
   )mlir";
 
-  auto module = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(module);
-  ASSERT_TRUE(succeeded(verify(*module)));
+  auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   qtensor::AllocOp alloc;
-  module->walk([&](qtensor::AllocOp candidate) { alloc = candidate; });
+  moduleOp->walk([&](qtensor::AllocOp candidate) { alloc = candidate; });
   ASSERT_TRUE(alloc);
 
   TensorIterator iterator(alloc.getResult());
@@ -404,9 +399,11 @@ TEST_F(TensorIteratorTest, TraversesWhileCarriedTensors) {
                                     locations);
   builder.setInsertionPointToStart(after);
   scf::YieldOp::create(builder, builder.getLoc(),
-                       ValueRange{builder.floatConstant(2.0),
-                                  after->getArgument(2),
-                                  after->getArgument(1)});
+                       ValueRange{
+                           builder.floatConstant(2.0),
+                           after->getArgument(2),
+                           after->getArgument(1),
+                       });
   builder.setInsertionPointAfter(loop);
   auto tensor0Result = loop.getResult(2);
   auto tensor1Result = loop.getResult(1);

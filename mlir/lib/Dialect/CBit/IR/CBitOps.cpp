@@ -14,10 +14,13 @@
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallPtrSet.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Block.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectImplementation.h> // IWYU pragma: keep
 #include <mlir/IR/PatternMatch.h>
@@ -26,6 +29,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <variant>
 
 using namespace mlir;
@@ -168,10 +172,86 @@ struct ForwardKnownLoad final : OpRewritePattern<LoadOp> {
     return success();
   }
 };
+
+struct DecomposeRead final : OpRewritePattern<ReadOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(ReadOp read,
+                                PatternRewriter& rewriter) const override {
+    auto loc = read.getLoc();
+    const auto type = read.getResult().getType();
+    const auto width = type.getWidth();
+    Value result;
+    for (unsigned index = 0; index < width; ++index) {
+      auto indexValue = arith::ConstantIndexOp::create(rewriter, loc, index);
+      Value bit = LoadOp::create(rewriter, loc, rewriter.getI1Type(),
+                                 read.getReg(), indexValue);
+      if (width != 1) {
+        bit = arith::ExtUIOp::create(rewriter, loc, type, bit);
+      }
+      if (index == 0) {
+        result = bit;
+      } else {
+        auto shift = arith::ConstantIntOp::create(rewriter, loc, type, index);
+        bit = arith::ShLIOp::create(rewriter, loc, bit, shift);
+        result = arith::OrIOp::create(rewriter, loc, result, bit);
+      }
+    }
+    rewriter.replaceOp(read, result);
+    return success();
+  }
+};
+
+struct DecomposeWrite final : OpRewritePattern<WriteOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(WriteOp write,
+                                PatternRewriter& rewriter) const override {
+    auto loc = write.getLoc();
+    const auto type = write.getValue().getType();
+    const auto width = type.getWidth();
+    for (unsigned index = 0; index < width; ++index) {
+      Value bit = write.getValue();
+      if (index != 0) {
+        auto shift = arith::ConstantIntOp::create(rewriter, loc, type, index);
+        bit = arith::ShRUIOp::create(rewriter, loc, bit, shift);
+      }
+      if (width != 1) {
+        bit = arith::TruncIOp::create(rewriter, loc, rewriter.getI1Type(), bit);
+      }
+      auto indexValue = arith::ConstantIndexOp::create(rewriter, loc, index);
+      StoreOp::create(rewriter, loc, bit, write.getReg(), indexValue);
+    }
+    rewriter.eraseOp(write);
+    return success();
+  }
+};
+
 } // namespace
 
 LogicalResult LoadOp::verify() {
   return verifyIndex(getOperation(), getReg(), getIndex());
+}
+
+LogicalResult ReadOp::verify() {
+  if (std::cmp_not_equal(getResult().getType().getWidth(),
+                         getReg().getType().getWidth())) {
+    return emitOpError("result width must match register width");
+  }
+  return success();
+}
+
+LogicalResult WriteOp::verify() {
+  if (std::cmp_not_equal(getValue().getType().getWidth(),
+                         getReg().getType().getWidth())) {
+    return emitOpError("value width must match register width");
+  }
+  return success();
+}
+
+void mlir::cbit::populateCBitDecompositionPatterns(
+    RewritePatternSet& patterns) {
+  patterns.add<DecomposeRead, DecomposeWrite>(patterns.getContext());
 }
 
 void LoadOp::getCanonicalizationPatterns(RewritePatternSet& results,

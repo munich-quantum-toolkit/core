@@ -16,7 +16,6 @@
 #pragma once
 
 #include "dd/statistics/TableStatistics.hpp"
-#include "ir/Definitions.hpp"
 
 #include <cstddef>
 #include <functional>
@@ -74,7 +73,7 @@ public:
                                  const RightOperandType& rightOperand) const {
     const auto h1 = std::hash<LeftOperandType>{}(leftOperand);
     const auto h2 = std::hash<RightOperandType>{}(rightOperand);
-    const auto hash = qc::combineHash(h1, h2);
+    const auto hash = combineHash(h1, h2);
     const auto mask = stats.numBuckets - 1;
     return hash & mask;
   }

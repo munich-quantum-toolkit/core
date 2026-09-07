@@ -10,7 +10,6 @@
 
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
-#include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -31,11 +30,9 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
-#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
-#include <ranges>
 
 namespace mlir::qco {
 
@@ -148,109 +145,16 @@ embedUnitaryInBody(UnitaryOpInterface unitary, size_t numTargets,
   return matrix->embedInNqubit(numTargets, *q0, *q1);
 }
 
-bool hasComposableBodyMatrix(Block& block, size_t numTargets) {
-  if (!isModifierMatrixSizeSupported(numTargets) ||
-      block.getNumArguments() != numTargets ||
-      block.getTerminator()->getNumOperands() != numTargets) {
-    return false;
-  }
-
-  if (auto sole = mqt::getSoleBodyUnitary<UnitaryOpInterface>(block);
-      sole && sole.getNumQubits() > 2) {
-    if (sole.getNumQubits() != numTargets ||
-        !sole.hasCompileTimeKnownUnitaryMatrix()) {
-      return false;
-    }
-    const auto inputsMatch =
-        llvm::all_of(llvm::enumerate(sole.getInputQubits()), [&](auto indexed) {
-          return indexed.value() == block.getArgument(indexed.index());
-        });
-    const auto outputsMatch = llvm::all_of(
-        llvm::zip_equal(sole.getOutputQubits(),
-                        block.getTerminator()->getOperands()),
-        [](auto pair) { return std::get<0>(pair) == std::get<1>(pair); });
-    return inputsMatch && outputsMatch;
-  }
-
-  DenseMap<Value, size_t> wireIds;
-  for (size_t i = 0; i < numTargets; ++i) {
-    wireIds[block.getArgument(i)] = i;
-  }
-
-  for (Operation& op : block.without_terminator()) {
-    const bool handled =
-        TypeSwitch<Operation*, bool>(&op)
-            .Case<BarrierOp>([&](BarrierOp barrier) {
-              propagateWireIds(barrier, wireIds);
-              return true;
-            })
-            .Case<GPhaseOp>([](GPhaseOp gphase) {
-              return cast<UnitaryOpInterface>(gphase.getOperation())
-                  .hasCompileTimeKnownUnitaryMatrix();
-            })
-            .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
-              if (unitary.getNumQubits() == 0 || unitary.getNumQubits() > 2 ||
-                  !unitary.hasCompileTimeKnownUnitaryMatrix() ||
-                  llvm::any_of(unitary.getInputQubits(), [&](Value input) {
-                    return !wireIds.contains(input);
-                  })) {
-                return false;
-              }
-              propagateWireIds(unitary, wireIds);
-              return true;
-            })
-            .Default([&](Operation* unknown) {
-              const auto usesQubit = [](Value value) {
-                return isLinearQubitType(value.getType());
-              };
-              return !mqt::containsUnitaryOperation<UnitaryOpInterface>(
-                         unknown) &&
-                     !llvm::any_of(unknown->getOperands(), usesQubit) &&
-                     !llvm::any_of(unknown->getResults(), usesQubit);
-            });
-    if (!handled) {
-      return false;
-    }
-  }
-
-  const auto yielded = block.getTerminator()->getOperands();
-  return std::ranges::all_of(
-      std::views::iota(size_t{0}, numTargets), [&](const size_t index) {
-        const auto wire = lookupWireId(wireIds, yielded[index]);
-        return wire.has_value() && *wire == index;
-      });
-}
-
 std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
                                                size_t numTargets) {
-  if (!hasComposableBodyMatrix(block, numTargets)) {
+  if (numTargets == 0 || numTargets > kMaxModifierTargetQubits ||
+      block.getNumArguments() != numTargets) {
     return std::nullopt;
-  }
-
-  if (auto sole = mqt::getSoleBodyUnitary<UnitaryOpInterface>(block);
-      sole && sole.getNumQubits() > 2 && sole.getNumQubits() == numTargets) {
-    const auto inputsMatch =
-        llvm::all_of(llvm::enumerate(sole.getInputQubits()), [&](auto indexed) {
-          return indexed.value() == block.getArgument(indexed.index());
-        });
-    const auto outputsMatch = llvm::all_of(
-        llvm::zip_equal(sole.getOutputQubits(),
-                        block.getTerminator()->getOperands()),
-        [](auto pair) { return std::get<0>(pair) == std::get<1>(pair); });
-    if (!inputsMatch || !outputsMatch) {
-      return std::nullopt;
-    }
-    auto matrix = sole.getUnitaryMatrix<DynamicMatrix>();
-    const auto expectedDim = static_cast<int64_t>(1ULL << numTargets);
-    if (!matrix || matrix->rows() != expectedDim ||
-        matrix->cols() != expectedDim) {
-      return std::nullopt;
-    }
-    return matrix;
   }
 
   std::optional<DynamicMatrix> acc;
   Complex global{1.0, 0.0};
+  bool found = false;
 
   DenseMap<Value, size_t> wireIds;
   for (size_t i = 0; i < numTargets; ++i) {
@@ -260,19 +164,20 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
   for (Operation& op : block.without_terminator()) {
     const bool handled =
         TypeSwitch<Operation*, bool>(&op)
-            .Case<BarrierOp>([&](BarrierOp barrier) {
+            .Case([&](BarrierOp barrier) {
               propagateWireIds(barrier, wireIds);
               return true;
             })
-            .Case<GPhaseOp>([&](GPhaseOp gphase) {
+            .Case([&](GPhaseOp gphase) {
               const auto matrix = gphase.getUnitaryMatrix();
               if (!matrix) {
                 return false;
               }
               global *= matrix->value;
+              found = true;
               return true;
             })
-            .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
+            .Case([&](UnitaryOpInterface unitary) {
               auto embedded = embedUnitaryInBody(unitary, numTargets, wireIds);
               if (!embedded.has_value()) {
                 return false;
@@ -282,16 +187,15 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
               } else {
                 acc->premultiplyBy(*embedded);
               }
+              found = true;
               propagateWireIds(unitary, wireIds);
               return true;
             })
             .Default([&](Operation* unknown) {
               const auto usesQubit = [](Value value) {
-                return isLinearQubitType(value.getType());
+                return isa<QubitType>(value.getType());
               };
-              return !mqt::containsUnitaryOperation<UnitaryOpInterface>(
-                         unknown) &&
-                     !llvm::any_of(unknown->getOperands(), usesQubit) &&
+              return !llvm::any_of(unknown->getOperands(), usesQubit) &&
                      !llvm::any_of(unknown->getResults(), usesQubit);
             });
 
@@ -300,12 +204,8 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
     }
   }
 
-  for (auto [index, yielded] :
-       llvm::enumerate(block.getTerminator()->getOperands())) {
-    const auto wire = lookupWireId(wireIds, yielded);
-    if (!wire.has_value() || *wire != index) {
-      return std::nullopt;
-    }
+  if (!found) {
+    return std::nullopt;
   }
   if (!acc.has_value()) {
     acc = DynamicMatrix::identity(static_cast<int64_t>(1ULL << numTargets));

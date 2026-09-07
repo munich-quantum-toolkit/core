@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 add_mlir_library(MLIRQCTranslationSupport PARTIAL_SOURCES_INTENDED StandardGate.cpp LINK_LIBS
-                 MLIRQCDialect)
+                 MLIRQCDialect MLIRSCFDialect)
 
 mqt_mlir_target_use_project_options(MLIRQCTranslationSupport)
 
@@ -23,6 +23,7 @@ add_mlir_library(
   TranslateQASM3ToQC.cpp
   TranslateQCToOpenQASM3.cpp
   LINK_LIBS
+  MLIRAnalysis
   MLIRArithDialect
   MLIRCBitDialect
   MLIRFuncDialect

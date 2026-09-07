@@ -16,6 +16,7 @@ target_link_libraries(
           MLIRParser
           MLIRPass
           MLIRQCOPrograms
+          MLIRQCODDFunctionality
           MLIRQCOProgramBuilder
           MLIRSupportMQT
           MLIRTransforms

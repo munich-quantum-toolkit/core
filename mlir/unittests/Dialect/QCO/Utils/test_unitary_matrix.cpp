@@ -30,6 +30,7 @@ namespace mlir::qco {
 static_assert(SupportedMatrix<Matrix1x1>);
 static_assert(SupportedMatrix<Matrix2x2>);
 static_assert(SupportedMatrix<Matrix4x4>);
+static_assert(SupportedMatrix<Matrix8x8>);
 static_assert(SupportedMatrix<DynamicMatrix>);
 static_assert(!SupportedMatrix<int>);
 
@@ -74,9 +75,12 @@ static void verifyMatrix2x2FixedMatchesDynamic() {
 }
 
 static void verifyMatrix4x4FixedMatchesDynamic() {
-  const Matrix4x4 gate =
-      Matrix4x4::fromDiagonal({std::exp(1i * 0.2), std::exp(1i * 0.5),
-                               std::exp(1i * 1.1), std::exp(1i * -0.7)});
+  const Matrix4x4 gate = Matrix4x4::fromDiagonal({
+      std::exp(1i * 0.2),
+      std::exp(1i * 0.5),
+      std::exp(1i * 1.1),
+      std::exp(1i * -0.7),
+  });
   const std::optional<EigenDecomposition4x4> fixed = gate.eigenDecomposition();
   const std::optional<EigenDecomposition> dynamic =
       DynamicMatrix(gate).eigenDecomposition();
@@ -430,24 +434,26 @@ TEST(DynamicMatrix, PremultiplyByEmbeddedMatchesDense) {
   const Matrix4x4 swap = swapMatrix();
   for (const size_t numQubits : {2U, 3U}) {
     for (size_t wire = 0; wire < numQubits; ++wire) {
-      DynamicMatrix dense =
-          DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+      DynamicMatrix dense = DynamicMatrix::identity(
+          static_cast<int64_t>(uint64_t{1} << numQubits));
       dense.premultiplyBy(x.embedInNqubit(numQubits, wire));
-      DynamicMatrix structured =
-          DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+      DynamicMatrix structured = DynamicMatrix::identity(
+          static_cast<int64_t>(uint64_t{1} << numQubits));
       structured.premultiplyByEmbedded1Q(x, numQubits, wire);
       EXPECT_TRUE(dense.isApprox(structured));
     }
   }
-  for (const std::array<size_t, 2> wires :
-       {std::array<size_t, 2>{0, 1}, std::array<size_t, 2>{0, 2},
-        std::array<size_t, 2>{1, 2}}) {
+  for (const std::array<size_t, 2> wires : {
+           std::array<size_t, 2>{0, 1},
+           std::array<size_t, 2>{0, 2},
+           std::array<size_t, 2>{1, 2},
+       }) {
     constexpr size_t numQubits = 3;
     DynamicMatrix dense =
-        DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+        DynamicMatrix::identity(static_cast<int64_t>(uint64_t{1} << numQubits));
     dense.premultiplyBy(swap.embedInNqubit(numQubits, wires[0], wires[1]));
     DynamicMatrix structured =
-        DynamicMatrix::identity(static_cast<int64_t>(1) << numQubits);
+        DynamicMatrix::identity(static_cast<int64_t>(uint64_t{1} << numQubits));
     structured.premultiplyByEmbedded2Q(swap, numQubits, wires[0], wires[1]);
     EXPECT_TRUE(dense.isApprox(structured));
   }
@@ -589,6 +595,22 @@ TEST(Matrix4x4, AssignFromDynamicMatrix) {
   EXPECT_TRUE(out.assignFrom(dynamic));
   EXPECT_TRUE(out.isApprox(swap));
   EXPECT_FALSE(out.assignFrom(DynamicMatrix::identity(2)));
+}
+
+TEST(Matrix8x8, AccessAdjointAndDynamicRoundtrip) {
+  auto matrix = Matrix8x8::identity();
+  matrix(1, 7) = {0.25, -0.5};
+  const auto& readOnly = matrix;
+  EXPECT_EQ(readOnly(1, 7), Complex(0.25, -0.5));
+  EXPECT_EQ(matrix.entries()[15], readOnly(1, 7));
+  EXPECT_EQ(matrix.adjoint()(7, 1), Complex(0.25, 0.5));
+
+  const DynamicMatrix dynamic{matrix};
+  Matrix8x8 copy;
+  ASSERT_TRUE(copy.assignFrom(dynamic));
+  EXPECT_TRUE(copy.isApprox(matrix));
+  EXPECT_FALSE(copy.assignFrom(DynamicMatrix::identity(4)));
+  EXPECT_TRUE(copy.isApprox(matrix));
 }
 
 TEST(UnitaryMatrix2x2, TransposeAndIsIdentity) {
@@ -818,9 +840,12 @@ TEST(SymmetricEigensolver, ReconstructsRandomSymmetric) {
     EXPECT_TRUE((v.transpose() * v).isIdentity());
 
     // Reconstruction: V D V^T == A.
-    const Matrix4x4 d =
-        Matrix4x4::fromDiagonal({result.eigenvalues[0], result.eigenvalues[1],
-                                 result.eigenvalues[2], result.eigenvalues[3]});
+    const Matrix4x4 d = Matrix4x4::fromDiagonal({
+        result.eigenvalues[0],
+        result.eigenvalues[1],
+        result.eigenvalues[2],
+        result.eigenvalues[3],
+    });
     const Matrix4x4 reconstructed = v * d * v.transpose();
     const Matrix4x4 original =
         Matrix4x4::fromElements(a[0], a[1], a[2], a[3],      // row 0

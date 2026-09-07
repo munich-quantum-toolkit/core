@@ -14,6 +14,8 @@
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
@@ -28,5 +30,9 @@ namespace mlir::cbit {
 /// Validates a static index used by a CBit register builder operation.
 void validateStaticRegisterIndex(Value reg,
                                  const std::variant<int64_t, Value>& index);
+
+/// Populates patterns that decompose whole-register operations into static
+/// bit loads, stores, and ordinary integer arithmetic.
+void populateCBitDecompositionPatterns(RewritePatternSet& patterns);
 
 } // namespace mlir::cbit

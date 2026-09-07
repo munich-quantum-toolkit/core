@@ -30,9 +30,9 @@ namespace mlir {
 
 /// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
-  Unset,  //!< No allocation mode has been established yet.
-  Static, //!< The module uses static qubit allocation.
-  Dynamic //!< The module uses dynamic qubit allocation.
+  Unset,   //!< No allocation mode has been established yet.
+  Static,  //!< The module uses static qubit allocation.
+  Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
 /// State object for tracking lowering information during QIR conversion
@@ -40,14 +40,11 @@ struct LoweringState {
   /// Result-array pointers to be deallocated at the end of the program
   DenseSet<Value> resultArrays;
 
+  /// CBit read operations whose register is backed by a result array.
+  DenseSet<Operation*> returnedCBitReads;
+
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
-
-  /// Cache Base Profile qubit-register elements by source register and index.
-  DenseMap<Value, DenseMap<int64_t, Value>> staticQubitRegisterElements;
-
-  /// Next physical qubit index after all explicitly referenced static qubits.
-  int64_t nextStaticQubitIndex = 0;
 
   /// Cache qubit register sizes for reuse
   DenseMap<Value, Value> qregSizes;
@@ -95,14 +92,6 @@ struct LoweringState {
 struct QCToQIRTypeConverter final : LLVMTypeConverter {
   explicit QCToQIRTypeConverter(MLIRContext* ctx);
 };
-
-/**
- * Validate the module-wide assumptions shared by the QIR conversions before
- * either pass mutates the input module.
- */
-[[nodiscard]] LogicalResult validateQIRConversionInput(ModuleOp moduleOp,
-                                                       bool requireSingleBlock,
-                                                       LoweringState& state);
 
 /**
  * @brief Base class for conversion patterns that need access to lowering state

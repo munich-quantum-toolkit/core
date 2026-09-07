@@ -20,7 +20,11 @@
 #include <llvm/Support/Error.h>
 
 #include <cassert>
+#include <initializer_list>
+#include <numeric>
 #include <string>
+#include <utility>
+#include <vector>
 
 using mlir::CompilerTarget;
 
@@ -41,8 +45,9 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
 
   ASSERT_TRUE(target.name());
   EXPECT_EQ(*target.name(), "IQM Garnet");
-  EXPECT_EQ(target.numQubits(), 20);
-  EXPECT_TRUE(target.hasExplicitTopology());
+  EXPECT_EQ(target.numSites(), 20);
+  EXPECT_EQ(target.connectivityKind(),
+            CompilerTarget::Connectivity::Kind::Explicit);
   EXPECT_EQ(target.couplings().size(), 30);
 
   ASSERT_TRUE(target.durationUnit());
@@ -70,26 +75,63 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
     }
   }
 
-  EXPECT_TRUE(target.supportsOperation("r", 1, 2));
-  EXPECT_TRUE(target.supportsOperation("cz", 2, 0));
-  EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
-  EXPECT_FALSE(target.supportsOperation("rx", 1, 1));
+  EXPECT_EQ(target.supportsOperation("r", 1, 2), true);
+  EXPECT_EQ(target.supportsOperation("cz", 2, 0), true);
+  EXPECT_EQ(target.supportsOperation("measure", 1, 0), true);
+  EXPECT_EQ(target.supportsOperation("rx", 1, 1), false);
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit,
             CompilerTarget::SingleQubitBasis::R);
   EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CZ);
 }
 
-TEST(CompilerQDMIAdapterTest, PreservesMissingTopologyAsAllToAll) {
+TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
-  EXPECT_EQ(target.numQubits(), 65535);
-  EXPECT_FALSE(target.hasExplicitTopology());
-  EXPECT_TRUE(target.areAdjacent(0, target.numQubits() - 1));
-  EXPECT_TRUE(target.supportsOperation("h", 1, 0));
-  EXPECT_TRUE(target.supportsOperation("cx", 2, 0));
-  EXPECT_TRUE(target.supportsOperation("measure", 1, 0));
+  EXPECT_EQ(target.numSites(), 65535);
+  EXPECT_EQ(target.connectivityKind(),
+            CompilerTarget::Connectivity::Kind::AllToAll);
+  EXPECT_EQ(target.nativeOperationsKind(),
+            CompilerTarget::NativeOperations::Kind::Explicit);
+  const auto& gphase = findOperation(target, "gphase");
+  EXPECT_EQ(gphase.arity().kind(),
+            CompilerTarget::Operation::Arity::Kind::Fixed);
+  EXPECT_EQ(gphase.arity().value(), 0);
+  for (const auto [name, minimum] :
+       std::initializer_list<std::pair<llvm::StringRef, size_t>>{
+           {"id", 1},
+           {"h", 1},
+           {"rx", 1},
+           {"swap", 2},
+           {"rxx", 2},
+           {"rccx", 3},
+       }) {
+    const auto& operation = findOperation(target, name);
+    EXPECT_EQ(operation.arity().kind(),
+              CompilerTarget::Operation::Arity::Kind::Variadic)
+        << name.str();
+    EXPECT_EQ(operation.arity().value(), minimum) << name.str();
+    EXPECT_TRUE(operation.siteTuples().empty()) << name.str();
+    EXPECT_TRUE(
+        target.supportsOperation(name, minimum, operation.numParameters()))
+        << name.str();
+    EXPECT_TRUE(
+        target.supportsOperation(name, minimum + 4, operation.numParameters()))
+        << name.str();
+    std::vector<CompilerTarget::SiteId> sites(minimum + 4);
+    std::iota(sites.begin(), sites.end(), 0);
+    EXPECT_TRUE(target.supportsOperation(name, minimum + 4,
+                                         operation.numParameters(), sites))
+        << name.str();
+  }
+  EXPECT_TRUE(target.supportsOperation("gphase", 0, 1));
+  EXPECT_EQ(target.supportsOperation("h", 1, 0), true);
+  EXPECT_EQ(target.supportsOperation("cx", 2, 0), true);
+  EXPECT_EQ(target.supportsOperation("cswap", 3, 0), true);
+  EXPECT_EQ(target.supportsOperation("measure", 1, 0), true);
+  EXPECT_EQ(target.supportsOperation("reset", 1, 0), true);
+  EXPECT_EQ(target.supportsOperation("barrier", 0, 0), false);
 }
 
 TEST(CompilerQDMIAdapterTest, ListsRegisteredDeviceIds) {
@@ -114,30 +156,79 @@ TEST(CompilerQDMIAdapterTest, RejectsNonhomogeneousOperationSupport) {
   ASSERT_FALSE(target);
   const auto message = llvm::toString(target.takeError());
   EXPECT_NE(message.find("homogeneous"), std::string::npos);
-  EXPECT_NE(message.find("every topology edge"), std::string::npos);
+  EXPECT_NE(message.find("all topology edges"), std::string::npos);
 }
 
-TEST(CompilerQDMIAdapterTest, RejectsDirectionalOperationWithoutReverseSites) {
+TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
+  qdmi::DeviceSessionConfig overrides;
+  overrides.deviceConfiguration =
+      qdmi::FileDeviceConfiguration{MQT_CORE_MLIR_HIGHER_ARITY_SC_CONFIG};
+  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+
+  EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0));
+  EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0, {0, 1, 2}));
+  EXPECT_TRUE(target.supportsOperation("ccnot", 3, 0, {2, 1, 0}));
+  EXPECT_FALSE(target.supportsOperation("ccnot", 3, 0, {0, 1, 3}));
+}
+
+TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
-      MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG};
+      MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG,
+  };
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
-  auto target = mlir::compilerTargetFromDevice(device);
-  ASSERT_FALSE(target);
-  const auto message = llvm::toString(target.takeError());
-  EXPECT_NE(message.find("both orientations"), std::string::npos);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+
+  ASSERT_EQ(target.couplings().size(), 1U);
+  const auto& cx = findOperation(target, "cx");
+  ASSERT_EQ(cx.siteTuples().size(), 1U);
+  EXPECT_EQ(cx.siteTuples()[0].sites(),
+            (llvm::ArrayRef<CompilerTarget::SiteId>{0, 1}));
+  EXPECT_FALSE(cx.siteTuples()[0].duration());
+  EXPECT_FALSE(cx.siteTuples()[0].fidelity());
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {0, 1}));
+  EXPECT_FALSE(target.supportsOperation("cx", 2, 0, {1, 0}));
+  ASSERT_TRUE(target.synthesisBasis());
+  EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CX);
+}
+
+TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
+  qdmi::DeviceSessionConfig overrides;
+  overrides.deviceConfiguration = qdmi::InlineDeviceConfiguration{
+      .json = R"({
+    "schema-version": 1,
+    "name": "Unavailable operation",
+    "numQubits": 1,
+    "durationUnit": {"unit": "ns", "scaleFactor": 1},
+    "qubitProperties": {"defaults": {}, "overrides": []},
+    "couplings": [],
+    "operations": [
+      {"name": "x", "numQubits": 1, "numParameters": 0, "sites": []}
+    ]
+  })",
+  };
+  const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
+  const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+  EXPECT_EQ(target.nativeOperationsKind(),
+            CompilerTarget::NativeOperations::Kind::Explicit);
+  EXPECT_TRUE(target.operations().empty());
+  EXPECT_FALSE(target.supportsOperation("x", 1, 0, {0}));
 }
 
 TEST(CompilerQDMIAdapterTest,
      PreservesDirectionalCalibrationWhenBothOrientationsExist) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
-      MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG};
+      MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG,
+  };
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
   ASSERT_EQ(target.couplings().size(), 1);
   const auto& cx = findOperation(target, "cx");
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {0, 1}));
+  EXPECT_TRUE(target.supportsOperation("cx", 2, 0, {1, 0}));
   ASSERT_EQ(cx.siteTuples().size(), 2);
   EXPECT_EQ(cx.siteTuples()[0].sites(),
             (llvm::ArrayRef<CompilerTarget::SiteId>{0, 1}));

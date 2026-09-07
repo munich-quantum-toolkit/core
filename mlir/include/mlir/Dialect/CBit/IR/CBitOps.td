@@ -20,14 +20,6 @@ include "mlir/Interfaces/SideEffectInterfaces.td"
 // Attributes and types
 //===----------------------------------------------------------------------===//
 
-def CBit_Initialization
-    : I32EnumAttr<"Initialization", "Classical-bit register initialization",
-                  [I32EnumAttrCase<"Zero", 0, "zero">,
-                   I32EnumAttrCase<"Undefined", 1, "undefined">]> {
-  let cppNamespace = "::mlir::cbit";
-  let genSpecializedAttr = 0;
-}
-
 def CBit_InitializationAttr
     : EnumAttr<CBitDialect, CBit_Initialization, "init"> {
   let assemblyFormat = "`<` $value `>`";
@@ -93,6 +85,49 @@ def LoadOp : CBitOp<"load"> {
     $reg `[` $index `]` attr-dict `:` qualified(type($reg))
   }];
   let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
+def ReadOp : CBitOp<"read"> {
+  let summary = "Read a classical-bit register as an integer";
+  let description = [{
+    Reads the complete register as an exact-width integer bit pattern. Register
+    element zero is the least-significant result bit, and the result width must
+    equal the static register width.
+
+    Example:
+    ```mlir
+    %value = cbit.read %c : !cbit.reg<3> -> i3
+    ```
+  }];
+
+  let arguments = (ins Arg<CBit_RegisterType, "register", [MemRead]>:$reg);
+  let results = (outs AnySignlessInteger:$result);
+  let assemblyFormat = [{
+    $reg attr-dict `:` qualified(type($reg)) `->` qualified(type($result))
+  }];
+  let hasVerifier = 1;
+}
+
+def WriteOp : CBitOp<"write"> {
+  let summary = "Write an integer to a classical-bit register";
+  let description = [{
+    Writes a fixed-width integer to the complete register. Integer bit zero is
+    stored in register element zero, and the value width must equal the static
+    register width.
+
+    Example:
+    ```mlir
+    cbit.write %value, %c : i3, !cbit.reg<3>
+    ```
+  }];
+
+  let arguments = (ins AnySignlessInteger:$value,
+      Arg<CBit_RegisterType, "register", [MemWrite]>:$reg);
+  let assemblyFormat = [{
+    $value `,` $reg attr-dict `:` qualified(type($value)) `,`
+        qualified(type($reg))
+  }];
   let hasVerifier = 1;
 }
 

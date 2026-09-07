@@ -82,8 +82,10 @@ decodeCodePoint(const char* position, const char* end) {
                                 llvm::strictConversion) != llvm::conversionOK) {
     return std::nullopt;
   }
-  return DecodedCodePoint{.value = codePoint,
-                          .width = static_cast<size_t>(source - begin)};
+  return DecodedCodePoint{
+      .value = codePoint,
+      .width = static_cast<size_t>(source - begin),
+  };
 }
 
 [[nodiscard]] static TokenKind keywordKind(StringRef text) {
@@ -105,6 +107,8 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("else", TokenKind::Else)
       .Case("for", TokenKind::For)
       .Case("while", TokenKind::While)
+      .Case("break", TokenKind::Break)
+      .Case("continue", TokenKind::Continue)
       .Case("switch", TokenKind::Switch)
       .Case("case", TokenKind::Case)
       .Case("default", TokenKind::Default)
@@ -124,8 +128,7 @@ decodeCodePoint(const char* position, const char* end) {
       .Case("false", TokenKind::False)
       .Cases({"defcalgrammar", "def", "cal", "defcal"},
              TokenKind::UnsupportedKeyword)
-      .Cases({"extern", "box", "let", "break", "continue"},
-             TokenKind::UnsupportedKeyword)
+      .Cases({"extern", "box", "let"}, TokenKind::UnsupportedKeyword)
       .Cases({"end", "return"}, TokenKind::UnsupportedKeyword)
       .Cases({"pragma", "input", "readonly", "mutable"},
              TokenKind::UnsupportedKeyword)
@@ -264,9 +267,16 @@ Token Lexer::lexNumber(const char* start) {
     }
     const StringRef text(start, static_cast<size_t>(cur - start));
     const StringRef digitText(digits, static_cast<size_t>(cur - digits));
-    Token token{.kind = TokenKind::IntegerLiteral,
-                .loc = SMLoc::getFromPointer(start),
-                .spelling = text};
+    Token token{
+        .kind = TokenKind::IntegerLiteral,
+        .loc = SMLoc::getFromPointer(start),
+        .identifier = {},
+        .stringValue = {},
+        .spelling = text,
+        .intValue = 0,
+        .floatValue = 0.0,
+        .wideInteger = false,
+    };
     llvm::SmallString<32> normalized;
     for (const char value : digitText) {
       if (!isSeparator(value)) {

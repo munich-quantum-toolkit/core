@@ -4,7 +4,6 @@
   "🐉 MQT Core MLIR": ["MLIR"],
   "🐲 MQT Core QIR": ["QIR"],
   "🔌 MQT Core QDMI": ["QDMI"],
-  "🏼 MQT Core NA Package": ["NA"],
   "🚀 Features and Enhancements": [
     "enhancement",
     "feature",

@@ -6,6 +6,104 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+### CMake 3.28 minimum
+
+MQT Core now requires CMake 3.28 or newer. Upgrade CMake before configuring a
+source build or embedding MQT Core with `FetchContent`.
+
+### Removal of the classic circuit representation
+
+MQT Core 4 removes the complete classic circuit surface. This includes the C++
+`qc::QuantumComputation` hierarchy, the `MQT::CoreIR` and `MQT::CoreQASM` CMake
+targets, and the installed `ir/` and `qasm3/` headers. Python no longer provides
+`mqt.core.ir`, the top-level `mqt.core.load` helper, or the classic
+`mqt.core.plugins.qiskit.mqt_to_qiskit` and `qiskit_to_mqt` converters. MQT Core
+4 deliberately provides no compatibility alias or adapter for these APIs.
+
+Use the compiler-backed Python interface in new code:
+
+```python
+from mqt.core.mlir import OutputFormat, QCProgram, compile_program
+
+qc_program = QCProgram.from_qasm_file("circuit.qasm")
+qco_program = compile_program(qc_program, output=OutputFormat.QCO_OPTIMIZED)
+```
+
+Use `QCProgram.from_qasm_str` for source text, `QCProgram.from_qiskit` for a
+Qiskit `QuantumCircuit`, and `QCProgram.to_qiskit` for conversion back to
+Qiskit. For decision-diagram simulation, pass any compiler input to the
+`sample`, `simulate`, or `build_functionality` function in `mqt.core.mlir`. The
+top-level `simulate` function runs a closed program from the all-zero state.
+Lower to a `QCOProgram` and call the corresponding method when the compiled
+program is reused, a custom initial state is required, or the result should
+remain a DD. The circuit-taking functions in `mqt.core.dd` and the
+operation-taking `DDPackage` methods have been removed; the raw vector and
+matrix DD constructors remain available.
+
+The MQT Core v3 release series continues to provide the classic circuit
+interfaces for repositories that have not migrated. Pin `mqt-core>=3,<4` and
+stay on that release series. C++ consumers should likewise use a v3 release
+branch or a matching v3 version constraint. MQT Core v3 and v4 cannot provide
+their Python or CMake packages in the same environment.
+
+### Typed benchmark library
+
+MQT Core 4 provides the separate `MQT::CoreBench` library and `mqt-core-bench`
+CLI for typed structured benchmarks. These interfaces are not drop-in
+replacements for the circuit factories removed in MQT Core 3.10.
+
+### QIR execution
+
+Dynamic QIR inputs must use the current QIR 2.1 resource-management interface.
+Legacy allocator and output overloads are no longer accepted.
+
+The DDSIM QDMI device now isolates the runtime, simulator state, random-number
+generator, and output sink of every QIR job. Concurrently submitted jobs no
+longer share execution state or write QIR records to process stdout.
+
+QIR statevector extraction is supported only for Base-format jobs. The input
+must mark its first measurement boundary as `irreversible`, and no quantum work
+may follow that boundary. Adaptive-format statevector requests continue to
+return `QDMI_ERROR_NOTSUPPORTED`.
+
+### LLVM/MLIR enabled by default
+
+MQT Core now builds its MLIR-based compiler infrastructure by default. This
+configuration requires LLVM 23.1+ with MLIR and includes QIR support in the
+DDSIM QDMI device. Set `BUILD_MQT_CORE_MLIR=OFF` to build the decision-diagram
+and QDMI libraries without LLVM/MLIR. The compiler-backed DDSIM device requires
+MLIR and is skipped in this configuration.
+
+We offer pre-built distributions for all supported platforms as part of the
+`setup-mlir` project at
+[munich-quantum-software/setup-mlir](https://github.com/munich-quantum-software/setup-mlir).
+Please follow the instructions there to install the distribution for your
+platform. You can then point CMake to the installation directory using the
+`-DMLIR_DIR=/path/to/mlir/installation/lib/cmake/mlir` option.
+
+For local development, you can configure `MLIR_DIR` once in a repository-local
+`.env` file (for example, `MLIR_DIR=/path/to/installation/lib/cmake/mlir`). MQT
+Core's CMake setup will pick this up automatically when `MLIR_DIR` is not
+otherwise provided.
+
+Known limitations when MLIR is enabled:
+
+- Our pre-built distributions are incompatible with GCC on macOS. Use
+  (Apple)Clang instead or compile LLVM from source using your preferred
+  compiler.
+- AppleClang 17+ is required to build the MLIR part of MQT Core due to some
+  C++20 features that older versions do not support fully.
+
+## [3.10.0]
+
+### Shared-library ABI version
+
+The shared-library ABI version (`SOVERSION`) changes from `3.9` to `3.10`.
+Rebuild downstream C++ libraries against MQT Core 3.10.0. In `cibuildwheel`
+configurations that exclude bundled MQT Core libraries from wheel repair,
+replace each `libmqt-core-*.so.3.9` entry with the corresponding
+`libmqt-core-*.so.3.10` entry.
+
 ### Removal of the `spdlog` dependency
 
 MQT Core no longer discovers, downloads, builds, installs, or exports `spdlog`.
@@ -71,8 +169,16 @@ longer accept the `recursive` argument and always use sequential construction.
 Use MQT DDSIM's unitary simulator when recursive pairwise construction is
 required.
 
-The zero, basis, GHZ, W, dense-vector, and sequential circuit constructors
-remain available.
+MQT Core also removed `dd/GateMatrixDefinitions.hpp`,
+`dd::opToSingleQubitGateMatrix`, `dd::opToTwoQubitGateMatrix`,
+`dd::opToThreeQubitGateMatrix`, `dd::getStandardOperationDD`,
+`dd::MEAS_ZERO_MAT`, and `dd::MEAS_ONE_MAT`. Low-level consumers must pass raw
+matrices to `dd::Package::makeGateDD`, `makeTwoQubitGateDD`,
+`makeThreeQubitGateDD`, or `makeDDFromMatrix`. Circuit-facing DD functions
+continue to translate CoreIR operations internally.
+
+The zero, basis, GHZ, W, dense-vector, dense-matrix, raw gate-matrix, and
+sequential circuit constructors remain available.
 
 ### macOS support
 
@@ -87,38 +193,56 @@ factories. Move required implementations to the package that uses them. The
 `BUILD_MQT_CORE_BENCHMARKS` option and its legacy DD evaluation target were also
 removed.
 
-MQT Core now provides the separate `MQT::CoreBench` library and `mqt-core-bench`
-CLI for typed structured benchmarks. These interfaces are not drop-in
-replacements for the removed factories.
+### Removal of the FoMaC compatibility APIs
 
-### Python 3.11 and split-mode wheels
+MQT Core no longer provides `mqt.core.fomac` or `mqt.core.qdmi.driver.Session`.
+Import QDMI entities such as `Device`, `Job`, and `ProgramFormat` from
+`mqt.core.qdmi`. Import `DeviceDefinition` and the module-level registry
+functions from `mqt.core.qdmi.driver`. Use `registered_device_ids()` to discover
+devices and `open_device()` to open a fresh device session. Pass provider
+configuration overrides to `open_device()` when a device needs per-open
+configuration.
 
-MQT Core now requires Python 3.11 or newer. Upgrade the Python environment
-before installing this release.
+MQT Core also removes the FoMaC name from its C++ API. Apply these replacements:
 
-MQT Core now uses nanobind 3 split mode. One `cp311-abi3` wheel supports
-GIL-enabled CPython 3.11 and newer. Free-threaded support starts with CPython
-3.15 and uses a separate `cp315-abi3t` wheel. MQT Core no longer publishes
-free-threaded CPython 3.13 or 3.14 wheels.
+- `fomac::` becomes `qdmi::`.
+- `fomac/FoMaC.hpp` becomes `qdmi/Client.hpp`.
+- `fomac/Slurm.hpp` becomes `qdmi/Slurm.hpp`.
+- `MQT::CoreFoMaC` becomes `MQT::CoreQDMI`.
 
-nanobind 3 changes the nanobind ABI. Rebuild downstream native Python extensions
-that use MQT Core's nanobind-bound C++ types. Pure Python consumers do not need
-to recompile anything.
+The class and function names do not change. For example:
 
-The Python bindings depend on `nanobind-backend`, which supplies the
-interpreter-specific nanobind runtime. This dependency does not change the C++
-API or the Python import paths.
+```cpp
+#include "qdmi/Client.hpp"
 
-### Removal of DD approximation and density-matrix support
+auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+```
 
-MQT Core no longer provides the decision-diagram approximation algorithm. The
-algorithm had no production owner in the MQT ecosystem. Remove uses of the
-`dd/Approximation.hpp` header, the `dd::ApproximationMetadata` type, and the
-`dd::approximate` function. MQT Core does not provide a replacement.
+### Qiskit 2.1 minimum
 
-MQT Core also no longer provides density-matrix decision diagrams or the noise
-operations that depended on them. Consumers must provide this functionality or
-use another implementation.
+The minimum Qiskit version increases from **1.1.0 to 2.1.0**, dropping support
+for all Qiskit 1.x releases and Qiskit 2.0. Upgrade Qiskit to 2.1.0 or newer.
+
+### Native QDMI Qiskit primitives
+
+`QDMISampler` and `QDMIEstimator` are removed. Use Qiskit's `BackendSamplerV2`
+and `BackendEstimatorV2`, or the backend factories with native options:
+
+```python
+sampler = backend.sampler(default_shots=2048)
+estimator = backend.estimator(default_precision=0.01)
+```
+
+Estimator uses positive precision, not `default_shots`: its default is `1/64`
+(4096 shots). Grouping, metadata, broadcasting, and standard errors now follow
+Qiskit. Sampler requires genuine QDMI `SHOTS`, which DDSIM supports. Counts-only
+devices remain usable for Estimator but cannot run Sampler. No shot
+reconstruction is available.
+
+`backend.run(memory=True)` preserves shot order. Results include classical
+register boundaries; failed jobs and invalid results raise on collection, and
+unsupported execution options are rejected. See the
+[backend requirements](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qdmi_backend.html#backend-requirements).
 
 ### Private `nlohmann_json` dependency
 
@@ -144,54 +268,57 @@ following names:
 
 ### Removal of the neutral-atom stack
 
-MQT Core no longer contains any neutral-atom functionality. The complete stack
-moved to [MQT QMAP](https://github.com/munich-quantum-toolkit/qmap), which is
-now its sole owner. Depend on MQT QMAP to keep using it.
+MQT Core no longer contains neutral-atom functionality. The complete stack moved
+to [MQT QMAP](https://github.com/munich-quantum-toolkit/qmap), which is now its
+sole owner. Depend on MQT QMAP to keep using this functionality.
 
 MQT Core removed the following names:
 
-- The `MQT::CoreNA`, `MQT::CoreNAQDMI`, `MQT::CoreQDMINaDevice`, and
+- The `MQT::CoreNA`, `MQT::CoreNAFoMaC`, `MQT::CoreQDMINaDevice`, and
   `MQT::CoreQDMINaDeviceConfig` CMake targets.
 - The `BUILD_MQT_CORE_QDMI_NA_DEVICE` CMake option.
 - The `na/NAComputation.hpp`, `na/entities/*.hpp`, `na/operations/*.hpp`,
-  `na/qdmi/Device.hpp`, `qdmi/devices/na/Configuration.hpp`, and
+  `na/fomac/Device.hpp`, `qdmi/devices/na/Configuration.hpp`, and
   `ir/operations/AodOperation.hpp` headers.
 - The `na` C++ namespace.
-- The `mqt.core.na` Python module and its `mqt.core.na.qdmi` submodule.
+- The `mqt.core.na` Python module and its `mqt.core.na.qdmi` and
+  `mqt.core.na.fomac` submodules.
 - The `Move`, `Bridge`, `AodActivate`, `AodDeactivate`, and `AodMove`
   `qc::OpType` values, together with `QuantumComputation::move`,
+  `QuantumComputation::cmove`, `QuantumComputation::mcmove`,
   `QuantumComputation::bridge`, and the OpenQASM names `move`, `bridge`,
   `aod_activate`, `aod_deactivate`, and `aod_move`.
 - The bundled `mqt.na.default` QDMI device.
 
-### Removal of FoMaC compatibility APIs
+### Removal of the ZX-calculus library
 
-MQT Core 4 removes the deprecated FoMaC names that MQT Core 3.9 kept as
-compatibility aliases. Replace Python imports of QDMI entities from
-`mqt.core.fomac` with imports from `mqt.core.qdmi`. Import registry functions
-and `DeviceDefinition` from `mqt.core.qdmi.driver`.
+MQT Core no longer provides the `mqt-core-zx` library, the `MQT::CoreZX` CMake
+target, the `mqt-core/zx` headers, or the global `zx` namespace. Remove these
+from downstream includes and link dependencies. Equivalence-checking users
+should use [MQT QCEC]; QCEC's ZX implementation is internal and is not a
+replacement public API.
 
-MQT Core 4 also removes `mqt.core.qdmi.driver.Session`. Use
-`registered_device_ids()` to discover devices and `open_device()` to open a
-fresh device session. Pass provider configuration overrides to `open_device()`
-when a device needs per-open configuration.
+The build-tree `MQT::Multiprecision` alias, the installed `MQT::multiprecision`
+target, the `USE_SYSTEM_BOOST`, `MQT_CORE_WITH_GMP`, and
+`MQT_CORE_ZX_SYSTEM_BOOST` CMake options, and the `BOOST_MIN_VERSION` cache
+variable have also been removed. MQT Core no longer discovers, fetches, or
+exports configuration for Boost.Multiprecision or GMP.
 
-Apply these replacements to C++ and MLIR code:
+### Removal of density matrix support from the DD package
 
-- `fomac::` becomes `qdmi::`.
-- `fomac/FoMaC.hpp` becomes `qdmi/Client.hpp`.
-- `fomac/Slurm.hpp` becomes `qdmi/Slurm.hpp`.
-- `MQT::CoreFoMaC` becomes `MQT::CoreQDMI`.
-- `mlir/Compiler/FoMaCAdapter.h` and `MQTCompilerFoMaCAdapter` become
-  `mlir/Compiler/QDMIAdapter.h` and `MQTCompilerQDMIAdapter`.
+MQT Core no longer provides density matrix decision diagrams or the related
+deterministic and stochastic noise functionality. [MQT DDSIM] 2.5.0 and newer
+provide this functionality in the `dd::ddsim` namespace. Downstream code that
+used the MQT Core APIs must migrate to MQT DDSIM or provide the functionality
+directly. The `ATrue`, `AFalse`, `MultiATrue`, and `MultiAFalse` operation types
+have also been removed.
 
-The class and function names do not change. For example:
+### Removal of DD approximation support
 
-```cpp
-#include "qdmi/Client.hpp"
-
-auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-```
+MQT Core no longer provides the decision-diagram approximation algorithm. The
+algorithm had no production owner in the MQT ecosystem. Remove uses of the
+`dd/Approximation.hpp` header, the `dd::ApproximationMetadata` type, and the
+`dd::approximate` function. MQT Core does not provide a replacement.
 
 ### CoreIR API cleanup
 
@@ -207,13 +334,13 @@ The CoreIR API cleanup requires the following migrations:
 - Construct output-permutation measurements explicitly instead of calling
   `appendMeasurementsAccordingToOutputPermutation()`.
 - Replace direct `Operation::dumpOpenQASM2()`, `dumpOpenQASM3()`, or
-  `dumpOpenQASM()` calls with `OpenQASMSerializer`. The register-map aliases
-  moved from `ir/Register.hpp` to `ir/OpenQASMSerializer.hpp`:
+  `dumpOpenQASM()` calls with `qasm3::Serializer`. The register-map aliases
+  moved from `ir/Register.hpp` to `qasm3/Serializer.hpp`:
 
   ```cpp
-  #include "ir/OpenQASMSerializer.hpp"
+  #include "qasm3/Serializer.hpp"
 
-  qc::OpenQASMSerializer(stream, qc::Format::OpenQASM2)
+  qasm3::Serializer(stream, qc::Format::OpenQASM2)
       .serialize(operation, qubitMap, bitMap);
   ```
 
@@ -226,85 +353,38 @@ The CoreIR API cleanup requires the following migrations:
 The register lookup helpers `getQubitRegister()`, `getPhysicalQubitIndex()`, and
 `physicalQubitIsAncillary()` are now private implementation details.
 
+### QuantumComputation random-number generator
+
 `QuantumComputation` no longer stores a random-number generator or seed. Remove
 the third `seed` argument from C++ and Python constructor calls. C++ callers
 that used `QuantumComputation::getGenerator()` must create and own a
 random-number generator instead. Randomized circuit generators continue to
 accept a seed and now own a separate generator for each call.
 
-### Removal of the legacy circuit-to-MLIR translator
-
-The compiler no longer accepts `qc::QuantumComputation` or
-`mqt.core.ir.QuantumComputation` objects. The
-`mlir::QCProgram::fromQuantumComputation` and Python
-`QCProgram.from_quantum_computation` functions have been removed. Pass OpenQASM,
-a Qiskit circuit, or a typed MLIR program to the compiler instead. Existing
-Python code can convert a legacy circuit to OpenQASM 3 before compilation:
-
-```python
-program = compile_program(computation.qasm3_str())
-```
-
-### Removal of the ZX-calculus library
-
-MQT Core no longer provides the `mqt-core-zx` library, the `MQT::CoreZX` CMake
-target, the `mqt-core/zx` headers, or the global `zx` namespace. Remove these
-from downstream includes and link dependencies. Equivalence-checking users
-should use [MQT QCEC]; QCEC's ZX implementation is internal and is not a
-replacement public API.
-
-The `MQT::Multiprecision` target and the `USE_SYSTEM_BOOST`,
-`MQT_CORE_WITH_GMP`, and `MQT_CORE_ZX_SYSTEM_BOOST` CMake options have also been
-removed. MQT Core no longer discovers, fetches, or exports configuration for
-Boost.Multiprecision or GMP.
-
-### QIR execution
-
-Dynamic QIR inputs must use the current QIR 2.1 resource-management interface.
-Legacy allocator and output overloads are no longer accepted.
-
-The DDSIM QDMI device now isolates the runtime, simulator state, random-number
-generator, and output sink of every QIR job. Concurrently submitted jobs no
-longer share execution state or write QIR records to process stdout.
-
-QIR statevector extraction is supported only for Base-format jobs. The input
-must mark its first measurement boundary as `irreversible`, and no quantum work
-may follow that boundary. Adaptive-format statevector requests continue to
-return `QDMI_ERROR_NOTSUPPORTED`.
-
-### LLVM/MLIR enabled by default
-
-MQT Core now builds its MLIR-based compiler infrastructure by default. This
-configuration requires LLVM 23.1+ with MLIR and includes QIR support in the
-DDSIM QDMI device. Set `BUILD_MQT_CORE_MLIR=OFF` to build the core IR, decision
-diagram, OpenQASM, and QDMI libraries without LLVM/MLIR or DDSIM QIR support.
-The DDSIM device continues to support OpenQASM 2 and OpenQASM 3 programs.
-
-We offer pre-built distributions for all supported platforms as part of the
-`setup-mlir` project at
-[munich-quantum-software/setup-mlir](https://github.com/munich-quantum-software/setup-mlir).
-Please follow the instructions there to install the distribution for your
-platform. You can then point CMake to the installation directory using the
-`-DMLIR_DIR=/path/to/mlir/installation/lib/cmake/mlir` option.
-
-For local development, you can configure `MLIR_DIR` once in a repository-local
-`.env` file (for example, `MLIR_DIR=/path/to/installation/lib/cmake/mlir`). MQT
-Core's CMake setup will pick this up automatically when `MLIR_DIR` is not
-otherwise provided.
-
-Known limitations when MLIR is enabled:
-
-- Our pre-built distributions are incompatible with GCC on macOS. Use
-  (Apple)Clang instead or compile LLVM from source using your preferred
-  compiler.
-- AppleClang 17+ is required to build the MLIR part of MQT Core due to some
-  C++20 features that older versions do not support fully.
-
 ### Removal of the `datastructures` (sub)library
 
-MQT Core no longer provides the `datastructures` (`ds`) sublibrary. MQT QMAP was
-its only consumer. Downstream users must depend on MQT QMAP or provide the
-required data structures directly.
+MQT Core no longer provides the `datastructures` (`ds`) sublibrary. [MQT QMAP]
+3.8.0 and newer provide the moved code under `datastructures/` through the
+`MQT::QMapDS` CMake target. Downstream users must depend on MQT QMAP or provide
+the required data structures directly.
+
+### Python 3.11 and Stable ABI wheels
+
+MQT Core now requires Python 3.11 or newer. Upgrade the Python environment
+before installing this release.
+
+MQT Core now publishes one `cp311-abi3` wheel for GIL-enabled CPython 3.11 and
+newer. Free-threaded support starts with CPython 3.15 in a separate
+`cp315-abi3t` wheel. MQT Core no longer publishes free-threaded CPython 3.13 or
+3.14 wheels.
+
+This release updates `nanobind` to 3.0.1, which changes the `nanobind` ABI.
+Rebuild downstream native Python extensions that use MQT Core's `nanobind`-bound
+C++ types. Pure Python consumers do not need to recompile anything.
+
+The Python bindings depend on `nanobind-backend`, which supplies the
+interpreter-specific `nanobind` runtime. This dependency does not change the C++
+API or the Python import paths.
 
 ## [3.9.2]
 
@@ -972,7 +1052,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...HEAD
+[3.10.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...v3.9.1
 [3.9.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.8.0...v3.9.0
@@ -989,8 +1070,8 @@ It also requires the `uv` library version 0.5.20 or higher.
 
 <!-- Other links -->
 
-[MQT DDSIM]: https://github.com/cda-tum/mqt-ddsim
-[MQT QMAP]: https://github.com/cda-tum/mqt-qmap
-[MQT QCEC]: https://github.com/cda-tum/mqt-qcec
-[MQT SyReC]: https://github.com/cda-tum/mqt-syrec
+[MQT DDSIM]: https://github.com/munich-quantum-toolkit/ddsim
+[MQT QMAP]: https://github.com/munich-quantum-toolkit/qmap
+[MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
+[MQT SyReC]: https://github.com/munich-quantum-toolkit/syrec
 [CMake presets]: https://cmake.org/cmake/help/latest/manual/cmake-presets.7.html

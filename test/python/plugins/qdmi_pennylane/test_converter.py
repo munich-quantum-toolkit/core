@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import re
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -268,6 +269,33 @@ def test_validates_operation_topology(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(PennyLaneValidationError, match=r"not advertised on device wires \(1, 0\)"):
         circuit()
     assert not qdmi.submissions
+
+
+def test_reuses_session_contract_checks_without_skipping_input_validation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Reuse valid gate locations across tapes, not inputs or other sessions."""
+    rx = operation("rx", 1, 1, sites=[0])
+    qdmi = StubDevice([rx], [ProgramFormat.QASM3])
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2, shots=2)
+    query_sites = Mock(wraps=rx.sites)
+    monkeypatch.setattr(rx, "sites", query_sites)
+
+    def tape(angle: float, wire: int = 0):
+        return qp.tape.QuantumScript([qp.RX(angle, wires=wire)], [qp.sample(wires=[0, 1])], shots=2)
+
+    device.execute((tape(0.1), tape(0.2)))
+    device.execute(tape(0.3))
+    query_sites.assert_called_once()
+    assert len({program for program, *_ in qdmi.submissions}) == 3
+    with pytest.raises(PennyLaneValidationError, match="non-finite"):
+        device.execute(tape(float("nan")))
+    with pytest.raises(PennyLaneValidationError, match="not advertised on device wire 1"):
+        device.execute(tape(0.4, wire=1))
+    assert len(qdmi.submissions) == 3
+
+    query_sites.reset_mock()
+    QDMIDevice("fake.qdmi", wires=2, shots=2).execute(tape(0.5))
+    query_sites.assert_called_once()
 
 
 def test_rejects_operation_on_an_unadvertised_site(monkeypatch: pytest.MonkeyPatch) -> None:

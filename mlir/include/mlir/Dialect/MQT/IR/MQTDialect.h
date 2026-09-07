@@ -15,7 +15,6 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Dialect.h>
 #include <mlir/IR/Operation.h>
-#include <mlir/Support/LogicalResult.h>
 
 //===----------------------------------------------------------------------===//
 // Dialect
@@ -24,7 +23,7 @@
 #include "mlir/Dialect/MQT/IR/MQTDialect.h.inc" // IWYU pragma: export
 
 namespace mlir::mqt {
-/// Return whether an operation has the program entry-point marker.
+/// Return whether an operation is the program entry point.
 [[nodiscard]] inline bool isEntryPoint(Operation* operation) {
   return operation != nullptr &&
          operation->hasAttr(MQTDialect::EntryPointAttrHelper::getNameStr());
@@ -36,7 +35,16 @@ void setEntryPoint(Operation* operation);
 /// Remove the program entry-point marker from an operation.
 void removeEntryPoint(Operation* operation);
 
-/// Return the source-level func.func entry point, or null if there is none.
+/// Return whether an operation defines a unitary function.
+[[nodiscard]] inline bool isUnitaryFunction(Operation* operation) {
+  return operation != nullptr &&
+         operation->hasAttr(MQTDialect::UnitaryAttrHelper::getNameStr());
+}
+
+/// Mark a function as unitary.
+void setUnitaryFunction(Operation* operation);
+
+/// Return the program entry point, or null if the module has none.
 [[nodiscard]] inline func::FuncOp getEntryPoint(ModuleOp moduleOp) {
   for (auto function : moduleOp.getOps<func::FuncOp>()) {
     if (isEntryPoint(function)) {
@@ -45,7 +53,4 @@ void removeEntryPoint(Operation* operation);
   }
   return nullptr;
 }
-
-/// Verify metadata invariants that involve more than one operation.
-[[nodiscard]] LogicalResult verifyProgramMetadata(ModuleOp moduleOp);
 } // namespace mlir::mqt

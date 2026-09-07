@@ -41,7 +41,7 @@ enum class QPEMethod : uint8_t {
   /// Estimate all phase bits with one query qubit per bit.
   Standard,
   /// Measure and reset one reused query qubit, with feed-forward corrections.
-  Iterative
+  Iterative,
 };
 
 /// Parameters for one QPE benchmark instance.

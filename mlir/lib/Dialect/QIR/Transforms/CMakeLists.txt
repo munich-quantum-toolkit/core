@@ -13,7 +13,6 @@ add_mlir_library(
   ${PASSES_SOURCES}
   LINK_LIBS
   PRIVATE
-  MLIRAnalysis
   MLIRLLVMDialect
   MLIRMQTDialect
   MLIRQIRUtils

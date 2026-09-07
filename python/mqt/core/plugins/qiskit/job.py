@@ -14,9 +14,11 @@ Provides a Qiskit JobV1-compatible wrapper for QDMI job execution and results.
 from __future__ import annotations
 
 import datetime
-from typing import TYPE_CHECKING
+from collections import Counter
+from numbers import Integral
+from typing import TYPE_CHECKING, Any
 
-from qiskit.providers import JobStatus, JobV1
+from qiskit.providers import JobError, JobStatus, JobV1
 from qiskit.result import Result
 from qiskit.result.models import ExperimentResult
 
@@ -24,6 +26,8 @@ from mqt.core.qdmi import Job as QDMIJobHandle
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from qiskit.circuit import QuantumCircuit
 
     from .backend import QDMIBackend
 
@@ -34,6 +38,36 @@ def __dir__() -> list[str]:
     return __all__
 
 
+def _cancel_jobs(jobs: Sequence[QDMIJobHandle]) -> bool:
+    """Attempt every cancellation without masking an execution failure.
+
+    Returns:
+        Whether every cancellation succeeded.
+    """
+    success = True
+    for job in jobs:
+        try:
+            job.cancel()
+        except BaseException:  # ruff:ignore[blind-except] Cleanup must preserve the original failure, even on interruption.
+            success = False
+    return success
+
+
+def _encode_bits(bits: str, width: int) -> str:
+    """Validate a QDMI bitstring and encode it as Qiskit result data.
+
+    Returns:
+        The hexadecimal Qiskit memory value.
+
+    Raises:
+        JobError: If the bitstring has the wrong width or contains nonbinary digits.
+    """
+    if len(bits) != width or any(bit not in "01" for bit in bits):
+        msg = f"Invalid QDMI bitstring {bits!r}: expected {width} binary digits in classical-bit order."
+        raise JobError(msg)
+    return hex(int(bits, 2)) if bits else "0x0"
+
+
 class QDMIJob(JobV1):
     """Qiskit job wrapping one or more QDMI jobs.
 
@@ -42,48 +76,58 @@ class QDMIJob(JobV1):
 
     Args:
         backend: The backend this job runs on.
-        jobs: One QDMI job or a list of QDMI jobs.
-        circuit_names: The name(s) of the circuit(s) being executed. Can be a single name or a list of names.
+        jobs: Submitted QDMI jobs, in circuit order.
+        circuits: The executed circuits, used to snapshot result headers.
+        shots: Requested shots per circuit.
+        memory: Whether to collect genuine ordered shots.
     """
 
     def __init__(
         self,
         backend: QDMIBackend,
-        jobs: QDMIJobHandle | Sequence[QDMIJobHandle],
-        circuit_names: str | Sequence[str],
+        jobs: Sequence[QDMIJobHandle],
+        circuits: Sequence[QuantumCircuit],
+        *,
+        shots: int,
+        memory: bool,
     ) -> None:
-        """Initialize the job.
-
-        Args:
-            backend: The backend to use for the job.
-            jobs: One QDMI job or a list of QDMI jobs.
-            circuit_names: The name(s) of the circuit(s) the job is associated with.
+        """Initialize without querying remote job IDs.
 
         Raises:
-            ValueError: If jobs list is empty or if jobs and circuit_names have mismatched lengths.
+            ValueError: If the jobs and circuits are empty or differ in length.
         """
-        # Normalize to lists
-        self._jobs = [jobs] if isinstance(jobs, QDMIJobHandle) else jobs
-        self._circuit_names = [circuit_names] if isinstance(circuit_names, str) else circuit_names
-
-        # Validate non-empty jobs list
-        if not self._jobs:
-            msg = "QDMIJob must be initialized with at least one underlying job."
+        if not jobs or len(jobs) != len(circuits):
+            msg = "QDMIJob requires one submitted job per circuit and at least one circuit."
             raise ValueError(msg)
-
-        # Validate that jobs and circuit_names have matching lengths
-        if len(self._jobs) != len(self._circuit_names):
-            msg = (
-                f"Length mismatch: jobs ({len(self._jobs)}) and circuit_names ({len(self._circuit_names)}) "
-                "must have the same length."
-            )
-            raise ValueError(msg)
-
-        # Use the first job's ID as the primary job ID
-        job_id = self._jobs[0].id
-        super().__init__(backend=backend, job_id=job_id)
+        super().__init__(backend=backend, job_id="")
         self._backend: QDMIBackend = backend
-        self._counts_cache: list[dict[str, int] | None] = [None] * len(self._jobs)
+        self._jobs = list(jobs)
+        self._headers: list[dict[str, Any]] = [
+            {
+                "name": circuit.name,
+                "memory_slots": circuit.num_clbits,
+                "creg_sizes": [[register.name, register.size] for register in circuit.cregs],
+                "metadata": circuit.metadata.copy(),
+            }
+            for circuit in circuits
+        ]
+        self._shots = shots
+        self._memory = memory
+        self._result: Result | None = None
+
+    def job_id(self) -> str:
+        """Return the first remote job ID, querying it only when requested."""
+        if not self._job_id:
+            self._job_id = self._jobs[0].id
+        return self._job_id
+
+    def cancel(self) -> bool:
+        """Attempt to cancel every job.
+
+        Returns:
+            Whether all cancellation requests succeeded.
+        """
+        return _cancel_jobs(self._jobs)
 
     def result(self) -> Result:
         """Get the result of the job.
@@ -93,40 +137,73 @@ class QDMIJob(JobV1):
         Returns:
             The result of the job with one ExperimentResult per circuit.
         """
-        experiment_results = []
-        overall_success = True
+        if self._result is not None:
+            return self._result
+        try:
+            experiment_results = list(map(self._collect_result, self._jobs, self._headers))
+            self._result = Result(
+                backend_name=self._backend.name,
+                backend_version=self._backend.backend_version,
+                job_id=self.job_id(),
+                success=True,
+                date=datetime.datetime.now(datetime.UTC).isoformat(),
+                results=experiment_results,
+            )
+        except BaseException:
+            _cancel_jobs(self._jobs)
+            raise
+        return self._result
 
-        for idx, (job, circuit_name) in enumerate(zip(self._jobs, self._circuit_names, strict=True)):
-            # Wait for job completion if needed
+    def _collect_result(self, job: QDMIJobHandle, header: dict[str, Any]) -> ExperimentResult:
+        """Collect and validate one circuit's result.
+
+        Returns:
+            A Qiskit experiment with counts and, if requested, ordered memory.
+
+        Raises:
+            JobError: If execution failed or the result violates the circuit's output contract.
+        """
+        status = job.check()
+        if status not in {
+            QDMIJobHandle.Status.DONE,
+            QDMIJobHandle.Status.FAILED,
+            QDMIJobHandle.Status.CANCELED,
+        }:
+            job.wait()
             status = job.check()
-            if status not in {QDMIJobHandle.Status.DONE, QDMIJobHandle.Status.FAILED, QDMIJobHandle.Status.CANCELED}:
-                job.wait()
-                status = job.check()
+        if status != QDMIJobHandle.Status.DONE:
+            msg = f"QDMI job did not complete successfully: {status.name}."
+            raise JobError(msg)
 
-            success = status == QDMIJobHandle.Status.DONE
-            overall_success = overall_success and success
-
-            # Get counts if successful and not cached
-            if self._counts_cache[idx] is None and success:
-                self._counts_cache[idx] = job.get_counts()
-
-            exp_result = ExperimentResult.from_dict({
-                "success": success,
-                "shots": job.num_shots,
-                "data": {"counts": self._counts_cache[idx], "metadata": {}},
-                "header": {"name": circuit_name},
-            })
-            experiment_results.append(exp_result)
-
-        return Result(
-            backend_name=self._backend.name,
-            backend_version=self._backend.backend_version,
-            qobj_id=self.job_id(),
-            job_id=self.job_id(),
-            success=overall_success,
-            date=datetime.datetime.now(datetime.UTC).isoformat(),
-            results=experiment_results,
-        )
+        width = header["memory_slots"]
+        if self._memory:
+            try:
+                shots = job.get_shots()
+            except Exception as exc:
+                exc.add_note("memory=True and BackendSamplerV2 require valid QDMI SHOTS results.")
+                raise
+            if len(shots) != self._shots:
+                msg = f"Invalid QDMI SHOTS result: expected {self._shots} shots, got {len(shots)}."
+                raise JobError(msg)
+            memory = [_encode_bits(bits, width) for bits in shots]
+            data = {"memory": memory, "counts": dict(Counter(memory))}
+        elif not width:
+            data = {"counts": {}}
+        else:
+            counts = job.get_counts()
+            if any(not isinstance(count, Integral) or count < 0 for count in counts.values()):
+                msg = "Invalid QDMI histogram: counts must be nonnegative integers."
+                raise JobError(msg)
+            if sum(counts.values()) != self._shots:
+                msg = f"Invalid QDMI histogram: expected {self._shots} total shots."
+                raise JobError(msg)
+            data = {"counts": {_encode_bits(bits, width): count for bits, count in counts.items()}}
+        return ExperimentResult.from_dict({
+            "success": True,
+            "shots": self._shots,
+            "data": data,
+            "header": header,
+        })
 
     def status(self) -> JobStatus:
         """Get the status of the job.

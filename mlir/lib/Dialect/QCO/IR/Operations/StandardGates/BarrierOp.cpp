@@ -9,9 +9,9 @@
  */
 
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -24,7 +24,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <optional>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -39,39 +38,47 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
 
   LogicalResult matchAndRewrite(BarrierOp op,
                                 PatternRewriter& rewriter) const override {
-    auto outputs = op.getQubitsOut();
-    if (outputs.empty()) {
-      return failure();
-    }
+    auto qubitsIn = op.getQubitsIn();
 
-    BarrierOp nextBarrier;
-    for (Value output : outputs) {
-      auto user = dyn_cast<BarrierOp>(*output.getUsers().begin());
-      if (!user || user->getBlock() != op->getBlock() ||
-          (nextBarrier && user != nextBarrier)) {
-        return failure();
+    auto anythingToMerge = false;
+    DenseMap<size_t, Value> newQubitsOutMap;
+
+    SmallVector<Value> newQubitsIn;
+    SmallVector<size_t> indicesToFill;
+
+    for (size_t i = 0; i < qubitsIn.size(); ++i) {
+      if (isa<BarrierOp>(
+              *op.getOutputForInput(qubitsIn[i]).getUsers().begin())) {
+        anythingToMerge = true;
+        newQubitsOutMap[i] = qubitsIn[i];
+      } else {
+        newQubitsIn.push_back(qubitsIn[i]);
+        indicesToFill.push_back(i);
       }
-      nextBarrier = user;
     }
 
-    if (nextBarrier.getNumTargets() != outputs.size()) {
+    if (!anythingToMerge) {
       return failure();
     }
 
-    rewriter.replaceOp(op, op.getQubitsIn());
+    auto newBarrier = BarrierOp::create(rewriter, op.getLoc(), newQubitsIn);
+
+    for (size_t i = 0; i < indicesToFill.size(); ++i) {
+      newQubitsOutMap[indicesToFill[i]] = newBarrier.getQubitsOut()[i];
+    }
+
+    SmallVector<Value> newQubitsOut;
+    newQubitsOut.reserve(op.getQubitsIn().size());
+    for (size_t i = 0; i < op.getQubitsIn().size(); ++i) {
+      newQubitsOut.push_back(newQubitsOutMap[i]);
+    }
+
+    rewriter.replaceOp(op, newQubitsOut);
     return success();
   }
 };
 
 } // namespace
-
-LogicalResult BarrierOp::verify() {
-  if (getQubitsIn().size() != getQubitsOut().size()) {
-    return emitOpError(
-        "number of input qubits must match the number of output qubits");
-  }
-  return success();
-}
 
 Value BarrierOp::getInputForOutput(Value output) {
   if (auto result = dyn_cast<OpResult>(output);
@@ -105,13 +112,8 @@ void BarrierOp::getCanonicalizationPatterns(RewritePatternSet& results,
   results.add<MergeSubsequentBarrier>(context);
 }
 
-bool BarrierOp::hasCompileTimeKnownUnitaryMatrix() {
-  return isModifierMatrixSizeSupported(getNumTargets());
-}
-
-std::optional<DynamicMatrix> BarrierOp::getUnitaryMatrix() {
-  if (!hasCompileTimeKnownUnitaryMatrix()) {
-    return std::nullopt;
-  }
-  return DynamicMatrix::identity(static_cast<int64_t>(1ULL << getNumTargets()));
+DynamicMatrix BarrierOp::getUnitaryMatrix() {
+  const auto numQubits = getQubitsIn().size();
+  return DynamicMatrix::identity(
+      static_cast<int64_t>(uint64_t{1} << numQubits));
 }

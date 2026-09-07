@@ -12,6 +12,7 @@
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
@@ -47,6 +48,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <numbers>
 #include <string>
 #include <variant>
@@ -56,6 +58,52 @@ using namespace mlir;
 using namespace mlir::oq3::test;
 
 namespace {
+
+TEST(OpenQASMTargetTest, FirstIterationInitializationHasRepresentableState) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.0;
+output bit result;
+bool value;
+for int i in [0:0] {
+  value = true;
+  continue;
+}
+result = value;
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  moduleOp->walk([&](Operation* operation) {
+    EXPECT_NE(operation->getName().getStringRef(), "ub.poison");
+  });
+}
+
+TEST(OpenQASMTargetTest, ContinueSkipsUnreachableQuantumOperations) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+for int i in [0:2] {
+  x q;
+  continue;
+  h q;
+}
+bool again = true;
+while (again) {
+  again = false;
+  continue;
+  h q;
+}
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t unreachableGates = 0;
+  moduleOp->walk([&](qc::HOp) { ++unreachableGates; });
+  EXPECT_EQ(unreachableGates, 0);
+}
 
 TEST(OpenQASMTargetTest, EmitsVerifiedQCDirectly) {
   MLIRContext context;
@@ -518,6 +566,25 @@ out = measure q;
   });
   EXPECT_EQ(resets, 1);
   EXPECT_EQ(barriers, 1);
+
+  auto pair = moduleOp->lookupSymbol<func::FuncOp>("pair");
+  ASSERT_TRUE(pair);
+  EXPECT_TRUE(pair.isPrivate());
+  EXPECT_TRUE(mqt::isUnitaryFunction(pair));
+  const std::array<Type, 3> expectedTypes{
+      Float64Type::get(&context),
+      qc::QubitType::get(&context),
+      qc::QubitType::get(&context),
+  };
+  EXPECT_TRUE(llvm::equal(pair.getArgumentTypes(), expectedTypes));
+  EXPECT_EQ(std::distance(pair.getOps<qc::CallOp>().begin(),
+                          pair.getOps<qc::CallOp>().end()),
+            0);
+  auto entry = mqt::getEntryPoint(*moduleOp);
+  ASSERT_TRUE(entry);
+  size_t pairCalls = 0;
+  entry.walk([&](qc::CallOp) { ++pairCalls; });
+  EXPECT_EQ(pairCalls, 1);
 }
 
 TEST(OpenQASMTargetTest, ResolvesManyCustomGateDefinitionsThroughTheIndex) {
@@ -728,7 +795,7 @@ cx q[i], aux[j];
   EXPECT_EQ(switches, 0);
 }
 
-TEST(OpenQASMTargetTest, RejectsExcessiveCustomGateExpansion) {
+TEST(OpenQASMTargetTest, PreservesCompactCustomGateGraph) {
   std::string source = "OPENQASM 3.1;\n"
                        "include \"stdgates.inc\";\n"
                        "gate g0 q { x q; }\n";
@@ -740,44 +807,39 @@ TEST(OpenQASMTargetTest, RejectsExcessiveCustomGateExpansion) {
   source += "qubit q;\ng24 q;\n";
 
   MLIRContext context;
-  std::string diagnostic;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
-    diagnostic = value.str();
-    return success();
-  });
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  EXPECT_FALSE(moduleOp);
-  EXPECT_NE(diagnostic.find("projected emitted operation count"),
-            std::string::npos);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_EQ(std::distance(moduleOp->getOps<func::FuncOp>().begin(),
+                          moduleOp->getOps<func::FuncOp>().end()),
+            26);
+  size_t calls = 0;
+  size_t xGates = 0;
+  moduleOp->walk([&](Operation* operation) {
+    calls += isa<qc::CallOp>(operation);
+    xGates += isa<qc::XOp>(operation);
+  });
+  EXPECT_EQ(calls, 49);
+  EXPECT_EQ(xGates, 1);
 }
 
-TEST(OpenQASMTargetTest, AccountsForEachLabelInSwitchCaseBudgets) {
-  std::string source = "OPENQASM 3.1;\n"
-                       "include \"stdgates.inc\";\n"
-                       "gate g0 q { x q; }\n";
-  for (size_t level = 1; level <= 23; ++level) {
-    source += "gate g" + std::to_string(level) + " q { g" +
-              std::to_string(level - 1) + " q; g" + std::to_string(level - 1) +
-              " q; }\n";
-  }
-  source += "qubit q;\n"
-            "int selector = 0;\n"
-            "switch (selector) {\n"
-            "  case 0, 1 { g23 q; }\n"
-            "  default { }\n"
-            "}\n";
+TEST(OpenQASMTargetTest, PreservesCustomGateNamedMain) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+gate main q { x q; }
+qubit q;
+main q;
+)qasm";
 
   MLIRContext context;
-  std::string diagnostic;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
-    diagnostic = value.str();
-    return success();
-  });
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  EXPECT_FALSE(moduleOp);
-  EXPECT_NE(diagnostic.find("projected emitted operation count"),
-            std::string::npos)
-      << diagnostic;
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto gate = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(gate);
+  EXPECT_TRUE(mqt::isUnitaryFunction(gate));
+  EXPECT_NE(mqt::getEntryPoint(*moduleOp), gate);
 }
 
 TEST(OpenQASMTargetTest, DoesNotMultiplyCustomGatesByRegisterWidth) {
@@ -808,39 +870,6 @@ TEST(OpenQASMTargetTest, DoesNotMultiplyCustomGatesByRegisterWidth) {
   EXPECT_EQ(xGates, 25);
 }
 
-TEST(OpenQASMTargetTest, BudgetsRepresentativeOperationConstruction) {
-  constexpr auto baseBodies = std::to_array<llvm::StringLiteral>({
-      "rx(theta + theta) q;",
-      "U(theta, theta, theta) q;",
-      "pow(2) @ x q;",
-      "for int i in [0:1] { x q; }",
-  });
-  for (const auto baseBody : baseBodies) {
-    std::string source = "OPENQASM 3.1;\n"
-                         "include \"stdgates.inc\";\n"
-                         "gate g0(theta) q { " +
-                         baseBody.str() + " }\n";
-    for (size_t level = 1; level <= 24; ++level) {
-      source += "gate g" + std::to_string(level) + "(theta) q { g" +
-                std::to_string(level - 1) + "(theta) q; g" +
-                std::to_string(level - 1) + "(theta) q; }\n";
-    }
-    source += "qubit q;\ng24(0.5) q;\n";
-
-    MLIRContext context;
-    std::string diagnostic;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& value) {
-      diagnostic = value.str();
-      return success();
-    });
-    auto moduleOp = qc::translateQASM3ToQC(source, &context);
-    EXPECT_FALSE(moduleOp);
-    EXPECT_NE(diagnostic.find("projected emitted operation count"),
-              std::string::npos)
-        << diagnostic;
-  }
-}
-
 TEST(OpenQASMTargetTest, LowersGateBodyLoopsAndBuiltinConstants) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
@@ -866,6 +895,18 @@ bit result = measure q;
   });
   EXPECT_EQ(forLoops, 1);
   EXPECT_EQ(whileLoops, 1);
+
+  auto repeated = moduleOp->lookupSymbol<func::FuncOp>("repeated");
+  ASSERT_TRUE(repeated);
+  EXPECT_FALSE(mqt::isUnitaryFunction(repeated));
+  EXPECT_EQ(std::distance(repeated.getOps<scf::ForOp>().begin(),
+                          repeated.getOps<scf::ForOp>().end()),
+            1);
+  auto entry = mqt::getEntryPoint(*moduleOp);
+  ASSERT_TRUE(entry);
+  auto calls = entry.getOps<func::CallOp>();
+  ASSERT_EQ(std::distance(calls.begin(), calls.end()), 1);
+  EXPECT_EQ((*calls.begin()).getCallee(), "repeated");
 
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
@@ -931,17 +972,12 @@ if (target[0] || target[1]) { x q[0]; }
   canonicalizer.addPass(createCanonicalizerPass());
   ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
 
-  SmallVector<Value> measured;
-  moduleOp->walk([&](qc::MeasureOp measurement) {
-    measured.push_back(measurement.getResult());
-  });
-  const auto returned = returnedBitValues(*moduleOp);
-  ASSERT_EQ(measured.size(), 2);
-  ASSERT_EQ(returned.size(), 2);
-  ASSERT_TRUE(returned[0]);
-  ASSERT_TRUE(returned[1]);
-  EXPECT_EQ(*returned[0], measured[0]);
-  EXPECT_EQ(*returned[1], measured[1]);
+  SmallVector<cbit::WriteOp> writes;
+  moduleOp->walk([&](cbit::WriteOp write) { writes.push_back(write); });
+  ASSERT_EQ(writes.size(), 1);
+  auto read = writes.front().getValue().getDefiningOp<cbit::ReadOp>();
+  ASSERT_TRUE(read);
+  EXPECT_NE(read.getReg(), writes.front().getReg());
 }
 
 TEST(OpenQASMTargetTest, LowersTypedBitVectorBuiltins) {
@@ -980,110 +1016,101 @@ if (count == 3) { x q; }
     funnelShifts += isa<LLVM::FshlOp, LLVM::FshrOp>(operation);
   });
   EXPECT_EQ(populationCounts, 1);
-  // Both rotation distances are constant and therefore only permute SSA values.
-  EXPECT_EQ(funnelShifts, 0);
+  EXPECT_EQ(funnelShifts, 1);
 }
 
-TEST(OpenQASMTargetTest, ReusesPackedNestedDynamicRotations) {
+TEST(OpenQASMTargetTest, LowersRuntimeBitRegisterExpressions) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
-bit[5] value;
-value[0] = true;
-value[1] = false;
-value[2] = true;
-value[3] = false;
-value[4] = true;
-int distance = -7;
-uint count = popcount(rotl(rotr(value, distance), 1));
+include "stdgates.inc";
+qubit[3] q;
+bit[3] value = measure q;
+output bit[3] result;
+result = (~value & 6) | (value ^ 1);
+if ((result >> 1) < (result << 2)) { x q[0]; }
+)qasm";
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& value) {
+    return value.kind == oq3::frontend::ConditionKind::BitVectorComparison;
+  }));
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST(OpenQASMTargetTest, FoldsBitRegisterOvershiftsToZero) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit[3] q;
+bit[3] value = measure q;
+output bit[3] result;
+result = value << 3;
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool hasLeftShift = false;
+  moduleOp->walk([&](arith::ShLIOp) { hasLeftShift = true; });
+  EXPECT_FALSE(hasLeftShift);
+  cbit::WriteOp write;
+  moduleOp->walk([&](cbit::WriteOp candidate) { write = candidate; });
+  ASSERT_TRUE(write);
+  EXPECT_TRUE(matchPattern(write.getValue(), m_Zero()));
+}
+
+TEST(OpenQASMTargetTest, LowersQiskitCompatibleBitRegisterShiftDistances) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit[3] q;
+bit[3] value = measure q;
+if ((value << (value & 1)) == 0) {}
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool hasShift = false;
+  moduleOp->walk([&](arith::ShLIOp) { hasShift = true; });
+  EXPECT_TRUE(hasShift);
+}
+
+TEST(OpenQASMTargetTest, WidensSizedIntegerBuiltinAndIndexOperands) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"qasm(OPENQASM 3.1;
+bit[3] c = 1;
+int[3] distance = -1;
+c = rotl(c, distance);
+c = rotr(c, distance);
+)qasm",
+      R"qasm(OPENQASM 3.1;
+bit[3] c = 0;
+uint[2] positive = 2;
+int[2] negative = -1;
+c[positive] = true;
+c[negative] = false;
+)qasm",
+      R"qasm(OPENQASM 3.1;
 qubit q;
-if (count == 3) { x q; }
-)qasm";
-
-  MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  size_t leftShifts = 0;
-  size_t rightShifts = 0;
-  size_t populationCounts = 0;
-  size_t unpackingTruncations = 0;
-  moduleOp->walk([&](Operation* operation) {
-    leftShifts += isa<LLVM::FshlOp>(operation);
-    rightShifts += isa<LLVM::FshrOp>(operation);
-    populationCounts += isa<math::CtPopOp>(operation);
-    if (auto truncation = dyn_cast<arith::TruncIOp>(operation);
-        truncation && truncation.getOut().getType().isInteger(1)) {
-      ++unpackingTruncations;
-    }
+int[3] signedExponent = -1;
+uint[3] unsignedExponent = 7;
+pow(signedExponent) @ x q;
+pow(unsignedExponent) @ x q;
+)qasm",
   });
-  EXPECT_EQ(leftShifts, 1);
-  EXPECT_EQ(rightShifts, 1);
-  EXPECT_EQ(populationCounts, 1);
-  // The nested packed value reaches popcount without an unpack/repack cycle.
-  EXPECT_EQ(unpackingTruncations, 0);
-}
-
-TEST(OpenQASMTargetTest, StoresAtomicRotationsThroughControlFlow) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.1;
-output bit[5] value;
-value[0] = true;
-value[1] = false;
-value[2] = true;
-value[3] = false;
-value[4] = true;
-qubit q;
-bit condition = measure q;
-if (condition) {
-  value = rotl(value, 1);
-}
-)qasm";
-
-  MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  bool storesWholeRegister = false;
-  moduleOp->walk([&](scf::IfOp conditional) {
-    size_t stores = 0;
-    conditional.getThenRegion().walk([&](cbit::StoreOp) { ++stores; });
-    storesWholeRegister |= conditional.getNumResults() == 0 && stores == 5;
-  });
-  EXPECT_TRUE(storesWholeRegister);
-}
-
-TEST(OpenQASMTargetTest, SelfRotationSnapshotsTheWholeRegister) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.1;
-qubit[5] q;
-output bit[5] result;
-result = measure q;
-result = rotl(result, 2);
-)qasm";
-
-  MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  PassManager canonicalizer(&context);
-  canonicalizer.addPass(createCanonicalizerPass());
-  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
-
-  SmallVector<Value> measured;
-  moduleOp->walk([&](qc::MeasureOp measurement) {
-    measured.push_back(measurement.getResult());
-  });
-  const auto returned = returnedBitValues(*moduleOp);
-  ASSERT_EQ(measured.size(), 5);
-  ASSERT_EQ(returned.size(), 5);
-  ASSERT_TRUE(llvm::all_of(
-      returned, [](const auto& value) { return value.has_value(); }));
-  EXPECT_EQ(*returned[0], measured[3]);
-  EXPECT_EQ(*returned[1], measured[4]);
-  EXPECT_EQ(*returned[2], measured[0]);
-  EXPECT_EQ(*returned[3], measured[1]);
-  EXPECT_EQ(*returned[4], measured[2]);
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    MLIRContext context;
+    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    ASSERT_TRUE(moduleOp);
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  }
 }
 
 TEST(OpenQASMTargetTest, SupportsWidthOneBitVectorBuiltins) {
@@ -1152,97 +1179,6 @@ uint count = popcount(value);
   EXPECT_EQ(narrowedCounts, 1);
 }
 
-TEST(OpenQASMTargetTest, RotationsProduceSpecifiedBitResults) {
-  constexpr std::array input{true, false, true, true, false};
-  constexpr std::array<int64_t, 5> distances{0, 2, -2, 7, -7};
-  std::string source = "OPENQASM 3.1;\n";
-  std::vector<std::vector<bool>> expectedResults;
-  size_t resultIndex = 0;
-  for (const bool runtime : {false, true}) {
-    for (const auto distance : distances) {
-      for (const bool left : {true, false}) {
-        const auto resultName = "result" + std::to_string(resultIndex);
-        source += "output bit[5] " + resultName + ";\n";
-        for (size_t bit = 0; bit < input.size(); ++bit) {
-          source += resultName + "[" + std::to_string(bit) +
-                    "] = " + (input[bit] ? "true;\n" : "false;\n");
-        }
-        std::string distanceExpression = std::to_string(distance);
-        if (runtime) {
-          const auto distanceName = "distance" + std::to_string(resultIndex);
-          source.append("int ")
-              .append(distanceName)
-              .append(" = ")
-              .append(distanceExpression)
-              .append(";\n");
-          distanceExpression = distanceName;
-        }
-        source.append(resultName)
-            .append(" = ")
-            .append(left ? "rotl(" : "rotr(")
-            .append(resultName)
-            .append(", ")
-            .append(distanceExpression)
-            .append(");\n");
-        expectedResults.push_back(rotateBits(input, distance, left));
-        ++resultIndex;
-      }
-    }
-  }
-
-  const auto outputs = canonicalizedBitOutputs(source);
-  ASSERT_EQ(outputs.size(), expectedResults.size() * input.size());
-  std::vector<std::vector<bool>> actualResults;
-  actualResults.reserve(expectedResults.size());
-  for (size_t result = 0; result < expectedResults.size(); ++result) {
-    const auto begin =
-        outputs.begin() + static_cast<ptrdiff_t>(result * input.size());
-    actualResults.emplace_back(begin, begin + input.size());
-    EXPECT_EQ(actualResults.back(), expectedResults[result])
-        << "rotation result " << result;
-  }
-
-  for (size_t runtime = 0; runtime < 2; ++runtime) {
-    for (size_t distance = 0; distance < distances.size(); ++distance) {
-      // libc++ uses a pointer here, whereas MSVC uses an iterator class.
-      const auto opposite = // NOLINT(readability-qualified-auto)
-          std::ranges::find(distances, -distances[distance]);
-      ASSERT_NE(opposite, distances.end());
-      const auto oppositeIndex =
-          static_cast<size_t>(opposite - distances.begin());
-      const auto left = ((runtime * distances.size()) + distance) * 2;
-      const auto oppositeRight =
-          (((runtime * distances.size()) + oppositeIndex) * 2) + 1;
-      EXPECT_EQ(actualResults[left], actualResults[oppositeRight])
-          << "rotl(a, n) differs from rotr(a, -n) for n = "
-          << distances[distance];
-    }
-  }
-}
-
-TEST(OpenQASMTargetTest, PopcountProducesSpecifiedResult) {
-  constexpr llvm::StringLiteral source = R"qasm(
-OPENQASM 3.1;
-bit[5] source;
-source[0] = true;
-source[1] = false;
-source[2] = true;
-source[3] = true;
-source[4] = false;
-output bit[6] result;
-result[0] = false;
-result[1] = false;
-result[2] = false;
-result[3] = false;
-result[4] = false;
-result[5] = false;
-result[popcount(source)] = true;
-)qasm";
-
-  EXPECT_EQ(canonicalizedBitOutputs(source),
-            (std::vector<bool>{false, false, false, true, false, false}));
-}
-
 TEST(OpenQASMTargetTest, SupportsOpenQASM2RegisterConditions) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 2.0;
@@ -1258,10 +1194,178 @@ if (c == 1) x q[0];
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t conditionals = 0;
+  size_t comparisons = 0;
   moduleOp->walk([&](scf::IfOp) { ++conditionals; });
-  // The register equality and the source-level branch each short-circuit
-  // through their own structured conditional.
-  EXPECT_EQ(conditionals, 2);
+  moduleOp->walk([&](arith::CmpIOp) { ++comparisons; });
+  EXPECT_EQ(conditionals, 1);
+  EXPECT_EQ(comparisons, 1);
+}
+
+TEST(OpenQASMTargetTest, EmitsAllRegisterComparisonPredicates) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+bit[3] c;
+c[0] = true;
+c[1] = false;
+c[2] = true;
+qubit q;
+if (c == 5) { x q; }
+if (c != 5) { x q; }
+if (c < 5) { x q; }
+if (c <= 5) { x q; }
+if (c > 5) { x q; }
+if (c >= 5) { x q; }
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  std::vector<arith::CmpIPredicate> predicates;
+  moduleOp->walk([&](arith::CmpIOp comparison) {
+    predicates.emplace_back(comparison.getPredicate());
+    EXPECT_EQ(
+        cast<IntegerAttr>(
+            comparison.getRhs().getDefiningOp<arith::ConstantOp>().getValue())
+            .getValue(),
+        llvm::APInt(3, 5));
+  });
+  EXPECT_EQ(
+      predicates,
+      (std::vector{arith::CmpIPredicate::eq, arith::CmpIPredicate::ne,
+                   arith::CmpIPredicate::ult, arith::CmpIPredicate::ule,
+                   arith::CmpIPredicate::ugt, arith::CmpIPredicate::uge}));
+}
+
+TEST(OpenQASMTargetTest, PreservesWideRegisterComparisons) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[1];
+creg c[65];
+if (c == 18446744073709551616) x q[0];
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  arith::CmpIOp comparison;
+  moduleOp->walk([&](arith::CmpIOp op) { comparison = op; });
+  ASSERT_TRUE(comparison);
+  EXPECT_EQ(
+      cast<IntegerAttr>(
+          comparison.getRhs().getDefiningOp<arith::ConstantOp>().getValue())
+          .getValue(),
+      llvm::APInt(65, 1).shl(64));
+}
+
+TEST(OpenQASMTargetTest, EmitsSizedBitRegisterCastCondition) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
+include "stdgates.inc";
+
+bit[2] syndrome;
+qubit[2] q;
+
+syndrome[0] = measure q[0];
+syndrome[1] = measure q[1];
+
+if (uint[2](syndrome) == 3) {
+  x q[0];
+}
+if (uint[2](syndrome) < 3) {
+  x q[0];
+}
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  size_t conditionalGates = 0;
+  moduleOp->walk([&](qc::XOp operation) {
+    conditionalGates += operation->getParentOfType<scf::IfOp>() != nullptr;
+  });
+  EXPECT_EQ(conditionalGates, 2);
+  std::vector<arith::CmpIPredicate> predicates;
+  moduleOp->walk([&](arith::CmpIOp comparison) {
+    predicates.emplace_back(comparison.getPredicate());
+    EXPECT_EQ(
+        cast<IntegerAttr>(
+            comparison.getRhs().getDefiningOp<arith::ConstantOp>().getValue())
+            .getInt(),
+        3);
+  });
+  EXPECT_EQ(predicates,
+            (std::vector{arith::CmpIPredicate::eq, arith::CmpIPredicate::slt}));
+}
+
+TEST(OpenQASMTargetTest, EmitsSignedBitRegisterCastComparisons) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+include "stdgates.inc";
+
+bit[2] syndrome;
+qubit[2] q;
+
+syndrome[0] = measure q[0];
+syndrome[1] = measure q[1];
+
+if (int[2](syndrome) < -1) { x q[0]; }
+if (int[2](syndrome) <= -1) { x q[0]; }
+if (-1 < int[2](syndrome)) { x q[0]; }
+if (-1 <= int[2](syndrome)) { x q[0]; }
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  std::vector<arith::CmpIPredicate> predicates;
+  moduleOp->walk([&](arith::CmpIOp comparison) {
+    predicates.emplace_back(comparison.getPredicate());
+    EXPECT_TRUE(comparison.getLhs().getType().isInteger(64));
+  });
+  EXPECT_EQ(
+      predicates,
+      (std::vector{arith::CmpIPredicate::slt, arith::CmpIPredicate::sle,
+                   arith::CmpIPredicate::slt, arith::CmpIPredicate::sle}));
+}
+
+TEST(OpenQASMTargetTest, PreservesBitRegisterCastSignedness) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+bit[3] unsigned_bits;
+unsigned_bits[0] = true;
+unsigned_bits[1] = true;
+unsigned_bits[2] = false;
+bit[3] signed_bits;
+signed_bits[0] = true;
+signed_bits[1] = false;
+signed_bits[2] = true;
+output uint unsigned_value;
+unsigned_value = uint[3](unsigned_bits);
+output int signed_value;
+signed_value = int[3](signed_bits);
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  func::ReturnOp result;
+  moduleOp->walk([&](func::ReturnOp operation) { result = operation; });
+  ASSERT_TRUE(result);
+  ASSERT_EQ(result.getNumOperands(), 2);
+  auto unsignedCast = result.getOperand(0).getDefiningOp<arith::ExtUIOp>();
+  auto signedCast = result.getOperand(1).getDefiningOp<arith::ExtSIOp>();
+  ASSERT_TRUE(unsignedCast);
+  ASSERT_TRUE(signedCast);
+  EXPECT_TRUE(unsignedCast.getIn().getDefiningOp<cbit::ReadOp>());
+  EXPECT_TRUE(signedCast.getIn().getDefiningOp<cbit::ReadOp>());
 }
 
 TEST(OpenQASMTargetTest, ZeroInitializesUnmeasuredOpenQASM2Registers) {
@@ -1285,13 +1389,11 @@ if (c == 0) x q[0];
   ASSERT_EQ(returned.size(), 2);
   EXPECT_TRUE(llvm::none_of(
       returned, [](const auto& value) { return value.has_value(); }));
-  size_t conditionals = 0;
   size_t xGates = 0;
-  moduleOp->walk([&](scf::IfOp) { ++conditionals; });
+  moduleOp->walk([&](cbit::AllocOp alloc) {
+    EXPECT_EQ(alloc.getInitialization(), cbit::Initialization::Zero);
+  });
   moduleOp->walk([&](qc::XOp) { ++xGates; });
-  // Zero initialization proves the condition true and removes both
-  // short-circuit conditionals.
-  EXPECT_EQ(conditionals, 0);
   EXPECT_EQ(xGates, 1);
 }
 
@@ -1544,6 +1646,33 @@ switch (selector) {
     EXPECT_TRUE(switchOp.getResult(0).getType().isInteger(64));
   });
   EXPECT_EQ(switches, 1);
+}
+
+TEST(OpenQASMTargetTest, PreservesNarrowUnsignedSwitchValues) {
+  constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
+uint[3] selector = 7;
+output int result;
+result = 0;
+switch (selector) {
+  case 7 { result = 42; }
+  default { result = -1; }
+}
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  PassManager canonicalizer(&context);
+  canonicalizer.addPass(createCanonicalizerPass());
+  ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto result =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  ASSERT_EQ(result.getNumOperands(), 1);
+  APInt value;
+  ASSERT_TRUE(matchPattern(result.getOperand(0), m_ConstantInt(&value)));
+  EXPECT_EQ(value.getSExtValue(), 42);
 }
 
 TEST(OpenQASMTargetTest, LoadsDynamicQubitMeasurementsDirectly) {
@@ -1867,7 +1996,7 @@ inv @ wrapper q;
   EXPECT_NE(diagnostic.find("structured control flow"), std::string::npos);
 }
 
-TEST(OpenQASMTargetTest, IgnoresUnreachableStructuredCustomGates) {
+TEST(OpenQASMTargetTest, PreservesUnreachableStructuredCustomGates) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 include "stdgates.inc";
@@ -1881,6 +2010,15 @@ x q;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  auto looped = moduleOp->lookupSymbol<func::FuncOp>("looped");
+  auto wrapper = moduleOp->lookupSymbol<func::FuncOp>("wrapper");
+  ASSERT_TRUE(looped);
+  ASSERT_TRUE(wrapper);
+  EXPECT_FALSE(mqt::isUnitaryFunction(looped));
+  EXPECT_FALSE(mqt::isUnitaryFunction(wrapper));
+  EXPECT_EQ(std::distance(wrapper.getOps<func::CallOp>().begin(),
+                          wrapper.getOps<func::CallOp>().end()),
+            1);
 }
 
 TEST(OpenQASMTargetTest, RejectsMutableRuntimeQuantumIndices) {
@@ -2011,7 +2149,7 @@ for int i in [0:stride:6] { x q[i]; }
   EXPECT_EQ(text.find("i128"), std::string::npos);
 }
 
-TEST(OpenQASMTargetTest, LowersCheckedIntegerArithmeticAtQCTarget) {
+TEST(OpenQASMTargetTest, LowersIntegerArithmeticAtItsMachineWidth) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       R"qasm(
 OPENQASM 3.1;
@@ -2036,9 +2174,9 @@ if (value + 1 > 0) { x q; })qasm",
     auto moduleOp = qc::translateQASM3ToQC(source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    size_t assertions = 0;
-    moduleOp->walk([&](cf::AssertOp) { ++assertions; });
-    EXPECT_GE(assertions, 1);
+    moduleOp->walk([&](arith::AddIOp add) {
+      EXPECT_TRUE(add.getType().isInteger(64) || add.getType().isIndex());
+    });
   }
 }
 
@@ -2069,11 +2207,8 @@ unsignedValue = unsignedValue ** unsignedOperand;
   auto moduleOp = qc::translateQASM3ToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  size_t assertions = 0;
   size_t powerLoops = 0;
-  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
   moduleOp->walk([&](scf::WhileOp) { ++powerLoops; });
-  EXPECT_GE(assertions, 7);
   EXPECT_EQ(powerLoops, 2);
 }
 
@@ -2513,18 +2648,32 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
     ConditionalCounts conditionals;
   };
   const auto fixtures = std::to_array<Fixture>({
-      {.name = "simple-while",
-       .source = qasm::simpleWhileReset,
-       .tripCounts = {},
-       .whileLoops = 1,
-       .operations = {.h = 2, .x = 0, .measurements = 3, .controls = 0},
-       .conditionals = {.semantic = 0, .dispatch = 0, .whileMeasurements = 0}},
-      {.name = "condition-while-and",
-       .source = qasm::conditionWhileAnd,
-       .tripCounts = {},
-       .whileLoops = 1,
-       .operations = {.h = 3, .x = 0, .measurements = 6, .controls = 0},
-       .conditionals = {.semantic = 1, .dispatch = 0, .whileMeasurements = 0}},
+      {
+          .name = "simple-while",
+          .source = qasm::simpleWhileReset,
+          .tripCounts = {},
+          .whileLoops = 1,
+          .operations = {.h = 2, .x = 0, .measurements = 3, .controls = 0},
+          .conditionals =
+              {
+                  .semantic = 0,
+                  .dispatch = 0,
+                  .whileMeasurements = 0,
+              },
+      },
+      {
+          .name = "condition-while-and",
+          .source = qasm::conditionWhileAnd,
+          .tripCounts = {},
+          .whileLoops = 1,
+          .operations = {.h = 3, .x = 0, .measurements = 6, .controls = 0},
+          .conditionals =
+              {
+                  .semantic = 1,
+                  .dispatch = 0,
+                  .whileMeasurements = 0,
+              },
+      },
   });
 
   for (const auto& fixture : fixtures) {

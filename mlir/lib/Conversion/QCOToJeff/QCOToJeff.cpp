@@ -19,6 +19,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mlir/Support/IntegerExpressions.h"
 
 #include <jeff/Conversion/NativeToJeff/NativeToJeff.h>
 #include <jeff/IR/JeffDialect.h>
@@ -26,8 +27,11 @@
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -38,16 +42,15 @@
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
-#include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
+#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/RegionUtils.h>
 
 #include <cassert>
@@ -72,9 +75,9 @@ namespace {
 
 /** @brief Qubit allocation mode */
 enum class AllocationMode : std::uint8_t {
-  Unset,  //!< No allocation mode has been established yet.
-  Static, //!< The module uses static qubit allocation.
-  Dynamic //!< The module uses dynamic qubit allocation.
+  Unset,   //!< No allocation mode has been established yet.
+  Static,  //!< The module uses static qubit allocation.
+  Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
 /// Tracks the current jeff array value for each mutable CBit register.
@@ -140,9 +143,9 @@ public:
   /// Records source register operands before dialect conversion remaps them.
   void recordRegisterUses(Operation* root) {
     root->walk([&](Operation* operation) {
-      if (isa<cbit::LoadOp>(operation)) {
+      if (isa<cbit::LoadOp, cbit::ReadOp>(operation)) {
         operationRegisters[operation] = operation->getOperand(0);
-      } else if (isa<cbit::StoreOp>(operation)) {
+      } else if (isa<cbit::StoreOp, cbit::WriteOp>(operation)) {
         operationRegisters[operation] = operation->getOperand(1);
       }
     });
@@ -205,83 +208,6 @@ struct LoweringState {
         "cannot mix static and dynamic qubit allocation modes in QCO program");
   }
 };
-
-} // namespace
-
-[[nodiscard]] static LogicalResult validateQCOToJeffInput(ModuleOp module) {
-  auto entryPoint = mqt::getEntryPoint(module);
-  if (!entryPoint) {
-    module.emitError(
-        "qco-to-jeff requires a program entry function marked with "
-        "mqt.entry_point");
-    return failure();
-  }
-  if (entryPoint.isExternal() || !entryPoint.getBody().hasOneBlock() ||
-      !isa<func::ReturnOp>(entryPoint.getBody().front().getTerminator())) {
-    entryPoint.emitError(
-        "qco-to-jeff requires a defined, single-block entry function ending "
-        "in func.return");
-    return failure();
-  }
-
-  Operation* staticAllocation = nullptr;
-  Operation* dynamicAllocation = nullptr;
-  bool invalid = false;
-  const auto validateType = [&](Type type, Operation* owner) {
-    const auto tensor = dyn_cast<RankedTensorType>(type);
-    if (tensor && isa<QubitType>(tensor.getElementType()) &&
-        tensor.getRank() != 1) {
-      owner->emitError("qco-to-jeff only supports rank-one qco.qubit tensors");
-      invalid = true;
-    }
-  };
-  module.walk([&](Operation* operation) {
-    if (isa<StaticOp>(operation)) {
-      staticAllocation = operation;
-    } else if (isa<AllocOp, qtensor::AllocOp>(operation)) {
-      dynamicAllocation = operation;
-    }
-    if (auto control = dyn_cast<CtrlOp>(operation);
-        control &&
-        control.getNumControls() > std::numeric_limits<uint8_t>::max()) {
-      control.emitError(
-          "qco-to-jeff supports at most 255 controls on one operation");
-      invalid = true;
-    }
-    for (const Type type : operation->getOperandTypes()) {
-      validateType(type, operation);
-    }
-    for (const Type type : operation->getResultTypes()) {
-      validateType(type, operation);
-    }
-    if (auto function = dyn_cast<FunctionOpInterface>(operation)) {
-      for (const Type type : function.getArgumentTypes()) {
-        validateType(type, operation);
-      }
-      for (const Type type : function.getResultTypes()) {
-        validateType(type, operation);
-      }
-    }
-    for (Region& region : operation->getRegions()) {
-      for (Block& block : region) {
-        for (BlockArgument argument : block.getArguments()) {
-          validateType(argument.getType(), operation);
-        }
-      }
-    }
-  });
-  if (invalid) {
-    return failure();
-  }
-  if (staticAllocation != nullptr && dynamicAllocation != nullptr) {
-    dynamicAllocation->emitError(
-        "qco-to-jeff cannot mix static and dynamic qubit allocations");
-    return failure();
-  }
-  return success();
-}
-
-namespace {
 
 /**
  * @brief Base class for conversion patterns that need access to the
@@ -550,19 +476,22 @@ static LogicalResult cleanUp(ModuleOp moduleOp, LoweringState& state) {
   }
 
   std::optional<uint16_t> entryPoint;
-  uint64_t functionIndex = 0;
-  for (auto funcOp : moduleOp.getOps<func::FuncOp>()) {
-    if (funcOp.getSymName() == state.entryPointName) {
-      if (functionIndex > std::numeric_limits<uint16_t>::max()) {
-        return failure();
-      }
-      entryPoint = static_cast<uint16_t>(functionIndex);
+  for (auto [index, function] :
+       llvm::enumerate(moduleOp.getOps<func::FuncOp>())) {
+    if (index > std::numeric_limits<uint16_t>::max()) {
+      return moduleOp.emitError(
+          "too many functions for the jeff function table");
     }
-    state.strings.emplace_back(funcOp.getSymName());
-    ++functionIndex;
+    state.strings.emplace_back(function.getSymName());
+    if (function.getSymName() == state.entryPointName) {
+      entryPoint = static_cast<uint16_t>(index);
+    }
   }
   if (!entryPoint) {
     return failure();
+  }
+  if (state.strings.size() > size_t{std::numeric_limits<uint16_t>::max()} + 1) {
+    return moduleOp.emitError("too many strings for the jeff string table");
   }
 
   OpBuilder builder(moduleOp.getContext());
@@ -597,6 +526,16 @@ static LogicalResult moveRegion(Region& source, Region& dest,
                                 const TypeConverter* typeConverter,
                                 const SetVector<Value>& aboveValues,
                                 LoweringState& state) {
+  if (source.empty()) {
+    auto* block = &dest.emplaceBlock();
+    for (auto value : aboveValues) {
+      block->addArgument(typeConverter->convertType(value.getType()),
+                         value.getLoc());
+    }
+    rewriter.setInsertionPointToEnd(block);
+    jeff::YieldOp::create(rewriter, dest.getLoc(), block->getArguments());
+    return success();
+  }
   auto* oldBlock = &source.back();
   auto* newBlock = &dest.emplaceBlock();
   rewriter.setInsertionPointToEnd(newBlock);
@@ -709,6 +648,463 @@ struct ConvertCBitLoadOpToJeff final
     array = rewriter.getRemappedValue(array);
     rewriter.replaceOpWithNewOp<jeff::IntArrayGetIndexOp>(
         op, op.getType(), array, adaptor.getIndex());
+    return success();
+  }
+};
+
+} // namespace
+
+/// Integer representation limits belong to this backend, not QC/QCO.
+static unsigned nativeIntegerWidth(unsigned width) {
+  for (const unsigned candidate : {1U, 8U, 16U, 32U, 64U}) {
+    if (width <= candidate) {
+      return candidate;
+    }
+  }
+  return 0;
+}
+
+static Value integerConstant(OpBuilder& builder, Location loc, IntegerType type,
+                             const APInt& value) {
+  auto attribute =
+      builder.getIntegerAttr(type, value.zextOrTrunc(type.getWidth()));
+  switch (type.getWidth()) {
+  case 1:
+    return {jeff::IntConst1Op::create(builder, loc, attribute)};
+  case 8:
+    return {jeff::IntConst8Op::create(builder, loc, attribute)};
+  case 16:
+    return {jeff::IntConst16Op::create(builder, loc, attribute)};
+  case 32:
+    return {jeff::IntConst32Op::create(builder, loc, attribute)};
+  case 64:
+    return {jeff::IntConst64Op::create(builder, loc, attribute)};
+  default:
+    llvm_unreachable("unsupported jeff integer width");
+  }
+}
+
+static Value selectInteger(OpBuilder& builder, Location loc, Value condition,
+                           Value trueValue, Value falseValue) {
+  /// The current serializer infers result types from the input signature.
+  /// Carry one difference value and yield either that value or zero.
+  auto difference = jeff::IntBinaryOp::create(
+      builder, loc, trueValue, falseValue, jeff::IntBinaryOperation::_xor);
+  auto select =
+      jeff::SwitchOp::create(builder, loc, TypeRange{trueValue.getType()},
+                             condition, ValueRange{difference}, 2);
+  {
+    OpBuilder::InsertionGuard guard(builder);
+    for (auto& region : select->getRegions()) {
+      auto* block = builder.createBlock(&region, {},
+                                        TypeRange{trueValue.getType()}, {loc});
+      Value result = block->getArgument(0);
+      if (&region != &select.getBranches()[1]) {
+        auto type = cast<IntegerType>(trueValue.getType());
+        result = integerConstant(builder, loc, type, APInt(type.getWidth(), 0));
+      }
+      jeff::YieldOp::create(builder, loc, result);
+    }
+  }
+  return jeff::IntBinaryOp::create(builder, loc, select.getResult(0),
+                                   falseValue, jeff::IntBinaryOperation::_xor);
+}
+
+static Value maskInteger(OpBuilder& builder, Location loc, Value value,
+                         unsigned width) {
+  auto type = cast<IntegerType>(value.getType());
+  if (width == type.getWidth()) {
+    return value;
+  }
+  auto mask = integerConstant(builder, loc, type,
+                              APInt::getLowBitsSet(type.getWidth(), width));
+  return jeff::IntBinaryOp::create(builder, loc, value, mask,
+                                   jeff::IntBinaryOperation::_and);
+}
+
+/// Extend the sign bit in a promoted representation using (x xor sign) - sign.
+static Value signedInteger(OpBuilder& builder, Location loc, Value value,
+                           unsigned width) {
+  auto type = cast<IntegerType>(value.getType());
+  if (width == type.getWidth()) {
+    return value;
+  }
+  auto sign = integerConstant(builder, loc, type,
+                              APInt::getOneBitSet(type.getWidth(), width - 1));
+  auto biased = jeff::IntBinaryOp::create(builder, loc, value, sign,
+                                          jeff::IntBinaryOperation::_xor);
+  return jeff::IntBinaryOp::create(builder, loc, biased, sign,
+                                   jeff::IntBinaryOperation::_sub);
+}
+
+/// Keep reconstructed integers shallow enough for expression-based exporters.
+static Value joinBits(OpBuilder& builder, Location loc,
+                      SmallVector<Value> bits) {
+  while (bits.size() > 1) {
+    size_t output = 0;
+    for (size_t input = 0; input < bits.size(); input += 2) {
+      bits[output++] = input + 1 == bits.size()
+                           ? bits[input]
+                           : jeff::IntBinaryOp::create(
+                                 builder, loc, bits[input], bits[input + 1],
+                                 jeff::IntBinaryOperation::_or)
+                                 .getResult();
+    }
+    bits.resize(output);
+  }
+  return bits.front();
+}
+
+/// jeff has no integer cast: extract at most 64 bits into the target
+/// representation.
+static Value castInteger(OpBuilder& builder, Location loc, Value value,
+                         unsigned sourceWidth, IntegerType targetType,
+                         unsigned targetWidth, bool signExtend) {
+  auto sourceType = cast<IntegerType>(value.getType());
+  Value result = value;
+  if (sourceType != targetType) {
+    SmallVector<Value> bits;
+    auto zero = integerConstant(builder, loc, sourceType,
+                                APInt(sourceType.getWidth(), 0));
+    for (unsigned bit = 0; bit < std::min(sourceWidth, targetWidth); ++bit) {
+      auto mask =
+          integerConstant(builder, loc, sourceType,
+                          APInt::getOneBitSet(sourceType.getWidth(), bit));
+      auto masked = jeff::IntBinaryOp::create(builder, loc, value, mask,
+                                              jeff::IntBinaryOperation::_and);
+      auto isZero = jeff::IntComparisonOp::create(
+          builder, loc, masked, zero, jeff::IntComparisonOperation::_eq);
+      auto targetBit =
+          integerConstant(builder, loc, targetType,
+                          APInt::getOneBitSet(targetType.getWidth(), bit));
+      auto selected =
+          selectInteger(builder, loc, isZero,
+                        integerConstant(builder, loc, targetType,
+                                        APInt(targetType.getWidth(), 0)),
+                        targetBit);
+      bits.push_back(selected);
+    }
+    result = joinBits(builder, loc, std::move(bits));
+  }
+  if (signExtend && targetWidth > sourceWidth) {
+    result = signedInteger(builder, loc, result, sourceWidth);
+  }
+  return maskInteger(builder, loc, result, targetWidth);
+}
+
+namespace {
+
+struct ConvertCBitReadOpToJeff final
+    : StatefulOpConversionPattern<cbit::ReadOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+  LogicalResult
+  matchAndRewrite(cbit::ReadOp op, OpAdaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto width = op.getType().getWidth();
+    if (width > 64) {
+      return op.emitError(
+          "jeff supports general integer expressions only up to 64 bits");
+    }
+    auto& state = getState().cbitState;
+    auto reg = state.resolveRegisterUse(op, op.getReg());
+    auto array = state.getCurrentValue(reg, op);
+    if (!array) {
+      return rewriter.notifyMatchFailure(op, "unknown classical register");
+    }
+    array = rewriter.getRemappedValue(array);
+    auto type =
+        cast<IntegerType>(getTypeConverter()->convertType(op.getType()));
+    auto zero =
+        integerConstant(rewriter, op.getLoc(), type, APInt(type.getWidth(), 0));
+    SmallVector<Value> bits;
+    for (unsigned bit = 0; bit < width; ++bit) {
+      auto index = integerConstant(rewriter, op.getLoc(), rewriter.getI32Type(),
+                                   APInt(32, bit));
+      auto value = jeff::IntArrayGetIndexOp::create(
+          rewriter, op.getLoc(), rewriter.getI1Type(), array, index);
+      Value selected = value;
+      if (width != 1) {
+        auto mask = integerConstant(rewriter, op.getLoc(), type,
+                                    APInt::getOneBitSet(type.getWidth(), bit));
+        selected = selectInteger(rewriter, op.getLoc(), value, mask, zero);
+      }
+      bits.push_back(selected);
+    }
+    rewriter.replaceOp(op, joinBits(rewriter, op.getLoc(), std::move(bits)));
+    return success();
+  }
+};
+
+struct ConvertCBitWriteOpToJeff final
+    : StatefulOpConversionPattern<cbit::WriteOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+  LogicalResult
+  matchAndRewrite(cbit::WriteOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto width = op.getValue().getType().getWidth();
+    if (width > 64) {
+      return op.emitError(
+          "jeff supports general integer expressions only up to 64 bits");
+    }
+    auto& state = getState().cbitState;
+    auto reg = state.resolveRegisterUse(op, op.getReg());
+    auto array = state.getCurrentValue(reg, op);
+    if (!array) {
+      return rewriter.notifyMatchFailure(op, "unknown classical register");
+    }
+    array = rewriter.getRemappedValue(array);
+    auto value = adaptor.getValue();
+    auto type = cast<IntegerType>(value.getType());
+    auto zero =
+        integerConstant(rewriter, op.getLoc(), type, APInt(type.getWidth(), 0));
+    for (unsigned bit = 0; bit < width; ++bit) {
+      auto mask = integerConstant(rewriter, op.getLoc(), type,
+                                  APInt::getOneBitSet(type.getWidth(), bit));
+      auto masked = jeff::IntBinaryOp::create(
+          rewriter, op.getLoc(), value, mask, jeff::IntBinaryOperation::_and);
+      auto isZero =
+          jeff::IntComparisonOp::create(rewriter, op.getLoc(), masked, zero,
+                                        jeff::IntComparisonOperation::_eq);
+      auto one = integerConstant(rewriter, op.getLoc(), rewriter.getI1Type(),
+                                 APInt(1, 1));
+      auto selected = jeff::IntBinaryOp::create(
+          rewriter, op.getLoc(), isZero, one, jeff::IntBinaryOperation::_xor);
+      auto index = integerConstant(rewriter, op.getLoc(), rewriter.getI32Type(),
+                                   APInt(32, bit));
+      array = jeff::IntArraySetIndexOp::create(
+          rewriter, op.getLoc(), array.getType(), array, index, selected);
+    }
+    state.setCurrentValue(reg, array, op);
+    state.addAlias(array, reg);
+    rewriter.eraseOp(op);
+    return success();
+  }
+};
+
+/// Override the dependency adapter for exact-width integer computations.
+struct ConvertIntegerExpression final : ConversionPattern {
+  ConvertIntegerExpression(TypeConverter& converter, MLIRContext* context)
+      : ConversionPattern(converter, MatchAnyOpTypeTag(), 10, context) {}
+  LogicalResult
+  matchAndRewrite(Operation* op, ArrayRef<Value> operands,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (op->getNumResults() != 1 ||
+        !isa<IntegerType>(op->getResult(0).getType()) ||
+        op->getName().getDialectNamespace() != "arith") {
+      return failure();
+    }
+    auto originalType = cast<IntegerType>(op->getResult(0).getType());
+    auto width = originalType.getWidth();
+    if (width > 64) {
+      return op->emitError(
+          "jeff supports general integer expressions only up to 64 bits");
+    }
+    auto type =
+        cast<IntegerType>(getTypeConverter()->convertType(originalType));
+    auto loc = op->getLoc();
+    if (auto constant = dyn_cast<arith::ConstantOp>(op)) {
+      rewriter.replaceOp(
+          op,
+          integerConstant(rewriter, loc, type,
+                          cast<IntegerAttr>(constant.getValue()).getValue()));
+      return success();
+    }
+    if (isa<arith::ExtUIOp, arith::ExtSIOp, arith::TruncIOp>(op)) {
+      rewriter.replaceOp(
+          op,
+          castInteger(rewriter, loc, operands[0],
+                      cast<IntegerType>(op->getOperand(0).getType()).getWidth(),
+                      type, width, isa<arith::ExtSIOp>(op)));
+      return success();
+    }
+    if (isa<arith::SelectOp>(op)) {
+      rewriter.replaceOp(op, selectInteger(rewriter, loc, operands[0],
+                                           operands[1], operands[2]));
+      return success();
+    }
+    if (auto comparison = dyn_cast<arith::CmpIOp>(op)) {
+      auto lhs = operands[0];
+      auto rhs = operands[1];
+      auto predicate = comparison.getPredicate();
+      const auto unsignedPredicate = mqt::unsignedPredicate(predicate);
+      if (unsignedPredicate != predicate) {
+        auto operandType = cast<IntegerType>(lhs.getType());
+        auto sourceType = dyn_cast<IntegerType>(comparison.getLhs().getType());
+        auto sourceWidth =
+            sourceType ? sourceType.getWidth() : operandType.getWidth();
+        auto sign = integerConstant(
+            rewriter, loc, operandType,
+            APInt::getOneBitSet(operandType.getWidth(), sourceWidth - 1));
+        lhs = jeff::IntBinaryOp::create(rewriter, loc, lhs, sign,
+                                        jeff::IntBinaryOperation::_xor);
+        rhs = jeff::IntBinaryOp::create(rewriter, loc, rhs, sign,
+                                        jeff::IntBinaryOperation::_xor);
+      }
+      predicate = unsignedPredicate;
+      if (predicate == arith::CmpIPredicate::ugt ||
+          predicate == arith::CmpIPredicate::uge) {
+        std::swap(lhs, rhs);
+      }
+      auto operation = predicate == arith::CmpIPredicate::eq ||
+                               predicate == arith::CmpIPredicate::ne
+                           ? jeff::IntComparisonOperation::_eq
+                       : predicate == arith::CmpIPredicate::ult ||
+                               predicate == arith::CmpIPredicate::ugt
+                           ? jeff::IntComparisonOperation::_ltU
+                           : jeff::IntComparisonOperation::_lteU;
+      Value result =
+          jeff::IntComparisonOp::create(rewriter, loc, lhs, rhs, operation);
+      if (predicate == arith::CmpIPredicate::ne) {
+        result = jeff::IntBinaryOp::create(
+            rewriter, loc, result,
+            integerConstant(rewriter, loc, type, APInt(1, 1)),
+            jeff::IntBinaryOperation::_xor);
+      }
+      rewriter.replaceOp(op, result);
+      return success();
+    }
+    auto operation =
+        llvm::StringSwitch<std::optional<jeff::IntBinaryOperation>>(
+            op->getName().getStringRef())
+            .Case("arith.addi", jeff::IntBinaryOperation::_add)
+            .Case("arith.subi", jeff::IntBinaryOperation::_sub)
+            .Case("arith.muli", jeff::IntBinaryOperation::_mul)
+            .Case("arith.divui", jeff::IntBinaryOperation::_divU)
+            .Case("arith.divsi", jeff::IntBinaryOperation::_divS)
+            .Case("arith.remui", jeff::IntBinaryOperation::_remU)
+            .Case("arith.remsi", jeff::IntBinaryOperation::_remS)
+            .Case("arith.minsi", jeff::IntBinaryOperation::_minS)
+            .Case("arith.maxsi", jeff::IntBinaryOperation::_maxS)
+            .Case("arith.andi", jeff::IntBinaryOperation::_and)
+            .Case("arith.ori", jeff::IntBinaryOperation::_or)
+            .Case("arith.xori", jeff::IntBinaryOperation::_xor)
+            .Case("arith.shli", jeff::IntBinaryOperation::_shl)
+            .Cases({"arith.shrui", "arith.shrsi"},
+                   jeff::IntBinaryOperation::_shr)
+            .Default(std::nullopt);
+    if (!operation) {
+      return failure();
+    }
+    auto lhs = operands[0];
+    auto rhs = operands[1];
+    if (isa<arith::DivSIOp, arith::RemSIOp, arith::MinSIOp, arith::MaxSIOp>(
+            op)) {
+      lhs = signedInteger(rewriter, loc, lhs, width);
+      rhs = signedInteger(rewriter, loc, rhs, width);
+    }
+    Value result =
+        jeff::IntBinaryOp::create(rewriter, loc, lhs, rhs, *operation);
+    if (isa<arith::ShRSIOp>(op)) {
+      auto sign = integerConstant(
+          rewriter, loc, type, APInt::getOneBitSet(type.getWidth(), width - 1));
+      auto signBit = jeff::IntBinaryOp::create(rewriter, loc, lhs, sign,
+                                               jeff::IntBinaryOperation::_and);
+      auto zero =
+          integerConstant(rewriter, loc, type, APInt(type.getWidth(), 0));
+      auto nonnegative = jeff::IntComparisonOp::create(
+          rewriter, loc, signBit, zero, jeff::IntComparisonOperation::_eq);
+      auto ones = integerConstant(rewriter, loc, type,
+                                  APInt::getLowBitsSet(type.getWidth(), width));
+      auto shiftedMask = jeff::IntBinaryOp::create(
+          rewriter, loc, ones, rhs, jeff::IntBinaryOperation::_shr);
+      auto fill = jeff::IntBinaryOp::create(rewriter, loc, ones, shiftedMask,
+                                            jeff::IntBinaryOperation::_xor);
+      auto selected = selectInteger(rewriter, loc, nonnegative, zero, fill);
+      result = jeff::IntBinaryOp::create(rewriter, loc, result, selected,
+                                         jeff::IntBinaryOperation::_or);
+    }
+    rewriter.replaceOp(op, maskInteger(rewriter, loc, result, width));
+    return success();
+  }
+};
+
+} // namespace
+
+static Value
+buildBitComparison(OpBuilder& builder, const Location location,
+                   const arith::CmpIPredicate predicate, const llvm::APInt& rhs,
+                   const llvm::function_ref<Value(int64_t)> loadBit) {
+  const auto encodedPredicate = mqt::unsignedPredicate(predicate);
+  auto encodedRhs = rhs;
+  const bool biasSignBit = encodedPredicate != predicate;
+  if (biasSignBit) {
+    encodedRhs.flipBit(encodedRhs.getBitWidth() - 1U);
+  }
+
+  auto one = arith::ConstantIntOp::create(builder, location, 1, 1);
+  Value equal = one;
+  Value less;
+  if (encodedPredicate != arith::CmpIPredicate::eq &&
+      encodedPredicate != arith::CmpIPredicate::ne) {
+    less = arith::ConstantIntOp::create(builder, location, 0, 1);
+  }
+  for (int64_t index = static_cast<int64_t>(encodedRhs.getBitWidth()) - 1;
+       index >= 0; --index) {
+    auto bit = loadBit(index);
+    if (biasSignBit &&
+        index == static_cast<int64_t>(encodedRhs.getBitWidth()) - 1) {
+      bit = arith::XOrIOp::create(builder, location, bit, one);
+    }
+    Value matches = bit;
+    if (!encodedRhs[static_cast<unsigned>(index)]) {
+      matches = arith::XOrIOp::create(builder, location, bit, one);
+    } else if (less) {
+      auto lower = arith::XOrIOp::create(builder, location, bit, one);
+      auto firstDifference =
+          arith::AndIOp::create(builder, location, equal, lower);
+      less = arith::OrIOp::create(builder, location, less, firstDifference);
+    }
+    equal = arith::AndIOp::create(builder, location, equal, matches);
+  }
+  switch (encodedPredicate) {
+  case arith::CmpIPredicate::eq:
+    return equal;
+  case arith::CmpIPredicate::ne:
+    return arith::XOrIOp::create(builder, location, equal, one);
+  case arith::CmpIPredicate::ult:
+    return less;
+  case arith::CmpIPredicate::ule:
+    return arith::OrIOp::create(builder, location, less, equal);
+  case arith::CmpIPredicate::ugt: {
+    auto lessOrEqual = arith::OrIOp::create(builder, location, less, equal);
+    return arith::XOrIOp::create(builder, location, lessOrEqual, one);
+  }
+  case arith::CmpIPredicate::uge:
+    return arith::XOrIOp::create(builder, location, less, one);
+  default:
+    llvm_unreachable("signed CBit predicate must be encoded as unsigned");
+  }
+}
+
+namespace {
+
+/// Lower explicit register snapshots compared with constants at the read point.
+struct LowerRegisterComparison final : OpRewritePattern<arith::CmpIOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(arith::CmpIOp op,
+                                PatternRewriter& rewriter) const override {
+    auto read = op.getLhs().getDefiningOp<cbit::ReadOp>();
+    llvm::APInt constant;
+    if (!read || read.getType().getWidth() <= 64 ||
+        !matchPattern(op.getRhs(), m_ConstantInt(&constant))) {
+      return failure();
+    }
+    OpBuilder::InsertionGuard guard(rewriter);
+    rewriter.setInsertionPoint(read);
+    auto result = buildBitComparison(
+        rewriter, op.getLoc(), op.getPredicate(), constant,
+        [&](int64_t index) -> Value {
+          auto position =
+              arith::ConstantIndexOp::create(rewriter, read.getLoc(), index);
+          return {cbit::LoadOp::create(rewriter, read.getLoc(),
+                                       rewriter.getI1Type(), read.getReg(),
+                                       position)};
+        });
+    rewriter.replaceOp(op, result);
+    if (read->use_empty()) {
+      rewriter.eraseOp(read);
+    }
     return success();
   }
 };
@@ -1461,18 +1857,16 @@ struct ConvertQCOYieldOpToJeff final : StatefulOpConversionPattern<YieldOp> {
  * }
  * ```
  */
-struct ConvertQCOIfOpToJeff final : RegionMovingConversionPattern<IfOp> {
-  using RegionMovingConversionPattern::RegionMovingConversionPattern;
+template <typename IfOpType>
+struct ConvertIfOpToJeff final : RegionMovingConversionPattern<IfOpType> {
+  using RegionMovingConversionPattern<IfOpType>::RegionMovingConversionPattern;
+  using typename RegionMovingConversionPattern<IfOpType>::OpAdaptor;
+  using RegionMovingConversionPattern<IfOpType>::getTypeConverter;
+  using RegionMovingConversionPattern<IfOpType>::getState;
 
   LogicalResult
-  matchAndRewrite(IfOp op, OpAdaptor adaptor,
+  matchAndRewrite(IfOpType op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!op.getClassicalResults().empty()) {
-      op.emitError("classical qco.if results are not supported by the "
-                   "QCO-to-Jeff conversion");
-      return failure();
-    }
-
     auto loc = op.getLoc();
 
     SetVector<Value> aboveValues;
@@ -1480,11 +1874,17 @@ struct ConvertQCOIfOpToJeff final : RegionMovingConversionPattern<IfOp> {
     getUsedValuesDefinedAbove(op.getThenRegion(), aboveValues);
 
     SmallVector<Value> initArgs;
-    llvm::append_range(initArgs, adaptor.getQubits());
+    ValueRange qubits;
+    TypeRange classicalTypes = op.getResultTypes();
+    if constexpr (std::is_same_v<IfOpType, IfOp>) {
+      qubits = adaptor.getQubits();
+      classicalTypes = op.getClassicalResults().getTypes();
+    }
+    llvm::append_range(initArgs, qubits);
 
     SmallVector<Type> outTypes;
-    if (failed(getTypeConverter()->convertTypes(
-            op.getLinearResults().getTypes(), outTypes))) {
+    if (failed(
+            getTypeConverter()->convertTypes(op.getResultTypes(), outTypes))) {
       return failure();
     }
 
@@ -1518,15 +1918,29 @@ struct ConvertQCOIfOpToJeff final : RegionMovingConversionPattern<IfOp> {
     // Add trivial default case
     {
       auto* block = &jeffSwitch.getDefault().emplaceBlock();
-      for (auto value : adaptor.getQubits()) {
+      for (auto value : qubits) {
         block->addArgument(value.getType(), loc);
       }
       for (auto value : aboveValues) {
-        block->addArgument(typeConverter->convertType(value.getType()), loc);
+        block->addArgument(getTypeConverter()->convertType(value.getType()),
+                           loc);
       }
       OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToStart(block);
-      jeff::YieldOp::create(rewriter, loc, block->getArguments());
+      /// Both Boolean cases are explicit, so the default cannot execute.
+      SmallVector<Value> values;
+      for (auto type : classicalTypes) {
+        auto converted = getTypeConverter()->convertType(type);
+        auto zero = rewriter.getZeroAttr(converted);
+        if (!zero) {
+          return rewriter.notifyMatchFailure(
+              op, "unsupported classical conditional result type");
+        }
+        values.push_back(
+            arith::ConstantOp::create(rewriter, loc, converted, zero));
+      }
+      llvm::append_range(values, block->getArguments());
+      jeff::YieldOp::create(rewriter, loc, values);
     }
 
     // Update tensor values
@@ -1716,61 +2130,28 @@ struct ConvertSCFWhileOpToJeff final
   }
 };
 
-/**
- * @brief Converts the QCO-style main function to a `jeff`-style main function
- *
- * @par Example:
- * ```mlir
- * func.func @main() -> i64 attributes {mqt.entry_point} { ... }
- * ```
- * is converted to
- * ```mlir
- * func.func @main() -> i64 { ... }
- * ```
- */
-struct ConvertQCOMainToJeff final : StatefulOpConversionPattern<func::FuncOp> {
+/// Preserve a unitary call as a native jeff function call.
+struct ConvertQCOCallToJeff final : StatefulOpConversionPattern<qco::CallOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
   LogicalResult
-  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
+  matchAndRewrite(qco::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (!mqt::isEntryPoint(op)) {
+    if (getState().inModifier()) {
+      return rewriter.notifyMatchFailure(
+          op, "modified calls must be expanded first");
+    }
+    SmallVector<Type> results;
+    if (failed(
+            getTypeConverter()->convertTypes(op.getResultTypes(), results))) {
       return failure();
     }
-
-    if (op.getBlocks().size() != 1) {
-      return failure();
-    }
-    auto* block = &op.getBlocks().front();
-
-    auto* returnOp = block->getTerminator();
-    if (!isa<func::ReturnOp>(returnOp)) {
-      return failure();
-    }
-
-    getState().entryPointName = op.getSymName();
-
-    auto funcType = op.getFunctionType();
-    SmallVector<Type> newInputs;
-    if (failed(getTypeConverter()->convertTypes(funcType.getInputs(),
-                                                newInputs))) {
-      return failure();
-    }
-    SmallVector<Type> newResults;
-    if (failed(getTypeConverter()->convertTypes(funcType.getResults(),
-                                                newResults))) {
-      return failure();
-    }
-
-    rewriter.startOpModification(op);
-    op.setType(rewriter.getFunctionType(newInputs, newResults));
-    for (const auto& [argument, type] :
-         llvm::zip_equal(block->getArguments(), newInputs)) {
-      argument.setType(type);
-    }
-    mqt::removeEntryPoint(op);
-    rewriter.finalizeOpModification(op);
-
+    auto argAttrs = op.getArgAttrsAttr();
+    auto resAttrs = op.getResAttrsAttr();
+    auto call = rewriter.replaceOpWithNewOp<func::CallOp>(
+        op, op.getCallee(), results, adaptor.getOperands());
+    call.setArgAttrsAttr(argAttrs);
+    call.setResAttrsAttr(resAttrs);
     return success();
   }
 };
@@ -1806,6 +2187,11 @@ public:
   explicit QCOToJeffTypeConverter(MLIRContext* ctx) {
     // Identity conversion for all types by default
     addConversion([](Type type) { return type; });
+
+    addConversion([ctx](IntegerType type) -> Type {
+      const auto width = nativeIntegerWidth(type.getWidth());
+      return width != 0 ? IntegerType::get(ctx, width) : Type{};
+    });
 
     addConversion([ctx](IndexType /*type*/) -> Type {
       return IntegerType::get(ctx, 32);
@@ -1931,24 +2317,61 @@ struct QCOToJeff final : impl::QCOToJeffBase<QCOToJeff> {
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto original = getOperation();
-    OwningOpRef<ModuleOp> converted(original.clone());
-    auto moduleOp = *converted;
-    if (failed(validateQCOToJeffInput(moduleOp))) {
-      signalPassFailure();
-      return;
-    }
+    auto moduleOp = getOperation();
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
       return;
     }
 
+    RewritePatternSet comparisons(context);
+    comparisons.add<LowerRegisterComparison>(context);
+    arith::CmpIOp::getCanonicalizationPatterns(comparisons, context);
+    mqt::populateIntegerExpansionPatterns(comparisons);
+    if (failed(applyPatternsGreedily(moduleOp, std::move(comparisons)))) {
+      signalPassFailure();
+      return;
+    }
+    const auto unsupportedMath = moduleOp.walk([](Operation* op) {
+      if (isa<math::AbsIOp, math::IPowIOp>(op)) {
+        auto type = dyn_cast<IntegerType>(op->getResult(0).getType());
+        if (type && nativeIntegerWidth(type.getWidth()) != type.getWidth()) {
+          op->emitError(
+              "jeff requires a native integer width for this operation");
+          return WalkResult::interrupt();
+        }
+      }
+      return WalkResult::advance();
+    });
+    if (unsupportedMath.wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
     QCOToJeffTypeConverter typeConverter(context);
 
     LoweringState state;
-    state.cbitState.recordRegisterUses(moduleOp.getOperation());
+    for (auto function : moduleOp.getOps<func::FuncOp>()) {
+      if (function.isExternal() || !function.getBody().hasOneBlock() ||
+          !isa<func::ReturnOp>(function.getBody().front().getTerminator())) {
+        function.emitError("jeff export requires single-block definitions "
+                           "ending in func.return");
+        signalPassFailure();
+        return;
+      }
+      if (mqt::isEntryPoint(function)) {
+        state.entryPointName = function.getSymName();
+        mqt::removeEntryPoint(function);
+      } else if (llvm::any_of(function.getArgumentTypes(),
+                              llvm::IsaPred<cbit::RegisterType>)) {
+        function.emitError("classical register arguments in helper functions "
+                           "are not supported");
+        signalPassFailure();
+        return;
+      }
+      function->removeAttr(mqt::MQTDialect::UnitaryAttrHelper::getNameStr());
+    }
+    state.cbitState.recordRegisterUses(moduleOp);
 
     // Configure conversion target
     target.addIllegalDialect<cbit::CBitDialect, QCODialect,
@@ -1956,19 +2379,24 @@ protected:
                              math::MathDialect, tensor::TensorDialect,
                              scf::SCFDialect, memref::MemRefDialect>();
     target.addLegalDialect<jeff::JeffDialect>();
+    target.addIllegalOp<LLVM::FshlOp, LLVM::FshrOp>();
 
-    target.addDynamicallyLegalOp<func::FuncOp>(
-        [](func::FuncOp op) { return !mqt::isEntryPoint(op); });
-    target.addDynamicallyLegalOp<func::ReturnOp>([](func::ReturnOp op) {
-      return llvm::none_of(op.getOperandTypes(), [](Type type) {
-        return isa<cbit::RegisterType>(type);
-      });
+    target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
+      return typeConverter.isSignatureLegal(op.getFunctionType()) &&
+             typeConverter.isLegal(&op.getBody());
     });
+    target.addDynamicallyLegalOp<func::CallOp, func::ReturnOp>(
+        [&](Operation* op) { return typeConverter.isLegal(op); });
+    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
+        patterns, typeConverter);
+    populateCallOpTypeConversionPattern(patterns, typeConverter);
 
     // Register operation conversion patterns
     jeff::populateNativeToJeffConversionPatterns(patterns);
+    patterns.add<ConvertIntegerExpression>(typeConverter, context);
     patterns.add<ConvertCBitAllocOpToJeff, ConvertCBitStoreOpToJeff,
-                 ConvertCBitLoadOpToJeff, ConvertQTensorAllocOp,
+                 ConvertCBitLoadOpToJeff, ConvertCBitReadOpToJeff,
+                 ConvertCBitWriteOpToJeff, ConvertQTensorAllocOp,
                  ConvertQTensorExtractOp, ConvertQTensorInsertOp,
                  ConvertQTensorDeallocOp, ConvertQCOAllocOpToJeff,
                  ConvertQCOStaticOpToJeff, ConvertQCOSinkOpToJeff,
@@ -2039,14 +2467,17 @@ protected:
 
     patterns.add<ConvertQCOBarrierOpToJeff, ConvertQCOCtrlOpToJeff,
                  ConvertQCOInvOpToJeff, ConvertQCOPowOpToJeff,
-                 ConvertQCOYieldOpToJeff, ConvertQCOIfOpToJeff,
-                 ConvertSCFForOpToJeff, ConvertSCFWhileOpToJeff,
-                 ConvertQCOMainToJeff, ConvertFuncReturnOpToJeff>(
-        typeConverter, context, &state);
+                 ConvertQCOYieldOpToJeff, ConvertIfOpToJeff<IfOp>,
+                 ConvertIfOpToJeff<scf::IfOp>, ConvertSCFForOpToJeff,
+                 ConvertSCFWhileOpToJeff, ConvertQCOCallToJeff,
+                 ConvertFuncReturnOpToJeff>(typeConverter, context, &state);
 
-    // Apply the conversion
-    if (applyPartialConversion(moduleOp, target, std::move(patterns))
-            .failed()) {
+    /// Cloned region arguments already have target types. Convert their users
+    /// before source folds inspect typed quantum operands.
+    ConversionConfig config;
+    config.foldingMode = DialectConversionFoldingMode::AfterPatterns;
+    if (failed(applyPartialConversion(moduleOp, target, std::move(patterns),
+                                      config))) {
       signalPassFailure();
       return;
     }
@@ -2055,15 +2486,7 @@ protected:
 
     if (cleanUp(moduleOp, state).failed()) {
       signalPassFailure();
-      return;
     }
-    if (failed(verify(moduleOp)) ||
-        failed(mqt::verifyProgramMetadata(moduleOp))) {
-      signalPassFailure();
-      return;
-    }
-    original->setAttrs(moduleOp->getAttrDictionary());
-    original.getBodyRegion().takeBody(moduleOp.getBodyRegion());
   }
 };
 

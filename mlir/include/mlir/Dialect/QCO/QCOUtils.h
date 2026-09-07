@@ -22,20 +22,10 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <cmath>
 #include <cstddef>
 #include <optional>
 
 namespace mlir::qco {
-
-/// Return false when both parameters fold and their sum is non-finite.
-/// Dynamic parameters remain valid SSA values and may be merged at runtime.
-[[nodiscard]] inline bool constantParameterSumIsFinite(Value lhs, Value rhs) {
-  const auto lhsConstant = mqt::valueToConstantDouble(lhs);
-  const auto rhsConstant = mqt::valueToConstantDouble(rhs);
-  return !lhsConstant || !rhsConstant ||
-         std::isfinite(*lhsConstant + *rhsConstant);
-}
 
 /**
  * @brief Check if given quantum operation is unused (i.e., only used by sinks
@@ -70,15 +60,9 @@ inline bool checkDeadGate(Operation* op) {
 /// the entry block.
 [[nodiscard]] LogicalResult verifyLinearity(Operation* root);
 
-/// Maximum number of qubits supported by dense modifier matrix queries.
+/// Maximum number of modifier targets supported by @ref
+/// composeBodyMatrix.
 inline constexpr size_t kMaxModifierTargetQubits = 10;
-
-/// Return whether a dense modifier matrix fits the supported qubit bound.
-[[nodiscard]] constexpr bool
-isModifierMatrixSizeSupported(size_t numTargets, size_t numControls = 0) {
-  return numTargets <= kMaxModifierTargetQubits &&
-         numControls <= kMaxModifierTargetQubits - numTargets;
-}
 
 /**
  * @brief Composes compile-time unitaries in a modifier body on @p numTargets
@@ -90,10 +74,6 @@ isModifierMatrixSizeSupported(size_t numTargets, size_t numControls = 0) {
  */
 [[nodiscard]] std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
                                                              size_t numTargets);
-
-/// Return whether @p block has a compile-time-known matrix that
-/// @ref composeBodyMatrix can construct without allocating it.
-[[nodiscard]] bool hasComposableBodyMatrix(Block& block, size_t numTargets);
 
 /**
  * @brief Check whether two parameter values match.
@@ -250,17 +230,18 @@ template <typename OpType>
 LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the same operation
   auto nextOp = dyn_cast<OpType>(*op.getOutputQubit(0).user_begin());
-  if (!nextOp) {
-    return failure();
-  }
-  if (!constantParameterSumIsFinite(op.getOperand(1), nextOp.getOperand(1))) {
+  if (!nextOp || op->getBlock() != nextOp->getBlock()) {
     return failure();
   }
 
-  // Compute and set the new parameter
+  // Compute the new parameter where both operands dominate, then move the
+  // merged gate behind it.
+  rewriter.setInsertionPoint(nextOp);
   auto newParameter = arith::AddFOp::create(
       rewriter, op.getLoc(), op.getOperand(1), nextOp.getOperand(1));
-  op->setOperand(1, newParameter.getResult());
+  rewriter.modifyOpInPlace(
+      op, [&] { op->setOperand(1, newParameter.getResult()); });
+  rewriter.moveOpBefore(op, nextOp);
 
   // Replace the second operation with the result of the first operation
   rewriter.replaceOp(nextOp, op.getResult());
@@ -283,6 +264,9 @@ template <typename OpType>
 static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
                                                     PatternRewriter& rewriter,
                                                     bool symmetric = false) {
+  if (op->getBlock() != nextOp->getBlock()) {
+    return failure();
+  }
 
   // Both qubits have to point to the same successor
   auto nextOp2 = *op.getOutputQubit(1).user_begin();
@@ -292,13 +276,14 @@ static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
 
   auto output0 = op.getOutputQubit(0);
   if (symmetric || output0 == nextOp.getInputQubit(0)) {
-    if (!constantParameterSumIsFinite(op.getOperand(2), nextOp.getOperand(2))) {
-      return failure();
-    }
-    // Compute and set the new parameter
+    // Compute the new parameter where both operands dominate, then move the
+    // merged gate behind it.
+    rewriter.setInsertionPoint(nextOp);
     auto newParameter = arith::AddFOp::create(
         rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
-    op->setOperand(2, newParameter.getResult());
+    rewriter.modifyOpInPlace(
+        op, [&] { op->setOperand(2, newParameter.getResult()); });
+    rewriter.moveOpBefore(op, nextOp);
     rewriter.replaceOp(nextOp, nextOp.getInputQubits());
     return success();
   }

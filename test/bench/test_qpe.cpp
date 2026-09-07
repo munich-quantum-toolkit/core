@@ -97,9 +97,11 @@ TEST(QPE, UsesTheNegativeHalfTurnRepresentative) {
 
 TEST(QPE, SupportsArbitraryWidthOutcomes) {
   constexpr size_t precision = 1025;
-  const QPE qpe{{.precision = precision,
-                 .phase = Phase(1, 3),
-                 .method = QPEMethod::Iterative}};
+  const QPE qpe{{
+      .precision = precision,
+      .phase = Phase(1, 3),
+      .method = QPEMethod::Iterative,
+  }};
   auto lower = std::string{};
   lower.reserve(precision);
   for (size_t index = 0; index < precision; ++index) {

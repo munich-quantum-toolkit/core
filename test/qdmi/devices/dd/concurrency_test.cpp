@@ -42,7 +42,7 @@ TEST(Concurrency, ConcurrentStatevectorReads) {
       qdmi_test::querySize(j.job, QDMI_JOB_RESULT_STATEVECTOR_DENSE);
   ASSERT_GT(stateSize, 0U);
 
-  auto worker = [&]() {
+  auto const worker = [&] {
     std::vector<double> buf(stateSize / sizeof(double));
     EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                   j.job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, stateSize,
@@ -74,14 +74,14 @@ TEST(Concurrency, ConcurrentHistogramReads) {
   const size_t valsSize =
       qdmi_test::querySize(j.job, QDMI_JOB_RESULT_HIST_VALUES);
 
-  auto keysWorker = [&]() {
+  auto const keysWorker = [&] {
     std::string buf(keysSize > 0 ? keysSize - 1 : 0, '\0');
     EXPECT_EQ(
         MQT_DDSIM_QDMI_device_job_get_results(j.job, QDMI_JOB_RESULT_HIST_KEYS,
                                               keysSize, buf.data(), nullptr),
         QDMI_SUCCESS);
   };
-  auto valsWorker = [&]() {
+  auto const valsWorker = [&] {
     std::vector<size_t> v(valsSize / sizeof(size_t));
     EXPECT_EQ(
         MQT_DDSIM_QDMI_device_job_get_results(
@@ -110,7 +110,7 @@ TEST(Concurrency, ConcurrentCheckDuringRun) {
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j.job), QDMI_SUCCESS);
 
   std::atomic<bool> done{false};
-  std::thread poller([&]() {
+  std::thread poller([&] {
     QDMI_Job_Status s0 = QDMI_JOB_STATUS_CREATED;
     while (!done.load()) {
       ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(j.job, &s0), QDMI_SUCCESS);
@@ -125,7 +125,6 @@ TEST(Concurrency, ConcurrentCheckDuringRun) {
   poller.join();
 }
 
-#ifdef BUILD_MQT_CORE_MLIR
 TEST(Concurrency, ConcurrentQIRJobsOwnTheirRuntimeState) {
   constexpr size_t numJobs = 4;
   constexpr size_t shots = 1024;
@@ -154,4 +153,3 @@ TEST(Concurrency, ConcurrentQIRJobsOwnTheirRuntimeState) {
         keys, [](const auto& key) { return key == "00" || key == "11"; }));
   }
 }
-#endif

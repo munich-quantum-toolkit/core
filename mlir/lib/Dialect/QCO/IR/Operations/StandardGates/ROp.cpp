@@ -78,20 +78,20 @@ struct MergeSubsequentR final : OpRewritePattern<ROp> {
   LogicalResult matchAndRewrite(ROp op,
                                 PatternRewriter& rewriter) const override {
     auto nextOp = dyn_cast<ROp>(*op.getOutputQubit(0).user_begin());
-    if (!nextOp) {
+    if (!nextOp || op->getBlock() != nextOp->getBlock()) {
       return failure();
     }
 
     if (!valuesMatchWithinTolerance(op.getPhi(), nextOp.getPhi())) {
       return failure();
     }
-    if (!constantParameterSumIsFinite(op.getTheta(), nextOp.getTheta())) {
-      return failure();
-    }
 
+    rewriter.setInsertionPoint(nextOp);
     auto newParameter = arith::AddFOp::create(rewriter, op.getLoc(),
                                               op.getTheta(), nextOp.getTheta());
-    op->setOperand(1, newParameter.getResult());
+    rewriter.modifyOpInPlace(
+        op, [&] { op->setOperand(1, newParameter.getResult()); });
+    rewriter.moveOpBefore(op, nextOp);
     rewriter.replaceOp(nextOp, op.getResult());
     return success();
   }

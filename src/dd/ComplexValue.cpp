@@ -12,7 +12,6 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
-#include "ir/Definitions.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -76,9 +75,9 @@ ComplexValue::getLowestFraction(const fp x,
 
   while ((lowerBound.second <= maxDenominator) &&
          (upperBound.second <= maxDenominator)) {
-    auto num = lowerBound.first + upperBound.first;
-    auto den = lowerBound.second + upperBound.second;
-    auto median = static_cast<fp>(num) / static_cast<fp>(den);
+    auto const num = lowerBound.first + upperBound.first;
+    auto const den = lowerBound.second + upperBound.second;
+    auto const median = static_cast<fp>(num) / static_cast<fp>(den);
     if (std::abs(x - median) <= RealNumber::eps) {
       if (den <= maxDenominator) {
         return std::pair{num, den};
@@ -306,5 +305,5 @@ std::size_t std::hash<dd::ComplexValue>::operator()(
       static_cast<std::size_t>(std::round(c.r / dd::RealNumber::eps)));
   const auto h2 = dd::murmur64(
       static_cast<std::size_t>(std::round(c.i / dd::RealNumber::eps)));
-  return qc::combineHash(h1, h2);
+  return dd::combineHash(h1, h2);
 }

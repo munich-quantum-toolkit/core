@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Compiler/Target.h"
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
 #include "mlir/Dialect/MQT/Utils/Parameters.h"
@@ -282,7 +283,7 @@ enum class PlanOpKind : uint8_t {
   CCX,
   CCCX,
   RCCX,
-  NestedMCX
+  NestedMCX,
 };
 
 /// One plan op. `wires` are local indices for `lowerPlan`; for `NestedMCX`,
@@ -659,9 +660,11 @@ static CircuitPlan planRelativePhaseMcx(size_t numControls) {
     SmallVector<size_t, 16> wires;
     const auto ladderStep = [&](size_t begin, size_t end, size_t width,
                                 bool positive) {
-      plan.append({.kind = PlanOpKind::P,
-                   .wires = {target},
-                   .angle = positive ? K_PI8 : -K_PI8});
+      plan.append({
+          .kind = PlanOpKind::P,
+          .wires = {target},
+          .angle = positive ? K_PI8 : -K_PI8,
+      });
       wires.clear();
       for (size_t q = begin; q < end; ++q) {
         wires.push_back(q);
@@ -844,21 +847,27 @@ static CircuitPlan planHp24Core(size_t n, const Hp24Policy& policy) {
   double phi = -K_PI;
   for (size_t q = numControls - 2; q > 0; --q) {
     phi /= 2.0;
-    plan.append({.kind = PlanOpKind::CCP,
-                 .wires = {q, topControl, target},
-                 .angle = phi});
+    plan.append({
+        .kind = PlanOpKind::CCP,
+        .wires = {q, topControl, target},
+        .angle = phi,
+    });
   }
   increment(false);
   phi = K_PI;
   for (size_t q = numControls - 2; q > 0; --q) {
     phi /= 2.0;
-    plan.append({.kind = PlanOpKind::CCP,
-                 .wires = {q, topControl, target},
-                 .angle = phi});
+    plan.append({
+        .kind = PlanOpKind::CCP,
+        .wires = {q, topControl, target},
+        .angle = phi,
+    });
   }
-  plan.append({.kind = PlanOpKind::CCP,
-               .wires = {0, topControl, target},
-               .angle = phi});
+  plan.append({
+      .kind = PlanOpKind::CCP,
+      .wires = {0, topControl, target},
+      .angle = phi,
+  });
   return plan;
 }
 
@@ -957,26 +966,28 @@ static void appendMcpBarencoRelative(CircuitPlan& plan, double theta,
 static void appendRelativePhaseC3X(CircuitPlan& plan, size_t c0, size_t c1,
                                    size_t c2, size_t t, bool invert) {
   const double q = K_PI / 4.0; // T = p(pi/4)
-  const std::array<PlanOp, 18> ops = {{
-      {.kind = PlanOpKind::H, .wires = {t}},
-      {.kind = PlanOpKind::P, .wires = {t}, .angle = q},
-      {.kind = PlanOpKind::CX, .wires = {c2, t}},
-      {.kind = PlanOpKind::P, .wires = {t}, .angle = -q},
-      {.kind = PlanOpKind::H, .wires = {t}},
-      {.kind = PlanOpKind::CX, .wires = {c0, t}},
-      {.kind = PlanOpKind::P, .wires = {t}, .angle = q},
-      {.kind = PlanOpKind::CX, .wires = {c1, t}},
-      {.kind = PlanOpKind::P, .wires = {t}, .angle = -q},
-      {.kind = PlanOpKind::CX, .wires = {c0, t}},
-      {.kind = PlanOpKind::P, .wires = {t}, .angle = q},
-      {.kind = PlanOpKind::CX, .wires = {c1, t}},
-      {.kind = PlanOpKind::P, .wires = {t}, .angle = -q},
-      {.kind = PlanOpKind::H, .wires = {t}},
-      {.kind = PlanOpKind::P, .wires = {t}, .angle = q},
-      {.kind = PlanOpKind::CX, .wires = {c2, t}},
-      {.kind = PlanOpKind::P, .wires = {t}, .angle = -q},
-      {.kind = PlanOpKind::H, .wires = {t}},
-  }};
+  const std::array<PlanOp, 18> ops = {
+      {
+          {.kind = PlanOpKind::H, .wires = {t}},
+          {.kind = PlanOpKind::P, .wires = {t}, .angle = q},
+          {.kind = PlanOpKind::CX, .wires = {c2, t}},
+          {.kind = PlanOpKind::P, .wires = {t}, .angle = -q},
+          {.kind = PlanOpKind::H, .wires = {t}},
+          {.kind = PlanOpKind::CX, .wires = {c0, t}},
+          {.kind = PlanOpKind::P, .wires = {t}, .angle = q},
+          {.kind = PlanOpKind::CX, .wires = {c1, t}},
+          {.kind = PlanOpKind::P, .wires = {t}, .angle = -q},
+          {.kind = PlanOpKind::CX, .wires = {c0, t}},
+          {.kind = PlanOpKind::P, .wires = {t}, .angle = q},
+          {.kind = PlanOpKind::CX, .wires = {c1, t}},
+          {.kind = PlanOpKind::P, .wires = {t}, .angle = -q},
+          {.kind = PlanOpKind::H, .wires = {t}},
+          {.kind = PlanOpKind::P, .wires = {t}, .angle = q},
+          {.kind = PlanOpKind::CX, .wires = {c2, t}},
+          {.kind = PlanOpKind::P, .wires = {t}, .angle = -q},
+          {.kind = PlanOpKind::H, .wires = {t}},
+      },
+  };
   if (!invert) {
     for (const PlanOp& op : ops) {
       plan.append(op);
@@ -1154,9 +1165,11 @@ static CircuitPlan planMcp(double theta, size_t numControls) {
 /// SP22 Eq. (1) `P_m` as single-controlled CRX ladder; `sign = -1` → dagger.
 static void appendSp22PRx(CircuitPlan& plan, size_t m, double sign) {
   for (size_t c = 1; c < m; ++c) {
-    plan.append({.kind = PlanOpKind::CRX,
-                 .wires = {c, m},
-                 .angle = sign * std::ldexp(K_PI, -static_cast<int>(m - c))});
+    plan.append({
+        .kind = PlanOpKind::CRX,
+        .wires = {c, m},
+        .angle = sign * std::ldexp(K_PI, -static_cast<int>(m - c)),
+    });
   }
 }
 
@@ -1167,9 +1180,11 @@ static CircuitPlan buildSp22Q(size_t m) {
     return q; // Q_1 = Q_0 = I
   }
   appendSp22PRx(q, m - 1, 1.0);
-  q.append({.kind = PlanOpKind::CRX,
-            .wires = {0, m - 1},
-            .angle = std::ldexp(K_PI, -static_cast<int>(m - 2))});
+  q.append({
+      .kind = PlanOpKind::CRX,
+      .wires = {0, m - 1},
+      .angle = std::ldexp(K_PI, -static_cast<int>(m - 2)),
+  });
   appendPlanOps(q, buildSp22Q(m - 1));
   appendSp22PRx(q, m - 1, -1.0);
   return q;
@@ -1194,15 +1209,19 @@ static CircuitPlan planMcpSp22(double theta, size_t numControls) {
 
   // P_n(U)
   for (size_t c = 1; c < n; ++c) {
-    plan.append({.kind = PlanOpKind::CP,
-                 .wires = {c, target},
-                 .angle = rootAngle(theta, n - c)});
+    plan.append({
+        .kind = PlanOpKind::CP,
+        .wires = {c, target},
+        .angle = rootAngle(theta, n - c),
+    });
   }
 
   // Mid-root
-  plan.append({.kind = PlanOpKind::CP,
-               .wires = {0, target},
-               .angle = rootAngle(theta, n - 1)});
+  plan.append({
+      .kind = PlanOpKind::CP,
+      .wires = {0, target},
+      .angle = rootAngle(theta, n - 1),
+  });
 
   // Q_n
   const CircuitPlan qn = buildSp22Q(n);
@@ -1210,9 +1229,11 @@ static CircuitPlan planMcpSp22(double theta, size_t numControls) {
 
   // P_n(U)^dagger
   for (size_t c = 1; c < n; ++c) {
-    plan.append({.kind = PlanOpKind::CP,
-                 .wires = {c, target},
-                 .angle = rootAngle(-theta, n - c)});
+    plan.append({
+        .kind = PlanOpKind::CP,
+        .wires = {c, target},
+        .angle = rootAngle(-theta, n - c),
+    });
   }
 
   // Q_n^dagger
@@ -1267,17 +1288,23 @@ static SmallVector<Value> synthesizeMultiControlledPhase(OpBuilder& builder,
 static std::optional<ControlledGateSpec>
 matchControlledTarget(UnitaryOpInterface inner) {
   if (isa<XOp>(inner.getOperation())) {
-    return ControlledGateSpec{.gate = ControlledTarget::X,
-                              .theta = std::nullopt};
+    return ControlledGateSpec{
+        .gate = ControlledTarget::X,
+        .theta = std::nullopt,
+    };
   }
   if (isa<ZOp>(inner.getOperation())) {
-    return ControlledGateSpec{.gate = ControlledTarget::Z,
-                              .theta = std::nullopt};
+    return ControlledGateSpec{
+        .gate = ControlledTarget::Z,
+        .theta = std::nullopt,
+    };
   }
   if (auto pOp = dyn_cast<POp>(inner.getOperation())) {
     if (const auto theta = mlir::mqt::valueToDouble(pOp.getTheta())) {
-      return ControlledGateSpec{.gate = ControlledTarget::Phase,
-                                .theta = theta};
+      return ControlledGateSpec{
+          .gate = ControlledTarget::Phase,
+          .theta = theta,
+      };
     }
   }
   return std::nullopt;
@@ -1314,16 +1341,34 @@ synthesizeControlledSwap(OpBuilder& builder, Location loc, ValueRange controls,
 // Patterns and pass
 //===----------------------------------------------------------------------===//
 
+static bool isWithinTargetNativeUnitary(UnitaryOpInterface op,
+                                        const CompilerTarget* target) {
+  if (target == nullptr) {
+    return false;
+  }
+  for (; op; op = op->getParentOfType<UnitaryOpInterface>()) {
+    if (target->supports(op.getOperation())) {
+      return true;
+    }
+  }
+  return false;
+}
+
 namespace {
 
 struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
   explicit DecomposeControlledGatePattern(MLIRContext* context,
-                                          uint64_t minQubits)
-      : OpRewritePattern<CtrlOp>(context), minQubits_(minQubits) {}
+                                          uint64_t minQubits,
+                                          const CompilerTarget* target)
+      : OpRewritePattern<CtrlOp>(context), minQubits_(minQubits),
+        target_(target) {}
 
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
     if (op.getNumQubits() < minQubits_) {
+      return failure();
+    }
+    if (isWithinTargetNativeUnitary(op, target_)) {
       return failure();
     }
 
@@ -1335,10 +1380,6 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
 
     // MCSWAP(C, a, b) = CX(a,b) · MCX(C ∪ {b}, a) · CX(a,b).
     if (op.getNumTargets() == 2 && isa<SWAPOp>(inner.getOperation())) {
-      if (failed(mqt::hoistSupportingOpsBefore(
-              *op.getBody(), inner.getOperation(), op, rewriter))) {
-        return failure();
-      }
       rewriter.setInsertionPoint(op);
       rewriter.replaceOp(op, synthesizeControlledSwap(
                                  rewriter, op.getLoc(), op.getControlsIn(),
@@ -1354,10 +1395,6 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    if (failed(mqt::hoistSupportingOpsBefore(
-            *op.getBody(), inner.getOperation(), op, rewriter))) {
-      return failure();
-    }
     ControlledTarget gate = spec->gate;
     // A compile-time phase of +/- pi is exactly Z; route it through the
     // multi-controlled-Z path (elementary at 3–4 qubits, relative-phase / Vale
@@ -1397,15 +1434,21 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
 
 private:
   uint64_t minQubits_;
+  const CompilerTarget* target_;
 };
 
 struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
-  explicit DecomposeRCCXPattern(MLIRContext* context, uint64_t minQubits)
-      : OpRewritePattern<RCCXOp>(context), minQubits_(minQubits) {}
+  explicit DecomposeRCCXPattern(MLIRContext* context, uint64_t minQubits,
+                                const CompilerTarget* target)
+      : OpRewritePattern<RCCXOp>(context), minQubits_(minQubits),
+        target_(target) {}
 
   LogicalResult matchAndRewrite(RCCXOp op,
                                 PatternRewriter& rewriter) const override {
     if (RCCXOp::getNumQubits() < minQubits_) {
+      return failure();
+    }
+    if (isWithinTargetNativeUnitary(op, target_)) {
       return failure();
     }
     rewriter.setInsertionPoint(op);
@@ -1417,11 +1460,17 @@ struct DecomposeRCCXPattern final : OpRewritePattern<RCCXOp> {
 
 private:
   uint64_t minQubits_;
+  const CompilerTarget* target_;
 };
 
 struct DecomposeMultiControlled final
     : impl::DecomposeMultiControlledBase<DecomposeMultiControlled> {
   using DecomposeMultiControlledBase::DecomposeMultiControlledBase;
+
+  DecomposeMultiControlled(const CompilerTarget& target, uint64_t minQubitsIn)
+      : target_(target) {
+    minQubits = minQubitsIn;
+  }
 
 protected:
   void runOnOperation() override {
@@ -1432,16 +1481,31 @@ protected:
       return;
     }
 
+    const CompilerTarget* nativeTarget =
+        target_ && target_->connectivityKind() ==
+                       CompilerTarget::Connectivity::Kind::AllToAll
+            ? &*target_
+            : nullptr;
+
     RewritePatternSet patterns(&getContext());
     patterns.add<DecomposeControlledGatePattern, DecomposeRCCXPattern>(
-        &getContext(), minQubits);
+        &getContext(), minQubits, nativeTarget);
 
     if (failed(applyPatternsGreedily(getOperation(), std::move(patterns)))) {
       signalPassFailure();
     }
   }
+
+private:
+  std::optional<CompilerTarget> target_;
 };
 
 } // namespace
+
+std::unique_ptr<Pass>
+createDecomposeMultiControlled(const CompilerTarget& target,
+                               uint64_t minQubits) {
+  return std::make_unique<DecomposeMultiControlled>(target, minQubits);
+}
 
 } // namespace mlir::qco

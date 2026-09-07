@@ -8,38 +8,49 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/WireIterator.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Types.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <memory>
 #include <tuple>
+#include <utility>
 
 using namespace mlir;
+using namespace mlir::qco;
 
 namespace {
-class DriversTest : public testing::Test {
+class DriversFixture : public testing::Test {
 protected:
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<qco::QCODialect, scf::SCFDialect, arith::ArithDialect,
+    registry.insert<QCODialect, scf::SCFDialect, arith::ArithDialect,
                     func::FuncDialect>();
 
     context = std::make_unique<MLIRContext>();
@@ -47,248 +58,234 @@ protected:
     context->loadAllAvailableDialects();
   }
 
+  /// Construct the test program.
+  [[maybe_unused]] [[nodiscard]] OwningOpRef<ModuleOp> getProgram() const {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize(SmallVector<Type>(4, builder.getI1Type()));
+
+    SmallVector<Value> qubits(4);
+    SmallVector<Value> bits(4);
+
+    for (size_t i = 0; i < 4; ++i) {
+      qubits[i] = builder.allocQubit();
+    }
+
+    qubits[0] = builder.h(qubits[0]);
+
+    std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
+    std::tie(qubits[2], qubits[3]) = builder.cx(qubits[2], qubits[3]);
+
+    qubits[0] = builder.z(qubits[0]);
+    qubits[2] = builder.h(qubits[2]);
+
+    std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
+
+    std::tie(qubits[0], qubits[1]) = builder.cx(qubits[0], qubits[1]);
+
+    qubits[1] = builder.h(qubits[1]);
+
+    qubits = builder.scfFor(0, 3, 1, qubits, [&](Value, ValueRange args) {
+      return SmallVector<Value>{args};
+    });
+
+    qubits = builder.qcoIf(
+        false, qubits,
+        [&](ValueRange args) { return SmallVector<Value>{args}; },
+        [&](ValueRange args) { return SmallVector<Value>{args}; });
+
+    const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
+    qubits = builder.qcoIndexSwitch(0, qubits, SmallVector<int64_t>{0},
+                                    {identity}, identity);
+
+    qubits = builder.barrier(qubits);
+
+    for (size_t i = 0; i < 4; ++i) {
+      std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+    }
+
+    return builder.finalize(bits);
+  }
+
+  /// Return the wires of the test program.
+  static SmallVector<WireIterator> getWires(ModuleOp op) {
+    auto func = mlir::mqt::getEntryPoint(op);
+    SmallVector<WireIterator> wires;
+    for (AllocOp op : func.getOps<AllocOp>()) {
+      wires.emplace_back(op.getResult());
+    }
+    return wires;
+  }
+
   std::unique_ptr<MLIRContext> context;
 };
 } // namespace
 
-TEST_F(DriversTest, ProgramGraphWalkTooFewWires) {
-  qco::QCOProgramBuilder builder(context.get());
-  builder.initialize();
-
-  const auto q00 = builder.allocQubit();
-  const auto q10 = builder.allocQubit();
-  auto [q01, q11] = builder.cx(q00, q10);
-
-  [[maybe_unused]] auto mod = builder.finalize();
-
-  // Collect just one wire.
-  SmallVector<qco::WireIterator> wires;
-  wires.emplace_back(q00);
-
-  auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyMap&, qco::ReleasedOps&) {
-        return WalkResult::skip();
+TEST_F(DriversFixture, ProgramWalkVisitsAllOps) {
+  auto mod = getProgram();
+  auto wires = getWires(*mod);
+  size_t nvisited = 0;
+  walkProgramGraph<WireDirection::Forward>(
+      wires, [&](const Frontier& frontier, ReleasedOps& released) {
+        for (const auto& [op, indices] : frontier) {
+          ++nvisited;
+          released.emplace_back(op);
+        }
+        return WalkResult::advance();
       });
-  ASSERT_TRUE(res.failed());
+  ASSERT_EQ(nvisited, 24);
+  ASSERT_TRUE(llvm::all_of(wires, [](const WireIterator& it) {
+    return it == std::default_sentinel;
+  }));
+
+  for_each(wires, [&](WireIterator& it) { --it; });
+
+  nvisited = 0;
+  walkProgramGraph<WireDirection::Backward>(
+      wires, [&](const Frontier& frontier, ReleasedOps& released) {
+        for (const auto& [op, indices] : frontier) {
+          ++nvisited;
+          released.emplace_back(op);
+        }
+        return WalkResult::advance();
+      });
+  ASSERT_EQ(nvisited, 24);
+  ASSERT_TRUE(llvm::all_of(wires, [](const WireIterator& it) {
+    return it == std::default_sentinel;
+  }));
 }
 
-TEST_F(DriversTest, ProgramGraphWalkRetainsUnreleasedReadyOperations) {
-  qco::QCOProgramBuilder builder(context.get());
-  builder.initialize();
+TEST_F(DriversFixture, StopProgramWalkWithInterrupt) {
+  auto mod = getProgram();
+  auto wires = getWires(*mod);
+  size_t nvisited = 0;
+  walkProgramGraph<WireDirection::Forward>(
+      wires, [&](const Frontier& frontier, ReleasedOps& released) {
+        for (const auto& [op, indices] : frontier) {
+          ++nvisited;
+          if (isa<BarrierOp>(op)) {
+            return WalkResult::interrupt();
+          }
 
-  const auto q00 = builder.allocQubit();
-  const auto q10 = builder.allocQubit();
-  const auto q20 = builder.allocQubit();
-  const auto q30 = builder.allocQubit();
+          released.emplace_back(op);
+        }
+        return WalkResult::advance();
+      });
+  ASSERT_EQ(nvisited, 16);
+}
 
-  auto [q01, q11] = builder.cx(q00, q10);
-  auto [q21, q31] = builder.cx(q20, q30);
-  auto [q02, q12] = builder.cx(q01, q11);
+TEST_F(DriversFixture, ProgramWalkTooFewWires) {
+  auto mod = getProgram();
+  SmallVector<WireIterator> wires{getWires(*mod).front()};
+  ASSERT_DEATH(walkProgramGraph<WireDirection::Forward>(
+                   wires,
+                   [&](const Frontier& frontier, ReleasedOps& released) {
+                     for_each(frontier.keys(), [&](Operation* op) {
+                       released.emplace_back(op);
+                     });
+                     return WalkResult::advance();
+                   }),
+               "more input qubits than wires");
+}
 
-  builder.measure(q02);
-  builder.measure(q12);
-  builder.measure(q21);
-  builder.measure(q31);
+TEST_F(DriversFixture, ProgramWalkVisitsLayersCorrectly) {
+  auto mod = getProgram();
+  auto wires = getWires(*mod);
+  SmallVector<DenseSet<std::pair<size_t, size_t>>> layers;
+  const auto callback = [&](const Frontier& frontier, ReleasedOps& released) {
+    for (const auto& [op, indices] : frontier) {
+      if (indices.size() == 1) {
+        released.emplace_back(op);
+      }
+    }
 
-  [[maybe_unused]] auto mod = builder.finalize();
+    if (released.empty()) {
+      DenseSet<std::pair<size_t, size_t>> layer;
+      layer.reserve(frontier.size());
 
-  SmallVector<qco::WireIterator> wires;
-  wires.emplace_back(q00);
-  wires.emplace_back(q10);
-  wires.emplace_back(q20);
-  wires.emplace_back(q30);
+      for (const auto& [op, indices] : frontier) {
+        if (!isa<BarrierOp>(op) && isa<UnitaryOpInterface>(op)) {
+          layer.insert(std::minmax(indices[0], indices[1]));
+        }
+        released.emplace_back(op);
+      }
 
-  auto* firstOp = q01.getDefiningOp();
-  auto* deferredOp = q21.getDefiningOp();
-  auto* nextOp = q02.getDefiningOp();
+      if (!layer.empty()) {
+        layers.emplace_back(std::move(layer));
+      }
+    }
+
+    return WalkResult::advance();
+  };
+
+  walkProgramGraph<WireDirection::Forward>(wires, callback);
+
+  ASSERT_EQ(layers.size(), 3);
+  ASSERT_TRUE(layers[0].contains(std::make_pair(0, 1)));
+  ASSERT_TRUE(layers[0].contains(std::make_pair(2, 3)));
+  ASSERT_TRUE(layers[1].contains(std::make_pair(1, 2)));
+  ASSERT_TRUE(layers[2].contains(std::make_pair(0, 1)));
+
+  for_each(wires, [&](WireIterator& it) { --it; });
+
+  layers.clear();
+
+  walkProgramGraph<WireDirection::Backward>(wires, callback);
+
+  ASSERT_EQ(layers.size(), 3);
+  ASSERT_TRUE(layers[0].contains(std::make_pair(0, 1)));
+  ASSERT_TRUE(layers[1].contains(std::make_pair(1, 2)));
+  ASSERT_TRUE(layers[2].contains(std::make_pair(0, 1)));
+  ASSERT_TRUE(layers[2].contains(std::make_pair(2, 3)));
+}
+
+TEST_F(DriversFixture, ProgramWalkRetainsUnreleasedReadyOperations) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize(SmallVector<Type>(3, builder.getI1Type()));
+
+  SmallVector<WireIterator> wires;
+  SmallVector<Value> qubits(3);
+  SmallVector<Value> bits(3);
+
+  for (size_t i = 0; i < 3; ++i) {
+    qubits[i] = builder.allocQubit();
+    wires.emplace_back(qubits[i]);
+  }
+
+  qubits[0] = builder.h(qubits[0]);
+  std::tie(qubits[1], qubits[2]) = builder.cx(qubits[1], qubits[2]);
+
+  for (size_t i = 0; i < 3; ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+  }
+
+  [[maybe_unused]] auto mod = builder.finalize(bits);
 
   size_t iteration = 0;
-  bool observedDeferredOp = false;
-  auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps& released) {
-        DenseSet<Operation*> layer;
-        for (Operation* op : ready.keys()) {
-          layer.insert(op);
-        }
-
+  DenseSet<Operation*> prev;
+  DenseSet<Operation*> curr;
+  walkProgramGraph<WireDirection::Forward>(
+      wires, [&](const Frontier& frontier, ReleasedOps& released) {
         if (iteration++ == 0) {
-          EXPECT_TRUE(layer.contains(firstOp));
-          EXPECT_TRUE(layer.contains(deferredOp));
-          released.emplace_back(firstOp);
+          EXPECT_GE(frontier.size(), 2U);
+          if (frontier.size() < 2) {
+            return WalkResult::interrupt();
+          }
+
+          released.emplace_back(*frontier.keys().begin());
+          for (Operation* op : llvm::drop_begin(frontier.keys())) {
+            prev.insert(op);
+          }
           return WalkResult::advance();
         }
 
-        if (layer.contains(nextOp)) {
-          observedDeferredOp = layer.contains(deferredOp);
-          return WalkResult::skip();
+        for (Operation* op : frontier.keys()) {
+          curr.insert(op);
         }
 
-        return WalkResult::advance();
-      });
-
-  ASSERT_TRUE(res.succeeded());
-  EXPECT_TRUE(observedDeferredOp);
-}
-
-TEST_F(DriversTest, ProgramGraphWalk) {
-  qco::QCOProgramBuilder builder(context.get());
-  builder.initialize();
-
-  const auto q00 = builder.allocQubit();
-  const auto q10 = builder.allocQubit();
-  const auto q20 = builder.allocQubit();
-  const auto q30 = builder.allocQubit();
-
-  auto q01 = builder.h(q00);
-
-  auto [q02, q11] = builder.cx(q01, q10);
-  auto [q21, q31] = builder.cx(q20, q30);
-
-  auto q03 = builder.z(q02);
-  auto q22 = builder.h(q21);
-
-  auto [q12, q23] = builder.cx(q11, q22);
-
-  auto [q04, q13] = builder.cx(q03, q12);
-  auto q14 = builder.h(q13);
-
-  Value iterQ0;
-  Value iterQ1;
-  ValueRange blockArgs;
-  auto forResults = builder.scfFor(
-      0, 3, 1, {q04, q14, q23, q31}, [&](Value, ValueRange args) {
-        blockArgs = args;
-        std::tie(iterQ0, iterQ1) = builder.cx(args[0], args[1]);
-        return SmallVector<Value>{iterQ0, iterQ1, args[2], args[3]};
-      });
-
-  auto q05 = builder.qcoIf(
-      false, forResults[0],
-      [&](ValueRange args) { return SmallVector<Value>{builder.h(args[0])}; },
-      [&](ValueRange args) {
-        return SmallVector<Value>{builder.id(args[0])};
-      })[0];
-
-  const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
-  const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
-      identity};
-  auto q06 = builder.qcoIndexSwitch(0, q05, SmallVector<int64_t>{0}, caseBodies,
-                                    identity)[0];
-
-  builder.measure(q06);
-  builder.measure(forResults[1]);
-  builder.measure(forResults[2]);
-  builder.measure(forResults[3]);
-
-  auto mod = builder.finalize();
-  auto func = *(mod->getOps<func::FuncOp>().begin());
-
-  // Collect wires.
-  SmallVector<qco::WireIterator> wires;
-  for (qco::AllocOp op : func.getOps<qco::AllocOp>()) {
-    wires.emplace_back(op.getResult());
-  }
-
-  // Unit-test supporting datastructure.
-  SmallVector<DenseSet<Operation*>> readyPerLayer;
-
-  // Forward pass.
-  auto res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps& released) {
-        DenseSet<Operation*> layer;
-        for (Operation* op : ready.keys()) {
-          layer.insert(op);
-          released.emplace_back(op);
-        }
-        readyPerLayer.emplace_back(layer);
-        return WalkResult::advance();
-      });
-
-  ASSERT_TRUE(res.succeeded());
-  ASSERT_GE(readyPerLayer.size(), 4);
-  ASSERT_TRUE(readyPerLayer[0].contains(q02.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[0].contains(q21.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[1].contains(q12.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[2].contains(q04.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[3].contains(forResults[0].getDefiningOp()));
-
-  // Backward pass.
-  readyPerLayer.clear();
-  res = qco::walkProgramGraph<qco::WireDirection::Backward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps& released) {
-        DenseSet<Operation*> layer;
-        for (Operation* op : ready.keys()) {
-          layer.insert(op);
-          released.emplace_back(op);
-        }
-        readyPerLayer.emplace_back(layer);
-        return WalkResult::advance();
-      });
-
-  ASSERT_TRUE(res.succeeded());
-  ASSERT_GE(readyPerLayer.size(), 4);
-  ASSERT_TRUE(readyPerLayer[0].contains(forResults[0].getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[1].contains(q04.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[2].contains(q12.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[3].contains(q02.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[3].contains(q21.getDefiningOp()));
-
-  // Forward, but instead of releasing all, we use ::skip().
-  readyPerLayer.clear();
-  res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps&) {
-        DenseSet<Operation*> layer;
-        for (Operation* op : ready.keys()) {
-          layer.insert(op);
-        }
-        readyPerLayer.emplace_back(layer);
-        return WalkResult::skip();
-      });
-
-  ASSERT_TRUE(res.succeeded());
-  ASSERT_GE(readyPerLayer.size(), 4);
-  ASSERT_TRUE(readyPerLayer[0].contains(q02.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[0].contains(q21.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[1].contains(q12.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[2].contains(q04.getDefiningOp()));
-  ASSERT_TRUE(readyPerLayer[3].contains(forResults[0].getDefiningOp()));
-
-  // Backward, but stop after first layer.
-  readyPerLayer.clear();
-  res = qco::walkProgramGraph<qco::WireDirection::Backward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps& released) {
-        DenseSet<Operation*> layer;
-        for (Operation* op : ready.keys()) {
-          layer.insert(op);
-          released.emplace_back(op);
-        }
-        readyPerLayer.emplace_back(layer);
         return WalkResult::interrupt();
       });
 
-  ASSERT_TRUE(res.failed());
-  ASSERT_EQ(readyPerLayer.size(), 1);
-  ASSERT_TRUE(readyPerLayer[0].contains(forResults[0].getDefiningOp()));
-
-  // Forward, but start at block arguments.
-  wires.clear();
-  for (Value arg : blockArgs) {
-    wires.emplace_back(arg);
-  }
-
-  readyPerLayer.clear();
-  res = qco::walkProgramGraph<qco::WireDirection::Forward>(
-      wires, [&](const qco::ReadyMap& ready, qco::ReleasedOps& released) {
-        DenseSet<Operation*> layer;
-        for (Operation* op : ready.keys()) {
-          layer.insert(op);
-          released.emplace_back(op);
-        }
-        readyPerLayer.emplace_back(layer);
-        return WalkResult::advance();
-      });
-
-  ASSERT_TRUE(res.succeeded());
-  ASSERT_GE(readyPerLayer.size(), 1);
-  ASSERT_TRUE(readyPerLayer[0].contains(iterQ0.getDefiningOp()));
+  EXPECT_GE(curr.size(), prev.size());
+  EXPECT_TRUE(
+      llvm::all_of(prev, [&](Operation* op) { return curr.contains(op); }));
 }

@@ -26,49 +26,25 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
-    GIT_TAG 7e11628de13d87798474386721c08f218b5f277e)
-  function(_mqt_core_make_jeff_available)
-    # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option
-    # and defines a global `check` target when it is enabled. Do not let an embedding project's test
-    # setting leak into this third-party dependency.
-    set(BUILD_TESTING OFF)
-    # jeff's transitive Cap'n Proto dependency contains source files that cannot share a unity
-    # translation unit. Keep the complete dependency subtree out of unity builds.
-    set(CMAKE_UNITY_BUILD OFF)
-    FetchContent_MakeAvailable(jeff-mlir)
-  endfunction()
-  _mqt_core_make_jeff_available()
-
-  # jeff-mlir currently reports malformed serialized input through LLVM's fatal error API. Compile
-  # its translation boundary with exceptions and redirect those reports so the public MQT importer
-  # can diagnose them without exiting. MLIR uses an object target when available. Visual Studio
-  # generators compile the sources in the library target directly.
-  if(TARGET obj.MLIRJeffTranslation)
-    set(_mqt_core_jeff_translation_target obj.MLIRJeffTranslation)
-  else()
-    set(_mqt_core_jeff_translation_target MLIRJeffTranslation)
-  endif()
-  if(MSVC)
-    target_compile_options(
-      ${_mqt_core_jeff_translation_target}
-      PRIVATE /EHsc "/FI${PROJECT_SOURCE_DIR}/mlir/include/mlir/Compiler/JeffFatalErrorRedirect.h")
-  else()
-    target_compile_options(
-      ${_mqt_core_jeff_translation_target}
-      PRIVATE -fexceptions -include
-              "${PROJECT_SOURCE_DIR}/mlir/include/mlir/Compiler/JeffFatalErrorRedirect.h")
-  endif()
-  unset(_mqt_core_jeff_translation_target)
+    GIT_TAG 4732c4f12047e8cbf1890c79e90e30110e6588e2
+    EXCLUDE_FROM_ALL)
+  block()
+  # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option
+  # and defines a global `check` target when it is enabled. Do not let an embedding project's test
+  # setting leak into this third-party dependency.
+  set(BUILD_TESTING OFF)
+  # jeff's transitive Cap'n Proto dependency contains source files that cannot share a unity
+  # translation unit. Keep the complete dependency subtree out of unity builds.
+  set(CMAKE_UNITY_BUILD OFF)
+  FetchContent_MakeAvailable(jeff-mlir)
+  endblock()
 endif()
 
 set(JSON_VERSION
     3.12.0
     CACHE STRING "nlohmann_json version")
 set(JSON_URL https://github.com/nlohmann/json/releases/download/v${JSON_VERSION}/json.tar.xz)
-set(JSON_SystemInclude
-    ON
-    CACHE INTERNAL "Treat the library headers like system headers")
-FetchContent_Declare(nlohmann_json URL ${JSON_URL} FIND_PACKAGE_ARGS ${JSON_VERSION})
+FetchContent_Declare(nlohmann_json URL ${JSON_URL} SYSTEM FIND_PACKAGE_ARGS ${JSON_VERSION})
 list(APPEND FETCH_PACKAGES nlohmann_json)
 
 if(BUILD_MQT_CORE_TESTS)

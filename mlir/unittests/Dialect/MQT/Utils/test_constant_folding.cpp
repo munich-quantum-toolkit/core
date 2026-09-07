@@ -229,7 +229,8 @@ TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsSuccess) {
   }
   const auto stdValue = mlir::mqt::valueToConstantDouble(v);
   ASSERT_TRUE(stdValue.has_value());
-  EXPECT_DOUBLE_EQ(*stdValue, static_cast<double>(1ULL << depth));
+  EXPECT_DOUBLE_EQ(*stdValue,
+                   static_cast<double>(1ULL << static_cast<unsigned>(depth)));
 }
 
 TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsFailure) {

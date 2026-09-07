@@ -1,13 +1,11 @@
 # Normalize compiler-wide global phases without changing quantum semantics
 
-This ExecPlan is a living document. The sections `Progress`,
-`Surprises & Discoveries`, `Decision Log`, and `Outcomes & Retrospective` must
-be kept up to date as work proceeds.
+Status: historical implementation record.
 
-This ExecPlan must be maintained in accordance with `.agent/PLANS.md` from the
-repository root.
+Later test decisions and remaining questions:
+[global-phase audit](../audits/global-phase-normalization.md).
 
-## Purpose / Big Picture
+## Goal and scope
 
 MQT Core synthesis and canonicalization passes often emit one `qc.gphase` or
 `qco.gphase` operation for each local rewrite so that the rewritten circuit has
@@ -26,184 +24,125 @@ unknown regions remain independent scopes. Focused full-matrix tests, including
 tests under an extra outer control, demonstrate that no rewrite hides an
 incorrect phase behind an equivalence-up-to-phase comparison.
 
-## Progress
+## Constraints
 
-- [x] (2026-08-01 10:42Z) Refresh `origin/main`, allocate the isolated task
-  worktree, verify issue labels, and read repository policy.
-- [x] (2026-08-01 10:42Z) Record the semantic contract and staged implementation
-  in this ExecPlan.
-- [x] (2026-08-01) Repair existing principal-power canonicalization and add
-      direct and outer-controlled full-matrix regressions for phase-producing
-      power rewrites.
-- [x] (2026-08-01) Add the shared QC/QCO global-phase normalization engine and
-  its textual pass.
-- [x] (2026-08-01) Factor normalized phases through inverse, integral power, and
-      control modifiers with conservative SSA-slice hoisting.
-- [x] (2026-08-01) Integrate normalization into cleanup, typed C++ APIs,
-      generated Python bindings, conversion passes, and phase-producing
-      synthesis passes.
-- [x] (2026-08-01) Add exact-unitary modifier tests, scope-boundary and
-  idempotence tests, conversion diagnostics, synthesis invariants, an
-  OpenQASM-to-Jeff/QIR case, and 1k/10k/100k scaling coverage.
-- [x] (2026-08-01) Run focused tests, the complete 4,427-case configured CTest
-  suite, the release build, generated-stub and Python binding checks,
-  repository lint, and final diff/status audits.
-- [x] (2026-08-01) Refresh `origin/main`, inspect its two non-overlapping
-  commits, rebase the three implementation stages, and repeat affected
-  validation before handoff.
-- [x] (2026-08-02) Reproduce the review findings on the current PR head:
-      imprecise reduction of very large angles, dynamic overflow exposure, a
-      quadratic nested-modifier path, a duplicate default-pipeline
-      normalization, and generic build-system naming.
-- [x] (2026-08-02) Replace the non-finite and arbitrary-magnitude phase paths
-  with a shared practical angle contract and QC/QCO operation verifiers.
-- [x] (2026-08-02) Defer inverse and power arithmetic in a symbolic postfix
-      phase expression so nested modifiers perform linear work and materialize
-      SSA arithmetic only once.
-- [x] (2026-08-02) Remove the redundant default-pipeline normalizer and rename
-  transform library, TableGen, and documentation targets from `Quantum` to
-  `MQT`.
-- [x] (2026-08-02) Run final local clang-tidy, the complete release build, 4,431
-      configured tests, all repository hooks, focused post-format semantic
-      tests, and final diff/status checks.
-
-## Surprises & Discoveries
-
-- Observation: current `PowOp` uses eigendecomposition and raises eigenvalues on
-  the principal complex branch, but the existing `pow(r) { x }` general fold
-  emits `gphase(-r*pi/2); rx(r*pi)`. For `r = 1/3`, the maximum entrywise error
-  from principal `X^(1/3)` is approximately `0.866`, while changing the phase
-  sign to positive reduces the error to floating-point noise. Existing
+- current `PowOp` uses eigendecomposition and raises eigenvalues on the
+  principal complex branch, but the existing `pow(r) { x }` general fold emits
+  `gphase(-r*pi/2); rx(r*pi)`. For `r = 1/3`, the maximum entrywise error from
+  principal `X^(1/3)` is approximately `0.866`, while changing the phase sign to
+  positive reduces the error to floating-point noise. Existing
   measurement-oriented module-equivalence tests do not observe this global phase
   error.
-- Observation: extracting a phase through a fractional matrix power is not
-  generally valid. For a diagonal example, independently applying the principal
-  power to `exp(i*phi) V` and factoring `exp(i*p*phi)` from `V^p` differs by
-  magnitude `2.0` across a branch cut. Integral powers remain exact.
-- Observation: QIR cannot represent a global phase nested in a control. The
-  conversion now runs normalization itself: a hoistable phase becomes the exact
-  relative `P` operation on the controls, while a phase whose angle depends on a
+
+- extracting a phase through a fractional matrix power is not generally valid.
+  For a diagonal example, independently applying the principal power to
+  `exp(i*phi) V` and factoring `exp(i*p*phi)` from `V^p` differs by magnitude
+  `2.0` across a branch cut. Integral powers remain exact.
+
+- QIR cannot represent a global phase nested in a control. The conversion now
+  runs normalization itself: a hoistable phase becomes the exact relative `P`
+  operation on the controls, while a phase whose angle depends on a
   non-speculatable call remains nested and produces the existing
   `Controlled GPhaseOps cannot be converted to QIR` diagnostic.
-- Observation: the QCO DD fallback used by the exact-unitary oracle accepts
-  full-width unitaries only in canonical qubit order. Reordered-control SSA
-  threading is therefore verified structurally, while canonical control orders
-  with zero through three controls are checked by complete matrix equality.
-- Observation: release-mode normalization took 79,750 ns, 624,667 ns, and
-  6,124,500 ns for 1,000, 10,000, and 100,000 phase contributions. The observed
-  growth factors of approximately 7.8 and 9.8 for tenfold input growth are
-  consistent with the intended linear traversal.
-- Observation: generated stubs initially selected an unrelated MLIR and failed
-  configuration. Selecting the repository's LLVM/MLIR 22.1.3 installation
-  produced the wheel and completed the Nox `stubs` session successfully without
-  source workarounds.
-- Observation: the final upstream refresh advanced `origin/main` from
-  `e772dba5c` to `a5757fe95` by two commits confined to DD serialization and ZX
-  decomposition. They did not overlap the compiler changes and rebased cleanly.
-- Observation: after rebasing, the complete configured CTest suite passed all
-  4,427 cases in 38.63 seconds; two environment-dependent QDMI job-ID tests were
-  reported by CTest as skipped. The all-files Nox lint session passed every
-  hook, and the built Python 3.13 binding test passed.
-- Observation: before remediation, release-mode normalization of one dynamic
-  phase under 100, 200, 400, 800, 1,600, and 3,200 nested integral powers took
-  827 us, 2,855 us, 10,259 us, 33,470 us, 130,212 us, and 532,003 us,
-  respectively. Each modifier had materialized another SSA operation and the
-  next modifier walked the entire growing chain.
-- Observation: after deferring modifier arithmetic, 128, 256, 512, and 1,024
-  nested dynamic integral powers took 116,666 ns, 188,708 ns, 359,625 ns, and
-  754,500 ns in the focused release test. An eightfold increase in depth caused
-  approximately 6.5-fold runtime growth.
-- Observation: local clang-tidy 22.1.8 needs the active Xcode SDK and libc++
-  include paths passed explicitly on macOS. With those paths, the changed
-  normalizer source has no diagnostics; the generated TableGen headers still
-  produce their pre-existing diagnostics.
-- Observation: final validation passed all 4,431 configured tests in 44.61
-  seconds. The two environment-dependent QDMI job-ID tests were skipped. The
-  full release build, all repository hooks, final five-source clang-tidy run,
-  and 27 focused global-phase tests also passed.
 
-## Decision Log
+- the QCO DD fallback used by the exact-unitary oracle accepts full-width
+  unitaries only in canonical qubit order. Reordered-control SSA threading is
+  therefore verified structurally, while canonical control orders with zero
+  through three controls are checked by complete matrix equality.
 
-- Decision: preserve `qc.gphase` and `qco.gphase` as the canonical materialized
+- release-mode normalization took 79,750 ns, 624,667 ns, and 6,124,500 ns for
+  1,000, 10,000, and 100,000 phase contributions. The observed growth factors of
+  approximately 7.8 and 9.8 for tenfold input growth are consistent with the
+  intended linear traversal.
+
+- before remediation, release-mode normalization of one dynamic phase under 100,
+  200, 400, 800, 1,600, and 3,200 nested integral powers took 827 us, 2,855 us,
+  10,259 us, 33,470 us, 130,212 us, and 532,003 us, respectively. Each modifier
+  had materialized another SSA operation and the next modifier walked the entire
+  growing chain.
+
+- after deferring modifier arithmetic, 128, 256, 512, and 1,024 nested dynamic
+  integral powers took 116,666 ns, 188,708 ns, 359,625 ns, and 754,500 ns in the
+  focused release test. An eightfold increase in depth caused approximately
+  6.5-fold runtime growth.
+
+## Decisions
+
+- preserve `qc.gphase` and `qco.gphase` as the canonical materialized
   representation and place at most one directly in each basic block. Rationale:
   this avoids a new phase-token dataflow system and retains all existing
-  translations and lowerings. Date/Author: 2026-08-01, Codex.
-- Decision: define each basic block as a normalization scope and never transport
-  phase state through function signatures, CFG successors, or SCF
-  arguments/results in this change. Rationale: one block-local traversal is
-  linear, dominance-safe for runtime angles, and conservative at control-flow
-  joins. Date/Author: 2026-08-01, Codex.
-- Decision: factor through inverse unconditionally, through power only for a
-  finite exactly integral compile-time exponent, and through control as a
-  relative phase on the control register. Rationale: these are exact operator
-  identities under MQT's current matrix semantics; fractional power
-  factorization is not. Date/Author: 2026-08-01, Codex.
-- Decision: compare rewritten unitary matrices directly and place
-  phase-producing rewrites under an additional control in semantic tests.
-  Rationale: probability-based tests and comparisons modulo global phase cannot
-  detect the errors that become relative phases under control. Date/Author:
-  2026-08-01, Codex.
-- Decision: implement one shared traversal with small QC/QCO adapters instead of
-  patterns that repeatedly scan enclosing modules. Rationale: this gives
-  deterministic linear work and one place to enforce boundary and numerical
-  rules. Date/Author: 2026-08-01, Codex.
-- Decision: run normalization inside the QC-to-QIR Base/Adaptive and QCO-to-Jeff
+  translations and lowerings.
+
+- define each basic block as a normalization scope and never transport phase
+  state through function signatures, CFG successors, or SCF arguments/results in
+  this change. Rationale: one block-local traversal is linear, dominance-safe
+  for runtime angles, and conservative at control-flow joins.
+
+- factor through inverse unconditionally, through power only for a finite
+  exactly integral compile-time exponent, and through control as a relative
+  phase on the control register. Rationale: these are exact operator identities
+  under MQT's current matrix semantics; fractional power factorization is not.
+
+- compare rewritten unitary matrices directly and place phase-producing rewrites
+  under an additional control in semantic tests. Rationale: probability-based
+  tests and comparisons modulo global phase cannot detect the errors that become
+  relative phases under control.
+
+- implement one shared traversal with small QC/QCO adapters instead of patterns
+  that repeatedly scan enclosing modules. Rationale: this gives deterministic
+  linear work and one place to enforce boundary and numerical rules.
+
+- run normalization inside the QC-to-QIR Base/Adaptive and QCO-to-Jeff
   conversion passes, rather than relying only on typed-program wrappers.
   Rationale: textual pass pipelines and direct conversion users must receive the
   same sound boundary behavior without a duplicate traversal in the typed API.
-  Date/Author: 2026-08-01, Codex.
-- Decision: reduce each finite literal modulo `2*pi` while accumulating
-  constants. Rationale: the phase identity permits this and it prevents two
-  individually finite literals from overflowing their C++ accumulator before the
-  final normalization. Dynamic additions remain unreassociated and in encounter
-  order. Date/Author: 2026-08-01, Codex.
-- Decision: return numeric phase contributions directly from Euler and Weyl
-  synthesis, while dynamic optimization contributions remain canonical
-  `qco.gphase` operations until the one post-pass normalization traversal.
-  Rationale: all current synthesis corrections are compile-time doubles; an
-  exposed double-or-SSA wrapper would add an unused abstraction. The shared
-  normalizer already provides the common ordered accumulator for both numeric
-  and SSA-valued contributions. Date/Author: 2026-08-01, Codex.
-- Decision: require constant `qc.gphase` and `qco.gphase` angles to be finite
-  and no larger than 10,000 radians in magnitude, with the same documented
-  runtime precondition for dynamic values. Rationale: this range is generous for
+
+- reduce each finite literal modulo `2*pi` while accumulating constants.
+  Rationale: the phase identity permits this and it prevents two individually
+  finite literals from overflowing their C++ accumulator before the final
+  normalization. Dynamic additions remain unreassociated and in encounter order.
+
+- return numeric phase contributions directly from Euler and Weyl synthesis,
+  while dynamic optimization contributions remain canonical `qco.gphase`
+  operations until the one post-pass normalization traversal. Rationale: all
+  current synthesis corrections are compile-time doubles; an exposed
+  double-or-SSA wrapper would add an unused abstraction. The shared normalizer
+  already provides the common ordered accumulator for both numeric and
+  SSA-valued contributions.
+
+- require constant `qc.gphase` and `qco.gphase` angles to be finite and no
+  larger than 10,000 radians in magnitude, with the same documented runtime
+  precondition for dynamic values. Rationale: this range is generous for
   compiler workloads while keeping binary64 modulo reduction within the
   exact-unitary test tolerance. A verifier makes malformed constants explicit
   and removes the need for overflow, NaN, and infinity branches throughout the
-  normalizer. Date/Author: 2026-08-02, Codex.
-- Decision: represent a phase being transported through modifiers as a postfix
-  expression containing values, constants, ordered additions, negations, and
-  scales. Rationale: inverse and power transformations remain exact and retain
-  the original dynamic addition grouping, while the expression and its hoistable
+  normalizer.
+
+- represent a phase being transported through modifiers as a postfix expression
+  containing values, constants, ordered additions, negations, and scales.
+  Rationale: inverse and power transformations remain exact and retain the
+  original dynamic addition grouping, while the expression and its hoistable
   value leaves are traversed linearly and materialized only at the stopping
-  scope. Date/Author: 2026-08-02, Codex.
-- Decision: rely on the compiler invariant that a program uses either QC or QCO,
-  never both, and assert this when contributions are combined. Rationale:
+  scope.
+
+- rely on the compiler invariant that a program uses either QC or QCO, never
+  both, and assert this when contributions are combined. Rationale:
   mixed-dialect recovery code would complicate a state that cannot arise in
-  supported programs. Date/Author: 2026-08-02, Codex.
+  supported programs.
 
-## Outcomes & Retrospective
+## Outcome and validation
 
-The semantic repairs, shared transform, APIs, conversion integration, synthesis
-refactor, generated stubs, and acceptance tests are implemented. Complete QC and
-QCO matrices are compared entry-by-entry, including phase-producing power folds
-and controlled-phase extraction under another control. Euler/Weyl and native
-synthesis retain full-unitary equivalence while emitting at most one direct
-phase per block. The release build, all 4,427 configured CTest cases, generated
-stubs, the built Python 3.13 binding test, all-files repository lint,
-`git diff --check`, and focused linear-scaling measurement passed. The three
-local commits are rebased onto `a5757fe95`. No remote branch, issue, or
-pull-request state has been changed.
+The shared transform, program APIs, conversion integration, and synthesis
+changes preserve complete QC/QCO unitaries, including controlled phases.
+Bounded-angle verification and deferred symbolic materialization avoid full-f64
+argument reduction and repeated traversal.
 
-The follow-up review remediation is implemented and validated locally but not
-yet published. It uses a bounded-angle verifier instead of attempting full-f64
-argument reduction, keeps modifier transformations symbolic until their stopping
-scope, removes a duplicate default-pipeline traversal, and uses MQT-specific
-transform target names. The final release build, all 4,431 configured tests,
-repository hooks, focused exact-unitary and scaling tests, local clang-tidy, and
-diff checks pass.
+The final recorded release build, configured CTests, hooks, stubs, Python
+binding tests, exact-unitary tests, scaling checks, and focused clang-tidy
+passed. Later decisions about representation-specific tests and remaining risks
+are in the linked audit.
 
-## Context and Orientation
+## Code and ownership
 
 The QC dialect represents quantum operations on reference-like qubit values. Its
 operation definitions are in `mlir/include/mlir/Dialect/QC/IR/QCOps.td`, with
@@ -248,107 +187,7 @@ currently materialize phase operations immediately. They will instead return or
 accumulate a `double` or SSA-value phase contribution and materialize it once
 per completed pass scope.
 
-This work must remain inside its assigned worktree. It must not modify another
-task's worktree. `AGENTS.md` and `docs/ai_usage.md` govern validation, generated
-files, AI disclosure, and external actions. This ExecPlan authorizes no push,
-pull request, issue comment, or other GitHub mutation.
-
-## Plan of Work
-
-First, repair the existing phase-producing power canonicalization in both
-dialects. Fixed-spectrum gates may retain real-exponent closed forms only when
-the formula follows directly from their principal eigenphases. In particular,
-use positive `r*pi/2` global phase for `X` and `Y`, positive `r*pi/4` for `SX`,
-and negative `r*pi/4` for `SXdg`. Keep the existing exact `P`-family and iSWAP
-spectral forms. Restrict folds that merely scale a runtime or arbitrary gate
-parameter (`gphase`, rotations, `P`, `R`, and parameterized two-qubit gates) to
-finite exactly integral exponents. Add QCO matrix tests that compare the
-original `PowOp` matrix directly with the canonical replacement and repeat each
-phase-producing case under an outer control. Mirror structural/canonicalization
-coverage for QC.
-
-Next, add a common transform library and a module pass named
-`normalize-global-phases`. The traversal must recurse through child regions
-first, specially factor modifier-body phases when legal, then normalize direct
-phase operations in each block. It must collect contributions in textual order,
-sum constants in C++, build nonconstant additions as an ordered `arith.addf`
-chain without fast-math, normalize the final constant modulo `2*pi`, and emit
-one phase immediately before the block terminator. It must not cancel symbolic
-opposites. Constant global-phase angles outside the shared practical range are
-invalid IR; supported programs contain either QC or QCO operations, never a
-mixture.
-
-When factoring a modifier, first locate the one normalized direct phase at the
-body exit. If its angle is defined outside the modifier, reuse it. If defined
-inside, collect its backward SSA slice and move that slice only when every
-operation is speculatable, has no memory effects, and has no block-argument
-dependency. Otherwise leave the phase in place. Remove the phase and record the
-negation or integer scale symbolically until bubbling stops. For QCO control,
-remove the body phase, keep the original control for the remaining body, create
-`P` or a smaller `CtrlOp` on the original control outputs, and replace
-downstream uses of those control results while leaving target results unchanged.
-Implement the same operator order in QC. A zero-control modifier leaves the
-phase global.
-
-Register the pass and expose `normalizeGlobalPhases()` on both typed C++
-programs plus `normalize_global_phases()` in Python. Add it after generic
-canonicalization in QC and QCO cleanup, and immediately before target
-conversions that cannot represent a controlled global phase. Regenerate Python
-stubs with the repository Nox session.
-
-Refactor phase-producing synthesis code only after the normalizer is proven.
-Introduce a small `GlobalPhaseContribution` representation that contains either
-a constant `double` or an existing `f64` SSA value. Euler and Weyl synthesis
-return their correction with their synthesized outputs; native two-qubit
-synthesis accumulates all constant corrections before materializing one
-operation. Rotation merging and Hadamard lifting send their contributions to the
-shared block accumulator. A standalone phase-producing pass invokes
-normalization once after its rewrite traversal; a compound native pipeline does
-so once after all internal stages.
-
-Finally add end-to-end and scaling coverage. Exercise OpenQASM-to-QC, QC-to-QCO,
-QCO-to-QC, Jeff, and QIR paths with modifier-contained phases and structured
-control flow. Add a test or benchmark helper that creates 1,000, 10,000, and
-100,000 phase contributions and records phase count and pass time. The
-implementation is acceptable only if the phase count becomes the number of
-nonzero block scopes and observed runtime growth remains linear.
-
-## Concrete Steps
-
-Run all commands from the repository root.
-
-Inspect and iterate with the focused source and test searches:
-
-    rg -n "GPhaseOp|PowOp|populateQ.CleanupPipeline" mlir
-
-Configure a worktree-local release build:
-
-    ./.agent/run.sh cmake --preset release
-
-Build the focused dialect and compiler tests as their exact generated targets
-become known:
-
-    ./.agent/run.sh cmake --build --preset release --target \
-      mqt-core-mlir-unittests-qco-ir \
-      mqt-core-mlir-unittests-qc-ir \
-      mqt-core-mlir-unittests-compiler
-
-Run the corresponding binaries with GoogleTest filters while iterating, then run
-the complete affected binaries without filters. Use
-`./.agent/run.sh ctest --preset release` for the final configured C++ suite.
-
-Regenerate binding stubs after changing `bindings/mlir/register_mlir.cpp`:
-
-    ./.agent/run.sh uvx nox -s stubs
-
-Run repository lint last:
-
-    ./.agent/run.sh uvx nox -s lint
-
-Record exact target names, test counts, timings, and any environment failures in
-`Progress`, `Surprises & Discoveries`, and `Outcomes & Retrospective`.
-
-## Validation and Acceptance
+## Acceptance
 
 The `normalize-global-phases` pass succeeds when a block containing multiple
 direct QC or QCO phases contains zero phases if the exact normalized sum is
@@ -376,35 +215,11 @@ precise failure for a deliberately non-hoistable controlled phase.
 
 The final branch must pass focused modifier, synthesis, conversion, and compiler
 tests, the affected complete test binaries, the release build, stub generation,
-`./.agent/run.sh uvx nox -s lint`, `git diff --check`, and a clean review of
+`uvx nox -s lint`, `git diff --check`, and a clean review of
 `git status --short`. Any unavailable broader check must be reported with its
 exact failure and must not be weakened.
 
-## Idempotence and Recovery
-
-Source edits and tests are repeatable. The normalization pass itself must be
-idempotent. CMake configuration, builds, tests, stub generation, and lint may be
-rerun through `.agent/run.sh`; their caches remain local to this worktree.
-
-If a semantic test exposes an invalid planned identity, retain the original
-modifier boundary, record the counterexample here, and do not weaken the exact
-matrix oracle. If generated stubs differ unexpectedly, regenerate them from the
-binding source rather than editing them. Preserve unrelated files and never
-reset, clean, or modify another worktree.
-
-## Artifacts and Notes
-
-The initial analytic counterexample is:
-
-    max_entry_error(principal_pow(X, 1/3),
-                    gphase(-pi/6) * rx(pi/3)) = 0.8660254037844386
-
-    max_entry_error(principal_pow(X, 1/3),
-                    gphase(+pi/6) * rx(pi/3)) = 1.1102230246251565e-16
-
-This is an acceptance fixture, not merely design motivation.
-
-## Interfaces and Dependencies
+## Interfaces
 
 The final public interfaces are:
 
@@ -419,7 +234,3 @@ The textual pass argument is `normalize-global-phases` and operates on
 implementation must depend only on existing MLIR IR, side-effect, speculation,
 and rewrite utilities; it must not introduce a phase-token type, change
 `GPhaseOp` syntax, or require Jeff/QIR to duplicate normalization logic.
-
-Revision note: created on 2026-08-01 to turn the approved compiler-wide phase
-normalization design into a self-contained staged implementation and validation
-record.

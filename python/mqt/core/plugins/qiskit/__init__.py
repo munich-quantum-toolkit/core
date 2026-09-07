@@ -30,7 +30,6 @@ __all__ = [
 
 if TYPE_CHECKING or HAS_QISKIT:
     from .backend import QDMIBackend
-    from .estimator import QDMIEstimator
     from .exceptions import (
         CircuitValidationError,
         JobSubmissionError,
@@ -40,10 +39,7 @@ if TYPE_CHECKING or HAS_QISKIT:
         UnsupportedOperationError,
     )
     from .job import QDMIJob
-    from .mqt_to_qiskit import mqt_to_qiskit
     from .provider import QDMIProvider
-    from .qiskit_to_mqt import qiskit_to_mqt
-    from .sampler import QDMISampler
     from .serializers import (
         ProgramSerializer,
         program_serializer,
@@ -56,17 +52,13 @@ if TYPE_CHECKING or HAS_QISKIT:
         "JobSubmissionError",
         "ProgramSerializer",
         "QDMIBackend",
-        "QDMIEstimator",
         "QDMIJob",
         "QDMIProvider",
         "QDMIQiskitError",
-        "QDMISampler",
         "TranslationError",
         "UnsupportedFormatError",
         "UnsupportedOperationError",
-        "mqt_to_qiskit",
         "program_serializer",
-        "qiskit_to_mqt",
         "register_program_serializer",
         "unregister_program_serializer",
     ]

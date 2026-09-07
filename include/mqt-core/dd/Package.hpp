@@ -29,12 +29,10 @@
 #include "dd/RealNumberUniqueTable.hpp"
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
-#include "ir/Definitions.hpp"
-#include "ir/Permutation.hpp"
-#include "ir/operations/Control.hpp"
 
 #include <array>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -43,6 +41,7 @@
 #include <random>
 #include <ranges>
 #include <regex>
+#include <span>
 #include <stack>
 #include <stdexcept>
 #include <string>
@@ -116,10 +115,12 @@ private:
 public:
   /// The memory manager for vector nodes
   MemoryManager vMemoryManager{
-      MemoryManager::create<vNode>(config_.utVecInitialAllocationSize)};
+      MemoryManager::create<vNode>(config_.utVecInitialAllocationSize),
+  };
   /// The memory manager for matrix nodes
   MemoryManager mMemoryManager{
-      MemoryManager::create<mNode>(config_.utMatInitialAllocationSize)};
+      MemoryManager::create<mNode>(config_.utMatInitialAllocationSize),
+  };
   /**
    * @brief The memory manager for complex numbers
    * @note The real and imaginary part of complex numbers are treated
@@ -223,7 +224,7 @@ private:
 
     /// @brief Add to respective root set.
     template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
-      ++(getRoots<Node>()[e]);
+      ++getRoots<Node>()[e];
     }
 
     /// @brief Remove from respective root set.
@@ -341,7 +342,7 @@ public:
    * @param target The target qubit
    * @return A decision diagram for the gate
    */
-  mEdge makeGateDD(const GateMatrix& mat, qc::Qubit target);
+  mEdge makeGateDD(const GateMatrix& mat, Qubit target);
 
   /**
    * @brief Construct the DD for a single-qubit controlled gate
@@ -350,8 +351,7 @@ public:
    * @param target The target qubit
    * @return A decision diagram for the gate
    */
-  mEdge makeGateDD(const GateMatrix& mat, const qc::Control& control,
-                   qc::Qubit target);
+  mEdge makeGateDD(const GateMatrix& mat, const Control& control, Qubit target);
 
   /**
    * @brief Construct the DD for a multi-controlled single-qubit gate
@@ -360,8 +360,12 @@ public:
    * @param target The target qubit
    * @return A decision diagram for the gate
    */
-  mEdge makeGateDD(const GateMatrix& mat, const qc::Controls& controls,
-                   qc::Qubit target);
+  mEdge makeGateDD(const GateMatrix& mat, const Controls& controls,
+                   Qubit target);
+
+  /// Construct a single-qubit gate DD from a row-major matrix view.
+  mEdge makeGateDD(std::span<const std::complex<fp>, NEDGE> mat,
+                   const Controls& controls, Qubit target);
 
   /**
    * @brief Creates the DD for a two-qubit gate
@@ -372,8 +376,8 @@ public:
    * @throws std::runtime_error if the number of qubits is larger than the
    * package configuration
    */
-  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, qc::Qubit target0,
-                           qc::Qubit target1);
+  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, Qubit target0,
+                           Qubit target1);
 
   /**
    * @brief Creates the DD for a two-qubit gate
@@ -386,8 +390,8 @@ public:
    * package configuration
    */
   mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                           const qc::Control& control, qc::Qubit target0,
-                           qc::Qubit target1);
+                           const Control& control, Qubit target0,
+                           Qubit target1);
 
   /**
    * @brief Creates the DD for a two-qubit gate
@@ -400,8 +404,14 @@ public:
    * package configuration
    */
   mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                           const qc::Controls& controls, qc::Qubit target0,
-                           qc::Qubit target1);
+                           const Controls& controls, Qubit target0,
+                           Qubit target1);
+
+  /// Construct a two-qubit gate DD from a row-major matrix view.
+  mEdge makeTwoQubitGateDD(
+      std::span<const std::complex<fp>, static_cast<std::size_t>(NEDGE) * NEDGE>
+          mat,
+      const Controls& controls, Qubit target0, Qubit target1);
 
   /**
    * @brief Creates the DD for a three-qubit gate
@@ -413,8 +423,8 @@ public:
    * @throws std::runtime_error if the number of qubits is larger than the
    * package configuration
    */
-  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, qc::Qubit target0,
-                             qc::Qubit target1, qc::Qubit target2);
+  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, Qubit target0,
+                             Qubit target1, Qubit target2);
 
   /**
    * @brief Creates the DD for a three-qubit gate
@@ -428,8 +438,8 @@ public:
    * package configuration
    */
   mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                             const qc::Control& control, qc::Qubit target0,
-                             qc::Qubit target1, qc::Qubit target2);
+                             const Control& control, Qubit target0,
+                             Qubit target1, Qubit target2);
 
   /**
    * @brief Creates the DD for a three-qubit gate
@@ -443,8 +453,16 @@ public:
    * package configuration
    */
   mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
-                             const qc::Controls& controls, qc::Qubit target0,
-                             qc::Qubit target1, qc::Qubit target2);
+                             const Controls& controls, Qubit target0,
+                             Qubit target1, Qubit target2);
+
+  /// Construct a three-qubit gate DD from a row-major matrix view.
+  mEdge makeThreeQubitGateDD(
+      std::span<const std::complex<fp>,
+                static_cast<std::size_t>(THREE_QUBIT_GATE_DIM) *
+                    THREE_QUBIT_GATE_DIM>
+          mat,
+      const Controls& controls, Qubit target0, Qubit target1, Qubit target2);
 
   /**
    * @brief Converts a given matrix to a decision diagram
@@ -759,7 +777,7 @@ public:
     if (!x.isTerminal()) {
       var = x.p->v;
     }
-    if (!y.isTerminal() && (y.p->v) > var) {
+    if (!y.isTerminal() && y.p->v > var) {
       var = y.p->v;
     }
 
@@ -767,6 +785,26 @@ public:
     return cn.lookup(result);
   }
 
+private:
+  /// Select a successor at this level and apply the incoming edge weight.
+  template <class Node>
+  static CachedEdge<Node> weightedSuccessor(const CachedEdge<Node>& edge,
+                                            const Qubit var,
+                                            const std::size_t index) {
+    if constexpr (IsMatrix<Node>) {
+      if (edge.isIdentity() || edge.p->v < var) {
+        return index == 0 || index == 3 ? edge : CachedEdge<Node>{};
+      }
+    }
+    const auto& successor = edge.p->e[index];
+    auto result = CachedEdge<Node>{successor.p, 0};
+    if (!successor.w.exactlyZero()) {
+      result.w = edge.w * successor.w;
+    }
+    return result;
+  }
+
+public:
   /**
    * @brief Internal function to add two decision diagrams.
    *
@@ -804,53 +842,8 @@ public:
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
-      CachedEdge<Node> e1{};
-      if constexpr (IsMatrix<Node>) {
-        if (x.isIdentity() || x.p->v < var) {
-          // [ 0 | 1 ]   [ x | 0 ]
-          // --------- = ---------
-          // [ 2 | 3 ]   [ 0 | x ]
-          if (i == 0 || i == 3) {
-            e1 = x;
-          }
-        } else {
-          auto& xSuccessor = x.p->e[i];
-          e1 = {xSuccessor.p, 0};
-          if (!xSuccessor.w.exactlyZero()) {
-            e1.w = x.w * xSuccessor.w;
-          }
-        }
-      } else {
-        auto& xSuccessor = x.p->e[i];
-        e1 = {xSuccessor.p, 0};
-        if (!xSuccessor.w.exactlyZero()) {
-          e1.w = x.w * xSuccessor.w;
-        }
-      }
-      CachedEdge<Node> e2{};
-      if constexpr (IsMatrix<Node>) {
-        if (y.isIdentity() || y.p->v < var) {
-          // [ 0 | 1 ]   [ y | 0 ]
-          // --------- = ---------
-          // [ 2 | 3 ]   [ 0 | y ]
-          if (i == 0 || i == 3) {
-            e2 = y;
-          }
-        } else {
-          auto& ySuccessor = y.p->e[i];
-          e2 = {ySuccessor.p, 0};
-          if (!ySuccessor.w.exactlyZero()) {
-            e2.w = y.w * ySuccessor.w;
-          }
-        }
-      } else {
-        auto& ySuccessor = y.p->e[i];
-        e2 = {ySuccessor.p, 0};
-        if (!ySuccessor.w.exactlyZero()) {
-          e2.w = y.w * ySuccessor.w;
-        }
-      }
-      edge[i] = add2(e1, e2, var - 1);
+      edge[i] = add2(weightedSuccessor(x, var, i), weightedSuccessor(y, var, i),
+                     var - 1);
     }
     auto r = makeDDNode(var, edge);
     computeTable.insert(x, y, r);
@@ -896,47 +889,8 @@ public:
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
-      CachedEdge<Node> e1{};
-      if constexpr (IsMatrix<Node>) {
-        if (x.isIdentity() || x.p->v < var) {
-          if (i == 0 || i == 3) {
-            e1 = x;
-          }
-        } else {
-          auto& xSuccessor = x.p->e[i];
-          e1 = {xSuccessor.p, 0};
-          if (!xSuccessor.w.exactlyZero()) {
-            e1.w = x.w * xSuccessor.w;
-          }
-        }
-      } else {
-        auto& xSuccessor = x.p->e[i];
-        e1 = {xSuccessor.p, 0};
-        if (!xSuccessor.w.exactlyZero()) {
-          e1.w = x.w * xSuccessor.w;
-        }
-      }
-      CachedEdge<Node> e2{};
-      if constexpr (IsMatrix<Node>) {
-        if (y.isIdentity() || y.p->v < var) {
-          if (i == 0 || i == 3) {
-            e2 = y;
-          }
-        } else {
-          auto& ySuccessor = y.p->e[i];
-          e2 = {ySuccessor.p, 0};
-          if (!ySuccessor.w.exactlyZero()) {
-            e2.w = y.w * ySuccessor.w;
-          }
-        }
-      } else {
-        auto& ySuccessor = y.p->e[i];
-        e2 = {ySuccessor.p, 0};
-        if (!ySuccessor.w.exactlyZero()) {
-          e2.w = y.w * ySuccessor.w;
-        }
-      }
-      edge[i] = addMagnitudes(e1, e2, var - 1);
+      edge[i] = addMagnitudes(weightedSuccessor(x, var, i),
+                              weightedSuccessor(y, var, i), var - 1);
     }
     auto r = makeDDNode(var, edge);
     computeTable.insert(x, y, r);
@@ -1210,9 +1164,9 @@ public:
    * @param permutation An optional permutation of qubits.
    * @return The fidelity of the measurement outcomes.
    */
-  static fp
-  fidelityOfMeasurementOutcomes(const vEdge& e, const SparsePVec& probs,
-                                const qc::Permutation& permutation = {});
+  static fp fidelityOfMeasurementOutcomes(const vEdge& e,
+                                          const SparsePVec& probs,
+                                          const Permutation& permutation = {});
 
 private:
   /**
@@ -1246,7 +1200,7 @@ private:
    */
   static fp fidelityOfMeasurementOutcomesRecursive(
       const vEdge& e, const SparsePVec& probs, std::size_t i,
-      const qc::Permutation& permutation, std::size_t nQubits);
+      const Permutation& permutation, std::size_t nQubits);
 
 public:
   /**

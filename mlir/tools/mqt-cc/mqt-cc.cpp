@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/TargetCompilation.h"
 #include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
@@ -30,6 +29,7 @@
 #include "mlir/Support/Passes.h"
 
 #include <jeff/IR/JeffDialect.h>
+#include <jeff/Translation/Deserialize.hpp>
 #include <jeff/Translation/Serialize.hpp>
 #include <llvm/ADT/Twine.h>
 #include <llvm/Bitcode/BitcodeWriter.h>
@@ -46,8 +46,10 @@
 #include <mlir/Bytecode/BytecodeWriter.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
+#include <mlir/Dialect/Func/Extensions/InlinerExtension.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -63,10 +65,10 @@
 #include <mlir/Target/LLVMIR/Dialect/Builtin/BuiltinToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Dialect/LLVMIR/LLVMToLLVMIRTranslation.h>
 #include <mlir/Target/LLVMIR/Export.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cstdint>
 #include <cstdlib>
-#include <filesystem>
 #include <memory>
 #include <optional>
 #include <string>
@@ -126,7 +128,7 @@ enum class OutputFormat : std::uint8_t {
   OpenQASM3,
   QIRBase,
   QIRAdaptive,
-  Jeff
+  Jeff,
 };
 
 struct ParsedProgram {
@@ -301,20 +303,26 @@ static ParsedProgram loadJeffFile(const StringRef filename,
     return {};
   }
 
-  auto mod = detail::deserializeJeffFile(context,
-                                         std::filesystem::path(filename.str()));
-  if (failed(mod)) {
+  std::string errorMessage;
+  if (!openInputFile(filename, &errorMessage)) {
+    llvm::errs() << "Failed to load file '" << filename << "': '"
+                 << errorMessage << "'\n";
+    return {};
+  }
+
+  auto mod = deserializeFromFile(context, filename);
+  if (!mod) {
     llvm::errs() << "Failed to deserialize jeff file '" << filename << "'.\n";
     return {};
   }
 
   PassManager pm(context);
   pm.addPass(createJeffToQCO());
-  if (pm.run(**mod).failed()) {
+  if (pm.run(*mod).failed()) {
     llvm::errs() << "Failed to convert jeff input to QCO.\n";
     return {};
   }
-  return {.mod = std::move(*mod), .dialect = InputDialect::QCO};
+  return {.mod = std::move(mod), .dialect = InputDialect::QCO};
 }
 
 /**
@@ -456,6 +464,8 @@ static int runCompiler(int argc, char** argv) {
               tensor::TensorDialect, jeff::JeffDialect>();
   registerBuiltinDialectTranslation(registry);
   registerLLVMDialectTranslation(registry);
+  func::registerInlinerExtension(registry);
+  LLVM::registerInlinerInterface(registry);
 
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
@@ -476,9 +486,6 @@ static int runCompiler(int argc, char** argv) {
     break;
   }
   if (!program.mod) {
-    return 1;
-  }
-  if (failed(mqt::verifyProgramMetadata(*program.mod))) {
     return 1;
   }
 
@@ -512,10 +519,7 @@ static int runCompiler(int argc, char** argv) {
         if (failed(populate(pm))) {
           return failure();
         }
-        if (failed(pm.run(*program.mod))) {
-          return failure();
-        }
-        return mqt::verifyProgramMetadata(*program.mod);
+        return pm.run(*program.mod);
       };
 
   if (*parsedOutputFormat != OutputFormat::QCImport &&
@@ -531,33 +535,38 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
-  if (*parsedOutputFormat != OutputFormat::QCImport &&
-      *parsedOutputFormat != OutputFormat::QCO) {
-    if (failed(runPasses([&](OpPassManager& pm) {
-          if (compilerTarget) {
-            populateTargetCompilationPipeline(pm, *compilerTarget);
-            return success();
-          }
-          populateQCOCleanupPipeline(pm);
-          if (passPipeline.hasAnyOccurrences()) {
-            if (failed(passPipeline.addToPipeline(pm, [](const Twine& message) {
-                  llvm::errs() << message << "\n";
-                  return failure();
-                }))) {
-              return failure();
-            }
-          } else {
-            if (enableDecomposeMultiControlled) {
-              populateDecomposeMultiControlledPipeline(
-                  pm, decomposeMultiControlledMinQubits.getValue());
-            }
-            populateDefaultQCOOptimizationPipeline(pm);
-          }
-          populateQCOCleanupPipeline(pm);
+  const bool requiresPostQcoPasses =
+      *parsedOutputFormat != OutputFormat::QCImport &&
+      *parsedOutputFormat != OutputFormat::QCO;
+  if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
+        if (!compilerTarget &&
+            (*parsedOutputFormat == OutputFormat::QIRBase ||
+             *parsedOutputFormat == OutputFormat::QIRAdaptive)) {
+          pm.addPass(createInlinerPass());
+        }
+        if (compilerTarget) {
+          populateTargetCompilationPipeline(pm, *compilerTarget);
           return success();
-        }))) {
-      return 1;
-    }
+        }
+        populateQCOCleanupPipeline(pm);
+        if (passPipeline.hasAnyOccurrences()) {
+          if (failed(passPipeline.addToPipeline(pm, [](const Twine& message) {
+                llvm::errs() << message << "\n";
+                return failure();
+              }))) {
+            return failure();
+          }
+        } else {
+          if (enableDecomposeMultiControlled) {
+            populateDecomposeMultiControlledPipeline(
+                pm, decomposeMultiControlledMinQubits.getValue());
+          }
+          populateDefaultQCOOptimizationPipeline(pm);
+        }
+        populateQCOCleanupPipeline(pm);
+        return success();
+      }))) {
+    return 1;
   }
 
   if (*parsedOutputFormat == OutputFormat::Jeff &&
@@ -584,7 +593,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::QIRBase &&
       failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(mqt::createUnrollModifiers());
+        populateQIRPreparationPipeline(pm);
         pm.addPass(createQCToQIRBase());
         populateQIRCleanupPipeline(pm, false);
         return success();
@@ -594,7 +603,7 @@ static int runCompiler(int argc, char** argv) {
 
   if (*parsedOutputFormat == OutputFormat::QIRAdaptive &&
       failed(runPasses([](OpPassManager& pm) {
-        pm.addPass(mqt::createUnrollModifiers());
+        populateQIRPreparationPipeline(pm);
         pm.addPass(createQCToQIRAdaptive());
         populateQIRCleanupPipeline(pm, true);
         return success();

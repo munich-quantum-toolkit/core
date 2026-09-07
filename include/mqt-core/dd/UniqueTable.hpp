@@ -19,7 +19,6 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/statistics/UniqueTableStatistics.hpp"
-#include "ir/Definitions.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -81,7 +80,7 @@ public:
     const std::size_t mask = cfg.nBuckets - 1;
     std::size_t key = 0U;
     for (const auto& succ : p.e) {
-      qc::hashCombine(key, std::hash<Edge<Node>>{}(succ));
+      hashCombine(key, std::hash<Edge<Node>>{}(succ));
     }
     key &= mask;
     return key;

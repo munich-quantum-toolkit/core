@@ -25,9 +25,12 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 
 #include <mlir/Bytecode/BytecodeOpInterface.h>
+#include <mlir/IR/SymbolTable.h>
+#include <mlir/Interfaces/CallInterfaces.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 
+#include <optional>
 #include <variant>
 
 #define GET_OP_CLASSES

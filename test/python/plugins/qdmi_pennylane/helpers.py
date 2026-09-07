@@ -113,6 +113,7 @@ class StubDevice:
         self._result_factory = result_factory
         self._expose_shots = expose_shots
         self.submissions: list[tuple[str, ProgramFormat, int, Mapping[str, object]]] = []
+        self.events: list[str] = []
 
     @staticmethod
     def name() -> str:
@@ -152,8 +153,19 @@ class StubDevice:
         self.submissions.append((program, program_format, num_shots, parameters))
         shots = list(self._result_factory(program, num_shots))
         job = Mock()
-        job.id = str(len(self.submissions))
-        job.wait.return_value = True
+        job_id = str(len(self.submissions))
+        job.id = job_id
+        self.events.append(f"submit:{job_id}")
+
+        def wait() -> bool:
+            self.events.append(f"wait:{job_id}")
+            return True
+
+        def cancel() -> None:
+            self.events.append(f"cancel:{job_id}")
+
+        job.wait.side_effect = wait
+        job.cancel.side_effect = cancel
         job.check.return_value = QDMIJob.Status.DONE
         if self._expose_shots:
             job.get_shots.return_value = shots

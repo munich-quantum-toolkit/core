@@ -49,7 +49,7 @@ def MergeSingleQubitRotationGates
     parameters at run time.
 
     The emitted `UOp` is defined by $U = \exp [i (\phi + \lambda) / 2] R_z (\phi) R_y (\theta) R_z (\lambda)$.
-    Normalizing either extracted Z angle into $(-\pi, \pi]$ by $\pm 2\pi$ flips
+    Normalizing either extracted Z angle into $[-\pi, \pi)$ by $\pm 2\pi$ flips
     the $\mathrm{SU}(2)$ representative; half of each removed angle is returned
     as an Euler-wrap phase correction. Each merge therefore computes
     $\mathrm{inputPhase} - (\phi + \lambda) / 2 + \mathrm{eulerPhase}$, which
@@ -96,8 +96,7 @@ def FuseSingleQubitUnitaryRuns
 
 def QuantumLoopUnroll
     : InterfacePass<"quantum-loop-unroll", "FunctionOpInterface"> {
-  let dependentDialects = ["mlir::arith::ArithDialect", "mlir::qco::QCODialect",
-                           "mlir::scf::SCFDialect"];
+  let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect"];
   let summary = "Unroll bounded loops containing quantum operations";
   let description = [{
     This pass unrolls `scf.for` operations which contain quantum operations. Classical loops are not unrolled.
@@ -107,9 +106,8 @@ def QuantumLoopUnroll
   }];
   let options = [Option<"unrollFactor", "unroll-factor", "int64_t",
                         /*default=*/"-1",
-                        "Use this unroll factor (maximum 4096) for all loops "
-                        "being unrolled; -1 fully unrolls static loops within "
-                        "the same limit.">];
+                        "Use this unroll factor for all loops being unrolled, "
+                        "set it to -1, and it will fully unroll.">];
 }
 
 //===----------------------------------------------------------------------===//
@@ -128,14 +126,16 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     mapping. Target-defined site identifiers are retained in the resulting
     `qco.static` operations.
 
+    The entry function and supported structured-control-flow regions must each
+    contain one block. Calls that carry qubits must be inlined before mapping.
+    Adaptive classical dependencies must be represented by SSA def-use chains.
+
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
     mapping, which is referred to as the initial layout. The layout covers the
     complete target virtually, while only program qubits and vacant sites used
     as routing workspace are materialized. Then, the pass traverses the circuit
     and inserts `qco.swap` operations to ensure that all two-qubit operations
     are executable on the target architecture, a process known as routing.
-    Routing keeps terminal measurements and resets after any inserted swaps so
-    that irreversible operations remain terminal on each logical qubit.
 
     For routing, the pass first divides the circuit into layers. A layer is a set of independently executable (sequences
     or blocks of) two-qubit operations. Subsequently, the pass performs an A* search for each layer to find and insert a
@@ -146,15 +146,17 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     - `f(n) = g(n) + h(n)`
     - `g(n) = alpha * depth(n)`
-    - `h(n) = sum(pow(lambda, i) * h(L, p) for [i, L] in enumerate(layers))`
+    - `h(n) = sum(pow(lambda, i) * h(gate, p) for [i, gate] in enumerate(window))`
 
     Where:
 
     - `p` is the dynamic-to-static mapping associated with search node `n`.
-    - `layers` is an array of layers with size `1 + nlookahead`.
+    - `window` contains at most `1 + nlookahead` two-qubit operations in program order.
     - `depth(n)` returns the distance from the node `n` to the root node.
     - `dist(i, j)` returns the distance between the qubits `i` and `j` on the target's coupling graph.
-    - `h(L, p) := sum(dist(p[gate.first], p[gate.second]) for gate in L)`
+    - `h(gate, p)` is `dist(p[gate.first], p[gate.second]) - 1`.
+
+    Routing uses undirected target connectivity. Target-native synthesis realizes operations and inserted SWAPs in a supported operand direction.
 
     To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
@@ -164,20 +166,17 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     The pass option `ntrials` determines how many random initial layouts the pass explores. If compiled with multi-threading on, these trials will be executed in parallel.
   }];
   let options = [Option<"nlookahead", "nlookahead", "std::size_t", "1",
-                        "The number of lookahead steps. Must be <= 4096.">,
+                        "The number of lookahead steps.">,
                  Option<"alpha", "alpha", "float", "1.0F",
-                        "The alpha factor in the cost function. Must be finite "
-                        "and > 0.">,
+                        "The alpha factor in the cost function. Must be > 0.">,
                  Option<"lambda", "lambda", "float", "0.5F",
-                        "The lambda factor in the cost function. Must be "
-                        "finite.">,
+                        "The lambda factor in the cost function.">,
                  Option<"niterations", "niterations", "std::size_t", "1",
                         "The number of forwards and backwards traversal to "
-                        "improve the initial layout. Must be in [1, 4096].">,
+                        "improve the initial layout. Must be > 0.">,
                  Option<"ntrials", "ntrials", "std::size_t", "4",
                         "The number of (possibly parallel) random trials of "
-                        "the forwards and backwards mechanism. Must be in [1, "
-                        "4096].">,
+                        "the forwards and backwards mechanism. Must be > 0.">,
                  Option<"seed", "seed", "std::size_t", "42",
                         "A seed used for randomization.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",

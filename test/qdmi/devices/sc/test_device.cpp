@@ -436,7 +436,7 @@ TEST(ScRuntimeConfiguration, MissingCalibrationReturnsNotSupported) {
 }
 
 TEST(ScRuntimeConfiguration, InitializesIndependentSessionsConcurrently) {
-  auto initializeAndQuery = [] {
+  auto const initializeAndQuery = [] {
     auto* session = initializedSession();
     const auto name = queryName(session);
     MQT_SC_QDMI_device_session_free(session);

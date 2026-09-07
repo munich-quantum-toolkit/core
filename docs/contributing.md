@@ -194,7 +194,7 @@ instructions on how to set up your development environment.
 
 Building the project requires a C++20-capable
 [C++ compiler](https://en.wikipedia.org/wiki/List_of_compilers#C++_compilers)
-and [CMake](https://cmake.org/) 3.24 or newer. As of August 2025, our CI
+and [CMake](https://cmake.org/) 3.28 or newer. As of August 2025, our CI
 pipeline on GitHub continuously tests the library across the following matrix of
 systems and compilers:
 
@@ -203,7 +203,6 @@ systems and compilers:
 - {code}`ubuntu-24.04-arm`: {code}`Release` build using {code}`gcc`
 - {code}`macos-26`: {code}`Release` and {code}`Debug` builds using
   {code}`AppleClang`
-- {code}`macos-26-intel`: {code}`Release` build using {code}`AppleClang`
 - {code}`windows-2025`: {code}`Release` and {code}`Debug` builds using
   {code}`msvc`
 - {code}`windows-11-arm`: {code}`Release` build using {code}`msvc`

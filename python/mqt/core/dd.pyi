@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""MQT Core DD  - The MQT Core Decision Diagram (DD) module."""
+"""MQT Core decision diagram module."""
 
 import enum
 from collections.abc import Sequence
@@ -16,8 +16,34 @@ from typing import Annotated
 import numpy as np
 from numpy.typing import NDArray
 
-import mqt.core.ir
-import mqt.core.ir.operations
+class Control:
+    """Control a raw matrix DD operation with one qubit.
+
+    Args:
+        qubit: Control qubit index.
+        type_: Control polarity.
+    """
+
+    def __init__(self, qubit: int, type_: Control.Type = ...) -> None: ...
+
+    class Type(enum.Enum):
+        """Control polarity."""
+
+        Pos = 1
+
+        Neg = 0
+
+    @property
+    def qubit(self) -> int:
+        """Control qubit index."""
+
+    @property
+    def type_(self) -> Control.Type:
+        """Control polarity."""
+
+    def __eq__(self, arg: object, /) -> bool: ...
+    def __ne__(self, arg: object, /) -> bool: ...
+    def __hash__(self) -> int: ...
 
 class VectorDD:
     """A class representing a vector decision diagram (DD)."""
@@ -379,91 +405,6 @@ class DDPackage:
             The resulting state is guaranteed to have its reference count increased.
         """
 
-    def apply_unitary_operation(
-        self, vec: VectorDD, operation: mqt.core.ir.operations.Operation, permutation: mqt.core.ir.Permutation = ...
-    ) -> VectorDD:
-        """Apply a unitary operation to the DD.
-
-        Notes:
-            Automatically manages the reference count of the input and output DDs.
-            The input DD must have a non-zero reference count.
-
-        Args:
-            vec: The input DD.
-            operation: The operation. Must be unitary.
-            permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-        Returns:
-            The resulting DD.
-        """
-
-    def apply_measurement(
-        self,
-        vec: VectorDD,
-        operation: mqt.core.ir.operations.NonUnitaryOperation,
-        measurements: Sequence[bool],
-        permutation: mqt.core.ir.Permutation = ...,
-    ) -> tuple[VectorDD, list[bool]]:
-        """Apply a measurement to the DD.
-
-        Notes:
-            Automatically manages the reference count of the input and output DDs.
-            The input DD must have a non-zero reference count
-
-        Args:
-            vec: The input DD.
-            operation: The measurement operation.
-            measurements: A list of bits with existing measurement outcomes.
-            permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-        Returns:
-            The resulting DD after the measurement as well as the updated measurement outcomes.
-        """
-
-    def apply_reset(
-        self,
-        vec: VectorDD,
-        operation: mqt.core.ir.operations.NonUnitaryOperation,
-        permutation: mqt.core.ir.Permutation = ...,
-    ) -> VectorDD:
-        """Apply a reset to the DD.
-
-        Notes:
-            Automatically manages the reference count of the input and output DDs.
-            The input DD must have a non-zero reference count.
-
-        Args:
-            vec: The input DD.
-            operation: The reset operation.
-            permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-        Returns:
-            The resulting DD after the reset.
-        """
-
-    def apply_if_else_operation(
-        self,
-        vec: VectorDD,
-        operation: mqt.core.ir.operations.IfElseOperation,
-        measurements: Sequence[bool],
-        permutation: mqt.core.ir.Permutation = ...,
-    ) -> VectorDD:
-        """Apply a classically controlled operation to the DD.
-
-        Notes:
-            Automatically manages the reference count of the input and output DDs.
-            The input DD must have a non-zero reference count.
-
-        Args:
-            vec: The input DD.
-            operation: The classically controlled operation.
-            measurements: A list of bits with stored measurement outcomes.
-            permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-        Returns:
-            The resulting DD after the operation.
-        """
-
     def measure_collapsing(self, vec: VectorDD, qubit: int) -> str:
         """Measure a qubit and collapse the DD.
 
@@ -517,10 +458,7 @@ class DDPackage:
         """
 
     def controlled_single_qubit_gate(
-        self,
-        matrix: Annotated[NDArray[np.complex128], {"shape": (2, 2)}],
-        control: mqt.core.ir.operations.Control | int,
-        target: int,
+        self, matrix: Annotated[NDArray[np.complex128], {"shape": (2, 2)}], control: Control | int, target: int
     ) -> MatrixDD:
         """Create the DD for a controlled single-qubit gate.
 
@@ -536,7 +474,7 @@ class DDPackage:
     def multi_controlled_single_qubit_gate(
         self,
         matrix: Annotated[NDArray[np.complex128], {"shape": (2, 2)}],
-        controls: AbstractSet[mqt.core.ir.operations.Control | int],
+        controls: AbstractSet[Control | int],
         target: int,
     ) -> MatrixDD:
         """Create the DD for a multi-controlled single-qubit gate.
@@ -567,7 +505,7 @@ class DDPackage:
     def controlled_two_qubit_gate(
         self,
         matrix: Annotated[NDArray[np.complex128], {"shape": (4, 4)}],
-        control: mqt.core.ir.operations.Control | int,
+        control: Control | int,
         target0: int,
         target1: int,
     ) -> MatrixDD:
@@ -586,7 +524,7 @@ class DDPackage:
     def multi_controlled_two_qubit_gate(
         self,
         matrix: Annotated[NDArray[np.complex128], {"shape": (4, 4)}],
-        controls: AbstractSet[mqt.core.ir.operations.Control | int],
+        controls: AbstractSet[Control | int],
         target0: int,
         target1: int,
     ) -> MatrixDD:
@@ -610,17 +548,6 @@ class DDPackage:
 
         Returns:
             The DD for the matrix.
-        """
-
-    def from_operation(self, operation: mqt.core.ir.operations.Operation, invert: bool = False) -> MatrixDD:
-        """Create a DD from an operation.
-
-        Args:
-            operation: The operation. Must be unitary.
-            invert: Whether to get the inverse of the operation.
-
-        Returns:
-            The DD for the operation.
         """
 
     def inc_ref_vec(self, vec: VectorDD) -> None:
@@ -864,103 +791,4 @@ class BasisStates(enum.Enum):
     left = 5
     """
     The superposition state :math:`|L\\rangle = \\frac{1}{\\sqrt{2}} (|0\\rangle + i |1\\rangle)`.
-    """
-
-def sample(qc: mqt.core.ir.QuantumComputation, shots: int = 1024, seed: int = 0) -> dict[str, int]:
-    """Sample from the output distribution of a quantum computation.
-
-    This function classically simulates the quantum computation and repeatedly samples from the output distribution.
-    It supports mid-circuit measurements, resets, and classical control.
-
-    Args:
-        qc: The quantum computation.
-        shots: The number of samples to take.
-            If the quantum computation contains no mid-circuit measurements or resets, the circuit is simulated once and the samples are drawn from the final state.
-            Otherwise, the circuit is simulated once for each sample.
-            Defaults to 1024.
-        seed: The seed for the random number generator.
-            If set to a specific non-zero value, the simulation is deterministic.
-            If set to 0, the RNG is randomly seeded.
-            Defaults to 0.
-
-    Returns:
-        A histogram of the samples.
-        Each sample is a bitstring representing the measurement outcomes of the qubits in the quantum computation.
-        The leftmost bit corresponds to the most significant qubit, that is, the qubit with the highest index (big-endian).
-        If the circuit contains measurements, only the qubits that are actively measured are included in the output distribution.
-        Otherwise, all qubits in the circuit are measured.
-    """
-
-def simulate_statevector(qc: mqt.core.ir.QuantumComputation) -> Annotated[NDArray[np.complex128], {"shape": (None,)}]:
-    """Simulate the quantum computation and return the final state vector.
-
-    This function classically simulates the quantum computation and returns the state vector of the final state.
-    It does not support measurements, resets, or classical control.
-
-    Since the state vector is guaranteed to be exponentially large in the number of qubits, this function is only suitable for small quantum computations.
-    Consider using the :func:`~mqt.core.dd.simulate` or the :func:`~mqt.core.dd.sample` functions, which never explicitly construct the state vector, for larger quantum computations.
-
-    Notes:
-        This function internally constructs a :class:`~mqt.core.dd.DDPackage`, creates the zero state, and simulates the quantum computation via the :func:`simulate` function.
-        The state vector is then extracted from the resulting DD via the :meth:`~mqt.core.dd.VectorDD.get_vector` method.
-
-    Args:
-        qc: The quantum computation. Must only contain unitary operations.
-
-    Returns:
-        The state vector of the final state.
-    """
-
-def build_unitary(qc: mqt.core.ir.QuantumComputation) -> Annotated[NDArray[np.complex128], {"shape": (None, None)}]:
-    """Build a unitary matrix representation of a quantum computation.
-
-    This function builds a matrix representation of the unitary representing the functionality of a quantum computation.
-    This function does not support measurements, resets, or classical control, as the corresponding operations are non-unitary.
-
-    Since the unitary matrix is guaranteed to be exponentially large in the number of qubits, this function is only suitable for small quantum computations.
-    Consider using the :func:`~mqt.core.dd.build_functionality` function, which never explicitly constructs the unitary matrix, for larger quantum computations.
-
-    Notes:
-        This function internally constructs a :class:`~mqt.core.dd.DDPackage`, creates the identity matrix, and builds the unitary matrix via the :func:`~mqt.core.dd.build_functionality` function.
-        The unitary matrix is then extracted from the resulting DD via the :meth:`~mqt.core.dd.MatrixDD.get_matrix` method.
-
-    Args:
-        qc: The quantum computation. Must only contain unitary operations.
-
-    Returns:
-        The unitary matrix representing the functionality of the quantum computation.
-    """
-
-def simulate(qc: mqt.core.ir.QuantumComputation, initial_state: VectorDD, dd_package: DDPackage) -> VectorDD:
-    """Simulate a quantum computation.
-
-    This function classically simulates a quantum computation for a given initial state and returns the final state (represented as a DD).
-    Compared to the `sample` function, this function does not support measurements, resets, or classical control.
-    It only supports unitary operations.
-
-    The simulation is effectively computed by sequentially applying the operations of the quantum computation to the initial state.
-
-    Args:
-        qc: The quantum computation. Must only contain unitary operations.
-        initial_state: The initial state as a DD. Must have the same number of qubits as the quantum computation.
-            The reference count of the initial state is decremented during the simulation, so the caller must ensure that the initial state has a non-zero reference count.
-        dd_package: The DD package. Must be configured with a sufficient number of qubits to accommodate the quantum computation.
-
-    Returns:
-        The final state as a DD. The reference count of the final state is non-zero and must be manually decremented by the caller if it is no longer needed.
-    """
-
-def build_functionality(qc: mqt.core.ir.QuantumComputation, dd_package: DDPackage) -> MatrixDD:
-    """Build a functional representation of a quantum computation.
-
-    This function builds a matrix DD representation of the unitary representing the functionality of a quantum computation.
-    This function does not support measurements, resets, or classical control, as the corresponding operations are non-unitary.
-
-    Args:
-        qc: The quantum computation.
-            Must only contain unitary operations.
-        dd_package: The DD package. Must be configured with a sufficient number of qubits to accommodate the quantum computation.
-
-    Returns:
-        The functionality as a DD. The reference count of the result is non-zero and must be manually decremented by the caller if it is no longer needed.
     """

@@ -34,7 +34,7 @@ struct ComplexValue {
   fp i{};
 
   ComplexValue() = default;
-  // NOLINTNEXTLINE(google-explicit-constructor) We want impl. conv. from reals
+  // NOLINTNEXTLINE(misc-explicit-constructor) We want impl. conv. from reals
   ComplexValue(const fp real) noexcept : r{real} {}
   explicit ComplexValue(const std::complex<fp>& c) noexcept
       : r{c.real()}, i{c.imag()} {}

@@ -22,6 +22,7 @@ namespace nb = nanobind;
 void registerBV(const nb::module_& m);
 void registerGHZ(const nb::module_& m);
 void registerGrover(const nb::module_& m);
+void registerMultiplexer(const nb::module_& m);
 void registerQFT(const nb::module_& m);
 void registerQPE(const nb::module_& m);
 
@@ -58,6 +59,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   const nb::module_ grover =
       m.def_submodule("grover", "Grover benchmark instances and options.");
   registerGrover(grover);
+
+  const nb::module_ multiplexer = m.def_submodule(
+      "multiplexer", "Quantum multiplexer benchmark instances and options.");
+  registerMultiplexer(multiplexer);
 
   const nb::module_ qft =
       m.def_submodule("qft", "QFT benchmark instances and options.");

@@ -194,7 +194,7 @@ void RealNumberUniqueTable::print() const {
   const auto precision = std::cout.precision();
   std::cout.precision(std::numeric_limits<dd::fp>::max_digits10);
   for (std::size_t key = 0; key < table.size(); ++key) {
-    auto* p = table[key];
+    const auto* p = table[key];
     if (p != nullptr) {
       std::cout << key << ": \n";
     }
@@ -213,7 +213,7 @@ void RealNumberUniqueTable::print() const {
 }
 
 std::ostream& RealNumberUniqueTable::printBucketDistribution(std::ostream& os) {
-  for (auto* bucket : table) {
+  for (const auto* bucket : table) {
     if (bucket == nullptr) {
       os << "0\n";
       continue;

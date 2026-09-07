@@ -136,7 +136,8 @@ calibration(const Json& value, const std::string_view source,
   keys(value, {"t1", "t2"}, source, pointer);
   auto result = Device::QubitCalibration{
       .t1 = optional<uint64_t>(value, "t1", source, pointer),
-      .t2 = optional<uint64_t>(value, "t2", source, pointer)};
+      .t2 = optional<uint64_t>(value, "t2", source, pointer),
+  };
   if ((result.t1 && *result.t1 == 0) || (result.t2 && *result.t2 == 0)) {
     fail(source, pointer, "t1 and t2 must be positive when present");
   }
@@ -155,12 +156,25 @@ void validateFidelity(const std::optional<double>& fidelity,
 [[nodiscard]] Device parse(const Json& root, const std::string_view source) {
   object(root, source, "$");
   keys(root,
-       {"schema-version", "name", "numQubits", "durationUnit",
-        "qubitProperties", "couplings", "operations"},
+       {
+           "schema-version",
+           "name",
+           "numQubits",
+           "durationUnit",
+           "qubitProperties",
+           "couplings",
+           "operations",
+       },
        source, "$");
-  for (const auto* const key :
-       {"schema-version", "name", "numQubits", "durationUnit",
-        "qubitProperties", "couplings", "operations"}) {
+  for (const auto* const key : {
+           "schema-version",
+           "name",
+           "numQubits",
+           "durationUnit",
+           "qubitProperties",
+           "couplings",
+           "operations",
+       }) {
     if (!root.contains(key)) {
       fail(source, "$/" + std::string(key), "is required");
     }
@@ -270,8 +284,15 @@ void validateFidelity(const std::optional<double>& fidelity,
     const auto& value = operations[i];
     object(value, source, pointer);
     keys(value,
-         {"name", "numParameters", "numQubits", "sites", "duration", "fidelity",
-          "siteOverrides"},
+         {
+             "name",
+             "numParameters",
+             "numQubits",
+             "sites",
+             "duration",
+             "fidelity",
+             "siteOverrides",
+         },
          source, pointer);
     Device::Operation operation;
     operation.name = required<std::string>(value, "name", source, pointer);

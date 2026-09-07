@@ -195,18 +195,11 @@ static LogicalResult tryReplaceMeasuredRZTarget(CtrlOp op, RZOp rzOp,
     return failure();
   }
   if (areAllMeasured(op.getControlsIn())) {
-    if (failed(
-            mqt::hoistSupportingOpsBefore(*op.getBody(), rzOp, op, rewriter))) {
-      return failure();
-    }
     rewriter.replaceOp(op, op.getInputQubits());
     return success();
   }
 
-  if (failed(
-          mqt::hoistSupportingOpsBefore(*op.getBody(), rzOp, op, rewriter))) {
-    return failure();
-  }
+  mqt::hoistSupportingOpsBefore(*op.getBody(), rzOp, op, rewriter);
   rewriter.setInsertionPoint(op);
   Value phase = selectScaledAngle(rewriter, op.getLoc(), rzOp.getTheta(),
                                   outcome, 0.5, -0.5);
@@ -245,19 +238,12 @@ static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
     return failure();
   }
   if (bothTargetsMeasured && areAllMeasured(op.getControlsIn())) {
-    if (failed(mqt::hoistSupportingOpsBefore(*op.getBody(), rzzOp, op,
-                                             rewriter))) {
-      return failure();
-    }
     replaceRZZCtrlOp(op, *targetResultOrder, op.getControlsIn(),
                      op.getTargetsIn(), rewriter);
     return success();
   }
 
-  if (failed(
-          mqt::hoistSupportingOpsBefore(*op.getBody(), rzzOp, op, rewriter))) {
-    return failure();
-  }
+  mqt::hoistSupportingOpsBefore(*op.getBody(), rzzOp, op, rewriter);
   rewriter.setInsertionPoint(op);
   SmallVector<Value> controls(op.getControlsIn());
   SmallVector<Value> targets(op.getTargetsIn());
@@ -309,7 +295,7 @@ static void trySwapControlAndTargetOfPhaseGate(CtrlOp op,
     Value controlOut = op.getControlsOut()[controlIndex];
     Value targetOut = op.getTargetsOut()[0];
 
-    rewriter.modifyOpInPlace(op, [&]() {
+    rewriter.modifyOpInPlace(op, [&] {
       op.getTargetsInMutable()[0].set(control);
       op.getControlsInMutable()[controlIndex].set(target);
     });

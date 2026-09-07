@@ -30,6 +30,5 @@ if sys.platform == "win32":  # ruff:ignore[non-empty-init-module] This is actual
 
 from ._version import version as __version__
 from ._version import version_tuple as version_info
-from .load import load
 
-__all__ = ["__version__", "load", "version_info"]
+__all__ = ["__version__", "version_info"]

@@ -10,6 +10,15 @@
 #define MLIR_DIALECT_CBIT_IR_CBITDIALECT_TD
 
 include "mlir/IR/DialectBase.td"
+include "mlir/IR/EnumAttr.td"
+
+def CBit_Initialization
+    : I32EnumAttr<"Initialization", "Classical-bit register initialization",
+                  [I32EnumAttrCase<"Zero", 0, "zero">,
+                   I32EnumAttrCase<"Undefined", 1, "undefined">]> {
+  let cppNamespace = "::mlir::cbit";
+  let genSpecializedAttr = 0;
+}
 
 def CBitDialect : Dialect {
   let name = "cbit";

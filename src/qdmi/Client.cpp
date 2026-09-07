@@ -54,6 +54,64 @@ void rejectUnsupportedProgramFormat(const QDMI_Program_Format format) {
         "trigger a calibration run");
   }
 }
+template <typename T>
+std::map<std::string, T>
+getSparseResult(QDMI_Job job, const QDMI_Job_Result keysResult,
+                const QDMI_Job_Result valuesResult,
+                const std::string& description, const std::string& valueType,
+                const std::string& mismatch) {
+  size_t keysSize = 0;
+  qdmi::throwIfError(
+      QDMI_job_get_results(job, keysResult, 0, nullptr, &keysSize),
+      "Querying " + description + " keys size");
+
+  if (keysSize == 0) {
+    return {};
+  }
+
+  std::string keys(keysSize, '\0');
+  qdmi::throwIfError(
+      QDMI_job_get_results(job, keysResult, keysSize, keys.data(), nullptr),
+      "Querying " + description + " keys");
+  keys.pop_back();
+
+  size_t valuesSize = 0;
+  qdmi::throwIfError(
+      QDMI_job_get_results(job, valuesResult, 0, nullptr, &valuesSize),
+      "Querying " + description + " values size");
+
+  if (valuesSize % sizeof(T) != 0) {
+    throw std::runtime_error("Invalid " + description +
+                             " values size: not a multiple of " + valueType);
+  }
+
+  std::vector<T> values(valuesSize / sizeof(T));
+  qdmi::throwIfError(QDMI_job_get_results(job, valuesResult, valuesSize,
+                                          values.data(), nullptr),
+                     "Querying " + description + " values");
+
+  /// Parse the comma-separated keys.
+  std::map<std::string, T> result;
+  if (keys.empty() && values.size() == 1) {
+    result[""] = values.front();
+    return result;
+  }
+  std::istringstream keysStream(keys);
+  std::string key;
+  size_t idx = 0;
+  while (std::getline(keysStream, key, ',')) {
+    if (idx >= values.size()) {
+      throw std::runtime_error(mismatch);
+    }
+    result[key] = values[idx];
+    ++idx;
+  }
+
+  if (idx != values.size()) {
+    throw std::runtime_error(mismatch);
+  }
+  return result;
+}
 } // namespace
 
 size_t Site::getIndex() const {
@@ -648,25 +706,13 @@ std::vector<std::string> Job::getShots() const {
     return {};
   }
 
-  std::string shots(shotsSize - 1, '\0');
+  std::string shots(shotsSize, '\0');
   qdmi::throwIfError(QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_SHOTS,
                                           shotsSize, shots.data(), nullptr),
                      "Querying shots");
+  shots.pop_back();
 
-  // Parse the shots (comma-separated)
-  std::vector<std::string> shotsVec;
-  const auto numShots = getNumShots();
-  shotsVec.reserve(numShots);
-  std::istringstream shotsStream(shots);
-  std::string shot;
-  while (std::getline(shotsStream, shot, ',')) {
-    shotsVec.emplace_back(shot);
-  }
-  if (shotsVec.size() != numShots) {
-    throw std::runtime_error("Number of shots mismatch");
-  }
-
-  return shotsVec;
+  return detail::parseShots(shots, getNumShots());
 }
 
 std::map<std::string, size_t> Job::getCounts() const {
@@ -680,10 +726,11 @@ std::map<std::string, size_t> Job::getCounts() const {
     return {}; // Empty histogram
   }
 
-  std::string keys(keysSize - 1, '\0');
+  std::string keys(keysSize, '\0');
   qdmi::throwIfError(QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_HIST_KEYS,
                                           keysSize, keys.data(), nullptr),
                      "Querying histogram keys");
+  keys.pop_back();
 
   // Get the histogram values
   size_t valuesSize = 0;
@@ -705,6 +752,10 @@ std::map<std::string, size_t> Job::getCounts() const {
 
   // Parse the keys (comma-separated)
   std::map<std::string, size_t> counts;
+  if (keys.empty() && values.size() == 1) {
+    counts[""] = values.front();
+    return counts;
+  }
   std::istringstream keysStream(keys);
   std::string key;
   size_t idx = 0;
@@ -764,112 +815,17 @@ std::vector<double> Job::getDenseProbabilities() const {
 }
 
 std::map<std::string, std::complex<double>> Job::getSparseStateVector() const {
-  size_t keysSize = 0;
-  qdmi::throwIfError(
-      QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
-                           0, nullptr, &keysSize),
-      "Querying sparse state vector keys size");
-
-  if (keysSize == 0) {
-    return {}; // Empty state vector
-  }
-
-  std::string keys(keysSize - 1, '\0');
-  qdmi::throwIfError(
-      QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
-                           keysSize, keys.data(), nullptr),
-      "Querying sparse state vector keys");
-
-  size_t valuesSize = 0;
-  qdmi::throwIfError(QDMI_job_get_results(
-                         job_.get(), QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
-                         0, nullptr, &valuesSize),
-                     "Querying sparse state vector values size");
-
-  if (valuesSize % sizeof(std::complex<double>) != 0) {
-    throw std::runtime_error(
-        "Invalid sparse state vector values size: not a multiple of "
-        "complex<double>");
-  }
-
-  std::vector<std::complex<double>> values(valuesSize /
-                                           sizeof(std::complex<double>));
-  qdmi::throwIfError(QDMI_job_get_results(
-                         job_.get(), QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
-                         valuesSize, values.data(), nullptr),
-                     "Querying sparse state vector values");
-
-  // Parse the keys (comma-separated)
-  std::map<std::string, std::complex<double>> stateVector;
-  std::istringstream keysStream(keys);
-  std::string key;
-  size_t idx = 0;
-  while (std::getline(keysStream, key, ',')) {
-    if (idx >= values.size()) {
-      throw std::runtime_error("Sparse state vector key/value count mismatch");
-    }
-    stateVector[key] = values[idx];
-    ++idx;
-  }
-
-  if (idx != values.size()) {
-    throw std::runtime_error("Sparse state vector key/value count mismatch");
-  }
-  return stateVector;
+  return getSparseResult<std::complex<double>>(
+      job_.get(), QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
+      QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, "sparse state vector",
+      "complex<double>", "Sparse state vector key/value count mismatch");
 }
 
 std::map<std::string, double> Job::getSparseProbabilities() const {
-  size_t keysSize = 0;
-  qdmi::throwIfError(QDMI_job_get_results(
-                         job_.get(), QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
-                         0, nullptr, &keysSize),
-                     "Querying sparse probabilities keys size");
-
-  if (keysSize == 0) {
-    return {}; // Empty probabilities
-  }
-
-  std::string keys(keysSize - 1, '\0');
-  qdmi::throwIfError(QDMI_job_get_results(
-                         job_.get(), QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
-                         keysSize, keys.data(), nullptr),
-                     "Querying sparse probabilities keys");
-
-  size_t valuesSize = 0;
-  qdmi::throwIfError(
-      QDMI_job_get_results(job_.get(),
-                           QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, 0,
-                           nullptr, &valuesSize),
-      "Querying sparse probabilities values size");
-
-  if (valuesSize % sizeof(double) != 0) {
-    throw std::runtime_error(
-        "Invalid sparse probabilities values size: not a multiple of double");
-  }
-
-  std::vector<double> values(valuesSize / sizeof(double));
-  qdmi::throwIfError(
-      QDMI_job_get_results(job_.get(),
-                           QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
-                           valuesSize, values.data(), nullptr),
-      "Querying sparse probabilities values");
-
-  // Parse the keys (comma-separated)
-  std::map<std::string, double> probabilities;
-  std::istringstream keysStream(keys);
-  std::string key;
-  size_t idx = 0;
-  while (std::getline(keysStream, key, ',')) {
-    if (idx >= values.size()) {
-      throw std::runtime_error("Sparse probabilities key/value count mismatch");
-    }
-    probabilities[key] = values[idx];
-    ++idx;
-  }
-  if (idx != values.size()) {
-    throw std::runtime_error("Sparse probabilities key/value count mismatch");
-  }
-  return probabilities;
+  return getSparseResult<double>(
+      job_.get(), QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
+      QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, "sparse probabilities",
+      "double", "Sparse probabilities key/value count mismatch");
 }
 
 Device Session::createSessionlessDevice(QDMI_Device device) {

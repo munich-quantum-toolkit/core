@@ -46,11 +46,25 @@ differences that apply to code built on LLVM and MLIR.
 
 ### C++ documentation comments
 
-Use `///` for Doxygen documentation comments. Do not use `/** ... */`. The first
-sentence is the summary; separate additional paragraphs with a blank `///` line
-instead of using `\brief` or `\details`. Document parameters and return values
-only when the explanation adds information that the name and signature do not
-already provide.
+Use `///` for Doxygen documentation comments. The first sentence is the summary;
+separate additional paragraphs with a blank `///` line instead of using `\brief`
+or `\details`. Document parameters and return values only when the explanation
+adds information that the name and signature do not already provide. Preserve
+existing documentation when changing comment style.
+
+Keep `//!<` or `///<` for trailing member documentation. Keep `/** ... */`
+documentation inside backslash-continued macros: line comments there can consume
+the following declarations after line splicing. Preserve explicit `@brief`
+commands there when Doxygen needs them to retain summaries after macro
+expansion.
+
+Keep top-level `@file` documentation and put its summary on the next line,
+without `@brief`:
+
+```cpp
+/// @file Circuit.h
+/// Defines the circuit representation.
+```
 
 ```cpp
 /// Returns the number of qubits in the circuit.
@@ -70,6 +84,10 @@ Operation apply(llvm::ArrayRef<Qubit> qubits);
 Keep public API documentation in the declaration and do not duplicate it in the
 implementation. Use ordinary implementation comments for details that do not
 belong to the API contract.
+
+Use `//` for ordinary implementation and namespace closing comments. Inline
+`/* ... */` comments remain valid, including unused parameter names such as
+`OpAdaptor /*adaptor*/` and argument labels such as `/*isSigned=*/false`.
 
 ### Reproduce C++ lint locally
 

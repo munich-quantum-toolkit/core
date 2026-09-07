@@ -16,6 +16,10 @@ mqt_mlir_target_use_project_options(MQTBenchmarkGenerate)
 
 # The executable that generates and evaluates configured benchmarks.
 add_executable(mqt-core-bench MQTCoreBench.cpp)
+if(WIN32)
+  # Keep the executable import library distinct from the benchmark library.
+  set_target_properties(mqt-core-bench PROPERTIES ARCHIVE_OUTPUT_NAME mqt-core-bench-executable)
+endif()
 target_link_libraries(mqt-core-bench PRIVATE MQT::CoreBenchGenerate MLIRSupport)
 set(LLVM_REQUIRES_EH ON)
 mqt_mlir_target_use_project_options(mqt-core-bench)

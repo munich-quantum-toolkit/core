@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 #include "mlir/Compiler/Programs.h"
@@ -27,6 +29,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/Support/LogicalResult.h>
 #include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
 #include <nanobind/stl/filesystem.h>
 #include <nanobind/stl/map.h>
 #include <nanobind/stl/optional.h>
@@ -37,9 +40,12 @@
 #include <nanobind/stl/vector.h>
 
 #include <cctype>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <limits>
+#include <map>
 #include <memory>
 #include <optional>
 #include <random>
@@ -49,12 +55,18 @@
 #include <string_view>
 #include <system_error>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace mqt {
 
 namespace nb = nanobind;
 using namespace nb::literals;
+
+using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
+                                nb::c_contig, nb::device::cpu>;
+using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,
+                                nb::c_contig, nb::device::cpu>;
 
 template <class T>
 [[nodiscard]] static T takeResult(std::optional<T>&& result) {
@@ -147,9 +159,10 @@ entryFunc(const mlir::QCOProgram& program) {
   return std::mt19937_64(seed);
 }
 
-/// Run @p fn under a diagnostic handler and raise `ValueError` on failure,
+/// Run @p fn under a diagnostic handler and raise the chosen Python exception,
 /// appending any emitted MLIR diagnostics to @p message.
-template <typename Fn>
+template <nb::exception_type Exception = nb::exception_type::value_error,
+          typename Fn>
 [[nodiscard]] static auto takeFailureOr(mlir::MLIRContext* context,
                                         const char* message, Fn&& fn) {
   std::string diagnostics;
@@ -159,6 +172,9 @@ template <typename Fn>
           diagnostics.push_back('\n');
         }
         llvm::raw_string_ostream os(diagnostics);
+        if (!llvm::isa<mlir::UnknownLoc>(diag.getLocation())) {
+          os << diag.getLocation() << ": ";
+        }
         os << diag;
         return mlir::success();
       });
@@ -168,7 +184,7 @@ template <typename Fn>
     if (!diagnostics.empty()) {
       full.append(": ").append(diagnostics);
     }
-    throw nb::value_error(full.c_str());
+    throw nb::builtin_exception(Exception, full.c_str());
   }
   return *std::move(result);
 }
@@ -183,9 +199,7 @@ template <class ProgramType>
   return std::move(program);
 }
 
-/**
- * @brief Check whether @p input unambiguously looks like source text.
- */
+/// Check whether @p input unambiguously looks like source text.
 [[nodiscard]] static bool isSourceString(const std::string_view input) {
   auto source = input;
   while (!source.empty() &&
@@ -198,9 +212,7 @@ template <class ProgramType>
           std::isspace(static_cast<unsigned char>(source[6])) != 0);
 }
 
-/**
- * @brief Construct a frontend program from a file path.
- */
+/// Construct a frontend program from a file path.
 [[nodiscard]] static mlir::CompilerInput
 programFromPath(const std::filesystem::path& path) {
   if (path.empty()) {
@@ -236,9 +248,7 @@ programFromPath(const std::filesystem::path& path) {
                            "' has unsupported extension '" + extension + "'.");
 }
 
-/**
- * @brief Construct a frontend program from a string containing source or path.
- */
+/// Construct a frontend program from a string containing source or path.
 [[nodiscard]] static mlir::CompilerInput
 programFromString(const std::string& input) {
   if (isSourceString(input)) {
@@ -250,13 +260,11 @@ programFromString(const std::string& input) {
   return programFromPath(std::filesystem::path(input));
 }
 
-/**
- * @brief Convert a Python object to a compiler program.
- *
- * @details Program objects are copied by default so the high-level entry point
- * behaves like a conventional compiler function. Set @p inplace to transfer
- * ownership from a program object instead.
- */
+/// Convert a Python object to a compiler program.
+///
+/// Program objects are copied by default so the high-level entry point
+/// behaves like a conventional compiler function. Set @p inplace to transfer
+/// ownership from a program object instead.
 [[nodiscard]] static mlir::CompilerInput
 programFromInput(const nb::object& program, const bool inplace) {
   if (nb::isinstance<nb::str>(program)) {
@@ -299,9 +307,7 @@ programFromInput(const nb::object& program, const bool inplace) {
                            " is not supported.");
 }
 
-/**
- * @brief Run the coordinated default pipeline and return a typed program.
- */
+/// Run the coordinated default pipeline and return a typed program.
 [[nodiscard]] static mlir::CompilerProgram
 compileProgram(const nb::object& program, const mlir::ProgramFormat output,
                const bool inplace, const mlir::CompilerTarget* const target,
@@ -310,6 +316,122 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
   return takeResult(mlir::runDefaultPipeline(programFromInput(program, inplace),
                                              output, target, qcoPipeline,
                                              enableTiming, enableStatistics));
+}
+
+template <class Function>
+[[nodiscard]] static auto withQCOProgram(const nb::object& program,
+                                         Function&& function) {
+  if (nb::isinstance<mlir::QCOProgram>(program)) {
+    return std::forward<Function>(function)(
+        nb::cast<const mlir::QCOProgram&>(program));
+  }
+  auto compiled = takeResult(mlir::runDefaultPipeline(
+      programFromInput(program, false), mlir::ProgramFormat::QCO));
+  return std::forward<Function>(function)(std::get<mlir::QCOProgram>(compiled));
+}
+
+[[nodiscard]] static dd::MatrixDD
+buildQCOFunctionality(const mlir::QCOProgram& program, dd::Package& ddPackage) {
+  auto func = entryFunc(program);
+  return takeFailureOr(
+      func.getContext(), "cannot build DD functionality for this QCO program",
+      [&] { return mlir::qco::buildFunctionality(func, ddPackage); });
+}
+
+[[nodiscard]] static dd::VectorDD simulateQCO(const mlir::QCOProgram& program,
+                                              const dd::VectorDD& initialState,
+                                              dd::Package& ddPackage,
+                                              uint64_t seed) {
+  if (dd::VectorDD::trackingRequired(initialState) &&
+      !ddPackage.getRootSet<dd::vNode>().contains(initialState)) {
+    throw nb::value_error(
+        "initial_state must have a live reference in dd_package");
+  }
+  auto func = entryFunc(program);
+  auto rng = makeRng(seed);
+  return takeFailureOr(
+      func.getContext(), "cannot simulate this QCO program",
+      [&] { return mlir::qco::simulate(func, initialState, ddPackage, rng); });
+}
+
+[[nodiscard]] static std::map<std::string, size_t>
+sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
+  auto func = entryFunc(program);
+  return takeFailureOr(func.getContext(), "cannot sample this QCO program",
+                       [&] { return mlir::qco::sample(func, shots, seed); });
+}
+
+[[nodiscard]] static DenseVector toDenseVector(const dd::VectorDD& state) {
+  if (!state.isTerminal()) {
+    const auto numQubits = static_cast<size_t>(state.p->v) + 1U;
+    if (numQubits >= std::numeric_limits<size_t>::digits ||
+        (size_t{1} << numQubits) >
+            std::numeric_limits<size_t>::max() / sizeof(std::complex<dd::fp>)) {
+      throw nb::value_error(
+          "dense statevector dimensions exceed addressable memory");
+    }
+  }
+  auto dataPtr = std::make_unique<dd::CVec>(state.getVector());
+  auto* const data = dataPtr->data();
+  const auto size = dataPtr->size();
+  const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
+    delete static_cast<dd::CVec*>(ptr);
+  });
+  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
+  return DenseVector(data, {size}, owner);
+}
+
+[[nodiscard]] static DenseMatrix toDenseMatrix(const dd::MatrixDD& matrix,
+                                               size_t numQubits) {
+  if (numQubits >= std::numeric_limits<size_t>::digits) {
+    throw nb::value_error("dense unitary dimensions exceed addressable memory");
+  }
+
+  const size_t dim = size_t{1} << numQubits;
+  if (dim >
+      std::numeric_limits<size_t>::max() / sizeof(std::complex<dd::fp>) / dim) {
+    throw nb::value_error("dense unitary dimensions exceed addressable memory");
+  }
+  auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
+  matrix.traverseMatrix(
+      std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
+      [&dataPtr, dim](size_t i, size_t j, const std::complex<dd::fp>& value) {
+        (*dataPtr)[(i * dim) + j] = value;
+      },
+      numQubits);
+  auto* const data = dataPtr->data();
+  const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
+    delete static_cast<dd::CVec*>(ptr);
+  });
+  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
+  return DenseMatrix(data, {dim, dim}, owner);
+}
+
+[[nodiscard]] static DenseMatrix
+buildDenseFunctionality(const nb::object& program) {
+  return withQCOProgram(program, [](const mlir::QCOProgram& qco) {
+    dd::Package ddPackage(0);
+    const auto matrix = buildQCOFunctionality(qco, ddPackage);
+    return toDenseMatrix(matrix, ddPackage.qubits());
+  });
+}
+
+[[nodiscard]] static DenseVector simulateDense(const nb::object& program) {
+  return withQCOProgram(program, [](const mlir::QCOProgram& qco) {
+    dd::Package ddPackage(0);
+    auto func = entryFunc(qco);
+    const auto state = takeFailureOr(
+        func.getContext(), "cannot simulate this QCO program",
+        [&] { return mlir::qco::simulateStatevector(func, ddPackage); });
+    return toDenseVector(state);
+  });
+}
+
+[[nodiscard]] static std::map<std::string, size_t>
+sample(const nb::object& program, size_t shots, uint64_t seed) {
+  return withQCOProgram(program, [&](const mlir::QCOProgram& qco) {
+    return sampleQCO(qco, shots, seed);
+  });
 }
 
 [[nodiscard]] static mlir::QCProgram
@@ -356,8 +478,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   auto compilerTarget = nb::class_<mlir::CompilerTarget>(
       m, "CompilerTarget", R"pb(Immutable MLIR compiler target.
 
-An absent topology means all-to-all connectivity. An absent operation set
-means every operation is native.)pb");
+Every target has either all-to-all or explicitly enumerated connectivity and
+either unrestricted or explicitly enumerated native-operation support.)pb");
 
   auto durationUnit = nb::class_<mlir::CompilerTarget::DurationUnit>(
       compilerTarget, "DurationUnit", "Unit for raw target timing metadata.");
@@ -412,7 +534,7 @@ means every operation is native.)pb");
 
   auto siteTuple = nb::class_<mlir::CompilerTarget::SiteTuple>(
       compilerTarget, "SiteTuple",
-      "Calibration data for an ordered tuple of target sites.");
+      "A supported ordered placement with optional calibration.");
   siteTuple
       .def(
           "__init__",
@@ -437,14 +559,42 @@ means every operation is native.)pb");
       .def_prop_ro("fidelity", &mlir::CompilerTarget::SiteTuple::fidelity,
                    "The operation fidelity, if available.");
 
+  nb::implicitly_convertible<std::vector<mlir::CompilerTarget::SiteId>,
+                             mlir::CompilerTarget::SiteTuple>();
+
+  nb::enum_<mlir::CompilerTarget::Operation::Arity::Kind>(
+      compilerTarget, "OperationArityKind",
+      "How an operation capability accepts qubit widths.")
+      .value("FIXED", mlir::CompilerTarget::Operation::Arity::Kind::Fixed)
+      .value("VARIADIC",
+             mlir::CompilerTarget::Operation::Arity::Kind::Variadic);
+
+  auto operationArity = nb::class_<mlir::CompilerTarget::Operation::Arity>(
+      compilerTarget, "OperationArity", "Accepted operation qubit widths.");
+  operationArity
+      .def_static("fixed", &mlir::CompilerTarget::Operation::Arity::fixed,
+                  "value"_a, "Create an exact operation arity.")
+      .def_static("variadic", &mlir::CompilerTarget::Operation::Arity::variadic,
+                  "minimum"_a,
+                  "Create an operation arity with an inclusive minimum. "
+                  "Operation construction requires a positive minimum.")
+      .def_prop_ro("kind", &mlir::CompilerTarget::Operation::Arity::kind,
+                   "The arity kind.")
+      .def_prop_ro("value", &mlir::CompilerTarget::Operation::Arity::value,
+                   "The exact arity or inclusive variadic minimum.")
+      .def("accepts", &mlir::CompilerTarget::Operation::Arity::accepts,
+           "width"_a, "Whether this arity accepts a concrete width.");
+
   auto targetOperation = nb::class_<mlir::CompilerTarget::Operation>(
       compilerTarget, "Operation",
-      "A homogeneous target-wide operation capability and its calibration.");
+      "A target operation capability, calibration, and ordered "
+      "applicability.");
   targetOperation
       .def(
           "__init__",
           [](mlir::CompilerTarget::Operation& self, std::string name,
-             const size_t numQubits, const size_t numParameters,
+             const mlir::CompilerTarget::Operation::Arity arity,
+             const size_t numParameters,
              std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
                  siteTuples,
              const std::optional<uint64_t> duration,
@@ -452,15 +602,33 @@ means every operation is native.)pb");
             constructFromExpected(
                 self,
                 mlir::CompilerTarget::Operation::create(
-                    std::move(name), numQubits, numParameters,
+                    std::move(name), arity, numParameters,
                     std::move(siteTuples)
                         .value_or(
                             std::vector<mlir::CompilerTarget::SiteTuple>{}),
                     duration, fidelity));
           },
-          "name"_a, "num_qubits"_a, "num_parameters"_a,
-          "site_tuples"_a = nb::none(), "duration"_a = nb::none(),
-          "fidelity"_a = nb::none())
+          "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
+          "duration"_a = nb::none(), "fidelity"_a = nb::none())
+      .def(
+          "__init__",
+          [](mlir::CompilerTarget::Operation& self, std::string name,
+             const size_t arity, const size_t numParameters,
+             std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
+                 siteTuples,
+             const std::optional<uint64_t> duration,
+             const std::optional<double> fidelity) {
+            constructFromExpected(
+                self,
+                mlir::CompilerTarget::Operation::create(
+                    std::move(name), arity, numParameters,
+                    std::move(siteTuples)
+                        .value_or(
+                            std::vector<mlir::CompilerTarget::SiteTuple>{}),
+                    duration, fidelity));
+          },
+          "name"_a, "arity"_a, "num_parameters"_a, "site_tuples"_a = nb::none(),
+          "duration"_a = nb::none(), "fidelity"_a = nb::none())
       .def_prop_ro(
           "name",
           [](const mlir::CompilerTarget::Operation& operation) {
@@ -473,8 +641,8 @@ means every operation is native.)pb");
             return operation.canonicalName().str();
           },
           "The normalized compiler operation name.")
-      .def_prop_ro("num_qubits", &mlir::CompilerTarget::Operation::numQubits,
-                   "The fixed operation arity.")
+      .def_prop_ro("arity", &mlir::CompilerTarget::Operation::arity,
+                   "The accepted operation arity.")
       .def_prop_ro("num_parameters",
                    &mlir::CompilerTarget::Operation::numParameters,
                    "The number of real-valued parameters.")
@@ -484,7 +652,8 @@ means every operation is native.)pb");
             return std::vector<mlir::CompilerTarget::SiteTuple>(
                 operation.siteTuples().begin(), operation.siteTuples().end());
           },
-          "Ordered site-specific calibration data.")
+          "Supported ordered placements with optional calibration; empty means "
+          "general applicability.")
       .def_prop_ro("duration", &mlir::CompilerTarget::Operation::duration,
                    "The raw default duration, if available.")
       .def_prop_ro("fidelity", &mlir::CompilerTarget::Operation::fidelity,
@@ -529,71 +698,126 @@ means every operation is native.)pb");
       .def_ro("entangler", &mlir::CompilerTarget::SynthesisBasis::entangler,
               "The two-qubit entangler.");
 
+  nb::enum_<mlir::CompilerTarget::Connectivity::Kind>(
+      compilerTarget, "ConnectivityKind", "The target connectivity model.")
+      .value("ALL_TO_ALL", mlir::CompilerTarget::Connectivity::Kind::AllToAll)
+      .value("EXPLICIT", mlir::CompilerTarget::Connectivity::Kind::Explicit);
+
+  auto connectivity = nb::class_<mlir::CompilerTarget::Connectivity>(
+      compilerTarget, "Connectivity", "A target connectivity model.");
+  connectivity
+      .def(
+          "__init__",
+          [](mlir::CompilerTarget::Connectivity& self,
+             const std::vector<mlir::CompilerTarget::Coupling>& couplings) {
+            new (&self) mlir::CompilerTarget::Connectivity(
+                mlir::CompilerTarget::Connectivity::fromCouplings(couplings));
+          },
+          "couplings"_a, "Create an explicit connectivity model.")
+      .def_static("all_to_all", &mlir::CompilerTarget::Connectivity::allToAll,
+                  "Create an all-to-all connectivity model.")
+      .def_prop_ro("kind", &mlir::CompilerTarget::Connectivity::kind,
+                   "The connectivity model.")
+      .def_prop_ro(
+          "couplings",
+          [](const mlir::CompilerTarget::Connectivity& value) {
+            return std::vector<mlir::CompilerTarget::Coupling>(
+                value.couplings().begin(), value.couplings().end());
+          },
+          "The explicit couplings, if present.");
+
+  nb::enum_<mlir::CompilerTarget::NativeOperations::Kind>(
+      compilerTarget, "NativeOperationsKind",
+      "The native-operation support model.")
+      .value("UNRESTRICTED",
+             mlir::CompilerTarget::NativeOperations::Kind::Unrestricted)
+      .value("EXPLICIT",
+             mlir::CompilerTarget::NativeOperations::Kind::Explicit);
+
+  auto nativeOperations = nb::class_<mlir::CompilerTarget::NativeOperations>(
+      compilerTarget, "NativeOperations", "Native-operation support.");
+  nativeOperations
+      .def(
+          "__init__",
+          [](mlir::CompilerTarget::NativeOperations& self,
+             const std::vector<mlir::CompilerTarget::Operation>& operations) {
+            new (&self) mlir::CompilerTarget::NativeOperations(
+                mlir::CompilerTarget::NativeOperations::fromOperations(
+                    operations));
+          },
+          "operations"_a, "Create explicit native-operation support.")
+      .def_static("unrestricted",
+                  &mlir::CompilerTarget::NativeOperations::unrestricted,
+                  "Create unrestricted native-operation support.")
+      .def_prop_ro("kind", &mlir::CompilerTarget::NativeOperations::kind,
+                   "The native-operation support model.")
+      .def_prop_ro(
+          "operations",
+          [](const mlir::CompilerTarget::NativeOperations& value) {
+            return std::vector<mlir::CompilerTarget::Operation>(
+                value.operations().begin(), value.operations().end());
+          },
+          "The explicit operations, if present.");
+
   compilerTarget
       .def(
           "__init__",
-          [](mlir::CompilerTarget& self, const size_t numQubits,
-             std::optional<std::vector<mlir::CompilerTarget::Coupling>>
-                 couplings,
-             std::optional<std::vector<mlir::CompilerTarget::Operation>>
-                 operations,
+          [](mlir::CompilerTarget& self, const size_t numSites,
+             mlir::CompilerTarget::Connectivity connectivity,
+             mlir::CompilerTarget::NativeOperations nativeOperations,
              std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
             constructFromExpected(self, mlir::CompilerTarget::create(
-                                            numQubits, std::move(couplings),
-                                            std::move(operations),
+                                            numSites, std::move(connectivity),
+                                            std::move(nativeOperations),
                                             std::move(durationUnit)));
           },
-          "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "num_sites"_a, nb::kw_only(), "connectivity"_a, "native_operations"_a,
+          "duration_unit"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget& self, std::string name,
-             const size_t numQubits,
-             std::optional<std::vector<mlir::CompilerTarget::Coupling>>
-                 couplings,
-             std::optional<std::vector<mlir::CompilerTarget::Operation>>
-                 operations,
+             const size_t numSites,
+             mlir::CompilerTarget::Connectivity connectivity,
+             mlir::CompilerTarget::NativeOperations nativeOperations,
              std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
             constructFromExpected(
-                self, mlir::CompilerTarget::create(
-                          std::move(name), numQubits, std::move(couplings),
-                          std::move(operations), std::move(durationUnit)));
+                self, mlir::CompilerTarget::create(std::move(name), numSites,
+                                                   std::move(connectivity),
+                                                   std::move(nativeOperations),
+                                                   std::move(durationUnit)));
           },
-          "name"_a, "num_qubits"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "name"_a, "num_sites"_a, nb::kw_only(), "connectivity"_a,
+          "native_operations"_a, "duration_unit"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget& self,
              std::vector<mlir::CompilerTarget::Site> sites,
-             std::optional<std::vector<mlir::CompilerTarget::Coupling>>
-                 couplings,
-             std::optional<std::vector<mlir::CompilerTarget::Operation>>
-                 operations,
+             mlir::CompilerTarget::Connectivity connectivity,
+             mlir::CompilerTarget::NativeOperations nativeOperations,
              std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
             constructFromExpected(
-                self, mlir::CompilerTarget::create(
-                          std::move(sites), std::move(couplings),
-                          std::move(operations), std::move(durationUnit)));
+                self, mlir::CompilerTarget::create(std::move(sites),
+                                                   std::move(connectivity),
+                                                   std::move(nativeOperations),
+                                                   std::move(durationUnit)));
           },
-          "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "sites"_a, nb::kw_only(), "connectivity"_a, "native_operations"_a,
+          "duration_unit"_a = nb::none())
       .def(
           "__init__",
           [](mlir::CompilerTarget& self, std::string name,
              std::vector<mlir::CompilerTarget::Site> sites,
-             std::optional<std::vector<mlir::CompilerTarget::Coupling>>
-                 couplings,
-             std::optional<std::vector<mlir::CompilerTarget::Operation>>
-                 operations,
+             mlir::CompilerTarget::Connectivity connectivity,
+             mlir::CompilerTarget::NativeOperations nativeOperations,
              std::optional<mlir::CompilerTarget::DurationUnit> durationUnit) {
             constructFromExpected(self, mlir::CompilerTarget::create(
                                             std::move(name), std::move(sites),
-                                            std::move(couplings),
-                                            std::move(operations),
+                                            std::move(connectivity),
+                                            std::move(nativeOperations),
                                             std::move(durationUnit)));
           },
-          "name"_a, "sites"_a, nb::kw_only(), "couplings"_a = nb::none(),
-          "operations"_a = nb::none(), "duration_unit"_a = nb::none())
+          "name"_a, "sites"_a, nb::kw_only(), "connectivity"_a,
+          "native_operations"_a, "duration_unit"_a = nb::none())
       .def_static(
           "from_device",
           [](const qdmi::Device& device) {
@@ -650,7 +874,7 @@ means every operation is native.)pb");
           "The target name, if available.")
       .def_prop_ro("duration_unit", &mlir::CompilerTarget::durationUnit,
                    "The target timing unit, if available.")
-      .def_prop_ro("num_qubits", &mlir::CompilerTarget::numQubits,
+      .def_prop_ro("num_sites", &mlir::CompilerTarget::numSites,
                    "The number of target sites.")
       .def_prop_ro(
           "sites",
@@ -659,9 +883,8 @@ means every operation is native.)pb");
                 target.sites().begin(), target.sites().end());
           },
           "Detailed sites in compiler-vertex order.")
-      .def_prop_ro("has_explicit_topology",
-                   &mlir::CompilerTarget::hasExplicitTopology,
-                   "Whether the target defines a coupling topology.")
+      .def_prop_ro("connectivity_kind", &mlir::CompilerTarget::connectivityKind,
+                   "The target connectivity model.")
       .def_prop_ro(
           "couplings",
           [](const mlir::CompilerTarget& target) {
@@ -669,9 +892,9 @@ means every operation is native.)pb");
                 target.couplings().begin(), target.couplings().end());
           },
           "Canonical undirected couplings in target site IDs.")
-      .def_prop_ro("has_explicit_operations",
-                   &mlir::CompilerTarget::hasExplicitOperations,
-                   "Whether the target defines an operation set.")
+      .def_prop_ro("native_operations_kind",
+                   &mlir::CompilerTarget::nativeOperationsKind,
+                   "The target native-operation support model.")
       .def_prop_ro(
           "operations",
           [](const mlir::CompilerTarget& target) {
@@ -691,12 +914,17 @@ means every operation is native.)pb");
       .def(
           "supports_operation",
           [](const mlir::CompilerTarget& target, const std::string_view name,
-             const size_t numQubits,
-             const std::optional<size_t> numParameters) {
-            return target.supportsOperation(name, numQubits, numParameters);
+             const size_t arity, const std::optional<size_t> numParameters,
+             const std::optional<std::vector<mlir::CompilerTarget::SiteId>>&
+                 sites) {
+            if (sites) {
+              return target.supportsOperation(name, arity, numParameters,
+                                              *sites);
+            }
+            return target.supportsOperation(name, arity, numParameters);
           },
-          "name"_a, "num_qubits"_a, "num_parameters"_a = nb::none(),
-          "Whether the target supports an operation capability.");
+          "name"_a, "arity"_a, "num_parameters"_a = nb::none(),
+          "sites"_a = nb::none(), "Whether the target supports an operation.");
 
   auto program = nb::class_<mlir::Program>(
       m, "Program", R"pb(Base class for a typed MLIR compiler program.
@@ -759,10 +987,23 @@ before conversion to QCO.)pb");
       .def("normalize_global_phases",
            &BooleanMemberAdapter<&mlir::QCProgram::normalizeGlobalPhases>::call,
            "Normalize scoped global phases in place.")
-      .def("to_openqasm3",
-           &OptionalMemberAdapter<&mlir::QCProgram::toOpenQASM3>::call,
-           "Clean up and emit this QC program as OpenQASM 3 without QCO "
-           "optimization.")
+      .def(
+          "to_openqasm3",
+          [](const mlir::QCProgram& program) {
+            requireValid(program);
+            return takeFailureOr<nb::exception_type::runtime_error>(
+                program.module().getContext(),
+                "cannot export QC program to OpenQASM 3",
+                [&]() -> mlir::FailureOr<mlir::OpenQASMProgram> {
+                  auto result = program.toOpenQASM3();
+                  if (!result) {
+                    return mlir::failure();
+                  }
+                  return std::move(*result);
+                });
+          },
+          "Clean up and emit this QC program as OpenQASM 3 without QCO "
+          "optimization.")
       .def(
           "to_qiskit",
           [](const mlir::QCProgram& program,
@@ -1006,15 +1247,7 @@ LLVM bitcode.)pb");
   nb::module_::import_("mqt.core.dd");
 
   qcoProgram.def(
-      "build_functionality",
-      [](const mlir::QCOProgram& program, dd::Package& ddPackage) {
-        auto func = entryFunc(program);
-        return takeFailureOr(
-            func.getContext(),
-            "cannot build DD functionality for this QCO program",
-            [&] { return mlir::qco::buildFunctionality(func, ddPackage); });
-      },
-      "dd_package"_a,
+      "build_functionality", &buildQCOFunctionality, "dd_package"_a,
       // Keep the DD package alive while the returned matrix DD is alive.
       nb::keep_alive<0, 2>(),
       R"pb(Build a matrix DD for a static unitary QCO program.
@@ -1029,22 +1262,8 @@ Raises:
     ValueError: When the program is unsupported for functionality construction.)pb");
 
   qcoProgram.def(
-      "simulate",
-      [](const mlir::QCOProgram& program, const dd::VectorDD& initialState,
-         dd::Package& ddPackage, const uint64_t seed) {
-        if (dd::VectorDD::trackingRequired(initialState) &&
-            !ddPackage.getRootSet<dd::vNode>().contains(initialState)) {
-          throw nb::value_error(
-              "initial_state must have a live reference in dd_package");
-        }
-        auto func = entryFunc(program);
-        auto rng = makeRng(seed);
-        return takeFailureOr(
-            func.getContext(), "cannot simulate this QCO program", [&] {
-              return mlir::qco::simulate(func, initialState, ddPackage, rng);
-            });
-      },
-      "initial_state"_a, "dd_package"_a, "seed"_a = 0U,
+      "simulate", &simulateQCO, "initial_state"_a, "dd_package"_a,
+      "seed"_a = 0U,
       // Keep the DD package alive while the returned vector DD is alive.
       nb::keep_alive<0, 3>(),
       R"pb(Simulate a QCO program on a DD state.
@@ -1064,31 +1283,74 @@ Raises:
     ValueError: When ``initial_state`` has no live reference in ``dd_package``,
         has too few qubits, or the program is unsupported for simulation.)pb");
 
-  qcoProgram.def(
-      "sample",
-      [](const mlir::QCOProgram& program, dd::Package& ddPackage,
-         const size_t shots, const uint64_t seed) {
-        auto func = entryFunc(program);
-        auto rng = makeRng(seed);
-        return takeFailureOr(
-            func.getContext(), "cannot sample this QCO program",
-            [&] { return mlir::qco::sample(func, ddPackage, shots, rng); });
-      },
-      "dd_package"_a, "shots"_a = 1024U, "seed"_a = 0U,
-      R"pb(Sample the declared outputs of a QCO program.
+  qcoProgram.def("sample", &sampleQCO, "shots"_a = 1024U, "seed"_a = 0U,
+                 R"pb(Sample the declared outputs of a QCO program.
 
 Args:
-    dd_package: DD package with enough qubits for the program.
     shots: Number of shots (default 1024).
     seed: RNG seed. ``0`` (default) selects nondeterministic seeding. Any other
         value produces reproducible results.
 
 Returns:
-    Histogram of returned CBit registers in return order, each MSB first. If
-    no CBit result exists, final ``measureAll`` bitstrings instead.
+    Histogram keys use conventional count-string order. The last returned
+    register comes first, and each register is MSB-first. If no CBit result
+    exists, final ``measureAll`` bitstrings are used instead.
 
 Raises:
     ValueError: When the program is unsupported for sampling.)pb");
+
+  m.def("build_functionality", &buildDenseFunctionality, "program"_a,
+        nb::sig("def build_functionality(program: str | os.PathLike[str] | "
+                "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
+                "JeffProgram | OpenQASMProgram) -> "
+                "typing.Annotated[numpy.typing.NDArray[numpy.complex128], "
+                "{'shape': (None, None)}]"),
+        R"pb(Build the full unitary matrix of a supported compiler input.
+
+The DD package is managed internally. The matrix is materialized directly into
+the returned NumPy array without an additional copy. The full matrix grows
+exponentially, and the caller is responsible for requesting a result that fits
+in memory.
+
+Raises:
+    MemoryError: When the dense matrix does not fit in memory.
+    ValueError: When the program is unsupported or the matrix dimensions exceed
+        addressable memory.)pb");
+
+  m.def("simulate", &simulateDense, "program"_a,
+        nb::sig("def simulate(program: str | os.PathLike[str] | "
+                "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
+                "JeffProgram | OpenQASMProgram) -> "
+                "typing.Annotated[numpy.typing.NDArray[numpy.complex128], "
+                "{'shape': (None,)}]"),
+        R"pb(Simulate a closed compiler input from the all-zero state.
+
+The DD package is managed internally. Terminal measurements that only assemble
+returned classical registers do not collapse the state. Mid-circuit measurement
+feedback and resets are unsupported; use {py:meth}`QCOProgram.simulate` with an
+explicit DD package for those workflows or for a custom initial state.
+
+Args:
+    program: Compiler input to lower directly to QCO.
+
+Returns:
+    Full statevector, materialized directly into the returned NumPy array.
+
+Raises:
+    MemoryError: When the dense statevector does not fit in memory.
+    ValueError: When the program is not closed, is unsupported for statevector
+        simulation, or the statevector dimensions exceed addressable memory.)pb");
+
+  m.def("sample", &sample, "program"_a, "shots"_a = 1024U, "seed"_a = 0U,
+        nb::sig("def sample(program: str | os.PathLike[str] | "
+                "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
+                "JeffProgram | OpenQASMProgram, shots: int = 1024, seed: int = "
+                "0) -> dict[str, int]"),
+        R"pb(Sample a supported input after lowering it directly to QCO.
+
+An existing QCO program is used without copying. See
+{py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error
+contracts.)pb");
 
   m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
         "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,

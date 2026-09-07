@@ -17,7 +17,7 @@ if(MQT_CORE_INSTALL)
   set(MQT_CORE_CMAKE_VERSION_CONFIG_FILE
       "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-config-version.cmake")
   set(MQT_CORE_CMAKE_PROJECT_CONFIG_FILE "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-config.cmake")
-  set(MQT_CORE_CMAKE_PROJECT_TARGETS_FILE "${MQT_CORE_CMAKE_CONFIG_DIR}/mqt-core-targets.cmake")
+  set(MQT_CORE_CMAKE_PROJECT_TARGETS_FILE "mqt-core-targets.cmake")
 endif()
 
 if(NOT TARGET MQT::ProjectWarnings)
@@ -58,12 +58,6 @@ endif()
 
 # add the benchmark semantic package
 add_subdirectory(bench)
-
-# add the IR package
-add_subdirectory(ir)
-
-# add the QASM package
-add_subdirectory(qasm3)
 
 # add DD package library
 add_subdirectory(dd)
@@ -106,7 +100,7 @@ if(MQT_CORE_INSTALL)
 
   install(
     EXPORT ${MQT_CORE_TARGETS_EXPORT_NAME}
-    FILE ${MQT_CORE_PROJECT_TARGETS_FILE}
+    FILE ${MQT_CORE_CMAKE_PROJECT_TARGETS_FILE}
     NAMESPACE MQT::
     DESTINATION ${MQT_CORE_CONFIG_INSTALL_DIR}
     COMPONENT ${MQT_CORE_TARGET_NAME}_Development)

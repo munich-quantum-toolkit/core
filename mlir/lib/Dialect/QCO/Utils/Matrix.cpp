@@ -469,8 +469,12 @@ Matrix4x4 Matrix4x4::kron(const Matrix2x2& lhs, const Matrix2x2& rhs) {
 std::array<Complex, Matrix4x4::K_ROWS>
 Matrix4x4::column(const size_t col) const {
   assert(col < K_COLS && "matrix index out of bounds");
-  return {data[col], data[K_COLS + col], data[(2 * K_COLS) + col],
-          data[(3 * K_COLS) + col]};
+  return {
+      data[col],
+      data[K_COLS + col],
+      data[(2 * K_COLS) + col],
+      data[(3 * K_COLS) + col],
+  };
 }
 
 void Matrix4x4::setColumn(const size_t col, const ArrayRef<Complex> values) {
@@ -500,18 +504,22 @@ void Matrix4x4::setRow(const size_t row, const ArrayRef<Complex> values) {
 
 std::array<double, Matrix4x4::K_SIZE_AT_COMPILE_TIME>
 Matrix4x4::realPart() const {
-  return {data[0].real(),  data[1].real(),  data[2].real(),  data[3].real(),
-          data[4].real(),  data[5].real(),  data[6].real(),  data[7].real(),
-          data[8].real(),  data[9].real(),  data[10].real(), data[11].real(),
-          data[12].real(), data[13].real(), data[14].real(), data[15].real()};
+  return {
+      data[0].real(),  data[1].real(),  data[2].real(),  data[3].real(),
+      data[4].real(),  data[5].real(),  data[6].real(),  data[7].real(),
+      data[8].real(),  data[9].real(),  data[10].real(), data[11].real(),
+      data[12].real(), data[13].real(), data[14].real(), data[15].real(),
+  };
 }
 
 std::array<double, Matrix4x4::K_SIZE_AT_COMPILE_TIME>
 Matrix4x4::imagPart() const {
-  return {data[0].imag(),  data[1].imag(),  data[2].imag(),  data[3].imag(),
-          data[4].imag(),  data[5].imag(),  data[6].imag(),  data[7].imag(),
-          data[8].imag(),  data[9].imag(),  data[10].imag(), data[11].imag(),
-          data[12].imag(), data[13].imag(), data[14].imag(), data[15].imag()};
+  return {
+      data[0].imag(),  data[1].imag(),  data[2].imag(),  data[3].imag(),
+      data[4].imag(),  data[5].imag(),  data[6].imag(),  data[7].imag(),
+      data[8].imag(),  data[9].imag(),  data[10].imag(), data[11].imag(),
+      data[12].imag(), data[13].imag(), data[14].imag(), data[15].imag(),
+  };
 }
 
 bool Matrix4x4::isApprox(const Matrix4x4& other, const double tol) const {
@@ -538,9 +546,9 @@ DynamicMatrix Matrix4x4::embedInNqubit(const size_t numQubits,
       if (!otherQubitBitsMatch(row, col, numQubits, q0Index, q1Index)) {
         continue;
       }
-      const size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1) |
+      const size_t rowPair = (qubitBitAt(row, numQubits, q0Index) << 1U) |
                              qubitBitAt(row, numQubits, q1Index);
-      const size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1) |
+      const size_t colPair = (qubitBitAt(col, numQubits, q0Index) << 1U) |
                              qubitBitAt(col, numQubits, q1Index);
       out(static_cast<int64_t>(row), static_cast<int64_t>(col)) =
           (*this)(rowPair, colPair);
@@ -1788,6 +1796,28 @@ SymmetricEigenDecomposition4x4 Matrix4x4::symmetricEigenDecomposition() const {
   return symmetricEigenDecomposition4x4(realPart());
 }
 
+Complex& Matrix8x8::operator()(size_t row, size_t col) {
+  return data[checkedFlatIndex(row, col, K_COLS)];
+}
+
+Complex Matrix8x8::operator()(size_t row, size_t col) const {
+  return data[checkedFlatIndex(row, col, K_COLS)];
+}
+
+Matrix8x8 Matrix8x8::adjoint() const {
+  Matrix8x8 out;
+  adjointInto(data, out.data, K_ROWS);
+  return out;
+}
+
+bool Matrix8x8::isApprox(const Matrix8x8& other, double tol) const {
+  return entriesAreApprox(data, other.data, tol);
+}
+
+bool Matrix8x8::assignFrom(const DynamicMatrix& src) {
+  return assignFromDynamicImpl<K_ROWS, K_SIZE_AT_COMPILE_TIME>(src, data);
+}
+
 struct DynamicMatrix::Impl {
   int64_t dim = 0;
   SmallVector<Complex> data;
@@ -1807,6 +1837,11 @@ DynamicMatrix::DynamicMatrix(const Matrix2x2& src)
 }
 
 DynamicMatrix::DynamicMatrix(const Matrix4x4& src)
+    : impl_(std::make_unique<Impl>()) {
+  assignFrom(src);
+}
+
+DynamicMatrix::DynamicMatrix(const Matrix8x8& src)
     : impl_(std::make_unique<Impl>()) {
   assignFrom(src);
 }
@@ -1855,6 +1890,10 @@ Complex DynamicMatrix::operator()(const int64_t row, const int64_t col) const {
       ->data[static_cast<size_t>(checkedFlatIndex(row, col, impl_->dim))];
 }
 
+std::span<const Complex> DynamicMatrix::entries() const noexcept {
+  return {impl_->data.data(), impl_->data.size()};
+}
+
 void DynamicMatrix::setBottomRightCorner(const Matrix2x2& block) {
   copyBottomRightCorner(impl_->dim, impl_->data,
                         static_cast<int64_t>(Matrix2x2::K_ROWS), block.data);
@@ -1888,6 +1927,11 @@ void DynamicMatrix::assignFrom(const Matrix2x2& src) {
 
 void DynamicMatrix::assignFrom(const Matrix4x4& src) {
   assignFixedImpl<Matrix4x4::K_ROWS, Matrix4x4::K_SIZE_AT_COMPILE_TIME>(
+      impl_->dim, impl_->data, src.data);
+}
+
+void DynamicMatrix::assignFrom(const Matrix8x8& src) {
+  assignFixedImpl<Matrix8x8::K_ROWS, Matrix8x8::K_SIZE_AT_COMPILE_TIME>(
       impl_->dim, impl_->data, src.data);
 }
 
@@ -1975,7 +2019,7 @@ void DynamicMatrix::premultiplyByEmbedded1Q(const Matrix2x2& gate,
   }
   const auto udim = checkedDim(impl_->dim);
   const size_t mask = size_t{1} << (numQubits - 1 - qubitIndex);
-  const size_t step = mask << 1;
+  const size_t step = mask << 1U;
   auto& data = impl_->data;
   for (size_t chunk = 0; chunk < udim; chunk += step) {
     for (size_t inner = 0; inner < mask; ++inner) {
@@ -2008,7 +2052,7 @@ void DynamicMatrix::premultiplyByEmbedded2Q(const Matrix4x4& gate,
   const size_t mask0 = size_t{1} << (numQubits - 1 - q0Index);
   const size_t mask1 = size_t{1} << (numQubits - 1 - q1Index);
   auto& data = impl_->data;
-  for (size_t block = 0; block < (udim >> 2); ++block) {
+  for (size_t block = 0; block < (udim >> 2U); ++block) {
     size_t base = 0;
     size_t rest = block;
     for (size_t q = 0; q < numQubits; ++q) {
@@ -2021,7 +2065,11 @@ void DynamicMatrix::premultiplyByEmbedded2Q(const Matrix4x4& gate,
       rest >>= 1U;
     }
     const std::array<size_t, Matrix4x4::K_ROWS> rowIdx = {
-        base, base | mask1, base | mask0, base | mask0 | mask1};
+        base,
+        base | mask1,
+        base | mask0,
+        base | mask0 | mask1,
+    };
     for (size_t col = 0; col < udim; ++col) {
       apply4x4LeftToColumn(gate.data, data[(rowIdx[0] * udim) + col],
                            data[(rowIdx[1] * udim) + col],

@@ -14,7 +14,6 @@ target_link_libraries(
           MLIRArithDialect
           MLIRCBitDialect
           MLIRFuncDialect
-          MLIRLLVMDialect
           MLIRMemRefDialect
           MLIRMQTDialect
           MLIRParser

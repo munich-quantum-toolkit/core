@@ -22,19 +22,22 @@ namespace mlir {
 
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const CompilerTarget& target) {
+  pm.addPass(createInlinerPass());
   populateQCOCleanupPipeline(pm);
-  populateDecomposeMultiControlledPipeline(pm, 3);
+  pm.addPass(qco::createDecomposeMultiControlled(target));
   populateDefaultQCOOptimizationPipeline(pm);
   pm.addPass(qco::createFuseTwoQubitGates());
-  if (target.hasExplicitTopology()) {
+  switch (target.connectivityKind()) {
+  case CompilerTarget::Connectivity::Kind::Explicit:
     pm.addPass(qco::createMappingPass(target, qco::MappingPassOptions{}));
-  } else {
+    break;
+  case CompilerTarget::Connectivity::Kind::AllToAll:
     pm.addPass(qco::createPlacementPass(target));
+    break;
   }
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createTargetNativeSynthesis(target));
   pm.addPass(createCSEPass());
-  pm.addPass(createRemoveDeadValuesPass());
   pm.addPass(qco::createVerifyTargetConformance(target));
 }
 

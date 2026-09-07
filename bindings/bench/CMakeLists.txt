@@ -7,8 +7,14 @@
 # Licensed under the MIT License
 
 if(NOT TARGET ${MQT_CORE_TARGET_NAME}-bench-bindings)
-  set(BENCH_SOURCES register_bench.cpp register_bv.cpp register_ghz.cpp register_grover.cpp
-                    register_qft.cpp register_qpe.cpp)
+  set(BENCH_SOURCES
+      register_bench.cpp
+      register_bv.cpp
+      register_ghz.cpp
+      register_grover.cpp
+      register_multiplexer.cpp
+      register_qft.cpp
+      register_qpe.cpp)
 
   add_mqt_python_binding(
     CORE
