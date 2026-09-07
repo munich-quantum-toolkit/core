@@ -540,11 +540,14 @@ class DDPackage:
             The DD for the multi-controlled two-qubit gate.
         """
 
-    def from_matrix(self, matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}]) -> MatrixDD:
+    def from_matrix(
+        self, matrix: Annotated[NDArray[np.complex128], {"shape": (None, None), "writable": False}]
+    ) -> MatrixDD:
         """Create a DD from a matrix.
 
         Args:
             matrix: The matrix. Must be square and have a size that is a power of 2.
+                Read-only and strided arrays are supported.
 
         Returns:
             The DD for the matrix.

@@ -35,6 +35,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <queue>
 #include <random>
@@ -513,61 +514,68 @@ mEdge Package::makeThreeQubitGateDD(
   return buildThreeQubitGateDD(*this, mat, controls, target0, target1, target2);
 }
 
+mEdge Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
+                          const std::span<const Qubit> targets,
+                          const Controls& controls) {
+  if (targets.size() >= std::numeric_limits<size_t>::digits / 2 ||
+      matrix.size() != (size_t{1} << (2 * targets.size()))) {
+    throw std::invalid_argument("Matrix size does not match its target count.");
+  }
+  switch (targets.size()) {
+  case 1:
+    return makeGateDD(matrix.first<NEDGE>(), controls, targets[0]);
+  case 2:
+    return makeTwoQubitGateDD(matrix.first<NEDGE * NEDGE>(), controls,
+                              targets[0], targets[1]);
+  case 3:
+    return makeThreeQubitGateDD(
+        matrix.first<THREE_QUBIT_GATE_DIM * THREE_QUBIT_GATE_DIM>(), controls,
+        targets[0], targets[1], targets[2]);
+  default:
+    break;
+  }
+  if (!controls.empty()) {
+    throw std::invalid_argument(
+        "Sparse controls require one to three target qubits.");
+  }
+  if (targets.empty()) {
+    return mEdge::terminal(cn.lookup(matrix[0]));
+  }
+  /// The matrix-size check bounds the number of operands by the size_t width.
+  std::array<std::pair<Qubit, size_t>, std::numeric_limits<size_t>::digits / 2>
+      storage{};
+  const auto operands = std::span{storage}.first(targets.size());
+  for (size_t i = 0; i < targets.size(); ++i) {
+    if (targets[i] >= qubits()) {
+      throwGateQubitOutOfRange(qubits());
+    }
+    operands[i] = {targets[i], size_t{1} << (targets.size() - 1 - i)};
+  }
+  std::ranges::sort(operands, {}, &std::pair<Qubit, size_t>::first);
+  if (std::ranges::adjacent_find(
+          operands, {}, &std::pair<Qubit, size_t>::first) != operands.end()) {
+    throwGateQubitsNotDistinct();
+  }
+  const auto dimension = size_t{1} << targets.size();
+  const auto root = buildMatrixDD(
+      [matrix, dimension](const size_t row, const size_t col) {
+        return matrix[(row * dimension) + col];
+      },
+      [&operands](const size_t level) { return operands[level]; },
+      targets.size() - 1, 0, 0);
+  return toMatrixDD(*this, root);
+}
+
 mEdge Package::makeDDFromMatrix(const CMat& matrix) {
-  if (matrix.empty()) {
-    return mEdge::one();
-  }
-
-  const auto& length = matrix.size();
-  if ((length & (length - 1)) != 0) {
-    throw std::invalid_argument("Matrix must have a length of a power of two.");
-  }
-
-  const auto& width = matrix[0].size();
-  if (std::ranges::any_of(
-          matrix, [length](const auto& row) { return row.size() != length; })) {
+  if (std::ranges::any_of(matrix, [&matrix](const auto& row) {
+        return row.size() != matrix.size();
+      })) {
     throw std::invalid_argument("Matrix must be square.");
   }
-
-  if (length == 1) {
-    return mEdge::terminal(cn.lookup(matrix[0][0]));
-  }
-
-  const auto level = static_cast<Qubit>(std::log2(length) - 1);
-  const auto matrixDD = makeDDFromMatrix(matrix, level, 0, length, 0, width);
-  return {.p = matrixDD.p, .w = cn.lookup(matrixDD.w)};
-}
-mCachedEdge Package::makeDDFromMatrix(const CMat& matrix, const Qubit level,
-                                      const std::size_t rowStart,
-                                      const std::size_t rowEnd,
-                                      const std::size_t colStart,
-                                      const std::size_t colEnd) {
-  // base case
-  if (level == 0U) {
-    assert(rowEnd - rowStart == 2);
-    assert(colEnd - colStart == 2);
-    return makeDDNode<mNode, CachedEdge>(
-        0U, {
-                mCachedEdge::terminal(matrix[rowStart][colStart]),
-                mCachedEdge::terminal(matrix[rowStart][colStart + 1]),
-                mCachedEdge::terminal(matrix[rowStart + 1][colStart]),
-                mCachedEdge::terminal(matrix[rowStart + 1][colStart + 1]),
-            });
-  }
-
-  // recursively call the function on all quadrants
-  const auto rowMid = (rowStart + rowEnd) / 2;
-  const auto colMid = (colStart + colEnd) / 2;
-  const auto l = static_cast<Qubit>(level - 1U);
-
-  return makeDDNode<mNode, CachedEdge>(
-      level,
-      {
-          makeDDFromMatrix(matrix, l, rowStart, rowMid, colStart, colMid),
-          makeDDFromMatrix(matrix, l, rowStart, rowMid, colMid, colEnd),
-          makeDDFromMatrix(matrix, l, rowMid, rowEnd, colStart, colMid),
-          makeDDFromMatrix(matrix, l, rowMid, rowEnd, colMid, colEnd),
-      });
+  return makeDDFromMatrix(matrix.size(),
+                          [&matrix](const size_t row, const size_t col) {
+                            return matrix[row][col];
+                          });
 }
 void Package::clearComputeTables() {
   vectorAdd.clear();

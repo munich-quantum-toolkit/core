@@ -31,6 +31,7 @@
 #include "dd/UniqueTable.hpp"
 
 #include <array>
+#include <bit>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -470,37 +471,71 @@ public:
    * @return A decision diagram representing the matrix.
    * @throws std::invalid_argument If the given matrix is not square or its
    * length is not a power of two.
+   * @throws std::runtime_error If the matrix exceeds the package capacity.
    */
   mEdge makeDDFromMatrix(const CMat& matrix);
 
+  /// Construct a matrix DD without copying its storage.
+  /// @param dimension Number of rows and columns; zero yields the identity.
+  /// @param entry Callable returning the complex entry at (row, column).
+  /// @pre entry is valid for all indices smaller than dimension.
+  /// @throws std::invalid_argument If dimension is not a power of two.
+  /// @throws std::runtime_error If the matrix exceeds the package capacity.
+  template <class MatrixEntry>
+  mEdge makeDDFromMatrix(const size_t dimension, const MatrixEntry& entry) {
+    if (dimension == 0) {
+      return mEdge::one();
+    }
+    if (!std::has_single_bit(dimension)) {
+      throw std::invalid_argument(
+          "Matrix must have a length of a power of two.");
+    }
+    const auto levels = std::bit_width(dimension) - 1;
+    if (levels > qubits()) {
+      throw std::runtime_error("Matrix exceeds the package qubit capacity.");
+    }
+    if (levels == 0) {
+      return mEdge::terminal(cn.lookup(entry(0, 0)));
+    }
+    const auto operand = [](const size_t level) {
+      return std::pair{static_cast<Qubit>(level), size_t{1} << level};
+    };
+    const auto root = buildMatrixDD(entry, operand, levels - 1, 0, 0);
+    return {.p = root.p, .w = cn.lookup(root.w)};
+  }
+
+  /// Embed a row-major local matrix on targets in most-significant-bit order.
+  /// Missing DD levels represent identity wires. An empty target list takes a
+  /// single scalar entry. Controls are supported for one to three targets.
+  /// @throws std::invalid_argument If the matrix size does not match the target
+  /// count or controls accompany zero or more than three targets.
+  /// @throws std::runtime_error If qubits exceed package capacity, targets are
+  /// duplicated, or controls overlap targets.
+  mEdge makeGateDD(std::span<const std::complex<fp>> matrix,
+                   std::span<const Qubit> targets,
+                   const Controls& controls = {});
+
 private:
-  /**
-   * @brief Constructs a decision diagram (DD) from a complex matrix using a
-   * recursive algorithm.
-   *
-   * @param matrix The complex matrix from which to create the DD.
-   * @param level The current level of recursion. Starts at the highest level of
-   * the matrix (log base 2 of the matrix size - 1).
-   * @param rowStart The starting row of the quadrant being processed.
-   * @param rowEnd The ending row of the quadrant being processed.
-   * @param colStart The starting column of the quadrant being processed.
-   * @param colEnd The ending column of the quadrant being processed.
-   * @return An mCachedEdge representing the root node of the created DD.
-   *
-   * @details This function recursively breaks down the matrix into quadrants
-   * until each quadrant has only one element. At each level of recursion, four
-   * new edges are created, one for each quadrant of the matrix. The four
-   * resulting decision diagram edges are used to create a new decision diagram
-   * node at the current level, and this node is returned as the result of the
-   * current recursive call. At the base case of recursion, the matrix has only
-   * one element, which is converted into a terminal node of the decision
-   * diagram.
-   *
-   * @note This function assumes that the matrix size is a power of two.
-   */
-  mCachedEdge makeDDFromMatrix(const CMat& matrix, Qubit level,
-                               std::size_t rowStart, std::size_t rowEnd,
-                               std::size_t colStart, std::size_t colEnd);
+  /// Read matrix bits in DD level order, which may differ from operand order.
+  template <class MatrixEntry, class Operand>
+  mCachedEdge buildMatrixDD(const MatrixEntry& entry, const Operand& operand,
+                            const size_t level, const size_t row,
+                            const size_t col) {
+    const auto [wire, mask] = operand(level);
+    if (level == 0) {
+      return makeDDNode<mNode, CachedEdge>(
+          wire, {mCachedEdge::terminal(entry(row, col)),
+                 mCachedEdge::terminal(entry(row, col | mask)),
+                 mCachedEdge::terminal(entry(row | mask, col)),
+                 mCachedEdge::terminal(entry(row | mask, col | mask))});
+    }
+    return makeDDNode<mNode, CachedEdge>(
+        wire,
+        {buildMatrixDD(entry, operand, level - 1, row, col),
+         buildMatrixDD(entry, operand, level - 1, row, col | mask),
+         buildMatrixDD(entry, operand, level - 1, row | mask, col),
+         buildMatrixDD(entry, operand, level - 1, row | mask, col | mask)});
+  }
 
 public:
   /**

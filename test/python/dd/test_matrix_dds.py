@@ -184,6 +184,33 @@ def test_from_matrix() -> None:
             assert np.allclose(mat, mat2)
 
 
+def test_from_strided_matrix() -> None:
+    """Read matrix views without losing offsets, negative strides, or broadcasts."""
+    package = DDPackage(3)
+    values = np.arange(256, dtype=np.float64).reshape(16, 16)
+    matrix = values + 1j * (values + 1)
+    for view in (
+        matrix[1::2, ::2],
+        matrix[:8, :8].T,
+        matrix[7::-1, 7::-1],
+        np.broadcast_to(matrix[0, :8], (8, 8)),
+    ):
+        assert np.allclose(package.from_matrix(view).get_matrix(3), view)
+
+
+def test_from_matrix_dimensions() -> None:
+    """Validate shape and capacity before reading matrix entries."""
+    package = DDPackage(1)
+    assert np.array_equal(package.from_matrix(np.empty((0, 0), dtype=np.complex128)).get_matrix(0), [[1]])
+    scalar = np.array([[0.25 + 0.5j]])
+    assert np.allclose(package.from_matrix(scalar).get_matrix(0), scalar)
+    for shape in ((2, 3), (3, 3)):
+        with pytest.raises(ValueError, match=r"square|power of two"):
+            package.from_matrix(np.zeros(shape, dtype=np.complex128))
+    with pytest.raises(RuntimeError, match="capacity"):
+        package.from_matrix(np.zeros((4, 4), dtype=np.complex128))
+
+
 @pytest.mark.parametrize("binary", [False, True])
 def test_serialization(*, binary: bool) -> None:
     """Test serializing and deserializing matrix DDs."""

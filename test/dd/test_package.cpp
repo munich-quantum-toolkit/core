@@ -25,6 +25,7 @@
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
@@ -38,6 +39,7 @@
 #include <limits>
 #include <memory>
 #include <random>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -1236,6 +1238,85 @@ TEST(DDPackageTest, KroneckerRespectsIndexModeAcrossCalls) {
         package.multiply(package.makeGateDD(H_MAT, shift ? 3 : 2), bottom);
     EXPECT_EQ(result.getMatrix(4), expected.getMatrix(4));
   }
+}
+
+TEST(DDPackageTest, EmbedsDenseMatricesInOperandOrder) {
+  Package package(6);
+  for (const size_t count : {1U, 2U, 3U, 4U}) {
+    const std::array<Qubit, 4> wires{4, 1, 5, 2};
+    const auto targets = std::span{wires}.first(count);
+    const auto dimension = size_t{1} << count;
+    std::vector<std::complex<fp>> entries(dimension * dimension);
+    for (size_t i = 0; i < entries.size(); ++i) {
+      entries[i] = {std::sin(static_cast<fp>(i)),
+                    std::cos(static_cast<fp>(2 * i))};
+    }
+    for (const auto& controls :
+         {Controls{}, Controls{{0, Control::Type::Neg}, {3}}}) {
+      if (count > 3 && !controls.empty()) {
+        continue;
+      }
+      const auto actual =
+          package.makeGateDD(entries, targets, controls).getMatrix(6);
+      const auto localIndex = [targets](const size_t index) {
+        size_t result = 0;
+        for (const auto target : targets) {
+          result = (result << 1U) | ((index >> target) & 1U);
+        }
+        return result;
+      };
+      size_t targetMask = 0;
+      for (const auto target : targets) {
+        targetMask |= size_t{1} << target;
+      }
+      for (size_t row = 0; row < actual.size(); ++row) {
+        for (size_t col = 0; col < actual.size(); ++col) {
+          const auto active =
+              std::ranges::all_of(controls, [col](const auto& control) {
+                return ((col >> control.qubit) & 1U) ==
+                       static_cast<size_t>(control.type == Control::Type::Pos);
+              });
+          std::complex<fp> expected{};
+          if (!active) {
+            expected = row == col ? 1. : 0.;
+          } else if (((row ^ col) & ~targetMask) == 0) {
+            expected = entries[(localIndex(row) * dimension) + localIndex(col)];
+          }
+          EXPECT_NEAR(std::abs(actual[row][col] - expected), 0., 1e-12);
+        }
+      }
+    }
+  }
+}
+
+TEST(DDPackageTest, MatrixViewsValidateDimensionsAndQubits) {
+  Package package(4);
+  const std::array scalar{std::complex<fp>{0.25, 0.5}};
+  EXPECT_EQ(package.makeGateDD(scalar, {}),
+            mEdge::terminal(package.cn.lookup(scalar[0])));
+  const auto entry = [&scalar](size_t, size_t) { return scalar[0]; };
+  EXPECT_TRUE(package.makeDDFromMatrix(0, entry).isOneTerminal());
+  EXPECT_EQ(package.makeDDFromMatrix(1, entry), package.makeGateDD(scalar, {}));
+  EXPECT_THROW(package.makeDDFromMatrix(3, entry), std::invalid_argument);
+  EXPECT_THROW(package.makeDDFromMatrix(32, entry), std::runtime_error);
+  EXPECT_THROW(package.makeDDFromMatrix(CMat(32, CVec(32))),
+               std::runtime_error);
+  const std::array<Qubit, 4> targets{3, 0, 2, 1};
+  const std::vector<std::complex<fp>> matrix(256);
+  EXPECT_THROW(package.makeGateDD(scalar, targets), std::invalid_argument);
+  EXPECT_THROW(package.makeGateDD(matrix, targets, Controls{{0}}),
+               std::invalid_argument);
+  EXPECT_THROW(package.makeGateDD(scalar, {}, Controls{{0}}),
+               std::invalid_argument);
+  const std::array<Qubit, 4> duplicates{3, 0, 2, 2};
+  EXPECT_THROW(package.makeGateDD(matrix, duplicates), std::runtime_error);
+  const std::array<Qubit, 4> outside{4, 0, 2, 1};
+  EXPECT_THROW(package.makeGateDD(matrix, outside), std::runtime_error);
+  const std::array<Qubit, std::numeric_limits<size_t>::digits> tooMany{};
+  EXPECT_THROW(package.makeGateDD(scalar, tooMany), std::invalid_argument);
+  Package empty(0);
+  EXPECT_EQ(empty.makeGateDD(scalar, {}),
+            mEdge::terminal(empty.cn.lookup(scalar[0])));
 }
 
 TEST(DDPackageTest, MatrixConstructionRejectsRaggedRows) {

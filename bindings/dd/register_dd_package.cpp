@@ -35,7 +35,8 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
-using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
+using MatrixInput =
+    nb::ndarray<nb::numpy, const std::complex<dd::fp>, nb::ndim<2>>;
 using SingleQubitMatrix =
     nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::shape<2, 2>>;
 using TwoQubitMatrix =
@@ -61,35 +62,6 @@ dd::vCachedEdge makeDDFromVector(dd::Package& p, const Vector& v,
                                                  {zeroSuccessor, oneSuccessor});
 }
 
-/// Recursive helper function to create a matrix DD from a numpy array
-dd::mCachedEdge makeDDFromMatrix(dd::Package& p, const Matrix& m,
-                                 const size_t rowStart, const size_t rowEnd,
-                                 const size_t colStart, const size_t colEnd,
-                                 const dd::Qubit level) {
-  if (level == 0U) {
-    const auto zeroSuccessor = dd::mCachedEdge::terminal(m(rowStart, colStart));
-    const auto oneSuccessor =
-        dd::mCachedEdge::terminal(m(rowStart, colStart + 1));
-    const auto twoSuccessor =
-        dd::mCachedEdge::terminal(m(rowStart + 1, colStart));
-    const auto threeSuccessor =
-        dd::mCachedEdge::terminal(m(rowStart + 1, colStart + 1));
-    return p.makeDDNode<dd::mNode, dd::CachedEdge>(
-        0, {zeroSuccessor, oneSuccessor, twoSuccessor, threeSuccessor});
-  }
-
-  const auto rowHalf = rowStart + ((rowEnd - rowStart) / 2);
-  const auto colHalf = colStart + ((colEnd - colStart) / 2);
-  return p.makeDDNode<dd::mNode, dd::CachedEdge>(
-      level,
-      {
-          makeDDFromMatrix(p, m, rowStart, rowHalf, colStart, colHalf,
-                           level - 1),
-          makeDDFromMatrix(p, m, rowStart, rowHalf, colHalf, colEnd, level - 1),
-          makeDDFromMatrix(p, m, rowHalf, rowEnd, colStart, colHalf, level - 1),
-          makeDDFromMatrix(p, m, rowHalf, rowEnd, colHalf, colEnd, level - 1),
-      });
-}
 } // namespace
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
@@ -497,25 +469,13 @@ Returns:
 
   dd.def(
       "from_matrix",
-      [](dd::Package& p, const Matrix& mat) {
+      [](dd::Package& p, const MatrixInput& mat) {
         const auto rows = mat.shape(0);
         const auto cols = mat.shape(1);
         if (rows != cols) {
           throw std::invalid_argument("Matrix must be square.");
         }
-        if (rows == 0) {
-          return dd::mEdge::one();
-        }
-        if ((rows & (rows - 1)) != 0) {
-          throw std::invalid_argument(
-              "Matrix must have a size of a power of two.");
-        }
-        if (rows == 1) {
-          return dd::mEdge::terminal(p.cn.lookup(mat(0, 0)));
-        }
-        const auto level = static_cast<dd::Qubit>(std::log2(rows) - 1);
-        const auto matrixDD = makeDDFromMatrix(p, mat, 0, rows, 0, cols, level);
-        return dd::mEdge{.p = matrixDD.p, .w = p.cn.lookup(matrixDD.w)};
+        return p.makeDDFromMatrix(rows, mat.view());
       },
       "matrix"_a,
       // keep the DD package alive while the returned matrix DD is alive.
@@ -523,6 +483,7 @@ Returns:
 
 Args:
     matrix: The matrix. Must be square and have a size that is a power of 2.
+        Read-only and strided arrays are supported.
 
 Returns:
     The DD for the matrix.)pb");
