@@ -109,7 +109,7 @@ def test_multiplexer_reference_json_and_generation() -> None:
     assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
 
     shots = 16_384
-    counts = benchmark.generate().to_qco().sample(shots=shots, seed=17)
+    counts = mlir.sample(benchmark.generate(), shots=shots, seed=17)
     assert sum(counts.values()) == shots
     assert benchmark.evaluate(counts).total_variation_distance < 0.03
     assert_generates(benchmark)
