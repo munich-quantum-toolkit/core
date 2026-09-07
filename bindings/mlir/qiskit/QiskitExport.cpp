@@ -2025,8 +2025,11 @@ static void validateControlFlowDepth(const size_t controlFlowDepth) {
   }
   for (auto* operation = measure->getNextNode(); operation != store;
        operation = operation->getNextNode()) {
+    // Fusion writes the destination at the measurement. Quantum gates and
+    // resets cannot observe that earlier classical write and stay in place.
     if (operation == nullptr ||
-        !llvm::isa<mlir::arith::ConstantOp>(operation)) {
+        !llvm::isa<mlir::arith::ConstantOp, mlir::qc::UnitaryOpInterface,
+                   mlir::qc::ResetOp>(operation)) {
       return false;
     }
   }
