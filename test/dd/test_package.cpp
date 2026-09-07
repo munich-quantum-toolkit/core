@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "dd/CachedEdge.hpp"
+#include "dd/ComputeTable.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/Export.hpp"
@@ -16,6 +18,7 @@
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
+#include "dd/UnaryComputeTable.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
 
 #include <gtest/gtest.h>
@@ -171,6 +174,31 @@ TEST(DDPackageTest, TrivialTest) {
   ASSERT_EQ(dd->fidelity(zeroState, oneState), 0.0);
   ASSERT_NEAR(dd->fidelity(zeroState, hState), 0.5, RealNumber::eps);
   ASSERT_NEAR(dd->fidelity(oneState, hState), 0.5, RealNumber::eps);
+}
+
+TEST(DDPackageTest, ComputeTableConfigurationAndClear) {
+  using BinaryTable = ComputeTable<size_t, size_t, size_t>;
+  using UnaryTable = UnaryComputeTable<size_t, size_t>;
+  for (const size_t buckets : {0U, 3U}) {
+    EXPECT_THROW(BinaryTable{buckets}, std::invalid_argument);
+    EXPECT_THROW(UnaryTable{buckets}, std::invalid_argument);
+  }
+  for (const size_t buckets : {1U, 2U, 4U}) {
+    BinaryTable binary(buckets);
+    UnaryTable unary(buckets);
+    for (size_t value = 0; value < 2; ++value) {
+      binary.insert(1, 2, value);
+      unary.insert(1, value);
+      ASSERT_NE(binary.lookup(1, 2), nullptr);
+      EXPECT_EQ(*binary.lookup(1, 2), value);
+      ASSERT_NE(unary.lookup(1), nullptr);
+      EXPECT_EQ(*unary.lookup(1), value);
+      binary.clear();
+      unary.clear();
+      EXPECT_EQ(binary.lookup(1, 2), nullptr);
+      EXPECT_EQ(unary.lookup(1), nullptr);
+    }
+  }
 }
 
 TEST(DDPackageTest, BellState) {
@@ -1202,6 +1230,28 @@ TEST(DDPackageTest, DestructiveMeasurementAll) {
   ASSERT_EQ(vAfter[static_cast<std::size_t>(i)], 1.);
 }
 
+TEST(DDPackageTest, MeasurementProbabilitiesMatchDenseState) {
+  auto dd = std::make_unique<Package>(2);
+  for (const CVec& amplitudes : {
+           CVec{0.5, 0.5, 0.5, 0.5},
+           CVec{{0., 0.5}, 0.5, 0., SQRT2_2},
+           CVec{1., 0., 0., 1.},
+       }) {
+    const auto state = makeStateFromVector(amplitudes, *dd);
+    for (Qubit qubit = 0; qubit < 2; ++qubit) {
+      std::array<fp, 2> expected{};
+      for (size_t i = 0; i < amplitudes.size(); ++i) {
+        expected[(i >> qubit) & 1U] += std::norm(amplitudes[i]);
+      }
+      const auto [zero, one] =
+          Package::determineMeasurementProbabilities(state, qubit);
+      EXPECT_NEAR(zero, expected[0], 1e-12);
+      EXPECT_NEAR(one, expected[1], 1e-12);
+    }
+    dd->decRef(state);
+  }
+}
+
 TEST(DDPackageTest, DestructiveMeasurementOne) {
   auto dd = std::make_unique<Package>(4);
   auto const hGate0 = getDD(TestGate(0, Fixture::H), *dd);
@@ -2010,6 +2060,62 @@ TEST(DDPackageTest, ReduceAncillaRegression) {
       CMat{{1, 0, 1, 0}, {1, 0, 1, 0}, {1, 0, -1, 0}, {1, 0, -1, 0}};
 
   EXPECT_EQ(outputMatrix, expected);
+}
+
+TEST(DDPackageTest, ConjugationAfterGarbageCollection) {
+  auto dd = std::make_unique<Package>(1);
+  const auto input = makeStateFromVector({SQRT2_2, {0., SQRT2_2}}, *dd);
+  const auto expected = dd->conjugate(input).getVector();
+
+  /// Cached results are unreferenced and may be collected and reused.
+  ASSERT_TRUE(dd->garbageCollect(true));
+  const auto replacement = makeZeroState(1, *dd);
+  EXPECT_EQ(dd->conjugate(input).getVector(), expected);
+  dd->decRef(input);
+  dd->decRef(replacement);
+}
+
+TEST(DDPackageTest, VectorMagnitudeAdditionAfterGarbageCollection) {
+  auto dd = std::make_unique<Package>(1);
+  const auto a = makeStateFromVector({1., 0.}, *dd);
+  const auto b = makeStateFromVector({0.6, 0.8}, *dd);
+  const vCachedEdge x{a.p, a.w};
+  const vCachedEdge y{b.p, b.w};
+  const auto result = dd->addMagnitudes(x, y, 0);
+  const auto expected =
+      vEdge{.p = result.p, .w = dd->cn.lookup(result.w)}.getVector();
+
+  ASSERT_TRUE(dd->garbageCollect(true));
+  const auto replacement = makeStateFromVector({0., 1.}, *dd);
+  const auto again = dd->addMagnitudes(x, y, 0);
+  EXPECT_EQ((vEdge{.p = again.p, .w = dd->cn.lookup(again.w)}.getVector()),
+            expected);
+  dd->decRef(a);
+  dd->decRef(b);
+  dd->decRef(replacement);
+}
+
+TEST(DDPackageTest, MatrixMagnitudeAdditionAfterGarbageCollection) {
+  auto dd = std::make_unique<Package>(1);
+  const auto a = getDD(TestGate(0, Fixture::Z), *dd);
+  const auto b = getDD(TestGate(0, Fixture::H), *dd);
+  dd->incRef(a);
+  dd->incRef(b);
+  const mCachedEdge x{a.p, a.w};
+  const mCachedEdge y{b.p, b.w};
+  const auto result = dd->addMagnitudes(x, y, 0);
+  const auto expected =
+      mEdge{.p = result.p, .w = dd->cn.lookup(result.w)}.getMatrix(1);
+
+  ASSERT_TRUE(dd->garbageCollect(true));
+  const auto replacement = getDD(TestGate(0, Fixture::X), *dd);
+  dd->incRef(replacement);
+  const auto again = dd->addMagnitudes(x, y, 0);
+  EXPECT_EQ((mEdge{.p = again.p, .w = dd->cn.lookup(again.w)}.getMatrix(1)),
+            expected);
+  dd->decRef(a);
+  dd->decRef(b);
+  dd->decRef(replacement);
 }
 
 TEST(DDPackageTest, VectorConjugate) {

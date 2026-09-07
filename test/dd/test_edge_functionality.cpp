@@ -17,6 +17,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <memory>
 
@@ -362,6 +363,22 @@ TEST(MatrixFunctionality, PrintMatrix) {
                     "(-0.447,0) (-0.548,0) (0.632,0) (0.316,0) \n"
                     "(-0.548,0) (-0.632,0) (0.316,0) (0.447,0) \n"
                     "(-0.632,0) (-0.316,0) (-0.447,0) (0.548,0) \n");
+}
+
+TEST(MatrixFunctionality, TraversalUsesOneCallbackAcrossIdentityLevels) {
+  size_t visited = 0;
+  mEdge::one().traverseMatrix(
+      {0., 1.}, 0, 0,
+      [&visited,
+       ordinal = size_t{0}](const size_t i, const size_t j,
+                            const std::complex<fp>& amplitude) mutable {
+        EXPECT_EQ(i, j);
+        EXPECT_EQ(i, ordinal++);
+        EXPECT_EQ(amplitude, (std::complex<fp>{0., 1.}));
+        ++visited;
+      },
+      4);
+  EXPECT_EQ(visited, 16U);
 }
 
 TEST(MatrixFunctionality, SizeTerminal) {

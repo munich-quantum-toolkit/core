@@ -10,7 +10,7 @@ production or test changes accompany this report. Dependencies: LLVM/MLIR
 1. **High impact, reproduced:** QIR Base lowering moves a gate before an earlier
    measurement of the same qubit, changing the recorded result.
 2. **High impact, reproduced:** QC-to-QCO conversion aborts on valid branches
-   that use the same captured qubit.
+   that use the same dominating qubit.
 3. **High impact, reproduced:** a malformed JeFF file aborts the importing
    process instead of returning an import error.
 4. **Medium impact, reproduced:** QIR resource metadata declares too few qubits
