@@ -19,7 +19,7 @@
 
 namespace mlir {
 class CompilerTarget;
-}
+} // namespace mlir
 
 namespace mlir::qco {
 
