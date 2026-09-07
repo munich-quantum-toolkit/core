@@ -22,11 +22,11 @@ if(BUILD_MQT_CORE_BINDINGS)
 endif()
 
 if(BUILD_MQT_CORE_MLIR)
-  # Fetch jeff-mlir
+  # Restore the upstream URL after unitaryfoundation/jeff-mlir#56 is merged.
   FetchContent_Declare(
     jeff-mlir
-    GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
-    GIT_TAG ea09a8b46ec77ff4be8fd54ea72d781a644106c6
+    GIT_REPOSITORY https://github.com/simon1hofmann/jeff-mlir.git
+    GIT_TAG 650973fa9fafe246918a89506b94fef1424e4ce9
     EXCLUDE_FROM_ALL)
   block()
   # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option
