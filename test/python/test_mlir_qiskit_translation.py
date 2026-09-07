@@ -2406,12 +2406,17 @@ def test_measurement_snapshot_rejects_overwritten_destination(overwrite: str) ->
 
 
 @pytest.mark.parametrize("via_qco", [False, True], ids=["qc", "qco"])
-@pytest.mark.parametrize("gate", ["x", "swap", "reset", "barrier"])
+@pytest.mark.parametrize("gate", ["x", "swap", "reset", "barrier", "inv"])
 def test_delayed_measurement_store_across_quantum_operations(gate: str, *, via_qco: bool) -> None:
     """Keep measurements before quantum operations without extra classical bits."""
     instruction = f"qc.{gate} %q0 : !qc.qubit"
     if gate in {"swap", "barrier"}:
         instruction = f"qc.{gate} %q0, %q1 : !qc.qubit, !qc.qubit"
+    elif gate == "inv":
+        instruction = """qc.inv (%target = %q0) {
+      qc.x %target : !qc.qubit
+      qc.yield
+    } : !qc.qubit"""
     program = QCProgram.from_mlir_str(
         f"""module {{
   func.func @main() -> !cbit.reg<1> attributes {{mqt.entry_point}} {{
@@ -2444,7 +2449,11 @@ def test_delayed_measurement_store_across_quantum_operations(gate: str, *, via_q
             [restored.find_bit(bit).index for bit in item.clbits],
         )
         for item in restored.data
-    ] == [("x", [0], []), ("measure", [0], [0]), (gate, [0, 1] if gate in {"swap", "barrier"} else [0], [])]
+    ] == [
+        ("x", [0], []),
+        ("measure", [0], [0]),
+        ("x" if gate == "inv" else gate, [0, 1] if gate in {"swap", "barrier"} else [0], []),
+    ]
     assert QCProgram.from_qiskit(restored).to_qco().sample(shots=1, seed=1) == {"1": 1}
 
 

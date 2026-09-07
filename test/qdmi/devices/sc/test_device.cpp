@@ -267,6 +267,53 @@ TEST(ScRuntimeConfiguration, RejectsOperationOutsideCouplingMap) {
   MQT_SC_QDMI_device_session_free(session);
 }
 
+TEST(ScRuntimeConfiguration, PreservesUnsortedTuplesAndPartialOverrides) {
+  auto configuration = nlohmann::json::parse(CUSTOM_SC);
+  configuration["numQubits"] = 3;
+  configuration["couplings"] = {{1, 2}, {0, 1}, {2, 0}};
+  configuration["operations"][0]["siteOverrides"] = {
+      {{"sites", {2, 0}}, {"fidelity", 0.8}},
+      {{"sites", {0, 1}}, {"duration", 10}},
+  };
+  auto* session = initializedSession(configuration.dump());
+  const auto sites = querySites(session);
+  auto* const operation = queryOperations(session).front();
+  const std::array expected{
+      sites[1], sites[2], sites[0], sites[1], sites[2], sites[0],
+  };
+  std::array<MQT_SC_QDMI_Site, 6> flattened{};
+  EXPECT_EQ(MQT_SC_QDMI_device_session_query_operation_property(
+                session, operation, 0, nullptr, 0, nullptr,
+                QDMI_OPERATION_PROPERTY_SITES, sizeof(flattened),
+                static_cast<void*>(flattened.data()), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(flattened, expected);
+  const std::array<uint64_t, 3> durations{20, 10, 20};
+  const std::array fidelities{0.9, 0.9, 0.8};
+  for (size_t i = 0; i < durations.size(); ++i) {
+    uint64_t duration = 0;
+    double fidelity = 0;
+    EXPECT_EQ(MQT_SC_QDMI_device_session_query_operation_property(
+                  session, operation, 2, &expected[2 * i], 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_DURATION, sizeof(duration), &duration,
+                  nullptr),
+              QDMI_SUCCESS);
+    EXPECT_EQ(duration, durations[i]);
+    EXPECT_EQ(MQT_SC_QDMI_device_session_query_operation_property(
+                  session, operation, 2, &expected[2 * i], 0, nullptr,
+                  QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(fidelity), &fidelity,
+                  nullptr),
+              QDMI_SUCCESS);
+    EXPECT_DOUBLE_EQ(fidelity, fidelities[i]);
+  }
+  const std::array unsupported{sites[0], sites[2]};
+  EXPECT_EQ(MQT_SC_QDMI_device_session_query_operation_property(
+                session, operation, unsupported.size(), unsupported.data(), 0,
+                nullptr, QDMI_OPERATION_PROPERTY_DURATION, 0, nullptr, nullptr),
+            QDMI_ERROR_NOTSUPPORTED);
+  MQT_SC_QDMI_device_session_free(session);
+}
+
 TEST(ScRuntimeConfiguration, SessionsOwnIndependentModelsAndCalibration) {
   auto* custom = initializedSession();
   MQT_SC_QDMI_Device_Session bundled = nullptr;

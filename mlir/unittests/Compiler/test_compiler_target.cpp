@@ -576,6 +576,24 @@ TEST(CompilerTargetTest, EnforcesExactOrderedOperationApplicability) {
       target.supportsOperation("device.operation", 3, 0, {30, 20, 10}));
 }
 
+TEST(CompilerTargetTest, ResolvesSingleQubitBasisWithoutEntangler) {
+  for (size_t numSites : {1U, 2U}) {
+    SCOPED_TRACE(numSites);
+    const auto target =
+        valid(Target::create(numSites, Connectivity::allToAll(),
+                             NativeOperations::fromOperations({
+                                 valid(Operation::create("sx", 1, 0)),
+                                 valid(Operation::create("x", 1, 0)),
+                                 valid(Operation::create("rz", 1, 1)),
+                             })));
+
+    ASSERT_TRUE(target.synthesisBasis());
+    EXPECT_EQ(target.synthesisBasis()->singleQubit,
+              Target::SingleQubitBasis::ZSXX);
+    EXPECT_FALSE(target.synthesisBasis()->entangler);
+  }
+}
+
 TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
   using Entangler = std::tuple<GateKind, std::string_view, size_t>;
   const std::array entanglers{

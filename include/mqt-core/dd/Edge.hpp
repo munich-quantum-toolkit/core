@@ -213,7 +213,7 @@ private:
    * ignored
    */
   void traverseVector(const std::complex<fp>& amp, std::size_t i,
-                      AmplitudeFunc f, fp threshold = 0.) const
+                      const AmplitudeFunc& f, fp threshold = 0.) const
     requires IsVector<Node>;
 
 public:
@@ -290,6 +290,7 @@ public:
   /**
    * @brief Recursively traverse the DD and call a function for each non-zero
    * matrix entry.
+   * @details One callback instance is used for the entire traversal.
    * @param amp the accumulated amplitude from previous traversals
    * @param i the current row index in the matrix
    * @param j the current column index in the matrix
@@ -303,6 +304,12 @@ public:
   void traverseMatrix(const std::complex<fp>& amp, std::size_t i, std::size_t j,
                       MatrixEntryFunc f, std::size_t level,
                       fp threshold = 0.) const
+    requires IsMatrix<Node>;
+
+private:
+  void traverseMatrixImpl(const std::complex<fp>& amp, std::size_t i,
+                          std::size_t j, const MatrixEntryFunc& f,
+                          std::size_t level, fp threshold) const
     requires IsMatrix<Node>;
 };
 } // namespace dd

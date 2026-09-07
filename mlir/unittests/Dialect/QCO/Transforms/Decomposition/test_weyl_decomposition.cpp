@@ -64,7 +64,8 @@ static const Matrix4x4 TWO_QUBIT_CONTROLLED_Z =
 
 [[nodiscard]] static bool
 isUnitaryMatrix(const auto& matrix, const double tolerance = MATRIX_TOLERANCE) {
-  return (matrix.adjoint() * matrix).isIdentity(tolerance);
+  const auto product = matrix.adjoint() * matrix;
+  return product.isIdentity(tolerance);
 }
 
 static Matrix4x4 randomUnitary4x4(std::mt19937& rng) {
@@ -475,7 +476,7 @@ synthesize2QMatrix(MLIRContext* ctx, const Matrix4x4& target,
   auto* entry = func.addEntryBlock();
 
   builder.setInsertionPointToStart(entry);
-  const auto decomposition = decomposeUnitary2QWeyl(target, basis.entangler);
+  const auto decomposition = decomposeUnitary2QWeyl(target, *basis.entangler);
   const auto synthesized =
       emitUnitary2QWeyl(builder, loc, entry->getArgument(0),
                         entry->getArgument(1), decomposition, basis);

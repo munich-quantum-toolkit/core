@@ -39,9 +39,11 @@
 
 namespace {
 [[nodiscard]] bool
-contains(const std::vector<std::vector<MQT_SC_QDMI_Site>>& haystack,
-         const std::vector<MQT_SC_QDMI_Site>& needle) {
-  return std::ranges::find(haystack, needle) != haystack.end();
+siteTupleLess(const std::span<const MQT_SC_QDMI_Site> first,
+              const std::span<const MQT_SC_QDMI_Site> second) {
+  return std::ranges::lexicographical_compare(first, second, {},
+                                              &MQT_SC_QDMI_Site_impl_d::id,
+                                              &MQT_SC_QDMI_Site_impl_d::id);
 }
 
 [[nodiscard]] std::vector<MQT_SC_QDMI_Site>
@@ -141,9 +143,12 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
         operation->flattenedSites.insert(operation->flattenedSites.end(),
                                          tuple.begin(), tuple.end());
       }
+      /// Keep the public flattened site list in its configured order.
+      std::ranges::sort(operation->supportedSites, siteTupleLess);
       for (const auto& override : operationConfiguration.siteOverrides) {
         auto tuple = materializeTuple(override.sites, newSites);
-        if (!contains(operation->supportedSites, tuple)) {
+        if (!std::ranges::binary_search(operation->supportedSites, tuple,
+                                        siteTupleLess)) {
           throw std::invalid_argument(
               "operation site override is not a supported tuple");
         }
@@ -153,6 +158,10 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
                                   .fidelity = override.fidelity,
                               });
       }
+      std::ranges::sort(
+          operation->overrides, siteTupleLess,
+          &std::pair<std::vector<MQT_SC_QDMI_Site>,
+                     MQT_SC_QDMI_Operation_impl_d::Calibration>::first);
       newOperations.emplace_back(operation.get());
       newOperationStorage.emplace_back(std::move(operation));
     }
@@ -353,14 +362,12 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
       IS_INVALID_ARGUMENT(property, QDMI_OPERATION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  std::vector<MQT_SC_QDMI_Site> tuple;
+  const std::span tuple{sites, numSites};
   if (sites != nullptr) {
     if (numSites != numQubits) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
-    const std::span suppliedSites{sites, numSites};
-    tuple.assign(suppliedSites.begin(), suppliedSites.end());
-    if (!contains(supportedSites, tuple)) {
+    if (!std::ranges::binary_search(supportedSites, tuple, siteTupleLess)) {
       return QDMI_ERROR_NOTSUPPORTED;
     }
   }
@@ -377,10 +384,10 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
                     flattenedSites, property, size, value, sizeRet)
   const auto calibration = [&]() -> Calibration {
     if (!tuple.empty()) {
-      if (const auto found = std::ranges::find(
-              overrides, tuple,
+      if (const auto found = std::ranges::lower_bound(
+              overrides, tuple, siteTupleLess,
               &std::pair<std::vector<MQT_SC_QDMI_Site>, Calibration>::first);
-          found != overrides.end()) {
+          found != overrides.end() && std::ranges::equal(found->first, tuple)) {
         return {
             .duration = found->second.duration ? found->second.duration
                                                : defaults.duration,

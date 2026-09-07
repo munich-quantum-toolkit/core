@@ -626,15 +626,12 @@ auto Job::operator=(Job&& other) noexcept -> Job& {
 }
 
 std::string Job::getId() const {
-  size_t size = 0;
-  qdmi::throwIfError(QDMI_job_query_property(job_.get(), QDMI_JOB_PROPERTY_ID,
-                                             0, nullptr, &size),
-                     "Querying job ID size");
-  std::string id(size - 1, '\0');
-  qdmi::throwIfError(QDMI_job_query_property(job_.get(), QDMI_JOB_PROPERTY_ID,
-                                             size, id.data(), nullptr),
-                     "Querying job ID");
-  return id;
+  return detail::queryProperty<std::string>(
+      [this](const size_t size, void* value, size_t* sizeRet) {
+        return QDMI_job_query_property(job_.get(), QDMI_JOB_PROPERTY_ID, size,
+                                       value, sizeRet);
+      },
+      "Querying job ID", "Querying job ID size");
 }
 
 QDMI_Program_Format Job::getProgramFormat() const {
@@ -716,61 +713,9 @@ std::vector<std::string> Job::getShots() const {
 }
 
 std::map<std::string, size_t> Job::getCounts() const {
-  // Get the histogram keys
-  size_t keysSize = 0;
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_HIST_KEYS,
-                                          0, nullptr, &keysSize),
-                     "Querying histogram keys size");
-
-  if (keysSize == 0) {
-    return {}; // Empty histogram
-  }
-
-  std::string keys(keysSize, '\0');
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(), QDMI_JOB_RESULT_HIST_KEYS,
-                                          keysSize, keys.data(), nullptr),
-                     "Querying histogram keys");
-  keys.pop_back();
-
-  // Get the histogram values
-  size_t valuesSize = 0;
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(),
-                                          QDMI_JOB_RESULT_HIST_VALUES, 0,
-                                          nullptr, &valuesSize),
-                     "Querying histogram values size");
-
-  if (valuesSize % sizeof(size_t) != 0) {
-    throw std::runtime_error(
-        "Invalid histogram values size: not a multiple of size_t");
-  }
-
-  std::vector<size_t> values(valuesSize / sizeof(size_t));
-  qdmi::throwIfError(QDMI_job_get_results(job_.get(),
-                                          QDMI_JOB_RESULT_HIST_VALUES,
-                                          valuesSize, values.data(), nullptr),
-                     "Querying histogram values");
-
-  // Parse the keys (comma-separated)
-  std::map<std::string, size_t> counts;
-  if (keys.empty() && values.size() == 1) {
-    counts[""] = values.front();
-    return counts;
-  }
-  std::istringstream keysStream(keys);
-  std::string key;
-  size_t idx = 0;
-  while (std::getline(keysStream, key, ',')) {
-    if (idx < values.size()) {
-      counts[key] = values[idx];
-      ++idx;
-    }
-  }
-
-  if (idx != values.size()) {
-    throw std::runtime_error("Histogram key/value count mismatch");
-  }
-
-  return counts;
+  return getSparseResult<size_t>(
+      job_.get(), QDMI_JOB_RESULT_HIST_KEYS, QDMI_JOB_RESULT_HIST_VALUES,
+      "histogram", "size_t", "Histogram key/value count mismatch");
 }
 
 std::vector<std::complex<double>> Job::getDenseStateVector() const {

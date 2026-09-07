@@ -47,6 +47,7 @@
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
@@ -658,6 +659,9 @@ enum class ForbiddenModifierBodyOp : uint8_t {
   CBitRead,
   CBitLoad,
   CBitStore,
+  MemoryLoad,
+  MemoryStore,
+  StructuredControlFlow,
 };
 
 } // namespace
@@ -686,6 +690,12 @@ static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
     return "cbit.load";
   case ForbiddenModifierBodyOp::CBitStore:
     return "cbit.store";
+  case ForbiddenModifierBodyOp::MemoryLoad:
+    return "memref.load";
+  case ForbiddenModifierBodyOp::MemoryStore:
+    return "memref.store";
+  case ForbiddenModifierBodyOp::StructuredControlFlow:
+    return "scf.if";
   }
   llvm_unreachable("unknown forbidden modifier operation");
 }
@@ -733,32 +743,50 @@ buildInvalidNestedModifierBody(QCOProgramBuilder& builder,
   auto condition = builder.boolConstant(true);
   auto cbitReg = builder.allocClassicalBitRegister(1);
   auto index = arith::ConstantIndexOp::create(builder, 0);
+  auto value = arith::ConstantIntOp::create(builder, builder.getI32Type(), 1);
+  auto buffer = memref::AllocOp::create(
+      builder, MemRefType::get({1}, builder.getI32Type()));
   const auto modifierBody = [&](Value argument) -> Value {
-    auto ifOp = IfOp::create(
-        builder, condition, argument, [&](Value nestedArgument) -> Value {
-          switch (forbiddenOperation) {
-          case ForbiddenModifierBodyOp::Measure:
-            return MeasureOp::create(builder, nestedArgument).getQubitOut();
-          case ForbiddenModifierBodyOp::CBitAlloc:
-            cbit::AllocOp::create(
-                builder, cbit::RegisterType::get(builder.getContext(), 1),
-                cbit::Initialization::Zero);
-            break;
-          case ForbiddenModifierBodyOp::CBitRead:
-            cbit::ReadOp::create(builder, builder.getI1Type(), cbitReg);
-            break;
-          case ForbiddenModifierBodyOp::CBitLoad:
-            cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg,
-                                 index.getResult());
-            break;
-          case ForbiddenModifierBodyOp::CBitStore:
-            cbit::StoreOp::create(builder, condition, cbitReg,
-                                  index.getResult());
-            break;
-          }
-          return nestedArgument;
-        });
-    return ifOp.getResult(0);
+    return InvOp::create(
+               builder, argument,
+               [&](Value nestedArgument) -> Value {
+                 switch (forbiddenOperation) {
+                 case ForbiddenModifierBodyOp::Measure:
+                   return MeasureOp::create(builder, nestedArgument)
+                       .getQubitOut();
+                 case ForbiddenModifierBodyOp::CBitAlloc:
+                   cbit::AllocOp::create(
+                       builder,
+                       cbit::RegisterType::get(builder.getContext(), 1),
+                       cbit::Initialization::Zero);
+                   break;
+                 case ForbiddenModifierBodyOp::CBitRead:
+                   cbit::ReadOp::create(builder, builder.getI1Type(), cbitReg);
+                   break;
+                 case ForbiddenModifierBodyOp::CBitLoad:
+                   cbit::LoadOp::create(builder, builder.getI1Type(), cbitReg,
+                                        index.getResult());
+                   break;
+                 case ForbiddenModifierBodyOp::CBitStore:
+                   cbit::StoreOp::create(builder, condition, cbitReg,
+                                         index.getResult());
+                   break;
+                 case ForbiddenModifierBodyOp::MemoryLoad:
+                   memref::LoadOp::create(builder, buffer.getResult(),
+                                          ValueRange{index.getResult()});
+                   break;
+                 case ForbiddenModifierBodyOp::MemoryStore:
+                   memref::StoreOp::create(builder, value.getResult(),
+                                           buffer.getResult(),
+                                           ValueRange{index.getResult()});
+                   break;
+                 case ForbiddenModifierBodyOp::StructuredControlFlow:
+                   scf::IfOp::create(builder, TypeRange{}, condition, false);
+                   break;
+                 }
+                 return nestedArgument;
+               })
+        .getOutputTarget(0);
   };
 
   switch (modifier) {
@@ -780,9 +808,14 @@ TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
       VerifierModifierKind::Pow,
   };
   constexpr std::array forbiddenOperations{
-      ForbiddenModifierBodyOp::Measure,   ForbiddenModifierBodyOp::CBitAlloc,
-      ForbiddenModifierBodyOp::CBitRead,  ForbiddenModifierBodyOp::CBitLoad,
+      ForbiddenModifierBodyOp::Measure,
+      ForbiddenModifierBodyOp::CBitAlloc,
+      ForbiddenModifierBodyOp::CBitRead,
+      ForbiddenModifierBodyOp::CBitLoad,
       ForbiddenModifierBodyOp::CBitStore,
+      ForbiddenModifierBodyOp::MemoryLoad,
+      ForbiddenModifierBodyOp::MemoryStore,
+      ForbiddenModifierBodyOp::StructuredControlFlow,
   };
 
   for (const auto modifier : modifiers) {
@@ -796,14 +829,15 @@ TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
           buildInvalidNestedModifierBody(builder, modifier, forbiddenOperation);
 
       bool sawExpectedDiagnostic = false;
-      ScopedDiagnosticHandler handler(
-          context.get(), [&](Diagnostic& diagnostic) {
-            sawExpectedDiagnostic |=
-                StringRef(diagnostic.str())
-                    .contains("body must not contain non-unitary operations or "
-                              "access registers");
-            return success();
-          });
+      ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic&
+                                                             diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str())
+                .contains(
+                    "body must contain only unitary operations and "
+                    "memory-effect-free classical operations without regions");
+        return success();
+      });
       EXPECT_TRUE(failed(verify(modifierOp)));
       EXPECT_TRUE(sawExpectedDiagnostic);
     }
@@ -838,6 +872,180 @@ TEST_F(QCOTest, ModifiersRejectDirectAndNestedQubitCaptures) {
       EXPECT_TRUE(sawExpectedDiagnostic);
     }
   }
+}
+
+TEST_F(QCOTest, RegionOperationEffectTraitsMatchTheirSemantics) {
+  EXPECT_FALSE(CtrlOp::hasTrait<OpTrait::AlwaysSpeculatableImplTrait>());
+  EXPECT_FALSE(InvOp::hasTrait<OpTrait::AlwaysSpeculatableImplTrait>());
+  EXPECT_FALSE(PowOp::hasTrait<OpTrait::AlwaysSpeculatableImplTrait>());
+  EXPECT_FALSE(IfOp::hasTrait<OpTrait::AlwaysSpeculatableImplTrait>());
+  EXPECT_FALSE(IndexSwitchOp::hasTrait<OpTrait::AlwaysSpeculatableImplTrait>());
+
+  EXPECT_TRUE(CtrlOp::hasTrait<OpTrait::RecursivelySpeculatableImplTrait>());
+  EXPECT_TRUE(InvOp::hasTrait<OpTrait::RecursivelySpeculatableImplTrait>());
+  EXPECT_TRUE(PowOp::hasTrait<OpTrait::RecursivelySpeculatableImplTrait>());
+  EXPECT_TRUE(IfOp::hasTrait<OpTrait::RecursivelySpeculatableImplTrait>());
+  EXPECT_TRUE(
+      IndexSwitchOp::hasTrait<OpTrait::RecursivelySpeculatableImplTrait>());
+
+  EXPECT_TRUE(CtrlOp::hasTrait<OpTrait::HasRecursiveMemoryEffects>());
+  EXPECT_TRUE(InvOp::hasTrait<OpTrait::HasRecursiveMemoryEffects>());
+  EXPECT_TRUE(PowOp::hasTrait<OpTrait::HasRecursiveMemoryEffects>());
+  EXPECT_TRUE(IfOp::hasTrait<OpTrait::HasRecursiveMemoryEffects>());
+  EXPECT_TRUE(IndexSwitchOp::hasTrait<OpTrait::HasRecursiveMemoryEffects>());
+}
+
+TEST_F(QCOTest, GlobalPhaseMakesModifiersEffectfulAndNonSpeculatable) {
+  constexpr std::array modifiers{
+      VerifierModifierKind::Inv,
+      VerifierModifierKind::Ctrl,
+      VerifierModifierKind::Pow,
+  };
+
+  for (const auto modifier : modifiers) {
+    SCOPED_TRACE(testing::Message()
+                 << "modifier=" << modifierName(modifier).str());
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    const auto target = builder.allocQubit();
+    const auto control = builder.allocQubit();
+    const auto body = [&](Value argument) -> Value {
+      builder.gphase(0.25);
+      return argument;
+    };
+
+    Operation* modifierOp = nullptr;
+    switch (modifier) {
+    case VerifierModifierKind::Inv:
+      modifierOp = InvOp::create(builder, target, body);
+      break;
+    case VerifierModifierKind::Ctrl:
+      modifierOp = CtrlOp::create(builder, control, target, body);
+      break;
+    case VerifierModifierKind::Pow:
+      modifierOp = PowOp::create(builder, target, 2.0, body);
+      break;
+    }
+
+    EXPECT_FALSE(isMemoryEffectFree(modifierOp));
+    EXPECT_FALSE(isSpeculatable(modifierOp));
+  }
+}
+
+TEST_F(QCOTest, GlobalPhaseEffectsPropagateAcrossUnitaryCalls) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @phase(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %theta = arith.constant 0.25 : f64
+        qco.gphase(%theta)
+        return %q : !qco.qubit
+      }
+      func.func @main(%q: !qco.qubit) -> !qco.qubit {
+        %out = qco.inv (%arg = %q) {
+          %called = qco.call @phase(%arg)
+              : (!qco.qubit) -> !qco.qubit
+          qco.yield %called : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %out : !qco.qubit
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  CallOp call;
+  InvOp inv;
+  moduleOp->walk([&](CallOp op) { call = op; });
+  moduleOp->walk([&](InvOp op) { inv = op; });
+  ASSERT_TRUE(call && inv);
+  EXPECT_FALSE(isMemoryEffectFree(call));
+  EXPECT_FALSE(isSpeculatable(call));
+  EXPECT_FALSE(isMemoryEffectFree(inv));
+  EXPECT_FALSE(isSpeculatable(inv));
+}
+
+TEST_F(QCOTest, UnitaryCallEffectsRemainConservativeAcrossCalleeChanges) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @leaf(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %out = qco.x %q : !qco.qubit -> !qco.qubit
+        return %out : !qco.qubit
+      }
+      func.func private @left(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %out = qco.inv (%arg = %q) {
+          %called = qco.call @leaf(%arg) : (!qco.qubit) -> !qco.qubit
+          qco.yield %called : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %out : !qco.qubit
+      }
+      func.func private @right(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %out = qco.call @leaf(%q) : (!qco.qubit) -> !qco.qubit
+        return %out : !qco.qubit
+      }
+      func.func private @diamond(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %left = qco.call @left(%q) : (!qco.qubit) -> !qco.qubit
+        %out = qco.call @right(%left) : (!qco.qubit) -> !qco.qubit
+        return %out : !qco.qubit
+      }
+      func.func @main(%q: !qco.qubit) -> !qco.qubit {
+        %out = qco.call @diamond(%q) : (!qco.qubit) -> !qco.qubit
+        return %out : !qco.qubit
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  const auto checkCalls = [&] {
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    moduleOp->walk([&](CallOp call) {
+      EXPECT_FALSE(isMemoryEffectFree(call));
+      EXPECT_FALSE(isSpeculatable(call));
+    });
+    moduleOp->walk([&](InvOp inv) {
+      EXPECT_FALSE(isMemoryEffectFree(inv));
+      EXPECT_FALSE(isSpeculatable(inv));
+    });
+  };
+  checkCalls();
+  auto leaf = moduleOp->lookupSymbol<func::FuncOp>("leaf");
+  OpBuilder builder(leaf.getBody().front().getTerminator());
+  auto phase = GPhaseOp::create(builder, leaf.getLoc(), 0.25);
+  checkCalls();
+  phase.erase();
+  checkCalls();
+}
+
+TEST_F(QCOTest, UnitaryCallEffectsConservativelyHandleInvalidCallees) {
+  auto moduleOp =
+      parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @external(!qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary}
+      func.func private @cycle(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %out = qco.call @cycle(%q) : (!qco.qubit) -> !qco.qubit
+        return %out : !qco.qubit
+      }
+      func.func @main(%q: !qco.qubit) -> !qco.qubit {
+        %a = qco.call @external(%q) : (!qco.qubit) -> !qco.qubit
+        %b = qco.call @missing(%a) : (!qco.qubit) -> !qco.qubit
+        %out = qco.call @cycle(%b) : (!qco.qubit) -> !qco.qubit
+        return %out : !qco.qubit
+      }
+    }
+  )mlir",
+                                  ParserConfig(context.get(), false));
+  ASSERT_TRUE(moduleOp);
+  moduleOp->walk([&](CallOp call) {
+    EXPECT_FALSE(isMemoryEffectFree(call));
+    EXPECT_FALSE(isSpeculatable(call));
+  });
 }
 
 TEST_F(QCOTest, DirectIfBuilder) {

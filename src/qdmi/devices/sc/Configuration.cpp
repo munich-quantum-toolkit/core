@@ -58,10 +58,9 @@ void object(const Json& value, const std::string_view source,
 void keys(const Json& value,
           const std::initializer_list<std::string_view> known,
           const std::string_view source, const std::string_view pointer) {
-  const std::set<std::string_view> allowed(known);
   for (const auto& [key, unused] : value.items()) {
     static_cast<void>(unused);
-    if (!allowed.contains(key)) {
+    if (std::ranges::find(known, key) == known.end()) {
       fail(source, pointer, "contains unknown key '" + key + "'");
     }
   }
