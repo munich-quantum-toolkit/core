@@ -27,7 +27,9 @@ struct QFTAdderClassicalOptions {
   std::string addend;
 };
 
-/// A validated classical-input QFT adder and its analytic reference.
+/// A QFT adder that adds the classical addend to an accumulator in |1>.
+/// Leading zeros define the n-bit input width. The n+1-bit big-endian result
+/// is addend + 1; the extra bit preserves carry.
 class MQT_CORE_BENCH_EXPORT QFTAdderClassical final {
 public:
   explicit QFTAdderClassical(QFTAdderClassicalOptions options);

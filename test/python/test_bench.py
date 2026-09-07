@@ -204,10 +204,21 @@ def test_classical_qft_adder_reference_json_and_generation() -> None:
     manifest_copy = qft_adder_classical.QFTAdderClassical.from_manifest_json(benchmark.manifest_json)
     assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
 
-    shots = 1_024
-    counts = benchmark.generate().to_qco().sample(shots=shots, seed=17)
-    assert counts == {"0111": shots}
     assert_generates(benchmark)
+
+
+@pytest.mark.parametrize(
+    ("addend", "expected"),
+    [("0", "01"), ("1", "10"), ("001", "0010"), ("110", "0111"), ("111", "1000")],
+)
+def test_classical_qft_adder_dd_sampling_preserves_width_and_carry(addend: str, expected: str) -> None:
+    """Execute zero, leading-zero, and carry cases against their exact sums."""
+    benchmark = qft_adder_classical.QFTAdderClassical(qft_adder_classical.Options(addend=addend))
+    program = benchmark.generate().to_qco()
+    # Fold phase-table reads to scalars supported by the DD interpreter.
+    program.unroll_quantum_loops()
+    shots = 1_024
+    assert program.sample(shots=shots, seed=17) == {expected: shots}
 
 
 def test_qpe_accepts_fraction_and_native_phase() -> None:
