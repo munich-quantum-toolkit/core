@@ -43,7 +43,7 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
 
   // Construct unresolved map: The dependencies of each operation.
 
-  SmallDenseSet<Value> effectedValues;
+  SmallDenseSet<Value> valuesWithEffect;
   DenseMap<Operation*, size_t> inDegree;
   DenseMap<Value, Operation*> lastEffect;
   DenseMap<Operation*, SmallSetVector<Operation*, 16>> successors;
@@ -73,7 +73,7 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
     if (effects) {
       for (const auto& effect : *effects) {
         auto value = effect.getValue();
-        if (!(value && effectedValues.insert(value).second)) {
+        if (!(value && valuesWithEffect.insert(value).second)) {
           continue;
         }
 
@@ -89,7 +89,7 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
     // defining operation.
 
     for (auto v : op.getOperands()) {
-      if (effectedValues.contains(v)) {
+      if (valuesWithEffect.contains(v)) {
         continue;
       }
 
@@ -115,7 +115,7 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
       }
     }
 
-    effectedValues.clear();
+    valuesWithEffect.clear();
   }
 
   assert((inDegree.size() == range_size(block)));
