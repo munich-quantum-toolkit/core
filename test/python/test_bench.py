@@ -207,10 +207,7 @@ def test_qpe_dd_sampling_matches_reference(method: qpe.Method, phase: Fraction) 
     """Execute exact and inexact phases with both inverse-QFT implementations."""
     benchmark = qpe.QPE(qpe.Options(precision=3, phase=phase, method=method))
     shots = 16_384
-    program = benchmark.generate().to_qco()
-    # Fold phase-table reads to scalars supported by the DD interpreter.
-    program.unroll_quantum_loops()
-    counts = program.sample(shots=shots, seed=17)
+    counts = benchmark.generate().to_qco().sample(shots=shots, seed=17)
     assert sum(counts.values()) == shots
     assert benchmark.evaluate(counts).total_variation_distance < 0.03
 
