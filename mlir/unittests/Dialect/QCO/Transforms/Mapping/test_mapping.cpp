@@ -666,13 +666,13 @@ TEST_F(MappingPassFixture, PreserveStoredRegisterControlDuringRouting) {
         %condition = arith.cmpi eq, %snapshot, %expected : i1
         %controlled1 = qco.if %condition args(%arg = %q1) -> (!qco.qubit) {
           %prev_bit = cbit.read %reg : !cbit.reg<1> -> i1
-          
+
           %flipped = qco.x %arg : !qco.qubit -> !qco.qubit
           %cond_meas, %next_bit = qco.measure %flipped : !qco.qubit
-          
+
           %changed = arith.xori %prev_bit, %next_bit : i1
           cbit.store %changed, %reg[%c0] : !cbit.reg<1>
-          
+
           qco.yield %cond_meas : !qco.qubit
         } else args(%arg = %q1) {
           qco.yield %arg : !qco.qubit
