@@ -1230,6 +1230,28 @@ TEST(DDPackageTest, DestructiveMeasurementAll) {
   ASSERT_EQ(vAfter[static_cast<std::size_t>(i)], 1.);
 }
 
+TEST(DDPackageTest, MeasurementProbabilitiesMatchDenseState) {
+  auto dd = std::make_unique<Package>(2);
+  for (const CVec& amplitudes : {
+           CVec{0.5, 0.5, 0.5, 0.5},
+           CVec{{0., 0.5}, 0.5, 0., SQRT2_2},
+           CVec{1., 0., 0., 1.},
+       }) {
+    const auto state = makeStateFromVector(amplitudes, *dd);
+    for (Qubit qubit = 0; qubit < 2; ++qubit) {
+      std::array<fp, 2> expected{};
+      for (size_t i = 0; i < amplitudes.size(); ++i) {
+        expected[(i >> qubit) & 1U] += std::norm(amplitudes[i]);
+      }
+      const auto [zero, one] =
+          Package::determineMeasurementProbabilities(state, qubit);
+      EXPECT_NEAR(zero, expected[0], 1e-12);
+      EXPECT_NEAR(one, expected[1], 1e-12);
+    }
+    dd->decRef(state);
+  }
+}
+
 TEST(DDPackageTest, DestructiveMeasurementOne) {
   auto dd = std::make_unique<Package>(4);
   auto const hGate0 = getDD(TestGate(0, Fixture::H), *dd);

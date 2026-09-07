@@ -35,10 +35,8 @@
 #include <cstdint>
 #include <initializer_list>
 #include <iostream>
-#include <map>
 #include <queue>
 #include <random>
-#include <set>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -665,42 +663,30 @@ fp Package::assignProbabilities(const vEdge& edge,
 std::pair<fp, fp>
 Package::determineMeasurementProbabilities(const vEdge& rootEdge,
                                            const Qubit index) {
-  std::map<const vNode*, fp> measurementProbabilities;
-  std::set<const vNode*> visited;
+  std::unordered_map<const vNode*, fp> measurementProbabilities;
   std::queue<const vNode*> q;
 
-  measurementProbabilities[rootEdge.p] = ComplexNumbers::mag2(rootEdge.w);
-  visited.insert(rootEdge.p);
+  measurementProbabilities.emplace(rootEdge.p,
+                                   ComplexNumbers::mag2(rootEdge.w));
   q.push(rootEdge.p);
 
   while (q.front()->v != index) {
     const auto* ptr = q.front();
     q.pop();
-    const fp prob = measurementProbabilities[ptr];
+    const fp prob = measurementProbabilities.at(ptr);
 
-    const auto& s0 = ptr->e[0];
-    if (const auto s0w = static_cast<ComplexValue>(s0.w);
-        !s0w.approximatelyZero()) {
-      const fp tmp1 = prob * s0w.mag2();
-      if (visited.contains(s0.p)) {
-        measurementProbabilities[s0.p] = measurementProbabilities[s0.p] + tmp1;
-      } else {
-        measurementProbabilities[s0.p] = tmp1;
-        visited.insert(s0.p);
-        q.push(s0.p);
+    for (const auto& edge : ptr->e) {
+      const auto weight = static_cast<ComplexValue>(edge.w);
+      if (weight.approximatelyZero()) {
+        continue;
       }
-    }
-
-    const auto& s1 = ptr->e[1];
-    if (const auto s1w = static_cast<ComplexValue>(s1.w);
-        !s1w.approximatelyZero()) {
-      const fp tmp1 = prob * s1w.mag2();
-      if (visited.contains(s1.p)) {
-        measurementProbabilities[s1.p] = measurementProbabilities[s1.p] + tmp1;
+      const fp contribution = prob * weight.mag2();
+      auto [it, inserted] =
+          measurementProbabilities.try_emplace(edge.p, contribution);
+      if (inserted) {
+        q.push(edge.p);
       } else {
-        measurementProbabilities[s1.p] = tmp1;
-        visited.insert(s1.p);
-        q.push(s1.p);
+        it->second += contribution;
       }
     }
   }
@@ -710,15 +696,16 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
   while (!q.empty()) {
     const auto* ptr = q.front();
     q.pop();
+    const fp prob = measurementProbabilities.at(ptr);
     const auto& s0 = ptr->e[0];
     if (const auto s0w = static_cast<ComplexValue>(s0.w);
         !s0w.approximatelyZero()) {
-      pzero += measurementProbabilities[ptr] * s0w.mag2();
+      pzero += prob * s0w.mag2();
     }
     const auto& s1 = ptr->e[1];
     if (const auto s1w = static_cast<ComplexValue>(s1.w);
         !s1w.approximatelyZero()) {
-      pone += measurementProbabilities[ptr] * s1w.mag2();
+      pone += prob * s1w.mag2();
     }
   }
 
