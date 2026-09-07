@@ -161,7 +161,9 @@ TEST(QCToQIRBaseNativeTest, RejectsMultiBlockEntryFunctionWithoutMutation) {
 }
 
 static void expectMeasurementOrderRejected(
-    function_ref<Value(qc::QCProgramBuilder&)> buildProgram) {
+    function_ref<Value(qc::QCProgramBuilder&)> buildProgram,
+    StringRef expectedDiagnostic =
+        "QIR Base Profile forbids using a qubit after measurement") {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                       LLVM::LLVMDialect, memref::MemRefDialect>();
@@ -178,9 +180,7 @@ static void expectMeasurementOrderRejected(
     std::string message;
     llvm::raw_string_ostream stream(message);
     diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "QIR Base Profile requires gates to precede measurements on the "
-        "same qubit");
+    sawExpectedDiagnostic |= StringRef(message).contains(expectedDiagnostic);
     return success();
   });
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
@@ -224,6 +224,105 @@ TEST(QCToQIRBaseNativeTest, RejectsGateOnMeasuredRegisterElement) {
     builder.x(alias);
     return result;
   });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsRepeatedMeasurement) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto qubit = builder.allocQubit();
+    builder.measure(qubit);
+    return builder.measure(qubit);
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsRepeatedMeasurementToSameBit) {
+  expectMeasurementOrderRejected(qc::repeatedMeasurementToSameBit);
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsRepeatedMeasurementToDifferentBits) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    return qc::repeatedMeasurementToDifferentBits(builder).front();
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsMixedQubitAllocationModes) {
+  for (const bool registerAllocation : {false, true}) {
+    SCOPED_TRACE(registerAllocation);
+    expectMeasurementOrderRejected(
+        [registerAllocation](qc::QCProgramBuilder& builder) {
+          auto qubit = builder.staticQubit(5);
+          if (registerAllocation) {
+            memref::AllocOp::create(builder,
+                                    MemRefType::get({1}, qubit.getType()));
+          } else {
+            qc::AllocOp::create(builder);
+          }
+          return builder.measure(qubit);
+        },
+        "cannot mix static and dynamic qubit allocation modes");
+  }
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsRuntimeQubitRegisterIndex) {
+  expectMeasurementOrderRejected(
+      [](qc::QCProgramBuilder& builder) {
+        auto qubits = builder.allocQubitRegister(2);
+        auto unknown = LLVM::UndefOp::create(builder, builder.getI64Type());
+        auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),
+                                                unknown);
+        return builder.measure(builder.loadQubit(qubits.value, index));
+      },
+      "QIR Base Profile requires constant indices");
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsOutOfBoundsQubitRegisterIndex) {
+  for (const auto index : {-1, 2}) {
+    SCOPED_TRACE(index);
+    expectMeasurementOrderRejected(
+        [index](qc::QCProgramBuilder& builder) {
+          auto qubits = builder.allocQubitRegister(2);
+          return builder.measure(
+              builder.loadQubit(qubits.value, builder.indexConstant(index)));
+        },
+        "qubit-register index is out of bounds");
+  }
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsRepeatedMeasurementThroughRegisterAlias) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto qubits = builder.allocQubitRegister(1);
+    builder.measure(qubits[0]);
+    return builder.measure(
+        builder.loadQubit(qubits.value, builder.indexConstant(0)));
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RegisterLoadsPreserveQubitIdentity) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto qubits = builder.allocQubitRegister(1);
+  builder.x(qubits[0]);
+  auto result = builder.measure(
+      builder.loadQubit(qubits.value, builder.indexConstant(0)));
+  builder.retype(result.getType());
+  auto moduleOp = builder.finalize(result);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  Value gateQubit;
+  Value measuredQubit;
+  moduleOp->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_X) {
+      gateQubit = call.getOperand(0);
+    } else if (call.getCallee() == qir::QIR_MEASURE) {
+      measuredQubit = call.getOperand(0);
+    }
+  });
+  ASSERT_TRUE(gateQubit);
+  EXPECT_EQ(gateQubit, measuredQubit);
 }
 
 TEST(QCToQIRBaseNativeTest, AllowsGateAfterMeasurementOnIndependentQubit) {
@@ -1043,14 +1142,6 @@ INSTANTIATE_TEST_SUITE_P(
             "SingleMeasurementToSingleBit",
             MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit),
             MQT_NAMED_BUILDER(qir::singleMeasurementToSingleBit)},
-        QCToQIRBaseTestCase{
-            "RepeatedMeasurementToSameBit",
-            MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit),
-            MQT_NAMED_BUILDER(qir::repeatedMeasurementToSameBit)},
-        QCToQIRBaseTestCase{
-            "RepeatedMeasurementToDifferentBits",
-            MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits),
-            MQT_NAMED_BUILDER(qir::repeatedMeasurementToDifferentBits)},
         QCToQIRBaseTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),

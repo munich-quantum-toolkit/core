@@ -834,6 +834,30 @@ if (flag) {
   EXPECT_TRUE(qir->llvmIR().has_value());
 }
 
+TEST_F(CompilerPipelineTest, BaseMeasurementMayBeInsertedIntoFreedQTensor) {
+  auto qco = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %reg = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+      %rest, %qubit = qtensor.extract %reg[%c0] : tensor<1x!qco.qubit>
+      %out, %result = qco.measure %qubit : !qco.qubit
+      %final = qtensor.insert %out into %rest[%c0] : tensor<1x!qco.qubit>
+      qtensor.dealloc %final : tensor<1x!qco.qubit>
+      return %result : i1
+    }
+  })mlir");
+  ASSERT_TRUE(qco);
+  auto qc = std::move(*qco).intoQC();
+  ASSERT_TRUE(qc);
+  auto qir = std::move(*qc).intoQIR(QIRProfile::Base);
+  ASSERT_TRUE(qir);
+  const auto llvmIR = qir->llvmIR();
+  ASSERT_TRUE(llvmIR);
+  EXPECT_NE(llvmIR->find("call void @__quantum__qis__mz__body"),
+            std::string::npos);
+}
+
 TEST_F(CompilerPipelineTest, EmitsQIR21ProfileModuleFlags) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;

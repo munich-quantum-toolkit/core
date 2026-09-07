@@ -16,7 +16,6 @@
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
@@ -52,6 +51,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <utility>
 #include <variant>
 
@@ -88,39 +88,35 @@ static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
   return results[static_cast<size_t>(*indexValue)];
 }
 
-/// Checks that moving measurements after all gates preserves qubit order.
-static LogicalResult checkMeasurementOrder(func::FuncOp entryPoint) {
-  // Static qubit IDs and constant register indices can have SSA aliases.
-  const auto qubitKey = [](Value qubit) -> std::pair<Value, int64_t> {
-    if (auto staticQubit = qubit.getDefiningOp<StaticOp>()) {
-      return {Value{}, static_cast<int64_t>(staticQubit.getIndex())};
-    }
-    if (auto load = qubit.getDefiningOp<memref::LoadOp>();
-        load && load.getIndices().size() == 1) {
-      if (const auto index = getConstantIntValue(load.getIndices().front())) {
-        return {load.getMemref(), *index};
-      }
-    }
-    return {qubit, 0};
-  };
-
-  DenseSet<std::pair<Value, int64_t>> measuredQubits;
-  for (auto& operation : entryPoint.front()) {
-    if (auto measurement = dyn_cast<MeasureOp>(operation)) {
-      measuredQubits.insert(qubitKey(measurement.getQubit()));
+/// Validates canonical qubit pointers before moving measurements out of order.
+static LogicalResult moveTerminalMeasurements(Block& body,
+                                              Block& measurements) {
+  DenseSet<Value> measuredQubits;
+  SmallVector<LLVM::CallOp> measurementCalls;
+  for (auto call : body.getOps<LLVM::CallOp>()) {
+    if (!call.getCallee() ||
+        !call.getCallee()->starts_with("__quantum__qis__")) {
       continue;
     }
-    auto unitary = dyn_cast<UnitaryOpInterface>(operation);
-    if (!unitary || isa<BarrierOp, IdOp>(operation)) {
-      continue;
+    const bool isMeasurement = call.getCallee() == QIR_MEASURE;
+    /// Measurement's second pointer identifies a result, not a qubit.
+    auto operands = call.getOperands();
+    if (isMeasurement) {
+      operands = operands.take_front(1);
     }
-    for (auto qubit : unitary.getQubits()) {
-      if (measuredQubits.contains(qubitKey(qubit))) {
-        return operation.emitError(
-            "QIR Base Profile requires gates to precede measurements on "
-            "the same qubit");
+    for (auto operand : operands) {
+      if (measuredQubits.contains(operand)) {
+        return call.emitError(
+            "QIR Base Profile forbids using a qubit after measurement");
       }
     }
+    if (isMeasurement) {
+      measuredQubits.insert(call.getOperand(0));
+      measurementCalls.push_back(call);
+    }
+  }
+  for (auto call : measurementCalls) {
+    call->moveBefore(measurements.getTerminator());
   }
   return success();
 }
@@ -211,6 +207,9 @@ struct ConvertMemRefAllocOp final
   LogicalResult
   matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic, op))) {
+      return failure();
+    }
     rewriter.eraseOp(op);
     return success();
   }
@@ -246,16 +245,23 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
-    // Save current insertion point
-    const OpBuilder::InsertionGuard guard(rewriter);
-
-    // Switch to entry block
-    rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-
-    auto nqubits = state.staticQubits.size();
-    auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
-                                        static_cast<int64_t>(nqubits));
-    state.staticQubits.try_emplace(static_cast<int64_t>(nqubits), qubit);
+    const auto index = getConstantIntValue(op.getIndices().front());
+    if (!index || ShapedType::isDynamic(shape.front()) ||
+        !op.getMemref().getDefiningOp<memref::AllocOp>()) {
+      return op.emitError("QIR Base Profile requires constant indices into "
+                          "statically allocated qubit registers");
+    }
+    if (*index < 0 || *index >= shape.front()) {
+      return op.emitError("qubit-register index is out of bounds");
+    }
+    auto& qubit = state.staticRegisterQubits[{op.getMemref(), *index}];
+    if (!qubit) {
+      const OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+      const auto id = static_cast<int64_t>(state.staticQubits.size());
+      qubit = createPointerFromIndex(rewriter, op.getLoc(), id);
+      state.staticQubits.try_emplace(id, qubit);
+    }
     rewriter.replaceOp(op, qubit);
 
     return success();
@@ -302,6 +308,9 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    if (failed(state.ensureAllocationMode(AllocationMode::Dynamic, op))) {
+      return failure();
+    }
 
     const OpBuilder::InsertionGuard guard(rewriter);
 
@@ -371,8 +380,8 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
       result = getResultPtr(state, op.getOperation(), rewriter);
     }
 
-    // Emit the measurement in the measurements block
-    rewriter.setInsertionPoint(state.measurementsBlock->getTerminator());
+    /// Preserve instruction order until terminal measurements are verified.
+    rewriter.setInsertionPoint(op);
     auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
     auto fnDec =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSig);
@@ -508,8 +517,8 @@ protected:
    * Insert the `__quantum__rt__initialize` call.
    *
    * **Stage 4: QC to LLVM**
-   * Convert QC dialect operations to QIR calls and add output recording to the
-   * output block.
+   * Convert QC dialect operations in place, validate and move terminal
+   * measurements, and add output recording to the output block.
    *
    * **Stage 5: Standard dialects to LLVM**
    * Convert arith and control flow dialects to LLVM (for index arithmetic and
@@ -530,10 +539,6 @@ protected:
     if (!entryPoint.getBody().hasOneBlock()) {
       entryPoint.emitError(
           "QIR Base Profile requires a single-block entry function");
-      signalPassFailure();
-      return;
-    }
-    if (failed(checkMeasurementOrder(entryPoint))) {
       signalPassFailure();
       return;
     }
@@ -598,6 +603,11 @@ protected:
         return;
       }
 
+      auto& body = *std::next(main.getBody().begin());
+      if (failed(moveTerminalMeasurements(body, *state.measurementsBlock))) {
+        signalPassFailure();
+        return;
+      }
       addOutputRecording(main, ctx, state);
     }
 
