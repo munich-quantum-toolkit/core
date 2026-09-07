@@ -14,6 +14,9 @@ def QCToQCO : Pass<"qc-to-qco", "mlir::ModuleOp"> {
   let description = [{
     This pass converts all operations from the QC dialect to their equivalent operations in the QCO dialect.
     It handles the transformation of qubit references in QC to qubit values in QCO, ensuring that the semantics of quantum operations are preserved during the conversion process.
+    Control flow must use structured SCF operations. Operations with block
+    successors, including `cf.br`, `cf.cond_br`, and `cf.switch`, are diagnosed
+    before conversion.
   }];
 
   let dependentDialects = ["mlir::arith::ArithDialect", "mlir::qco::QCODialect",

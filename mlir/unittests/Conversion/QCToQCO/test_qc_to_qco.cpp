@@ -39,6 +39,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -806,6 +807,39 @@ module {
   EXPECT_TRUE(call.getOperand(1).getDefiningOp<qtensor::ExtractOp>());
   ASSERT_TRUE(call.getResult(1).hasOneUse());
   EXPECT_TRUE(isa<qtensor::InsertOp>(*call.getResult(1).getUsers().begin()));
+}
+
+TEST_F(QCToQCORegressionTest, RejectsUnstructuredControlFlow) {
+  context.getOrLoadDialect<cf::ControlFlowDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.static 0 : !qc.qubit
+    %c = arith.constant true
+    cf.cond_br %c, ^then, ^else
+  ^then:
+    qc.x %q : !qc.qubit
+    return
+  ^else:
+    qc.z %q : !qc.qubit
+    return
+  }
+}
+)mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("QC-to-QCO does not support unstructured control flow");
+    return success();
+  });
+
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
 TEST_F(QCToQCORegressionTest, PreflightRejectsNonOneDimensionalQubitRegisters) {

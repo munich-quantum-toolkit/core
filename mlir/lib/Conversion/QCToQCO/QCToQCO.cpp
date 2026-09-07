@@ -465,6 +465,12 @@ static void commitQubits(LoweringState& state, Operation* anchor,
 [[nodiscard]] static LogicalResult
 validateQuantumValueSources(Operation* root) {
   const auto result = root->walk([&](Operation* operation) {
+    if (operation->getNumSuccessors() != 0) {
+      operation->emitOpError(
+          "QC-to-QCO does not support unstructured control flow; use SCF "
+          "operations");
+      return WalkResult::interrupt();
+    }
     if (auto returnOp = dyn_cast<func::ReturnOp>(operation)) {
       auto function = returnOp->getParentOfType<func::FuncOp>();
       llvm::SmallDenseSet<Value, 4> returnedQubits;
