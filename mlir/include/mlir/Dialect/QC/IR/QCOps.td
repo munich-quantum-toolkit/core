@@ -1043,7 +1043,8 @@ def CtrlOp
         Note that control qubits are logically unmodified by this operation in that their quantum state remains unchanged.
         However, the `controls` argument is marked with `MemWrite` to ensure correct dependency tracking in MLIR.
 
-        The body region may contain unitary operations and pure classical operations without regions.
+        The body region may contain unitary operations and memory-effect-free classical operations without regions.
+        Parameter computation is eager, as specified by the `mqt.unitary` contract; it need not be speculatable.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
@@ -1107,7 +1108,8 @@ def InvOp : QCOp<"inv",
   let description = [{
         A modifier operation that inverts the gates defined in its body region.
 
-        The body region may contain unitary operations and pure classical operations without regions.
+        The body region may contain unitary operations and memory-effect-free classical operations without regions.
+        Parameter computation is eager, as specified by the `mqt.unitary` contract; it need not be speculatable.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
@@ -1171,7 +1173,8 @@ def PowOp : QCOp<"pow",
           - r = 0: identity (no-op).
           - r < 0: equivalent to inv @ pow(-r) @ g.
 
-          The body region may contain unitary operations and pure classical operations without regions.
+        The body region may contain unitary operations and memory-effect-free classical operations without regions.
+        Parameter computation is eager, as specified by the `mqt.unitary` contract; it need not be speculatable.
           Classical SSA values may be captured from above, but every qubit used
           in the body must be passed through a modifier operand and accessed via
           its aliased block argument.

@@ -45,14 +45,15 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
           return false;
         }
         const auto isQubit = [](Type type) { return isa<QubitType>(type); };
-        return operation.getNumRegions() != 0 || !isPure(&operation) ||
+        return operation.getNumRegions() != 0 ||
+               !isMemoryEffectFree(&operation) ||
                llvm::any_of(operation.getOperandTypes(), isQubit) ||
                llvm::any_of(operation.getResultTypes(), isQubit);
       });
   if (hasNonUnitaryOperation) {
-    return modifierOp->emitOpError(
-        "body must contain only unitary operations and pure classical "
-        "operations without regions");
+    return modifierOp->emitOpError("body must contain only unitary operations "
+                                   "and memory-effect-free classical "
+                                   "operations without regions");
   }
 
   return success();

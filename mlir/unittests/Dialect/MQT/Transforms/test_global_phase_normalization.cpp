@@ -10,7 +10,9 @@
 
 #include "ExactUnitaryTest.h"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/MQT/Utils/Angles.h"
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mlir/Dialect/MQT/Utils/Parameters.h"
@@ -36,9 +38,11 @@
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cmath>
 #include <cstddef>
@@ -58,9 +62,10 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<arith::ArithDialect, cf::ControlFlowDialect,
-                    func::FuncDialect, memref::MemRefDialect,
-                    mlir::qc::QCDialect, qco::QCODialect, scf::SCFDialect>();
+    registry
+        .insert<arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
+                memref::MemRefDialect, mlir::mqt::MQTDialect,
+                mlir::qc::QCDialect, qco::QCODialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -105,6 +110,165 @@ protected:
 };
 
 } // namespace
+
+TEST_F(GlobalPhaseNormalizationTest,
+       UnrollsEagerParameterChainsWithoutCrossingClassicalControl) {
+  for (bool convertToQCO : {false, true}) {
+    for (StringRef modifier :
+         {"qc.inv", "qc.ctrl(%c) targets", "qc.pow(%two)"}) {
+      SCOPED_TRACE(modifier.str());
+      SCOPED_TRACE(convertToQCO);
+      const auto source = std::string(R"mlir(
+        func.func @test(%cond: i1, %theta: f64, %q: !qc.qubit,
+                        %r: !qc.qubit, %c: !qc.qubit) {
+          %two = arith.constant 2.0 : f64
+          scf.if %cond {
+      )mlir") + modifier.str() +
+                          R"mlir( (%a = %q, %b = %r) {
+            %n = arith.fptosi %theta : f64 to i64
+            %one = arith.constant 1 : i64
+            %d = arith.divsi %one, %n : i64
+            %angle = arith.sitofp %d : i64 to f64
+            qc.rx(%angle) %a : !qc.qubit
+            qc.ry(%angle) %b : !qc.qubit
+            qc.yield
+          } : )mlir" +
+                          (modifier.starts_with("qc.ctrl")
+                               ? "{!qc.qubit}, {!qc.qubit, !qc.qubit}"
+                               : "!qc.qubit, !qc.qubit") +
+                          R"mlir(
+          }
+          return
+        }
+      )mlir";
+      auto moduleOp = parse(source);
+      ASSERT_TRUE(moduleOp);
+      PassManager pm(context.get());
+      if (convertToQCO) {
+        pm.addPass(createQCToQCO());
+      }
+      pm.addPass(mlir::mqt::createUnrollModifiers());
+      ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      size_t divisions = 0;
+      size_t modifiers = 0;
+      moduleOp->walk([&](arith::DivSIOp div) {
+        ++divisions;
+        EXPECT_TRUE((isa<scf::IfOp, qco::IfOp>(div->getParentOp())));
+        EXPECT_FALSE(isSpeculatable(div));
+      });
+      moduleOp->walk([&](Operation* op) {
+        if (isa<qc::InvOp, qc::CtrlOp, qc::PowOp, qco::InvOp, qco::CtrlOp,
+                qco::PowOp>(op)) {
+          ++modifiers;
+          EXPECT_EQ(op->getRegion(0).front().getOperations().size(), 2);
+        }
+      });
+      EXPECT_EQ(divisions, 1);
+      EXPECT_EQ(modifiers, 2);
+    }
+  }
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
+       ExtractsEagerPhaseParameterWithoutCrossingClassicalControl) {
+  for (bool convertToQCO : {false, true}) {
+    auto moduleOp = parse(R"mlir(
+      func.func @test(%cond: i1, %theta: f64, %q: !qc.qubit) {
+        scf.if %cond {
+          qc.inv (%a = %q) {
+            %n = arith.fptosi %theta : f64 to i64
+            %one = arith.constant 1 : i64
+            %d = arith.divsi %one, %n : i64
+            %angle = arith.sitofp %d : i64 to f64
+            qc.gphase(%angle)
+            qc.x %a : !qc.qubit
+            qc.yield
+          } : !qc.qubit
+        }
+        return
+      }
+    )mlir");
+    ASSERT_TRUE(moduleOp);
+    if (convertToQCO) {
+      PassManager pm(context.get());
+      pm.addPass(createQCToQCO());
+      ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    }
+    ASSERT_TRUE(succeeded(mlir::mqt::normalizeGlobalPhases(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    size_t phases = 0;
+    size_t divisions = 0;
+    moduleOp->walk([&](arith::DivSIOp div) {
+      ++divisions;
+      EXPECT_TRUE((isa<scf::IfOp, qco::IfOp>(div->getParentOp())));
+    });
+    moduleOp->walk([&](Operation* op) {
+      if (isa<qc::GPhaseOp, qco::GPhaseOp>(op)) {
+        ++phases;
+        EXPECT_TRUE((isa<scf::IfOp, qco::IfOp>(op->getParentOp())));
+        EXPECT_TRUE(op->getOperand(0).getDefiningOp<arith::NegFOp>());
+      }
+    });
+    EXPECT_EQ(phases, 1);
+    EXPECT_EQ(divisions, 1);
+  }
+}
+
+TEST_F(GlobalPhaseNormalizationTest,
+       NestedModifierRewritesPreserveParameterProducers) {
+  for (bool convertToQCO : {false, true}) {
+    for (int variant : {0, 1, 2}) {
+      SCOPED_TRACE(convertToQCO);
+      SCOPED_TRACE(variant);
+      const auto* const outer = variant == 2 ? "qc.pow(%power)" : "qc.inv";
+      const auto* const inner = variant == 0 ? "qc.inv" : "qc.ctrl(%a) targets";
+      const auto* const innerTypes =
+          variant == 0 ? "!qc.qubit" : "{!qc.qubit}, {!qc.qubit}";
+      const auto source = std::string(R"mlir(
+        func.func private @rotate(%angle: f64, %q: !qc.qubit)
+            attributes {mqt.unitary, no_inline} {
+          qc.rx(%angle) %q : !qc.qubit
+          return
+        }
+        func.func @test(%cond: i1, %theta: f64, %power: f64,
+                        %q: !qc.qubit, %r: !qc.qubit) {
+          scf.if %cond {
+      )mlir") + outer + R"mlir( (%a = %q, %b = %r) {
+            %n = arith.fptosi %theta : f64 to i64
+            %one = arith.constant 1 : i64
+            %d = arith.divsi %one, %n : i64
+            %angle = arith.sitofp %d : i64 to f64
+      )mlir" + inner + R"mlir( (%t = %b) {
+              qc.call @rotate(%angle, %t) : f64, !qc.qubit
+              qc.yield
+            } : )mlir" + innerTypes +
+                          R"mlir(
+            qc.yield
+          } : !qc.qubit, !qc.qubit
+          }
+          return
+        }
+      )mlir";
+      auto moduleOp = parse(source);
+      ASSERT_TRUE(moduleOp);
+      PassManager pm(context.get());
+      if (convertToQCO) {
+        pm.addPass(createQCToQCO());
+      }
+      pm.addPass(createCanonicalizerPass());
+      ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      size_t divisions = 0;
+      moduleOp->walk([&](arith::DivSIOp div) {
+        ++divisions;
+        EXPECT_TRUE((isa<scf::IfOp, qco::IfOp>(div->getParentOp())));
+        EXPECT_FALSE(div->use_empty());
+      });
+      EXPECT_EQ(divisions, 1);
+    }
+  }
+}
 
 TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
   auto moduleOp = parse(R"mlir(

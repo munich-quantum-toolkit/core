@@ -410,7 +410,7 @@ TEST_F(MQTIRTest, RejectsMutuallyRecursiveUnitaryFunctions) {
   }
 }
 
-TEST_F(MQTIRTest, UnitaryFunctionsRejectNonSpeculatableClassicalComputation) {
+TEST_F(MQTIRTest, UnitaryFunctionsAllowNonSpeculatableParameterComputation) {
   for (StringRef source : {
            R"mlir(
              func.func private @rotate(%theta: f64, %q: !qc.qubit)
@@ -436,21 +436,7 @@ TEST_F(MQTIRTest, UnitaryFunctionsRejectNonSpeculatableClassicalComputation) {
            )mlir",
        }) {
     SCOPED_TRACE(source.str());
-    bool rejectedBody = false;
-    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-      rejectedBody |= StringRef(diagnostic.str())
-                          .contains("body contains a non-unitary operation");
-      return success();
-    });
-    EXPECT_FALSE(parse(source));
-    EXPECT_TRUE(rejectedBody);
-
-    auto safe = source.str();
-    const auto divisor = safe.find("arith.divsi %one, %n");
-    ASSERT_NE(divisor, std::string::npos);
-    safe.replace(divisor, StringRef("arith.divsi %one, %n").size(),
-                 "arith.divsi %one, %one");
-    EXPECT_TRUE(parse(safe));
+    EXPECT_TRUE(parse(source));
   }
 }
 

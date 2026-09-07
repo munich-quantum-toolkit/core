@@ -25,6 +25,7 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/ScopeExit.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -661,41 +662,12 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
 /// Rejects unsupported operations and qubit captures in QC modifiers.
 [[nodiscard]] static LogicalResult validateModifierBodies(Operation* root) {
   const auto result = root->walk([&](Operation* operation) {
-    if (!isa<qc::InvOp, qc::CtrlOp, qc::PowOp>(operation)) {
-      return WalkResult::advance();
-    }
-
-    SetVector<Value> captures;
-    getUsedValuesDefinedAbove(operation->getRegions(), captures);
-    if (llvm::any_of(captures, [](Value value) {
-          return isa<qc::QubitType>(value.getType());
-        })) {
-      operation->emitOpError(
-          "body must not capture qubits from above; use only its aliased "
-          "block arguments");
-      return WalkResult::interrupt();
-    }
-
-    auto& body = operation->getRegion(0).front();
-    const auto hasNonUnitaryOperation =
-        llvm::any_of(body.without_terminator(), [](Operation& nested) {
-          if (isa<qc::UnitaryOpInterface>(nested)) {
-            return false;
-          }
-          const auto isQubit = [](Type type) {
-            return isa<qc::QubitType>(type);
-          };
-          return nested.getNumRegions() != 0 || !isPure(&nested) ||
-                 llvm::any_of(nested.getOperandTypes(), isQubit) ||
-                 llvm::any_of(nested.getResultTypes(), isQubit);
-        });
-    if (hasNonUnitaryOperation) {
-      operation->emitOpError(
-          "body must contain only unitary operations and pure classical "
-          "operations without regions");
-      return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
+    return llvm::TypeSwitch<Operation*, WalkResult>(operation)
+        .Case<qc::InvOp, qc::CtrlOp, qc::PowOp>([](auto modifier) {
+          return failed(modifier.verify()) ? WalkResult::interrupt()
+                                           : WalkResult::advance();
+        })
+        .Default(WalkResult::advance());
   });
   return success(!result.wasInterrupted());
 }

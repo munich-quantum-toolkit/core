@@ -1308,8 +1308,9 @@ TEST_P(NestedModifierConversionTest, RejectsStructuredOperation) {
     ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
       sawExpectedDiagnostic |=
           StringRef(diagnostic.str())
-              .contains("body must contain only unitary operations and pure "
-                        "classical operations without regions");
+              .contains(
+                  "body must contain only unitary operations and "
+                  "memory-effect-free classical operations without regions");
       return success();
     });
 
@@ -1377,8 +1378,9 @@ TEST_F(QCToQCORegressionTest, PreflightRejectsRegisterLoadsInEveryModifier) {
     ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
       sawExpectedDiagnostic |=
           StringRef(diagnostic.str())
-              .contains("body must contain only unitary operations and pure "
-                        "classical operations without regions");
+              .contains(
+                  "body must contain only unitary operations and "
+                  "memory-effect-free classical operations without regions");
       return success();
     });
 
@@ -1485,8 +1487,9 @@ TEST_F(QCToQCORegressionTest,
       ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
         sawExpectedDiagnostic |=
             StringRef(diagnostic.str())
-                .contains("body must contain only unitary operations and pure "
-                          "classical operations without regions");
+                .contains(
+                    "body must contain only unitary operations and "
+                    "memory-effect-free classical operations without regions");
         return success();
       });
 

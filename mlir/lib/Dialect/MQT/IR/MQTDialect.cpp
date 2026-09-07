@@ -358,7 +358,7 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
       return;
     }
     valid =
-        nested->getNumRegions() == 0 && isPure(nested) &&
+        nested->getNumRegions() == 0 && isMemoryEffectFree(nested) &&
         llvm::none_of(nested->getOperandTypes(),
                       llvm::IsaPred<qc::QubitType>) &&
         llvm::none_of(nested->getResultTypes(), llvm::IsaPred<qc::QubitType>);
@@ -382,7 +382,7 @@ verifyNoUnitaryRecursion(func::FuncOp function) {
       return;
     }
     valid =
-        nested->getNumRegions() == 0 && isPure(nested) &&
+        nested->getNumRegions() == 0 && isMemoryEffectFree(nested) &&
         llvm::none_of(nested->getOperandTypes(),
                       llvm::IsaPred<qco::QubitType>) &&
         llvm::none_of(nested->getResultTypes(), llvm::IsaPred<qco::QubitType>);

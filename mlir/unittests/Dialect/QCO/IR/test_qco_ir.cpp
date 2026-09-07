@@ -829,14 +829,15 @@ TEST_F(QCOTest, ModifiersRecursivelyRejectNonUnitaryOperations) {
           buildInvalidNestedModifierBody(builder, modifier, forbiddenOperation);
 
       bool sawExpectedDiagnostic = false;
-      ScopedDiagnosticHandler handler(
-          context.get(), [&](Diagnostic& diagnostic) {
-            sawExpectedDiagnostic |=
-                StringRef(diagnostic.str())
-                    .contains("body must contain only unitary operations and "
-                              "pure classical operations without regions");
-            return success();
-          });
+      ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic&
+                                                             diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str())
+                .contains(
+                    "body must contain only unitary operations and "
+                    "memory-effect-free classical operations without regions");
+        return success();
+      });
       EXPECT_TRUE(failed(verify(modifierOp)));
       EXPECT_TRUE(sawExpectedDiagnostic);
     }
