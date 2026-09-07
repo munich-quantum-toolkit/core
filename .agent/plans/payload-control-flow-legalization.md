@@ -1,13 +1,14 @@
 # Compiler-only control-flow legalization
 
-Status: independently rebased and locally validated; design remains gated.
+Status: independently rebased and locally validated capability snapshot; ready
+for human contract review.
 
-## Scope and design gate
+## Scope and release boundary
 
-Core #2162 follows #2219 without QDMI runtime or adapter ancestry. This is a
-non-blocking Core 4.1 candidate, gated by the capability design in Core #2365
-and QDMI #523. The rebase preserves the prototype; it does not settle the
-provider-neutral capability vocabulary.
+Core #2162 follows #2219 without QDMI runtime or adapter ancestry and targets
+Core 4.0. Core #2365 and QDMI #523 track the separate Core 4.1/QDMI 1.4
+adaptation and do not gate this prototype. The rebase preserves the capability
+snapshot; human review must still settle the provider-neutral vocabulary.
 
 Legalize structural control flow against the selected target environment. Retain
 supported constructs, lower unsupported static loops and switches where
@@ -35,10 +36,11 @@ including constant-control folding, loop bounds and overflow, conversion of
 switches with linear results, unsupported dynamic control and exact constraint
 boundaries. Run repository lint, C++ lint and the MLIR documentation build.
 
-The release suite passes: 3,889 tests pass and one existing optional-device test
-skips. MLIR documentation and repository lint pass. The current LLVM correctly
-represents the full-width loop range; its test now verifies that the loop and
-its exact trip count survive instead of requiring the LLVM 22 failure.
+The prior capability-snapshot validation passed 3,889 release tests, with one
+existing optional-device skip. MLIR documentation and repository lint passed.
+The current LLVM correctly represents the full-width loop range; its test now
+verifies that the loop and its exact trip count survive instead of requiring the
+LLVM 22 failure.
 
 Preserve Simon Hofmann's human co-authorship and existing review discussion. No
 archive branches or automatic review requests.
