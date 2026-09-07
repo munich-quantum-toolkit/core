@@ -37,8 +37,11 @@
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Error.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/FileUtilities.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -303,7 +306,7 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
   QCProgramBuilder emptyBuilder(context.get());
   emptyBuilder.initialize();
   auto emptyModule = emptyBuilder.finalize();
-  EXPECT_FALSE(QCProgram::fromModule(context, std::move(emptyModule)));
+  EXPECT_TRUE(QCProgram::fromModule(context, std::move(emptyModule)));
 
   QCProgramBuilder mismatchedBuilder(context.get());
   mismatchedBuilder.initialize();
@@ -1050,6 +1053,90 @@ h q;
   ASSERT_TRUE(qcoFromQC);
   EXPECT_FALSE(QCProgram::fromMLIRString(qcoFromQC->str()));
   EXPECT_FALSE(QCOProgram::fromMLIRString(mlir));
+}
+
+TEST_F(CompilerPipelineTest, EmptyCompiledProgramsRoundTrip) {
+  for (const std::string parameters : {"", "%angle: f64"}) {
+    SCOPED_TRACE(parameters);
+    auto qc =
+        QCProgram::fromMLIRString("module { func.func @main(" + parameters +
+                                  R"mlir() attributes {mqt.entry_point} {
+      %phase = arith.constant 0.0 : f64
+      qc.gphase(%phase)
+      return
+    }
+  })mlir");
+    ASSERT_TRUE(qc);
+    auto qco = std::move(*qc).intoQCO();
+    ASSERT_TRUE(qco);
+    ASSERT_TRUE(qco->compileForTarget(makeCZTarget({{"sx", 0}, {"rz", 1}})));
+    ASSERT_TRUE(succeeded(verify(qco->module())));
+    qco->module().walk([](Operation* operation) {
+      const auto dialect = operation->getName().getDialectNamespace();
+      EXPECT_NE(dialect, "qc");
+      EXPECT_NE(dialect, "qco");
+    });
+
+    SmallString<128> filename;
+    ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("empty-compiled-program",
+                                                    "mlir", filename));
+    const llvm::FileRemover cleanup(filename);
+    const auto path = std::filesystem::path(filename.str().str());
+    std::ofstream(path) << qco->str();
+    auto qcoFromString = QCOProgram::fromMLIRString(qco->str());
+    auto qcoFromFile = QCOProgram::fromMLIRFile(path);
+    ASSERT_TRUE(qcoFromString);
+    ASSERT_TRUE(qcoFromFile);
+    EXPECT_EQ(qcoFromString->str(), qco->str());
+    EXPECT_EQ(qcoFromFile->str(), qco->str());
+
+    auto restoredQC = std::move(*qcoFromString).intoQC();
+    ASSERT_TRUE(restoredQC);
+    EXPECT_EQ(restoredQC->numGates(), 0U);
+    std::ofstream(path) << restoredQC->str();
+    auto qcFromString = QCProgram::fromMLIRString(restoredQC->str());
+    auto qcFromFile = QCProgram::fromMLIRFile(path);
+    ASSERT_TRUE(qcFromString);
+    ASSERT_TRUE(qcFromFile);
+    EXPECT_EQ(qcFromString->str(), restoredQC->str());
+    EXPECT_EQ(qcFromFile->str(), restoredQC->str());
+  }
+}
+
+TEST_F(CompilerPipelineTest, EmptyProgramImportsRejectForeignTypes) {
+  EXPECT_FALSE(QCProgram::fromMLIRString(R"mlir(module {
+    func.func @identity(%q: !qco.qubit) -> !qco.qubit {
+      return %q : !qco.qubit
+    }
+  })mlir"));
+  EXPECT_FALSE(QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @identity(%q: !qc.qubit) -> !qc.qubit {
+      return %q : !qc.qubit
+    }
+  })mlir"));
+  constexpr llvm::StringLiteral declaration = R"mlir(module {
+    func.func private @get_qubit() -> !qc.qubit
+  })mlir";
+  EXPECT_FALSE(QCOProgram::fromMLIRString(declaration));
+  EXPECT_FALSE(QCProgram::fromMLIRString(R"mlir(module {
+    func.func @identity(%q: tensor<1x!qco.qubit>) -> tensor<1x!qco.qubit> {
+      return %q : tensor<1x!qco.qubit>
+    }
+  })mlir"));
+  EXPECT_FALSE(QCProgram::fromMLIRString(R"mlir(module {
+    func.func @main() {
+      return
+    ^bb1(%foreign: !qco.qubit):
+      return
+    }
+  })mlir"));
+  EXPECT_FALSE(QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() {
+      return
+    ^bb1(%foreign: !qc.qubit):
+      return
+    }
+  })mlir"));
 }
 
 // Test: QCO imports require each linear value to have one use.
