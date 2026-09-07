@@ -66,7 +66,7 @@ struct ProgramCapability {
                          const ProgramCapability&) = default;
 };
 
-/// Context-free selected payload execution contract.
+/// Context-free selected execution payload contract.
 ///
 /// Producers must include every effective capability, including
 /// payload-format baselines. The knowledge bit states whether the list also
@@ -74,6 +74,7 @@ struct ProgramCapability {
 class PayloadSpecification {
 public:
   /// Create and validate a selected payload specification.
+  ///
   /// Numeric versions accept one to three components; omitted components are
   /// zero, and the stored version always uses major.minor.patch.
   [[nodiscard]] static llvm::Expected<PayloadSpecification>

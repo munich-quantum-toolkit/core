@@ -2474,10 +2474,10 @@ h q;
       payload);
 
   EXPECT_FALSE(runDefaultPipeline(std::move(program), environment));
-  /// The call binds an rvalue reference, but the unsupported output is rejected
-  /// before the function consumes the input. Inspecting the input verifies that
-  /// preservation contract.
-  /// NOLINTNEXTLINE(bugprone-use-after-move)
+  // The call binds an rvalue reference, but the unsupported output is rejected
+  // before the function consumes the input. Inspecting the input verifies that
+  // preservation contract.
+  // NOLINTNEXTLINE(bugprone-use-after-move)
   ASSERT_TRUE(std::holds_alternative<QCProgram>(program));
   EXPECT_EQ(std::get<QCProgram>(program).str(), original);
 }
