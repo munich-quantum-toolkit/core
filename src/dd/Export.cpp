@@ -310,17 +310,21 @@ std::ostream& classicNode(const vEdge& e, std::ostream& os,
      << "\"]\n";
   return os;
 }
-std::ostream& bwEdge(const mEdge& from, const mEdge& to,
-                     const std::uint16_t idx, std::ostream& os,
-                     const bool edgeLabels, const bool classic,
-                     const bool formatAsPolar) {
+namespace {
+template <class Node>
+std::ostream& renderEdge(const Edge<Node>& from, const Edge<Node>& to,
+                         const std::uint16_t idx, std::ostream& os,
+                         const bool colored, const bool edgeLabels,
+                         const bool classic, const bool formatAsPolar) {
   const auto fromlabel =
       (reinterpret_cast<std::uintptr_t>(from.p) & 0x001fffffU) >> 1U;
   const auto tolabel =
       (reinterpret_cast<std::uintptr_t>(to.p) & 0x001fffffU) >> 1U;
 
   os << fromlabel << ":" << idx << ":";
-  if (classic) {
+  if constexpr (IsVector<Node>) {
+    os << (idx == 0 ? "sw" : "se");
+  } else if (classic) {
     if (idx == 0) {
       os << "sw";
     } else if (idx == 1 || idx == 2) {
@@ -347,7 +351,9 @@ std::ostream& bwEdge(const mEdge& from, const mEdge& to,
   const auto mag = thicknessFromMagnitude(to.w);
   os << "[penwidth=\"" << mag << "\",tooltip=\""
      << conditionalFormat(to.w, formatAsPolar) << "\"";
-  if (!to.w.exactlyOne()) {
+  if (colored) {
+    os << " color=\"" << colorFromPhase(to.w) << "\"";
+  } else if (!to.w.exactlyOne()) {
     os << ",style=dashed";
   }
   if (edgeLabels) {
@@ -358,114 +364,35 @@ std::ostream& bwEdge(const mEdge& from, const mEdge& to,
 
   return os;
 }
+} // namespace
+
+std::ostream& bwEdge(const mEdge& from, const mEdge& to,
+                     const std::uint16_t idx, std::ostream& os,
+                     const bool edgeLabels, const bool classic,
+                     const bool formatAsPolar) {
+  return renderEdge(from, to, idx, os, false, edgeLabels, classic,
+                    formatAsPolar);
+}
 std::ostream& bwEdge(const vEdge& from, const vEdge& to,
                      const std::uint16_t idx, std::ostream& os,
-                     const bool edgeLabels, [[maybe_unused]] const bool classic,
+                     const bool edgeLabels, const bool classic,
                      const bool formatAsPolar) {
-  const auto fromlabel =
-      (reinterpret_cast<std::uintptr_t>(from.p) & 0x001fffffU) >> 1U;
-  const auto tolabel =
-      (reinterpret_cast<std::uintptr_t>(to.p) & 0x001fffffU) >> 1U;
-
-  os << fromlabel << ":" << idx << ":";
-  os << (idx == 0 ? "sw" : "se") << "->";
-  if (to.isTerminal()) {
-    os << "t";
-  } else {
-    os << tolabel;
-  }
-
-  const auto mag = thicknessFromMagnitude(to.w);
-  os << "[penwidth=\"" << mag << "\",tooltip=\""
-     << conditionalFormat(to.w, formatAsPolar) << "\"";
-  if (!to.w.exactlyOne()) {
-    os << ",style=dashed";
-  }
-  if (edgeLabels) {
-    os << ",label=<<font point-size=\"8\">&nbsp;"
-       << conditionalFormat(to.w, formatAsPolar) << "</font>>";
-  }
-  os << "]\n";
-
-  return os;
+  return renderEdge(from, to, idx, os, false, edgeLabels, classic,
+                    formatAsPolar);
 }
 std::ostream& coloredEdge(const mEdge& from, const mEdge& to,
                           const std::uint16_t idx, std::ostream& os,
                           const bool edgeLabels, const bool classic,
                           const bool formatAsPolar) {
-  const auto fromlabel =
-      (reinterpret_cast<std::uintptr_t>(from.p) & 0x001fffffU) >> 1U;
-  const auto tolabel =
-      (reinterpret_cast<std::uintptr_t>(to.p) & 0x001fffffU) >> 1U;
-
-  os << fromlabel << ":" << idx << ":";
-  if (classic) {
-    if (idx == 0) {
-      os << "sw";
-    } else if (idx == 1 || idx == 2) {
-      os << "s";
-    } else {
-      os << "se";
-    }
-  } else {
-    if (idx == 0) {
-      os << "sw";
-    } else if (idx == 1) {
-      os << "se";
-    } else {
-      os << 's';
-    }
-  }
-  os << "->";
-  if (to.isTerminal()) {
-    os << "t";
-  } else {
-    os << tolabel;
-  }
-
-  const auto mag = thicknessFromMagnitude(to.w);
-  const auto color = colorFromPhase(to.w);
-  os << "[penwidth=\"" << mag << "\",tooltip=\""
-     << conditionalFormat(to.w, formatAsPolar) << "\" color=\"" << color
-     << "\"";
-  if (edgeLabels) {
-    os << ",label=<<font point-size=\"8\">&nbsp;"
-       << conditionalFormat(to.w, formatAsPolar) << "</font>>";
-  }
-  os << "]\n";
-
-  return os;
+  return renderEdge(from, to, idx, os, true, edgeLabels, classic,
+                    formatAsPolar);
 }
 std::ostream& coloredEdge(const vEdge& from, const vEdge& to,
                           const std::uint16_t idx, std::ostream& os,
-                          const bool edgeLabels,
-                          [[maybe_unused]] const bool classic,
+                          const bool edgeLabels, const bool classic,
                           const bool formatAsPolar) {
-  const auto fromlabel =
-      (reinterpret_cast<std::uintptr_t>(from.p) & 0x001fffffU) >> 1U;
-  const auto tolabel =
-      (reinterpret_cast<std::uintptr_t>(to.p) & 0x001fffffU) >> 1U;
-
-  os << fromlabel << ":" << idx << ":";
-  os << (idx == 0 ? "sw" : "se") << "->";
-  if (to.isTerminal()) {
-    os << "t";
-  } else {
-    os << tolabel;
-  }
-
-  const auto mag = thicknessFromMagnitude(to.w);
-  const auto color = colorFromPhase(to.w);
-  os << "[penwidth=\"" << mag << "\",tooltip=\""
-     << conditionalFormat(to.w, formatAsPolar) << "\" color=\"" << color
-     << "\"";
-  if (edgeLabels) {
-    os << ",label=<<font point-size=\"8\">&nbsp;"
-       << conditionalFormat(to.w, formatAsPolar) << "</font>>";
-  }
-  os << "]\n";
-
-  return os;
+  return renderEdge(from, to, idx, os, true, edgeLabels, classic,
+                    formatAsPolar);
 }
 void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
   if (writeBinary) {
