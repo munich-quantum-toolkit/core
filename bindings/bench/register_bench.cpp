@@ -73,7 +73,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
 
   const nb::module_ qftAdderClassical =
       m.def_submodule("qft_adder_classical",
-                      "Classical-input QFT adder instances and options.");
+                      "Classical-input QFT adder benchmark instances and "
+                      "options.");
   registerQFTAdderClassical(qftAdderClassical);
 
   const nb::module_ qftAdderQuantum = m.def_submodule(

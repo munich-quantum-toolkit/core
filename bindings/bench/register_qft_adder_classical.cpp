@@ -33,7 +33,8 @@ void registerQFTAdderClassical(const nb::module_& m) {
 
   auto qftAdder = nb::class_<bench::QFTAdderClassical>(
       m, "QFTAdderClassical",
-      "A validated classical-input QFT adder benchmark.");
+      "A validated classical-input QFT adder benchmark.\n\n"
+      "Reference: https://arxiv.org/abs/quant-ph/0205095");
   qftAdder.def(nb::init<bench::QFTAdderClassicalOptions>(), "options"_a)
       .def_prop_ro("options", &bench::QFTAdderClassical::options,
                    nb::rv_policy::reference_internal,

@@ -18,11 +18,12 @@ one; the extra accumulator qubit preserves overflow.
 ## Decisions
 
 The generator uses the shared exact no-swap QFT and inverse-QFT helpers in
-`mlir/bench/programs/QFTAdderUtils.*`. Between them, it emits exactly one
-unconditional phase gate for each accumulator wire, including a zero-angle gate.
-For little-endian accumulator wire `j`, the phase is the binary fraction formed
-by addend bits `j` through zero. The extra wire receives the continued fraction
-and therefore records carry.
+`mlir/bench/programs/QFTUtils.*`. Between them, it materializes the precomputed
+angles as a dense tensor. A structured loop applies one unconditional phase gate
+to each accumulator wire, including a zero-angle gate. For little-endian
+accumulator wire `j`, the phase is the binary fraction formed by addend bits `j`
+through zero. The extra wire receives the continued fraction and therefore
+records carry.
 
 Compute the phase table by scanning the addend from least to most significant:
 divide the previous angle by two and add pi for a set bit. Append one more
@@ -40,7 +41,8 @@ combines each wire's classically known rotations into one single-qubit phase.
 
 - [x] Add the typed family, strict JSON contract, binding, stubs, and reference
       tests.
-- [x] Generate and structurally test the complete Figure 3 circuit.
+- [x] Generate the complete Figure 3 circuit and test its phase table and
+      structured size.
 - [x] Document the source, harness, bit order, phase convention, and output.
 - [x] Validate the focused native, MLIR, and Python behavior.
 - [x] Create the draft pull request on the quantum-input QFT-adder branch and
