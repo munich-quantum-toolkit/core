@@ -1,6 +1,6 @@
 # QFT adder benchmark
 
-Status: in progress; validate the unified API and exhaustive small-width tests.
+Status: complete.
 
 ## Goal and scope
 
@@ -26,20 +26,13 @@ Measure the register addend as well as the sum to expose their correlation. A
 unique logical result exists only for basis inputs. Sampling alone cannot check
 phase coherence; compare coherent DD statevectors with exact amplitudes.
 
-## Work remaining
-
-- [ ] Validate options, references, JSON round trips, bindings, and QC/jeff
-      generation.
-- [ ] Check every operand pair at widths one through three for both methods and
-      overflow policies.
-- [ ] Check coherent addition amplitudes, then run required lint and stub
-      generation.
-
 ## Validation
 
 Run the native benchmark and generation binaries and
 `uv run --no-sync pytest test/python/test_bench.py test/python/test_cli.py -k bench`.
-Local implementation checks passed: 47 native reference/JSON tests, 17
-generation tests, and 26 Python benchmark/CLI tests. Stubs were regenerated. The
-implementation belongs to #2404; #2408 adds exhaustive arithmetic and
-phase-sensitive execution checks. Both retain the existing PR chain.
+Local checks passed: 47 native reference/JSON tests, 17 generation tests, and 44
+Python benchmark/CLI tests. The latter include all 336 operand pairs across
+widths one through three, both methods, and both overflow policies, plus 28
+coherent register-addition statevectors. Stubs were regenerated. The
+implementation is in #2404; #2408 adds the exhaustive and phase-sensitive
+execution tests. Validation is bounded to these widths and supported inputs.

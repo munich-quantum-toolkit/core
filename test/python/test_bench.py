@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import json
 from fractions import Fraction
+from itertools import product
 
+import numpy as np
 import pytest
 
 from mqt.core import bench, mlir
@@ -202,6 +204,43 @@ def test_qft_adder_preserves_leading_zeros_and_carry(addend: str, expected: str)
         )
     )
     assert mlir.sample(benchmark.generate(), shots=128, seed=17) == {expected: 128}
+
+
+@pytest.mark.parametrize("width", [1, 2, 3])
+@pytest.mark.parametrize("method", [qft_adder.Method.REGISTER, qft_adder.Method.CONSTANT])
+@pytest.mark.parametrize("overflow", [qft_adder.Overflow.WRAP, qft_adder.Overflow.CARRY])
+def test_qft_adder_all_small_operands(width: int, method: qft_adder.Method, overflow: qft_adder.Overflow) -> None:
+    """Compare every small operand pair with independent integer addition."""
+    sum_width = width + (overflow == qft_adder.Overflow.CARRY)
+    for addend, accumulator in product(range(1 << width), repeat=2):
+        addend_bits = f"{addend:0{width}b}"
+        benchmark = qft_adder.QFTAdder(
+            qft_adder.Options(
+                addend=addend_bits, accumulator=f"{accumulator:0{width}b}", method=method, overflow=overflow
+            )
+        )
+        total = (addend + accumulator) % (1 << sum_width)
+        expected = (addend_bits if method == qft_adder.Method.REGISTER else "") + f"{total:0{sum_width}b}"
+        assert benchmark.expected_result == expected
+        assert mlir.sample(benchmark.generate(), shots=32, seed=17) == {expected: 32}, (addend, accumulator)
+
+
+@pytest.mark.parametrize("width", [1, 2, 3])
+@pytest.mark.parametrize("overflow", [qft_adder.Overflow.WRAP, qft_adder.Overflow.CARRY])
+def test_qft_adder_preserves_relative_phases(width: int, overflow: qft_adder.Overflow) -> None:
+    """Check coherent register addition for every small basis accumulator."""
+    sum_width = width + (overflow == qft_adder.Overflow.CARRY)
+    for accumulator in range(1 << width):
+        benchmark = qft_adder.QFTAdder(
+            qft_adder.Options(addend="+" * width, accumulator=f"{accumulator:0{width}b}", overflow=overflow)
+        )
+        actual = mlir.simulate(benchmark.generate())
+        expected = np.zeros(1 << (width + sum_width), dtype=np.complex128)
+        for addend in range(1 << width):
+            total = (addend + accumulator) % (1 << sum_width)
+            expected[(total << width) | addend] = 2 ** (-width / 2)
+        phase = np.exp(1j * np.angle(np.vdot(expected, actual)))
+        np.testing.assert_allclose(actual, phase * expected, rtol=0, atol=1e-12)
 
 
 def test_qpe_accepts_fraction_and_native_phase() -> None:
