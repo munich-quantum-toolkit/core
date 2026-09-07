@@ -13,14 +13,29 @@
 #include "mlir/Compiler/Programs.h"
 
 #include <gtest/gtest.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <utility>
 #include <variant>
 
 namespace mqt::bench::test {
+
+[[nodiscard]] inline mlir::DenseElementsAttr
+angleTable(mlir::ModuleOp moduleOp) {
+  mlir::DenseElementsAttr result;
+  moduleOp.walk([&](mlir::arith::ConstantOp op) {
+    if (auto table = mlir::dyn_cast<mlir::DenseElementsAttr>(op.getValue())) {
+      EXPECT_FALSE(result);
+      result = table;
+    }
+  });
+  return result;
+}
 
 template <class Op> [[nodiscard]] size_t countOps(mlir::ModuleOp moduleOp) {
   size_t count = 0;

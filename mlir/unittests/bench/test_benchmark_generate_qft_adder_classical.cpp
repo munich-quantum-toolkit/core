@@ -40,23 +40,12 @@ static void expectPhaseLoopConstantIndex(Value value, int64_t expected) {
   EXPECT_EQ(constant.value(), expected);
 }
 
-[[nodiscard]] static DenseElementsAttr phaseTable(ModuleOp moduleOp) {
-  DenseElementsAttr result;
-  moduleOp.walk([&](arith::ConstantOp op) {
-    if (auto table = dyn_cast<DenseElementsAttr>(op.getValue())) {
-      EXPECT_FALSE(result);
-      result = table;
-    }
-  });
-  return result;
-}
-
 TEST(GenerateProgramTest, UsesConfiguredClassicalQFTAdderPhases) {
   auto program = generate(QFTAdderClassical{{.addend = "101"}});
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
 
-  auto table = phaseTable(moduleOp);
+  auto table = test::angleTable(moduleOp);
   ASSERT_TRUE(table);
   const auto angles = llvm::to_vector(table.getValues<double>());
   ASSERT_EQ(angles.size(), 4U);
@@ -99,7 +88,7 @@ TEST(GenerateProgramTest, KeepsLargestClassicalQFTAdderFiniteAndStructured) {
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
 
-  auto table = phaseTable(moduleOp);
+  auto table = test::angleTable(moduleOp);
   ASSERT_TRUE(table);
   EXPECT_EQ(table.getNumElements(),
             QFTAdderClassicalOptions::MAX_ADDEND_BITS + 1U);
