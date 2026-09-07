@@ -11,16 +11,51 @@
 #pragma once
 
 #include "mlir/Compiler/Programs.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mlir/bench/Generate.h"
 
 #include <gtest/gtest.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Operation.h>
 
 #include <cstddef>
+#include <optional>
 #include <utility>
 #include <variant>
 
 namespace mqt::bench::test {
+
+template <class Benchmark>
+[[nodiscard]] std::optional<mlir::QCOProgram>
+generateQCO(const Benchmark& benchmark) {
+  auto program = generate(benchmark);
+  if (!program) {
+    return std::nullopt;
+  }
+  auto compiled = mlir::runDefaultPipeline(
+      mlir::CompilerInput{std::move(*program)}, mlir::ProgramFormat::QCO);
+  if (!compiled) {
+    return std::nullopt;
+  }
+  return std::get<mlir::QCOProgram>(std::move(*compiled));
+}
+
+template <class Benchmark>
+void expectSamplingMatchesReference(const Benchmark& benchmark) {
+  auto program = generateQCO(benchmark);
+  ASSERT_TRUE(program);
+  constexpr size_t shots = 16'384;
+  auto counts =
+      mlir::qco::sample(mlir::mqt::getEntryPoint(program->module()), shots, 17);
+  ASSERT_TRUE(mlir::succeeded(counts));
+  size_t total = 0;
+  for (const auto& [outcome, count] : *counts) {
+    total += count;
+  }
+  EXPECT_EQ(total, shots);
+  EXPECT_LT(benchmark.evaluate(*counts).totalVariationDistance, 0.03);
+}
 
 template <class Op> [[nodiscard]] size_t countOps(mlir::ModuleOp moduleOp) {
   size_t count = 0;

@@ -104,4 +104,8 @@ TEST(GenerateProgramTest, SerializesTheLargestQuantumMultiplexer) {
   test::expectJeffRoundTrip(std::move(*program));
 }
 
+TEST(GenerateProgramTest, SamplesMULTIPLEXERAgainstReference) {
+  test::expectSamplingMatchesReference(Multiplexer{{.qubits = 3}});
+}
+
 } // namespace mqt::bench

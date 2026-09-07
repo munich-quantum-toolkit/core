@@ -61,4 +61,12 @@ TEST(GenerateProgramTest, KeepsLargeQFTStructured) {
   }
 }
 
+TEST(GenerateProgramTest, SamplesQFTAgainstReference) {
+  for (const auto method : {QFTMethod::Standard, QFTMethod::Semiclassical}) {
+    SCOPED_TRACE(static_cast<int>(method));
+    test::expectSamplingMatchesReference(
+        QFT{{.qubits = 3, .periodExponent = 1, .method = method}});
+  }
+}
+
 } // namespace mqt::bench

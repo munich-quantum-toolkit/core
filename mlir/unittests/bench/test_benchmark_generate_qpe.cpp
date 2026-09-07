@@ -142,4 +142,14 @@ TEST(GenerateProgramTest, DoublesQPEPhaseModuloOneWithoutOverflow) {
   EXPECT_DOUBLE_EQ(angles[3], static_cast<double>(4.L * turn));
 }
 
+TEST(GenerateProgramTest, SamplesQPEAgainstReference) {
+  for (const auto method : {QPEMethod::Standard, QPEMethod::Iterative}) {
+    for (const auto phase : {Phase(3, 8), Phase(1, 3)}) {
+      SCOPED_TRACE(static_cast<int>(method));
+      test::expectSamplingMatchesReference(
+          QPE{{.precision = 3, .phase = phase, .method = method}});
+    }
+  }
+}
+
 } // namespace mqt::bench

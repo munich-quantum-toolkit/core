@@ -31,8 +31,11 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -159,10 +162,10 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry
-        .insert<cbit::CBitDialect, QCODialect, qtensor::QTensorDialect,
-                arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
-                math::MathDialect, memref::MemRefDialect, scf::SCFDialect>();
+    registry.insert<cbit::CBitDialect, QCODialect, qtensor::QTensorDialect,
+                    arith::ArithDialect, cf::ControlFlowDialect,
+                    func::FuncDialect, math::MathDialect, memref::MemRefDialect,
+                    scf::SCFDialect, tensor::TensorDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -2300,6 +2303,68 @@ TEST_F(QCODDFunctionalityTest, FuncCallSharesClassicalCBitStorage) {
                                          context.get());
   ASSERT_TRUE(mod);
   expectSimulatesFromZero(mainFunc(*mod), true);
+}
+
+TEST_F(QCODDFunctionalityTest, ReadsDenseFloatTablesInStructuredLoops) {
+  for (const auto angles : {
+           std::array{0., std::numbers::pi},
+           std::array{std::numbers::pi / 2., std::numbers::pi / 2.},
+       }) {
+    auto mod = buildModule([&](QCOProgramBuilder& b) {
+      auto type = RankedTensorType::get({2}, b.getF64Type());
+      auto table = arith::ConstantOp::create(
+          b, DenseFPElementsAttr::get(type, ArrayRef<double>(angles)));
+      auto q = b.h(b.staticQubit(0));
+      auto result =
+          b.scfFor(0, 2, 1, ValueRange{q},
+                   [&](Value index, ValueRange args) -> SmallVector<Value> {
+                     auto angle =
+                         tensor::ExtractOp::create(b, table, ValueRange{index});
+                     return {b.p(angle, args[0])};
+                   });
+      b.sink(b.h(result[0]));
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(mod);
+    expectEqualToReference(mainFunc(*mod), 1, {referenceGate<XOp>({0})});
+    const auto counts = sample(mainFunc(*mod), 8, 1);
+    ASSERT_TRUE(succeeded(counts));
+    EXPECT_EQ(*counts, (std::map<std::string, size_t>{{"1", 8}}));
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsOutOfBoundsFloatTableIndices) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%index: index) {
+        %table = arith.constant dense<[0.0, 1.0]> : tensor<2xf64>
+        %angle = tensor.extract %table[%index] : tensor<2xf64>
+        qco.gphase(%angle)
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  auto func = mainFunc(*mod);
+  auto dd = std::make_unique<dd::Package>(0);
+  for (const auto index : {-1, 2}) {
+    DDArgumentBindings bindings;
+    bindings[func.getArgument(0)] =
+        IntegerAttr::get(IndexType::get(context.get()), index);
+    EXPECT_TRUE(failed(buildFunctionality(func, *dd, bindings)));
+    EXPECT_TRUE(failed(sample(func, 1, 1, bindings)));
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUnsupportedTensorConstants) {
+  for (const auto* type :
+       {"tensor<2xf32>", "tensor<1x2xf64>", "vector<2xf64>"}) {
+    const auto code = std::string("module { func.func @main() { "
+                                  "%table = arith.constant dense<0.0> : ") +
+                      type + " return } }";
+    expectMlirSimulationFails(0, code);
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnsupportedClassicalMemRefs) {
