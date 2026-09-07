@@ -23,8 +23,7 @@ class GHZ;
 class Grover;
 class Multiplexer;
 class QFT;
-class QFTAdderClassical;
-class QFTAdderQuantum;
+class QFTAdder;
 class QPE;
 class Teleportation;
 } // namespace mqt::bench
@@ -50,13 +49,9 @@ SmallVector<Value> multiplexer(qc::QCProgramBuilder& builder,
 /// Emit one configured QFT benchmark.
 SmallVector<Value> qft(qc::QCProgramBuilder& builder, const QFT& benchmark);
 
-/// Emit one configured classical-input QFT adder benchmark.
-SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& builder,
-                                     const QFTAdderClassical& benchmark);
-
-/// Emit one configured quantum-input QFT adder benchmark.
-SmallVector<Value> qftAdderQuantum(qc::QCProgramBuilder& builder,
-                                   const QFTAdderQuantum& benchmark);
+/// Emit one configured QFT adder benchmark.
+SmallVector<Value> qftAdder(qc::QCProgramBuilder& builder,
+                            const QFTAdder& benchmark);
 
 /// Emit one configured QPE benchmark.
 SmallVector<Value> qpe(qc::QCProgramBuilder& builder, const QPE& benchmark);

@@ -9,15 +9,17 @@
  */
 
 #include "TestUtils.h"
-#include "bench/QFTAdderQuantum.hpp"
+#include "bench/QFTAdder.hpp"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/bench/Generate.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Value.h>
@@ -26,6 +28,8 @@
 #include <cmath>
 #include <cstdint>
 #include <numbers>
+#include <string>
+#include <utility>
 
 namespace mqt::bench {
 
@@ -47,7 +51,7 @@ static void expectConstantFloat(Value value, double expected) {
 
 TEST(GenerateProgramTest, EmitsQuantumQFTAdderCircuit) {
   constexpr int64_t qubits = 3;
-  auto program = generate(QFTAdderQuantum{{.qubits = qubits}});
+  auto program = generate(QFTAdder{{.addend = "+++", .accumulator = "001"}});
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
 
@@ -60,7 +64,7 @@ TEST(GenerateProgramTest, EmitsQuantumQFTAdderCircuit) {
   EXPECT_EQ(test::countOps<qc::MeasureOp>(moduleOp), 2U);
   EXPECT_EQ(test::countOps<qc::SWAPOp>(moduleOp), 0U);
 
-  // Unlike the QFT phases, the addition phase connects the two registers.
+  /// Unlike the QFT phases, the addition phase connects the two registers.
   qc::CtrlOp addition;
   moduleOp.walk([&](qc::CtrlOp op) {
     auto control = op.getControl(0).getDefiningOp<memref::LoadOp>();
@@ -118,8 +122,10 @@ TEST(GenerateProgramTest, EmitsQuantumQFTAdderCircuit) {
 }
 
 TEST(GenerateProgramTest, KeepsLargestQuantumQFTAdderFiniteAndStructured) {
-  auto program =
-      generate(QFTAdderQuantum{{.qubits = QFTAdderQuantumOptions::MAX_QUBITS}});
+  auto program = generate(QFTAdder{{
+      .addend = std::string(QFTAdderOptions::MAX_QUBITS, '+'),
+      .accumulator = std::string(QFTAdderOptions::MAX_QUBITS - 1, '0') + "1",
+  }});
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
 
@@ -129,6 +135,81 @@ TEST(GenerateProgramTest, KeepsLargestQuantumQFTAdderFiniteAndStructured) {
       EXPECT_TRUE(std::isfinite(value.getValueAsDouble()));
     }
   });
+}
+
+static void expectPhaseLoopConstantIndex(Value value, int64_t expected) {
+  auto constant = value.getDefiningOp<arith::ConstantIndexOp>();
+  ASSERT_TRUE(constant);
+  EXPECT_EQ(constant.value(), expected);
+}
+
+TEST(GenerateProgramTest, UsesConfiguredClassicalQFTAdderPhases) {
+  auto program = generate(QFTAdder{{
+      .addend = "101",
+      .accumulator = "001",
+      .method = QFTAdderMethod::Constant,
+      .overflow = QFTAdderOverflow::Carry,
+  }});
+  ASSERT_TRUE(program);
+  auto moduleOp = program->module();
+
+  auto table = test::angleTable(moduleOp);
+  ASSERT_TRUE(table);
+  const auto angles = llvm::to_vector(table.getValues<double>());
+  ASSERT_EQ(angles.size(), 4U);
+  EXPECT_DOUBLE_EQ(angles[0], std::numbers::pi);
+  EXPECT_DOUBLE_EQ(angles[1], std::numbers::pi / 2.);
+  EXPECT_DOUBLE_EQ(angles[2], 5. * std::numbers::pi / 4.);
+  EXPECT_DOUBLE_EQ(angles[3], 5. * std::numbers::pi / 8.);
+
+  tensor::ExtractOp extract;
+  moduleOp.walk([&](tensor::ExtractOp op) {
+    EXPECT_FALSE(extract);
+    extract = op;
+  });
+  ASSERT_TRUE(extract);
+  auto loop = extract->getParentOfType<scf::ForOp>();
+  ASSERT_TRUE(loop);
+  expectPhaseLoopConstantIndex(loop.getLowerBound(), 0);
+  expectPhaseLoopConstantIndex(loop.getUpperBound(), 4);
+  expectPhaseLoopConstantIndex(loop.getStep(), 1);
+  EXPECT_EQ(extract.getIndices().front(), loop.getInductionVar());
+
+  qc::POp phase;
+  moduleOp.walk([&](qc::POp op) {
+    if (!op->getParentOfType<qc::CtrlOp>()) {
+      EXPECT_FALSE(phase);
+      phase = op;
+    }
+  });
+  ASSERT_TRUE(phase);
+  EXPECT_EQ(phase->getParentOfType<scf::ForOp>(), loop);
+  EXPECT_EQ(phase.getTheta(), extract.getResult());
+  auto target = phase.getQubit(0).getDefiningOp<memref::LoadOp>();
+  ASSERT_TRUE(target);
+  EXPECT_EQ(target.getIndices().front(), loop.getInductionVar());
+}
+
+TEST(GenerateProgramTest, KeepsLargestClassicalQFTAdderFiniteAndStructured) {
+  auto addend = std::string((QFTAdderOptions::MAX_QUBITS - 1U), '1');
+  auto program = generate(QFTAdder{{
+      .addend = std::move(addend),
+      .accumulator = std::string(QFTAdderOptions::MAX_QUBITS - 2, '0') + "1",
+      .method = QFTAdderMethod::Constant,
+      .overflow = QFTAdderOverflow::Carry,
+  }});
+  ASSERT_TRUE(program);
+  auto moduleOp = program->module();
+
+  auto table = test::angleTable(moduleOp);
+  ASSERT_TRUE(table);
+  EXPECT_EQ(table.getNumElements(), (QFTAdderOptions::MAX_QUBITS - 1U) + 1U);
+  for (const auto angle : table.getValues<double>()) {
+    EXPECT_TRUE(std::isfinite(angle));
+  }
+
+  EXPECT_EQ(test::countOps<tensor::ExtractOp>(moduleOp), 1U);
+  EXPECT_LT(test::countOperations(moduleOp), 100U);
 }
 
 } // namespace mqt::bench
