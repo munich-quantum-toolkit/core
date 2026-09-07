@@ -879,25 +879,14 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
             *condition ? select.getTrueValue() : select.getFalseValue();
         return classical.bindFrom(selected, select.getResult(), select);
       })
-      .Case([&](arith::ExtUIOp ext) {
-        return applyIntegerCast(ext.getIn(), ext.getOut(), ext, classical,
-                                false);
-      })
-      .Case([&](arith::ExtSIOp cast) {
+      .Case<arith::ExtUIOp, arith::IndexCastUIOp, arith::TruncIOp>(
+          [&](auto cast) {
+            return applyIntegerCast(cast.getIn(), cast.getOut(), cast,
+                                    classical, false);
+          })
+      .Case<arith::ExtSIOp, arith::IndexCastOp>([&](auto cast) {
         return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
                                 true);
-      })
-      .Case([&](arith::IndexCastUIOp cast) {
-        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
-                                false);
-      })
-      .Case([&](arith::IndexCastOp cast) {
-        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
-                                true);
-      })
-      .Case([&](arith::TruncIOp cast) {
-        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
-                                false);
       })
       .Case<arith::FPToSIOp, arith::FPToUIOp>(
           [&](Operation* castOp) -> LogicalResult {
