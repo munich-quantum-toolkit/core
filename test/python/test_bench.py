@@ -214,11 +214,8 @@ def test_classical_qft_adder_reference_json_and_generation() -> None:
 def test_classical_qft_adder_dd_sampling_preserves_width_and_carry(addend: str, expected: str) -> None:
     """Execute zero, leading-zero, and carry cases against their exact sums."""
     benchmark = qft_adder_classical.QFTAdderClassical(qft_adder_classical.Options(addend=addend))
-    program = benchmark.generate().to_qco()
-    # Fold phase-table reads to scalars supported by the DD interpreter.
-    program.unroll_quantum_loops()
     shots = 1_024
-    assert program.sample(shots=shots, seed=17) == {expected: shots}
+    assert benchmark.generate().to_qco().sample(shots=shots, seed=17) == {expected: shots}
 
 
 def test_qpe_accepts_fraction_and_native_phase() -> None:
