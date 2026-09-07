@@ -100,7 +100,7 @@ jobs:
             compiler: msvc
             preset: release
             run-on-draft: false
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@4e1a050439717695ca078f11a41ce066144df257
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@ad19ac42882422b7cedb632ffea5c09d89e87f7f
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
@@ -153,7 +153,7 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [ubuntu-24.04, ubuntu-24.04-arm, macos-26, windows-2025]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@4e1a050439717695ca078f11a41ce066144df257
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@ad19ac42882422b7cedb632ffea5c09d89e87f7f
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
@@ -208,7 +208,7 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@4e1a050439717695ca078f11a41ce066144df257
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@ad19ac42882422b7cedb632ffea5c09d89e87f7f
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
