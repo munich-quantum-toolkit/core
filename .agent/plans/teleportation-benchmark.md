@@ -27,6 +27,6 @@ outcome in the manifest. No new simulation or benchmark abstraction is needed.
 
 Run `mqt-core-bench-test --gtest_filter='Teleportation.*:BenchmarkJSON.*'` and
 `mqt-core-mlir-unittests-benchmark` from their build directories, then
-`uv run --no-sync pytest test/python/test_bench.py -k teleportation`. These
-checks cover reference metrics, JSON identity, internal correction data flow,
-QC/jeff generation, and deterministic DD sampling of Bob's result.
+`uv run --no-sync pytest test/python/bench/test_teleportation.py`. These checks
+cover reference metrics, JSON identity, internal correction data flow, QC/jeff
+generation, Python bindings, and native DD sampling of Bob's result.

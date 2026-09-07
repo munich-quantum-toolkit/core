@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "TestUtils.h"
+#include "bench/Evaluation.hpp"
 #include "bench/Teleportation.hpp"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
@@ -58,6 +60,15 @@ TEST(GenerateProgramTest, KeepsTeleportationFeedForwardAndReturnsOnlyBob) {
   EXPECT_EQ(zCorrection.getQubit(0), measurements[2].getQubit());
   EXPECT_TRUE(corrections[0]->isBeforeInBlock(corrections[1]));
   EXPECT_TRUE(corrections[1]->isBeforeInBlock(measurements[2]));
+}
+
+TEST(GenerateProgramTest, SamplesTeleportedStateAtBob) {
+  auto program = test::generateQCO(Teleportation{});
+  ASSERT_TRUE(program);
+  auto counts =
+      qco::sample(mlir::mqt::getEntryPoint(program->module()), 128, 17);
+  ASSERT_TRUE(succeeded(counts));
+  EXPECT_EQ(*counts, (Counts{{"0", 128}}));
 }
 
 } // namespace mqt::bench
