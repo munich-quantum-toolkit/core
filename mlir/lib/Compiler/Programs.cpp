@@ -285,8 +285,10 @@ QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
   if (failed(verify(*storage.mod))) {
     return std::nullopt;
   }
-  if (!moduleUsesDialect(*storage.mod, "qc")) {
-    storage.mod->emitError("expected a module using the 'qc' dialect");
+  if (moduleUsesDialect(*storage.mod, "qco") ||
+      moduleUsesDialect(*storage.mod, "qtensor")) {
+    storage.mod->emitError(
+        "QC programs must not contain QCO or QTensor operations");
     return std::nullopt;
   }
   return QCProgram(std::move(storage));
@@ -378,8 +380,8 @@ QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
   if (failed(verify(*storage.mod))) {
     return std::nullopt;
   }
-  if (!moduleUsesDialect(*storage.mod, "qco")) {
-    storage.mod->emitError("expected a module using the 'qco' dialect");
+  if (moduleUsesDialect(*storage.mod, "qc")) {
+    storage.mod->emitError("QCO programs must not contain QC operations");
     return std::nullopt;
   }
   if (failed(qco::verifyLinearity(*storage.mod))) {
