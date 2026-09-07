@@ -95,8 +95,6 @@ class QCToQCOTest : public testing::TestWithParam<QCToQCOTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  // GoogleTest requires this override name.
-  // NOLINTNEXTLINE(readability-identifier-naming)
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
