@@ -1253,19 +1253,37 @@ public:
    * @param x The first decision diagram.
    * @param y The second decision diagram.
    * @param yNumQubits The number of qubits in the second decision diagram.
-   * @param incIdx Whether to increment the index of the nodes in the second
-   * decision diagram.
+   * @param incIdx Whether to shift the first DD above the second DD.
+   * @details Matrix widths include leading identity levels omitted from the DD.
+   * The compute table is reused while the index shift remains unchanged.
    * @return The resulting decision diagram after computing the Kronecker
    * product.
    */
   template <class Node>
   Edge<Node> kronecker(const Edge<Node>& x, const Edge<Node>& y,
                        const std::size_t yNumQubits, const bool incIdx = true) {
-    const auto e = kronecker2(x, y, yNumQubits, incIdx);
+    size_t shift = 0;
+    if (incIdx) {
+      if constexpr (IsMatrix<Node>) {
+        shift = yNumQubits;
+      } else if (!y.isTerminal()) {
+        shift = static_cast<size_t>(y.p->v) + 1;
+      }
+    }
+    auto& cachedShift =
+        IsVector<Node> ? vectorKroneckerShift_ : matrixKroneckerShift_;
+    if (cachedShift != shift) {
+      getKroneckerComputeTable<Node>().clear();
+      cachedShift = shift;
+    }
+    const auto e = kronecker2(x, y, shift);
     return cn.lookup(e);
   }
 
 private:
+  size_t vectorKroneckerShift_ = 0;
+  size_t matrixKroneckerShift_ = 0;
+
   /**
    * @brief Internal function to compute the Kronecker product of two decision
    * diagrams.
@@ -1277,14 +1295,12 @@ private:
    * @tparam Node The type of the node.
    * @param x The first decision diagram.
    * @param y The second decision diagram.
-   * @param yNumQubits The number of qubits in the second decision diagram.
-   * @param incIdx Whether to increment the qubit index.
+   * @param shift The qubit index offset for nodes from the first DD.
    * @return The resulting decision diagram after the Kronecker product.
    */
   template <class Node>
   CachedEdge<Node> kronecker2(const Edge<Node>& x, const Edge<Node>& y,
-                              const std::size_t yNumQubits,
-                              const bool incIdx = true) {
+                              const size_t shift) {
     if (x.w.exactlyZero() || y.w.exactlyZero()) {
       return CachedEdge<Node>::zero();
     }
@@ -1327,24 +1343,10 @@ private:
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (auto i = 0U; i < n; ++i) {
-      edge[i] = kronecker2(x.p->e[i], y, yNumQubits, incIdx);
+      edge[i] = kronecker2(x.p->e[i], y, shift);
     }
 
-    // Increase the qubit index
-    Qubit idx = x.p->v;
-    if (incIdx) {
-      // use the given number of qubits if y is an identity
-      if constexpr (IsMatrix<Node>) {
-        if (y.isIdentity()) {
-          idx += static_cast<Qubit>(yNumQubits);
-        } else {
-          idx += static_cast<Qubit>(y.p->v + 1U);
-        }
-      } else {
-        idx += static_cast<Qubit>(y.p->v + 1U);
-      }
-    }
-    auto e = makeDDNode(idx, edge);
+    auto e = makeDDNode(static_cast<Qubit>(x.p->v + shift), edge);
     computeTable.insert(x.p, y.p, {e.p, e.w});
     return {e.p, rWeight};
   }
@@ -1370,7 +1372,7 @@ public:
    *
    * @param a The matrix decision diagram.
    * @param eliminate A vector of booleans indicating which qubits to trace out.
-   * @return The resulting matrix decision diagram after the partial trace.
+   * @return The normalized partial trace, divided by two per eliminated qubit.
    */
   mEdge partialTrace(const mEdge& a, const std::vector<bool>& eliminate);
 
@@ -1379,7 +1381,7 @@ public:
    *
    * @param a The decision diagram.
    * @param numQubits The number of qubits in the decision diagram.
-   * @return The trace of the decision diagram as a complex value.
+   * @return The normalized trace, divided by the matrix dimension.
    */
   ComplexValue trace(const mEdge& a, std::size_t numQubits);
 
@@ -1416,8 +1418,7 @@ private:
    * each level marked for elimination, thereby ensuring that the result is
    * mapped to the interval [0,1] (as opposed to the interval [0,2^N]).
    */
-  mCachedEdge trace(const mEdge& a, const std::vector<bool>& eliminate,
-                    std::size_t level, std::size_t alreadyEliminated = 0);
+  mCachedEdge trace(const mEdge& a, std::span<const size_t> eliminatedBelow);
 
   /**
    * @brief Recursively checks if a given matrix is close to the identity
