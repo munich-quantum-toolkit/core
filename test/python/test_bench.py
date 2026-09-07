@@ -215,7 +215,7 @@ def test_classical_qft_adder_dd_sampling_preserves_width_and_carry(addend: str, 
     """Execute zero, leading-zero, and carry cases against their exact sums."""
     benchmark = qft_adder_classical.QFTAdderClassical(qft_adder_classical.Options(addend=addend))
     shots = 1_024
-    assert benchmark.generate().to_qco().sample(shots=shots, seed=17) == {expected: shots}
+    assert mlir.sample(benchmark.generate(), shots=shots, seed=17) == {expected: shots}
 
 
 def test_qpe_accepts_fraction_and_native_phase() -> None:
