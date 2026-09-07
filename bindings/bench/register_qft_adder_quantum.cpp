@@ -33,10 +33,11 @@ void registerQFTAdderQuantum(const nb::module_& m) {
 
   auto qftAdder = nb::class_<bench::QFTAdderQuantum>(
       m, "QFTAdderQuantum",
-      R"pb(A QFT adder with an n-qubit addend in :math:`|+\\rangle^{\\otimes n}` and an accumulator in :math:`|1\\rangle`.
+      R"pb(A QFT adder with an :math:`n`-qubit addend in :math:`|+\rangle^{\otimes n}` and an accumulator in :math:`|1\rangle`.
 
-Big-endian outcomes concatenate the addend and sum, each with n bits. The sum
-is addend + 1 modulo 2^n; each valid outcome has probability 2^-n.
+Big-endian outcomes concatenate the addend and sum, each with :math:`n` bits.
+For addend :math:`a`, the sum is :math:`(a + 1) \bmod 2^n`; each valid
+outcome has probability :math:`2^{-n}`.
 
 Reference: https://arxiv.org/abs/quant-ph/0008033)pb");
   qftAdder.def(nb::init<bench::QFTAdderQuantumOptions>(), "options"_a)
