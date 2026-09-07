@@ -34,5 +34,5 @@ Local checks passed: 47 native reference/JSON tests, 17 generation tests, and 44
 Python benchmark/CLI tests. The latter include all 336 operand pairs across
 widths one through three, both methods, and both overflow policies, plus 28
 coherent register-addition statevectors. Stubs were regenerated. The
-implementation is in #2404; #2408 adds the exhaustive and phase-sensitive
-execution tests. Validation is bounded to these widths and supported inputs.
+implementation and its exhaustive, phase-sensitive execution tests are in #2404.
+Validation is bounded to these widths and supported inputs.
