@@ -49,12 +49,8 @@ namespace mlir::mqt {
 #define GEN_PASS_DEF_UNROLLMODIFIERS
 #include "mlir/Dialect/MQT/Transforms/Passes.h.inc"
 
-/**
- *@brief Move the classical operations of @p body in front of @p modifier.
- *
- * @details Fails if a classical operation is impure or depends on values
- * defined in @p body.
- */
+/// Move eager, memory-effect-free parameter computation before the modifier.
+/// Keep dependency order and reject dependencies on the body's qubits.
 template <typename UnitaryOpInterface>
 static LogicalResult hoistClassicalOps(Block& body, Operation* modifier,
                                        RewriterBase& rewriter) {
@@ -64,9 +60,12 @@ static LogicalResult hoistClassicalOps(Block& body, Operation* modifier,
   };
   for (auto& op : body) {
     if (isClassical(op) &&
-        (!isPure(&op) || llvm::any_of(op.getOperands(), [&](Value operand) {
-          return operand.getParentBlock() == &body;
-        }))) {
+        (op.getNumRegions() != 0 || !isMemoryEffectFree(&op) ||
+         llvm::any_of(op.getOperands(), [&](Value operand) {
+           return operand.getParentBlock() == &body &&
+                  (!operand.getDefiningOp() ||
+                   !isClassical(*operand.getDefiningOp()));
+         }))) {
       return failure();
     }
   }

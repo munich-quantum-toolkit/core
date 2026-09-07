@@ -417,6 +417,36 @@ def test_qco_program_compiles_for_direct_sparse_target() -> None:
 
 
 @requires_qiskit_translation
+@pytest.mark.parametrize("num_sites", [1, 2])
+def test_target_compiles_single_qubit_gates_without_entangler(num_sites: int) -> None:
+    """Compile a non-native rotation without inventing a two-qubit capability."""
+    target = CompilerTarget(
+        num_sites,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.Operation("sx", 1, 0),
+            CompilerTarget.Operation("x", 1, 0),
+            CompilerTarget.Operation("rz", 1, 1),
+            CompilerTarget.Operation("gphase", 0, 1),
+        ]),
+    )
+    assert target.synthesis_basis is not None
+    assert target.synthesis_basis.single_qubit == CompilerTarget.SingleQubitBasis.ZSXX
+    assert target.synthesis_basis.entangler is None
+    source = QuantumCircuit(num_sites)
+    for site in range(num_sites):
+        source.ry(0.123, site)
+    program = QCProgram.from_qiskit(source).to_qco()
+
+    program.compile_for_target(target)
+
+    assert program.is_valid
+    result = program.to_qc().to_qiskit(target=target)
+    assert set(result.count_ops()) <= {"sx", "x", "rz"}
+    assert np.allclose(Operator(result).data, Operator(source).data)
+
+
+@requires_qiskit_translation
 def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
     """Export a mapped program with the complete compiler target."""
     target = CompilerTarget(

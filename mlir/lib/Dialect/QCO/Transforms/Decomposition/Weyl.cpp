@@ -215,7 +215,8 @@ diagonalizeComplexSymmetric(const Matrix4x4& m,
     const Matrix4x4 p = Matrix4x4::fromRealRowMajor(m2Real)
                             .symmetricEigenDecomposition()
                             .eigenvectors;
-    const std::array<Complex, 4> d = (p.transpose() * m * p).diagonal();
+    const auto diagonalized = p.transpose() * m * p;
+    const std::array<Complex, 4> d = diagonalized.diagonal();
 
     const auto compare = p * Matrix4x4::fromDiagonal(d) * p.transpose();
     double err = 0.0;
@@ -253,7 +254,7 @@ decomposeTwoQubitProductGate(const Matrix4x4& specialUnitary) {
     llvm::reportFatalInternalError(
         "decomposeTwoQubitProductGate: unable to decompose: det_r < 0.1");
   }
-  r *= (1.0 / std::sqrt(detR));
+  r *= 1.0 / std::sqrt(detR);
   const Matrix2x2 rTConj = r.adjoint();
 
   const Matrix4x4 temp =
@@ -266,7 +267,7 @@ decomposeTwoQubitProductGate(const Matrix4x4& specialUnitary) {
     llvm::reportFatalInternalError(
         "decomposeTwoQubitProductGate: unable to decompose: detL < 0.9");
   }
-  l *= (1.0 / std::sqrt(detL));
+  l *= 1.0 / std::sqrt(detL);
   const auto phase = std::arg(detL) / 2.;
 
   return {l, r, phase};
@@ -747,6 +748,10 @@ SynthesizedUnitary2Q
 emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
                   const TwoQubitNativeDecomposition& decomposition,
                   const CompilerTarget::SynthesisBasis basis) {
+  if (!basis.entangler) {
+    llvm::reportFatalInternalError(
+        "two-qubit emission requires a synthesis-basis entangler");
+  }
   double globalPhase = decomposition.globalPhase;
 
   Value wire0 = qubit0;

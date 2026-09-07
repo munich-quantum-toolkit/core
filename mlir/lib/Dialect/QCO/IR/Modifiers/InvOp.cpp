@@ -81,6 +81,8 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
           return mqt::getValueFromBlockArgument(t, outerQubits);
         });
 
+    mqt::hoistSupportingOpsBefore(*op.getBody(), innerCtrlOp, op, rewriter);
+
     auto newCtrl =
         CtrlOp::create(rewriter, op.getLoc(), controls, targets,
                        [&](ValueRange targetArgs) -> SmallVector<Value> {
@@ -369,6 +371,8 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
     if (!mqt::getSoleBodyUnitary<UnitaryOpInterface>(*innerInvOp.getBody())) {
       return failure();
     }
+
+    mqt::hoistSupportingOpsBefore(*op.getBody(), innerInvOp, op, rewriter);
 
     // inv(inv(x)) == x: inline the doubly-nested body directly onto the outer
     // input qubits. The inner body's block arguments alias the inner modifier's

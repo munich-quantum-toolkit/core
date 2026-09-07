@@ -246,6 +246,8 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
           return mqt::getValueFromBlockArgument(t, outerQubits);
         });
 
+    mqt::hoistSupportingOpsBefore(*op.getBody(), innerCtrlOp, op, rewriter);
+
     rewriter.replaceOpWithNewOp<CtrlOp>(
         op, controls, targets, [&](ValueRange targetArgs) {
           PowOp::create(rewriter, op.getLoc(), op.getExponent(), targetArgs,

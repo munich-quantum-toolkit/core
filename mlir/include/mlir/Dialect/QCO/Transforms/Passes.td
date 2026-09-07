@@ -327,6 +327,12 @@ def ReuseQubits : Pass<"reuse-qubits", "mlir::ModuleOp"> {
     `measurement-lifting` and `replace-classical-controls` passes, which can reduce the number of qubits required for a quantum program significantly.
     Only single-qubit allocations are considered for reuse, no `qtensor` allocations.
 
+    Before rewriting non-unitary functions, the pass summarizes the memory effects
+    of unitary helpers and their transitive callees. Proven effect-free calls
+    permit reuse; scoped global phases and unknown effects remain barriers.
+    Unitary helpers are not rewritten, and summaries are discarded after each
+    pass invocation.
+
     Use the `mqt-qubit-reuse` pipeline to run the preparation passes followed by this pass.
   }];
 }

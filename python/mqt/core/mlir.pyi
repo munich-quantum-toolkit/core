@@ -284,8 +284,8 @@ class CompilerTarget:
             """The single-qubit synthesis basis."""
 
         @property
-        def entangler(self) -> CompilerTarget.GateKind:
-            """The two-qubit entangler."""
+        def entangler(self) -> CompilerTarget.GateKind | None:
+            """The two-qubit entangler, or None when none is usable."""
 
     class ConnectivityKind(enum.Enum):
         """The target connectivity model."""
@@ -383,7 +383,7 @@ class CompilerTarget:
 
     @property
     def synthesis_basis(self) -> CompilerTarget.SynthesisBasis | None:
-        """A complete target-wide synthesis basis, if available."""
+        """A target-wide single-qubit basis with an optional entangler, or None when no single-qubit basis is usable."""
 
     def supports_operation(
         self, name: str, arity: int, num_parameters: int | None = None, sites: Sequence[int] | None = None
