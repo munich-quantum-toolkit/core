@@ -10,150 +10,107 @@
 
 #include "mlir/Dialect/QCO/Utils/Sorting.h"
 
-#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SetVector.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
-using namespace mlir;
-using namespace llvm;
-
-/// Find the nearest neighbour in a given block.
-static Operation* findParentInBlock(Operation* op, Block& block) {
-  Operation* parent = op->getParentOp();
-  while (parent != nullptr && parent->getBlock() != &block) {
-    parent = parent->getParentOp();
-  }
-  return parent;
-}
-
-/// Return the vector of locations for each block argument.
-static SmallVector<Location> getArgumentLocs(Block& block) {
-  return map_to_vector(block.getArguments(),
-                       [](BlockArgument& arg) { return arg.getLoc(); });
-}
+#include <cassert>
+#include <cstddef>
 
 namespace mlir::qco {
+
 void reorderTopologically(Block& block, IRRewriter& rewriter) {
   Operation* const terminator = block.getTerminator();
 
-  // Construct unresolved map: The dependencies of each operation.
-
-  SmallDenseSet<Value> valuesWithEffect;
-  DenseMap<Operation*, size_t> inDegree;
+  struct Dependencies {
+    size_t pending = 0;
+    SmallVector<Operation*, 2> successors;
+  };
+  const auto numOperations = llvm::range_size(block);
+  DenseMap<Operation*, Dependencies> dependencies;
+  dependencies.reserve(numOperations);
   DenseMap<Value, Operation*> lastEffect;
-  DenseMap<Operation*, SmallSetVector<Operation*, 16>> successors;
-  DenseMap<Operation*, SmallDenseSet<Operation*, 16>> predecessors;
 
+  /// Count repeated edges on both ends instead of maintaining deduplication
+  /// sets.
   const auto addDependency = [&](Operation* predecessor, Operation* successor) {
     assert(predecessor != successor);
-    if (!predecessors[successor].insert(predecessor).second) {
-      return;
-    }
-    ++inDegree[successor];
-    successors[predecessor].insert(successor);
+    ++dependencies[successor].pending;
+    dependencies[predecessor].successors.push_back(successor);
   };
 
   for (Operation& op : block) {
-    successors.try_emplace(&op);
-    predecessors.try_emplace(&op);
-    inDegree.try_emplace(&op, 0);
+    dependencies.try_emplace(&op);
 
-    // Collect the in-block dependencies of the current operation.
-
-    // First, process the side-effect dependencies. This includes all operations
-    // with memory effects. For example, classical register operations which
-    // don't fulfill linear typing.
-
+    /// Preserve the order of effects on each SSA value, including nested
+    /// effects.
     const auto effects = getEffectsRecursively(&op);
     if (effects) {
       for (const auto& effect : *effects) {
         auto value = effect.getValue();
-        if (!(value && valuesWithEffect.insert(value).second)) {
+        if (!value) {
           continue;
         }
-
-        if (Operation* last = lastEffect.lookup(value)) {
-          addDependency(last, &op);
+        auto [it, inserted] = lastEffect.try_emplace(value, &op);
+        if (!inserted && it->second != &op) {
+          addDependency(it->second, &op);
+          it->second = &op;
         }
-
-        lastEffect[value] = &op;
       }
     }
 
-    // Then, process the def-use dependencies, where each operand depends on its
-    // defining operation.
-
+    /// An effect edge need not lead back to the value's defining operation.
+    /// Always retain SSA dependencies, including those of effect-bearing
+    /// inputs.
     for (auto v : op.getOperands()) {
-      if (valuesWithEffect.contains(v)) {
-        continue;
-      }
-
       Operation* def = v.getDefiningOp();
       if (def != nullptr && v.getParentBlock() == &block) {
         addDependency(def, &op);
       }
     }
 
-    // Finally, for each user of the current operation that is *not* in the
-    // targeted block, find the nearest parent operation in the targeted block,
-    // and increase its pending count. Thus, this parent operation also depends
-    // on the release of the current operation.
-
+    /// A nested capture makes its enclosing operation depend on the producer.
     for (Operation* user : op.getUsers()) {
       if (user->getBlock() == &block) {
         continue;
       }
 
-      if (Operation* parent = findParentInBlock(user, block);
+      if (Operation* parent = block.findAncestorOpInBlock(*user);
           parent != nullptr) {
         addDependency(&op, parent);
       }
     }
-
-    valuesWithEffect.clear();
   }
 
-  assert((inDegree.size() == range_size(block)));
+  assert(dependencies.size() == numOperations);
 
   SmallVector<Operation*> worklist;
-  worklist.reserve(range_size(block));
+  worklist.reserve(numOperations);
   for (Operation& op : block) {
-    if (inDegree.lookup(&op) == 0) {
+    if (dependencies[&op].pending == 0) {
       worklist.emplace_back(&op);
     }
   }
 
-  Block* newBlock = rewriter.createBlock(&block, block.getArgumentTypes(),
-                                         getArgumentLocs(block));
-
   for (size_t cursor = 0; cursor < worklist.size(); ++cursor) {
     Operation* ready = worklist[cursor];
 
-    rewriter.moveOpBefore(ready, newBlock, newBlock->end());
+    rewriter.moveOpBefore(ready, &block, block.end());
 
-    for (Operation* user : successors[ready]) {
-      inDegree[user]--;
-      if (inDegree[user] == 0) {
+    for (Operation* user : dependencies[ready].successors) {
+      if (--dependencies[user].pending == 0) {
         worklist.push_back(user);
       }
     }
   }
 
-  assert(all_of(inDegree, [](const auto& kv) { return kv.second == 0; }));
+  assert(worklist.size() == numOperations && "cyclic operation dependencies");
 
-  // Finally replace the old block arguments with the new ones, move the
-  // terminator back at its place, and erase the old block.
-
-  for (size_t i = 0; i < block.getNumArguments(); ++i) {
-    rewriter.replaceAllUsesWith(block.getArgument(i), newBlock->getArgument(i));
-  }
-
-  rewriter.moveOpBefore(terminator, newBlock, newBlock->end());
-  rewriter.eraseBlock(&block);
+  rewriter.moveOpBefore(terminator, &block, block.end());
 }
 } // namespace mlir::qco
