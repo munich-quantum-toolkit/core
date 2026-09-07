@@ -684,32 +684,6 @@ static Value integerConstant(OpBuilder& builder, Location loc, IntegerType type,
   }
 }
 
-static Value selectInteger(OpBuilder& builder, Location loc, Value condition,
-                           Value trueValue, Value falseValue) {
-  /// The current serializer infers result types from the input signature.
-  /// Carry one difference value and yield either that value or zero.
-  auto difference = jeff::IntBinaryOp::create(
-      builder, loc, trueValue, falseValue, jeff::IntBinaryOperation::_xor);
-  auto select =
-      jeff::SwitchOp::create(builder, loc, TypeRange{trueValue.getType()},
-                             condition, ValueRange{difference}, 2);
-  {
-    OpBuilder::InsertionGuard guard(builder);
-    for (auto& region : select->getRegions()) {
-      auto* block = builder.createBlock(&region, {},
-                                        TypeRange{trueValue.getType()}, {loc});
-      Value result = block->getArgument(0);
-      if (&region != &select.getBranches()[1]) {
-        auto type = cast<IntegerType>(trueValue.getType());
-        result = integerConstant(builder, loc, type, APInt(type.getWidth(), 0));
-      }
-      jeff::YieldOp::create(builder, loc, result);
-    }
-  }
-  return jeff::IntBinaryOp::create(builder, loc, select.getResult(0),
-                                   falseValue, jeff::IntBinaryOperation::_xor);
-}
-
 static Value maskInteger(OpBuilder& builder, Location loc, Value value,
                          unsigned width) {
   auto type = cast<IntegerType>(value.getType());
@@ -755,39 +729,24 @@ static Value joinBits(OpBuilder& builder, Location loc,
   return bits.front();
 }
 
-/// jeff has no integer cast: extract at most 64 bits into the target
-/// representation.
+/// Cast between native widths and preserve the original integer's sign and
+/// mask.
 static Value castInteger(OpBuilder& builder, Location loc, Value value,
                          unsigned sourceWidth, IntegerType targetType,
                          unsigned targetWidth, bool signExtend) {
   auto sourceType = cast<IntegerType>(value.getType());
   Value result = value;
-  if (sourceType != targetType) {
-    SmallVector<Value> bits;
-    auto zero = integerConstant(builder, loc, sourceType,
-                                APInt(sourceType.getWidth(), 0));
-    for (unsigned bit = 0; bit < std::min(sourceWidth, targetWidth); ++bit) {
-      auto mask =
-          integerConstant(builder, loc, sourceType,
-                          APInt::getOneBitSet(sourceType.getWidth(), bit));
-      auto masked = jeff::IntBinaryOp::create(builder, loc, value, mask,
-                                              jeff::IntBinaryOperation::_and);
-      auto isZero = jeff::IntComparisonOp::create(
-          builder, loc, masked, zero, jeff::IntComparisonOperation::_eq);
-      auto targetBit =
-          integerConstant(builder, loc, targetType,
-                          APInt::getOneBitSet(targetType.getWidth(), bit));
-      auto selected =
-          selectInteger(builder, loc, isZero,
-                        integerConstant(builder, loc, targetType,
-                                        APInt(targetType.getWidth(), 0)),
-                        targetBit);
-      bits.push_back(selected);
-    }
-    result = joinBits(builder, loc, std::move(bits));
-  }
   if (signExtend && targetWidth > sourceWidth) {
     result = signedInteger(builder, loc, result, sourceWidth);
+  }
+  if (sourceType.getWidth() < targetType.getWidth()) {
+    if (signExtend) {
+      result = jeff::IntExtSOp::create(builder, loc, targetType, result);
+    } else {
+      result = jeff::IntExtUOp::create(builder, loc, targetType, result);
+    }
+  } else if (sourceType.getWidth() > targetType.getWidth()) {
+    result = jeff::IntTruncOp::create(builder, loc, targetType, result);
   }
   return maskInteger(builder, loc, result, targetWidth);
 }
@@ -826,7 +785,8 @@ struct ConvertCBitReadOpToJeff final
       if (width != 1) {
         auto mask = integerConstant(rewriter, op.getLoc(), type,
                                     APInt::getOneBitSet(type.getWidth(), bit));
-        selected = selectInteger(rewriter, op.getLoc(), value, mask, zero);
+        selected = jeff::IntSelectOp::create(rewriter, op.getLoc(), type, value,
+                                             mask, zero);
       }
       bits.push_back(selected);
     }
@@ -881,16 +841,37 @@ struct ConvertCBitWriteOpToJeff final
   }
 };
 
-/// Override the dependency adapter for exact-width integer computations.
+/// Preserve promoted integer widths and cover gaps in native conversions.
 struct ConvertIntegerExpression final : ConversionPattern {
   ConvertIntegerExpression(TypeConverter& converter, MLIRContext* context)
       : ConversionPattern(converter, MatchAnyOpTypeTag(), 10, context) {}
   LogicalResult
   matchAndRewrite(Operation* op, ArrayRef<Value> operands,
                   ConversionPatternRewriter& rewriter) const override {
+    if (op->getName().getDialectNamespace() != "arith") {
+      return failure();
+    }
+    if (getTypeConverter()->isLegal(op) &&
+        !isa<arith::CmpIOp, arith::ShRUIOp, arith::ShRSIOp>(op)) {
+      return failure();
+    }
+    if (isa<arith::SIToFPOp>(op)) {
+      auto sourceType = dyn_cast<IntegerType>(op->getOperand(0).getType());
+      if (!sourceType) {
+        return failure();
+      }
+      const auto width = sourceType.getWidth();
+      if (width > 64) {
+        return op->emitError(
+            "jeff supports general integer expressions only up to 64 bits");
+      }
+      auto value = signedInteger(rewriter, op->getLoc(), operands[0], width);
+      rewriter.replaceOpWithNewOp<jeff::IntToFloatSOp>(
+          op, op->getResult(0).getType(), value);
+      return success();
+    }
     if (op->getNumResults() != 1 ||
-        !isa<IntegerType>(op->getResult(0).getType()) ||
-        op->getName().getDialectNamespace() != "arith") {
+        !isa<IntegerType>(op->getResult(0).getType())) {
       return failure();
     }
     auto originalType = cast<IntegerType>(op->getResult(0).getType());
@@ -910,26 +891,47 @@ struct ConvertIntegerExpression final : ConversionPattern {
       return success();
     }
     if (isa<arith::ExtUIOp, arith::ExtSIOp, arith::TruncIOp>(op)) {
-      rewriter.replaceOp(
-          op,
-          castInteger(rewriter, loc, operands[0],
-                      cast<IntegerType>(op->getOperand(0).getType()).getWidth(),
-                      type, width, isa<arith::ExtSIOp>(op)));
+      const auto sourceWidth =
+          cast<IntegerType>(op->getOperand(0).getType()).getWidth();
+      rewriter.replaceOp(op,
+                         castInteger(rewriter, loc, operands[0], sourceWidth,
+                                     type, width, isa<arith::ExtSIOp>(op)));
+      return success();
+    }
+    if (isa<arith::FPToSIOp, arith::FPToUIOp>(op)) {
+      Value result =
+          isa<arith::FPToSIOp>(op)
+              ? jeff::FloatToSIntOp::create(rewriter, loc, type, operands[0])
+                    .getResult()
+              : jeff::FloatToUIntOp::create(rewriter, loc, type, operands[0])
+                    .getResult();
+      rewriter.replaceOp(op, maskInteger(rewriter, loc, result, width));
       return success();
     }
     if (isa<arith::SelectOp>(op)) {
-      rewriter.replaceOp(op, selectInteger(rewriter, loc, operands[0],
-                                           operands[1], operands[2]));
+      rewriter.replaceOpWithNewOp<jeff::IntSelectOp>(op, type, operands[0],
+                                                     operands[1], operands[2]);
       return success();
     }
     if (auto comparison = dyn_cast<arith::CmpIOp>(op)) {
       auto lhs = operands[0];
       auto rhs = operands[1];
       auto predicate = comparison.getPredicate();
+      // Zero-extension preserves equality and unsigned ordering. Signed
+      // comparisons need adjustment only when the operands were promoted.
+      auto sourceType = dyn_cast<IntegerType>(comparison.getLhs().getType());
+      if (predicate == arith::CmpIPredicate::eq ||
+          predicate == arith::CmpIPredicate::ult ||
+          predicate == arith::CmpIPredicate::ule ||
+          ((predicate == arith::CmpIPredicate::slt ||
+            predicate == arith::CmpIPredicate::sle) &&
+           (!sourceType || nativeIntegerWidth(sourceType.getWidth()) ==
+                               sourceType.getWidth()))) {
+        return failure();
+      }
       const auto unsignedPredicate = mqt::unsignedPredicate(predicate);
       if (unsignedPredicate != predicate) {
         auto operandType = cast<IntegerType>(lhs.getType());
-        auto sourceType = dyn_cast<IntegerType>(comparison.getLhs().getType());
         auto sourceWidth =
             sourceType ? sourceType.getWidth() : operandType.getWidth();
         auto sign = integerConstant(
@@ -969,15 +971,10 @@ struct ConvertIntegerExpression final : ConversionPattern {
             .Case("arith.addi", jeff::IntBinaryOperation::_add)
             .Case("arith.subi", jeff::IntBinaryOperation::_sub)
             .Case("arith.muli", jeff::IntBinaryOperation::_mul)
-            .Case("arith.divui", jeff::IntBinaryOperation::_divU)
             .Case("arith.divsi", jeff::IntBinaryOperation::_divS)
-            .Case("arith.remui", jeff::IntBinaryOperation::_remU)
             .Case("arith.remsi", jeff::IntBinaryOperation::_remS)
             .Case("arith.minsi", jeff::IntBinaryOperation::_minS)
             .Case("arith.maxsi", jeff::IntBinaryOperation::_maxS)
-            .Case("arith.andi", jeff::IntBinaryOperation::_and)
-            .Case("arith.ori", jeff::IntBinaryOperation::_or)
-            .Case("arith.xori", jeff::IntBinaryOperation::_xor)
             .Case("arith.shli", jeff::IntBinaryOperation::_shl)
             .Cases({"arith.shrui", "arith.shrsi"},
                    jeff::IntBinaryOperation::_shr)
@@ -1009,7 +1006,8 @@ struct ConvertIntegerExpression final : ConversionPattern {
           rewriter, loc, ones, rhs, jeff::IntBinaryOperation::_shr);
       auto fill = jeff::IntBinaryOp::create(rewriter, loc, ones, shiftedMask,
                                             jeff::IntBinaryOperation::_xor);
-      auto selected = selectInteger(rewriter, loc, nonnegative, zero, fill);
+      auto selected = jeff::IntSelectOp::create(rewriter, loc, type,
+                                                nonnegative, zero, fill);
       result = jeff::IntBinaryOp::create(rewriter, loc, result, selected,
                                          jeff::IntBinaryOperation::_or);
     }
