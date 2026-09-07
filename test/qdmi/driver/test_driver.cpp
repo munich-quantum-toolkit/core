@@ -1403,6 +1403,25 @@ TEST(DeviceRegistrationTest, FreshJobRetainsItsDeviceSession) {
   EXPECT_THAT(queryName(probe), testing::HasSubstr("active=1"));
 }
 
+TEST(DeviceRegistrationTest, ValidatesHistogramKeyValueCounts) {
+  registerSessionTestDevice();
+  qdmi::DeviceSessionConfig overrides;
+  for (const auto* keys : {"", "00", "00,11"}) {
+    overrides.custom3 = keys;
+    const auto device =
+        qdmi::Session::openDevice("test.session-overrides", overrides);
+    const auto job =
+        device.submitJob("OPENQASM 2.0;", QDMI_PROGRAM_FORMAT_QASM2);
+    if (std::string_view(keys) == "00,11") {
+      EXPECT_THROW(std::ignore = job.getCounts(), std::runtime_error);
+    } else {
+      const auto counts = job.getCounts();
+      ASSERT_EQ(counts.size(), 1);
+      EXPECT_EQ(counts.at(keys), 5);
+    }
+  }
+}
+
 TEST(DeviceRegistrationTest, CustomBinaryJobDoesNotRequireShots) {
   registerSessionTestDevice();
   const auto device = qdmi::Session::openDevice("test.session-overrides");
