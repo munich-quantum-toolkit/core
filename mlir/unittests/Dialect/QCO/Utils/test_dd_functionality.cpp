@@ -36,6 +36,7 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
@@ -2343,6 +2344,50 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedClassicalMemRefs) {
     expectMlirSimulationFails(0, source);
   }
 }
+TEST_F(QCODDFunctionalityTest, SamplingAnalysisHandlesSharedCallees) {
+  for (StringRef leafBody : {
+           "",
+           "func.call @decl() : () -> ()",
+           "func.call @f0() : () -> ()",
+           R"mlir(%q = qco.static 0 : !qco.qubit
+             %r = qco.reset %q : !qco.qubit -> !qco.qubit
+             qco.sink %r : !qco.qubit)mlir",
+       }) {
+    SCOPED_TRACE(leafBody.str());
+    std::string source;
+    llvm::raw_string_ostream os(source);
+    os << "module { func.func private @decl() func.func private @f0() {"
+       << leafBody << " return }\n";
+    for (size_t level = 1; level <= 20; ++level) {
+      os << "func.func private @f" << level << "() { func.call @f" << level - 1
+         << "() : () -> () func.call @f" << level - 1
+         << "() : () -> () return }\n";
+    }
+    /// The unreachable branch isolates analysis from the expanded call count.
+    os << R"mlir(func.func @main() {
+      %false = arith.constant false
+      scf.if %false { func.call @f20() : () -> () }
+      return
+    } })mlir";
+    auto mod = parseSourceString<ModuleOp>(os.str(), context.get());
+    ASSERT_TRUE(mod);
+    ASSERT_TRUE(succeeded(verify(*mod)));
+    auto func = mainFunc(*mod);
+    auto histogram = sample(func, 1, 1);
+    ASSERT_TRUE(succeeded(histogram));
+    ASSERT_EQ(histogram->size(), 1U);
+    EXPECT_EQ(histogram->at(""), 1U);
+
+    auto dd = std::make_unique<dd::Package>(0);
+    auto state = simulateStatevector(func, *dd);
+    EXPECT_EQ(failed(state), !leafBody.empty());
+    if (succeeded(state)) {
+      EXPECT_TRUE(state->isOneTerminal());
+      dd->decRef(*state);
+    }
+  }
+}
+
 TEST_F(QCODDFunctionalityTest,
        SampleExecutesCalleeMeasurementBeforeCallerGate) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
