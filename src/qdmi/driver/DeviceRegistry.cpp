@@ -12,6 +12,7 @@
 
 #include "qdmi/common/DeviceConfiguration.hpp"
 #include "qdmi/driver/Driver.hpp"
+#include "qdmi/driver/SessionConfig.hpp"
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
@@ -34,27 +35,12 @@ namespace qdmi::detail {
 namespace {
 using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
 
-struct SessionPatch {
-  std::optional<std::string> baseUrl;
-  std::optional<std::string> token;
-  std::optional<std::filesystem::path> authFile;
-  std::optional<std::string> authUrl;
-  std::optional<std::string> username;
-  std::optional<std::string> password;
-  std::optional<DeviceConfigurationSource> deviceConfiguration;
-  std::optional<std::string> custom1;
-  std::optional<std::string> custom2;
-  std::optional<std::string> custom3;
-  std::optional<std::string> custom4;
-  std::optional<std::string> custom5;
-};
-
 struct DefinitionPatch {
   std::string id;
   std::optional<std::filesystem::path> library;
   std::optional<std::string> prefix;
   std::optional<bool> enabled;
-  SessionPatch session;
+  DeviceSessionConfig session;
   std::filesystem::path source;
 };
 
@@ -120,7 +106,7 @@ void rejectUnknownKeys(const Json& value,
 [[nodiscard]] auto
 parseSessionPatch(const Json& value, const std::filesystem::path& source,
                   const std::string& path, const std::filesystem::path& base)
-    -> SessionPatch {
+    -> DeviceSessionConfig {
   requireObject(value, source, path);
   rejectUnknownKeys(value,
                     {
@@ -138,7 +124,7 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
                         "device-config",
                     },
                     source, path);
-  SessionPatch patch;
+  DeviceSessionConfig patch;
   patch.baseUrl = optionalString(value, "base-url", source, path);
   patch.token = optionalString(value, "token", source, path);
   patch.authUrl = optionalString(value, "auth-url", source, path);
@@ -272,33 +258,11 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
   }
 }
 
-template <class T>
-void mergeOptional(std::optional<T>& target, const std::optional<T>& source) {
-  if (source) {
-    target = source;
-  }
-}
-
-void mergeSession(SessionPatch& target, const SessionPatch& source) {
-  mergeOptional(target.baseUrl, source.baseUrl);
-  mergeOptional(target.token, source.token);
-  mergeOptional(target.authFile, source.authFile);
-  mergeOptional(target.authUrl, source.authUrl);
-  mergeOptional(target.username, source.username);
-  mergeOptional(target.password, source.password);
-  mergeOptional(target.deviceConfiguration, source.deviceConfiguration);
-  mergeOptional(target.custom1, source.custom1);
-  mergeOptional(target.custom2, source.custom2);
-  mergeOptional(target.custom3, source.custom3);
-  mergeOptional(target.custom4, source.custom4);
-  mergeOptional(target.custom5, source.custom5);
-}
-
 void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
-  mergeOptional(target.library, source.library);
-  mergeOptional(target.prefix, source.prefix);
-  mergeOptional(target.enabled, source.enabled);
-  mergeSession(target.session, source.session);
+  applyOverride(target.library, source.library);
+  applyOverride(target.prefix, source.prefix);
+  applyOverride(target.enabled, source.enabled);
+  target.session = mergeSessionConfig(target.session, source.session);
   target.source = source.source;
 }
 
@@ -419,20 +383,7 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   definition.id = patch.id;
   definition.library = *patch.library;
   definition.prefix = *patch.prefix;
-  definition.session.baseUrl = patch.session.baseUrl;
-  definition.session.token = patch.session.token;
-  if (patch.session.authFile) {
-    definition.session.authFile = patch.session.authFile;
-  }
-  definition.session.authUrl = patch.session.authUrl;
-  definition.session.username = patch.session.username;
-  definition.session.password = patch.session.password;
-  definition.session.deviceConfiguration = patch.session.deviceConfiguration;
-  definition.session.custom1 = patch.session.custom1;
-  definition.session.custom2 = patch.session.custom2;
-  definition.session.custom3 = patch.session.custom3;
-  definition.session.custom4 = patch.session.custom4;
-  definition.session.custom5 = patch.session.custom5;
+  definition.session = patch.session;
   return definition;
 }
 

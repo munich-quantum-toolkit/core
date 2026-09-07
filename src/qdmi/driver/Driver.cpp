@@ -13,6 +13,7 @@
 #include "DeviceRegistry.hpp"
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/Diagnostics.hpp"
+#include "qdmi/driver/SessionConfig.hpp"
 
 #include <qdmi/client.h>
 #include <qdmi/device.h>
@@ -190,32 +191,6 @@ struct DynamicLibraryCache {
   return library;
 }
 
-template <class T>
-void applyOverride(std::optional<T>& value,
-                   const std::optional<T>& overrideValue) {
-  if (overrideValue) {
-    value = overrideValue;
-  }
-}
-
-[[nodiscard]] auto mergeSessionConfig(const DeviceSessionConfig& defaults,
-                                      const DeviceSessionConfig& overrides)
-    -> DeviceSessionConfig {
-  auto merged = defaults;
-  applyOverride(merged.baseUrl, overrides.baseUrl);
-  applyOverride(merged.token, overrides.token);
-  applyOverride(merged.authFile, overrides.authFile);
-  applyOverride(merged.authUrl, overrides.authUrl);
-  applyOverride(merged.username, overrides.username);
-  applyOverride(merged.password, overrides.password);
-  applyOverride(merged.deviceConfiguration, overrides.deviceConfiguration);
-  applyOverride(merged.custom1, overrides.custom1);
-  applyOverride(merged.custom2, overrides.custom2);
-  applyOverride(merged.custom3, overrides.custom3);
-  applyOverride(merged.custom4, overrides.custom4);
-  applyOverride(merged.custom5, overrides.custom5);
-  return merged;
-}
 } // namespace
 
 #undef DL_OPEN
@@ -798,7 +773,7 @@ auto Driver::openFresh(const std::string_view id,
   }
   return std::make_shared<QDMI_Device_impl_d>(
       getDynamicDeviceLibrary(definition.library.string(), definition.prefix),
-      mergeSessionConfig(definition.session, overrides));
+      detail::mergeSessionConfig(definition.session, overrides));
 }
 
 void Driver::materializeClientCatalog() {
