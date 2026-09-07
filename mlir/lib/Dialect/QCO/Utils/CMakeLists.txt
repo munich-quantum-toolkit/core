@@ -98,6 +98,7 @@ add_mlir_library(
   MLIRCBitDialect
   MLIRMemRefDialect
   MLIRMQTUtils
+  MLIRTensorDialect
   MLIRQTensorDialect)
 
 mqt_mlir_target_use_project_options(MLIRQCODDFunctionality)

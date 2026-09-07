@@ -39,6 +39,7 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
@@ -408,9 +409,14 @@ static LogicalResult validateReturn(func::ReturnOp returnOp,
 
 static LogicalResult recordConstant(arith::ConstantOp constant,
                                     ClassicalEnv& classical) {
-  if (!isSupportedClassicalType(constant.getType())) {
+  auto tensorType = dyn_cast<RankedTensorType>(constant.getType());
+  const bool isFloatTable = tensorType && tensorType.getRank() == 1 &&
+                            tensorType.getElementType().isF64() &&
+                            isa<DenseFPElementsAttr>(constant.getValue());
+  if (!isSupportedClassicalType(constant.getType()) && !isFloatTable) {
     return constant.emitError()
-           << "QCO DD simulation only supports integer, index, and f64 values";
+           << "QCO DD simulation only supports scalar integer, index, and f64 "
+              "constants or dense rank-one f64 tensor constants";
   }
   classical.values[constant.getResult()] = constant.getValue();
   return success();
@@ -1141,6 +1147,29 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
           [](auto) { return success(); })
       .Case([&](arith::ConstantOp constant) {
         return recordConstant(constant, *walk.classical);
+      })
+      .Case([&](tensor::ExtractOp extract) -> LogicalResult {
+        auto value =
+            lookupAttribute(extract.getTensor(), *walk.classical, extract);
+        if (failed(value)) {
+          return failure();
+        }
+        auto table = dyn_cast<DenseFPElementsAttr>(*value);
+        if (!table || extract.getIndices().size() != 1) {
+          return extract.emitError()
+                 << "QCO DD simulation requires a dense rank-one f64 tensor";
+        }
+        auto index =
+            lookupIndex(extract.getIndices().front(), *walk.classical, extract);
+        if (failed(index)) {
+          return failure();
+        }
+        if (*index < 0 || *index >= table.getNumElements()) {
+          return extract.emitError() << "tensor index out of range";
+        }
+        walk.classical->values[extract.getResult()] =
+            table.getValues<FloatAttr>()[*index];
+        return success();
       })
       .Case([&](AllocOp alloc) -> LogicalResult {
         if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
