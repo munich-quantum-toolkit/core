@@ -616,7 +616,7 @@ protected:
           return isLegal(operation, *support);
         });
     target.markUnknownOpDynamicallyLegal([](Operation* operation) {
-      if (isa<scf::ExecuteRegionOp, CtrlOp, InvOp, PowOp>(operation)) {
+      if (isa<scf::ExecuteRegionOp>(operation)) {
         return true;
       }
       return !isa<BranchOpInterface, RegionBranchOpInterface>(operation);
