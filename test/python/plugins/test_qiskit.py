@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from math import pi
 from typing import TYPE_CHECKING, Any, cast
 
 import pytest
@@ -30,6 +31,7 @@ from qiskit.providers.fake_provider import GenericBackendV2
 from qiskit.qasm3 import dumps
 from qiskit.quantum_info import Operator
 
+from mqt.core.ir import QuantumComputation
 from mqt.core.ir.operations import (
     ComparisonKind,
     CompoundOperation,
@@ -417,6 +419,23 @@ def test_operations() -> None:
     print(qiskit_qc)
     assert qiskit_qc.num_qubits == 3
     assert len(qiskit_qc) == len(qc)
+
+
+def test_v_gates() -> None:
+    """Test export of V gates."""
+    qc = QuantumComputation(2)
+    qc.v(0)
+    qc.cv(0, 1)
+    qc.vdg(0)
+    qc.cvdg(0, 1)
+
+    expected = QuantumCircuit(2)
+    expected.rx(pi / 2, 0)
+    expected.crx(pi / 2, 0, 1)
+    expected.rx(-pi / 2, 0)
+    expected.crx(-pi / 2, 0, 1)
+
+    assert mqt_to_qiskit(qc) == expected
 
 
 @pytest.mark.parametrize("ctrl_state", ["0", "1"])

@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+from math import pi
 from typing import TYPE_CHECKING
 
 from qiskit.circuit import (
@@ -67,8 +68,7 @@ from ...ir.operations import (
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
-    from qiskit.circuit import Clbit, Qubit
-    from qiskit.circuit.singleton import SingletonGate
+    from qiskit.circuit import Clbit, Gate, Qubit
 
     from ...ir import QuantumComputation
     from ...ir.operations import Operation
@@ -132,7 +132,7 @@ def _add_standard_operation(circ: QuantumCircuit, op: StandardOperation, qubit_m
 
     controls, ctrl_state = _translate_controls(op.controls, qubit_map)
 
-    gate_map_singleton: dict[OpType, SingletonGate] = {
+    gate_map_no_param: dict[OpType, Gate] = {
         OpType.i: IGate(),
         OpType.x: XGate(),
         OpType.y: YGate(),
@@ -142,6 +142,8 @@ def _add_standard_operation(circ: QuantumCircuit, op: StandardOperation, qubit_m
         OpType.sdg: SdgGate(),
         OpType.t: TGate(),
         OpType.tdg: TdgGate(),
+        OpType.v: RXGate(pi / 2),
+        OpType.vdg: RXGate(-pi / 2),
         OpType.sx: SXGate(),
         OpType.sxdg: SXdgGate(),
         OpType.dcx: DCXGate(),
@@ -151,8 +153,8 @@ def _add_standard_operation(circ: QuantumCircuit, op: StandardOperation, qubit_m
         OpType.rccx: RCCXGate(),
     }
 
-    if op.type_ in gate_map_singleton:
-        gate = gate_map_singleton[op.type_]
+    if op.type_ in gate_map_no_param:
+        gate = gate_map_no_param[op.type_]
         if len(controls) == 0:
             circ.append(gate, targets)
         else:
