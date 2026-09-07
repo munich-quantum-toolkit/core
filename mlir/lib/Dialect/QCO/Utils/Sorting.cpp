@@ -13,12 +13,15 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SetVector.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 using namespace mlir;
+using namespace llvm;
 
 /// Find the nearest neighbour in a given block.
 static Operation* findParentInBlock(Operation* op, Block& block) {
@@ -41,54 +44,79 @@ void reorderTopologically(Block& block, IRRewriter& rewriter) {
 
   // Construct unresolved map: The dependencies of each operation.
 
+  SmallDenseSet<Value> effectedValues;
   DenseMap<Operation*, size_t> inDegree;
-  DenseMap<Operation*, llvm::SmallSetVector<Operation*, 16>> successors;
-  DenseMap<Operation*, llvm::SmallDenseSet<Operation*, 16>> predecessors;
+  DenseMap<Value, Operation*> lastEffect;
+  DenseMap<Operation*, SmallSetVector<Operation*, 16>> successors;
+  DenseMap<Operation*, SmallDenseSet<Operation*, 16>> predecessors;
+
+  const auto addDependency = [&](Operation* predecessor, Operation* successor) {
+    assert(predecessor != successor);
+    if (!predecessors[successor].insert(predecessor).second) {
+      return;
+    }
+    ++inDegree[successor];
+    successors[predecessor].insert(successor);
+  };
 
   for (Operation& op : block) {
+    successors.try_emplace(&op);
+    predecessors.try_emplace(&op);
+    inDegree.try_emplace(&op, 0);
 
     // Collect the in-block dependencies of the current operation.
 
-    auto& succs = successors[&op];
-    auto& pres = predecessors[&op];
-    inDegree.try_emplace(&op, 0);
+    // First, process the side-effect dependencies. This includes all operations
+    // with memory effects. For example, classical register operations which
+    // don't fulfill linear typing.
 
-    for (Value v : op.getOperands()) {
-      Operation* def = v.getDefiningOp();
-      if (def != nullptr && v.getParentBlock() == &block &&
-          !pres.contains(def)) {
-        pres.insert(def);
-        ++inDegree[&op];
+    const auto effects = getEffectsRecursively(&op);
+    if (effects) {
+      for (const auto& effect : *effects) {
+        auto value = effect.getValue();
+        if (!(value && effectedValues.insert(value).second)) {
+          continue;
+        }
+
+        if (Operation* last = lastEffect.lookup(value)) {
+          addDependency(last, &op);
+        }
+
+        lastEffect[value] = &op;
       }
     }
 
-    // For each user of the current operation that is *not* in the targeted
-    // block, find the nearest parent operation in the targeted block, and
-    // increase its pending count. Thus, this parent operation also depends on
-    // the release of the current operation.
+    // Then, process the def-use dependencies, where each operand depends on its
+    // defining operation.
+
+    for (auto v : op.getOperands()) {
+      if (effectedValues.contains(v)) {
+        continue;
+      }
+
+      Operation* def = v.getDefiningOp();
+      if (def != nullptr && v.getParentBlock() == &block) {
+        addDependency(def, &op);
+      }
+    }
+
+    // Finally, for each user of the current operation that is *not* in the
+    // targeted block, find the nearest parent operation in the targeted block,
+    // and increase its pending count. Thus, this parent operation also depends
+    // on the release of the current operation.
 
     for (Operation* user : op.getUsers()) {
       if (user->getBlock() == &block) {
-        if (!succs.contains(user)) {
-          succs.insert(user);
-        }
         continue;
       }
 
       if (Operation* parent = findParentInBlock(user, block);
           parent != nullptr) {
-
-        auto& parentPre = predecessors[parent];
-        if (!parentPre.contains(&op)) {
-          parentPre.insert(&op);
-          ++inDegree[parent];
-        }
-
-        if (!succs.contains(parent)) {
-          succs.insert(parent);
-        }
+        addDependency(&op, parent);
       }
     }
+
+    effectedValues.clear();
   }
 
   assert((inDegree.size() == range_size(block)));
