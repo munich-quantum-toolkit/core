@@ -1,49 +1,34 @@
-# Add a quantum-input QFT adder benchmark
+# Register-input QFT adder benchmark
 
-Status: complete.
+Status: complete; configurable inputs and family consolidation remain proposals.
 
 ## Goal and scope
 
-Add the `qft-adder-quantum` structured benchmark from Draper's
-[Addition on a Quantum Computer](https://arxiv.org/abs/quant-ph/0008033). The
-benchmark must be available through the typed C++, JSON, command-line, Python,
-and MLIR generation interfaces. It must generate the full no-swap QFT, Draper
-addition, and inverse-QFT circuit rather than a circuit with the same output
-distribution.
-
-The benchmark parameter is the width `n` of each quantum register. The source
-register is prepared as |+>^n and the accumulator as |1>. The one logical
-`result` output has width `2n` and is written as the big-endian concatenation
-`addend || sum`. Its ideal distribution has probability `2^-n` exactly when
-`sum = addend + 1 mod 2^n`. Measuring both registers keeps this correlation
-observable; measuring the sum alone would produce an uninformative uniform
-distribution.
+Expose `qft-adder-quantum` through C++, Python, JSON, the CLI, and MLIR.
+`src/bench/QFTAdderQuantum.cpp` owns its analytic reference;
+`mlir/bench/programs/QFTAdderQuantum.cpp` emits Draper's controlled-phase adder.
+The addend starts in `|+>^n`, the accumulator in `|1>`, and the result is the
+big-endian concatenation `addend || sum`, with `sum = addend + 1 mod 2^n`.
 
 ## Decisions
 
-Register index zero is the least-significant bit. The forward QFT uses no swaps
-and visits targets from most to least significant. For target `t`, it applies H
-and then `CP(pi / 2^(t-c))` from every lower control `c`. The addition block
-applies the same controlled-phase gate from source control `c <= t` to
-accumulator target `t`, including each `CP(pi)` gate. The inverse QFT visits
-targets from least to most significant. It starts each target at `-pi / 2` and
-halves the angle while visiting lower controls from nearest to farthest. This
-order gives the exact inverse because the controlled-phase gates commute. It
-also prevents distant rotations from making later nearby rotations underflow.
-`CP` cannot be replaced with a controlled RZ because their relative phases
-differ.
+Measure both registers: the sum alone is uniform and cannot check addition. The
+shared no-swap QFT helpers in `mlir/bench/programs/QFTUtils.*` also serve QFT
+and QPE. Keep controlled phase gates; controlled RZ changes relative phases.
+Halve angles from the largest rotation to avoid premature underflow. The
+1024-qubit register limit keeps the reference probability representable.
 
-The width is limited to 1024 qubits per register. This keeps the smallest
-required binary phase and the ideal probability representable as `double`. The
-implementation does not add swaps, carry qubits, approximate rotations, or an
-alternative QFT convention. Private MLIR helpers own the shared phase loop and
-the forward and inverse no-swap transforms. The standard QFT and QPE generators
-use the same transforms.
+The DD interpreter reads dense rank-one f64 phase tables with checked indices;
+QPE and adder tests can sample structured programs without loop unrolling. The
+name distinguishes a register-held addend from a classical constant, not quantum
+computation from classical computation. Configurable operands and a shared
+family need an agreed overflow contract before changing the public API.
 
 ## Validation
 
-The focused MLIR test checks the controlled-addition register and phase
-relations. The shared benchmark test checks QC and jeff generation. The Python
-test samples the width-three circuit and compares the result with the analytic
-correlation. The largest supported instance stays structured and uses finite
-angles.
+Run `mqt-core-bench-test` and `mqt-core-mlir-unittests-benchmark` from their
+build directories, and `uv run --no-sync pytest test/python/test_bench.py`.
+Prior local checks passed for reference/JSON behavior, QC/jeff generation, phase
+structure, and DD sampling of the width-three correlated distribution. Sampling
+this fixed input does not certify arbitrary accumulators or relative phases;
+those require broader inputs and statevector or functionality checks.
