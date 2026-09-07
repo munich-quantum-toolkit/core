@@ -287,13 +287,15 @@ satisfy the existing snapshot checks.
 
 Each exported measurement must write to one static public CBit in the same
 block. Destinations may be reused; later measurements overwrite earlier values
-in program order. A measurement's destination store must follow it directly,
-apart from constant operations. A conditional or otherwise delayed destination
-store is rejected because Qiskit cannot preserve it as one measurement
-instruction. The measurement result may feed supported classical expressions
-after that store. General scalar control flow saves live measurement results in
-native variables before later writes. Deferred measurement expressions require
-an unchanged destination CBit.
+in program order. Constants, unitary quantum operations (including barriers),
+and resets may separate a measurement from its destination store. The exporter
+keeps the measurement at its original position and writes the destination there.
+Other intervening operations, including classical accesses and control flow, are
+rejected because this earlier write may change the program's meaning. The
+measurement result may feed supported classical expressions after that store.
+General scalar control flow saves live measurement results in native variables
+before later writes. Deferred measurement expressions require an unchanged
+destination CBit.
 
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to
