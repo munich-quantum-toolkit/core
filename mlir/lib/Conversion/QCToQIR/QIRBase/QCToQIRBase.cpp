@@ -16,10 +16,12 @@
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCInterfaces.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <llvm/ADT/DenseSet.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
@@ -40,6 +42,7 @@
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
@@ -86,6 +89,51 @@ static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
 }
 
 namespace {
+
+/// Checks that moving measurements after all gates preserves qubit order.
+static LogicalResult checkMeasurementOrder(func::FuncOp entryPoint) {
+  // Static indices and register elements can have multiple SSA references.
+  const auto qubitKey = [](Value qubit) -> std::pair<Value, int64_t> {
+    if (auto staticQubit = qubit.getDefiningOp<StaticOp>()) {
+      return {Value{}, static_cast<int64_t>(staticQubit.getIndex())};
+    }
+    if (auto load = qubit.getDefiningOp<memref::LoadOp>()) {
+      // A dynamic index can refer to any element of its register.
+      const auto index =
+          load.getIndices().size() == 1
+              ? getConstantIntValue(load.getIndices().front()).value_or(-1)
+              : -1;
+      return {load.getMemref(), index};
+    }
+    return {qubit, 0};
+  };
+
+  DenseSet<std::pair<Value, int64_t>> measuredQubits;
+  DenseSet<Value> measuredRegisters;
+  for (auto& operation : entryPoint.front()) {
+    if (auto measurement = dyn_cast<MeasureOp>(operation)) {
+      const auto key = qubitKey(measurement.getQubit());
+      measuredQubits.insert(key);
+      measuredRegisters.insert(key.first);
+      continue;
+    }
+    auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+    if (!unitary || isa<BarrierOp, IdOp>(operation)) {
+      continue;
+    }
+    for (auto qubit : unitary.getQubits()) {
+      const auto key = qubitKey(qubit);
+      if (measuredQubits.contains(key) ||
+          measuredQubits.contains({key.first, -1}) ||
+          (key.second == -1 && measuredRegisters.contains(key.first))) {
+        return operation.emitError(
+            "QIR Base Profile requires gates to precede measurements on "
+            "the same qubit");
+      }
+    }
+  }
+  return success();
+}
 
 /**
  * @brief Converts `cbit.alloc` to static result
@@ -490,6 +538,10 @@ protected:
     if (!entryPoint.getBody().hasOneBlock()) {
       entryPoint.emitError(
           "QIR Base Profile requires a single-block entry function");
+      signalPassFailure();
+      return;
+    }
+    if (failed(checkMeasurementOrder(entryPoint))) {
       signalPassFailure();
       return;
     }

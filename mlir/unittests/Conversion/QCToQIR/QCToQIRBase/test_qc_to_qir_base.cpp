@@ -16,6 +16,7 @@
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"
+#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Support/Passes.h"
@@ -157,6 +158,119 @@ TEST(QCToQIRBaseNativeTest, RejectsMultiBlockEntryFunctionWithoutMutation) {
   EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
   EXPECT_TRUE(sawExpectedDiagnostic);
   EXPECT_EQ(entryPoint.getBlocks().size(), 2);
+}
+
+static void expectMeasurementOrderRejected(
+    function_ref<Value(qc::QCProgramBuilder&)> buildProgram) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto result = buildProgram(builder);
+  builder.retype(result.getType());
+  auto moduleOp = builder.finalize(result);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "QIR Base Profile requires gates to precede measurements on the "
+        "same qubit");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsGateAfterMeasurementOnSameQubit) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto qubit = builder.allocQubit();
+    auto result = builder.measure(qubit);
+    builder.x(qubit);
+    return result;
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsGateWithMeasuredControl) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto control = builder.allocQubit();
+    auto target = builder.allocQubit();
+    auto result = builder.measure(control);
+    builder.cx(control, target);
+    return result;
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsGateOnMeasuredStaticAlias) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto qubit = builder.staticQubit(0);
+    auto result = builder.measure(qubit);
+    auto alias = qc::StaticOp::create(builder, 0).getQubit();
+    builder.x(alias);
+    return result;
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsGateOnMeasuredRegisterElement) {
+  expectMeasurementOrderRejected([](qc::QCProgramBuilder& builder) {
+    auto qubits = builder.allocQubitRegister(2);
+    auto result = builder.measure(qubits[0]);
+    auto alias = builder.loadQubit(qubits.value, builder.indexConstant(0));
+    builder.x(alias);
+    return result;
+  });
+}
+
+TEST(QCToQIRBaseNativeTest, RejectsPossiblyMeasuredRegisterElement) {
+  for (const auto dynamicMeasurement : {false, true}) {
+    SCOPED_TRACE(dynamicMeasurement);
+    expectMeasurementOrderRejected([&](qc::QCProgramBuilder& builder) {
+      auto qubits = builder.allocQubitRegister(2);
+      auto condition = LLVM::UndefOp::create(builder, builder.getI1Type());
+      auto index =
+          arith::SelectOp::create(builder, condition, builder.indexConstant(0),
+                                  builder.indexConstant(1));
+      auto dynamicQubit = builder.loadQubit(qubits.value, index);
+      auto result =
+          builder.measure(dynamicMeasurement ? dynamicQubit : qubits[0]);
+      builder.x(dynamicMeasurement ? qubits[0] : dynamicQubit);
+      return result;
+    });
+  }
+}
+
+TEST(QCToQIRBaseNativeTest, AllowsGateAfterMeasurementOnIndependentQubit) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto qubits = builder.allocQubitRegister(2);
+  auto result = builder.measure(qubits[0]);
+  builder.x(qubits[1]);
+  builder.retype(result.getType());
+  auto moduleOp = builder.finalize(result);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRBaseConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  SmallVector<LLVM::CallOp> quantumCalls;
+  moduleOp->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_X ||
+        call.getCallee() == qir::QIR_MEASURE) {
+      quantumCalls.push_back(call);
+    }
+  });
+  ASSERT_EQ(quantumCalls.size(), 2);
+  EXPECT_EQ(quantumCalls[0].getCallee(), qir::QIR_X);
+  EXPECT_EQ(quantumCalls[1].getCallee(), qir::QIR_MEASURE);
+  EXPECT_NE(quantumCalls[0].getOperand(0), quantumCalls[1].getOperand(0));
 }
 
 TEST(QCToQIRBaseNativeTest, ControlledBarrierDoesNotControlFollowingGate) {

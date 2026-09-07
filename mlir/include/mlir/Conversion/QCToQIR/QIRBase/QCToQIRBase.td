@@ -23,6 +23,11 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
     - The input entry function must consist of a single block.
       Multi-block input functions are currently not supported.
     - The program must have straight-line control flow (i.e., Base Profile QIR).
+    - A gate must not act on a qubit after it has been measured. The pass
+      rejects this order because moving the measurement after the gate can
+      change the result. Gates on independent qubits may follow measurements.
+      Dynamic register indices must be provably independent of measured
+      register elements.
 
     Behavior:
 
