@@ -22,6 +22,7 @@ if(BUILD_MQT_CORE_BINDINGS)
 endif()
 
 if(BUILD_MQT_CORE_MLIR)
+  # Fetch jeff-mlir
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
