@@ -62,19 +62,19 @@ semiclassicalQFT(qc::QCProgramBuilder& builder, const QFT& benchmark) {
   auto firstAngle = builder.floatConstant(std::numbers::pi / 2.);
   auto half = builder.floatConstant(0.5);
 
-  const auto round = [&](Value step, const bool preparePlus) {
+  const auto round = [&](Value index, const bool preparePlus) {
     if (preparePlus) {
       builder.h(query);
     }
-    auto previous = arith::SubIOp::create(builder, step, one);
+    auto previous = arith::SubIOp::create(builder, index, one);
     detail::phaseRotationLoop(
-        builder, zero, step, one, firstAngle, half,
+        builder, zero, index, one, firstAngle, half,
         [&](Value angle, Value distance) {
           auto bit = arith::SubIOp::create(builder, previous, distance);
           builder.scfIf(result, bit, [&] { builder.p(angle, query); });
         });
     builder.h(query);
-    builder.measure(query, result, step);
+    builder.measure(query, result, index);
     builder.reset(query);
   };
 

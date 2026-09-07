@@ -75,23 +75,23 @@ iterativeQPE(qc::QCProgramBuilder& builder, const QPE& benchmark) {
   auto firstCorrection = builder.floatConstant(-std::numbers::pi / 2.);
   auto half = builder.floatConstant(0.5);
 
-  builder.scfFor(lower, upper, 1, [&](Value step) {
-    auto power = arith::SubIOp::create(builder, last, step);
+  builder.scfFor(lower, upper, 1, [&](Value index) {
+    auto power = arith::SubIOp::create(builder, last, index);
     auto angle = tensor::ExtractOp::create(builder, angles, ValueRange{power})
                      .getResult();
     builder.h(query);
     builder.cp(angle, query, ancilla);
 
-    auto previous = arith::SubIOp::create(builder, step, one);
+    auto previous = arith::SubIOp::create(builder, index, one);
     detail::phaseRotationLoop(
-        builder, lower, step, one, firstCorrection, half,
+        builder, lower, index, one, firstCorrection, half,
         [&](Value correction, Value distance) {
           auto bit = arith::SubIOp::create(builder, previous, distance);
           builder.scfIf(result, bit, [&] { builder.p(correction, query); });
         });
 
     builder.h(query);
-    builder.measure(query, result, step);
+    builder.measure(query, result, index);
     builder.reset(query);
   });
   return {result};
