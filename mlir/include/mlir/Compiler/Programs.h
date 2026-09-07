@@ -163,10 +163,8 @@ public:
   /// Take ownership of an MLIR module that contains a QC program.
   ///
   /// The context must own every dialect referenced by the module and must
-  /// remain the module's context. The factory verifies the module and requires
-  /// at least one QC operation, or only single-block functions with scalar
-  /// integer, index, or float parameters, constants, and returns for an empty
-  /// program.
+  /// remain the module's context. The factory verifies the module and rejects
+  /// QCO and QTensor operations. QC operations are not required.
   [[nodiscard]] static std::optional<QCProgram>
   fromModule(std::shared_ptr<MLIRContext> context,
              OwningOpRef<ModuleOp> moduleOp);
@@ -238,9 +236,7 @@ public:
   ///
   /// The context must own every dialect referenced by the module and must
   /// remain the module's context. The factory verifies the module and QCO
-  /// linearity. It requires at least one QCO operation, or only single-block
-  /// functions with scalar integer, index, or float parameters, constants,
-  /// and returns for an empty program.
+  /// linearity and rejects QC operations. QCO operations are not required.
   [[nodiscard]] static std::optional<QCOProgram>
   fromModule(std::shared_ptr<MLIRContext> context,
              OwningOpRef<ModuleOp> moduleOp);

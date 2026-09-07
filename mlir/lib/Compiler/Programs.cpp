@@ -22,7 +22,6 @@
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include <jeff/IR/JeffDialect.h>
-#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <llvm/Support/FileSystem.h>
@@ -38,7 +37,6 @@
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
-#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/Location.h>
@@ -138,29 +136,6 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
                    : WalkResult::advance();
       })
       .wasInterrupted();
-}
-
-/// Accept empty functions after cleanup removes all quantum operations.
-[[nodiscard]] static bool isEmptyProgram(ModuleOp moduleOp) {
-  return !moduleOp
-              .walk([](Operation* operation) {
-                if (auto function = dyn_cast<func::FuncOp>(operation)) {
-                  return function.getBody().hasOneBlock() &&
-                                 llvm::all_of(
-                                     function.getArgumentTypes(),
-                                     [](Type type) {
-                                       return isa<IntegerType, IndexType,
-                                                  FloatType>(type);
-                                     })
-                             ? WalkResult::advance()
-                             : WalkResult::interrupt();
-                }
-                return isa<ModuleOp, arith::ConstantOp, func::ReturnOp>(
-                           operation)
-                           ? WalkResult::advance()
-                           : WalkResult::interrupt();
-              })
-              .wasInterrupted();
 }
 
 template <class ProgramType, class Parse>
@@ -310,8 +285,10 @@ QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
   if (failed(verify(*storage.mod))) {
     return std::nullopt;
   }
-  if (!moduleUsesDialect(*storage.mod, "qc") && !isEmptyProgram(*storage.mod)) {
-    storage.mod->emitError("expected a module using the 'qc' dialect");
+  if (moduleUsesDialect(*storage.mod, "qco") ||
+      moduleUsesDialect(*storage.mod, "qtensor")) {
+    storage.mod->emitError(
+        "QC programs must not contain QCO or QTensor operations");
     return std::nullopt;
   }
   return QCProgram(std::move(storage));
@@ -403,9 +380,8 @@ QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
   if (failed(verify(*storage.mod))) {
     return std::nullopt;
   }
-  if (!moduleUsesDialect(*storage.mod, "qco") &&
-      !isEmptyProgram(*storage.mod)) {
-    storage.mod->emitError("expected a module using the 'qco' dialect");
+  if (moduleUsesDialect(*storage.mod, "qc")) {
+    storage.mod->emitError("QCO programs must not contain QC operations");
     return std::nullopt;
   }
   if (failed(qco::verifyLinearity(*storage.mod))) {

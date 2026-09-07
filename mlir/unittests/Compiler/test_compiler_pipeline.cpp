@@ -127,6 +127,8 @@ class CompilerPipelineTest
 protected:
   std::unique_ptr<MLIRContext> context;
 
+  // GoogleTest requires this override name.
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<cbit::CBitDialect, QCDialect, QCODialect,
@@ -1103,40 +1105,39 @@ TEST_F(CompilerPipelineTest, EmptyCompiledProgramsRoundTrip) {
   }
 }
 
-TEST_F(CompilerPipelineTest, EmptyProgramImportsRejectForeignTypes) {
-  EXPECT_FALSE(QCProgram::fromMLIRString(R"mlir(module {
-    func.func @identity(%q: !qco.qubit) -> !qco.qubit {
-      return %q : !qco.qubit
+TEST_F(CompilerPipelineTest, ProgramImportsRejectMixedQuantumDialects) {
+  const std::string source = R"mlir(module {
+    func.func @main() {
+      %reference = qc.alloc : !qc.qubit
+      qc.dealloc %reference : !qc.qubit
+      %value = qco.alloc : !qco.qubit
+      qco.sink %value : !qco.qubit
+      return
     }
-  })mlir"));
-  EXPECT_FALSE(QCOProgram::fromMLIRString(R"mlir(module {
-    func.func @identity(%q: !qc.qubit) -> !qc.qubit {
-      return %q : !qc.qubit
-    }
-  })mlir"));
-  constexpr llvm::StringLiteral declaration = R"mlir(module {
-    func.func private @get_qubit() -> !qc.qubit
   })mlir";
-  EXPECT_FALSE(QCOProgram::fromMLIRString(declaration));
-  EXPECT_FALSE(QCProgram::fromMLIRString(R"mlir(module {
-    func.func @identity(%q: tensor<1x!qco.qubit>) -> tensor<1x!qco.qubit> {
-      return %q : tensor<1x!qco.qubit>
-    }
-  })mlir"));
-  EXPECT_FALSE(QCProgram::fromMLIRString(R"mlir(module {
+  auto moduleOp = parseRecordedModule(source);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  EXPECT_FALSE(QCProgram::fromMLIRString(source));
+  EXPECT_FALSE(QCOProgram::fromMLIRString(source));
+}
+
+TEST_F(CompilerPipelineTest, ProgramImportsRecognizeQTensorOnlyModules) {
+  const std::string source = R"mlir(module {
     func.func @main() {
-      return
-    ^bb1(%foreign: !qco.qubit):
-      return
-    }
-  })mlir"));
-  EXPECT_FALSE(QCOProgram::fromMLIRString(R"mlir(module {
-    func.func @main() {
-      return
-    ^bb1(%foreign: !qc.qubit):
+      %c1 = arith.constant 1 : index
+      %register = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+      qtensor.dealloc %register : tensor<1x!qco.qubit>
       return
     }
-  })mlir"));
+  })mlir";
+  auto moduleOp = parseRecordedModule(source);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  EXPECT_TRUE(QCOProgram::fromMLIRString(source));
+  EXPECT_FALSE(QCProgram::fromMLIRString(source));
 }
 
 // Test: QCO imports require each linear value to have one use.
