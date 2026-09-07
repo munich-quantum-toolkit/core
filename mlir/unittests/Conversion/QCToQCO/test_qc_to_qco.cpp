@@ -1297,53 +1297,28 @@ class NestedModifierConversionTest
 
 } // namespace
 
-TEST_P(NestedModifierConversionTest, CarriesQubitThroughStructuredOperation) {
+TEST_P(NestedModifierConversionTest, RejectsStructuredOperation) {
   for (const bool registerBacked : {false, true}) {
     SCOPED_TRACE(testing::Message() << "register_backed=" << registerBacked);
     auto moduleOp =
         buildNestedModifierProgram(&context, GetParam(), registerBacked);
     ASSERT_TRUE(moduleOp);
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-    ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
-    qco::YieldOp modifierYield;
-    moduleOp->walk([&](qco::YieldOp yield) {
-      if (isa<qco::InvOp, qco::CtrlOp, qco::PowOp>(yield->getParentOp())) {
-        modifierYield = yield;
-      }
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains(
+                  "body must contain only unitary operations and "
+                  "memory-effect-free classical operations without regions");
+      return success();
     });
-    ASSERT_TRUE(modifierYield);
-    ASSERT_EQ(modifierYield.getNumOperands(), 1);
 
-    Value structuredResult;
-    switch (GetParam().structured) {
-    case StructuredKind::For:
-      moduleOp->walk(
-          [&](scf::ForOp op) { structuredResult = op.getResults().back(); });
-      break;
-    case StructuredKind::While:
-      moduleOp->walk(
-          [&](scf::WhileOp op) { structuredResult = op.getResults().back(); });
-      break;
-    case StructuredKind::If:
-      moduleOp->walk([&](qco::IfOp op) {
-        structuredResult = op.getLinearResults().back();
-      });
-      break;
-    case StructuredKind::IndexSwitch:
-      moduleOp->walk([&](qco::IndexSwitchOp op) {
-        structuredResult = op.getLinearResults().back();
-      });
-      break;
-    }
-
-    ASSERT_TRUE(structuredResult);
-    EXPECT_EQ(modifierYield.getOperand(0), structuredResult);
-    if (registerBacked) {
-      expectOperationLocalRegisterAccesses(*moduleOp);
-    }
-    expectNoQCOperations(*moduleOp);
+    PassManager pm(&context);
+    pm.enableVerifier(false);
+    pm.addPass(createQCToQCO());
+    EXPECT_TRUE(failed(pm.run(*moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
   }
 }
 
@@ -1360,18 +1335,16 @@ static StringRef modifierName(const ModifierKind modifier) {
 }
 
 static OwningOpRef<ModuleOp>
-buildInvalidNestedRegisterLoadProgram(MLIRContext* context,
-                                      const ModifierKind modifier) {
+buildInvalidRegisterLoadProgram(MLIRContext* context,
+                                const ModifierKind modifier) {
   qc::QCProgramBuilder builder(context);
   builder.initialize();
   auto target = builder.allocQubit();
   auto reg = builder.allocQubitRegisterStorage(1);
   auto index = arith::ConstantIndexOp::create(builder, 0);
   const auto body = [&](Value) {
-    builder.scfIf(true, [&] {
-      auto loaded = builder.loadQubit(reg, index.getResult());
-      builder.x(loaded);
-    });
+    auto loaded = builder.loadQubit(reg, index.getResult());
+    builder.x(loaded);
   };
 
   switch (modifier) {
@@ -1388,8 +1361,7 @@ buildInvalidNestedRegisterLoadProgram(MLIRContext* context,
   return builder.finalize();
 }
 
-TEST_F(QCToQCORegressionTest,
-       PreflightRejectsNestedRegisterLoadsInEveryModifier) {
+TEST_F(QCToQCORegressionTest, PreflightRejectsRegisterLoadsInEveryModifier) {
   constexpr std::array modifiers{
       ModifierKind::Inv,
       ModifierKind::Ctrl,
@@ -1399,15 +1371,16 @@ TEST_F(QCToQCORegressionTest,
   for (const auto modifier : modifiers) {
     SCOPED_TRACE(testing::Message()
                  << "modifier=" << modifierName(modifier).str());
-    auto moduleOp = buildInvalidNestedRegisterLoadProgram(&context, modifier);
+    auto moduleOp = buildInvalidRegisterLoadProgram(&context, modifier);
     ASSERT_TRUE(moduleOp);
 
     bool sawExpectedDiagnostic = false;
     ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
       sawExpectedDiagnostic |=
           StringRef(diagnostic.str())
-              .contains("body must not contain non-unitary operations or "
-                        "access registers");
+              .contains(
+                  "body must contain only unitary operations and "
+                  "memory-effect-free classical operations without regions");
       return success();
     });
 
@@ -1448,31 +1421,29 @@ buildInvalidCBitModifierProgram(MLIRContext* context,
   auto index = arith::ConstantIndexOp::create(builder, 0);
   auto bit = builder.boolConstant(false);
   const auto body = [&](Value) {
-    builder.scfIf(true, [&] {
-      switch (cbitOperation) {
-      case CBitModifierBodyOp::Alloc:
-        cbit::AllocOp::create(builder,
-                              cbit::RegisterType::get(builder.getContext(), 1),
-                              cbit::Initialization::Zero);
-        break;
-      case CBitModifierBodyOp::Compare:
-        arith::CmpIOp::create(
-            builder, arith::CmpIPredicate::eq,
-            cbit::ReadOp::create(
-                builder,
-                builder.getIntegerAttr(builder.getI1Type(), 0).getType(), reg),
-            arith::ConstantOp::create(
-                builder, builder.getIntegerAttr(builder.getI1Type(), 0)));
-        break;
-      case CBitModifierBodyOp::Load:
-        cbit::LoadOp::create(builder, builder.getI1Type(), reg,
-                             index.getResult());
-        break;
-      case CBitModifierBodyOp::Store:
-        cbit::StoreOp::create(builder, bit, reg, index.getResult());
-        break;
-      }
-    });
+    switch (cbitOperation) {
+    case CBitModifierBodyOp::Alloc:
+      cbit::AllocOp::create(builder,
+                            cbit::RegisterType::get(builder.getContext(), 1),
+                            cbit::Initialization::Zero);
+      break;
+    case CBitModifierBodyOp::Compare:
+      arith::CmpIOp::create(
+          builder, arith::CmpIPredicate::eq,
+          cbit::ReadOp::create(
+              builder, builder.getIntegerAttr(builder.getI1Type(), 0).getType(),
+              reg),
+          arith::ConstantOp::create(
+              builder, builder.getIntegerAttr(builder.getI1Type(), 0)));
+      break;
+    case CBitModifierBodyOp::Load:
+      cbit::LoadOp::create(builder, builder.getI1Type(), reg,
+                           index.getResult());
+      break;
+    case CBitModifierBodyOp::Store:
+      cbit::StoreOp::create(builder, bit, reg, index.getResult());
+      break;
+    }
   };
 
   switch (modifier) {
@@ -1516,8 +1487,9 @@ TEST_F(QCToQCORegressionTest,
       ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
         sawExpectedDiagnostic |=
             StringRef(diagnostic.str())
-                .contains("body must not contain non-unitary operations or "
-                          "access registers");
+                .contains(
+                    "body must contain only unitary operations and "
+                    "memory-effect-free classical operations without regions");
         return success();
       });
 
@@ -1651,42 +1623,6 @@ TEST_F(QCToQCORegressionTest, ModifiersPermitClassicalCaptures) {
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     expectNoQCOperations(*moduleOp);
   }
-}
-
-TEST_F(QCToQCORegressionTest,
-       NestedModifiersCarryTheStructuredOperationResultByRegion) {
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  auto target = builder.allocQubit();
-  builder.inv(target, [&](Value outerArgument) {
-    builder.pow(2.0, outerArgument, [&](Value innerArgument) {
-      builder.scfFor(0, 1, 1, [&](Value) { builder.x(innerArgument); });
-    });
-  });
-
-  auto moduleOp = builder.finalize();
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  qco::InvOp inv;
-  qco::PowOp pow;
-  scf::ForOp loop;
-  moduleOp->walk([&](qco::InvOp op) { inv = op; });
-  moduleOp->walk([&](qco::PowOp op) { pow = op; });
-  moduleOp->walk([&](scf::ForOp op) { loop = op; });
-  ASSERT_TRUE(inv);
-  ASSERT_TRUE(pow);
-  ASSERT_TRUE(loop);
-
-  auto invYield = cast<qco::YieldOp>(inv.getBody()->getTerminator());
-  auto powYield = cast<qco::YieldOp>(pow.getBody()->getTerminator());
-  ASSERT_EQ(invYield.getNumOperands(), 1);
-  ASSERT_EQ(powYield.getNumOperands(), 1);
-  EXPECT_EQ(invYield.getOperand(0), pow.getQubitsOut().front());
-  EXPECT_EQ(powYield.getOperand(0), loop.getResults().back());
-  expectNoQCOperations(*moduleOp);
 }
 
 INSTANTIATE_TEST_SUITE_P(

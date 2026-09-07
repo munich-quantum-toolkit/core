@@ -410,6 +410,36 @@ TEST_F(MQTIRTest, RejectsMutuallyRecursiveUnitaryFunctions) {
   }
 }
 
+TEST_F(MQTIRTest, UnitaryFunctionsAllowNonSpeculatableParameterComputation) {
+  for (StringRef source : {
+           R"mlir(
+             func.func private @rotate(%theta: f64, %q: !qc.qubit)
+                 attributes {mqt.unitary} {
+               %n = arith.fptosi %theta : f64 to i64
+               %one = arith.constant 1 : i64
+               %d = arith.divsi %one, %n : i64
+               %angle = arith.sitofp %d : i64 to f64
+               qc.rx(%angle) %q : !qc.qubit
+               return
+             }
+           )mlir",
+           R"mlir(
+             func.func private @rotate(%theta: f64, %q: !qco.qubit)
+                 -> !qco.qubit attributes {mqt.unitary} {
+               %n = arith.fptosi %theta : f64 to i64
+               %one = arith.constant 1 : i64
+               %d = arith.divsi %one, %n : i64
+               %angle = arith.sitofp %d : i64 to f64
+               %out = qco.rx(%angle) %q : !qco.qubit -> !qco.qubit
+               return %out : !qco.qubit
+             }
+           )mlir",
+       }) {
+    SCOPED_TRACE(source.str());
+    EXPECT_TRUE(parse(source));
+  }
+}
+
 TEST_F(MQTIRTest, RejectsEmptyUnitaryBodies) {
   for (StringRef source : {
            R"mlir(

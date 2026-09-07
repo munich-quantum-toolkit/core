@@ -25,6 +25,7 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/ScopeExit.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/Func/Transforms/FuncConversions.h>
@@ -661,36 +662,12 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
 /// Rejects unsupported operations and qubit captures in QC modifiers.
 [[nodiscard]] static LogicalResult validateModifierBodies(Operation* root) {
   const auto result = root->walk([&](Operation* operation) {
-    if (isa<qc::InvOp, qc::CtrlOp, qc::PowOp>(operation)) {
-      SetVector<Value> captures;
-      getUsedValuesDefinedAbove(operation->getRegions(), captures);
-      if (llvm::any_of(captures, [](Value value) {
-            return isa<qc::QubitType>(value.getType());
-          })) {
-        operation->emitOpError(
-            "body must not capture qubits from above; use only its aliased "
-            "block arguments");
-        return WalkResult::interrupt();
-      }
-    }
-
-    if (operation->getName().getDialectNamespace() !=
-            cbit::CBitDialect::getDialectNamespace() &&
-        !isa<qc::AllocOp, qc::DeallocOp, qc::MeasureOp, qc::ResetOp,
-             memref::LoadOp, memref::StoreOp>(operation)) {
-      return WalkResult::advance();
-    }
-
-    for (auto* parent = operation->getParentOp(); parent != nullptr;
-         parent = parent->getParentOp()) {
-      if (!isa<qc::InvOp, qc::CtrlOp, qc::PowOp>(parent)) {
-        continue;
-      }
-      parent->emitOpError(
-          "body must not contain non-unitary operations or access registers");
-      return WalkResult::interrupt();
-    }
-    return WalkResult::advance();
+    return llvm::TypeSwitch<Operation*, WalkResult>(operation)
+        .Case<qc::InvOp, qc::CtrlOp, qc::PowOp>([](auto modifier) {
+          return failed(modifier.verify()) ? WalkResult::interrupt()
+                                           : WalkResult::advance();
+        })
+        .Default(WalkResult::advance());
   });
   return success(!result.wasInterrupted());
 }
@@ -727,27 +704,6 @@ static void collectStructuredCaptures(Operation* root, LoweringState& state) {
   });
 }
 
-/// Canonicalizes preserved SCF capture keys after signature conversion.
-static void remapStructuredCaptures(Operation* root, LoweringState& state) {
-  root->walk([&](Operation* operation) {
-    if (!isa<scf::ForOp, scf::WhileOp, scf::IfOp, scf::IndexSwitchOp>(
-            operation)) {
-      return;
-    }
-
-    const auto captures = state.regionQubitMap.find(operation);
-    if (captures == state.regionQubitMap.end()) {
-      return;
-    }
-
-    SetVector<Value> remapped;
-    for (auto qubit : captures->second) {
-      remapped.insert(canonicalQubitKey(state, qubit));
-    }
-    captures->second = std::move(remapped);
-  });
-}
-
 /// Seeds region-owned modifier state after signature conversion.
 static void initializeModifierRegionState(Operation* modifier,
                                           ValueRange sourceArguments,
@@ -762,11 +718,6 @@ static void initializeModifierRegionState(Operation* modifier,
       SmallVector<Value>(convertedArguments.begin(), convertedArguments.end());
   seedRegionMappings(state, region, convertedArguments, {}, convertedArguments,
                      {});
-
-  // Signature conversion replaces modifier block arguments. Refresh nested
-  // structured captures so they refer to the converted arguments owned by the
-  // moved region rather than source conversion keys.
-  remapStructuredCaptures(modifier, state);
 }
 
 namespace {
