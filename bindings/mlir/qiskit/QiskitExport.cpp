@@ -49,6 +49,7 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <nanobind/nanobind.h>
@@ -1687,12 +1688,34 @@ exportExpression(mlir::Value value, ExportState& state,
   return result;
 }
 
+[[nodiscard]] static mlir::cbit::StoreOp
+measurementDestination(mlir::qc::MeasureOp measure) {
+  mlir::cbit::StoreOp destination;
+  for (auto* user : measure.getResult().getUsers()) {
+    if (auto store = llvm::dyn_cast<mlir::cbit::StoreOp>(user)) {
+      if (destination) {
+        throw std::runtime_error(
+            "QC measurement has more than one classical destination");
+      }
+      destination = store;
+    }
+  }
+  if (!destination) {
+    throw std::runtime_error(
+        "QC measurement is missing a static classical destination");
+  }
+  return destination;
+}
+
 /// Index writes in block order, including effects of nested operations.
 static void indexWrites(mlir::Block& block, ExportState::WriteIndex& index) {
   index.try_emplace(&block);
   for (auto& operation : block) {
     llvm::DenseSet<mlir::Value> modified;
-    if (auto store = llvm::dyn_cast<mlir::cbit::StoreOp>(operation)) {
+    if (auto measure = llvm::dyn_cast<mlir::qc::MeasureOp>(operation)) {
+      /// Fusion writes the destination at the measurement's position.
+      modified.insert(measurementDestination(measure).getReg());
+    } else if (auto store = llvm::dyn_cast<mlir::cbit::StoreOp>(operation)) {
       modified.insert(store.getReg());
     } else if (auto write = llvm::dyn_cast<mlir::cbit::WriteOp>(operation)) {
       modified.insert(write.getReg());
@@ -2053,6 +2076,71 @@ static void validateControlFlowDepth(const size_t controlFlowDepth) {
   }
 }
 
+[[nodiscard]] static bool
+disjointClassicalBit(mlir::Value reg, mlir::Value index,
+                     mlir::cbit::StoreOp destination) {
+  if (reg != destination.getReg()) {
+    return true;
+  }
+  const auto bit = mlir::getConstantIntValue(index);
+  const auto destinationBit = mlir::getConstantIntValue(destination.getIndex());
+  return bit && destinationBit && *bit != *destinationBit;
+}
+
+[[nodiscard]] static bool
+canFuseMeasurementAcross(mlir::Operation& operation,
+                         mlir::cbit::StoreOp destination) {
+  return !operation
+              .walk<mlir::WalkOrder::PreOrder>([&](mlir::Operation* candidate) {
+                // Verified unitary regions cannot access classical memory.
+                // Their global phase and call effects are deliberately broad.
+                if (llvm::isa<mlir::qc::UnitaryOpInterface>(candidate)) {
+                  return mlir::WalkResult::skip();
+                }
+                if (auto measure =
+                        llvm::dyn_cast<mlir::qc::MeasureOp>(candidate)) {
+                  auto store = measurementDestination(measure);
+                  return disjointClassicalBit(store.getReg(), store.getIndex(),
+                                              destination)
+                             ? mlir::WalkResult::advance()
+                             : mlir::WalkResult::interrupt();
+                }
+                if (auto store =
+                        llvm::dyn_cast<mlir::cbit::StoreOp>(candidate)) {
+                  return disjointClassicalBit(store.getReg(), store.getIndex(),
+                                              destination)
+                             ? mlir::WalkResult::advance()
+                             : mlir::WalkResult::interrupt();
+                }
+                if (auto load = llvm::dyn_cast<mlir::cbit::LoadOp>(candidate)) {
+                  return disjointClassicalBit(load.getReg(), load.getIndex(),
+                                              destination)
+                             ? mlir::WalkResult::advance()
+                             : mlir::WalkResult::interrupt();
+                }
+                if (auto interface =
+                        llvm::dyn_cast<mlir::MemoryEffectOpInterface>(
+                            candidate)) {
+                  llvm::SmallVector<mlir::MemoryEffects::EffectInstance>
+                      effects;
+                  interface.getEffects(effects);
+                  // CBit registers do not alias. Unknown locations and reads
+                  // as well as writes to the destination block early fusion.
+                  if (llvm::any_of(effects, [&](const auto& effect) {
+                        return !effect.getValue() ||
+                               effect.getValue() == destination.getReg();
+                      })) {
+                    return mlir::WalkResult::interrupt();
+                  }
+                } else if (!candidate->hasTrait<
+                               mlir::OpTrait::HasRecursiveMemoryEffects>()) {
+                  return mlir::WalkResult::interrupt();
+                }
+                return mlir::WalkResult::advance();
+              })
+              .wasInterrupted();
+}
+
 [[nodiscard]] static bool isFusableMeasurementStore(mlir::qc::MeasureOp measure,
                                                     mlir::cbit::StoreOp store) {
   if (store.getValue() != measure.getResult() ||
@@ -2061,11 +2149,7 @@ static void validateControlFlowDepth(const size_t controlFlowDepth) {
   }
   for (auto* operation = measure->getNextNode(); operation != store;
        operation = operation->getNextNode()) {
-    // Fusion writes the destination at the measurement. Quantum gates and
-    // resets cannot observe that earlier classical write and stay in place.
-    if (operation == nullptr ||
-        !llvm::isa<mlir::arith::ConstantOp, mlir::qc::UnitaryOpInterface,
-                   mlir::qc::ResetOp>(operation)) {
+    if (operation == nullptr || !canFuseMeasurementAcross(*operation, store)) {
       return false;
     }
   }
@@ -2570,21 +2654,7 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
         continue;
       }
       if (auto measure = llvm::dyn_cast<mlir::qc::MeasureOp>(operation)) {
-        mlir::cbit::StoreOp destination;
-        for (auto& use : measure.getResult().getUses()) {
-          if (auto store =
-                  llvm::dyn_cast<mlir::cbit::StoreOp>(use.getOwner())) {
-            if (destination) {
-              throw std::runtime_error(
-                  "QC measurement has more than one classical destination");
-            }
-            destination = store;
-          }
-        }
-        if (!destination) {
-          throw std::runtime_error(
-              "QC measurement is missing a static classical destination");
-        }
+        auto destination = measurementDestination(measure);
         const auto info =
             state.classicalRegisterInfo.find(destination.getReg());
         const auto index = mlir::getConstantIntValue(destination.getIndex());
