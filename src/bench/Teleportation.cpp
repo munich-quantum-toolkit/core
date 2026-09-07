@@ -17,19 +17,20 @@
 
 namespace mqt::bench {
 
-Teleportation::Teleportation() : output_{.name = "result", .width = 3} {}
+Teleportation::Teleportation() : output_{.name = "result", .width = 1} {}
 
 const Output& Teleportation::output() const noexcept { return output_; }
 
 double Teleportation::probability(const std::string_view outcome) const {
   detail::validateOutcome(outcome, output_.width);
-  return 1. / 8.;
+  return outcome == "0" ? 1. : 0.;
 }
 
 Evaluation Teleportation::evaluate(const Counts& counts) const {
   return detail::evaluate(
       output_, counts,
-      [this](const std::string_view outcome) { return probability(outcome); });
+      [this](const std::string_view outcome) { return probability(outcome); },
+      "0");
 }
 
 } // namespace mqt::bench

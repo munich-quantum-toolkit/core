@@ -14,50 +14,31 @@
 #include <gtest/gtest.h>
 
 #include <stdexcept>
-#include <string_view>
 
 namespace {
 
 using mqt::bench::Output;
 using mqt::bench::Teleportation;
 
-TEST(Teleportation, HasTheFixedOutput) {
+TEST(Teleportation, ChecksTheTeleportedState) {
   const Teleportation benchmark;
-  EXPECT_EQ(benchmark.output(), (Output{"result", 3}));
-}
-
-TEST(Teleportation, HasTheExactUniformReference) {
-  const Teleportation benchmark;
-  for (const std::string_view outcome :
-       {"000", "001", "010", "011", "100", "101", "110", "111"}) {
-    EXPECT_DOUBLE_EQ(benchmark.probability(outcome), 1. / 8.);
-  }
+  EXPECT_EQ(benchmark.output(), (Output{"result", 1}));
+  EXPECT_DOUBLE_EQ(benchmark.probability("0"), 1.);
+  EXPECT_DOUBLE_EQ(benchmark.probability("1"), 0.);
   EXPECT_THROW(static_cast<void>(benchmark.probability("00")),
                std::invalid_argument);
-  EXPECT_THROW(static_cast<void>(benchmark.probability("00x")),
+  EXPECT_THROW(static_cast<void>(benchmark.probability("x")),
                std::invalid_argument);
-}
 
-TEST(Teleportation, EvaluatesTheReferenceWithoutASuccessOutcome) {
-  const Teleportation benchmark;
-  const auto exact = benchmark.evaluate({
-      {"000", 1},
-      {"001", 1},
-      {"010", 1},
-      {"011", 1},
-      {"100", 1},
-      {"101", 1},
-      {"110", 1},
-      {"111", 1},
-  });
+  const auto exact = benchmark.evaluate({{"0", 8}});
   EXPECT_DOUBLE_EQ(exact.totalVariationDistance, 0.);
   EXPECT_DOUBLE_EQ(exact.squaredHellingerFidelity, 1.);
-  EXPECT_FALSE(exact.successProbability);
+  EXPECT_EQ(exact.successProbability, 1.);
 
-  const auto biased = benchmark.evaluate({{"000", 8}});
-  EXPECT_DOUBLE_EQ(biased.totalVariationDistance, 7. / 8.);
-  EXPECT_DOUBLE_EQ(biased.squaredHellingerFidelity, 1. / 8.);
-  EXPECT_FALSE(biased.successProbability);
+  const auto noisy = benchmark.evaluate({{"0", 6}, {"1", 2}});
+  EXPECT_DOUBLE_EQ(noisy.totalVariationDistance, 0.25);
+  EXPECT_DOUBLE_EQ(noisy.squaredHellingerFidelity, 0.75);
+  EXPECT_EQ(noisy.successProbability, 0.75);
 }
 
 } // namespace
