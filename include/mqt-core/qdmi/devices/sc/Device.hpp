@@ -48,9 +48,12 @@ struct MQT_SC_QDMI_Operation_impl_d {
   std::string name;
   size_t numParameters = 0;
   size_t numQubits = 0;
+  /// Sorted lexicographically by site ID for lookup.
   std::vector<std::vector<MQT_SC_QDMI_Site>> supportedSites;
+  /// Supported tuples in their configured order for QDMI queries.
   std::vector<MQT_SC_QDMI_Site> flattenedSites;
   Calibration defaults;
+  /// Sorted by the same tuple order as supportedSites.
   std::vector<std::pair<std::vector<MQT_SC_QDMI_Site>, Calibration>> overrides;
 
   int queryProperty(size_t numSites, const MQT_SC_QDMI_Site* sites,

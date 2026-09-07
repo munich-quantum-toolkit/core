@@ -399,9 +399,16 @@ template <maybe_optional_value_or_string_or_vector T, typename Query>
     }
 
     qdmi::throwIfError(result, sizeMsg);
-    std::string value(size - 1, '\0');
+    if (size == 0) {
+      throw std::runtime_error(sizeMsg + ": missing string terminator");
+    }
+    std::string value(size, '\0');
     result = query(size, value.data(), nullptr);
     qdmi::throwIfError(result, msg);
+    if (value.back() != '\0') {
+      throw std::runtime_error(msg + ": missing string terminator");
+    }
+    value.pop_back();
     return value;
   } else if constexpr (maybe_optional_size_constructible_contiguous_range<T>) {
     size_t size = 0;
@@ -414,10 +421,16 @@ template <maybe_optional_value_or_string_or_vector T, typename Query>
     }
 
     qdmi::throwIfError(result, sizeMsg);
+    if (size % sizeof(typename remove_optional_t<T>::value_type) != 0) {
+      throw std::runtime_error(
+          sizeMsg + ": byte count is not a multiple of the element size");
+    }
     remove_optional_t<T> value(
         size / sizeof(typename remove_optional_t<T>::value_type));
-    result = query(size, value.data(), nullptr);
-    qdmi::throwIfError(result, msg);
+    if (size != 0) {
+      result = query(size, value.data(), nullptr);
+      qdmi::throwIfError(result, msg);
+    }
     return value;
   } else {
     remove_optional_t<T> value{};
@@ -513,17 +526,13 @@ private:
   /// Query a session property.
   template <size_constructible_contiguous_range T>
   [[nodiscard]] T queryProperty(const QDMI_Session_Property prop) const {
-    using StrippedValueType = remove_optional_t<T>::value_type;
-
-    size_t size = 0;
-    qdmi::throwIfError(QDMI_session_query_session_property(session_.get(), prop,
-                                                           0, nullptr, &size),
-                       std::string("Querying size ") + qdmi::toString(prop));
-    remove_optional_t<T> value(size / sizeof(StrippedValueType));
-    qdmi::throwIfError(QDMI_session_query_session_property(
-                           session_.get(), prop, size, value.data(), nullptr),
-                       std::string("Querying ") + qdmi::toString(prop));
-    return value;
+    return detail::queryProperty<T>(
+        [&](const size_t size, void* value, size_t* sizeRet) {
+          return QDMI_session_query_session_property(session_.get(), prop, size,
+                                                     value, sizeRet);
+        },
+        std::string("Querying ") + qdmi::toString(prop),
+        std::string("Querying size ") + qdmi::toString(prop));
   }
 
   std::unique_ptr<QDMI_Session_impl_d, decltype(&QDMI_session_free)> session_{

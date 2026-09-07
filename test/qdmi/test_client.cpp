@@ -220,6 +220,43 @@ TEST(StandardPropertyTest, PreservesValuesAndOptionalSupport) {
                std::runtime_error);
 }
 
+TEST(StandardPropertyTest, RejectsMalformedSizesBeforeReading) {
+  bool read = false;
+  const auto query = [&read](size_t, void* value, size_t* sizeRet) {
+    if (sizeRet != nullptr) {
+      *sizeRet = sizeof(size_t) + 1;
+    }
+    read |= value != nullptr;
+    return QDMI_SUCCESS;
+  };
+  EXPECT_THROW(std::ignore = detail::queryProperty<std::vector<size_t>>(
+                   query, "value", "size"),
+               std::runtime_error);
+  EXPECT_THROW(std::ignore =
+                   detail::queryProperty<std::optional<std::vector<size_t>>>(
+                       query, "value", "size"),
+               std::runtime_error);
+  EXPECT_FALSE(read);
+}
+
+TEST(StandardPropertyTest, ValidatesStringsAndPreservesEmptyValues) {
+  const std::vector<std::byte> empty;
+  EXPECT_TRUE(detail::queryProperty<std::vector<size_t>>(queryBytes(empty),
+                                                         "value", "size")
+                  .empty());
+  EXPECT_THROW(std::ignore = detail::queryProperty<std::string>(
+                   queryBytes(empty), "value", "size"),
+               std::runtime_error);
+  const std::vector<std::byte> unterminated{std::byte{'x'}};
+  EXPECT_THROW(std::ignore = detail::queryProperty<std::optional<std::string>>(
+                   queryBytes(unterminated), "value", "size"),
+               std::runtime_error);
+  const std::vector<std::byte> terminated{std::byte{0}};
+  EXPECT_EQ(detail::queryProperty<std::string>(queryBytes(terminated), "value",
+                                               "size"),
+            "");
+}
+
 TEST(CustomPropertyTest, DecodesSupportedTypes) {
   const std::vector<std::byte> stringBytes{
       std::byte{'v'}, std::byte{'a'}, std::byte{'l'},

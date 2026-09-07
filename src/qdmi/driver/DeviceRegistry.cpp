@@ -61,10 +61,9 @@ void rejectUnknownKeys(const Json& value,
                        const std::initializer_list<std::string_view> allowed,
                        const std::filesystem::path& source,
                        const std::string_view path) {
-  const std::set<std::string_view> known(allowed);
   for (const auto& [key, unused] : value.items()) {
     static_cast<void>(unused);
-    if (!known.contains(key)) {
+    if (std::ranges::find(allowed, key) == allowed.end()) {
       throw std::invalid_argument(sourceLabel(source, path) +
                                   " contains unknown key '" + key + "'");
     }
