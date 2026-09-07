@@ -33,11 +33,12 @@ void registerQFTAdderClassical(const nb::module_& m) {
 
   auto qftAdder = nb::class_<bench::QFTAdderClassical>(
       m, "QFTAdderClassical",
-      "A QFT adder that adds the classical addend to an accumulator "
-      "in |1>.\n\n"
-      "Leading zeros define the n-bit input width. The n+1-bit big-endian "
-      "result is addend + 1; the extra bit preserves carry.\n\n"
-      "Reference: https://arxiv.org/abs/quant-ph/0205095");
+      R"pb(A QFT adder that adds the classical addend to an accumulator in :math:`|1\\rangle`.
+
+Leading zeros define the n-bit input width. The n+1-bit big-endian result is
+addend + 1; the extra bit preserves carry.
+
+Reference: https://arxiv.org/abs/quant-ph/0205095)pb");
   qftAdder.def(nb::init<bench::QFTAdderClassicalOptions>(), "options"_a)
       .def_prop_ro("options", &bench::QFTAdderClassical::options,
                    nb::rv_policy::reference_internal,
