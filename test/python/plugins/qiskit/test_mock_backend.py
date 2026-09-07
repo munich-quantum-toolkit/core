@@ -25,6 +25,7 @@ from mqt.core.plugins.qiskit import (
     QDMIProvider,
     TranslationError,
     UnsupportedFormatError,
+    UnsupportedOperationError,
     program_serializer,
     register_program_serializer,
     unregister_program_serializer,
@@ -812,3 +813,57 @@ def test_backend_validation_uses_inverse_mapping(
     # knows that Qiskit's 'r' can map to device's 'prx'
     job = backend.run(qc_bound, shots=100)
     assert job is not None
+
+
+@pytest.mark.parametrize(
+    ("unit", "scale", "duration", "expected"),
+    [
+        ("ns", None, 20, 20e-9),
+        ("us", 0.5, 20, 10e-6),
+        (None, None, None, None),
+        ("ns", 1.0, 0, 0.0),
+    ],
+)
+def test_global_target_duration(
+    monkeypatch: pytest.MonkeyPatch,
+    unit: str | None,
+    scale: float | None,
+    duration: int | None,
+    expected: float | None,
+) -> None:
+    """Global calibrations use device units; absent durations need no unit."""
+    device = MockQDMIDevice(operations=["x", "measure"])
+    monkeypatch.setattr(device.operations()[0], "duration", lambda: duration)
+    monkeypatch.setattr(device, "duration_unit", lambda: unit, raising=False)
+    monkeypatch.setattr(device, "duration_scale_factor", lambda: scale, raising=False)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Intentional device double.
+    properties = backend.target["x"][None]
+    if expected is None:
+        assert properties is None
+    else:
+        assert properties.duration == pytest.approx(expected)
+
+
+@pytest.mark.parametrize(("unit", "scale"), [(None, 1.0), ("dt", 1.0), ("ns", 0.0), ("ns", float("nan"))])
+def test_target_rejects_invalid_duration_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    unit: str | None,
+    scale: float,
+) -> None:
+    """A reported duration must have units that can be converted to seconds."""
+    device = MockQDMIDevice(operations=["x", "measure"])
+    monkeypatch.setattr(device.operations()[0], "duration", lambda: 20)
+    monkeypatch.setattr(device, "duration_unit", lambda: unit, raising=False)
+    monkeypatch.setattr(device, "duration_scale_factor", lambda: scale, raising=False)
+    with pytest.raises(UnsupportedOperationError, match="duration"):
+        QDMIBackend(device)  # ty: ignore[invalid-argument-type] Intentional device double.
+
+
+def test_target_rejects_incomplete_site_tuple(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Malformed fixed-arity metadata cannot become global gate support."""
+    device = MockQDMIDevice(num_qubits=4, operations=["ccx", "measure"])
+    operation = device.operations()[0]
+    monkeypatch.setattr(operation, "qubits_num", lambda: 3)
+    monkeypatch.setattr(operation, "sites", device.sites)
+    with pytest.raises(UnsupportedOperationError, match="incomplete 3-qubit site tuple"):
+        QDMIBackend(device)  # ty: ignore[invalid-argument-type] Intentional device double.

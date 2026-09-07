@@ -494,8 +494,16 @@ The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 
 1. Querying the QDMI device for available operations
 2. Mapping each operation to the corresponding Qiskit gate
-3. Determining qubit connectivity from the device's coupling map
+3. Preserving each operation's ordered site tuples, including gates on three or
+   more qubits
 4. Including operation properties (duration, fidelity) if available
+
+Instruction durations use seconds: the backend multiplies raw QDMI durations by
+the device's duration scale factor and converts the advertised time unit. An
+absent scale factor defaults to one. A reported duration with a missing or
+unsupported unit, or an invalid scale factor, raises
+{py:class}`~mqt.core.plugins.qiskit.exceptions.UnsupportedOperationError`.
+Operations without duration metadata remain uncalibrated.
 
 ## API Reference
 

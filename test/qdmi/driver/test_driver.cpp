@@ -38,6 +38,12 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <dlfcn.h>
+#endif
+
 namespace testing {
 namespace {
 auto stringConcat5(const std::string& a, const std::string& b,
@@ -102,6 +108,10 @@ class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
     if (session == nullptr || activeLibrary == nullptr) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
+    if (activeLibrary->nullSession) {
+      *session = nullptr;
+      return QDMI_SUCCESS;
+    }
     auto fakeSession =
         std::make_unique<Session>(Session{.library = activeLibrary});
     auto* const sessionPtr = fakeSession.get();
@@ -110,7 +120,7 @@ class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
     activeLibrary->sessions_.emplace(sessionHandle, std::move(fakeSession));
     ++activeLibrary->allocatedSessions;
     *session = sessionHandle;
-    return QDMI_SUCCESS;
+    return activeLibrary->successStatus;
   }
 
   static void free(QDMI_Device_Session session) {
@@ -128,10 +138,13 @@ class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
     if (session == nullptr || value == nullptr || size == 0) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
+    auto* const fakeSession = asSession(session);
+    if (parameter == QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1) {
+      return fakeSession->library->successStatus;
+    }
     if (parameter != QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE) {
       return QDMI_ERROR_NOTSUPPORTED;
     }
-    auto* const fakeSession = asSession(session);
     if (fakeSession->library->rejectChildSelection ||
         size != sizeof(QDMI_Child_Device)) {
       return QDMI_ERROR_NOTSUPPORTED;
@@ -139,7 +152,7 @@ class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
     std::memcpy(static_cast<void*>(&fakeSession->child), value,
                 sizeof(QDMI_Child_Device));
     fakeSession->library->selectedChildren.emplace_back(fakeSession->child);
-    return QDMI_SUCCESS;
+    return fakeSession->library->successStatus;
   }
 
   static auto init(QDMI_Device_Session session) -> int {
@@ -147,7 +160,7 @@ class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
     asSession(session)->initialized = true;
-    return QDMI_SUCCESS;
+    return asSession(session)->library->successStatus;
   }
 
   static auto queryDeviceProperty(QDMI_Device_Session session,
@@ -189,10 +202,13 @@ class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
             library->children_, handles.begin(), [](Child& child) {
               return reinterpret_cast<QDMI_Child_Device>(&child);
             });
+        if (library->nullChild) {
+          handles.back() = nullptr;
+        }
         std::memcpy(value, static_cast<const void*>(handles.data()),
                     requiredSize);
       }
-      return QDMI_SUCCESS;
+      return library->successStatus;
     }
 
     if (property == QDMI_DEVICE_PROPERTY_NAME) {
@@ -219,6 +235,9 @@ class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
 public:
   size_t allocatedSessions = 0;
   size_t freedSessions = 0;
+  int successStatus = QDMI_SUCCESS;
+  bool nullSession = false;
+  bool nullChild = false;
   bool rejectChildSelection = false;
   bool malformedChildList = false;
   bool childDevicesNotSupported = false;
@@ -385,6 +404,29 @@ TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
               QDMI_ERROR_NOTSUPPORTED);
   }
   EXPECT_EQ(library->freedSessions, 3);
+}
+
+TEST(ChildDeviceTest, AcceptsWarningsDuringSessionSetup) {
+  const auto library = std::make_shared<ChildDeviceLibrary>();
+  library->successStatus = QDMI_WARN_GENERAL;
+  {
+    const QDMI_Device_impl_d parent(library, {.custom1 = "setting"});
+    EXPECT_EQ(library->allocatedSessions, 3);
+    EXPECT_EQ(library->selectedChildren.size(), 2);
+  }
+  EXPECT_EQ(library->freedSessions, 3);
+}
+
+TEST(ChildDeviceTest, RejectsNullProviderHandles) {
+  const auto library = std::make_shared<ChildDeviceLibrary>();
+  library->nullSession = true;
+  EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
+  EXPECT_EQ(library->allocatedSessions, 0);
+  library->nullSession = false;
+  library->nullChild = true;
+  EXPECT_THROW(QDMI_Device_impl_d{library}, std::runtime_error);
+  EXPECT_EQ(library->allocatedSessions, 2);
+  EXPECT_EQ(library->freedSessions, 2);
 }
 
 TEST(ChildDeviceTest, CleansUpWhenSelectingAChildFails) {
@@ -883,6 +925,34 @@ TEST(ConfiguredDriverTest, ConstructionRegistersWithoutOpeningDevices) {
   const auto [library, prefix] = TEST_DEVICE_LIBRARIES.front();
   EXPECT_NO_THROW(qdmi::Driver::get().registerDevice(
       {.id = "mqt.sc.default", .library = library, .prefix = prefix}, true));
+}
+
+TEST(DriverSessionTest, CustomEnumsAreValidButUnsupported) {
+  QDMI_Session session = nullptr;
+  ASSERT_EQ(QDMI_session_alloc(&session), QDMI_SUCCESS);
+  for (const auto parameter : {
+           QDMI_SESSION_PARAMETER_CUSTOM1,
+           QDMI_SESSION_PARAMETER_CUSTOM2,
+           QDMI_SESSION_PARAMETER_CUSTOM3,
+           QDMI_SESSION_PARAMETER_CUSTOM4,
+           QDMI_SESSION_PARAMETER_CUSTOM5,
+       }) {
+    EXPECT_EQ(QDMI_session_set_parameter(session, parameter, 0, nullptr),
+              QDMI_ERROR_NOTSUPPORTED);
+  }
+  ASSERT_EQ(QDMI_session_init(session), QDMI_SUCCESS);
+  for (const auto property : {
+           QDMI_SESSION_PROPERTY_CUSTOM1,
+           QDMI_SESSION_PROPERTY_CUSTOM2,
+           QDMI_SESSION_PROPERTY_CUSTOM3,
+           QDMI_SESSION_PROPERTY_CUSTOM4,
+           QDMI_SESSION_PROPERTY_CUSTOM5,
+       }) {
+    EXPECT_EQ(QDMI_session_query_session_property(session, property, 0, nullptr,
+                                                  nullptr),
+              QDMI_ERROR_NOTSUPPORTED);
+  }
+  QDMI_session_free(session);
 }
 
 TEST(ConfiguredDriverTest, ExposesWorkingDefinitionsAndIsolatesFailures) {
@@ -1713,6 +1783,57 @@ TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {
       EXPECT_NO_THROW(static_cast<void>(openTestDevice(lib, prefix, config)););
     }
   }
+}
+
+TEST(DynamicDeviceLibraryDeathTest,
+     ReusesLoadedModuleAcrossAliasesAndSessionLifetimes) {
+  EXPECT_EXIT(
+      ([] {
+#ifdef _WIN32
+        auto* handle = LoadLibraryW(
+            std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).c_str());
+#else
+        auto* handle =
+            dlopen(MQT_CORE_QDMI_SESSION_DEVICE, RTLD_NOW | RTLD_LOCAL);
+#endif
+        if (handle == nullptr) {
+          std::_Exit(1);
+        }
+        /// Pin the module without initializing it so counters survive an
+        /// erroneous unload.
+        auto& driver = qdmi::Driver::get();
+        driver.registerDevice({.id = "cache.absolute",
+                               .library = MQT_CORE_QDMI_SESSION_DEVICE,
+                               .prefix = "TEST_SESSION",
+                               .session = {.custom1 = "lifetime-counts"}});
+        driver.registerDevice(
+            {.id = "cache.basename",
+             .library =
+                 std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).filename(),
+             .prefix = "TEST_SESSION"});
+        {
+          const auto first = qdmi::Session::openDevice("cache.absolute");
+          const auto second = qdmi::Session::openDevice("cache.basename");
+          if (&static_cast<QDMI_Device>(first)->getLibrary() !=
+              &static_cast<QDMI_Device>(second)->getLibrary()) {
+            std::_Exit(2);
+          }
+        }
+        const auto later = qdmi::Session::openDevice("cache.absolute");
+        std::array<size_t, 2> counts{};
+        const auto status = QDMI_device_query_device_property(
+            later, QDMI_DEVICE_PROPERTY_CUSTOM4, sizeof(counts),
+            static_cast<void*>(counts.data()), nullptr);
+        const auto valid =
+            status == QDMI_SUCCESS && counts[0] == 1 && counts[1] == 0;
+#ifdef _WIN32
+        FreeLibrary(handle);
+#else
+        dlclose(handle);
+#endif
+        std::_Exit(valid ? 0 : 3);
+      }()),
+      testing::ExitedWithCode(0), "");
 }
 
 TEST(DynamicDeviceLibraryTest, ReusesLibraryWithFreshDeviceSessions) {

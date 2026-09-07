@@ -187,6 +187,21 @@ TEST(ScConfigurationTest, AcceptsOptionalSiteNames) {
   EXPECT_FALSE(qubitOverride.t2);
 }
 
+TEST(ScConfigurationTest, RejectsNamesContainingNul) {
+  for (const auto& name :
+       {std::string("\0hidden", 7), std::string("x\0different", 11)}) {
+    expectInvalid([&name](auto& root) { root["name"] = name; }, "name");
+    expectInvalid(
+        [&name](auto& root) {
+          root["qubitProperties"]["overrides"].push_back(
+              {{"qubit", 8}, {"name", name}});
+        },
+        "qubitProperties/overrides");
+    expectInvalid([&name](auto& root) { root["operations"][0]["name"] = name; },
+                  "operations");
+  }
+}
+
 TEST(ScConfigurationTest, RejectsInvalidOrderedTopology) {
   expectInvalid(
       [](auto& root) { root["couplings"].push_back(root["couplings"][0]); },

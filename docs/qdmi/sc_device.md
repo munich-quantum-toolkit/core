@@ -57,7 +57,8 @@ and fidelity, and optional tuple-specific overrides.
 is positive and finite. Couplings contain distinct, valid, non-self tuples.
 Their order is significant; list both orientations if an operation supports
 both. Operation names are unique, durations are non-negative, and fidelities are
-finite values in the inclusive range `[0, 1]`.
+finite values in the inclusive range `[0, 1]`. Device, qubit, and operation
+names must be non-empty and contain no NUL bytes.
 
 The `sites` member may be omitted for one-qubit operations to support every
 qubit, or for two-qubit operations to use the coupling map. Higher-arity

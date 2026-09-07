@@ -8,6 +8,8 @@
  * Licensed under the MIT License
  */
 
+#include "qdmi/driver/Driver.hpp"
+
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 #include <qdmi/client.h>
@@ -15,6 +17,29 @@
 #include <cstdlib>
 
 namespace {
+
+TEST(DriverDiagnosticDeathTest,
+     InvalidConfigurationDoesNotEscapeSessionAllocation) {
+  EXPECT_EXIT(
+      ([] {
+#ifdef _WIN32
+        if (_putenv_s("MQT_CORE_QDMI_CONFIG_JSON", "invalid-json") != 0) {
+#else
+        /// NOLINTNEXTLINE(misc-include-cleaner)
+        if (setenv("MQT_CORE_QDMI_CONFIG_JSON", "invalid-json", 1) != 0) {
+#endif
+          std::_Exit(1);
+        }
+        if (QDMI_session_alloc(nullptr) != QDMI_ERROR_INVALIDARGUMENT) {
+          std::_Exit(2);
+        }
+        QDMI_Session_impl_d sentinel({});
+        auto* session = &sentinel;
+        const auto status = QDMI_session_alloc(&session);
+        std::_Exit(status == QDMI_ERROR_FATAL && session == nullptr ? 0 : 3);
+      }()),
+      testing::ExitedWithCode(0), "");
+}
 
 TEST(DriverDiagnosticTest, ReportsSkippedConfiguredDevice) {
 #ifdef _WIN32

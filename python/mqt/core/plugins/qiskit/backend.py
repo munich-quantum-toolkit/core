@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import inspect
 import warnings
+from math import isfinite
 from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
@@ -498,7 +499,7 @@ class QDMIBackend(BackendV2):
         if qargs == [None]:
             # Create instruction properties
             props = None
-            duration = op.duration()
+            duration = self._duration_seconds(op.duration())
             fidelity = op.fidelity()
             if duration is not None or fidelity is not None:
                 error = 1.0 - fidelity if fidelity is not None else None
@@ -512,36 +513,63 @@ class QDMIBackend(BackendV2):
         # Add the operation without properties and populate them iteratively later
         target.add_instruction(gate, dict.fromkeys(qargs))
 
-        num_qubits = op.qubits_num()
-        if num_qubits == 1:
-            op_sites = op.sites()
-            assert op_sites is not None
-            for qarg, site in zip(qargs, op_sites, strict=True):
-                duration = op.duration(sites=[site])
-                fidelity = op.fidelity(sites=[site])
-                if duration is not None or fidelity is not None:
-                    error = 1.0 - fidelity if fidelity is not None else None
-                    props = InstructionProperties(
-                        duration=duration,
-                        error=error,
-                    )
-                    target.update_instruction_properties(gate_name, qarg, props)
-            return
+        site_tuples = self._get_operation_site_tuples(op)
+        assert site_tuples is not None
+        for qarg, sites in zip(qargs, site_tuples, strict=True):
+            duration = self._duration_seconds(op.duration(sites=sites))
+            fidelity = op.fidelity(sites=sites)
+            if duration is not None or fidelity is not None:
+                error = 1.0 - fidelity if fidelity is not None else None
+                target.update_instruction_properties(
+                    gate_name, qarg, InstructionProperties(duration=duration, error=error)
+                )
 
-        if num_qubits == 2:
-            op_site_pairs = op.site_pairs()
-            assert op_site_pairs is not None
-            for qarg, (site1, site2) in zip(qargs, op_site_pairs, strict=True):
-                duration = op.duration(sites=[site1, site2])
-                fidelity = op.fidelity(sites=[site1, site2])
-                if duration is not None or fidelity is not None:
-                    error = 1.0 - fidelity if fidelity is not None else None
-                    props = InstructionProperties(
-                        duration=duration,
-                        error=error,
-                    )
-                    target.update_instruction_properties(gate_name, qarg, props)
-            return
+    def _duration_seconds(self, duration: int | None) -> float | None:
+        """Convert a raw QDMI duration to Qiskit's seconds.
+
+        Returns:
+            The duration in seconds, or None when it is unavailable.
+
+        Raises:
+            UnsupportedOperationError: If the duration unit or scale is invalid.
+        """
+        if duration is None:
+            return None
+        unit = self._device.duration_unit()
+        seconds_per_unit = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12, "fs": 1e-15}
+        if unit not in seconds_per_unit:
+            msg = f"Cannot convert operation duration with device duration unit {unit!r} to seconds"
+            raise UnsupportedOperationError(msg)
+        scale = self._device.duration_scale_factor()
+        if scale is None:
+            scale = 1.0
+        if not isfinite(scale) or scale <= 0:
+            msg = f"Device duration scale factor must be positive and finite, got {scale!r}"
+            raise UnsupportedOperationError(msg)
+        return duration * scale * seconds_per_unit[unit]
+
+    @staticmethod
+    def _get_operation_site_tuples(op: QDMIDevice.Operation) -> Sequence[tuple[QDMIDevice.Site, ...]] | None:
+        """Read explicit operation placements without widening their support.
+
+        Returns:
+            Ordered site tuples, or None when placements are unspecified.
+
+        Raises:
+            UnsupportedOperationError: If a site tuple is incomplete.
+        """
+        arity = op.qubits_num()
+        if arity is None or arity == 0:
+            return None
+        if arity == 2:
+            return op.site_pairs()
+        sites = op.sites()
+        if sites is None:
+            return None
+        if len(sites) % arity:
+            msg = f"Operation '{op.name()}' has an incomplete {arity}-qubit site tuple"
+            raise UnsupportedOperationError(msg)
+        return [tuple(sites[i : i + arity]) for i in range(0, len(sites), arity)]
 
     @classmethod
     def _map_operation_to_gate(cls, op_name: str) -> Instruction | type[Instruction] | None:
@@ -570,62 +598,27 @@ class QDMIBackend(BackendV2):
         """
         return cls._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
 
-    def _get_operation_qargs(self, op: QDMIDevice.Operation) -> list[tuple[int]] | list[tuple[int, int]] | list[None]:
-        """Get the qubit argument tuples for an operation.
-
-        This method determines which qubit indices an operation can act on by:
-        1. Checking explicit site lists from the operation (sites() for 1-qubit, site_pairs() for 2-qubit)
-        2. For operations without site lists (returns None):
-           - Single-qubit: Available on all individual qubits
-           - Two-qubit with coupling map: Misconfigured device (error)
-           - Two-qubit without coupling map: Available on all qubit pairs (all-to-all)
-           - Multi-qubit (3+): Assumed to be globally available
-
-        Args:
-            op: QDMI device operation.
+    def _get_operation_qargs(self, op: QDMIDevice.Operation) -> list[tuple[int, ...]] | list[None]:
+        """Get explicit qubit tuples, or global support when placements are absent.
 
         Returns:
-            Sequence of qubit index tuples this operation can act on.
-            Returns [None] for globally available operations (will be converted to {None: None} in Target).
+            Ordered qubit tuples, or [None] for global support.
 
         Raises:
-            UnsupportedOperationError: If the device is misconfigured.
+            UnsupportedOperationError: If a site tuple is incomplete or a two-qubit
+                operation omits placements on a device with a coupling map.
         """
-        qubits_num = op.qubits_num()
-
-        # For single-qubit operations, first check for explicit sites
-        if qubits_num == 1:
-            site_list = op.sites()
-            if site_list is not None:
-                # Operation explicitly defines where it can be executed
-                return [(s.index(),) for s in site_list]
-
-            # No explicit sites - operation is globally available on all qubits
-            return [None]
-
-        # For two-qubit operations, first check for explicit site_pairs
-        if qubits_num == 2:
-            site_pairs = op.site_pairs()
-            if site_pairs is not None:
-                return [(s1.index(), s2.index()) for s1, s2 in site_pairs]
-
-            # Two-qubit operations without explicit site_pairs
-            # Check device-level coupling map
-            coupling_map = self._device.coupling_map()
-            if coupling_map is not None:
-                # Device has coupling map but operation doesn't expose sites
-                msg = (
-                    f"Device provides a coupling map (stating connectivity constraints), "
-                    f"but operation '{op.name()}' does not expose site pairs. This indicates "
-                    f"a misconfigured device. Devices with connectivity constraints must expose "
-                    f"sites for their operations."
-                )
-                raise UnsupportedOperationError(msg)
-
-            # No coupling map and no site pairs - operation is globally available (all-to-all)
-            return [None]
-
-        # Operation has unspecified qubit count or 3+ qubits -> assume it applies to all qubits
+        site_tuples = self._get_operation_site_tuples(op)
+        if site_tuples is not None:
+            return [tuple(site.index() for site in sites) for sites in site_tuples]
+        if op.qubits_num() == 2 and self._device.coupling_map() is not None:
+            msg = (
+                f"Device provides a coupling map (stating connectivity constraints), "
+                f"but operation '{op.name()}' does not expose site pairs. This indicates "
+                f"a misconfigured device. Devices with connectivity constraints must expose "
+                f"sites for their operations."
+            )
+            raise UnsupportedOperationError(msg)
         return [None]
 
     def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:  # ruff:ignore[no-self-use]

@@ -23,6 +23,10 @@ via {cpp-api:func}`qdmi::Driver::registerDevice` and
 registered through
 [versioned QDMI device configuration](configuration.md).
 
+The driver shares a loaded provider across path aliases with the same symbol
+prefix and retains it for the process lifetime. Closing a device session frees
+that session without finalizing the provider while another session may use it.
+
 ## Building the Bundled Devices
 
 Standalone MQT Core builds include the DDSIM and superconducting QDMI device
