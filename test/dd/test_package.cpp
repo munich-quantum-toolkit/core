@@ -9,6 +9,7 @@
  */
 
 #include "dd/CachedEdge.hpp"
+#include "dd/ComputeTable.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/Export.hpp"
@@ -17,6 +18,7 @@
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
+#include "dd/UnaryComputeTable.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
 
 #include <gtest/gtest.h>
@@ -172,6 +174,31 @@ TEST(DDPackageTest, TrivialTest) {
   ASSERT_EQ(dd->fidelity(zeroState, oneState), 0.0);
   ASSERT_NEAR(dd->fidelity(zeroState, hState), 0.5, RealNumber::eps);
   ASSERT_NEAR(dd->fidelity(oneState, hState), 0.5, RealNumber::eps);
+}
+
+TEST(DDPackageTest, ComputeTableConfigurationAndClear) {
+  using BinaryTable = ComputeTable<size_t, size_t, size_t>;
+  using UnaryTable = UnaryComputeTable<size_t, size_t>;
+  for (const size_t buckets : {0U, 3U}) {
+    EXPECT_THROW(BinaryTable{buckets}, std::invalid_argument);
+    EXPECT_THROW(UnaryTable{buckets}, std::invalid_argument);
+  }
+  for (const size_t buckets : {1U, 2U, 4U}) {
+    BinaryTable binary(buckets);
+    UnaryTable unary(buckets);
+    for (size_t value = 0; value < 2; ++value) {
+      binary.insert(1, 2, value);
+      unary.insert(1, value);
+      ASSERT_NE(binary.lookup(1, 2), nullptr);
+      EXPECT_EQ(*binary.lookup(1, 2), value);
+      ASSERT_NE(unary.lookup(1), nullptr);
+      EXPECT_EQ(*unary.lookup(1), value);
+      binary.clear();
+      unary.clear();
+      EXPECT_EQ(binary.lookup(1, 2), nullptr);
+      EXPECT_EQ(unary.lookup(1), nullptr);
+    }
+  }
 }
 
 TEST(DDPackageTest, BellState) {
