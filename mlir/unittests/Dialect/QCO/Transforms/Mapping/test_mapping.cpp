@@ -9,6 +9,8 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -16,6 +18,7 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mlir/Dialect/QCO/Utils/Sorting.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/Passes.h"
@@ -61,6 +64,8 @@
 
 using namespace mlir;
 using namespace mlir::qco;
+using namespace mlir::cbit;
+
 using mlir::mqt::getEntryPoint;
 using Connectivity = CompilerTarget::Connectivity;
 using NativeOperations = CompilerTarget::NativeOperations;
@@ -305,7 +310,8 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<mqt::MQTDialect, QCODialect, qtensor::QTensorDialect,
-                    scf::SCFDialect, arith::ArithDialect, func::FuncDialect>();
+                    CBitDialect, scf::SCFDialect, arith::ArithDialect,
+                    func::FuncDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -498,7 +504,7 @@ TEST_F(MappingPassFixture, PlaceNoncontiguousTargetCompactly) {
   size_t numAllocations = 0;
   SmallVector<int64_t> staticSites;
   size_t numSinks = 0;
-  module->walk([&](AllocOp) { ++numAllocations; });
+  module->walk([&](qco::AllocOp) { ++numAllocations; });
   module->walk([&](StaticOp op) { staticSites.emplace_back(op.getIndex()); });
   module->walk([&](SinkOp) { ++numSinks; });
   EXPECT_EQ(numAllocations, 0);
@@ -642,6 +648,97 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
   EXPECT_EQ(numSinks, numStatics);
 }
 
+TEST_F(MappingPassFixture, PreserveStoredRegisterControlDuringRouting) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.alloc : !qco.qubit
+        %q2 = qco.alloc : !qco.qubit
+        %measured, %bit = qco.measure %q0 : !qco.qubit
+        cbit.store %bit, %reg[%c0] : !cbit.reg<1>
+        %one = arith.constant 1 : i64
+        %two = arith.addi %one, %one : i64
+        %snapshot = cbit.read %reg : !cbit.reg<1> -> i1
+        %expected = arith.constant 1 : i1
+        %condition = arith.cmpi eq, %snapshot, %expected : i1
+        %controlled1 = qco.if %condition args(%arg = %q1) -> (!qco.qubit) {
+          %prev_bit = cbit.read %reg : !cbit.reg<1> -> i1
+
+          %flipped = qco.x %arg : !qco.qubit -> !qco.qubit
+          %cond_meas, %next_bit = qco.measure %flipped : !qco.qubit
+
+          %changed = arith.xori %prev_bit, %next_bit : i1
+          cbit.store %changed, %reg[%c0] : !cbit.reg<1>
+
+          qco.yield %cond_meas : !qco.qubit
+        } else args(%arg = %q1) {
+          qco.yield %arg : !qco.qubit
+        }
+        %next1, %next2 = qco.swap %controlled1, %q2
+            : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
+        qco.sink %measured : !qco.qubit
+        qco.sink %next1 : !qco.qubit
+        qco.sink %next2 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
+  PassManager mappingPm(context.get());
+  mappingPm.addPass(
+      createMappingPass(target, MappingPassOptions{.ntrials = 1}));
+  ASSERT_TRUE(succeeded(mappingPm.run(moduleOp.get())));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));
+
+  auto func = mqt::getEntryPoint(*moduleOp);
+  auto alloc = *func.getOps<cbit::AllocOp>().begin();
+  auto measure = *func.getOps<MeasureOp>().begin();
+  auto store = *func.getOps<StoreOp>().begin();
+  auto snapshot = *func.getOps<ReadOp>().begin();
+  auto comparison = *func.getOps<arith::CmpIOp>().begin();
+  auto conditional = *func.getOps<IfOp>().begin();
+
+  Block* condBody = conditional.getBody();
+  auto condRead = *condBody->getOps<ReadOp>().begin();
+  auto condMeasure = *condBody->getOps<MeasureOp>().begin();
+  auto condXOR = *condBody->getOps<arith::XOrIOp>().begin();
+  auto condStore = *condBody->getOps<StoreOp>().begin();
+
+  ASSERT_TRUE(alloc);
+  ASSERT_TRUE(measure);
+  ASSERT_TRUE(store);
+  ASSERT_TRUE(snapshot);
+  ASSERT_TRUE(comparison);
+  ASSERT_TRUE(conditional);
+
+  ASSERT_TRUE(condRead);
+  ASSERT_TRUE(condMeasure);
+  ASSERT_TRUE(condXOR);
+  ASSERT_TRUE(condStore);
+
+  ASSERT_TRUE(alloc->isBeforeInBlock(measure));
+  ASSERT_TRUE(measure->isBeforeInBlock(store));
+  ASSERT_TRUE(store->isBeforeInBlock(snapshot));
+  ASSERT_TRUE(snapshot->isBeforeInBlock(comparison));
+  ASSERT_TRUE(comparison->isBeforeInBlock(conditional));
+
+  ASSERT_TRUE(condRead->isBeforeInBlock(condStore));
+  ASSERT_TRUE(condRead->isBeforeInBlock(condXOR));
+  ASSERT_TRUE(condMeasure->isBeforeInBlock(condXOR));
+  ASSERT_TRUE(condMeasure->isBeforeInBlock(condStore));
+}
+
 TEST_P(MappingPassTest, FailNoEntryPoint) {
   const auto& target = GetParam();
 
@@ -672,7 +769,7 @@ TEST_P(MappingPassTest, MapScalarAllocation) {
 
   size_t numAllocations = 0;
   size_t numStatics = 0;
-  m->walk([&](AllocOp) { ++numAllocations; });
+  m->walk([&](qco::AllocOp) { ++numAllocations; });
   m->walk([&](StaticOp) { ++numStatics; });
   EXPECT_EQ(numAllocations, 0);
   EXPECT_EQ(numStatics, 1);
@@ -747,7 +844,7 @@ TEST_P(MappingPassTest, MapMixedScalarAndTensorAllocations) {
 
   size_t numScalarAllocations = 0;
   size_t numTensorAllocations = 0;
-  m->walk([&](AllocOp) { ++numScalarAllocations; });
+  m->walk([&](qco::AllocOp) { ++numScalarAllocations; });
   m->walk([&](qtensor::AllocOp) { ++numTensorAllocations; });
   EXPECT_EQ(numScalarAllocations, 0);
   EXPECT_EQ(numTensorAllocations, 0);
@@ -899,7 +996,7 @@ TEST_P(MappingPassTest, FailNestedHigherArityUnitary) {
 
   size_t numAllocations = 0;
   size_t numStatics = 0;
-  m->walk([&](AllocOp) { ++numAllocations; });
+  m->walk([&](qco::AllocOp) { ++numAllocations; });
   m->walk([&](StaticOp) { ++numStatics; });
   EXPECT_EQ(numAllocations, 3);
   EXPECT_EQ(numStatics, 0);
