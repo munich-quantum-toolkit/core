@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
 #include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Dialect/MQT/IR/MQTAttributes.h"
@@ -20,6 +21,7 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Error.h>
+#include <mlir/AsmParser/AsmParser.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -106,9 +108,9 @@ TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
       "Invalid payload specification: Payload specification attribute must "
       "not be null");
   expectInvalid(mlir::PayloadSpecification::create(
-                    {.id = "qir", .version = "2.1", .profile = "base"}),
+                    {.id = "qir", .version = "2.1.0.1", .profile = "base"}),
                 "Invalid payload specification: Payload format version must "
-                "use canonical major.minor.patch");
+                "use major[.minor[.patch]]");
   expectInvalid(
       mlir::PayloadSpecification::create({.id = "", .version = "2.1.0"}),
       "Invalid payload specification: Payload format requires an ID and "
@@ -164,6 +166,47 @@ TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
                     }),
                 "Invalid payload specification: Payload specification contains "
                 "a duplicate capability ID/value pair");
+}
+
+TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
+  for (const auto& [input, expected] : std::array{
+           std::pair{"2", "2.0.0"},
+           std::pair{"2.1", "2.1.0"},
+           std::pair{"2.1.3", "2.1.3"},
+       }) {
+    SCOPED_TRACE(input);
+    const auto payload = valid(mlir::PayloadSpecification::create(
+        {.id = "qir", .version = input, .profile = "base"}));
+    EXPECT_EQ(payload.format().version, expected);
+  }
+
+  const auto qir = valid(mlir::PayloadSpecification::create(
+      {.id = "qir", .version = "2.1", .profile = "base"}));
+  EXPECT_EQ(valid(qir.compilerOutput()), mlir::ProgramFormat::QIRBase);
+  const auto qasm = valid(
+      mlir::PayloadSpecification::create({.id = "openqasm", .version = "3"}));
+  EXPECT_EQ(valid(qasm.compilerOutput()), mlir::ProgramFormat::OpenQASM3);
+  const auto exactMajor = valid(mlir::PayloadSpecification::create(
+      {.id = "qir", .version = "2", .profile = "base"}));
+  expectInvalid(exactMajor.compilerOutput(),
+                "Invalid payload specification: MQT Compiler cannot emit the "
+                "selected payload format");
+}
+
+TEST(PayloadSpecificationTest, NormalizesTypedVersionShorthand) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto attribute = mlir::dyn_cast_if_present<mlir::mqt::PayloadSpecAttr>(
+      mlir::parseAttribute(R"mlir(#mqt.payload_spec<
+        format = <id = "qir", version = "2.1", profile = "base", encoding = text>,
+        capabilities = [], optional_capabilities_known = false>)mlir",
+                           &context));
+  ASSERT_TRUE(attribute);
+  const auto payload = valid(mlir::PayloadSpecification::create(attribute));
+  EXPECT_EQ(payload.format().version, "2.1.0");
+  EXPECT_EQ(valid(payload.compilerOutput()), mlir::ProgramFormat::QIRBase);
+  EXPECT_EQ(payload.materialize(context).getFormat().getVersion().getValue(),
+            "2.1.0");
 }
 
 TEST(TargetEnvironmentTest, InvalidatesCachedAnalysisAfterAttributeChange) {

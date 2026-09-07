@@ -45,6 +45,13 @@ effective capability, including the selected format's baseline. Set
 `optional_capabilities_known=True` only when the producer also knows that the
 list contains every optional device capability.
 
+Payload versions accept one to three numeric components. A
+`PayloadSpecification` fills omitted components with zero: `"2.1"` becomes
+`"2.1.0"`, and `"3"` becomes `"3.0.0"`. These are exact versions, not ranges;
+`"2"` means `"2.0.0"` and does not select QIR 2.1. Leading zeros, prerelease
+suffixes, and version ranges are rejected. The same rules apply when reading
+the typed `#mqt.payload_spec` attribute.
+
 The target can also be constructed directly. Connectivity and native-operation
 support are required:
 

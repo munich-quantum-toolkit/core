@@ -823,7 +823,7 @@ TEST_F(MQTIRTest, RejectsInvalidPayloadContracts) {
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_format<id = "qir",
       version = "2.1.0", profile = "base\00suffix", encoding = text>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_format<id = "qir",
-      version = "2.1", profile = "base", encoding = text>)mlir"));
+      version = "2.1.0.1", profile = "base", encoding = text>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_format<id = "qir",
       version = "02.1.0", profile = "base", encoding = text>)mlir"));
   EXPECT_FALSE(parseAttr(R"mlir(#mqt.payload_format<id = "qir",

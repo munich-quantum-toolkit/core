@@ -29,6 +29,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -39,11 +40,16 @@ namespace mlir {
                                  "Invalid payload specification: " + message);
 }
 
-[[nodiscard]] static bool isCanonicalVersion(const llvm::StringRef version) {
+[[nodiscard]] static std::optional<std::string>
+normalizePayloadVersion(llvm::StringRef version) {
   llvm::VersionTuple parsed;
-  return !parsed.tryParse(version) && parsed.getMinor() &&
-         parsed.getSubminor() && !parsed.getBuild() &&
-         parsed.getAsString() == version;
+  if (parsed.tryParse(version) || parsed.getBuild() ||
+      parsed.getAsString() != version) {
+    return std::nullopt;
+  }
+  return llvm::VersionTuple(parsed.getMajor(), parsed.getMinor().value_or(0),
+                            parsed.getSubminor().value_or(0))
+      .getAsString();
 }
 
 [[nodiscard]] static bool containsNull(const llvm::StringRef value) {
@@ -62,10 +68,12 @@ PayloadSpecification::create(PayloadFormat format,
     return invalidPayload(
         "Payload format fields must not contain null characters");
   }
-  if (!isCanonicalVersion(format.version)) {
+  auto version = normalizePayloadVersion(format.version);
+  if (!version) {
     return invalidPayload(
-        "Payload format version must use canonical major.minor.patch");
+        "Payload format version must use major[.minor[.patch]]");
   }
+  format.version = std::move(*version);
   switch (format.encoding) {
   case PayloadEncoding::Text:
   case PayloadEncoding::Binary:

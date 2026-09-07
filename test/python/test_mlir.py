@@ -651,8 +651,27 @@ def test_payload_specification_preserves_python_api() -> None:
     assert environment.format.version == "2.1.0"
     assert environment.capabilities[0].value == 0
 
-    with pytest.raises(ValueError, match=r"canonical major\.minor\.patch"):
-        PayloadSpecification(PayloadFormat("qir", "2.1", "base"))
+    with pytest.raises(ValueError, match=r"major\[\.minor\[\.patch\]\]"):
+        PayloadSpecification(PayloadFormat("qir", "2.1.0.1", "base"))
+
+
+@pytest.mark.parametrize(
+    ("format_id", "version", "profile", "expected_version", "expected_type"),
+    [("qir", "2.1", "base", "2.1.0", QIRProgram), ("openqasm", "3", "", "3.0.0", OpenQASMProgram)],
+)
+def test_target_compilation_accepts_exact_version_shorthand(
+    format_id: str, version: str, profile: str, expected_version: str, expected_type: type
+) -> None:
+    """Normalize a shortened version before selecting the compiler output."""
+    payload = PayloadSpecification(PayloadFormat(format_id, version, profile))
+    assert payload.format.version == expected_version
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    result = compile_program(QASM_STRING, target_environment=TargetEnvironment(target, payload))
+    assert isinstance(result, expected_type)
 
 
 def test_compiler_target_construction_preserves_validation_errors() -> None:

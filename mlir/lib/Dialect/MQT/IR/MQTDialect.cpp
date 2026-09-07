@@ -70,8 +70,7 @@ void MQTDialect::initialize() {
 
 [[nodiscard]] static bool isCanonicalPayloadVersion(const StringRef version) {
   llvm::VersionTuple parsed;
-  return !parsed.tryParse(version) && parsed.getMinor() &&
-         parsed.getSubminor() && !parsed.getBuild() &&
+  return !parsed.tryParse(version) && !parsed.getBuild() &&
          parsed.getAsString() == version;
 }
 
@@ -90,7 +89,7 @@ PayloadFormatAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
   }
   if (!isCanonicalPayloadVersion(version.getValue())) {
     return emitError()
-           << "payload format version must use canonical major.minor.patch";
+           << "payload format version must use major[.minor[.patch]]";
   }
   return success();
 }
