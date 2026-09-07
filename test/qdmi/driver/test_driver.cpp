@@ -1787,53 +1787,54 @@ TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {
 
 TEST(DynamicDeviceLibraryDeathTest,
      ReusesLoadedModuleAcrossAliasesAndSessionLifetimes) {
-  EXPECT_EXIT(
-      ([] {
+  const auto probe = [] {
 #ifdef _WIN32
-        auto* handle = LoadLibraryW(
-            std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).c_str());
+    auto* handle = LoadLibraryW(
+        std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).c_str());
 #else
-        auto* handle =
-            dlopen(MQT_CORE_QDMI_SESSION_DEVICE, RTLD_NOW | RTLD_LOCAL);
+    auto* handle = dlopen(MQT_CORE_QDMI_SESSION_DEVICE, RTLD_NOW | RTLD_LOCAL);
 #endif
-        if (handle == nullptr) {
-          std::_Exit(1);
-        }
-        /// Pin the module without initializing it so counters survive an
-        /// erroneous unload.
-        auto& driver = qdmi::Driver::get();
-        driver.registerDevice({.id = "cache.absolute",
-                               .library = MQT_CORE_QDMI_SESSION_DEVICE,
-                               .prefix = "TEST_SESSION",
-                               .session = {.custom1 = "lifetime-counts"}});
-        driver.registerDevice(
-            {.id = "cache.basename",
-             .library =
-                 std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).filename(),
-             .prefix = "TEST_SESSION"});
-        {
-          const auto first = qdmi::Session::openDevice("cache.absolute");
-          const auto second = qdmi::Session::openDevice("cache.basename");
-          if (&static_cast<QDMI_Device>(first)->getLibrary() !=
-              &static_cast<QDMI_Device>(second)->getLibrary()) {
-            std::_Exit(2);
-          }
-        }
-        const auto later = qdmi::Session::openDevice("cache.absolute");
-        std::array<size_t, 2> counts{};
-        const auto status = QDMI_device_query_device_property(
-            later, QDMI_DEVICE_PROPERTY_CUSTOM4, sizeof(counts),
-            static_cast<void*>(counts.data()), nullptr);
-        const auto valid =
-            status == QDMI_SUCCESS && counts[0] == 1 && counts[1] == 0;
+    if (handle == nullptr) {
+      std::_Exit(1);
+    }
+    /// Pin the module without initializing it so counters survive an
+    /// erroneous unload.
+    auto& driver = qdmi::Driver::get();
+    driver.registerDevice({
+        .id = "cache.absolute",
+        .library = MQT_CORE_QDMI_SESSION_DEVICE,
+        .prefix = "TEST_SESSION",
+        .session = {.custom1 = "lifetime-counts"},
+    });
+    driver.registerDevice({
+        .id = "cache.basename",
+        .library =
+            std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).filename(),
+        .prefix = "TEST_SESSION",
+    });
+    {
+      const auto first = qdmi::Session::openDevice("cache.absolute");
+      const auto second = qdmi::Session::openDevice("cache.basename");
+      if (&static_cast<QDMI_Device>(first)->getLibrary() !=
+          &static_cast<QDMI_Device>(second)->getLibrary()) {
+        std::_Exit(2);
+      }
+    }
+    const auto later = qdmi::Session::openDevice("cache.absolute");
+    std::array<size_t, 2> counts{};
+    const auto status = QDMI_device_query_device_property(
+        later, QDMI_DEVICE_PROPERTY_CUSTOM4, sizeof(counts),
+        static_cast<void*>(counts.data()), nullptr);
+    const auto valid =
+        status == QDMI_SUCCESS && counts[0] == 1 && counts[1] == 0;
 #ifdef _WIN32
-        FreeLibrary(handle);
+    FreeLibrary(handle);
 #else
-        dlclose(handle);
+    dlclose(handle);
 #endif
-        std::_Exit(valid ? 0 : 3);
-      }()),
-      testing::ExitedWithCode(0), "");
+    std::_Exit(valid ? 0 : 3);
+  };
+  EXPECT_EXIT(probe(), testing::ExitedWithCode(0), "");
 }
 
 TEST(DynamicDeviceLibraryTest, ReusesLibraryWithFreshDeviceSessions) {
