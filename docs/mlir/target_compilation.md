@@ -81,8 +81,10 @@ directions. Target compilation requires a known static physical site for each
 qubit. Structured branch exits must agree on sites, and loop backedges must
 preserve the entry sites. Unsupported or inconsistent site transfers are
 diagnosed, including after all-to-all placement. A synthesis basis must provide
-the same one-qubit gate family on every site and an entangler on every routing
-edge in at least one direction.
+the same one-qubit gate family on every site. Its entangler is optional:
+one-qubit synthesis does not need one. Two-qubit synthesis requires an entangler
+on every routing edge in at least one direction. A native operation does not
+need a synthesis basis.
 
 Target synthesis preserves a native `gphase`. If the target does not support
 `gphase`, target synthesis preserves relative phase effects and removes only the
