@@ -36,7 +36,7 @@ class Options:
     ) -> None: ...
     @property
     def addend(self) -> str:
-        """Big-endian addend; register inputs also accept '+' for a |+> qubit."""
+        """Big-endian addend; register inputs also accept ``+`` for a :math:`|+\\rangle` qubit."""
 
     @property
     def accumulator(self) -> str:

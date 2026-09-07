@@ -237,7 +237,9 @@ resolved parameters, logical output, reference, definition version, and case ID.
 Before evaluation, normalize backend results to the manifest's big-endian
 `result` order.
 
-## QFT addition
+## Benchmark families
+
+### QFT addition
 
 The `qft-adder` family adds two equal-width operands. `REGISTER` stores the
 addend in qubits and applies controlled phases; `CONSTANT` combines the known

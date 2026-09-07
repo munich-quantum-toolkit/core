@@ -43,7 +43,7 @@ void registerQFTAdder(const nb::module_& m) {
            "overflow"_a = bench::QFTAdderOverflow::Wrap)
       .def_ro(
           "addend", &bench::QFTAdderOptions::addend,
-          "Big-endian addend; register inputs also accept '+' for a |+> qubit.")
+          R"pb(Big-endian addend; register inputs also accept ``+`` for a :math:`|+\rangle` qubit.)pb")
       .def_ro("accumulator", &bench::QFTAdderOptions::accumulator,
               "Binary accumulator with the same width as the addend.")
       .def_ro("method", &bench::QFTAdderOptions::method,
