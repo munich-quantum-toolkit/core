@@ -24,23 +24,23 @@ using namespace mlir;
 
 SmallVector<Value> teleportation(qc::QCProgramBuilder& builder,
                                  const Teleportation& benchmark) {
-  auto msg = builder.allocQubit();
+  auto message = builder.allocQubit();
   auto alice = builder.allocQubit();
   auto bob = builder.allocQubit();
   auto result = builder.allocClassicalBitRegister(
       static_cast<int64_t>(benchmark.output().width), benchmark.output().name);
 
-  builder.h(msg);
+  builder.h(message);
   builder.h(alice);
   builder.cx(alice, bob);
 
-  builder.cx(msg, alice);
-  builder.h(msg);
+  builder.cx(message, alice);
+  builder.h(message);
 
-  auto a = builder.measure(msg, result, 0);
-  auto b1 = builder.measure(alice, result, 1);
-  builder.scfIf(b1, [&] { builder.x(bob); });
-  builder.scfIf(a, [&] { builder.z(bob); });
+  auto messageMeasurement = builder.measure(message, result, 0);
+  auto aliceMeasurement = builder.measure(alice, result, 1);
+  builder.scfIf(aliceMeasurement, [&] { builder.x(bob); });
+  builder.scfIf(messageMeasurement, [&] { builder.z(bob); });
 
   builder.measure(bob, result, 2);
   return {result};
