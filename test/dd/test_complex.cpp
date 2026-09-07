@@ -112,6 +112,33 @@ TEST_F(CNTest, SortedBuckets) {
   EXPECT_EQ(counter, numbers.size());
 }
 
+TEST_F(CNTest, ReusesEntriesAtOccupiedBucketBorders) {
+  const auto mask = static_cast<fp>(ut.getTable().size() - 1);
+  for (const fp side : {-1., 1.}) {
+    const fp border = (side < 0 ? 8191.5 : 16383.5) / mask;
+    const fp interior = border + (side * 1e-6);
+    const fp nearBorder = border + (side * RealNumber::eps / 4);
+    const auto* interiorEntry = ut.lookup(interior);
+    const auto* borderEntry = ut.lookup(nearBorder);
+    const auto entries = ut.getStats().numEntries;
+    for (size_t repeat = 0; repeat < 3; ++repeat) {
+      EXPECT_EQ(ut.lookup(nearBorder), borderEntry);
+      EXPECT_EQ(ut.lookup(interior), interiorEntry);
+    }
+    EXPECT_EQ(ut.getStats().numEntries, entries);
+  }
+}
+
+TEST_F(CNTest, HashesLargeFiniteValuesIntoLastBucket) {
+  const auto lastBucket = RealNumberUniqueTable::hash(1.);
+  for (const fp value : {1e15, std::numeric_limits<fp>::max()}) {
+    EXPECT_EQ(RealNumberUniqueTable::hash(value), lastBucket);
+    const auto* entry = ut.lookup(value);
+    EXPECT_EQ(entry->value, value);
+    EXPECT_EQ(ut.lookup(value), entry);
+  }
+}
+
 TEST_F(CNTest, GarbageCollectSomeInBucket) {
   EXPECT_EQ(ut.garbageCollect(), 0);
 

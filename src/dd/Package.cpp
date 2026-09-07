@@ -35,6 +35,7 @@
 #include <cstdint>
 #include <initializer_list>
 #include <iostream>
+#include <numeric>
 #include <queue>
 #include <random>
 #include <span>
@@ -523,7 +524,8 @@ mEdge Package::makeDDFromMatrix(const CMat& matrix) {
   }
 
   const auto& width = matrix[0].size();
-  if (length != width) {
+  if (std::ranges::any_of(
+          matrix, [length](const auto& row) { return row.size() != length; })) {
     throw std::invalid_argument("Matrix must be square.");
   }
 
@@ -936,15 +938,21 @@ fp Package::expectationValue(const mEdge& x, const vEdge& y) {
 }
 mEdge Package::partialTrace(const mEdge& a,
                             const std::vector<bool>& eliminate) {
-  auto const r = trace(a, eliminate, eliminate.size());
+  std::vector<size_t> eliminatedBelow(eliminate.size() + 1);
+  for (size_t q = 0; q < eliminate.size(); ++q) {
+    eliminatedBelow[q + 1] =
+        eliminatedBelow[q] + static_cast<size_t>(eliminate[q]);
+  }
+  auto const r = trace(a, eliminatedBelow);
   return {.p = r.p, .w = cn.lookup(r.w)};
 }
 ComplexValue Package::trace(const mEdge& a, const std::size_t numQubits) {
   if (a.isIdentity()) {
     return static_cast<ComplexValue>(a.w);
   }
-  const auto eliminate = std::vector<bool>(numQubits, true);
-  return trace(a, eliminate, numQubits).w;
+  std::vector<size_t> eliminatedBelow(numQubits + 1);
+  std::iota(eliminatedBelow.begin(), eliminatedBelow.end(), size_t{0});
+  return trace(a, eliminatedBelow).w;
 }
 bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
                                 const std::vector<bool>& garbage,
@@ -953,49 +961,36 @@ bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
   visited.reserve(mUniqueTable.getNumEntries());
   return isCloseToIdentityRecursive(m, visited, tol, garbage, checkCloseToOne);
 }
-mCachedEdge Package::trace(const mEdge& a, const std::vector<bool>& eliminate,
-                           std::size_t level, std::size_t alreadyEliminated) {
+mCachedEdge Package::trace(const mEdge& a,
+                           const std::span<const size_t> eliminatedBelow) {
   const auto aWeight = static_cast<ComplexValue>(a.w);
   if (aWeight.approximatelyZero()) {
     return mCachedEdge::zero();
   }
-
-  // If `a` is the identity matrix or there is nothing left to eliminate,
-  // then simply return `a`
-  if (a.isIdentity() ||
-      std::none_of(eliminate.begin(),
-                   eliminate.begin() +
-                       static_cast<std::vector<bool>::difference_type>(level),
-                   [](bool v) { return v; })) {
-    return mCachedEdge{a.p, aWeight};
+  if (a.isIdentity()) {
+    return {a.p, aWeight};
   }
 
   const auto v = a.p->v;
-  if (eliminate[v]) {
-    // Lookup nodes marked for elimination in the compute table if all
-    // lower-level qubits are eliminated as well: if the trace has already
-    // been computed, return the result
-    const auto eliminateAll =
-        std::all_of(eliminate.begin(),
-                    eliminate.begin() +
-                        static_cast<std::vector<bool>::difference_type>(level),
-                    [](bool e) { return e; });
+  const auto below = eliminatedBelow[v];
+  const auto through = eliminatedBelow[static_cast<size_t>(v) + 1];
+  if (through == 0) {
+    return {a.p, aWeight};
+  }
+
+  if (through != below) {
+    /// Only complete traces are independent of the elimination mask.
+    const bool eliminateAll = through == static_cast<size_t>(v) + 1;
     if (eliminateAll) {
       if (const auto* r = getTraceComputeTable().lookup(a.p); r != nullptr) {
         return {r->p, r->w * aWeight};
       }
     }
 
-    const auto elims = alreadyEliminated + 1;
-    auto r = add2(trace(a.p->e[0], eliminate, level - 1, elims),
-                  trace(a.p->e[3], eliminate, level - 1, elims), v - 1);
-
-    // The resulting weight is continuously normalized to the range [0,1] for
-    // matrix nodes
+    const auto nextLevel = static_cast<Qubit>(v == below ? 0 : v - below - 1);
+    auto r = add2(trace(a.p->e[0], eliminatedBelow),
+                  trace(a.p->e[3], eliminatedBelow), nextLevel);
     r.w = r.w / 2.0;
-
-    // Insert result into compute table if all lower-level qubits are
-    // eliminated as well
     if (eliminateAll) {
       getTraceComputeTable().insert(a.p, r);
     }
@@ -1004,17 +999,11 @@ mCachedEdge Package::trace(const mEdge& a, const std::vector<bool>& eliminate,
   }
 
   std::array<mCachedEdge, NEDGE> edge{};
-  std::ranges::transform(std::as_const(a.p->e), edge.begin(),
-                         [this, &eliminate, &alreadyEliminated,
-                          &level](const mEdge& e) -> mCachedEdge {
-                           return trace(e, eliminate, level - 1,
-                                        alreadyEliminated);
+  std::ranges::transform(a.p->e, edge.begin(),
+                         [this, eliminatedBelow](const mEdge& e) {
+                           return trace(e, eliminatedBelow);
                          });
-  const auto adjustedV = static_cast<Qubit>(
-      static_cast<std::size_t>(a.p->v) -
-      (static_cast<std::size_t>(std::ranges::count(eliminate, true)) -
-       alreadyEliminated));
-  auto r = makeDDNode(adjustedV, edge);
+  auto r = makeDDNode(static_cast<Qubit>(v - below), edge);
   r.w = r.w * aWeight;
   return r;
 }

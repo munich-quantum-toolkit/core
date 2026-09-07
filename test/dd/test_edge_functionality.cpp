@@ -20,6 +20,7 @@
 #include <complex>
 #include <cstddef>
 #include <memory>
+#include <string>
 
 namespace dd {
 
@@ -200,6 +201,27 @@ TEST(MatrixFunctionality, GetValueByPathTerminal) {
 TEST(MatrixFunctionality, GetValueByIndexTerminal) {
   EXPECT_EQ(mEdge::zero().getValueByIndex(0, 0, 0), 0.);
   EXPECT_EQ(mEdge::one().getValueByIndex(0, 0, 0), 1.);
+}
+
+TEST(MatrixFunctionality, ScalarAccessPreservesImplicitIdentities) {
+  Package package(3);
+  const auto phase = package.cn.lookup(0.5, -0.5);
+  auto gate = package.makeGateDD(GateMatrix{0., 1., 1., 0.}, 1);
+  gate.w = phase;
+  for (const auto& matrix : {mEdge::zero(), mEdge::terminal(phase), gate}) {
+    const auto dense = matrix.getMatrix(3);
+    for (size_t row = 0; row < dense.size(); ++row) {
+      for (size_t col = 0; col < dense.size(); ++col) {
+        std::string path(3, '0');
+        for (size_t bit = 0; bit < path.size(); ++bit) {
+          path[bit] = static_cast<char>('0' + (2 * ((row >> bit) & 1U)) +
+                                        ((col >> bit) & 1U));
+        }
+        EXPECT_EQ(matrix.getValueByIndex(3, row, col), dense[row][col]);
+        EXPECT_EQ(matrix.getValueByPath(3, path), dense[row][col]);
+      }
+    }
+  }
 }
 
 TEST(MatrixFunctionality, GetValueByIndexEndianness) {

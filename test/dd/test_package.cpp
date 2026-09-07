@@ -26,6 +26,7 @@
 #include <nlohmann/json_fwd.hpp>
 
 #include <array>
+#include <bit>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -338,6 +339,61 @@ TEST(DDPackageTest, PartialSWapMatTrace) {
   // Check that successively tracing out subsystems is the same as computing the
   // full trace from the beginning
   EXPECT_EQ(fullTrace, fullTraceOriginal);
+}
+
+TEST(DDPackageTest, PartialTraceMatchesDenseOracleAcrossIdentityLevels) {
+  Package package(3);
+  CMat input(8, CVec(8));
+  for (size_t row = 0; row < 8; ++row) {
+    for (size_t col = 0; col < 8; ++col) {
+      input[row][col] = {std::sin(static_cast<fp>(row + (2 * col))),
+                         std::cos(static_cast<fp>((2 * row) + col))};
+    }
+  }
+  const auto x = package.makeGateDD(X_MAT, 0);
+  const auto zx = package.multiply(package.makeGateDD(Z_MAT, 2), x);
+  for (const auto& matrix :
+       {Package::makeIdent(), x, zx, package.makeDDFromMatrix(input)}) {
+    const auto dense = matrix.getMatrix(3);
+    const auto fullTrace = package.trace(matrix, 3);
+    for (size_t mask = 0; mask < 8; ++mask) {
+      SCOPED_TRACE(mask);
+      const size_t removed = std::popcount(mask);
+      const size_t dimension = size_t{1} << (3 - removed);
+      const auto compress = [mask](size_t index) {
+        size_t result = 0;
+        size_t next = 0;
+        for (size_t bit = 0; bit < 3; ++bit) {
+          if ((mask & (size_t{1} << bit)) == 0) {
+            result |= ((index >> bit) & 1U) << next++;
+          }
+        }
+        return result;
+      };
+      CMat expected(dimension, CVec(dimension));
+      for (size_t row = 0; row < 8; ++row) {
+        for (size_t col = 0; col < 8; ++col) {
+          if (((row ^ col) & mask) == 0) {
+            expected[compress(row)][compress(col)] +=
+                dense[row][col] / static_cast<fp>(size_t{1} << removed);
+          }
+        }
+      }
+      const auto result = package.partialTrace(
+          matrix, {(mask & 1U) != 0, (mask & 2U) != 0, (mask & 4U) != 0});
+      const auto actual = result.getMatrix(3 - removed);
+      for (size_t row = 0; row < dimension; ++row) {
+        for (size_t col = 0; col < dimension; ++col) {
+          EXPECT_NEAR(std::abs(actual[row][col] - expected[row][col]), 0.,
+                      1e-12);
+        }
+      }
+      if (removed == 3) {
+        EXPECT_NEAR(fullTrace.r, expected[0][0].real(), 1e-12);
+        EXPECT_NEAR(fullTrace.i, expected[0][0].imag(), 1e-12);
+      }
+    }
+  }
 }
 
 TEST(DDPackageTest, PartialTraceKeepInnerQubits) {
@@ -1146,6 +1202,51 @@ TEST(DDPackageTest, KroneckerIdentityHandling) {
       {0, 0, 0, SQRT2_2, 0, 0, 0, -SQRT2_2},
   };
   EXPECT_EQ(matrix, expectedMatrix);
+}
+
+TEST(DDPackageTest, KroneckerRespectsBottomWidthAcrossCalls) {
+  Package package(4);
+  const auto top = package.makeGateDD(H_MAT, 0);
+  const auto topDense = top.getMatrix(1);
+  for (const auto& bottom :
+       {Package::makeIdent(), package.makeGateDD(X_MAT, 0)}) {
+    for (const size_t width : {1U, 2U, 3U, 2U, 1U}) {
+      SCOPED_TRACE(width);
+      const auto bottomDense = bottom.getMatrix(width);
+      const auto result = package.kronecker(top, bottom, width);
+      const auto actual = result.getMatrix(width + 1);
+      const auto dim = bottomDense.size();
+      for (size_t row = 0; row < actual.size(); ++row) {
+        for (size_t col = 0; col < actual.size(); ++col) {
+          EXPECT_EQ(actual[row][col], topDense[row / dim][col / dim] *
+                                          bottomDense[row % dim][col % dim]);
+        }
+      }
+    }
+  }
+}
+
+TEST(DDPackageTest, KroneckerRespectsIndexModeAcrossCalls) {
+  Package package(4);
+  const auto top = package.makeGateDD(H_MAT, 2);
+  const auto bottom = package.makeGateDD(X_MAT, 0);
+  for (const bool shift : {true, false, false, true}) {
+    const auto result = package.kronecker(top, bottom, 1, shift);
+    const auto expected =
+        package.multiply(package.makeGateDD(H_MAT, shift ? 3 : 2), bottom);
+    EXPECT_EQ(result.getMatrix(4), expected.getMatrix(4));
+  }
+}
+
+TEST(DDPackageTest, MatrixConstructionRejectsRaggedRows) {
+  Package package(1);
+  for (const CMat& matrix : {
+           CMat{{1., 0.}, {}},
+           CMat{{1., 0.}, {0.}},
+           CMat{{1., 0.}, {0., 1., 0.}},
+       }) {
+    EXPECT_THROW(package.makeDDFromMatrix(matrix), std::invalid_argument);
+  }
 }
 
 TEST(DDPackageTest, NearZeroNormalize) {

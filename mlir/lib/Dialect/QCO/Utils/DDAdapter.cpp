@@ -28,17 +28,6 @@
 
 namespace mlir::qco {
 
-static auto addIdentityWires(dd::Package& package, dd::mCachedEdge child,
-                             size_t firstWire, size_t endWire)
-    -> dd::mCachedEdge {
-  for (auto wire = firstWire; wire < endWire; ++wire) {
-    child = package.makeDDNode<dd::mNode, dd::CachedEdge>(
-        static_cast<dd::Qubit>(wire),
-        {child, dd::mCachedEdge::zero(), dd::mCachedEdge::zero(), child});
-  }
-  return child;
-}
-
 namespace {
 struct EmbeddedOperand {
   dd::Qubit wire;
@@ -50,35 +39,29 @@ static auto buildEmbeddedLocalDD(dd::Package& package,
                                  const std::span<const Complex> local,
                                  const size_t dimension,
                                  const llvm::ArrayRef<EmbeddedOperand> operands,
-                                 const size_t operandIndex,
-                                 const size_t maxWire, const size_t row,
+                                 const size_t operandIndex, const size_t row,
                                  const size_t col) -> dd::mCachedEdge {
   if (operandIndex == operands.size()) {
-    auto terminal = dd::mCachedEdge::terminal(local[(row * dimension) + col]);
-    return addIdentityWires(package, terminal, 0, maxWire);
+    return dd::mCachedEdge::terminal(local[(row * dimension) + col]);
   }
 
   const auto [wire, mask] = operands[operandIndex];
   const auto edge00 = buildEmbeddedLocalDD(package, local, dimension, operands,
-                                           operandIndex + 1, wire, row, col);
-  const auto edge01 =
-      buildEmbeddedLocalDD(package, local, dimension, operands,
-                           operandIndex + 1, wire, row, col | mask);
-  const auto edge10 =
-      buildEmbeddedLocalDD(package, local, dimension, operands,
-                           operandIndex + 1, wire, row | mask, col);
+                                           operandIndex + 1, row, col);
+  const auto edge01 = buildEmbeddedLocalDD(package, local, dimension, operands,
+                                           operandIndex + 1, row, col | mask);
+  const auto edge10 = buildEmbeddedLocalDD(package, local, dimension, operands,
+                                           operandIndex + 1, row | mask, col);
   const auto edge11 =
       buildEmbeddedLocalDD(package, local, dimension, operands,
-                           operandIndex + 1, wire, row | mask, col | mask);
-  auto root = package.makeDDNode<dd::mNode, dd::CachedEdge>(
+                           operandIndex + 1, row | mask, col | mask);
+  return package.makeDDNode<dd::mNode, dd::CachedEdge>(
       wire, {edge00, edge01, edge10, edge11});
-  return addIdentityWires(package, root, static_cast<size_t>(wire) + 1,
-                          maxWire);
 }
 
 static auto makeEmbeddedLocalDD(dd::Package& package,
                                 const std::span<const Complex> local,
-                                const size_t dimension, const size_t numQubits,
+                                const size_t dimension,
                                 const llvm::ArrayRef<dd::Qubit> wires)
     -> dd::MatrixDD {
   llvm::SmallVector<EmbeddedOperand, 8> operands;
@@ -91,13 +74,13 @@ static auto makeEmbeddedLocalDD(dd::Package& package,
   }
   std::ranges::sort(operands, std::greater{}, &EmbeddedOperand::wire);
 
-  const auto root = buildEmbeddedLocalDD(package, local, dimension, operands, 0,
-                                         numQubits, 0, 0);
+  const auto root =
+      buildEmbeddedLocalDD(package, local, dimension, operands, 0, 0, 0);
   return {.p = root.p, .w = package.cn.lookup(root.w)};
 }
 
 auto makeGateDD(dd::Package& package, const std::span<const Complex> matrix,
-                const size_t numQubits, const llvm::ArrayRef<dd::Qubit> targets,
+                size_t /*numQubits*/, const llvm::ArrayRef<dd::Qubit> targets,
                 const dd::Controls& controls) -> dd::MatrixDD {
   if (targets.size() >= std::numeric_limits<size_t>::digits) {
     throw std::invalid_argument(
@@ -136,7 +119,7 @@ auto makeGateDD(dd::Package& package, const std::span<const Complex> matrix,
     throw std::invalid_argument(
         "Sparse controls are only supported for up to three target qubits");
   }
-  return makeEmbeddedLocalDD(package, matrix, dimension, numQubits, targets);
+  return makeEmbeddedLocalDD(package, matrix, dimension, targets);
 }
 
 } // namespace mlir::qco
