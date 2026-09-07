@@ -40,6 +40,8 @@
 #include <vector>
 
 #ifdef _WIN32
+#include "qdmi/common/DeviceConfiguration.hpp"
+
 #include <windows.h>
 #else
 #include <dlfcn.h>
@@ -48,34 +50,6 @@
 namespace qdmi {
 #ifdef _WIN32
 namespace {
-/// Returns the directory of the currently loaded driver library.
-[[nodiscard]] auto getDriverDirectory() -> std::filesystem::path {
-  HMODULE module = nullptr;
-  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                         reinterpret_cast<LPCWSTR>(&getDriverDirectory),
-                         &module) == 0) {
-    return {};
-  }
-
-  std::wstring buffer(MAX_PATH, L'\0');
-  DWORD size = 0;
-  while (true) {
-    size = GetModuleFileNameW(module, buffer.data(),
-                              static_cast<DWORD>(buffer.size()));
-    if (size == 0) {
-      return {};
-    }
-    if (size < buffer.size()) {
-      buffer.resize(size);
-      break;
-    }
-    buffer.resize(buffer.size() * 2);
-  }
-
-  return std::filesystem::path(buffer).parent_path();
-}
-
 /// Loads the device library with the given name, searching in the driver
 /// directory if no path is specified.
 [[nodiscard]] auto loadDeviceLibrary(const std::string& libName) -> HMODULE {
@@ -84,7 +58,9 @@ namespace {
   // already absolute or relative to their declaring file.
   const auto path = requested.has_parent_path()
                         ? requested
-                        : getDriverDirectory() / requested;
+                        : detail::moduleDirectory(reinterpret_cast<const void*>(
+                              &loadDeviceLibrary)) /
+                              requested;
   // Search beside the device DLL for its dependencies. This is required for
   // device implementations such as DDSIM in an installed Python wheel.
   return LoadLibraryExW(path.wstring().c_str(), nullptr,

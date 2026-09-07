@@ -10,6 +10,7 @@
 
 #include "DeviceRegistry.hpp"
 
+#include "qdmi/common/DeviceConfiguration.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
@@ -28,12 +29,6 @@
 #include <system_error>
 #include <utility>
 #include <vector>
-
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
 
 namespace qdmi::detail {
 namespace {
@@ -307,59 +302,6 @@ void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
   target.source = source.source;
 }
 
-[[nodiscard]] auto moduleDirectory() -> std::filesystem::path {
-#ifdef _WIN32
-  HMODULE module = nullptr;
-  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                         reinterpret_cast<LPCWSTR>(&moduleDirectory),
-                         &module) == 0) {
-    return {};
-  }
-  std::wstring buffer(MAX_PATH, L'\0');
-  while (true) {
-    const auto size = GetModuleFileNameW(module, buffer.data(),
-                                         static_cast<DWORD>(buffer.size()));
-    if (size == 0) {
-      return {};
-    }
-    if (size < buffer.size()) {
-      buffer.resize(size);
-      return std::filesystem::path(buffer).parent_path();
-    }
-    buffer.resize(buffer.size() * 2);
-  }
-#else
-  Dl_info info{};
-  if (dladdr(reinterpret_cast<const void*>(&moduleDirectory), &info) == 0 ||
-      info.dli_fname == nullptr) {
-    return {};
-  }
-  return std::filesystem::path(info.dli_fname).parent_path();
-#endif
-}
-
-[[nodiscard]] auto environment(const char* name) -> std::optional<std::string> {
-#ifdef _WIN32
-  char* raw = nullptr;
-  size_t size = 0;
-  if (_dupenv_s(&raw, &size, name) != 0 || raw == nullptr) {
-    return std::nullopt;
-  }
-  const std::unique_ptr<char, decltype(&std::free)> value(raw, &std::free);
-  if (*value == '\0') {
-    return std::nullopt;
-  }
-  return std::string(value.get());
-#else
-  if (const auto* value = std::getenv(name);
-      value != nullptr && *value != '\0') {
-    return std::string(value);
-  }
-  return std::nullopt;
-#endif
-}
-
 void appendIfFile(std::vector<std::filesystem::path>& files,
                   const std::filesystem::path& path) {
   const auto absolute = absolutePath(path);
@@ -411,7 +353,8 @@ void appendFragments(std::vector<std::filesystem::path>& files,
 
 [[nodiscard]] auto discoverFiles() -> std::vector<std::filesystem::path> {
   std::vector<std::filesystem::path> files;
-  const auto root = moduleDirectory();
+  const auto root =
+      moduleDirectory(reinterpret_cast<const void*>(&discoverFiles));
   appendFragments(files, root);
   appendFragments(files, root / "bin");
   appendFragments(files, root / "lib");
