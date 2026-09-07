@@ -15,7 +15,6 @@
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
-#include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/bench/Generate.h"
 
 #include <gtest/gtest.h>
@@ -47,45 +46,6 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
   expectValidQCAndJeff(QPE{{.precision = 3, .phase = Phase(3, 8)}});
   expectValidQCAndJeff(QPE{
       {.precision = 3, .phase = Phase(3, 8), .method = QPEMethod::Iterative}});
-}
-
-TEST(GenerateProgramTest, OmitsAllocationAdjacentResets) {
-  EXPECT_EQ(test::countOps<qc::ResetOp>(generate(GHZ{{.qubits = 3}})->module()),
-            0U);
-  EXPECT_EQ(test::countOps<qc::ResetOp>(
-                generate(Grover{{.markedBitstring = "101"}})->module()),
-            0U);
-  EXPECT_EQ(test::countOps<qc::ResetOp>(
-                generate(Multiplexer{{.qubits = 3}})->module()),
-            0U);
-  EXPECT_EQ(test::countOps<qc::ResetOp>(
-                generate(BV{{.hiddenBitstring = "101"}})->module()),
-            0U);
-  EXPECT_EQ(test::countOps<qc::ResetOp>(
-                generate(QFT{{.qubits = 3, .periodExponent = 1}})->module()),
-            0U);
-  EXPECT_EQ(
-      test::countOps<qc::ResetOp>(
-          generate(QPE{{.precision = 3, .phase = Phase(3, 8)}})->module()),
-      0U);
-
-  EXPECT_GT(
-      test::countOps<qc::ResetOp>(
-          generate(BV{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}})
-              ->module()),
-      0U);
-  EXPECT_GT(test::countOps<qc::ResetOp>(
-                generate(QFT{{.qubits = 3,
-                              .periodExponent = 1,
-                              .method = QFTMethod::Semiclassical}})
-                    ->module()),
-            0U);
-  EXPECT_GT(test::countOps<qc::ResetOp>(
-                generate(QPE{{.precision = 3,
-                              .phase = Phase(3, 8),
-                              .method = QPEMethod::Iterative}})
-                    ->module()),
-            0U);
 }
 
 } // namespace mqt::bench

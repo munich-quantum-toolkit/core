@@ -2310,7 +2310,7 @@ TEST_F(QCODDFunctionalityTest, ReadsDenseFloatTablesInStructuredLoops) {
            std::array{0., std::numbers::pi},
            std::array{std::numbers::pi / 2., std::numbers::pi / 2.},
        }) {
-    auto mod = buildModule([&](QCOProgramBuilder& b) {
+    auto moduleOp = buildModule([&](QCOProgramBuilder& b) {
       auto type = RankedTensorType::get({2}, b.getF64Type());
       auto table = arith::ConstantOp::create(
           b, DenseFPElementsAttr::get(type, ArrayRef<double>(angles)));
@@ -2325,16 +2325,16 @@ TEST_F(QCODDFunctionalityTest, ReadsDenseFloatTablesInStructuredLoops) {
       b.sink(b.h(result[0]));
       return b.intConstant(0);
     });
-    ASSERT_TRUE(mod);
-    expectEqualToReference(mainFunc(*mod), 1, {referenceGate<XOp>({0})});
-    const auto counts = sample(mainFunc(*mod), 8, 1);
+    ASSERT_TRUE(moduleOp);
+    expectEqualToReference(mainFunc(*moduleOp), 1, {referenceGate<XOp>({0})});
+    const auto counts = sample(mainFunc(*moduleOp), 8, 1);
     ASSERT_TRUE(succeeded(counts));
     EXPECT_EQ(*counts, (std::map<std::string, size_t>{{"1", 8}}));
   }
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsOutOfBoundsFloatTableIndices) {
-  auto mod = parseSourceString<ModuleOp>(R"mlir(
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @main(%index: index) {
         %table = arith.constant dense<[0.0, 1.0]> : tensor<2xf64>
@@ -2344,9 +2344,9 @@ TEST_F(QCODDFunctionalityTest, RejectsOutOfBoundsFloatTableIndices) {
       }
     }
   )mlir",
-                                         context.get());
-  ASSERT_TRUE(mod);
-  auto func = mainFunc(*mod);
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  auto func = mainFunc(*moduleOp);
   auto dd = std::make_unique<dd::Package>(0);
   for (const auto index : {-1, 2}) {
     DDArgumentBindings bindings;
