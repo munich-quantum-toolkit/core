@@ -406,10 +406,6 @@ private:
   std::vector<QDMI_Device> devices_;
 
 public:
-  /// @brief Constructor for the QDMI session.
-  explicit QDMI_Session_impl_d(
-      const std::vector<std::unique_ptr<QDMI_Device_impl_d>>& devices);
-
   /// @brief Constructor from an explicit device-handle snapshot.
   explicit QDMI_Session_impl_d(const std::vector<QDMI_Device>& devices);
 

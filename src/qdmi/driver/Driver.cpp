@@ -13,6 +13,7 @@
 #include "DeviceRegistry.hpp"
 #include "qdmi/common/Common.hpp"
 #include "qdmi/common/Diagnostics.hpp"
+#include "qdmi/driver/SessionConfig.hpp"
 
 #include <qdmi/client.h>
 #include <qdmi/device.h>
@@ -40,6 +41,8 @@
 #include <vector>
 
 #ifdef _WIN32
+#include "qdmi/common/DeviceConfiguration.hpp"
+
 #include <windows.h>
 #else
 #include <dlfcn.h>
@@ -48,34 +51,6 @@
 namespace qdmi {
 #ifdef _WIN32
 namespace {
-/// Returns the directory of the currently loaded driver library.
-[[nodiscard]] auto getDriverDirectory() -> std::filesystem::path {
-  HMODULE module = nullptr;
-  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                         reinterpret_cast<LPCWSTR>(&getDriverDirectory),
-                         &module) == 0) {
-    return {};
-  }
-
-  std::wstring buffer(MAX_PATH, L'\0');
-  DWORD size = 0;
-  while (true) {
-    size = GetModuleFileNameW(module, buffer.data(),
-                              static_cast<DWORD>(buffer.size()));
-    if (size == 0) {
-      return {};
-    }
-    if (size < buffer.size()) {
-      buffer.resize(size);
-      break;
-    }
-    buffer.resize(buffer.size() * 2);
-  }
-
-  return std::filesystem::path(buffer).parent_path();
-}
-
 /// Loads the device library with the given name, searching in the driver
 /// directory if no path is specified.
 [[nodiscard]] auto loadDeviceLibrary(const std::string& libName) -> HMODULE {
@@ -84,7 +59,9 @@ namespace {
   // already absolute or relative to their declaring file.
   const auto path = requested.has_parent_path()
                         ? requested
-                        : getDriverDirectory() / requested;
+                        : detail::moduleDirectory(reinterpret_cast<const void*>(
+                              &loadDeviceLibrary)) /
+                              requested;
   // Search beside the device DLL for its dependencies. This is required for
   // device implementations such as DDSIM in an installed Python wheel.
   return LoadLibraryExW(path.wstring().c_str(), nullptr,
@@ -214,32 +191,6 @@ struct DynamicLibraryCache {
   return library;
 }
 
-template <class T>
-void applyOverride(std::optional<T>& value,
-                   const std::optional<T>& overrideValue) {
-  if (overrideValue) {
-    value = overrideValue;
-  }
-}
-
-[[nodiscard]] auto mergeSessionConfig(const DeviceSessionConfig& defaults,
-                                      const DeviceSessionConfig& overrides)
-    -> DeviceSessionConfig {
-  auto merged = defaults;
-  applyOverride(merged.baseUrl, overrides.baseUrl);
-  applyOverride(merged.token, overrides.token);
-  applyOverride(merged.authFile, overrides.authFile);
-  applyOverride(merged.authUrl, overrides.authUrl);
-  applyOverride(merged.username, overrides.username);
-  applyOverride(merged.password, overrides.password);
-  applyOverride(merged.deviceConfiguration, overrides.deviceConfiguration);
-  applyOverride(merged.custom1, overrides.custom1);
-  applyOverride(merged.custom2, overrides.custom2);
-  applyOverride(merged.custom3, overrides.custom3);
-  applyOverride(merged.custom4, overrides.custom4);
-  applyOverride(merged.custom5, overrides.custom5);
-  return merged;
-}
 } // namespace
 
 #undef DL_OPEN
@@ -515,13 +466,6 @@ namespace {
   }
 }
 } // namespace
-
-QDMI_Session_impl_d::QDMI_Session_impl_d(
-    const std::vector<std::unique_ptr<QDMI_Device_impl_d>>& devices) {
-  devices_.reserve(devices.size());
-  std::ranges::transform(devices, std::back_inserter(devices_),
-                         [](const auto& device) { return device.get(); });
-}
 
 QDMI_Session_impl_d::QDMI_Session_impl_d(
     const std::vector<QDMI_Device>& devices)
@@ -822,7 +766,7 @@ auto Driver::openFresh(const std::string_view id,
   }
   return std::make_shared<QDMI_Device_impl_d>(
       getDynamicDeviceLibrary(definition.library.string(), definition.prefix),
-      mergeSessionConfig(definition.session, overrides));
+      detail::mergeSessionConfig(definition.session, overrides));
 }
 
 void Driver::materializeClientCatalog() {

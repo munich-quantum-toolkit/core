@@ -22,10 +22,11 @@
 
 namespace mqt::test {
 
-/// Temporarily sets an environment variable and restores its previous value.
+/// Temporarily sets or unsets an environment variable and restores its value.
 class ScopedEnvironmentVariable {
 public:
-  ScopedEnvironmentVariable(std::string name, const std::string& value)
+  ScopedEnvironmentVariable(std::string name,
+                            const std::optional<std::string>& value)
       : name_(std::move(name)) {
     if (const auto* previous = std::getenv(name_.c_str());
         previous != nullptr) {
@@ -35,15 +36,8 @@ public:
   }
 
   ~ScopedEnvironmentVariable() {
-    if (previous_) {
-      static_cast<void>(setWithoutChecking(*previous_));
-    } else {
-#ifdef _WIN32
-      static_cast<void>(_putenv_s(name_.c_str(), ""));
-#else
-      // NOLINTNEXTLINE(misc-include-cleaner)
-      static_cast<void>(unsetenv(name_.c_str()));
-#endif
+    if (!setWithoutChecking(previous_)) {
+      std::abort();
     }
   }
 
@@ -54,18 +48,20 @@ public:
   ScopedEnvironmentVariable& operator=(ScopedEnvironmentVariable&&) = delete;
 
 private:
-  void set(const std::string& value) const {
+  void set(const std::optional<std::string>& value) const {
     if (!setWithoutChecking(value)) {
       throw std::runtime_error("Failed to set environment variable " + name_);
     }
   }
 
-  [[nodiscard]] bool setWithoutChecking(const std::string& value) const {
+  [[nodiscard]] bool
+  setWithoutChecking(const std::optional<std::string>& value) const {
 #ifdef _WIN32
-    return _putenv_s(name_.c_str(), value.c_str()) == 0;
+    return _putenv_s(name_.c_str(), value.value_or("").c_str()) == 0;
 #else
-    // NOLINTNEXTLINE(misc-include-cleaner)
-    return setenv(name_.c_str(), value.c_str(), 1) == 0;
+    const auto* const name = name_.c_str();
+    /// NOLINTNEXTLINE(misc-include-cleaner): POSIX environment functions.
+    return (value ? setenv(name, value->c_str(), 1) : unsetenv(name)) == 0;
 #endif
   }
 
