@@ -319,12 +319,17 @@ TEST_F(QIRTest, MetadataDeclaresCapacityForStaticResourceIds) {
     SmallVector<int64_t> indices;
     StringRef requiredCapacity;
   };
-  const std::array cases{CapacityCase{{}, "0"}, CapacityCase{{0}, "1"},
-                         CapacityCase{{0, 1, 0}, "2"},
-                         CapacityCase{{7, 2, 7}, "8"}};
+  const std::array cases{
+      CapacityCase{.indices = {}, .requiredCapacity = "0"},
+      CapacityCase{.indices = {0}, .requiredCapacity = "1"},
+      CapacityCase{.indices = {0, 1, 0}, .requiredCapacity = "2"},
+      CapacityCase{.indices = {7, 2, 7}, .requiredCapacity = "8"},
+  };
 
-  for (const auto profile : {QIRProgramBuilder::Profile::Base,
-                             QIRProgramBuilder::Profile::Adaptive}) {
+  for (const auto profile : {
+           QIRProgramBuilder::Profile::Base,
+           QIRProgramBuilder::Profile::Adaptive,
+       }) {
     for (const auto& testCase : cases) {
       SCOPED_TRACE(testing::Message()
                    << "profile=" << static_cast<int>(profile)
@@ -371,7 +376,7 @@ TEST_F(QIRTest, MetadataRejectsUnrepresentableStaticResourceCapacity) {
                                               context.get());
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  OwningOpRef<ModuleOp> before = cast<ModuleOp>(moduleOp->clone());
+  OwningOpRef<ModuleOp> before = moduleOp->clone();
 
   EXPECT_TRUE(failed(attachQIRMetadata(moduleOp.get())));
   EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
