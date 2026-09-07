@@ -23,10 +23,18 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
     - The input entry function must consist of a single block.
       Multi-block input functions are currently not supported.
     - The program must have straight-line control flow (i.e., Base Profile QIR).
+    - A measured qubit must not be used by another quantum instruction,
+      including another measurement. Gates on independent qubits may follow
+      measurements in the input.
+    - Explicit static qubit IDs cannot be mixed with qubit allocations.
+    - Qubit-register loads require constant, in-bounds indices into statically
+      sized allocations. Register aliases must be resolved before conversion.
 
     Behavior:
 
-    - Each QC quantum operation is replaced by a call to the corresponding QIR function in the LLVM dialect.
+    - Each QC quantum operation is replaced in place by its QIR call. After
+      validating qubit usage in instruction order, the pass moves terminal
+      measurements to the irreversible operations block.
     - Required QIR module flags are attached as attributes to the entry function.
     - The pass transforms the single-block entry function into four blocks to satisfy QIR Base Profile constraints:
       0. Initialization block: Sets up the execution environment and performs required runtime initialization.
