@@ -1136,17 +1136,16 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
 }
 
 def CallOp
-    : QCOOp<"call",
-            traits = [CallOpInterface, UnitaryOpInterface,
-                      DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                      DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
+    : QCOOp<"call", traits = [CallOpInterface, UnitaryOpInterface,
+                              DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+                              MemoryEffects<[MemWrite]>]> {
   let summary = "Call a unitary QCO function";
   let description = [{
     Calls a private `func.func` marked with `mqt.unitary`. Parameters precede
     qubit operands. Each qubit result continues the corresponding qubit input.
-    Calls are memory-effect-free when their transitive callees are
-    memory-effect-free. Otherwise, they conservatively carry a write effect,
-    including when a callee contains a global phase. Calls are not speculatable.
+    Calls conservatively carry a write effect and are not speculatable.
+    Module-level analyses may prove more precise effects for individual
+    optimizations. Generic effect queries do not inspect other function bodies.
 
     Example:
     ```mlir

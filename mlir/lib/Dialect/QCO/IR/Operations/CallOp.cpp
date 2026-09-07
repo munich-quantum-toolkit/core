@@ -12,90 +12,16 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallPtrSet.h>
-#include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/Region.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <iterator>
-#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
-
-/// Query local effects and follow calls without recursively querying
-/// containers. Summaries live only for this query: rewrites may change a
-/// callee's effects.
-static bool hasEffectFreeCallees(CallOp root) {
-  SymbolTableCollection symbols;
-  SmallPtrSet<Operation*, 8> active;
-  SmallPtrSet<Operation*, 8> completed;
-  SmallVector<std::pair<Operation*, bool>> worklist{{root, false}};
-  while (!worklist.empty()) {
-    auto [operation, leaving] = worklist.pop_back_val();
-    if (leaving) {
-      active.erase(operation);
-      completed.insert(operation);
-      continue;
-    }
-    if (auto call = dyn_cast<CallOp>(operation)) {
-      auto symbol = call->getAttrOfType<FlatSymbolRefAttr>("callee");
-      auto callee =
-          symbol ? symbols.lookupNearestSymbolFrom<func::FuncOp>(call, symbol)
-                 : func::FuncOp{};
-      if (!callee || !mqt::isUnitaryFunction(callee) ||
-          !callee.getBody().hasOneBlock() ||
-          callee.getArgumentTypes() != call.getOperandTypes() ||
-          callee.getResultTypes() != call.getResultTypes()) {
-        return false;
-      }
-      if (completed.contains(callee)) {
-        continue;
-      }
-      if (!active.insert(callee).second) {
-        return false;
-      }
-      worklist.emplace_back(callee, true);
-      for (Operation& nested : callee.getBody().front()) {
-        worklist.emplace_back(&nested, false);
-      }
-      continue;
-    }
-    const bool recursive =
-        operation->hasTrait<OpTrait::HasRecursiveMemoryEffects>();
-    if (auto effects = dyn_cast<MemoryEffectOpInterface>(operation)) {
-      if (!effects.hasNoEffect()) {
-        return false;
-      }
-    } else if (!recursive) {
-      return false;
-    }
-    if (recursive) {
-      for (Region& region : operation->getRegions()) {
-        for (Block& block : region) {
-          for (Operation& nested : block) {
-            worklist.emplace_back(&nested, false);
-          }
-        }
-      }
-    }
-  }
-  return true;
-}
-
-void CallOp::getEffects(
-    SmallVectorImpl<MemoryEffects::EffectInstance>& effects) {
-  if (!hasEffectFreeCallees(*this)) {
-    effects.emplace_back(MemoryEffects::Write::get());
-  }
-}
 
 void CallOp::build(OpBuilder&, OperationState& state, FlatSymbolRefAttr callee,
                    ValueRange operands) {

@@ -965,7 +965,7 @@ TEST_F(QCOTest, GlobalPhaseEffectsPropagateAcrossUnitaryCalls) {
   EXPECT_FALSE(isSpeculatable(inv));
 }
 
-TEST_F(QCOTest, UnitaryCallEffectsFollowTransitiveCalleeChanges) {
+TEST_F(QCOTest, UnitaryCallEffectsRemainConservativeAcrossCalleeChanges) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func private @leaf(%q: !qco.qubit) -> !qco.qubit
@@ -1000,24 +1000,24 @@ TEST_F(QCOTest, UnitaryCallEffectsFollowTransitiveCalleeChanges) {
   )mlir",
                                               context.get());
   ASSERT_TRUE(moduleOp);
-  const auto checkCalls = [&](bool effectFree) {
+  const auto checkCalls = [&] {
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
     moduleOp->walk([&](CallOp call) {
-      EXPECT_EQ(isMemoryEffectFree(call), effectFree);
+      EXPECT_FALSE(isMemoryEffectFree(call));
       EXPECT_FALSE(isSpeculatable(call));
     });
     moduleOp->walk([&](InvOp inv) {
-      EXPECT_EQ(isMemoryEffectFree(inv), effectFree);
+      EXPECT_FALSE(isMemoryEffectFree(inv));
       EXPECT_FALSE(isSpeculatable(inv));
     });
   };
-  checkCalls(true);
+  checkCalls();
   auto leaf = moduleOp->lookupSymbol<func::FuncOp>("leaf");
   OpBuilder builder(leaf.getBody().front().getTerminator());
   auto phase = GPhaseOp::create(builder, leaf.getLoc(), 0.25);
-  checkCalls(false);
+  checkCalls();
   phase.erase();
-  checkCalls(true);
+  checkCalls();
 }
 
 TEST_F(QCOTest, UnitaryCallEffectsConservativelyHandleInvalidCallees) {
