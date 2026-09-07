@@ -24,8 +24,8 @@ from mqt.core.mlir import (
     compile_program,
 )
 
-target = CompilerTarget.from_device_id("mqt.sc.iqm.garnet")
-payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.BINARY))
+target = CompilerTarget.from_device_id("mqt.ddsim.default")
+payload = PayloadSpecification(PayloadFormat("qir", "2.1", "base", PayloadEncoding.BINARY))
 environment = TargetEnvironment(target, payload)
 compiled = compile_program(
     "bell.qasm",
@@ -40,6 +40,10 @@ the canonical QCO pipeline. The targeted overload therefore accepts one
 QDMI adapter does not yet translate QDMI program-format and feature metadata, so
 callers must construct the payload specification from the device documentation.
 
+DDSIM accepts the QIR payload used here. The bundled SC devices, such as
+`mqt.sc.iqm.garnet`, provide hardware models for compilation only; a model's
+gate set does not imply that it accepts an executable payload.
+
 The example has no reported execution capabilities. A producer must add every
 effective capability, including the selected format's baseline. Set
 `optional_capabilities_known=True` only when the producer also knows that the
@@ -49,8 +53,8 @@ Payload versions accept one to three numeric components. A
 `PayloadSpecification` fills omitted components with zero: `"2.1"` becomes
 `"2.1.0"`, and `"3"` becomes `"3.0.0"`. These are exact versions, not ranges;
 `"2"` means `"2.0.0"` and does not select QIR 2.1. Leading zeros, prerelease
-suffixes, and version ranges are rejected. The same rules apply when reading
-the typed `#mqt.payload_spec` attribute.
+suffixes, and version ranges are rejected. The same rules apply when reading the
+typed `#mqt.payload_spec` attribute.
 
 The target can also be constructed directly. Connectivity and native-operation
 support are required:
@@ -121,10 +125,10 @@ on the program. Copy the program before compilation if the caller must preserve
 the input. The target passes read the typed `mqt.target_env` module attribute.
 The mapping, native-synthesis, and conformance factories also work in textual
 MLIR pass pipelines. Target compilation keeps deterministic placement on
-all-to-all targets and uses mapping only for explicit topology.
-The high-level program API registers the required inliner extensions; callers
-that populate the low-level target pipeline directly must register inliner
-extensions for every callable dialect in their context.
+all-to-all targets and uses mapping only for explicit topology. The high-level
+program API registers the required inliner extensions; callers that populate the
+low-level target pipeline directly must register inliner extensions for every
+callable dialect in their context.
 
 Target compilation preserves quantum operations even when their final qubit
 values are not measured or returned. This supports measurement-free programs,
@@ -143,8 +147,8 @@ mqt-cc --qdmi-list-devices
 Select a device when compiling:
 
 ```console
-mqt-cc --qdmi-device=mqt.sc.iqm.garnet \
-  --payload-spec='#mqt.payload_spec<format = <id = "qir", version = "2.1.0", profile = "base", encoding = binary>, capabilities = [], optional_capabilities_known = false>' \
+mqt-cc --qdmi-device=mqt.ddsim.default \
+  --payload-spec='#mqt.payload_spec<format = <id = "qir", version = "2.1", profile = "base", encoding = binary>, capabilities = [], optional_capabilities_known = false>' \
   -o output.bc input.qasm
 ```
 
@@ -153,7 +157,7 @@ An explicit registry file can be selected before device discovery:
 ```console
 mqt-cc --qdmi-config=/path/to/qdmi.json \
   --qdmi-device=example.device \
-  --payload-spec='#mqt.payload_spec<format = <id = "qir", version = "2.1.0", profile = "base", encoding = binary>, capabilities = [], optional_capabilities_known = false>' \
+  --payload-spec='#mqt.payload_spec<format = <id = "qir", version = "2.1", profile = "base", encoding = binary>, capabilities = [], optional_capabilities_known = false>' \
   input.qasm
 ```
 
@@ -174,7 +178,7 @@ device ID and the compiler-owned target:
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 
-auto target = mlir::compilerTargetFromDeviceId("mqt.sc.iqm.garnet");
+auto target = mlir::compilerTargetFromDeviceId("mqt.ddsim.default");
 if (!target) {
   llvm::errs() << "Failed to create compiler target: "
                << llvm::toString(target.takeError()) << '\n';
@@ -183,7 +187,7 @@ if (!target) {
 
 auto payload = mlir::PayloadSpecification::create({
     .id = "qir",
-    .version = "2.1.0",
+    .version = "2.1",
     .profile = "base",
     .encoding = mlir::PayloadEncoding::Binary,
 });

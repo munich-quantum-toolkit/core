@@ -22,6 +22,9 @@ class OpPassManager;
 /// synthesizes native operations, performs a final local cleanup, and verifies
 /// target conformance. The context that runs this low-level pipeline must
 /// register inliner extensions for its callable dialects.
+/// The input module must have an attached `mqt.target_env` whose compiler
+/// target matches `target`. Use `attachTargetEnvironment` before running the
+/// pipeline.
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const CompilerTarget& target);
 
