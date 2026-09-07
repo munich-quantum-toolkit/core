@@ -35,6 +35,9 @@ def MQTDialect : Dialect {
     `mqt.entry_point` marks the single public, defined `func.func` program entry
     in a module.
     `mqt.unitary` marks a private function that defines a unitary operation.
+    Its body admits unitary operations and pure, region-free classical
+    computation, matching the quantum modifier-body contract. Unitary
+    operations may retain effects such as a scoped global-phase contribution.
     `#mqt.compilation_target` records compiler-target facts as typed IR.
   }];
 

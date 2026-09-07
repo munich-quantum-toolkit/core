@@ -410,6 +410,50 @@ TEST_F(MQTIRTest, RejectsMutuallyRecursiveUnitaryFunctions) {
   }
 }
 
+TEST_F(MQTIRTest, UnitaryFunctionsRejectNonSpeculatableClassicalComputation) {
+  for (StringRef source : {
+           R"mlir(
+             func.func private @rotate(%theta: f64, %q: !qc.qubit)
+                 attributes {mqt.unitary} {
+               %n = arith.fptosi %theta : f64 to i64
+               %one = arith.constant 1 : i64
+               %d = arith.divsi %one, %n : i64
+               %angle = arith.sitofp %d : i64 to f64
+               qc.rx(%angle) %q : !qc.qubit
+               return
+             }
+           )mlir",
+           R"mlir(
+             func.func private @rotate(%theta: f64, %q: !qco.qubit)
+                 -> !qco.qubit attributes {mqt.unitary} {
+               %n = arith.fptosi %theta : f64 to i64
+               %one = arith.constant 1 : i64
+               %d = arith.divsi %one, %n : i64
+               %angle = arith.sitofp %d : i64 to f64
+               %out = qco.rx(%angle) %q : !qco.qubit -> !qco.qubit
+               return %out : !qco.qubit
+             }
+           )mlir",
+       }) {
+    SCOPED_TRACE(source.str());
+    bool rejectedBody = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      rejectedBody |= StringRef(diagnostic.str())
+                          .contains("body contains a non-unitary operation");
+      return success();
+    });
+    EXPECT_FALSE(parse(source));
+    EXPECT_TRUE(rejectedBody);
+
+    auto safe = source.str();
+    const auto divisor = safe.find("arith.divsi %one, %n");
+    ASSERT_NE(divisor, std::string::npos);
+    safe.replace(divisor, StringRef("arith.divsi %one, %n").size(),
+                 "arith.divsi %one, %one");
+    EXPECT_TRUE(parse(safe));
+  }
+}
+
 TEST_F(MQTIRTest, RejectsEmptyUnitaryBodies) {
   for (StringRef source : {
            R"mlir(

@@ -965,6 +965,88 @@ TEST_F(QCOTest, GlobalPhaseEffectsPropagateAcrossUnitaryCalls) {
   EXPECT_FALSE(isSpeculatable(inv));
 }
 
+TEST_F(QCOTest, UnitaryCallEffectsFollowTransitiveCalleeChanges) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @leaf(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %out = qco.x %q : !qco.qubit -> !qco.qubit
+        return %out : !qco.qubit
+      }
+      func.func private @left(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %out = qco.inv (%arg = %q) {
+          %called = qco.call @leaf(%arg) : (!qco.qubit) -> !qco.qubit
+          qco.yield %called : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %out : !qco.qubit
+      }
+      func.func private @right(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %out = qco.call @leaf(%q) : (!qco.qubit) -> !qco.qubit
+        return %out : !qco.qubit
+      }
+      func.func private @diamond(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %left = qco.call @left(%q) : (!qco.qubit) -> !qco.qubit
+        %out = qco.call @right(%left) : (!qco.qubit) -> !qco.qubit
+        return %out : !qco.qubit
+      }
+      func.func @main(%q: !qco.qubit) -> !qco.qubit {
+        %out = qco.call @diamond(%q) : (!qco.qubit) -> !qco.qubit
+        return %out : !qco.qubit
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  const auto checkCalls = [&](bool effectFree) {
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    moduleOp->walk([&](CallOp call) {
+      EXPECT_EQ(isMemoryEffectFree(call), effectFree);
+      EXPECT_FALSE(isSpeculatable(call));
+    });
+    moduleOp->walk([&](InvOp inv) {
+      EXPECT_EQ(isMemoryEffectFree(inv), effectFree);
+      EXPECT_FALSE(isSpeculatable(inv));
+    });
+  };
+  checkCalls(true);
+  auto leaf = moduleOp->lookupSymbol<func::FuncOp>("leaf");
+  OpBuilder builder(leaf.getBody().front().getTerminator());
+  auto phase = GPhaseOp::create(builder, leaf.getLoc(), 0.25);
+  checkCalls(false);
+  phase.erase();
+  checkCalls(true);
+}
+
+TEST_F(QCOTest, UnitaryCallEffectsConservativelyHandleInvalidCallees) {
+  auto moduleOp =
+      parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @external(!qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary}
+      func.func private @cycle(%q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %out = qco.call @cycle(%q) : (!qco.qubit) -> !qco.qubit
+        return %out : !qco.qubit
+      }
+      func.func @main(%q: !qco.qubit) -> !qco.qubit {
+        %a = qco.call @external(%q) : (!qco.qubit) -> !qco.qubit
+        %b = qco.call @missing(%a) : (!qco.qubit) -> !qco.qubit
+        %out = qco.call @cycle(%b) : (!qco.qubit) -> !qco.qubit
+        return %out : !qco.qubit
+      }
+    }
+  )mlir",
+                                  ParserConfig(context.get(), false));
+  ASSERT_TRUE(moduleOp);
+  moduleOp->walk([&](CallOp call) {
+    EXPECT_FALSE(isMemoryEffectFree(call));
+    EXPECT_FALSE(isSpeculatable(call));
+  });
+}
+
 TEST_F(QCOTest, DirectIfBuilder) {
   QCOProgramBuilder builder(context.get());
   auto cbitType = cbit::RegisterType::get(context.get(), 1);

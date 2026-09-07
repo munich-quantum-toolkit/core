@@ -1136,15 +1136,17 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
 }
 
 def CallOp
-    : QCOOp<"call", traits = [CallOpInterface, UnitaryOpInterface,
-                              DeclareOpInterfaceMethods<SymbolUserOpInterface>,
-                              MemoryEffects<[MemWrite]>]> {
+    : QCOOp<"call",
+            traits = [CallOpInterface, UnitaryOpInterface,
+                      DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+                      DeclareOpInterfaceMethods<MemoryEffectsOpInterface>]> {
   let summary = "Call a unitary QCO function";
   let description = [{
     Calls a private `func.func` marked with `mqt.unitary`. Parameters precede
     qubit operands. Each qubit result continues the corresponding qubit input.
-    Calls conservatively carry a write effect because the callee may contain a
-    global phase.
+    Calls are memory-effect-free when their transitive callees are
+    memory-effect-free. Otherwise, they conservatively carry a write effect,
+    including when a callee contains a global phase. Calls are not speculatable.
 
     Example:
     ```mlir
@@ -1257,7 +1259,8 @@ def CtrlOp : QCOOp<"ctrl",
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
-        Operations with memory effects and non-unitary region operations are not allowed.
+        Classical memory access and non-unitary region operations are not allowed.
+        Unitary operations retain their required effects, including global phase.
 
         Example:
         ```mlir
@@ -1343,7 +1346,8 @@ def InvOp
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
-        Operations with memory effects and non-unitary region operations are not allowed.
+        Classical memory access and non-unitary region operations are not allowed.
+        Unitary operations retain their required effects, including global phase.
 
         Example:
         ```mlir
@@ -1426,7 +1430,8 @@ def PowOp
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
-        Operations with memory effects and non-unitary region operations are not allowed.
+        Classical memory access and non-unitary region operations are not allowed.
+        Unitary operations retain their required effects, including global phase.
 
         Example:
         ```mlir

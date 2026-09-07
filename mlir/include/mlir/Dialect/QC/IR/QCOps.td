@@ -1047,7 +1047,8 @@ def CtrlOp
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
-        Operations with memory effects and non-unitary region operations are not allowed.
+        Classical memory access and non-unitary region operations are not allowed.
+        Unitary operations retain their required effects, including global phase.
 
         Example:
         ```mlir
@@ -1110,7 +1111,8 @@ def InvOp : QCOp<"inv",
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
-        Operations with memory effects and non-unitary region operations are not allowed.
+        Classical memory access and non-unitary region operations are not allowed.
+        Unitary operations retain their required effects, including global phase.
 
         Example:
         ```mlir
@@ -1173,7 +1175,8 @@ def PowOp : QCOp<"pow",
           Classical SSA values may be captured from above, but every qubit used
           in the body must be passed through a modifier operand and accessed via
           its aliased block argument.
-          Operations with memory effects and non-unitary region operations are not allowed.
+          Classical memory access and non-unitary region operations are not allowed.
+          Unitary operations retain their required effects, including global phase.
 
           Example:
           ```mlir

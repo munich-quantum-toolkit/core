@@ -15,13 +15,16 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
@@ -226,6 +229,52 @@ TEST_F(QCOQubitReuseTest, preserveEffectfulUserOrder) {
   ASSERT_EQ(callees.size(), 2);
   EXPECT_EQ(callees[0], "record1");
   EXPECT_EQ(callees[1], "record0");
+}
+
+TEST_F(QCOQubitReuseTest, ReuseAcrossPhaseFreeUnitaryCalls) {
+  for (const bool hasPhase : {false, true}) {
+    SCOPED_TRACE(hasPhase);
+    module = parseSourceString<ModuleOp>(R"mlir(
+      module {
+        func.func private @record0(i1)
+        func.func private @record1(i1)
+        func.func private @flip(%q: !qco.qubit) -> !qco.qubit
+            attributes {mqt.unitary, no_inline} {
+          %out = qco.x %q : !qco.qubit -> !qco.qubit
+          return %out : !qco.qubit
+        }
+        func.func @main() attributes {mqt.entry_point} {
+          %q0 = qco.alloc : !qco.qubit
+          %h = qco.h %q0 : !qco.qubit -> !qco.qubit
+          %q1 = qco.alloc : !qco.qubit
+          %x = qco.call @flip(%q1) : (!qco.qubit) -> !qco.qubit
+          %m0, %b0 = qco.measure %h : !qco.qubit
+          func.call @record0(%b0) : (i1) -> ()
+          qco.sink %m0 : !qco.qubit
+          %m1, %b1 = qco.measure %x : !qco.qubit
+          func.call @record1(%b1) : (i1) -> ()
+          qco.sink %m1 : !qco.qubit
+          return
+        }
+      }
+    )mlir",
+                                         &context);
+    ASSERT_TRUE(module);
+    if (hasPhase) {
+      auto flip = module->lookupSymbol<func::FuncOp>("flip");
+      OpBuilder builder(flip.getBody().front().getTerminator());
+      GPhaseOp::create(builder, flip.getLoc(), 0.25);
+    }
+    ASSERT_TRUE(succeeded(verify(*module)));
+    PassManager pm(&context);
+    pm.addPass(createReuseQubits());
+    ASSERT_TRUE(succeeded(pm.run(*module)));
+    ASSERT_TRUE(succeeded(verify(*module)));
+    auto main = module->lookupSymbol<func::FuncOp>("main");
+    EXPECT_EQ(llvm::range_size(main.getOps<AllocOp>()), hasPhase ? 2 : 1);
+    EXPECT_EQ(llvm::range_size(main.getOps<ResetOp>()), hasPhase ? 0 : 1);
+    EXPECT_EQ(llvm::range_size(main.getOps<CallOp>()), 1);
+  }
 }
 
 /**
