@@ -273,17 +273,19 @@ TEST(ScRuntimeConfiguration, PreservesUnsortedTuplesAndPartialOverrides) {
   configuration["couplings"] = {{1, 2}, {0, 1}, {2, 0}};
   configuration["operations"][0]["siteOverrides"] = {
       {{"sites", {2, 0}}, {"fidelity", 0.8}},
-      {{"sites", {0, 1}}, {"duration", 10}}};
+      {{"sites", {0, 1}}, {"duration", 10}},
+  };
   auto* session = initializedSession(configuration.dump());
   const auto sites = querySites(session);
   auto* const operation = queryOperations(session).front();
-  const std::array expected{sites[1], sites[2], sites[0],
-                            sites[1], sites[2], sites[0]};
+  const std::array expected{
+      sites[1], sites[2], sites[0], sites[1], sites[2], sites[0],
+  };
   std::array<MQT_SC_QDMI_Site, 6> flattened{};
   EXPECT_EQ(MQT_SC_QDMI_device_session_query_operation_property(
                 session, operation, 0, nullptr, 0, nullptr,
                 QDMI_OPERATION_PROPERTY_SITES, sizeof(flattened),
-                flattened.data(), nullptr),
+                static_cast<void*>(flattened.data()), nullptr),
             QDMI_SUCCESS);
   EXPECT_EQ(flattened, expected);
   const std::array<uint64_t, 3> durations{20, 10, 20};
@@ -292,13 +294,13 @@ TEST(ScRuntimeConfiguration, PreservesUnsortedTuplesAndPartialOverrides) {
     uint64_t duration = 0;
     double fidelity = 0;
     EXPECT_EQ(MQT_SC_QDMI_device_session_query_operation_property(
-                  session, operation, 2, expected.data() + 2 * i, 0, nullptr,
+                  session, operation, 2, &expected[2 * i], 0, nullptr,
                   QDMI_OPERATION_PROPERTY_DURATION, sizeof(duration), &duration,
                   nullptr),
               QDMI_SUCCESS);
     EXPECT_EQ(duration, durations[i]);
     EXPECT_EQ(MQT_SC_QDMI_device_session_query_operation_property(
-                  session, operation, 2, expected.data() + 2 * i, 0, nullptr,
+                  session, operation, 2, &expected[2 * i], 0, nullptr,
                   QDMI_OPERATION_PROPERTY_FIDELITY, sizeof(fidelity), &fidelity,
                   nullptr),
               QDMI_SUCCESS);
