@@ -22,7 +22,9 @@ class Options:
         """The number of qubits in each input register."""
 
 class QFTAdderQuantum:
-    """A validated quantum-input QFT adder benchmark.
+    """A QFT adder with an n-qubit addend in |+>^n and an accumulator in |1>.
+
+    Big-endian outcomes concatenate the addend and sum, each with n bits. The sum is addend + 1 modulo 2^n; each valid outcome has probability 2^-n.
 
     Reference: https://arxiv.org/abs/quant-ph/0008033
     """

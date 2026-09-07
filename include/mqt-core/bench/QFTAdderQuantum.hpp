@@ -26,7 +26,9 @@ struct QFTAdderQuantumOptions {
   size_t qubits;
 };
 
-/// A validated quantum-input QFT adder and its analytic reference.
+/// A QFT adder with an n-qubit addend in |+>^n and an accumulator in |1>.
+/// Big-endian outcomes concatenate the addend and sum, each with n bits.
+/// The sum is addend + 1 modulo 2^n; each valid outcome has probability 2^-n.
 class MQT_CORE_BENCH_EXPORT QFTAdderQuantum final {
 public:
   explicit QFTAdderQuantum(QFTAdderQuantumOptions options);

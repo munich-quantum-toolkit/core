@@ -64,9 +64,7 @@ SmallVector<Value> qftAdderQuantum(qc::QCProgramBuilder& builder,
   addQuantumRegister(builder, addend, sum, qubits);
   detail::inverseQFT(builder, sum, qubits);
 
-  builder.scfFor(0, qubits, 1, [&](Value index) {
-    builder.measure(builder.loadQubit(sum, index), result, index);
-  });
+  builder.measureQubitRegister(sum, result, qubits);
   auto resultOffset = builder.indexConstant(qubits);
   builder.scfFor(0, qubits, 1, [&](Value index) {
     auto resultIndex =

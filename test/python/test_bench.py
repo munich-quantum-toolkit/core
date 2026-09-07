@@ -133,6 +133,10 @@ def test_qft_methods_share_the_periodic_reference() -> None:
         assert (
             qft.QFT.from_instance_specification_json(benchmark.instance_specification_json).case_id == benchmark.case_id
         )
+        shots = 16_384
+        counts = benchmark.generate().to_qco().sample(shots=shots, seed=17)
+        assert sum(counts.values()) == shots
+        assert benchmark.evaluate(counts).total_variation_distance < 0.03
         assert_generates(benchmark)
 
 
@@ -195,6 +199,20 @@ def test_qpe_accepts_fraction_and_native_phase() -> None:
     assert phase.denominator == 8
     assert native_options.phase == Fraction(1, 8)
     assert_generates(benchmark)
+
+
+@pytest.mark.parametrize("method", [qpe.Method.STANDARD, qpe.Method.ITERATIVE])
+@pytest.mark.parametrize("phase", [Fraction(3, 8), Fraction(1, 3)])
+def test_qpe_dd_sampling_matches_reference(method: qpe.Method, phase: Fraction) -> None:
+    """Execute exact and inexact phases with both inverse-QFT implementations."""
+    benchmark = qpe.QPE(qpe.Options(precision=3, phase=phase, method=method))
+    shots = 16_384
+    program = benchmark.generate().to_qco()
+    # Fold phase-table reads to scalars supported by the DD interpreter.
+    program.unroll_quantum_loops()
+    counts = program.sample(shots=shots, seed=17)
+    assert sum(counts.values()) == shots
+    assert benchmark.evaluate(counts).total_variation_distance < 0.03
 
 
 def test_qpe_rejects_untyped_phase_input() -> None:
