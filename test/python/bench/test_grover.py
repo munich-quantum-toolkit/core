@@ -17,18 +17,40 @@ from mqt.core.bench import grover
 from .utils import assert_generates
 
 
-def test_grover_resolves_iterations_and_reports_success() -> None:
-    """Expose Grover's resolved default and marked-outcome score."""
+def _make_benchmark() -> grover.Grover:
+    return grover.Grover(grover.Options(marked_bitstring="10"))
+
+
+def test_grover_resolves_default_iterations() -> None:
+    """Resolve the default iteration count when constructing the benchmark."""
     options = grover.Options(marked_bitstring="10")
     benchmark = grover.Grover(options)
 
     assert options.iterations is None
     assert benchmark.options.iterations == 1
+
+
+def test_grover_reference() -> None:
+    """Use the marked bitstring as the deterministic reference result."""
+    benchmark = _make_benchmark()
     assert benchmark.qubits == 2
     assert benchmark.probability("10") == pytest.approx(1)
+
+
+def test_grover_evaluation() -> None:
+    """Report samples of the marked bitstring as successful."""
+    benchmark = _make_benchmark()
     assert benchmark.evaluate({"10": 20}).success_probability == pytest.approx(1)
 
+
+def test_grover_manifest_roundtrip() -> None:
+    """Preserve the benchmark identity and instance through its manifest."""
+    benchmark = _make_benchmark()
     copy = grover.Grover.from_manifest_json(benchmark.manifest_json)
     assert copy.instance_specification_json == benchmark.instance_specification_json
     assert copy.case_id == benchmark.case_id
-    assert_generates(benchmark.generate())
+
+
+def test_grover_generation() -> None:
+    """Generate a Grover program through the Python binding."""
+    assert_generates(_make_benchmark().generate())

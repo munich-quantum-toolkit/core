@@ -16,14 +16,30 @@ from mqt.core.bench import qft
 
 from .utils import assert_generates
 
+METHODS = (qft.Method.STANDARD, qft.Method.SEMICLASSICAL)
 
-def test_qft_methods_share_the_periodic_reference() -> None:
-    """Expose standard and semiclassical QFT as one family."""
-    for method in (qft.Method.STANDARD, qft.Method.SEMICLASSICAL):
-        benchmark = qft.QFT(qft.Options(qubits=3, period_exponent=1, method=method))
-        assert benchmark.probability("000") == pytest.approx(0.5)
-        assert benchmark.probability("100") == pytest.approx(0.5)
-        assert (
-            qft.QFT.from_instance_specification_json(benchmark.instance_specification_json).case_id == benchmark.case_id
-        )
-        assert_generates(benchmark.generate())
+
+def _make_benchmark(method: qft.Method) -> qft.QFT:
+    return qft.QFT(qft.Options(qubits=3, period_exponent=1, method=method))
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_qft_reference(method: qft.Method) -> None:
+    """Use the same periodic reference distribution for both methods."""
+    benchmark = _make_benchmark(method)
+    assert benchmark.probability("000") == pytest.approx(0.5)
+    assert benchmark.probability("100") == pytest.approx(0.5)
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_qft_instance_specification_roundtrip(method: qft.Method) -> None:
+    """Preserve the benchmark identity through its instance specification."""
+    benchmark = _make_benchmark(method)
+    copy = qft.QFT.from_instance_specification_json(benchmark.instance_specification_json)
+    assert copy.case_id == benchmark.case_id
+
+
+@pytest.mark.parametrize("method", METHODS)
+def test_qft_generation(method: qft.Method) -> None:
+    """Generate both QFT methods through the Python binding."""
+    assert_generates(_make_benchmark(method).generate())

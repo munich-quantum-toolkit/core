@@ -20,8 +20,18 @@ from mqt.core.bench import qpe
 from .utils import assert_generates
 
 
-def test_qpe_accepts_fraction_and_native_phase() -> None:
-    """Use exact rational input without a free-form parameter dictionary."""
+def _make_benchmark() -> qpe.QPE:
+    return qpe.QPE(
+        qpe.Options(
+            precision=2,
+            phase=Fraction(3, 24),
+            method=qpe.Method.ITERATIVE,
+        )
+    )
+
+
+def test_qpe_accepts_fraction() -> None:
+    """Normalize exact rational input in the benchmark options."""
     options = qpe.Options(
         precision=2,
         phase=Fraction(3, 24),
@@ -29,9 +39,17 @@ def test_qpe_accepts_fraction_and_native_phase() -> None:
     )
     assert options.phase == Fraction(1, 8)
 
-    benchmark = qpe.QPE(options)
+
+def test_qpe_reference() -> None:
+    """Expose the reference distribution for an exact phase."""
+    benchmark = _make_benchmark()
     assert benchmark.probability("00") == pytest.approx((2 + 2**0.5) / 8)
     assert benchmark.probability("01") == pytest.approx((2 + 2**0.5) / 8)
+
+
+def test_qpe_json_roundtrip() -> None:
+    """Preserve the normalized phase and method through JSON."""
+    benchmark = _make_benchmark()
     assert json.loads(benchmark.instance_specification_json)["parameters"]["phase"] == {
         "denominator": 8,
         "numerator": 1,
@@ -42,12 +60,19 @@ def test_qpe_accepts_fraction_and_native_phase() -> None:
     assert instance_copy.options.method is qpe.Method.ITERATIVE
     assert instance_copy.case_id == benchmark.case_id
 
+
+def test_qpe_accepts_native_phase() -> None:
+    """Normalize the native phase type before storing it in the options."""
     phase = qpe.Phase(numerator=9, denominator=8)
     native_options = qpe.Options(precision=3, phase=phase)
     assert phase.numerator == 1
     assert phase.denominator == 8
     assert native_options.phase == Fraction(1, 8)
-    assert_generates(benchmark.generate())
+
+
+def test_qpe_generation() -> None:
+    """Generate a QPE program through the Python binding."""
+    assert_generates(_make_benchmark().generate())
 
 
 def test_qpe_rejects_untyped_phase_input() -> None:
