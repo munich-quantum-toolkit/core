@@ -9,7 +9,11 @@
  */
 
 #include "TestUtils.h"
+#include "bench/Evaluation.hpp"
+#include "bench/JSON.hpp"
 #include "bench/QFTAdder.hpp"
+#include "dd/DDDefinitions.hpp"
+#include "dd/Package.hpp"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/bench/Generate.h"
@@ -26,8 +30,12 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cmath>
+#include <complex>
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <numbers>
+#include <numeric>
 #include <string>
 #include <utility>
 
@@ -210,6 +218,93 @@ TEST(GenerateProgramTest, KeepsLargestClassicalQFTAdderFiniteAndStructured) {
 
   EXPECT_EQ(test::countOps<tensor::ExtractOp>(moduleOp), 1U);
   EXPECT_LT(test::countOperations(moduleOp), 100U);
+}
+
+TEST(GenerateProgramTest, SamplesEverySmallQFTAdderOperandPair) {
+  for (const auto method :
+       {QFTAdderMethod::Register, QFTAdderMethod::Constant}) {
+    for (const auto overflow :
+         {QFTAdderOverflow::Wrap, QFTAdderOverflow::Carry}) {
+      for (size_t width = 1; width <= 3; ++width) {
+        const auto sumWidth =
+            width + (overflow == QFTAdderOverflow::Carry ? 1U : 0U);
+        for (size_t addend = 0; addend < (size_t{1} << width); ++addend) {
+          for (size_t accumulator = 0; accumulator < (size_t{1} << width);
+               ++accumulator) {
+            const auto addendBits = dd::intToBinaryString(addend, width);
+            const QFTAdder benchmark{{
+                .addend = addendBits,
+                .accumulator = dd::intToBinaryString(accumulator, width),
+                .method = method,
+                .overflow = overflow,
+            }};
+            SCOPED_TRACE(toInstanceSpecificationJSON(benchmark));
+            const auto total = (addend + accumulator) % (size_t{1} << sumWidth);
+            const auto expected =
+                (method == QFTAdderMethod::Register ? addendBits : "") +
+                dd::intToBinaryString(total, sumWidth);
+            EXPECT_EQ(benchmark.expectedResult(), expected);
+            auto program = test::generateQCO(benchmark);
+            ASSERT_TRUE(program);
+            auto counts = qco::sample(
+                mlir::mqt::getEntryPoint(program->module()), 32, 17);
+            ASSERT_TRUE(succeeded(counts));
+            EXPECT_EQ(*counts, (Counts{{expected, 32}}));
+          }
+        }
+      }
+    }
+  }
+}
+
+TEST(GenerateProgramTest, PreservesQFTAdderRelativePhases) {
+  for (const auto overflow :
+       {QFTAdderOverflow::Wrap, QFTAdderOverflow::Carry}) {
+    for (size_t width = 1; width <= 3; ++width) {
+      const auto sumWidth =
+          width + (overflow == QFTAdderOverflow::Carry ? 1U : 0U);
+      for (size_t accumulator = 0; accumulator < (size_t{1} << width);
+           ++accumulator) {
+        const QFTAdder benchmark{{
+            .addend = std::string(width, '+'),
+            .accumulator = dd::intToBinaryString(accumulator, width),
+            .overflow = overflow,
+        }};
+        SCOPED_TRACE(toInstanceSpecificationJSON(benchmark));
+        auto program = test::generateQCO(benchmark);
+        ASSERT_TRUE(program);
+        dd::Package package(0);
+        auto state = qco::simulateStatevector(
+            mlir::mqt::getEntryPoint(program->module()), package);
+        ASSERT_TRUE(succeeded(state));
+        const auto actual = state->getVector();
+        package.decRef(*state);
+        dd::CVec expected(size_t{1} << (width + sumWidth));
+        for (size_t addend = 0; addend < (size_t{1} << width); ++addend) {
+          const auto total = (addend + accumulator) % (size_t{1} << sumWidth);
+          expected[(total << width) | addend] =
+              1. / std::sqrt(static_cast<double>(size_t{1} << width));
+        }
+        ASSERT_EQ(actual.size(), expected.size());
+        const auto overlap =
+            std::inner_product(expected.begin(), expected.end(), actual.begin(),
+                               std::complex<double>{}, std::plus<>(),
+                               [](const auto& lhs, const auto& rhs) {
+                                 return std::conj(lhs) * rhs;
+                               });
+        const auto phase = std::polar(1., std::arg(overlap));
+        for (size_t i = 0; i < actual.size(); ++i) {
+          EXPECT_NEAR(std::abs(actual[i] - phase * expected[i]), 0., 1e-12)
+              << i;
+        }
+      }
+    }
+  }
+}
+
+TEST(GenerateProgramTest, SamplesPartlySuperposedQFTAdder) {
+  test::expectSamplingMatchesReference(
+      QFTAdder{{.addend = "1+0", .accumulator = "001"}});
 }
 
 } // namespace mqt::bench
