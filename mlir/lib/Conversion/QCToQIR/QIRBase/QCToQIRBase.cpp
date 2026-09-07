@@ -88,8 +88,6 @@ static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
   return results[static_cast<size_t>(*indexValue)];
 }
 
-namespace {
-
 /// Checks that moving measurements after all gates preserves qubit order.
 static LogicalResult checkMeasurementOrder(func::FuncOp entryPoint) {
   // Static indices and register elements can have multiple SSA references.
@@ -134,6 +132,8 @@ static LogicalResult checkMeasurementOrder(func::FuncOp entryPoint) {
   }
   return success();
 }
+
+namespace {
 
 /**
  * @brief Converts `cbit.alloc` to static result
