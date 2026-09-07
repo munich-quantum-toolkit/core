@@ -214,8 +214,8 @@ TEST(MatrixFunctionality, ScalarAccessPreservesImplicitIdentities) {
       for (size_t col = 0; col < dense.size(); ++col) {
         std::string path(3, '0');
         for (size_t bit = 0; bit < path.size(); ++bit) {
-          path[bit] += static_cast<char>((2 * ((row >> bit) & 1U)) +
-                                         ((col >> bit) & 1U));
+          path[bit] = static_cast<char>('0' + (2 * ((row >> bit) & 1U)) +
+                                        ((col >> bit) & 1U));
         }
         EXPECT_EQ(matrix.getValueByIndex(3, row, col), dense[row][col]);
         EXPECT_EQ(matrix.getValueByPath(3, path), dense[row][col]);
