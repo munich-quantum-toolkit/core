@@ -32,9 +32,18 @@ def MQTDialect : Dialect {
     `mqt.register_name` records the source-level name of a quantum or classical
     register allocation. Input and register names share one function-wide
     namespace.
-    `mqt.entry_point` marks the single defined program entry function in a
-    module.
+    `mqt.entry_point` marks the single public, defined `func.func` program entry
+    in a module.
     `mqt.unitary` marks a private function that defines a unitary operation.
+    Its body admits unitary operations and memory-effect-free, region-free
+    classical computation, matching the quantum modifier-body contract. Parameter
+    computation is evaluated eagerly when the invocation is reached; it need not
+    be speculatable. The quantum action is unitary on the computation's defined
+    input domain. Modifiers transform that action, not the parameter computation:
+    inverse does not reverse it, control does not conditionally evaluate it, and
+    power does not repeat it, including at exponent zero. Undefined inputs do not
+    guarantee traps. Unitary operations may retain effects such as a scoped
+    global-phase contribution.
     `#mqt.compilation_target` records compiler-target facts as typed IR.
   }];
 

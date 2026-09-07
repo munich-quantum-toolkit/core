@@ -879,6 +879,80 @@ TEST_F(TargetSynthesisTest,
       runPass(*moduleOp, mlir::qco::createVerifyTargetConformance(target))));
 }
 
+TEST_F(TargetSynthesisTest, SingleQubitSynthesisNeedsNoEntangler) {
+  const auto rotation = [](QCOProgramBuilder& builder) {
+    auto qubit = builder.staticQubit(0);
+    qubit = builder.ry(0.123, qubit);
+    builder.gphase(0.25);
+    return builder.intConstant(0);
+  };
+  auto expected = build(rotation);
+  auto synthesized = build(rotation);
+  const auto target =
+      valid(Target::create(1, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({
+                               valid(Operation::create("sx", 1, 0)),
+                               valid(Operation::create("x", 1, 0)),
+                               valid(Operation::create("rz", 1, 1)),
+                               valid(Operation::create("gphase", 0, 1)),
+                           })));
+
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*synthesized, mlir::qco::createTargetNativeSynthesis(target))));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*synthesized, mlir::qco::createVerifyTargetConformance(target))));
+  expectEquivalent(expected, synthesized);
+}
+
+TEST_F(TargetSynthesisTest, RuntimeSingleQubitSynthesisNeedsNoEntangler) {
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> !qco.qubit {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.ry(%theta) %q0 : !qco.qubit -> !qco.qubit
+        return %q1 : !qco.qubit
+      }
+    }
+  )mlir",
+                                                    context.get());
+  ASSERT_TRUE(moduleOp);
+  const auto target = valid(Target::create(
+      1, Connectivity::allToAll(),
+      NativeOperations::fromOperations({valid(Operation::create("u", 1, 3))})));
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*moduleOp, mlir::qco::createTargetNativeSynthesis(target))));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  EXPECT_EQ(countOps<RYOp>(*moduleOp), 0U);
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*moduleOp, mlir::qco::createVerifyTargetConformance(target))));
+}
+
+TEST_F(TargetSynthesisTest, TwoQubitSynthesisRequiresEntangler) {
+  auto moduleOp = build([](QCOProgramBuilder& builder) {
+    auto input0 = builder.staticQubit(0);
+    auto input1 = builder.staticQubit(1);
+    [[maybe_unused]] auto [q0, q1] = builder.cx(input0, input1);
+    return builder.intConstant(0);
+  });
+  const auto target = valid(Target::create(
+      2, Connectivity::allToAll(),
+      NativeOperations::fromOperations({valid(Operation::create("u", 1, 3))})));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  const auto before = printModule(*moduleOp);
+
+  const auto diagnostics =
+      expectFailure(*moduleOp, mlir::qco::createTargetNativeSynthesis(target));
+
+  EXPECT_NE(diagnostics.find("no usable two-qubit entangler"),
+            std::string::npos)
+      << diagnostics;
+  EXPECT_EQ(printModule(*moduleOp), before);
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+}
+
 TEST_F(TargetSynthesisTest, DenseUnitaryHasAsymmetricTwoQubitDDSemantics) {
   const auto denseCx = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);

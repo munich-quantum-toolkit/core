@@ -415,9 +415,19 @@ extern "C" int TEST_SESSION_QDMI_device_job_wait(QDMI_Device_Job /*job*/,
   return QDMI_ERROR_NOTSUPPORTED;
 }
 
-extern "C" int TEST_SESSION_QDMI_device_job_get_results(
-    QDMI_Device_Job /*job*/, QDMI_Job_Result /*result*/, size_t /*size*/,
-    void* /*value*/, size_t* /*sizeRet*/) {
+extern "C" int TEST_SESSION_QDMI_device_job_get_results(QDMI_Device_Job job,
+                                                        QDMI_Job_Result result,
+                                                        size_t size,
+                                                        void* value,
+                                                        size_t* sizeRet) {
+  if (result == QDMI_JOB_RESULT_HIST_KEYS) {
+    return queryString(
+        parameter(job->session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3), size,
+        value, sizeRet);
+  }
+  if (result == QDMI_JOB_RESULT_HIST_VALUES) {
+    return queryValue(size_t{5}, size, value, sizeRet);
+  }
   return QDMI_ERROR_NOTSUPPORTED;
 }
 

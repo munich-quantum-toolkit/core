@@ -10,200 +10,107 @@
 
 #include "mlir/Dialect/QCO/Utils/Sorting.h"
 
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
-
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/PriorityQueue.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SetVector.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <llvm/ADT/SmallVector.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 
-#include <cstdint>
-#include <optional>
-
-using namespace mlir;
-
-namespace {
-struct RegisterEffects {
-  Operation* latestRegisterBarrier = nullptr;
-  DenseMap<int64_t, Operation*> latestIndexedEffects;
-};
-} // namespace
-
-/// Return the static index of a direct CBit element access. Dynamic and
-/// indirect accesses conservatively alias the complete register.
-static std::optional<int64_t> getDirectCBitIndex(Operation* operation,
-                                                 Value reg) {
-  if (auto load = dyn_cast<cbit::LoadOp>(operation);
-      load && load.getReg() == reg) {
-    return getConstantIntValue(load.getIndex());
-  }
-  if (auto store = dyn_cast<cbit::StoreOp>(operation);
-      store && store.getReg() == reg) {
-    return getConstantIntValue(store.getIndex());
-  }
-  return std::nullopt;
-}
-
-/// Find the nearest neighbour in a given block.
-static Operation* findParentInBlock(Operation* op, Block& block) {
-  Operation* parent = op->getParentOp();
-  while (parent != nullptr && parent->getBlock() != &block) {
-    parent = parent->getParentOp();
-  }
-  return parent;
-}
-
-/// Return the vector of locations for each block argument.
-static SmallVector<Location> getArgumentLocs(Block& block) {
-  return map_to_vector(block.getArguments(),
-                       [](BlockArgument& arg) { return arg.getLoc(); });
-}
+#include <cassert>
+#include <cstddef>
 
 namespace mlir::qco {
+
 void reorderTopologically(Block& block, IRRewriter& rewriter) {
   Operation* const terminator = block.getTerminator();
 
-  // Construct unresolved map: The dependencies of each operation.
+  struct Dependencies {
+    size_t pending = 0;
+    SmallVector<Operation*, 2> successors;
+  };
+  const auto numOperations = llvm::range_size(block);
+  DenseMap<Operation*, Dependencies> dependencies;
+  dependencies.reserve(numOperations);
+  DenseMap<Value, Operation*> lastEffect;
 
-  DenseMap<Operation*, size_t> inDegree;
-  DenseMap<Operation*, size_t> blockOrder;
-  DenseMap<Operation*, llvm::SmallSetVector<Operation*, 16>> successors;
-  DenseMap<Operation*, llvm::SmallDenseSet<Operation*, 16>> predecessors;
-
+  /// Count repeated edges on both ends instead of maintaining deduplication
+  /// sets.
   const auto addDependency = [&](Operation* predecessor, Operation* successor) {
-    if (predecessor == successor ||
-        !predecessors[successor].insert(predecessor).second) {
-      return;
-    }
-    ++inDegree[successor];
-    successors[predecessor].insert(successor);
+    assert(predecessor != successor);
+    ++dependencies[successor].pending;
+    dependencies[predecessor].successors.push_back(successor);
   };
 
-  DenseMap<Value, RegisterEffects> registerEffects;
-
   for (Operation& op : block) {
+    dependencies.try_emplace(&op);
 
-    // Collect the in-block dependencies of the current operation.
+    /// Preserve the order of effects on each SSA value, including nested
+    /// effects.
+    const auto effects = getEffectsRecursively(&op);
+    if (effects) {
+      for (const auto& effect : *effects) {
+        auto value = effect.getValue();
+        if (!value) {
+          continue;
+        }
+        auto [it, inserted] = lastEffect.try_emplace(value, &op);
+        if (!inserted && it->second != &op) {
+          addDependency(it->second, &op);
+          it->second = &op;
+        }
+      }
+    }
 
-    successors.try_emplace(&op);
-    predecessors.try_emplace(&op);
-    inDegree.try_emplace(&op, 0);
-    blockOrder.try_emplace(&op, blockOrder.size());
-
-    for (Value v : op.getOperands()) {
+    /// An effect edge need not lead back to the value's defining operation.
+    /// Always retain SSA dependencies, including those of effect-bearing
+    /// inputs.
+    for (auto v : op.getOperands()) {
       Operation* def = v.getDefiningOp();
       if (def != nullptr && v.getParentBlock() == &block) {
         addDependency(def, &op);
       }
     }
 
-    // For each user of the current operation that is *not* in the targeted
-    // block, find the nearest parent operation in the targeted block, and
-    // increase its pending count. Thus, this parent operation also depends on
-    // the release of the current operation.
-
+    /// A nested capture makes its enclosing operation depend on the producer.
     for (Operation* user : op.getUsers()) {
       if (user->getBlock() == &block) {
-        addDependency(&op, user);
         continue;
       }
 
-      if (Operation* parent = findParentInBlock(user, block);
+      if (Operation* parent = block.findAncestorOpInBlock(*user);
           parent != nullptr) {
         addDependency(&op, parent);
       }
     }
-
-    // SSA use-def chains do not capture ordering constraints on mutable CBit
-    // registers. Preserve the original order of effects that may alias the
-    // same register element. Direct, statically indexed accesses to distinct
-    // elements do not alias; whole-register and dynamic accesses
-    // conservatively alias every element. Value-less effects cannot safely
-    // impose block-order dependencies here: routing may temporarily require
-    // those operations to move while repairing SSA order.
-    const auto effects = getEffectsRecursively(&op);
-    if (!effects) {
-      continue;
-    }
-
-    llvm::SmallDenseSet<Value, 4> affectedValues;
-    for (const auto& effect : *effects) {
-      Value value = effect.getValue();
-      if (!value || !affectedValues.insert(value).second) {
-        continue;
-      }
-      if (isa<cbit::RegisterType>(value.getType())) {
-        auto& state = registerEffects[value];
-        if (const auto index = getDirectCBitIndex(&op, value)) {
-          if (state.latestRegisterBarrier != nullptr) {
-            addDependency(state.latestRegisterBarrier, &op);
-          }
-          if (Operation* previous = state.latestIndexedEffects.lookup(*index)) {
-            addDependency(previous, &op);
-          }
-          state.latestIndexedEffects[*index] = &op;
-          continue;
-        }
-
-        if (state.latestRegisterBarrier != nullptr) {
-          addDependency(state.latestRegisterBarrier, &op);
-        }
-        for (const auto& indexed : state.latestIndexedEffects) {
-          addDependency(indexed.second, &op);
-        }
-        state.latestIndexedEffects.clear();
-        state.latestRegisterBarrier = &op;
-      }
-    }
   }
 
-  assert((inDegree.size() == range_size(block)));
+  assert(dependencies.size() == numOperations);
 
-  const auto laterInBlock = [&blockOrder](Operation* lhs, Operation* rhs) {
-    return blockOrder.lookup(lhs) > blockOrder.lookup(rhs);
-  };
-  llvm::PriorityQueue<Operation*, std::vector<Operation*>,
-                      decltype(laterInBlock)>
-      worklist(laterInBlock);
+  SmallVector<Operation*> worklist;
+  worklist.reserve(numOperations);
   for (Operation& op : block) {
-    if (inDegree.lookup(&op) == 0) {
-      worklist.push(&op);
+    if (dependencies[&op].pending == 0) {
+      worklist.emplace_back(&op);
     }
   }
 
-  Block* newBlock = rewriter.createBlock(&block, block.getArgumentTypes(),
-                                         getArgumentLocs(block));
+  for (size_t cursor = 0; cursor < worklist.size(); ++cursor) {
+    Operation* ready = worklist[cursor];
 
-  while (!worklist.empty()) {
-    Operation* ready = worklist.top();
-    worklist.pop();
+    rewriter.moveOpBefore(ready, &block, block.end());
 
-    rewriter.moveOpBefore(ready, newBlock, newBlock->end());
-
-    for (Operation* user : successors[ready]) {
-      inDegree[user]--;
-      if (inDegree[user] == 0) {
-        worklist.push(user);
+    for (Operation* user : dependencies[ready].successors) {
+      if (--dependencies[user].pending == 0) {
+        worklist.push_back(user);
       }
     }
   }
 
-  assert(all_of(inDegree, [](const auto& kv) { return kv.second == 0; }));
+  assert(worklist.size() == numOperations && "cyclic operation dependencies");
 
-  // Finally replace the old block arguments with the new ones, move the
-  // terminator back at its place, and erase the old block.
-
-  for (size_t i = 0; i < block.getNumArguments(); ++i) {
-    rewriter.replaceAllUsesWith(block.getArgument(i), newBlock->getArgument(i));
-  }
-
-  rewriter.moveOpBefore(terminator, newBlock, newBlock->end());
-  rewriter.eraseBlock(&block);
+  rewriter.moveOpBefore(terminator, &block, block.end());
 }
 } // namespace mlir::qco

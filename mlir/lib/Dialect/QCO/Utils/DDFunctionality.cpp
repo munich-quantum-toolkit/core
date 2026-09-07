@@ -46,8 +46,10 @@
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
 #include <cmath>
@@ -879,25 +881,14 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
             *condition ? select.getTrueValue() : select.getFalseValue();
         return classical.bindFrom(selected, select.getResult(), select);
       })
-      .Case([&](arith::ExtUIOp ext) {
-        return applyIntegerCast(ext.getIn(), ext.getOut(), ext, classical,
-                                false);
-      })
-      .Case([&](arith::ExtSIOp cast) {
+      .Case<arith::ExtUIOp, arith::IndexCastUIOp, arith::TruncIOp>(
+          [&](auto cast) {
+            return applyIntegerCast(cast.getIn(), cast.getOut(), cast,
+                                    classical, false);
+          })
+      .Case<arith::ExtSIOp, arith::IndexCastOp>([&](auto cast) {
         return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
                                 true);
-      })
-      .Case([&](arith::IndexCastUIOp cast) {
-        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
-                                false);
-      })
-      .Case([&](arith::IndexCastOp cast) {
-        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
-                                true);
-      })
-      .Case([&](arith::TruncIOp cast) {
-        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
-                                false);
       })
       .Case<arith::FPToSIOp, arith::FPToUIOp>(
           [&](Operation* castOp) -> LogicalResult {
@@ -1676,10 +1667,7 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
   };
   walkState.activeCalls.insert(func.getOperation());
 
-  dd::MatrixDD state =
-      qubits.numQubits == 0
-          ? dd::MatrixDD::one()
-          : dd.createInitialMatrix(std::vector<bool>(qubits.numQubits, false));
+  dd::MatrixDD state = dd::MatrixDD::one();
   if (failed(walkFunction(func, walkState, state))) {
     if (qubits.numQubits != 0) {
       dd.decRef(state);
@@ -1746,30 +1734,38 @@ FailureOr<dd::VectorDD> simulate(func::FuncOp func, const dd::VectorDD& in,
   return simulateImpl(func, in, dd, *prepared, &rng);
 }
 
-static bool mayMeasureOrReset(func::FuncOp func, DenseSet<Operation*>& active) {
+static bool mayMeasureOrReset(func::FuncOp func, DenseSet<Operation*>& active,
+                              DenseMap<Operation*, bool>& cachedResults,
+                              SymbolTableCollection& symbols) {
+  if (const auto it = cachedResults.find(func); it != cachedResults.end()) {
+    return it->second;
+  }
   if (!active.insert(func).second) {
     return true;
   }
   const auto guard = llvm::make_scope_exit([&] { active.erase(func); });
-  bool found = false;
-  func.getBody().walk([&](Operation* op) {
-    if (found || isa<MeasureOp, ResetOp>(op)) {
-      found = true;
-      return;
+  const auto result = func.getBody().walk([&](Operation* op) -> WalkResult {
+    if (isa<MeasureOp, ResetOp>(op)) {
+      return WalkResult::interrupt();
     }
-    auto call = dyn_cast<func::CallOp>(op);
-    if (!call) {
-      return;
+    if (auto call = dyn_cast<func::CallOp>(op)) {
+      auto callee = symbols.lookupNearestSymbolFrom<func::FuncOp>(
+          call, call.getCalleeAttr());
+      if (!callee || callee.isDeclaration() ||
+          mayMeasureOrReset(callee, active, cachedResults, symbols)) {
+        return WalkResult::interrupt();
+      }
     }
-    auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
-        call, call.getCalleeAttr());
-    found =
-        !callee || callee.isDeclaration() || mayMeasureOrReset(callee, active);
+    return WalkResult::advance();
   });
+  const bool found = result.wasInterrupted();
+  cachedResults[func] = found;
   return found;
 }
 
 static void analyzeSampling(func::FuncOp func, SamplingPlan& plan) {
+  DenseMap<Operation*, bool> cachedResults;
+  SymbolTableCollection symbols;
   func.getBody().walk([&](Operation* op) {
     if (isa<ResetOp>(op)) {
       plan.dynamic = true;
@@ -1783,11 +1779,11 @@ static void analyzeSampling(func::FuncOp func, SamplingPlan& plan) {
     if (!call) {
       return;
     }
-    auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+    auto callee = symbols.lookupNearestSymbolFrom<func::FuncOp>(
         call, call.getCalleeAttr());
     DenseSet<Operation*> active;
     if (!callee || callee.isDeclaration() ||
-        mayMeasureOrReset(callee, active)) {
+        mayMeasureOrReset(callee, active, cachedResults, symbols)) {
       plan.dynamic = true;
     }
   });

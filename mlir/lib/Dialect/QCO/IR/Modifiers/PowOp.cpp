@@ -298,6 +298,8 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
           return mqt::getValueFromBlockArgument(t, outerQubits);
         });
 
+    mqt::hoistSupportingOpsBefore(*op.getBody(), innerCtrlOp, op, rewriter);
+
     auto newCtrl = CtrlOp::create(
         rewriter, op.getLoc(), controls, targets,
         [&](ValueRange targetArgs) -> SmallVector<Value> {

@@ -19,6 +19,7 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/APInt.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/IR/Constants.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Metadata.h>
@@ -36,12 +37,14 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
+#include <cstdint>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
@@ -94,6 +97,8 @@ class QIRTest : public testing::TestWithParam<QIRTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
+  // GoogleTest requires this override name.
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<LLVM::LLVMDialect>();
@@ -306,6 +311,76 @@ TEST_F(QIRTest, PreservesUnrelatedMetadataIdempotently) {
   ASSERT_TRUE(succeeded(attachQIRMetadata(module)));
   EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
       module, afterFirstRun->getOperation(),
+      OperationEquivalence::Flags::None));
+}
+
+TEST_F(QIRTest, MetadataDeclaresCapacityForStaticResourceIds) {
+  struct CapacityCase {
+    SmallVector<int64_t> indices;
+    StringRef requiredCapacity;
+  };
+  const std::array cases{
+      CapacityCase{.indices = {}, .requiredCapacity = "0"},
+      CapacityCase{.indices = {0}, .requiredCapacity = "1"},
+      CapacityCase{.indices = {0, 1, 0}, .requiredCapacity = "2"},
+      CapacityCase{.indices = {7, 2, 7}, .requiredCapacity = "8"},
+  };
+
+  for (const auto profile : {
+           QIRProgramBuilder::Profile::Base,
+           QIRProgramBuilder::Profile::Adaptive,
+       }) {
+    for (const auto& testCase : cases) {
+      SCOPED_TRACE(testing::Message()
+                   << "profile=" << static_cast<int>(profile)
+                   << ", requiredCapacity=" << testCase.requiredCapacity.str());
+      auto moduleOp = QIRProgramBuilder::build(
+          context.get(),
+          [&](QIRProgramBuilder& builder) {
+            for (const auto index : testCase.indices) {
+              auto qubit = builder.staticQubit(index);
+              builder.x(qubit);
+              builder.measure(qubit, index);
+            }
+            return builder.intConstant(0);
+          },
+          profile);
+
+      ASSERT_TRUE(moduleOp);
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      auto main = getMainFunction(moduleOp.get());
+      ASSERT_TRUE(main);
+      const auto passthrough = main.getPassthroughAttr();
+      ASSERT_TRUE(passthrough);
+      OpBuilder builder(context.get());
+      for (const StringRef attribute :
+           {"required_num_qubits", "required_num_results"}) {
+        EXPECT_TRUE(llvm::is_contained(
+            passthrough,
+            builder.getStrArrayAttr({attribute, testCase.requiredCapacity})));
+      }
+    }
+  }
+}
+
+TEST_F(QIRTest, MetadataRejectsUnrepresentableStaticResourceCapacity) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.func @__quantum__qis__x__body(!llvm.ptr)
+    llvm.func @main() attributes {passthrough = ["entry_point"]} {
+      %index = llvm.mlir.constant(-1 : i64) : i64
+      %qubit = llvm.inttoptr %index : i64 to !llvm.ptr
+      llvm.call @__quantum__qis__x__body(%qubit) : (!llvm.ptr) -> ()
+      llvm.return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  OwningOpRef<ModuleOp> before = moduleOp->clone();
+
+  EXPECT_TRUE(failed(attachQIRMetadata(moduleOp.get())));
+  EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+      moduleOp.get(), before->getOperation(),
       OperationEquivalence::Flags::None));
 }
 

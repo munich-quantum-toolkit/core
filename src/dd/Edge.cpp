@@ -70,6 +70,9 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
 }
 
 template <class Node> auto Edge<Node>::size() const -> std::size_t {
+  if (isTerminal()) {
+    return 1U;
+  }
   static constexpr std::size_t NODECOUNT_BUCKETS = 200000U;
   static thread_local std::unordered_set<const Node*> visited{
       NODECOUNT_BUCKETS,
@@ -284,7 +287,7 @@ auto Edge<Node>::addToVector(CVec& amplitudes) const -> void
 
 template <class Node>
 void Edge<Node>::traverseVector(const std::complex<fp>& amp,
-                                const std::size_t i, AmplitudeFunc f,
+                                const std::size_t i, const AmplitudeFunc& f,
                                 const fp threshold) const
   requires IsVector<Node>
 {
@@ -479,6 +482,17 @@ void Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
                                 const fp threshold) const
   requires IsMatrix<Node>
 {
+  traverseMatrixImpl(amp, i, j, f, level, threshold);
+}
+
+template <class Node>
+void Edge<Node>::traverseMatrixImpl(const std::complex<fp>& amp,
+                                    const std::size_t i, const std::size_t j,
+                                    const MatrixEntryFunc& f,
+                                    const std::size_t level,
+                                    const fp threshold) const
+  requires IsMatrix<Node>
+{
   // calculate new accumulated amplitude
   const auto c = amp * static_cast<std::complex<fp>>(w);
 
@@ -496,8 +510,8 @@ void Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
   const std::size_t x = i | (1ULL << nextLevel);
   const std::size_t y = j | (1ULL << nextLevel);
   if (isTerminal() || p->v < nextLevel) {
-    traverseMatrix(amp, i, j, f, nextLevel, threshold);
-    traverseMatrix(amp, x, y, f, nextLevel, threshold);
+    traverseMatrixImpl(amp, i, j, f, nextLevel, threshold);
+    traverseMatrixImpl(amp, x, y, f, nextLevel, threshold);
     return;
   }
 
@@ -505,7 +519,7 @@ void Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
   std::size_t k = 0U;
   for (const auto& [a, b] : coords) {
     if (auto const& e = p->e[k++]; !e.w.exactlyZero()) {
-      e.traverseMatrix(c, a, b, f, nextLevel, threshold);
+      e.traverseMatrixImpl(c, a, b, f, nextLevel, threshold);
     }
   }
 }

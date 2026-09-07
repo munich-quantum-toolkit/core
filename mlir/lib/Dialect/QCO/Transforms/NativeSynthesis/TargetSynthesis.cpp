@@ -269,7 +269,7 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
     return false;
   }
 
-  const auto native = decomposeUnitary2QWeyl(run.composed, basis.entangler);
+  const auto native = decomposeUnitary2QWeyl(run.composed, *basis.entangler);
   if (native.numBasisUses >= run.numTwoQ) {
     return false;
   }
@@ -502,13 +502,16 @@ static LogicalResult synthesizeTargetOperation(
     return success();
   }
 
+  if (!basis->entangler) {
+    return unsupported("the target has no usable two-qubit entangler");
+  }
   Matrix4x4 matrix;
   if (!assignTwoQubitOpMatrix(op, matrix)) {
     return unsupported("its unitary matrix is not available at compile time");
   }
-  const bool reverseEntangler = !target.supports(basis->entangler, sites);
+  const bool reverseEntangler = !target.supports(*basis->entangler, sites);
   if (reverseEntangler &&
-      !target.supports(basis->entangler, std::array{sites[1], sites[0]})) {
+      !target.supports(*basis->entangler, std::array{sites[1], sites[0]})) {
     return operation->emitError()
            << "no supported synthesis-basis placement is known for its "
               "static sites";
@@ -520,7 +523,7 @@ static LogicalResult synthesizeTargetOperation(
     matrix = matrix.reorderForQubits(1, 0);
     std::swap(input0, input1);
   }
-  const auto native = decomposeUnitary2QWeyl(matrix, basis->entangler);
+  const auto native = decomposeUnitary2QWeyl(matrix, *basis->entangler);
   const auto synthesized = emitUnitary2QWeyl(rewriter, operation->getLoc(),
                                              input0, input1, native, *basis);
   decomposition::emitGPhaseIfNeeded(rewriter, operation->getLoc(),

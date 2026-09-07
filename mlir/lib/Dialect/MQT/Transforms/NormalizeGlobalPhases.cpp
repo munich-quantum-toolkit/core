@@ -200,7 +200,8 @@ struct PhaseContribution final {
 
 } // namespace
 
-/// Collect a pure, body-local dependency slice in topological order.
+/// Collect a memory-effect-free, body-local dependency slice in order.
+/// Extraction crosses only eager quantum modifiers, never classical branches.
 static bool collectHoistableSlice(Value value, Block& body,
                                   SmallPtrSetImpl<Operation*>& visiting,
                                   SmallPtrSetImpl<Operation*>& collected,
@@ -217,7 +218,7 @@ static bool collectHoistableSlice(Value value, Block& body,
     return true;
   }
   if (!visiting.insert(definingOp).second || definingOp->getNumRegions() != 0 ||
-      !isPure(definingOp) || !isSpeculatable(definingOp)) {
+      !isMemoryEffectFree(definingOp)) {
     return false;
   }
   for (auto operand : definingOp->getOperands()) {

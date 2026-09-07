@@ -44,7 +44,7 @@ def CBit_RegisterType : TypeDef<CBitDialect, "Register"> {
 class CBitOp<string mnemonic, list<Trait> traits = []>
     : Op<CBitDialect, mnemonic, traits>;
 
-def AllocOp : CBitOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
+def AllocOp : CBitOp<"alloc"> {
   let summary = "Allocate a classical-bit register";
   let description = [{
     Allocates a static classical-bit register. `zero` initialization defines
@@ -60,7 +60,7 @@ def AllocOp : CBitOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
   }];
 
   let arguments = (ins CBit_InitializationAttr:$initialization);
-  let results = (outs CBit_RegisterType:$result);
+  let results = (outs Res<CBit_RegisterType, "register", [MemAlloc]>:$result);
   let assemblyFormat = [{
     `(` qualified($initialization) `)` attr-dict `:` qualified(type($result))
   }];

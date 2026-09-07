@@ -799,10 +799,15 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
   const auto entangler =
       std::ranges::find_if(entanglerPreference, supportsOnEveryCoupling);
-  if (!singleQubit || entangler == entanglerPreference.end()) {
+  if (!singleQubit) {
     return std::nullopt;
   }
-  return SynthesisBasis{.singleQubit = *singleQubit, .entangler = *entangler};
+  return SynthesisBasis{
+      .singleQubit = *singleQubit,
+      .entangler = entangler == entanglerPreference.end()
+                       ? std::nullopt
+                       : std::optional{*entangler},
+  };
 }
 
 llvm::Expected<CompilerTarget>

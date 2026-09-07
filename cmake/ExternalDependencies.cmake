@@ -26,28 +26,25 @@ if(BUILD_MQT_CORE_MLIR)
   FetchContent_Declare(
     jeff-mlir
     GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
-    GIT_TAG d214dc5c1c18c48b197c122f06f12cf44f49831a)
-  function(_mqt_core_make_jeff_available)
-    # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option
-    # and defines a global `check` target when it is enabled. Do not let an embedding project's test
-    # setting leak into this third-party dependency.
-    set(BUILD_TESTING OFF)
-    # jeff's transitive Cap'n Proto dependency contains source files that cannot share a unity
-    # translation unit. Keep the complete dependency subtree out of unity builds.
-    set(CMAKE_UNITY_BUILD OFF)
-    FetchContent_MakeAvailable(jeff-mlir)
-  endfunction()
-  _mqt_core_make_jeff_available()
+    GIT_TAG 316eab7fab26d80a38278c8bf2ac2d249bda81a1
+    EXCLUDE_FROM_ALL)
+  block()
+  # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option
+  # and defines a global `check` target when it is enabled. Do not let an embedding project's test
+  # setting leak into this third-party dependency.
+  set(BUILD_TESTING OFF)
+  # jeff's transitive Cap'n Proto dependency contains source files that cannot share a unity
+  # translation unit. Keep the complete dependency subtree out of unity builds.
+  set(CMAKE_UNITY_BUILD OFF)
+  FetchContent_MakeAvailable(jeff-mlir)
+  endblock()
 endif()
 
 set(JSON_VERSION
     3.12.0
     CACHE STRING "nlohmann_json version")
 set(JSON_URL https://github.com/nlohmann/json/releases/download/v${JSON_VERSION}/json.tar.xz)
-set(JSON_SystemInclude
-    ON
-    CACHE INTERNAL "Treat the library headers like system headers")
-FetchContent_Declare(nlohmann_json URL ${JSON_URL} FIND_PACKAGE_ARGS ${JSON_VERSION})
+FetchContent_Declare(nlohmann_json URL ${JSON_URL} SYSTEM FIND_PACKAGE_ARGS ${JSON_VERSION})
 list(APPEND FETCH_PACKAGES nlohmann_json)
 
 if(BUILD_MQT_CORE_TESTS)

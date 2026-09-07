@@ -31,7 +31,10 @@
 #include "qco_programs.h"
 #include "qir_programs.h"
 
+#include <capnp/message.h>
+#include <capnp/serialize.h>
 #include <gtest/gtest.h>
+#include <jeff.capnp.h>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/APFloat.h>
@@ -50,6 +53,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/UB/IR/UBOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -75,6 +79,7 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <variant>
@@ -86,6 +91,8 @@ using namespace mlir;
 using namespace mlir::qc;
 using namespace mlir::qco;
 using namespace mlir::qir;
+
+namespace jeff = mlir::jeff;
 
 using QCProgramBuilderFn = NamedMLIRBuilder<QCProgramBuilder>;
 using QIRProgramBuilderFn = NamedMLIRBuilder<QIRProgramBuilder>;
@@ -124,6 +131,8 @@ class CompilerPipelineTest
 protected:
   std::unique_ptr<MLIRContext> context;
 
+  // GoogleTest requires this override name.
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<cbit::CBitDialect, QCDialect, QCODialect,
@@ -1155,6 +1164,23 @@ bit[2] c = measure q;
   EXPECT_TRUE(adaptiveQIR);
 }
 
+TEST_F(CompilerPipelineTest, TypedOpenQASMExportDropsUnusedGates) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @unused(%q: !qc.qubit) attributes {mqt.unitary} {
+      qc.x %q : !qc.qubit
+      return
+    }
+    func.func @main() attributes {mqt.entry_point} { return }
+  })mlir";
+  auto program = QCProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+
+  auto exported = program->toOpenQASM3();
+
+  ASSERT_TRUE(exported);
+  EXPECT_EQ(exported->source().find("gate unused"), std::string::npos);
+}
+
 TEST_F(CompilerPipelineTest, TypedOpenQASMExportReportsUnsupportedQC) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main(%value: i64) {
@@ -1438,12 +1464,54 @@ TEST_F(CompilerPipelineTest, JeffBinaryRoundTripPreservesReusableFunctions) {
     ASSERT_TRUE(output);
     EXPECT_TRUE(std::get<QIRProgram>(*output).llvmIR());
   }
+  auto targeted = restored->copy();
+  ASSERT_TRUE(targeted.compileForTarget(makeSparseUCZTarget(true)));
+  EXPECT_EQ(llvm::range_size(targeted.module().getOps<func::FuncOp>()), 1);
   auto qc = std::move(*restored).intoQC();
   ASSERT_TRUE(qc);
   EXPECT_TRUE(succeeded(verify(qc->module())));
   helper = qc->module().lookupSymbol<func::FuncOp>("rotate");
   ASSERT_TRUE(helper);
   EXPECT_EQ(helper.getNumResults(), 0);
+}
+
+TEST_F(CompilerPipelineTest, QIRPreservesSparseStaticQubitIdsAndCapacity) {
+  auto qc = QCProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.static 7 : !qc.qubit
+      qc.x %q : !qc.qubit
+      return
+    }
+  })mlir");
+  ASSERT_TRUE(qc);
+  ASSERT_TRUE(succeeded(verify(qc->module())));
+
+  for (const auto format :
+       {ProgramFormat::QIRBase, ProgramFormat::QIRAdaptive}) {
+    auto output = runDefaultPipeline(CompilerInput{qc->copy()}, format);
+    ASSERT_TRUE(output);
+    auto moduleOp = std::get<QIRProgram>(*output).module();
+    ASSERT_TRUE(succeeded(verify(moduleOp)));
+    auto main = getMainFunction(moduleOp);
+    ASSERT_TRUE(main);
+    OpBuilder builder(moduleOp.getContext());
+    EXPECT_TRUE(llvm::is_contained(
+        main.getPassthroughAttr(),
+        builder.getStrArrayAttr({"required_num_qubits", "8"})));
+
+    LLVM::CallOp gate;
+    main.walk([&](LLVM::CallOp call) {
+      if (call.getCallee() == QIR_X) {
+        gate = call;
+      }
+    });
+    ASSERT_TRUE(gate);
+    auto pointer = gate.getOperand(0).getDefiningOp<LLVM::IntToPtrOp>();
+    ASSERT_TRUE(pointer);
+    auto index = pointer.getArg().getDefiningOp<LLVM::ConstantOp>();
+    ASSERT_TRUE(index);
+    EXPECT_EQ(cast<IntegerAttr>(index.getValue()).getInt(), 7);
+  }
 }
 
 TEST_F(CompilerPipelineTest, JeffRejectsMutableClassicalHelperArguments) {
@@ -1459,6 +1527,14 @@ TEST_F(CompilerPipelineTest, JeffRejectsMutableClassicalHelperArguments) {
   })mlir");
   ASSERT_TRUE(qco);
   EXPECT_FALSE(std::move(*qco).intoJeff());
+}
+
+TEST_F(CompilerPipelineTest, RejectsJeffModuleWithoutFunctions) {
+  capnp::MallocMessageBuilder message;
+  message.initRoot<::jeff::Module>().setVersionMinor(3);
+  auto words = capnp::messageToFlatArray(message);
+  EXPECT_FALSE(JeffProgram::fromBytes(
+      std::as_bytes(std::span(words.begin(), words.size()))));
 }
 
 // Test: jeff programs round-trip through their binary APIs.
@@ -1635,6 +1711,39 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   EXPECT_FALSE(unsupportedQCO->compileForTarget(makeSparseUCZTarget(false)));
 }
 
+TEST_F(CompilerPipelineTest, TargetCompilationInlinesReusableFunctions) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func private @flip(%q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %out = qco.x %q : !qco.qubit -> !qco.qubit
+      return %out : !qco.qubit
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qco.alloc : !qco.qubit
+      %out = qco.call @flip(%q) : (!qco.qubit) -> !qco.qubit
+      qco.sink %out : !qco.qubit
+      return
+    }
+  })mlir";
+
+  DialectRegistry registry;
+  registry.insert<mlir::mqt::MQTDialect, QCODialect, arith::ArithDialect,
+                  func::FuncDialect>();
+  auto ownedContext = std::make_shared<MLIRContext>(registry);
+  ownedContext->loadAllAvailableDialects();
+  auto moduleOp = parseSourceString<ModuleOp>(source, ownedContext.get());
+  ASSERT_TRUE(moduleOp);
+  auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
+  ASSERT_TRUE(program);
+
+  ASSERT_TRUE(program->compileForTarget(makeSparseUCZTarget(false)));
+  EXPECT_FALSE(program->module().lookupSymbol<func::FuncOp>("flip"));
+  size_t calls = 0;
+  program->module().walk([&](qco::CallOp) { ++calls; });
+  EXPECT_EQ(calls, 0U);
+  EXPECT_TRUE(verify(program->module()).succeeded());
+}
+
 // Test that target compilation leaves dead-value cleanup at a fixed point.
 TEST_F(CompilerPipelineTest,
        TargetCompilationLeavesDeadValueCleanupAtFixedPoint) {
@@ -1684,8 +1793,7 @@ TEST_F(CompilerPipelineTest,
 
   ASSERT_TRUE(program->compileForTarget(target));
   const std::string before = program->str();
-  EXPECT_NE(before.find("func.func private @forward"), std::string::npos);
-  EXPECT_NE(before.find("call @forward"), std::string::npos);
+  EXPECT_EQ(before.find("func.func private @forward"), std::string::npos);
   EXPECT_NE(before.find("qco.if"), std::string::npos);
   EXPECT_NE(before.find("qco.u"), std::string::npos);
   EXPECT_NE(before.find("qco.ctrl"), std::string::npos);

@@ -45,7 +45,6 @@
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
@@ -783,9 +782,8 @@ private:
     return newWhileOp;
   }
 
-  /// Return an iterator to the wire edge crossing a boundary in block order.
-  static WireIterator iteratorBeforeBoundary(WireIterator iterator,
-                                             Operation* boundary) {
+  /// Return the value whose wire edge crosses a composite in block order.
+  static Value valueBeforeBoundary(WireIterator iterator, Operation* boundary) {
     assert(boundary != nullptr && boundary->getBlock() != nullptr);
 
     // Independent wires can advance beyond `boundary`. Rewind to the qubit
@@ -810,7 +808,7 @@ private:
     assert((consumer == boundary || boundary->isBeforeInBlock(consumer) ||
             isa<SinkOp>(consumer)) &&
            "selected qubit value does not cross composite boundary");
-    return iterator;
+    return value;
   }
 
   /// Rewind only when a wire has advanced through structured classical
@@ -829,28 +827,6 @@ private:
       }
     }
     return insertionPoint;
-  }
-
-  /// Return the first direct memory-write destination of a measured qubit,
-  /// unless doing so would move routing across structured control.
-  static Operation* measurementDestination(Value qubit) {
-    auto measurement = qubit.getDefiningOp<MeasureOp>();
-    if (!measurement) {
-      return nullptr;
-    }
-
-    for (Operation* operation = measurement->getNextNode();
-         operation != nullptr; operation = operation->getNextNode()) {
-      if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(operation)) {
-        return nullptr;
-      }
-      if (llvm::is_contained(operation->getOperands(),
-                             measurement.getResult()) &&
-          hasEffect<MemoryEffects::Write>(operation)) {
-        return operation;
-      }
-    }
-    return nullptr;
   }
 
   /// Execute `ntrials` many (parallel) initial layout refinement trials and
@@ -1216,25 +1192,7 @@ private:
         auto in0 = w0.qubit();
         auto in1 = w1.qubit();
 
-        Operation* destination = nullptr;
-        for (Value input : {in0, in1}) {
-          Operation* candidate = measurementDestination(input);
-          if (candidate != nullptr &&
-              (destination == nullptr ||
-               destination->isBeforeInBlock(candidate))) {
-            destination = candidate;
-          }
-        }
-        Operation* in0Definition = in0.getDefiningOp();
-        if (destination != nullptr &&
-            (in0Definition == nullptr ||
-             (in0Definition->getBlock() == destination->getBlock() &&
-              in0Definition->isBeforeInBlock(destination)))) {
-          rewriter->setInsertionPointAfter(destination);
-        } else {
-          // Valid because hot routing only runs in the forward direction.
-          rewriter->setInsertionPointAfterValue(in0);
-        }
+        rewriter->setInsertionPointAfterValue(in0); // Valid bc. Hot => Forward.
         auto swapOp = SWAPOp::create(*rewriter, in0.getLoc(), in0, in1);
 
         auto out0 = swapOp.getQubit0Out();
@@ -1404,7 +1362,7 @@ private:
         allIndices, [&](const size_t i) { return !included.contains(i); }));
 
     const SmallVector<Value> addons(map_range(excluded, [&](const size_t i) {
-      return iteratorBeforeBoundary(parent.wires[i], composite.op).qubit();
+      return valueBeforeBoundary(parent.wires[i], composite.op);
     }));
 
     composite = CompositeUnitary{

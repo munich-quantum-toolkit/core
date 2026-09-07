@@ -539,8 +539,9 @@ static int runCompiler(int argc, char** argv) {
       *parsedOutputFormat != OutputFormat::QCImport &&
       *parsedOutputFormat != OutputFormat::QCO;
   if (requiresPostQcoPasses && failed(runPasses([&](OpPassManager& pm) {
-        if (*parsedOutputFormat == OutputFormat::QIRBase ||
-            *parsedOutputFormat == OutputFormat::QIRAdaptive) {
+        if (!compilerTarget &&
+            (*parsedOutputFormat == OutputFormat::QIRBase ||
+             *parsedOutputFormat == OutputFormat::QIRAdaptive)) {
           pm.addPass(createInlinerPass());
         }
         if (compilerTarget) {

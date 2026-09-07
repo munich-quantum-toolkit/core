@@ -26,7 +26,7 @@ releases may include breaking changes.
   [#1927], [#1935], [#1936], [#1938], [#1975], [#1976], [#2006], [#2014],
   [#2015], [#2017], [#2026], [#2028], [#2054], [#2058], [#2125], [#2136],
   [#2149], [#2150], [#2158], [#2194], [#2210], [#2211], [#2215], [#2218],
-  [#2220], [#2323], [#2336]) ([**@burgholzer**], [**@denialhaag**],
+  [#2220], [#2323], [#2336], [#2344]) ([**@burgholzer**], [**@denialhaag**],
   [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
   [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 - ✨ Add a library for typed structured quantum benchmarks with versioned
@@ -45,9 +45,9 @@ releases may include breaking changes.
 
 #### Import and export
 
-- ✨ Add Qiskit circuit import and target-aware export to the compiler
-  collection ([#2031], [#2133], [#2140], [#2150], [#2175], [#2176], [#2178])
-  ([**@burgholzer**], [**@simon1hofmann**])
+- ✨ Add Qiskit circuit import, target-aware export, and reusable custom Gate
+  round trips to the compiler collection ([#2031], [#2133], [#2140], [#2150],
+  [#2175], [#2176], [#2178], [#2342]) ([**@burgholzer**], [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105],
   [#2339]) ([**@denialhaag**], [**@burgholzer**])
@@ -74,7 +74,7 @@ releases may include breaking changes.
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
   [#1748], [#1805], [#1870], [#1904], [#1911], [#1951], [#1956], [#1997],
-  [#2016], [#2060], [#2179], [#2184], [#2185], [#2205], [#2240])
+  [#2016], [#2060], [#2179], [#2184], [#2185], [#2205], [#2240], [#2436])
   ([**@MatthiasReumann**], [**@burgholzer**], [**@rturrado**],
   [**@simon1hofmann**])
 - ✨ Add modifier and global-phase normalization passes ([#1986], [#1995],
@@ -97,6 +97,9 @@ releases may include breaking changes.
 
 ### Changed
 
+- 💥 Require CMake 3.28 or newer for source builds and embedded projects, use
+  native dependency exclusions and system include handling, and disable unused
+  C++ module scanning ([#2421]) ([**@burgholzer**])
 - ⬆️ Update clang-tidy to version 23 and adapt the C++ sources to its
   diagnostics ([#2328]) ([**@simon1hofmann**])
 - 💥 Update QIR execution for QIR 2.1, isolated runtimes, deterministic QDMI
@@ -923,11 +926,15 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2436]: https://github.com/munich-quantum-toolkit/core/pull/2436
+[#2421]: https://github.com/munich-quantum-toolkit/core/pull/2421
 [#2399]: https://github.com/munich-quantum-toolkit/core/pull/2399
 [#2380]: https://github.com/munich-quantum-toolkit/core/pull/2380
 [#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368
 [#2358]: https://github.com/munich-quantum-toolkit/core/pull/2358
 [#2349]: https://github.com/munich-quantum-toolkit/core/pull/2349
+[#2344]: https://github.com/munich-quantum-toolkit/core/pull/2344
+[#2342]: https://github.com/munich-quantum-toolkit/core/pull/2342
 [#2340]: https://github.com/munich-quantum-toolkit/core/pull/2340
 [#2339]: https://github.com/munich-quantum-toolkit/core/pull/2339
 [#2338]: https://github.com/munich-quantum-toolkit/core/pull/2338

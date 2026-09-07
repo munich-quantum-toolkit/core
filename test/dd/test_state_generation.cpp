@@ -306,7 +306,7 @@ TEST(StateGenerationTest, MakeWInvalidArguments) {
 
   // Test: Misconfigured package (# of qubits).
 
-  constexpr std::size_t nq = 100;
+  constexpr std::size_t nq = 2;
 
   auto dd = std::make_unique<Package>(nq);
   EXPECT_THROW({ makeWState(nq + 1, *dd); }, std::invalid_argument);

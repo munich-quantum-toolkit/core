@@ -38,7 +38,6 @@
 #endif
 
 namespace qdmi::detail {
-namespace {
 [[nodiscard]] std::optional<std::string>
 environment(const std::string_view name) {
 #ifdef _WIN32
@@ -93,6 +92,7 @@ environment(const std::string_view name) {
 #endif
 }
 
+namespace {
 template <class Reporter>
 void reportPath(const std::filesystem::path& path,
                 const std::format_string<> fallback,
