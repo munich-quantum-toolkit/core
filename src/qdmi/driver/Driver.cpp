@@ -468,13 +468,6 @@ namespace {
 } // namespace
 
 QDMI_Session_impl_d::QDMI_Session_impl_d(
-    const std::vector<std::unique_ptr<QDMI_Device_impl_d>>& devices) {
-  devices_.reserve(devices.size());
-  std::ranges::transform(devices, std::back_inserter(devices_),
-                         [](const auto& device) { return device.get(); });
-}
-
-QDMI_Session_impl_d::QDMI_Session_impl_d(
     const std::vector<QDMI_Device>& devices)
     : devices_(devices) {}
 
