@@ -236,3 +236,33 @@ does not depend on a path or output format. Parsing a manifest checks its
 resolved parameters, logical output, reference, definition version, and case ID.
 Before evaluation, normalize backend results to the manifest's big-endian
 `result` order.
+
+## QFT addition
+
+The `qft-adder` family adds two equal-width operands. `REGISTER` stores the
+addend in qubits and applies controlled phases; `CONSTANT` combines the known
+addend into one phase per accumulator qubit. Both use the same exact QFT and
+inverse QFT. `WRAP` keeps an n-bit sum, while `CARRY` keeps an extra sum bit.
+
+```{code-cell} ipython3
+from mqt.core import mlir
+from mqt.core.bench import qft_adder
+
+adder = qft_adder.QFTAdder(
+    qft_adder.Options(
+        addend="110",
+        accumulator="011",
+        method=qft_adder.Method.CONSTANT,
+        overflow=qft_adder.Overflow.CARRY,
+    )
+)
+assert mlir.sample(adder.generate(), shots=128, seed=17) == {"1001": 128}
+```
+
+Operands are big-endian strings; leading zeros set their common width. The
+accumulator and constant addends must be binary. Register addends may also use
+`+` for independently prepared $|+\rangle$ qubits, such as `addend="1+0"`.
+Register results concatenate the addend and sum so their correlation remains
+observable. Constant results contain only the sum. `expected_result` is the
+unique logical outcome for basis inputs and `None` for a superposed addend. The
+total sum width, including an optional carry bit, is limited to 1024.

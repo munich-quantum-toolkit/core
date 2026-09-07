@@ -22,8 +22,7 @@ from mqt.core.bench import (
     grover,
     multiplexer,
     qft,
-    qft_adder_classical,
-    qft_adder_quantum,
+    qft_adder,
     qpe,
     teleportation,
 )
@@ -36,8 +35,7 @@ def assert_generates(
         | grover.Grover
         | multiplexer.Multiplexer
         | qft.QFT
-        | qft_adder_classical.QFTAdderClassical
-        | qft_adder_quantum.QFTAdderQuantum
+        | qft_adder.QFTAdder
         | qpe.QPE
         | teleportation.Teleportation
     ),
@@ -151,71 +149,59 @@ def test_qft_methods_share_the_periodic_reference() -> None:
         assert_generates(benchmark)
 
 
-def test_quantum_qft_adder_reference_json_and_generation() -> None:
-    """Expose the correlated addend and sum distribution."""
-    benchmark = qft_adder_quantum.QFTAdderQuantum(qft_adder_quantum.Options(qubits=2))
-    assert benchmark.output.name == "result"
-    assert benchmark.output.width == 4
-    assert benchmark.probability("0001") == pytest.approx(0.25)
-    assert benchmark.probability("0110") == pytest.approx(0.25)
-    assert benchmark.probability("1011") == pytest.approx(0.25)
-    assert benchmark.probability("1100") == pytest.approx(0.25)
-    assert benchmark.probability("0000") == 0
-
-    evaluation = benchmark.evaluate({"0001": 1, "0110": 1, "1011": 1, "1100": 1})
-    assert evaluation.total_variation_distance == pytest.approx(0)
-    assert evaluation.squared_hellinger_fidelity == pytest.approx(1)
-    assert evaluation.success_probability is None
-    assert json.loads(benchmark.instance_specification_json)["parameters"] == {"qubits": 2}
-
-    instance_copy = qft_adder_quantum.QFTAdderQuantum.from_instance_specification_json(
-        benchmark.instance_specification_json
-    )
-    manifest_copy = qft_adder_quantum.QFTAdderQuantum.from_manifest_json(benchmark.manifest_json)
-    assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
-
-    sampled = qft_adder_quantum.QFTAdderQuantum(qft_adder_quantum.Options(qubits=3))
-    shots = 16_384
-    counts = mlir.sample(sampled.generate(), shots=shots, seed=17)
-    assert sum(counts.values()) == shots
-    assert sampled.evaluate(counts).total_variation_distance < 0.03
-    assert_generates(benchmark)
-
-
-def test_classical_qft_adder_reference_json_and_generation() -> None:
-    """Expose exact classical addition without truncating a carry."""
-    benchmark = qft_adder_classical.QFTAdderClassical(qft_adder_classical.Options(addend="110"))
+@pytest.mark.parametrize("method", [qft_adder.Method.REGISTER, qft_adder.Method.CONSTANT])
+@pytest.mark.parametrize("overflow", [qft_adder.Overflow.WRAP, qft_adder.Overflow.CARRY])
+def test_qft_adder_reference_json_and_generation(method: qft_adder.Method, overflow: qft_adder.Overflow) -> None:
+    """Expose both operand representations with the same overflow contract."""
+    benchmark = qft_adder.QFTAdder(qft_adder.Options(addend="110", accumulator="011", method=method, overflow=overflow))
+    expected_sum = "1001" if overflow == qft_adder.Overflow.CARRY else "001"
+    expected = ("110" if method == qft_adder.Method.REGISTER else "") + expected_sum
     assert benchmark.options.addend == "110"
-    assert benchmark.output.name == "result"
-    assert benchmark.output.width == 4
-    assert benchmark.expected_result == "0111"
-    assert benchmark.probability("0111") == 1
-    assert benchmark.probability("0110") == 0
-
-    evaluation = benchmark.evaluate({"0111": 8, "0110": 2})
-    assert evaluation.total_variation_distance == pytest.approx(0.2)
-    assert evaluation.squared_hellinger_fidelity == pytest.approx(0.8)
-    assert evaluation.success_probability == pytest.approx(0.8)
-    assert json.loads(benchmark.instance_specification_json)["parameters"] == {"addend": "110"}
-
-    instance_copy = qft_adder_classical.QFTAdderClassical.from_instance_specification_json(
-        benchmark.instance_specification_json
-    )
-    manifest_copy = qft_adder_classical.QFTAdderClassical.from_manifest_json(benchmark.manifest_json)
-    assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
-
+    assert benchmark.options.accumulator == "011"
+    assert benchmark.output.width == len(expected)
+    assert benchmark.expected_result == expected
+    assert benchmark.probability(expected) == 1
+    assert benchmark.evaluate({expected: 8}).success_probability == 1
+    parameters = json.loads(benchmark.instance_specification_json)["parameters"]
+    assert parameters["addend"] == "110"
+    assert parameters["accumulator"] == "011"
+    copy = qft_adder.QFTAdder.from_instance_specification_json(benchmark.instance_specification_json)
+    manifest_copy = qft_adder.QFTAdder.from_manifest_json(benchmark.manifest_json)
+    assert copy.case_id == manifest_copy.case_id == benchmark.case_id
+    assert mlir.sample(benchmark.generate(), shots=128, seed=17) == {expected: 128}
     assert_generates(benchmark)
+
+
+def test_qft_adder_superposition_reference() -> None:
+    """Keep the observable correlation for a partly superposed addend."""
+    benchmark = qft_adder.QFTAdder(qft_adder.Options(addend="1+0", accumulator="001"))
+    assert benchmark.expected_result is None
+    assert benchmark.probability("100101") == pytest.approx(0.5)
+    assert benchmark.probability("110111") == pytest.approx(0.5)
+    assert benchmark.probability("000001") == 0
+    assert benchmark.probability("100100") == 0
+    evaluation = benchmark.evaluate({"100101": 1, "110111": 1})
+    assert evaluation.total_variation_distance == 0
+    assert evaluation.success_probability is None
+    counts = mlir.sample(benchmark.generate(), shots=16_384, seed=17)
+    assert benchmark.evaluate(counts).total_variation_distance < 0.03
 
 
 @pytest.mark.parametrize(
     ("addend", "expected"),
     [("0", "01"), ("1", "10"), ("001", "0010"), ("110", "0111"), ("111", "1000")],
 )
-def test_classical_qft_adder_dd_sampling_preserves_width_and_carry(addend: str, expected: str) -> None:
-    """Execute zero, leading-zero, and carry cases against their exact sums."""
-    benchmark = qft_adder_classical.QFTAdderClassical(qft_adder_classical.Options(addend=addend))
-    shots = 1_024
-    assert mlir.sample(benchmark.generate(), shots=shots, seed=17) == {expected: shots}
+def test_qft_adder_preserves_leading_zeros_and_carry(addend: str, expected: str) -> None:
+    """Keep the input width and final carry in constant addition."""
+    benchmark = qft_adder.QFTAdder(
+        qft_adder.Options(
+            addend=addend,
+            accumulator="0" * (len(addend) - 1) + "1",
+            method=qft_adder.Method.CONSTANT,
+            overflow=qft_adder.Overflow.CARRY,
+        )
+    )
+    assert mlir.sample(benchmark.generate(), shots=128, seed=17) == {expected: 128}
 
 
 def test_qpe_accepts_fraction_and_native_phase() -> None:

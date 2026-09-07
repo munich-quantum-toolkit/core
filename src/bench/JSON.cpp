@@ -17,8 +17,7 @@
 #include "bench/Grover.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
-#include "bench/QFTAdderClassical.hpp"
-#include "bench/QFTAdderQuantum.hpp"
+#include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
 #include "bench/Teleportation.hpp"
 
@@ -425,31 +424,40 @@ parseMultiplexerParameters(const Json& parameters,
   }
 }
 
-[[nodiscard]] QFTAdderClassical
-parseQFTAdderClassicalParameters(const Json& parameters,
-                                 const std::string_view source) {
-  rejectUnknownKeys(parameters, {"addend"}, source, "$/parameters");
-  try {
-    return QFTAdderClassical({
-        .addend =
-            stringValue(required(parameters, "addend", source, "$/parameters"),
-                        source, "$/parameters/addend"),
-    });
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
+[[nodiscard]] QFTAdder parseQFTAdderParameters(const Json& parameters,
+                                               const std::string_view source) {
+  rejectUnknownKeys(parameters, {"addend", "accumulator", "method", "overflow"},
+                    source, "$/parameters");
+  QFTAdderOptions options{
+      .addend =
+          stringValue(required(parameters, "addend", source, "$/parameters"),
+                      source, "$/parameters/addend"),
+      .accumulator = stringValue(
+          required(parameters, "accumulator", source, "$/parameters"), source,
+          "$/parameters/accumulator"),
+  };
+  if (const auto it = parameters.find("method"); it != parameters.end()) {
+    const auto value = stringValue(*it, source, "$/parameters/method");
+    if (value == "register") {
+      options.method = QFTAdderMethod::Register;
+    } else if (value == "constant") {
+      options.method = QFTAdderMethod::Constant;
+    } else {
+      fail(source, "$/parameters/method", "must be 'register' or 'constant'");
+    }
   }
-}
-
-[[nodiscard]] QFTAdderQuantum
-parseQFTAdderQuantumParameters(const Json& parameters,
-                               const std::string_view source) {
-  rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
+  if (const auto it = parameters.find("overflow"); it != parameters.end()) {
+    const auto value = stringValue(*it, source, "$/parameters/overflow");
+    if (value == "wrap") {
+      options.overflow = QFTAdderOverflow::Wrap;
+    } else if (value == "carry") {
+      options.overflow = QFTAdderOverflow::Carry;
+    } else {
+      fail(source, "$/parameters/overflow", "must be 'wrap' or 'carry'");
+    }
+  }
   try {
-    return QFTAdderQuantum({
-        .qubits =
-            sizeValue(required(parameters, "qubits", source, "$/parameters"),
-                      source, "$/parameters/qubits"),
-    });
+    return QFTAdder(std::move(options));
   } catch (const std::invalid_argument& error) {
     fail(source, "$/parameters", error.what());
   }
@@ -559,12 +567,20 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
-[[nodiscard]] Json parametersJSON(const QFTAdderClassical& benchmark) {
-  return {{"addend", benchmark.options().addend}};
-}
-
-[[nodiscard]] Json parametersJSON(const QFTAdderQuantum& benchmark) {
-  return {{"qubits", benchmark.options().qubits}};
+[[nodiscard]] Json parametersJSON(const QFTAdder& benchmark) {
+  const auto& options = benchmark.options();
+  return {
+      {"addend", options.addend},
+      {"accumulator", options.accumulator},
+      {
+          "method",
+          options.method == QFTAdderMethod::Register ? "register" : "constant",
+      },
+      {
+          "overflow",
+          options.overflow == QFTAdderOverflow::Wrap ? "wrap" : "carry",
+      },
+  };
 }
 
 [[nodiscard]] Json parametersJSON(const QPE& benchmark) {
@@ -638,25 +654,18 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
-[[nodiscard]] Json referenceJSON(const QFTAdderClassical& benchmark) {
-  return {
+[[nodiscard]] Json referenceJSON(const QFTAdder& benchmark) {
+  Json reference = {
       {"kind", "analytic"},
-      {"model", "qft_adder_classical"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"success_outcome", benchmark.expectedResult()},
-      {"version", 1},
-  };
-}
-
-[[nodiscard]] Json referenceJSON(const QFTAdderQuantum& benchmark) {
-  return {
-      {"kind", "analytic"},
-      {"model", "qft_adder_quantum"},
+      {"model", "qft_adder"},
       {"outcome_order", "big_endian"},
       {"output", benchmark.output().name},
       {"version", 1},
   };
+  if (benchmark.expectedResult()) {
+    reference["success_outcome"] = *benchmark.expectedResult();
+  }
+  return reference;
 }
 
 [[nodiscard]] Json referenceJSON(const QPE& benchmark) {
@@ -937,8 +946,8 @@ template <class Benchmark>
   });
 }
 
-[[nodiscard]] Json qftAdderClassicalInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<QFTAdderClassical>({
+[[nodiscard]] Json qftAdderInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<QFTAdder>({
       {"additionalProperties", false},
       {
           "properties",
@@ -946,36 +955,95 @@ template <class Benchmark>
               {
                   "addend",
                   {
-                      {"maxLength", QFTAdderClassicalOptions::MAX_ADDEND_BITS},
-                      {"minLength", 1},
-                      {"pattern", "^[01]+$"},
                       {"type", "string"},
+                      {"minLength", 1},
+                      {"maxLength", QFTAdderOptions::MAX_QUBITS},
+                      {"pattern", "^[01+]+$"},
+                  },
+              },
+              {
+                  "accumulator",
+                  {
+                      {"type", "string"},
+                      {"minLength", 1},
+                      {"maxLength", QFTAdderOptions::MAX_QUBITS},
+                      {"pattern", "^[01]+$"},
+                  },
+              },
+              {
+                  "method",
+                  {
+                      {"type", "string"},
+                      {"enum", {"register", "constant"}},
+                      {"default", "register"},
+                  },
+              },
+              {
+                  "overflow",
+                  {
+                      {"type", "string"},
+                      {"enum", {"wrap", "carry"}},
+                      {"default", "wrap"},
                   },
               },
           },
       },
-      {"required", {"addend"}},
-      {"type", "object"},
-  });
-}
-
-[[nodiscard]] Json qftAdderQuantumInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<QFTAdderQuantum>({
-      {"additionalProperties", false},
       {
-          "properties",
+          "allOf",
           {
               {
-                  "qubits",
                   {
-                      {"maximum", QFTAdderQuantumOptions::MAX_QUBITS},
-                      {"minimum", 1},
-                      {"type", "integer"},
+                      "if",
+                      {
+                          {"properties", {{"method", {{"const", "constant"}}}}},
+                          {"required", {"method"}},
+                      },
+                  },
+                  {
+                      "then",
+                      {{"properties", {{"addend", {{"pattern", "^[01]+$"}}}}}},
+                  },
+              },
+              {
+                  {
+                      "if",
+                      {
+                          {"properties", {{"overflow", {{"const", "carry"}}}}},
+                          {"required", {"overflow"}},
+                      },
+                  },
+                  {
+                      "then",
+                      {
+                          {
+                              "properties",
+                              {
+                                  {
+                                      "addend",
+                                      {
+                                          {
+                                              "maxLength",
+                                              QFTAdderOptions::MAX_QUBITS - 1U,
+                                          },
+                                      },
+                                  },
+                                  {
+                                      "accumulator",
+                                      {
+                                          {
+                                              "maxLength",
+                                              QFTAdderOptions::MAX_QUBITS - 1U,
+                                          },
+                                      },
+                                  },
+                              },
+                          },
+                      },
                   },
               },
           },
       },
-      {"required", {"qubits"}},
+      {"required", {"addend", "accumulator"}},
       {"type", "object"},
   });
 }
