@@ -10,21 +10,18 @@
 
 #include "ModifierUtils.h"
 
-#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVectorExtras.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/RegionUtils.h>
 
 #include <cstddef>
@@ -32,21 +29,6 @@
 namespace mlir::qc::detail {
 
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
-  const auto hasNonUnitaryOperation =
-      body.walk([](Operation* operation) {
-            return operation->getName().getDialectNamespace() ==
-                               cbit::CBitDialect::getDialectNamespace() ||
-                           isa<AllocOp, DeallocOp, StaticOp, MeasureOp, ResetOp,
-                               memref::LoadOp, memref::StoreOp>(operation)
-                       ? WalkResult::interrupt()
-                       : WalkResult::advance();
-          })
-          .wasInterrupted();
-  if (hasNonUnitaryOperation) {
-    return modifierOp->emitOpError(
-        "body must not contain non-unitary operations or access registers");
-  }
-
   SetVector<Value> captures;
   getUsedValuesDefinedAbove(modifierOp->getRegions(), captures);
   if (llvm::any_of(captures, [](Value value) {
@@ -55,6 +37,22 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
     return modifierOp->emitOpError(
         "body must not capture qubits from above; use only its aliased block "
         "arguments");
+  }
+
+  const auto hasNonUnitaryOperation =
+      llvm::any_of(body.without_terminator(), [](Operation& operation) {
+        if (isa<UnitaryOpInterface>(operation)) {
+          return false;
+        }
+        const auto isQubit = [](Type type) { return isa<QubitType>(type); };
+        return operation.getNumRegions() != 0 || !isPure(&operation) ||
+               llvm::any_of(operation.getOperandTypes(), isQubit) ||
+               llvm::any_of(operation.getResultTypes(), isQubit);
+      });
+  if (hasNonUnitaryOperation) {
+    return modifierOp->emitOpError(
+        "body must contain only unitary operations and pure classical "
+        "operations without regions");
   }
 
   return success();

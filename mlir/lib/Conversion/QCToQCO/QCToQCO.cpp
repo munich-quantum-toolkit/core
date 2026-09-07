@@ -661,33 +661,38 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
 /// Rejects unsupported operations and qubit captures in QC modifiers.
 [[nodiscard]] static LogicalResult validateModifierBodies(Operation* root) {
   const auto result = root->walk([&](Operation* operation) {
-    if (isa<qc::InvOp, qc::CtrlOp, qc::PowOp>(operation)) {
-      SetVector<Value> captures;
-      getUsedValuesDefinedAbove(operation->getRegions(), captures);
-      if (llvm::any_of(captures, [](Value value) {
-            return isa<qc::QubitType>(value.getType());
-          })) {
-        operation->emitOpError(
-            "body must not capture qubits from above; use only its aliased "
-            "block arguments");
-        return WalkResult::interrupt();
-      }
-    }
-
-    if (operation->getName().getDialectNamespace() !=
-            cbit::CBitDialect::getDialectNamespace() &&
-        !isa<qc::AllocOp, qc::DeallocOp, qc::MeasureOp, qc::ResetOp,
-             memref::LoadOp, memref::StoreOp>(operation)) {
+    if (!isa<qc::InvOp, qc::CtrlOp, qc::PowOp>(operation)) {
       return WalkResult::advance();
     }
 
-    for (auto* parent = operation->getParentOp(); parent != nullptr;
-         parent = parent->getParentOp()) {
-      if (!isa<qc::InvOp, qc::CtrlOp, qc::PowOp>(parent)) {
-        continue;
-      }
-      parent->emitOpError(
-          "body must not contain non-unitary operations or access registers");
+    SetVector<Value> captures;
+    getUsedValuesDefinedAbove(operation->getRegions(), captures);
+    if (llvm::any_of(captures, [](Value value) {
+          return isa<qc::QubitType>(value.getType());
+        })) {
+      operation->emitOpError(
+          "body must not capture qubits from above; use only its aliased "
+          "block arguments");
+      return WalkResult::interrupt();
+    }
+
+    auto& body = operation->getRegion(0).front();
+    const auto hasNonUnitaryOperation =
+        llvm::any_of(body.without_terminator(), [](Operation& nested) {
+          if (isa<qc::UnitaryOpInterface>(nested)) {
+            return false;
+          }
+          const auto isQubit = [](Type type) {
+            return isa<qc::QubitType>(type);
+          };
+          return nested.getNumRegions() != 0 || !isPure(&nested) ||
+                 llvm::any_of(nested.getOperandTypes(), isQubit) ||
+                 llvm::any_of(nested.getResultTypes(), isQubit);
+        });
+    if (hasNonUnitaryOperation) {
+      operation->emitOpError(
+          "body must contain only unitary operations and pure classical "
+          "operations without regions");
       return WalkResult::interrupt();
     }
     return WalkResult::advance();
@@ -727,27 +732,6 @@ static void collectStructuredCaptures(Operation* root, LoweringState& state) {
   });
 }
 
-/// Canonicalizes preserved SCF capture keys after signature conversion.
-static void remapStructuredCaptures(Operation* root, LoweringState& state) {
-  root->walk([&](Operation* operation) {
-    if (!isa<scf::ForOp, scf::WhileOp, scf::IfOp, scf::IndexSwitchOp>(
-            operation)) {
-      return;
-    }
-
-    const auto captures = state.regionQubitMap.find(operation);
-    if (captures == state.regionQubitMap.end()) {
-      return;
-    }
-
-    SetVector<Value> remapped;
-    for (auto qubit : captures->second) {
-      remapped.insert(canonicalQubitKey(state, qubit));
-    }
-    captures->second = std::move(remapped);
-  });
-}
-
 /// Seeds region-owned modifier state after signature conversion.
 static void initializeModifierRegionState(Operation* modifier,
                                           ValueRange sourceArguments,
@@ -762,11 +746,6 @@ static void initializeModifierRegionState(Operation* modifier,
       SmallVector<Value>(convertedArguments.begin(), convertedArguments.end());
   seedRegionMappings(state, region, convertedArguments, {}, convertedArguments,
                      {});
-
-  // Signature conversion replaces modifier block arguments. Refresh nested
-  // structured captures so they refer to the converted arguments owned by the
-  // moved region rather than source conversion keys.
-  remapStructuredCaptures(modifier, state);
 }
 
 namespace {

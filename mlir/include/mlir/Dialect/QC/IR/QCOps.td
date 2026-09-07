@@ -1043,11 +1043,11 @@ def CtrlOp
         Note that control qubits are logically unmodified by this operation in that their quantum state remains unchanged.
         However, the `controls` argument is marked with `MemWrite` to ensure correct dependency tracking in MLIR.
 
-        The body region may contain an arbitrary amount of unitary and classical operations.
+        The body region may contain unitary operations and pure classical operations without regions.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
-        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
+        Operations with memory effects and non-unitary region operations are not allowed.
 
         Example:
         ```mlir
@@ -1106,11 +1106,11 @@ def InvOp : QCOp<"inv",
   let description = [{
         A modifier operation that inverts the gates defined in its body region.
 
-        The body region may contain an arbitrary amount of unitary and classical operations.
+        The body region may contain unitary operations and pure classical operations without regions.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
-        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
+        Operations with memory effects and non-unitary region operations are not allowed.
 
         Example:
         ```mlir
@@ -1169,11 +1169,11 @@ def PowOp : QCOp<"pow",
           - r = 0: identity (no-op).
           - r < 0: equivalent to inv @ pow(-r) @ g.
 
-          The body region may contain an arbitrary amount of unitary and classical operations.
+          The body region may contain unitary operations and pure classical operations without regions.
           Classical SSA values may be captured from above, but every qubit used
           in the body must be passed through a modifier operand and accessed via
           its aliased block argument.
-          Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
+          Operations with memory effects and non-unitary region operations are not allowed.
 
           Example:
           ```mlir

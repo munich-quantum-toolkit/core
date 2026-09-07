@@ -713,14 +713,14 @@ TEST_F(GlobalPhaseNormalizationTest, ZeroControlsReleaseAnUnchangedPhase) {
 }
 
 TEST_F(GlobalPhaseNormalizationTest,
-       MemoryDependentAngleRemainsInsideModifier) {
+       MemoryDependentAngleCapturedByModifierMovesOutsideModifier) {
   auto moduleOp = parse(R"mlir(
     module {
       func.func @test(%q: !qco.qubit, %angles: memref<1xf64>)
           -> !qco.qubit {
         %c0 = arith.constant 0 : index
+        %phase = memref.load %angles[%c0] : memref<1xf64>
         %out = qco.inv (%arg = %q) {
-          %phase = memref.load %angles[%c0] : memref<1xf64>
           %x = qco.x %arg : !qco.qubit -> !qco.qubit
           qco.gphase(%phase)
           qco.yield %x : !qco.qubit
@@ -735,8 +735,8 @@ TEST_F(GlobalPhaseNormalizationTest,
 
   auto func = *moduleOp->getOps<func::FuncOp>().begin();
   auto inv = *func.getBody().getOps<qco::InvOp>().begin();
-  EXPECT_EQ(llvm::range_size(inv.getBody()->getOps<qco::GPhaseOp>()), 1);
-  EXPECT_TRUE(func.getBody().getOps<qco::GPhaseOp>().empty());
+  EXPECT_TRUE(inv.getBody()->getOps<qco::GPhaseOp>().empty());
+  EXPECT_EQ(llvm::range_size(func.getBody().getOps<qco::GPhaseOp>()), 1);
 }
 
 TEST_F(GlobalPhaseNormalizationTest, CFGBlocksRemainIndependentScopes) {

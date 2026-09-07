@@ -120,42 +120,6 @@ TEST(QCToQIRAdaptiveNativeTest,
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RejectsControlledPhaseWithNonHoistableAngle) {
-  MLIRContext context;
-  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
-                      LLVM::LLVMDialect>();
-  qc::QCProgramBuilder builder(&context);
-  builder.initialize();
-  auto control = builder.allocQubit();
-  auto target = builder.allocQubit();
-  builder.ctrl(control, target, [&](Value /*targetArg*/) {
-    auto angle = func::CallOp::create(builder, builder.getLoc(), "angle",
-                                      builder.getF64Type(), ValueRange{});
-    builder.gphase(angle.getResult(0));
-  });
-  auto moduleOp = builder.finalize();
-  ASSERT_TRUE(moduleOp);
-  OpBuilder moduleBuilder(&context);
-  moduleBuilder.setInsertionPointToStart(moduleOp->getBody());
-  auto angleFunction = func::FuncOp::create(
-      moduleBuilder, moduleOp->getLoc(), "angle",
-      moduleBuilder.getFunctionType({}, {moduleBuilder.getF64Type()}));
-  angleFunction.setPrivate();
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  bool sawExpectedDiagnostic = false;
-  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-    std::string message;
-    llvm::raw_string_ostream stream(message);
-    diagnostic.print(stream);
-    sawExpectedDiagnostic |= StringRef(message).contains(
-        "Controlled GPhaseOps cannot be converted to QIR");
-    return success();
-  });
-  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*moduleOp)));
-  EXPECT_TRUE(sawExpectedDiagnostic);
-}
-
 TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
   MLIRContext context;
   context
