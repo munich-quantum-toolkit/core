@@ -28,12 +28,11 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <optional>
-#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <type_traits>
 #include <unordered_map>
 #include <utility>
@@ -82,7 +81,12 @@ namespace {
 
 DynamicDeviceLibrary::DynamicDeviceLibrary(const std::string& libName,
                                            const std::string& prefix)
-    : libHandle_(DL_OPEN(libName.c_str())) {
+    : DynamicDeviceLibrary(DL_OPEN(libName.c_str()), libName, prefix) {}
+
+DynamicDeviceLibrary::DynamicDeviceLibrary(void* handle,
+                                           const std::string& libName,
+                                           const std::string& prefix)
+    : libHandle_(handle) {
   if (libHandle_ == nullptr) {
     throw std::runtime_error("Couldn't open the device library: " + libName);
   }
@@ -161,37 +165,40 @@ DynamicDeviceLibrary::~DynamicDeviceLibrary() {
 namespace {
 struct DynamicLibraryCache {
   std::mutex mutex;
-  std::map<std::pair<std::string, std::string>,
-           std::weak_ptr<DynamicDeviceLibrary>>
+  std::map<void*, std::map<std::string, std::shared_ptr<DynamicDeviceLibrary>>>
       libraries;
 };
 
 [[nodiscard]] auto dynamicLibraryCache() -> DynamicLibraryCache& {
-  static DynamicLibraryCache cache;
-  return cache;
+  /// Match Driver::get(): providers must outlive sessions in global
+  /// destructors. NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  static auto* cache = new DynamicLibraryCache();
+  return *cache;
 }
+} // namespace
 
 [[nodiscard]] auto getDynamicDeviceLibrary(const std::string& libName,
                                            const std::string& prefix)
     -> std::shared_ptr<DynamicDeviceLibrary> {
   auto& cache = dynamicLibraryCache();
   const std::scoped_lock lock(cache.mutex);
-  std::error_code error;
-  auto canonicalPath = std::filesystem::weakly_canonical(
-      std::filesystem::absolute(std::filesystem::path(libName), error), error);
-  if (error) {
-    canonicalPath = std::filesystem::path(libName).lexically_normal();
+  const auto closeLibrary = [](void* handle) { DL_CLOSE(handle); };
+  std::unique_ptr<void, decltype(closeLibrary)> handle(DL_OPEN(libName.c_str()),
+                                                       closeLibrary);
+  if (!handle) {
+    throw std::runtime_error("Couldn't open the device library: " + libName);
   }
-  const auto key = std::pair{canonicalPath.string(), prefix};
-  if (const auto library = cache.libraries[key].lock()) {
-    return library;
+  auto& providers = cache.libraries[handle.get()];
+  if (const auto found = providers.find(prefix); found != providers.end()) {
+    return found->second;
   }
-  auto library = std::make_shared<DynamicDeviceLibrary>(libName, prefix);
-  cache.libraries[key] = library;
+  /// The private constructor takes ownership of the already loaded module.
+  /// NOLINTNEXTLINE(cppcoreguidelines-owning-memory)
+  auto library = std::shared_ptr<DynamicDeviceLibrary>(
+      new DynamicDeviceLibrary(handle.release(), libName, prefix));
+  providers.emplace(prefix, library);
   return library;
 }
-
-} // namespace
 
 #undef DL_OPEN
 #undef DL_SYM
@@ -203,135 +210,107 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
     const qdmi::DeviceSessionConfig& config,
     QDMI_Child_Device_impl_d* const childDevice)
     : library_(std::move(lib)) {
-  if (library_->device_session_alloc(&deviceSession_) != QDMI_SUCCESS) {
-    throw std::runtime_error("Failed to allocate device session");
+  const auto checkStatus = [](const int status, const std::string& action) {
+    if (status != QDMI_SUCCESS && status != QDMI_WARN_GENERAL) {
+      throw std::runtime_error(
+          action + ": " + qdmi::toString(static_cast<QDMI_STATUS>(status)));
+    }
+    qdmi::throwIfError(status, action);
+  };
+  checkStatus(library_->device_session_alloc(&deviceSession_),
+              "Failed to allocate device session");
+  if (deviceSession_ == nullptr) {
+    throw std::runtime_error("Device returned a null session handle");
   }
-
-  // Set device session parameters from config
-  auto setParameter = [this](const std::optional<std::string>& value,
-                             QDMI_Device_Session_Parameter param) {
-    if (value && library_->device_session_set_parameter) {
-      const auto status =
-          static_cast<QDMI_STATUS>(library_->device_session_set_parameter(
-              deviceSession_, param, value->size() + 1, value->c_str()));
-      if (status == QDMI_SUCCESS) {
+  try {
+    const auto setParameter = [&](const std::optional<std::string>& value,
+                                  const QDMI_Device_Session_Parameter param) {
+      if (!value || library_->device_session_set_parameter == nullptr) {
         return;
       }
-
+      const auto status = library_->device_session_set_parameter(
+          deviceSession_, param, value->size() + 1, value->c_str());
       if (status == QDMI_ERROR_NOTSUPPORTED) {
         qdmi::diagnostics::info(
             "Device session parameter {} not supported by device (skipped)",
             qdmi::toString(param));
         return;
       }
-      library_->device_session_free(deviceSession_);
-      std::ostringstream ss;
-      ss << "Failed to set device session parameter " << qdmi::toString(param)
-         << ": " << qdmi::toString(status);
-      throw std::runtime_error(ss.str());
+      checkStatus(status,
+                  std::string("Failed to set device session parameter ") +
+                      qdmi::toString(param));
+    };
+    setParameter(config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL);
+    setParameter(config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN);
+    if (config.authFile) {
+      setParameter(config.authFile->string(),
+                   QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE);
     }
-  };
-
-  setParameter(config.baseUrl, QDMI_DEVICE_SESSION_PARAMETER_BASEURL);
-  setParameter(config.token, QDMI_DEVICE_SESSION_PARAMETER_TOKEN);
-  if (config.authFile) {
-    const std::optional authFile = config.authFile->string();
-    setParameter(authFile, QDMI_DEVICE_SESSION_PARAMETER_AUTHFILE);
-  }
-  setParameter(config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL);
-  setParameter(config.username, QDMI_DEVICE_SESSION_PARAMETER_USERNAME);
-  setParameter(config.password, QDMI_DEVICE_SESSION_PARAMETER_PASSWORD);
-  if (config.deviceConfiguration &&
-      (config.custom1.has_value() || config.custom2.has_value())) {
-    library_->device_session_free(deviceSession_);
-    deviceSession_ = nullptr;
-    throw std::invalid_argument(
-        "Typed device configuration cannot be combined with raw custom1 or "
-        "custom2 session parameters");
-  }
-  if (config.deviceConfiguration) {
-    std::visit(
-        [&](const auto& source) {
-          using Source = std::decay_t<decltype(source)>;
-          if constexpr (std::is_same_v<Source,
-                                       qdmi::InlineDeviceConfiguration>) {
-            setParameter(std::optional{source.json},
-                         QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
-          } else {
-            setParameter(std::optional{source.path.string()},
-                         QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
-          }
-        },
-        *config.deviceConfiguration);
-  }
-  setParameter(config.custom1, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
-  setParameter(config.custom2, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
-  setParameter(config.custom3, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3);
-  setParameter(config.custom4, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4);
-  setParameter(config.custom5, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5);
-
-  if (childDevice != nullptr) {
-    const auto status =
-        static_cast<QDMI_STATUS>(library_->device_session_set_parameter(
-            deviceSession_, QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE,
-            sizeof(QDMI_Child_Device), static_cast<const void*>(&childDevice)));
-    if (status != QDMI_SUCCESS) {
-      library_->device_session_free(deviceSession_);
-      deviceSession_ = nullptr;
-      std::ostringstream ss;
-      ss << "Failed to select child device: " << qdmi::toString(status);
-      throw std::runtime_error(ss.str());
+    setParameter(config.authUrl, QDMI_DEVICE_SESSION_PARAMETER_AUTHURL);
+    setParameter(config.username, QDMI_DEVICE_SESSION_PARAMETER_USERNAME);
+    setParameter(config.password, QDMI_DEVICE_SESSION_PARAMETER_PASSWORD);
+    if (config.deviceConfiguration && (config.custom1 || config.custom2)) {
+      throw std::invalid_argument(
+          "Typed device configuration cannot be combined with raw custom1 or "
+          "custom2 session parameters");
     }
-  }
-
-  if (library_->device_session_init(deviceSession_) != QDMI_SUCCESS) {
-    library_->device_session_free(deviceSession_);
-    deviceSession_ = nullptr;
-    throw std::runtime_error("Failed to initialize device session");
-  }
-
-  // Child sessions represent leaf devices in the QDMI multicore
-  // workflow. Only top-level sessions discover and wrap child handles.
-  if (childDevice != nullptr) {
-    return;
-  }
-
-  size_t childrenSize = 0;
-  auto status =
-      static_cast<QDMI_STATUS>(library_->device_session_query_device_property(
-          deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr,
-          &childrenSize));
-  if (status == QDMI_ERROR_NOTSUPPORTED) {
-    return;
-  }
-  if (status != QDMI_SUCCESS || childrenSize % sizeof(QDMI_Child_Device) != 0) {
-    library_->device_session_free(deviceSession_);
-    deviceSession_ = nullptr;
-    if (status != QDMI_SUCCESS) {
-      throw std::runtime_error("Failed to query child devices: " +
-                               std::string(qdmi::toString(status)));
+    if (config.deviceConfiguration) {
+      std::visit(
+          [&](const auto& source) {
+            using Source = std::decay_t<decltype(source)>;
+            if constexpr (std::is_same_v<Source,
+                                         qdmi::InlineDeviceConfiguration>) {
+              setParameter(source.json, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
+            } else {
+              setParameter(source.path.string(),
+                           QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
+            }
+          },
+          *config.deviceConfiguration);
     }
-    throw std::runtime_error("Device returned an invalid child device list");
-  }
-
-  std::vector<QDMI_Child_Device> children(childrenSize /
-                                          sizeof(QDMI_Child_Device));
-  if (childrenSize != 0) {
-    status =
-        static_cast<QDMI_STATUS>(library_->device_session_query_device_property(
-            deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, childrenSize,
-            static_cast<void*>(children.data()), nullptr));
-    if (status != QDMI_SUCCESS) {
-      library_->device_session_free(deviceSession_);
-      deviceSession_ = nullptr;
-      throw std::runtime_error("Failed to query child devices: " +
-                               std::string(qdmi::toString(status)));
+    setParameter(config.custom1, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1);
+    setParameter(config.custom2, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM2);
+    setParameter(config.custom3, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM3);
+    setParameter(config.custom4, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM4);
+    setParameter(config.custom5, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM5);
+    if (childDevice != nullptr) {
+      checkStatus(library_->device_session_set_parameter(
+                      deviceSession_, QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE,
+                      sizeof(QDMI_Child_Device),
+                      static_cast<const void*>(&childDevice)),
+                  "Failed to select child device");
     }
-  }
-
-  try {
+    checkStatus(library_->device_session_init(deviceSession_),
+                "Failed to initialize device session");
+    /// Child sessions are leaves; only the parent discovers children.
+    if (childDevice != nullptr) {
+      return;
+    }
+    size_t childrenSize = 0;
+    const auto status = library_->device_session_query_device_property(
+        deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES, 0, nullptr,
+        &childrenSize);
+    if (status == QDMI_ERROR_NOTSUPPORTED) {
+      return;
+    }
+    checkStatus(status, "Failed to query child devices");
+    if (childrenSize % sizeof(QDMI_Child_Device) != 0) {
+      throw std::runtime_error("Device returned an invalid child device list");
+    }
+    std::vector<QDMI_Child_Device> children(childrenSize /
+                                            sizeof(QDMI_Child_Device));
+    if (!children.empty()) {
+      checkStatus(library_->device_session_query_device_property(
+                      deviceSession_, QDMI_DEVICE_PROPERTY_CHILDDEVICES,
+                      childrenSize, static_cast<void*>(children.data()),
+                      nullptr),
+                  "Failed to query child devices");
+    }
     childDevices_.reserve(children.size());
     for (auto* const child : children) {
+      if (child == nullptr) {
+        throw std::runtime_error("Device returned a null child device handle");
+      }
       childDevices_.emplace_back(
           std::make_unique<QDMI_Device_impl_d>(library_, config, child));
     }
@@ -555,7 +534,8 @@ auto QDMI_Session_impl_d::init() -> int {
 auto QDMI_Session_impl_d::setParameter(QDMI_Session_Parameter param,
                                        const size_t size,
                                        const void* value) const -> int {
-  if ((value != nullptr && size == 0) || param >= QDMI_SESSION_PARAMETER_MAX) {
+  if ((value != nullptr && size == 0) ||
+      IS_INVALID_ARGUMENT(param, QDMI_SESSION_PARAMETER)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_ != qdmi::SessionStatus::ALLOCATED) {
@@ -567,7 +547,8 @@ auto QDMI_Session_impl_d::setParameter(QDMI_Session_Parameter param,
 auto QDMI_Session_impl_d::querySessionProperty(QDMI_Session_Property prop,
                                                size_t size, void* value,
                                                size_t* sizeRet) const -> int {
-  if ((value != nullptr && size == 0) || prop >= QDMI_SESSION_PROPERTY_MAX) {
+  if ((value != nullptr && size == 0) ||
+      IS_INVALID_ARGUMENT(prop, QDMI_SESSION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (status_ != qdmi::SessionStatus::INITIALIZED) {
@@ -831,7 +812,17 @@ auto Driver::sessionFree(QDMI_Session session) -> void {
 } // namespace qdmi
 
 int QDMI_session_alloc(QDMI_Session* session) {
-  return qdmi::Driver::get().sessionAlloc(session);
+  if (session == nullptr) {
+    return QDMI_ERROR_INVALIDARGUMENT;
+  }
+  *session = nullptr;
+  try {
+    return qdmi::Driver::get().sessionAlloc(session);
+  } catch (const std::bad_alloc&) {
+    return QDMI_ERROR_OUTOFMEM;
+  } catch (...) {
+    return QDMI_ERROR_FATAL;
+  }
 }
 
 int QDMI_session_init(QDMI_Session session) {

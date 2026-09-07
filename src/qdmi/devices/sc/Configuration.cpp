@@ -185,8 +185,8 @@ void validateFidelity(const std::optional<double>& fidelity,
     fail(source, "$/schema-version", "must be 1");
   }
   result.name = required<std::string>(root, "name", source, "$");
-  if (result.name.empty()) {
-    fail(source, "$/name", "must not be empty");
+  if (result.name.empty() || result.name.find('\0') != std::string::npos) {
+    fail(source, "$/name", "must be non-empty and contain no NUL bytes");
   }
   result.numQubits = required<uint64_t>(root, "numQubits", source, "$");
   if (result.numQubits == 0 ||
@@ -238,7 +238,8 @@ void validateFidelity(const std::optional<double>& fidelity,
         entry.t1 = optional<uint64_t>(value, "t1", source, pointer);
         entry.t2 = optional<uint64_t>(value, "t2", source, pointer);
         if (entry.qubit >= result.numQubits ||
-            (entry.name && entry.name->empty()) ||
+            (entry.name && (entry.name->empty() ||
+                            entry.name->find('\0') != std::string::npos)) ||
             (entry.t1 && *entry.t1 == 0) || (entry.t2 && *entry.t2 == 0) ||
             (!entry.name && !entry.t1 && !entry.t2) ||
             !overridden.emplace(entry.qubit).second) {
@@ -302,19 +303,21 @@ void validateFidelity(const std::optional<double>& fidelity,
     operation.duration = optional<uint64_t>(value, "duration", source, pointer);
     operation.fidelity = optional<double>(value, "fidelity", source, pointer);
     validateFidelity(operation.fidelity, source, pointer + "/fidelity");
-    if (operation.name.empty() || operation.numQubits == 0 ||
-        operation.numQubits > result.numQubits ||
+    if (operation.name.empty() ||
+        operation.name.find('\0') != std::string::npos ||
+        operation.numQubits == 0 || operation.numQubits > result.numQubits ||
         operation.numParameters > std::numeric_limits<size_t>::max() ||
         !names.emplace(operation.name).second) {
       fail(source, pointer,
-           "must have a unique non-empty name and representable counts");
+           "must have a unique non-empty name without NUL bytes and "
+           "representable counts");
     }
+    std::set<std::vector<uint64_t>> uniqueSites;
     if (const auto sites = value.find("sites"); sites != value.end()) {
       if (!sites->is_array()) {
         fail(source, pointer + "/sites", "must be an array");
       }
       operation.sites.emplace();
-      std::set<std::vector<uint64_t>> uniqueSites;
       for (size_t j = 0; j < sites->size(); ++j) {
         auto tuple = indices((*sites)[j], source,
                              pointer + "/sites/" + std::to_string(j));
@@ -371,15 +374,12 @@ void validateFidelity(const std::optional<double>& fidelity,
         auto supported = false;
         if (override.sites.size() == operation.numQubits) {
           if (operation.sites) {
-            supported = std::ranges::find(*operation.sites, override.sites) !=
-                        operation.sites->end();
+            supported = uniqueSites.contains(override.sites);
           } else if (operation.numQubits == 1) {
             supported = true;
           } else if (operation.numQubits == 2) {
-            supported = std::ranges::find(
-                            result.couplings,
-                            std::pair{override.sites[0], override.sites[1]}) !=
-                        result.couplings.end();
+            supported = uniqueCouplings.contains(
+                std::pair{override.sites[0], override.sites[1]});
           }
         }
         if (override.sites.size() != operation.numQubits ||

@@ -175,6 +175,12 @@ class DynamicDeviceLibrary final : public DeviceLibrary {
   /// @brief Handle to the dynamic library
   void* libHandle_;
 
+  DynamicDeviceLibrary(void* handle, const std::string& libName,
+                       const std::string& prefix);
+  friend auto getDynamicDeviceLibrary(const std::string& libName,
+                                      const std::string& prefix)
+      -> std::shared_ptr<DynamicDeviceLibrary>;
+
 public:
   /**
    * @brief Constructs a DynamicDeviceLibrary object.

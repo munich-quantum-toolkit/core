@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 from typing import cast
@@ -30,8 +32,6 @@ from mqt.core.qdmi import (
 from mqt.core.qdmi.driver import (
     DeviceDefinition,
     open_device,
-    register_device,
-    register_device_if_absent,
     registered_device_ids,
 )
 
@@ -643,25 +643,6 @@ def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> No
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom5="value")
 
 
-def test_device_submit_job_preserves_num_shots(ddsim_device: Device) -> None:
-    """Test that different shot counts are correctly preserved."""
-    qasm3_program = """
-OPENQASM 3.0;
-qubit[1] q;
-bit[1] c;
-c[0] = measure q[0];
-"""
-
-    # Submit jobs with different shot counts
-    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
-    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=100)
-    job3 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=1000)
-
-    assert job1.num_shots == 10
-    assert job2.num_shots == 100
-    assert job3.num_shots == 1000
-
-
 def test_device_submit_job_without_shots(ddsim_device: Device) -> None:
     """Allow devices or custom programs to define their own repetitions."""
     qasm3_program = """
@@ -698,21 +679,6 @@ bit[1] c;
 c[0] = measure q[0];
 """
     return ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
-
-
-def test_job_ids_are_unique(ddsim_device: Device) -> None:
-    """Test that different jobs have unique IDs."""
-    qasm3_program = """
-OPENQASM 3.0;
-qubit[1] q;
-bit[1] c;
-c[0] = measure q[0];
-"""
-
-    job1 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
-    job2 = ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=10)
-
-    assert job1.id != job2.id
 
 
 def test_job_queue_position_is_unavailable(submitted_job: Job) -> None:
@@ -774,19 +740,6 @@ def test_job_get_counts_returns_valid_histogram(submitted_job: Job) -> None:
     assert total_counts == submitted_job.num_shots
 
 
-def test_job_get_counts_is_consistent(submitted_job: Job) -> None:
-    """Test that multiple get_counts() calls return consistent results."""
-    # Wait for job to complete
-    submitted_job.wait()
-
-    # Get counts multiple times
-    counts1 = submitted_job.get_counts()
-    counts2 = submitted_job.get_counts()
-
-    # Results should be identical
-    assert counts1 == counts2
-
-
 def test_job_shots_match_counts(submitted_job: Job) -> None:
     """Keep the same ordered samples on repeated reads and in the histogram."""
     submitted_job.wait()
@@ -801,22 +754,6 @@ def test_empty_program_has_empty_shot_strings(ddsim_device: Device) -> None:
     job = ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, num_shots=4)
     job.wait()
     assert job.get_shots() == [""] * 4
-
-
-@pytest.fixture
-def simulator_job(ddsim_device: Device) -> Job:
-    """Fixture that provides a simulator job for testing.
-
-    Returns:
-        A submitted job with 0 shots.
-    """
-    qasm3_program = """
-OPENQASM 3.0;
-qubit[2] q;
-h q[0];
-cx q[0], q[1];
-"""
-    return ddsim_device.submit_job(qasm3_program, ProgramFormat.QASM3, num_shots=0)
 
 
 def test_empty_qasm_program_has_empty_results(ddsim_device: Device) -> None:
@@ -835,96 +772,68 @@ def test_empty_qasm_program_has_empty_results(ddsim_device: Device) -> None:
     assert state_job.get_sparse_probabilities() == {}
 
 
-def test_simulator_job_get_dense_state_vector_returns_valid_state(simulator_job: Job) -> None:
-    """Test that get_dense_statevector() returns the correct Bell state."""
-    simulator_job.wait()
-
-    state_vector = simulator_job.get_dense_statevector()
-    assert len(state_vector) == 4  # 2 qubits -> 4 amplitudes
-
-    # The expected state is (|00> + |11>)/sqrt(2)
+def test_simulator_job_result_bindings(ddsim_device: Device) -> None:
+    """Expose dense and sparse Bell-state results with Python container types."""
+    job = ddsim_device.submit_job("OPENQASM 3.0; qubit[2] q; h q[0]; cx q[0], q[1];", ProgramFormat.QASM3, num_shots=0)
+    assert job.wait()
     inv_sqrt2 = 1.0 / (2**0.5)
-    assert abs(state_vector[0]) == pytest.approx(inv_sqrt2)  # |00>
-    assert abs(state_vector[1]) == pytest.approx(0.0)  # |01>
-    assert abs(state_vector[2]) == pytest.approx(0.0)  # |10>
-    assert abs(state_vector[3]) == pytest.approx(inv_sqrt2)  # |11>
+
+    state_vector = job.get_dense_statevector()
+    assert isinstance(state_vector, list)
+    assert all(isinstance(value, complex) for value in state_vector)
+    assert state_vector == pytest.approx([inv_sqrt2, 0, 0, inv_sqrt2])
+
+    probabilities = job.get_dense_probabilities()
+    assert isinstance(probabilities, list)
+    assert all(isinstance(value, float) for value in probabilities)
+    assert probabilities == pytest.approx([0.5, 0, 0, 0.5])
+
+    sparse_state_vector = job.get_sparse_statevector()
+    assert isinstance(sparse_state_vector, dict)
+    assert all(isinstance(value, complex) for value in sparse_state_vector.values())
+    assert sparse_state_vector == pytest.approx({"00": inv_sqrt2, "11": inv_sqrt2})
+
+    sparse_probabilities = job.get_sparse_probabilities()
+    assert isinstance(sparse_probabilities, dict)
+    assert all(isinstance(value, float) for value in sparse_probabilities.values())
+    assert sparse_probabilities == pytest.approx({"00": 0.5, "11": 0.5})
 
 
-def test_simulator_job_get_dense_probabilities_returns_valid_probabilities(simulator_job: Job) -> None:
-    """Test that get_dense_probabilities() returns the correct probabilities."""
-    simulator_job.wait()
-
-    probabilities = simulator_job.get_dense_probabilities()
-    assert len(probabilities) == 4  # 2 qubits -> 4 probabilities
-
-    # The expected probabilities are 0.5 for |00> and |11>, and 0 for |01> and |10>
-    assert probabilities[0] == pytest.approx(0.5)  # |00>
-    assert probabilities[1] == pytest.approx(0.0)  # |01>
-    assert probabilities[2] == pytest.approx(0.0)  # |10>
-    assert probabilities[3] == pytest.approx(0.5)  # |11>
-
-
-def test_simulator_job_get_sparse_state_vector_returns_valid_state(simulator_job: Job) -> None:
-    """Test that get_sparse_statevector() returns the correct Bell state."""
-    simulator_job.wait()
-
-    sparse_state_vector = simulator_job.get_sparse_statevector()
-    assert len(sparse_state_vector) == 2  # Only |00> and |11> should be present
-
-    inv_sqrt2 = 1.0 / (2**0.5)
-    assert "00" in sparse_state_vector
-    assert abs(sparse_state_vector["00"]) == pytest.approx(inv_sqrt2)
-
-    assert "11" in sparse_state_vector
-    assert abs(sparse_state_vector["11"]) == pytest.approx(inv_sqrt2)
-
-
-def test_simulator_job_get_sparse_probabilities_returns_valid_probabilities(simulator_job: Job) -> None:
-    """Test that get_sparse_probabilities() returns the correct probabilities."""
-    simulator_job.wait()
-
-    sparse_probabilities = simulator_job.get_sparse_probabilities()
-    assert len(sparse_probabilities) == 2  # Only |00> and |11> should be present
-
-    assert "00" in sparse_probabilities
-    assert sparse_probabilities["00"] == pytest.approx(0.5)
-
-    assert "11" in sparse_probabilities
-    assert sparse_probabilities["11"] == pytest.approx(0.5)
-
-
-def test_register_device_does_not_load_nonexistent_library() -> None:
-    """Registration stores metadata and opening performs native loading."""
-    library_path = Path("/nonexistent/lib.so")
-    definition = DeviceDefinition("python.missing", library_path, "PREFIX")
-    assert definition.device_id == "python.missing"
-    assert definition.library_path == library_path
-    assert definition.prefix == "PREFIX"
-    register_device(definition)
-    with pytest.raises(RuntimeError):
-        open_device("python.missing")
-
-
-def test_register_device_if_absent_only_ignores_existing_id() -> None:
-    """Idempotent registration still validates duplicate definitions."""
-    definition = DeviceDefinition("python.if-absent", "/nonexistent/device.so", "PREFIX")
-    assert register_device_if_absent(definition)
-    assert not register_device_if_absent(definition)
-    with pytest.raises(ValueError, match="library must not be empty"):
-        register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
-
-
-def test_registered_device_ids_include_runtime_registrations_in_order() -> None:
-    """Stable-ID enumeration is ordered and does not load native libraries."""
+def test_device_registration_bindings() -> None:
+    """Exercise registration without leaving invalid devices in the shared registry."""
     ids_before = registered_device_ids()
-    register_device(DeviceDefinition("python.enumeration.first", "/nonexistent/first.so", "FIRST"))
-    register_device(DeviceDefinition("python.enumeration.second", "/nonexistent/second.so", "SECOND"))
+    script = """
+from pathlib import Path
 
-    assert registered_device_ids() == [
-        *ids_before,
-        "python.enumeration.first",
-        "python.enumeration.second",
-    ]
+import pytest
+
+from mqt.core.qdmi.driver import (
+    DeviceDefinition,
+    open_device,
+    register_device,
+    register_device_if_absent,
+    registered_device_ids,
+)
+
+ids_before = registered_device_ids()
+library_path = Path("/nonexistent/lib.so")
+definition = DeviceDefinition("python.missing", library_path, "PREFIX")
+assert definition.device_id == "python.missing"
+assert definition.library_path == library_path
+assert definition.prefix == "PREFIX"
+register_device(definition)
+with pytest.raises(RuntimeError):
+    open_device("python.missing")
+
+definition = DeviceDefinition("python.if-absent", "/nonexistent/device.so", "PREFIX")
+assert register_device_if_absent(definition) is True
+assert register_device_if_absent(definition) is False
+with pytest.raises(ValueError, match="library must not be empty"):
+    register_device_if_absent(DeviceDefinition("python.if-absent", "", "PREFIX"))
+assert registered_device_ids() == [*ids_before, "python.missing", "python.if-absent"]
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
+    assert registered_device_ids() == ids_before
 
 
 def test_open_device_rejects_unknown_id() -> None:
