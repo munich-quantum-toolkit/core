@@ -31,7 +31,10 @@
 #include "qco_programs.h"
 #include "qir_programs.h"
 
+#include <capnp/message.h>
+#include <capnp/serialize.h>
 #include <gtest/gtest.h>
+#include <jeff.capnp.h>
 #include <jeff/IR/JeffDialect.h>
 #include <jeff/IR/JeffOps.h>
 #include <llvm/ADT/APFloat.h>
@@ -75,6 +78,7 @@
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <variant>
@@ -86,6 +90,8 @@ using namespace mlir;
 using namespace mlir::qc;
 using namespace mlir::qco;
 using namespace mlir::qir;
+
+namespace jeff = mlir::jeff;
 
 using QCProgramBuilderFn = NamedMLIRBuilder<QCProgramBuilder>;
 using QIRProgramBuilderFn = NamedMLIRBuilder<QIRProgramBuilder>;
@@ -124,6 +130,8 @@ class CompilerPipelineTest
 protected:
   std::unique_ptr<MLIRContext> context;
 
+  // GoogleTest requires this override name.
+  // NOLINTNEXTLINE(readability-identifier-naming)
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<cbit::CBitDialect, QCDialect, QCODialect,
@@ -1479,6 +1487,14 @@ TEST_F(CompilerPipelineTest, JeffRejectsMutableClassicalHelperArguments) {
   })mlir");
   ASSERT_TRUE(qco);
   EXPECT_FALSE(std::move(*qco).intoJeff());
+}
+
+TEST_F(CompilerPipelineTest, RejectsJeffModuleWithoutFunctions) {
+  capnp::MallocMessageBuilder message;
+  message.initRoot<::jeff::Module>().setVersionMinor(3);
+  auto words = capnp::messageToFlatArray(message);
+  EXPECT_FALSE(JeffProgram::fromBytes(
+      std::as_bytes(std::span(words.begin(), words.size()))));
 }
 
 // Test: jeff programs round-trip through their binary APIs.
