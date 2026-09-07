@@ -14,7 +14,10 @@ import mqt.core.bench
 import mqt.core.mlir
 
 class Teleportation:
-    """A fixed quantum teleportation benchmark."""
+    """Teleport the fixed |+> state and measure all three qubits.
+
+    Big-endian outcomes contain Bob's, Alice's, then the message measurement. The uniform reference checks output statistics, not teleportation fidelity.
+    """
 
     def __init__(self) -> None: ...
     @property

@@ -24,7 +24,11 @@ using namespace nb::literals;
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerTeleportation(const nb::module_& m) {
   auto teleportation = nb::class_<bench::Teleportation>(
-      m, "Teleportation", "A fixed quantum teleportation benchmark.");
+      m, "Teleportation",
+      "Teleport the fixed |+> state and measure all three qubits.\n\n"
+      "Big-endian outcomes contain Bob's, Alice's, then the message "
+      "measurement. The uniform reference checks output statistics, "
+      "not teleportation fidelity.");
   teleportation.def(nb::init<>())
       .def_prop_ro("output", &bench::Teleportation::output,
                    nb::rv_policy::reference_internal,

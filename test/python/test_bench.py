@@ -196,4 +196,9 @@ def test_teleportation_reference_json_and_generation() -> None:
     instance_copy = teleportation.Teleportation.from_instance_specification_json(benchmark.instance_specification_json)
     manifest_copy = teleportation.Teleportation.from_manifest_json(benchmark.manifest_json)
     assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
+
+    shots = 16_384
+    counts = benchmark.generate().to_qco().sample(shots=shots, seed=17)
+    assert sum(counts.values()) == shots
+    assert benchmark.evaluate(counts).total_variation_distance < 0.03
     assert_generates(benchmark)
