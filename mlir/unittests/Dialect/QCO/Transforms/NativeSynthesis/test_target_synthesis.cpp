@@ -1010,6 +1010,42 @@ TEST_F(TargetSynthesisTest, TwoQubitSynthesisRequiresEntangler) {
   EXPECT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
 }
 
+TEST(TargetSynthesisPassContract, LoadsMathDialectForRuntimeSynthesis) {
+  mlir::DialectRegistry registry;
+  registry.insert<mlir::qco::QCODialect, mlir::mqt::MQTDialect,
+                  mlir::func::FuncDialect>();
+  mlir::MLIRContext context(registry);
+  context.getOrLoadDialect<mlir::mqt::MQTDialect>();
+  auto moduleOp = mlir::parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%theta: f64) -> !qco.qubit {
+        %q0 = qco.static 0 : !qco.qubit
+        %q1 = qco.rz(%theta) %q0 : !qco.qubit -> !qco.qubit
+        return %q1 : !qco.qubit
+      }
+    }
+  )mlir",
+                                                    &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({
+                               valid(Operation::create("r", 1, 2)),
+                               valid(Operation::create("cx", 2, 0)),
+                               valid(Operation::create("gphase", 0, 1)),
+                           })));
+
+  EXPECT_EQ(context.getLoadedDialect<mlir::math::MathDialect>(), nullptr);
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
+  EXPECT_EQ(countOps<RZOp>(*moduleOp), 0U);
+  EXPECT_GT(countOps<mlir::qco::ROp>(*moduleOp), 0U);
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+  EXPECT_TRUE(mlir::succeeded(runTargetPass(
+      *moduleOp, target, mlir::qco::createVerifyTargetConformance())));
+}
+
 TEST_F(TargetSynthesisTest, DenseUnitaryHasAsymmetricTwoQubitDDSemantics) {
   const auto denseCx = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);

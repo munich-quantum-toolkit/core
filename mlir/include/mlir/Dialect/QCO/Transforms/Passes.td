@@ -185,7 +185,8 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
 def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
-                           "::mlir::arith::ArithDialect"];
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::math::MathDialect"];
   let summary = "Synthesize operations for the native target basis";
   let description = [{
     Reads the typed `mqt.target_env` module attribute and lowers non-native
@@ -193,7 +194,8 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     compiler target. Unknown native-operation metadata is valid when no
     surviving unitary operation needs it. Otherwise, the pass fails when the
     metadata is unknown, no complete basis exists, or an operation has no
-    compile-time unitary matrix.
+    compile-time unitary matrix and cannot be synthesized as a parameterized
+    single-qubit gate.
   }];
 }
 
