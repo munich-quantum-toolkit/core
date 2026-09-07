@@ -27,7 +27,6 @@
 #include <llvm/ADT/ScopeExit.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
@@ -461,9 +460,8 @@ static void commitQubits(LoweringState& state, Operation* anchor,
   return success();
 }
 
-/// Rejects quantum SSA sources unsupported by the lowering state.
-[[nodiscard]] static LogicalResult
-validateQuantumValueSources(Operation* root) {
+/// Rejects input unsupported by the lowering state.
+[[nodiscard]] static LogicalResult validateSupportedInput(Operation* root) {
   const auto result = root->walk([&](Operation* operation) {
     if (operation->getNumSuccessors() != 0) {
       operation->emitOpError(
@@ -2026,7 +2024,7 @@ protected:
 
     LoweringState preflightState;
     if (failed(validateModifierBodies(moduleOp)) ||
-        failed(validateQuantumValueSources(moduleOp)) ||
+        failed(validateSupportedInput(moduleOp)) ||
         failed(collectRegisterAccesses(moduleOp, preflightState))) {
       signalPassFailure();
       return;
@@ -2133,9 +2131,6 @@ protected:
     patterns.add<ConvertFuncCallOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::CallOp>(
         [&](func::CallOp op) { return typeConverter.isLegal(op); });
-
-    // Conversion of qc types in control-flow ops (e.g., cf.br, cf.cond_br)
-    populateBranchOpInterfaceTypeConversionPattern(patterns, typeConverter);
 
     // Convert structured parents and their contents first.
     if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
