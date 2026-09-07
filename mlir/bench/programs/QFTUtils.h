@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include <mlir/Support/LLVM.h>
+
 #include <cstdint>
 
 namespace mlir {
@@ -22,7 +24,13 @@ class QCProgramBuilder;
 
 namespace mqt::bench::detail {
 
-/// Apply the exact no-swap QFT used by the QFT-adder families.
+/// Emit a loop whose phase angle follows a geometric sequence.
+void phaseRotationLoop(
+    mlir::qc::QCProgramBuilder& builder, mlir::Value lower, mlir::Value upper,
+    mlir::Value step, mlir::Value initialAngle, mlir::Value scale,
+    const mlir::function_ref<void(mlir::Value angle, mlir::Value index)>& body);
+
+/// Apply the exact no-swap QFT.
 void forwardQFT(mlir::qc::QCProgramBuilder& builder, mlir::Value qubitRegister,
                 int64_t qubits);
 

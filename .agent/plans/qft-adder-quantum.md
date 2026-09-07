@@ -1,7 +1,6 @@
 # Add a quantum-input QFT adder benchmark
 
-Status: in progress. The implementation is validated. The draft pull request and
-its changelog reference remain to be added.
+Status: complete.
 
 ## Goal and scope
 
@@ -26,25 +25,25 @@ Register index zero is the least-significant bit. The forward QFT uses no swaps
 and visits targets from most to least significant. For target `t`, it applies H
 and then `CP(pi / 2^(t-c))` from every lower control `c`. The addition block
 applies the same controlled-phase gate from source control `c <= t` to
-accumulator target `t`, including each `CP(pi)` gate. The inverse QFT reverses
-the complete gate order and negates each phase. `CP` cannot be replaced with a
-controlled RZ because their relative phases differ.
+accumulator target `t`, including each `CP(pi)` gate. The inverse QFT visits
+targets from least to most significant. It starts each target at `-pi / 2` and
+halves the angle while visiting lower controls from nearest to farthest. This
+order gives the exact inverse because the controlled-phase gates commute. It
+also prevents distant rotations from making later nearby rotations underflow.
+`CP` cannot be replaced with a controlled RZ because their relative phases
+differ.
 
 The width is limited to 1024 qubits per register. This keeps the smallest
 required binary phase and the ideal probability representable as `double`. The
 implementation does not add swaps, carry qubits, approximate rotations, or an
-alternative QFT convention. A private MLIR helper may own the shared forward and
-inverse no-swap transforms; it must not change the existing QFT benchmark.
-
-## Work remaining
-
-- [ ] Create the draft stacked pull request and fold its number into the
-      existing unreleased structured-benchmark changelog entry.
+alternative QFT convention. Private MLIR helpers own the shared phase loop and
+the forward and inverse no-swap transforms. The standard QFT and QPE generators
+use the same transforms.
 
 ## Validation
 
-The release build, all 50 native benchmark tests, all 15 MLIR benchmark tests,
-the benchmark CLI test, and 23 focused Python benchmark and CLI tests pass. The
-Python test samples the width-three circuit and compares the result with the
-analytic correlation. Stub generation, the general repository lint session, and
-`git diff --check` pass. The separate C++ lint session was not run.
+The focused MLIR test checks the controlled-addition register and phase
+relations. The shared benchmark test checks QC and jeff generation. The Python
+test samples the width-three circuit and compares the result with the analytic
+correlation. The largest supported instance stays structured and uses finite
+angles.

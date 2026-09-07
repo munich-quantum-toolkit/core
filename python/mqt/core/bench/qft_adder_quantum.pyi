@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Quantum-input QFT adder instances and options."""
+"""Quantum-input QFT adder benchmark instances and options."""
 
 from collections.abc import Mapping
 
@@ -22,7 +22,10 @@ class Options:
         """The number of qubits in each input register."""
 
 class QFTAdderQuantum:
-    """A validated quantum-input QFT adder benchmark."""
+    """A validated quantum-input QFT adder benchmark.
+
+    Reference: https://arxiv.org/abs/quant-ph/0008033
+    """
 
     def __init__(self, options: Options) -> None: ...
     @property
