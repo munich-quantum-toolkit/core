@@ -1,57 +1,74 @@
-# Native DD matrix construction
+# Native DD construction
 
 Status: complete.
 
-## Goal and scope
+## Outcome and ownership
 
-The DD package owns matrix construction for nested C++ matrices, strided NumPy
-arrays, and QCO local matrices on ordered physical targets. QCO retains gate
-matrix extraction and wire mapping. Preserve scalar matrices, implicit identity
-levels, operand order, complex weights, and existing sparse controls for one to
-three targets. Do not expand a local matrix to the surrounding state dimension.
+Native matrix and vector construction serve C++ containers and NumPy views.
+`Package` owns matrix construction and physical target embedding; state
+factories in `StateGeneration.hpp` own vector construction and retain the
+returned roots. QCO retains gate matrix extraction and wire mapping, then
+delegates construction. No new dependency or dense expansion to the surrounding
+state width is needed.
 
 ## Decisions
 
-- Keep the specialized gate constructors and dispatch to them for one to three
-  targets. Move general embedding and its dimension checks into `dd::Package`.
-- Share the four-quadrant recursion through compile-time element and level
-  accessors. Nested vectors and NumPy strides must require neither a matrix copy
-  nor an indirect call per entry.
-- Validate dimensions and package capacity before recursion. Reject duplicate or
-  out-of-range targets and unsupported sparse controls before constructing
-  nodes.
+- Share recursive construction through compile-time entry accessors. NumPy uses
+  const strided views, preserving offsets, negative strides, and broadcasts
+  without copying complex input storage.
+- Keep specialized one-, two-, and three-target matrix constructors. General
+  matrix embedding sorts bounded stack storage in DD level order while
+  preserving the matrix's most-significant-bit operand order.
+- Validate vector dimensions and qubit counts before reading entries. Retain
+  nonconstant scalar vector roots across garbage collection, as for larger
+  states.
+- Check state intervals with subtraction so offsets cannot overflow validation.
+  Zero-state creation validates capacity before allocating its temporary vector.
+- Reject conflicting polarities on one control qubit before constructing DD
+  nodes. Such input previously produced repeated levels and could abort export.
+- Compare the at most three small-gate targets directly. Their validator needs
+  no temporary sorted vector or heap allocation.
 
 ## Validation
 
-Local checks passed: 170 release DD tests, 185 QCO utility tests, 3,980
-configured assertion-enabled CTest cases (one expected skip), and 54 Python
-DD/QCO tests. Stub regeneration, general lint, and full-file C++ lint on the
-committed diff passed. The final style corrections were followed by a fresh
-native DD test run.
+Local checks passed: 173 release DD tests, 3,983 configured assertion-enabled
+CTest cases with one expected skip, and 57 Python DD/QCO tests. Full-file C++
+lint, general lint, stub regeneration, and the strict documentation build
+passed.
 
-The focused entry points are `mqt-core-dd-test`,
-`mqt-core-mlir-unittest-qco-utils`, and
-`pytest test/python/dd test/python/test_qco_dd.py`. Root agent guidance
-documents build presets and required lint sessions.
+Focused entry points are `mqt-core-dd-test`, `mqt-core-mlir-unittest-qco-utils`,
+and `pytest test/python/dd test/python/test_qco_dd.py`. The root agent guide
+documents build presets and required lint sessions. New regressions cover
+dimensions, capacity, scalar ownership, complex entries, target order, control
+polarity, state offsets, and NumPy view layouts.
 
-A release microbenchmark compared the merged baseline with the shared recursion
-on dense complex matrices of one, two, three, four, six, and eight qubits. Three
-alternating process pairs, each reporting the median of seven warmed samples,
-measured general embedding at 4.73 vs 5.09 microseconds (four targets), 82.9 vs
-89.4 microseconds (six), and 4.74 vs 4.93 milliseconds (eight). Native dense
-construction at two to eight qubits and two/three-target gates stayed within
-about 3%. Single-target measurements varied between 66 and 140 nanoseconds for
-both binaries; no speedup is claimed there. These are construction
-microbenchmarks, not end-to-end compiler or CI speedups. Matrices used sin(row *
-dimension + column) as the real part and cos(row + 2 * column) as the imaginary
-part, on targets [k, ..., 1].
+## Performance evidence
 
-## Outcome and limits
+Release construction probes use warmed medians and alternate the compared paths.
+These are construction measurements, not end-to-end compiler or CI speedups.
 
-`Package` owns one matrix recursion, dimension validation, and target embedding.
-The QCO adapter delegates construction, and the NumPy binding supplies a const
-strided view. Generated stubs describe read-only input support. New tests cover
-complex matrices, target order, controls, scalar and empty matrices, shape and
-capacity failures, negative strides, transposes, offsets, and broadcasts. Sparse
-controls remain limited to one to three targets. No dense expansion to the
-surrounding state width or new dependency is required.
+The matrix comparison against the merged baseline measured general embedding at
+4.73 vs 5.09 microseconds for four targets, 82.9 vs 89.4 microseconds for six,
+and 4.74 vs 4.93 milliseconds for eight. Three process pairs each reported seven
+warmed samples. Matrices used sin(row * dimension + column) as the real part and
+cos(row + 2 * column) as the imaginary part, on targets [k, ..., 1]. Native
+dense construction at two to eight qubits stayed within about 3% of baseline.
+
+The vector comparison ran the old and new constructors in one process, checked
+that their canonical roots matched, and balanced their reference counts. Three
+processes each alternated seven warmed samples on vectors with 2, 8, 64, 1,024,
+and 65,536 entries. Amplitudes used sin(index) and cos(2 * index). Median
+construction time fell by 8–16%, including 33.7 to 28.4 milliseconds at 65,536
+entries.
+
+A warmed 1,000-call probe counted 1,000 allocations before and zero after for
+each small-gate constructor, with and without controls. Two- and three-target
+medians improved by about 1–5%. Single-target timings varied substantially
+between processes, so no single-target latency improvement is claimed.
+
+## Limits
+
+Sparse controls remain limited to one to three matrix targets. The adjacent
+audit covered state factories, input bindings, root ownership, gate
+construction, and traversal consumers; it does not establish correctness of
+unrelated DD algorithms.

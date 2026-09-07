@@ -192,10 +192,16 @@ void ensureGateQubitsInRange(const std::size_t nqubits,
     throwGateQubitOutOfRange(nqubits);
   }
 
-  std::vector<Qubit> sortedTargets(targets.begin(), targets.end());
-  std::ranges::sort(sortedTargets);
-  if (std::ranges::adjacent_find(sortedTargets) != sortedTargets.end()) {
+  if (std::ranges::adjacent_find(controls, {}, &Control::qubit) !=
+      controls.end()) {
     throwGateQubitsNotDistinct();
+  }
+
+  for (size_t i = 0; i < targets.size(); ++i) {
+    if (std::ranges::find(targets.first(i), targets[i]) !=
+        targets.first(i).end()) {
+      throwGateQubitsNotDistinct();
+    }
   }
 
   if (std::ranges::any_of(controls, [&targets](const auto& control) {

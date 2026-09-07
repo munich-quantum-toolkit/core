@@ -510,7 +510,8 @@ public:
   /// @throws std::invalid_argument If the matrix size does not match the target
   /// count or controls accompany zero or more than three targets.
   /// @throws std::runtime_error If qubits exceed package capacity, targets are
-  /// duplicated, or controls overlap targets.
+  /// duplicated, controls have conflicting polarities, or controls overlap
+  /// targets.
   mEdge makeGateDD(std::span<const std::complex<fp>> matrix,
                    std::span<const Qubit> targets,
                    const Controls& controls = {});

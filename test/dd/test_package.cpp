@@ -987,6 +987,16 @@ TEST(DDPackageTest, RejectsOverlappingGateQubits) {
       std::runtime_error);
 }
 
+TEST(DDPackageTest, RejectsConflictingControlPolarities) {
+  Package package(5);
+  const Controls controls{{0, Control::Type::Neg}, {0, Control::Type::Pos}};
+  EXPECT_THROW(package.makeGateDD(X_MAT, controls, 1), std::runtime_error);
+  EXPECT_THROW(package.makeTwoQubitGateDD(SWAP_MAT, controls, 1, 2),
+               std::runtime_error);
+  EXPECT_THROW(package.makeThreeQubitGateDD(THREE_QUBIT_MAT, controls, 1, 2, 3),
+               std::runtime_error);
+}
+
 TEST(DDPackageTest, PackageReset) {
   auto dd = std::make_unique<Package>(1);
 

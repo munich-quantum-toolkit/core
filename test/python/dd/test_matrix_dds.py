@@ -171,6 +171,15 @@ def test_controlled_two_qubit_gate() -> None:
                     assert arr.shape == (2**i, 2**i)
 
 
+def test_rejects_conflicting_controls() -> None:
+    """Reject opposite polarities on the same physical control qubit."""
+    package = DDPackage(2)
+    matrix = np.array([[0, 1], [1, 0]], dtype=np.complex128)
+    controls = {Control(0, Control.Type.Pos), Control(0, Control.Type.Neg)}
+    with pytest.raises(RuntimeError, match="duplicate"):
+        package.multi_controlled_single_qubit_gate(matrix, controls, 1)
+
+
 def test_from_matrix() -> None:
     """Test constructing a DD from a random unitary matrix."""
     p = DDPackage(3)

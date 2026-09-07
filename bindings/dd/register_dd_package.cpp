@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "dd/CachedEdge.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
@@ -22,7 +21,6 @@
 #include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
 
 #include <array>
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <random>
@@ -34,35 +32,14 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
+using VectorInput =
+    nb::ndarray<nb::numpy, const std::complex<dd::fp>, nb::ndim<1>>;
 using MatrixInput =
     nb::ndarray<nb::numpy, const std::complex<dd::fp>, nb::ndim<2>>;
 using SingleQubitMatrix =
     nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::shape<2, 2>>;
 using TwoQubitMatrix =
     nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::shape<4, 4>>;
-
-namespace {
-
-/// Recursive helper function to create a vector DD from a numpy array
-dd::vCachedEdge makeDDFromVector(dd::Package& p, const Vector& v,
-                                 const size_t startIdx, const size_t endIdx,
-                                 const dd::Qubit level) {
-  if (level == 0U) {
-    const auto zeroSuccessor = dd::vCachedEdge::terminal(v(startIdx));
-    const auto oneSuccessor = dd::vCachedEdge::terminal(v(startIdx + 1));
-    return p.makeDDNode<dd::vNode, dd::CachedEdge>(
-        0, {zeroSuccessor, oneSuccessor});
-  }
-
-  const auto half = startIdx + ((endIdx - startIdx) / 2);
-  const auto zeroSuccessor = makeDDFromVector(p, v, startIdx, half, level - 1);
-  const auto oneSuccessor = makeDDFromVector(p, v, half, endIdx, level - 1);
-  return p.makeDDNode<dd::vNode, dd::CachedEdge>(level,
-                                                 {zeroSuccessor, oneSuccessor});
-}
-
-} // namespace
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerDDPackage(const nb::module_& m) {
@@ -230,32 +207,15 @@ Returns:
 
   dd.def(
       "from_vector",
-      [](dd::Package& p, const Vector& v) {
-        const auto length = v.shape(0);
-        if (length == 0) {
-          return dd::vEdge::one();
-        }
-        if ((length & (length - 1)) != 0) {
-          throw std::invalid_argument(
-              "State vector must have a length of a power of two.");
-        }
-        if (length == 1) {
-          const auto state = dd::vEdge::terminal(p.cn.lookup(v(0)));
-          p.incRef(state);
-          return state;
-        }
-        const auto level = static_cast<dd::Qubit>(std::log2(length) - 1);
-        const auto state = makeDDFromVector(p, v, 0, length, level);
-        const dd::vEdge e{.p = state.p, .w = p.cn.lookup(state.w)};
-        p.incRef(e);
-        return e;
+      [](dd::Package& p, const VectorInput& v) {
+        return dd::makeStateFromVector(v.shape(0), v.view(), p);
       },
       "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
       nb::keep_alive<0, 1>(), R"pb(Create a DD from a state vector.
 
 Args:
-    state: The state vector.
+    state: The state vector. Read-only and strided arrays are supported.
         Must have a length that is a power of 2.
         Must not require more qubits than the DDPackage is configured with.
 

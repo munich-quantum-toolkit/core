@@ -392,11 +392,11 @@ class DDPackage:
             The resulting state is guaranteed to have its reference count increased.
         """
 
-    def from_vector(self, state: Annotated[NDArray[np.complex128], {"shape": (None,)}]) -> VectorDD:
+    def from_vector(self, state: Annotated[NDArray[np.complex128], {"shape": (None,), "writable": False}]) -> VectorDD:
         """Create a DD from a state vector.
 
         Args:
-            state: The state vector.
+            state: The state vector. Read-only and strided arrays are supported.
                 Must have a length that is a power of 2.
                 Must not require more qubits than the DDPackage is configured with.
 

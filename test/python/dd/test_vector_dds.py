@@ -127,6 +127,35 @@ def test_from_vector() -> None:
             p.dec_ref_vec(dd)
 
 
+def test_from_strided_vector() -> None:
+    """Preserve offsets, negative strides, and read-only broadcast amplitudes."""
+    package = DDPackage(3)
+    values = np.arange(16, dtype=np.float64)
+    vector = values + 1j * (values + 1)
+    for view in (vector[1::2], vector[7::-1], np.broadcast_to(vector[3], (8,))):
+        state = package.from_vector(view)
+        package.garbage_collect(force=True)
+        assert np.allclose(state.get_vector(), view)
+        package.dec_ref_vec(state)
+
+
+def test_from_vector_dimensions() -> None:
+    """Reject oversized vectors and retain scalar states across collection."""
+    package = DDPackage(1)
+    for length in (3, 4, 8):
+        with pytest.raises(ValueError, match=r"power of two|capacity"):
+            package.from_vector(np.zeros(length, dtype=np.complex128))
+    empty_package = DDPackage(0)
+    with pytest.raises(ValueError, match="capacity"):
+        empty_package.from_vector(np.zeros(2, dtype=np.complex128))
+    for vector in (np.empty(0, dtype=np.complex128), np.array([0.25 + 0.5j])):
+        state = empty_package.from_vector(vector)
+        empty_package.garbage_collect(force=True)
+        expected = vector if vector.size else np.array([1])
+        assert np.allclose(state.get_vector(), expected)
+        empty_package.dec_ref_vec(state)
+
+
 @pytest.mark.parametrize("binary", [False, True])
 def test_serialization(*, binary: bool) -> None:
     """Test serializing and deserializing vector DDs."""

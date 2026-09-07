@@ -19,6 +19,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <numbers>
 #include <stdexcept>
@@ -230,7 +231,11 @@ TEST(StateGenerationTest, FromVectorScalar) {
   auto const psi = makeStateFromVector(vec, *dd);
 
   EXPECT_TRUE(psi.isTerminal());
+  ASSERT_TRUE(dd->getRootSet<vNode>().contains(psi));
+  dd->garbageCollect(true);
   EXPECT_TRUE(psi.w.approximatelyEquals(dd->cn.lookup(alpha)));
+  EXPECT_NO_THROW(dd->decRef(psi));
+  EXPECT_TRUE(dd->getRootSet<vNode>().empty());
 }
 
 TEST(StateGenerationTest, FromVector) {
@@ -327,4 +332,42 @@ TEST(StateGenerationTest, FromVectorInvalidArguments) {
   auto dd = std::make_unique<Package>(nq);
   EXPECT_THROW({ makeStateFromVector(CVec(5), *dd); }, std::invalid_argument);
   EXPECT_THROW({ makeStateFromVector(CVec(3), *dd); }, std::invalid_argument);
+}
+
+TEST(StateGenerationTest, VectorConstructionChecksCapacity) {
+  Package empty(0);
+  EXPECT_THROW(makeStateFromVector(CVec(2), empty), std::invalid_argument);
+  Package oneQubit(1);
+  EXPECT_THROW(makeStateFromVector(CVec(4), oneQubit), std::invalid_argument);
+  EXPECT_THROW(makeStateFromVector(CVec(8), oneQubit), std::invalid_argument);
+  bool read = false;
+  const auto entry = [&read](size_t) {
+    read = true;
+    return std::complex<fp>{};
+  };
+  EXPECT_THROW(makeStateFromVector(4, entry, oneQubit), std::invalid_argument);
+  EXPECT_FALSE(read);
+  const auto state =
+      makeStateFromVector(CVec{{0.5, 0.25}, {-0.5, 0.75}}, oneQubit);
+  expectStateVectorNear(state.getVector(), {{0.5, 0.25}, {-0.5, 0.75}});
+  EXPECT_NO_THROW(oneQubit.decRef(state));
+}
+
+TEST(StateGenerationTest, StateIntervalsRejectOverflow) {
+  Package package(2);
+  const auto maximum = std::numeric_limits<size_t>::max();
+  EXPECT_THROW(makeZeroState(maximum, package), std::invalid_argument);
+  EXPECT_THROW(makeZeroState(1, package, maximum), std::invalid_argument);
+  EXPECT_THROW(makeBasisState(1, std::vector<bool>{false}, package, maximum),
+               std::invalid_argument);
+  EXPECT_THROW(makeBasisState(2, std::vector<BasisStates>(2), package, maximum),
+               std::invalid_argument);
+  EXPECT_THROW(makeBasisState(2, std::vector<BasisStates>(2), package, 1),
+               std::invalid_argument);
+  const auto state = makeBasisState(1, std::vector<bool>{true}, package, 1);
+  ASSERT_FALSE(state.isTerminal());
+  EXPECT_EQ(state.p->v, 1);
+  EXPECT_TRUE(state.p->e[0].isZeroTerminal());
+  EXPECT_TRUE(state.p->e[1].isOneTerminal());
+  EXPECT_NO_THROW(package.decRef(state));
 }
