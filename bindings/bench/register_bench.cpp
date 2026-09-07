@@ -73,8 +73,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       m.def_submodule("qpe", "QPE benchmark instances and options.");
   registerQPE(qpe);
 
-  const nb::module_ teleportation =
-      m.def_submodule("teleportation", "Quantum teleportation benchmarks.");
+  const nb::module_ teleportation = m.def_submodule(
+      "teleportation", "Quantum teleportation benchmark instance.");
   registerTeleportation(teleportation);
 }
 

@@ -63,17 +63,18 @@ then measures Bob's qubit.
   empty type would expose no choice or information. Instance specifications
   still contain a strict empty `parameters` object for the common JSON envelope.
   Date/Author: 2026-09-01 / Daniel Haag.
-- Decision: Store Alice's message result `a` at result index zero, Alice's
-  entangled-qubit result `b1` at index one, and Bob's final result `b2` at index
-  two. Rationale: this preserves the historical Core emitter and records values
-  in source declaration order. Date/Author: 2026-09-01 / Daniel Haag.
+- Decision: Store `messageMeasurement` (source result `a`) at result index zero,
+  `aliceMeasurement` (source result `b1`) at index one, and Bob's final result
+  `b2` at index two. Rationale: this preserves the historical Core emitter and
+  records values in source declaration order. Date/Author: 2026-09-01 / Daniel
+  Haag.
 - Decision: Omit the source's three initial resets. Rationale: allocation
   already creates qubits in |0>, so adjacent resets add no behavior and create
   needless output. Date/Author: 2026-09-01 / Daniel Haag.
 - Decision: Use measurement results directly as the two `scf.if` conditions.
-  Rationale: the scalar values match the source's `a` and `b1` bits, expose the
-  feed-forward dependencies, and avoid redundant loads from the result register.
-  Date/Author: 2026-09-01 / Daniel Haag.
+  Rationale: the scalar values retain the source's `a` and `b1` semantics,
+  expose the feed-forward dependencies, and avoid redundant loads from the
+  result register. Date/Author: 2026-09-01 / Daniel Haag.
 - Decision: Use reference model `teleportation`, definition version 1, and no
   success outcome. Rationale: the model name is a short stable family name, all
   eight outcomes are equally likely, and no single result denotes protocol
@@ -140,17 +141,18 @@ the contract in `test/bench/test_teleportation.cpp` and
 Implement generation in `mlir/bench/programs/Teleportation.cpp`. Allocate the
 message, Alice, and Bob qubits plus the three-bit result register. Apply H to
 the message, create the Alice--Bob Bell pair with H and CX, apply CX and H for
-Alice's joint measurement, and store `a` and `b1` at result indices zero and
-one. Apply X to Bob under `b1` and Z under `a`, then store Bob's result at index
-two. Do not reset freshly allocated qubits.
+Alice's joint measurement, and store `messageMeasurement` and `aliceMeasurement`
+at result indices zero and one. Apply X to Bob under `aliceMeasurement` and Z
+under `messageMeasurement`, then store Bob's result at index two. Do not reset
+freshly allocated qubits.
 
 Register the generator in `mlir/bench/programs/Programs.h`,
 `mlir/bench/programs/CMakeLists.txt`, and `mlir/include/mlir/bench/Generate.h`.
 The catalog row supplies the implementation wrapper and dispatch entry. Extend
 the MLIR unit and command-line tests. In addition to the all-family QC and
 `jeff` smoke test, add one focused test that proves the first condition is the
-`b1` measurement and contains X, while the second is the `a` measurement and
-contains Z. Avoid tests of generic builder internals.
+Alice-qubit measurement and contains X, while the second is the message-qubit
+measurement and contains Z. Avoid tests of generic builder internals.
 
 Register `mqt.core.bench.teleportation` through
 `bindings/bench/register_teleportation.cpp` and

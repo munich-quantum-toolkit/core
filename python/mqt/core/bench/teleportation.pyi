@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Quantum teleportation benchmarks."""
+"""Quantum teleportation benchmark instance."""
 
 from collections.abc import Mapping
 
