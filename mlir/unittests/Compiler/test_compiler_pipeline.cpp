@@ -50,6 +50,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/Dialect/UB/IR/UBOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -1464,6 +1465,45 @@ TEST_F(CompilerPipelineTest, JeffBinaryRoundTripPreservesReusableFunctions) {
   helper = qc->module().lookupSymbol<func::FuncOp>("rotate");
   ASSERT_TRUE(helper);
   EXPECT_EQ(helper.getNumResults(), 0);
+}
+
+TEST_F(CompilerPipelineTest, QIRPreservesSparseStaticQubitIdsAndCapacity) {
+  auto qc = QCProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.static 7 : !qc.qubit
+      qc.x %q : !qc.qubit
+      return
+    }
+  })mlir");
+  ASSERT_TRUE(qc);
+  ASSERT_TRUE(succeeded(verify(qc->module())));
+
+  for (const auto format :
+       {ProgramFormat::QIRBase, ProgramFormat::QIRAdaptive}) {
+    auto output = runDefaultPipeline(CompilerInput{qc->copy()}, format);
+    ASSERT_TRUE(output);
+    auto moduleOp = std::get<QIRProgram>(*output).module();
+    ASSERT_TRUE(succeeded(verify(moduleOp)));
+    auto main = getMainFunction(moduleOp);
+    ASSERT_TRUE(main);
+    OpBuilder builder(moduleOp.getContext());
+    EXPECT_TRUE(llvm::is_contained(
+        main.getPassthroughAttr(),
+        builder.getStrArrayAttr({"required_num_qubits", "8"})));
+
+    LLVM::CallOp gate;
+    main.walk([&](LLVM::CallOp call) {
+      if (call.getCallee() == QIR_X) {
+        gate = call;
+      }
+    });
+    ASSERT_TRUE(gate);
+    auto pointer = gate.getOperand(0).getDefiningOp<LLVM::IntToPtrOp>();
+    ASSERT_TRUE(pointer);
+    auto index = pointer.getArg().getDefiningOp<LLVM::ConstantOp>();
+    ASSERT_TRUE(index);
+    EXPECT_EQ(cast<IntegerAttr>(index.getValue()).getInt(), 7);
+  }
 }
 
 TEST_F(CompilerPipelineTest, JeffRejectsMutableClassicalHelperArguments) {
