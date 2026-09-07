@@ -2552,7 +2552,22 @@ private:
       return;
     }
 
-    auto [startWide, stepWide, stopWide] = emitWideRange(loop);
+    const auto& startExpression = program.expressions.at(loop.start);
+    const auto& stepExpression = program.expressions.at(loop.step);
+    const auto& stopExpression = program.expressions.at(loop.stop);
+    const bool narrowDynamicRange =
+        startExpression.type == frontend::ScalarType::Int &&
+        stopExpression.type == frontend::ScalarType::Int &&
+        stepExpression.type == frontend::ScalarType::Int &&
+        stepExpression.kind == frontend::ExpressionKind::Constant &&
+        std::get<int64_t>(stepExpression.constant) > 0 &&
+        (startExpression.kind != frontend::ExpressionKind::Constant ||
+         stopExpression.kind != frontend::ExpressionKind::Constant);
+    auto [startValue, stepValue, stopValue] =
+        narrowDynamicRange ? std::array{emitExpression(builder, loop.start, {}),
+                                        emitExpression(builder, loop.step, {}),
+                         emitExpression(builder, loop.stop, {}),}
+                           : emitWideRange(loop);
     auto i128 = builder.getIntegerType(128);
     if (const auto tripCount = constantRangeTripCount(loop)) {
       auto lowerBound = arith::ConstantIndexOp::create(builder, 0);
@@ -2572,8 +2587,8 @@ private:
         auto counter = arith::IndexCastOp::create(builder, builder.getI64Type(),
                                                   forOp.getInductionVar());
         auto counterWide = arith::ExtUIOp::create(builder, i128, counter);
-        auto offset = arith::MulIOp::create(builder, counterWide, stepWide);
-        auto inductionWide = arith::AddIOp::create(builder, startWide, offset);
+        auto offset = arith::MulIOp::create(builder, counterWide, stepValue);
+        auto inductionWide = arith::AddIOp::create(builder, startValue, offset);
         scalarValues.at(loop.inductionVariable) = arith::TruncIOp::create(
             builder, builder.getI64Type(), inductionWide);
         for (const auto statement : loop.body) {
@@ -2586,22 +2601,29 @@ private:
       return;
     }
 
-    auto zero = arith::ConstantIntOp::create(builder, 0, 128);
-    SmallVector<Type> resultTypes{i128};
-    llvm::append_range(resultTypes, ValueRange(initialValues).getTypes());
-    SmallVector<Value> operands{startWide};
+    SmallVector<Value> operands{startValue};
+    if (narrowDynamicRange) {
+      operands.push_back(arith::CmpIOp::create(
+          builder, arith::CmpIPredicate::sle, startValue, stopValue));
+    }
     llvm::append_range(operands, initialValues);
+    const auto stateOffset = narrowDynamicRange ? 2U : 1U;
     auto whileOp = scf::WhileOp::create(
-        builder, resultTypes, operands,
+        builder, ValueRange(operands).getTypes(), operands,
         [&](OpBuilder& nested, Location loc, ValueRange arguments) {
+          if (narrowDynamicRange) {
+            scf::ConditionOp::create(nested, loc, arguments[1], arguments);
+            return;
+          }
+          auto zero = arith::ConstantIntOp::create(nested, loc, 0, 128);
           auto positive = arith::CmpIOp::create(
-              nested, loc, arith::CmpIPredicate::sgt, stepWide, zero);
+              nested, loc, arith::CmpIPredicate::sgt, stepValue, zero);
           auto ascending =
               arith::CmpIOp::create(nested, loc, arith::CmpIPredicate::sle,
-                                    arguments.front(), stopWide);
+                                    arguments.front(), stopValue);
           auto descending =
               arith::CmpIOp::create(nested, loc, arith::CmpIPredicate::sge,
-                                    arguments.front(), stopWide);
+                                    arguments.front(), stopValue);
           auto active = arith::SelectOp::create(nested, loc, positive,
                                                 ascending, descending);
           scf::ConditionOp::create(nested, loc, active, arguments);
@@ -2611,20 +2633,31 @@ private:
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
           scalarValues = savedScalars;
-          assignState(slots, arguments.drop_front());
-          scalarValues.at(loop.inductionVariable) = arith::TruncIOp::create(
-              builder, builder.getI64Type(), arguments.front());
+          assignState(slots, arguments.drop_front(stateOffset));
+          scalarValues.at(loop.inductionVariable) =
+              narrowDynamicRange
+                  ? arguments.front()
+                  : arith::TruncIOp::create(builder, builder.getI64Type(),
+                                            arguments.front());
           for (const auto statement : loop.body) {
             emitStatement(statement, gateParameters, gateQubits);
           }
           SmallVector<Value> yielded{
-              arith::AddIOp::create(builder, arguments.front(), stepWide),
+              arith::AddIOp::create(builder, arguments.front(), stepValue),
           };
+          if (narrowDynamicRange) {
+            /// The unsigned distance fits in 64 bits even across zero. An
+            /// overflowing final increment is unused when the loop is done.
+            auto remaining =
+                arith::SubIOp::create(builder, stopValue, arguments.front());
+            yielded.push_back(arith::CmpIOp::create(
+                builder, arith::CmpIPredicate::uge, remaining, stepValue));
+          }
           llvm::append_range(yielded, stateValues(slots));
           scf::YieldOp::create(builder, yielded);
         });
     scalarValues = savedScalars;
-    assignState(slots, whileOp.getResults().drop_front());
+    assignState(slots, whileOp.getResults().drop_front(stateOffset));
   }
 
   template <typename Loop>
