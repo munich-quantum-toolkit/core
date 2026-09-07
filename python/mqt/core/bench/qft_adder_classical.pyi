@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Classical-input QFT adder instances and options."""
+"""Classical-input QFT adder benchmark instances and options."""
 
 from collections.abc import Mapping
 
@@ -22,7 +22,10 @@ class Options:
         """The big-endian classical addend."""
 
 class QFTAdderClassical:
-    """A validated classical-input QFT adder benchmark."""
+    """A validated classical-input QFT adder benchmark.
+
+    Reference: https://arxiv.org/abs/quant-ph/0205095
+    """
 
     def __init__(self, options: Options) -> None: ...
     @property

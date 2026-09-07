@@ -11,13 +11,18 @@
 #include "bench/QFTAdderClassical.hpp"
 
 #include "Programs.h"
-#include "QFTAdderUtils.h"
+#include "QFTUtils.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include <llvm/ADT/ArrayRef.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/IR/BuiltinAttributes.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
-#include <cstddef>
 #include <cstdint>
 #include <numbers>
 #include <ranges>
@@ -27,8 +32,8 @@ namespace mqt::bench {
 
 using namespace mlir;
 
-[[nodiscard]] static SmallVector<double>
-phaseAngles(const std::string_view addend) {
+[[nodiscard]] static Value phaseAngles(qc::QCProgramBuilder& builder,
+                                       const std::string_view addend) {
   SmallVector<double> angles;
   angles.reserve(addend.size() + 1U);
   long double angle = 0.L;
@@ -40,7 +45,11 @@ phaseAngles(const std::string_view addend) {
     angles.push_back(static_cast<double>(angle));
   }
   angles.push_back(static_cast<double>(angle / 2.L));
-  return angles;
+
+  const auto type = RankedTensorType::get({static_cast<int64_t>(angles.size())},
+                                          builder.getF64Type());
+  const auto value = DenseElementsAttr::get(type, ArrayRef<double>(angles));
+  return arith::ConstantOp::create(builder, value).getResult();
 }
 
 SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& builder,
@@ -55,12 +64,12 @@ SmallVector<Value> qftAdderClassical(qc::QCProgramBuilder& builder,
   builder.x(builder.loadQubit(sum, zero));
 
   detail::forwardQFT(builder, sum, qubits);
-  const auto angles = phaseAngles(benchmark.options().addend);
-  for (size_t target = 0; target < angles.size(); ++target) {
-    auto angle = builder.floatConstant(angles[target]);
-    auto index = builder.indexConstant(static_cast<int64_t>(target));
-    builder.p(angle, builder.loadQubit(sum, index));
-  }
+  auto angles = phaseAngles(builder, benchmark.options().addend);
+  builder.scfFor(0, qubits, 1, [&](Value target) {
+    auto angle = tensor::ExtractOp::create(builder, angles, ValueRange{target})
+                     .getResult();
+    builder.p(angle, builder.loadQubit(sum, target));
+  });
   detail::inverseQFT(builder, sum, qubits);
 
   builder.measureQubitRegister(sum, result, qubits);
