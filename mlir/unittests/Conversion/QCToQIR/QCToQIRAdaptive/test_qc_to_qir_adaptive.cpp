@@ -74,8 +74,6 @@ class QCToQIRAdaptiveTest
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  // GoogleTest requires this override name.
-  // NOLINTNEXTLINE(readability-identifier-naming)
   void SetUp() override {
     DialectRegistry registry;
     registry.insert<qc::QCDialect, LLVM::LLVMDialect, arith::ArithDialect,
