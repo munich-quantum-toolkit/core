@@ -22,10 +22,11 @@ class Options:
         """The big-endian classical addend."""
 
 class QFTAdderClassical:
-    """A QFT adder that adds the classical addend to an accumulator in :math:`|1\\\\rangle`.
+    """A QFT adder that adds the classical addend to an accumulator in :math:`|1\\rangle`.
 
-    Leading zeros define the n-bit input width. The n+1-bit big-endian result is
-    addend + 1; the extra bit preserves carry.
+    Leading zeros define input width :math:`n`. For addend :math:`a`, the
+    big-endian result has :math:`n + 1` bits and equals :math:`a + 1`; the extra
+    bit preserves carry.
 
     Reference: https://arxiv.org/abs/quant-ph/0205095
     """
