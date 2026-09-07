@@ -32,7 +32,9 @@ void registerQFTAdderQuantum(const nb::module_& m) {
               "The number of qubits in each input register.");
 
   auto qftAdder = nb::class_<bench::QFTAdderQuantum>(
-      m, "QFTAdderQuantum", "A validated quantum-input QFT adder benchmark.");
+      m, "QFTAdderQuantum",
+      "A validated quantum-input QFT adder benchmark.\n\n"
+      "Reference: https://arxiv.org/abs/quant-ph/0008033");
   qftAdder.def(nb::init<bench::QFTAdderQuantumOptions>(), "options"_a)
       .def_prop_ro("options", &bench::QFTAdderQuantum::options,
                    nb::rv_policy::reference_internal,

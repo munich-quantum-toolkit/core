@@ -11,14 +11,11 @@
 #include "bench/QFTAdderQuantum.hpp"
 
 #include "Programs.h"
-#include "QFTAdderUtils.h"
+#include "QFTUtils.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
 #include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
@@ -33,23 +30,19 @@ static void addQuantumRegister(qc::QCProgramBuilder& builder, Value addend,
   auto zero = builder.indexConstant(0);
   auto one = builder.indexConstant(1);
   auto last = builder.indexConstant(qubits - 1);
+  auto firstAngle = builder.floatConstant(std::numbers::pi);
+  auto half = builder.floatConstant(0.5);
   builder.scfFor(0, qubits, 1, [&](Value step) {
     auto target = arith::SubIOp::create(builder, last, step).getResult();
     auto upper = arith::AddIOp::create(builder, target, one).getResult();
-    auto firstAngle = builder.floatConstant(std::numbers::pi);
-    auto half = builder.floatConstant(0.5);
-    auto loop =
-        scf::ForOp::create(builder, zero, upper, one, ValueRange{firstAngle});
-    OpBuilder::InsertionGuard guard(builder);
-    builder.setInsertionPointToStart(loop.getBody());
-    auto angle = loop.getRegionIterArg(0);
-    auto control =
-        arith::SubIOp::create(builder, target, loop.getInductionVar())
-            .getResult();
-    builder.cp(angle, builder.loadQubit(addend, control),
-               builder.loadQubit(sum, target));
-    auto next = arith::MulFOp::create(builder, angle, half).getResult();
-    scf::YieldOp::create(builder, ValueRange{next});
+    detail::phaseRotationLoop(
+        builder, zero, upper, one, firstAngle, half,
+        [&](Value angle, Value distance) {
+          auto control =
+              arith::SubIOp::create(builder, target, distance).getResult();
+          builder.cp(angle, builder.loadQubit(addend, control),
+                     builder.loadQubit(sum, target));
+        });
   });
 }
 

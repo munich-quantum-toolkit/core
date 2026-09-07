@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "QFTAdderUtils.h"
+#include "QFTUtils.h"
 
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
@@ -25,15 +25,12 @@ namespace mqt::bench::detail {
 
 using namespace mlir;
 
-static void
-phaseRotationLoop(qc::QCProgramBuilder& builder, Value upper,
-                  Value initialAngle, double factor,
-                  const function_ref<void(Value angle, Value index)>& body) {
-  auto zero = builder.indexConstant(0);
-  auto one = builder.indexConstant(1);
-  auto scale = builder.floatConstant(factor);
+void phaseRotationLoop(
+    qc::QCProgramBuilder& builder, Value lower, Value upper, Value step,
+    Value initialAngle, Value scale,
+    const function_ref<void(Value angle, Value index)>& body) {
   auto loop =
-      scf::ForOp::create(builder, zero, upper, one, ValueRange{initialAngle});
+      scf::ForOp::create(builder, lower, upper, step, ValueRange{initialAngle});
   OpBuilder::InsertionGuard guard(builder);
   builder.setInsertionPointToStart(loop.getBody());
   auto angle = loop.getRegionIterArg(0);
@@ -44,16 +41,19 @@ phaseRotationLoop(qc::QCProgramBuilder& builder, Value upper,
 
 void forwardQFT(qc::QCProgramBuilder& builder, Value qubitRegister,
                 int64_t qubits) {
+  auto zero = builder.indexConstant(0);
   auto one = builder.indexConstant(1);
   auto last = builder.indexConstant(qubits - 1);
+  auto firstAngle = builder.floatConstant(std::numbers::pi / 2.);
+  auto half = builder.floatConstant(0.5);
   builder.scfFor(0, qubits, 1, [&](Value step) {
     auto target = arith::SubIOp::create(builder, last, step).getResult();
     builder.h(builder.loadQubit(qubitRegister, target));
 
     auto previous = arith::SubIOp::create(builder, target, one).getResult();
-    auto firstAngle = builder.floatConstant(std::numbers::pi / 2.);
     phaseRotationLoop(
-        builder, target, firstAngle, 0.5, [&](Value angle, Value distance) {
+        builder, zero, target, one, firstAngle, half,
+        [&](Value angle, Value distance) {
           auto control =
               arith::SubIOp::create(builder, previous, distance).getResult();
           builder.cp(angle, builder.loadQubit(qubitRegister, control),
@@ -67,24 +67,20 @@ void inverseQFT(qc::QCProgramBuilder& builder, Value qubitRegister,
   auto zero = builder.indexConstant(0);
   auto one = builder.indexConstant(1);
   auto upper = builder.indexConstant(qubits);
-  auto firstAngle = builder.floatConstant(-std::numbers::pi);
+  auto firstAngle = builder.floatConstant(-std::numbers::pi / 2.);
   auto half = builder.floatConstant(0.5);
-  auto loop =
-      scf::ForOp::create(builder, zero, upper, one, ValueRange{firstAngle});
-  OpBuilder::InsertionGuard guard(builder);
-  builder.setInsertionPointToStart(loop.getBody());
-
-  auto target = loop.getInductionVar();
-  auto initialAngle = loop.getRegionIterArg(0);
-  phaseRotationLoop(
-      builder, target, initialAngle, 2., [&](Value angle, Value control) {
-        builder.cp(angle, builder.loadQubit(qubitRegister, control),
-                   builder.loadQubit(qubitRegister, target));
-      });
-  builder.h(builder.loadQubit(qubitRegister, target));
-
-  auto next = arith::MulFOp::create(builder, initialAngle, half).getResult();
-  scf::YieldOp::create(builder, ValueRange{next});
+  builder.scfFor(zero, upper, 1, [&](Value target) {
+    auto previous = arith::SubIOp::create(builder, target, one).getResult();
+    phaseRotationLoop(
+        builder, zero, target, one, firstAngle, half,
+        [&](Value angle, Value distance) {
+          auto control =
+              arith::SubIOp::create(builder, previous, distance).getResult();
+          builder.cp(angle, builder.loadQubit(qubitRegister, control),
+                     builder.loadQubit(qubitRegister, target));
+        });
+    builder.h(builder.loadQubit(qubitRegister, target));
+  });
 }
 
 } // namespace mqt::bench::detail

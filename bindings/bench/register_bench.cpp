@@ -71,7 +71,8 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   registerQFT(qft);
 
   const nb::module_ qftAdderQuantum = m.def_submodule(
-      "qft_adder_quantum", "Quantum-input QFT adder instances and options.");
+      "qft_adder_quantum",
+      "Quantum-input QFT adder benchmark instances and options.");
   registerQFTAdderQuantum(qftAdderQuantum);
 
   const nb::module_ qpe =
