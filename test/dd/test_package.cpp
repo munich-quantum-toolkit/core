@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "dd/CachedEdge.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/Export.hpp"
@@ -2010,6 +2011,62 @@ TEST(DDPackageTest, ReduceAncillaRegression) {
       CMat{{1, 0, 1, 0}, {1, 0, 1, 0}, {1, 0, -1, 0}, {1, 0, -1, 0}};
 
   EXPECT_EQ(outputMatrix, expected);
+}
+
+TEST(DDPackageTest, ConjugationAfterGarbageCollection) {
+  auto dd = std::make_unique<Package>(1);
+  const auto input = makeStateFromVector({SQRT2_2, {0., SQRT2_2}}, *dd);
+  const auto expected = dd->conjugate(input).getVector();
+
+  /// Cached results are unreferenced and may be collected and reused.
+  ASSERT_TRUE(dd->garbageCollect(true));
+  const auto replacement = makeZeroState(1, *dd);
+  EXPECT_EQ(dd->conjugate(input).getVector(), expected);
+  dd->decRef(input);
+  dd->decRef(replacement);
+}
+
+TEST(DDPackageTest, VectorMagnitudeAdditionAfterGarbageCollection) {
+  auto dd = std::make_unique<Package>(1);
+  const auto a = makeStateFromVector({1., 0.}, *dd);
+  const auto b = makeStateFromVector({0.6, 0.8}, *dd);
+  const vCachedEdge x{a.p, a.w};
+  const vCachedEdge y{b.p, b.w};
+  const auto result = dd->addMagnitudes(x, y, 0);
+  const auto expected =
+      vEdge{.p = result.p, .w = dd->cn.lookup(result.w)}.getVector();
+
+  ASSERT_TRUE(dd->garbageCollect(true));
+  const auto replacement = makeStateFromVector({0., 1.}, *dd);
+  const auto again = dd->addMagnitudes(x, y, 0);
+  EXPECT_EQ((vEdge{.p = again.p, .w = dd->cn.lookup(again.w)}.getVector()),
+            expected);
+  dd->decRef(a);
+  dd->decRef(b);
+  dd->decRef(replacement);
+}
+
+TEST(DDPackageTest, MatrixMagnitudeAdditionAfterGarbageCollection) {
+  auto dd = std::make_unique<Package>(1);
+  const auto a = getDD(TestGate(0, Fixture::Z), *dd);
+  const auto b = getDD(TestGate(0, Fixture::H), *dd);
+  dd->incRef(a);
+  dd->incRef(b);
+  const mCachedEdge x{a.p, a.w};
+  const mCachedEdge y{b.p, b.w};
+  const auto result = dd->addMagnitudes(x, y, 0);
+  const auto expected =
+      mEdge{.p = result.p, .w = dd->cn.lookup(result.w)}.getMatrix(1);
+
+  ASSERT_TRUE(dd->garbageCollect(true));
+  const auto replacement = getDD(TestGate(0, Fixture::X), *dd);
+  dd->incRef(replacement);
+  const auto again = dd->addMagnitudes(x, y, 0);
+  EXPECT_EQ((mEdge{.p = again.p, .w = dd->cn.lookup(again.w)}.getMatrix(1)),
+            expected);
+  dd->decRef(a);
+  dd->decRef(b);
+  dd->decRef(replacement);
 }
 
 TEST(DDPackageTest, VectorConjugate) {

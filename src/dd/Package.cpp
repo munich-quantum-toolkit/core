@@ -115,6 +115,8 @@ bool Package::garbageCollect(bool force) {
   // invalidate all compute tables involving vectors if any vector node has
   // been collected
   if (invV) {
+    conjugateVector.clear();
+    vectorAddMagnitudes.clear();
     vectorAdd.clear();
     vectorInnerProduct.clear();
     vectorKronecker.clear();
@@ -123,6 +125,7 @@ bool Package::garbageCollect(bool force) {
   // invalidate all compute tables involving matrices if any matrix node has
   // been collected
   if (invM) {
+    matrixAddMagnitudes.clear();
     matrixAdd.clear();
     conjugateMatrixTranspose.clear();
     matrixKronecker.clear();
