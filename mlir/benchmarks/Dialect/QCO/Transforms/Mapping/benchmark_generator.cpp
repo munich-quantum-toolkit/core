@@ -386,8 +386,8 @@ int main(int argc, char** argv) {
 
     // VQE
 
-    // programs.emplace_back("vqe_" + std::to_string(i),
-    //                       vqe(&context, static_cast<int64_t>(i), 10000, 0.5));
+    programs.emplace_back("vqe_" + std::to_string(i),
+                          vqe(&context, static_cast<int64_t>(i), 10000, 0.5));
 
     // QAOA
 
