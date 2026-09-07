@@ -13,7 +13,6 @@
 #include <llvm/ADT/DenseSet.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SetVector.h>
-#include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
