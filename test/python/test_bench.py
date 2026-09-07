@@ -134,7 +134,7 @@ def test_qft_methods_share_the_periodic_reference() -> None:
             qft.QFT.from_instance_specification_json(benchmark.instance_specification_json).case_id == benchmark.case_id
         )
         shots = 16_384
-        counts = benchmark.generate().to_qco().sample(shots=shots, seed=17)
+        counts = mlir.sample(benchmark.generate(), shots=shots, seed=17)
         assert sum(counts.values()) == shots
         assert benchmark.evaluate(counts).total_variation_distance < 0.03
         assert_generates(benchmark)
@@ -165,7 +165,7 @@ def test_quantum_qft_adder_reference_json_and_generation() -> None:
 
     sampled = qft_adder_quantum.QFTAdderQuantum(qft_adder_quantum.Options(qubits=3))
     shots = 16_384
-    counts = sampled.generate().to_qco().sample(shots=shots, seed=17)
+    counts = mlir.sample(sampled.generate(), shots=shots, seed=17)
     assert sum(counts.values()) == shots
     assert sampled.evaluate(counts).total_variation_distance < 0.03
     assert_generates(benchmark)
@@ -207,7 +207,7 @@ def test_qpe_dd_sampling_matches_reference(method: qpe.Method, phase: Fraction) 
     """Execute exact and inexact phases with both inverse-QFT implementations."""
     benchmark = qpe.QPE(qpe.Options(precision=3, phase=phase, method=method))
     shots = 16_384
-    counts = benchmark.generate().to_qco().sample(shots=shots, seed=17)
+    counts = mlir.sample(benchmark.generate(), shots=shots, seed=17)
     assert sum(counts.values()) == shots
     assert benchmark.evaluate(counts).total_variation_distance < 0.03
 
