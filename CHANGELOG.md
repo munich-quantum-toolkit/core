@@ -10,6 +10,10 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Fixed
+
+- 🐛 Export V and V† gates to Qiskit ([#2433]) ([**@burgholzer**])
+
 ## [3.10.0] - 2026-09-05
 
 _If you are upgrading: please see [`UPGRADING.md`](UPGRADING.md#3100)._
@@ -823,6 +827,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2433]: https://github.com/munich-quantum-toolkit/core/pull/2433
 [#2399]: https://github.com/munich-quantum-toolkit/core/pull/2399
 [#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368
 [#2358]: https://github.com/munich-quantum-toolkit/core/pull/2358
