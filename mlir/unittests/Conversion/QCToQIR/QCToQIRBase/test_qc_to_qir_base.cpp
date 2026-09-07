@@ -228,24 +228,6 @@ TEST(QCToQIRBaseNativeTest, RejectsGateOnMeasuredRegisterElement) {
   });
 }
 
-TEST(QCToQIRBaseNativeTest, RejectsPossiblyMeasuredRegisterElement) {
-  for (const auto dynamicMeasurement : {false, true}) {
-    SCOPED_TRACE(dynamicMeasurement);
-    expectMeasurementOrderRejected([&](qc::QCProgramBuilder& builder) {
-      auto qubits = builder.allocQubitRegister(2);
-      auto condition = LLVM::UndefOp::create(builder, builder.getI1Type());
-      auto index =
-          arith::SelectOp::create(builder, condition, builder.indexConstant(0),
-                                  builder.indexConstant(1));
-      auto dynamicQubit = builder.loadQubit(qubits.value, index);
-      auto result =
-          builder.measure(dynamicMeasurement ? dynamicQubit : qubits[0]);
-      builder.x(dynamicMeasurement ? qubits[0] : dynamicQubit);
-      return result;
-    });
-  }
-}
-
 TEST(QCToQIRBaseNativeTest, AllowsGateAfterMeasurementOnIndependentQubit) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,

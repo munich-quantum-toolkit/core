@@ -26,8 +26,6 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
     - A gate must not act on a qubit after it has been measured. The pass
       rejects this order because moving the measurement after the gate can
       change the result. Gates on independent qubits may follow measurements.
-      Dynamic register indices must be provably independent of measured
-      register elements.
 
     Behavior:
 

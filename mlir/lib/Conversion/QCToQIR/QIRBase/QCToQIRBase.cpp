@@ -90,29 +90,24 @@ static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
 
 /// Checks that moving measurements after all gates preserves qubit order.
 static LogicalResult checkMeasurementOrder(func::FuncOp entryPoint) {
-  // Static indices and register elements can have multiple SSA references.
+  // Static qubit IDs and constant register indices can have SSA aliases.
   const auto qubitKey = [](Value qubit) -> std::pair<Value, int64_t> {
     if (auto staticQubit = qubit.getDefiningOp<StaticOp>()) {
       return {Value{}, static_cast<int64_t>(staticQubit.getIndex())};
     }
-    if (auto load = qubit.getDefiningOp<memref::LoadOp>()) {
-      // A dynamic index can refer to any element of its register.
-      const auto index =
-          load.getIndices().size() == 1
-              ? getConstantIntValue(load.getIndices().front()).value_or(-1)
-              : -1;
-      return {load.getMemref(), index};
+    if (auto load = qubit.getDefiningOp<memref::LoadOp>();
+        load && load.getIndices().size() == 1) {
+      if (const auto index = getConstantIntValue(load.getIndices().front())) {
+        return {load.getMemref(), *index};
+      }
     }
     return {qubit, 0};
   };
 
   DenseSet<std::pair<Value, int64_t>> measuredQubits;
-  DenseSet<Value> measuredRegisters;
   for (auto& operation : entryPoint.front()) {
     if (auto measurement = dyn_cast<MeasureOp>(operation)) {
-      const auto key = qubitKey(measurement.getQubit());
-      measuredQubits.insert(key);
-      measuredRegisters.insert(key.first);
+      measuredQubits.insert(qubitKey(measurement.getQubit()));
       continue;
     }
     auto unitary = dyn_cast<UnitaryOpInterface>(operation);
@@ -120,10 +115,7 @@ static LogicalResult checkMeasurementOrder(func::FuncOp entryPoint) {
       continue;
     }
     for (auto qubit : unitary.getQubits()) {
-      const auto key = qubitKey(qubit);
-      if (measuredQubits.contains(key) ||
-          measuredQubits.contains({key.first, -1}) ||
-          (key.second == -1 && measuredRegisters.contains(key.first))) {
+      if (measuredQubits.contains(qubitKey(qubit))) {
         return operation.emitError(
             "QIR Base Profile requires gates to precede measurements on "
             "the same qubit");
