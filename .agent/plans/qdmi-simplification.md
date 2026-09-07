@@ -14,7 +14,8 @@ fields as fresh-session overrides, including explicitly empty values. The test
 environment guard supports unsetting and fails loudly if restoration fails.
 
 Validation: the QDMI C++ suite passes in release and Clang builds (465 passed,
-one expected skip). `uv run --no-sync pytest test/python/qdmi test/python/plugins
--q` passes all 463 tests. Both `uvx nox -s lint` and `uvx nox -s cpp-lint` pass.
-No dependencies or public wrapper API changes require migration instructions.
-Hosted CI remains a separate check; Windows behavior was not executed locally.
+one expected skip).
+`uv run --no-sync pytest test/python/qdmi test/python/plugins -q` passes all 463
+tests. Both `uvx nox -s lint` and `uvx nox -s cpp-lint` pass. No dependencies or
+public wrapper API changes require migration instructions. Hosted CI remains a
+separate check; Windows behavior was not executed locally.
