@@ -393,13 +393,13 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
     throw nb::value_error("dense unitary dimensions exceed addressable memory");
   }
   auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
+  auto* const data = dataPtr->data();
   matrix.traverseMatrix(
       std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
-      [&dataPtr, dim](size_t i, size_t j, const std::complex<dd::fp>& value) {
-        (*dataPtr)[(i * dim) + j] = value;
+      [data, dim](size_t i, size_t j, const std::complex<dd::fp>& value) {
+        data[i * dim + j] = value;
       },
       numQubits);
-  auto* const data = dataPtr->data();
   const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
     delete static_cast<dd::CVec*>(ptr);
   });
@@ -696,7 +696,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
               &mlir::CompilerTarget::SynthesisBasis::singleQubit,
               "The single-qubit synthesis basis.")
       .def_ro("entangler", &mlir::CompilerTarget::SynthesisBasis::entangler,
-              "The two-qubit entangler.");
+              "The two-qubit entangler, or None when none is usable.");
 
   nb::enum_<mlir::CompilerTarget::Connectivity::Kind>(
       compilerTarget, "ConnectivityKind", "The target connectivity model.")
@@ -910,7 +910,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           },
           "Recognized native gates supported by the target.")
       .def_prop_ro("synthesis_basis", &mlir::CompilerTarget::synthesisBasis,
-                   "A complete target-wide synthesis basis, if available.")
+                   "A target-wide single-qubit basis with an optional "
+                   "entangler, or None when no single-qubit basis is usable.")
       .def(
           "supports_operation",
           [](const mlir::CompilerTarget& target, const std::string_view name,
