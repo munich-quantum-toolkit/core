@@ -879,25 +879,14 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
             *condition ? select.getTrueValue() : select.getFalseValue();
         return classical.bindFrom(selected, select.getResult(), select);
       })
-      .Case([&](arith::ExtUIOp ext) {
-        return applyIntegerCast(ext.getIn(), ext.getOut(), ext, classical,
-                                false);
-      })
-      .Case([&](arith::ExtSIOp cast) {
+      .Case<arith::ExtUIOp, arith::IndexCastUIOp, arith::TruncIOp>(
+          [&](auto cast) {
+            return applyIntegerCast(cast.getIn(), cast.getOut(), cast,
+                                    classical, false);
+          })
+      .Case<arith::ExtSIOp, arith::IndexCastOp>([&](auto cast) {
         return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
                                 true);
-      })
-      .Case([&](arith::IndexCastUIOp cast) {
-        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
-                                false);
-      })
-      .Case([&](arith::IndexCastOp cast) {
-        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
-                                true);
-      })
-      .Case([&](arith::TruncIOp cast) {
-        return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
-                                false);
       })
       .Case<arith::FPToSIOp, arith::FPToUIOp>(
           [&](Operation* castOp) -> LogicalResult {
@@ -1676,10 +1665,7 @@ buildFunctionality(func::FuncOp func, dd::Package& dd,
   };
   walkState.activeCalls.insert(func.getOperation());
 
-  dd::MatrixDD state =
-      qubits.numQubits == 0
-          ? dd::MatrixDD::one()
-          : dd.createInitialMatrix(std::vector<bool>(qubits.numQubits, false));
+  dd::MatrixDD state = dd::MatrixDD::one();
   if (failed(walkFunction(func, walkState, state))) {
     if (qubits.numQubits != 0) {
       dd.decRef(state);

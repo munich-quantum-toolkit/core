@@ -24,6 +24,37 @@
 
 namespace qdmi {
 
+namespace detail {
+template <class T>
+inline void applyOverride(std::optional<T>& value,
+                          const std::optional<T>& overrideValue) {
+  if (overrideValue) {
+    value = overrideValue;
+  }
+}
+
+/// Apply present overrides, including explicitly empty values.
+[[nodiscard]] inline auto
+mergeSessionConfig(const DeviceSessionConfig& defaults,
+                   const DeviceSessionConfig& overrides)
+    -> DeviceSessionConfig {
+  auto merged = defaults;
+  applyOverride(merged.baseUrl, overrides.baseUrl);
+  applyOverride(merged.token, overrides.token);
+  applyOverride(merged.authFile, overrides.authFile);
+  applyOverride(merged.authUrl, overrides.authUrl);
+  applyOverride(merged.username, overrides.username);
+  applyOverride(merged.password, overrides.password);
+  applyOverride(merged.deviceConfiguration, overrides.deviceConfiguration);
+  applyOverride(merged.custom1, overrides.custom1);
+  applyOverride(merged.custom2, overrides.custom2);
+  applyOverride(merged.custom3, overrides.custom3);
+  applyOverride(merged.custom4, overrides.custom4);
+  applyOverride(merged.custom5, overrides.custom5);
+  return merged;
+}
+} // namespace detail
+
 /**
  * @brief Construct a device session configuration from individual parameters.
  * @throws std::invalid_argument If both an inline device configuration and a

@@ -190,6 +190,36 @@ TEST(CustomPropertyTest, RejectsInvalidSelector) {
                std::invalid_argument);
 }
 
+TEST(StandardPropertyTest, PreservesValuesAndOptionalSupport) {
+  const auto bytes = bytesOf(size_t{42});
+  const auto query = queryBytes(bytes);
+  EXPECT_EQ(detail::queryProperty<size_t>(query, "value", "size"), 42);
+  EXPECT_EQ(
+      detail::queryProperty<std::optional<size_t>>(query, "value", "size"), 42);
+  EXPECT_EQ(detail::queryProperty<std::vector<size_t>>(query, "value", "size"),
+            std::vector<size_t>{42});
+  const std::vector<std::byte> text{std::byte{'x'}, std::byte{0}};
+  EXPECT_EQ(
+      detail::queryProperty<std::string>(queryBytes(text), "value", "size"),
+      "x");
+
+  const auto unsupported = [](size_t, void*, size_t*) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  };
+  EXPECT_EQ(detail::queryProperty<std::optional<size_t>>(unsupported, "value",
+                                                         "size"),
+            std::nullopt);
+  EXPECT_EQ(detail::queryProperty<std::optional<std::string>>(unsupported,
+                                                              "value", "size"),
+            std::nullopt);
+  EXPECT_EQ(detail::queryProperty<std::optional<std::vector<size_t>>>(
+                unsupported, "value", "size"),
+            std::nullopt);
+  EXPECT_THROW(std::ignore =
+                   detail::queryProperty<size_t>(unsupported, "value", "size"),
+               std::runtime_error);
+}
+
 TEST(CustomPropertyTest, DecodesSupportedTypes) {
   const std::vector<std::byte> stringBytes{
       std::byte{'v'}, std::byte{'a'}, std::byte{'l'},

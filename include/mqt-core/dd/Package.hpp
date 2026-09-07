@@ -785,6 +785,26 @@ public:
     return cn.lookup(result);
   }
 
+private:
+  /// Select a successor at this level and apply the incoming edge weight.
+  template <class Node>
+  static CachedEdge<Node> weightedSuccessor(const CachedEdge<Node>& edge,
+                                            const Qubit var,
+                                            const std::size_t index) {
+    if constexpr (IsMatrix<Node>) {
+      if (edge.isIdentity() || edge.p->v < var) {
+        return index == 0 || index == 3 ? edge : CachedEdge<Node>{};
+      }
+    }
+    const auto& successor = edge.p->e[index];
+    auto result = CachedEdge<Node>{successor.p, 0};
+    if (!successor.w.exactlyZero()) {
+      result.w = edge.w * successor.w;
+    }
+    return result;
+  }
+
+public:
   /**
    * @brief Internal function to add two decision diagrams.
    *
@@ -822,53 +842,8 @@ public:
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
-      CachedEdge<Node> e1{};
-      if constexpr (IsMatrix<Node>) {
-        if (x.isIdentity() || x.p->v < var) {
-          // [ 0 | 1 ]   [ x | 0 ]
-          // --------- = ---------
-          // [ 2 | 3 ]   [ 0 | x ]
-          if (i == 0 || i == 3) {
-            e1 = x;
-          }
-        } else {
-          auto& xSuccessor = x.p->e[i];
-          e1 = {xSuccessor.p, 0};
-          if (!xSuccessor.w.exactlyZero()) {
-            e1.w = x.w * xSuccessor.w;
-          }
-        }
-      } else {
-        auto& xSuccessor = x.p->e[i];
-        e1 = {xSuccessor.p, 0};
-        if (!xSuccessor.w.exactlyZero()) {
-          e1.w = x.w * xSuccessor.w;
-        }
-      }
-      CachedEdge<Node> e2{};
-      if constexpr (IsMatrix<Node>) {
-        if (y.isIdentity() || y.p->v < var) {
-          // [ 0 | 1 ]   [ y | 0 ]
-          // --------- = ---------
-          // [ 2 | 3 ]   [ 0 | y ]
-          if (i == 0 || i == 3) {
-            e2 = y;
-          }
-        } else {
-          auto& ySuccessor = y.p->e[i];
-          e2 = {ySuccessor.p, 0};
-          if (!ySuccessor.w.exactlyZero()) {
-            e2.w = y.w * ySuccessor.w;
-          }
-        }
-      } else {
-        auto& ySuccessor = y.p->e[i];
-        e2 = {ySuccessor.p, 0};
-        if (!ySuccessor.w.exactlyZero()) {
-          e2.w = y.w * ySuccessor.w;
-        }
-      }
-      edge[i] = add2(e1, e2, var - 1);
+      edge[i] = add2(weightedSuccessor(x, var, i), weightedSuccessor(y, var, i),
+                     var - 1);
     }
     auto r = makeDDNode(var, edge);
     computeTable.insert(x, y, r);
@@ -914,47 +889,8 @@ public:
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
-      CachedEdge<Node> e1{};
-      if constexpr (IsMatrix<Node>) {
-        if (x.isIdentity() || x.p->v < var) {
-          if (i == 0 || i == 3) {
-            e1 = x;
-          }
-        } else {
-          auto& xSuccessor = x.p->e[i];
-          e1 = {xSuccessor.p, 0};
-          if (!xSuccessor.w.exactlyZero()) {
-            e1.w = x.w * xSuccessor.w;
-          }
-        }
-      } else {
-        auto& xSuccessor = x.p->e[i];
-        e1 = {xSuccessor.p, 0};
-        if (!xSuccessor.w.exactlyZero()) {
-          e1.w = x.w * xSuccessor.w;
-        }
-      }
-      CachedEdge<Node> e2{};
-      if constexpr (IsMatrix<Node>) {
-        if (y.isIdentity() || y.p->v < var) {
-          if (i == 0 || i == 3) {
-            e2 = y;
-          }
-        } else {
-          auto& ySuccessor = y.p->e[i];
-          e2 = {ySuccessor.p, 0};
-          if (!ySuccessor.w.exactlyZero()) {
-            e2.w = y.w * ySuccessor.w;
-          }
-        }
-      } else {
-        auto& ySuccessor = y.p->e[i];
-        e2 = {ySuccessor.p, 0};
-        if (!ySuccessor.w.exactlyZero()) {
-          e2.w = y.w * ySuccessor.w;
-        }
-      }
-      edge[i] = addMagnitudes(e1, e2, var - 1);
+      edge[i] = addMagnitudes(weightedSuccessor(x, var, i),
+                              weightedSuccessor(y, var, i), var - 1);
     }
     auto r = makeDDNode(var, edge);
     computeTable.insert(x, y, r);

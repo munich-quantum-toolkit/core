@@ -10,7 +10,9 @@
 
 #include "DeviceRegistry.hpp"
 
+#include "qdmi/common/DeviceConfiguration.hpp"
 #include "qdmi/driver/Driver.hpp"
+#include "qdmi/driver/SessionConfig.hpp"
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
@@ -29,37 +31,16 @@
 #include <utility>
 #include <vector>
 
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <dlfcn.h>
-#endif
-
 namespace qdmi::detail {
 namespace {
 using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
-
-struct SessionPatch {
-  std::optional<std::string> baseUrl;
-  std::optional<std::string> token;
-  std::optional<std::filesystem::path> authFile;
-  std::optional<std::string> authUrl;
-  std::optional<std::string> username;
-  std::optional<std::string> password;
-  std::optional<DeviceConfigurationSource> deviceConfiguration;
-  std::optional<std::string> custom1;
-  std::optional<std::string> custom2;
-  std::optional<std::string> custom3;
-  std::optional<std::string> custom4;
-  std::optional<std::string> custom5;
-};
 
 struct DefinitionPatch {
   std::string id;
   std::optional<std::filesystem::path> library;
   std::optional<std::string> prefix;
   std::optional<bool> enabled;
-  SessionPatch session;
+  DeviceSessionConfig session;
   std::filesystem::path source;
 };
 
@@ -125,7 +106,7 @@ void rejectUnknownKeys(const Json& value,
 [[nodiscard]] auto
 parseSessionPatch(const Json& value, const std::filesystem::path& source,
                   const std::string& path, const std::filesystem::path& base)
-    -> SessionPatch {
+    -> DeviceSessionConfig {
   requireObject(value, source, path);
   rejectUnknownKeys(value,
                     {
@@ -143,7 +124,7 @@ parseSessionPatch(const Json& value, const std::filesystem::path& source,
                         "device-config",
                     },
                     source, path);
-  SessionPatch patch;
+  DeviceSessionConfig patch;
   patch.baseUrl = optionalString(value, "base-url", source, path);
   patch.token = optionalString(value, "token", source, path);
   patch.authUrl = optionalString(value, "auth-url", source, path);
@@ -277,87 +258,12 @@ parseDevicePatch(const Json& value, const std::filesystem::path& source,
   }
 }
 
-template <class T>
-void mergeOptional(std::optional<T>& target, const std::optional<T>& source) {
-  if (source) {
-    target = source;
-  }
-}
-
-void mergeSession(SessionPatch& target, const SessionPatch& source) {
-  mergeOptional(target.baseUrl, source.baseUrl);
-  mergeOptional(target.token, source.token);
-  mergeOptional(target.authFile, source.authFile);
-  mergeOptional(target.authUrl, source.authUrl);
-  mergeOptional(target.username, source.username);
-  mergeOptional(target.password, source.password);
-  mergeOptional(target.deviceConfiguration, source.deviceConfiguration);
-  mergeOptional(target.custom1, source.custom1);
-  mergeOptional(target.custom2, source.custom2);
-  mergeOptional(target.custom3, source.custom3);
-  mergeOptional(target.custom4, source.custom4);
-  mergeOptional(target.custom5, source.custom5);
-}
-
 void mergePatch(DefinitionPatch& target, const DefinitionPatch& source) {
-  mergeOptional(target.library, source.library);
-  mergeOptional(target.prefix, source.prefix);
-  mergeOptional(target.enabled, source.enabled);
-  mergeSession(target.session, source.session);
+  applyOverride(target.library, source.library);
+  applyOverride(target.prefix, source.prefix);
+  applyOverride(target.enabled, source.enabled);
+  target.session = mergeSessionConfig(target.session, source.session);
   target.source = source.source;
-}
-
-[[nodiscard]] auto moduleDirectory() -> std::filesystem::path {
-#ifdef _WIN32
-  HMODULE module = nullptr;
-  if (GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
-                             GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
-                         reinterpret_cast<LPCWSTR>(&moduleDirectory),
-                         &module) == 0) {
-    return {};
-  }
-  std::wstring buffer(MAX_PATH, L'\0');
-  while (true) {
-    const auto size = GetModuleFileNameW(module, buffer.data(),
-                                         static_cast<DWORD>(buffer.size()));
-    if (size == 0) {
-      return {};
-    }
-    if (size < buffer.size()) {
-      buffer.resize(size);
-      return std::filesystem::path(buffer).parent_path();
-    }
-    buffer.resize(buffer.size() * 2);
-  }
-#else
-  Dl_info info{};
-  if (dladdr(reinterpret_cast<const void*>(&moduleDirectory), &info) == 0 ||
-      info.dli_fname == nullptr) {
-    return {};
-  }
-  return std::filesystem::path(info.dli_fname).parent_path();
-#endif
-}
-
-[[nodiscard]] auto environment(const char* name) -> std::optional<std::string> {
-#ifdef _WIN32
-  char* raw = nullptr;
-  size_t size = 0;
-  if (_dupenv_s(&raw, &size, name) != 0 || raw == nullptr) {
-    return std::nullopt;
-  }
-  const std::unique_ptr<char, decltype(&std::free)> value(raw, &std::free);
-  if (*value == '\0') {
-    return std::nullopt;
-  }
-  return std::string(value.get());
-#else
-  if (const auto* value = std::getenv(name);
-      value != nullptr && *value != '\0') {
-    return std::string(value);
-  }
-  return std::nullopt;
-#endif
 }
 
 void appendIfFile(std::vector<std::filesystem::path>& files,
@@ -411,7 +317,8 @@ void appendFragments(std::vector<std::filesystem::path>& files,
 
 [[nodiscard]] auto discoverFiles() -> std::vector<std::filesystem::path> {
   std::vector<std::filesystem::path> files;
-  const auto root = moduleDirectory();
+  const auto root =
+      moduleDirectory(reinterpret_cast<const void*>(&discoverFiles));
   appendFragments(files, root);
   appendFragments(files, root / "bin");
   appendFragments(files, root / "lib");
@@ -476,20 +383,7 @@ void appendFragments(std::vector<std::filesystem::path>& files,
   definition.id = patch.id;
   definition.library = *patch.library;
   definition.prefix = *patch.prefix;
-  definition.session.baseUrl = patch.session.baseUrl;
-  definition.session.token = patch.session.token;
-  if (patch.session.authFile) {
-    definition.session.authFile = patch.session.authFile;
-  }
-  definition.session.authUrl = patch.session.authUrl;
-  definition.session.username = patch.session.username;
-  definition.session.password = patch.session.password;
-  definition.session.deviceConfiguration = patch.session.deviceConfiguration;
-  definition.session.custom1 = patch.session.custom1;
-  definition.session.custom2 = patch.session.custom2;
-  definition.session.custom3 = patch.session.custom3;
-  definition.session.custom4 = patch.session.custom4;
-  definition.session.custom5 = patch.session.custom5;
+  definition.session = patch.session;
   return definition;
 }
 
