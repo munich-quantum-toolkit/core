@@ -17,6 +17,7 @@ target_link_libraries(
           MLIRParser
           MLIRSupportMQT
           MLIRQCToQCO
+          MLIRQCODDFunctionality
           MLIRQCProgramBuilder
           MLIRQCOpenQASMTranslation
           MLIRQCPrograms
