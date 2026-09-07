@@ -702,18 +702,18 @@ TEST_F(MappingPassFixture, PreserveStoredRegisterControlDuringRouting) {
   EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));
 
   auto func = mqt::getEntryPoint(*moduleOp);
-  auto alloc = *(func.getOps<cbit::AllocOp>().begin());
-  auto measure = *(func.getOps<MeasureOp>().begin());
-  auto store = *(func.getOps<StoreOp>().begin());
-  auto snapshot = *(func.getOps<ReadOp>().begin());
-  auto comparison = *(func.getOps<arith::CmpIOp>().begin());
-  auto conditional = *(func.getOps<IfOp>().begin());
+  auto alloc = *func.getOps<cbit::AllocOp>().begin();
+  auto measure = *func.getOps<MeasureOp>().begin();
+  auto store = *func.getOps<StoreOp>().begin();
+  auto snapshot = *func.getOps<ReadOp>().begin();
+  auto comparison = *func.getOps<arith::CmpIOp>().begin();
+  auto conditional = *func.getOps<IfOp>().begin();
 
   Block* condBody = conditional.getBody();
-  auto condRead = *(condBody->getOps<ReadOp>().begin());
-  auto condMeasure = *(condBody->getOps<MeasureOp>().begin());
-  auto condXOR = *(condBody->getOps<arith::XOrIOp>().begin());
-  auto condStore = *(condBody->getOps<StoreOp>().begin());
+  auto condRead = *condBody->getOps<ReadOp>().begin();
+  auto condMeasure = *condBody->getOps<MeasureOp>().begin();
+  auto condXOR = *condBody->getOps<arith::XOrIOp>().begin();
+  auto condStore = *condBody->getOps<StoreOp>().begin();
 
   ASSERT_TRUE(alloc);
   ASSERT_TRUE(measure);
