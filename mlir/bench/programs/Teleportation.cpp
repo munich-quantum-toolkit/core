@@ -37,12 +37,13 @@ SmallVector<Value> teleportation(qc::QCProgramBuilder& builder,
   builder.cx(message, alice);
   builder.h(message);
 
-  auto messageMeasurement = builder.measure(message, result, 0);
-  auto aliceMeasurement = builder.measure(alice, result, 1);
+  auto messageMeasurement = builder.measure(message);
+  auto aliceMeasurement = builder.measure(alice);
   builder.scfIf(aliceMeasurement, [&] { builder.x(bob); });
   builder.scfIf(messageMeasurement, [&] { builder.z(bob); });
 
-  builder.measure(bob, result, 2);
+  builder.h(bob);
+  builder.measure(bob, result, 0);
   return {result};
 }
 

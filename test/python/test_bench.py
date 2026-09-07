@@ -183,22 +183,21 @@ def test_teleportation_reference_json_and_generation() -> None:
     """Expose the fixed quantum teleportation benchmark without options."""
     benchmark = teleportation.Teleportation()
     assert benchmark.output.name == "result"
-    assert benchmark.output.width == 3
-    assert benchmark.probability("000") == pytest.approx(0.125)
-    assert benchmark.probability("111") == pytest.approx(0.125)
+    assert benchmark.output.width == 1
+    assert benchmark.probability("0") == 1
+    assert benchmark.probability("1") == 0
 
-    evaluation = benchmark.evaluate({f"{outcome:03b}": 1 for outcome in range(8)})
+    evaluation = benchmark.evaluate({"0": 128})
     assert evaluation.total_variation_distance == pytest.approx(0)
     assert evaluation.squared_hellinger_fidelity == pytest.approx(1)
-    assert evaluation.success_probability is None
+    assert evaluation.success_probability == 1
     assert json.loads(benchmark.instance_specification_json)["parameters"] == {}
 
     instance_copy = teleportation.Teleportation.from_instance_specification_json(benchmark.instance_specification_json)
     manifest_copy = teleportation.Teleportation.from_manifest_json(benchmark.manifest_json)
     assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
 
-    shots = 16_384
-    counts = benchmark.generate().to_qco().sample(shots=shots, seed=17)
-    assert sum(counts.values()) == shots
-    assert benchmark.evaluate(counts).total_variation_distance < 0.03
+    shots = 128
+    counts = mlir.sample(benchmark.generate(), shots=shots, seed=17)
+    assert counts == {"0": shots}
     assert_generates(benchmark)

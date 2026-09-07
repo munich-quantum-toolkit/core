@@ -200,8 +200,8 @@ TEST(BenchmarkJSON, UsesStableSemanticCaseIds) {
             caseId(Multiplexer{{.qubits = 7}}));
   EXPECT_NE(caseId(Multiplexer{{.qubits = 7}}),
             caseId(Multiplexer{{.qubits = 6}}));
-  EXPECT_EQ(caseId(Teleportation{}), "sha256-8abc3c4e4adb4f0fde27c0d3562acddb"
-                                     "8c79442fbadf613098878d448b302251");
+  EXPECT_EQ(caseId(Teleportation{}), "sha256-de1348477e2604539b963a28bc19f5d3"
+                                     "ed27ed86fc6608366bbc6eb9b55855f6");
   EXPECT_EQ(caseId(linear), "sha256-a222c0c57bcecb4f5e7ea72bab439683"
                             "92861a52c5cb7c9c13aeaffffa059a65");
 }
@@ -398,10 +398,10 @@ TEST(BenchmarkJSON, ParsesCountsAndSerializesEvaluations) {
             std::string::npos);
 
   const Teleportation teleportation;
-  const auto teleportationEvaluation = evaluateJSON(
-      toManifestJSON(teleportation),
-      R"({"schema_version":1,"counts":{"000":1,"001":1,"010":1,"011":1,"100":1,"101":1,"110":1,"111":1}})");
-  EXPECT_NE(teleportationEvaluation.find("\"success_probability\":null"),
+  const auto teleportationEvaluation =
+      evaluateJSON(toManifestJSON(teleportation),
+                   R"({"schema_version":1,"counts":{"0":8}})");
+  EXPECT_NE(teleportationEvaluation.find("\"success_probability\":1.0"),
             std::string::npos);
   EXPECT_NE(teleportationEvaluation.find("\"total_variation_distance\":0.0"),
             std::string::npos);

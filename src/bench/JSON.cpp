@@ -614,6 +614,7 @@ parseTeleportationParameters(const Json& parameters,
       {"model", "teleportation"},
       {"outcome_order", "big_endian"},
       {"output", benchmark.output().name},
+      {"success_outcome", "0"},
       {"version", 1},
   };
 }

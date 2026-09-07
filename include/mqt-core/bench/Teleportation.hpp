@@ -17,10 +17,8 @@
 
 namespace mqt::bench {
 
-/// A benchmark that teleports the fixed |+> state and measures all three
-/// qubits. Big-endian outcomes contain Bob's, Alice's, then the message
-/// measurement. The uniform reference checks output statistics, not
-/// teleportation fidelity.
+/// Teleport the fixed |+> state and measure Bob's qubit in the X basis.
+/// The one-bit result is zero on success; Alice's measurements stay internal.
 class MQT_CORE_BENCH_EXPORT Teleportation final {
 public:
   Teleportation();
