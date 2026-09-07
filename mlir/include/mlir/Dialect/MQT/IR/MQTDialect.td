@@ -235,6 +235,13 @@ def PayloadFormatAttr : MQTAttr<"PayloadFormat", "payload_format"> {
     Identifies a payload by format ID, exact version, optional profile ID, and
     encoding. Every field takes part in identity. An empty profile denotes a
     payload without a named profile.
+
+    The following identity selects binary QIR 2.1 with the base profile:
+
+    ```mlir
+    #mqt.payload_format<id = "qir", version = "2.1",
+        profile = "base", encoding = binary>
+    ```
   }];
   let parameters = (ins "StringAttr":$id, "StringAttr":$version,
       "StringAttr":$profile, EnumParameter<PayloadEncoding>:$encoding);
@@ -273,6 +280,18 @@ def PayloadSpecAttr : MQTAttr<"PayloadSpec", "payload_spec"> {
     remains available when optional capability metadata is unknown;
     `optional_capabilities_known` records whether that optional metadata is
     complete.
+
+    The following producer-defined format reports bounded forward branching.
+    Its optional capability metadata is incomplete:
+
+    ```mlir
+    #mqt.payload_spec<
+        format = <id = "vendor-ir", version = "1.0.0", profile = "",
+            encoding = binary>,
+        capabilities = [<id = "forward-branching", value = 0,
+            constraints = [<id = "max-control-flow-nesting-depth", value = 4>]>],
+        optional_capabilities_known = false>
+    ```
   }];
   let parameters = (ins "PayloadFormatAttr":$format,
       MQTArrayRefParameter<"ProgramCapabilityAttr">:$capabilities,
@@ -287,6 +306,20 @@ def TargetEnvAttr : MQTAttr<"TargetEnv", "target_env", [DLTIQueryInterface]> {
     Combines typed compiler-target facts with the selected payload contract.
     Optional DLTI extensions carry provider-specific facts. Direct access to
     the typed fields is authoritative.
+
+    The following environment pairs a one-site target with a producer-defined
+    payload:
+
+    ```mlir
+    #mqt.target_env<
+        compilation_target = #mqt.compilation_target<
+            sites = [<id = 0>], connectivity = all_to_all, couplings = [],
+            native_operations = unrestricted, operations = []>,
+        payload_specification = #mqt.payload_spec<
+            format = <id = "vendor-ir", version = "1.0.0", profile = "",
+                encoding = binary>,
+            capabilities = [], optional_capabilities_known = false>>
+    ```
   }];
   let parameters = (ins "CompilationTargetAttr":$compilation_target,
       "PayloadSpecAttr":$payload_specification,
