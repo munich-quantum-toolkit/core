@@ -60,8 +60,8 @@ inline bool checkDeadGate(Operation* op) {
 /// the entry block.
 [[nodiscard]] LogicalResult verifyLinearity(Operation* root);
 
-/// Maximum number of modifier targets supported by @ref
-/// composeBodyMatrix.
+/// Maximum dense modifier matrix width. Controlled matrices include controls
+/// in this bound; @ref composeBodyMatrix applies it to the target body.
 inline constexpr size_t kMaxModifierTargetQubits = 10;
 
 /**
@@ -70,7 +70,10 @@ inline constexpr size_t kMaxModifierTargetQubits = 10;
  *
  * @details Block arguments map to wire indices `0..numTargets-1` (MSB-first,
  * matching @ref Matrix2x2::embedInNqubit). Returns the composed unitary in
- * program order, or `std::nullopt` when the body cannot be composed.
+ * program order, including idle targets. Supports one- and two-qubit embeddings
+ * and full-width operations whose input order matches the modifier's wires.
+ * Returns `std::nullopt` for reordered yields, unsupported embeddings, unknown
+ * parameters, or widths above @ref kMaxModifierTargetQubits.
  */
 [[nodiscard]] std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
                                                              size_t numTargets);

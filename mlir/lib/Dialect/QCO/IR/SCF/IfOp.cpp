@@ -104,13 +104,7 @@ void IfOp::getSuccessorRegions(RegionBranchPoint point,
 
   regions.push_back(RegionSuccessor(&getThenRegion()));
 
-  // If the else region is empty, execution continues after the parent op.
-  Region* elseRegion = &getElseRegion();
-  if (elseRegion->empty()) {
-    regions.push_back(RegionSuccessor(getOperation()));
-  } else {
-    regions.push_back(RegionSuccessor(elseRegion));
-  }
+  regions.push_back(RegionSuccessor(&getElseRegion()));
 }
 
 void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
@@ -121,13 +115,8 @@ void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
     regions.push_back(RegionSuccessor(&getThenRegion()));
   }
 
-  // If the else region is empty, execution continues after the parent op.
   if (!boolAttr || !boolAttr.getValue()) {
-    if (!getElseRegion().empty()) {
-      regions.push_back(RegionSuccessor(&getElseRegion()));
-    } else {
-      regions.push_back(RegionSuccessor(getOperation()));
-    }
+    regions.push_back(RegionSuccessor(&getElseRegion()));
   }
 }
 

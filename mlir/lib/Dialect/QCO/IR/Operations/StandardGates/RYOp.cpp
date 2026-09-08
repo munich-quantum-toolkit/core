@@ -28,23 +28,6 @@ using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::mqt;
 
-namespace {
-
-/**
- * @brief Merge subsequent RY operations on the same qubit by adding their
- * angles.
- */
-struct MergeSubsequentRY final : OpRewritePattern<RYOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RYOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeOneTargetOneParameter(op, rewriter);
-  }
-};
-
-} // namespace
-
 void RYOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
   auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
@@ -60,8 +43,8 @@ OpFoldResult RYOp::fold(FoldAdaptor /*adaptor*/) {
 }
 
 void RYOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                       MLIRContext* context) {
-  results.add<MergeSubsequentRY>(context);
+                                       MLIRContext* /*context*/) {
+  results.add(&mergeOneTargetOneParameter<RYOp>);
 }
 
 Matrix2x2 RYOp::unitaryMatrix(const double theta) {

@@ -3565,3 +3565,21 @@ TEST_F(QCOTest, UnrollModifiersLeavesNonIntegerPowUntouched) {
   expectUnrollsTo(context.get(), powHalfDisjoint, powHalfDisjoint,
                   checkPreservedPowStructure);
 }
+
+TEST_F(QCOTest, BarrierRejectsMismatchedQubitArity) {
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  auto program = parseSourceString<ModuleOp>(R"mlir(
+    func.func @test(%q: !qco.qubit) -> (!qco.qubit, !qco.qubit) {
+      %out:2 = qco.barrier %q : !qco.qubit -> !qco.qubit, !qco.qubit
+      return %out#0, %out#1 : !qco.qubit, !qco.qubit
+    }
+  )mlir",
+                                             context.get());
+  EXPECT_FALSE(program);
+  EXPECT_NE(diagnostics.find("one output qubit for each input qubit"),
+            std::string::npos);
+}

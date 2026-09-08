@@ -526,22 +526,6 @@ bool InvOp::hasCompileTimeKnownUnitaryMatrix() {
 }
 
 std::optional<DynamicMatrix> InvOp::getUnitaryMatrix() {
-  if (getNumBodyUnitaries() == 0) {
-    return DynamicMatrix::identity(
-        static_cast<int64_t>(uint64_t{1} << getNumTargets()));
-  }
-
-  // Single inner unitary (e.g. `inv { h }`, `inv { cx }`).
-  if (auto bodyUnitary =
-          mqt::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
-    if (const auto targetMatrix =
-            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
-      return targetMatrix->adjoint();
-    }
-    return std::nullopt;
-  }
-
-  // Composed body (e.g., `ctrl { h; x }` or `ctrl { swap; ry }`)
   if (const auto composed = composeBodyMatrix(*getBody(), getNumTargets())) {
     return composed->adjoint();
   }

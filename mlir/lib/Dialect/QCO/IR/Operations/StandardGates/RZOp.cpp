@@ -29,23 +29,6 @@ using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::mqt;
 
-namespace {
-
-/**
- * @brief Merge subsequent RZ operations on the same qubit by adding their
- * angles.
- */
-struct MergeSubsequentRZ final : OpRewritePattern<RZOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RZOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeOneTargetOneParameter(op, rewriter);
-  }
-};
-
-} // namespace
-
 void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
   auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
@@ -61,8 +44,8 @@ OpFoldResult RZOp::fold(FoldAdaptor /*adaptor*/) {
 }
 
 void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                       MLIRContext* context) {
-  results.add<MergeSubsequentRZ>(context);
+                                       MLIRContext* /*context*/) {
+  results.add(&mergeOneTargetOneParameter<RZOp>);
 }
 
 Matrix2x2 RZOp::unitaryMatrix(const double theta) {

@@ -23,38 +23,10 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove Tdg operations that immediately follow T operations.
- */
-struct RemoveTdgAfterT final : OpRewritePattern<TdgOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(TdgOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeInversePairOneTargetZeroParameter<TOp>(op, rewriter);
-  }
-};
-
-/**
- * @brief Merge subsequent Tdg operations on the same qubit into an Sdg
- * operation.
- */
-struct MergeSubsequentTdg final : OpRewritePattern<TdgOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(TdgOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeOneTargetZeroParameter<SdgOp>(op, rewriter);
-  }
-};
-
-} // namespace
-
 void TdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                        MLIRContext* context) {
-  results.add<RemoveTdgAfterT, MergeSubsequentTdg>(context);
+                                        MLIRContext* /*context*/) {
+  results.add(&removeInversePairOneTargetZeroParameter<TOp, TdgOp>);
+  results.add(&mergeOneTargetZeroParameter<SdgOp, TdgOp>);
 }
 
 Matrix2x2 TdgOp::getUnitaryMatrix() {

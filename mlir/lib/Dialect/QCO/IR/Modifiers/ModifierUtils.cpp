@@ -64,7 +64,7 @@ SmallVector<size_t> getUsedQubitIndices(Block& body) {
   for (auto [index, arg, yielded] : llvm::enumerate(
            body.getArguments(), body.getTerminator()->getOperands())) {
     // A qubit that the body only yields back is not acted upon.
-    if (!arg.hasOneUse() || yielded != arg) {
+    if (yielded != arg) {
       used.push_back(index);
     }
   }

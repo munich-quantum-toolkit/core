@@ -22,38 +22,10 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove SXdg operations that immediately follow SX operations.
- */
-struct RemoveSXdgAfterSX final : OpRewritePattern<SXdgOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(SXdgOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeInversePairOneTargetZeroParameter<SXOp>(op, rewriter);
-  }
-};
-
-/**
- * @brief Merge subsequent SXdg operations on the same qubit into an X
- * operation.
- */
-struct MergeSubsequentSXdg final : OpRewritePattern<SXdgOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(SXdgOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeOneTargetZeroParameter<XOp>(op, rewriter);
-  }
-};
-
-} // namespace
-
 void SXdgOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                         MLIRContext* context) {
-  results.add<RemoveSXdgAfterSX, MergeSubsequentSXdg>(context);
+                                         MLIRContext* /*context*/) {
+  results.add(&removeInversePairOneTargetZeroParameter<SXOp, SXdgOp>);
+  results.add(&mergeOneTargetZeroParameter<XOp, SXdgOp>);
 }
 
 Matrix2x2 SXdgOp::getUnitaryMatrix() {

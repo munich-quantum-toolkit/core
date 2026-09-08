@@ -2390,3 +2390,31 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
             true}));
+
+TEST_F(QCToQCOTest, EmitsSinksInAllocationOrder) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @main() {
+      %q0 = qc.alloc : !qc.qubit
+      %q1 = qc.alloc : !qc.qubit
+      %q2 = qc.alloc : !qc.qubit
+      %q3 = qc.alloc : !qc.qubit
+      qc.x %q2 : !qc.qubit
+      qc.h %q0 : !qc.qubit
+      return
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto allocations = llvm::to_vector(function.getOps<qco::AllocOp>());
+  auto sinks = llvm::to_vector(function.getOps<qco::SinkOp>());
+  ASSERT_EQ(sinks.size(), 4U);
+  EXPECT_EQ(sinks[0].getQubit(),
+            (*function.getOps<qco::HOp>().begin()).getResult());
+  EXPECT_EQ(sinks[1].getQubit(), allocations[1].getResult());
+  EXPECT_EQ(sinks[2].getQubit(),
+            (*function.getOps<qco::XOp>().begin()).getResult());
+  EXPECT_EQ(sinks[3].getQubit(), allocations[3].getResult());
+}

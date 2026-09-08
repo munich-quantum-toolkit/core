@@ -1133,6 +1133,7 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
   let builders = [OpBuilder<(ins "ValueRange":$qubits)>];
 
   let hasCanonicalizer = 1;
+  let hasVerifier = 1;
 }
 
 def CallOp

@@ -22,36 +22,24 @@
 using namespace mlir;
 using namespace mlir::qtensor;
 
-/**
- * @brief Checks whether removing an extract-insert pair is linearity-safe.
- */
-static bool isRemovableExtractInsertPair(InsertOp insert, ExtractOp extract) {
-  return insert.getScalar() == extract.getResult() &&
-         isEqualConstantIntOrValue(insert.getIndex(), extract.getIndex());
-}
-
-/**
- * @brief Folds an insert operation after a matching extract operation into the
- * original tensor.
- */
-static Value foldInsertAfterExtract(InsertOp insert) {
-  auto extract = insert.getScalar().getDefiningOp<ExtractOp>();
-  if (!extract) {
-    return nullptr;
-  }
-
-  if (insert.getDest() != extract.getOutTensor()) {
-    return nullptr;
-  }
-
-  if (!isRemovableExtractInsertPair(insert, extract)) {
-    return nullptr;
-  }
-
-  return extract.getTensor();
-}
-
 namespace {
+/// Remove both operations so forwarding the tensor preserves linearity.
+struct FoldInsertAfterExtract final : OpRewritePattern<InsertOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(InsertOp insert,
+                                PatternRewriter& rewriter) const override {
+    auto extract = insert.getScalar().getDefiningOp<ExtractOp>();
+    if (!extract || insert.getDest() != extract.getOutTensor() ||
+        !isEqualConstantIntOrValue(insert.getIndex(), extract.getIndex())) {
+      return failure();
+    }
+    rewriter.replaceOp(insert, extract.getTensor());
+    rewriter.eraseOp(extract);
+    return success();
+  }
+};
+
 /**
  * @brief Commutes a directly chained insert and extract at provably distinct
  * constant indices.
@@ -61,9 +49,6 @@ struct CommuteAdjacentInsertExtractPattern final : OpRewritePattern<InsertOp> {
 
   LogicalResult matchAndRewrite(InsertOp insert,
                                 PatternRewriter& rewriter) const override {
-    if (!insert.getResult().hasOneUse()) {
-      return failure();
-    }
     auto extract = dyn_cast<ExtractOp>(*insert.getResult().getUsers().begin());
     if (!extract || insert->getBlock() != extract->getBlock()) {
       return failure();
@@ -114,14 +99,8 @@ LogicalResult InsertOp::verify() {
   return success();
 }
 
-OpFoldResult InsertOp::fold(FoldAdaptor /*adaptor*/) {
-  if (auto result = foldInsertAfterExtract(*this)) {
-    return result;
-  }
-  return {};
-}
-
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
-  results.add<CommuteAdjacentInsertExtractPattern>(context);
+  results.add<FoldInsertAfterExtract, CommuteAdjacentInsertExtractPattern>(
+      context);
 }

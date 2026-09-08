@@ -22,25 +22,9 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove subsequent H operations on the same qubit.
- */
-struct RemoveSubsequentH final : OpRewritePattern<HOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(HOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeInversePairOneTargetZeroParameter<HOp>(op, rewriter);
-  }
-};
-
-} // namespace
-
 void HOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* context) {
-  results.add<RemoveSubsequentH>(context);
+                                      MLIRContext* /*context*/) {
+  results.add(&removeInversePairOneTargetZeroParameter<HOp, HOp>);
 }
 
 Matrix2x2 HOp::getUnitaryMatrix() {
