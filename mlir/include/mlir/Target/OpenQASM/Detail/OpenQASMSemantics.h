@@ -19,8 +19,7 @@ namespace mlir::oq3::frontend::detail {
 
 [[nodiscard]] AnalysisResult
 analyzeSyntaxProgram(const SyntaxProgram& syntax,
-                     const llvm::SourceMgr& sources,
-                     const FrontendOptions& options);
+                     const llvm::SourceMgr& sources, GatePolicy gatePolicy);
 
 [[nodiscard]] SourceLocation sourceLocation(const llvm::SourceMgr& sources,
                                             llvm::SMLoc location);

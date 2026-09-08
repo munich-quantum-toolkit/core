@@ -7,23 +7,31 @@ on:
     paths:
       - ".github/workflows/slurm.yml"
       - "bindings/qdmi/**"
+      - "CMakeLists.txt"
       - "cmake/**"
       - "include/mqt-core/qdmi/**"
       - "pyproject.toml"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
       - "test/slurm/**"
+      - "test/qdmi/**"
+      - "test/python/qdmi/**"
+      - "test/python/test_slurm_integration.py"
       - "uv.lock"
   pull_request:
     paths:
       - ".github/workflows/slurm.yml"
       - "bindings/qdmi/**"
+      - "CMakeLists.txt"
       - "cmake/**"
       - "include/mqt-core/qdmi/**"
       - "pyproject.toml"
       - "python/mqt/core/qdmi/**"
       - "src/qdmi/**"
       - "test/slurm/**"
+      - "test/qdmi/**"
+      - "test/python/qdmi/**"
+      - "test/python/test_slurm_integration.py"
       - "uv.lock"
   workflow_dispatch:
 
@@ -41,6 +49,7 @@ jobs:
     timeout-minutes: 45
     env:
       UV_NO_PROGRESS: "1"
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Check out MQT Core
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -54,13 +63,25 @@ jobs:
           enable-cache: true
           python-version: "3.14"
 
+      - name: Check the Slurm test runner
+        run: >-
+          uv run --no-project --with 'pytest>=9.0.1' --python 3.14
+          pytest -o addopts= -q test/python/test_slurm_integration.py
+
       - name: Set up MLIR
         uses: munich-quantum-software/setup-mlir@3f32263ce571a8b745068980f30f188b6e800763 # v1.4.2
         with:
           llvm-version: 23.1.0
 
+      - name: Set up compiler cache
+        uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
+        with:
+          version: v0.16.0
+
       - name: Build the MQT Core wheel
+        timeout-minutes: 15
         run: uv build --wheel --out-dir test/slurm/dist
 
       - name: Test Slurm admission and QDMI execution
+        timeout-minutes: 15
         run: uv run --no-project --python 3.14 test/slurm/run_integration.py

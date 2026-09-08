@@ -65,6 +65,8 @@ enum class AllocationMode : std::uint8_t {
 /// dynamic qubits) or simply erase it (for static qubits). This is also used to
 /// catch cases of mixed allocation modes being used, which is not supported.
 struct LoweringState {
+  /// Function symbols remain in place while their signatures are converted.
+  SymbolTableCollection symbolTables;
   /// Per-region map from a register's indices to its loaded qubit values.
   DenseMap<Region*, DenseMap<Value, DenseMap<Value, Value>>> qubitValues;
   /// Original qubit argument positions, retained while signatures are
@@ -480,7 +482,7 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
   LogicalResult
   matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+    auto callee = getState().symbolTables.lookupNearestSymbolFrom<func::FuncOp>(
         op, op.getCalleeAttr());
     if (!callee) {
       return rewriter.notifyMatchFailure(op, "callee is not defined");

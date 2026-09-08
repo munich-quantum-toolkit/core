@@ -28,6 +28,7 @@
 #include <cstring>
 #include <exception>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <optional>
 #include <span>
@@ -225,12 +226,14 @@ int MQT_SC_QDMI_Device_Session_impl_d::createDeviceJob(
   }
   auto value = std::make_unique<MQT_SC_QDMI_Device_Job_impl_d>(this);
   *job = value.get();
+  const std::scoped_lock lock(jobsMutex);
   jobs.emplace(*job, std::move(value));
   return QDMI_SUCCESS;
 }
 
 void MQT_SC_QDMI_Device_Session_impl_d::freeDeviceJob(
     MQT_SC_QDMI_Device_Job job) {
+  const std::scoped_lock lock(jobsMutex);
   jobs.erase(job);
 }
 

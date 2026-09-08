@@ -172,10 +172,24 @@ compiler target
   a compiler pipeline may use for one destination. It is a snapshot used for
   compilation, not a live device connection.
 
+target environment
+  A compiler target paired with the selected payload specification for one
+  compilation. It combines hardware facts with the selected output contract.
+
+selected payload specification
+  The exact format, encoding, and effective execution capabilities selected for
+  a compiled program. It does not describe every format accepted by a device.
+
 payload
   The program IR on which a transform, schedule, or target-specific action
   operates. Use a more specific term when the exact object, such as a function
   or circuit, matters.
+
+execution payload
+  The serialized program submitted for execution. This is distinct from the
+  MLIR transform dialect's payload IR. A payload format identifies its
+  representation; execution capabilities state what that representation may
+  contain for the selected target.
 
 static
   Known while compiling the program. Static does not necessarily mean a C++

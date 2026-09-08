@@ -2871,7 +2871,11 @@ collectGateFunctions(mlir::ModuleOp moduleOp, mlir::func::FuncOp entryPoint) {
 collectGateDefinition(mlir::func::FuncOp function) {
   const auto numParameters = gateParameterCount(function);
   ExportState state;
-  collectParameters(function, state, numParameters);
+  for (size_t index = 0; index < numParameters; ++index) {
+    auto parameter = Parameter::symbol("p" + std::to_string(index));
+    state.parameters[function.getArgument(index)] = parameter;
+    state.inputParameters.push_back(std::move(parameter));
+  }
   const auto numQubits = function.getNumArguments() - numParameters;
   state.numQubits = checkedIndex(static_cast<uint64_t>(numQubits), "qubit");
   for (auto [index, argument] :
@@ -2903,12 +2907,10 @@ nb::object exportCircuit(const mlir::QCProgram& program,
   auto moduleOp = *expanded;
   mlir::RewritePatternSet patterns(moduleOp.getContext());
   mlir::mqt::populateIntegerExpansionPatterns(patterns);
-  // Expand missing operations and eliminate dead expressions without folding
-  // unrelated control flow or changing the source program.
-  if (mlir::failed(mlir::applyPatternsGreedily(
-          moduleOp, std::move(patterns),
-          mlir::GreedyRewriteConfig().enableFolding(false)))) {
-    throw std::runtime_error("failed to expand integer operations for Qiskit");
+  /// Fold scalar expressions without applying resource or snapshot rewrites.
+  if (mlir::failed(
+          mlir::applyPatternsGreedily(moduleOp, std::move(patterns)))) {
+    throw std::runtime_error("failed to normalize arithmetic for Qiskit");
   }
   auto function = mlir::mqt::getEntryPoint(moduleOp);
   if (!function) {

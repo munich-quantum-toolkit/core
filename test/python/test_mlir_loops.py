@@ -112,18 +112,21 @@ result = false;
 
 @pytest.mark.parametrize("stale", [False, True])
 def test_wide_register_condition_in_do_while(*, stale: bool) -> None:
-    """Preserve direct wide comparisons and reject snapshots read before a store."""
+    """Preserve wide snapshots across stores in OpenQASM loop conditions."""
     read = "%bits = cbit.read %out : !cbit.reg<65> -> i65"
     program = QCProgram.from_mlir_str(f"""
 module {{
   func.func @main() -> !cbit.reg<65> attributes {{mqt.entry_point}} {{
     %q = qc.alloc : !qc.qubit
+    %parity = qc.alloc : !qc.qubit
     %out = cbit.alloc(#cbit.init<zero>) : !cbit.reg<65>
+    %lowest = arith.constant 0 : index
     %highest = arith.constant 64 : index
     %expected = arith.constant {1 << 64} : i65
     scf.while : () -> () {{
       qc.reset %q : !qc.qubit
       qc.x %q : !qc.qubit
+      qc.x %parity : !qc.qubit
       {read if stale else ""}
       %measured = qc.measure %q : !qc.qubit -> i1
       cbit.store %measured, %out[%highest] : !cbit.reg<65>
@@ -134,6 +137,9 @@ module {{
       scf.yield
     }}
     qc.dealloc %q : !qc.qubit
+    %odd = qc.measure %parity : !qc.qubit -> i1
+    cbit.store %odd, %out[%lowest] : !cbit.reg<65>
+    qc.dealloc %parity : !qc.qubit
     return %out : !cbit.reg<65>
   }}
 }}
@@ -141,10 +147,9 @@ module {{
     if stale:
         with pytest.raises(RuntimeError, match="stale classical snapshot"):
             program.to_qiskit()
-        with pytest.raises(RuntimeError, match="stale classical snapshot"):
-            program.to_openqasm3()
+        assert observe(QCProgram.from_qasm_str(program.to_openqasm3().source)) == 1 << 64
     else:
-        check_paths(program, 1 << 64)
+        check_paths(program, (1 << 64) | 1)
         assert program.to_qiskit().num_clbits == 65
 
 

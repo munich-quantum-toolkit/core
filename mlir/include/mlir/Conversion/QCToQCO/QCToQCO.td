@@ -17,6 +17,9 @@ def QCToQCO : Pass<"qc-to-qco", "mlir::ModuleOp"> {
     Control flow must use structured SCF operations. Operations with block
     successors, including `cf.br`, `cf.cond_br`, and `cf.switch`, are diagnosed
     before conversion.
+    Static qubit references are hoisted and coalesced when needed. General
+    classical folding and common subexpression elimination are not guaranteed
+    by this conversion; use the corresponding simplification passes when needed.
   }];
 
   let dependentDialects = ["mlir::arith::ArithDialect", "mlir::qco::QCODialect",

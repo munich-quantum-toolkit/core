@@ -134,7 +134,8 @@ decodeCodePoint(const char* position, const char* end) {
              TokenKind::UnsupportedKeyword)
       .Cases({"complex", "array", "void", "stretch"},
              TokenKind::UnsupportedKeyword)
-      .Cases({"durationof", "delay", "im"}, TokenKind::UnsupportedKeyword)
+      .Cases({"durationof", "delay", "im", "sizeof"},
+             TokenKind::UnsupportedKeyword)
       .Default(TokenKind::Identifier);
 }
 

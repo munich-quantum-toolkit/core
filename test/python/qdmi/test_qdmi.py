@@ -21,7 +21,17 @@ from typing import cast
 import pytest
 from packaging import version
 
-from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+from mqt.core.mlir import (
+    CompilerTarget,
+    OutputFormat,
+    PayloadEncoding,
+    PayloadFormat,
+    PayloadSpecification,
+    QIRProfile,
+    QIRProgram,
+    TargetEnvironment,
+    compile_program,
+)
 from mqt.core.qdmi import (
     CustomProperty,
     Device,
@@ -556,7 +566,10 @@ cx q[0], q[1];
 c = measure q;
 """
     target = CompilerTarget.from_device(ddsim_device)
-    program = compile_program(qasm3_program, output=OutputFormat.QIR_BASE, target=target)
+    payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.TEXT))
+    program = compile_program(qasm3_program, target_environment=TargetEnvironment(target, payload))
+    assert isinstance(program, QIRProgram)
+    assert program.profile == QIRProfile.BASE
     assert ProgramFormat.QIR_BASE_STRING in ddsim_device.supported_program_formats()
 
     job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=1024)
@@ -593,7 +606,9 @@ def test_device_executes_controlled_qir_with_exact_phase(ddsim_device: Device) -
     expected = quantum_info.Statevector.from_instruction(circuit).data
 
     target = CompilerTarget.from_device(ddsim_device)
-    program = compile_program(circuit, output=OutputFormat.QIR_BASE, target=target)
+    payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.TEXT))
+    program = compile_program(circuit, target_environment=TargetEnvironment(target, payload))
+    assert isinstance(program, QIRProgram)
     job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=0)
     job.wait()
 
@@ -847,6 +862,56 @@ def test_open_device_creates_a_fresh_session() -> None:
     first = open_device("mqt.sc.default")
     second = open_device("mqt.sc.default")
     assert first != second
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="Requires POSIX named pipes")
+@pytest.mark.parametrize("entrypoint", ["driver", "slurm", "compiler"])
+def test_device_open_releases_gil(tmp_path: Path, entrypoint: str) -> None:
+    """A Python thread can supply configuration while native opening waits."""
+    script = """
+import json
+import os
+import sys
+from pathlib import Path
+from threading import Thread
+
+from mqt.core.mlir import CompilerTarget
+from mqt.core.qdmi import slurm
+from mqt.core.qdmi.driver import open_device
+
+fifo = Path(sys.argv[1]) / "device.json"
+os.mkfifo(fifo)
+configuration = Path("json/sc/mqt-core-qdmi-sc-device.json").read_bytes()
+os.environ["MQT_CORE_QDMI_CONFIG_JSON"] = json.dumps({
+    "schema-version": 1,
+    "qdmi": {"devices": [{
+        "id": "mqt.sc.default",
+        "session": {"device-config": {"file": str(fifo)}},
+    }]},
+})
+os.environ["SLURM_JOB_LICENSES"] = "mqt.sc.default:1"
+
+def supply_configuration():
+    # Opening the write end blocks until the native reader opens the FIFO.
+    with fifo.open("wb") as stream:
+        stream.write(configuration)
+
+writer = Thread(target=supply_configuration, daemon=True)
+writer.start()
+entrypoint = sys.argv[2]
+if entrypoint == "driver":
+    assert open_device("mqt.sc.default").qubits_num() > 0
+elif entrypoint == "slurm":
+    assert slurm.open_device_from_license().qubits_num() > 0
+else:
+    assert CompilerTarget.from_device_id("mqt.sc.default").num_sites > 0
+writer.join()
+"""
+    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+        [sys.executable, "-c", script, str(tmp_path), entrypoint],
+        check=True,
+        timeout=15,
+    )
 
 
 def test_device_configuration_arguments_are_mutually_exclusive() -> None:

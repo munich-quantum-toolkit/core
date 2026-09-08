@@ -120,11 +120,15 @@ c[1] = measure q;
 const std::string globalPhase = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 gphase(0.123);
+output int result;
+result = 0;
 )qasm";
 
 const std::string inverseGlobalPhase = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 inv @ gphase(-0.123);
+output int result;
+result = 0;
 )qasm";
 
 const std::string identity = R"qasm(OPENQASM 3.0;

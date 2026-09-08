@@ -2387,3 +2387,124 @@ TEST_F(QCToQCOTest, EmitsSinksInAllocationOrder) {
             (*function.getOps<qco::XOp>().begin()).getResult());
   EXPECT_EQ(sinks[3].getQubit(), allocations[3].getResult());
 }
+
+TEST_F(QCToQCORegressionTest, PreservesLiveQubitsAfterExplicitDeallocation) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @main() -> !qc.qubit {
+      %q0 = qc.alloc : !qc.qubit
+      %q1 = qc.alloc : !qc.qubit
+      %q2 = qc.alloc : !qc.qubit
+      %q3 = qc.alloc : !qc.qubit
+      %q4 = qc.alloc : !qc.qubit
+      qc.dealloc %q1 : !qc.qubit
+      qc.dealloc %q3 : !qc.qubit
+      qc.h %q0 : !qc.qubit
+      qc.x %q2 : !qc.qubit
+      return %q4 : !qc.qubit
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto allocations = llvm::to_vector(function.getOps<qco::AllocOp>());
+  auto sinks = llvm::to_vector(function.getOps<qco::SinkOp>());
+  ASSERT_EQ(allocations.size(), 5U);
+  ASSERT_EQ(sinks.size(), 4U);
+  EXPECT_EQ(sinks[0].getQubit(), allocations[1].getResult());
+  EXPECT_EQ(sinks[1].getQubit(), allocations[3].getResult());
+  EXPECT_EQ(sinks[2].getQubit(),
+            (*function.getOps<qco::HOp>().begin()).getResult());
+  EXPECT_EQ(sinks[3].getQubit(),
+            (*function.getOps<qco::XOp>().begin()).getResult());
+  auto returnOp =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  EXPECT_EQ(returnOp.getOperand(0), allocations[4].getResult());
+}
+
+TEST_F(QCToQCORegressionTest, RejectsConsumedBorrowedQubit) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @consume(%q: !qc.qubit) {
+      qc.dealloc %q : !qc.qubit
+      return
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains(
+                "cannot convert a function that consumes a qubit argument");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest, CoalescesStaticQubitsInEntryBlock) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @main() {
+      %q0 = qc.static 0 : !qc.qubit
+      %q1 = qc.static 0 : !qc.qubit
+      qc.h %q0 : !qc.qubit
+      qc.x %q1 : !qc.qubit
+      return
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  EXPECT_EQ(llvm::range_size(function.getOps<qco::StaticOp>()), 1U);
+  auto h = *function.getOps<qco::HOp>().begin();
+  auto x = *function.getOps<qco::XOp>().begin();
+  EXPECT_EQ(x.getQubitIn(), h.getQubitOut());
+}
+
+TEST_F(QCToQCORegressionTest,
+       RoundTripsRepeatedGenericCallsBeforeTheirDefinitions) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%q: !qc.qubit) {
+        func.call @flip(%q) : (!qc.qubit) -> ()
+        func.call @flip(%q) : (!qc.qubit) -> ()
+        return
+      }
+      func.func private @flip(%q: !qc.qubit) {
+        qc.x %q : !qc.qubit
+        return
+      }
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto calls = llvm::to_vector(function.getOps<func::CallOp>());
+  ASSERT_EQ(calls.size(), 2U);
+  ASSERT_EQ(calls[0].getNumResults(), 1U);
+  EXPECT_EQ(calls[1].getOperand(0), calls[0].getResult(0));
+
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  calls = llvm::to_vector(function.getOps<func::CallOp>());
+  ASSERT_EQ(calls.size(), 2U);
+  for (auto call : calls) {
+    EXPECT_EQ(call.getCallee(), "flip");
+    EXPECT_EQ(call.getNumResults(), 0U);
+    EXPECT_EQ(call.getOperand(0), function.getArgument(0));
+  }
+}

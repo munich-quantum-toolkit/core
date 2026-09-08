@@ -18,7 +18,6 @@
 
 #include <algorithm>
 #include <cstddef>
-#include <numeric>
 #include <string>
 
 namespace dd {
@@ -35,6 +34,9 @@ UniqueTable::UniqueTable(MemoryManager& manager,
 
 void UniqueTable::resize(const std::size_t nVars) {
   const auto oldSize = tables.size();
+  for (auto i = nVars; i < oldSize; ++i) {
+    entryCount_ -= stats[i].numEntries;
+  }
   cfg.nVars = nVars;
   tables.resize(nVars);
   /// TODO: release entries for removed levels when shrinking populated tables.
@@ -74,6 +76,7 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
           memoryManager->returnEntry(*p);
           p = next;
           --stat.numEntries;
+          --entryCount_;
         } else {
           lastp = p;
           p = p->next();
@@ -105,6 +108,7 @@ void UniqueTable::clear() {
     }
   }
   gcLimit = cfg.initialGCLimit;
+  entryCount_ = 0U;
   for (auto& stat : stats) {
     stat.reset();
   }
@@ -149,13 +153,7 @@ nlohmann::basic_json<> toJson(const UniqueTable& table,
   return j;
 }
 
-std::size_t UniqueTable::getNumEntries() const noexcept {
-  return std::accumulate(
-      stats.begin(), stats.end(), std::size_t{0},
-      [](const std::size_t& sum, const UniqueTableStatistics& stat) {
-        return sum + stat.numEntries;
-      });
-}
+std::size_t UniqueTable::getNumEntries() const noexcept { return entryCount_; }
 
 std::size_t UniqueTable::countMarkedEntries() const noexcept {
   std::size_t count = 0U;
