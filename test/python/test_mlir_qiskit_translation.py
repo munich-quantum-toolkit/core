@@ -41,7 +41,7 @@ from qiskit.circuit.parametervector import ParameterVectorElement
 from qiskit.quantum_info import Operator, random_unitary
 from qiskit_support import supports_qiskit_translation
 
-from mqt.core.mlir import CompilerTarget, QCProgram, compile_program
+from mqt.core.mlir import CompilerTarget, QCProgram, compile_program, sample
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -886,7 +886,7 @@ def test_qiskit_reversed_register_conditions_import_canonically(comparison: str,
         circuit.x(0)
 
     circuit.measure(0, 0)
-    histogram = QCProgram.from_qiskit(circuit).to_qco().sample(shots=1, seed=1)
+    histogram = sample(circuit, shots=1, seed=1)
     expected = "001" if predicate in {"ne", "ult", "ule"} else "000"
     assert histogram == {expected: 1}
 
@@ -1023,7 +1023,7 @@ def test_qiskit_store_preserves_dynamic_index_snapshot() -> None:
     )
 
     restored = QCProgram.from_qiskit(program.to_qiskit())
-    assert restored.to_qco().sample(shots=1, seed=1) == program.to_qco().sample(shots=1, seed=1)
+    assert sample(restored, shots=1, seed=1) == sample(program, shots=1, seed=1)
 
 
 def test_qiskit_custom_gate_named_store_remains_a_gate() -> None:
@@ -2052,7 +2052,7 @@ def test_zero_qubit_cbit_only_control_flow_round_trip() -> None:
     assert restored.num_qubits == 0
     assert restored.num_clbits == 1
     assert len(restored.data) == 0
-    assert QCProgram.from_qiskit(restored).to_qco().sample(shots=1, seed=1) == {"0": 1}
+    assert sample(restored, shots=1, seed=1) == {"0": 1}
 
 
 def _single_qubit_program(operations: list[str], *, returns_classical: bool = False) -> QCProgram:
@@ -2284,7 +2284,7 @@ def test_export_expression_depth_is_bounded(*, initial: bool) -> None:
     program = _single_qubit_program(operations, returns_classical=True)
 
     restored = QCProgram.from_qiskit(program.to_qiskit())
-    assert restored.to_qco().sample(shots=1, seed=1) == {str(int(initial)): 1}
+    assert sample(restored, shots=1, seed=1) == {str(int(initial)): 1}
 
 
 def test_general_boolean_select_round_trip() -> None:
@@ -2309,7 +2309,7 @@ def test_general_boolean_select_round_trip() -> None:
     )
 
     restored = QCProgram.from_qiskit(program.to_qiskit())
-    assert restored.to_qco().sample(shots=1, seed=1) == program.to_qco().sample(shots=1, seed=1)
+    assert sample(restored, shots=1, seed=1) == sample(program, shots=1, seed=1)
 
 
 def test_export_control_flow_depth_is_bounded() -> None:
@@ -2375,7 +2375,7 @@ def test_classical_snapshot_survives_later_writes(write_operations: tuple[str, .
         returns_classical=True,
     )
     restored = QCProgram.from_qiskit(program.to_qiskit())
-    assert restored.to_qco().sample(shots=1, seed=1) == {"1": 1}
+    assert sample(restored, shots=1, seed=1) == {"1": 1}
 
 
 @pytest.mark.parametrize(
@@ -2411,7 +2411,7 @@ def test_measurement_snapshot_survives_overwritten_destination(overwrite: str) -
     )
     restored = QCProgram.from_qiskit(program.to_qiskit())
     expected = "1" if "%next" in overwrite else "0"
-    assert restored.to_qco().sample(shots=1, seed=1) == {expected: 1}
+    assert sample(restored, shots=1, seed=1) == {expected: 1}
 
 
 @pytest.mark.parametrize("via_qco", [False, True], ids=["qc", "qco"])
@@ -2463,7 +2463,7 @@ def test_delayed_measurement_store_across_quantum_operations(gate: str, *, via_q
         ("measure", [0], [0]),
         ("x" if gate == "inv" else gate, [0, 1] if gate in {"swap", "barrier"} else [0], []),
     ]
-    assert QCProgram.from_qiskit(restored).to_qco().sample(shots=1, seed=1) == {"1": 1}
+    assert sample(restored, shots=1, seed=1) == {"1": 1}
 
 
 @pytest.mark.parametrize(
@@ -2539,7 +2539,7 @@ def test_multi_result_boolean_select_round_trip() -> None:
     circuit = program.to_qiskit()
     assert circuit.num_clbits == 0
     circuit.measure_all()
-    assert QCProgram.from_qiskit(circuit).to_qco().sample(shots=1, seed=1) == {"1": 1}
+    assert sample(circuit, shots=1, seed=1) == {"1": 1}
 
 
 def _undefined_cbit_program(operations: list[str]) -> QCProgram:
@@ -2682,7 +2682,7 @@ def test_bool_uint_and_float_expressions(condition: expr.Expr, operation: str) -
     assert operation in program.ir
     restored = QCProgram.from_qiskit(program.to_qiskit())
     expected = "0" if operation in {"scf.if", "arith.xori"} else "1"
-    assert restored.to_qco().sample(shots=1, seed=1) == {expected: 1}
+    assert sample(restored, shots=1, seed=1) == {expected: 1}
 
 
 def test_index_expression_export_preserves_low_bit() -> None:
@@ -2878,7 +2878,7 @@ def test_width_one_register_bitwise_expression_round_trips() -> None:
         circuit.x(1)
     circuit.measure(1, 0)
     restored = QCProgram.from_qiskit(QCProgram.from_qiskit(circuit).to_qiskit())
-    assert restored.to_qco().sample(shots=1, seed=1) == {"0": 1}
+    assert sample(restored, shots=1, seed=1) == {"0": 1}
 
 
 def test_nested_classical_expression_captures_import() -> None:
@@ -3811,7 +3811,7 @@ def test_snapshot_export_survives_cleanup() -> None:
     program = QCProgram.from_qiskit(circuit)
     program.cleanup()
     restored = QCProgram.from_qiskit(program.to_qiskit())
-    assert restored.to_qco().sample(shots=1, seed=1) == {"1": 1}
+    assert sample(restored, shots=1, seed=1) == {"1": 1}
 
 
 @pytest.mark.parametrize("values", [list(range(70)), [i * i for i in range(70)]])
@@ -3824,7 +3824,7 @@ def test_shallow_list_loop_with_jump_exports(values: list[int]) -> None:
     circuit.measure(0, 0)
     program = QCProgram.from_qiskit(circuit)
     restored = QCProgram.from_qiskit(program.to_qiskit())
-    assert restored.to_qco().sample(shots=1, seed=1) == {"0": 1}
+    assert sample(restored, shots=1, seed=1) == {"0": 1}
 
 
 def test_numeric_import_decodes_parameters_at_most_twice(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -3866,7 +3866,7 @@ def test_large_switch_with_jumps_has_bounded_dispatch(selected: int) -> None:
     circuit.measure(0, 0)
     program = QCProgram.from_qiskit(circuit)
     restored = QCProgram.from_qiskit(program.to_qiskit())
-    assert restored.to_qco().sample(shots=1, seed=1) == program.to_qco().sample(shots=1, seed=1)
+    assert sample(restored, shots=1, seed=1) == sample(program, shots=1, seed=1)
 
 
 def test_generated_dispatch_counts_toward_nesting_limit() -> None:
