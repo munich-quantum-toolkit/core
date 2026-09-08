@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-// Modified to implement, dispatch, and emit square-root iSWAP synthesis.
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 
 #include "mlir/Compiler/Target.h"

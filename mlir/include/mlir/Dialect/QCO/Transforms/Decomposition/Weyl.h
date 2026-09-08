@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-// Modified to declare square-root iSWAP synthesis.
 #pragma once
 
 #include "mlir/Compiler/Target.h"
