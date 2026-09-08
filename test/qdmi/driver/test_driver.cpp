@@ -236,6 +236,9 @@ public:
   size_t allocatedSessions = 0;
   size_t freedSessions = 0;
   int successStatus = QDMI_SUCCESS;
+  int jobStatus = QDMI_SUCCESS;
+  bool nullJob = false;
+  size_t freedJobs = 0;
   bool nullSession = false;
   bool nullChild = false;
   bool rejectChildSelection = false;
@@ -251,6 +254,18 @@ public:
     device_session_set_parameter = setParameter;
     device_session_init = init;
     device_session_query_device_property = queryDeviceProperty;
+    device_session_create_device_job = [](QDMI_Device_Session session,
+                                          QDMI_Device_Job* job) {
+      *job = activeLibrary->nullJob
+                 ? nullptr
+                 : reinterpret_cast<QDMI_Device_Job>(session);
+      return activeLibrary->jobStatus;
+    };
+    device_session_retrieve_device_job_by_id =
+        [](QDMI_Device_Session session, const char*, QDMI_Device_Job* job) {
+          return activeLibrary->device_session_create_device_job(session, job);
+        };
+    device_job_free = [](QDMI_Device_Job) { ++activeLibrary->freedJobs; };
   }
 
   ~ChildDeviceLibrary() override { activeLibrary = nullptr; }
@@ -404,6 +419,33 @@ TEST(ChildDeviceTest, WrapsOpaqueHandlesInStableClientDevices) {
               QDMI_ERROR_NOTSUPPORTED);
   }
   EXPECT_EQ(library->freedSessions, 3);
+}
+
+TEST(ChildDeviceTest, PreservesWarningJobsAndRejectsNullHandles) {
+  const auto library = std::make_shared<ChildDeviceLibrary>();
+  library->childDevicesNotSupported = true;
+  QDMI_Device_impl_d device(library);
+  for (const auto status : {QDMI_SUCCESS, QDMI_WARN_GENERAL}) {
+    library->jobStatus = status;
+    for (const auto nullJob : {false, true}) {
+      library->nullJob = nullJob;
+      for (const auto retrieve : {false, true}) {
+        QDMI_Job job = nullptr;
+        const auto freedBefore = library->freedJobs;
+        const auto result =
+            retrieve ? QDMI_session_retrieve_job_by_id(&device, "job", &job)
+                     : QDMI_device_create_job(&device, &job);
+        EXPECT_EQ(result, nullJob ? QDMI_ERROR_FATAL : status);
+        if (nullJob) {
+          EXPECT_EQ(job, nullptr);
+        } else {
+          ASSERT_NE(job, nullptr);
+          QDMI_job_free(job);
+        }
+        EXPECT_EQ(library->freedJobs, freedBefore + (nullJob ? 0 : 1));
+      }
+    }
+  }
 }
 
 TEST(ChildDeviceTest, AcceptsWarningsDuringSessionSetup) {

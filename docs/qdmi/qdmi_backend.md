@@ -415,6 +415,17 @@ When you run a circuit, the backend:
 3. Submits the program to the QDMI device via `device.submit_job()`
 4. Returns a {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob`
 
+The built-in OpenQASM serializers validate circuit width and ordered operation
+placements against native QDMI metadata after preprocessing. They reject an
+invalid circuit before any job in its batch is submitted. This check uses the
+native device sites because a backend extension may hide sites from its public
+Target or use preprocessing to address them. It does not route circuits.
+
+Control-flow instructions require explicit support in the backend's Target;
+their bodies are checked recursively using the enclosing circuit's qubits.
+Advertising OpenQASM 3 alone does not enable control flow. Custom serializers
+retain responsibility for validating the native programs they produce.
+
 ### Program Serializers
 
 A _program serializer_ turns one circuit into one program in one program format.

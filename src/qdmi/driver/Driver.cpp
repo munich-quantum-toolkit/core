@@ -326,11 +326,15 @@ auto QDMI_Device_impl_d::createJob(QDMI_Job* job) -> int {
   if (job == nullptr) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
+  *job = nullptr;
   QDMI_Device_Job deviceJob = nullptr;
   auto const result =
       library_->device_session_create_device_job(deviceSession_, &deviceJob);
-  if (result != QDMI_SUCCESS) {
+  if (result != QDMI_SUCCESS && result != QDMI_WARN_GENERAL) {
     return result;
+  }
+  if (deviceJob == nullptr) {
+    return QDMI_ERROR_FATAL;
   }
   auto uniqueJob = std::make_unique<QDMI_Job_impl_d>(deviceJob, this);
   auto* const jobHandle = uniqueJob.get();
@@ -339,7 +343,7 @@ auto QDMI_Device_impl_d::createJob(QDMI_Job* job) -> int {
     jobs_.emplace(jobHandle, std::move(uniqueJob));
   }
   *job = jobHandle;
-  return QDMI_SUCCESS;
+  return result;
 }
 
 auto QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
@@ -350,11 +354,15 @@ auto QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
   if (library_->device_session_retrieve_device_job_by_id == nullptr) {
     return QDMI_ERROR_NOTSUPPORTED;
   }
+  *job = nullptr;
   QDMI_Device_Job deviceJob = nullptr;
   const auto result = library_->device_session_retrieve_device_job_by_id(
       deviceSession_, jobId, &deviceJob);
-  if (result != QDMI_SUCCESS) {
+  if (result != QDMI_SUCCESS && result != QDMI_WARN_GENERAL) {
     return result;
+  }
+  if (deviceJob == nullptr) {
+    return QDMI_ERROR_FATAL;
   }
   auto uniqueJob = std::make_unique<QDMI_Job_impl_d>(deviceJob, this);
   auto* const jobHandle = uniqueJob.get();
@@ -363,7 +371,7 @@ auto QDMI_Device_impl_d::retrieveJobById(const char* const jobId,
     jobs_.emplace(jobHandle, std::move(uniqueJob));
   }
   *job = jobHandle;
-  return QDMI_SUCCESS;
+  return result;
 }
 
 auto QDMI_Device_impl_d::freeJob(QDMI_Job job) -> void {
