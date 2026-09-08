@@ -1,8 +1,9 @@
 # Contract audit: QDMI jobs and Python plugins
 
-Status: findings 1, 2, and 5 fixed locally; findings 3 and 4 declined by the user.
-PennyLane specialist findings and Qiskit native preflight are implemented. Audit baseline:
-`1bf02dd7694d511abe19032b5d80a649ab5f8d20` (merged PR #2454). Date: 2026-09-07.
+Status: findings 1, 2, and 5 fixed locally; findings 3 and 4 declined by the
+user. PennyLane specialist findings and Qiskit native preflight are implemented.
+Audit baseline: `1bf02dd7694d511abe19032b5d80a649ab5f8d20` (merged PR #2454).
+Date: 2026-09-07.
 
 Scope: native job creation/retrieval, Qiskit target and submission behavior,
 PennyLane conversion and sampled execution. This is a bounded follow-up, not a
@@ -120,8 +121,8 @@ the replaceable driver and staging; they are not prerequisites for these fixes.
 
 PR #2373 and issues #2363/#2364 cover native multi-program batching; do not
 duplicate them. PR #2233 removes obsolete calibration/pulse metadata, so a
-separate duration-query cache optimization would need coordination. No additional compiler/DD changes
-are justified by this investigation.
+separate duration-query cache optimization would need coordination. No
+additional compiler/DD changes are justified by this investigation.
 
 ### Validation and limits
 
@@ -136,7 +137,6 @@ are justified by this investigation.
   Python process through `register_device` and `open_device`.
 - These audit probes preceded the fixes below. Windows and real hardware were
   not used. No new commit or remote write was made.
-
 
 ## Resolution
 
@@ -170,11 +170,12 @@ at the review date. All four specialist findings are addressed:
    format-specific supported operation names. QASM2 and QASM3 regressions verify
    the resulting operation matrix and serialization. Placement checks remain
    authoritative; graph support does not imply routing or hardware costs. See
-   the [plugin guide](https://docs.pennylane.ai/en/stable/development/plugins.html#custom-device-decompositions).
+   the
+   [plugin guide](https://docs.pennylane.ai/en/stable/development/plugins.html#custom-device-decompositions).
 3. **Shot API:** remove device-level shots, the implicit 1024-shot default, and
    the private `_shots` assignment. QNodes and tapes must specify finite shots;
-   `qp.set_shots` can override a QNode's budget. Omission fails before submission.
-   Examples and tests use the modern APIs. See
+   `qp.set_shots` can override a QNode's budget. Omission fails before
+   submission. Examples and tests use the modern APIs. See
    [deprecations](https://docs.pennylane.ai/en/stable/development/deprecations.html).
 4. **Tracking:** use standard `Tracker.update/record` for batches, tape counts,
    accepted jobs, and shots. Shot-vector copies count individually; jobs that
@@ -189,7 +190,8 @@ result decoding remain in #2226. Native batching remains with #2364/#2373.
 
 ## Final validation
 
-- `uv run --no-sync pytest -n0 test/python/qdmi test/python/plugins`: 500 passed.
+- `uv run --no-sync pytest -n0 test/python/qdmi test/python/plugins`: 500
+  passed.
 - Full repository lint passes, including Ruff and ty.
 - The unchanged native fix passes 104 driver tests and the warning-provider
   binding probe for both job entry points.
@@ -197,9 +199,10 @@ result decoding remain in #2226. Native batching remains with #2364/#2373.
   checked six C++ files with zero findings. The older base selects both changed
   driver files through the preceding PR's diff; lint inspects current contents
   with `--lines-changed-only=false`.
-- The two previously failing MLIR binaries pass 500 QCO IR and 47 target-synthesis
-  tests. Running formatting hooks alongside the build likely exposed partially
-  rewritten headers; sequential checks pass without unrelated source changes.
+- The two previously failing MLIR binaries pass 500 QCO IR and 47
+  target-synthesis tests. Running formatting hooks alongside the build likely
+  exposed partially rewritten headers; sequential checks pass without unrelated
+  source changes.
 - No hosted CI, Windows, or real hardware execution was performed.
 
 See [the v4 decision record](../plans/qdmi-v4-plugin-validation.md).
