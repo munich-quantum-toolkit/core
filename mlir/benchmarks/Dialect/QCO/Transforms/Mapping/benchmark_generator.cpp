@@ -35,6 +35,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/ValueRange.h>
 #include <mlir/Pass/PassInstrumentation.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
@@ -51,12 +52,19 @@
 using namespace mlir;
 using namespace mlir::qco;
 
+static OwningOpRef<ModuleOp> prepare(OwningOpRef<ModuleOp> mod) {
+  PassManager pm(mod->getContext());
+  pm.addPass(createDecomposeMultiControlled());
+  pm.addPass(createCanonicalizerPass());
+  pm.run(*mod);
+  return mod;
+}
+
 /// Return a structured program implementing Grover's algorithm using
 /// @p numQubits qubits.
-static OwningOpRef<ModuleOp> groverAlg(MLIRContext* context,
-                                       const int64_t nqubits,
-                                       const int64_t niterations,
-                                       const std::string& markedBitstring) {
+static OwningOpRef<ModuleOp> grover(MLIRContext* context, const int64_t nqubits,
+                                    const int64_t niterations,
+                                    const std::string& markedBitstring) {
   QCOProgramBuilder builder(context);
   builder.initialize(SmallVector<Type>(nqubits, builder.getI1Type()));
 
@@ -130,26 +138,7 @@ static OwningOpRef<ModuleOp> groverAlg(MLIRContext* context,
 
   builder.qtensorDealloc(tensor);
 
-  auto mod = builder.finalize(bits);
-
-  PassManager pm(context);
-  pm.addPass(createDecomposeMultiControlled());
-  pm.addPass(createCanonicalizerPass());
-  pm.run(*mod);
-
-  return mod;
-}
-
-static OwningOpRef<ModuleOp>
-groverDecomposed(MLIRContext* context, const int64_t nqubits,
-                 const int64_t niterations,
-                 const std::string& markedBitstring) {
-  auto mod = groverAlg(context, nqubits, niterations, markedBitstring);
-  PassManager pm(context);
-  pm.addPass(createDecomposeMultiControlled());
-  pm.addPass(createCanonicalizerPass());
-  pm.run(*mod);
-  return mod;
+  return builder.finalize(bits);
 }
 
 static OwningOpRef<ModuleOp> vqe(MLIRContext* context, const int64_t nqubits,
@@ -225,15 +214,18 @@ static OwningOpRef<ModuleOp> vqe(MLIRContext* context, const int64_t nqubits,
 
         // Compute energy:
         // The energy of the chain counts the neighbouring pairs that disagree.
-        auto energy = builder.intConstant(0);
+        auto energy =
+            arith::ExtUIOp::create(builder, builder.getI64Type(), bits[0])
+                .getResult();
 
         // Update angle.
-        angle = arith::MulFOp::create(builder, angle,
-                                      builder.floatConstant(decay))
-                    .getResult();
+        angle =
+            arith::MulFOp::create(builder, angle, builder.floatConstant(decay))
+                .getResult();
         // Compute exit condition.
         improved = arith::CmpIOp::create(builder, arith::CmpIPredicate::slt,
                                          energy, previous);
+        previous = energy;
 
         return bodyArgs;
       });
@@ -250,14 +242,7 @@ static OwningOpRef<ModuleOp> vqe(MLIRContext* context, const int64_t nqubits,
 
   builder.qtensorDealloc(tensor);
 
-  auto mod = builder.finalize(outArgs[1]);
-
-  PassManager pm(context);
-  pm.addPass(createDecomposeMultiControlled());
-  pm.addPass(createCanonicalizerPass());
-  pm.run(*mod);
-
-  return mod;
+  return builder.finalize(outArgs[1]);
 }
 
 static OwningOpRef<ModuleOp> qaoa(MLIRContext* context, const int64_t nqubits,
@@ -310,14 +295,113 @@ static OwningOpRef<ModuleOp> qaoa(MLIRContext* context, const int64_t nqubits,
 
   builder.qtensorDealloc(tensor);
 
-  auto mod = builder.finalize(bits);
+  return builder.finalize(bits);
+}
 
-  PassManager pm(context);
-  pm.addPass(createDecomposeMultiControlled());
-  pm.addPass(createCanonicalizerPass());
-  pm.run(*mod);
+static OwningOpRef<ModuleOp> mlqae(MLIRContext* context,
+                                   const int64_t nqubits) {
+  constexpr double mlqaeAngle = llvm::numbers::pi / 5.0;
 
-  return mod;
+  QCOProgramBuilder builder(context);
+  builder.initialize(SmallVector<Type>(nqubits, builder.getI1Type()));
+
+  auto c = builder.allocClassicalBitRegister(nqubits - 1, "c");
+
+  SmallVector<Value> qubits(nqubits);
+  SmallVector<Value> bits(nqubits);
+
+  Value one = builder.indexConstant(1);
+  Value tensor = builder.qtensorAlloc(nqubits - 1);
+
+  for (int64_t i = 0; i < nqubits - 1; ++i) {
+    std::tie(tensor, qubits[i]) = builder.qtensorExtract(tensor, i);
+  }
+  qubits[nqubits - 1] = builder.allocQubit();
+
+  // Every round prepares the state again and then applies the Grover operator
+  // a number of times that doubles from round to round. The schedule turns the
+  // bound of the inner loop into a runtime value.
+  for (int64_t i = 0; i < 5; ++i) {
+
+    for_each(qubits, [&](auto& q) { q = builder.reset(q); });
+    for_each(qubits, [&](auto& q) { q = builder.h(q); });
+
+    const auto out = builder.mcz(ArrayRef(qubits).drop_back(), qubits.back());
+    for (size_t i = 0; i < qubits.size() - 1; ++i) {
+      qubits[i] = out.first[i];
+    }
+    qubits.back() = out.second;
+
+    auto k = builder.indexConstant(i);
+    auto power = arith::ShLIOp::create(builder, one, k);
+    qubits =
+        builder.scfFor(0, power, 1, qubits, [&](Value, ValueRange innerArgs) {
+          SmallVector<Value> innerBodyQubits(innerArgs);
+
+          innerBodyQubits.back() = builder.z(innerBodyQubits.back());
+
+          // const auto out2 =
+          //     builder.mcry(-mlqaeAngle,
+          //     ArrayRef(innerBodyQubits).drop_back(),
+          //                  innerBodyQubits.back());
+          const auto out2 = builder.mcz(ArrayRef(innerBodyQubits).drop_back(),
+                                        innerBodyQubits.back());
+          for (size_t i = 0; i < innerBodyQubits.size() - 1; ++i) {
+            innerBodyQubits[i] = out2.first[i];
+          }
+          innerBodyQubits.back() = out2.second;
+          for (size_t i = 0; i < innerBodyQubits.size() - 1; ++i) {
+            innerBodyQubits[i] = builder.h(innerBodyQubits[i]);
+            innerBodyQubits[i] = builder.x(innerBodyQubits[i]);
+          }
+
+          innerBodyQubits.back() = builder.x(innerBodyQubits.back());
+
+          const auto out3 = builder.mcz(ArrayRef(innerBodyQubits).drop_back(),
+                                        innerBodyQubits.back());
+          for (size_t i = 0; i < innerBodyQubits.size() - 1; ++i) {
+            innerBodyQubits[i] = out3.first[i];
+          }
+          innerBodyQubits.back() = out3.second;
+
+          innerBodyQubits.back() = builder.x(innerBodyQubits.back());
+          for (size_t i = 0; i < innerBodyQubits.size() - 1; ++i) {
+            innerBodyQubits[i] = builder.x(innerBodyQubits[i]);
+            innerBodyQubits[i] = builder.h(innerBodyQubits[i]);
+          }
+
+          const auto out4 = builder.mcz(ArrayRef(innerBodyQubits).drop_back(),
+                                        innerBodyQubits.back());
+          for (size_t i = 0; i < innerBodyQubits.size() - 1; ++i) {
+            innerBodyQubits[i] = out4.first[i];
+          }
+          innerBodyQubits.back() = out4.second;
+
+          return innerBodyQubits;
+        });
+
+    // Value m;
+    // std::tie(m, std::ignore) = builder.measure(qubits.back(), c, k);
+    // qubits.back() = m;
+  }
+
+  qubits = builder.barrier(qubits);
+
+  // Measure all qubits
+  for (int64_t i = 0; i < nqubits; ++i) {
+    std::tie(qubits[i], bits[i]) = builder.measure(qubits[i]);
+  }
+
+  // Clean up
+  for (int64_t i = 0; i < nqubits - 1; ++i) {
+    tensor = builder.qtensorInsert(qubits[i], tensor, i);
+  }
+
+  builder.sink(qubits[nqubits - 1]);
+
+  builder.qtensorDealloc(tensor);
+
+  return builder.finalize(bits);
 }
 
 static void writeMLIR(ModuleOp mod, const std::string& filename) {
@@ -371,7 +455,7 @@ int main(int argc, char** argv) {
   std::uniform_int_distribution<> dis(0, 1);
 
   SmallVector<std::pair<std::string, OwningOpRef<ModuleOp>>> programs;
-  for (size_t i = 2; i <= 120; ++i) {
+  for (size_t i = 2; i <= 30; ++i) {
 
     // Grover
 
@@ -381,19 +465,26 @@ int main(int argc, char** argv) {
     }
     programs.emplace_back(
         "grover_" + std::to_string(i),
-        groverDecomposed(&context, static_cast<int64_t>(i), 10000,
-        bitstring));
+        prepare(grover(&context, static_cast<int64_t>(i), 10000, bitstring)));
 
     // VQE
 
-    programs.emplace_back("vqe_" + std::to_string(i),
-                          vqe(&context, static_cast<int64_t>(i), 10000, 0.5));
+    // programs.emplace_back(
+    //     "vqe_" + std::to_string(i),
+    //     prepare(vqe(&context, static_cast<int64_t>(i), 10000, 0.5)));
 
     // QAOA
 
     programs.emplace_back(
         "qaoa_" + std::to_string(i),
-        qaoa(&context, static_cast<int64_t>(i), 10000, 0.5, 0.1));
+        prepare(qaoa(&context, static_cast<int64_t>(i), 10000, 0.5, 0.1)));
+  }
+
+  for (size_t i = 2; i <= 20; ++i) {
+    // MLQAE
+
+    programs.emplace_back("mlqae_" + std::to_string(i),
+                          prepare(mlqae(&context, static_cast<int64_t>(i))));
   }
 
   for (const auto& [name, m] : programs) {
