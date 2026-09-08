@@ -29,7 +29,7 @@ getOpenQASMLocation(const oq3::frontend::SourceLocation& source,
 
 [[nodiscard]] OwningOpRef<ModuleOp>
 emitOpenQASMToQC(const oq3::frontend::TypedProgram& program,
-                 MLIRContext& context, size_t operationLimit = 10'000'000);
+                 MLIRContext& context, size_t operationLimit);
 
 } // namespace qc::detail
 } // namespace mlir

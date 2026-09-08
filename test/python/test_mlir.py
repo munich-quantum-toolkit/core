@@ -300,9 +300,7 @@ def test_openqasm_helper_gate_matrix(gate: Gate) -> None:
     circuit.append(gate, range(gate.num_qubits))
 
     source = QCProgram.from_qiskit(circuit).to_openqasm3().source
-    imported = QCProgram.from_qasm_str(source).to_qco()
-    imported.run_pass_pipeline("inline,canonicalize")
-    round_tripped = imported.to_qc().to_qiskit()
+    round_tripped = QCProgram.from_qasm_str(source).to_qiskit()
 
     assert np.allclose(Operator(round_tripped).data, Operator(circuit).data)
 

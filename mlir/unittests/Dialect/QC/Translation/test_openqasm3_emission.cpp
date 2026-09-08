@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "../../../../lib/Dialect/QC/Translation/OpenQASMToQCEmitter.h"
 #include "dd/Package.hpp"
 #include "mlir/Conversion/QCToQCO/QCToQCO.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
@@ -2192,10 +2191,9 @@ TEST(OpenQASM3EmissionTest,
       ASSERT_TRUE(original);
       auto emitted = qc::translateQCToOpenQASM3(*original);
       ASSERT_TRUE(succeeded(emitted));
-      auto analyzed = oq3::frontend::analyzeOpenQASM(
-          *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict});
-      ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-      auto restored = qc::detail::emitOpenQASMToQC(*analyzed.program, context);
+      auto restored = qc::translateQASM3ToQC(
+          *emitted, &context,
+          {.frontend = {.gatePolicy = oq3::frontend::GatePolicy::Strict}});
       ASSERT_TRUE(restored);
       dd::Package package(width);
       PassManager manager(&context);

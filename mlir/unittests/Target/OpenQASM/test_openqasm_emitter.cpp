@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "../../../lib/Dialect/QC/Translation/OpenQASMToQCEmitter.h"
 #include "OpenQASMTestUtils.h"
 #include "mlir/Dialect/CBit/IR/CBitAttributes.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
@@ -2849,8 +2848,6 @@ TEST(OpenQASMTargetTest, StopsEmissionAtEveryOperationBudgetBoundary) {
   };
   for (const auto* source : sources) {
     SCOPED_TRACE(source);
-    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
-    ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
     bool succeededOnce = false;
     for (size_t limit = 0; limit <= 256; ++limit) {
       SCOPED_TRACE(limit);
@@ -2861,7 +2858,7 @@ TEST(OpenQASMTargetTest, StopsEmissionAtEveryOperationBudgetBoundary) {
         return success();
       });
       auto moduleOp =
-          qc::detail::emitOpenQASMToQC(*analyzed.program, context, limit);
+          qc::translateQASM3ToQC(source, &context, {.maxOperations = limit});
       if (moduleOp) {
         EXPECT_TRUE(succeeded(verify(*moduleOp)));
         EXPECT_EQ(diagnostics, 0);

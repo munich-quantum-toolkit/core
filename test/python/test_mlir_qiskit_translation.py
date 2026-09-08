@@ -1609,6 +1609,54 @@ def test_custom_gate_export_checks_longest_shared_call_path() -> None:
         program.to_qiskit()
 
 
+def test_unnamed_custom_gate_parameters_export_without_mutation() -> None:
+    """Name local formals without colliding with existing parameter metadata."""
+    program = QCProgram.from_mlir_str("""module {
+  func.func private @custom(%first: f64, %second: f64 {mqt.input_name = "p0"}, %q: !qc.qubit) attributes {mqt.unitary} {
+    qc.rx(%first) %q : !qc.qubit
+    qc.ry(%second) %q : !qc.qubit
+    return
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %first = arith.constant 0.2 : f64
+    %second = arith.constant 0.3 : f64
+    qc.call @custom(%first, %second, %q) : f64, f64, !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+""")
+    source_ir = program.ir
+    expected = QuantumCircuit(1)
+    expected.rx(0.2, 0)
+    expected.ry(0.3, 0)
+
+    restored = program.to_qiskit()
+
+    assert np.allclose(Operator(restored).data, Operator(expected).data)
+    assert restored == program.to_qiskit()
+    assert program.ir == source_ir
+
+
+@pytest.mark.parametrize(("cast", "angle"), [("sitofp", -1.0), ("uitofp", 255.0)])
+def test_constant_integer_cast_gate_parameter(cast: str, angle: float) -> None:
+    """Preserve the signedness of constant integer-to-float gate parameters."""
+    program = QCProgram.from_mlir_str(f"""module {{
+  func.func @main() attributes {{mqt.entry_point}} {{
+    %q = qc.alloc : !qc.qubit
+    %integer = arith.constant -1 : i8
+    %angle = arith.{cast} %integer : i8 to f64
+    qc.rx(%angle) %q : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }}
+}}
+""")
+
+    assert program.to_qiskit().data[0].operation.params == [angle]
+
+
 def test_constant_unary_custom_gate_argument_is_folded() -> None:
     """Fold constant expressions before reconstructing Python parameters."""
     program = QCProgram.from_mlir_str(

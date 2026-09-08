@@ -16,6 +16,11 @@ auto fromString = mlir::QCProgram::fromQASMString(source);
 auto fromFile = mlir::QCProgram::fromQASMFile("program.qasm");
 ```
 
+The lower-level `mlir::qc::translateQASM3ToQC` importer accepts
+`QASM3ImportOptions`. Its `frontend` field selects the gate policy, and
+`maxOperations` limits the number of inserted QC operations (10,000,000 by
+default). Exceeding the limit emits a diagnostic and returns no program.
+
 Python provides the corresponding constructors:
 
 ```python
@@ -23,6 +28,7 @@ from mqt.core.mlir import QCProgram
 
 from_string = QCProgram.from_qasm_str(source)
 from_file = QCProgram.from_qasm_file("program.qasm")
+qiskit_circuit = QCProgram.from_qasm_str(source).to_qiskit()
 ```
 
 `mqt-cc` recognizes `.qasm` files automatically. Use `--input-format=qasm` when

@@ -17,6 +17,12 @@ unordered floating inequality round-trip. A shared native-U helper preserves
 global phase, including under controls. Loop-local bit storage does not carry
 global register-name metadata.
 
+The public importer accepts frontend policy and emission limits through
+`QASM3ImportOptions`; tests use this API without including private emitter
+headers. Direct Qiskit export assigns names to unnamed private gate parameters
+and folds constant integer-to-float casts. OpenQASM callers need no QCO
+conversion or manual pass pipeline for these cases.
+
 The implementation lives in `mlir/lib/Target/OpenQASM` and
 `mlir/lib/Dialect/QC/Translation`, with headers under `mlir/include` and
 regression tests in the corresponding `mlir/unittests` directories. The source
@@ -38,14 +44,17 @@ accepted dispositions are in `../audits/openqasm-import-export.md`.
 
 ## Validation
 
-The release build passes. The configured CTest suite has 3,166 passes and one
-optional QDMI job-ID test skipped, including 191 passing OpenQASM target tests.
-All 1,131 Python tests pass. Strict-policy helper matrices check controlled
-global phase; Python round trips use the native OpenQASM frontend before
-comparison with Qiskit matrices. Snapshot tests distinguish one loop iteration
-from two. An instrumented run covers 18 previously missed changed lines through
-the existing emission-budget boundary test. Repository lint and complete C++
-lint pass. Hosted CI is separate from these local results.
+The release build passes with `ENABLE_IPO=OFF`; GCC LTO encountered duplicate
+MLIR symbols in the local linker. The configured CTest suite has 3,201 passes
+and one optional QDMI job-ID test skipped, including 191 passing OpenQASM target
+tests. All 1,152 Python tests pass. Strict-policy helper matrices check
+controlled global phase; Python round trips use the native OpenQASM frontend and
+direct Qiskit export. Snapshot tests distinguish one loop iteration from two. An
+instrumented run covers 18 previously missed changed lines through the existing
+emission-budget boundary test. Repository lint and complete C++ lint pass. The
+documentation build passes with the PennyLane capability-link fix from upstream
+main. Generated Python stubs are unchanged. Hosted CI is separate from these
+local results.
 
 The audit records baseline/revised parser memory and timing measurements and
 scaling checks for shared affine expressions and large controlled gates.

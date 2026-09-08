@@ -143,6 +143,11 @@ struct ExportedControlFlow {
                            "-level nesting depth");
 }
 
+[[nodiscard]] static bool isConstantIntegerToFloat(mlir::Operation& operation) {
+  return llvm::isa<mlir::arith::SIToFPOp, mlir::arith::UIToFPOp>(operation) &&
+         mlir::matchPattern(operation.getOperand(0), mlir::m_Constant());
+}
+
 [[nodiscard]] static Parameter
 exportParameterImpl(mlir::Value value, ExportedParameters& parameters,
                     const size_t depth, size_t& nodes) {
@@ -170,6 +175,13 @@ exportParameterImpl(mlir::Value value, ExportedParameters& parameters,
     throw std::runtime_error(
         "Qiskit runtime classical gate parameters are not supported; use a "
         "constant or symbolic gate parameter");
+  }
+  if (isConstantIntegerToFloat(*operation)) {
+    if (const auto number = mlir::mqt::valueToConstantDouble(value)) {
+      auto result = Parameter::number(*number);
+      parameters.try_emplace(value, result);
+      return result;
+    }
   }
   const auto unary = [&](const UnaryParameterKind kind) {
     if (operation->getNumOperands() != 1U) {
@@ -288,7 +300,8 @@ isParameterExpressionOperation(mlir::Operation& operation) {
                    mlir::arith::NegFOp, mlir::math::PowFOp, mlir::math::SinOp,
                    mlir::math::CosOp, mlir::math::TanOp, mlir::math::AsinOp,
                    mlir::math::AcosOp, mlir::math::AtanOp, mlir::math::ExpOp,
-                   mlir::math::LogOp, mlir::math::AbsFOp>(operation);
+                   mlir::math::LogOp, mlir::math::AbsFOp>(operation) ||
+         isConstantIntegerToFloat(operation);
 }
 
 [[nodiscard]] static uint32_t checkedIndex(const int64_t index,
@@ -2870,6 +2883,25 @@ collectGateFunctions(mlir::ModuleOp moduleOp, mlir::func::FuncOp entryPoint) {
 [[nodiscard]] static ExportedGateDefinition
 collectGateDefinition(mlir::func::FuncOp function) {
   const auto numParameters = gateParameterCount(function);
+  const auto nameAttribute =
+      mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr();
+  llvm::StringSet<> parameterNames;
+  for (size_t index = 0; index < numParameters; ++index) {
+    if (auto name =
+            function.getArgAttrOfType<mlir::StringAttr>(index, nameAttribute)) {
+      parameterNames.insert(name.getValue());
+    }
+  }
+  for (size_t index = 0; index < numParameters; ++index) {
+    if (!function.getArgAttr(index, nameAttribute)) {
+      auto name = "p" + std::to_string(index);
+      while (!parameterNames.insert(name).second) {
+        name += '_';
+      }
+      function.setArgAttr(index, nameAttribute,
+                          mlir::StringAttr::get(function.getContext(), name));
+    }
+  }
   ExportState state;
   collectParameters(function, state, numParameters);
   const auto numQubits = function.getNumArguments() - numParameters;
