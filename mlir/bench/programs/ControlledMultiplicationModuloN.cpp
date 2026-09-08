@@ -11,7 +11,7 @@
 #include "bench/ControlledMultiplicationModuloN.hpp"
 
 #include "Programs.h"
-#include "QFTAdderUtils.h"
+#include "QFTUtils.h"
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <llvm/ADT/APInt.h>

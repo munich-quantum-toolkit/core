@@ -269,7 +269,7 @@ observable. Constant results contain only the sum. `expected_result` is the
 unique logical outcome for basis inputs and `None` for a superposed addend. The
 total sum width, including an optional carry bit, is limited to 1024.
 
-### Controlled multiplication modulo N
+### Controlled multiplication modulo $N$
 
 The `controlled-multiplication-modulo-n` family implements the controlled
 modular multiplication circuit from Figures 5 and 6 of
@@ -279,10 +279,10 @@ strings. The modulus uses its canonical representation, and the integer values
 satisfy $0 < \mathtt{multiplier} < \mathtt{modulus}$. Each input can contain
 between 2 and 63 bits.
 
-For a configured width $n$, the benchmark prepares the control and
-multiplicand in a uniform superposition. It leaves the $n + 1$ accumulator
-qubits at zero. The result is the big-endian concatenation
+For a configured width $n$, the benchmark prepares the control and multiplicand
+in a uniform superposition. It leaves the $n + 1$ accumulator qubits at zero.
+The result is the big-endian concatenation
 `control || multiplicand || accumulator`. When the control is zero, the
 accumulator remains zero. When the control is one, the accumulator contains
-$\mathtt{multiplier} \cdot \mathtt{multiplicand} \bmod \mathtt{modulus}$.
-Every valid outcome has probability $2^{-(n + 1)}$.
+$\mathtt{multiplier} \cdot \mathtt{multiplicand} \bmod \mathtt{modulus}$. Every
+valid outcome has probability $2^{-(n + 1)}$.

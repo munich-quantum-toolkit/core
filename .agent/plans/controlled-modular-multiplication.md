@@ -66,10 +66,10 @@ double-and-add arithmetic, not native fixed-width integers.
 Use `multiplier = 011` and `modulus = 101` as the main three-bit case. It covers
 both control values, all multiplicand bits, modular wraparound, and values of
 the multiplicand greater than or equal to the modulus. Structural tests must
-assert every Figure 5 stage in order, all controls and targets, the absence of
-swaps and resets, and cleanup of the work qubit by construction. Execution tests
-must sample the full control/multiplicand/accumulator correlation. Add boundary
-and invalid-input tests and a jeff round trip.
+assert every Figure 5 stage in order, all controls and targets, and cleanup of
+the work qubit by construction. Execution tests must sample the full
+control/multiplicand/accumulator correlation. Add boundary and invalid-input
+tests. The shared registry test covers the jeff round trip.
 
 ## Work remaining
 

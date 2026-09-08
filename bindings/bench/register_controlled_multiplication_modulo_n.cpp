@@ -27,7 +27,7 @@ using namespace nb::literals;
 void registerControlledMultiplicationModuloN(const nb::module_& m) {
   nb::class_<bench::ControlledMultiplicationModuloNOptions>(
       m, "Options",
-      "Parameters for a controlled multiplication modulo N benchmark.")
+      R"pb(Parameters for a controlled multiplication modulo :math:`N` benchmark.)pb")
       .def(nb::init<std::string, std::string>(), nb::kw_only(), "multiplier"_a,
            "modulus"_a)
       .def_ro("multiplier",
@@ -37,10 +37,10 @@ void registerControlledMultiplicationModuloN(const nb::module_& m) {
               &bench::ControlledMultiplicationModuloNOptions::modulus,
               "The canonical big-endian modulus.");
 
-  auto controlledMultiplicationModuloN =
-      nb::class_<bench::ControlledMultiplicationModuloN>(
-          m, "ControlledMultiplicationModuloN",
-          "A validated controlled multiplication modulo N benchmark.");
+  auto controlledMultiplicationModuloN = nb::class_<
+      bench::ControlledMultiplicationModuloN>(
+      m, "ControlledMultiplicationModuloN",
+      R"pb(A validated controlled multiplication modulo :math:`N` benchmark.)pb");
   controlledMultiplicationModuloN
       .def(nb::init<bench::ControlledMultiplicationModuloNOptions>(),
            "options"_a)

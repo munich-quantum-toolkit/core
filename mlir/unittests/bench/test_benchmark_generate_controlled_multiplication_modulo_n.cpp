@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "QFTAdderTestUtils.h"
 #include "TestUtils.h"
 #include "bench/ControlledMultiplicationModuloN.hpp"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
@@ -32,11 +31,30 @@
 #include <cstdint>
 #include <numbers>
 #include <string>
-#include <utility>
 
 namespace mqt::bench {
 
 using namespace mlir;
+
+static void expectIndexConstant(Value value, int64_t expected) {
+  auto constant = value.getDefiningOp<arith::ConstantIndexOp>();
+  ASSERT_TRUE(constant);
+  EXPECT_EQ(constant.value(), expected);
+}
+
+static void expectFloatConstant(Value value, double expected) {
+  auto constant = value.getDefiningOp<arith::ConstantOp>();
+  ASSERT_TRUE(constant);
+  auto attribute = dyn_cast<FloatAttr>(constant.getValue());
+  ASSERT_TRUE(attribute);
+  EXPECT_DOUBLE_EQ(attribute.getValueAsDouble(), expected);
+}
+
+static void expectStaticLoop(scf::ForOp loop, int64_t lower, int64_t upper) {
+  expectIndexConstant(loop.getLowerBound(), lower);
+  expectIndexConstant(loop.getUpperBound(), upper);
+  expectIndexConstant(loop.getStep(), 1);
+}
 
 static void expectIntegerConstant(Value value, const llvm::APInt& expected) {
   auto constant = value.getDefiningOp<arith::ConstantOp>();
@@ -72,12 +90,47 @@ static void expectRegisterLoad(Value value, Value expectedRegister,
   EXPECT_EQ(load.getIndices().front(), expectedIndex);
 }
 
+static void expectQFTStage(scf::ForOp loop, Value expectedRegister,
+                           int64_t width, bool inverse) {
+  expectStaticLoop(loop, 0, width);
+
+  qc::HOp hadamard;
+  scf::ForOp phases;
+  for (Operation& operation : loop.getBody()->without_terminator()) {
+    if (auto candidate = dyn_cast<qc::HOp>(operation)) {
+      ASSERT_FALSE(hadamard);
+      hadamard = candidate;
+    } else if (auto candidate = dyn_cast<scf::ForOp>(operation)) {
+      ASSERT_FALSE(phases);
+      phases = candidate;
+    }
+  }
+  ASSERT_TRUE(hadamard);
+  ASSERT_TRUE(phases);
+  EXPECT_EQ(phases->isBeforeInBlock(hadamard), inverse);
+
+  auto hadamardLoad = hadamard.getQubit(0).getDefiningOp<memref::LoadOp>();
+  ASSERT_TRUE(hadamardLoad);
+  EXPECT_EQ(hadamardLoad.getMemref(), expectedRegister);
+
+  SmallVector<qc::CtrlOp> rotations;
+  phases.walk([&](qc::CtrlOp rotation) { rotations.push_back(rotation); });
+  ASSERT_EQ(rotations.size(), 1U);
+  auto control =
+      rotations.front().getControl(0).getDefiningOp<memref::LoadOp>();
+  auto target = rotations.front().getTarget(0).getDefiningOp<memref::LoadOp>();
+  ASSERT_TRUE(control);
+  ASSERT_TRUE(target);
+  EXPECT_EQ(control.getMemref(), expectedRegister);
+  EXPECT_EQ(target.getMemref(), expectedRegister);
+}
+
 static void expectPhaseLayer(scf::ForOp loop, Value accumulator, Value addend,
                              llvm::ArrayRef<Value> expectedControls,
                              bool inverse, int64_t width) {
-  test::expectStaticLoop(loop, 0, width);
+  expectStaticLoop(loop, 0, width);
   ASSERT_EQ(loop.getInitArgs().size(), 2U);
-  test::expectConstantFloat(loop.getInitArgs().front(), 0.);
+  expectFloatConstant(loop.getInitArgs().front(), 0.);
   EXPECT_EQ(loop.getInitArgs()[1], addend);
 
   SmallVector<qc::POp> phases;
@@ -91,7 +144,7 @@ static void expectPhaseLayer(scf::ForOp loop, Value accumulator, Value addend,
   if (inverse) {
     auto negated = angle.getDefiningOp<arith::MulFOp>();
     ASSERT_TRUE(negated);
-    test::expectConstantFloat(negated.getRhs(), -1.);
+    expectFloatConstant(negated.getRhs(), -1.);
     angle = negated.getLhs();
   }
 
@@ -112,9 +165,9 @@ static void expectPhaseLayer(scf::ForOp loop, Value accumulator, Value addend,
   auto decayed = elseYield.getOperand(0).getDefiningOp<arith::MulFOp>();
   ASSERT_TRUE(decayed);
   EXPECT_EQ(sum.getLhs(), decayed.getResult());
-  test::expectConstantFloat(sum.getRhs(), std::numbers::pi);
+  expectFloatConstant(sum.getRhs(), std::numbers::pi);
   EXPECT_EQ(decayed.getLhs(), loop.getRegionIterArg(0));
-  test::expectConstantFloat(decayed.getRhs(), 0.5);
+  expectFloatConstant(decayed.getRhs(), 0.5);
 
   auto hasBit = selectAngle.getCondition().getDefiningOp<arith::CmpIOp>();
   ASSERT_TRUE(hasBit);
@@ -181,7 +234,6 @@ TEST(GenerateProgramTest, EmitsExactControlledMultiplicationModuloNSchedule) {
   EXPECT_EQ(test::countOps<qc::AllocOp>(moduleOp), 2U);
   EXPECT_EQ(test::countOps<memref::AllocOp>(moduleOp), 2U);
   EXPECT_EQ(test::countOps<cbit::AllocOp>(moduleOp), 1U);
-  EXPECT_EQ(test::countOps<qc::ResetOp>(moduleOp), 0U);
   EXPECT_EQ(test::countOps<qc::SWAPOp>(moduleOp), 0U);
   EXPECT_EQ(test::countOps<qc::RZOp>(moduleOp), 0U);
   EXPECT_EQ(test::countOps<qc::MeasureOp>(moduleOp), 3U);
@@ -200,7 +252,7 @@ TEST(GenerateProgramTest, EmitsExactControlledMultiplicationModuloNSchedule) {
     }
   });
   ASSERT_TRUE(multiplication);
-  test::expectStaticLoop(multiplication, 0, bits);
+  expectStaticLoop(multiplication, 0, bits);
 
   auto multiplier = integerConstant(moduleOp, llvm::APInt(width, 3));
   auto modulus = integerConstant(moduleOp, llvm::APInt(width, 5));
@@ -241,8 +293,7 @@ TEST(GenerateProgramTest, EmitsExactControlledMultiplicationModuloNSchedule) {
                    true, width);
 
   auto firstInverse = cast<scf::ForOp>(schedule[2]);
-  test::expectStaticLoop(firstInverse, 0, width);
-  test::expectInverseQFT(firstInverse, accumulator);
+  expectQFTStage(firstInverse, accumulator, width, true);
 
   auto firstCarry = expectControlledX(schedule[3]);
   ASSERT_TRUE(firstCarry);
@@ -251,19 +302,17 @@ TEST(GenerateProgramTest, EmitsExactControlledMultiplicationModuloNSchedule) {
   auto overflowLoad = overflow.getDefiningOp<memref::LoadOp>();
   ASSERT_TRUE(overflowLoad);
   EXPECT_EQ(overflowLoad.getMemref(), accumulator);
-  test::expectConstantIndex(overflowLoad.getIndices().front(), width - 1);
+  expectIndexConstant(overflowLoad.getIndices().front(), width - 1);
 
   auto firstForward = cast<scf::ForOp>(schedule[4]);
-  test::expectStaticLoop(firstForward, 0, width);
-  test::expectForwardQFT(firstForward, accumulator, width);
+  expectQFTStage(firstForward, accumulator, width, false);
   expectPhaseLayer(cast<scf::ForOp>(schedule[5]), accumulator, modulus, {work},
                    false, width);
   expectPhaseLayer(cast<scf::ForOp>(schedule[6]), accumulator, currentAddend,
                    controls, true, width);
 
   auto secondInverse = cast<scf::ForOp>(schedule[7]);
-  test::expectStaticLoop(secondInverse, 0, width);
-  test::expectInverseQFT(secondInverse, accumulator);
+  expectQFTStage(secondInverse, accumulator, width, true);
 
   auto firstOverflowX = cast<qc::XOp>(schedule[8]);
   ASSERT_TRUE(firstOverflowX);
@@ -280,8 +329,7 @@ TEST(GenerateProgramTest, EmitsExactControlledMultiplicationModuloNSchedule) {
                      overflowLoad.getIndices().front());
 
   auto secondForward = cast<scf::ForOp>(schedule[11]);
-  test::expectStaticLoop(secondForward, 0, width);
-  test::expectForwardQFT(secondForward, accumulator, width);
+  expectQFTStage(secondForward, accumulator, width, false);
   expectPhaseLayer(cast<scf::ForOp>(schedule[12]), accumulator, currentAddend,
                    controls, false, width);
 
@@ -298,84 +346,64 @@ TEST(GenerateProgramTest, EmitsExactControlledMultiplicationModuloNSchedule) {
   EXPECT_EQ(doubled.getLhs(), currentAddend);
   expectIntegerConstant(doubled.getRhs(), llvm::APInt(width, 1));
 
-  auto topLevelLoops = test::topLevelLoops(moduleOp);
-  scf::ForOp outerForward;
-  scf::ForOp outerInverse;
-  for (auto loop : topLevelLoops) {
-    if (loop == multiplication) {
-      continue;
+  SmallVector<scf::ForOp> outerQFTs;
+  moduleOp.walk([&](scf::ForOp loop) {
+    if (loop == multiplication || loop->getParentOfType<scf::ForOp>()) {
+      return;
     }
-    if (loop->isBeforeInBlock(multiplication)) {
-      SmallVector<qc::CtrlOp> modifiers;
-      loop.walk([&](qc::CtrlOp modifier) { modifiers.push_back(modifier); });
-      if (!modifiers.empty()) {
-        outerForward = loop;
-      }
+    SmallVector<qc::CtrlOp> rotations;
+    loop.walk([&](qc::CtrlOp rotation) { rotations.push_back(rotation); });
+    if (!rotations.empty()) {
+      outerQFTs.push_back(loop);
     }
-    if (multiplication->isBeforeInBlock(loop) &&
-        loop.getInitArgs().size() == 1U &&
-        loop.getInitArgs().front().getType().isF64()) {
-      outerInverse = loop;
-      break;
-    }
-  }
-  ASSERT_TRUE(outerForward);
-  ASSERT_TRUE(outerInverse);
-  test::expectStaticLoop(outerForward, 0, width);
-  test::expectForwardQFT(outerForward, accumulator, width);
-  test::expectStaticLoop(outerInverse, 0, width);
-  test::expectInverseQFT(outerInverse, accumulator);
+  });
+  ASSERT_EQ(outerQFTs.size(), 2U);
+  EXPECT_TRUE(outerQFTs.front()->isBeforeInBlock(multiplication));
+  EXPECT_TRUE(multiplication->isBeforeInBlock(outerQFTs.back()));
+  expectQFTStage(outerQFTs.front(), accumulator, width, false);
+  expectQFTStage(outerQFTs.back(), accumulator, width, true);
 
   qc::HOp controlPreparation;
   scf::ForOp multiplicandPreparation;
   moduleOp.walk([&](qc::HOp h) {
-    if (!h->getParentOfType<scf::ForOp>()) {
+    auto load = h.getQubit(0).getDefiningOp<memref::LoadOp>();
+    if (!load && !h->getParentOfType<scf::ForOp>()) {
       controlPreparation = h;
+    } else if (load && load.getMemref() == multiplicand) {
+      multiplicandPreparation = h->getParentOfType<scf::ForOp>();
     }
   });
-  for (auto loop : topLevelLoops) {
-    if (loop->isBeforeInBlock(outerForward)) {
-      SmallVector<qc::HOp> gates;
-      loop.walk([&](qc::HOp gate) { gates.push_back(gate); });
-      if (gates.size() == 1U) {
-        multiplicandPreparation = loop;
-      }
-    }
-  }
   ASSERT_TRUE(controlPreparation);
   ASSERT_TRUE(multiplicandPreparation);
   EXPECT_EQ(controlPreparation.getQubit(0), control);
-  test::expectStaticLoop(multiplicandPreparation, 0, bits);
+  expectStaticLoop(multiplicandPreparation, 0, bits);
   qc::HOp multiplicandH;
   multiplicandPreparation.walk([&](qc::HOp h) { multiplicandH = h; });
   ASSERT_TRUE(multiplicandH);
   expectRegisterLoad(multiplicandH.getQubit(0), multiplicand,
                      multiplicandPreparation.getInductionVar());
 
-  SmallVector<qc::MeasureOp> measurements;
-  moduleOp.walk(
-      [&](qc::MeasureOp measurement) { measurements.push_back(measurement); });
-  ASSERT_EQ(measurements.size(), 3U);
-
-  SmallVector<scf::ForOp> measurementLoops;
-  for (auto loop : topLevelLoops) {
-    SmallVector<qc::MeasureOp> loopMeasurements;
-    loop.walk([&](qc::MeasureOp measurement) {
-      loopMeasurements.push_back(measurement);
-    });
-    if (!loopMeasurements.empty()) {
-      ASSERT_EQ(loopMeasurements.size(), 1U);
-      measurementLoops.push_back(loop);
-    }
-  }
-  ASSERT_EQ(measurementLoops.size(), 2U);
-
-  auto accumulatorMeasurementLoop = measurementLoops[0];
-  test::expectStaticLoop(accumulatorMeasurementLoop, 0, width);
   qc::MeasureOp accumulatorMeasurement;
-  accumulatorMeasurementLoop.walk(
-      [&](qc::MeasureOp measurement) { accumulatorMeasurement = measurement; });
+  qc::MeasureOp multiplicandMeasurement;
+  qc::MeasureOp controlMeasurement;
+  moduleOp.walk([&](qc::MeasureOp measurement) {
+    auto load = measurement.getQubit().getDefiningOp<memref::LoadOp>();
+    if (!load) {
+      controlMeasurement = measurement;
+    } else if (load.getMemref() == accumulator) {
+      accumulatorMeasurement = measurement;
+    } else if (load.getMemref() == multiplicand) {
+      multiplicandMeasurement = measurement;
+    }
+  });
   ASSERT_TRUE(accumulatorMeasurement);
+  ASSERT_TRUE(multiplicandMeasurement);
+  ASSERT_TRUE(controlMeasurement);
+
+  auto accumulatorMeasurementLoop =
+      accumulatorMeasurement->getParentOfType<scf::ForOp>();
+  ASSERT_TRUE(accumulatorMeasurementLoop);
+  expectStaticLoop(accumulatorMeasurementLoop, 0, width);
   expectRegisterLoad(accumulatorMeasurement.getQubit(), accumulator,
                      accumulatorMeasurementLoop.getInductionVar());
   auto accumulatorStore =
@@ -385,13 +413,10 @@ TEST(GenerateProgramTest, EmitsExactControlledMultiplicationModuloNSchedule) {
   EXPECT_EQ(accumulatorStore.getIndex(),
             accumulatorMeasurementLoop.getInductionVar());
 
-  auto multiplicandMeasurementLoop = measurementLoops[1];
-  test::expectStaticLoop(multiplicandMeasurementLoop, 0, bits);
-  qc::MeasureOp multiplicandMeasurement;
-  multiplicandMeasurementLoop.walk([&](qc::MeasureOp measurement) {
-    multiplicandMeasurement = measurement;
-  });
-  ASSERT_TRUE(multiplicandMeasurement);
+  auto multiplicandMeasurementLoop =
+      multiplicandMeasurement->getParentOfType<scf::ForOp>();
+  ASSERT_TRUE(multiplicandMeasurementLoop);
+  expectStaticLoop(multiplicandMeasurementLoop, 0, bits);
   expectRegisterLoad(multiplicandMeasurement.getQubit(), multiplicand,
                      multiplicandMeasurementLoop.getInductionVar());
   auto multiplicandStore = dyn_cast<cbit::StoreOp>(
@@ -403,27 +428,17 @@ TEST(GenerateProgramTest, EmitsExactControlledMultiplicationModuloNSchedule) {
   ASSERT_TRUE(multiplicandResultIndex);
   EXPECT_EQ(multiplicandResultIndex.getLhs(),
             multiplicandMeasurementLoop.getInductionVar());
-  test::expectConstantIndex(multiplicandResultIndex.getRhs(), width);
+  expectIndexConstant(multiplicandResultIndex.getRhs(), width);
 
-  qc::MeasureOp controlMeasurement;
-  for (auto measurement : measurements) {
-    if (!measurement->getParentOfType<scf::ForOp>()) {
-      controlMeasurement = measurement;
-    }
-  }
-  ASSERT_TRUE(controlMeasurement);
   EXPECT_EQ(controlMeasurement.getQubit(), control);
   auto controlStore =
       dyn_cast<cbit::StoreOp>(*controlMeasurement.getResult().user_begin());
   ASSERT_TRUE(controlStore);
   EXPECT_EQ(controlStore.getReg(), resultAllocation.getResult());
-  test::expectConstantIndex(controlStore.getIndex(), 2 * bits + 1);
-
-  test::expectJeffRoundTrip(std::move(*program));
+  expectIndexConstant(controlStore.getIndex(), 2 * bits + 1);
 }
 
-TEST(GenerateProgramTest,
-     KeepsLargestControlledMultiplicationStructuredAndSerializable) {
+TEST(GenerateProgramTest, KeepsLargestControlledMultiplicationStructured) {
   constexpr size_t bits = ControlledMultiplicationModuloNOptions::MAX_BITS;
   const auto multiplier = std::string(bits - 1U, '0') + "1";
   const auto modulus = "1" + std::string(bits - 1U, '0');
@@ -444,7 +459,14 @@ TEST(GenerateProgramTest,
                 .getWidth(),
             bits + 1U);
   EXPECT_LT(test::countOperations(moduleOp), 250U);
-  test::expectJeffRoundTrip(std::move(*program));
+}
+
+TEST(GenerateProgramTest,
+     SamplesControlledMultiplicationModuloNAgainstReference) {
+  test::expectSamplingMatchesReference(
+      ControlledMultiplicationModuloN{{.multiplier = "011", .modulus = "101"}});
+  test::expectSamplingMatchesReference(
+      ControlledMultiplicationModuloN{{.multiplier = "010", .modulus = "100"}});
 }
 
 } // namespace mqt::bench

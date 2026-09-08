@@ -57,7 +57,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
 
   const nb::module_ controlledMultiplicationModuloN = m.def_submodule(
       "controlled_multiplication_modulo_n",
-      "Controlled multiplication modulo N benchmark instances and options.");
+      R"pb(Controlled multiplication modulo :math:`N` benchmark instances and options.)pb");
   registerControlledMultiplicationModuloN(controlledMultiplicationModuloN);
 
   const nb::module_ ghz =

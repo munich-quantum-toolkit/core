@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Controlled multiplication modulo N benchmark instances and options."""
+"""Controlled multiplication modulo :math:`N` benchmark instances and options."""
 
 from collections.abc import Mapping
 
@@ -14,7 +14,7 @@ import mqt.core.bench
 import mqt.core.mlir
 
 class Options:
-    """Parameters for a controlled multiplication modulo N benchmark."""
+    """Parameters for a controlled multiplication modulo :math:`N` benchmark."""
 
     def __init__(self, *, multiplier: str, modulus: str) -> None: ...
     @property
@@ -26,7 +26,7 @@ class Options:
         """The canonical big-endian modulus."""
 
 class ControlledMultiplicationModuloN:
-    """A validated controlled multiplication modulo N benchmark."""
+    """A validated controlled multiplication modulo :math:`N` benchmark."""
 
     def __init__(self, options: Options) -> None: ...
     @property
