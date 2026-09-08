@@ -14,8 +14,6 @@
 
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/StringMap.h>
-#include <llvm/Support/Allocator.h>
-#include <llvm/Support/StringSaver.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -72,13 +70,8 @@ struct LoweringState {
   /// `qc::MeasureOp`
   DenseSet<Operation*> returnedStaticResults;
 
-  /// Modifier information
-  bool inCtrlOp = false;
-  SmallVector<Value> controls;
-
-  /// Allocator and StringSaver for stable StringRefs
-  llvm::BumpPtrAllocator allocator;
-  llvm::StringSaver stringSaver{allocator};
+  /// Converted controls associated with their specific body unitary.
+  DenseMap<Operation*, SmallVector<Value>> controlledGates;
 
   /// Block information
   Block* entryBlock{};
@@ -92,6 +85,11 @@ struct LoweringState {
   [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
                                                    Operation* op);
 };
+
+/// Lower remaining classical dialects and reconcile casts for either profile.
+[[nodiscard]] LogicalResult
+finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
+                      LLVMTypeConverter& typeConverter);
 
 struct QCToQIRTypeConverter final : LLVMTypeConverter {
   explicit QCToQIRTypeConverter(MLIRContext* ctx);
@@ -165,7 +163,7 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
  *
  * @param main The main LLVM function
  * @param ctx The MLIR context
- * @param state The lowering state containing measurement information
+ * @param state The lowering state whose returned register records are consumed
  */
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state);

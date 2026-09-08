@@ -13,8 +13,9 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
                 "QIR Base Profile 2.1";
 
   let description = [{
-    This pass lowers all operations from the QC dialect to their equivalent operations in the LLVM dialect, ensuring compliance with the QIR Base Profile 2.1 standard.
-    It translates quantum operations and types from QC to their corresponding representations in QIR, facilitating interoperability with quantum computing frameworks that utilize the QIR standard.
+    Lower supported QC operations to QIR Base Profile runtime calls and
+    LLVM dialect operations. Run `set-qir-attributes-and-metadata` separately
+    to attach QIR attributes and module flags.
 
     Requirements:
 
@@ -35,11 +36,10 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
     - Each QC quantum operation is replaced in place by its QIR call. After
       validating qubit usage in instruction order, the pass moves terminal
       measurements to the irreversible operations block.
-    - Required QIR module flags are attached as attributes to the entry function.
     - The pass transforms the single-block entry function into four blocks to satisfy QIR Base Profile constraints:
       0. Initialization block: Sets up the execution environment and performs required runtime initialization.
       1. Reversible operations block: Contains only void-returning calls to reversible quantum operations.
-      2. Irreversible operations block: Contains only void-returning calls to operations marked irreversible (e.g., `__quantum__qis__mz__body` and `__quantum__qis__reset__body`).
+      2. Irreversible operations block: Contains terminal measurement calls (`__quantum__qis__mz__body`). Reset operations are not supported.
       3. Epilogue block: Records measurement results and returns from the entry function.
     - Blocks are connected via unconditional branches in the order listed above.
     - Non-quantum dialects are lowered via MLIR's built-in conversions.

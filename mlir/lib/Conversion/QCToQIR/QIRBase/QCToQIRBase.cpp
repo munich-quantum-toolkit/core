@@ -21,12 +21,8 @@
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
 #include <llvm/ADT/DenseSet.h>
-#include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
-#include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
-#include <mlir/Conversion/MathToLLVM/MathToLLVM.h>
-#include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -43,7 +39,6 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
-#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -128,7 +123,7 @@ namespace {
  * pointers represented by `llvm.inttoptr` operations
  *
  * @details
- * Static qubit pointers are allocated during by `ConvertMemRefLoadOp`.
+ * Allocate static result pointers for each bit in a classical register.
  */
 struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -152,11 +147,12 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
 
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+    reg.results.reserve(static_cast<size_t>(*size));
     const auto base = static_cast<int64_t>(state.staticResults.size());
     for (int64_t i = 0; i < *size; ++i) {
       const auto index = base + i;
       auto result = createPointerFromIndex(rewriter, op.getLoc(), index);
-      reg.results[i] = result;
+      reg.results.push_back(result);
       // The results are recorded as part of the register
       state.staticResults.try_emplace(
           index, qir::StaticResult{.pointer = result, .record = false});
@@ -411,28 +407,8 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
 }
 
 namespace {
-/**
- * @brief Pass for converting QC dialect operations to QIR
- *
- * @details
- * This pass converts QC dialect quantum operations to QIR (Quantum
- * Intermediate Representation) by lowering them to LLVM dialect operations
- * that call QIR runtime functions.
- *
- * Conversion stages:
- * 1. Convert func dialect to LLVM
- * 2. Ensure proper block structure for QIR base profile
- * 3. Add QIR initialization call
- * 4. Convert QC operations to QIR calls
- * 5. Set QIR metadata attributes
- * 6. Convert arith and cf dialects to LLVM
- * 7. Reconcile unrealized casts
- *
- * @pre
- * The input entry function must consist of a single block. The pass will
- * restructure it into four blocks. Multi-block input functions are
- * currently not supported.
- */
+/// Lower supported QC operations to QIR Base runtime calls and LLVM IR.
+/// QIR attributes and module flags are attached by the separate metadata pass.
 struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
   using QCToQIRBaseBase::QCToQIRBaseBase;
 
@@ -499,34 +475,6 @@ struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
   }
 
 protected:
-  /**
-   * @brief Executes the QC to QIR conversion pass
-   *
-   * @details
-   * Performs the conversion in six stages:
-   *
-   * **Stage 1: Func to LLVM**
-   * Convert func dialect operations (main function) to LLVM dialect
-   * equivalents.
-   *
-   * **Stage 2: Block structure**
-   * Create proper 4-block structure for QIR base profile (entry, main,
-   * irreversible, output).
-   *
-   * **Stage 3: Initialization**
-   * Insert the `__quantum__rt__initialize` call.
-   *
-   * **Stage 4: QC to LLVM**
-   * Convert QC dialect operations in place, validate and move terminal
-   * measurements, and add output recording to the output block.
-   *
-   * **Stage 5: Standard dialects to LLVM**
-   * Convert arith and control flow dialects to LLVM (for index arithmetic and
-   * function control flow).
-   *
-   * **Stage 6: Reconcile casts**
-   * Clean up any unrealized cast operations introduced during type conversion.
-   */
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto moduleOp = getOperation();
@@ -611,30 +559,7 @@ protected:
       addOutputRecording(main, ctx, state);
     }
 
-    // Stage 5: Convert standard dialects to LLVM
-    {
-      RewritePatternSet stdPatterns(ctx);
-      target.addIllegalDialect<arith::ArithDialect>();
-      target.addIllegalDialect<cf::ControlFlowDialect>();
-      target.addIllegalDialect<math::MathDialect>();
-
-      cf::populateControlFlowToLLVMConversionPatterns(typeConverter,
-                                                      stdPatterns);
-      cf::populateAssertToLLVMConversionPattern(typeConverter, stdPatterns);
-      arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
-      populateMathToLLVMConversionPatterns(typeConverter, stdPatterns);
-
-      if (applyPartialConversion(moduleOp, target, std::move(stdPatterns))
-              .failed()) {
-        signalPassFailure();
-        return;
-      }
-    }
-
-    // Stage 6: Reconcile unrealized casts
-    PassManager passManager(ctx);
-    passManager.addPass(createReconcileUnrealizedCastsPass());
-    if (passManager.run(moduleOp).failed()) {
+    if (failed(finalizeQIRConversion(moduleOp, target, typeConverter))) {
       signalPassFailure();
     }
   }
