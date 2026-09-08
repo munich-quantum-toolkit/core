@@ -359,7 +359,7 @@ translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
     mod.emitError("failed to translate QIR MLIR to LLVM IR");
     return nullptr;
   }
-  qir::normalizeQIRModuleFlags(*llvmModule, mod);
+  qir::normalizeQIRModuleFlags(*llvmModule);
   return llvmModule;
 }
 

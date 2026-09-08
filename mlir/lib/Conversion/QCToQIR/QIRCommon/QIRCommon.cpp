@@ -20,13 +20,15 @@
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
-#include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Conversion/MathToLLVM/MathToLLVM.h>
 #include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
@@ -37,6 +39,7 @@
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -64,6 +67,24 @@ LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
       "cannot mix static and dynamic qubit allocation modes in conversion");
 }
 
+LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
+                                    LLVMTypeConverter& typeConverter) {
+  auto* ctx = moduleOp.getContext();
+  RewritePatternSet patterns(ctx);
+  target.addIllegalDialect<arith::ArithDialect, cf::ControlFlowDialect,
+                           math::MathDialect>();
+  cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
+  cf::populateAssertToLLVMConversionPattern(typeConverter, patterns);
+  arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
+  populateMathToLLVMConversionPatterns(typeConverter, patterns);
+  if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
+    return failure();
+  }
+  PassManager manager(ctx);
+  manager.addPass(createReconcileUnrealizedCastsPass());
+  return manager.run(moduleOp);
+}
+
 QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
     : LLVMTypeConverter(ctx) {
   addConversion([ctx](QubitType) { return LLVM::LLVMPointerType::get(ctx); });
@@ -85,7 +106,7 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
  * @param op The QC operation instance to convert
  * @param adaptor The OpAdaptor of the QC operation
  * @param rewriter The pattern rewriter
- * @param state The lowering state
+ * @param controls Converted controls for this gate
  * @param fnName The name of the QIR function to call
  * @param numTargets The number of targets
  * @param numParams The number of parameters
@@ -94,22 +115,13 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
 template <typename QCOpType, typename QCOpAdaptorType>
 static LogicalResult
 convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
-                       ConversionPatternRewriter& rewriter,
-                       LoweringState& state, StringRef fnName,
-                       const size_t numTargets, const size_t numParams) {
-  // Query state for modifier information
-  const SmallVector<Value> controls =
-      state.inCtrlOp ? state.controls : SmallVector<Value>{};
+                       ConversionPatternRewriter& rewriter, ValueRange controls,
+                       StringRef fnName, const size_t numTargets,
+                       const size_t numParams) {
   auto convertedOperands = adaptor.getOperands();
   auto targets = convertedOperands.take_front(numTargets);
   auto parameters = convertedOperands.drop_front(numTargets);
   assert(parameters.size() == numParams && "unexpected gate parameter count");
-
-  // Clean up modifier information
-  if (state.inCtrlOp) {
-    state.inCtrlOp = false;
-    state.controls.clear();
-  }
 
   qir::emitQISCall(rewriter, op, op.getLoc(), parameters, controls, targets,
                    fnName);
@@ -214,10 +226,17 @@ struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
   matchAndRewrite(OpType op, OpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    const size_t numCtrls = state.inCtrlOp ? state.controls.size() : 0;
-    const auto fnName = GetFnName(numCtrls);
-    return convertUnitaryToCallOp(op, adaptor, rewriter, state, fnName,
-                                  NumTargets, NumParams);
+    const auto it = state.controlledGates.find(op);
+    ValueRange controls = it != state.controlledGates.end()
+                              ? ValueRange(it->second)
+                              : ValueRange{};
+    const auto fnName = GetFnName(controls.size());
+    auto result = convertUnitaryToCallOp(op, adaptor, rewriter, controls,
+                                         fnName, NumTargets, NumParams);
+    if (it != state.controlledGates.end()) {
+      state.controlledGates.erase(it);
+    }
+    return result;
   }
 };
 
@@ -296,11 +315,11 @@ struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
   matchAndRewrite(GPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    if (state.inCtrlOp) {
+    if (state.controlledGates.contains(op)) {
       return op.emitError("Controlled GPhaseOps cannot be converted to QIR");
     }
-    return convertUnitaryToCallOp(op, adaptor, rewriter, state, QIR_GPHASE, 0,
-                                  1);
+    return convertUnitaryToCallOp(op, adaptor, rewriter, ValueRange{},
+                                  QIR_GPHASE, 0, 1);
   }
 };
 
@@ -331,7 +350,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    if (state.inCtrlOp) {
+    if (state.controlledGates.contains(op)) {
       return rewriter.notifyMatchFailure(op,
                                          "Nested CtrlOps are not supported");
     }
@@ -342,15 +361,11 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
               "unroll-modifiers pass before the conversion");
     }
 
-    // Empty control bodies and controls around no-op unitaries do not need
-    // lowering state. In particular, barrier lowering erases the operation
-    // without consuming that state, which would otherwise control the next
-    // gate.
     auto bodyUnitary = op.getNumBodyUnitaries() == 1 ? op.getBodyUnitary(0)
                                                      : UnitaryOpInterface{};
     if (bodyUnitary && !isa<BarrierOp, IdOp>(bodyUnitary.getOperation())) {
-      state.inCtrlOp = true;
-      state.controls = llvm::to_vector(adaptor.getControls());
+      state.controlledGates.try_emplace(bodyUnitary.getOperation(),
+                                        llvm::to_vector(adaptor.getControls()));
     }
 
     // Inline block and remove operation
@@ -399,7 +414,7 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
   SmallVector<qir::ClassicalRegister> returnedRegisters;
   returnedRegisters.reserve(state.returnedCregs.size());
   for (const auto registerIndex : state.returnedCregs) {
-    returnedRegisters.push_back(state.cregs[registerIndex]);
+    returnedRegisters.push_back(std::move(state.cregs[registerIndex]));
   }
   emitOutputRecording(builder, main, returnedRegisters, state.staticResults);
 }
@@ -482,7 +497,6 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
       }
       const auto size = allocOp.getResult().getType().getWidth();
       reg.size = size;
-      reg.results.assign(static_cast<size_t>(size), Value{});
     });
 
     const auto markRegisterForRecording = [&](const size_t registerIndex) {

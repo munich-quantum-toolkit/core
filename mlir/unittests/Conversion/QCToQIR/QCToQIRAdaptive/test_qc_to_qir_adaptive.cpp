@@ -534,7 +534,7 @@ TEST(QCToQIRAdaptiveNativeTest, LowersInternalZeroInitializedRegisterStorage) {
                       LLVM::LLVMDialect, memref::MemRefDialect>();
   qc::QCProgramBuilder builder(&context);
   builder.initialize();
-  auto c = builder.allocClassicalBitRegister(2);
+  auto c = builder.allocClassicalBitRegister(8192);
   auto first = builder.loadClassicalBit(c, 0);
   builder.storeClassicalBit(first, c, 1);
   auto module = builder.finalize();
@@ -551,7 +551,58 @@ TEST(QCToQIRAdaptiveNativeTest, LowersInternalZeroInitializedRegisterStorage) {
   module->walk([&](LLVM::StoreOp) { ++stores; });
   EXPECT_EQ(allocs, 1);
   EXPECT_EQ(loads, 1);
-  EXPECT_EQ(stores, 3);
+  EXPECT_EQ(stores, 1);
+  size_t zeroFills = 0;
+  module->walk([&](LLVM::MemsetOp fill) {
+    ++zeroFills;
+    auto value = fill.getVal().getDefiningOp<LLVM::ConstantOp>();
+    ASSERT_TRUE(value);
+    EXPECT_TRUE(cast<IntegerAttr>(value.getValue()).getValue().isZero());
+  });
+  EXPECT_EQ(zeroFills, 1);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, InitializesLocalRegisterInsideLoop) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, qc::QCDialect, arith::ArithDialect,
+                      cf::ControlFlowDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> i64 attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %false = arith.constant false
+        %true = arith.constant true
+        %answer = scf.for %i = %c0 to %c2 step %c1
+            iter_args(%last = %false) -> i1 {
+          %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+          %v = cbit.load %r[%c0] : !cbit.reg<1>
+          cbit.store %true, %r[%c0] : !cbit.reg<1>
+          scf.yield %v : i1
+        }
+        %exit = arith.extui %answer : i1 to i64
+        return %exit : i64
+      }
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  LLVM::MemsetOp fill;
+  LLVM::LoadOp load;
+  moduleOp->walk([&](LLVM::MemsetOp op) { fill = op; });
+  moduleOp->walk([&](LLVM::LoadOp op) { load = op; });
+  ASSERT_TRUE(fill);
+  ASSERT_TRUE(load);
+  ASSERT_EQ(fill->getBlock(), load->getBlock());
+  EXPECT_TRUE(fill->isBeforeInBlock(load));
+  auto main = moduleOp->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  ASSERT_TRUE(main);
+  EXPECT_NE(fill->getBlock(), &main.getBody().front());
 }
 
 TEST(QCToQIRAdaptiveNativeTest, SupportsDynamicInternalRegisterIndices) {

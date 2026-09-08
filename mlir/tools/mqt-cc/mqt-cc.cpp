@@ -637,7 +637,7 @@ static int runCompiler(int argc, char** argv) {
       llvm::errs() << "Failed to translate MLIR module to LLVM IR\n";
       return 1;
     }
-    qir::normalizeQIRModuleFlags(*llvmMod, *program.mod);
+    qir::normalizeQIRModuleFlags(*llvmMod);
     if (writeOutput<llvm::Module*>(llvmMod.get(), outputFilename).failed()) {
       return 1;
     }

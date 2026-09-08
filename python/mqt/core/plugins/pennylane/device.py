@@ -146,6 +146,7 @@ class QDMIDevice(Device):
     """
 
     capabilities = DeviceCapabilities(supported_mcm_methods=[])
+    """Backend capabilities described by :class:`~pennylane.devices.capabilities.DeviceCapabilities`."""
 
     def __init__(
         self,
