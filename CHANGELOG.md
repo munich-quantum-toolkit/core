@@ -84,10 +84,10 @@ releases may include breaking changes.
   and rotation merging ([#1407], [#1605], [#1672], [#1674], [#2002], [#2038],
   [#2228]) ([**@J4MMlE**], [**@lirem101**], [**@burgholzer**],
   [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
-- ✨ Add multi-qubit decomposition, fusion, and target-native synthesis passes
-  ([#1774], [#1802], [#1803], [#1809], [#1810], [#1814], [#1832], [#1850],
-  [#1865], [#1961], [#1996], [#1998], [#2001], [#2467]) ([**@simon1hofmann**],
-  [**@burgholzer**])
+- ✨ Add multi-qubit decomposition, fusion, and target-native synthesis passes,
+  including optimal square-root iSWAP synthesis ([#1774], [#1802], [#1803],
+  [#1809], [#1810], [#1814], [#1832], [#1850], [#1865], [#1961], [#1996],
+  [#1998], [#2001], [#2467], [#2468]) ([**@simon1hofmann**], [**@burgholzer**])
 
 #### Other additions
 
@@ -927,6 +927,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2468]: https://github.com/munich-quantum-toolkit/core/pull/2468
 [#2467]: https://github.com/munich-quantum-toolkit/core/pull/2467
 [#2457]: https://github.com/munich-quantum-toolkit/core/pull/2457
 [#2436]: https://github.com/munich-quantum-toolkit/core/pull/2436
