@@ -15,12 +15,13 @@ from __future__ import annotations
 
 import inspect
 import warnings
+from functools import cached_property
 from math import isfinite
 from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit import qasm2, qasm3
-from qiskit.circuit import QuantumCircuit
+from qiskit.circuit import ControlFlowOp, QuantumCircuit
 from qiskit.circuit.library import (
     MCPhaseGate,
     MCXGate,
@@ -123,6 +124,7 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     Returns:
         The OpenQASM 3 program.
     """
+    backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
     # Qiskit classical bits start at zero, while OpenQASM 3 bits are
     # uninitialized. Preserve Qiskit's semantics and make every output valid
     # even when the circuit measures only part of a register.
@@ -188,17 +190,17 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     return qasm3.dumps(circuit, basis_gates=basis_gates)
 
 
-def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:  # ruff:ignore[unused-function-argument]
+def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     """Serialize a circuit into an OpenQASM 2 program.
 
     Args:
         circuit: The circuit to serialize.
-        backend: The backend that runs the circuit. Qiskit's OpenQASM 2 exporter
-            takes no information from it.
+        backend: The backend whose native placements constrain the circuit.
 
     Returns:
         The OpenQASM 2 program.
     """
+    backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
     return qasm2.dumps(circuit)
 
 
@@ -621,6 +623,59 @@ class QDMIBackend(BackendV2):
             raise UnsupportedOperationError(msg)
         return [None]
 
+    @cached_property
+    def _native_operation_loci(self) -> dict[str, tuple[int | None, frozenset[tuple[int, ...] | None]]]:
+        """Normalize native placements once for the opened device session.
+
+        Returns:
+            Native arity and placements by QDMI operation name.
+        """
+        return {
+            operation.name().lower(): (operation.qubits_num(), frozenset(self._get_operation_qargs(operation)))
+            for operation in self._device.operations()
+        }
+
+    def _validate_circuit(self, circuit: QuantumCircuit, *, native: bool = False) -> None:
+        """Check supported operations, including operations inside control flow.
+
+        Built-in QASM serializers also check native width and placements after
+        preprocessing. Custom serializers can perform further compilation and
+        therefore retain responsibility for validating their output placements.
+
+        Raises:
+            CircuitValidationError: If the circuit exceeds the native device width.
+            UnsupportedOperationError: If an operation or placement is unsupported.
+        """
+        if native and circuit.num_qubits > self._device.qubits_num():
+            msg = f"Circuit has {circuit.num_qubits} qubits, but the native device has {self._device.qubits_num()}."
+            raise CircuitValidationError(msg)
+        device_ops = {operation.name().lower() for operation in self._device.operations()}
+
+        pending = [(circuit, tuple(range(circuit.num_qubits)))]
+        while pending:
+            block, indices = pending.pop()
+            for instruction in block.data:
+                operation = instruction.operation
+                qargs = tuple(indices[block.find_bit(bit).index] for bit in instruction.qubits)
+                if isinstance(operation, ControlFlowOp):
+                    if operation.name not in self._target.operation_names:
+                        msg = f"Unsupported control flow operation: '{operation.name}'"
+                        raise UnsupportedOperationError(msg)
+                    pending.extend((body, qargs) for body in reversed(operation.blocks))
+                    continue
+                if operation.name == "barrier":
+                    continue
+                names = self._map_qiskit_gate_to_operation_names(operation.name) & device_ops
+                if not names:
+                    msg = f"Unsupported operation: '{operation.name}'"
+                    raise UnsupportedOperationError(msg)
+                if native and not any(
+                    arity in {None, len(qargs)} and (None in loci or qargs in loci)
+                    for arity, loci in (self._native_operation_loci[name] for name in names)
+                ):
+                    msg = f"Operation '{operation.name}' is not advertised on native device qubits {qargs}."
+                    raise UnsupportedOperationError(msg)
+
     def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:  # ruff:ignore[no-self-use]
         """Rewrite a bound circuit before validation and conversion.
 
@@ -659,6 +714,7 @@ class QDMIBackend(BackendV2):
             text format and bytes for a binary format.
 
         Raises:
+            CircuitValidationError: If native circuit validation fails.
             UnsupportedFormatError: If the device reports no program format that
                 has a serializer.
             UnsupportedOperationError: If the circuit contains an operation the
@@ -676,7 +732,7 @@ class QDMIBackend(BackendV2):
                 continue
             try:
                 program = serializer(circuit, self)
-            except UnsupportedOperationError:
+            except (CircuitValidationError, UnsupportedOperationError):
                 # A circuit the chosen format cannot express must fail loudly
                 # rather than arrive at the device in a weaker format.
                 raise
@@ -733,7 +789,7 @@ class QDMIBackend(BackendV2):
             >>> qc2.ry(theta, 0)
             >>> qc2.measure_all()
             >>> job = backend.run([qc1, qc2], parameter_values=[{theta: 0.5}, {theta: 1.5}])
-        """
+        """  # ruff:ignore[docstring-extraneous-exception] The validation helper raises operation errors.
         # Normalize input to a list of circuits
         circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
 
@@ -770,8 +826,6 @@ class QDMIBackend(BackendV2):
             msg = f"Invalid 'memory' value: {memory!r}"
             raise CircuitValidationError(msg)
 
-        # Build set of all supported QDMI operation names once
-        device_ops = {op.name().lower() for op in self._device.operations()}
         supported_formats = self._device.supported_program_formats()
 
         # Process each circuit
@@ -803,16 +857,7 @@ class QDMIBackend(BackendV2):
                 msg = "Classical registers must partition circuit.clbits in register order."
                 raise CircuitValidationError(msg)
 
-            # Validate operations are supported
-            for instruction in bound_circuit.data:
-                op_name = instruction.operation.name
-                # Map the Qiskit gate name to possible QDMI operation names and check if any match
-                possible_qdmi_names = self._map_qiskit_gate_to_operation_names(op_name)
-                # Check if any of the possible QDMI names are supported by the device
-                # Also always allow 'barrier' as it's a directive, not an operation
-                if op_name != "barrier" and not any(qdmi_name in device_ops for qdmi_name in possible_qdmi_names):
-                    msg = f"Unsupported operation: '{op_name}'"
-                    raise UnsupportedOperationError(msg)
+            self._validate_circuit(bound_circuit)
 
             # Serialize the circuit into a program format the device accepts
             serialized_circuits.append(self._serialize_circuit(bound_circuit, supported_formats))

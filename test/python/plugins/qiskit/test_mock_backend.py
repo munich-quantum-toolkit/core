@@ -18,9 +18,11 @@ from typing import TYPE_CHECKING, ClassVar, NoReturn
 
 import pytest
 from qiskit import qasm2, qasm3
-from qiskit.circuit import Gate, Parameter, QuantumCircuit
+from qiskit.circuit import Gate, IfElseOp, Parameter, QuantumCircuit
+from qiskit.transpiler import Target
 
 from mqt.core.plugins.qiskit import (
+    CircuitValidationError,
     QDMIBackend,
     QDMIProvider,
     TranslationError,
@@ -662,8 +664,8 @@ def replaced_qasm3_serializer() -> Iterator[str]:
 
 
 def test_backend_uses_replaced_qasm3_serializer(replaced_qasm3_serializer: str) -> None:
-    """Replacing the built-in OpenQASM 3 serializer changes what the backend submits."""
-    device = MockQDMIDevice(num_qubits=2, operations=["h", "measure"])
+    """A custom serializer retains control over compilation to native width."""
+    device = MockQDMIDevice(num_qubits=1, operations=["h", "measure"])
     submissions = _record_submissions(device)
 
     backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type]
@@ -674,6 +676,99 @@ def test_backend_uses_replaced_qasm3_serializer(replaced_qasm3_serializer: str) 
     backend.run(qc, shots=100)
 
     assert submissions == [(replaced_qasm3_serializer, ProgramFormat.QASM3)]
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_qasm_rejects_invalid_native_placements_before_submitting_batch(
+    monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat
+) -> None:
+    """Validate the whole batch against ordered native pairs before submission."""
+    device = MockQDMIDevice(num_qubits=2, operations=["cx", "measure"])
+    operation = device.operations()[0]
+    monkeypatch.setattr(operation, "site_pairs", lambda: [(device.sites()[0], device.sites()[1])])
+    monkeypatch.setattr(device, "supported_program_formats", lambda: [program_format])
+    submissions = _record_submissions(device)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    valid = QuantumCircuit(2)
+    valid.cx(0, 1)
+    valid.measure_all()
+    invalid = QuantumCircuit(2)
+    invalid.cx(1, 0)
+    invalid.measure_all()
+
+    with pytest.raises(UnsupportedOperationError, match=r"native device qubits \(1, 0\)"):
+        backend.run([valid, invalid], shots=2)
+    assert not submissions
+    backend.run(valid, shots=2)
+    assert len(submissions) == 1
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM2, ProgramFormat.QASM3])
+def test_qasm_rejects_excess_native_width(monkeypatch: pytest.MonkeyPatch, program_format: ProgramFormat) -> None:
+    """A QASM program cannot address qubits beyond the native device width."""
+    device = MockQDMIDevice(num_qubits=2, operations=["measure"])
+    monkeypatch.setattr(device, "supported_program_formats", lambda: [program_format])
+    submissions = _record_submissions(device)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    circuit = QuantumCircuit(3)
+    circuit.measure_all()
+    with pytest.raises(CircuitValidationError, match="native device has 2"):
+        backend.run(circuit, shots=2)
+    assert not submissions
+
+
+def test_qasm_preflight_uses_native_sites_after_preprocessing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Preprocessing may widen a logical circuit to a site hidden from the Target."""
+
+    class WideningBackend(QDMIBackend):
+        """Expose a logical pair and lower it onto three native sites."""
+
+        def _build_target(self) -> Target:
+            return Target.from_configuration(basis_gates=["cx", "measure"], num_qubits=self.device.qubits_num() - 1)
+
+        def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:
+            widened = QuantumCircuit(self.device.qubits_num(), circuit.num_clbits)
+            widened.compose(circuit, qubits=[0, 2], inplace=True)
+            return widened
+
+    device = MockQDMIDevice(num_qubits=3, operations=["cx", "measure"])
+    monkeypatch.setattr(device.operations()[0], "site_pairs", lambda: [(device.sites()[0], device.sites()[2])])
+    submissions = _record_submissions(device)
+    backend = WideningBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    circuit = QuantumCircuit(2)
+    circuit.cx(0, 1)
+    circuit.measure_all()
+    backend.run(circuit, shots=2)
+    assert backend.target.num_qubits == 2
+    assert len(submissions) == 1
+    program, _ = submissions[0]
+    assert isinstance(program, str)
+    assert "cx q[0], q[2];" in program
+
+
+def test_qasm_preflight_maps_control_flow_operands(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Validate block-local operands against their enclosing native qubits."""
+    device = MockQDMIDevice(num_qubits=3, operations=["cx", "measure"])
+    monkeypatch.setattr(device.operations()[0], "site_pairs", lambda: [(device.sites()[2], device.sites()[0])])
+    submissions = _record_submissions(device)
+    backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Device boundary double.
+    body = QuantumCircuit(2)
+    body.cx(0, 1)
+    circuit = QuantumCircuit(3, 1)
+    circuit.if_else((circuit.clbits[0], True), body, QuantumCircuit(2), [2, 0], [])
+    with pytest.raises(UnsupportedOperationError, match="Unsupported control flow"):
+        backend.run(circuit, shots=2)
+    assert not submissions
+
+    backend.target.add_instruction(IfElseOp, name="if_else")
+    backend.run(circuit, shots=2)
+    assert len(submissions) == 1
+
+    invalid = QuantumCircuit(3, 1)
+    invalid.if_else((invalid.clbits[0], True), body, QuantumCircuit(2), [0, 2], [])
+    with pytest.raises(UnsupportedOperationError, match=r"native device qubits \(0, 2\)"):
+        backend.run(invalid, shots=2)
+    assert len(submissions) == 1
 
 
 def test_backend_rejects_device_without_program_payload() -> None:
