@@ -24,6 +24,7 @@ void registerGHZ(const nb::module_& m);
 void registerGrover(const nb::module_& m);
 void registerMultiplexer(const nb::module_& m);
 void registerQFT(const nb::module_& m);
+void registerQFTAdder(const nb::module_& m);
 void registerQPE(const nb::module_& m);
 void registerTeleportation(const nb::module_& m);
 
@@ -68,6 +69,10 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   const nb::module_ qft =
       m.def_submodule("qft", "QFT benchmark instances and options.");
   registerQFT(qft);
+
+  const nb::module_ qftAdder = m.def_submodule(
+      "qft_adder", "QFT adder benchmark instances and options.");
+  registerQFTAdder(qftAdder);
 
   const nb::module_ qpe =
       m.def_submodule("qpe", "QPE benchmark instances and options.");

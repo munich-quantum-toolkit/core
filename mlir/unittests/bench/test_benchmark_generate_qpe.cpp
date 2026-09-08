@@ -34,17 +34,6 @@ namespace mqt::bench {
 
 using namespace mlir;
 
-[[nodiscard]] static DenseElementsAttr angleTable(ModuleOp moduleOp) {
-  DenseElementsAttr result;
-  moduleOp.walk([&](arith::ConstantOp op) {
-    if (const auto table = dyn_cast<DenseElementsAttr>(op.getValue())) {
-      EXPECT_FALSE(result);
-      result = table;
-    }
-  });
-  return result;
-}
-
 TEST(GenerateProgramTest, KeepsStandardQPEPowerAndResultOrderAligned) {
   const QPE benchmark({.precision = 2, .phase = Phase(1, 4)});
   EXPECT_DOUBLE_EQ(benchmark.probability("01"), 1.);
@@ -52,7 +41,7 @@ TEST(GenerateProgramTest, KeepsStandardQPEPowerAndResultOrderAligned) {
   auto program = generate(benchmark);
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
-  auto table = angleTable(moduleOp);
+  auto table = test::angleTable(moduleOp);
   ASSERT_TRUE(table);
   const auto angles = llvm::to_vector(table.getValues<double>());
   ASSERT_EQ(angles.size(), 2U);
@@ -109,7 +98,7 @@ TEST(GenerateProgramTest, KeepsLargeQPEFiniteAndStructured) {
     ASSERT_TRUE(program);
     auto moduleOp = program->module();
 
-    auto table = angleTable(moduleOp);
+    auto table = test::angleTable(moduleOp);
     ASSERT_TRUE(table);
     EXPECT_EQ(table.getNumElements(), precision);
     for (const auto angle : table.getValues<double>()) {
@@ -128,7 +117,7 @@ TEST(GenerateProgramTest, DoublesQPEPhaseModuloOneWithoutOverflow) {
   });
   auto program = generate(benchmark);
   ASSERT_TRUE(program);
-  const auto table = angleTable(program->module());
+  const auto table = test::angleTable(program->module());
   ASSERT_TRUE(table);
   const auto angles = llvm::to_vector(table.getValues<double>());
   ASSERT_EQ(angles.size(), 4U);

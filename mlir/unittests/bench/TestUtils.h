@@ -16,8 +16,11 @@
 #include "mlir/bench/Generate.h"
 
 #include <gtest/gtest.h>
+#include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/Support/LLVM.h>
 
 #include <cstddef>
 #include <optional>
@@ -55,6 +58,18 @@ void expectSamplingMatchesReference(const Benchmark& benchmark) {
   }
   EXPECT_EQ(total, shots);
   EXPECT_LT(benchmark.evaluate(*counts).totalVariationDistance, 0.03);
+}
+
+[[nodiscard]] inline mlir::DenseElementsAttr
+angleTable(mlir::ModuleOp moduleOp) {
+  mlir::DenseElementsAttr result;
+  moduleOp.walk([&](mlir::arith::ConstantOp op) {
+    if (auto table = mlir::dyn_cast<mlir::DenseElementsAttr>(op.getValue())) {
+      EXPECT_FALSE(result);
+      result = table;
+    }
+  });
+  return result;
 }
 
 template <class Op> [[nodiscard]] size_t countOps(mlir::ModuleOp moduleOp) {

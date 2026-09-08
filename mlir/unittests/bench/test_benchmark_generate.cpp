@@ -14,6 +14,7 @@
 #include "bench/Grover.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
+#include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
 #include "bench/Teleportation.hpp"
 #include "mlir/bench/Generate.h"
@@ -44,6 +45,13 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
   expectValidQCAndJeff(QFT{{.qubits = 3, .periodExponent = 1}});
   expectValidQCAndJeff(QFT{
       {.qubits = 3, .periodExponent = 1, .method = QFTMethod::Semiclassical}});
+  expectValidQCAndJeff(QFTAdder{{
+      .addend = "101",
+      .accumulator = "001",
+      .method = QFTAdderMethod::Constant,
+      .overflow = QFTAdderOverflow::Carry,
+  }});
+  expectValidQCAndJeff(QFTAdder{{.addend = "+++", .accumulator = "001"}});
   expectValidQCAndJeff(QPE{{.precision = 3, .phase = Phase(3, 8)}});
   expectValidQCAndJeff(QPE{
       {.precision = 3, .phase = Phase(3, 8), .method = QPEMethod::Iterative}});
