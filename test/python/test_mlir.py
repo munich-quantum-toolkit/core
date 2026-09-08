@@ -389,7 +389,7 @@ def test_empty_compiled_program_round_trips_through_mlir() -> None:
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    program.compile_for_target(target)
+    program.compile_for_target(_test_target_environment(target))
     assert "qco." not in program.ir
 
     qc = QCOProgram.from_mlir_str(program.ir).to_qc()
@@ -503,7 +503,7 @@ def test_target_compiles_single_qubit_gates_without_entangler(num_sites: int) ->
         source.ry(0.123, site)
     program = QCProgram.from_qiskit(source).to_qco()
 
-    program.compile_for_target(target)
+    program.compile_for_target(_test_target_environment(target))
 
     assert program.is_valid
     result = program.to_qc().to_qiskit(target=target)

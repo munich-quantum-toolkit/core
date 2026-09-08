@@ -729,9 +729,9 @@ TEST_F(MappingPassFixture, PreserveStoredRegisterControlDuringRouting) {
   const auto target = llvm::cantFail(
       CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
                              NativeOperations::unrestricted()));
+  attachTestEnvironment(moduleOp.get(), target);
   PassManager mappingPm(context.get());
-  mappingPm.addPass(
-      createMappingPass(target, MappingPassOptions{.ntrials = 1}));
+  mappingPm.addPass(createMappingPass(MappingPassOptions{.ntrials = 1}));
   ASSERT_TRUE(succeeded(mappingPm.run(moduleOp.get())));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_TRUE(isExecutable(getEntryPoint(moduleOp.get()), target));

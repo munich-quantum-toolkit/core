@@ -1127,7 +1127,8 @@ TEST_F(CompilerPipelineTest, EmptyCompiledProgramsRoundTrip) {
     ASSERT_TRUE(qc);
     auto qco = std::move(*qc).intoQCO();
     ASSERT_TRUE(qco);
-    ASSERT_TRUE(qco->compileForTarget(makeCZTarget({{"sx", 0}, {"rz", 1}})));
+    ASSERT_TRUE(qco->compileForTarget(TargetEnvironment(
+        makeCZTarget({{"sx", 0}, {"rz", 1}}), makePayloadSpecification())));
     ASSERT_TRUE(succeeded(verify(qco->module())));
     qco->module().walk([](Operation* operation) {
       const auto dialect = operation->getName().getDialectNamespace();

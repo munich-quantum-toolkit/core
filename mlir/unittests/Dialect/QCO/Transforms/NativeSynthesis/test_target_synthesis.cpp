@@ -955,11 +955,11 @@ TEST_F(TargetSynthesisTest, SingleQubitSynthesisNeedsNoEntangler) {
                            })));
 
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
-  ASSERT_TRUE(mlir::succeeded(
-      runPass(*synthesized, mlir::qco::createTargetNativeSynthesis(target))));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
-  ASSERT_TRUE(mlir::succeeded(
-      runPass(*synthesized, mlir::qco::createVerifyTargetConformance(target))));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *synthesized, target, mlir::qco::createVerifyTargetConformance())));
   expectEquivalent(expected, synthesized);
 }
 
@@ -979,12 +979,12 @@ TEST_F(TargetSynthesisTest, RuntimeSingleQubitSynthesisNeedsNoEntangler) {
       1, Connectivity::allToAll(),
       NativeOperations::fromOperations({valid(Operation::create("u", 1, 3))})));
 
-  ASSERT_TRUE(mlir::succeeded(
-      runPass(*moduleOp, mlir::qco::createTargetNativeSynthesis(target))));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
   EXPECT_EQ(countOps<RYOp>(*moduleOp), 0U);
-  ASSERT_TRUE(mlir::succeeded(
-      runPass(*moduleOp, mlir::qco::createVerifyTargetConformance(target))));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *moduleOp, target, mlir::qco::createVerifyTargetConformance())));
 }
 
 TEST_F(TargetSynthesisTest, TwoQubitSynthesisRequiresEntangler) {
@@ -997,11 +997,12 @@ TEST_F(TargetSynthesisTest, TwoQubitSynthesisRequiresEntangler) {
   const auto target = valid(Target::create(
       2, Connectivity::allToAll(),
       NativeOperations::fromOperations({valid(Operation::create("u", 1, 3))})));
+  attachTestEnvironment(*moduleOp, target);
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
   const auto before = printModule(*moduleOp);
 
   const auto diagnostics =
-      expectFailure(*moduleOp, mlir::qco::createTargetNativeSynthesis(target));
+      expectFailure(*moduleOp, mlir::qco::createTargetNativeSynthesis());
 
   EXPECT_NE(diagnostics.find("no usable two-qubit entangler"),
             std::string::npos)
