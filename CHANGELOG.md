@@ -32,7 +32,7 @@ releases may include breaking changes.
 - ✨ Add a library for typed structured quantum benchmarks with versioned
   instance specifications, analytic references, deterministic manifests, and
   C++, Python, and command-line interfaces ([#2135], [#2299], [#2315], [#2337],
-  [#2380]) ([**@burgholzer**], [**@denialhaag**])
+  [#2380], [#2402]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add DD construction, simulation, statevector extraction, and sampling for
   QCO programs with structured control and dynamic quantum data, including
   direct lowering and dense-array helpers for supported compiler inputs
@@ -929,6 +929,7 @@ for previous changelogs._
 [#2457]: https://github.com/munich-quantum-toolkit/core/pull/2457
 [#2436]: https://github.com/munich-quantum-toolkit/core/pull/2436
 [#2421]: https://github.com/munich-quantum-toolkit/core/pull/2421
+[#2402]: https://github.com/munich-quantum-toolkit/core/pull/2402
 [#2399]: https://github.com/munich-quantum-toolkit/core/pull/2399
 [#2380]: https://github.com/munich-quantum-toolkit/core/pull/2380
 [#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368

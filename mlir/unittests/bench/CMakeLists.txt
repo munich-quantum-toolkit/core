@@ -6,10 +6,18 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-unittests-benchmark test_benchmark_generate.cpp)
+add_executable(
+  mqt-core-mlir-unittests-benchmark
+  test_benchmark_generate.cpp
+  test_benchmark_generate_bv.cpp
+  test_benchmark_generate_ghz.cpp
+  test_benchmark_generate_grover.cpp
+  test_benchmark_generate_multiplexer.cpp
+  test_benchmark_generate_qft.cpp
+  test_benchmark_generate_qpe.cpp)
 
-target_link_libraries(mqt-core-mlir-unittests-benchmark PRIVATE GTest::gtest_main
-                                                                MQT::CoreBenchGenerate)
+target_link_libraries(mqt-core-mlir-unittests-benchmark
+                      PRIVATE GTest::gtest_main MQT::CoreBenchGenerate MLIRQCODDFunctionality)
 
 mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-benchmark)
 
