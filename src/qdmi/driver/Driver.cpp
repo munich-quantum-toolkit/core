@@ -164,9 +164,12 @@ DynamicDeviceLibrary::~DynamicDeviceLibrary() {
 
 namespace {
 struct DynamicLibraryCache {
+  struct Module {
+    std::mutex mutex;
+    std::map<std::string, std::shared_ptr<DynamicDeviceLibrary>> providers;
+  };
   std::mutex mutex;
-  std::map<void*, std::map<std::string, std::shared_ptr<DynamicDeviceLibrary>>>
-      libraries;
+  std::map<void*, Module> libraries;
 };
 
 [[nodiscard]] auto dynamicLibraryCache() -> DynamicLibraryCache& {
@@ -181,14 +184,20 @@ struct DynamicLibraryCache {
                                            const std::string& prefix)
     -> std::shared_ptr<DynamicDeviceLibrary> {
   auto& cache = dynamicLibraryCache();
-  const std::scoped_lock lock(cache.mutex);
   const auto closeLibrary = [](void* handle) { DL_CLOSE(handle); };
   std::unique_ptr<void, decltype(closeLibrary)> handle(DL_OPEN(libName.c_str()),
                                                        closeLibrary);
   if (!handle) {
     throw std::runtime_error("Couldn't open the device library: " + libName);
   }
-  auto& providers = cache.libraries[handle.get()];
+  auto& module = [&]() -> auto& {
+    const std::scoped_lock lock(cache.mutex);
+    return cache.libraries[handle.get()];
+  }();
+  /// Modules may contain providers that share initialization state. Keep their
+  /// initialization serialized without blocking unrelated modules.
+  const std::scoped_lock lock(module.mutex);
+  auto& providers = module.providers;
   if (const auto found = providers.find(prefix); found != providers.end()) {
     return found->second;
   }
@@ -223,13 +232,14 @@ QDMI_Device_impl_d::QDMI_Device_impl_d(
     throw std::runtime_error("Device returned a null session handle");
   }
   try {
-    const auto setParameter = [&](const std::optional<std::string>& value,
+    /// All views borrow NUL-terminated strings for this synchronous call.
+    const auto setParameter = [&](const std::optional<std::string_view> value,
                                   const QDMI_Device_Session_Parameter param) {
       if (!value || library_->device_session_set_parameter == nullptr) {
         return;
       }
       const auto status = library_->device_session_set_parameter(
-          deviceSession_, param, value->size() + 1, value->c_str());
+          deviceSession_, param, value->size() + 1, value->data());
       if (status == QDMI_ERROR_NOTSUPPORTED) {
         qdmi::diagnostics::info(
             "Device session parameter {} not supported by device (skipped)",
@@ -755,7 +765,7 @@ auto Driver::openFresh(const std::string_view id,
   }
   return std::make_shared<QDMI_Device_impl_d>(
       getDynamicDeviceLibrary(definition.library.string(), definition.prefix),
-      detail::mergeSessionConfig(definition.session, overrides));
+      detail::mergeSessionConfig(std::move(definition.session), overrides));
 }
 
 void Driver::materializeClientCatalog() {

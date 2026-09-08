@@ -10,6 +10,7 @@
 
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
+#include "qdmi/driver/SessionConfig.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
@@ -18,13 +19,16 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <barrier>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <future>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -140,6 +144,7 @@ class ChildDeviceLibrary final : public qdmi::DeviceLibrary {
     }
     auto* const fakeSession = asSession(session);
     if (parameter == QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1) {
+      fakeSession->library->custom1Data.emplace_back(value);
       return fakeSession->library->successStatus;
     }
     if (parameter != QDMI_DEVICE_SESSION_PARAMETER_CHILDDEVICE) {
@@ -246,6 +251,7 @@ public:
   bool childDevicesNotSupported = false;
   bool childDeviceQueryFails = false;
   std::vector<QDMI_Child_Device> selectedChildren;
+  std::vector<const void*> custom1Data;
 
   ChildDeviceLibrary() {
     activeLibrary = this;
@@ -1680,6 +1686,27 @@ TEST(DeviceRegistrationTest, RuntimeRegistrationsStayOutOfClientCatalog) {
   QDMI_session_free(existingSession);
 }
 
+TEST(DeviceSessionConfigTest, MovesAndBorrowsInlineConfiguration) {
+  const auto library = std::make_shared<ChildDeviceLibrary>();
+  qdmi::DeviceSessionConfig config{
+      .deviceConfiguration =
+          qdmi::InlineDeviceConfiguration{
+              .json = std::string(4096, ' '),
+          },
+  };
+  const auto* const data =
+      std::get<qdmi::InlineDeviceConfiguration>(*config.deviceConfiguration)
+          .json.data();
+  const auto merged = qdmi::detail::mergeSessionConfig(std::move(config), {});
+  EXPECT_EQ(
+      std::get<qdmi::InlineDeviceConfiguration>(*merged.deviceConfiguration)
+          .json.data(),
+      data);
+  const QDMI_Device_impl_d device(library, merged);
+  /// The parent and both children borrow the same configuration buffer.
+  EXPECT_THAT(library->custom1Data, testing::ElementsAre(data, data, data));
+}
+
 TEST(DeviceSessionConfigTest, OpenWithBaseUrl) {
   qdmi::DeviceSessionConfig config;
   config.baseUrl = "http://localhost:8080";
@@ -1825,6 +1852,90 @@ TEST(DeviceSessionConfigTest, IdempotentLoadingWithDifferentConfigs) {
       EXPECT_NO_THROW(static_cast<void>(openTestDevice(lib, prefix, config)););
     }
   }
+}
+
+TEST(DynamicDeviceLibraryDeathTest,
+     InitializesUnrelatedModulesWhileRetryingConcurrentAliases) {
+  const auto probe = [] {
+#ifdef _WIN32
+    auto* handle = LoadLibraryW(
+        std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).c_str());
+    const auto setCallback =
+        handle == nullptr
+            ? nullptr
+            : reinterpret_cast<void (*)(int (*)())>(GetProcAddress(
+                  handle, "TEST_SESSION_set_initialize_callback"));
+#else
+    auto* handle = dlopen(MQT_CORE_QDMI_SESSION_DEVICE, RTLD_NOW | RTLD_LOCAL);
+    const auto setCallback =
+        handle == nullptr
+            ? nullptr
+            : reinterpret_cast<void (*)(int (*)())>(
+                  dlsym(handle, "TEST_SESSION_set_initialize_callback"));
+#endif
+    if (setCallback == nullptr) {
+      std::_Exit(1);
+    }
+    static std::promise<void> entered;
+    static std::promise<void> release;
+    static const auto RELEASED = release.get_future().share();
+    static std::atomic_size_t attempts = 0;
+    setCallback([]() -> int {
+      if (++attempts == 1) {
+        entered.set_value();
+        RELEASED.wait();
+        return QDMI_ERROR_FATAL;
+      }
+      return QDMI_SUCCESS;
+    });
+
+    auto& driver = qdmi::Driver::get();
+    driver.registerDevice({
+        .id = "cache.slow",
+        .library = MQT_CORE_QDMI_SESSION_DEVICE,
+        .prefix = "TEST_SESSION",
+    });
+    driver.registerDevice({
+        .id = "cache.alias",
+        .library =
+            std::filesystem::path(MQT_CORE_QDMI_SESSION_DEVICE).filename(),
+        .prefix = "TEST_SESSION",
+    });
+    const auto warm = qdmi::Session::openDevice("mqt.sc.default");
+    auto first = std::async(std::launch::async, [] {
+      try {
+        static_cast<void>(qdmi::Session::openDevice("cache.slow"));
+        return false;
+      } catch (const std::runtime_error&) {
+        return true;
+      }
+    });
+    if (entered.get_future().wait_for(std::chrono::seconds(5)) !=
+        std::future_status::ready) {
+      std::_Exit(2);
+    }
+    auto alias = std::async(std::launch::async, [] {
+      return qdmi::Session::openDevice("cache.alias");
+    });
+    auto unrelated = std::async(std::launch::async, [] {
+      return qdmi::Session::openDevice("mqt.sc.default");
+    });
+    const auto aliasWaited = alias.wait_for(std::chrono::milliseconds(50)) ==
+                             std::future_status::timeout;
+    const auto unrelatedReady = unrelated.wait_for(std::chrono::seconds(5)) ==
+                                std::future_status::ready;
+    release.set_value();
+    const auto failed = first.get();
+    const auto retried = alias.get();
+    static_cast<void>(unrelated.get());
+    const auto later = qdmi::Session::openDevice("cache.slow");
+    const auto shared = &static_cast<QDMI_Device>(retried)->getLibrary() ==
+                        &static_cast<QDMI_Device>(later)->getLibrary();
+    std::_Exit(
+        failed && aliasWaited && unrelatedReady && shared && attempts == 2 ? 0
+                                                                           : 3);
+  };
+  EXPECT_EXIT(probe(), testing::ExitedWithCode(0), "");
 }
 
 TEST(DynamicDeviceLibraryDeathTest,
