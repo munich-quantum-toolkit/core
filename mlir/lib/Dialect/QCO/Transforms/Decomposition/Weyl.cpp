@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+// Modified to implement, dispatch, and emit square-root iSWAP synthesis.
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Weyl.h"
 
 #include "mlir/Compiler/Target.h"
@@ -732,9 +733,161 @@ bool TwoQubitWeylDecomposition::applySpecialization(
   return flippedFromOriginal;
 }
 
+using KAK = TwoQubitWeylDecomposition;
+constexpr double EIGHTH_PI = std::numbers::pi / 8.;
+
+// Independently implemented from the mathematical results in section I.B,
+// equations (3), (5)--(7), of the supplemental material to
+// https://doi.org/10.1103/PhysRevLett.130.070601.
+// KAK is an existing dependency; no external synthesis code is used here.
+static Matrix4x4 sqrtISwapMatrix() {
+  const auto s = std::numbers::sqrt2 / 2.;
+  return Matrix4x4::fromElements(1., 0., 0., 0., 0., s, Complex(0., s), 0., 0.,
+                                 Complex(0., s), s, 0., 0., 0., 0., 1.);
+}
+
+static double twoGateMargin(const KAK& target) {
+  return target.a() - target.b() - std::abs(target.c());
+}
+
+// Attach U's outer local factors to a synthesis of its canonical matrix.
+static void attachLocalFactors(TwoQubitNativeDecomposition& result,
+                               const KAK& target) {
+  auto& factors = result.singleQubitFactors;
+  factors[0] = factors[0] * target.k2r();
+  factors[1] = factors[1] * target.k2l();
+  factors[factors.size() - 2] = target.k1r() * factors[factors.size() - 2];
+  factors.back() = target.k1l() * factors.back();
+  result.globalPhase += target.globalPhase();
+}
+
+// Convert a circuit locally equivalent to target to an exact realization.
+static void align(TwoQubitNativeDecomposition& result, const KAK& circuit,
+                  const KAK& target) {
+  auto& factors = result.singleQubitFactors;
+  factors[0] = factors[0] * circuit.k2r().adjoint();
+  factors[1] = factors[1] * circuit.k2l().adjoint();
+  factors[factors.size() - 2] =
+      circuit.k1r().adjoint() * factors[factors.size() - 2];
+  factors.back() = circuit.k1l().adjoint() * factors.back();
+  result.globalPhase -= circuit.globalPhase();
+  // On x=pi/4, opposite signs of z denote the same local class.
+  // Y on the left qubit reverses XX and ZZ; i(XX) then shifts
+  // -pi/4 back to pi/4. Their product is -(Z tensor X).
+  if (circuit.c() * target.c() < 0. &&
+      std::abs(circuit.a() - std::numbers::pi / 4.) <= WEYL_TOLERANCE &&
+      std::abs(target.a() - std::numbers::pi / 4.) <= WEYL_TOLERANCE) {
+    const auto x = Matrix2x2::fromElements(0., 1., 1., 0.);
+    const auto y =
+        Matrix2x2::fromElements(0., Complex(0., -1.), Complex(0., 1.), 0.);
+    const auto minusZ = Matrix2x2::fromElements(-1., 0., 0., 1.);
+    factors[1] = factors[1] * y;
+    factors[factors.size() - 2] = x * factors[factors.size() - 2];
+    factors.back() = minusZ * factors.back();
+  }
+  attachLocalFactors(result, target);
+}
+
+static TwoQubitNativeDecomposition oneGate(const KAK& target) {
+  const auto identity = Matrix2x2::identity();
+  TwoQubitNativeDecomposition result{
+      1, {identity, identity, identity, identity}, 0.};
+  static const auto BASIS = KAK::create(sqrtISwapMatrix(), std::nullopt);
+  align(result, BASIS, target);
+  return result;
+}
+
+static TwoQubitNativeDecomposition twoGates(const KAK& target) {
+  const double x = target.a(), y = target.b(), z = target.c();
+  const double c = std::sin(x + y - z) * std::sin(x - y + z) *
+                   std::sin(-x - y - z) * std::sin(-x + y + z);
+  const auto split = 2. * std::sqrt(std::max(0., c));
+  const auto center = std::cos(2. * x) - std::cos(2. * y) + std::cos(2. * z);
+  const auto alpha = std::acos(std::clamp(center + split, -1., 1.));
+  const auto beta = std::acos(std::clamp(center - split, -1., 1.));
+  const auto t = 2. * std::cos(x) * std::cos(z) * std::sin(y);
+  const auto numerator = t * t;
+  const auto denominator =
+      numerator + std::cos(2. * x) * std::cos(2. * y) * std::cos(2. * z);
+  // At CNOT the ratio is 0/0. Either limiting phase gives the same class.
+  const auto ratio = denominator > 0. ? numerator / denominator : 0.;
+  const auto gamma =
+      std::acos((z < 0. ? -1. : 1.) * std::sqrt(std::clamp(ratio, 0., 1.)));
+  const auto a = std::polar(std::cos(alpha / 2.), gamma);
+  const auto b = Complex(0., std::sin(alpha / 2.));
+  const auto left = Matrix2x2::fromElements(a, b, b, std::conj(a));
+  const auto right = Matrix2x2::fromElements(
+      std::cos(beta / 2.), Complex(0., std::sin(beta / 2.)),
+      Complex(0., std::sin(beta / 2.)), std::cos(beta / 2.));
+  const auto identity = Matrix2x2::identity();
+  TwoQubitNativeDecomposition result{
+      2, {identity, identity, right, left, identity, identity}, 0.};
+  const auto gate = sqrtISwapMatrix();
+  const auto sandwich = gate * Matrix4x4::kron(left, right) * gate;
+  align(result, KAK::create(sandwich, std::nullopt), target);
+  return result;
+}
+TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
+  const auto kak = KAK::create(target, std::nullopt);
+  if (kak.a() <= WEYL_TOLERANCE) {
+    TwoQubitNativeDecomposition result{
+        0, {Matrix2x2::identity(), Matrix2x2::identity()}, 0.};
+    attachLocalFactors(result, kak);
+    return result;
+  }
+  if (std::abs(kak.a() - EIGHTH_PI) <= WEYL_TOLERANCE &&
+      std::abs(kak.b() - EIGHTH_PI) <= WEYL_TOLERANCE &&
+      std::abs(kak.c()) <= WEYL_TOLERANCE) {
+    return oneGate(kak);
+  }
+  if (twoGateMargin(kak) >= -WEYL_TOLERANCE) {
+    return twoGates(kak);
+  }
+
+  // The twelve commuting representatives of sqrt(iSWAP) shift one pair of
+  // magic-basis eigenphases by +/-pi/4. Lemma 2 guarantees a residual in
+  // the two-gate region. Maximize its margin to avoid fragile boundaries.
+  std::optional<KAK> residual;
+  std::optional<KAK> prefix;
+  double bestMargin = -1.;
+  for (size_t zero = 0; zero < 3; ++zero) {
+    for (double first : {-EIGHTH_PI, EIGHTH_PI}) {
+      for (double second : {-EIGHTH_PI, EIGHTH_PI}) {
+        std::array<double, 3> coordinates{};
+        coordinates[(zero + 1) % 3] = first;
+        coordinates[(zero + 2) % 3] = second;
+        const auto gate = KAK::getCanonicalMatrix(
+            coordinates[0], coordinates[1], coordinates[2]);
+        const auto candidate = KAK::create(
+            kak.getCanonicalMatrix() * gate.adjoint(), std::nullopt);
+        if (twoGateMargin(candidate) > bestMargin) {
+          bestMargin = twoGateMargin(candidate);
+          residual = candidate;
+          prefix = KAK::create(gate, std::nullopt);
+        }
+      }
+    }
+  }
+  assert(residual && prefix && bestMargin >= -WEYL_TOLERANCE);
+  auto before = oneGate(*prefix);
+  auto after = twoGates(*residual);
+  auto& factors = before.singleQubitFactors;
+  factors[2] = after.singleQubitFactors[0] * factors[2];
+  factors[3] = after.singleQubitFactors[1] * factors[3];
+  factors.append(after.singleQubitFactors.begin() + 2,
+                 after.singleQubitFactors.end());
+  before.numBasisUses = 3;
+  before.globalPhase += after.globalPhase;
+  attachLocalFactors(before, kak);
+  return before;
+}
+
 TwoQubitNativeDecomposition
 decomposeUnitary2QWeyl(const Matrix4x4& target,
                        const CompilerTarget::GateKind entangler) {
+  if (entangler == CompilerTarget::GateKind::SQRTISWAP) {
+    return decomposeSqrtISwap(target);
+  }
   auto decomposition =
       cachedNativeBasisDecomposer(entangler).decomposeTarget(target);
   if (!decomposition) {
@@ -801,6 +954,13 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
       auto rzzOp = RZZOp::create(builder, loc, wire0, wire1, WEYL_PI / 2.0);
       wire0 = rzzOp.getOutputQubit(0);
       wire1 = rzzOp.getOutputQubit(1);
+      return;
+    }
+    if (basis.entangler == CompilerTarget::GateKind::SQRTISWAP) {
+      auto exchange =
+          XXPlusYYOp::create(builder, loc, wire0, wire1, -WEYL_PI / 2., 0.);
+      wire0 = exchange.getOutputQubit(0);
+      wire1 = exchange.getOutputQubit(1);
       return;
     }
     if (basis.entangler == CompilerTarget::GateKind::ISWAP) {

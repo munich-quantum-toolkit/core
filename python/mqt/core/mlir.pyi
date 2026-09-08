@@ -340,6 +340,8 @@ class CompilerTarget:
 
         ECR = 14
 
+        SQRT_ISWAP = 15
+
     class SingleQubitBasis(enum.Enum):
         """Recognized target-wide single-qubit synthesis basis."""
 

@@ -284,6 +284,7 @@ public:
     CZ,
     CX,
     ECR,
+    SQRTISWAP,
   };
 
   /// Recognized globally usable single-qubit synthesis basis.

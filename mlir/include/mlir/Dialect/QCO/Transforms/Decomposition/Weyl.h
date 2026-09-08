@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+// Modified to declare square-root iSWAP synthesis.
 #pragma once
 
 #include "mlir/Compiler/Target.h"
@@ -350,6 +351,12 @@ struct SynthesizedUnitary2Q {
   Value qubit1;
   double globalPhase = 0.0;
 };
+
+/// Decompose a two-qubit unitary into the minimum number of sqrt(iSWAP)
+/// gates (0--3), up to WEYL_TOLERANCE in the interaction coefficients.
+/// Single-qubit factors and global phase follow TwoQubitNativeDecomposition.
+[[nodiscard]] TwoQubitNativeDecomposition
+decomposeSqrtISwap(const Matrix4x4& target);
 
 /**
  * @brief Decomposes a two-qubit unitary using @p entangler.

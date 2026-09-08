@@ -245,3 +245,22 @@ and creates a canonical physical Qiskit circuit. The circuit has one register
 named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits.
 This option does not run target compilation or emit Qiskit layout metadata.
 Target-aware export requires static qubits whose site IDs belong to that target.
+
+## Square-root iSWAP targets
+
+A target operation named `sqrt_iswap`, with two qubits and zero parameters,
+selects square-root iSWAP synthesis when no earlier-preferred entangler is
+available. Pair it with a supported single-qubit basis, such as `u`. The
+compiler emits each gate as `xx_plus_yy(-pi/2, 0)`; other parameter values do
+not satisfy this fixed-gate capability.
+
+Numeric two-qubit synthesis minimizes the square-root iSWAP count per block,
+with arbitrary single-qubit gates and preserved global phase. Local gates use
+zero entanglers, the square-root iSWAP local equivalence class uses one, and
+other blocks use two or three. With canonical interaction coordinates
+`pi/4 >= x >= y >= abs(z)`, two gates suffice when `x >= y + abs(z)`.
+Classification uses the Weyl numerical tolerance. This does not guarantee a
+minimum count for an entire multi-qubit circuit or minimum execution error.
+
+The construction follows the mathematical results in section I.B of the
+[supplemental material to Quantum Instruction Set Design for Performance](https://journals.aps.org/prl/supplemental/10.1103/PhysRevLett.130.070601/QISA_Supp.pdf).

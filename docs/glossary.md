@@ -17,6 +17,13 @@ implementation.
 ```{glossary}
 :sorted:
 
+square-root iSWAP
+SQiSW
+  **Preferred term:** square-root iSWAP. **Accepted aliases:** SQiSW and
+  sqrt(iSWAP). The two-qubit gate that fixes the states 00 and 11 and maps
+  01 to (01 + i 10)/sqrt(2), and 10 to (i 01 + 10)/sqrt(2). Its square is
+  iSWAP. The compiler target operation name is `sqrt_iswap`.
+
 CDA
 Chair for Design Automation
   **Preferred term:** Chair for Design Automation. **Accepted abbreviation:**

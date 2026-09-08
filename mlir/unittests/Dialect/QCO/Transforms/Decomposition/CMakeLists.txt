@@ -8,7 +8,7 @@
 
 set(target_name mqt-core-mlir-unittest-decomposition)
 add_executable(${target_name} test_euler_decomposition.cpp test_multi_controlled_decomposition.cpp
-                              test_weyl_decomposition.cpp)
+                              test_sqrt_iswap.cpp test_weyl_decomposition.cpp)
 
 target_link_libraries(
   ${target_name}

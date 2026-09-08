@@ -820,6 +820,7 @@ TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
       Entangler{GateKind::RYY, "ryy", 1},
       Entangler{GateKind::RZZ, "rzz", 1},
       Entangler{GateKind::ISWAP, "iswap", 0},
+      Entangler{GateKind::SQRTISWAP, "sqrt_iswap", 0},
       Entangler{GateKind::CX, "cx", 0},
       Entangler{GateKind::ECR, "ecr", 0},
       Entangler{GateKind::RZX, "rzx", 1},

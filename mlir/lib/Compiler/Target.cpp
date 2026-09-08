@@ -36,6 +36,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -121,6 +122,12 @@ constexpr std::array GATE_SPECIFICATIONS{
         .name = "rzz",
         .arity = 2,
         .numParameters = 1,
+    },
+    GateSpecification{
+        .kind = GateKind::SQRTISWAP,
+        .name = "sqrt_iswap",
+        .arity = 2,
+        .numParameters = 0,
     },
     GateSpecification{
         .kind = GateKind::ISWAP,
@@ -793,8 +800,9 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   };
 
   constexpr std::array entanglerPreference{
-      GateKind::RXX,   GateKind::RYY, GateKind::RZX, GateKind::RZZ,
-      GateKind::ISWAP, GateKind::CZ,  GateKind::CX,  GateKind::ECR,
+      GateKind::RXX, GateKind::RYY,   GateKind::RZX,
+      GateKind::RZZ, GateKind::ISWAP, GateKind::CZ,
+      GateKind::CX,  GateKind::ECR,   GateKind::SQRTISWAP,
   };
   /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
   const auto entangler =
@@ -1138,6 +1146,17 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
         return storage_->supportsOperation("cz", 2, 0, sites);
       }
       return false;
+    }
+    if (auto exchange = dyn_cast<qco::XXPlusYYOp>(operation)) {
+      const auto theta = mqt::valueToDouble(exchange.getTheta());
+      const auto beta = mqt::valueToDouble(exchange.getBeta());
+      if (theta && beta &&
+          std::abs(*theta + std::numbers::pi / 2.) <=
+              mqt::PARAMETER_COMPARISON_TOLERANCE &&
+          std::abs(*beta) <= mqt::PARAMETER_COMPARISON_TOLERANCE &&
+          storage_->supportsOperation("sqrt_iswap", 2, 0, sites)) {
+        return true;
+      }
     }
     return storage_->supportsOperation(unitary.getBaseSymbol(),
                                        unitary.getNumQubits(),
