@@ -317,8 +317,17 @@ def test_restartable_worktree_rejects_unrelated_changes(tmp_path: Path, monkeypa
         adopt.require_restartable_worktree(git, version)
 
 
-def test_raw_capsule_access_is_reviewed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("default_encoding", ["utf-8", "cp1252"])
+def test_raw_capsule_access_is_reviewed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, default_encoding: str) -> None:
     """Resolve raw table accesses and fail closed if a new header moves them."""
+    original_read = Path.read_text
+
+    def read_text(
+        path: Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+    ) -> str:
+        return original_read(path, encoding=encoding or default_encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
     implementation = tmp_path / "translation.cpp"
     implementation.write_text("_Qk_API_Circuit[38]\n")
     monkeypatch.setattr(adopt, "TRANSLATION_IMPLEMENTATION", implementation)

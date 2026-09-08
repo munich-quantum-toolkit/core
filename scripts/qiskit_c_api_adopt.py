@@ -234,17 +234,19 @@ def api_surface(include: Path) -> dict[str, Any]:
         RuntimeError: A raw capsule access has no matching header declaration.
     """
     qiskit = include / "qiskit"
-    implementation = TRANSLATION_IMPLEMENTATION.read_text()
+    implementation = TRANSLATION_IMPLEMENTATION.read_text(encoding="utf-8")
     used_function_names = set(re.findall(r"\bqk_[A-Za-z0-9_]+", strip_comments(implementation)))
-    capsule = capsule_functions((qiskit / "funcs_py_generated.h").read_text())
+    capsule = capsule_functions((qiskit / "funcs_py_generated.h").read_text(encoding="utf-8"))
     for table, slot in re.findall(r"(_Qk_API_\w+)\[(\d+)\]", strip_comments(implementation)):
         matches = {name for name, entry in capsule.items() if entry["table"] == table and entry["slot"] == int(slot)}
         if not matches:
             msg = f"unresolved raw capsule access: {table}[{slot}]"
             raise RuntimeError(msg)
         used_function_names.update(matches)
-    declarations = function_declarations((qiskit / "funcs.h").read_text() + "\n" + (qiskit / "funcs_py.h").read_text())
-    types = typedefs("\n".join(header.read_text() for header in sorted(qiskit.glob("*.h"))))
+    declarations = function_declarations(
+        (qiskit / "funcs.h").read_text(encoding="utf-8") + "\n" + (qiskit / "funcs_py.h").read_text(encoding="utf-8")
+    )
+    types = typedefs("\n".join(header.read_text(encoding="utf-8") for header in sorted(qiskit.glob("*.h"))))
     functions = {
         name: {
             "capsule": capsule.get(name),
@@ -315,7 +317,7 @@ def vendored_files(root: Path) -> dict[Path, bytes]:
     if not provenance_path.is_file():
         msg = f"vendored snapshot has no provenance: {root}"
         raise RuntimeError(msg)
-    provenance = json.loads(provenance_path.read_text())
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
     files = provenance.get("files")
     if not isinstance(files, dict) or not all(isinstance(path, str) for path in files):
         msg = f"vendored snapshot has invalid file provenance: {root}"
@@ -370,7 +372,7 @@ def populate_vendor_tree(target: Path, version: str, wheel: Path, artifact: Json
         (target / "LICENSE").write_bytes(license_text)
         hashes["LICENSE"] = hashlib.sha256(license_text).hexdigest()
 
-    version_header = (target / "include" / "qiskit" / "version.h").read_text()
+    version_header = (target / "include" / "qiskit" / "version.h").read_text(encoding="utf-8")
     embedded_match = re.search(r'^#define QISKIT_VERSION "([^"]+)"$', version_header, re.MULTILINE)
     if embedded_match is None or embedded_match.group(1) != version:
         msg = "wheel C API headers do not embed the requested Qiskit version"
@@ -489,7 +491,7 @@ def translation_artifacts(version: Version) -> tuple[Path, str, str]:
     registration = f'MQT_QISKIT_VERSION({major}, {minor}, {suffix}, {patch}, {version}, "{supported_range}")'
     source = (
         TRANSLATION_TEMPLATE
-        .read_text()
+        .read_text(encoding="utf-8")
         .replace("@QISKIT_FACTORY@", f"createQiskit{suffix}")
         .replace("@QISKIT_MAJOR@", str(major))
         .replace("@QISKIT_MINOR@", str(minor))
@@ -507,13 +509,13 @@ def register_translation(version: Version) -> None:
     """
     major, minor, _ = version.release
     destination, source, registration = translation_artifacts(version)
-    current = REGISTRY.read_text()
+    current = REGISTRY.read_text(encoding="utf-8")
     existing = re.search(rf"^MQT_QISKIT_VERSION\({major}, *{minor},.*$", current, re.MULTILINE)
     if existing is not None and existing.group(0) != registration:
         msg = f"Qiskit {major}.{minor} has a conflicting translation registration"
         raise RuntimeError(msg)
     if destination.exists():
-        if destination.read_text() != source:
+        if destination.read_text(encoding="utf-8") != source:
             msg = f"existing translation source is not the generated source: {destination}"
             raise RuntimeError(msg)
     else:
@@ -553,7 +555,7 @@ def require_restartable_worktree(git: str, version: Version) -> None:
     if unrelated:
         msg = "Qiskit C API adoption found unrelated worktree changes: " + ", ".join(unrelated)
         raise RuntimeError(msg)
-    if destination.exists() and destination.read_text() != source:
+    if destination.exists() and destination.read_text(encoding="utf-8") != source:
         msg = f"existing translation source is not the generated source: {destination}"
         raise RuntimeError(msg)
     registry_path = REGISTRY.relative_to(ROOT).as_posix()
@@ -568,7 +570,7 @@ def require_restartable_worktree(git: str, version: Version) -> None:
         timeout=GIT_TIMEOUT,
     ).stdout
     resumed = head.rstrip() + "\n" + registration + "\n"
-    if REGISTRY.read_text() not in {head, resumed}:
+    if REGISTRY.read_text(encoding="utf-8") not in {head, resumed}:
         msg = "existing translation registry contains changes unrelated to this adoption"
         raise RuntimeError(msg)
     LOGGER.info("Resuming Qiskit C API adoption from exact generated artifacts")
