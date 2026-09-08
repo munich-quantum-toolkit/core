@@ -1461,6 +1461,22 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
     if (op.getNumTargets() != 1) {
       return failure();
     }
+    if (isa<YOp>(inner.getOperation())) {
+      // Y = S X S†; the new MCX reuses this pass's width selection.
+      rewriter.setInsertionPoint(op);
+      auto loc = op.getLoc();
+      auto target =
+          SdgOp::create(rewriter, loc, op.getInputTarget(0)).getOutputQubit(0);
+      auto mcx = CtrlOp::create(
+          rewriter, loc, op.getControlsIn(), target, [&](Value targetArg) {
+            return XOp::create(rewriter, loc, targetArg).getOutputQubit(0);
+          });
+      SmallVector<Value> results(mcx.getOutputControls());
+      results.push_back(
+          SOp::create(rewriter, loc, mcx.getOutputTarget(0)).getOutputQubit(0));
+      rewriter.replaceOp(op, results);
+      return success();
+    }
     if (isa<RXOp, RYOp, RZOp>(inner.getOperation())) {
       // Verified support operations cannot depend on the body's qubits.
       // Hoist them so region-local symbolic angles survive the replacement.

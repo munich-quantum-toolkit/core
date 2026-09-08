@@ -277,7 +277,7 @@ public:
   /// Prepare the program for qubit reuse and reuse eligible qubits.
   [[nodiscard]] bool runQubitReusePipeline();
 
-  /// Decompose controlled X/Z/SWAP and RX/RY/RZ gates, `qco.rccx`, and
+  /// Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, `qco.rccx`, and
   /// constant-angle phase gates that act on at least @p minQubits qubits
   /// (@p minQubits must be at least 3; default 3 means wider than two-qubit).
   [[nodiscard]] bool decomposeMultiControlled(uint64_t minQubits = 3);

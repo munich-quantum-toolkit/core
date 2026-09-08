@@ -262,56 +262,21 @@ def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
     assert set(restored.count_ops()) <= {"u", "cx"}
 
 
-@pytest.mark.parametrize("gate_type", [library.RXGate, library.RYGate, library.RZGate])
-@pytest.mark.parametrize("num_controls", [2, 5, 8])
-@pytest.mark.parametrize("angle", [0.73, 2 * np.pi])
-def test_multi_controlled_rotations_compile_to_target_basis(
-    gate_type: Callable[[float], Gate], num_controls: int, angle: float
-) -> None:
-    """Preserve the exact controlled rotation, including conditional phase."""
-    circuit = QuantumCircuit(num_controls + 1)
-    circuit.append(AnnotatedOperation(gate_type(angle), ControlModifier(num_controls)), circuit.qubits)
-    target = CompilerTarget(
-        circuit.num_qubits,
-        connectivity=CompilerTarget.Connectivity.all_to_all(),
-        native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.Operation("u", 1, 3),
-            CompilerTarget.Operation("cx", 2, 0),
-            CompilerTarget.Operation("gphase", 0, 1),
-        ]),
-    )
-    program = QCProgram.from_qiskit(circuit).to_qco()
-
-    program.compile_for_target(target)
-    restored = program.to_qc().to_qiskit(target=target)
-
-    assert restored.num_qubits == circuit.num_qubits
-    assert set(restored.count_ops()) <= {"u", "cx"}
-    assert np.allclose(Operator(restored).data, Operator(circuit).data, atol=1e-10, rtol=0)
-
-
-@pytest.mark.parametrize("gate_type", [library.RXGate, library.RYGate, library.RZGate])
-@pytest.mark.parametrize("num_controls", [3, 8])
-def test_symbolic_multi_controlled_rotations_decompose_and_bind(
-    gate_type: Callable[[Parameter], Gate], num_controls: int
-) -> None:
-    """Export symbolic synthesis and retain its phase after parameter binding."""
+def test_symbolic_multi_controlled_rotations_decompose_and_bind() -> None:
+    """Export and bind angle expressions produced by decomposition."""
     theta = Parameter("theta")
-    circuit = QuantumCircuit(num_controls + 1)
-    circuit.append(AnnotatedOperation(gate_type(theta), ControlModifier(num_controls)), circuit.qubits)
+    circuit = QuantumCircuit(3)
+    circuit.append(AnnotatedOperation(library.RYGate(theta), ControlModifier(2)), circuit.qubits)
     program = QCProgram.from_qiskit(circuit).to_qco()
 
     program.decompose_multi_controlled()
     restored = program.to_qc().to_qiskit()
 
-    assert restored.num_qubits == circuit.num_qubits
     assert {parameter.name for parameter in restored.parameters} == {theta.name}
-    restored_theta = next(iter(restored.parameters))
     assert all(item.operation.num_qubits <= 2 for item in restored.data)
-    for angle in (-0.61, 2 * np.pi):
-        expected = circuit.assign_parameters({theta: angle})
-        actual = restored.assign_parameters({restored_theta: angle})
-        assert np.allclose(Operator(actual).data, Operator(expected).data, atol=1e-10, rtol=0)
+    expected = circuit.assign_parameters({theta: -0.61})
+    actual = _assign_parameter_values(restored, {theta.name: -0.61})
+    assert np.allclose(Operator(actual).data, Operator(expected).data, atol=1e-10, rtol=0)
 
 
 def test_controlled_dense_unitary_export_preserves_operation_order() -> None:

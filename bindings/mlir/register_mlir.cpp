@@ -1232,7 +1232,7 @@ operations.)pb");
            &BooleanMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
            nb::kw_only(), "min_qubits"_a = 3,
-           "Decompose controlled X/Z/SWAP and RX/RY/RZ gates, qco.rccx, and "
+           "Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and "
            "constant-angle phase gates that act on at least min_qubits qubits "
            "(min_qubits must be at least 3; default 3 means wider than "
            "two-qubit).")

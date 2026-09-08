@@ -16,9 +16,8 @@ API or dependency was added.
 
 ## Decisions
 
-- Derive the implementation from Pauli rotation identities and Core's existing
-  decomposition helpers. Do not consult or adapt Qiskit source. Use Qiskit's
-  public APIs only as an external performance comparator.
+- Lower controlled Y as `S†`, MCX, then `S` on the target, reusing the existing
+  MCX decomposition and its width and native-target policies.
 - For RY and RZ, split controls into two balanced groups and alternate their MCX
   operations with quarter-angle rotations. Borrow controls from the other group
   through Core's exact dirty-helper MCX decomposition. Helpers must be restored
@@ -31,19 +30,26 @@ API or dependency was added.
 
 ## Validation
 
-The complete `mqt-core-mlir-unittest-decomposition` binary passes 263 tests,
-including 26 rotation tests. These check phase-exact full operators for 2–8
-controls, runtime and region-local angles, native target and threshold policy,
-and linear resources through 64 controls.
+The complete `mqt-core-mlir-unittest-decomposition` binary passes 297 tests.
+These check phase-exact operators, runtime and region-local angles, native
+target and threshold policy, and numeric and symbolic rotation CX budgets
+through 64 controls. Shared Pauli tests cover X, Y, and Z with the same CX
+counts, including coherent states at synthesis boundaries.
 
-`pytest test/python/test_mlir_qiskit_translation.py -k multi_controlled_rotations`
-passes all 24 cases. Numeric target compilation requests native `gphase` to
-retain overall phase, as required by the existing target contract. Symbolic
-synthesis is exported and bound before exact matrix comparison.
+The Python `test_qco_program_decomposes_multi_controlled` API test covers X, Y,
+RX, RY, and RZ, including the minimum-width argument and its error handling. One
+symbolic RY round trip checks export and binding of generated angle expressions.
+These six cases pass; synthesis matrices and resource bounds remain in the
+native tests.
 
-All 384 Python translation and typed-program checks pass, including the two QDMI
-device cases with the built native device configured. General lint, stub
-generation, and whole-changed-file C++ lint pass with no remaining findings.
+The test pass manager verifies each output once; the helper retains separate
+input/output linearity checks. The runtime comparison and rejected cache
+experiment are recorded in
+[`controlled-synthesis-test-runtime.md`](../audits/controlled-synthesis-test-runtime.md).
+
+MCY import, decomposition, and export preserve the exact operator at 2, 3, and 5
+controls. General lint, stub generation, and whole-changed-file C++ lint pass
+with no remaining findings.
 
 ## Performance and limits
 
@@ -58,8 +64,3 @@ deeper: RY has depth 186 versus 171 at 8 controls and 1978 versus 1963 at 64.
 Local nine-sample median synthesis times were lower for all sampled cases in a
 MinSizeRel build. These timings exclude frontend import, basis normalization,
 routing, and full target compilation; they are not an end-to-end speed claim.
-
-Symbolic decomposition and export work. Full symbolic target compilation can
-still produce `math.atan2`, which the existing Qiskit exporter does not support.
-Bind parameters before target compilation when using that export path. A general
-symbolic exporter change is outside this synthesis implementation.

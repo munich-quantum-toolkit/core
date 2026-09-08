@@ -895,10 +895,11 @@ def test_typed_programs_normalize_global_phases() -> None:
     assert qco.ir == once
 
 
-def test_qco_program_decomposes_multi_controlled() -> None:
+@pytest.mark.parametrize("gate", ["x", "y", "rx(0.73)", "ry(0.73)", "rz(0.73)"])
+def test_qco_program_decomposes_multi_controlled(gate: str) -> None:
     """Decompose multi-controlled gates through the typed QCOProgram API."""
     qco = compile_program(
-        'OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; ctrl(2) @ x q[0], q[1], q[2];',
+        f'OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; ctrl(2) @ {gate} q[0], q[1], q[2];',
         output=OutputFormat.QCO,
     )
     assert isinstance(qco, QCOProgram)
