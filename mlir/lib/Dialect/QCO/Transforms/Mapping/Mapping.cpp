@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -28,7 +29,6 @@
 #include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
@@ -811,24 +811,6 @@ private:
     return value;
   }
 
-  /// Rewind only when a wire has advanced through structured classical
-  /// control beyond an earlier routing frontier.
-  static WireIterator iteratorBeforeCrossedControl(WireIterator iterator,
-                                                   Operation* boundary) {
-    WireIterator insertionPoint = iterator;
-    while (iterator != std::default_sentinel &&
-           iterator.operation() != nullptr &&
-           !iterator.operation()->isBeforeInBlock(boundary)) {
-      Operation* operation = iterator.operation();
-      assert(operation->getBlock() == boundary->getBlock());
-      --iterator;
-      if (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(operation)) {
-        insertionPoint = iterator;
-      }
-    }
-    return insertionPoint;
-  }
-
   /// Execute `ntrials` many (parallel) initial layout refinement trials and
   /// return the heuristically best one.
   ///
@@ -1161,15 +1143,11 @@ private:
 
   /// Insert SWAP operations, exchanging two qubits, virtually
   /// (`RoutingMode::Cold`) or into the IR (`RoutingMode::Hot`). The function
-  /// expects that each wire points at the correct insertion point. In hot mode,
-  /// `boundary` prevents a touched wire from crossing earlier classical
-  /// control.
+  /// expects that each wire points at the correct insertion point.
   template <RoutingMode Mode>
   static void insertSWAPs(ArrayRef<IndexPairType> swaps, RoutingBundle& bundle,
-                          Statistics& stats, IRRewriter* rewriter,
-                          Operation* boundary = nullptr) {
+                          Statistics& stats, IRRewriter* rewriter) {
     auto& [wires, infos, layout] = bundle;
-    DenseSet<size_t> adjusted;
     for (const auto& [hw0, hw1] : swaps) {
       const auto [prog0, prog1] = layout.getProgramIndices(hw0, hw1);
 
@@ -1181,14 +1159,7 @@ private:
 
         auto& w0 = wires[i0];
         auto& w1 = wires[i1];
-        if (boundary != nullptr) {
-          for (const auto& [index, wire] :
-               {std::pair{i0, &w0}, std::pair{i1, &w1}}) {
-            if (adjusted.insert(index).second) {
-              *wire = iteratorBeforeCrossedControl(*wire, boundary);
-            }
-          }
-        }
+
         auto in0 = w0.qubit();
         auto in1 = w1.qubit();
 
@@ -1270,7 +1241,7 @@ private:
                   getForwardSlice(bit, &slice);
                   return any_of(slice, [](Operation* op) {
                     return isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp,
-                               UnitaryOpInterface>(op);
+                               UnitaryOpInterface, cbit::StoreOp>(op);
                   });
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
@@ -1280,9 +1251,6 @@ private:
                     [](auto&) { return Direction == WireDirection::Backward; })
                 .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
                     [&](auto&) {
-                      if (indices.size() == 1) {
-                        return true;
-                      }
                       if (visited.insert(op).second) {
                         composites.emplace_back(op, indices);
                       }
@@ -1735,31 +1703,26 @@ private:
 
       if constexpr (Mode == RoutingMode::Hot) {
 
-        // Remember the earliest unresolved operation before moving each wire
-        // to its usual SWAP insertion point. If an endpoint has advanced
-        // through structured classical control beyond that frontier, rewind
-        // just that endpoint before inserting its first SWAP.
-        Operation* boundary = nullptr;
-        for (WireIterator& wire : wires) {
-          Operation* operation = wire.operation();
-          assert(operation != nullptr &&
-                 "expected an operation at the frontier");
-          assert((boundary == nullptr ||
-                  operation->getBlock() == boundary->getBlock()) &&
-                 "expected a single-block routing frontier");
-          if (boundary == nullptr || operation->isBeforeInBlock(boundary)) {
-            boundary = operation;
-          }
-        }
-        assert(boundary != nullptr && "expected a non-empty routing frontier");
+        // At this point the wire iterators point to sink-like operations
+        // (e.g. SinkOp, YieldOp), measurements, or two-qubit gate of the
+        // subsequent layer. Decrementing once ensures that the wire iterators
+        // point at the input qubits of those operations.
 
         for_each(wires, [](auto& it) { std::ranges::advance(it, -1); });
+      }
 
-        insertSWAPs<Mode>(*swaps, bundle, stats, rewriter, boundary);
+      insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
+
+      if constexpr (Mode == RoutingMode::Hot) {
+
+        // After SWAP insertion, a wire is either untouched by the SWAP
+        // insertion or pointing at a SWAP operation. If the former is the
+        // case, incrementing the wire iterator will undo the previous
+        // decrement, leaving it at the same position as before the SWAP
+        // insertion. Otherwise, an increment will move the iterator past the
+        // inserted SWAP operation.
 
         for_each(wires, [](auto& it) { std::ranges::advance(it, 1); });
-      } else {
-        insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
       }
     }
 
