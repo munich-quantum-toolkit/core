@@ -233,7 +233,9 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
         });
       },
       "Cannot mix dynamic and static qubit allocation modes");
+}
 
+TEST_F(QCTest, BuilderRejectsDynamicAllocationOutsideEntryBlock) {
   EXPECT_DEATH(
       {
         QCProgramBuilder builder(context.get());
@@ -242,9 +244,36 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
           builder.allocQubit();
           return SmallVector<Value>{};
         });
-        builder.staticQubit(0);
       },
-      "Cannot mix dynamic and static qubit allocation modes");
+      "Dynamic qubit allocation requires the entry block");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.createFunction("dynamic_helper", {}, [&](ValueRange) {
+          builder.allocQubitRegister(1);
+          return SmallVector<Value>{};
+        });
+      },
+      "Dynamic qubit allocation requires the entry block");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.allocQubit();
+        builder.scfIf(true, [&] { builder.allocQubit(); });
+      },
+      "Dynamic qubit allocation requires the entry block");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.scfIf(true, [&] { builder.allocQubitRegisterStorage(1); });
+      },
+      "Dynamic qubit allocation requires the entry block");
 }
 
 TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
@@ -437,11 +466,14 @@ TEST_F(QCTest, BuilderFinalizesRenamedEntryPoint) {
   builder.initialize();
   auto entry = cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp());
   entry.setName("entry");
+  builder.allocQubit();
+  builder.allocQubitRegister(1);
 
   auto moduleOp = builder.finalize();
 
   ASSERT_TRUE(moduleOp);
   EXPECT_EQ(mlir::mqt::getEntryPoint(*moduleOp).getName(), "entry");
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST_F(QCTest, BuilderCreatesFunctionLocalStaticQubits) {
@@ -1103,6 +1135,8 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
       auto moduleOp = buildInvalidNestedModifierProgram(context.get(), modifier,
                                                         forbiddenOperation);
       ASSERT_TRUE(moduleOp);
+      // Check the modifier contract independently of program allocation scope.
+      mlir::mqt::removeEntryPoint(mlir::mqt::getEntryPoint(*moduleOp));
 
       bool sawExpectedDiagnostic = false;
       ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic&

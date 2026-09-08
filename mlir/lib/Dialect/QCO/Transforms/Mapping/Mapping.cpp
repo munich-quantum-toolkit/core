@@ -173,30 +173,15 @@ static LogicalResult validateRoutingOperations(func::FuncOp func) {
 static FailureOr<Computation> discoverComputation(func::FuncOp func) {
   Computation computation;
 
-  const auto discovery = func.walk([&](Operation* op) {
-    if (!isa<AllocOp, qtensor::AllocOp>(op)) {
-      return WalkResult::advance();
-    }
-    if (op->getParentRegion() == &func.getFunctionBody()) {
-      TypeSwitch<Operation*>(op)
-          .Case([&](AllocOp alloc) {
-            computation.scalarAllocations.emplace_back(alloc);
-          })
-          .Case([&](qtensor::AllocOp alloc) {
-            computation.tensorAllocations.emplace_back(
-                TensorAllocation{.allocation = alloc});
-          });
-      return WalkResult::advance();
-    }
-
-    op->emitError()
-        << "target placement requires dynamic qubit allocations in the entry "
-           "function body";
-    return WalkResult::interrupt();
-  });
-
-  if (discovery.wasInterrupted()) {
-    return failure();
+  for (Operation& op : func.getBody().front()) {
+    TypeSwitch<Operation*>(&op)
+        .Case([&](AllocOp alloc) {
+          computation.scalarAllocations.emplace_back(alloc);
+        })
+        .Case([&](qtensor::AllocOp alloc) {
+          computation.tensorAllocations.emplace_back(
+              TensorAllocation{.allocation = alloc});
+        });
   }
 
   for (auto alloc : computation.scalarAllocations) {

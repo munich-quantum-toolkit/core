@@ -28,6 +28,11 @@ def QCODialect : Dialect {
 
         The name "QCO" stands for "Quantum Circuit Optimization."
 
+        In a program, dynamic qubit and qubit-tensor allocations must be in
+        the entry block of the `mqt.entry_point` function. Helper functions
+        receive quantum resources as arguments. The MQT entry-point verifier
+        checks this rule across the program.
+
         Example:
         ```mlir
         %q_out = qco.h %q_in                       // Consumes %q_in, produces %q_out

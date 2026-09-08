@@ -100,69 +100,6 @@ static LogicalResult runQCToQIRAdaptiveConversionSimple(ModuleOp moduleOp) {
   return pm.run(moduleOp);
 }
 
-TEST(QCToQIRAdaptiveNativeTest, RejectsConditionalQubitAllocations) {
-  const auto sources = {
-      R"mlir(module {
-        func.func private @condition() -> i1
-        func.func @main() attributes {mqt.entry_point} {
-          %c = func.call @condition() : () -> i1
-          scf.if %c {
-            %q = qc.alloc : !qc.qubit
-            qc.x %q : !qc.qubit
-            qc.dealloc %q : !qc.qubit
-          }
-          return
-        }
-      })mlir",
-      R"mlir(module {
-        func.func private @condition() -> i1
-        func.func @main() attributes {mqt.entry_point} {
-          %c = func.call @condition() : () -> i1
-          scf.if %c {
-            %reg = memref.alloc() : memref<1x!qc.qubit>
-            memref.dealloc %reg : memref<1x!qc.qubit>
-          }
-          return
-        }
-      })mlir",
-      R"mlir(module {
-        func.func private @condition() -> i1
-        func.func @main() attributes {mqt.entry_point} {
-          %c = func.call @condition() : () -> i1
-          cf.cond_br %c, ^then, ^end
-        ^then:
-          %q = qc.alloc : !qc.qubit
-          qc.x %q : !qc.qubit
-          qc.dealloc %q : !qc.qubit
-          cf.br ^end
-        ^end:
-          return
-        }
-      })mlir",
-  };
-  for (const auto* source : sources) {
-    SCOPED_TRACE(source);
-    MLIRContext context;
-    context
-        .loadDialect<qc::QCDialect, func::FuncDialect, cf::ControlFlowDialect,
-                     scf::SCFDialect, memref::MemRefDialect>();
-    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
-    ASSERT_TRUE(moduleOp);
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-    bool sawExpectedDiagnostic = false;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      sawExpectedDiagnostic |=
-          StringRef(diagnostic.str())
-              .contains("adaptive QIR conversion requires dynamic qubit "
-                        "allocations in the entry block");
-      return success();
-    });
-    EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
-    EXPECT_TRUE(sawExpectedDiagnostic);
-  }
-}
-
 TEST(QCToQIRAdaptiveNativeTest, PreservesEntryBlockQubitAllocations) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,

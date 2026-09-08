@@ -15,6 +15,7 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Dialect.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/Support/LogicalResult.h>
 
 //===----------------------------------------------------------------------===//
 // Dialect
@@ -53,4 +54,9 @@ void setUnitaryFunction(Operation* operation);
   }
   return nullptr;
 }
+
+/// Check that dynamic quantum allocations belong to the program entry block.
+/// Modules without an entry point must not contain dynamic quantum allocations.
+/// Nested modules have separate program scopes.
+[[nodiscard]] LogicalResult verifyQuantumAllocations(ModuleOp moduleOp);
 } // namespace mlir::mqt

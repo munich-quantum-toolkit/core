@@ -21,9 +21,6 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
 
     - Input is a valid module in the QC dialect.
     - The entry function must be marked with `mqt.entry_point`.
-    - Dynamic qubit allocations in the entry function, including qubit-register
-      `memref.alloc`, must appear directly in its entry block. Allocations in
-      SCF regions or other blocks are diagnosed before lowering.
 
     Behavior:
 

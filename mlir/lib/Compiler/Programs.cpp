@@ -282,7 +282,10 @@ QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
         "cannot construct a QC program with a different MLIR context");
     return std::nullopt;
   }
-  if (failed(verify(*storage.mod))) {
+  storage.context->getOrLoadDialect<mqt::MQTDialect>();
+  if (failed(verify(*storage.mod)) ||
+      (!mqt::getEntryPoint(*storage.mod) &&
+       failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
     return std::nullopt;
   }
   if (moduleUsesDialect(*storage.mod, "qco") ||
@@ -377,7 +380,10 @@ QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
         "cannot construct a QCO program with a different MLIR context");
     return std::nullopt;
   }
-  if (failed(verify(*storage.mod))) {
+  storage.context->getOrLoadDialect<mqt::MQTDialect>();
+  if (failed(verify(*storage.mod)) ||
+      (!mqt::getEntryPoint(*storage.mod) &&
+       failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
     return std::nullopt;
   }
   if (moduleUsesDialect(*storage.mod, "qc")) {

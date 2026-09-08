@@ -2212,6 +2212,24 @@ unsignedValue = unsignedValue ** unsignedOperand;
   EXPECT_EQ(powerLoops, 2);
 }
 
+TEST(OpenQASMTargetTest, AllocatesGlobalQubitsAfterLoopWithBreak) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit q;
+for int i in [0:2] {
+  x q;
+  if (i == 1) { break; }
+}
+qubit later;
+qubit[2] reg;
+)qasm";
+
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
 TEST(OpenQASMTargetTest, UsesConstantBoundsForStaticInclusiveRanges) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       "OPENQASM 3.1; qubit q; for int i in [0:1:2] { x q; }",

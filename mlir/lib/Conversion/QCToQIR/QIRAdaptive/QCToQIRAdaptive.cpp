@@ -38,7 +38,6 @@
 #include <mlir/IR/Region.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
 #include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/DialectConversion.h>
 #include <mlir/Transforms/WalkPatternRewriteDriver.h>
 
@@ -762,25 +761,6 @@ protected:
     auto entryPoint = mqt::getEntryPoint(moduleOp);
     if (!entryPoint) {
       moduleOp->emitError("no main function with mqt.entry_point found");
-      signalPassFailure();
-      return;
-    }
-    const auto allocations = entryPoint.walk([&](Operation* operation) {
-      bool isQubitAllocation = isa<qc::AllocOp>(operation);
-      if (auto allocation = dyn_cast<memref::AllocOp>(operation)) {
-        isQubitAllocation =
-            isa<qc::QubitType>(allocation.getType().getElementType());
-      }
-      if (isQubitAllocation &&
-          operation->getBlock() != &entryPoint.getBody().front()) {
-        operation->emitOpError(
-            "adaptive QIR conversion requires dynamic qubit allocations in "
-            "the entry block of the entry function");
-        return WalkResult::interrupt();
-      }
-      return WalkResult::advance();
-    });
-    if (allocations.wasInterrupted()) {
       signalPassFailure();
       return;
     }

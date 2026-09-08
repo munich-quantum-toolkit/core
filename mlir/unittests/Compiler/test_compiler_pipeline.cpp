@@ -59,6 +59,7 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Matchers.h>
@@ -1049,8 +1050,11 @@ INSTANTIATE_TEST_SUITE_P(OpenQASMPrograms, OpenQASMJeffBoundaryTest,
 // Test: typed programs import MLIR and OpenQASM from their public APIs
 TEST_F(CompilerPipelineTest, TypedProgramImportsAndCopies) {
   const std::string mlir = R"(module {
-  %0 = qc.alloc : !qc.qubit
-  qc.dealloc %0 : !qc.qubit
+  func.func @main() attributes {mqt.entry_point} {
+    %0 = qc.alloc : !qc.qubit
+    qc.dealloc %0 : !qc.qubit
+    return
+  }
 })";
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
@@ -1138,7 +1142,7 @@ TEST_F(CompilerPipelineTest, EmptyCompiledProgramsRoundTrip) {
 
 TEST_F(CompilerPipelineTest, ProgramImportsRejectMixedQuantumDialects) {
   const std::string source = R"mlir(module {
-    func.func @main() {
+    func.func @main() attributes {mqt.entry_point} {
       %reference = qc.alloc : !qc.qubit
       qc.dealloc %reference : !qc.qubit
       %value = qco.alloc : !qco.qubit
@@ -1156,7 +1160,7 @@ TEST_F(CompilerPipelineTest, ProgramImportsRejectMixedQuantumDialects) {
 
 TEST_F(CompilerPipelineTest, ProgramImportsRecognizeQTensorOnlyModules) {
   const std::string source = R"mlir(module {
-    func.func @main() {
+    func.func @main() attributes {mqt.entry_point} {
       %c1 = arith.constant 1 : index
       %register = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
       qtensor.dealloc %register : tensor<1x!qco.qubit>
@@ -1171,10 +1175,88 @@ TEST_F(CompilerPipelineTest, ProgramImportsRecognizeQTensorOnlyModules) {
   EXPECT_FALSE(QCProgram::fromMLIRString(source));
 }
 
+TEST_F(CompilerPipelineTest, QuantumAllocationsRequireProgramEntryPoint) {
+  for (const auto& [isQC, body] : {
+           std::pair{true, "%q = qc.alloc : !qc.qubit\n"
+                           "qc.dealloc %q : !qc.qubit"},
+           std::pair{true, "%r = memref.alloc() : memref<1x!qc.qubit>\n"
+                           "%i = arith.constant 0 : index\n"
+                           "%q = memref.load %r[%i] : memref<1x!qc.qubit>\n"
+                           "qc.h %q : !qc.qubit\n"
+                           "memref.dealloc %r : memref<1x!qc.qubit>"},
+           std::pair{false, "%q = qco.alloc : !qco.qubit\n"
+                            "qco.sink %q : !qco.qubit"},
+           std::pair{false, "%i = arith.constant 0 : index\n"
+                            "%n = arith.constant 1 : index\n"
+                            "%r = qtensor.alloc(%n) : tensor<1x!qco.qubit>\n"
+                            "%rest, %q = qtensor.extract %r[%i] "
+                            ": tensor<1x!qco.qubit>\n"
+                            "qco.sink %q : !qco.qubit\n"
+                            "qtensor.dealloc %rest : tensor<1x!qco.qubit>"},
+       }) {
+    SCOPED_TRACE(body);
+    auto compilerContext = createCompilerContext();
+    const auto source =
+        std::string("module { func.func @main() {\n") + body + "\nreturn\n} }";
+    auto moduleOp = parseSourceString<ModuleOp>(source, compilerContext.get());
+    ASSERT_TRUE(moduleOp);
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(
+        compilerContext.get(), [&](Diagnostic& diag) {
+          diagnosed |= diag.str().find("dynamic quantum allocations must be") !=
+                       std::string::npos;
+          return success();
+        });
+    if (isQC) {
+      EXPECT_FALSE(QCProgram::fromModule(compilerContext, std::move(moduleOp)));
+    } else {
+      EXPECT_FALSE(
+          QCOProgram::fromModule(compilerContext, std::move(moduleOp)));
+    }
+    EXPECT_TRUE(diagnosed);
+  }
+}
+
+TEST_F(CompilerPipelineTest, ProgramImportsLoadEntryPointVerifier) {
+  for (const bool isQC : {true, false}) {
+    SCOPED_TRACE(isQC ? "QC" : "QCO");
+    auto compilerContext = std::make_shared<MLIRContext>();
+    compilerContext
+        ->loadDialect<func::FuncDialect, qc::QCDialect, qco::QCODialect>();
+    ASSERT_EQ(compilerContext->getLoadedDialect<mlir::mqt::MQTDialect>(),
+              nullptr);
+    const auto source =
+        std::string("module { func.func private @helper() {\n") +
+        (isQC ? "%q = qc.alloc : !qc.qubit\nqc.dealloc %q : !qc.qubit\n"
+              : "%q = qco.alloc : !qco.qubit\nqco.sink %q : !qco.qubit\n") +
+        "return } func.func @main() attributes {mqt.entry_point} { return } }";
+    auto moduleOp = parseSourceString<ModuleOp>(source, compilerContext.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_EQ(compilerContext->getLoadedDialect<mlir::mqt::MQTDialect>(),
+              nullptr);
+
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(
+        compilerContext.get(), [&](Diagnostic& diag) {
+          diagnosed |= diag.str().find("dynamic quantum allocations must be") !=
+                       std::string::npos;
+          return success();
+        });
+    if (isQC) {
+      EXPECT_FALSE(QCProgram::fromModule(compilerContext, std::move(moduleOp)));
+    } else {
+      EXPECT_FALSE(
+          QCOProgram::fromModule(compilerContext, std::move(moduleOp)));
+    }
+    EXPECT_TRUE(diagnosed);
+  }
+}
+
 // Test: QCO imports require each linear value to have one use.
 TEST_F(CompilerPipelineTest, QCOProgramImportsEnforceLinearity) {
   const std::string valid = R"mlir(module {
-    func.func @main() {
+    func.func @main() attributes {mqt.entry_point} {
       %c0 = arith.constant 0 : index
       %c1 = arith.constant 1 : index
       %reg = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
@@ -1186,13 +1268,13 @@ TEST_F(CompilerPipelineTest, QCOProgramImportsEnforceLinearity) {
     }
   })mlir";
   const std::string unusedResult = R"mlir(module {
-    func.func @main() {
+    func.func @main() attributes {mqt.entry_point} {
       %qubit = qco.alloc : !qco.qubit
       return
     }
   })mlir";
   const std::string reusedBlockArgument = R"mlir(module {
-    func.func @main(%reg: tensor<1x!qco.qubit>) {
+    func.func @main(%reg: tensor<1x!qco.qubit>) attributes {mqt.entry_point} {
       qtensor.dealloc %reg : tensor<1x!qco.qubit>
       qtensor.dealloc %reg : tensor<1x!qco.qubit>
       %qubit = qco.alloc : !qco.qubit
@@ -1201,7 +1283,7 @@ TEST_F(CompilerPipelineTest, QCOProgramImportsEnforceLinearity) {
     }
   })mlir";
   const std::string unusedVectorArgument = R"mlir(module {
-    func.func @main(%qubits: vector<2x!qco.qubit>) {
+    func.func @main(%qubits: vector<2x!qco.qubit>) attributes {mqt.entry_point} {
       %qubit = qco.alloc : !qco.qubit
       qco.sink %qubit : !qco.qubit
       return
@@ -1293,7 +1375,7 @@ TEST_F(CompilerPipelineTest, TypedOpenQASMExportDropsUnusedGates) {
 
 TEST_F(CompilerPipelineTest, TypedOpenQASMExportReportsUnsupportedQC) {
   constexpr llvm::StringLiteral source = R"mlir(module {
-    func.func @main(%value: i64) {
+    func.func @main(%value: i64) attributes {mqt.entry_point} {
       %qubit = qc.alloc : !qc.qubit
       qc.dealloc %qubit : !qc.qubit
       return
@@ -2604,9 +2686,8 @@ barrier q[0], q[1];
 
 TEST_F(CompilerPipelineTest, QCProgramCountGatesWithoutEntryPoint) {
   constexpr llvm::StringLiteral source = R"mlir(module {
-    func.func @helper() {
-      %qubit = qc.alloc : !qc.qubit
-      qc.dealloc %qubit : !qc.qubit
+    func.func @helper(%qubit: !qc.qubit) {
+      qc.h %qubit : !qc.qubit
       return
     }
   })mlir";

@@ -22,8 +22,10 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/AsmParser/AsmParser.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -31,9 +33,11 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -47,9 +51,11 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
-                    memref::MemRefDialect, mqt::MQTDialect, qc::QCDialect,
-                    qco::QCODialect, qtensor::QTensorDialect>();
+    registry
+        .insert<arith::ArithDialect, cbit::CBitDialect, cf::ControlFlowDialect,
+                func::FuncDialect, memref::MemRefDialect, mqt::MQTDialect,
+                qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
+                scf::SCFDialect>();
     context = std::make_unique<MLIRContext>(registry);
     context->loadAllAvailableDialects();
   }
@@ -367,6 +373,112 @@ TEST_F(MQTIRTest, RejectsInvalidEntryPoints) {
       func.func @main() {
         %c0 = "arith.constant"() {mqt.entry_point, value = 0 : i64}
             : () -> i64
+        return
+      }
+    }
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, ChecksQuantumAllocationPlacement) {
+  struct Placement {
+    StringRef prefix;
+    StringRef suffix;
+    bool allowed;
+  };
+  const std::array<Placement, 5> placements{
+      {
+          {
+              .prefix = "module { func.func @main() {\n",
+              .suffix = "return } }",
+              .allowed = true,
+          },
+          {
+              .prefix = "module { func.func @main(%condition: i1) {\n"
+                        "scf.if %condition {\n",
+              .suffix = "} return } }",
+              .allowed = false,
+          },
+          {
+              .prefix = "module { func.func private @helper() {\n",
+              .suffix = "return } func.func @main() { return } }",
+              .allowed = false,
+          },
+          {
+              .prefix = "module { func.func @main() {\ncf.br ^body\n^body:\n",
+              .suffix = "return } }",
+              .allowed = false,
+          },
+          {
+              .prefix = "module {\n",
+              .suffix = "func.func @main() { return } }",
+              .allowed = false,
+          },
+      },
+  };
+  for (StringRef allocation : {
+           "%q = qc.alloc : !qc.qubit\nqc.dealloc %q : !qc.qubit\n",
+           "%q = qco.alloc : !qco.qubit\nqco.sink %q : !qco.qubit\n",
+           "%q = memref.alloc() : memref<1x!qc.qubit>\n"
+           "memref.dealloc %q : memref<1x!qc.qubit>\n",
+           "%size = arith.constant 1 : index\n"
+           "%q = qtensor.alloc(%size) : tensor<1x!qco.qubit>\n"
+           "qtensor.dealloc %q : tensor<1x!qco.qubit>\n",
+       }) {
+    for (const auto& placement : placements) {
+      const auto source =
+          placement.prefix.str() + allocation.str() + placement.suffix.str();
+      SCOPED_TRACE(source);
+      auto moduleOp = parse(source);
+      ASSERT_TRUE(moduleOp);
+      auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+      ASSERT_TRUE(main);
+      mqt::setEntryPoint(main);
+
+      bool sawPlacementError = false;
+      ScopedDiagnosticHandler handler(
+          context.get(), [&](Diagnostic& diagnostic) {
+            sawPlacementError |=
+                StringRef(diagnostic.str())
+                    .contains("dynamic quantum allocations must be in the "
+                              "entry block of the "
+                              "'mqt.entry_point' function");
+            return success();
+          });
+      EXPECT_EQ(succeeded(verify(*moduleOp)), placement.allowed);
+      EXPECT_EQ(sawPlacementError, !placement.allowed);
+    }
+  }
+}
+
+TEST_F(MQTIRTest, KeepsNestedProgramAllocationScopesSeparate) {
+  EXPECT_TRUE(parse(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} { return }
+      module @nested {
+        func.func @main() attributes {mqt.entry_point} {
+          %q = qco.alloc : !qco.qubit
+          qco.sink %q : !qco.qubit
+          return
+        }
+      }
+    }
+  )mlir"));
+}
+
+TEST_F(MQTIRTest, DoesNotRestrictClassicalAllocationsOrStaticReferences) {
+  EXPECT_TRUE(parse(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} { return }
+      func.func private @helper(%condition: i1) {
+        scf.if %condition {
+          %bits = memref.alloc() : memref<1xi1>
+          memref.dealloc %bits : memref<1xi1>
+          %values = memref.alloc() : memref<1xf64>
+          memref.dealloc %values : memref<1xf64>
+          %qc = qc.static 0 : !qc.qubit
+          %qco = qco.static 0 : !qco.qubit
+          qco.sink %qco : !qco.qubit
+        }
         return
       }
     }
