@@ -116,15 +116,6 @@ Changed-line `clang-tidy` commands remain useful for quick iteration, but they
 do not reproduce CI's whole-changed-file scope. Update this session when the
 reusable C++ lint workflow changes its action version or inputs.
 
-## Test an existing Python wheel
-
-CI builds one Stable ABI wheel per platform and tests it in separate Python and
-dependency environments. Set `MQT_TEST_WHEEL` to a directory containing exactly
-one wheel to use the same path with `uvx nox -s tests minimums`. Each session
-resolves its dependencies and installs that wheel. Without this variable, Nox
-builds the package from source as usual. Keep concurrent sessions in separate
-checkouts because minimum-dependency resolution changes `uv.lock`.
-
 ## Commit messages
 
 MQT Core adapts Chris Beams's [commit-message guidance][commit-messages] to its

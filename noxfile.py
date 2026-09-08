@@ -146,22 +146,16 @@ def _run_tests(
         *install_args,
         env=env,
     )
-    if wheel_dir := os.environ.get("MQT_TEST_WHEEL"):
-        wheels = list(Path(wheel_dir).glob("*.whl"))
-        if len(wheels) != 1:
-            session.error("MQT_TEST_WHEEL must contain exactly one wheel")
-        session.install(str(wheels[0].resolve()), *install_args)
-    else:
-        session.run(
-            "uv",
-            "sync",
-            "--inexact",
-            "--no-dev",  # do not auto-install dev dependencies
-            "--no-build-isolation-package",
-            "mqt-core",  # build the project without isolation
-            *install_args,
-            env=env,
-        )
+    session.run(
+        "uv",
+        "sync",
+        "--inexact",
+        "--no-dev",  # do not auto-install dev dependencies
+        "--no-build-isolation-package",
+        "mqt-core",  # build the project without isolation
+        *install_args,
+        env=env,
+    )
     if extra_command:
         session.run(*extra_command, env=env)
     session.run(

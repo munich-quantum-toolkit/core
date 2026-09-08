@@ -91,12 +91,10 @@ Sources:
    disables unity. The controlled probe took 25.6 seconds for unity versus 19.7
    seconds with three source files compiled concurrently; all 171 compiler tests
    passed. Other unity settings are unchanged.
-8. **Python environments ran serially.** Core opts into the shared workflow's
-   one-wheel-per-platform path. Version-specific current/minimum Nox sessions
-   run in separate checkouts and produce separate coverage reports. Nox installs
-   the exact wheel via `MQT_TEST_WHEEL`; minimum dependencies are still resolved
-   independently. All eight environments remain covered. Hosted latency and
-   runner-cost changes require fresh CI evidence.
+8. **Python scheduling remains within each test session.** Nox keeps its
+   sequential current/minimum environments and existing build reuse. Pytest's
+   `--numprocesses=auto` supplies test parallelism. A separate wheel matrix and
+   wheel-installation mode are unnecessary and are not part of this change.
 9. **Cheap verifier cases paid process startup costs.** QC and QCO IR now use
    one CTest entry per binary, retaining all 348 and 500 cases in GoogleTest
    XML. Both binaries pass five shuffled repetitions. Other binaries retain
@@ -120,14 +118,16 @@ The implementation passes the full Release CTest suite: 3,142 entries, including
 both grouped verifier binaries, with one intentional skip. All 848 grouped cases
 pass and retain individual XML results. The full changed-file C++ lint check
 reports zero findings. A broader header scan found existing DD/Common header
-warnings outside this diff. Python 3.11–3.14 current and minimum sessions pass
-against one wheel. The relocated wheel passes 247 QDMI cases and a downstream
-CMake build and execution. QDMI's companion fix passes its Release build, 104
-CTest entries with existing read-only skips, and lint. Shared workflow checks,
-including actionlint and zizmor, pass.
+warnings outside this diff. Wheel compatibility was validated on Python
+3.11–3.14 with current and minimum dependencies. The normal source-building
+`tests-3.14` and `minimums-3.14` Nox sessions also pass with pytest parallelism.
+The relocated wheel passes 247 QDMI cases and a downstream CMake build and
+execution. QDMI's companion fix passes its Release build, 104 CTest entries with
+existing read-only skips, and lint. Shared workflow checks, including actionlint
+and zizmor, pass.
 
 These are local results. The native presets used for implementation validation
 differ from the controlled baseline's no-cache/no-IPO profiling configuration;
 there is no claimed whole-suite C++ speedup. Linux wheel relocation does not
 establish manylinux, macOS, or Windows packaging correctness. Hosted cache hit
-rates, matrix scheduling, and platform wheels remain CI validation tasks.
+rates and platform wheels remain CI validation tasks.
