@@ -1503,12 +1503,6 @@ llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms() {
           .name = "affine-index-alias",
           .source = expressionDynamicIntIndex,
       },
-  };
-  return programs;
-}
-
-llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
-  static const std::array programs{
       OpenQASMProgram{
           .name = "integer-to-floating-gate-parameter",
           .source = bitVectorBuiltins,
@@ -1517,6 +1511,12 @@ llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
           .name = "checked-integer-state",
           .source = checkedIntegerState,
       },
+  };
+  return programs;
+}
+
+llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
+  static const std::array programs{
       OpenQASMProgram{.name = "dynamic-range", .source = dynamicRange},
   };
   return programs;

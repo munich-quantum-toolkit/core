@@ -1029,51 +1029,6 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
 
     auto inValues = adaptor.getInValues();
 
-    /// Pure selections are ordinary SSA values, not mutable register aliases.
-    const bool pureSelection =
-        llvm::all_of(op.getBranches(), [](Region& region) {
-          return llvm::all_of(
-              region.front().without_terminator(), [](Operation& nested) {
-                return isa<jeff::IntConst1Op, jeff::IntConst8Op,
-                           jeff::IntConst16Op, jeff::IntConst32Op,
-                           jeff::IntConst64Op, arith::ConstantOp>(nested);
-              });
-        });
-    if (pureSelection && llvm::all_of(op.getResultTypes(), [](Type type) {
-          return isa<IntegerType>(type);
-        })) {
-      SmallVector<Value> falseValues;
-      SmallVector<Value> trueValues;
-      for (auto [index, region] : llvm::enumerate(op.getBranches())) {
-        auto yield = cast<jeff::YieldOp>(region.front().getTerminator());
-        auto& values = index == 0 ? falseValues : trueValues;
-        for (auto value : yield.getOperands()) {
-          auto argument = dyn_cast<BlockArgument>(value);
-          if (argument && argument.getOwner() == &region.front()) {
-            values.push_back(inValues[argument.getArgNumber()]);
-          } else if (auto* constant = value.getDefiningOp();
-                     isa_and_nonnull<jeff::IntConst1Op, jeff::IntConst8Op,
-                                     jeff::IntConst16Op, jeff::IntConst32Op,
-                                     jeff::IntConst64Op, arith::ConstantOp>(
-                         constant)) {
-            values.push_back(rewriter.clone(*constant)->getResult(0));
-          } else {
-            return rewriter.notifyMatchFailure(
-                op, "selection must yield an input or integer constant");
-          }
-        }
-      }
-      SmallVector<Value> results;
-      for (auto [trueValue, falseValue] :
-           llvm::zip_equal(trueValues, falseValues)) {
-        results.push_back(arith::SelectOp::create(rewriter, op.getLoc(),
-                                                  adaptor.getSelection(),
-                                                  trueValue, falseValue));
-      }
-      rewriter.replaceOp(op, results);
-      return success();
-    }
-
     SmallVector<Value> qubits;
     for (auto [argument, adapted] : llvm::zip_equal(
              op.getBranches()[0].front().getArguments(), inValues)) {
