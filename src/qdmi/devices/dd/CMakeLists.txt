@@ -43,7 +43,12 @@ if(NOT TARGET ${TARGET_NAME})
   if(UNIX AND NOT APPLE)
     # Keep symbols from static dependencies local. A plugin-enabled host can otherwise interpose
     # LLVM's process-wide registries when it loads this device.
-    target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
+    target_link_options(
+      ${TARGET_NAME}
+      PRIVATE
+      "LINKER:--exclude-libs,ALL"
+      "$<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>,$<CONFIG:RelWithDebInfo>>:LINKER:--gc-sections>"
+    )
   endif()
   target_link_libraries(${TARGET_NAME} PRIVATE MLIRQCODDFunctionality MQTCompilerPrograms
                                                MQT::CoreQIRJIT MQT::CoreQIRRuntime)
