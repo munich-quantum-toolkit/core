@@ -9,7 +9,7 @@ including deterministic DDSIM lifecycle tests, complete QDMI discovery, smaller
 sampling allocations, incremental builds, wheel size, and CI caching. QDMI owns
 header generation in
 [QDMI #537](https://github.com/Munich-Quantum-Software-Stack/QDMI/pull/537).
-The shared workflows own stub-build caching in
+The shared workflows own stub-build caching in the merged
 [Workflows #462](https://github.com/munich-quantum-toolkit/workflows/pull/462).
 Core pins both changes.
 

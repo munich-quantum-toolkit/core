@@ -68,8 +68,7 @@ Sources:
    dynamic allocation, argument-binding, seeded, and zero-shot cases remain.
 3. **QDMI rewrote unchanged headers.**
    [QDMI #537](https://github.com/Munich-Quantum-Software-Stack/QDMI/pull/537)
-   uses content-preserving generation and tests literal content, unchanged
-   timestamps, and changed inputs. Core pins that fix. Reconfiguration now
+   uses content-preserving generation. Core pins that fix. Reconfiguration now
    preserves all eight generated device headers and leaves Ninja with no work;
    the baseline dirtied 15 actions.
 4. **Stub generation had no shared compiler cache.**
@@ -122,9 +121,10 @@ warnings outside this diff. Wheel compatibility was validated on Python
 3.11–3.14 with current and minimum dependencies. The normal source-building
 `tests-3.14` and `minimums-3.14` Nox sessions also pass with pytest parallelism.
 The relocated wheel passes 247 QDMI cases and a downstream CMake build and
-execution. QDMI's companion fix passes its Release build, 104 CTest entries with
-existing read-only skips, and lint. Shared workflow checks, including actionlint
-and zizmor, pass.
+execution. QDMI's companion fix passed its Release build and CTest suite with
+existing read-only skips before the added generation test was removed at the
+maintainer's request. Shared workflow checks, including actionlint and zizmor,
+pass.
 
 These are local results. The native presets used for implementation validation
 differ from the controlled baseline's no-cache/no-IPO profiling configuration;
