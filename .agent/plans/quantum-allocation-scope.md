@@ -41,4 +41,15 @@ regressions. Commands from the repository root:
 - `ctest --test-dir build/cpp-lint -L mqt-mlir-unittests --output-on-failure -j8`
 
 Full changed-file C++ lint passed with local clang-tidy 23.0.0git and the macOS
-SDK headers configured. Hosted CI was not run for this local revision.
+SDK headers configured.
+
+With the built package and test environment active,
+`python -m pytest -n4 test/python` passed all 1,131 tests on Python 3.14 with
+Qiskit 2.5.2. The revised fixtures preserve whitespace-prefixed input handling
+and check that loop-local allocations fail during program construction, before
+export.
+
+`uvx nox --non-interactive -s docs` passed with strict reference checking and
+all seven executable notebooks. `uvx nox -s lint` passed after these fixture and
+documentation fixes; C++ sources are unchanged. These results are local; hosted
+CI has not run for this update.

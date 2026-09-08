@@ -479,9 +479,10 @@ module {
     assert "constant or symbolic" in str(error.value)
 
 
-def test_loop_resource_allocation_is_actionable() -> None:
-    """Constant-true loops are valid; resource allocation inside them is a target restriction."""
-    program = QCProgram.from_mlir_str("""
+def test_loop_resource_allocation_is_rejected_at_import(capfd: pytest.CaptureFixture[str]) -> None:
+    """Reject loop-local quantum allocations when constructing the program."""
+    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        QCProgram.from_mlir_str("""
 module {
   func.func @main() attributes {mqt.entry_point} {
     %true = arith.constant true
@@ -497,12 +498,9 @@ module {
   }
 }
 """)
-    with pytest.raises(RuntimeError, match="allocate") as qasm_error:
-        program.to_openqasm3()
-    assert "OpenQASM" in str(qasm_error.value)
-    with pytest.raises(RuntimeError, match="allocate them before the loop") as qiskit_error:
-        program.to_qiskit()
-    assert "qc.alloc" in str(qiskit_error.value)
+    diagnostic = capfd.readouterr().err
+    assert "'qc.alloc' op dynamic quantum allocations must be in the entry block" in diagnostic
+    assert "of the 'mqt.entry_point' function" in diagnostic
 
 
 def test_first_measurement_initializes_do_while_output() -> None:
