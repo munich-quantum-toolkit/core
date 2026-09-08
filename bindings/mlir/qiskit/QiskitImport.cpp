@@ -34,6 +34,7 @@
 #include <llvm/ADT/StringSet.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/LogicalResult.h>
+#include <llvm/Support/MathExtras.h>
 #include <llvm/Support/SaveAndRestore.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -1335,7 +1336,7 @@ loopParameterValue(mlir::qc::QCProgramBuilder& builder, mlir::Value iteration,
 
 [[nodiscard]] static bool containsLoopJump(const CircuitReader& circuit) {
   for (size_t index = 0; index < circuit.numInstructions(); ++index) {
-    if (circuit.instruction(index).kind != OperationKind::ControlFlow) {
+    if (circuit.instructionKind(index) != OperationKind::ControlFlow) {
       continue;
     }
     auto control = circuit.controlFlow(index);
@@ -1354,6 +1355,38 @@ loopParameterValue(mlir::qc::QCProgramBuilder& builder, mlir::Value iteration,
     }
   }
   return false;
+}
+
+static void normalizeLoopRange(Loop& result) {
+  if (!result.isRange) {
+    int64_t step = 1;
+    int64_t stop = 0;
+    bool progression =
+        result.values.size() < 2U ||
+        (llvm::SubOverflow(result.values[1], result.values[0], step) == 0);
+    progression &= step != 0;
+    for (size_t i = 2; progression && i < result.values.size(); ++i) {
+      int64_t difference = 0;
+      progression = (llvm::SubOverflow(result.values[i], result.values[i - 1],
+                                       difference) == 0) &&
+                    difference == step;
+    }
+    if (progression &&
+        (result.values.empty() ||
+         (llvm::AddOverflow(result.values.back(), step, stop) == 0))) {
+      constexpr auto maxExactInteger = static_cast<int64_t>(1ULL << 53U);
+      const auto bound = stop - (step > 0 ? 1 : -1);
+      if (result.parameter && !result.values.empty() &&
+          (bound < -maxExactInteger || bound > maxExactInteger)) {
+        return;
+      }
+      result.isRange = true;
+      result.start = result.values.empty() ? 0 : result.values.front();
+      result.stop = stop;
+      result.step = step;
+      result.values.clear();
+    }
+  }
 }
 
 static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
@@ -1553,7 +1586,7 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
     if (controlFlow.numBlocks() != 1U) {
       throw std::runtime_error("Qiskit for loop has an invalid block count");
     }
-    const auto loop = controlFlow.loop();
+    auto loop = controlFlow.loop();
     const auto body = controlFlow.block(0);
     if (containsLoopJump(*body)) {
       const auto count = loop.isRange
@@ -1579,32 +1612,35 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
               }
               translateBlock(*body, parameters);
             } else {
-              const auto emitElement = [&](auto&& self, size_t index) -> void {
-                if (index == loop.values.size()) {
+              const auto emitElements = [&](auto&& self, size_t begin,
+                                            size_t end) -> void {
+                if (begin == end) {
                   return;
                 }
-                auto match = mlir::arith::CmpIOp::create(
-                    builder, mlir::arith::CmpIPredicate::eq, counter,
+                if (end - begin == 1U) {
+                  requireExactLoopParameter(loop.values[begin]);
+                  auto parameters = localParameters;
+                  parameters[loop.parameter->getSymbol()->name] = floatConstant(
+                      builder, static_cast<double>(loop.values[begin]));
+                  translateBlock(*body, parameters);
+                  return;
+                }
+                const auto middle = begin + (end - begin) / 2U;
+                auto lower = mlir::arith::CmpIOp::create(
+                    builder, mlir::arith::CmpIPredicate::slt, counter,
                     mlir::arith::ConstantIntOp::create(
-                        builder, static_cast<int64_t>(index), 64));
+                        builder, static_cast<int64_t>(middle), 64));
                 variables.conditional(
-                    builder, match,
-                    [&] {
-                      requireExactLoopParameter(loop.values[index]);
-                      auto parameters = localParameters;
-                      parameters[loop.parameter->getSymbol()->name] =
-                          floatConstant(
-                              builder, static_cast<double>(loop.values[index]));
-                      translateBlock(*body, parameters);
-                    },
-                    [&] { self(self, index + 1); });
+                    builder, lower, [&] { self(self, begin, middle); },
+                    [&] { self(self, middle, end); });
               };
-              emitElement(emitElement, 0);
+              emitElements(emitElements, 0U, loop.values.size());
             }
           },
           count > 0);
       return;
     }
+    normalizeLoopRange(loop);
     llvm::SaveAndRestore<mlir::qc::QCProgramBuilder::LoopBuilder*> loopScope(
         variables.loop, nullptr);
     if (!loop.isRange) {
@@ -1684,40 +1720,68 @@ static void translateControlFlow(mlir::qc::QCProgramBuilder& builder,
       blocks.push_back(controlFlow.block(index));
     }
     if (variables.loop != nullptr || !variables.variables.empty()) {
-      const auto emitCase = [&](auto&& self, size_t index) -> void {
-        if (index == cases.size()) {
-          for (size_t fallback = 0; fallback < cases.size(); ++fallback) {
-            if (cases[fallback].isDefault) {
-              translateBlock(*blocks[fallback], localParameters);
-            }
-          }
-          return;
-        }
+      std::vector<std::pair<uint64_t, size_t>> labels;
+      std::optional<size_t> fallback;
+      const auto width =
+          mlir::cast<mlir::IntegerType>(target.getType()).getWidth();
+      for (size_t index = 0; index < cases.size(); ++index) {
         if (cases[index].isDefault) {
-          self(self, index + 1);
-          return;
+          fallback = index;
         }
-        mlir::Value match = builder.boolConstant(false);
-        for (const auto label : cases[index].labels) {
-          const auto width =
-              mlir::cast<mlir::IntegerType>(target.getType()).getWidth();
+        for (auto label : cases[index].labels) {
           if (width < 64U && (label >> width) != 0U) {
             throw std::runtime_error(
                 "Qiskit switch label does not fit the target type");
           }
-          auto equal = mlir::arith::CmpIOp::create(
-              builder, mlir::arith::CmpIPredicate::eq, target,
-              mlir::arith::ConstantOp::create(
-                  builder, builder.getIntegerAttr(
-                               target.getType(), static_cast<int64_t>(label))));
-          match = mlir::arith::OrIOp::create(builder, match, equal);
+          labels.emplace_back(label, index);
         }
-        variables.conditional(
-            builder, match,
-            [&] { translateBlock(*blocks[index], localParameters); },
-            [&] { self(self, index + 1); });
+      }
+      std::ranges::sort(labels);
+      const auto compare = [&](uint64_t label,
+                               mlir::arith::CmpIPredicate predicate) {
+        auto constant = mlir::arith::ConstantOp::create(
+            builder, builder.getIntegerAttr(target.getType(),
+                                            static_cast<int64_t>(label)));
+        return mlir::arith::CmpIOp::create(builder, predicate, target, constant)
+            .getResult();
       };
-      emitCase(emitCase, 0);
+      const auto matches = [&](auto&& self, size_t begin,
+                               size_t end) -> mlir::Value {
+        if (begin == end) {
+          return builder.boolConstant(false);
+        }
+        if (end - begin == 1U) {
+          return compare(labels[begin].first, mlir::arith::CmpIPredicate::eq);
+        }
+        const auto middle = begin + (end - begin) / 2U;
+        auto left = self(self, begin, middle);
+        auto right = self(self, middle, end);
+        return mlir::arith::OrIOp::create(builder, left, right).getResult();
+      };
+      const auto emitCases = [&](auto&& self, size_t begin,
+                                 size_t end) -> void {
+        if (begin == end) {
+          return;
+        }
+        if (end - begin == 1U) {
+          translateBlock(*blocks[labels[begin].second], localParameters);
+          return;
+        }
+        const auto middle = begin + (end - begin) / 2U;
+        variables.conditional(
+            builder,
+            compare(labels[middle].first, mlir::arith::CmpIPredicate::ult),
+            [&] { self(self, begin, middle); },
+            [&] { self(self, middle, end); });
+      };
+      variables.conditional(
+          builder, matches(matches, 0U, labels.size()),
+          [&] { emitCases(emitCases, 0U, labels.size()); },
+          [&] {
+            if (fallback) {
+              translateBlock(*blocks[*fallback], localParameters);
+            }
+          });
       return;
     }
     llvm::SmallVector<int64_t> labels;
@@ -2064,6 +2128,10 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
   ExpansionSummary result;
   for (size_t index = 0; index < circuit.numInstructions(); ++index) {
     addExpandedOperations(result.operations, 1U);
+    const auto kind = circuit.instructionKind(index);
+    if (kind != OperationKind::Unknown && kind != OperationKind::ControlFlow) {
+      continue;
+    }
     const auto instruction = circuit.instruction(index);
     const bool customGate =
         instruction.kind == OperationKind::Gate && !instruction.standardGate;
@@ -2157,6 +2225,9 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
         repetitions = loop.values.size();
       }
     }
+    const auto cases = controlFlow->kind() == ControlFlowKind::Switch
+                           ? controlFlow->switchCases()
+                           : std::vector<SwitchCase>{};
     for (size_t blockIndex = 0; blockIndex < controlFlow->numBlocks();
          ++blockIndex) {
       const auto blockSummary =
@@ -2168,7 +2239,11 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
           std::max(result.controlFlowDepth, blockSummary.controlFlowDepth + 1U);
       addExpandedOperations(
           result.operations,
-          repeatedOperations(blockSummary.operations, repetitions));
+          repeatedOperations(
+              blockSummary.operations + 4U,
+              cases.empty()
+                  ? repetitions
+                  : std::max(size_t{1}, cases.at(blockIndex).labels.size())));
     }
   }
   return result;
@@ -2727,6 +2802,24 @@ void validateCircuit(const CircuitReader& circuit,
   }
 }
 
+/// Source dispatch can add SCF nesting even when the source circuit is shallow.
+static void validateGeneratedControlFlow(mlir::Operation* operation,
+                                         size_t depth = 0U) {
+  if (llvm::isa<mlir::scf::IfOp, mlir::scf::ForOp, mlir::scf::WhileOp,
+                mlir::scf::IndexSwitchOp>(operation) &&
+      ++depth > MAX_CONTROL_FLOW_DEPTH) {
+    throw std::runtime_error(
+        "Qiskit generated control flow exceeds the nesting limit of 64");
+  }
+  for (auto& region : operation->getRegions()) {
+    for (auto& block : region) {
+      for (auto& nested : block) {
+        validateGeneratedControlFlow(&nested, depth);
+      }
+    }
+  }
+}
+
 mlir::QCProgram importCircuit(const nb::handle circuit) {
   auto translation = selectTranslation();
   auto view = translation->openCircuit(circuit);
@@ -2866,6 +2959,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
 
   auto moduleOp = classicalStorage.empty() ? builder.finalize()
                                            : builder.finalize(classicalStorage);
+  validateGeneratedControlFlow(moduleOp->getOperation());
   auto program = mlir::QCProgram::fromModule(context, std::move(moduleOp));
   if (!program) {
     throw std::runtime_error(

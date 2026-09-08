@@ -229,24 +229,36 @@ def api_surface(include: Path) -> dict[str, Any]:
 
     Returns:
         The capsule functions, native declarations, and public types.
+
+    Raises:
+        RuntimeError: A raw capsule access has no matching header declaration.
     """
     qiskit = include / "qiskit"
     implementation = TRANSLATION_IMPLEMENTATION.read_text()
-    used_function_names = sorted(set(re.findall(r"\bqk_[A-Za-z0-9_]+", implementation)))
+    used_function_names = set(re.findall(r"\bqk_[A-Za-z0-9_]+", strip_comments(implementation)))
     capsule = capsule_functions((qiskit / "funcs_py_generated.h").read_text())
+    for table, slot in re.findall(r"(_Qk_API_\w+)\[(\d+)\]", strip_comments(implementation)):
+        matches = {name for name, entry in capsule.items() if entry["table"] == table and entry["slot"] == int(slot)}
+        if not matches:
+            msg = f"unresolved raw capsule access: {table}[{slot}]"
+            raise RuntimeError(msg)
+        used_function_names.update(matches)
     declarations = function_declarations((qiskit / "funcs.h").read_text() + "\n" + (qiskit / "funcs_py.h").read_text())
-    types = typedefs((qiskit / "types.h").read_text())
-    used_type_names = sorted(set(re.findall(r"\bQk[A-Z][A-Za-z0-9_]+", implementation)) & types.keys())
-    return {
-        "functions": {
-            name: {
-                "capsule": capsule.get(name),
-                "declaration": declarations.get(name),
-            }
-            for name in used_function_names
-        },
-        "types": {name: types.get(name) for name in used_type_names},
+    types = typedefs("\n".join(header.read_text() for header in sorted(qiskit.glob("*.h"))))
+    functions = {
+        name: {
+            "capsule": capsule.get(name),
+            "declaration": declarations.get(name),
+        }
+        for name in sorted(used_function_names)
     }
+    used_type_names: set[str] = set()
+    pending = [implementation, json.dumps(functions)]
+    while pending:
+        for name in set(re.findall(r"\bQk[A-Z][A-Za-z0-9_]+", pending.pop())) & types.keys() - used_type_names:
+            used_type_names.add(name)
+            pending.append(types[name])
+    return {"functions": functions, "types": {name: types[name] for name in sorted(used_type_names)}}
 
 
 def surface_diff(previous: dict[str, Any], current: dict[str, Any]) -> str:
@@ -378,12 +390,7 @@ def populate_vendor_tree(target: Path, version: str, wheel: Path, artifact: Json
         previous_dirs.append(path)
     previous_dirs.sort(key=lambda path: Version(path.name))
     if previous_dirs:
-        previous_path = previous_dirs[-1] / "API_SURFACE.json"
-        previous = (
-            json.loads(previous_path.read_text())
-            if previous_path.exists()
-            else api_surface(previous_dirs[-1] / "include")
-        )
+        previous = api_surface(previous_dirs[-1] / "include")
         atomic_write_text(target / "API_DIFF.md", surface_diff(previous, surface))
 
     provenance = {
@@ -467,6 +474,8 @@ def build_and_test(version: str, include: Path, build_dir: Path, *, candidate: b
         "-n0",
         "-q",
         "test/python/test_mlir_qiskit_translation.py",
+        "test/python/test_mlir_loops.py",
+        "test/python/test_mlir_integer_interchange.py",
         env=env,
     )
 

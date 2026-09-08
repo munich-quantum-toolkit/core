@@ -330,6 +330,8 @@ public:
   [[nodiscard]] virtual uint32_t numQubits() const = 0;
   [[nodiscard]] virtual uint32_t numClbits() const = 0;
   [[nodiscard]] virtual size_t numInstructions() const = 0;
+  /// Classify native primitives without decoding their parameters.
+  [[nodiscard]] virtual OperationKind instructionKind(size_t index) const = 0;
   [[nodiscard]] virtual size_t numQuantumRegisters() const = 0;
   [[nodiscard]] virtual size_t numClassicalRegisters() const = 0;
   [[nodiscard]] virtual std::vector<ClassicalVariable> variables() const = 0;
@@ -402,7 +404,9 @@ public:
   addControlFlow(ControlFlowKind kind, ClassicalTarget target, Loop loop,
                  std::vector<SwitchCase> switchCases,
                  std::vector<std::unique_ptr<CircuitWriter>> blocks) = 0;
-  /// Transfer the native circuit to a new owned Python QuantumCircuit.
+  /// Create a block sharing this circuit's resources and lexical scope.
+  [[nodiscard]] virtual std::unique_ptr<CircuitWriter> createBlock() const = 0;
+  /// Return the completed, owned Python QuantumCircuit.
   [[nodiscard]] virtual nb::object finish() = 0;
 };
 

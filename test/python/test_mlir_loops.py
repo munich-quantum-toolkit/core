@@ -11,26 +11,19 @@
 from __future__ import annotations
 
 import math
-import os
 
 import pytest
 import qiskit
-from packaging.version import Version
 from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import Parameter
 from qiskit.circuit.classical import expr, types
+from qiskit_support import supports_qiskit_translation
 
 from mqt.core.dd import DDPackage
 from mqt.core.mlir import JeffProgram, QCProgram
 
-if not (
-    Version("2.5.0") <= Version(qiskit.__version__) < Version("2.6.0")
-    or qiskit.__version__ == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
-):
-    pytest.skip(
-        f"Loop interchange tests require Qiskit 2.5.x (installed: {qiskit.__version__})",
-        allow_module_level=True,
-    )
+if not supports_qiskit_translation():
+    pytest.skip(f"No registered Qiskit adapter for {qiskit.__version__}", allow_module_level=True)
 
 
 def observe(program: QCProgram) -> int:
