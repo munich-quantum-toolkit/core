@@ -26,6 +26,8 @@ registered through
 The driver shares a loaded provider across path aliases with the same symbol
 prefix and retains it for the process lifetime. Closing a device session frees
 that session without finalizing the provider while another session may use it.
+Initialization is serialized within each loaded module. A slow provider
+initializer does not hold the driver cache lock while other modules are opened.
 
 ## Building the Bundled Devices
 

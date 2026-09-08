@@ -44,6 +44,13 @@ namespace {
   return count;
 }
 
+using InitializeCallback = int (*)();
+
+auto initializeCallback() -> std::atomic<InitializeCallback>& {
+  static std::atomic<InitializeCallback> callback = nullptr;
+  return callback;
+}
+
 [[nodiscard]] auto finalizations() -> std::atomic_size_t& {
   static std::atomic_size_t count = 0;
   return count;
@@ -163,7 +170,17 @@ auto queryValue(const T& result, const size_t size, void* value,
 // NOLINTBEGIN(readability-identifier-naming)
 extern "C" int TEST_SESSION_QDMI_device_initialize() {
   ++initializations();
+  if (const auto callback = initializeCallback().load()) {
+    return callback();
+  }
   return QDMI_SUCCESS;
+}
+
+/// Tests install a callback before opening sessions to coordinate
+/// initialization.
+extern "C" void
+TEST_SESSION_set_initialize_callback(InitializeCallback callback) {
+  initializeCallback() = callback;
 }
 
 extern "C" int TEST_SESSION_QDMI_device_finalize() {

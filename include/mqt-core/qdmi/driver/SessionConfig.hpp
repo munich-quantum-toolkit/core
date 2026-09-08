@@ -35,10 +35,9 @@ inline void applyOverride(std::optional<T>& value,
 
 /// Apply present overrides, including explicitly empty values.
 [[nodiscard]] inline auto
-mergeSessionConfig(const DeviceSessionConfig& defaults,
+mergeSessionConfig(DeviceSessionConfig merged,
                    const DeviceSessionConfig& overrides)
     -> DeviceSessionConfig {
-  auto merged = defaults;
   applyOverride(merged.baseUrl, overrides.baseUrl);
   applyOverride(merged.token, overrides.token);
   applyOverride(merged.authFile, overrides.authFile);
