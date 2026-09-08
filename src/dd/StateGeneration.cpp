@@ -18,7 +18,6 @@
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
@@ -45,34 +44,15 @@ void suitablePackage(const size_t n, const Package& dd,
   }
 }
 
-} // namespace
-
-VectorDD makeZeroState(const std::size_t n, Package& dd,
-                       const std::size_t start) {
+template <class BasisEntry>
+VectorDD buildBasisState(const size_t n, const size_t available,
+                         const BasisEntry& entry, Package& dd,
+                         const size_t start) {
   suitablePackage(n, dd, start);
-  const std::vector<BasisStates> state(n, BasisStates::zero);
-  return makeBasisState(n, state, dd, start);
-}
-
-VectorDD makeBasisState(const std::size_t n, const std::vector<bool>& state,
-                        Package& dd, const std::size_t start) {
-  const auto op = [](bool b) {
-    return b ? BasisStates::one : BasisStates::zero;
-  };
-  std::vector<BasisStates> bState(state.size());
-  std::ranges::transform(state, bState.begin(), op);
-  return makeBasisState(n, bState, dd, start);
-}
-
-VectorDD makeBasisState(const std::size_t n,
-                        const std::vector<BasisStates>& state, Package& dd,
-                        const std::size_t start) {
-  suitablePackage(n, dd, start);
-
-  if (state.size() < n) {
+  if (available < n) {
     throw std::invalid_argument(
         "Insufficient qubit states provided. Requested " + std::to_string(n) +
-        ", but received " + std::to_string(state.size()));
+        ", but received " + std::to_string(available));
   }
 
   vCachedEdge f = vCachedEdge::one();
@@ -80,7 +60,7 @@ VectorDD makeBasisState(const std::size_t n,
     std::array<vCachedEdge, RADIX> edges{};
 
     const auto v = static_cast<Qubit>(p + start);
-    switch (state[p]) {
+    switch (entry(p)) {
     case BasisStates::zero:
       edges = {f, vCachedEdge::zero()};
       break;
@@ -105,6 +85,30 @@ VectorDD makeBasisState(const std::size_t n,
   const vEdge e{.p = f.p, .w = dd.cn.lookup(f.w)};
   dd.incRef(e);
   return e;
+}
+
+} // namespace
+
+VectorDD makeZeroState(const size_t n, Package& dd, const size_t start) {
+  return buildBasisState(
+      n, n, [](size_t) { return BasisStates::zero; }, dd, start);
+}
+
+VectorDD makeBasisState(const size_t n, const std::vector<bool>& state,
+                        Package& dd, const size_t start) {
+  return buildBasisState(
+      n, state.size(),
+      [&state](const size_t i) {
+        return state[i] ? BasisStates::one : BasisStates::zero;
+      },
+      dd, start);
+}
+
+VectorDD makeBasisState(const size_t n, const std::vector<BasisStates>& state,
+                        Package& dd, const size_t start) {
+  return buildBasisState(
+      n, state.size(), [&state](const size_t i) { return state[i]; }, dd,
+      start);
 }
 
 VectorDD makeGHZState(const std::size_t n, Package& dd) {

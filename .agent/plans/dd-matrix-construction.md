@@ -23,7 +23,7 @@ state width is needed.
   nonconstant scalar vector roots across garbage collection, as for larger
   states.
 - Check state intervals with subtraction so offsets cannot overflow validation.
-  Zero-state creation validates capacity before allocating its temporary vector.
+  Zero-state creation validates capacity before construction.
 - Reject conflicting polarities on one control qubit before constructing DD
   nodes. Such input previously produced repeated levels and could abort export.
 - Compare the at most three small-gate targets directly. Their validator needs

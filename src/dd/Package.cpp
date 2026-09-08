@@ -52,6 +52,12 @@ namespace dd {
 namespace {
 constexpr GateMatrix MEAS_ZERO_MAT{1, 0, 0, 0};
 constexpr GateMatrix MEAS_ONE_MAT{0, 0, 0, 1};
+
+void checkMeasurementQubit(const vEdge& state, const Qubit index) {
+  if (state.isTerminal() || index > state.p->v) {
+    throw std::invalid_argument("Measurement qubit is outside the state.");
+  }
+}
 } // namespace
 
 Package::Package(const std::size_t nq, const DDPackageConfig& config)
@@ -658,7 +664,8 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
     rootEdge = e;
   }
 
-  return std::string{result.rbegin(), result.rend()};
+  std::ranges::reverse(result);
+  return result;
 }
 fp Package::assignProbabilities(const vEdge& edge,
                                 std::unordered_map<const vNode*, fp>& probs) {
@@ -679,6 +686,15 @@ fp Package::assignProbabilities(const vEdge& edge,
 std::pair<fp, fp>
 Package::determineMeasurementProbabilities(const vEdge& rootEdge,
                                            const Qubit index) {
+  checkMeasurementQubit(rootEdge, index);
+  if (rootEdge.p->v == index) {
+    const auto probability = ComplexNumbers::mag2(rootEdge.w);
+    const auto zero = static_cast<ComplexValue>(rootEdge.p->e[0].w);
+    const auto one = static_cast<ComplexValue>(rootEdge.p->e[1].w);
+    return {zero.approximatelyZero() ? 0. : probability * zero.mag2(),
+            one.approximatelyZero() ? 0. : probability * one.mag2()};
+  }
+
   std::unordered_map<const vNode*, fp> measurementProbabilities;
   std::queue<const vNode*> q;
 
@@ -695,6 +711,9 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
       const auto weight = static_cast<ComplexValue>(edge.w);
       if (weight.approximatelyZero()) {
         continue;
+      }
+      if (edge.isTerminal()) {
+        throw std::invalid_argument("Measurement qubit is outside the state.");
       }
       const fp contribution = prob * weight.mag2();
       auto [it, inserted] =
@@ -750,12 +769,20 @@ char Package::measureOneCollapsing(vEdge& rootEdge, const Qubit index,
 void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
                                            const fp probability,
                                            const bool measureZero) {
-  const GateMatrix measurementMatrix =
-      measureZero ? MEAS_ZERO_MAT : MEAS_ONE_MAT;
-
-  const auto measurementGate = makeGateDD(measurementMatrix, index);
-
-  vEdge e = multiply(measurementGate, rootEdge);
+  checkMeasurementQubit(rootEdge, index);
+  vCachedEdge projected{};
+  if (rootEdge.p->v == index) {
+    std::array<vCachedEdge, RADIX> edges{};
+    const auto& successor = rootEdge.p->e[measureZero ? 0 : 1];
+    edges[measureZero ? 0 : 1] = {successor.p, successor.w};
+    projected = makeDDNode(index, edges);
+    projected.w = projected.w * static_cast<ComplexValue>(rootEdge.w);
+  } else {
+    const auto measurementGate =
+        makeGateDD(measureZero ? MEAS_ZERO_MAT : MEAS_ONE_MAT, index);
+    projected = project(rootEdge, measurementGate.p, measureZero);
+  }
+  auto e = cn.lookup(projected);
 
   assert(probability > 0.);
   e.w = cn.lookup(e.w / std::sqrt(probability));
@@ -763,6 +790,36 @@ void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
   decRef(rootEdge);
   rootEdge = e;
 }
+vCachedEdge Package::project(const vEdge& state, mNode* projector,
+                             const bool measureZero) {
+  if (state.w.exactlyZero()) {
+    return vCachedEdge::zero();
+  }
+  if (state.isTerminal()) {
+    throw std::invalid_argument("Measurement qubit is outside the state.");
+  }
+  if (const auto* cached =
+          matrixVectorMultiplication.lookup(projector, state.p);
+      cached != nullptr) {
+    return {cached->p, cached->w * static_cast<ComplexValue>(state.w)};
+  }
+
+  std::array<vCachedEdge, RADIX> edges{};
+  if (state.p->v == projector->v) {
+    const auto& successor = state.p->e[measureZero ? 0 : 1];
+    edges[measureZero ? 0 : 1] = {successor.p, successor.w};
+  } else {
+    edges = {
+        project(state.p->e[0], projector, measureZero),
+        project(state.p->e[1], projector, measureZero),
+    };
+  }
+  auto result = makeDDNode(state.p->v, edges);
+  matrixVectorMultiplication.insert(projector, state.p, result);
+  result.w = result.w * static_cast<ComplexValue>(state.w);
+  return result;
+}
+
 vEdge Package::conjugate(const vEdge& a) {
   const auto r = conjugateRec(a);
   return {.p = r.p, .w = cn.lookup(r.w)};

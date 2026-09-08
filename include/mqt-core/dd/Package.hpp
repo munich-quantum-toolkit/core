@@ -700,6 +700,9 @@ private:
   static fp assignProbabilities(const vEdge& edge,
                                 std::unordered_map<const vNode*, fp>& probs);
 
+  /// Project a state, caching the result without its incoming weight.
+  vCachedEdge project(const vEdge& state, mNode* projector, bool measureZero);
+
 public:
   /**
    * @brief Determine the measurement probabilities for a given qubit index.
@@ -714,8 +717,9 @@ public:
    * for a given qubit index in the decision diagram. It uses a breadth-first
    * search to traverse the decision diagram and accumulate the measurement
    * probabilities. The function maintains a map of measurement probabilities
-   * for each node and a set of visited nodes to avoid redundant calculations.
+   * for each node to avoid redundant calculations.
    * It also uses a queue to process nodes level by level.
+   * @throws std::invalid_argument If the qubit is outside the state.
    */
   static std::pair<fp, fp>
   determineMeasurementProbabilities(const vEdge& rootEdge, Qubit index);
@@ -731,6 +735,7 @@ public:
    * @return the measurement result ('0' or '1')
    * @throws std::runtime_error if a numerical instability is detected during
    * the measurement.
+   * @throws std::invalid_argument If the qubit is outside the state.
    */
   char measureOneCollapsing(vEdge& rootEdge, Qubit index, std::mt19937_64& mt,
                             fp epsilon = 0.001);
@@ -744,6 +749,7 @@ public:
    * normalization)
    * @param measureZero whether or not to measure '0' (otherwise '1' is
    * measured)
+   * @throws std::invalid_argument If the qubit is outside the state.
    */
   void performCollapsingMeasurement(vEdge& rootEdge, Qubit index,
                                     fp probability, bool measureZero);

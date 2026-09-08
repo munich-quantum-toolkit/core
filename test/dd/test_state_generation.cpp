@@ -371,3 +371,25 @@ TEST(StateGenerationTest, StateIntervalsRejectOverflow) {
   EXPECT_TRUE(state.p->e[1].isOneTerminal());
   EXPECT_NO_THROW(package.decRef(state));
 }
+
+TEST(StateGenerationTest, BasisConstructionUsesRequestedPrefix) {
+  Package package(4);
+  const std::vector<bool> bits{true, false, true, true, false};
+  const std::vector<BasisStates> basis{
+      BasisStates::one, BasisStates::zero, BasisStates::one,
+      BasisStates::one, BasisStates::zero,
+  };
+  for (const size_t width : {0U, 1U, 4U}) {
+    const auto binary = makeBasisState(width, bits, package);
+    const auto product = makeBasisState(width, basis, package);
+    const auto zero = makeZeroState(width, package);
+    EXPECT_EQ(binary, product);
+    EXPECT_EQ(binary.getValueByIndex(13U & ((1U << width) - 1U)), 1.);
+    EXPECT_EQ(zero.getValueByIndex(0), 1.);
+    package.decRef(binary);
+    package.decRef(product);
+    package.decRef(zero);
+  }
+  EXPECT_THROW(makeBasisState(2, std::vector<bool>{true}, package),
+               std::invalid_argument);
+}

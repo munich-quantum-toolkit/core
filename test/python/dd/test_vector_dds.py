@@ -167,3 +167,15 @@ def test_serialization(*, binary: bool) -> None:
         restored = VectorDD.from_bytes(DDPackage(3), data, binary=binary)
         assert np.allclose(restored.get_vector(), dd.get_vector())
         p.dec_ref_vec(dd)
+
+
+def test_measurement_rejects_missing_qubits() -> None:
+    """Reject qubits outside the state even when they fit in the package."""
+    package = DDPackage(4)
+    for width in (0, 2):
+        state = package.zero_state(width)
+        before = state.get_vector().copy()
+        with pytest.raises(ValueError, match="outside the state"):
+            package.measure_collapsing(state, width)
+        assert np.array_equal(state.get_vector(), before)
+        package.dec_ref_vec(state)

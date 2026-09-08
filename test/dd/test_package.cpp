@@ -1465,6 +1465,94 @@ TEST(DDPackageTest, DestructiveMeasurementOne) {
   ASSERT_EQ(vAfter[3], 0.);
 }
 
+TEST(DDPackageTest, MeasurementRejectsMissingQubits) {
+  Package package(8);
+  std::mt19937_64 rng(17);
+  const auto initialRng = rng;
+  for (const size_t width : {0U, 2U}) {
+    auto state = makeZeroState(width, package);
+    const auto original = state;
+    for (const Qubit index :
+         {static_cast<Qubit>(width), std::numeric_limits<Qubit>::max()}) {
+      EXPECT_THROW(Package::determineMeasurementProbabilities(state, index),
+                   std::invalid_argument);
+      EXPECT_THROW(package.measureOneCollapsing(state, index, rng),
+                   std::invalid_argument);
+      EXPECT_THROW(package.performCollapsingMeasurement(state, index, 1., true),
+                   std::invalid_argument);
+      EXPECT_EQ(state, original);
+      EXPECT_EQ(rng, initialRng);
+    }
+    package.decRef(state);
+  }
+  auto offsetState = makeZeroState(1, package, 2);
+  EXPECT_THROW(Package::determineMeasurementProbabilities(offsetState, 0),
+               std::invalid_argument);
+  EXPECT_THROW(package.performCollapsingMeasurement(offsetState, 0, 1., true),
+               std::invalid_argument);
+  package.decRef(offsetState);
+}
+
+TEST(DDPackageTest, CollapsingMeasurementPreservesComplexAmplitudes) {
+  Package package(3);
+  for (const std::complex<fp> phase :
+       {std::complex<fp>{1., 0.}, {0., 1.}, {-1., 0.}}) {
+    CVec amplitudes{
+        0., {0.25, 0.25}, {-0.5, 0.5}, 0., {0.25, -0.25}, 0., 0.5, 0.,
+    };
+    for (auto& amplitude : amplitudes) {
+      amplitude *= phase;
+    }
+    const auto original = makeStateFromVector(amplitudes, package);
+    for (Qubit qubit = 0; qubit < 3; ++qubit) {
+      for (const bool measureZero : {true, false}) {
+        fp probability = 0.;
+        for (size_t i = 0; i < amplitudes.size(); ++i) {
+          if (((i >> qubit) & 1U) == (measureZero ? 0U : 1U)) {
+            probability += std::norm(amplitudes[i]);
+          }
+        }
+        auto state = original;
+        package.incRef(state);
+        package.performCollapsingMeasurement(state, qubit, probability,
+                                             measureZero);
+        const auto actual = state.getVector();
+        for (size_t i = 0; i < amplitudes.size(); ++i) {
+          const auto expected = ((i >> qubit) & 1U) == (measureZero ? 0U : 1U)
+                                    ? amplitudes[i] / std::sqrt(probability)
+                                    : std::complex<fp>{};
+          EXPECT_NEAR(std::abs(actual[i] - expected), 0., 1e-12);
+        }
+        package.decRef(state);
+      }
+    }
+    package.decRef(original);
+    package.garbageCollect(true);
+    EXPECT_EQ(package.vUniqueTable.getNumEntries(), 0);
+  }
+}
+
+TEST(DDPackageTest, FullMeasurementPreservesBitOrderAndRandomDraws) {
+  Package package(17);
+  std::vector<bool> bits(17);
+  bits[0] = bits[5] = bits[16] = true;
+  auto state = makeBasisState(17, bits, package);
+  std::string expected(17, '0');
+  expected[0] = expected[11] = expected[16] = '1';
+  std::mt19937_64 actualRng(17);
+  auto expectedRng = actualRng;
+  std::uniform_real_distribution<fp> distribution(0., 1.);
+  for (const bool collapse : {false, true}) {
+    EXPECT_EQ(package.measureAll(state, collapse, actualRng), expected);
+    for (size_t qubit = 0; qubit < bits.size(); ++qubit) {
+      static_cast<void>(distribution(expectedRng));
+    }
+    EXPECT_EQ(actualRng, expectedRng);
+    EXPECT_EQ(state.getValueByIndex((1U << 16U) | (1U << 5U) | 1U), 1.);
+  }
+  package.decRef(state);
+}
+
 TEST(DDPackageTest, ExportPolarPhaseFormatted) {
   std::ostringstream phaseString;
 
