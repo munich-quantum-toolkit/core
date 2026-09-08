@@ -34,6 +34,7 @@
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringSet.h>
+#include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Casting.h>
 #include <mlir/Analysis/CallGraph.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -2090,55 +2091,54 @@ disjointClassicalBit(mlir::Value reg, mlir::Value index,
 [[nodiscard]] static bool
 canFuseMeasurementAcross(mlir::Operation& operation,
                          mlir::cbit::StoreOp destination) {
-  return !operation
-              .walk<mlir::WalkOrder::PreOrder>([&](mlir::Operation* candidate) {
-                // Verified unitary regions cannot access classical memory.
-                // Their global phase and call effects are deliberately broad.
-                if (llvm::isa<mlir::qc::UnitaryOpInterface>(candidate)) {
-                  return mlir::WalkResult::skip();
-                }
-                if (auto measure =
-                        llvm::dyn_cast<mlir::qc::MeasureOp>(candidate)) {
-                  auto store = measurementDestination(measure);
-                  return disjointClassicalBit(store.getReg(), store.getIndex(),
-                                              destination)
-                             ? mlir::WalkResult::advance()
-                             : mlir::WalkResult::interrupt();
-                }
-                if (auto store =
-                        llvm::dyn_cast<mlir::cbit::StoreOp>(candidate)) {
-                  return disjointClassicalBit(store.getReg(), store.getIndex(),
-                                              destination)
-                             ? mlir::WalkResult::advance()
-                             : mlir::WalkResult::interrupt();
-                }
-                if (auto load = llvm::dyn_cast<mlir::cbit::LoadOp>(candidate)) {
-                  return disjointClassicalBit(load.getReg(), load.getIndex(),
-                                              destination)
-                             ? mlir::WalkResult::advance()
-                             : mlir::WalkResult::interrupt();
-                }
-                if (auto interface =
-                        llvm::dyn_cast<mlir::MemoryEffectOpInterface>(
-                            candidate)) {
-                  llvm::SmallVector<mlir::MemoryEffects::EffectInstance>
-                      effects;
-                  interface.getEffects(effects);
-                  // CBit registers do not alias. Unknown locations and reads
-                  // as well as writes to the destination block early fusion.
-                  if (llvm::any_of(effects, [&](const auto& effect) {
-                        return !effect.getValue() ||
-                               effect.getValue() == destination.getReg();
-                      })) {
-                    return mlir::WalkResult::interrupt();
-                  }
-                } else if (!candidate->hasTrait<
-                               mlir::OpTrait::HasRecursiveMemoryEffects>()) {
-                  return mlir::WalkResult::interrupt();
-                }
-                return mlir::WalkResult::advance();
-              })
-              .wasInterrupted();
+  const auto result = operation.walk<mlir::WalkOrder::PreOrder>(
+      [&](mlir::Operation* candidate) {
+        return llvm::TypeSwitch<mlir::Operation*, mlir::WalkResult>(candidate)
+            .Case([](mlir::qc::UnitaryOpInterface) {
+              // Verified unitary regions cannot access classical
+              // memory. Their global phase and call effects are
+              // deliberately broad.
+              return mlir::WalkResult::skip();
+            })
+            .Case([&](mlir::qc::MeasureOp measure) {
+              auto store = measurementDestination(measure);
+              return disjointClassicalBit(store.getReg(), store.getIndex(),
+                                          destination)
+                         ? mlir::WalkResult::advance()
+                         : mlir::WalkResult::interrupt();
+            })
+            .Case([&](mlir::MemoryEffectOpInterface mem) {
+              llvm::SmallVector<mlir::MemoryEffects::EffectInstance> effects;
+              mem.getEffects(effects);
+              // CBit registers do not alias. Same-register bit accesses
+              // still need static-index disambiguation.
+              const bool conflicts =
+                  llvm::any_of(effects, [&](const auto& effect) {
+                    if (!effect.getValue()) {
+                      return true;
+                    }
+                    if (effect.getValue() != destination.getReg()) {
+                      return false;
+                    }
+                    return llvm::TypeSwitch<mlir::Operation*, bool>(candidate)
+                        .Case<mlir::cbit::LoadOp, mlir::cbit::StoreOp>(
+                            [&](auto access) {
+                              return !disjointClassicalBit(access.getReg(),
+                                                           access.getIndex(),
+                                                           destination);
+                            })
+                        .Default(true);
+                  });
+              return conflicts ? mlir::WalkResult::interrupt()
+                               : mlir::WalkResult::advance();
+            })
+            .Default([](mlir::Operation* op) {
+              return op->hasTrait<mlir::OpTrait::HasRecursiveMemoryEffects>()
+                         ? mlir::WalkResult::advance()
+                         : mlir::WalkResult::interrupt();
+            });
+      });
+  return !result.wasInterrupted();
 }
 
 [[nodiscard]] static bool isFusableMeasurementStore(mlir::qc::MeasureOp measure,

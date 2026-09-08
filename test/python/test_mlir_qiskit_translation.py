@@ -2710,6 +2710,63 @@ def test_delayed_measurement_store_across_independent_control(control: str, *, e
     assert QCProgram.from_qiskit(restored).to_qco().sample(shots=1, seed=1) == {expected: 1}
 
 
+@pytest.mark.parametrize(
+    ("access", "expected"),
+    [
+        ("%bit = cbit.load %c[%one] : !cbit.reg<2>\n    scf.if %bit { qc.x %q : !qc.qubit }", "01"),
+        ("cbit.store %true, %c[%one] : !cbit.reg<2>", "11"),
+    ],
+    ids=["load", "store"],
+)
+def test_delayed_measurement_store_across_disjoint_bit(access: str, expected: str) -> None:
+    """Cross accesses to another static bit in the destination register."""
+    program = QCProgram.from_mlir_str(
+        f"""module {{
+  func.func @main() -> !cbit.reg<2> attributes {{mqt.entry_point}} {{
+    %q = qc.alloc : !qc.qubit
+    %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %true = arith.constant true
+    qc.x %q : !qc.qubit
+    %measured = qc.measure %q : !qc.qubit -> i1
+    {access}
+    cbit.store %measured, %c[%zero] : !cbit.reg<2>
+    qc.dealloc %q : !qc.qubit
+    return %c : !cbit.reg<2>
+  }}
+}}
+"""
+    )
+    restored = program.to_qiskit()
+    assert restored.num_clbits == 2
+    assert QCProgram.from_qiskit(restored).to_qco().sample(shots=1, seed=1) == {expected: 1}
+
+
+@pytest.mark.parametrize("allocate_destination", [False, True], ids=["other-register", "destination"])
+def test_delayed_measurement_store_across_allocation(*, allocate_destination: bool) -> None:
+    """Fuse across another allocation, but never across the destination's allocation."""
+    allocation = "%classical = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>"
+    program = _single_qubit_program(
+        [
+            *([] if allocate_destination else [allocation]),
+            "%zero = arith.constant 0 : index",
+            "qc.x %q : !qc.qubit",
+            "%measured = qc.measure %q : !qc.qubit -> i1",
+            allocation if allocate_destination else "%other = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>",
+            "cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
+        ],
+        returns_classical=True,
+    )
+    if allocate_destination:
+        with pytest.raises(RuntimeError, match="destination must follow the measurement"):
+            program.to_qiskit()
+    else:
+        restored = program.to_qiskit()
+        assert restored.num_clbits == 1
+        assert QCProgram.from_qiskit(restored).to_qco().sample(shots=1, seed=1) == {"1": 1}
+
+
 @pytest.mark.parametrize("via_qco", [False, True], ids=["qc", "qco"])
 def test_grouped_measurements_reject_shared_destination(*, via_qco: bool) -> None:
     """Do not silently reverse writes when two measurements share a destination."""
