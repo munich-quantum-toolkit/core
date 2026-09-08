@@ -413,9 +413,7 @@ int64_t JitSession::sample(size_t shots, std::vector<std::string>& results) {
     if (const auto code = execute(); code != 0) {
       return code;
     }
-    for (size_t i = 0; i < shots; ++i) {
-      results.push_back(runtime_->sampleMeasurements(*samplingOutputs_));
-    }
+    runtime_->sampleMeasurements(*samplingOutputs_, shots, results);
     return 0;
   }
   for (size_t i = 0; i < shots; ++i) {

@@ -125,10 +125,17 @@ auto Runtime::enlargeState(size_t maxQubit) -> void {
     return;
   }
   const auto numQubits = maxQubit + 1;
-  if (!qState.dd) {
-    qState.dd = std::make_unique<dd::Package>(numQubits);
-  } else if (qState.dd->qubits() < numQubits) {
-    qState.dd->resize(numQubits);
+  const auto capacity = qState.dd ? qState.dd->qubits() : 0;
+  if (capacity < numQubits) {
+    /// Unknown resources grow geometrically; declared resources fit exactly.
+    const auto newCapacity = staticQubits_.value_or(std::min(
+        dd::Package::MAX_POSSIBLE_QUBITS,
+        std::max({numQubits, dd::Package::DEFAULT_QUBITS, 2 * capacity})));
+    if (!qState.dd) {
+      qState.dd = std::make_unique<dd::Package>(newCapacity);
+    } else {
+      qState.dd->resize(newCapacity);
+    }
   }
   qubitPermutation.resize(numQubits);
   std::iota(qubitPermutation.begin() + static_cast<ptrdiff_t>(qState.numQubits),
@@ -191,7 +198,7 @@ auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
                     std::span<Qubit* const> targets) -> void {
   auto addresses = translateAddresses(controls, targets);
   if (!qState.dd) {
-    qState.dd = std::make_unique<dd::Package>();
+    qState.dd = std::make_unique<dd::Package>(0);
   }
   std::ranges::transform(addresses, addresses.begin(), [&](const auto address) {
     return qubitPermutation[address];
@@ -209,7 +216,7 @@ auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
 
 auto Runtime::applyGlobalPhase(dd::fp phase) -> void {
   if (!qState.dd) {
-    qState.dd = std::make_unique<dd::Package>();
+    qState.dd = std::make_unique<dd::Package>(0);
   }
   qState.edge = dd::applyGlobalPhase(qState.edge, phase, *qState.dd);
 }
@@ -224,18 +231,38 @@ auto Runtime::measure(Qubit* qubit, Result* result) -> void {
   }
 }
 
-auto Runtime::sampleMeasurements(std::span<const uintptr_t> qubits)
-    -> std::string {
+auto Runtime::sampleMeasurements(std::span<const uintptr_t> qubits,
+                                 size_t shots,
+                                 std::vector<std::string>& results) -> void {
   measurements.clear();
   if (qubits.empty()) {
-    return measurements;
+    results.resize(shots);
+    return;
   }
-  const auto basis = qState.dd->measureAll(qState.edge, false, mt);
+  bool ascending = qubits.size() == qState.numQubits;
+  for (size_t i = 0; ascending && i < qubits.size(); ++i) {
+    ascending = qubitPermutation[qubits[i]] == i;
+  }
+  if (ascending) {
+    for (size_t i = 0; i < shots; ++i) {
+      auto basis = qState.dd->measureAll(qState.edge, false, mt);
+      std::ranges::reverse(basis);
+      results.push_back(std::move(basis));
+    }
+    if (shots != 0) {
+      measurements = results.back();
+    }
+    return;
+  }
   measurements.reserve(qubits.size());
-  for (const auto qubit : qubits) {
-    measurements.push_back(basis[basis.size() - 1 - qubitPermutation[qubit]]);
+  for (size_t i = 0; i < shots; ++i) {
+    const auto basis = qState.dd->measureAll(qState.edge, false, mt);
+    measurements.clear();
+    for (const auto qubit : qubits) {
+      measurements.push_back(basis[basis.size() - 1 - qubitPermutation[qubit]]);
+    }
+    results.push_back(measurements);
   }
-  return measurements;
 }
 
 auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
@@ -361,7 +388,7 @@ auto Runtime::takeState() -> QState {
     }
   }
   if (!qState.dd) {
-    qState.dd = std::make_unique<dd::Package>();
+    qState.dd = std::make_unique<dd::Package>(0);
   }
   QState ret = std::move(qState);
   reset();

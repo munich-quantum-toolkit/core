@@ -49,8 +49,8 @@ classical bit before submitting its generated OpenQASM 3 program.
 Sampling returns ordered bitstrings through `QDMI_JOB_RESULT_SHOTS` and their
 histogram through `QDMI_JOB_RESULT_HIST_KEYS` and `QDMI_JOB_RESULT_HIST_VALUES`.
 Both results come from the same samples, including mid-circuit measurements. QIR
-Base programs with a static terminal measurement region can sample one prepared
-DD; other QIR programs run once per shot. See the
+Base or Adaptive programs with a static terminal measurement region can sample
+one prepared DD; other QIR programs run once per shot. See the
 [QIR execution contract](../qir/index.md) for eligibility and resource limits.
 OpenQASM classical registers use reverse declaration order, with each register
 most-significant-bit first. QIR samples follow the program's recorded outputs.

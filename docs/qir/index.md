@@ -107,7 +107,7 @@ concurrently without sharing measurements. DDSIM records result bits directly;
 it does not format or retain the textual QIR output stream. Direct runtime
 callers can still request that stream, including its per-shot framing.
 
-Sampling supports Base and Adaptive formats. For Base programs with an acyclic,
+Sampling supports Base and Adaptive formats. For either profile with an acyclic,
 unconditional entry path, constant gate arguments, terminal Z measurements and
 scalar result records, DDSIM prepares the DD once and samples it for all shots.
 Repeated and reordered result records retain their program order, including
@@ -130,7 +130,8 @@ Statevector extraction is limited to Base formats: the JIT stops the selected
 entry point immediately before the first call to a function marked
 `irreversible`, following the semantic boundary defined by the Base Profile. It
 rejects other profiles and Base Profile programs whose irreversible region is
-not terminal. Extracted amplitudes preserve global phase and logical qubit
+not terminal, as well as defined or indirect helper calls whose quantum effects
+cannot be proven. Extracted amplitudes preserve global phase and logical qubit
 order, including SWAPs. LLVM target triples must match the host architecture and
 operating system because the JIT executes in process.
 

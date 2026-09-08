@@ -4,30 +4,38 @@ Status: implemented and locally validated.
 
 ## Goal and scope
 
-Implement the eight findings in `.agent/audits/ddsim-qir-runner.md` and submit
-one PR. Preserve Adaptive execution and the public textual QIR runtime ABI.
-Terminal sampling must preserve recorded-result order and fall back for
-unsupported inputs. State extraction must preserve logical wires and phase.
+Implement the findings in `.agent/audits/ddsim-qir-runner.md` and
+`.agent/audits/ddsim-qir-runner-refresh.md` in one PR. Preserve Adaptive
+execution, ordered shot results and the public textual QIR runtime ABI. State
+extraction must preserve logical wires, declared width and phase.
 
 ## Decisions
 
-- Build on current main. Shared gate-validation allocation work in #2455 stays
-  with that PR; QIR address-storage improvements are independent.
-- Declared static qubit capacity determines extracted state width. Missing
-  metadata keeps the existing direct-ABI and legacy-session inference behavior.
+- Keep canonical gate matrices and DD construction shared with QCO. General
+  caching and LLVM optimization remain dependent on workload evidence.
+- Declared static capacities bound resource IDs and determine extracted width.
+  Missing metadata retains direct-ABI and legacy-session inference behavior.
+- Start packages at zero capacity. Size declared resources exactly; grow unknown
+  resources geometrically from the DD default capacity on first quantum use.
+  Warm resets retain storage, and moved-out packages are recreated lazily.
 - Recycle physical dynamic wires, not opaque handles, to reject stale handles.
-- Enable terminal sampling only after proving a straight-line static program
-  with known QIS calls, terminal measurements and static output mapping. Keep
-  full JIT execution for other sampling programs.
-- Keep canonical matrices and DD construction shared with QCO. A general gate
-  cache and an LLVM optimization pipeline remain benchmark-dependent candidates,
-  outside the eight confirmed findings.
+- Prove terminal sampling eligibility from the actual Base or Adaptive body:
+  unconditional acyclic execution, constant gates and static resources, terminal
+  measurements, and known output mapping. Other programs execute for every shot.
+- Keep batch DD sampling in Runtime. Move full ascending physical sample strings
+  directly into the batch; preserve generic mappings, the final measurement
+  record and RNG consumption.
+- Initialize only appended unique-table levels in the shared DD implementation.
+  Preserve existing lookups, statistics, roots and GC behavior.
+- Reject defined and indirect helpers during state-extraction analysis before
+  changing IR. Do not infer effects through function bodies.
 
 ## Validation
 
-Release suites passed: 38 JIT/analysis, 78 runtime, 65 DDSIM, 169 DD and 122 QIR
-IR tests. The audit records CPU-time and allocation comparisons with their
-limits. Full Clang CTest: 4013 tests, no failures, one existing skip. Both
-`uvx nox -s lint` and `uvx nox -s cpp-lint` pass; C++ lint inspected all changed
-implementation and test files. The final JIT suite also passes after the
-naming-only cleanup. Hosted CI is not part of this local validation.
+Focused release tests passed: 46 JIT/analysis, 79 runtime and 180 DD tests. Full
+Clang CTest passed 3,190 tests with no failures and one existing skip. Both
+required lint sessions and the complete strict documentation build passed. C++
+lint inspected the full changed-file set, including shared DD code. The
+refreshed audit records combined CPU-time and allocation measurements, including
+noisy growth timings and unchanged seeded output mappings. Hosted CI is separate
+from these local results.

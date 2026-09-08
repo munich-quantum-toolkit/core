@@ -29,6 +29,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 
 #ifdef _WIN32
 #define SYSTEM _wsystem
@@ -799,8 +800,7 @@ TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
 }
 
 TEST_F(QIRRuntimeTest, PackageResizeWhenEnlargingState) {
-  // dd::Package starts at 32 qubits.
-  // Acting on qubit 32 forces qState.dd->resize.
+  /// Acting on qubit 32 must extend the initially empty state.
   auto* q32 = reinterpret_cast<Qubit*>(32UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__h__body(q32);
@@ -1009,3 +1009,28 @@ TEST_F(QIRRuntimeTest, DisabledTextOutputStillRecordsResults) {
 }
 
 } // namespace qir
+
+TEST(QIRRuntimeGrowth, PreservesStateAndPhaseAcrossGrowthAndTransfer) {
+  constexpr size_t width = 65;
+  const std::array<std::complex<dd::fp>, 4> x{0., 1., 1., 0.};
+  for (const bool dynamic : {false, true}) {
+    qir::Runtime runtime(42);
+    for (size_t job = 0; job < 2; ++job) {
+      runtime.applyGlobalPhase(dd::PI);
+      for (size_t q = 0; q < width; ++q) {
+        auto* qubit = dynamic ? runtime.qAlloc() : reinterpret_cast<Qubit*>(q);
+        const std::array targets{qubit};
+        runtime.apply(x, {}, targets);
+      }
+      auto state = runtime.takeState();
+      EXPECT_EQ(state.numQubits, width);
+      EXPECT_GE(state.dd->qubits(), width);
+      EXPECT_LT(state.dd->qubits(), 2 * width);
+      const auto amplitude =
+          state.edge.getValueByPath(width, std::string(width, '1'));
+      EXPECT_NEAR(amplitude.real(), -1., 1e-12);
+      EXPECT_NEAR(amplitude.imag(), 0., 1e-12);
+      state.dd->decRef(state.edge);
+    }
+  }
+}

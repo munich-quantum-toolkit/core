@@ -17,6 +17,7 @@
 #include <llvm/IR/Instructions.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
+#include <llvm/IR/Verifier.h>
 #include <llvm/IRReader/IRReader.h>
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/SourceMgr.h>
@@ -162,19 +163,25 @@ attributes #0 = { "entry_point" }
                std::invalid_argument);
 }
 
-} // namespace
-
-static auto samplingOutputs(llvm::StringRef ir) {
-  llvm::LLVMContext context;
-  llvm::SMDiagnostic error;
-  auto llvmModule = llvm::parseAssemblyString(ir, error, context);
-  if (!llvmModule) {
-    throw std::runtime_error(error.getMessage().str());
+class QIRSamplingPlan : public testing::TestWithParam<const char*> {
+protected:
+  auto samplingOutputs(std::string ir) {
+    ir.replace(ir.find("base_profile"), std::string_view("base_profile").size(),
+               GetParam());
+    llvm::LLVMContext context;
+    llvm::SMDiagnostic error;
+    auto llvmModule = llvm::parseAssemblyString(ir, error, context);
+    if (!llvmModule) {
+      throw std::runtime_error(error.getMessage().str());
+    }
+    return qir::getStaticSamplingOutputs(*llvmModule->getFunction("main"));
   }
-  return qir::getStaticSamplingOutputs(*llvmModule->getFunction("main"));
-}
+};
 
-TEST(QIRSamplingPlan, PreservesRepeatedOutputsAndOverwrittenResults) {
+INSTANTIATE_TEST_SUITE_P(Profiles, QIRSamplingPlan,
+                         testing::Values("base_profile", "adaptive_profile"));
+
+TEST_P(QIRSamplingPlan, PreservesRepeatedOutputsAndOverwrittenResults) {
   const auto outputs = samplingOutputs(R"(
 define i64 @main() #0 {
 entry:
@@ -199,7 +206,7 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
   EXPECT_EQ(*outputs, (std::vector<uintptr_t>{0, 2, 2}));
 }
 
-TEST(QIRSamplingPlan, DoesNotDeferMeasurementsBeforeQuantumWork) {
+TEST_P(QIRSamplingPlan, DoesNotDeferMeasurementsBeforeQuantumWork) {
   EXPECT_FALSE(samplingOutputs(R"(
 define i64 @main() #0 {
   call void @__quantum__qis__mz__body(ptr null, ptr null)
@@ -213,7 +220,7 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
                    .has_value());
 }
 
-TEST(QIRSamplingPlan, RejectsUnknownCallsAndHiddenQuantumEffects) {
+TEST_P(QIRSamplingPlan, RejectsUnknownCallsAndHiddenQuantumEffects) {
   EXPECT_FALSE(samplingOutputs(R"(
 define i64 @main() #0 {
   call void @helper()
@@ -238,7 +245,7 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
                    .has_value());
 }
 
-TEST(QIRSamplingPlan, RejectsControlFlowMemoryAndResets) {
+TEST_P(QIRSamplingPlan, RejectsControlFlowMemoryAndResets) {
   for (const auto* body : {
            "br label %loop\nloop: br label %loop",
            "br i1 true, label %left, label %right\nleft: ret i64 0\nright: ret "
@@ -267,3 +274,45 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
     EXPECT_FALSE(samplingOutputs(ir).has_value());
   }
 }
+
+TEST(IRRewriter, RejectsDefinedAndIndirectCallsBeforeChangingIR) {
+  for (const auto* body : {
+           "call void @readout()",
+           "%callee = load ptr, ptr @readout_ptr\ncall void %callee()",
+           "call void @__quantum__qis__mz__body(ptr null, ptr null)\n"
+           "call void @readout()",
+       }) {
+    SCOPED_TRACE(body);
+    const auto ir = std::string(R"(
+@readout_ptr = global ptr @readout
+define i64 @main() #0 {
+  call void @__quantum__qis__h__body(ptr null)
+)") + body + R"(
+  ret i64 0
+}
+define void @readout() {
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  ret void
+}
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr) #1
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+attributes #1 = { "irreversible" }
+)";
+    llvm::LLVMContext context;
+    llvm::SMDiagnostic error;
+    auto llvmModule = llvm::parseAssemblyString(ir, error, context);
+    ASSERT_NE(llvmModule, nullptr);
+    ASSERT_FALSE(llvm::verifyModule(*llvmModule));
+    const auto measurements =
+        countCallsTo(*llvmModule, "__quantum__qis__mz__body");
+    EXPECT_THROW(
+        qir::prepareForStateExtraction(*llvmModule->getFunction("main")),
+        std::invalid_argument);
+    EXPECT_EQ(countCallsTo(*llvmModule, "__quantum__qis__mz__body"),
+              measurements);
+    EXPECT_FALSE(llvm::verifyModule(*llvmModule));
+  }
+}
+
+} // namespace

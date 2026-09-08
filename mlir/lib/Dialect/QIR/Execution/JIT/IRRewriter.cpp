@@ -104,9 +104,19 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
   llvm::SmallVector<llvm::CallInst*, 8> irreversibleCalls;
   for (auto& block : entryPoint) {
     for (auto& instruction : block) {
-      auto* call = llvm::dyn_cast<llvm::CallInst>(&instruction);
-      if (call != nullptr && isIrreversible(*call)) {
-        irreversibleCalls.emplace_back(call);
+      auto* call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+      if (call == nullptr) {
+        continue;
+      }
+      const auto* callee = llvm::dyn_cast<llvm::Function>(
+          call->getCalledOperand()->stripPointerCasts());
+      if (!llvm::isa<llvm::CallInst>(call) || callee == nullptr ||
+          !callee->isDeclaration()) {
+        throw std::invalid_argument(
+            "QIR state extraction requires direct calls to declared functions");
+      }
+      if (isIrreversible(*call)) {
+        irreversibleCalls.emplace_back(llvm::cast<llvm::CallInst>(call));
       }
     }
   }
@@ -182,7 +192,8 @@ std::optional<std::vector<uintptr_t>>
 getStaticSamplingOutputs(const llvm::Function& entryPoint) {
   const auto profile = entryPoint.getFnAttribute(QIR_PROFILES_ATTR);
   if (entryPoint.isDeclaration() || !profile.isStringAttribute() ||
-      profile.getValueAsString().compare(BASE_PROFILE) != 0) {
+      (profile.getValueAsString().compare(BASE_PROFILE) != 0 &&
+       profile.getValueAsString().compare(ADAPTIVE_PROFILE) != 0)) {
     return std::nullopt;
   }
   std::unordered_map<uintptr_t, uintptr_t> results;

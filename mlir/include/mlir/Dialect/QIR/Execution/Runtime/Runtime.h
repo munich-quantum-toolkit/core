@@ -80,7 +80,7 @@ public:
     size_t numQubits;
 
     QState()
-        : dd(std::make_unique<dd::Package>()), edge(dd::vEdge::one()),
+        : dd(std::make_unique<dd::Package>(0)), edge(dd::vEdge::one()),
           numQubits(0) {}
 
     /// Reset to a fresh empty state.
@@ -134,7 +134,8 @@ private:
   auto enlargeState(size_t maxQubit) -> void;
   void configureStaticResources(std::optional<size_t> qubits,
                                 std::optional<size_t> results);
-  auto sampleMeasurements(std::span<const uintptr_t> qubits) -> std::string;
+  auto sampleMeasurements(std::span<const uintptr_t> qubits, size_t shots,
+                          std::vector<std::string>& results) -> void;
   static auto staticQubitId(const Qubit* qubit) -> dd::Qubit {
     const auto id = reinterpret_cast<uintptr_t>(qubit);
     if (id >= dd::Package::MAX_POSSIBLE_QUBITS) {

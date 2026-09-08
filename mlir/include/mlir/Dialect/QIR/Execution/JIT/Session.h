@@ -82,10 +82,10 @@ public:
 
   /// Execute a batch, preserving recorded-result order and returning the first
   /// nonzero exit code. With textual output disabled, eligible static Base
-  /// programs are executed once with deferred measurements, then sampled.
-  /// Other programs execute normally for every shot. State-extraction sessions
-  /// cannot be sampled. The supplied vector is replaced, including for zero
-  /// shots.
+  /// or Adaptive programs are executed once with deferred measurements, then
+  /// sampled. Other programs execute normally for every shot. State-extraction
+  /// sessions cannot be sampled. The supplied vector is replaced, including for
+  /// zero shots.
   int64_t sample(size_t shots, std::vector<std::string>& results);
 
   [[nodiscard]] auto runtime() -> Runtime&;

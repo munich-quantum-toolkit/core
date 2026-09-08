@@ -1,6 +1,8 @@
 # DDSIM QIR runner audit
 
-Status: implemented. Date: 2026-09-08. Audit baseline:
+Status: implemented; historical baseline. The
+[refreshed audit](ddsim-qir-runner-refresh.md) records the subsequent sampling,
+allocation and extraction changes. Date: 2026-09-08. Audit baseline:
 `33dbc843e589d9e9166308084e825c9f8b2ff89d`; implementation based on main
 `3be5ee96f`. Scope: DDSIM, QIR execution, resource metadata and shared DD roots.
 
