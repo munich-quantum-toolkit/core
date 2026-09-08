@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QIR/Execution/JIT/Session.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
 
 #include <gmock/gmock-matchers.h>
@@ -506,36 +507,44 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubi
   EXPECT_THROW(session.sample(1, results), std::logic_error);
 }
 
-TEST(QIRStaticResources, RejectsInvalidResourceCapacities) {
+TEST(QIRStaticResources, RejectsQubitCapacityBeyondDDRange) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" "required_num_qubits"="65537" }
+)";
+  EXPECT_THROW(qir::JitSession(ir, "excess-qubit-capacity"), std::out_of_range);
+}
+
+TEST(QIRStaticResources, RejectsMalformedResourceCapacities) {
   for (const auto* attribute : {
-           R"("required_num_qubits"="65537")",
            R"("required_num_qubits"="-1")",
            R"("required_num_results"="18446744073709551616")",
        }) {
+    SCOPED_TRACE(attribute);
     const std::string ir = std::string("define i64 @main() #0 { ret i64 0 }\n"
                                        "attributes #0 = { \"entry_point\" ") +
                            attribute + " }";
-    EXPECT_THROW(qir::JitSession(ir, "invalid-capacity"), std::exception);
+    EXPECT_THROW(qir::JitSession(ir, "invalid-capacity"),
+                 std::invalid_argument);
   }
 }
 
-TEST(QIRStaticResources, RejectsResourceIdsBeyondDeclaredCapacity) {
-  for (const auto* body : {
-           "call void @__quantum__qis__x__body(ptr inttoptr (i64 1 to ptr))",
-           "call void @__quantum__qis__mz__body(ptr null, ptr inttoptr (i64 1 "
-           "to "
-           "ptr))",
-       }) {
-    const std::string ir = std::string("define i64 @main() #0 {\n") + body + R"(
-  ret i64 0
-}
-declare void @__quantum__qis__x__body(ptr)
-declare void @__quantum__qis__mz__body(ptr, ptr)
+TEST(QIRStaticResources, ConfiguresRuntimeResourceBounds) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 { ret i64 0 }
 attributes #0 = { "entry_point" "required_num_qubits"="1" "required_num_results"="1" }
 )";
-    qir::JitSession session(ir, "invalid-id");
-    EXPECT_THROW(session.run(), std::out_of_range);
-  }
+  qir::JitSession session(ir, "resource-bounds");
+  auto& runtime = session.runtime();
+  Qubit* zeroQubit = nullptr;
+  Result* zeroResult = nullptr;
+  EXPECT_NO_THROW(runtime.measure(zeroQubit, zeroResult));
+  EXPECT_THROW(
+      runtime.measure(reinterpret_cast<Qubit*>(uintptr_t{1}), zeroResult),
+      std::out_of_range);
+  EXPECT_THROW(
+      runtime.measure(zeroQubit, reinterpret_cast<Result*>(uintptr_t{1})),
+      std::out_of_range);
 }
 
 TEST(QIRJIT, ResolvesProcessSymbolsWithDefaultGenerator) {
