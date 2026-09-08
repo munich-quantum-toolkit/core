@@ -252,6 +252,7 @@ build = "cp3*"
 skip = [ "*-musllinux_*", "cp314t-*" ]
 archs = "auto64"
 build-frontend = "uv"
+config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
 test-command = "pytest test/python"
 test-groups = [ "test" ]
 test-sources = [
@@ -263,7 +264,7 @@ test-sources = [
 ]
 
 [tool.cibuildwheel.linux]
-config-settings = { "cmake.define.CMAKE_LINKER_TYPE" = "MOLD" }
+config-settings = { "cmake.define.ENABLE_IPO" = "ON", "cmake.define.CMAKE_LINKER_TYPE" = "MOLD" }
 environment = { DEPLOY = "ON", PATH = "/opt/llvm-23.1.0/bin:$PATH:/root/.local/bin", MLIR_DIR = "/opt/llvm-23.1.0/lib/cmake/mlir" }
 environment-pass = [
   "CMAKE_C_COMPILER_LAUNCHER",

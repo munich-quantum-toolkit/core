@@ -16,8 +16,12 @@ LLVM/MLIR 23.1.0 assertion-enabled portable SDK, nanobind 3.0.1, CPython 3.14.7.
   settings through cibuildwheel's Linux container boundary, and select the
   bundled mold through `cmake.define.CMAKE_LINKER_TYPE`.
 - Remove the obsolete MSVC `/Zm10` limit.
-- Retain deployment LTO and nanobind optimization defaults. The local runtime
-  evidence does not support changing either globally.
+- Enable full LTO for Core release wheels, including the CI wheel builds that
+  validate CD. Clang uses full LTO explicitly rather than CMake's ThinLTO
+  default; GCC/MSVC retain their full IPO modes. Requested wheel IPO fails
+  configuration if unsupported. Keep nanobind's binding optimization defaults.
+- With full Core LTO in addition to section GC, the local wheel is 42,732,712
+  bytes. SDK archives remain native until compiler compatibility is coordinated.
 
 ## Runtime measurements
 
@@ -42,9 +46,10 @@ results; Qiskit circuits compare equal after a round trip.
 LTO slows the compiler cases by 11.5% and 14.9%. Binding `-O3` improves matrix
 multiplication by 7.3%, but slows vector conversion by 6.7%; the compiler
 changes are below 1.2%. These are bounded workload results, not broad platform
-rankings. Revisit LTO with GCC 14 and AppleClang against the assertion-free SDK
-before changing release defaults. No comparable cold-build timing was
-established.
+rankings. Full LTO is now enabled as the Core release-wheel policy. Recheck
+performance with GCC 14 and AppleClang against the assertion-free SDK; this
+earlier probe does not measure cross-module LTO through an LTO-built SDK. No
+comparable cold-build timing was established.
 
 Local recipes, raw samples, staged modules, and build logs are retained under
 `build/release-optimization/`: `configure-args.json`, `bench.py`,
@@ -154,8 +159,10 @@ allocator is justified by this audit.
 
 ## Validation and remaining gates
 
-The final local wheel uses mold, verified in its link command, and section GC.
-917 installed-wheel tests pass across DD, benchmarks, QDMI, compiler pipelines,
+The final local wheel uses mold, full GCC LTO, and section GC, verified in its
+compile and link commands. A local Clang 23 consumer verifies that wheel mode
+uses `-flto=full` for both compilation and linking. 917 installed-wheel tests
+pass after enabling full LTO across DD, benchmarks, QDMI, compiler pipelines,
 Qiskit interchange, and CLI behavior. A CMake consumer finds the wheel's
 installed package, links `MQT::CoreQDMI`, and creates a session. The installed
 benchmark executable generates both QC and jeff output.

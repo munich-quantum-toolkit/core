@@ -23,8 +23,10 @@ translation units before selecting production defaults.
   assessing wheel packaging. The v4.1 driver stack starts at Core #2229.
 - Preserve the small C++ SDK. Enable ELF section garbage collection on the DDSIM
   device and benchmark executable: the local wheel shrinks by 29.3%.
-- Retain deployment LTO and binding optimization defaults: the measured workload
-  regressions do not support enabling either globally.
+- Enable full LTO for Core release wheels and keep binding optimization
+  defaults. Preserve the earlier runtime measurements as a reason to re-evaluate
+  with the optimized SDK. Native SDK archives need a coordinated compiler policy
+  before LTO.
 
 ## Work remaining
 
@@ -34,8 +36,8 @@ translation units before selecting production defaults.
 - [x] Enable persistent wheel compiler caching and select mold on Linux.
 - [x] Trace installed wheel consumers and quantify packaging opportunities.
 - [x] Review Astral's PGO/BOLT pipelines and record an MQT training strategy.
-- [ ] Publish the Core integration PR; companion PRs are toolchain #94, setup
-      #255, and workflows #464.
+- [x] Publish Core #2476 and companion PRs: toolchain #94, setup #255, workflows
+      #464.
 
 ## Validation
 
