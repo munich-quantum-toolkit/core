@@ -735,10 +735,6 @@ bool TwoQubitWeylDecomposition::applySpecialization(
 using KAK = TwoQubitWeylDecomposition;
 constexpr double EIGHTH_PI = std::numbers::pi / 8.;
 
-// Independently implemented from the mathematical results in section I.B,
-// equations (3), (5)--(7), of the supplemental material to
-// https://doi.org/10.1103/PhysRevLett.130.070601.
-// KAK is an existing dependency; no external synthesis code is used here.
 static Matrix4x4 sqrtISwapMatrix() {
   const auto s = std::numbers::sqrt2 / 2.;
   return Matrix4x4::fromElements(1., 0., 0., 0., 0., s, Complex(0., s), 0., 0.,
@@ -796,6 +792,8 @@ static TwoQubitNativeDecomposition oneGate(const KAK& target) {
   return result;
 }
 
+// Interleaving rotations: supplemental material, Sec. I.B, Eqs. (3), (5)-(7),
+// https://doi.org/10.1103/PhysRevLett.130.070601.
 static TwoQubitNativeDecomposition twoGates(const KAK& target) {
   const double x = target.a(), y = target.b(), z = target.c();
   const double c = std::sin(x + y - z) * std::sin(x - y + z) *
