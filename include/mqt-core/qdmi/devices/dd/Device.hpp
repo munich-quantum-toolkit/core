@@ -35,10 +35,6 @@
 #include <variant>
 #include <vector>
 
-namespace qdmi_test {
-struct ControlledJob;
-}
-
 namespace qdmi::dd {
 class Device final : public Singleton<Device> {
   friend class Singleton;
@@ -184,8 +180,6 @@ public:
  * @brief Implementation of the MQT_DDSIM_QDMI_Device_Job structure.
  */
 struct MQT_DDSIM_QDMI_Device_Job_impl_d {
-  friend struct qdmi_test::ControlledJob;
-
 private:
   /// The device session associated with the job.
   MQT_DDSIM_QDMI_Device_Session_impl_d* session_;

@@ -20,15 +20,6 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@ae4c1005796fedc123c3c70cdba94ce643c9fcae # v2.3.1
     with:
       additional-python-files: "mlir/**"
-      additional-cd-files: |
-        pyproject.toml
-        CMakeLists.txt
-        cmake/**
-        bindings/**
-        python/**
-        src/**
-        include/**
-        mlir/**
     permissions:
       contents: read
 

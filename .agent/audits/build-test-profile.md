@@ -98,18 +98,13 @@ Sources:
    one CTest entry per binary, retaining all 348 and 500 cases in GoogleTest
    XML. Both binaries pass five shuffled repetitions. Other binaries retain
    their discovery and process isolation; no numerical assertions were removed.
-10. **Lifecycle tests relied on large workloads staying busy.** A controlled job
-    body holds the real asynchronous worker in RUNNING. Tests assert device
-    BUSY, unavailable results, an actual timeout, and blocking
-    cancellation/free, then release the worker. They share the device
-    implementation objects without exporting a C++ test API or compiling the
-    implementation twice. Real sampling and state-vector integration tests
-    remain. Eight focused Debug tests take 1.10 seconds, including the required
-    one-second timeout; the former heavy status/error tests each took 26–39
-    seconds in Debug CI.
-11. **Packaging changes did not trigger wheel CI.** Core's change detection now
-    includes Python, bindings, native source, MLIR, and CMake packaging inputs.
-    Release artifacts must still pass the platform matrix before publication.
+10. **Lifecycle tests relied on large workloads staying busy.** A test QIR
+    program calls a test-owned barrier through an in-process function pointer.
+    Submission uses the public device API and tests link the actual shared
+    device. No test hooks, friendships, or test-specific build targets are
+    present in production devices. Tests assert BUSY, unavailable results,
+    timeout, and blocking cancellation/free before releasing the barrier. Real
+    sampling and state-vector integration tests remain.
 
 ## Validation boundary
 

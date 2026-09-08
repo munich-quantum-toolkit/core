@@ -16,6 +16,9 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <thread>
+
 namespace {
 QDMI_Device_Status queryStatus(MQT_DDSIM_QDMI_Device_Session session) {
   QDMI_Device_Status st = QDMI_DEVICE_STATUS_OFFLINE;
@@ -35,7 +38,15 @@ TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
   const qdmi_test::JobGuard j{s.session};
   qdmi_test::ControlledJob running{j.job};
   EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_BUSY);
-  running.finish(j.job);
+  running.release();
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
+  /// Job completion is published just before the device busy count is cleared.
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(1);
+  while (queryStatus(s.session) == QDMI_DEVICE_STATUS_BUSY &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
 
   /// After completion, the status should be IDLE.
   EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_IDLE);

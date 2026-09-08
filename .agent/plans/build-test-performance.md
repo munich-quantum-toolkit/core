@@ -16,8 +16,8 @@ Core pins both changes.
 ## Decisions
 
 - Preserve all test cases and normal C++ installation versioning.
-- Share device implementation objects with tests to synchronize the real worker
-  without exporting test hooks or compiling the implementation twice.
+- Submit a test QIR barrier through the public API and link the actual shared
+  device; keep all test machinery in the test tree.
 - Keep simulation integration cases and the actual one-second timeout check.
 - Batch only QC/QCO IR binaries; retain per-case XML and check shuffled order.
 - Keep sequential Nox environments and existing build reuse. Pytest provides
