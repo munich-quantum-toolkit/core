@@ -17,8 +17,7 @@ MQT Core provides a fully-fledged, high-performance decision diagram package for
 quantum computing. The resulting library allows for the efficient representation
 and manipulation of quantum states and operations. If you are not yet familiar
 with decision diagrams as a data structure, you might want to start with the
-[introduction to quantum decision diagrams](#how-do-quantum-decision-diagrams-work)
-below.
+introduction to quantum decision diagrams below.
 
 Throughout the MQT, this library enables many classical simulation, synthesis,
 or verification techniques. While primarily developed in C++, the corresponding
@@ -112,6 +111,7 @@ mystnb:
   image:
     width: 20%
     align: center
+    alt: Bell-state DD with shared zero and one branches.
 ---
 import graphviz
 
@@ -185,6 +185,7 @@ This decomposition is the core of the decision-diagram formalism. The decision
 diagram representing $\ket{\Psi}$ has the structure
 
 ```{image} _static/dd-figure-01.svg
+:alt: One qubit with outgoing edges weighted by its zero and one amplitudes.
 :width: 15%
 :align: center
 ```
@@ -202,6 +203,7 @@ Consider the computational basis states $\ket{0}$ and $\ket{1}$. Then, the
 corresponding decision diagrams have the structures
 
 ```{image} _static/dd-figure-02.svg
+:alt: Zero state: only the zero successor has nonzero weight.
 :align: center
 :width: 8%
 ```
@@ -212,6 +214,7 @@ corresponding decision diagrams have the structures
 and
 
 ```{image} _static/dd-figure-03.svg
+:alt: One state: only the one successor has nonzero weight.
 :align: center
 :width: 8%
 ```
@@ -219,7 +222,7 @@ and
 \ket{1}\equiv\begin{bmatrix}0 & 1\end{bmatrix}^\top
 ```
 
-In each of the cases, one of the successors ends in the terminal node, while the other ends in a \emph{zero stub} (indicated by a black dot)---uncannily resembling the corresponding vector descriptions.
+In each of the cases, one of the successors ends in the terminal node, while the other ends in a _zero stub_ (indicated by a black dot)---uncannily resembling the corresponding vector descriptions.
 ````
 
 Building off the intuition of a single-qubit state, we can move to larger
@@ -278,12 +281,12 @@ where $q_2, q_1, q_0 \in \{0, 1\}$.
 This directly translates to the decision-diagram formalism:
 
 ```{image} _static/dd-figure-04.svg
+:alt: Unreduced three-qubit state with repeated branches.
+:name: dd-three-qubits
 :align: center
 :width: 65%
 ```
-```{math}
-:label: 3qbdd
-```
+
 
 Each level of the decision diagram consists of decision nodes with corresponding left and right successor edges.
 These successors represent the path that leads to an amplitude where the local quantum system (corresponding to the _level_ of the node, annotated here with the labels) is in the $\ket{0}$ (left successor) or the $\ket{1}$ state (right successor).
@@ -299,15 +302,16 @@ merged in the representation instead of being represented repeatedly.
 
 Observe how, as in the previous example, the left and right successors of the
 top-level node (labeled $q_2$) lead to exactly the same structure (highlighted
-by dashed rectangles in {eq}`3qbdd`). As a result, the whole sub-diagram does
-not need to be represented twice, i.e.,
+by dashed rectangles in {ref}`the unreduced diagram <dd-three-qubits>`). As a
+result, the whole sub-diagram does not need to be represented twice, i.e.,
 
 ```{image} _static/dd-figure-05.svg
+:alt: Equal branches of the three-qubit state merged into one subdiagram.
 :align: center
 :width: 40%
 ```
 
-From a memory perspective, this reduction alone has compressed the overall memory required to represent the state by 50\%.
+From a memory perspective, this reduction alone has compressed the overall memory required to represent the state by 50%.
 ````
 
 Identifying redundancies in these kinds of representations heavily depends on
@@ -319,13 +323,15 @@ this property is called _canonicity_.
 
 The most widely used and practically relevant normalization scheme is to
 normalize the outgoing edges of a node by dividing both weights by the norm of
-the vector containing both edge weights and adjusting the incoming edges
-accordingly {cite:p}`hillmichJustRealThing2020`. This normalizes the sum of the
-squared magnitudes of the outgoing edge weights to $1$ and is consistent with
-quantum semantics, where basis states $\ket{0}$ and $\ket{1}$ are observed after
-measurement with probabilities that are squared magnitudes of the respective
-weights. Normalization is recursively applied in a bottom-up fashion to ensure
-that every possible redundancy is caught.
+the vector containing both edge weights and extracting a common phase into the
+incoming edge {cite:p}`hillmichJustRealThing2020`. This normalizes the sum of
+the squared magnitudes of the outgoing edge weights to $1$ and is consistent
+with quantum semantics, where basis states $\ket{0}$ and $\ket{1}$ are observed
+after measurement with probabilities that are squared magnitudes of the
+respective weights. MQT Core selects a maximum-magnitude edge (preferring the
+left edge within numerical tolerance) and makes its normalized weight real and
+nonnegative. The incoming edge retains its complex phase. Normalization proceeds
+bottom-up; complex-number comparisons use the package tolerance.
 
 ````{admonition} Example _(Normalization of Decision Diagrams)_
 :class: tip
@@ -334,6 +340,7 @@ Considering the decision diagram from the previous example, this results in the
 following _normalized_ and _reduced_ decision diagram:
 
 ```{image} _static/dd-figure-06.svg
+:alt: Normalized state with shared subdiagrams and conditional amplitudes.
 :align: center
 :width: 35%
 ```
@@ -352,8 +359,8 @@ that are worth pointing out:
 
 - Decision diagrams can be initialized in their compact form (as, for example,
   shown in the last example above). There is no need to create the maximally
-  large decision diagram (as shown, for example, in {eq}`3qbdd`) at any point in
-  a calculation.
+  large decision diagram (as shown, for example, in
+  {ref}`the unreduced diagram <dd-three-qubits>`) at any point in a calculation.
 - Determining a particular amplitude of the represented state corresponds to
   multiplying the edge weights along a single-path traversal from the top edge
   of the decision diagram (called its _root_) to a terminal node.
@@ -390,12 +397,13 @@ matrix $U$, that is,
 ```{math}
 U &= \begin{bmatrix}
 U_{00} & U_{01} \\ U_{10} & U_{11}
-\end{bmatrix} = U_{00} \ket{0}\!\bra{0} + U_{01} \ket{1}\!\bra{0} + U_{10} \ket{0}\!\bra{1} + U_{11} \ket{1}\!\bra{1} .
+\end{bmatrix} = U_{00} \ket{0}\!\bra{0} + U_{01} \ket{0}\!\bra{1} + U_{10} \ket{1}\!\bra{0} + U_{11} \ket{1}\!\bra{1} .
 ```
 
 Then, the decision diagram representing this matrix has the structure
 
 ```{image} _static/dd-figure-07.svg
+:alt: Matrix DD with four successors in row-major order.
 :align: center
 :width: 35%
 ```
@@ -406,10 +414,11 @@ can be interpreted as the transformation of $\ket{j}$ to $\ket{i}$.
 ````{admonition} Example _(Single-Qubit Operations)_
 :class: tip
 
-The following shows decision diagram representations for selected
-\mbox{single-qubit} operations:
+The following shows decision diagram representations for selected single-qubit
+operations:
 
 ```{image} _static/dd-figure-08.svg
+:alt: DDs for single-qubit gates with common factors on the root edge.
 :align: center
 :width: 65%
 ```
@@ -456,12 +465,13 @@ I & -iX \\
 The corresponding (already reduced) decision diagram has the following structure:
 
 ```{image} _static/dd-figure-09.svg
+:alt: Rxx rotation sharing identity and Pauli-X submatrices.
 :align: center
 :width: 40%
 ```
 
 Notice how the decision diagram naturally resembles the structure of the matrix.
-The nodes at the bottom represent the identity and the $X$ matrix while the node at the top encodes the redundancy of the upper left quadrant and the bottom right quadrant, as well as the upper right and lower left quadrant in [](#rxxmat).
+The nodes at the bottom represent the identity and the $X$ matrix while the node at the top encodes the redundancy of the upper left quadrant and the bottom right quadrant, as well as the upper right and lower left quadrant in {eq}`rxxmat`.
 Similarly to the vector example above, exploiting redundancy has halved the overall memory requirement.
 ````
 
@@ -522,6 +532,7 @@ diagram with the root node of the second decision diagram. In case of the above
 example, this has the following form:
 
 ```{image} _static/dd-figure-10.svg
+:alt: Kronecker product replacing terminal edges with the second DD.
 :align: center
 :width: 60%
 ```
@@ -548,13 +559,15 @@ weights along the way until the individual amplitudes are reached) and back
 again (accumulating the results of the recursive computations). More precisely,
 
 ```{image} _static/dd-figure-11.svg
+:alt: Addition recursively combining corresponding weighted successors.
 :align: center
 :width: 70%
 ```
 
-where the dashed nodes represent the respective successor decision diagrams.
-Overall, this results in a complexity that is linear in the size of the larger
-decision diagram.
+where the dashed nodes represent the respective successor decision diagrams. The
+cost depends on the distinct weighted subproblems and the resulting DD. Even two
+compact inputs can produce an exponentially large sum; input node counts alone
+do not give a linear time bound.
 
 #### Matrix-Vector Multiplication
 
@@ -566,21 +579,23 @@ addition. Standard matrix-vector multiplication can be expressed as
 U\ket{\Psi} = \begin{bmatrix} U_{00} & U_{01} \\
 U_{10} & U_{11} \end{bmatrix} \begin{bmatrix} \Psi_0 \\ \Psi_1 \end{bmatrix}
  = w \begin{bmatrix} u_{00} & u_{01} \\
-u_{10} & u_{11} \end{bmatrix} w' \begin{bmatrix} \alpha_0 \\ \alpha_1 \end{bmatrix} = ww' \begin{bmatrix} u_{00} \cdot \alpha_0 + u_{10} \cdot \alpha_1 \\
-u_{01} \cdot \alpha_0 + u_{11} \cdot \alpha_1 \end{bmatrix}.
+u_{10} & u_{11} \end{bmatrix} w' \begin{bmatrix} \alpha_0 \\ \alpha_1 \end{bmatrix} = ww' \begin{bmatrix} u_{00} \cdot \alpha_0 + u_{01} \cdot \alpha_1 \\
+u_{10} \cdot \alpha_0 + u_{11} \cdot \alpha_1 \end{bmatrix}.
 ```
 
 This implies that a multiplication boils down to four smaller multiplications
 and two additions. In the decision-diagram formalism, this has the form
 
 ```{image} _static/dd-figure-12.svg
+:alt: Matrix-vector product combining each matrix row with the vector.
 :align: center
 :width: 90%
 ```
 
 where the dashed nodes again represent the respective successor decision
-diagrams. Overall, this results in a complexity that scales with the product of
-the size of both decision diagrams.
+diagrams. Runtime depends on the distinct weighted subproblems, intermediate
+additions, and output size. Cache reuse can reduce repeated work; compact input
+DDs alone do not guarantee a compact result.
 
 #### Inner Product
 
@@ -591,7 +606,7 @@ according to
 ```{math}
 :label: innerproduct
 \langle\Psi \vert \Phi\rangle = \begin{bmatrix} \Psi^*_0 & \Psi^*_1 \end{bmatrix} \begin{bmatrix} \Phi_0 \\ \Phi_1 \end{bmatrix}
-= w^* \begin{bmatrix} \alpha^*_0 & \alpha^*_1 \end{bmatrix} w' \begin{bmatrix} \alpha'_0 \\ \alpha'_1 \end{bmatrix} = w^*w' (\alpha^*_0 \alpha'_0 + \alpha^*_1 \alpha'_0)
+= w^* \begin{bmatrix} \alpha^*_0 & \alpha^*_1 \end{bmatrix} w' \begin{bmatrix} \alpha'_0 \\ \alpha'_1 \end{bmatrix} = w^*w' (\alpha^*_0 \alpha'_0 + \alpha^*_1 \alpha'_1)
 ```
 
 This implies that the inner product boils down to two smaller inner product
@@ -600,9 +615,57 @@ this is done recursively for each level of the decision diagram. In the
 decision-diagram formalism, this has the following form
 
 ```{image} _static/dd-figure-13.svg
+:alt: Inner product conjugating the first vector and summing paired branches.
 :align: center
 :width: 70%
 ```
 
-Overall, this results in a complexity that, just as in addition, scales linearly
-with the size of the larger decision diagram.
+The recursion visits pairs of subdiagrams and reuses cached results. Its cost
+depends on the pairs visited and cache reuse, rather than only the size of the
+larger input.
+
+### Check the algebra with complex amplitudes
+
+The same operations can be compared directly with NumPy. A nonsymmetric matrix
+makes row/column mistakes visible, while complex amplitudes exercise conjugation
+and phase handling.
+
+```{code-cell} ipython3
+matrix = np.array([[0.6, -0.8], [0.8, 0.6]], dtype=complex)
+state = np.array([1, 1j], dtype=complex) / np.sqrt(2)
+other = np.array([0, 1], dtype=complex)
+package = DDPackage(1)
+state_dd = package.from_vector(state)
+other_dd = package.from_vector(other)
+matrix_dd = package.from_matrix(matrix)
+product = package.matrix_vector_multiply(matrix_dd, state_dd)
+np.testing.assert_allclose(product.get_vector(), matrix @ state)
+np.testing.assert_allclose(package.inner_product(state_dd, other_dd), np.vdot(state, other))
+np.testing.assert_allclose(package.vector_add(state_dd, other_dd).get_vector(), state + other)
+with np.printoptions(precision=3, suppress=True):
+    print("Matrix-vector product:", np.asarray(product.get_vector()))
+    print("Inner product:", package.inner_product(state_dd, other_dd))
+```
+
+### Compact inputs can have a large sum
+
+Both inputs below are product states with one nonterminal node per qubit. Their
+sum needs many more nodes. The public `size()` includes the terminal; subtract
+one when reporting nonterminal nodes.
+
+```{code-cell} ipython3
+print("Qubits | Left nodes | Right nodes | Sum nodes")
+for n in (4, 6, 8):
+    package = DDPackage(n)
+    left = np.ones(1, dtype=complex)
+    right = left.copy()
+    for j in range(n):
+        left = np.kron(left, [1, 1]) / np.sqrt(2)
+        angle = 0.2 + 0.031 * j
+        right = np.kron(right, [np.cos(angle), np.sin(angle)])
+    left_dd = package.from_vector(left)
+    right_dd = package.from_vector(right)
+    result_dd = package.vector_add(left_dd, right_dd)
+    np.testing.assert_allclose(result_dd.get_vector(), left + right, atol=1e-10)
+    print(n, left_dd.size() - 1, right_dd.size() - 1, result_dd.size() - 1, sep=" | ")
+```

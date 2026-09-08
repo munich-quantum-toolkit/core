@@ -1,3 +1,11 @@
+---
+file_format: mystnb
+kernelspec:
+  name: python3
+mystnb:
+  number_source_lines: true
+---
+
 # MQT Core DD-based Simulator QDMI Device
 
 ## Objective
@@ -60,7 +68,7 @@ most-significant-bit first. QIR samples follow the program's recorded outputs.
 The compiler can snapshot the DDSIM device as an all-to-all target, compile a
 program to QIR, and submit the resulting bitcode to the same device:
 
-```python
+```{code-cell} ipython3
 from mqt.core.mlir import (
     CompilerTarget,
     PayloadFormat,
@@ -72,11 +80,20 @@ from mqt.core.mlir import (
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
+bell_qasm = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] result;
+h q[0];
+cx q[0], q[1];
+result = measure q;
+"""
+
 device = open_device("mqt.ddsim.default")
 target = CompilerTarget.from_device(device)
 payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.BINARY))
 program = compile_program(
-    "bell.qasm",
+    bell_qasm,
     target_environment=TargetEnvironment(target, payload),
 )
 
@@ -87,6 +104,9 @@ job = device.submit_job(
     custom1=7,
 )
 job.wait()
-print(job.get_counts())
-print(job.get_shots())
+counts = job.get_counts()
+assert sum(counts.values()) == 1024
+assert set(counts) <= {"00", "11"}
+print(counts)
+print("First eight shots:", job.get_shots()[:8])
 ```

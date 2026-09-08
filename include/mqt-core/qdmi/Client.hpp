@@ -730,19 +730,19 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
-  /**
-   * @brief Triggers a calibration run.
-   * @details A device that reports a nonzero
-   * `QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION` is asked to calibrate by submitting
-   * a job in the `QDMI_PROGRAM_FORMAT_CALIBRATION` format. QDMI does not
-   * require a program for such a job, so the payload is optional; when it is
-   * present, the device defines what it means, which is usually a
-   * configuration for the run. A calibration run executes no circuit, so no
-   * shot count is set.
-   * @param program The calibration payload. An empty span or `std::nullopt`
-   * means that the job has no payload.
-   * @see QDMI_job_submit
-   */
+  /// @brief Triggers a calibration run.
+  /// @details A device that reports a nonzero
+  /// `QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION` is asked to calibrate by
+  /// submitting a job in the `QDMI_PROGRAM_FORMAT_CALIBRATION` format. QDMI
+  /// does not require a program for such a job, so the payload is optional;
+  /// when it is present, the device defines what it means, which is usually a
+  /// configuration for the run. A calibration run executes no circuit, so no
+  /// shot count is set.
+  /// @param program The calibration payload. An empty span or `std::nullopt`
+  /// means that the job has no payload.
+  /// @param custom1,custom2,custom3,custom4,custom5 Optional provider-defined
+  /// job parameters.
+  /// @see QDMI_job_submit
   [[nodiscard]] Job submitCalibrationJob(
       std::optional<std::span<const std::byte>> program = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -751,13 +751,13 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
-  /**
-   * @brief Triggers a calibration run with a text payload.
-   * @details The terminating null byte required by QDMI text formats is
-   * included in the submitted payload.
-   * @param program The calibration payload.
-   * @see QDMI_job_submit
-   */
+  /// @brief Triggers a calibration run with a text payload.
+  /// @details The terminating null byte required by QDMI text formats is
+  /// included in the submitted payload.
+  /// @param program The calibration payload.
+  /// @param custom1,custom2,custom3,custom4,custom5 Optional provider-defined
+  /// job parameters.
+  /// @see QDMI_job_submit
   [[nodiscard]] Job submitCalibrationJob(
       const std::string& program,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
