@@ -22,6 +22,7 @@ from pathlib import Path
 
 import pytest
 from packaging.version import Version
+from qiskit_support import supports_qiskit_translation
 
 if sys.version_info < (3, 14):
     pytest.skip("the Qiskit C API adoption script requires Python 3.14", allow_module_level=True)
@@ -76,7 +77,16 @@ def test_write_vendor_tree_reuses_only_exact_generated_content(tmp_path: Path, m
         "url": "https://example.invalid/qiskit.whl",
     }
 
+    previous = vendor_root / "2.5.0"
+    for name, contents in headers.items():
+        if name.startswith("qiskit/include/"):
+            destination = previous / name.removeprefix("qiskit/")
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(contents)
+    (previous / "API_SURFACE.json").write_text('{"functions": {"stale": {}}}')
+
     target = adopt.write_vendor_tree("2.6.0", wheel, artifact)
+    assert "`stale`" not in (target / "API_DIFF.md").read_text()
     expected = adopt.directory_contents(target)
     equivalent_artifact = {
         "filename": "qiskit-2.6.0-cp314-manylinux.whl",
@@ -305,3 +315,47 @@ def test_restartable_worktree_rejects_unrelated_changes(tmp_path: Path, monkeypa
     (root / "unrelated.txt").write_text("user change\n")
     with pytest.raises(RuntimeError, match="unrelated worktree changes"):
         adopt.require_restartable_worktree(git, version)
+
+
+@pytest.mark.parametrize("default_encoding", ["utf-8", "cp1252"])
+def test_raw_capsule_access_is_reviewed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, default_encoding: str) -> None:
+    """Resolve raw table accesses and fail closed if a new header moves them."""
+    original_read = Path.read_text
+
+    def read_text(
+        path: Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+    ) -> str:
+        return original_read(path, encoding=encoding or default_encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    implementation = tmp_path / "translation.cpp"
+    implementation.write_text("_Qk_API_Circuit[38]\n")
+    monkeypatch.setattr(adopt, "TRANSLATION_IMPLEMENTATION", implementation)
+    include = SCRIPT.parents[1] / "vendor/qiskit-c-api/2.5.0/include"
+    surface = adopt.api_surface(include)
+    assert surface["functions"]["qk_circuit_parameterized_gate"]["capsule"]["slot"] == 38
+    implementation.write_text("qk_circuit_unitary\n")
+    matrix_surface = adopt.api_surface(include)
+    assert "QkComplex64" in matrix_surface["types"]
+    assert "double re" in matrix_surface["types"]["QkComplex64"]
+    implementation.write_text("_Qk_API_Circuit[999]\n")
+    with pytest.raises(RuntimeError, match="unresolved raw capsule access"):
+        adopt.api_surface(include)
+
+
+def test_registered_minor_test_selection(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A newly registered minor executes the same shipping translation suite."""
+    original_read = Path.read_text
+
+    def read_text(
+        path: Path, encoding: str | None = None, errors: str | None = None, newline: str | None = None
+    ) -> str:
+        if path.name == "SupportedVersions.inc":
+            return 'MQT_QISKIT_VERSION(2, 6, 2_6, 0, 2.6.0, ">=2.6.0,<2.7.0")\n'
+        return original_read(path, encoding=encoding, errors=errors, newline=newline)
+
+    monkeypatch.setattr(Path, "read_text", read_text)
+    monkeypatch.delenv("MQT_QISKIT_TEST_CANDIDATE_VERSION", raising=False)
+    assert supports_qiskit_translation("2.6.0")
+    assert not supports_qiskit_translation("2.5.2")
+    assert not supports_qiskit_translation("2.6.0rc1")

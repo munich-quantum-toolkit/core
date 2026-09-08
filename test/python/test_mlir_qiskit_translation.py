@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import os
 import re
 import subprocess
 import sys
@@ -20,7 +19,6 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pytest
 import qiskit
-from packaging.version import Version
 from qiskit import ClassicalRegister, QuantumCircuit, QuantumRegister, transpile
 from qiskit.circuit import (
     AnnotatedOperation,
@@ -41,21 +39,17 @@ from qiskit.circuit.classical import expr, types
 from qiskit.circuit.controlflow import CASE_DEFAULT, IfElseOp
 from qiskit.circuit.parametervector import ParameterVectorElement
 from qiskit.quantum_info import Operator, random_unitary
+from qiskit_support import supports_qiskit_translation
 
-from mqt.core.mlir import CompilerTarget, QCProgram, compile_program
+from mqt.core.mlir import CompilerTarget, QCProgram, compile_program, sample
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from qiskit.circuit.annotated_operation import Modifier
 
-installed_qiskit = Version(qiskit.__version__)
-candidate_version = os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
-if not (Version("2.5.0") <= installed_qiskit < Version("2.6.0") or qiskit.__version__ == candidate_version):
-    pytest.skip(
-        f"Qiskit circuit translation tests require Qiskit 2.5.x (installed: {qiskit.__version__})",
-        allow_module_level=True,
-    )
+if not supports_qiskit_translation():
+    pytest.skip(f"No registered Qiskit adapter for {qiskit.__version__}", allow_module_level=True)
 
 
 STANDARD_GATES = (
@@ -892,7 +886,7 @@ def test_qiskit_reversed_register_conditions_import_canonically(comparison: str,
         circuit.x(0)
 
     circuit.measure(0, 0)
-    histogram = QCProgram.from_qiskit(circuit).to_qco().sample(shots=1, seed=1)
+    histogram = sample(circuit, shots=1, seed=1)
     expected = "001" if predicate in {"ne", "ult", "ule"} else "000"
     assert histogram == {expected: 1}
 
@@ -957,7 +951,7 @@ def test_qiskit_store_round_trip_preserves_register_semantics() -> None:
 
 
 def test_qiskit_store_round_trip_inside_control_flow() -> None:
-    """Keep register metadata when rebasing a control-flow Store body."""
+    """Control-flow Store bodies share their parent's exact register."""
     register = ClassicalRegister(3, "c")
     circuit = QuantumCircuit(register)
     with circuit.if_test(expr.lift(register[0])):
@@ -1004,14 +998,16 @@ def test_qiskit_store_preserves_width_one_uint_contexts() -> None:
     assert indexed_store.lvalue.index.type == types.Uint(1)
 
 
-def test_qiskit_store_rejects_stale_dynamic_index() -> None:
-    """Reject an index snapshot that Qiskit would re-evaluate after a write."""
+def test_qiskit_store_preserves_dynamic_index_snapshot() -> None:
+    """Preserve an index snapshot across a later register write."""
     program = QCProgram.from_mlir_str(
         """module {
   func.func @main() -> (!cbit.reg<4>, !cbit.reg<2>) attributes {mqt.entry_point} {
     %q = qc.alloc : !qc.qubit
     %data = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "data"} : !cbit.reg<4>
     %index = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "index"} : !cbit.reg<2>
+    %ones = arith.constant 15 : i4
+    cbit.write %ones, %data : i4, !cbit.reg<4>
     %old_index = cbit.read %index : !cbit.reg<2> -> i2
     %zero = arith.constant 0 : index
     %true = arith.constant true
@@ -1026,8 +1022,8 @@ def test_qiskit_store_rejects_stale_dynamic_index() -> None:
 """
     )
 
-    with pytest.raises(RuntimeError, match="cannot preserve a stale classical snapshot"):
-        program.to_qiskit()
+    restored = QCProgram.from_qiskit(program.to_qiskit())
+    assert sample(restored, shots=1, seed=1) == sample(program, shots=1, seed=1)
 
 
 def test_qiskit_custom_gate_named_store_remains_a_gate() -> None:
@@ -2056,7 +2052,7 @@ def test_zero_qubit_cbit_only_control_flow_round_trip() -> None:
     assert restored.num_qubits == 0
     assert restored.num_clbits == 1
     assert len(restored.data) == 0
-    assert QCProgram.from_qiskit(restored).to_qco().sample(shots=1, seed=1) == {"0": 1}
+    assert sample(restored, shots=1, seed=1) == {"0": 1}
 
 
 def _single_qubit_program(operations: list[str], *, returns_classical: bool = False) -> QCProgram:
@@ -2268,20 +2264,27 @@ def test_shared_expression_dag_expansion_is_bounded() -> None:
         program.to_qiskit()
 
 
-def test_export_expression_depth_is_bounded() -> None:
-    """Reject a classical expression deeper than 64 levels during export."""
+@pytest.mark.parametrize("initial", [False, True])
+def test_export_expression_depth_is_bounded(*, initial: bool) -> None:
+    """Split a deep runtime expression into bounded intermediate values."""
     operations = [
         '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
         "%zero = arith.constant 0 : index",
         "%true = arith.constant true",
+        f"%initial = arith.constant {str(initial).lower()}",
+        "cbit.store %initial, %classical[%zero] : !cbit.reg<1>",
         "%value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
     ]
     operations.extend(f"%value{index} = arith.andi %value{index - 1}, %true : i1" for index in range(1, 65))
-    operations.extend(["scf.if %value64 {", "  qc.x %q : !qc.qubit", "}"])
+    operations.extend([
+        "scf.if %value64 { qc.x %q : !qc.qubit }",
+        "%final = qc.measure %q : !qc.qubit -> i1",
+        "cbit.store %final, %classical[%zero] : !cbit.reg<1>",
+    ])
     program = _single_qubit_program(operations, returns_classical=True)
 
-    with pytest.raises(RuntimeError, match="classical expressions exceed the nesting limit of 64"):
-        program.to_qiskit()
+    restored = QCProgram.from_qiskit(program.to_qiskit())
+    assert sample(restored, shots=1, seed=1) == {str(int(initial)): 1}
 
 
 def test_general_boolean_select_round_trip() -> None:
@@ -2306,7 +2309,7 @@ def test_general_boolean_select_round_trip() -> None:
     )
 
     restored = QCProgram.from_qiskit(program.to_qiskit())
-    assert restored.to_qco().sample(shots=1, seed=1) == program.to_qco().sample(shots=1, seed=1)
+    assert sample(restored, shots=1, seed=1) == sample(program, shots=1, seed=1)
 
 
 def test_export_control_flow_depth_is_bounded() -> None:
@@ -2354,22 +2357,25 @@ def test_unused_nonboolean_result_bearing_if_is_omitted() -> None:
     ],
     ids=["flat-write", "nested-write"],
 )
-def test_stale_classical_snapshot_is_rejected(write_operations: tuple[str, ...]) -> None:
-    """Reject a condition whose classical snapshot crosses a later write."""
+def test_classical_snapshot_survives_later_writes(write_operations: tuple[str, ...]) -> None:
+    """Preserve a condition whose classical snapshot crosses a later write."""
     program = _single_qubit_program(
         [
             '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
             "%zero = arith.constant 0 : index",
+            "qc.x %q : !qc.qubit",
             "%stale = cbit.load %classical[%zero] : !cbit.reg<1>",
             *write_operations,
             "scf.if %stale {",
             "  qc.x %q : !qc.qubit",
             "}",
+            "%final = qc.measure %q : !qc.qubit -> i1",
+            "cbit.store %final, %classical[%zero] : !cbit.reg<1>",
         ],
         returns_classical=True,
     )
-    with pytest.raises(RuntimeError, match=r"cannot preserve a (?:stale )?classical snapshot"):
-        program.to_qiskit()
+    restored = QCProgram.from_qiskit(program.to_qiskit())
+    assert sample(restored, shots=1, seed=1) == {"1": 1}
 
 
 @pytest.mark.parametrize(
@@ -2386,7 +2392,7 @@ def test_stale_classical_snapshot_is_rejected(write_operations: tuple[str, ...])
     ],
     ids=["bit-store", "register-write", "measurement", "nested-store"],
 )
-def test_measurement_snapshot_rejects_overwritten_destination(overwrite: str) -> None:
+def test_measurement_snapshot_survives_overwritten_destination(overwrite: str) -> None:
     """A measurement SSA value retains its value when its destination changes."""
     program = _single_qubit_program(
         [
@@ -2398,11 +2404,14 @@ def test_measurement_snapshot_rejects_overwritten_destination(overwrite: str) ->
             "cbit.store %measured, %classical[%zero] : !cbit.reg<1>",
             overwrite,
             "scf.if %measured { qc.x %q : !qc.qubit }",
+            "%final = qc.measure %q : !qc.qubit -> i1",
+            "cbit.store %final, %classical[%zero] : !cbit.reg<1>",
         ],
         returns_classical=True,
     )
-    with pytest.raises(RuntimeError, match=r"cannot preserve a (?:stale )?classical snapshot"):
-        program.to_qiskit()
+    restored = QCProgram.from_qiskit(program.to_qiskit())
+    expected = "1" if "%next" in overwrite else "0"
+    assert sample(restored, shots=1, seed=1) == {expected: 1}
 
 
 @pytest.mark.parametrize("via_qco", [False, True], ids=["qc", "qco"])
@@ -2454,7 +2463,7 @@ def test_delayed_measurement_store_across_quantum_operations(gate: str, *, via_q
         ("measure", [0], [0]),
         ("x" if gate == "inv" else gate, [0, 1] if gate in {"swap", "barrier"} else [0], []),
     ]
-    assert QCProgram.from_qiskit(restored).to_qco().sample(shots=1, seed=1) == {"1": 1}
+    assert sample(restored, shots=1, seed=1) == {"1": 1}
 
 
 @pytest.mark.parametrize(
@@ -2530,7 +2539,7 @@ def test_multi_result_boolean_select_round_trip() -> None:
     circuit = program.to_qiskit()
     assert circuit.num_clbits == 0
     circuit.measure_all()
-    assert QCProgram.from_qiskit(circuit).to_qco().sample(shots=1, seed=1) == {"1": 1}
+    assert sample(circuit, shots=1, seed=1) == {"1": 1}
 
 
 def _undefined_cbit_program(operations: list[str]) -> QCProgram:
@@ -2673,7 +2682,7 @@ def test_bool_uint_and_float_expressions(condition: expr.Expr, operation: str) -
     assert operation in program.ir
     restored = QCProgram.from_qiskit(program.to_qiskit())
     expected = "0" if operation in {"scf.if", "arith.xori"} else "1"
-    assert restored.to_qco().sample(shots=1, seed=1) == {expected: 1}
+    assert sample(restored, shots=1, seed=1) == {expected: 1}
 
 
 def test_index_expression_export_preserves_low_bit() -> None:
@@ -2869,7 +2878,7 @@ def test_width_one_register_bitwise_expression_round_trips() -> None:
         circuit.x(1)
     circuit.measure(1, 0)
     restored = QCProgram.from_qiskit(QCProgram.from_qiskit(circuit).to_qiskit())
-    assert restored.to_qco().sample(shots=1, seed=1) == {"0": 1}
+    assert sample(restored, shots=1, seed=1) == {"0": 1}
 
 
 def test_nested_classical_expression_captures_import() -> None:
@@ -3765,3 +3774,120 @@ import mqt.core.mlir
 assert "qiskit" not in sys.modules
 """
     subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
+
+
+@pytest.mark.parametrize("kind", ["quantum_register", "classical_register", "gate", "loop_parameter"])
+def test_qiskit_null_names_raise_without_aborting(kind: str) -> None:
+    """Reject names before a native CString conversion can terminate Python."""
+    if kind == "quantum_register":
+        circuit = QuantumCircuit(QuantumRegister(1, "a\0b"))
+    elif kind == "classical_register":
+        circuit = QuantumCircuit(ClassicalRegister(1, "a\0b"))
+    elif kind == "gate":
+        circuit = QuantumCircuit(1)
+        gate = Gate("a\0b", 1, [])
+        gate.definition = QuantumCircuit(1)
+        gate.definition.x(0)
+        circuit.append(gate, [0])
+    else:
+        circuit = QuantumCircuit(1)
+        with circuit.for_loop(range(2), Parameter("a\0b"), None, None, None, label=None) as index:
+            circuit.rx(index, 0)
+    with pytest.raises(RuntimeError, match="null characters"):
+        QCProgram.from_qiskit(circuit)
+
+
+def test_snapshot_export_survives_cleanup() -> None:
+    """Saving a classical value does not depend on unused SCF results."""
+    circuit = QuantumCircuit(1, 1)
+    circuit.x(0)
+    circuit.measure(0, 0)
+    snapshot = circuit.add_var("snapshot", expr.lift(circuit.clbits[0]))
+    circuit.x(0)
+    circuit.measure(0, 0)
+    with circuit.if_test(snapshot):
+        circuit.x(0)
+    circuit.measure(0, 0)
+    program = QCProgram.from_qiskit(circuit)
+    program.cleanup()
+    restored = QCProgram.from_qiskit(program.to_qiskit())
+    assert sample(restored, shots=1, seed=1) == {"1": 1}
+
+
+@pytest.mark.parametrize("values", [list(range(70)), [i * i for i in range(70)]])
+def test_shallow_list_loop_with_jump_exports(values: list[int]) -> None:
+    """Generated dispatch has bounded depth for both regular and irregular lists."""
+    circuit = QuantumCircuit(1, 1)
+    with circuit.for_loop(values, None, None, None, None, label=None) as index:
+        circuit.rz(index, 0)
+        circuit.continue_loop()
+    circuit.measure(0, 0)
+    program = QCProgram.from_qiskit(circuit)
+    restored = QCProgram.from_qiskit(program.to_qiskit())
+    assert sample(restored, shots=1, seed=1) == {"0": 1}
+
+
+def test_numeric_import_decodes_parameters_at_most_twice(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Expansion counting must not repeat primitive parameter decoding."""
+    circuit = QuantumCircuit(1)
+    for _ in range(8):
+        circuit.rx(0.3, 0)
+    original = Instruction.params
+    reads = 0
+
+    def parameters(instruction: Instruction) -> list[object]:
+        nonlocal reads
+        reads += 1
+        return original.fget(instruction)
+
+    monkeypatch.setattr(Instruction, "params", property(parameters, original.fset))
+    assert QCProgram.from_qiskit(circuit).is_valid
+    assert reads <= 2 * len(circuit)
+
+
+@pytest.mark.parametrize("selected", [0, 69, 100])
+def test_large_switch_with_jumps_has_bounded_dispatch(selected: int) -> None:
+    """Switch dispatch remains shallow and chooses the correct case or default."""
+    circuit = QuantumCircuit(1, 8)
+    circuit.store(circuit.cregs[0], selected)
+    selector = circuit.add_var("selector", expr.lift(circuit.cregs[0]))
+    with (
+        circuit.for_loop(range(1), None, None, None, None, label=None),
+        circuit.switch(selector, None, None, None, label=None) as case,
+    ):
+        for value in range(70):
+            with case(value):
+                if value == 69:
+                    circuit.x(0)
+                circuit.continue_loop()
+        with case(CASE_DEFAULT):
+            circuit.x(0)
+            circuit.continue_loop()
+    circuit.measure(0, 0)
+    program = QCProgram.from_qiskit(circuit)
+    restored = QCProgram.from_qiskit(program.to_qiskit())
+    assert sample(restored, shots=1, seed=1) == sample(program, shots=1, seed=1)
+
+
+def test_generated_dispatch_counts_toward_nesting_limit() -> None:
+    """The nesting budget includes SCF introduced for list dispatch."""
+    circuit = QuantumCircuit(1, 1)
+    with circuit.for_loop(list(range(70)), None, None, None, None, label=None) as index:
+        circuit.rz(index, 0)
+        circuit.continue_loop()
+    for _ in range(60):
+        outer = QuantumCircuit(*circuit.qregs, *circuit.cregs)
+        outer.append(IfElseOp((outer.clbits[0], 0), circuit), outer.qubits, outer.clbits)
+        circuit = outer
+    with pytest.raises(RuntimeError, match="generated control flow exceeds the nesting limit of 64"):
+        QCProgram.from_qiskit(circuit)
+
+
+@pytest.mark.parametrize("values", [[-(1 << 53), 1 << 53], [1 << 53, -(1 << 53)]])
+def test_list_range_normalization_preserves_exact_parameter_limits(values: list[int]) -> None:
+    """A range's unused endpoint must not reject previously valid list values."""
+    circuit = QuantumCircuit(1)
+    with circuit.for_loop(values, None, None, None, None, label=None) as index:
+        circuit.rx(index, 0)
+    program = QCProgram.from_qiskit(circuit)
+    assert QCProgram.from_qiskit(program.to_qiskit()).is_valid
