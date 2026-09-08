@@ -39,6 +39,23 @@ struct QDMI_Device_Job_impl_d {
 };
 
 namespace {
+[[nodiscard]] auto initializations() -> std::atomic_size_t& {
+  static std::atomic_size_t count = 0;
+  return count;
+}
+
+using InitializeCallback = int (*)();
+
+auto initializeCallback() -> std::atomic<InitializeCallback>& {
+  static std::atomic<InitializeCallback> callback = nullptr;
+  return callback;
+}
+
+[[nodiscard]] auto finalizations() -> std::atomic_size_t& {
+  static std::atomic_size_t count = 0;
+  return count;
+}
+
 [[nodiscard]] auto activeSessions() -> std::atomic_size_t& {
   static std::atomic_size_t sessions = 0;
   return sessions;
@@ -151,9 +168,25 @@ auto queryValue(const T& result, const size_t size, void* value,
 
 // QDMI requires these exported C symbols to use the configured device prefix.
 // NOLINTBEGIN(readability-identifier-naming)
-extern "C" int TEST_SESSION_QDMI_device_initialize() { return QDMI_SUCCESS; }
+extern "C" int TEST_SESSION_QDMI_device_initialize() {
+  ++initializations();
+  if (const auto callback = initializeCallback().load()) {
+    return callback();
+  }
+  return QDMI_SUCCESS;
+}
 
-extern "C" int TEST_SESSION_QDMI_device_finalize() { return QDMI_SUCCESS; }
+/// Tests install a callback before opening sessions to coordinate
+/// initialization.
+extern "C" void
+TEST_SESSION_set_initialize_callback(InitializeCallback callback) {
+  initializeCallback() = callback;
+}
+
+extern "C" int TEST_SESSION_QDMI_device_finalize() {
+  ++finalizations();
+  return QDMI_SUCCESS;
+}
 
 extern "C" int
 TEST_SESSION_QDMI_device_session_alloc(QDMI_Device_Session* session) {
@@ -246,6 +279,13 @@ extern "C" int TEST_SESSION_QDMI_device_session_query_device_property(
     std::memcpy(value, static_cast<const void*>(&child),
                 sizeof(QDMI_Child_Device));
     return QDMI_SUCCESS;
+  }
+  if (prop == QDMI_DEVICE_PROPERTY_CUSTOM4 &&
+      parameter(session, QDMI_DEVICE_SESSION_PARAMETER_CUSTOM1) ==
+          "lifetime-counts") {
+    return queryValue(
+        std::array{initializations().load(), finalizations().load()}, size,
+        value, sizeRet);
   }
   if (prop == QDMI_DEVICE_PROPERTY_CUSTOM1) {
     const auto& operations = customOperationHandles();

@@ -1961,7 +1961,7 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
     shotResults->clear();
     shotResults->reserve(shots);
   }
-  auto dd = std::make_unique<dd::Package>();
+  auto dd = std::make_unique<dd::Package>(0);
   std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
   auto prepared = prepare(func, *dd, argumentBindings);
   if (failed(prepared)) {

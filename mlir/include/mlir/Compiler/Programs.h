@@ -160,13 +160,11 @@ public:
   [[nodiscard]] static std::optional<QCProgram>
   fromQASMFile(const std::filesystem::path& path);
 
-  /**
-   * @brief Take ownership of an MLIR module that contains a QC program.
-   *
-   * @details The context must own every dialect referenced by the module and
-   * must remain the module's context. The factory verifies the module and
-   * requires at least one operation from the QC dialect.
-   */
+  /// Take ownership of an MLIR module that contains a QC program.
+  ///
+  /// The context must own every dialect referenced by the module and must
+  /// remain the module's context. The factory verifies the module and rejects
+  /// QCO and QTensor operations. QC operations are not required.
   [[nodiscard]] static std::optional<QCProgram>
   fromModule(std::shared_ptr<MLIRContext> context,
              OwningOpRef<ModuleOp> moduleOp);
@@ -234,13 +232,11 @@ public:
   [[nodiscard]] static std::optional<QCOProgram>
   fromMLIRFile(const std::filesystem::path& path);
 
-  /**
-   * @brief Take ownership of an MLIR module that contains a QCO program.
-   *
-   * @details The context must own every dialect referenced by the module and
-   * must remain the module's context. The factory verifies the module, requires
-   * at least one operation from the QCO dialect, and verifies QCO linearity.
-   */
+  /// Take ownership of an MLIR module that contains a QCO program.
+  ///
+  /// The context must own every dialect referenced by the module and must
+  /// remain the module's context. The factory verifies the module and QCO
+  /// linearity and rejects QC operations. QCO operations are not required.
   [[nodiscard]] static std::optional<QCOProgram>
   fromModule(std::shared_ptr<MLIRContext> context,
              OwningOpRef<ModuleOp> moduleOp);

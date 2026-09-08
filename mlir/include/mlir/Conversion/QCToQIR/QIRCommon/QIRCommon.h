@@ -12,6 +12,7 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/StringSaver.h>
@@ -45,6 +46,9 @@ struct LoweringState {
 
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
+
+  /// Canonical Base-profile pointers for constant qubit-register elements.
+  DenseMap<std::pair<Value, int64_t>, Value> staticRegisterQubits;
 
   /// Cache qubit register sizes for reuse
   DenseMap<Value, Value> qregSizes;

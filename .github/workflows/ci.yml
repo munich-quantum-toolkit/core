@@ -173,7 +173,7 @@ jobs:
     name: 🐍 Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-linter)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@ae4c1005796fedc123c3c70cdba94ce643c9fcae # v2.3.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@ecd1985364c8d8a2942f46bd13ad7d786baeb0ca
     with:
       check-stubs: true
       enable-ty: true

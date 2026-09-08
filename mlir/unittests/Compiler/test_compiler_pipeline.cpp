@@ -40,8 +40,11 @@
 #include <llvm/ADT/APFloat.h>
 #include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallString.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/Support/Error.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/FileUtilities.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
@@ -312,7 +315,7 @@ TEST(CompilerProgramOwnershipTest, ValidatesAndOwnsExistingQCModules) {
   QCProgramBuilder emptyBuilder(context.get());
   emptyBuilder.initialize();
   auto emptyModule = emptyBuilder.finalize();
-  EXPECT_FALSE(QCProgram::fromModule(context, std::move(emptyModule)));
+  EXPECT_TRUE(QCProgram::fromModule(context, std::move(emptyModule)));
 
   QCProgramBuilder mismatchedBuilder(context.get());
   mismatchedBuilder.initialize();
@@ -843,6 +846,30 @@ if (flag) {
   EXPECT_TRUE(qir->llvmIR().has_value());
 }
 
+TEST_F(CompilerPipelineTest, BaseMeasurementMayBeInsertedIntoFreedQTensor) {
+  auto qco = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %reg = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+      %rest, %qubit = qtensor.extract %reg[%c0] : tensor<1x!qco.qubit>
+      %out, %result = qco.measure %qubit : !qco.qubit
+      %final = qtensor.insert %out into %rest[%c0] : tensor<1x!qco.qubit>
+      qtensor.dealloc %final : tensor<1x!qco.qubit>
+      return %result : i1
+    }
+  })mlir");
+  ASSERT_TRUE(qco);
+  auto qc = std::move(*qco).intoQC();
+  ASSERT_TRUE(qc);
+  auto qir = std::move(*qc).intoQIR(QIRProfile::Base);
+  ASSERT_TRUE(qir);
+  const auto llvmIR = qir->llvmIR();
+  ASSERT_TRUE(llvmIR);
+  EXPECT_NE(llvmIR->find("call void @__quantum__qis__mz__body"),
+            std::string::npos);
+}
+
 TEST_F(CompilerPipelineTest, EmitsQIR21ProfileModuleFlags) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
@@ -1059,6 +1086,89 @@ h q;
   ASSERT_TRUE(qcoFromQC);
   EXPECT_FALSE(QCProgram::fromMLIRString(qcoFromQC->str()));
   EXPECT_FALSE(QCOProgram::fromMLIRString(mlir));
+}
+
+TEST_F(CompilerPipelineTest, EmptyCompiledProgramsRoundTrip) {
+  for (const std::string parameters : {"", "%angle: f64"}) {
+    SCOPED_TRACE(parameters);
+    auto qc =
+        QCProgram::fromMLIRString("module { func.func @main(" + parameters +
+                                  R"mlir() attributes {mqt.entry_point} {
+      %phase = arith.constant 0.0 : f64
+      qc.gphase(%phase)
+      return
+    }
+  })mlir");
+    ASSERT_TRUE(qc);
+    auto qco = std::move(*qc).intoQCO();
+    ASSERT_TRUE(qco);
+    ASSERT_TRUE(qco->compileForTarget(makeCZTarget({{"sx", 0}, {"rz", 1}})));
+    ASSERT_TRUE(succeeded(verify(qco->module())));
+    qco->module().walk([](Operation* operation) {
+      const auto dialect = operation->getName().getDialectNamespace();
+      EXPECT_NE(dialect, "qc");
+      EXPECT_NE(dialect, "qco");
+    });
+
+    SmallString<128> filename;
+    ASSERT_FALSE(llvm::sys::fs::createTemporaryFile("empty-compiled-program",
+                                                    "mlir", filename));
+    const llvm::FileRemover cleanup(filename);
+    const auto path = std::filesystem::path(filename.str().str());
+    std::ofstream(path) << qco->str();
+    auto qcoFromString = QCOProgram::fromMLIRString(qco->str());
+    auto qcoFromFile = QCOProgram::fromMLIRFile(path);
+    ASSERT_TRUE(qcoFromString);
+    ASSERT_TRUE(qcoFromFile);
+    EXPECT_EQ(qcoFromString->str(), qco->str());
+    EXPECT_EQ(qcoFromFile->str(), qco->str());
+
+    auto restoredQC = std::move(*qcoFromString).intoQC();
+    ASSERT_TRUE(restoredQC);
+    EXPECT_EQ(restoredQC->numGates(), 0U);
+    std::ofstream(path) << restoredQC->str();
+    auto qcFromString = QCProgram::fromMLIRString(restoredQC->str());
+    auto qcFromFile = QCProgram::fromMLIRFile(path);
+    ASSERT_TRUE(qcFromString);
+    ASSERT_TRUE(qcFromFile);
+    EXPECT_EQ(qcFromString->str(), restoredQC->str());
+    EXPECT_EQ(qcFromFile->str(), restoredQC->str());
+  }
+}
+
+TEST_F(CompilerPipelineTest, ProgramImportsRejectMixedQuantumDialects) {
+  const std::string source = R"mlir(module {
+    func.func @main() {
+      %reference = qc.alloc : !qc.qubit
+      qc.dealloc %reference : !qc.qubit
+      %value = qco.alloc : !qco.qubit
+      qco.sink %value : !qco.qubit
+      return
+    }
+  })mlir";
+  auto moduleOp = parseRecordedModule(source);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  EXPECT_FALSE(QCProgram::fromMLIRString(source));
+  EXPECT_FALSE(QCOProgram::fromMLIRString(source));
+}
+
+TEST_F(CompilerPipelineTest, ProgramImportsRecognizeQTensorOnlyModules) {
+  const std::string source = R"mlir(module {
+    func.func @main() {
+      %c1 = arith.constant 1 : index
+      %register = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
+      qtensor.dealloc %register : tensor<1x!qco.qubit>
+      return
+    }
+  })mlir";
+  auto moduleOp = parseRecordedModule(source);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  EXPECT_TRUE(QCOProgram::fromMLIRString(source));
+  EXPECT_FALSE(QCProgram::fromMLIRString(source));
 }
 
 // Test: QCO imports require each linear value to have one use.

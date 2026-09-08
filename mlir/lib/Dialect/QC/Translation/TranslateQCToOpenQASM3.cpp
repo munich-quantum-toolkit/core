@@ -886,10 +886,10 @@ private:
         return failure();
       }
       const auto operandType = dyn_cast<IntegerType>(operand.getType());
-      if (!operandType) {
+      if (!operandType && !operand.getType().isIndex()) {
         return text;
       }
-      const auto width = operandType.getWidth();
+      const auto width = operandType ? operandType.getWidth() : 64U;
       if (width > 64) {
         return isSigned
                    ? failExpression(operand,
@@ -957,8 +957,9 @@ private:
             arith::DivSIOp, arith::RemUIOp, arith::RemSIOp, arith::AndIOp,
             arith::OrIOp, arith::XOrIOp, arith::ShLIOp, arith::ShRUIOp,
             arith::ShRSIOp>(operation) &&
-        isa<IntegerType>(type)) {
-      const auto width = cast<IntegerType>(type).getWidth();
+        (isa<IntegerType>(type) || type.isIndex())) {
+      const auto width =
+          type.isIndex() ? 64U : cast<IntegerType>(type).getWidth();
       if (width > 64 &&
           !isa<arith::AndIOp, arith::OrIOp, arith::XOrIOp>(operation)) {
         return failExpression(value,
@@ -1440,6 +1441,12 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitFor(scf::ForOp forOp) {
+    const auto boundType =
+        castTarget("arith.index_cast", forOp.getLowerBound().getType());
+    if (boundType.empty()) {
+      return fail(forOp, "scf.for bounds support index and integers of at "
+                         "most 64 bits");
+    }
     if (failed(declareLocals(forOp.getResults())) ||
         failed(assignEdge(forOp.getResults(), forOp.getInitArgs(), forOp))) {
       return failure();
@@ -1453,24 +1460,50 @@ private:
     const auto lower = getConstantInteger(forOp.getLowerBound());
     const auto upper = getConstantInteger(forOp.getUpperBound());
     const auto step = getConstantInteger(forOp.getStep());
-    if (!lower || !upper || !step || *step <= 0) {
-      return fail(forOp, "scf.for requires constant bounds and a positive "
+    if (!step || *step <= 0 || forOp.getUnsignedCmp()) {
+      return fail(forOp, "scf.for requires signed comparisons and a positive "
                          "constant step");
     }
-    if (*lower >= *upper) {
+    if (lower && upper && *lower >= *upper) {
       return success();
     }
-    const APInt lowerWide(65, static_cast<uint64_t>(*lower), true);
-    const APInt upperWide(65, static_cast<uint64_t>(*upper), true);
-    const APInt stepWide(65, static_cast<uint64_t>(*step), true);
-    const auto lastWide =
-        lowerWide + ((upperWide - 1 - lowerWide).sdiv(stepWide) * stepWide);
-    const auto last = lastWide.getSExtValue();
+    const bool dynamicBounds = !lower || !upper;
+    if (dynamicBounds && gateNames_.contains(function)) {
+      return fail(forOp, "dynamic scf.for bounds require the entry function");
+    }
+    std::string first;
+    std::string last;
+    if (dynamicBounds) {
+      auto lowerExpression = emitExpression(forOp.getLowerBound());
+      auto upperExpression = emitExpression(forOp.getUpperBound());
+      if (failed(lowerExpression) || failed(upperExpression)) {
+        return failure();
+      }
+      first = uniqueName("lower", nextScalar);
+      const auto end = uniqueName("upper", nextScalar);
+      /// Snapshot bounds before the body can change their source storage.
+      *output << "int[64] " << first << " = " << boundType << '('
+              << *lowerExpression << ");\n";
+      *output << "int[64] " << end << " = " << boundType << '('
+              << *upperExpression << ");\n";
+      /// A nonempty signed range has an upper bound greater than INT64_MIN.
+      *output << "if (" << first << " < " << end << ") {\n";
+      output->indent();
+      last = "(" + end + " - 1)";
+    } else {
+      const APInt lowerWide(65, static_cast<uint64_t>(*lower), true);
+      const APInt upperWide(65, static_cast<uint64_t>(*upper), true);
+      const APInt stepWide(65, static_cast<uint64_t>(*step), true);
+      const auto lastWide =
+          lowerWide + ((upperWide - 1 - lowerWide).sdiv(stepWide) * stepWide);
+      first = std::to_string(*lower);
+      last = std::to_string(lastWide.getSExtValue());
+    }
 
     const auto induction = uniqueName("i", nextLoop);
     valueNames.try_emplace(forOp.getInductionVar(), induction);
 
-    *output << "for int " << induction << " in [" << *lower;
+    *output << "for int " << induction << " in [" << first;
     if (*step != 1) {
       *output << ':' << *step;
     }
@@ -1481,6 +1514,10 @@ private:
     }
     output->unindent();
     *output << "}\n";
+    if (dynamicBounds) {
+      output->unindent();
+      *output << "}\n";
+    }
     return success();
   }
 

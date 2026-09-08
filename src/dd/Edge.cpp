@@ -42,8 +42,10 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
                                 const std::string& decisions) const
     -> std::complex<fp> {
   auto c = static_cast<std::complex<fp>>(w);
-  if (isTerminal()) {
-    return c;
+  if constexpr (IsVector<Node>) {
+    if (isTerminal()) {
+      return c;
+    }
   }
 
   auto r = *this;
@@ -389,7 +391,7 @@ auto Edge<Node>::getValueByIndex(const std::size_t numQubits,
   requires IsMatrix<Node>
 {
   if (isTerminal()) {
-    return static_cast<std::complex<fp>>(w);
+    return i == j ? static_cast<std::complex<fp>>(w) : 0.;
   }
 
   auto decisions = std::string(numQubits, '0');

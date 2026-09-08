@@ -14,11 +14,16 @@
 
 #pragma once
 
+#include "dd/CachedEdge.hpp"
+#include "dd/ComplexNumbers.hpp"
 #include "dd/DDDefinitions.hpp"
+#include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
 
+#include <bit>
 #include <cstddef>
+#include <stdexcept>
 #include <vector>
 
 namespace dd {
@@ -27,7 +32,8 @@ namespace dd {
  * @param n The number of qubits.
  * @param dd The DD package to use for making the vector DD.
  * @param start The starting qubit index. Default is 0.
- * @throws `std::invalid_argument`, if `dd.qubits() < n`.
+ * @throws `std::invalid_argument`, if the qubit interval exceeds package
+ * capacity.
  * @return A vector DD for the all-zero state.
  */
 VectorDD makeZeroState(std::size_t n, Package& dd, std::size_t start = 0);
@@ -38,7 +44,8 @@ VectorDD makeZeroState(std::size_t n, Package& dd, std::size_t start = 0);
  * @param state The state to construct.
  * @param dd The DD package to use for making the vector DD.
  * @param start The starting qubit index. Default is 0.
- * @throws `std::invalid_argument`, if `dd.qubits() < n` or `size(state) < n`.
+ * @throws std::invalid_argument If the qubit interval exceeds package capacity
+ * or `size(state) < n`.
  * @return A vector DD for the computational basis state.
  */
 VectorDD makeBasisState(std::size_t n, const std::vector<bool>& state,
@@ -51,7 +58,8 @@ VectorDD makeBasisState(std::size_t n, const std::vector<bool>& state,
  * @param state The state to construct.
  * @param dd The DD package to use for making the vector DD.
  * @param start The starting qubit index. Default is 0.
- * @throws `std::invalid_argument`, if `dd.qubits() < n` or `size(state) < n`.
+ * @throws std::invalid_argument If the qubit interval exceeds package capacity
+ * or `size(state) < n`.
  * @return A vector DD for the product state.
  */
 VectorDD makeBasisState(std::size_t n, const std::vector<BasisStates>& state,
@@ -85,8 +93,59 @@ VectorDD makeWState(std::size_t n, Package& dd);
  * @param vec The state vector to convert to a DD.
  * @param dd The DD package to use for making the vector DD.
  * @throws `std::invalid_argument`, if `vec.size()` is not a power of two or
- * `dd.qubits() < log2(vec.size()) - 1`.
- * @return A vector DD representing the state.
+ * `dd.qubits() < log2(vec.size())`.
+ * @return A vector DD representing the state with its reference count
+ * increased.
  */
 VectorDD makeStateFromVector(const CVec& vec, Package& dd);
+
+namespace detail {
+/// Read successive halves of a state vector without copying its storage.
+template <class VectorEntry>
+vCachedEdge buildStateFromVector(const VectorEntry& entry, const size_t level,
+                                 const size_t start, Package& dd) {
+  if (level == 0) {
+    return dd.makeDDNode<vNode, CachedEdge>(
+        0, {vCachedEdge::terminal(entry(start)),
+            vCachedEdge::terminal(entry(start + 1))});
+  }
+  const auto half = start + (size_t{1} << level);
+  return dd.makeDDNode<vNode, CachedEdge>(
+      static_cast<Qubit>(level),
+      {buildStateFromVector(entry, level - 1, start, dd),
+       buildStateFromVector(entry, level - 1, half, dd)});
+}
+} // namespace detail
+
+/// Construct a state DD from an indexed view without copying its storage.
+/// @param length Number of amplitudes; zero yields the one-terminal.
+/// @param entry Callable returning the complex amplitude at an index.
+/// @param dd Package that owns the resulting DD.
+/// @pre entry is valid for all indices smaller than length.
+/// @return A state DD with its reference count increased.
+/// @throws std::invalid_argument If length is not a power of two or exceeds
+/// the package qubit capacity.
+template <class VectorEntry>
+VectorDD makeStateFromVector(const size_t length, const VectorEntry& entry,
+                             Package& dd) {
+  if (length == 0) {
+    return vEdge::one();
+  }
+  if (!std::has_single_bit(length)) {
+    throw std::invalid_argument(
+        "State vector must have a length of a power of two.");
+  }
+  const auto levels = std::bit_width(length) - 1;
+  if (levels > dd.qubits()) {
+    throw std::invalid_argument(
+        "State vector exceeds the package qubit capacity.");
+  }
+  const auto root =
+      levels == 0 ? vCachedEdge::terminal(entry(0))
+                  : detail::buildStateFromVector(entry, levels - 1, 0, dd);
+  const vEdge state{.p = root.p, .w = dd.cn.lookup(root.w)};
+  dd.incRef(state);
+  return state;
+}
+
 }; // namespace dd

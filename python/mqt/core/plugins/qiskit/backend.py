@@ -15,11 +15,13 @@ from __future__ import annotations
 
 import inspect
 import warnings
+from functools import cached_property
+from math import isfinite
 from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit import qasm2, qasm3
-from qiskit.circuit import QuantumCircuit
+from qiskit.circuit import ControlFlowOp, QuantumCircuit
 from qiskit.circuit.library import (
     MCPhaseGate,
     MCXGate,
@@ -122,6 +124,7 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     Returns:
         The OpenQASM 3 program.
     """
+    backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
     # Qiskit classical bits start at zero, while OpenQASM 3 bits are
     # uninitialized. Preserve Qiskit's semantics and make every output valid
     # even when the circuit measures only part of a register.
@@ -187,17 +190,17 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     return qasm3.dumps(circuit, basis_gates=basis_gates)
 
 
-def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:  # ruff:ignore[unused-function-argument]
+def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
     """Serialize a circuit into an OpenQASM 2 program.
 
     Args:
         circuit: The circuit to serialize.
-        backend: The backend that runs the circuit. Qiskit's OpenQASM 2 exporter
-            takes no information from it.
+        backend: The backend whose native placements constrain the circuit.
 
     Returns:
         The OpenQASM 2 program.
     """
+    backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
     return qasm2.dumps(circuit)
 
 
@@ -498,7 +501,7 @@ class QDMIBackend(BackendV2):
         if qargs == [None]:
             # Create instruction properties
             props = None
-            duration = op.duration()
+            duration = self._duration_seconds(op.duration())
             fidelity = op.fidelity()
             if duration is not None or fidelity is not None:
                 error = 1.0 - fidelity if fidelity is not None else None
@@ -512,36 +515,63 @@ class QDMIBackend(BackendV2):
         # Add the operation without properties and populate them iteratively later
         target.add_instruction(gate, dict.fromkeys(qargs))
 
-        num_qubits = op.qubits_num()
-        if num_qubits == 1:
-            op_sites = op.sites()
-            assert op_sites is not None
-            for qarg, site in zip(qargs, op_sites, strict=True):
-                duration = op.duration(sites=[site])
-                fidelity = op.fidelity(sites=[site])
-                if duration is not None or fidelity is not None:
-                    error = 1.0 - fidelity if fidelity is not None else None
-                    props = InstructionProperties(
-                        duration=duration,
-                        error=error,
-                    )
-                    target.update_instruction_properties(gate_name, qarg, props)
-            return
+        site_tuples = self._get_operation_site_tuples(op)
+        assert site_tuples is not None
+        for qarg, sites in zip(qargs, site_tuples, strict=True):
+            duration = self._duration_seconds(op.duration(sites=sites))
+            fidelity = op.fidelity(sites=sites)
+            if duration is not None or fidelity is not None:
+                error = 1.0 - fidelity if fidelity is not None else None
+                target.update_instruction_properties(
+                    gate_name, qarg, InstructionProperties(duration=duration, error=error)
+                )
 
-        if num_qubits == 2:
-            op_site_pairs = op.site_pairs()
-            assert op_site_pairs is not None
-            for qarg, (site1, site2) in zip(qargs, op_site_pairs, strict=True):
-                duration = op.duration(sites=[site1, site2])
-                fidelity = op.fidelity(sites=[site1, site2])
-                if duration is not None or fidelity is not None:
-                    error = 1.0 - fidelity if fidelity is not None else None
-                    props = InstructionProperties(
-                        duration=duration,
-                        error=error,
-                    )
-                    target.update_instruction_properties(gate_name, qarg, props)
-            return
+    def _duration_seconds(self, duration: int | None) -> float | None:
+        """Convert a raw QDMI duration to Qiskit's seconds.
+
+        Returns:
+            The duration in seconds, or None when it is unavailable.
+
+        Raises:
+            UnsupportedOperationError: If the duration unit or scale is invalid.
+        """
+        if duration is None:
+            return None
+        unit = self._device.duration_unit()
+        seconds_per_unit = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12, "fs": 1e-15}
+        if unit not in seconds_per_unit:
+            msg = f"Cannot convert operation duration with device duration unit {unit!r} to seconds"
+            raise UnsupportedOperationError(msg)
+        scale = self._device.duration_scale_factor()
+        if scale is None:
+            scale = 1.0
+        if not isfinite(scale) or scale <= 0:
+            msg = f"Device duration scale factor must be positive and finite, got {scale!r}"
+            raise UnsupportedOperationError(msg)
+        return duration * scale * seconds_per_unit[unit]
+
+    @staticmethod
+    def _get_operation_site_tuples(op: QDMIDevice.Operation) -> Sequence[tuple[QDMIDevice.Site, ...]] | None:
+        """Read explicit operation placements without widening their support.
+
+        Returns:
+            Ordered site tuples, or None when placements are unspecified.
+
+        Raises:
+            UnsupportedOperationError: If a site tuple is incomplete.
+        """
+        arity = op.qubits_num()
+        if arity is None or arity == 0:
+            return None
+        if arity == 2:
+            return op.site_pairs()
+        sites = op.sites()
+        if sites is None:
+            return None
+        if len(sites) % arity:
+            msg = f"Operation '{op.name()}' has an incomplete {arity}-qubit site tuple"
+            raise UnsupportedOperationError(msg)
+        return [tuple(sites[i : i + arity]) for i in range(0, len(sites), arity)]
 
     @classmethod
     def _map_operation_to_gate(cls, op_name: str) -> Instruction | type[Instruction] | None:
@@ -570,63 +600,81 @@ class QDMIBackend(BackendV2):
         """
         return cls._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
 
-    def _get_operation_qargs(self, op: QDMIDevice.Operation) -> list[tuple[int]] | list[tuple[int, int]] | list[None]:
-        """Get the qubit argument tuples for an operation.
-
-        This method determines which qubit indices an operation can act on by:
-        1. Checking explicit site lists from the operation (sites() for 1-qubit, site_pairs() for 2-qubit)
-        2. For operations without site lists (returns None):
-           - Single-qubit: Available on all individual qubits
-           - Two-qubit with coupling map: Misconfigured device (error)
-           - Two-qubit without coupling map: Available on all qubit pairs (all-to-all)
-           - Multi-qubit (3+): Assumed to be globally available
-
-        Args:
-            op: QDMI device operation.
+    def _get_operation_qargs(self, op: QDMIDevice.Operation) -> list[tuple[int, ...]] | list[None]:
+        """Get explicit qubit tuples, or global support when placements are absent.
 
         Returns:
-            Sequence of qubit index tuples this operation can act on.
-            Returns [None] for globally available operations (will be converted to {None: None} in Target).
+            Ordered qubit tuples, or [None] for global support.
 
         Raises:
-            UnsupportedOperationError: If the device is misconfigured.
+            UnsupportedOperationError: If a site tuple is incomplete or a two-qubit
+                operation omits placements on a device with a coupling map.
         """
-        qubits_num = op.qubits_num()
-
-        # For single-qubit operations, first check for explicit sites
-        if qubits_num == 1:
-            site_list = op.sites()
-            if site_list is not None:
-                # Operation explicitly defines where it can be executed
-                return [(s.index(),) for s in site_list]
-
-            # No explicit sites - operation is globally available on all qubits
-            return [None]
-
-        # For two-qubit operations, first check for explicit site_pairs
-        if qubits_num == 2:
-            site_pairs = op.site_pairs()
-            if site_pairs is not None:
-                return [(s1.index(), s2.index()) for s1, s2 in site_pairs]
-
-            # Two-qubit operations without explicit site_pairs
-            # Check device-level coupling map
-            coupling_map = self._device.coupling_map()
-            if coupling_map is not None:
-                # Device has coupling map but operation doesn't expose sites
-                msg = (
-                    f"Device provides a coupling map (stating connectivity constraints), "
-                    f"but operation '{op.name()}' does not expose site pairs. This indicates "
-                    f"a misconfigured device. Devices with connectivity constraints must expose "
-                    f"sites for their operations."
-                )
-                raise UnsupportedOperationError(msg)
-
-            # No coupling map and no site pairs - operation is globally available (all-to-all)
-            return [None]
-
-        # Operation has unspecified qubit count or 3+ qubits -> assume it applies to all qubits
+        site_tuples = self._get_operation_site_tuples(op)
+        if site_tuples is not None:
+            return [tuple(site.index() for site in sites) for sites in site_tuples]
+        if op.qubits_num() == 2 and self._device.coupling_map() is not None:
+            msg = (
+                f"Device provides a coupling map (stating connectivity constraints), "
+                f"but operation '{op.name()}' does not expose site pairs. This indicates "
+                f"a misconfigured device. Devices with connectivity constraints must expose "
+                f"sites for their operations."
+            )
+            raise UnsupportedOperationError(msg)
         return [None]
+
+    @cached_property
+    def _native_operation_loci(self) -> dict[str, tuple[int | None, frozenset[tuple[int, ...] | None]]]:
+        """Normalize native placements once for the opened device session.
+
+        Returns:
+            Native arity and placements by QDMI operation name.
+        """
+        return {
+            operation.name().lower(): (operation.qubits_num(), frozenset(self._get_operation_qargs(operation)))
+            for operation in self._device.operations()
+        }
+
+    def _validate_circuit(self, circuit: QuantumCircuit, *, native: bool = False) -> None:
+        """Check supported operations, including operations inside control flow.
+
+        Built-in QASM serializers also check native width and placements after
+        preprocessing. Custom serializers can perform further compilation and
+        therefore retain responsibility for validating their output placements.
+
+        Raises:
+            CircuitValidationError: If the circuit exceeds the native device width.
+            UnsupportedOperationError: If an operation or placement is unsupported.
+        """
+        if native and circuit.num_qubits > self._device.qubits_num():
+            msg = f"Circuit has {circuit.num_qubits} qubits, but the native device has {self._device.qubits_num()}."
+            raise CircuitValidationError(msg)
+        device_ops = {operation.name().lower() for operation in self._device.operations()}
+
+        pending = [(circuit, tuple(range(circuit.num_qubits)))]
+        while pending:
+            block, indices = pending.pop()
+            for instruction in block.data:
+                operation = instruction.operation
+                qargs = tuple(indices[block.find_bit(bit).index] for bit in instruction.qubits)
+                if isinstance(operation, ControlFlowOp):
+                    if operation.name not in self._target.operation_names:
+                        msg = f"Unsupported control flow operation: '{operation.name}'"
+                        raise UnsupportedOperationError(msg)
+                    pending.extend((body, qargs) for body in reversed(operation.blocks))
+                    continue
+                if operation.name == "barrier":
+                    continue
+                names = self._map_qiskit_gate_to_operation_names(operation.name) & device_ops
+                if not names:
+                    msg = f"Unsupported operation: '{operation.name}'"
+                    raise UnsupportedOperationError(msg)
+                if native and not any(
+                    arity in {None, len(qargs)} and (None in loci or qargs in loci)
+                    for arity, loci in (self._native_operation_loci[name] for name in names)
+                ):
+                    msg = f"Operation '{operation.name}' is not advertised on native device qubits {qargs}."
+                    raise UnsupportedOperationError(msg)
 
     def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:  # ruff:ignore[no-self-use]
         """Rewrite a bound circuit before validation and conversion.
@@ -666,6 +714,7 @@ class QDMIBackend(BackendV2):
             text format and bytes for a binary format.
 
         Raises:
+            CircuitValidationError: If native circuit validation fails.
             UnsupportedFormatError: If the device reports no program format that
                 has a serializer.
             UnsupportedOperationError: If the circuit contains an operation the
@@ -683,7 +732,7 @@ class QDMIBackend(BackendV2):
                 continue
             try:
                 program = serializer(circuit, self)
-            except UnsupportedOperationError:
+            except (CircuitValidationError, UnsupportedOperationError):
                 # A circuit the chosen format cannot express must fail loudly
                 # rather than arrive at the device in a weaker format.
                 raise
@@ -740,7 +789,7 @@ class QDMIBackend(BackendV2):
             >>> qc2.ry(theta, 0)
             >>> qc2.measure_all()
             >>> job = backend.run([qc1, qc2], parameter_values=[{theta: 0.5}, {theta: 1.5}])
-        """
+        """  # ruff:ignore[docstring-extraneous-exception] The validation helper raises operation errors.
         # Normalize input to a list of circuits
         circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
 
@@ -777,8 +826,6 @@ class QDMIBackend(BackendV2):
             msg = f"Invalid 'memory' value: {memory!r}"
             raise CircuitValidationError(msg)
 
-        # Build set of all supported QDMI operation names once
-        device_ops = {op.name().lower() for op in self._device.operations()}
         supported_formats = self._device.supported_program_formats()
 
         # Process each circuit
@@ -810,16 +857,7 @@ class QDMIBackend(BackendV2):
                 msg = "Classical registers must partition circuit.clbits in register order."
                 raise CircuitValidationError(msg)
 
-            # Validate operations are supported
-            for instruction in bound_circuit.data:
-                op_name = instruction.operation.name
-                # Map the Qiskit gate name to possible QDMI operation names and check if any match
-                possible_qdmi_names = self._map_qiskit_gate_to_operation_names(op_name)
-                # Check if any of the possible QDMI names are supported by the device
-                # Also always allow 'barrier' as it's a directive, not an operation
-                if op_name != "barrier" and not any(qdmi_name in device_ops for qdmi_name in possible_qdmi_names):
-                    msg = f"Unsupported operation: '{op_name}'"
-                    raise UnsupportedOperationError(msg)
+            self._validate_circuit(bound_circuit)
 
             # Serialize the circuit into a program format the device accepts
             serialized_circuits.append(self._serialize_circuit(bound_circuit, supported_formats))

@@ -35,6 +35,8 @@
 #include <cstdint>
 #include <initializer_list>
 #include <iostream>
+#include <limits>
+#include <numeric>
 #include <queue>
 #include <random>
 #include <span>
@@ -50,6 +52,12 @@ namespace dd {
 namespace {
 constexpr GateMatrix MEAS_ZERO_MAT{1, 0, 0, 0};
 constexpr GateMatrix MEAS_ONE_MAT{0, 0, 0, 1};
+
+void checkMeasurementQubit(const vEdge& state, const Qubit index) {
+  if (state.isTerminal() || index > state.p->v) {
+    throw std::invalid_argument("Measurement qubit is outside the state.");
+  }
+}
 } // namespace
 
 Package::Package(const std::size_t nq, const DDPackageConfig& config)
@@ -190,10 +198,16 @@ void ensureGateQubitsInRange(const std::size_t nqubits,
     throwGateQubitOutOfRange(nqubits);
   }
 
-  std::vector<Qubit> sortedTargets(targets.begin(), targets.end());
-  std::ranges::sort(sortedTargets);
-  if (std::ranges::adjacent_find(sortedTargets) != sortedTargets.end()) {
+  if (std::ranges::adjacent_find(controls, {}, &Control::qubit) !=
+      controls.end()) {
     throwGateQubitsNotDistinct();
+  }
+
+  for (size_t i = 0; i < targets.size(); ++i) {
+    if (std::ranges::find(targets.first(i), targets[i]) !=
+        targets.first(i).end()) {
+      throwGateQubitsNotDistinct();
+    }
   }
 
   if (std::ranges::any_of(controls, [&targets](const auto& control) {
@@ -512,60 +526,68 @@ mEdge Package::makeThreeQubitGateDD(
   return buildThreeQubitGateDD(*this, mat, controls, target0, target1, target2);
 }
 
+mEdge Package::makeGateDD(const std::span<const std::complex<fp>> matrix,
+                          const std::span<const Qubit> targets,
+                          const Controls& controls) {
+  if (targets.size() >= std::numeric_limits<size_t>::digits / 2 ||
+      matrix.size() != (size_t{1} << (2 * targets.size()))) {
+    throw std::invalid_argument("Matrix size does not match its target count.");
+  }
+  switch (targets.size()) {
+  case 1:
+    return makeGateDD(matrix.first<NEDGE>(), controls, targets[0]);
+  case 2:
+    return makeTwoQubitGateDD(matrix.first<NEDGE * NEDGE>(), controls,
+                              targets[0], targets[1]);
+  case 3:
+    return makeThreeQubitGateDD(
+        matrix.first<THREE_QUBIT_GATE_DIM * THREE_QUBIT_GATE_DIM>(), controls,
+        targets[0], targets[1], targets[2]);
+  default:
+    break;
+  }
+  if (!controls.empty()) {
+    throw std::invalid_argument(
+        "Sparse controls require one to three target qubits.");
+  }
+  if (targets.empty()) {
+    return mEdge::terminal(cn.lookup(matrix[0]));
+  }
+  /// The matrix-size check bounds the number of operands by the size_t width.
+  std::array<std::pair<Qubit, size_t>, std::numeric_limits<size_t>::digits / 2>
+      storage{};
+  const auto operands = std::span{storage}.first(targets.size());
+  for (size_t i = 0; i < targets.size(); ++i) {
+    if (targets[i] >= qubits()) {
+      throwGateQubitOutOfRange(qubits());
+    }
+    operands[i] = {targets[i], size_t{1} << (targets.size() - 1 - i)};
+  }
+  std::ranges::sort(operands, {}, &std::pair<Qubit, size_t>::first);
+  if (std::ranges::adjacent_find(
+          operands, {}, &std::pair<Qubit, size_t>::first) != operands.end()) {
+    throwGateQubitsNotDistinct();
+  }
+  const auto dimension = size_t{1} << targets.size();
+  const auto root = buildMatrixDD(
+      [matrix, dimension](const size_t row, const size_t col) {
+        return matrix[(row * dimension) + col];
+      },
+      [&operands](const size_t level) { return operands[level]; },
+      targets.size() - 1, 0, 0);
+  return toMatrixDD(*this, root);
+}
+
 mEdge Package::makeDDFromMatrix(const CMat& matrix) {
-  if (matrix.empty()) {
-    return mEdge::one();
-  }
-
-  const auto& length = matrix.size();
-  if ((length & (length - 1)) != 0) {
-    throw std::invalid_argument("Matrix must have a length of a power of two.");
-  }
-
-  const auto& width = matrix[0].size();
-  if (length != width) {
+  if (std::ranges::any_of(matrix, [&matrix](const auto& row) {
+        return row.size() != matrix.size();
+      })) {
     throw std::invalid_argument("Matrix must be square.");
   }
-
-  if (length == 1) {
-    return mEdge::terminal(cn.lookup(matrix[0][0]));
-  }
-
-  const auto level = static_cast<Qubit>(std::log2(length) - 1);
-  const auto matrixDD = makeDDFromMatrix(matrix, level, 0, length, 0, width);
-  return {.p = matrixDD.p, .w = cn.lookup(matrixDD.w)};
-}
-mCachedEdge Package::makeDDFromMatrix(const CMat& matrix, const Qubit level,
-                                      const std::size_t rowStart,
-                                      const std::size_t rowEnd,
-                                      const std::size_t colStart,
-                                      const std::size_t colEnd) {
-  // base case
-  if (level == 0U) {
-    assert(rowEnd - rowStart == 2);
-    assert(colEnd - colStart == 2);
-    return makeDDNode<mNode, CachedEdge>(
-        0U, {
-                mCachedEdge::terminal(matrix[rowStart][colStart]),
-                mCachedEdge::terminal(matrix[rowStart][colStart + 1]),
-                mCachedEdge::terminal(matrix[rowStart + 1][colStart]),
-                mCachedEdge::terminal(matrix[rowStart + 1][colStart + 1]),
-            });
-  }
-
-  // recursively call the function on all quadrants
-  const auto rowMid = (rowStart + rowEnd) / 2;
-  const auto colMid = (colStart + colEnd) / 2;
-  const auto l = static_cast<Qubit>(level - 1U);
-
-  return makeDDNode<mNode, CachedEdge>(
-      level,
-      {
-          makeDDFromMatrix(matrix, l, rowStart, rowMid, colStart, colMid),
-          makeDDFromMatrix(matrix, l, rowStart, rowMid, colMid, colEnd),
-          makeDDFromMatrix(matrix, l, rowMid, rowEnd, colStart, colMid),
-          makeDDFromMatrix(matrix, l, rowMid, rowEnd, colMid, colEnd),
-      });
+  return makeDDFromMatrix(matrix.size(),
+                          [&matrix](const size_t row, const size_t col) {
+                            return matrix[row][col];
+                          });
 }
 void Package::clearComputeTables() {
   vectorAdd.clear();
@@ -642,7 +664,8 @@ std::string Package::measureAll(vEdge& rootEdge, const bool collapse,
     rootEdge = e;
   }
 
-  return std::string{result.rbegin(), result.rend()};
+  std::ranges::reverse(result);
+  return result;
 }
 fp Package::assignProbabilities(const vEdge& edge,
                                 std::unordered_map<const vNode*, fp>& probs) {
@@ -663,6 +686,15 @@ fp Package::assignProbabilities(const vEdge& edge,
 std::pair<fp, fp>
 Package::determineMeasurementProbabilities(const vEdge& rootEdge,
                                            const Qubit index) {
+  checkMeasurementQubit(rootEdge, index);
+  if (rootEdge.p->v == index) {
+    const auto probability = ComplexNumbers::mag2(rootEdge.w);
+    const auto zero = static_cast<ComplexValue>(rootEdge.p->e[0].w);
+    const auto one = static_cast<ComplexValue>(rootEdge.p->e[1].w);
+    return {zero.approximatelyZero() ? 0. : probability * zero.mag2(),
+            one.approximatelyZero() ? 0. : probability * one.mag2()};
+  }
+
   std::unordered_map<const vNode*, fp> measurementProbabilities;
   std::queue<const vNode*> q;
 
@@ -679,6 +711,9 @@ Package::determineMeasurementProbabilities(const vEdge& rootEdge,
       const auto weight = static_cast<ComplexValue>(edge.w);
       if (weight.approximatelyZero()) {
         continue;
+      }
+      if (edge.isTerminal()) {
+        throw std::invalid_argument("Measurement qubit is outside the state.");
       }
       const fp contribution = prob * weight.mag2();
       auto [it, inserted] =
@@ -734,12 +769,20 @@ char Package::measureOneCollapsing(vEdge& rootEdge, const Qubit index,
 void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
                                            const fp probability,
                                            const bool measureZero) {
-  const GateMatrix measurementMatrix =
-      measureZero ? MEAS_ZERO_MAT : MEAS_ONE_MAT;
-
-  const auto measurementGate = makeGateDD(measurementMatrix, index);
-
-  vEdge e = multiply(measurementGate, rootEdge);
+  checkMeasurementQubit(rootEdge, index);
+  vCachedEdge projected{};
+  if (rootEdge.p->v == index) {
+    std::array<vCachedEdge, RADIX> edges{};
+    const auto& successor = rootEdge.p->e[measureZero ? 0 : 1];
+    edges[measureZero ? 0 : 1] = {successor.p, successor.w};
+    projected = makeDDNode(index, edges);
+    projected.w = projected.w * static_cast<ComplexValue>(rootEdge.w);
+  } else {
+    const auto measurementGate =
+        makeGateDD(measureZero ? MEAS_ZERO_MAT : MEAS_ONE_MAT, index);
+    projected = project(rootEdge, measurementGate.p, measureZero);
+  }
+  auto e = cn.lookup(projected);
 
   assert(probability > 0.);
   e.w = cn.lookup(e.w / std::sqrt(probability));
@@ -747,6 +790,36 @@ void Package::performCollapsingMeasurement(vEdge& rootEdge, const Qubit index,
   decRef(rootEdge);
   rootEdge = e;
 }
+vCachedEdge Package::project(const vEdge& state, mNode* projector,
+                             const bool measureZero) {
+  if (state.w.exactlyZero()) {
+    return vCachedEdge::zero();
+  }
+  if (state.isTerminal()) {
+    throw std::invalid_argument("Measurement qubit is outside the state.");
+  }
+  if (const auto* cached =
+          matrixVectorMultiplication.lookup(projector, state.p);
+      cached != nullptr) {
+    return {cached->p, cached->w * static_cast<ComplexValue>(state.w)};
+  }
+
+  std::array<vCachedEdge, RADIX> edges{};
+  if (state.p->v == projector->v) {
+    const auto& successor = state.p->e[measureZero ? 0 : 1];
+    edges[measureZero ? 0 : 1] = {successor.p, successor.w};
+  } else {
+    edges = {
+        project(state.p->e[0], projector, measureZero),
+        project(state.p->e[1], projector, measureZero),
+    };
+  }
+  auto result = makeDDNode(state.p->v, edges);
+  matrixVectorMultiplication.insert(projector, state.p, result);
+  result.w = result.w * static_cast<ComplexValue>(state.w);
+  return result;
+}
+
 vEdge Package::conjugate(const vEdge& a) {
   const auto r = conjugateRec(a);
   return {.p = r.p, .w = cn.lookup(r.w)};
@@ -936,15 +1009,21 @@ fp Package::expectationValue(const mEdge& x, const vEdge& y) {
 }
 mEdge Package::partialTrace(const mEdge& a,
                             const std::vector<bool>& eliminate) {
-  auto const r = trace(a, eliminate, eliminate.size());
+  std::vector<size_t> eliminatedBelow(eliminate.size() + 1);
+  for (size_t q = 0; q < eliminate.size(); ++q) {
+    eliminatedBelow[q + 1] =
+        eliminatedBelow[q] + static_cast<size_t>(eliminate[q]);
+  }
+  auto const r = trace(a, eliminatedBelow);
   return {.p = r.p, .w = cn.lookup(r.w)};
 }
 ComplexValue Package::trace(const mEdge& a, const std::size_t numQubits) {
   if (a.isIdentity()) {
     return static_cast<ComplexValue>(a.w);
   }
-  const auto eliminate = std::vector<bool>(numQubits, true);
-  return trace(a, eliminate, numQubits).w;
+  std::vector<size_t> eliminatedBelow(numQubits + 1);
+  std::iota(eliminatedBelow.begin(), eliminatedBelow.end(), size_t{0});
+  return trace(a, eliminatedBelow).w;
 }
 bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
                                 const std::vector<bool>& garbage,
@@ -953,49 +1032,36 @@ bool Package::isCloseToIdentity(const mEdge& m, const fp tol,
   visited.reserve(mUniqueTable.getNumEntries());
   return isCloseToIdentityRecursive(m, visited, tol, garbage, checkCloseToOne);
 }
-mCachedEdge Package::trace(const mEdge& a, const std::vector<bool>& eliminate,
-                           std::size_t level, std::size_t alreadyEliminated) {
+mCachedEdge Package::trace(const mEdge& a,
+                           const std::span<const size_t> eliminatedBelow) {
   const auto aWeight = static_cast<ComplexValue>(a.w);
   if (aWeight.approximatelyZero()) {
     return mCachedEdge::zero();
   }
-
-  // If `a` is the identity matrix or there is nothing left to eliminate,
-  // then simply return `a`
-  if (a.isIdentity() ||
-      std::none_of(eliminate.begin(),
-                   eliminate.begin() +
-                       static_cast<std::vector<bool>::difference_type>(level),
-                   [](bool v) { return v; })) {
-    return mCachedEdge{a.p, aWeight};
+  if (a.isIdentity()) {
+    return {a.p, aWeight};
   }
 
   const auto v = a.p->v;
-  if (eliminate[v]) {
-    // Lookup nodes marked for elimination in the compute table if all
-    // lower-level qubits are eliminated as well: if the trace has already
-    // been computed, return the result
-    const auto eliminateAll =
-        std::all_of(eliminate.begin(),
-                    eliminate.begin() +
-                        static_cast<std::vector<bool>::difference_type>(level),
-                    [](bool e) { return e; });
+  const auto below = eliminatedBelow[v];
+  const auto through = eliminatedBelow[static_cast<size_t>(v) + 1];
+  if (through == 0) {
+    return {a.p, aWeight};
+  }
+
+  if (through != below) {
+    /// Only complete traces are independent of the elimination mask.
+    const bool eliminateAll = through == static_cast<size_t>(v) + 1;
     if (eliminateAll) {
       if (const auto* r = getTraceComputeTable().lookup(a.p); r != nullptr) {
         return {r->p, r->w * aWeight};
       }
     }
 
-    const auto elims = alreadyEliminated + 1;
-    auto r = add2(trace(a.p->e[0], eliminate, level - 1, elims),
-                  trace(a.p->e[3], eliminate, level - 1, elims), v - 1);
-
-    // The resulting weight is continuously normalized to the range [0,1] for
-    // matrix nodes
+    const auto nextLevel = static_cast<Qubit>(v == below ? 0 : v - below - 1);
+    auto r = add2(trace(a.p->e[0], eliminatedBelow),
+                  trace(a.p->e[3], eliminatedBelow), nextLevel);
     r.w = r.w / 2.0;
-
-    // Insert result into compute table if all lower-level qubits are
-    // eliminated as well
     if (eliminateAll) {
       getTraceComputeTable().insert(a.p, r);
     }
@@ -1004,17 +1070,11 @@ mCachedEdge Package::trace(const mEdge& a, const std::vector<bool>& eliminate,
   }
 
   std::array<mCachedEdge, NEDGE> edge{};
-  std::ranges::transform(std::as_const(a.p->e), edge.begin(),
-                         [this, &eliminate, &alreadyEliminated,
-                          &level](const mEdge& e) -> mCachedEdge {
-                           return trace(e, eliminate, level - 1,
-                                        alreadyEliminated);
+  std::ranges::transform(a.p->e, edge.begin(),
+                         [this, eliminatedBelow](const mEdge& e) {
+                           return trace(e, eliminatedBelow);
                          });
-  const auto adjustedV = static_cast<Qubit>(
-      static_cast<std::size_t>(a.p->v) -
-      (static_cast<std::size_t>(std::ranges::count(eliminate, true)) -
-       alreadyEliminated));
-  auto r = makeDDNode(adjustedV, edge);
+  auto r = makeDDNode(static_cast<Qubit>(v - below), edge);
   r.w = r.w * aWeight;
   return r;
 }

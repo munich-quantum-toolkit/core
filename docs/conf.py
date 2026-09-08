@@ -157,7 +157,10 @@ napoleon_numpy_docstring = False
 # AutoAPI renders these annotations as Python cross-references although they
 # are typing expressions or private Qiskit aliases, not documented objects.
 nitpick_ignore_regex = [
-    ("py:class", r"Annotated\[numpy\.typing\.NDArray\[numpy\.complex128\], \{'shape': \(.*\)\}\]"),
+    (
+        "py:class",
+        r"Annotated\[numpy\.typing\.NDArray\[numpy\.complex128\], \{'shape': \(.*\)(?:, 'writable': False)?\}\]",
+    ),
     ("py:class", r"Ellipsis"),
     ("py:class", r"ParametersType"),
     ("py:class", r"pennylane\.tape\.QuantumScriptOrBatch"),

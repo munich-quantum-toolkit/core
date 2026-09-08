@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, get_type_hints
@@ -667,3 +668,32 @@ def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDM
     job = ddsim_backend.run(qc, shots=100)
     counts = job.result().get_counts()
     assert sum(counts.values()) == 100
+
+
+@pytest.mark.parametrize(("unit", "seconds"), [("s", 1.0), ("ms", 1e-3), ("us", 1e-6), ("ns", 1e-9)])
+def test_sc_target_preserves_placements_and_physical_calibration(unit: str, seconds: float) -> None:
+    """SC metadata retains ordered placements and converts raw durations to seconds."""
+    config = {
+        "schema-version": 1,
+        "name": "Target calibration test",
+        "numQubits": 4,
+        "durationUnit": {"unit": unit, "scaleFactor": 0.5},
+        "qubitProperties": {"defaults": {}, "overrides": []},
+        "couplings": [[0, 1]],
+        "operations": [
+            {"name": "x", "numParameters": 0, "numQubits": 1, "duration": 20, "fidelity": 0.99},
+            {"name": "cx", "numParameters": 0, "numQubits": 2, "sites": [[0, 1]], "duration": 40},
+            {"name": "ccx", "numParameters": 0, "numQubits": 3, "sites": [[0, 1, 2]], "duration": 60, "fidelity": 0.95},
+            {"name": "measure", "numParameters": 0, "numQubits": 1},
+        ],
+    }
+    backend = QDMIBackend(open_device("mqt.sc.default", device_config=json.dumps(config)))
+    target = backend.target
+    assert target["x"][0,].duration == pytest.approx(10 * seconds)
+    assert target["x"][0,].error == pytest.approx(0.01)
+    assert target["cx"][0, 1].duration == pytest.approx(20 * seconds)
+    assert set(target["ccx"]) == {(0, 1, 2)}
+    assert target["ccx"][0, 1, 2].duration == pytest.approx(30 * seconds)
+    assert target["ccx"][0, 1, 2].error == pytest.approx(0.05)
+    assert not target.instruction_supported(operation_name="ccx", qargs=(1, 2, 3))
+    assert target["measure"][0,] is None

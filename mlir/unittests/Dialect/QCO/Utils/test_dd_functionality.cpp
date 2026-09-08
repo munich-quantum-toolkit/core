@@ -302,6 +302,60 @@ TEST(DDAdapterTest, EmbedsFourQubitMatrixOnNoncontiguousTargets) {
                 embedPermutation(numQubits, targets, rowForColumn)));
 }
 
+TEST(DDAdapterTest, PreservesComplexMatricesAcrossIdleWires) {
+  constexpr size_t numQubits = 6;
+  dd::Package package(numQubits);
+  LiteralMatrix<16> local{};
+  for (size_t row = 0; row < 16; ++row) {
+    for (size_t col = 0; col < 16; ++col) {
+      local[row][col] = std::polar(
+          0.25, 2 * std::numbers::pi * static_cast<double>(row * col) / 16);
+    }
+  }
+  for (const auto& targets : {
+           std::array<dd::Qubit, 4>{0, 1, 2, 3},
+           std::array<dd::Qubit, 4>{4, 1, 5, 2},
+       }) {
+    const auto matrix =
+        makeGateDD(package, toDynamicMatrix(local), numQubits, targets)
+            .getMatrix(numQubits);
+    size_t targetMask = 0;
+    for (const auto wire : targets) {
+      targetMask |= size_t{1} << wire;
+    }
+    const auto localIndex = [&targets](size_t index) {
+      size_t result = 0;
+      for (const auto wire : targets) {
+        result = (result << 1U) | ((index >> wire) & 1U);
+      }
+      return result;
+    };
+    for (size_t row = 0; row < matrix.size(); ++row) {
+      for (size_t col = 0; col < matrix.size(); ++col) {
+        const auto expected = ((row ^ col) & ~targetMask) == 0
+                                  ? local[localIndex(row)][localIndex(col)]
+                                  : std::complex<double>{};
+        EXPECT_NEAR(std::abs(matrix[row][col] - expected), 0., 1e-12);
+      }
+    }
+  }
+}
+
+TEST(DDAdapterTest, PreservesScalarMatricesWithAndWithoutIdleWires) {
+  dd::Package package(4);
+  for (const size_t numQubits : {0U, 4U}) {
+    for (const auto scalar : {
+             std::complex<double>{},
+             std::polar(1., 0.37),
+             std::complex<double>{1e-15, 0.},
+         }) {
+      const std::array matrix{scalar};
+      EXPECT_EQ(makeGateDD(package, std::span{matrix}, numQubits, {}),
+                dd::mEdge::terminal(package.cn.lookup(scalar)));
+    }
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, ExercisesStandardGatePaths) {
   // Every `decodeStandardGate` branch once (distinct angles catch param-order
   // bugs), plus barrier / sparse ctrl / inv / sink.

@@ -18,4 +18,7 @@ target_link_libraries(
           MLIRQCPrograms
           MLIRMQTTransforms)
 mqt_mlir_configure_unittest_target(${target_name})
-gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
+# These cheap verifier cases share a process; retain per-case GoogleTest results.
+add_test(NAME ${target_name}
+         COMMAND ${target_name} --gtest_output=xml:${CMAKE_CURRENT_BINARY_DIR}/${target_name}.xml)
+set_tests_properties(${target_name} PROPERTIES LABELS mqt-mlir-unittests)

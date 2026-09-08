@@ -355,6 +355,27 @@ def test_compile_program_exposes_raw_and_optimized_qco() -> None:
     assert raw.ir != optimized.ir
 
 
+@requires_qiskit_translation
+def test_empty_compiled_program_round_trips_through_mlir() -> None:
+    """Reload empty compiled IR through both typed program APIs."""
+    circuit = QuantumCircuit(0)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program.compile_for_target(target)
+    assert "qco." not in program.ir
+
+    qc = QCOProgram.from_mlir_str(program.ir).to_qc()
+    restored = QCProgram.from_mlir_str(qc.ir).to_qiskit()
+
+    assert restored.num_qubits == 0
+    assert restored.num_clbits == 0
+    assert Operator(restored) == Operator(circuit)
+
+
 @pytest.fixture(scope="module")
 def garnet_target() -> CompilerTarget:
     """Snapshot the bundled IQM Garnet device.
