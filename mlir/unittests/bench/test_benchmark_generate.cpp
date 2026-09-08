@@ -15,6 +15,7 @@
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QPE.hpp"
+#include "bench/Teleportation.hpp"
 #include "mlir/bench/Generate.h"
 
 #include <gtest/gtest.h>
@@ -46,6 +47,7 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
   expectValidQCAndJeff(QPE{{.precision = 3, .phase = Phase(3, 8)}});
   expectValidQCAndJeff(QPE{
       {.precision = 3, .phase = Phase(3, 8), .method = QPEMethod::Iterative}});
+  expectValidQCAndJeff(Teleportation{});
 }
 
 } // namespace mqt::bench
