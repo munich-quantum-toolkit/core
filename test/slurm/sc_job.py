@@ -28,7 +28,10 @@ def main() -> None:
         "node": os.environ["SLURM_JOB_NODELIST"],
         "qubits": device.qubits_num(),
     }
-    Path(f"/runtime/sc-{job_id}.json").write_text(json.dumps(result, sort_keys=True), encoding="utf-8")
+    result_path = Path(f"/runtime/sc-{job_id}.json")
+    temporary = result_path.with_suffix(".tmp")
+    temporary.write_text(json.dumps(result, sort_keys=True), encoding="utf-8")
+    temporary.replace(result_path)
 
 
 if __name__ == "__main__":
