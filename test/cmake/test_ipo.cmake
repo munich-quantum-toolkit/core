@@ -9,7 +9,9 @@
 cmake_minimum_required(VERSION 3.28)
 
 file(WRITE "${TEST_BINARY_DIR}/main.cpp" "int main() { return 0; }\n")
-file(WRITE "${TEST_BINARY_DIR}/CMakeLists.txt" [=[
+file(
+  WRITE "${TEST_BINARY_DIR}/CMakeLists.txt"
+  [=[
 cmake_minimum_required(VERSION 3.28)
 project(IPOProbe LANGUAGES CXX)
 include("${MQT_SOURCE_DIR}/cmake/StandardProjectSettings.cmake")
@@ -25,9 +27,9 @@ endif()
 
 foreach(enabled IN ITEMS ON OFF)
   execute_process(
-    COMMAND "${CMAKE_COMMAND}" -S "${TEST_BINARY_DIR}" -B "${TEST_BINARY_DIR}/build"
-            -G "${TEST_GENERATOR}" "-DCMAKE_CXX_COMPILER=${TEST_CXX_COMPILER}"
-            "-DMQT_SOURCE_DIR=${MQT_SOURCE_DIR}" -DCMAKE_BUILD_TYPE=Release
-            "-DENABLE_IPO=${enabled}"
-    COMMAND_ERROR_IS_FATAL ANY)
+    COMMAND
+      "${CMAKE_COMMAND}" -S "${TEST_BINARY_DIR}" -B "${TEST_BINARY_DIR}/build" -G
+      "${TEST_GENERATOR}" "-DCMAKE_CXX_COMPILER=${TEST_CXX_COMPILER}"
+      "-DMQT_SOURCE_DIR=${MQT_SOURCE_DIR}" -DCMAKE_BUILD_TYPE=Release "-DENABLE_IPO=${enabled}"
+      COMMAND_ERROR_IS_FATAL ANY)
 endforeach()
