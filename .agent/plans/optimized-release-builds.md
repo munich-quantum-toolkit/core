@@ -23,10 +23,10 @@ translation units before selecting production defaults.
   assessing wheel packaging. The v4.1 driver stack starts at Core #2229.
 - Preserve the small C++ SDK. Enable ELF section garbage collection on the DDSIM
   device and benchmark executable: the local wheel shrinks by 29.3%.
-- Enable full LTO for Core release wheels and keep binding optimization
-  defaults. Preserve the earlier runtime measurements as a reason to re-evaluate
-  with the optimized SDK. Native SDK archives need a coordinated compiler policy
-  before LTO.
+- Enable full LTO for Linux and macOS Core release wheels and keep binding
+  optimization defaults. Preserve the earlier runtime measurements as a reason
+  to re-evaluate with the optimized SDK. Native SDK archives need a coordinated
+  compiler policy before LTO.
 
 ## Work remaining
 
@@ -49,3 +49,8 @@ cross-platform validation and unavailable release artifacts.
 
 Detailed measurements, distribution contracts, and the PGO/BOLT follow-up
 strategy are in [the audit](../audits/optimized-release-builds.md).
+
+Regular C++ and Python CI uses assertion-enabled SDKs. The CD wheel jobs,
+including their pull-request checks, use the assertion-free SDK. Windows wheel
+LTO is disabled. Linux wheel and SDK image digests match cibuildwheel 4.2.0 and
+must advance together with an SDK release.

@@ -10,16 +10,17 @@ LLVM/MLIR 23.1.0 assertion-enabled portable SDK, nanobind 3.0.1, CPython 3.14.7.
   on ELF platforms in optimized configurations. The local wheel shrinks from
   62,468,761 to 44,196,908 bytes (29.3%) while retaining its runtime and SDK
   files.
-- Select the explicit assertion-free SDK for release CI and wheels. Keep
-  assertion-enabled Debug coverage and Windows support.
+- Select the explicit assertion-free SDK for CD wheel builds, including their
+  pull-request checks. Keep ordinary C++ and Python CI assertion-enabled.
 - Reuse the shared GitHub-backed sccache setup for wheels, forward its cache
   settings through cibuildwheel's Linux container boundary, and select the
   bundled mold through `cmake.define.CMAKE_LINKER_TYPE`.
 - Remove the obsolete MSVC `/Zm10` limit.
-- Enable full LTO for Core release wheels, including the CI wheel builds that
-  validate CD. Clang uses full LTO explicitly rather than CMake's ThinLTO
-  default; GCC/MSVC retain their full IPO modes. Requested wheel IPO fails
-  configuration if unsupported. Keep nanobind's binding optimization defaults.
+- Enable full LTO for Linux and macOS Core release wheels, including the CI
+  wheel builds that validate CD. Clang uses full LTO explicitly rather than
+  CMake's ThinLTO default; GCC/MSVC retain their full IPO modes. Requested wheel
+  IPO fails configuration if unsupported. Keep nanobind's binding optimization
+  defaults.
 - With full Core LTO in addition to section GC, the local wheel is 42,732,712
   bytes. SDK archives remain native until compiler compatibility is coordinated.
 

@@ -52,7 +52,7 @@ jobs:
       compiler: ${{ matrix.compiler }}
       setup-mlir: ${{ matrix.setup-mlir }}
       llvm-version: 23.1.0
-      mlir-assertions: ${{ startsWith(matrix.preset, 'debug') }}
+      mlir-assertions: true
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
@@ -80,7 +80,7 @@ jobs:
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
       llvm-version: 23.1.0
-      mlir-assertions: ${{ startsWith(matrix.preset, 'debug') }}
+      mlir-assertions: true
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
@@ -108,7 +108,7 @@ jobs:
       compiler: ${{ matrix.compiler }}
       setup-mlir: true
       llvm-version: 23.1.0
-      mlir-assertions: ${{ startsWith(matrix.preset, 'debug') }}
+      mlir-assertions: true
       preset-name: ${{ matrix.preset }}
       run-on-draft: ${{ matrix.run-on-draft }}
     permissions:
@@ -162,7 +162,7 @@ jobs:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
       llvm-version: 23.1.0
-      mlir-assertions: false
+      mlir-assertions: true
     permissions:
       contents: read
 
@@ -186,7 +186,7 @@ jobs:
       enable-mypy: false
       setup-mlir: true
       llvm-version: 23.1.0
-      mlir-assertions: false
+      mlir-assertions: true
     permissions:
       contents: read
 
