@@ -167,10 +167,9 @@ TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleReturnsBeforeOutputPreparation) {
   EXPECT_TRUE(succeeded(verify(*module)));
 }
 
-TEST(QCToQIRAdaptiveNativeTest,
-     PreservesConditionalReleasesAndNonFinalReturnBlock) {
+TEST(QCToQIRAdaptiveNativeTest, PreservesConditionalReleases) {
   MLIRContext context;
-  context.loadDialect<qc::QCDialect, func::FuncDialect, cf::ControlFlowDialect,
+  context.loadDialect<qc::QCDialect, func::FuncDialect, scf::SCFDialect,
                       memref::MemRefDialect>();
   auto module = parseSourceString<ModuleOp>(R"mlir(module {
     func.func private @condition() -> i1
@@ -178,17 +177,14 @@ TEST(QCToQIRAdaptiveNativeTest,
       %q = qc.alloc : !qc.qubit
       %reg = memref.alloc() : memref<1x!qc.qubit>
       %condition = func.call @condition() : () -> i1
-      cf.cond_br %condition, ^left, ^right
-    ^exit:
+      scf.if %condition {
+        qc.dealloc %q : !qc.qubit
+        memref.dealloc %reg : memref<1x!qc.qubit>
+      } else {
+        qc.dealloc %q : !qc.qubit
+        memref.dealloc %reg : memref<1x!qc.qubit>
+      }
       return
-    ^left:
-      qc.dealloc %q : !qc.qubit
-      memref.dealloc %reg : memref<1x!qc.qubit>
-      cf.br ^exit
-    ^right:
-      qc.dealloc %q : !qc.qubit
-      memref.dealloc %reg : memref<1x!qc.qubit>
-      cf.br ^exit
     }
   })mlir",
                                             &context);

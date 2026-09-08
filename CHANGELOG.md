@@ -206,10 +206,6 @@ _If you are upgrading: please see
 
 ### Fixed
 
-- 🐛 Enforce entry-block quantum allocation across compiler entry points and
-  preserve Adaptive QIR release control flow and result ownership. Diagnose
-  unsupported output stores and multiple entry-function returns before lowering
-  ([#2446]) ([**@simon1hofmann**], [**@burgholzer**])
 - 🐛 Initialize Qiskit classical bits before OpenQASM 3 serialization so
   partially measured circuits preserve their zero values ([#2399])
   ([**@burgholzer**])
@@ -1415,5 +1411,3 @@ for previous changelogs._
 [munich-quantum-toolkit/workflows]: https://github.com/munich-quantum-toolkit/workflows
 [MQT QMAP]: https://github.com/munich-quantum-toolkit/qmap
 [MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
-
-[#2446]: https://github.com/munich-quantum-toolkit/core/pull/2446

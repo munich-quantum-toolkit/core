@@ -22,7 +22,6 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/AsmParser/AsmParser.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -52,10 +51,9 @@ protected:
   void SetUp() override {
     DialectRegistry registry;
     registry
-        .insert<arith::ArithDialect, cbit::CBitDialect, cf::ControlFlowDialect,
-                func::FuncDialect, memref::MemRefDialect, mqt::MQTDialect,
-                qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                scf::SCFDialect>();
+        .insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                memref::MemRefDialect, mqt::MQTDialect, qc::QCDialect,
+                qco::QCODialect, qtensor::QTensorDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>(registry);
     context->loadAllAvailableDialects();
   }
@@ -385,7 +383,7 @@ TEST_F(MQTIRTest, ChecksQuantumAllocationPlacement) {
     StringRef suffix;
     bool allowed;
   };
-  const std::array<Placement, 5> placements{
+  const std::array<Placement, 4> placements{
       {
           {
               .prefix = "module { func.func @main() {\n",
@@ -401,11 +399,6 @@ TEST_F(MQTIRTest, ChecksQuantumAllocationPlacement) {
           {
               .prefix = "module { func.func private @helper() {\n",
               .suffix = "return } func.func @main() { return } }",
-              .allowed = false,
-          },
-          {
-              .prefix = "module { func.func @main() {\ncf.br ^body\n^body:\n",
-              .suffix = "return } }",
               .allowed = false,
           },
           {

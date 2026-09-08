@@ -180,8 +180,9 @@ TEST_F(QIRTest, AdaptiveBuilderOwnsScalarAndRegisterResults) {
       ++scalarReleases;
       EXPECT_EQ(call.getOperand(0), scalar);
     }
-    if (call.getCallee() == QIR_RESULT_ARRAY_RELEASE)
+    if (call.getCallee() == QIR_RESULT_ARRAY_RELEASE) {
       ++arrayReleases;
+    }
   });
   EXPECT_EQ(scalarReleases, 1);
   EXPECT_EQ(arrayReleases, 1);
