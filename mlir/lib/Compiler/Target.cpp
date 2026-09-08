@@ -11,6 +11,7 @@
 #include "mlir/Compiler/Target.h"
 
 #include "mlir/Dialect/MQT/IR/MQTAttributes.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
