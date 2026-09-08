@@ -68,7 +68,7 @@ set(QDMI_MINIMUM_VERSION 1.3.3
         CACHE STRING "Minimum QDMI version")
 set(QDMI_VERSION 1.3.4
         CACHE STRING "QDMI version")
-set(QDMI_REV "69ccb861313daf215af12e72205df8697affab35" # QDMI #537
+set(QDMI_REV "7cf3dfd3a2337d0156dcc739cb96bf760828f0ec" # QDMI #537
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")
