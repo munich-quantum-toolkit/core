@@ -15,7 +15,7 @@ if(TARGET MQT::CoreQDMI_DDSIM_Device)
   # Add the test executable
   package_add_test(
     ${TARGET_NAME}
-    MQT::CoreQDMI_DDSIM_Device
+    ${MQT_CORE_TARGET_NAME}-qdmi-ddsim-device-objects
     helpers/test_utils.cpp
     device_properties_test.cpp
     session_lifecycle_test.cpp
@@ -31,19 +31,14 @@ if(TARGET MQT::CoreQDMI_DDSIM_Device)
   add_dependencies(${TARGET_NAME} qdmi_test_mqt_ddsim_device_defs)
   # Set the executable path and version information
   target_compile_definitions(
-    ${TARGET_NAME} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}"
+    ${TARGET_NAME} PRIVATE MQT_DDSIM_QDMI_device_EXPORTS MQT_CORE_VERSION="${MQT_CORE_VERSION}"
                            QIR_FILES_DIR="${PROJECT_SOURCE_DIR}/test/circuits")
-  target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_include_directories(
+    ${TARGET_NAME}
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+            $<TARGET_PROPERTY:MQT::CoreQDMI_DDSIM_Device,INTERFACE_INCLUDE_DIRECTORIES>)
 
   llvm_map_components_to_libnames(llvm_native_libs asmparser bitwriter core support)
   target_link_libraries(${TARGET_NAME} PRIVATE ${llvm_native_libs})
 
-  # On Windows, we need to copy the DLL to the test executable directory
-  if(WIN32)
-    add_custom_command(
-      TARGET ${TARGET_NAME}
-      PRE_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>
-              $<TARGET_FILE_DIR:${TARGET_NAME}>)
-  endif()
 endif()

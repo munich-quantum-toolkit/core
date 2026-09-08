@@ -20,6 +20,15 @@ jobs:
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-change-detection.yml@ae4c1005796fedc123c3c70cdba94ce643c9fcae # v2.3.1
     with:
       additional-python-files: "mlir/**"
+      additional-cd-files: |
+        pyproject.toml
+        CMakeLists.txt
+        cmake/**
+        bindings/**
+        python/**
+        src/**
+        include/**
+        mlir/**
     permissions:
       contents: read
 
@@ -152,11 +161,14 @@ jobs:
       fail-fast: false
       matrix:
         runs-on: [ubuntu-24.04, ubuntu-24.04-arm, macos-26, windows-2025]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@9d0a300a990563b5d70b6cd5e7549c3e678d3cf7
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-tests.yml@e6e5993b1709f1e28b82c512a8e7304461740af9
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
       llvm-version: 23.1.0
+      wheel-test-sessions: >-
+        ["minimums-3.11", "minimums-3.12", "minimums-3.13", "minimums-3.14",
+         "tests-3.11", "tests-3.12", "tests-3.13", "tests-3.14"]
     permissions:
       contents: read
 
@@ -173,7 +185,7 @@ jobs:
     name: 🐍 Lint
     needs: change-detection
     if: fromJSON(needs.change-detection.outputs.run-python-linter)
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@ae4c1005796fedc123c3c70cdba94ce643c9fcae # v2.3.1
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-linter.yml@e6e5993b1709f1e28b82c512a8e7304461740af9
     with:
       check-stubs: true
       enable-ty: true

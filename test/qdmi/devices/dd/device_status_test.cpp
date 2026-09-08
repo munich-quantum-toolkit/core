@@ -9,15 +9,12 @@
  */
 
 /* DDSIM QDMI device status transitions. */
-#include "helpers/circuits.hpp"
+#include "helpers/controlled_job.hpp"
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
 #include <gtest/gtest.h>
-
-#include <atomic>
-#include <thread>
 
 namespace {
 QDMI_Device_Status queryStatus(MQT_DDSIM_QDMI_Device_Session session) {
@@ -35,32 +32,11 @@ TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
 
   EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_IDLE);
 
-  // Submit a job to force BUSY, then wait for the return to IDLE.
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_HEAVY_SAMPLING),
-            QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 16384), QDMI_SUCCESS);
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j.job), QDMI_SUCCESS);
+  qdmi_test::ControlledJob running{j.job};
+  EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_BUSY);
+  running.finish(j.job);
 
-  // Poll while running to observe BUSY at least once.
-  std::atomic<bool> sawBusy{false};
-  std::atomic<bool> done{false};
-  std::thread poller([&] {
-    while (!done.load(std::memory_order_acquire)) {
-      if (const auto st = queryStatus(s.session);
-          st == QDMI_DEVICE_STATUS_BUSY) {
-        sawBusy.store(true, std::memory_order_release);
-      }
-    }
-  });
-
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
-  done.store(true, std::memory_order_release);
-  poller.join();
-
-  EXPECT_TRUE(sawBusy.load(std::memory_order_acquire));
-
-  // After completion, the status should be IDLE.
+  /// After completion, the status should be IDLE.
   EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_IDLE);
 }
