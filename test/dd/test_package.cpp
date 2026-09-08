@@ -19,6 +19,7 @@
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 #include "dd/UnaryComputeTable.hpp"
+#include "dd/UniqueTable.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
 
 #include <gtest/gtest.h>
@@ -1166,6 +1167,46 @@ TEST(DDPackageTest, UniqueTableGrowthPreservesLookupsStatisticsAndRoots) {
   const auto fresh = makeZeroState(1, package);
   EXPECT_EQ(fresh.getVector(), (CVec{1., 0.}));
   package.decRef(fresh);
+}
+
+TEST(DDPackageTest, UniqueTableEntryCountControlsCollection) {
+  auto manager = MemoryManager::create<vNode>(4);
+  UniqueTable table(manager, {.nBuckets = 4, .initialGCLimit = 2});
+  table.resize(2);
+  auto* low = manager.get<vNode>();
+  low->v = 0;
+  low->e = {vEdge::one(), vEdge::zero()};
+  ASSERT_EQ(table.lookup(low), low);
+  EXPECT_EQ(table.getNumEntries(), 1);
+  EXPECT_EQ(table.lookup(low), low);
+  EXPECT_EQ(table.getNumEntries(), 1);
+  EXPECT_FALSE(table.possiblyNeedsCollection());
+
+  auto* high = manager.get<vNode>();
+  high->v = 1;
+  high->e = {vEdge{.p = low, .w = Complex::one()}, vEdge::zero()};
+  ASSERT_EQ(table.lookup(high), high);
+  EXPECT_EQ(table.getNumEntries(), 2);
+  EXPECT_TRUE(table.possiblyNeedsCollection());
+  low->mark();
+  EXPECT_EQ(table.garbageCollect(), 1);
+  EXPECT_EQ(table.getNumEntries(), 1);
+  EXPECT_FALSE(table.possiblyNeedsCollection());
+  table.resize(1);
+  table.resize(4);
+  EXPECT_EQ(table.getNumEntries(), 1);
+  low->unmark();
+  EXPECT_EQ(table.garbageCollect(true), 1);
+  EXPECT_EQ(table.getNumEntries(), 0);
+
+  auto* fresh = manager.get<vNode>();
+  fresh->v = 0;
+  fresh->e = {vEdge::one(), vEdge::zero()};
+  ASSERT_EQ(table.lookup(fresh), fresh);
+  EXPECT_EQ(table.getNumEntries(), 1);
+  table.clear();
+  EXPECT_EQ(table.getNumEntries(), 0);
+  EXPECT_FALSE(table.possiblyNeedsCollection());
 }
 
 TEST(DDPackageTest, UniqueTableAllocation) {
