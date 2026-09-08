@@ -14,7 +14,8 @@ register results, and keeps absent outputs void. It materializes snapshots at
 their definition, shares frontend name validation, avoids unused measurement
 storage, and initializes registers with exact-width bit strings. Float casts and
 unordered floating inequality round-trip. A shared native-U helper preserves
-global phase, including under controls.
+global phase, including under controls. Loop-local bit storage does not carry
+global register-name metadata.
 
 The implementation lives in `mlir/lib/Target/OpenQASM` and
 `mlir/lib/Dialect/QC/Translation`, with headers under `mlir/include` and
@@ -37,11 +38,14 @@ accepted dispositions are in `../audits/openqasm-import-export.md`.
 
 ## Validation
 
-The release OpenQASM target suite passes 190 tests; QC translation passes 209,
-including strict-policy helper matrices with controlled global phase. Repository
-lint passes. The release build and all 3,215 MLIR CTests pass. Complete C++ lint
-on the PR diff passes with zero findings. Hosted CI is separate from these local
-results.
+The release build passes. The configured CTest suite has 3,166 passes and one
+optional QDMI job-ID test skipped, including 191 passing OpenQASM target tests.
+All 1,131 Python tests pass. Strict-policy helper matrices check controlled
+global phase; Python round trips use the native OpenQASM frontend before
+comparison with Qiskit matrices. Snapshot tests distinguish one loop iteration
+from two. An instrumented run covers 18 previously missed changed lines through
+the existing emission-budget boundary test. Repository lint and complete C++
+lint pass. Hosted CI is separate from these local results.
 
 The audit records baseline/revised parser memory and timing measurements and
 scaling checks for shared affine expressions and large controlled gates.

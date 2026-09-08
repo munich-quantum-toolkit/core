@@ -60,6 +60,29 @@ using namespace mlir::oq3::test;
 
 namespace {
 
+TEST(OpenQASMTargetTest, LoopLocalBitStorageHasNoGlobalRegisterName) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+output bit result;
+for int i in [0:1] {
+  bit local = true;
+  result = local;
+}
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t localRegisters = 0;
+  moduleOp->walk([&](cbit::AllocOp allocation) {
+    if (!isa<func::FuncOp>(allocation->getParentOp())) {
+      ++localRegisters;
+      EXPECT_FALSE(allocation->hasAttr("mqt.register_name"));
+    }
+  });
+  EXPECT_EQ(localRegisters, 1);
+}
+
 TEST(OpenQASMTargetTest, FirstIterationInitializationHasRepresentableState) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
@@ -2820,6 +2843,9 @@ TEST(OpenQASMTargetTest, StopsEmissionAtEveryOperationBudgetBoundary) {
       R"qasm(OPENQASM 3.1; qubit[8] q; barrier q; reset q;)qasm",
       R"qasm(OPENQASM 3.1; gate custom(a) q { inv @ U(a, 0.2, 0.3) q; } qubit[2] q; ctrl @ pow(2) @ custom(0.1) q[0], q[1];)qasm",
       R"qasm(OPENQASM 3.1; gate repeated(a) q { for int i in [0:2] { rx(a) q; } } qubit q; repeated(0.1) q;)qasm",
+      R"qasm(OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[-i * 1 + 3]; })qasm",
+      R"qasm(OPENQASM 3.1; bit[8] c = "00000001"; int n = 1; c = (~c & c) | (c ^ c); c = (c << uint(n + 1)) >> uint(n); c = rotl(~c, n + 1); c = rotr(c, 2);)qasm",
+      R"qasm(OPENQASM 3.1; output uint[8] result; uint[8] n = 1; result = (~n & n) | (n ^ n); result = (result << uint(n + 1)) >> n; result = uint[8](-int(sin(float(n + 1))));)qasm",
   };
   for (const auto* source : sources) {
     SCOPED_TRACE(source);

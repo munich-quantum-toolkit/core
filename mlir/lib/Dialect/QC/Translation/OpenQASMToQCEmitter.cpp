@@ -1795,7 +1795,10 @@ private:
       return;
     }
     classicalRegisters[statement.reg] = builder.allocClassicalBitRegister(
-        static_cast<int64_t>(declaration.width), declaration.name,
+        static_cast<int64_t>(declaration.width),
+        isa<func::FuncOp>(builder.getInsertionBlock()->getParentOp())
+            ? StringRef(declaration.name)
+            : StringRef{},
         program.openQASM2 ? cbit::Initialization::Zero
                           : cbit::Initialization::Undefined);
   }
