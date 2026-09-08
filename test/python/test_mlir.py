@@ -536,6 +536,20 @@ def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
     assert restored.layout is None
 
 
+def test_compiler_target_exposes_sqrt_iswap_basis() -> None:
+    """Return the new native entangler through the Python enum binding."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.Operation("u", 1, 3),
+            CompilerTarget.Operation("sqrt_iswap", 2, 0),
+        ]),
+    )
+    assert target.synthesis_basis is not None
+    assert target.synthesis_basis.entangler == CompilerTarget.GateKind.SQRT_ISWAP
+
+
 def test_compiler_target_constructors_preserve_python_api() -> None:
     """Construct every target metadata type and target overload."""
     duration_unit = CompilerTarget.DurationUnit("ns", 1.0)
