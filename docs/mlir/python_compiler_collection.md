@@ -202,10 +202,19 @@ containing circuit. This includes values used only by the condition or switch
 target and not by a control-flow block. External runtime inputs remain
 unsupported.
 
-Private gate parameters without name metadata receive local names during Qiskit
-export. Public program inputs still require explicit names. OpenQASM custom
-gates can therefore use `QCProgram.from_qasm_str(source).to_qiskit()` directly
-within the supported subset below.
+Private gate parameters bind by position and receive generated local names
+during Qiskit export; their original names and grouping are not preserved.
+Public program inputs still require explicit names. OpenQASM custom gates can
+therefore use `QCProgram.from_qasm_str(source).to_qiskit()` directly within the
+supported subset below.
+
+Export folds scalar expressions on a copy of the QC program. Constant
+arithmetic, casts, and idempotent expressions can therefore disappear;
+expression-tree shape is not preserved. Quantum-resource and classical-snapshot
+canonicalization patterns are not applied, because they can change circuit width
+or introduce scratch bits. Call `cleanup()` explicitly when those broader
+transformations are wanted. Live free parameters retain their identities; unused
+named program inputs remain unsupported.
 
 Free symbols become named {code}`f64` program inputs. Parameter-vector elements
 retain their grouping and index, preserving vector order and positional binding

@@ -288,8 +288,7 @@ cu3(0.1, 0.2, 0.3) q[0], q[1];
 )qasm";
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(source));
 
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   auto analyzed = oq3::frontend::analyzeOpenQASM(source, strict);
   ASSERT_FALSE(analyzed);
   ASSERT_FALSE(analyzed.diagnostics.empty());
@@ -298,8 +297,7 @@ cu3(0.1, 0.2, 0.3) q[0], q[1];
 }
 
 TEST(OpenQASMFrontendTest, PreservesStandardLibraryIdentity) {
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
 
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(R"qasm(
 OPENQASM 3.1;
@@ -342,8 +340,7 @@ swap q[0], q[1];
 }
 
 TEST(OpenQASMFrontendTest, AcceptsHybridOpenQASM2Libraries) {
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(R"qasm(
 OPENQASM 2.0;
 include "stdgates.inc";
@@ -362,8 +359,7 @@ gate x q {
 qubit q;
 x q;
 )qasm";
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(source, strict));
 }
 
@@ -938,8 +934,7 @@ if (true) {
 }
 
 TEST(OpenQASMFrontendTest, ActivatesStandardGatesSequentially) {
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   auto beforeInclude = oq3::frontend::analyzeOpenQASM(R"qasm(
 OPENQASM 3.1;
 qubit q;
@@ -1798,8 +1793,8 @@ r(0.5, 0.25) q;
   EXPECT_TRUE(llvm::none_of(compatible.program->gates,
                             [](const auto& gate) { return gate.name == "r"; }));
 
-  auto strict = oq3::frontend::analyzeOpenQASM(
-      source, {.gatePolicy = oq3::frontend::GatePolicy::Strict});
+  auto strict =
+      oq3::frontend::analyzeOpenQASM(source, oq3::frontend::GatePolicy::Strict);
   ASSERT_TRUE(strict) << strict.diagnostics.front().message;
   EXPECT_TRUE(llvm::any_of(strict.program->gates,
                            [](const auto& gate) { return gate.name == "r"; }));

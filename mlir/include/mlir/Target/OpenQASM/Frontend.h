@@ -62,10 +62,6 @@ enum class GatePolicy : uint8_t {
   MQTCompatibility,
 };
 
-struct FrontendOptions {
-  GatePolicy gatePolicy = GatePolicy::MQTCompatibility;
-};
-
 struct AnalysisResult;
 struct ParseResult;
 
@@ -87,7 +83,7 @@ private:
   friend ParseResult parseOpenQASM(llvm::StringRef source);
   friend ParseResult parseOpenQASM(llvm::SourceMgr& sourceMgr);
   friend AnalysisResult analyzeOpenQASM(const ParsedProgram& program,
-                                        const FrontendOptions& options);
+                                        GatePolicy gatePolicy);
 };
 
 struct ParseResult {
@@ -410,13 +406,14 @@ struct AnalysisResult {
 
 [[nodiscard]] AnalysisResult
 analyzeOpenQASM(const ParsedProgram& program,
-                const FrontendOptions& options = {});
+                GatePolicy gatePolicy = GatePolicy::MQTCompatibility);
 
 [[nodiscard]] AnalysisResult
 analyzeOpenQASM(llvm::SourceMgr& sourceMgr,
-                const FrontendOptions& options = {});
+                GatePolicy gatePolicy = GatePolicy::MQTCompatibility);
 
 [[nodiscard]] AnalysisResult
-analyzeOpenQASM(llvm::StringRef source, const FrontendOptions& options = {});
+analyzeOpenQASM(llvm::StringRef source,
+                GatePolicy gatePolicy = GatePolicy::MQTCompatibility);
 
 } // namespace mlir::oq3::frontend

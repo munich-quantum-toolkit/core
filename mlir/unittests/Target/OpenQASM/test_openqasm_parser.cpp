@@ -63,8 +63,7 @@ include "stdgates.inc";
 qubit q;
 x q;
 )qasm";
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
 
   EXPECT_FALSE(oq3::frontend::analyzeOpenQASM(withoutInclude, strict));
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(withInclude, strict));

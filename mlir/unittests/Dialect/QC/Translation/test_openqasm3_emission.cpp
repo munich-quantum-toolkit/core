@@ -105,7 +105,7 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   EXPECT_NE(source->find("ctrl @ x"), std::string::npos);
   EXPECT_NE(source->find("output bit[2] c;"), std::string::npos);
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *source, {.gatePolicy = oq3::frontend::GatePolicy::Strict}));
+      *source, oq3::frontend::GatePolicy::Strict));
   EXPECT_TRUE(qc::translateQASM3ToQC(*source, &context));
 }
 
@@ -140,8 +140,8 @@ TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
   ASSERT_NE(store, std::string::npos) << *emitted;
   EXPECT_LT(measurement, gate);
   EXPECT_LT(gate, store);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -198,8 +198,8 @@ result = measure q;
   EXPECT_EQ(emitted->find("mqt.openqasm"), std::string::npos);
   EXPECT_NE(emitted->find("rx(1.5707963267948966)"), std::string::npos)
       << *emitted;
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -256,8 +256,8 @@ r = measure q;
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("gate r("), std::string::npos);
   EXPECT_NE(emitted->find("output bit[1] _mqt_out0;"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -278,8 +278,8 @@ TEST(OpenQASM3EmissionTest, RenamesOutputsThatCollideWithStandardGates) {
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("output bit[1] _mqt_out0;"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
   EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
 }
@@ -320,8 +320,8 @@ switch (selector) {
   EXPECT_NE(emitted->find("if ("), std::string::npos);
   EXPECT_NE(emitted->find("for int "), std::string::npos);
   EXPECT_NE(emitted->find("while ("), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -342,8 +342,8 @@ while (c == 1) {
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("while ("), std::string::npos) << *emitted;
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -426,8 +426,8 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -500,8 +500,8 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -575,8 +575,8 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -695,8 +695,8 @@ module {
   EXPECT_NE(emitted->find("switch (1)"), std::string::npos);
   EXPECT_NE(emitted->find("case 1 {"), std::string::npos);
   EXPECT_NE(emitted->find("default {"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -748,8 +748,8 @@ TEST(OpenQASM3EmissionTest, EmitsCatalogHelpersUnderTheirNativeNames) {
   }
   EXPECT_NE(emitted->find("gate _mqt_gate"), std::string::npos);
   EXPECT_NE(emitted->find("pow(0.5) @ z"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 
   auto roundTripped = qc::translateQASM3ToQC(*emitted, &context);
@@ -786,8 +786,8 @@ inv @ pair(theta) q;
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("gate pair(p0) q0"), std::string::npos);
   EXPECT_NE(emitted->find("inv @ pair("), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
   auto roundTripped = qc::translateQASM3ToQC(*emitted, &context);
   ASSERT_TRUE(roundTripped);
@@ -830,8 +830,8 @@ TEST(OpenQASM3EmissionTest, OrdersNestedGateFunctionsBeforeTheirCallers) {
   ASSERT_NE(call, std::string::npos) << *emitted;
   EXPECT_LT(inner, outer);
   EXPECT_LT(outer, call);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -860,8 +860,8 @@ wrapper(0.5) q;
   EXPECT_LT(repeated, wrapper);
   EXPECT_NE(emitted->find("for int ", repeated), std::string::npos);
   EXPECT_NE(emitted->find("while (false)", repeated), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
   auto roundTripped = qc::translateQASM3ToQC(*emitted, &context);
   ASSERT_TRUE(roundTripped);
@@ -1137,8 +1137,8 @@ module {
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("mod(5.5, 2.0)"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -1491,8 +1491,8 @@ TEST(OpenQASM3EmissionTest, ReusesQubitRegisterNames) {
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("qubit[2] named_qubits;"), std::string::npos);
   EXPECT_EQ(emitted->find("qubit[2] not-valid;"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
+                                             oq3::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -2098,7 +2098,7 @@ TEST(OpenQASM3EmissionTest, UsesFrontendIdentifierRulesForOutputNames) {
     auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
     ASSERT_TRUE(succeeded(emitted));
     EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-        *emitted, {.gatePolicy = oq3::frontend::GatePolicy::Strict}))
+        *emitted, oq3::frontend::GatePolicy::Strict))
         << *emitted;
   }
 }
@@ -2193,7 +2193,7 @@ TEST(OpenQASM3EmissionTest,
       ASSERT_TRUE(succeeded(emitted));
       auto restored = qc::translateQASM3ToQC(
           *emitted, &context,
-          {.frontend = {.gatePolicy = oq3::frontend::GatePolicy::Strict}});
+          {.gatePolicy = oq3::frontend::GatePolicy::Strict});
       ASSERT_TRUE(restored);
       dd::Package package(width);
       PassManager manager(&context);

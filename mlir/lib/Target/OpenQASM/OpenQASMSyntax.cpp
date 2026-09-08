@@ -12,11 +12,9 @@
 
 #include "mlir/Target/OpenQASM/Detail/OpenQASMParser.h"
 
-#include <llvm/ADT/STLExtras.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
-#include <iterator>
 #include <optional>
 #include <tuple>
 #include <utility>
@@ -84,49 +82,14 @@ SyntaxBuilder::addExpression(const SyntaxExpression& expression) {
   return id;
 }
 
-SyntaxOperand SyntaxBuilder::copyOperand(const Operand& operand) {
-  SyntaxOperand copy{
-      .location = operand.loc,
-      .identifier = operand.identifier,
-      .index = operand.index,
-      .hardwareQubit = operand.hardwareQubit,
-  };
-
-  return copy;
-}
-
-SyntaxBitReference
-SyntaxBuilder::copyBitReference(const BitReference& reference) {
-  SyntaxBitReference copy{
-      .location = reference.loc,
-      .identifier = reference.identifier,
-      .index = reference.index,
-  };
-  return copy;
-}
-
 SyntaxGateCall SyntaxBuilder::copyGateCall(const GateCall& call) {
-  SyntaxGateCall copy{
+  return {
       .location = call.loc,
       .identifier = call.identifier,
-      .modifiers = {},
+      .modifiers = call.modifiers.vec(),
       .parameters = call.parameters.vec(),
-      .operands = {},
+      .operands = call.operands.vec(),
   };
-  copy.modifiers.reserve(call.modifiers.size());
-  for (const auto& modifier : call.modifiers) {
-    SyntaxModifier converted{
-        .kind = modifier.kind,
-        .argument = modifier.argument,
-    };
-
-    copy.modifiers.push_back(converted);
-  }
-
-  copy.operands.reserve(call.operands.size());
-  llvm::transform(call.operands, std::back_inserter(copy.operands),
-                  [&](const Operand& operand) { return copyOperand(operand); });
-  return copy;
 }
 
 LogicalResult
@@ -151,7 +114,7 @@ LogicalResult SyntaxBuilder::assignment(SMLoc location,
                                         const BitReference& target,
                                         SyntaxExpressionId value) {
   std::ignore = addStatement(location, SyntaxAssignment{
-                                           .target = copyBitReference(target),
+                                           .target = target,
                                            .value = value,
                                        });
   return success();
@@ -187,28 +150,24 @@ LogicalResult SyntaxBuilder::measure(SMLoc location, const BitReference* target,
                                      const Operand& source) {
   SyntaxMeasurement measurement{
       .target = std::nullopt,
-      .source = copyOperand(source),
+      .source = source,
   };
   if (target != nullptr) {
-    measurement.target = copyBitReference(*target);
+    measurement.target = *target;
   }
   std::ignore = addStatement(location, measurement);
   return success();
 }
 
 LogicalResult SyntaxBuilder::reset(SMLoc location, const Operand& operand) {
-  std::ignore =
-      addStatement(location, SyntaxReset{.operand = copyOperand(operand)});
+  std::ignore = addStatement(location, SyntaxReset{.operand = operand});
   return success();
 }
 
 LogicalResult SyntaxBuilder::barrier(SMLoc location,
                                      ArrayRef<Operand> operands) {
-  SyntaxBarrier barrier;
-  barrier.operands.reserve(operands.size());
-  llvm::transform(operands, std::back_inserter(barrier.operands),
-                  [&](const Operand& operand) { return copyOperand(operand); });
-  std::ignore = addStatement(location, std::move(barrier));
+  std::ignore =
+      addStatement(location, SyntaxBarrier{.operands = operands.vec()});
   return success();
 }
 

@@ -28,7 +28,8 @@ namespace qc {
 
 /// Controls source acceptance and the size of the emitted QC program.
 struct QASM3ImportOptions {
-  oq3::frontend::FrontendOptions frontend;
+  oq3::frontend::GatePolicy gatePolicy =
+      oq3::frontend::GatePolicy::MQTCompatibility;
   /// Maximum number of inserted operations, excluding the module itself.
   size_t maxOperations = 10'000'000;
 };

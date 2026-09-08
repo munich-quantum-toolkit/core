@@ -391,9 +391,8 @@ namespace {
 class SemanticAnalyzer {
 public:
   SemanticAnalyzer(const SyntaxProgram& syntaxProgram,
-                   const llvm::SourceMgr& sourceManager,
-                   const FrontendOptions& frontendOptions)
-      : syntax(syntaxProgram), sources(sourceManager), options(frontendOptions),
+                   const llvm::SourceMgr& sourceManager, GatePolicy policy)
+      : syntax(syntaxProgram), sources(sourceManager), gatePolicy(policy),
         constantExpressionStatus(syntax.expressions.size(), 0),
         constantValues(syntax.expressions.size()),
         constantTypes(syntax.expressions.size()) {
@@ -459,7 +458,7 @@ private:
   // The analyzed syntax and source manager are mandatory and outlive this run.
   const SyntaxProgram& syntax;
   const llvm::SourceMgr& sources;
-  FrontendOptions options;
+  GatePolicy gatePolicy;
   TypedProgram program;
   SmallVector<llvm::StringMap<Symbol>> scopes;
   llvm::StringMap<GateSignature> customGates;
@@ -956,7 +955,7 @@ private:
     if (gate.availability == GateAvailability::Language) {
       return true;
     }
-    if (options.gatePolicy == GatePolicy::MQTCompatibility) {
+    if (gatePolicy == GatePolicy::MQTCompatibility) {
       return true;
     }
     return (belongsToStdGates(gate.availability) && program.stdGatesIncluded) ||
@@ -3458,7 +3457,7 @@ private:
       return analyzeAssignment(location,
                                SyntaxAssignment{
                                    .target =
-                                       SyntaxBitReference{
+                                       BitReference{
                                            .location = location,
                                            .identifier = identifier,
                                            .index = std::nullopt,
@@ -4789,7 +4788,7 @@ private:
   }
 
   [[nodiscard]] FailureOr<std::vector<QubitReference>>
-  resolveQubitOperand(const SyntaxOperand& operand) {
+  resolveQubitOperand(const Operand& operand) {
     if (operand.hardwareQubit) {
       if (!activeGate_.empty()) {
         return fail(operand.location,
@@ -4904,7 +4903,7 @@ private:
   }
 
   [[nodiscard]] FailureOr<std::vector<frontend::BitReference>>
-  resolveBits(const SyntaxBitReference& reference) {
+  resolveBits(const BitReference& reference) {
     const auto* symbol = lookup(reference.identifier);
     if (symbol == nullptr || symbol->kind != SymbolKind::Register ||
         program.registers[symbol->id].kind == RegisterKind::Qubit) {
@@ -5029,8 +5028,8 @@ SourceLocation sourceLocation(const llvm::SourceMgr& sources,
 
 AnalysisResult analyzeSyntaxProgram(const SyntaxProgram& syntax,
                                     const llvm::SourceMgr& sources,
-                                    const FrontendOptions& options) {
-  return SemanticAnalyzer(syntax, sources, options).run();
+                                    GatePolicy gatePolicy) {
+  return SemanticAnalyzer(syntax, sources, gatePolicy).run();
 }
 
 } // namespace mlir::oq3::frontend::detail

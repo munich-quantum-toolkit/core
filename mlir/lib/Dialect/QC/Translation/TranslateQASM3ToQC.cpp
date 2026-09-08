@@ -36,7 +36,7 @@ emitDiagnostics(const ArrayRef<oq3::frontend::Diagnostic> diagnostics,
 OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
                                          MLIRContext* context,
                                          const QASM3ImportOptions& options) {
-  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr, options.frontend);
+  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr, options.gatePolicy);
   if (!analyzed) {
     emitDiagnostics(analyzed.diagnostics, *context);
     return nullptr;

@@ -146,7 +146,7 @@ struct Modifier {
  * @brief A gate operand: a (possibly indexed) identifier, or a hardware qubit.
  */
 struct Operand {
-  SMLoc loc;
+  SMLoc location;
   StringRef identifier;
   std::optional<SyntaxExpressionId> index = std::nullopt;
   std::optional<uint64_t> hardwareQubit;
@@ -154,7 +154,7 @@ struct Operand {
 
 /// A (possibly indexed) classical reference (e.g., `c` or `c[0]`).
 struct BitReference {
-  SMLoc loc;
+  SMLoc location;
   StringRef identifier;
   std::optional<SyntaxExpressionId> index = std::nullopt;
 };
@@ -190,30 +190,12 @@ struct SyntaxExpression {
   std::optional<SyntaxExpressionId> rhs;
 };
 
-struct SyntaxOperand {
-  SMLoc location;
-  StringRef identifier;
-  std::optional<SyntaxExpressionId> index;
-  std::optional<uint64_t> hardwareQubit;
-};
-
-struct SyntaxBitReference {
-  SMLoc location;
-  StringRef identifier;
-  std::optional<SyntaxExpressionId> index;
-};
-
-struct SyntaxModifier {
-  Modifier::Kind kind = Modifier::Kind::Inv;
-  std::optional<SyntaxExpressionId> argument;
-};
-
 struct SyntaxGateCall {
   SMLoc location;
   StringRef identifier;
-  std::vector<SyntaxModifier> modifiers;
+  std::vector<Modifier> modifiers;
   std::vector<SyntaxExpressionId> parameters;
-  std::vector<SyntaxOperand> operands;
+  std::vector<Operand> operands;
 };
 
 struct SyntaxScalarDeclaration {
@@ -226,7 +208,7 @@ struct SyntaxScalarDeclaration {
 };
 
 struct SyntaxAssignment {
-  SyntaxBitReference target;
+  BitReference target;
   SyntaxExpressionId value = 0;
 };
 
@@ -243,16 +225,16 @@ struct SyntaxBitDeclaration {
 };
 
 struct SyntaxMeasurement {
-  std::optional<SyntaxBitReference> target;
-  SyntaxOperand source;
+  std::optional<BitReference> target;
+  Operand source;
 };
 
 struct SyntaxReset {
-  SyntaxOperand operand;
+  Operand operand;
 };
 
 struct SyntaxBarrier {
-  std::vector<SyntaxOperand> operands;
+  std::vector<Operand> operands;
 };
 
 struct SyntaxGateDefinition {
@@ -417,9 +399,6 @@ public:
       std::vector<SyntaxIncludeContext> contexts);
 
 private:
-  [[nodiscard]] SyntaxOperand copyOperand(const Operand& operand);
-  [[nodiscard]] SyntaxBitReference
-  copyBitReference(const BitReference& reference);
   [[nodiscard]] SyntaxGateCall copyGateCall(const GateCall& call);
   [[nodiscard]] SyntaxStatementId addStatement(SMLoc location,
                                                SyntaxStatementData data);

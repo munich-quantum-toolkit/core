@@ -357,27 +357,27 @@ ParseResult parseOpenQASM(const llvm::StringRef source) {
 }
 
 AnalysisResult analyzeOpenQASM(const ParsedProgram& parsedProgram,
-                               const FrontendOptions& options) {
+                               GatePolicy gatePolicy) {
   return detail::analyzeSyntaxProgram(parsedProgram.impl->syntax,
-                                      *parsedProgram.impl->sources, options);
+                                      *parsedProgram.impl->sources, gatePolicy);
 }
 
 AnalysisResult analyzeOpenQASM(llvm::SourceMgr& sourceMgr,
-                               const FrontendOptions& options) {
+                               GatePolicy gatePolicy) {
   auto parsed = parseOpenQASM(sourceMgr);
   if (!parsed) {
     return {.diagnostics = std::move(parsed.diagnostics)};
   }
-  return analyzeOpenQASM(*parsed.program, options);
+  return analyzeOpenQASM(*parsed.program, gatePolicy);
 }
 
 AnalysisResult analyzeOpenQASM(const llvm::StringRef source,
-                               const FrontendOptions& options) {
+                               GatePolicy gatePolicy) {
   auto parsed = parseOpenQASM(source);
   if (!parsed) {
     return {.diagnostics = std::move(parsed.diagnostics)};
   }
-  return analyzeOpenQASM(*parsed.program, options);
+  return analyzeOpenQASM(*parsed.program, gatePolicy);
 }
 
 } // namespace mlir::oq3::frontend

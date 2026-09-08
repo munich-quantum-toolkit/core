@@ -407,7 +407,7 @@ private:
     }
     if (measureSource) {
       const BitReference target{
-          .loc = loc, .identifier = id, .index = std::nullopt};
+          .location = loc, .identifier = id, .index = std::nullopt};
       return sink.measure(loc, &target, *measureSource);
     }
     return success();
@@ -534,7 +534,7 @@ private:
     }
     if (measureSource) {
       const BitReference target{
-          .loc = loc, .identifier = id, .index = std::nullopt};
+          .location = loc, .identifier = id, .index = std::nullopt};
       return sink.measure(loc, &target, *measureSource);
     }
     return success();
@@ -886,7 +886,7 @@ private:
 
   [[nodiscard]] FailureOr<Operand> parseGateOperand() {
     Operand operand;
-    operand.loc = current().loc;
+    operand.location = current().loc;
     if (current().kind == TokenKind::HardwareQubit) {
       operand.hardwareQubit = static_cast<uint64_t>(current().intValue);
       advance();
@@ -911,7 +911,7 @@ private:
 
   [[nodiscard]] FailureOr<BitReference> parseBitReference() {
     BitReference reference;
-    reference.loc = current().loc;
+    reference.location = current().loc;
     if (current().kind != TokenKind::Identifier) {
       return expectedIdentifier("expected an identifier");
     }
