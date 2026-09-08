@@ -782,35 +782,6 @@ private:
     return newWhileOp;
   }
 
-  /// Return the value whose wire edge crosses a composite in block order.
-  static Value valueBeforeBoundary(WireIterator iterator, Operation* boundary) {
-    assert(boundary != nullptr && boundary->getBlock() != nullptr);
-
-    // Independent wires can advance beyond `boundary`. Rewind to the qubit
-    // value that crosses it so extending the composite does not move later
-    // operations before the boundary.
-    if (iterator == std::default_sentinel) {
-      --iterator;
-    }
-
-    while (iterator.operation() != nullptr &&
-           !iterator.operation()->isBeforeInBlock(boundary)) {
-      assert(iterator.operation()->getBlock() == boundary->getBlock());
-      --iterator;
-    }
-
-    Value value = iterator.qubit();
-    assert(value && "expected a qubit value before the composite boundary");
-    assert(value.hasOneUse() && "expected linear qubit use at boundary");
-    Operation* consumer = boundary->getBlock()->findAncestorOpInBlock(
-        *value.use_begin()->getOwner());
-    assert(consumer != nullptr && "expected consumer in boundary block");
-    assert((consumer == boundary || boundary->isBeforeInBlock(consumer) ||
-            isa<SinkOp>(consumer)) &&
-           "selected qubit value does not cross composite boundary");
-    return value;
-  }
-
   /// Execute `ntrials` many (parallel) initial layout refinement trials and
   /// return the heuristically best one.
   ///
@@ -1196,6 +1167,36 @@ private:
     DenseSet<Operation*> visited;
     SmallVector<CompositeUnitary> composites;
 
+    // The walkProgramGraph driver currently only respects quantum semantics; it
+    // does not follow classical def-use (side-effect) chains (TODO!).
+    // Consequently, whenever an operation using non-qubit values is ready there
+    // may still be classical dependencies. As of now, the easiest solution is
+    // to defer such a candidate operation until all wires either point at a
+    // sink (backward: allocs), the candidate itself, or any operation
+    // after (backward: before) the candidate (from an IR perspective). Hence,
+    // this function returns true if any of these cases is not fulfilled.
+    
+    const auto defer = [&wires](Operation* candidate) {
+      return any_of(wires, [&](WireIterator& it) {
+        assert(it != std::default_sentinel);
+
+        Operation* op = it.operation();
+        if (op == nullptr || op == candidate) {
+          return false;
+        }
+
+        if (isa<AllocOp, StaticOp, SinkOp>(op)) {
+          return false;
+        }
+
+        if constexpr (Direction == WireDirection::Forward) {
+          return op->isBeforeInBlock(candidate);
+        }
+
+        return candidate->isBeforeInBlock(op);
+      });
+    };
+
     // Advance wires past all executable gates and push composite unitaries
     // and the respective wire indices of their inputs onto the vector.
 
@@ -1275,8 +1276,8 @@ private:
                                scf::YieldOp, scf::ConditionOp>(
                     [](auto&) { return Direction == WireDirection::Backward; })
                 .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
-                    [&](auto&) {
-                      if (visited.insert(op).second) {
+                    [&](auto& cf) {
+                      if (!defer(cf) && visited.insert(op).second) {
                         composites.emplace_back(op, indices);
                       }
                       return false;
@@ -1304,26 +1305,6 @@ private:
                  assert(lhs.op->getBlock() == rhs.op->getBlock());
                  return lhs.op->isBeforeInBlock(rhs.op);
                });
-
-    // Defer a composite while another active wire points to an operation that
-    // precedes it in the traversal direction. Otherwise, dispatch would remove
-    // that operation from the routing frontier.
-    llvm::erase_if(composites, [&](const CompositeUnitary& composite) {
-      return llvm::any_of(wires, [&](const WireIterator& iterator) {
-        if (iterator == std::default_sentinel) {
-          return false;
-        }
-        Operation* operation = iterator.operation();
-        if (operation == nullptr || operation == composite.op) {
-          return false;
-        }
-        assert(operation->getBlock() == composite.op->getBlock());
-        if constexpr (Direction == WireDirection::Forward) {
-          return operation->isBeforeInBlock(composite.op);
-        }
-        return composite.op->isBeforeInBlock(operation);
-      });
-    });
 
     return composites;
   }
@@ -1355,7 +1336,10 @@ private:
         allIndices, [&](const size_t i) { return !included.contains(i); }));
 
     const SmallVector<Value> addons(map_range(excluded, [&](const size_t i) {
-      return valueBeforeBoundary(parent.wires[i], composite.op);
+      // Make sure the qubits point to an already processed operation.
+      const auto& it = std::prev(
+          parent.wires[i], parent.wires[i] == std::default_sentinel ? 2 : 1);
+      return it.qubit();
     }));
 
     composite = CompositeUnitary{
@@ -1684,7 +1668,6 @@ private:
     auto& [wires, infos, layout] = bundle;
 
     Statistics stats;
-
     while (true) {
       while (true) {
         auto composites = advance<Direction>(wires, infos, layout);
