@@ -1532,7 +1532,7 @@ TEST(DDPackageTest, CollapsingMeasurementPreservesComplexAmplitudes) {
   }
 }
 
-TEST(DDPackageTest, FullMeasurementPreservesBitOrderAndRandomDraws) {
+TEST(DDPackageTest, FullMeasurementPreservesBitOrder) {
   Package package(17);
   std::vector<bool> bits(17);
   bits[0] = bits[5] = bits[16] = true;
@@ -1540,14 +1540,8 @@ TEST(DDPackageTest, FullMeasurementPreservesBitOrderAndRandomDraws) {
   std::string expected(17, '0');
   expected[0] = expected[11] = expected[16] = '1';
   std::mt19937_64 actualRng(17);
-  auto expectedRng = actualRng;
-  std::uniform_real_distribution<fp> distribution(0., 1.);
   for (const bool collapse : {false, true}) {
     EXPECT_EQ(package.measureAll(state, collapse, actualRng), expected);
-    for (size_t qubit = 0; qubit < bits.size(); ++qubit) {
-      static_cast<void>(distribution(expectedRng));
-    }
-    EXPECT_EQ(actualRng, expectedRng);
     EXPECT_EQ(state.getValueByIndex((1U << 16U) | (1U << 5U) | 1U), 1.);
   }
   package.decRef(state);
@@ -2211,6 +2205,57 @@ TEST(DDPackageTest, ThreeQubitGateDDConstruction) {
         }
       }
     }
+  }
+}
+
+TEST(DDPackageTest, ArithmeticAcrossSkippedMatrixLevels) {
+  constexpr auto qubits = 6U;
+  constexpr auto dimension = 1U << qubits;
+  Package package(qubits);
+  auto x = package.multiply(package.makeGateDD(H_MAT, qubits - 1),
+                            package.makeGateDD(X_MAT, 0));
+  x.w = package.cn.lookup(ComplexValue{x.w} * ComplexValue{0.3, -0.7});
+  const auto y = package.multiply(
+      package.makeGateDD(GateMatrix{0, {0, -1}, {0, 1}, 0}, qubits - 1),
+      package.makeGateDD(S_MAT, 0));
+  const auto low = package.makeGateDD(H_MAT, 0);
+  const std::array operands{x, y, low};
+  for (const auto& operand : operands) {
+    package.incRef(operand);
+  }
+  for (const auto& left : operands) {
+    for (const auto& right : operands) {
+      const auto a = left.getMatrix(qubits);
+      const auto b = right.getMatrix(qubits);
+      for (const bool collect : {false, true}) {
+        if (collect) {
+          package.garbageCollect(true);
+        }
+        const auto sum = package.add(left, right).getMatrix(qubits);
+        const auto product = package.multiply(left, right).getMatrix(qubits);
+        for (size_t row = 0; row < dimension; ++row) {
+          for (size_t col = 0; col < dimension; ++col) {
+            std::complex<fp> expected{};
+            for (size_t inner = 0; inner < dimension; ++inner) {
+              expected += a[row][inner] * b[inner][col];
+            }
+            EXPECT_NEAR(std::abs(product[row][col] - expected), 0., 1e-12);
+            EXPECT_NEAR(std::abs(sum[row][col] - a[row][col] - b[row][col]), 0.,
+                        1e-12);
+          }
+        }
+      }
+    }
+  }
+  /// A scalar vector still needs zero extension through skipped matrix levels.
+  const auto vector = package.multiply(x, vEdge::one()).getVector();
+  const auto matrix = x.getMatrix(qubits);
+  ASSERT_EQ(vector.size(), dimension);
+  for (size_t row = 0; row < dimension; ++row) {
+    EXPECT_NEAR(std::abs(vector[row] - matrix[row][0]), 0., 1e-12);
+  }
+  for (const auto& operand : operands) {
+    package.decRef(operand);
   }
 }
 

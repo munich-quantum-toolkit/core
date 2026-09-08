@@ -1086,7 +1086,7 @@ private:
   template <class LeftOperandNode, class RightOperandNode>
   CachedEdge<RightOperandNode> multiply2(const Edge<LeftOperandNode>& x,
                                          const Edge<RightOperandNode>& y,
-                                         const Qubit var) {
+                                         Qubit var) {
     using LEdge = Edge<LeftOperandNode>;
     using REdge = Edge<RightOperandNode>;
     using ResultEdge = CachedEdge<RightOperandNode>;
@@ -1113,48 +1113,59 @@ private:
       return {r->p, r->w * rWeight};
     }
 
+    if constexpr (IsMatrix<RightOperandNode>) {
+      var = std::max(x.p->v, y.p->v);
+    }
+
     constexpr std::size_t n = std::tuple_size_v<decltype(y.p->e)>;
 
     constexpr std::size_t rows = RADIX;
     constexpr std::size_t cols = n == NEDGE ? RADIX : 1U;
 
     std::array<ResultEdge, n> edge{};
-    for (auto i = 0U; i < rows; i++) {
-      for (auto j = 0U; j < cols; j++) {
-        auto idx = (cols * i) + j;
-        edge[idx] = ResultEdge::zero();
-        for (auto k = 0U; k < rows; k++) {
-          const auto xIdx = (rows * i) + k;
-          LEdge e1{};
-          if (x.p != nullptr && x.p->v == var) {
-            e1 = x.p->e[xIdx];
-          } else {
-            if (xIdx == 0 || xIdx == 3) {
-              e1 = LEdge{x.p, Complex::one()};
+    if (x.p->v < var && !y.isTerminal() && y.p->v == var) {
+      /// The left operand acts as identity at this level.
+      for (std::size_t i = 0; i < n; ++i) {
+        edge[i] = multiply2(LEdge{x.p, Complex::one()}, y.p->e[i], var - 1);
+      }
+    } else {
+      for (auto i = 0U; i < rows; i++) {
+        for (auto j = 0U; j < cols; j++) {
+          auto idx = (cols * i) + j;
+          edge[idx] = ResultEdge::zero();
+          for (auto k = 0U; k < rows; k++) {
+            const auto xIdx = (rows * i) + k;
+            LEdge e1{};
+            if (x.p != nullptr && x.p->v == var) {
+              e1 = x.p->e[xIdx];
             } else {
-              e1 = LEdge::zero();
+              if (xIdx == 0 || xIdx == 3) {
+                e1 = LEdge{x.p, Complex::one()};
+              } else {
+                e1 = LEdge::zero();
+              }
             }
-          }
 
-          const auto yIdx = j + (cols * k);
-          REdge e2{};
-          if (y.p != nullptr && y.p->v == var) {
-            e2 = y.p->e[yIdx];
-          } else {
-            if (yIdx == 0 || yIdx == 3) {
-              e2 = REdge{y.p, Complex::one()};
+            const auto yIdx = j + (cols * k);
+            REdge e2{};
+            if (y.p != nullptr && y.p->v == var) {
+              e2 = y.p->e[yIdx];
             } else {
-              e2 = REdge::zero();
+              if (yIdx == 0 || yIdx == 3) {
+                e2 = REdge{y.p, Complex::one()};
+              } else {
+                e2 = REdge::zero();
+              }
             }
-          }
 
-          const auto v = static_cast<Qubit>(var - 1);
-          auto m = multiply2(e1, e2, v);
+            const auto v = static_cast<Qubit>(var - 1);
+            auto m = multiply2(e1, e2, v);
 
-          if (k == 0 || edge[idx].w.exactlyZero()) {
-            edge[idx] = m;
-          } else if (!m.w.exactlyZero()) {
-            edge[idx] = add2(edge[idx], m, v);
+            if (k == 0 || edge[idx].w.exactlyZero()) {
+              edge[idx] = m;
+            } else if (!m.w.exactlyZero()) {
+              edge[idx] = add2(edge[idx], m, v);
+            }
           }
         }
       }
