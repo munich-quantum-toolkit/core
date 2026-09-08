@@ -543,6 +543,25 @@ TEST_F(ScQDMISpecificationTest, JobCreate) {
   MQT_SC_QDMI_device_session_free(uninitializedSession);
 }
 
+TEST_F(ScQDMISpecificationTest, CreatesAndFreesJobsConcurrently) {
+  std::array<std::future<void>, 4> workers;
+  for (auto& worker : workers) {
+    worker = std::async(std::launch::async, [this] {
+      for (size_t iteration = 0; iteration < 1000; ++iteration) {
+        MQT_SC_QDMI_Device_Job concurrentJob = nullptr;
+        ASSERT_EQ(MQT_SC_QDMI_device_session_create_device_job(session,
+                                                               &concurrentJob),
+                  QDMI_SUCCESS);
+        ASSERT_NE(concurrentJob, nullptr);
+        MQT_SC_QDMI_device_job_free(concurrentJob);
+      }
+    });
+  }
+  for (auto& worker : workers) {
+    worker.get();
+  }
+}
+
 TEST_F(ScQDMISpecificationTest, JobSetParameter) {
   EXPECT_EQ(MQT_SC_QDMI_device_job_set_parameter(
                 nullptr, QDMI_DEVICE_JOB_PARAMETER_MAX, 0, nullptr),

@@ -821,7 +821,11 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .def_static(
           "from_device",
           [](const qdmi::Device& device) {
-            return takeResult(mlir::compilerTargetFromDevice(device));
+            auto target = [&device] {
+              const nb::gil_scoped_release release;
+              return mlir::compilerTargetFromDevice(device);
+            }();
+            return takeResult(std::move(target));
           },
           "device"_a, "Snapshot a circuit-model QDMI device.")
       .def_static(
@@ -853,8 +857,12 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                 std::move(deviceConfig), std::move(deviceConfigFile),
                 std::move(custom1), std::move(custom2), std::move(custom3),
                 std::move(custom4), std::move(custom5));
-            auto device = qdmi::Session::openDevice(deviceId, overrides);
-            return takeResult(mlir::compilerTargetFromDevice(device));
+            auto target = [&] {
+              const nb::gil_scoped_release release;
+              auto device = qdmi::Session::openDevice(deviceId, overrides);
+              return mlir::compilerTargetFromDevice(device);
+            }();
+            return takeResult(std::move(target));
           },
           "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
           "token"_a = std::nullopt, "auth_file"_a = std::nullopt,

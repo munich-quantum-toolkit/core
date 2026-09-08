@@ -62,6 +62,13 @@ operations, and jobs. The Python module exposes these QDMI entities through
 {py:mod}`mqt.core.qdmi`. Its {py:mod}`mqt.core.qdmi.driver` submodule provides
 device discovery, registration, and opening.
 
+Native device opening, property queries, job calls, and compiler-target
+snapshots release Python's GIL. Other Python threads can run while a provider
+waits for a remote response. Python argument and result conversion still holds
+the GIL. Concurrent calls into a shared device or job must satisfy the
+provider's thread safety contract; releasing the GIL does not serialize provider
+access.
+
 ## Usage
 
 The following example opens each registered device by its stable ID.
