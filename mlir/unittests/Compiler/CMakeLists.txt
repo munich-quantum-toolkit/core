@@ -8,6 +8,7 @@
 
 add_executable(mqt-core-mlir-unittests-compiler
                test_compiler_pipeline.cpp test_compiler_qdmi_adapter.cpp test_compiler_target.cpp)
+set_target_properties(mqt-core-mlir-unittests-compiler PROPERTIES UNITY_BUILD OFF)
 
 target_link_libraries(
   mqt-core-mlir-unittests-compiler
