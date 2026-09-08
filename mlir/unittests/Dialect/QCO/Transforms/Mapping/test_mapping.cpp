@@ -358,6 +358,47 @@ class MappingPassTest : public MappingPassFixture,
 
 }; // namespace
 
+TEST_F(MappingPassFixture, StandalonePassesUseSharedAllocationVerifier) {
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, Connectivity::fromCouplings({}),
+                             NativeOperations::fromOperations({})));
+  for (const bool placement : {false, true}) {
+    SCOPED_TRACE(placement);
+    MLIRContext rawContext;
+    rawContext.loadDialect<QCODialect, func::FuncDialect, arith::ArithDialect,
+                           scf::SCFDialect>();
+    auto module = parseSourceString<ModuleOp>(R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} {
+        %condition = arith.constant true
+        scf.if %condition {
+          %q = qco.alloc : !qco.qubit
+          qco.sink %q : !qco.qubit
+        }
+        return
+      }
+    })mlir",
+                                              &rawContext);
+    ASSERT_TRUE(module);
+    ASSERT_EQ(rawContext.getLoadedDialect<mlir::mqt::MQTDialect>(), nullptr);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&rawContext, [&](Diagnostic& diagnostic) {
+      diagnosed |=
+          diagnostic.str().find("dynamic quantum allocations must be") !=
+          std::string::npos;
+      return success();
+    });
+    PassManager pm(&rawContext);
+    if (placement) {
+      pm.addPass(createPlacementPass(target));
+    } else {
+      pm.addPass(createMappingPass());
+    }
+    EXPECT_TRUE(failed(pm.run(*module)));
+    EXPECT_TRUE(diagnosed);
+  }
+}
+
 TEST_F(MappingPassFixture, RequiresTypedTargetEnvironment) {
   QCOProgramBuilder builder(context.get());
   builder.initialize();
@@ -920,81 +961,6 @@ TEST_P(MappingPassTest, MapProgramAfterQubitReuse) {
   m->walk([&](ResetOp) { ++numResets; });
   EXPECT_EQ(numStatics, 1);
   EXPECT_EQ(numResets, 1);
-}
-
-TEST_P(MappingPassTest, FailNestedScalarAllocation) {
-  const auto& target = GetParam();
-  constexpr StringLiteral source = R"mlir(
-    module {
-      func.func @main() attributes {mqt.entry_point} {
-        %condition = arith.constant true
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
-          %nested = qco.alloc : !qco.qubit
-          qco.sink %nested : !qco.qubit
-          qco.yield %arg0 : !qco.qubit
-        } else args(%arg0 = %q0) {
-          qco.yield %arg0 : !qco.qubit
-        }
-        qco.sink %q1 : !qco.qubit
-        return
-      }
-    }
-  )mlir";
-
-  auto m = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(m);
-  ASSERT_TRUE(succeeded(verify(*m)));
-
-  std::string diagnostics;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
-  EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
-  EXPECT_TRUE(StringRef(diagnostics)
-                  .contains("target placement requires dynamic qubit "
-                            "allocations in the entry "
-                            "function body"))
-      << diagnostics;
-}
-
-TEST_P(MappingPassTest, FailNestedTensorAllocation) {
-  const auto& target = GetParam();
-  constexpr StringLiteral source = R"mlir(
-    module {
-      func.func @main() attributes {mqt.entry_point} {
-        %condition = arith.constant true
-        %c1 = arith.constant 1 : index
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
-          %nested = qtensor.alloc(%c1) : tensor<1x!qco.qubit>
-          qtensor.dealloc %nested : tensor<1x!qco.qubit>
-          qco.yield %arg0 : !qco.qubit
-        } else args(%arg0 = %q0) {
-          qco.yield %arg0 : !qco.qubit
-        }
-        qco.sink %q1 : !qco.qubit
-        return
-      }
-    }
-  )mlir";
-
-  auto m = parseSourceString<ModuleOp>(source, context.get());
-  ASSERT_TRUE(m);
-  ASSERT_TRUE(succeeded(verify(*m)));
-
-  std::string diagnostics;
-  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
-    diagnostics += diagnostic.str();
-    return success();
-  });
-  EXPECT_TRUE(failed(runPass(m.get(), target, MappingPassOptions{})));
-  EXPECT_TRUE(StringRef(diagnostics)
-                  .contains("target placement requires dynamic qubit "
-                            "allocations in the entry "
-                            "function body"))
-      << diagnostics;
 }
 
 TEST_P(MappingPassTest, FailNestedHigherArityUnitary) {

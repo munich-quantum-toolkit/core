@@ -137,7 +137,10 @@ def test_compile_program_mlir_string() -> None:
 
 def test_compile_program_mlir_string_with_leading_whitespace() -> None:
     """Compile a whitespace-prefixed single-line MLIR string."""
-    source = " module { %0 = qc.alloc : !qc.qubit qc.dealloc %0 : !qc.qubit }"
+    source = (
+        " module { func.func @main() attributes {mqt.entry_point} {"
+        " %0 = qc.alloc : !qc.qubit qc.dealloc %0 : !qc.qubit return } }"
+    )
 
     result = compile_program(source)
 

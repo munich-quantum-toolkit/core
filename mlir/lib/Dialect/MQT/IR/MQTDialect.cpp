@@ -39,6 +39,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
@@ -368,6 +369,35 @@ LogicalResult CompilationTargetAttr::verify(
   return success();
 }
 
+LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
+  auto entryPoint = getEntryPoint(moduleOp);
+  Block* entryBlock = entryPoint && !entryPoint.isExternal()
+                          ? &entryPoint.getBody().front()
+                          : nullptr;
+  const auto result =
+      moduleOp.walk<WalkOrder::PreOrder>([&](Operation* operation) {
+        if (isa<ModuleOp>(operation) && operation != moduleOp.getOperation()) {
+          return WalkResult::skip();
+        }
+        bool allocatesQubits =
+            isa<qc::AllocOp, qco::AllocOp, qtensor::AllocOp>(operation);
+        if (isa<memref::AllocOp>(operation) &&
+            operation->getNumResults() == 1) {
+          auto type = dyn_cast<MemRefType>(operation->getResult(0).getType());
+          allocatesQubits = type && isa<qc::QubitType>(type.getElementType());
+        }
+        if (allocatesQubits &&
+            (!entryBlock || operation->getBlock() != entryBlock)) {
+          operation->emitOpError(
+              "dynamic quantum allocations must be in the entry "
+              "block of the 'mqt.entry_point' function");
+          return WalkResult::interrupt();
+        }
+        return WalkResult::advance();
+      });
+  return success(!result.wasInterrupted());
+}
+
 [[nodiscard]] static LogicalResult
 verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
   if (!isa<UnitAttr>(attribute.getValue())) {
@@ -391,7 +421,7 @@ verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
              << "module must contain at most one program entry point";
     }
   }
-  return success();
+  return verifyQuantumAllocations(moduleOp);
 }
 
 template <typename CallOp>

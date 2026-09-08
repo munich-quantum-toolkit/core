@@ -175,6 +175,53 @@ TEST_F(QCOTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QCOTest, BuilderRejectsDynamicAllocationOutsideEntryBlock) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.createFunction("dynamic_helper", {}, [&](ValueRange) {
+          builder.allocQubit();
+          return SmallVector<Value>{};
+        });
+      },
+      "Dynamic qubit allocation requires the entry block");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.createFunction("dynamic_helper", {}, [&](ValueRange) {
+          builder.allocQubitRegister(1);
+          return SmallVector<Value>{};
+        });
+      },
+      "Dynamic qubit allocation requires the entry block");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.allocQubit();
+        builder.qcoIf(true, ValueRange{}, [&](ValueRange) {
+          builder.allocQubit();
+          return SmallVector<Value>{};
+        });
+      },
+      "Dynamic qubit allocation requires the entry block");
+
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.qcoIf(true, ValueRange{}, [&](ValueRange) {
+          builder.qtensorAlloc(1);
+          return SmallVector<Value>{};
+        });
+      },
+      "Dynamic qubit allocation requires the entry block");
+}
+
 TEST_F(QCOTest, BuilderReturnsTrackedQubit) {
   static_assert(std::is_convertible_v<Value, QCOProgramBuilder::Qubit>);
   static_assert(std::is_constructible_v<QCOProgramBuilder::Qubit, Value>);
@@ -372,11 +419,14 @@ TEST_F(QCOTest, BuilderFinalizesRenamedEntryPoint) {
   builder.initialize();
   auto entry = cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp());
   entry.setName("entry");
+  builder.allocQubit();
+  builder.allocQubitRegister(1);
 
   auto moduleOp = builder.finalize();
 
   ASSERT_TRUE(moduleOp);
   EXPECT_EQ(mlir::mqt::getEntryPoint(*moduleOp).getName(), "entry");
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST_F(QCOTest, UnitaryVerifierDiagnosesMalformedCalls) {
@@ -521,12 +571,15 @@ TEST_F(QCOTest, CleanupPrunesUnitaryFunctionsAndSignatures) {
     }
     func.func @main() attributes {mqt.entry_point} {
       %false = arith.constant false
-      scf.if %false {
-        %branchQ = qco.alloc : !qco.qubit
+      %branchQ = qco.alloc : !qco.qubit
+      %branchResult = scf.if %false -> !qco.qubit {
         %branchOut = qco.call @conditional(%branchQ)
             : (!qco.qubit) -> !qco.qubit
-        qco.sink %branchOut : !qco.qubit
+        scf.yield %branchOut : !qco.qubit
+      } else {
+        scf.yield %branchQ : !qco.qubit
       }
+      qco.sink %branchResult : !qco.qubit
       %unusedTheta = arith.constant 2.0 : f64
       %q = qco.alloc : !qco.qubit
       %out = qco.call @used(%unusedTheta, %q)

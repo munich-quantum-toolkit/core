@@ -48,6 +48,8 @@ namespace qc {
 /// allocation
 /// (`allocQubit` / `allocQubitRegister`), never both. The builder terminates
 /// with a usage error if the modes are mixed.
+/// Dynamic allocation is only allowed directly in the entry block of the
+/// `mqt.entry_point` function. Helpers receive allocated qubits as arguments.
 ///
 /// @par Example Usage:
 /// ```c++
@@ -120,6 +122,7 @@ public:
   /// Create a complete private function and infer its result types.
   ///
   /// Borrowed qubit arguments are updated in place and must not be returned.
+  /// The body must not dynamically allocate qubits or qubit registers.
   func::FuncOp
   createFunction(StringRef name, TypeRange argumentTypes,
                  function_ref<SmallVector<Value>(ValueRange)> body);
@@ -169,6 +172,7 @@ public:
   };
 
   /// Allocate a single qubit initialized to |0⟩
+  /// Requires an insertion point in the entry block of `mqt.entry_point`.
   /// @return A qubit reference
   ///
   /// @par Example:
@@ -196,6 +200,7 @@ public:
   /// Allocate a qubit register and eagerly load every element.
   ///
   /// Every allocated qubit is initialized to |0⟩.
+  /// Requires an insertion point in the entry block of `mqt.entry_point`.
   ///
   /// \param size Number of qubits; must be positive.
   /// \param name Optional source-level register name.
@@ -217,6 +222,7 @@ public:
   /// Every allocated qubit is initialized to |0⟩. The builder tracks the
   /// register for automatic deallocation. Use `loadQubit` to obtain references
   /// at their points of use.
+  /// Requires an insertion point in the entry block of `mqt.entry_point`.
   ///
   /// \param size Number of qubits; must be positive.
   /// \param name Optional source-level register name.
@@ -1375,6 +1381,7 @@ private:
   AllocationMode allocationMode = AllocationMode::Unset;
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
+  /// Dynamic allocation also requires the entry-point entry block.
   void ensureAllocationMode(AllocationMode requestedMode);
 };
 } // namespace qc

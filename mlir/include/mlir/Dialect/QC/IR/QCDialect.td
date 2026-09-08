@@ -28,6 +28,11 @@ def QCDialect : Dialect {
 
         The name "QC" stands for "Quantum Circuit."
 
+        In a program, dynamic qubit and qubit-register allocations must be in
+        the entry block of the `mqt.entry_point` function. Helper functions
+        receive quantum resources as arguments. The MQT entry-point verifier
+        checks this rule across the program.
+
         Example:
         ```mlir
         qc.h %q          // Applies Hadamard to qubit %q in place

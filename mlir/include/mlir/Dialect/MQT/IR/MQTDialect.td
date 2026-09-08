@@ -33,7 +33,11 @@ def MQTDialect : Dialect {
     register allocation. Input and register names share one function-wide
     namespace.
     `mqt.entry_point` marks the single public, defined `func.func` program entry
-    in a module.
+    in a module. Dynamic quantum allocations (`qc.alloc`, `qco.alloc`,
+    qubit `memref.alloc`, and `qtensor.alloc`) must appear directly in its
+    entry block. Other functions receive quantum resources as arguments;
+    they cannot allocate them. Classical allocations and static qubit references
+    are not subject to this restriction.
     `mqt.unitary` marks a private function that defines a unitary operation.
     Its body admits unitary operations and memory-effect-free, region-free
     classical computation, matching the quantum modifier-body contract. Parameter

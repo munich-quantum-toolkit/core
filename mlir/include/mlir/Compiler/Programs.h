@@ -164,7 +164,9 @@ public:
   ///
   /// The context must own every dialect referenced by the module and must
   /// remain the module's context. The factory verifies the module and rejects
-  /// QCO and QTensor operations. QC operations are not required.
+  /// QCO and QTensor operations. QC operations are not required. Dynamic
+  /// quantum allocations require an `mqt.entry_point` function and must appear
+  /// directly in its entry block.
   [[nodiscard]] static std::optional<QCProgram>
   fromModule(std::shared_ptr<MLIRContext> context,
              OwningOpRef<ModuleOp> moduleOp);
@@ -237,6 +239,8 @@ public:
   /// The context must own every dialect referenced by the module and must
   /// remain the module's context. The factory verifies the module and QCO
   /// linearity and rejects QC operations. QCO operations are not required.
+  /// Dynamic quantum allocations require an `mqt.entry_point` function and
+  /// must appear directly in its entry block.
   [[nodiscard]] static std::optional<QCOProgram>
   fromModule(std::shared_ptr<MLIRContext> context,
              OwningOpRef<ModuleOp> moduleOp);

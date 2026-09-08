@@ -1080,7 +1080,7 @@ module {
       R"mlir(
 module {
   func.func private @duplicate() -> (!qc.qubit, !qc.qubit) {
-    %q = qc.alloc : !qc.qubit
+    %q = qc.static 0 : !qc.qubit
     return %q, %q : !qc.qubit, !qc.qubit
   }
   func.func @main() attributes {mqt.entry_point} {
@@ -1683,37 +1683,6 @@ INSTANTIATE_TEST_SUITE_P(
     [](const testing::TestParamInfo<NestedModifierCase>& info) {
       return info.param.name;
     });
-
-TEST_F(QCToQCORegressionTest, DoesNotCaptureQubitsAllocatedInsideIf) {
-  constexpr llvm::StringLiteral source = R"mlir(
-module {
-  func.func @main(%condition: i1)
-      attributes {mqt.entry_point} {
-    scf.if %condition {
-      %q = qc.alloc : !qc.qubit
-      qc.h %q : !qc.qubit
-      qc.dealloc %q : !qc.qubit
-    }
-    return
-  }
-}
-)mlir";
-
-  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-  scf::IfOp ifOp;
-  moduleOp->walk([&](scf::IfOp candidate) { ifOp = candidate; });
-  ASSERT_TRUE(ifOp);
-  EXPECT_EQ(ifOp.getNumResults(), 0);
-  std::size_t allocations = 0;
-  ifOp.getThenRegion().walk([&](qco::AllocOp) { ++allocations; });
-  EXPECT_EQ(allocations, 1);
-  expectNoQCOperations(*moduleOp);
-}
 
 TEST_F(QCToQCORegressionTest,
        RejectsSameDynamicRegisterIndexWithinOneOperation) {
