@@ -1175,7 +1175,7 @@ private:
     // sink (backward: allocs), the candidate itself, or any operation
     // after (backward: before) the candidate (from an IR perspective). Hence,
     // this function returns true if any of these cases is not fulfilled.
-    
+
     const auto defer = [&wires](Operation* candidate) {
       return any_of(wires, [&](WireIterator& it) {
         assert(it != std::default_sentinel);
@@ -1252,11 +1252,10 @@ private:
                               return false;
                             }
                             return TypeSwitch<Operation*, bool>(op)
-                                .Case<cbit::LoadOp, cbit::StoreOp>(
-                                    [&](auto ls) {
-                                      return ls.getIndex() == store.getIndex();
-                                    })
-                                .template Case<cbit::ReadOp, cbit::WriteOp>(
+                                .Case<cbit::LoadOp>([&](auto ls) {
+                                  return ls.getIndex() == store.getIndex();
+                                })
+                                .template Case<cbit::ReadOp>(
                                     [](auto) { return true; })
                                 .Default([](Operation*) { return false; });
                           });
