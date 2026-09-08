@@ -226,7 +226,8 @@ parseOutputFormat(const StringRef format) {
 static llvm::cl::opt<bool> enableDecomposeMultiControlled(
     "decompose-multi-controlled",
     llvm::cl::desc(
-        "Decompose controlled X/Z/phase/SWAP gates and qco.rccx that act on at "
+        "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and qco.rccx "
+        "that act on at "
         "least --decompose-multi-controlled-min-qubits qubits (default 3)."),
     llvm::cl::init(false));
 
@@ -234,7 +235,8 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
     "decompose-multi-controlled-min-qubits",
     llvm::cl::desc(
         "Minimum qubit count for --decompose-multi-controlled: decompose "
-        "controlled X/Z/phase/SWAP gates and qco.rccx that act on at least "
+        "controlled X/Y/Z/rotation/phase/SWAP gates and qco.rccx that act on "
+        "at least "
         "this many qubits (default 3; must be at least 3). Higher values leave "
         "narrower gates undecomposed."),
     llvm::cl::init(3));

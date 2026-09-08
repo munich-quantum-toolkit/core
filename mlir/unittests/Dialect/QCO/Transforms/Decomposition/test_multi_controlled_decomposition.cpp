@@ -17,25 +17,32 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/DDAdapter.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/Support/Error.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -50,7 +57,7 @@ using namespace mlir;
 using namespace mlir::qco;
 
 /// DD for k=2…20 plus the first HP24 width (k=33): full matrix DD through k=8
-/// (MCX/MCZ) or k=6 (MCP); basis-state DD for larger MCX/MCZ widths;
+/// (MCX/MCY/MCZ) or k=6 (MCP); basis-state DD for larger Pauli widths;
 /// coherent-state DD at selected policy boundaries and representative larger
 /// MCP widths.
 static constexpr std::array<size_t, 20> K_DD_CONTROL_COUNTS = {
@@ -58,8 +65,10 @@ static constexpr std::array<size_t, 20> K_DD_CONTROL_COUNTS = {
 };
 static constexpr size_t K_MATRIX_DD_MAX_PAULI = 8;
 static constexpr size_t K_MATRIX_DD_MAX_MCP = 6;
-static constexpr std::array<size_t, 5> K_COHERENT_HP24_CONTROL_COUNTS = {
-    10, 11, 21, 22, 23,
+/// Retain representative SP22 widths and cover the HP24 crossover, both
+/// dirty-helper modes, and wide phase ladders that can fold to identity.
+static constexpr std::array<size_t, 12> K_COHERENT_PAULI_CONTROL_COUNTS = {
+    10, 11, 21, 22, 23, 32, 33, 34, 47, 48, 63, 64,
 };
 static constexpr std::array<size_t, 2> K_COHERENT_MCP_CONTROL_COUNTS = {7, 12};
 /// Additional fully-lowered/CX smoke checks for k > 20 through the SP22 MCX
@@ -121,8 +130,21 @@ static constexpr std::array<size_t, 34> K_EXPECTED_MCX_CX = {
   return small[k];
 }
 
+/// CX regression budget for the borrowed-helper rotation construction.
+/// Each half-MCX occurs twice and costs 1/6/14 CX at 1/2/3 controls.
+/// Above that, its two passes each use a 6-CX CCX, a 3-CX RCCX,
+/// and 2(n-3) two-CX gadgets: 8n-6 CX. Both halves reach this case at k=8.
+[[nodiscard]] static constexpr size_t expectedMcrCxBudget(size_t k) {
+  if (k >= 8) {
+    return (16 * k) - 24;
+  }
+  constexpr std::array<size_t, 8> small = {0, 0, 4, 14, 24, 40, 56, 80};
+  return small[k];
+}
+
 namespace {
-enum class ControlledPauli : uint8_t { X, Z };
+enum class ControlledPauli : uint8_t { X, Y, Z };
+enum class RotationAxis : uint8_t { X, Y, Z };
 } // namespace
 
 [[nodiscard]] static dd::Controls makeControls(size_t numControls) {
@@ -134,8 +156,9 @@ enum class ControlledPauli : uint8_t { X, Z };
 }
 
 [[nodiscard]] static dd::GateMatrix pauliMatrix(ControlledPauli pauli) {
-  const auto matrix = pauli == ControlledPauli::X ? XOp::getUnitaryMatrix()
-                                                  : ZOp::getUnitaryMatrix();
+  const auto matrix = pauli == ControlledPauli::X   ? XOp::getUnitaryMatrix()
+                      : pauli == ControlledPauli::Y ? YOp::getUnitaryMatrix()
+                                                    : ZOp::getUnitaryMatrix();
   return {matrix(0, 0), matrix(0, 1), matrix(1, 0), matrix(1, 1)};
 }
 
@@ -170,18 +193,21 @@ private:
   std::unique_ptr<MLIRContext> context_;
 };
 
-class McxDdTest : public MultiControlledDecompositionTest,
-                  public testing::WithParamInterface<size_t> {};
-class MczDdTest : public MultiControlledDecompositionTest,
-                  public testing::WithParamInterface<size_t> {};
+class McPauliDdTest
+    : public MultiControlledDecompositionTest,
+      public testing::WithParamInterface<std::tuple<ControlledPauli, size_t>> {
+};
 class McpDdTest : public MultiControlledDecompositionTest,
                   public testing::WithParamInterface<size_t> {};
-class McxSmokeTest : public MultiControlledDecompositionTest,
-                     public testing::WithParamInterface<size_t> {};
-class MczSmokeTest : public MultiControlledDecompositionTest,
-                     public testing::WithParamInterface<size_t> {};
+class McPauliSmokeTest
+    : public MultiControlledDecompositionTest,
+      public testing::WithParamInterface<std::tuple<ControlledPauli, size_t>> {
+};
 class McpSmokeTest : public MultiControlledDecompositionTest,
                      public testing::WithParamInterface<size_t> {};
+class McrDdTest
+    : public MultiControlledDecompositionTest,
+      public testing::WithParamInterface<std::tuple<RotationAxis, size_t>> {};
 
 } // namespace
 
@@ -199,21 +225,13 @@ buildControlledPauliModule(MLIRContext* context, size_t numControls,
         auto target = wires.back();
         if (pauli == ControlledPauli::X) {
           b.mcx(controls, target);
+        } else if (pauli == ControlledPauli::Y) {
+          b.mcy(controls, target);
         } else {
           b.mcz(controls, target);
         }
         return SmallVector<Value>{};
       });
-}
-
-[[nodiscard]] static OwningOpRef<ModuleOp> buildMcxModule(MLIRContext* context,
-                                                          size_t numControls) {
-  return buildControlledPauliModule(context, numControls, ControlledPauli::X);
-}
-
-[[nodiscard]] static OwningOpRef<ModuleOp> buildMczModule(MLIRContext* context,
-                                                          size_t numControls) {
-  return buildControlledPauliModule(context, numControls, ControlledPauli::Z);
 }
 
 [[nodiscard]] static OwningOpRef<ModuleOp>
@@ -228,6 +246,81 @@ buildMcpModule(MLIRContext* context, size_t numControls, double theta) {
         b.mcp(theta, ValueRange(wires).drop_back(), wires.back());
         return SmallVector<Value>{};
       });
+}
+
+[[nodiscard]] static Value applyRotation(QCOProgramBuilder& builder,
+                                         RotationAxis axis, Value theta,
+                                         Value target) {
+  if (axis == RotationAxis::X) {
+    return builder.rx(theta, target);
+  }
+  if (axis == RotationAxis::Y) {
+    return builder.ry(theta, target);
+  }
+  return builder.rz(theta, target);
+}
+
+static void buildControlledRotation(QCOProgramBuilder& builder,
+                                    size_t numControls, RotationAxis axis,
+                                    Value theta, bool regionLocal = false) {
+  SmallVector<Value> wires;
+  for (size_t i = 0; i <= numControls; ++i) {
+    wires.push_back(builder.staticQubit(i));
+  }
+  const size_t target = numControls / 2;
+  SmallVector<Value> controls;
+  for (size_t i = numControls + 1; i-- > 0;) {
+    if (i != target) {
+      controls.push_back(wires[i]);
+    }
+  }
+  builder.ctrl(controls, wires[target], [&](Value targetArg) {
+    auto angle =
+        regionLocal ? arith::NegFOp::create(builder, theta).getResult() : theta;
+    return applyRotation(builder, axis, angle, targetArg);
+  });
+}
+
+[[nodiscard]] static OwningOpRef<ModuleOp>
+buildMcrModule(MLIRContext* context, size_t numControls, RotationAxis axis,
+               double theta, bool runtimeAngle = false) {
+  Value parameter;
+  auto moduleOp =
+      QCOProgramBuilder::build(context, [&](QCOProgramBuilder& builder) {
+        parameter = builder.floatConstant(theta);
+        buildControlledRotation(builder, numControls, axis, parameter);
+        return SmallVector<Value>{};
+      });
+  if (moduleOp && runtimeAngle) {
+    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+    funcOp.insertArgument(0, Float64Type::get(context), {}, funcOp.getLoc());
+    parameter.replaceAllUsesWith(funcOp.getArgument(0));
+  }
+  return moduleOp;
+}
+
+// R_a(theta) = cos(theta/2) I - i sin(theta/2) sigma_a.
+[[nodiscard]] static dd::GateMatrix rotationMatrix(RotationAxis axis,
+                                                   double theta) {
+  const double cosine = std::cos(theta / 2);
+  const double sine = std::sin(theta / 2);
+  if (axis == RotationAxis::X) {
+    return {
+        cosine,
+        std::complex<double>{0, -sine},
+        std::complex<double>{0, -sine},
+        cosine,
+    };
+  }
+  if (axis == RotationAxis::Y) {
+    return {cosine, -sine, sine, cosine};
+  }
+  return {
+      std::complex<double>{cosine, -sine},
+      0,
+      0,
+      std::complex<double>{cosine, sine},
+  };
 }
 
 [[nodiscard]] static OwningOpRef<ModuleOp>
@@ -245,6 +338,28 @@ buildRCCXModule(MLIRContext* context) {
         std::max(numQubits, static_cast<size_t>(staticOp.getIndex()) + 1);
   }
   return numQubits;
+}
+
+static void expectImplementsControlledRotation(
+    func::FuncOp funcOp, size_t numControls, RotationAxis axis, double theta,
+    const DDArgumentBindings& bindings = DDArgumentBindings()) {
+  ASSERT_EQ(countStaticQubits(funcOp), numControls + 1);
+  const auto package = std::make_unique<dd::Package>(numControls + 1);
+  const auto actual = buildFunctionality(funcOp, *package, bindings);
+  ASSERT_TRUE(succeeded(actual));
+  const auto target = static_cast<dd::Qubit>(numControls / 2);
+  dd::Controls controls;
+  for (size_t i = 0; i <= numControls; ++i) {
+    if (i != static_cast<size_t>(target)) {
+      controls.emplace(static_cast<dd::Qubit>(i));
+    }
+  }
+  const auto expected =
+      package->makeGateDD(rotationMatrix(axis, theta), controls, target);
+  // Full operator equality preserves phase and restores every borrowed control,
+  // including when controls are entangled with other qubits.
+  EXPECT_EQ(*actual, expected);
+  package->decRef(*actual);
 }
 
 static void expectFullyDecomposed(func::FuncOp funcOp) {
@@ -270,6 +385,21 @@ static void expectImplementsControlledPauli(func::FuncOp funcOp,
       makeControlledGateDD(*dd, numControls, pauliMatrix(pauli));
   EXPECT_EQ(*decomposedDD, referenceDD);
   dd->decRef(*decomposedDD);
+}
+
+/// Compare the complete states, including phase, without requiring identical
+/// DD nodes after floating-point synthesis.
+static void expectStatesNear(dd::Package& package, const dd::VectorDD& actual,
+                             const dd::VectorDD& expected) {
+  auto negativeExpected = expected;
+  negativeExpected.w = package.cn.lookup(-dd::RealNumber::val(expected.w.r),
+                                         -dd::RealNumber::val(expected.w.i));
+  const auto difference = package.add(actual, negativeExpected);
+  package.incRef(difference);
+  constexpr double tolerance = 1e-11;
+  EXPECT_LE(package.innerProduct(difference, difference).r,
+            tolerance * tolerance);
+  package.decRef(difference);
 }
 
 static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
@@ -301,11 +431,7 @@ static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
     ASSERT_TRUE(succeeded(decomposedOutput));
     const auto referenceOutput = dd->applyOperation(
         referenceGate, dd::makeBasisState(numQubits, basisState, *dd));
-    EXPECT_EQ(decomposedOutput->p, referenceOutput.p);
-    EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.r),
-                dd::RealNumber::val(referenceOutput.w.r), 1e-11);
-    EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.i),
-                dd::RealNumber::val(referenceOutput.w.i), 1e-11);
+    expectStatesNear(*dd, *decomposedOutput, referenceOutput);
     dd->decRef(*decomposedOutput);
     dd->decRef(referenceOutput);
   }
@@ -327,6 +453,12 @@ static void
 expectMatchesReferenceOnCoherentState(func::FuncOp funcOp, size_t numControls,
                                       bool targetOne,
                                       const dd::GateMatrix& referenceMatrix) {
+  /// Resolve small SP22 ladder phases before comparing the whole-state error.
+  const auto previousTolerance = dd::RealNumber::eps;
+  const auto restoreTolerance = llvm::make_scope_exit([previousTolerance] {
+    dd::ComplexNumbers::setTolerance(previousTolerance);
+  });
+  dd::ComplexNumbers::setTolerance(1e-15);
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
@@ -340,11 +472,7 @@ expectMatchesReferenceOnCoherentState(func::FuncOp funcOp, size_t numControls,
       makeControlledGateDD(*dd, numControls, referenceMatrix),
       makeCoherentControlInput(numControls, targetOne, *dd));
 
-  EXPECT_EQ(decomposedOutput->p, referenceOutput.p);
-  EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.r),
-              dd::RealNumber::val(referenceOutput.w.r), 1e-11);
-  EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.i),
-              dd::RealNumber::val(referenceOutput.w.i), 1e-11);
+  expectStatesNear(*dd, *decomposedOutput, referenceOutput);
 
   dd->decRef(*decomposedOutput);
   dd->decRef(referenceOutput);
@@ -444,48 +572,204 @@ static void expectFullyLowered(ModuleOp moduleOp) {
 
 static LogicalResult runDecomposeMultiControlled(
     ModuleOp moduleOp, const DecomposeMultiControlledOptions& options = {}) {
+  if (failed(verify(moduleOp)) || failed(verifyLinearity(moduleOp))) {
+    return failure();
+  }
   PassManager pm(moduleOp.getContext());
+  pm.enableVerifier();
   pm.addPass(createDecomposeMultiControlled(options));
-  return pm.run(moduleOp);
+  if (failed(pm.run(moduleOp))) {
+    return failure();
+  }
+  // The pass manager already verifies the output IR.
+  return verifyLinearity(moduleOp);
 }
 
 //===----------------------------------------------------------------------===//
-// MCX / MCZ / MCP: DD + CX for k = 2..20
+// Multi-controlled rotations
 //===----------------------------------------------------------------------===//
 
-TEST_P(McxDdTest, EquivalenceAndCxCount) {
-  const size_t k = GetParam();
-  auto moduleOp = buildMcxModule(context(), k);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
-  expectFullyLowered(moduleOp.get());
-  EXPECT_EQ(countElementaryCxOps(moduleOp.get()), K_EXPECTED_MCX_CX[k])
-      << "k=" << k;
-
-  auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
-  if (k <= K_MATRIX_DD_MAX_PAULI) {
-    expectImplementsControlledPauli(funcOp, k, ControlledPauli::X);
-  } else {
-    expectMatchesReferenceOnBasisStates(funcOp, k, ControlledPauli::X);
+TEST_P(McrDdTest, PreservesFullOperatorAndBorrowedControls) {
+  const auto [axis, numControls] = GetParam();
+  for (const double theta : {0.0, 0.73, -1.21, 2 * std::numbers::pi}) {
+    SCOPED_TRACE(testing::Message() << "theta=" << theta);
+    auto moduleOp = buildMcrModule(context(), numControls, axis, theta);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(moduleOp.get())));
+    expectFullyLowered(moduleOp.get());
+    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+    expectFullyDecomposed(funcOp);
+    expectImplementsControlledRotation(funcOp, numControls, axis, theta);
   }
 }
 
-TEST_P(MczDdTest, EquivalenceAndCxCount) {
-  const size_t k = GetParam();
-  auto moduleOp = buildMczModule(context(), k);
+INSTANTIATE_TEST_SUITE_P(
+    DdRange, McrDdTest,
+    testing::Combine(testing::Values(RotationAxis::X, RotationAxis::Y,
+                                     RotationAxis::Z),
+                     testing::Values(2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U)),
+    ([](const testing::TestParamInfo<std::tuple<RotationAxis, size_t>>& info) {
+      const auto [axis, numControls] = info.param;
+      return std::string(axis == RotationAxis::X   ? "Rx"
+                         : axis == RotationAxis::Y ? "Ry"
+                                                   : "Rz") +
+             "k" + std::to_string(numControls);
+    }));
+
+TEST_F(MultiControlledDecompositionTest, RotationsPreserveRuntimeAngles) {
+  constexpr size_t numControls = 8;
+  for (const auto axis : {RotationAxis::X, RotationAxis::Y, RotationAxis::Z}) {
+    for (const bool regionLocal : {false, true}) {
+      SCOPED_TRACE(testing::Message() << "axis=" << static_cast<unsigned>(axis)
+                                      << " regionLocal=" << regionLocal);
+      Value parameter;
+      auto moduleOp =
+          QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& builder) {
+            parameter = builder.floatConstant(0.73);
+            buildControlledRotation(builder, numControls, axis, parameter,
+                                    regionLocal);
+            return SmallVector<Value>{};
+          });
+      ASSERT_TRUE(moduleOp);
+      auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+      funcOp.insertArgument(0, Float64Type::get(context()), {},
+                            funcOp.getLoc());
+      parameter.replaceAllUsesWith(funcOp.getArgument(0));
+      ASSERT_TRUE(succeeded(runDecomposeMultiControlled(moduleOp.get())));
+      expectFullyLowered(moduleOp.get());
+      expectFullyDecomposed(funcOp);
+      for (const double theta : {-0.91, 2 * std::numbers::pi}) {
+        const DDArgumentBindings bindings{
+            {
+                funcOp.getArgument(0),
+                FloatAttr::get(Float64Type::get(context()), theta),
+            },
+        };
+        expectImplementsControlledRotation(
+            funcOp, numControls, axis, regionLocal ? -theta : theta, bindings);
+      }
+    }
+  }
+}
+
+TEST_F(MultiControlledDecompositionTest,
+       RotationsUseLinearResourcesWithoutExtraQubits) {
+  for (const auto axis : {RotationAxis::X, RotationAxis::Y, RotationAxis::Z}) {
+    for (const size_t numControls : {
+             2U,
+             3U,
+             4U,
+             5U,
+             6U,
+             7U,
+             8U,
+             9U,
+             15U,
+             16U,
+             17U,
+             31U,
+             32U,
+             33U,
+             63U,
+             64U,
+         }) {
+      for (const bool runtimeAngle : {false, true}) {
+        SCOPED_TRACE(testing::Message()
+                     << "axis=" << static_cast<unsigned>(axis) << " controls="
+                     << numControls << " runtimeAngle=" << runtimeAngle);
+        auto moduleOp =
+            buildMcrModule(context(), numControls, axis, 0.73, runtimeAngle);
+        ASSERT_TRUE(moduleOp);
+        ASSERT_TRUE(succeeded(runDecomposeMultiControlled(moduleOp.get())));
+        expectFullyLowered(moduleOp.get());
+        auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+        expectFullyDecomposed(funcOp);
+        EXPECT_EQ(countStaticQubits(funcOp), numControls + 1);
+        funcOp.walk(
+            [](AllocOp) { ADD_FAILURE() << "unexpected helper qubit"; });
+        // The same bound covers every axis and permits future cancellation.
+        EXPECT_LE(countElementaryCxOps(moduleOp.get()),
+                  expectedMcrCxBudget(numControls));
+        size_t elementaryGates = 0;
+        funcOp.walk([&](UnitaryOpInterface op) {
+          if (op->getNumRegions() == 0) {
+            ++elementaryGates;
+          }
+        });
+        EXPECT_LE(elementaryGates, 60 * numControls);
+      }
+    }
+  }
+}
+
+TEST_F(MultiControlledDecompositionTest, RotationsRespectMinQubits) {
+  for (const auto axis : {RotationAxis::X, RotationAxis::Y, RotationAxis::Z}) {
+    auto moduleOp = buildMcrModule(context(), 3, axis, 0.73);
+    ASSERT_TRUE(moduleOp);
+    DecomposeMultiControlledOptions options;
+    options.minQubits = 5;
+    ASSERT_TRUE(
+        succeeded(runDecomposeMultiControlled(moduleOp.get(), options)));
+    EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
+    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+    expectImplementsControlledRotation(funcOp, 3, axis, 0.73);
+
+    options.minQubits = 4;
+    ASSERT_TRUE(
+        succeeded(runDecomposeMultiControlled(moduleOp.get(), options)));
+    EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
+    expectImplementsControlledRotation(funcOp, 3, axis, 0.73);
+  }
+}
+
+TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeRotations) {
+  using TargetOperation = CompilerTarget::Operation;
+  const std::vector operations{
+      llvm::cantFail(TargetOperation::create(
+          "rx", TargetOperation::Arity::variadic(4), 1)),
+      llvm::cantFail(TargetOperation::create(
+          "ry", TargetOperation::Arity::variadic(4), 1)),
+      llvm::cantFail(TargetOperation::create(
+          "rz", TargetOperation::Arity::variadic(4), 1)),
+  };
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations(operations)));
+  for (const auto axis : {RotationAxis::X, RotationAxis::Y, RotationAxis::Z}) {
+    auto moduleOp = buildMcrModule(context(), 3, axis, 0.73);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(moduleOp.get())));
+    ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
+    PassManager pm(context());
+    pm.addPass(createDecomposeMultiControlled(target));
+    ASSERT_TRUE(succeeded(pm.run(moduleOp.get())));
+    ASSERT_TRUE(succeeded(verify(moduleOp.get())));
+    ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
+    EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
+    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+    expectImplementsControlledRotation(funcOp, 3, axis, 0.73);
+  }
+}
+
+//===----------------------------------------------------------------------===//
+// MCX / MCY / MCZ / MCP: DD + CX for k = 2..20 and k = 33
+//===----------------------------------------------------------------------===//
+
+TEST_P(McPauliDdTest, EquivalenceAndCxCount) {
+  const auto [pauli, k] = GetParam();
+  auto moduleOp = buildControlledPauliModule(context(), k, pauli);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
   expectFullyLowered(moduleOp.get());
-  // MCZ shares the MCX elementary sequences / cores (no extra CX from the
-  // outer H sandwich on X).
+  // MCY and MCZ share MCX's CX budget; their basis changes add no CX.
   EXPECT_EQ(countElementaryCxOps(moduleOp.get()), K_EXPECTED_MCX_CX[k])
       << "k=" << k;
 
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   if (k <= K_MATRIX_DD_MAX_PAULI) {
-    expectImplementsControlledPauli(funcOp, k, ControlledPauli::Z);
+    expectImplementsControlledPauli(funcOp, k, pauli);
   } else {
-    expectMatchesReferenceOnBasisStates(funcOp, k, ControlledPauli::Z);
+    expectMatchesReferenceOnBasisStates(funcOp, k, pauli);
   }
 }
 
@@ -504,16 +788,21 @@ TEST_P(McpDdTest, EquivalenceAndCxCount) {
   }
 }
 
-INSTANTIATE_TEST_SUITE_P(DdRange, McxDdTest,
-                         testing::ValuesIn(K_DD_CONTROL_COUNTS),
-                         [](const testing::TestParamInfo<size_t>& info) {
-                           return "k" + std::to_string(info.param);
-                         });
-INSTANTIATE_TEST_SUITE_P(DdRange, MczDdTest,
-                         testing::ValuesIn(K_DD_CONTROL_COUNTS),
-                         [](const testing::TestParamInfo<size_t>& info) {
-                           return "k" + std::to_string(info.param);
-                         });
+static std::string pauliTestName(
+    const testing::TestParamInfo<std::tuple<ControlledPauli, size_t>>& info) {
+  const auto [pauli, k] = info.param;
+  return std::string(pauli == ControlledPauli::X   ? "X"
+                     : pauli == ControlledPauli::Y ? "Y"
+                                                   : "Z") +
+         "k" + std::to_string(k);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    DdRange, McPauliDdTest,
+    testing::Combine(testing::Values(ControlledPauli::X, ControlledPauli::Y,
+                                     ControlledPauli::Z),
+                     testing::ValuesIn(K_DD_CONTROL_COUNTS)),
+    pauliTestName);
 INSTANTIATE_TEST_SUITE_P(DdRange, McpDdTest,
                          testing::ValuesIn(K_DD_CONTROL_COUNTS),
                          [](const testing::TestParamInfo<size_t>& info) {
@@ -521,12 +810,12 @@ INSTANTIATE_TEST_SUITE_P(DdRange, McpDdTest,
                          });
 
 TEST_F(MultiControlledDecompositionTest,
-       CoherentStatesMatchAcrossHp24PolicyBoundaries) {
-  for (const auto k : K_COHERENT_HP24_CONTROL_COUNTS) {
-    for (const auto pauli : {ControlledPauli::X, ControlledPauli::Z}) {
+       CoherentStatesMatchAcrossSynthesisBoundaries) {
+  for (const auto k : K_COHERENT_PAULI_CONTROL_COUNTS) {
+    for (const auto pauli :
+         {ControlledPauli::X, ControlledPauli::Y, ControlledPauli::Z}) {
       SCOPED_TRACE(testing::Message()
-                   << "k=" << k
-                   << " pauli=" << (pauli == ControlledPauli::X ? "X" : "Z"));
+                   << "k=" << k << " pauli=" << static_cast<unsigned>(pauli));
       auto moduleOp = buildControlledPauliModule(context(), k, pauli);
       ASSERT_TRUE(moduleOp);
       ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
@@ -552,19 +841,9 @@ TEST_F(MultiControlledDecompositionTest, CoherentStatesMatchForLargerSp22Mcp) {
 // Additional smoke checks for k > 20 — fully lowered, pinned CX
 //===----------------------------------------------------------------------===//
 
-TEST_P(McxSmokeTest, FullyLowersWithExpectedCx) {
-  const size_t k = GetParam();
-  auto moduleOp = buildMcxModule(context(), k);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
-  expectFullyLowered(moduleOp.get());
-  EXPECT_EQ(countElementaryCxOps(moduleOp.get()), K_EXPECTED_MCX_CX[k])
-      << "k=" << k;
-}
-
-TEST_P(MczSmokeTest, FullyLowersWithExpectedCx) {
-  const size_t k = GetParam();
-  auto moduleOp = buildMczModule(context(), k);
+TEST_P(McPauliSmokeTest, FullyLowersWithExpectedCx) {
+  const auto [pauli, k] = GetParam();
+  auto moduleOp = buildControlledPauliModule(context(), k, pauli);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
   expectFullyLowered(moduleOp.get());
@@ -582,16 +861,12 @@ TEST_P(McpSmokeTest, FullyLowersWithExpectedCx) {
   EXPECT_EQ(countEffectiveCxOps(moduleOp.get()), expectedMcpCx(k)) << "k=" << k;
 }
 
-INSTANTIATE_TEST_SUITE_P(SmokeRange, McxSmokeTest,
-                         testing::ValuesIn(K_SMOKE_CONTROL_COUNTS),
-                         [](const testing::TestParamInfo<size_t>& info) {
-                           return "k" + std::to_string(info.param);
-                         });
-INSTANTIATE_TEST_SUITE_P(SmokeRange, MczSmokeTest,
-                         testing::ValuesIn(K_SMOKE_CONTROL_COUNTS),
-                         [](const testing::TestParamInfo<size_t>& info) {
-                           return "k" + std::to_string(info.param);
-                         });
+INSTANTIATE_TEST_SUITE_P(
+    SmokeRange, McPauliSmokeTest,
+    testing::Combine(testing::Values(ControlledPauli::X, ControlledPauli::Y,
+                                     ControlledPauli::Z),
+                     testing::ValuesIn(K_SMOKE_CONTROL_COUNTS)),
+    pauliTestName);
 INSTANTIATE_TEST_SUITE_P(SmokeRange, McpSmokeTest,
                          testing::ValuesIn(K_SMOKE_CONTROL_COUNTS),
                          [](const testing::TestParamInfo<size_t>& info) {
@@ -607,6 +882,10 @@ TEST_F(MultiControlledDecompositionTest, LeavesSingleControlledUntouched) {
       QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
         builder.cx(builder.staticQubit(0), builder.staticQubit(1));
         builder.cz(builder.staticQubit(2), builder.staticQubit(3));
+        builder.crx(0.73, builder.staticQubit(4), builder.staticQubit(5));
+        builder.cry(0.73, builder.staticQubit(6), builder.staticQubit(7));
+        builder.crz(0.73, builder.staticQubit(8), builder.staticQubit(9));
+        builder.cy(builder.staticQubit(10), builder.staticQubit(11));
         return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
@@ -618,7 +897,7 @@ TEST_F(MultiControlledDecompositionTest, LeavesSingleControlledUntouched) {
       ++singleControlled;
     }
   });
-  EXPECT_EQ(singleControlled, 2U);
+  EXPECT_EQ(singleControlled, 6U);
 }
 
 TEST_F(MultiControlledDecompositionTest, DecomposesRCCX) {
@@ -672,16 +951,53 @@ TEST_F(MultiControlledDecompositionTest,
 }
 
 TEST_F(MultiControlledDecompositionTest, MinQubitsThreshold) {
-  auto moduleOp = buildMcxModule(context(), 2);
-  ASSERT_TRUE(moduleOp);
-  DecomposeMultiControlledOptions options;
-  options.minQubits = 4;
-  ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
-  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 1U);
+  for (const auto pauli :
+       {ControlledPauli::X, ControlledPauli::Y, ControlledPauli::Z}) {
+    SCOPED_TRACE(testing::Message()
+                 << "pauli=" << static_cast<unsigned>(pauli));
+    auto moduleOp = buildControlledPauliModule(context(), 2, pauli);
+    ASSERT_TRUE(moduleOp);
+    DecomposeMultiControlledOptions options;
+    options.minQubits = 4;
+    ASSERT_TRUE(
+        runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
+    EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 2), 1U);
 
-  options.minQubits = 2;
-  EXPECT_FALSE(
-      runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
+    options.minQubits = 3;
+    ASSERT_TRUE(
+        runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
+    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+    expectImplementsControlledPauli(funcOp, 2, pauli);
+
+    options.minQubits = 2;
+    EXPECT_FALSE(
+        runDecomposeMultiControlled(moduleOp.get(), options).succeeded());
+  }
+}
+
+TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeMcy) {
+  auto moduleOp = buildControlledPauliModule(context(), 3, ControlledPauli::Y);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(moduleOp.get())));
+  ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
+  using TargetOperation = CompilerTarget::Operation;
+  const std::vector operations{
+      llvm::cantFail(
+          TargetOperation::create("y", TargetOperation::Arity::variadic(4), 0)),
+  };
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations(operations)));
+  PassManager pm(context());
+  pm.addPass(createDecomposeMultiControlled(target));
+  ASSERT_TRUE(succeeded(pm.run(moduleOp.get())));
+  EXPECT_TRUE(succeeded(verify(moduleOp.get())));
+  EXPECT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
+  EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 1U);
+  moduleOp->walk([](CtrlOp op) {
+    ASSERT_EQ(op.getNumBodyUnitaries(), 1U);
+    EXPECT_TRUE(isa<YOp>(op.getBodyUnitary(0).getOperation()));
+  });
 }
 
 TEST_F(MultiControlledDecompositionTest, DecomposesSingleControlledSwap) {
