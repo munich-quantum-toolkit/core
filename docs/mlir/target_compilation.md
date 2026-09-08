@@ -15,18 +15,46 @@ stored, copied cheaply, and reused for multiple compilations.
 Open a configured QDMI device and snapshot it as a compiler target:
 
 ```python
-from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+from mqt.core.mlir import (
+    CompilerTarget,
+    PayloadFormat,
+    PayloadEncoding,
+    PayloadSpecification,
+    TargetEnvironment,
+    compile_program,
+)
 
-target = CompilerTarget.from_device_id("mqt.sc.iqm.garnet")
+target = CompilerTarget.from_device_id("mqt.ddsim.default")
+payload = PayloadSpecification(PayloadFormat("qir", "2.1", "base", PayloadEncoding.BINARY))
+environment = TargetEnvironment(target, payload)
 compiled = compile_program(
     "bell.qasm",
-    target=target,
-    output=OutputFormat.QCO_OPTIMIZED,
+    target_environment=environment,
 )
 ```
 
-Target compilation accepts optimized QCO, QC, or QIR output and uses the
-canonical QCO pipeline; it cannot be combined with a custom `qco_pipeline`.
+The payload specification identifies the exact representation selected for the
+device. MQT Core derives the compiler output from that specification and uses
+the canonical QCO pipeline. The targeted overload therefore accepts one
+`TargetEnvironment` and no independent output or custom pipeline. MQT Core's
+QDMI adapter does not yet translate QDMI program-format and feature metadata, so
+callers must construct the payload specification from the device documentation.
+
+DDSIM accepts the QIR payload used here. The bundled SC devices, such as
+`mqt.sc.iqm.garnet`, provide hardware models for compilation only; a model's
+gate set does not imply that it accepts an executable payload.
+
+The example has no reported execution capabilities. A producer must add every
+effective capability, including the selected format's baseline. Set
+`optional_capabilities_known=True` only when the producer also knows that the
+list contains every optional device capability.
+
+Payload versions accept one to three numeric components. A
+`PayloadSpecification` fills omitted components with zero: `"2.1"` becomes
+`"2.1.0"`, and `"3"` becomes `"3.0.0"`. These are exact versions, not ranges;
+`"2"` means `"2.0.0"` and does not select QIR 2.1. Leading zeros, prerelease
+suffixes, and version ranges are rejected. The same rules apply when reading the
+typed `#mqt.payload_spec` attribute.
 
 The target can also be constructed directly. Connectivity and native-operation
 support are required:
@@ -90,17 +118,21 @@ Target synthesis preserves a native `gphase`. If the target does not support
 `gphase`, target synthesis preserves relative phase effects and removes only the
 unobservable global phase of the entry point.
 
-Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` to apply target
-compilation to an existing QCO program. Compilation runs in place. If a pass
-fails, earlier passes may already have changed the program. Copy the program
-before compilation if the caller must preserve the input. For pass-level
-benchmarking, the C++ API exposes separate factories for pre-routing
-optimization, deterministic placement, topology-aware mapping, native synthesis,
-and conformance verification. Target compilation uses compact placement on
-all-to-all targets and the mapper only when the target has an explicit coupling
-graph. The high-level program API registers the required inliner extensions;
-callers that populate the low-level target pipeline directly must register
-inliner extensions for every callable dialect in their context.
+Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` with the target
+environment to apply target compilation to an existing QCO program. Compilation
+runs in place. If a pass fails, the environment and earlier pass changes remain
+on the program. Copy the program before compilation if the caller must preserve
+the input. The pipeline takes one `TargetEnvironment`, replaces any existing
+`mqt.target_env` module attribute, and shares the prepared target with all
+target passes without rebuilding its connectivity tables. The selected
+environment must remain unchanged during pipeline execution. Standalone passes
+decode the typed module attribute once through a cached analysis. The mapping,
+native-synthesis, and conformance factories also work in textual MLIR pass
+pipelines. Target compilation keeps deterministic placement on all-to-all
+targets and uses mapping only for explicit topology. The high-level program API
+registers the required inliner extensions; callers that populate the low-level
+target pipeline directly must register inliner extensions for every callable
+dialect in their context.
 
 Target compilation preserves quantum operations even when their final qubit
 values are not measured or returned. This supports measurement-free programs,
@@ -119,20 +151,24 @@ mqt-cc --qdmi-list-devices
 Select a device when compiling:
 
 ```console
-mqt-cc --qdmi-device=mqt.sc.iqm.garnet \
-  --emit=qco-optimized input.qasm
+mqt-cc --qdmi-device=mqt.ddsim.default \
+  --payload-spec='#mqt.payload_spec<format = <id = "qir", version = "2.1", profile = "base", encoding = binary>, capabilities = [], optional_capabilities_known = false>' \
+  -o output.bc input.qasm
 ```
 
 An explicit registry file can be selected before device discovery:
 
 ```console
 mqt-cc --qdmi-config=/path/to/qdmi.json \
-  --qdmi-device=example.device input.qasm
+  --qdmi-device=example.device \
+  --payload-spec='#mqt.payload_spec<format = <id = "qir", version = "2.1", profile = "base", encoding = binary>, capabilities = [], optional_capabilities_known = false>' \
+  input.qasm
 ```
 
-Target compilation produces optimized QCO, QC, or QIR. It cannot be combined
-with a custom `--passes` pipeline because the canonical target pipeline owns the
-required pass ordering.
+The payload specification selects the emitted format and encoding. For targeted
+QIR, the selected encoding takes precedence over the output filename extension.
+Target compilation rejects `--emit` and custom `--passes` pipelines because the
+target contract owns the output and required pass ordering.
 
 ## C++ source-tree API
 
@@ -142,22 +178,35 @@ device ID and the compiler-owned target:
 ```cpp
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Programs.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 
-auto target = mlir::compilerTargetFromDeviceId("mqt.sc.iqm.garnet");
+auto target = mlir::compilerTargetFromDeviceId("mqt.ddsim.default");
 if (!target) {
   llvm::errs() << "Failed to create compiler target: "
                << llvm::toString(target.takeError()) << '\n';
   return 1;
 }
 
+auto payload = mlir::PayloadSpecification::create({
+    .id = "qir",
+    .version = "2.1",
+    .profile = "base",
+    .encoding = mlir::PayloadEncoding::Binary,
+});
+if (!payload) {
+  llvm::errs() << llvm::toString(payload.takeError()) << '\n';
+  return 1;
+}
+mlir::TargetEnvironment environment(*target, *payload);
+
 auto qc = mlir::QCProgram::fromQASMFile("input.qasm");
 if (!qc) {
   return 1;
 }
 auto qco = std::move(*qc).intoQCO();
-if (!qco || !qco->compileForTarget(*target)) {
+if (!qco || !qco->compileForTarget(environment)) {
   return 1;
 }
 ```

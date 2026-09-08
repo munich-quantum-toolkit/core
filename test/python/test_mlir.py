@@ -27,10 +27,16 @@ from mqt.core.mlir import (
     JeffProgram,
     OpenQASMProgram,
     OutputFormat,
+    PayloadEncoding,
+    PayloadFormat,
+    PayloadSpecification,
+    ProgramCapability,
+    ProgramConstraint,
     QCOProgram,
     QCProgram,
     QIRProfile,
     QIRProgram,
+    TargetEnvironment,
     compile_program,
 )
 from mqt.core.qdmi.driver import open_device
@@ -73,6 +79,24 @@ h q[0];
 cx q[0], q[1];
 bit[2] c = measure q;
 """
+
+
+def _test_payload_specification() -> PayloadSpecification:
+    """Return one explicit selected payload contract for target tests."""
+    return PayloadSpecification(
+        PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.BINARY),
+        [ProgramCapability("forward-branching", 0, [ProgramConstraint("max-control-flow-nesting-depth", 8)])],
+        optional_capabilities_known=True,
+    )
+
+
+def _test_target_environment(target: CompilerTarget) -> TargetEnvironment:
+    """Pair a compiler target with the test payload specification.
+
+    Returns:
+        The complete target environment.
+    """
+    return TargetEnvironment(target, _test_payload_specification())
 
 
 def _assert_bell_program(program: QCProgram, *, measured: bool = False) -> None:
@@ -365,7 +389,7 @@ def test_empty_compiled_program_round_trips_through_mlir() -> None:
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    program.compile_for_target(target)
+    program.compile_for_target(_test_target_environment(target))
     assert "qco." not in program.ir
 
     qc = QCOProgram.from_mlir_str(program.ir).to_qc()
@@ -388,22 +412,42 @@ def garnet_target() -> CompilerTarget:
 
 def test_compile_program_for_qdmi_target(garnet_target: CompilerTarget) -> None:
     """Compile through the canonical target pipeline for a QDMI device."""
-    result = compile_program(
-        QASM_STRING,
-        output=OutputFormat.QCO_OPTIMIZED,
-        target=garnet_target,
-    )
+    result = compile_program(QASM_STRING, target_environment=_test_target_environment(garnet_target))
 
-    assert isinstance(result, QCOProgram)
-    static_sites = {int(site) for site in re.findall(r"qco\.static (\d+)", result.ir)}
+    assert isinstance(result, QIRProgram)
+    assert result.profile == QIRProfile.BASE
+
+    mapped = compile_program(QASM_STRING, output=OutputFormat.QCO)
+    assert isinstance(mapped, QCOProgram)
+    mapped.compile_for_target(_test_target_environment(garnet_target))
+    static_sites = {int(site) for site in re.findall(r"qco\.static (\d+)", mapped.ir)}
     assert len(static_sites) == 2
     assert static_sites <= {site.id for site in garnet_target.sites}
-    assert "qco.r(" in result.ir
-    assert "qco.ctrl" in result.ir
-    assert "qco.z " in result.ir
-    assert result.ir.count("qco.measure") == 2
-    assert "qco.rx" not in result.ir
-    assert "qco.ry" not in result.ir
+    assert "qco.r(" in mapped.ir
+    assert "qco.ctrl" in mapped.ir
+    assert "qco.z " in mapped.ir
+    assert mapped.ir.count("qco.measure") == 2
+    assert "qco.rx" not in mapped.ir
+    assert "qco.ry" not in mapped.ir
+
+
+def test_compile_program_rejects_unsupported_target_payload_without_consuming_input() -> None:
+    """Reject an unsupported selected payload before consuming typed input."""
+    program = compile_program(QASM_STRING, output=OutputFormat.QCO)
+    assert isinstance(program, QCOProgram)
+    environment = TargetEnvironment(
+        CompilerTarget(
+            1,
+            connectivity=CompilerTarget.Connectivity.all_to_all(),
+            native_operations=CompilerTarget.NativeOperations.unrestricted(),
+        ),
+        PayloadSpecification(PayloadFormat("example.payload", "1.0.0")),
+    )
+
+    with pytest.raises(ValueError, match="cannot emit the selected payload format"):
+        compile_program(program, inplace=True, target_environment=environment)
+
+    assert program.is_valid
 
 
 def test_qco_program_compiles_for_direct_sparse_target() -> None:
@@ -428,7 +472,7 @@ def test_qco_program_compiles_for_direct_sparse_target() -> None:
     qco = compile_program(QASM_STRING, output=OutputFormat.QCO)
     assert isinstance(qco, QCOProgram)
 
-    qco.compile_for_target(target)
+    qco.compile_for_target(_test_target_environment(target))
 
     assert {int(site) for site in re.findall(r"qco\.static (\d+)", qco.ir)} == {10, 20}
     assert "qco.u(" in qco.ir
@@ -459,7 +503,7 @@ def test_target_compiles_single_qubit_gates_without_entangler(num_sites: int) ->
         source.ry(0.123, site)
     program = QCProgram.from_qiskit(source).to_qco()
 
-    program.compile_for_target(target)
+    program.compile_for_target(_test_target_environment(target))
 
     assert program.is_valid
     result = program.to_qc().to_qiskit(target=target)
@@ -475,12 +519,9 @@ def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    mapped = compile_program(
-        QASM_STRING,
-        output=OutputFormat.QCO_OPTIMIZED,
-        target=target,
-    )
+    mapped = compile_program(QASM_STRING, output=OutputFormat.QCO)
     assert isinstance(mapped, QCOProgram)
+    mapped.compile_for_target(_test_target_environment(target))
     assert 0 < mapped.ir.count("qco.static") < target.num_sites
 
     qc = mapped.to_qc(copy=True)
@@ -580,6 +621,57 @@ def test_compiler_target_accepts_plain_site_tuples(arity: int | CompilerTarget.O
     assert not target.supports_operation("cx", 2, sites=[0, 1])
     with pytest.raises(ValueError, match="site tuple does not match its arity"):
         CompilerTarget.Operation("cx", arity, 0, site_tuples=[(0,)])
+
+
+def test_payload_specification_preserves_python_api() -> None:
+    """Construct and validate one context-free selected payload contract."""
+    payload_format = PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.BINARY)
+    constraint = ProgramConstraint("max-control-flow-nesting-depth", 8)
+    capability = ProgramCapability("forward-branching", 0, [constraint])
+    environment = PayloadSpecification(
+        payload_format,
+        [capability],
+        optional_capabilities_known=True,
+    )
+
+    assert environment.format.format_id == "qir"
+    assert environment.format.version == "2.1.0"
+    assert environment.format.profile == "base"
+    assert environment.format.encoding == PayloadEncoding.BINARY
+    assert environment.capabilities[0].capability_id == "forward-branching"
+    assert environment.capabilities[0].value == 0
+    assert environment.capabilities[0].constraints[0].constraint_id == "max-control-flow-nesting-depth"
+    assert environment.capabilities[0].constraints[0].value == 8
+    assert environment.optional_capabilities_known
+
+    payload_format.version = "9.9.9"
+    exposed_descriptor = environment.format
+    exposed_descriptor.version = "8.8.8"
+    capability.value = 1
+    assert environment.format.version == "2.1.0"
+    assert environment.capabilities[0].value == 0
+
+    with pytest.raises(ValueError, match=r"major\[\.minor\[\.patch\]\]"):
+        PayloadSpecification(PayloadFormat("qir", "2.1.0.1", "base"))
+
+
+@pytest.mark.parametrize(
+    ("format_id", "version", "profile", "expected_version", "expected_type"),
+    [("qir", "2.1", "base", "2.1.0", QIRProgram), ("openqasm", "3", "", "3.0.0", OpenQASMProgram)],
+)
+def test_target_compilation_accepts_exact_version_shorthand(
+    format_id: str, version: str, profile: str, expected_version: str, expected_type: type
+) -> None:
+    """Normalize a shortened version before selecting the compiler output."""
+    payload = PayloadSpecification(PayloadFormat(format_id, version, profile))
+    assert payload.format.version == expected_version
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    result = compile_program(QASM_STRING, target_environment=TargetEnvironment(target, payload))
+    assert isinstance(result, expected_type)
 
 
 def test_compiler_target_construction_preserves_validation_errors() -> None:
