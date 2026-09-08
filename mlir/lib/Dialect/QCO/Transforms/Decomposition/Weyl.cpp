@@ -737,12 +737,10 @@ constexpr double EIGHTH_PI = std::numbers::pi / 8.;
 
 static Matrix4x4 sqrtISwapMatrix() {
   const auto s = std::numbers::sqrt2 / 2.;
-  return Matrix4x4::fromElements(1., 0., 0., 0., 0., s, Complex(0., s), 0., 0.,
-                                 Complex(0., s), s, 0., 0., 0., 0., 1.);
-}
-
-static double twoGateMargin(const KAK& target) {
-  return target.a() - target.b() - std::abs(target.c());
+  return Matrix4x4::fromElements(1., 0., 0., 0.,            // row 0
+                                 0., s, Complex(0., s), 0., // row 1
+                                 0., Complex(0., s), s, 0., // row 2
+                                 0., 0., 0., 1.);           // row 3
 }
 
 // Attach U's outer local factors to a synthesis of its canonical matrix.
@@ -792,8 +790,7 @@ static TwoQubitNativeDecomposition oneGate(const KAK& target) {
   return result;
 }
 
-// Interleaving rotations: supplemental material, Sec. I.B, Eqs. (3), (5)-(7),
-// https://doi.org/10.1103/PhysRevLett.130.070601.
+// See supplemental Eqs. (3), (5)-(7): doi:10.1103/PhysRevLett.130.070601.
 static TwoQubitNativeDecomposition twoGates(const KAK& target) {
   const double x = target.a(), y = target.b(), z = target.c();
   const double c = std::sin(x + y - z) * std::sin(x - y + z) *
@@ -837,13 +834,11 @@ TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
       std::abs(kak.c()) <= WEYL_TOLERANCE) {
     return oneGate(kak);
   }
-  if (twoGateMargin(kak) >= -WEYL_TOLERANCE) {
+  if (kak.a() - kak.b() - std::abs(kak.c()) >= -WEYL_TOLERANCE) {
     return twoGates(kak);
   }
 
-  // The twelve commuting representatives of sqrt(iSWAP) shift one pair of
-  // magic-basis eigenphases by +/-pi/4. Lemma 2 guarantees a residual in
-  // the two-gate region. Maximize its margin to avoid fragile boundaries.
+  // Choose the residual furthest inside the two-gate region.
   std::optional<KAK> residual;
   std::optional<KAK> prefix;
   double bestMargin = -1.;
@@ -857,8 +852,10 @@ TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
             coordinates[0], coordinates[1], coordinates[2]);
         const auto candidate = KAK::create(
             kak.getCanonicalMatrix() * gate.adjoint(), std::nullopt);
-        if (twoGateMargin(candidate) > bestMargin) {
-          bestMargin = twoGateMargin(candidate);
+        const auto margin =
+            candidate.a() - candidate.b() - std::abs(candidate.c());
+        if (margin > bestMargin) {
+          bestMargin = margin;
           residual = candidate;
           prefix = KAK::create(gate, std::nullopt);
         }
