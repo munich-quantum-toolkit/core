@@ -97,10 +97,11 @@ Before pushing a C++ change, run:
 uvx nox -s cpp-lint
 ```
 
-The session configures and builds the `lint` preset, then runs the same
-`cpp-linter` release and options as CI against every line of each changed C++
-file. It compares against `origin/main` by default. Pass a different Git diff
-base after `--` when needed:
+The session configures the `lint` preset and builds `mqt-core-lint-headers` to
+prepare generated headers without compiling or linking the project. It then runs
+the same `cpp-linter` release and options as CI against every line of each
+changed C++ file. It compares against `origin/main` by default. Pass a different
+Git diff base after `--` when needed:
 
 ```console
 uvx nox -s cpp-lint -- upstream/main

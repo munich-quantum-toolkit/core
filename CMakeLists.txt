@@ -133,6 +133,8 @@ if(BUILD_MQT_CORE_TESTS)
   add_subdirectory(test)
 endif()
 
+add_custom_target(mqt-core-lint-headers)
+
 if(BUILD_MQT_CORE_MLIR)
   add_subdirectory(mlir)
 
