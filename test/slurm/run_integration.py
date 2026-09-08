@@ -10,13 +10,18 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
+import os
 import re
 import secrets
 import shlex
+import shutil
+import signal
 import subprocess
 import time
+import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -26,24 +31,65 @@ if TYPE_CHECKING:
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / "test" / "slurm"
 DIST = FIXTURE / "dist"
-RUNTIME = FIXTURE / "runtime"
+RUNTIME = FIXTURE / "runtime" / uuid.uuid4().hex
 COMPOSE = (
     "docker",
     "compose",
     "--project-name",
-    "mqt-core-slurm-test",
+    f"mqt-core-slurm-{RUNTIME.name}",
     "--file",
     str(FIXTURE / "compose.yml"),
 )
 TIMEOUT = 120.0
+COMMAND_TIMEOUT = 30.0
 RESULT_VISIBILITY_GRACE_PERIOD = 5.0
 LOGGER = logging.getLogger(__name__)
 
 
-def run(command: Sequence[str], *, check: bool = True) -> subprocess.CompletedProcess[str]:
+def _communicate(process: subprocess.Popen[str], timeout: float) -> tuple[str, str]:
+    """Collect output, killing the whole command group on interruption.
+
+    Returns:
+        The command's stdout and stderr.
+    """
+    try:
+        return process.communicate(timeout=timeout)
+    except BaseException:
+        # Docker can spawn a Compose child holding our output pipes.
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
+        process.communicate()
+        raise
+
+
+def run(
+    command: Sequence[str],
+    *,
+    check: bool = True,
+    timeout: float = COMMAND_TIMEOUT,
+    capture_output: bool = True,
+    env: dict[str, str] | None = None,
+) -> subprocess.CompletedProcess[str]:
     """Run a command and retain output for assertions and diagnostics."""
     LOGGER.info("+ %s", shlex.join(command))
-    result = subprocess.run(command, check=False, capture_output=True, text=True)  # ruff: ignore[subprocess-without-shell-equals-true]
+    try:
+        with subprocess.Popen(  # ruff: ignore[subprocess-without-shell-equals-true]
+            command,
+            stdout=subprocess.PIPE if capture_output else None,
+            stderr=subprocess.PIPE if capture_output else None,
+            text=True,
+            env=env,
+            start_new_session=True,
+        ) as process:
+            stdout, stderr = _communicate(process, timeout)
+            result = subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        if check:
+            raise
+        LOGGER.warning("Command failed: %s", error)
+        return subprocess.CompletedProcess(
+            command, 124 if isinstance(error, subprocess.TimeoutExpired) else 127, "", str(error)
+        )
     if result.stdout:
         LOGGER.info("%s", result.stdout.rstrip())
     if result.stderr:
@@ -53,14 +99,25 @@ def run(command: Sequence[str], *, check: bool = True) -> subprocess.CompletedPr
     return result
 
 
-def compose(*arguments: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-    """Run Docker Compose for the fixed, isolated test project."""
-    return run((*COMPOSE, *arguments), check=check)
+def compose(
+    *arguments: str,
+    check: bool = True,
+    timeout: float = COMMAND_TIMEOUT,
+    capture_output: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    """Run Docker Compose for this invocation's isolated project and artifacts."""
+    return run(
+        (*COMPOSE, *arguments),
+        check=check,
+        timeout=timeout,
+        capture_output=capture_output,
+        env={**os.environ, "MQT_CORE_SLURM_RUNTIME": str(RUNTIME)},
+    )
 
 
-def controller(*command: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+def controller(*command: str, check: bool = True, timeout: float = COMMAND_TIMEOUT) -> subprocess.CompletedProcess[str]:
     """Run a Slurm client command in the controller container."""
-    return compose("exec", "-T", "controller", *command, check=check)
+    return compose("exec", "-T", "controller", *command, check=check, timeout=timeout)
 
 
 def compute(node: str, *command: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -113,6 +170,20 @@ def job_matches(job_id: str, state: str, *, node: str | None = None, reason: str
     )
 
 
+def job_finished(job_id: str, *, expected_state: str = "COMPLETED") -> bool:
+    """Require the terminal state and exit code, without an accounting daemon."""
+    output = controller("scontrol", "show", "job", job_id, "--oneliner").stdout
+    record = dict(field.split("=", maxsplit=1) for field in output.split() if "=" in field)
+    state = record["JobState"]
+    if state in {"PENDING", "CONFIGURING", "RUNNING", "COMPLETING", "SUSPENDED"}:
+        return False
+    exit_code = tuple(map(int, record["ExitCode"].split(":")))
+    if state != expected_state or len(exit_code) != 2 or ((exit_code == (0, 0)) != (expected_state == "COMPLETED")):
+        msg = f"Slurm job {job_id} ended with {state}, ExitCode={record['ExitCode']}; expected {expected_state}"
+        raise AssertionError(msg)
+    return True
+
+
 def submit(script: str, license_expression: str, *, node: str | None = None, hold: bool = False) -> str:
     """Submit one single-processor batch job and return its numeric ID."""
     command = [
@@ -121,6 +192,7 @@ def submit(script: str, license_expression: str, *, node: str | None = None, hol
         "--nodes=1",
         "--ntasks=1",
         "--cpus-per-task=1",
+        "--time=5",
         f"--licenses={license_expression}",
         "--chdir=/workspace",
         "--output=/runtime/slurm-%j.out",
@@ -190,7 +262,7 @@ def wait_for_failed_adapter(job_id: str, diagnostic: str) -> None:
     output_path = RUNTIME / f"slurm-{job_id}.out"
 
     def failed_with_diagnostic() -> bool:
-        if not output_path.exists() or job_record(job_id) is not None:
+        if not job_finished(job_id, expected_state="FAILED") or not output_path.exists():
             return False
         return diagnostic in output_path.read_text(encoding="utf-8")
 
@@ -218,11 +290,8 @@ def assert_bell_result(job_id: str, expected_node: str | None = None) -> None:
 
 
 def clean_runtime() -> None:
-    """Remove only result artifacts created by an earlier fixture run."""
-    RUNTIME.mkdir(parents=True, exist_ok=True)
-    for pattern in ("ddsim-*.json", "sc-*.json", "release-*", "slurm-*.out"):
-        for path in RUNTIME.glob(pattern):
-            path.unlink()
+    """Create private artifacts and a Munge key for this invocation only."""
+    RUNTIME.mkdir(mode=0o700, parents=True, exist_ok=False)
     key = RUNTIME / "munge.key"
     key.write_bytes(secrets.token_bytes(1024))
     key.chmod(0o600)
@@ -230,16 +299,17 @@ def clean_runtime() -> None:
 
 def print_diagnostics() -> None:
     """Print cluster state without hiding the original test failure."""
-    controller("squeue", "--all", check=False)
+    controller("squeue", "--all", check=False, timeout=5)
     controller(
         "sacct",
         "--allusers",
         "--starttime=now-1hour",
         "--format=JobID,State,ExitCode,Reason,NodeList",
         check=False,
+        timeout=5,
     )
-    controller("scontrol", "show", "node", check=False)
-    controller("scontrol", "show", "lic", check=False)
+    controller("scontrol", "show", "node", check=False, timeout=5)
+    controller("scontrol", "show", "lic", check=False, timeout=5)
     for output in sorted(RUNTIME.glob("slurm-*.out")):
         LOGGER.info("=== %s ===", output.name)
         try:
@@ -251,7 +321,7 @@ def print_diagnostics() -> None:
         ("node1", ("munge.service", "slurmd.service")),
         ("node2", ("munge.service", "slurmd.service")),
     ):
-        compose("exec", "-T", service, "systemctl", "status", "--no-pager", *units, check=False)
+        compose("exec", "-T", service, "systemctl", "status", "--no-pager", *units, check=False, timeout=5)
         compose(
             "exec",
             "-T",
@@ -261,17 +331,19 @@ def print_diagnostics() -> None:
             "--lines=100",
             *(argument for unit in units for argument in ("--unit", unit)),
             check=False,
+            timeout=5,
         )
-    compose("logs", "--no-color", check=False)
+    compose("logs", "--no-color", check=False, timeout=5)
 
 
 def main() -> None:
     """Build the cluster and verify Slurm admission and DDSIM execution."""
-    clean_runtime()
     wheels = tuple(DIST.glob("*.whl"))
     if len(wheels) != 1:
         msg = f"Build exactly one MQT Core wheel in {DIST}, found {len(wheels)}"
         raise RuntimeError(msg)
+
+    started_at = time.monotonic()
 
     success = False
     started = False
@@ -281,8 +353,12 @@ def main() -> None:
             msg = f"The Slurm integration requires Docker on cgroup v2, got {cgroup_version!r}"
             raise RuntimeError(msg)
 
+        clean_runtime()
+        LOGGER.info("Slurm runtime directory: %s", RUNTIME)
         started = True
-        compose("up", "--build", "--detach", "--wait")
+        compose("up", "--build", "--detach", "--wait", "--wait-timeout", "120", timeout=600, capture_output=False)
+        LOGGER.info("Slurm image build and startup: %.2fs", time.monotonic() - started_at)
+        testing_at = time.monotonic()
 
         version_output = controller("scontrol", "--version").stdout.strip()
         version_match = re.search(r"^slurm(?:-wlm)?\s+(\d+)\.(\d+)\b", version_output, flags=re.IGNORECASE)
@@ -346,7 +422,7 @@ def main() -> None:
 
         sc_job = submit("sc-job.sh", "mqt.sc.default:1")
         wait_for_result("sc", sc_job, "the SC job to execute on a free CPU")
-        wait_for("the SC job to leave the queue", lambda: job_record(sc_job) is None)
+        wait_for("the SC job to complete", lambda: job_finished(sc_job))
         sc_result = load_result("sc", sc_job)
         if sc_result["node"] not in {"node1", "node2"} or sc_result["qubits"] <= 0:
             msg = f"Unexpected SC job result: {sc_result}"
@@ -356,9 +432,9 @@ def main() -> None:
             raise AssertionError(msg)
 
         (RUNTIME / f"release-{first}").touch()
-        wait_for("the released first DDSIM job to finish", lambda: job_record(first) is None)
+        wait_for("the released first DDSIM job to finish", lambda: job_finished(first))
         wait_for_result("ddsim", third, "the pending third DDSIM job to execute")
-        wait_for("the third DDSIM job to finish", lambda: job_record(third) is None)
+        wait_for("the third DDSIM job to finish", lambda: job_finished(third))
 
         assert_bell_result(first, "node1")
         assert_bell_result(second, "node2")
@@ -366,7 +442,7 @@ def main() -> None:
         assert_license("mqt.ddsim.default", total=2, used=1, free=1)
 
         (RUNTIME / f"release-{second}").touch()
-        wait_for("the released second DDSIM job to finish", lambda: job_record(second) is None)
+        wait_for("the released second DDSIM job to finish", lambda: job_finished(second))
         assert_license("mqt.ddsim.default", total=2, used=0, free=2)
 
         LOGGER.info(
@@ -374,10 +450,23 @@ def main() -> None:
             "ran the SC job on a free CPU, and executed the third Bell job after release."
         )
         success = True
+        LOGGER.info("Slurm admission and execution checks: %.2fs", time.monotonic() - testing_at)
     finally:
-        if started and not success:
-            print_diagnostics()
-        compose("down", "--volumes", "--remove-orphans", check=False)
+        try:
+            if started and not success:
+                try:
+                    print_diagnostics()
+                except Exception:
+                    LOGGER.exception("Could not collect Slurm diagnostics")
+        finally:
+            if started:
+                stopped = compose("down", "--volumes", "--remove-orphans", "--rmi", "local", check=False, timeout=60)
+                if success and stopped.returncode == 0:
+                    shutil.rmtree(RUNTIME)
+                elif success:
+                    msg = f"Slurm cleanup failed; retained artifacts in {RUNTIME}"
+                    raise RuntimeError(msg)
+            LOGGER.info("Slurm integration total: %.2fs", time.monotonic() - started_at)
 
 
 if __name__ == "__main__":
