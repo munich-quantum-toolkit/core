@@ -14,7 +14,12 @@ import mqt.core.bench
 import mqt.core.mlir
 
 class RepeatUntilSuccess:
-    """A fixed repeat-until-success benchmark."""
+    """Apply a repeat-until-success implementation of :math:`(I + i\\sqrt{2}X) / \\sqrt{3}`.
+
+    Each attempt measures an ancilla prepared from :math:`|0\\rangle` and retries on
+    failure. After success, the circuit applies :math:`S^\\dagger` and :math:`H` to
+    the data qubit before measurement.
+    """
 
     def __init__(self) -> None: ...
     @property

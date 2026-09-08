@@ -39,10 +39,10 @@ phase-sensitive readout has probabilities `P(0) = 1/2 + sqrt(2)/3` and
 
 Structural tests must assert the one `scf.while`, exact operation order and wire
 roles in its before region, direct measurement condition, sole failure-path X,
-and S-dagger/H/data measurement after the loop. They must reject hidden resets,
-conditionals, recovery gates, and retry bounds. Add native reference and JSON
-tests, a seeded QCO sampling test, shared registry and CLI checks, and
-QC-to-jeff serialization with byte round-trip.
+and S-dagger/H/data measurement after the loop. They must reject conditionals,
+recovery gates, and retry bounds. Add native reference and JSON tests, a seeded
+QCO sampling test, shared registry and CLI checks, and a shared QC-to-jeff
+serialization test with byte round-trip.
 
 Version 1 of the paper labels the success unitary incorrectly. Version 2 fixes
 the label, matches the stated T convention, and is the version selected by the

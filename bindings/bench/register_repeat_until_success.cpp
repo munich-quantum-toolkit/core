@@ -24,7 +24,12 @@ using namespace nb::literals;
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerRepeatUntilSuccess(const nb::module_& m) {
   auto repeatUntilSuccess = nb::class_<bench::RepeatUntilSuccess>(
-      m, "RepeatUntilSuccess", "A fixed repeat-until-success benchmark.");
+      m, "RepeatUntilSuccess",
+      R"pb(Apply a repeat-until-success implementation of :math:`(I + i\sqrt{2}X) / \sqrt{3}`.
+
+Each attempt measures an ancilla prepared from :math:`|0\rangle` and retries on
+failure. After success, the circuit applies :math:`S^\dagger` and :math:`H` to
+the data qubit before measurement.)pb");
   repeatUntilSuccess.def(nb::init<>())
       .def_prop_ro("output", &bench::RepeatUntilSuccess::output,
                    nb::rv_policy::reference_internal,

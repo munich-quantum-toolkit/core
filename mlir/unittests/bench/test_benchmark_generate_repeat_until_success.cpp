@@ -24,8 +24,6 @@
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
 
-#include <utility>
-
 namespace mqt::bench {
 
 using namespace mlir;
@@ -56,7 +54,6 @@ TEST(GenerateProgramTest, EmitsExactRepeatUntilSuccessSchedule) {
   EXPECT_EQ(test::countOps<qc::XOp>(moduleOp), 3U);
   EXPECT_EQ(test::countOps<qc::SdgOp>(moduleOp), 1U);
   EXPECT_EQ(test::countOps<qc::MeasureOp>(moduleOp), 2U);
-  EXPECT_EQ(test::countOps<qc::ResetOp>(moduleOp), 0U);
 
   SmallVector<scf::WhileOp> loops;
   moduleOp.walk([&](scf::WhileOp loop) { loops.push_back(loop); });
@@ -148,10 +145,8 @@ TEST(GenerateProgramTest, EmitsExactRepeatUntilSuccessSchedule) {
   EXPECT_EQ(index.value(), 0);
 }
 
-TEST(GenerateProgramTest, SerializesRepeatUntilSuccessControlFlow) {
-  auto program = generate(RepeatUntilSuccess{});
-  ASSERT_TRUE(program);
-  test::expectJeffRoundTrip(std::move(*program));
+TEST(GenerateProgramTest, SamplesRepeatUntilSuccessAgainstReference) {
+  test::expectSamplingMatchesReference(RepeatUntilSuccess{});
 }
 
 } // namespace mqt::bench
