@@ -849,6 +849,56 @@ def test_open_device_creates_a_fresh_session() -> None:
     assert first != second
 
 
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="Requires POSIX named pipes")
+@pytest.mark.parametrize("entrypoint", ["driver", "slurm", "compiler"])
+def test_device_open_releases_gil(tmp_path: Path, entrypoint: str) -> None:
+    """A Python thread can supply configuration while native opening waits."""
+    script = """
+import json
+import os
+import sys
+from pathlib import Path
+from threading import Thread
+
+from mqt.core.mlir import CompilerTarget
+from mqt.core.qdmi import slurm
+from mqt.core.qdmi.driver import open_device
+
+fifo = Path(sys.argv[1]) / "device.json"
+os.mkfifo(fifo)
+configuration = Path("json/sc/mqt-core-qdmi-sc-device.json").read_bytes()
+os.environ["MQT_CORE_QDMI_CONFIG_JSON"] = json.dumps({
+    "schema-version": 1,
+    "qdmi": {"devices": [{
+        "id": "mqt.sc.default",
+        "session": {"device-config": {"file": str(fifo)}},
+    }]},
+})
+os.environ["SLURM_JOB_LICENSES"] = "mqt.sc.default:1"
+
+def supply_configuration():
+    # Opening the write end blocks until the native reader opens the FIFO.
+    with fifo.open("wb") as stream:
+        stream.write(configuration)
+
+writer = Thread(target=supply_configuration, daemon=True)
+writer.start()
+entrypoint = sys.argv[2]
+if entrypoint == "driver":
+    assert open_device("mqt.sc.default").qubits_num() > 0
+elif entrypoint == "slurm":
+    assert slurm.open_device_from_license().qubits_num() > 0
+else:
+    assert CompilerTarget.from_device_id("mqt.sc.default").num_sites > 0
+writer.join()
+"""
+    subprocess.run(  # ruff: ignore[subprocess-without-shell-equals-true]
+        [sys.executable, "-c", script, str(tmp_path), entrypoint],
+        check=True,
+        timeout=15,
+    )
+
+
 def test_device_configuration_arguments_are_mutually_exclusive() -> None:
     """Typed device configuration must select exactly one source."""
     DeviceDefinition(
