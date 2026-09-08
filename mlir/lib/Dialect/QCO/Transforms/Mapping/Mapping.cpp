@@ -1252,11 +1252,11 @@ private:
                               return false;
                             }
                             return TypeSwitch<Operation*, bool>(op)
-                                .Case<cbit::LoadOp>([&](auto ls) {
+                                .Case<cbit::LoadOp>([&](cbit::LoadOp ls) {
                                   return ls.getIndex() == store.getIndex();
                                 })
                                 .template Case<cbit::ReadOp>(
-                                    [](auto) { return true; })
+                                    [](cbit::ReadOp) { return true; })
                                 .Default([](Operation*) { return false; });
                           });
                     }
