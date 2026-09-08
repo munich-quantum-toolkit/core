@@ -468,25 +468,30 @@ TEST_F(TargetSynthesisTest,
 }
 
 TEST_F(TargetSynthesisTest, SqrtISwapSynthesisIsMinimalAndConforms) {
-  const auto target = valid(
-      Target::create(2, Connectivity::allToAll(),
-                     NativeOperations::fromOperations(
-                         {valid(Operation::create("u", 1, 3)),
-                          valid(Operation::create("gphase", 0, 1)),
-                          valid(Operation::create("sqrt_iswap", 2, 0))})));
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({
+                               valid(Operation::create("u", 1, 3)),
+                               valid(Operation::create("gphase", 0, 1)),
+                               valid(Operation::create("sqrt_iswap", 2, 0)),
+                           })));
   for (int gate = 0; gate < 4; ++gate) {
     const auto circuit = [gate](QCOProgramBuilder& builder) {
       auto q0 = builder.staticQubit(0);
       auto q1 = builder.staticQubit(1);
-      if (gate == 0)
+      if (gate == 0) {
         std::tie(q0, q1) = builder.cx(q0, q1);
-      if (gate == 1)
+      }
+      if (gate == 1) {
         std::tie(q0, q1) = builder.swap(q0, q1);
-      if (gate == 2)
+      }
+      if (gate == 2) {
         std::tie(q0, q1) = builder.iswap(q0, q1);
-      if (gate == 3)
+      }
+      if (gate == 3) {
         std::tie(q0, q1) =
             builder.xx_plus_yy(-std::numbers::pi / 2., 0., q0, q1);
+      }
       return builder.intConstant(0);
     };
     auto expected = build(circuit);
@@ -510,9 +515,8 @@ TEST_F(TargetSynthesisTest, SqrtISwapCapabilityRequiresFixedParameters) {
                      NativeOperations::fromOperations(
                          {valid(Operation::create("sqrt_iswap", 2, 0))})));
   auto program = build([](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.xx_plus_yy(.2, 0., q0, q1);
+    auto [q0, q1] = builder.xx_plus_yy(.2, 0., builder.staticQubit(0),
+                                       builder.staticQubit(1));
     std::tie(q0, q1) = builder.xx_plus_yy(-std::numbers::pi / 2., .1, q0, q1);
     return builder.intConstant(0);
   });
@@ -527,9 +531,9 @@ TEST_F(TargetSynthesisTest, SqrtISwapCapabilityHonorsPlacement) {
       NativeOperations::fromOperations({valid(Operation::create(
           "sqrt_iswap", 2, 0, {valid(Target::SiteTuple::create({0, 1}))}))})));
   auto program = build([](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    std::tie(q0, q1) = builder.xx_plus_yy(-std::numbers::pi / 2., 0., q0, q1);
+    [[maybe_unused]] auto [q0, q1] =
+        builder.xx_plus_yy(-std::numbers::pi / 2., 0., builder.staticQubit(0),
+                           builder.staticQubit(1));
     return builder.intConstant(0);
   });
   ASSERT_TRUE(program);

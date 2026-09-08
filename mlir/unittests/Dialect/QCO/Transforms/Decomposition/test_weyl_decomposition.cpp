@@ -647,8 +647,9 @@ reconstructSqrtISwap(const TwoQubitNativeDecomposition& result) {
     matrix = Matrix4x4::kron(result.singleQubitFactors[2 * i + 1],
                              result.singleQubitFactors[2 * i]) *
              matrix;
-    if (i < result.numBasisUses)
+    if (i < result.numBasisUses) {
       matrix = gate * matrix;
+    }
   }
   return std::polar(1., result.globalPhase) * matrix;
 }
@@ -683,11 +684,15 @@ TEST(SqrtISwap, ChamberGridWithLocalFactorsAndPhase) {
 TEST(SqrtISwap, NearChamberBoundaries) {
   for (double epsilon : {1e-4, 1e-8, 1e-10}) {
     const auto p = std::numbers::pi / 4.;
-    for (const auto& coordinates :
-         {std::array{epsilon, 0., 0.}, std::array{p - epsilon, 0., 0.},
-          std::array{p, epsilon, epsilon}, std::array{p - epsilon, .2, -.1},
-          std::array{.3, .2, .1 - epsilon}, std::array{.3, .2, .1 + epsilon},
-          std::array{p, p, p - epsilon}}) {
+    for (const auto& coordinates : {
+             std::array{epsilon, 0., 0.},
+             std::array{p - epsilon, 0., 0.},
+             std::array{p, epsilon, epsilon},
+             std::array{p - epsilon, .2, -.1},
+             std::array{.3, .2, .1 - epsilon},
+             std::array{.3, .2, .1 + epsilon},
+             std::array{p, p, p - epsilon},
+         }) {
       const auto target = TwoQubitWeylDecomposition::getCanonicalMatrix(
           coordinates[0], coordinates[1], coordinates[2]);
       const auto result = decomposeSqrtISwap(target);
@@ -703,13 +708,18 @@ TEST(SqrtISwap, RandomInteractionsAndLocalFactors) {
   std::mt19937 generator(42);
   std::uniform_real_distribution<double> sample(0., 1.);
   for (int i = 0; i < 1000; ++i) {
-    std::array coordinates{sample(generator), sample(generator),
-                           sample(generator)};
+    std::array coordinates{
+        sample(generator),
+        sample(generator),
+        sample(generator),
+    };
     std::ranges::sort(coordinates, std::greater<>());
-    for (auto& coefficient : coordinates)
+    for (auto& coefficient : coordinates) {
       coefficient *= std::numbers::pi / 4.;
-    if (i % 2 == 0)
+    }
+    if (i % 2 == 0) {
       coordinates[2] = -coordinates[2];
+    }
     const auto left =
         Matrix4x4::kron(RXOp::unitaryMatrix(6. * sample(generator)),
                         RYOp::unitaryMatrix(6. * sample(generator)));

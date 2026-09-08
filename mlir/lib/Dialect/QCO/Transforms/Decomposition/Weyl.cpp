@@ -785,7 +785,10 @@ static TwoQubitNativeDecomposition
 oneGate(const TwoQubitWeylDecomposition& target) {
   const auto identity = Matrix2x2::identity();
   TwoQubitNativeDecomposition result{
-      1, {identity, identity, identity, identity}, 0.};
+      .numBasisUses = 1,
+      .singleQubitFactors = {identity, identity, identity, identity},
+      .globalPhase = 0.,
+  };
   static const auto BASIS =
       TwoQubitWeylDecomposition::create(sqrtISwapMatrix(), std::nullopt);
   align(result, BASIS, target);
@@ -800,7 +803,16 @@ twoGates(const TwoQubitWeylDecomposition& target) {
                    std::sin(-x - y - z) * std::sin(-x + y + z);
   const auto split = 2. * std::sqrt(std::max(0., c));
   const auto center = std::cos(2. * x) - std::cos(2. * y) + std::cos(2. * z);
-  const auto alpha = std::acos(std::clamp(center + split, -1., 1.));
+  // Rationalize sin^2(alpha/2) to avoid cancellation near alpha=0.
+  const auto sinX = std::sin(x);
+  const auto sinY = std::sin(y);
+  const auto sinZ = std::sin(z);
+  const auto cosY = std::cos(y);
+  const auto sum = sinX * sinX - sinY * sinY + sinZ * sinZ + split / 2.;
+  const auto product = 2. * sinX * sinZ * cosY;
+  const auto sinAlphaSquared = sum > 0. ? product * product / sum : 0.;
+  const auto alpha =
+      2. * std::asin(std::sqrt(std::clamp(sinAlphaSquared, 0., 1.)));
   const auto beta = std::acos(std::clamp(center - split, -1., 1.));
   const auto t = 2. * std::cos(x) * std::cos(z) * std::sin(y);
   const auto numerator = t * t;
@@ -818,7 +830,18 @@ twoGates(const TwoQubitWeylDecomposition& target) {
       Complex(0., std::sin(beta / 2.)), std::cos(beta / 2.));
   const auto identity = Matrix2x2::identity();
   TwoQubitNativeDecomposition result{
-      2, {identity, identity, right, left, identity, identity}, 0.};
+      .numBasisUses = 2,
+      .singleQubitFactors =
+          {
+              identity,
+              identity,
+              right,
+              left,
+              identity,
+              identity,
+          },
+      .globalPhase = 0.,
+  };
   const auto gate = sqrtISwapMatrix();
   const auto sandwich = gate * Matrix4x4::kron(left, right) * gate;
   align(result, TwoQubitWeylDecomposition::create(sandwich, std::nullopt),
@@ -829,7 +852,10 @@ TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
   const auto kak = TwoQubitWeylDecomposition::create(target, std::nullopt);
   if (kak.a() <= WEYL_TOLERANCE) {
     TwoQubitNativeDecomposition result{
-        0, {Matrix2x2::identity(), Matrix2x2::identity()}, 0.};
+        .numBasisUses = 0,
+        .singleQubitFactors = {Matrix2x2::identity(), Matrix2x2::identity()},
+        .globalPhase = 0.,
+    };
     attachLocalFactors(result, kak);
     return result;
   }
