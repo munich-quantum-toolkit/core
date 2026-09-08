@@ -732,7 +732,6 @@ bool TwoQubitWeylDecomposition::applySpecialization(
   return flippedFromOriginal;
 }
 
-using KAK = TwoQubitWeylDecomposition;
 constexpr double EIGHTH_PI = std::numbers::pi / 8.;
 
 static Matrix4x4 sqrtISwapMatrix() {
@@ -745,7 +744,7 @@ static Matrix4x4 sqrtISwapMatrix() {
 
 // Attach U's outer local factors to a synthesis of its canonical matrix.
 static void attachLocalFactors(TwoQubitNativeDecomposition& result,
-                               const KAK& target) {
+                               const TwoQubitWeylDecomposition& target) {
   auto& factors = result.singleQubitFactors;
   factors[0] = factors[0] * target.k2r();
   factors[1] = factors[1] * target.k2l();
@@ -755,8 +754,9 @@ static void attachLocalFactors(TwoQubitNativeDecomposition& result,
 }
 
 // Convert a circuit locally equivalent to target to an exact realization.
-static void align(TwoQubitNativeDecomposition& result, const KAK& circuit,
-                  const KAK& target) {
+static void align(TwoQubitNativeDecomposition& result,
+                  const TwoQubitWeylDecomposition& circuit,
+                  const TwoQubitWeylDecomposition& target) {
   auto& factors = result.singleQubitFactors;
   factors[0] = factors[0] * circuit.k2r().adjoint();
   factors[1] = factors[1] * circuit.k2l().adjoint();
@@ -781,17 +781,20 @@ static void align(TwoQubitNativeDecomposition& result, const KAK& circuit,
   attachLocalFactors(result, target);
 }
 
-static TwoQubitNativeDecomposition oneGate(const KAK& target) {
+static TwoQubitNativeDecomposition
+oneGate(const TwoQubitWeylDecomposition& target) {
   const auto identity = Matrix2x2::identity();
   TwoQubitNativeDecomposition result{
       1, {identity, identity, identity, identity}, 0.};
-  static const auto BASIS = KAK::create(sqrtISwapMatrix(), std::nullopt);
+  static const auto BASIS =
+      TwoQubitWeylDecomposition::create(sqrtISwapMatrix(), std::nullopt);
   align(result, BASIS, target);
   return result;
 }
 
 // See supplemental Eqs. (3), (5)-(7): doi:10.1103/PhysRevLett.130.070601.
-static TwoQubitNativeDecomposition twoGates(const KAK& target) {
+static TwoQubitNativeDecomposition
+twoGates(const TwoQubitWeylDecomposition& target) {
   const double x = target.a(), y = target.b(), z = target.c();
   const double c = std::sin(x + y - z) * std::sin(x - y + z) *
                    std::sin(-x - y - z) * std::sin(-x + y + z);
@@ -818,11 +821,12 @@ static TwoQubitNativeDecomposition twoGates(const KAK& target) {
       2, {identity, identity, right, left, identity, identity}, 0.};
   const auto gate = sqrtISwapMatrix();
   const auto sandwich = gate * Matrix4x4::kron(left, right) * gate;
-  align(result, KAK::create(sandwich, std::nullopt), target);
+  align(result, TwoQubitWeylDecomposition::create(sandwich, std::nullopt),
+        target);
   return result;
 }
 TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
-  const auto kak = KAK::create(target, std::nullopt);
+  const auto kak = TwoQubitWeylDecomposition::create(target, std::nullopt);
   if (kak.a() <= WEYL_TOLERANCE) {
     TwoQubitNativeDecomposition result{
         0, {Matrix2x2::identity(), Matrix2x2::identity()}, 0.};
@@ -839,8 +843,8 @@ TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
   }
 
   // Choose the residual furthest inside the two-gate region.
-  std::optional<KAK> residual;
-  std::optional<KAK> prefix;
+  std::optional<TwoQubitWeylDecomposition> residual;
+  std::optional<TwoQubitWeylDecomposition> prefix;
   double bestMargin = -1.;
   for (size_t zero = 0; zero < 3; ++zero) {
     for (double first : {-EIGHTH_PI, EIGHTH_PI}) {
@@ -848,16 +852,16 @@ TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
         std::array<double, 3> coordinates{};
         coordinates[(zero + 1) % 3] = first;
         coordinates[(zero + 2) % 3] = second;
-        const auto gate = KAK::getCanonicalMatrix(
+        const auto gate = TwoQubitWeylDecomposition::getCanonicalMatrix(
             coordinates[0], coordinates[1], coordinates[2]);
-        const auto candidate = KAK::create(
+        const auto candidate = TwoQubitWeylDecomposition::create(
             kak.getCanonicalMatrix() * gate.adjoint(), std::nullopt);
         const auto margin =
             candidate.a() - candidate.b() - std::abs(candidate.c());
         if (margin > bestMargin) {
           bestMargin = margin;
           residual = candidate;
-          prefix = KAK::create(gate, std::nullopt);
+          prefix = TwoQubitWeylDecomposition::create(gate, std::nullopt);
         }
       }
     }
