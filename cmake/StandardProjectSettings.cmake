@@ -98,3 +98,13 @@ set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS
     CACHE BOOL "Export all symbols on Windows")
 
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
+option(ENABLE_BOLT "Prepare Linux release binaries for BOLT post-link optimization" OFF)
+if(ENABLE_BOLT)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "BOLT release optimization requires Linux")
+  endif()
+  add_compile_options("$<$<COMPILE_LANG_AND_ID:C,GNU>:-fno-reorder-blocks-and-partition>"
+                      "$<$<COMPILE_LANG_AND_ID:CXX,GNU>:-fno-reorder-blocks-and-partition>")
+  add_link_options("LINKER:--emit-relocs")
+endif()

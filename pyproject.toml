@@ -264,7 +264,7 @@ test-sources = [
 ]
 
 [tool.cibuildwheel.linux]
-config-settings = { "cmake.define.ENABLE_IPO" = "ON", "cmake.define.CMAKE_LINKER_TYPE" = "MOLD" }
+config-settings = { "cmake.define.ENABLE_IPO" = "ON", "cmake.define.CMAKE_LINKER_TYPE" = "BFD", "cmake.define.ENABLE_BOLT" = "ON", "install.strip" = "false" }
 environment = { DEPLOY = "ON", PATH = "/opt/llvm-23.1.0/bin:$PATH:/root/.local/bin", MLIR_DIR = "/opt/llvm-23.1.0/lib/cmake/mlir" }
 environment-pass = [
   "CMAKE_C_COMPILER_LAUNCHER",
@@ -278,8 +278,12 @@ environment-pass = [
 ]
 before-all = """
 uv tool install sccache>=0.10.0
-curl -LsSf https://raw.githubusercontent.com/munich-quantum-software/setup-mlir/ed5b604a5540aad8dd5deb19f50745cced8a43e4/installation/setup-mlir.sh | bash -s -- -v 23.1.0 -p /opt/llvm-23.1.0 -a OFF
+curl -LsSf https://raw.githubusercontent.com/munich-quantum-software/setup-mlir/dae31adab96bf01540439d2d2f8226464294f2f3/installation/setup-mlir.sh | bash -s -- -v 23.1.0 -p /opt/llvm-23.1.0 -a OFF
 """
+repair-wheel-command = """\
+  uv run --no-project --with wheel --python \"$(command -v python)\" python \"{project}/scripts/bolt_wheel.py\" \
+  \"{wheel}\" \"{dest_dir}\" \"{project}\"\
+  """
 before-test = "uvx sccache --show-stats"
 # QIR-Runner's Linux wheels require a newer glibc than the manylinux_2_28
 # containers used to build and test MQT Core's broadly compatible wheels.

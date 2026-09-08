@@ -16,9 +16,15 @@ function(add_mqt_python_binding package_name target_name)
     set(NB_ABI "${Python_VERSION_MAJOR}${Python_VERSION_MINOR}t")
   endif()
 
+  set(strip_option)
+  if(ENABLE_BOLT)
+    set(strip_option NOSTRIP)
+  endif()
+
   nanobind_add_module(
     # Name of the extension
     ${target_name}
+    ${strip_option}
     # Enable free-threaded support
     FREE_THREADED
     # Suppress compiler warnings from the nanobind library

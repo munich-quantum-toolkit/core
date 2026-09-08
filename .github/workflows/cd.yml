@@ -28,12 +28,13 @@ jobs:
             windows-2025,
             windows-11-arm,
           ]
-    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@bb77ab3c64143117b04c55aadb4102531fc2b47a
+    uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-python-packaging-wheel-cibuildwheel.yml@68937b4bab73933f62067c1c884c463ddd7b4731
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
       llvm-version: 23.1.0
       mlir-assertions: false
+      xcode-version: "26.6"
     permissions:
       contents: read
 
