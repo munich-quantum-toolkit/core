@@ -52,6 +52,19 @@ MQT Core 4 provides the separate `MQT::CoreBench` library and `mqt-core-bench`
 CLI for typed structured benchmarks. These interfaces are not drop-in
 replacements for the circuit factories removed in MQT Core 3.10.
 
+### QIR conversion
+
+Dynamic QC/QCO qubit allocations must be in the entry block of the function
+marked `mqt.entry_point`. Pass resources to helpers instead of allocating there.
+QIR conversion requires a single entry-function return; route multiple exits to
+one return before conversion. Keep returned CBit stores in the same block as
+measurement, compute their indices beforehand, and avoid intervening accesses
+that may observe or overwrite their destinations.
+
+Adaptive QIR now allocates scalar results dynamically, as it already did for
+result registers. In `QIRProgramBuilder`, do not mix explicit `staticResult()`
+references with Adaptive measurements or dynamic result registers.
+
 ### QIR execution
 
 Dynamic QIR inputs must use the current QIR 2.1 resource-management interface.

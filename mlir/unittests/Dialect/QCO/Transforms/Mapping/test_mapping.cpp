@@ -345,6 +345,47 @@ class MappingPassTest : public MappingPassFixture,
 
 }; // namespace
 
+TEST_F(MappingPassFixture, StandalonePassesUseSharedAllocationVerifier) {
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(1, Connectivity::fromCouplings({}),
+                             NativeOperations::fromOperations({})));
+  for (const bool placement : {false, true}) {
+    SCOPED_TRACE(placement);
+    MLIRContext rawContext;
+    rawContext.loadDialect<QCODialect, func::FuncDialect, arith::ArithDialect,
+                           scf::SCFDialect>();
+    auto module = parseSourceString<ModuleOp>(R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} {
+        %condition = arith.constant true
+        scf.if %condition {
+          %q = qco.alloc : !qco.qubit
+          qco.sink %q : !qco.qubit
+        }
+        return
+      }
+    })mlir",
+                                              &rawContext);
+    ASSERT_TRUE(module);
+    ASSERT_EQ(rawContext.getLoadedDialect<mlir::mqt::MQTDialect>(), nullptr);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&rawContext, [&](Diagnostic& diagnostic) {
+      diagnosed |=
+          diagnostic.str().find("dynamic quantum allocations must be") !=
+          std::string::npos;
+      return success();
+    });
+    PassManager pm(&rawContext);
+    if (placement) {
+      pm.addPass(createPlacementPass(target));
+    } else {
+      pm.addPass(createMappingPass(target, {}));
+    }
+    EXPECT_TRUE(failed(pm.run(*module)));
+    EXPECT_TRUE(diagnosed);
+  }
+}
+
 TEST_F(MappingPassFixture, MapTopologyOnlyWithEmptyOperationSet) {
   constexpr int64_t size = 3;
 

@@ -129,6 +129,36 @@ TEST(QCToQIRBaseNativeTest, EmptyCtrlDoesNotControlFollowingGate) {
       });
 }
 
+TEST(QCToQIRBaseNativeTest, RejectsReorderedOverlappingOutputStores) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+  auto reg = builder.allocClassicalBitRegister(1);
+  builder.x(q1);
+  auto zero = builder.measure(q0);
+  auto one = builder.measure(q1);
+  builder.storeClassicalBit(one, reg, 0);
+  builder.storeClassicalBit(zero, reg, 0);
+  builder.retype(reg.getType());
+  auto module = builder.finalize(reg);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |=
+        diagnostic.str().find("cannot fuse this measurement/store pair") !=
+        std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*module)));
+  EXPECT_TRUE(diagnosed);
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
 TEST(QCToQIRBaseNativeTest, RejectsMultiBlockEntryFunctionWithoutMutation) {
   MLIRContext context;
   context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,

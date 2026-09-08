@@ -320,6 +320,10 @@ struct PlacementPass final
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
+    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     auto func = mqt::getEntryPoint(moduleOp);
     if (!func) {
       moduleOp.emitError() << "does not contain an entry point function";
@@ -565,6 +569,10 @@ protected:
     }
 
     auto moduleOp = getOperation();
+    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     if (target->connectivityKind() !=
         CompilerTarget::Connectivity::Kind::Explicit) {
       moduleOp.emitError()

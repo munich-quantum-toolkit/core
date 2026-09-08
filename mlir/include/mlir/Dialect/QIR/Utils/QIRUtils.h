@@ -214,7 +214,7 @@ struct ClassicalRegister {
   Value array;
 };
 
-/// A static result (i.e., a result that is not part of a classical register).
+/// An indexed scalar result for output recording; its pointer may be dynamic.
 struct StaticResult {
   /// The result pointer.
   Value pointer;
