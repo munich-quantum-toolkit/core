@@ -198,3 +198,35 @@ TEST(ResultsStatevector, QIRBaseStringYieldsBellState) {
   EXPECT_NEAR(std::abs(vec[2]), 0.0, 1e-6);
   EXPECT_NEAR(std::abs(vec[3]), invSqrt2, 1e-6);
 }
+
+TEST(ResultsStatevector, QIRPreservesPhaseWireOrderAndDeclaredWidth) {
+  constexpr std::string_view program = R"(
+define i64 @main() #0 {
+  call void @__quantum__qis__gphase__body(double 0.3)
+  call void @__quantum__qis__x__body(ptr null)
+  call void @__quantum__qis__swap__body(ptr null, ptr inttoptr (i64 1 to ptr))
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  ret i64 0
+}
+declare void @__quantum__qis__gphase__body(double)
+declare void @__quantum__qis__x__body(ptr)
+declare void @__quantum__qis__swap__body(ptr, ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr) #1
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="3" "required_num_results"="1" }
+attributes #1 = { "irreversible" }
+)";
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  ASSERT_EQ(
+      qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QIRBASESTRING, program),
+      QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+  const auto values = qdmi_test::getDenseState(j.job);
+  ASSERT_EQ(values.size(), 8);
+  for (size_t i = 0; i < values.size(); ++i) {
+    EXPECT_NEAR(std::abs(values[i] - (i == 2 ? std::polar(1., 0.3)
+                                             : std::complex<double>{})),
+                0., 1e-12);
+  }
+}

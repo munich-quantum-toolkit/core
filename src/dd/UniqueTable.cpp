@@ -34,14 +34,15 @@ UniqueTable::UniqueTable(MemoryManager& manager,
 }
 
 void UniqueTable::resize(const std::size_t nVars) {
+  const auto oldSize = tables.size();
   cfg.nVars = nVars;
-  tables.resize(nVars, Table(cfg.nBuckets));
-  // TODO: if the new size is smaller than the old one we might have to
-  // release the unique table entries for the superfluous variables
+  tables.resize(nVars);
+  /// TODO: release entries for removed levels when shrinking populated tables.
   stats.resize(nVars);
-  for (auto& stat : stats) {
-    stat.entrySize = sizeof(Bucket);
-    stat.numBuckets = cfg.nBuckets;
+  for (auto i = oldSize; i < nVars; ++i) {
+    tables[i].resize(cfg.nBuckets);
+    stats[i].entrySize = sizeof(Bucket);
+    stats[i].numBuckets = cfg.nBuckets;
   }
 }
 

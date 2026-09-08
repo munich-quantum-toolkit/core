@@ -1117,3 +1117,36 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
                     MQT_NAMED_BUILDER(staticQubitsCanonical)}));
 /// @}
+
+TEST_F(QIRTest, MetadataIncludesUnrecordedMeasuredAndReadResults) {
+  for (const auto* call : {
+           "llvm.call @__quantum__qis__mz__body(%qubit, %result) : (!llvm.ptr, "
+           "!llvm.ptr) -> ()",
+           "%value = llvm.call @__quantum__rt__read_result(%result) : "
+           "(!llvm.ptr) "
+           "-> i1",
+       }) {
+    SCOPED_TRACE(call);
+    const std::string ir = std::string(R"mlir(module {
+      llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+      llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
+      llvm.func @main() attributes {passthrough = ["entry_point"]} {
+        %zero = llvm.mlir.constant(0 : i64) : i64
+        %seven = llvm.mlir.constant(7 : i64) : i64
+        %qubit = llvm.inttoptr %zero : i64 to !llvm.ptr
+        %result = llvm.inttoptr %seven : i64 to !llvm.ptr
+    )mlir") + call + R"mlir(
+        llvm.return
+      }
+    })mlir";
+    auto moduleOp = parseSourceString<ModuleOp>(ir, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
+    auto main = getMainFunction(*moduleOp);
+    OpBuilder builder(context.get());
+    EXPECT_TRUE(llvm::is_contained(
+        main.getPassthroughAttr(),
+        builder.getStrArrayAttr({"required_num_results", "8"})));
+  }
+}

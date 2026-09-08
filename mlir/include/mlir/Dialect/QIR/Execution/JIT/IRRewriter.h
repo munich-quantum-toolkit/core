@@ -14,6 +14,10 @@
 
 #pragma once
 
+#include <cstdint>
+#include <optional>
+#include <vector>
+
 namespace llvm {
 class Function;
 }
@@ -36,8 +40,16 @@ namespace qir {
  * @return Whether an irreversible boundary was found and truncated.
  * @throws std::invalid_argument if the entry point is not Base Profile, does
  * not use the QIR 2.x @c i64() signature, or has non-terminal irreversible
- * operations.
+ * operations or calls to defined or indirect callees.
  */
 bool prepareForStateExtraction(llvm::Function& entryPoint);
+
+/// Return logical qubit IDs in recorded-result order when measurements can be
+/// deferred for sampling. Only an acyclic unconditional Base or Adaptive path
+/// with constant gate arguments and scalar result records is supported. Unknown
+/// calls, result-dependent computation, resets and memory accesses return
+/// std::nullopt, leaving ordinary per-shot execution available.
+std::optional<std::vector<uintptr_t>>
+getStaticSamplingOutputs(const llvm::Function& entryPoint);
 
 } // namespace qir

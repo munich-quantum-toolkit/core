@@ -17,6 +17,7 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <numbers>
@@ -35,6 +36,27 @@ TEST(DDGateConstruction, AppliesGlobalPhase) {
   EXPECT_NEAR(vector[0].real(), 0., RealNumber::eps);
   EXPECT_NEAR(vector[0].imag(), 1., RealNumber::eps);
   EXPECT_EQ(vector[1], std::complex<fp>{});
+
+  package.garbageCollect(true);
+  state = package.applyOperation(Package::makeIdent(), state);
+  EXPECT_EQ(state.getVector(), vector);
+  package.decRef(state);
+  package.garbageCollect(true);
+  const auto [vectors, matrices, reals] = package.computeActiveCounts();
+  EXPECT_EQ(vectors, 0);
+  EXPECT_EQ(matrices, 0);
+  EXPECT_EQ(reals, 0);
+}
+
+TEST(DDGateConstruction, ScalarGlobalPhaseSurvivesCollection) {
+  Package package(0);
+  auto state = vEdge::one();
+  applyGlobalPhase(state, 0.3, package);
+  package.garbageCollect(true);
+  EXPECT_NEAR(std::abs(state.getVector().front() - std::polar(1., 0.3)), 0.,
+              RealNumber::eps);
+  package.decRef(state);
+  package.garbageCollect(true);
 }
 
 TEST(DDGateConstruction, VectorKroneckerWithTerminal) {
