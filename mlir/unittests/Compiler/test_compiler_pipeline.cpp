@@ -2490,8 +2490,7 @@ TEST_F(CompilerPipelineTest,
   EXPECT_TRUE(StringRef(diagnostics).contains("scf.while")) << diagnostics;
 }
 
-TEST_F(CompilerPipelineTest,
-       PayloadControlLiftsReducibleCFGToSupportedForwardBranch) {
+TEST_F(CompilerPipelineTest, PayloadControlRejectsUnstructuredCFG) {
   constexpr llvm::StringLiteral source = R"mlir(
     module {
       func.func @main(%condition: i1) -> i64 attributes {mqt.entry_point} {
@@ -2519,11 +2518,92 @@ TEST_F(CompilerPipelineTest,
               },
       },
   });
+  std::string diagnostics;
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(program);
-  ASSERT_TRUE(program->compileForTarget(
-      TargetEnvironment(makeUnrestrictedTarget(), payload)));
-  EXPECT_FALSE(StringRef(program->str()).contains("cf."));
+  EXPECT_FALSE(compileForTargetWithDiagnostics(*program, payload, diagnostics));
+  EXPECT_TRUE(StringRef(diagnostics).contains("structured QCO/SCF input"))
+      << diagnostics;
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlRejectsConstantCFGBeforeCleanup) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        cf.br ^exit
+      ^exit:
+        return
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(program);
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, makeControlPayloadSpecification({}), diagnostics));
+  EXPECT_TRUE(StringRef(diagnostics).contains("structured QCO/SCF input"))
+      << diagnostics;
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlAllowsRuntimeAssertions) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(
+    module {
+      func.func @main(%condition: i1) attributes {mqt.entry_point} {
+        cf.assert %condition, "runtime precondition"
+        return
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
+      makeUnrestrictedTarget(), makeControlPayloadSpecification({}))));
+  EXPECT_TRUE(StringRef(program->str()).contains("cf.assert"));
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlPreservesSingleCaseNativeSwitches) {
+  constexpr llvm::StringLiteral quantum = R"mlir(
+    module {
+      func.func @main(%selector: index) attributes {mqt.entry_point} {
+        %q = qco.alloc : !qco.qubit
+        %r = qco.index_switch %selector -> (!qco.qubit)
+        case 0 args(%a = %q) {
+          %x = qco.x %a : !qco.qubit -> !qco.qubit
+          qco.yield %x : !qco.qubit
+        }
+        default args(%a = %q) {
+          %h = qco.h %a : !qco.qubit -> !qco.qubit
+          qco.yield %h : !qco.qubit
+        }
+        qco.sink %r : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  constexpr llvm::StringLiteral classical = R"mlir(
+    module {
+      func.func @main(%selector: index) -> i64 attributes {mqt.entry_point} {
+        %r = scf.index_switch %selector -> i64
+        case 0 {
+          %one = arith.constant 1 : i64
+          scf.yield %one : i64
+        }
+        default {
+          %two = arith.constant 2 : i64
+          scf.yield %two : i64
+        }
+        return %r : i64
+      }
+    }
+  )mlir";
+  for (auto source : {quantum, classical}) {
+    auto program = QCOProgram::fromMLIRString(source.str());
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
+        makeUnrestrictedTarget(),
+        makeControlPayloadSpecification(
+            {{.id = "multiway-branching",
+              .constraints = {{.id = "max-case-count", .value = 1}}}}))));
+    EXPECT_TRUE(StringRef(program->str()).contains("index_switch"));
+  }
 }
 
 TEST_F(CompilerPipelineTest,

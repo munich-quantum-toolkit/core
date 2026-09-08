@@ -35,11 +35,9 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/RegionUtils.h>
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <initializer_list>
 #include <optional>
 #include <utility>
 
@@ -212,52 +210,20 @@ private:
          hasLinearCapture(operation);
 }
 
-/// Widen before subtracting so a large range cannot appear to have zero trips.
+/// Require literal bounds; do not infer constrained iteration from symbolic IR.
 [[nodiscard]] static std::optional<llvm::APInt>
 getExactConstantTripCount(scf::ForOp loop) {
-  const auto constant = [](Value value) -> std::optional<llvm::APInt> {
-    const auto result = getConstantAPIntValue(getAsOpFoldResult(value));
-    return result ? std::optional(result->first) : std::nullopt;
-  };
-
-  const auto lowerBound = constant(loop.getLowerBound());
-  const auto upperBound = constant(loop.getUpperBound());
-  const auto step = constant(loop.getStep());
-  if (!lowerBound || !upperBound || !step) {
+  if (!getConstantAPIntValue(getAsOpFoldResult(loop.getLowerBound())) ||
+      !getConstantAPIntValue(getAsOpFoldResult(loop.getUpperBound())) ||
+      !getConstantAPIntValue(getAsOpFoldResult(loop.getStep()))) {
     return std::nullopt;
   }
-
-  const unsigned width = std::max({
-                             lowerBound->getBitWidth(),
-                             upperBound->getBitWidth(),
-                             step->getBitWidth(),
-                         }) +
-                         1U;
-  const bool isUnsigned = loop.getUnsignedCmp();
-  const auto extend = [&](const llvm::APInt& value) {
-    return isUnsigned ? value.zextOrTrunc(width) : value.sextOrTrunc(width);
-  };
-  const llvm::APInt lower = extend(*lowerBound);
-  const llvm::APInt upper = extend(*upperBound);
-  const llvm::APInt stride = extend(*step);
-  const llvm::APInt one(width, 1U);
-
-  if ((isUnsigned && (stride.isZero() || upper.ule(lower))) ||
-      (!isUnsigned && (!stride.isStrictlyPositive() || upper.sle(lower)))) {
-    return llvm::APInt(width, 0U);
-  }
-  const llvm::APInt difference = upper - lower;
-  return ((difference - one).udiv(stride)) + one;
-}
-
-[[nodiscard]] static bool haveEqualTripCounts(const llvm::APInt& lhs,
-                                              const llvm::APInt& rhs) {
-  const unsigned width = std::max(lhs.getBitWidth(), rhs.getBitWidth());
-  return lhs.zextOrTrunc(width) == rhs.zextOrTrunc(width);
+  return loop.getStaticTripCount();
 }
 
 static LogicalResult foldStaticBranches(ModuleOp moduleOp) {
-  /// Do not load generic SCF loop patterns before the exact trip-count check.
+  /// Fold branches without transforming loops before the capture and unroll
+  /// safety checks below.
   RewritePatternSet patterns(moduleOp.getContext());
   IfOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
   IndexSwitchOp::getCanonicalizationPatterns(patterns, moduleOp.getContext());
@@ -297,13 +263,13 @@ static LogicalResult foldStaticBranches(ModuleOp moduleOp) {
 [[nodiscard]] static bool isLegal(IndexSwitchOp operation,
                                   const PayloadControlSupport& support) {
   const uint64_t cases = operation.getNumCases();
-  return cases > 1U && support.coversMultiwayBranching(operation, cases);
+  return cases > 0U && support.coversMultiwayBranching(operation, cases);
 }
 
 [[nodiscard]] static bool isLegal(scf::IndexSwitchOp operation,
                                   const PayloadControlSupport& support) {
   const uint64_t cases = operation.getNumCases();
-  return !hasLinearBranchState(operation) && cases > 1U &&
+  return !hasLinearBranchState(operation) && cases > 0U &&
          support.coversMultiwayBranching(operation, cases);
 }
 
@@ -497,15 +463,6 @@ protected:
               return WalkResult::interrupt();
             }
             const auto tripCount = getExactConstantTripCount(loop);
-            if (tripCount) {
-              const auto mlirTripCount = loop.getStaticTripCount();
-              if (!mlirTripCount ||
-                  !haveEqualTripCounts(*tripCount, *mlirTripCount)) {
-                loop.emitError(
-                    "MLIR cannot safely normalize this static loop range");
-                return WalkResult::interrupt();
-              }
-            }
             if (support->coversIteration(ControlFeature::CountedIteration, loop,
                                          tripCount)) {
               return WalkResult::advance();

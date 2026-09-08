@@ -1,7 +1,6 @@
 # Compiler-only control-flow legalization
 
-Status: independently rebased and locally validated capability snapshot; ready
-for human contract review.
+Status: implemented.
 
 ## Scope and release boundary
 
@@ -20,27 +19,30 @@ profile verification remain separate work.
 
 Keep two passes in one source: bounded static-loop unrolling before cleanup,
 then dialect conversion for residual branches and loops. Reuse MLIR symbol DCE,
-CFG-to-SCF lifting, SCCP, loop unrolling and conversion legality. Preserve the
-65,536 cloned-operation limit and widened trip-count guard against overflow.
-Reject invalid linear captures; carry quantum values explicitly through regions.
+SCCP, native static trip counts, loop unrolling and conversion legality. Require
+structured QCO/SCF input; producers normalize CFG branches before compilation.
+Preserve literal-bound proofs, the 65,536 cloned-operation limit, and signed
+arithmetic safety checks for full unrolling. Reject invalid linear captures;
+carry quantum values explicitly through regions.
 
-The canonical pipeline retains its validated CompilerTarget parameter for
-placement and decomposition. It does not reintroduce removed cleanup passes or
-unknown-target fallbacks. Both legalization passes consume the existing cached
-TargetEnvironmentAnalysis. Capability names and constraints remain provisional.
+The canonical pipeline receives one selected TargetEnvironment and shares its
+prepared target with all passes. It does not reintroduce removed cleanup passes
+or unknown-target fallbacks. Both legalization passes consume the existing
+cached TargetEnvironmentAnalysis. Capability names and constraints remain
+provisional.
+
+Single-case switches require only multiway branching. Cleanup after mapping
+remains; the redundant cleanup immediately after control legalization is
+removed.
 
 ## Validation
 
-Build independently on #2219 and run the compiler and full native suites,
-including constant-control folding, loop bounds and overflow, conversion of
-switches with linear results, unsupported dynamic control and exact constraint
-boundaries. Run repository lint, C++ lint and the MLIR documentation build.
+The optimized native build passed all 3,217 configured tests, with one existing
+optional-device skip. The compiler suite passed all 191 tests, including early
+CFG rejection, runtime assertions, single-case quantum and classical switches,
+full-width trip counts, unroll bounds, and linear-state constraints. MLIR
+documentation, repository lint, and whole changed-file C++ lint passed.
 
-The prior capability-snapshot validation passed 3,889 release tests, with one
-existing optional-device skip. MLIR documentation and repository lint passed.
-The current LLVM correctly represents the full-width loop range; its test now
-verifies that the loop and its exact trip count survive instead of requiring the
-LLVM 22 failure.
-
-Preserve Simon Hofmann's human co-authorship and existing review discussion. No
-archive branches or automatic review requests.
+Simon Hofmann's human co-authorship and the existing review history are
+preserved. The child commits are restacked on the shared-environment
+implementation in #2219.

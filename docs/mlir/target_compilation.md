@@ -78,11 +78,11 @@ typed `#mqt.payload_spec` attribute.
 
 ### Payload control flow
 
-Target compilation removes unused symbols, lifts reducible ControlFlow dialect
-graphs to SCF, and propagates constants. It checks constant loop ranges with
-widened arithmetic before generic canonicalization, unrolls unsupported static
-loops, and then runs the standard QCO cleanup pipeline. It applies these
-structural capabilities to the remaining control flow:
+Target compilation requires structured QCO/SCF input. Producers of raw CFG
+branches must normalize them before target compilation; runtime assertions are
+allowed. The pipeline removes unused symbols, propagates constants, unrolls
+unsupported static loops, and then runs the standard QCO cleanup pipeline. It
+applies these structural capabilities to the remaining control flow:
 
 | Capability           | Residual operations                                 |
 | -------------------- | --------------------------------------------------- |
@@ -102,13 +102,15 @@ arguments instead of capturing it.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and
-`max-case-count` on multiway branching. Limits are inclusive. The compiler must
+`max-case-count` on multiway branching, counting explicit cases without the
+default region. One explicit case plus a default is a supported index switch and
+does not require forward branching. Limits are inclusive. The compiler must
 prove a constrained loop's trip count. It currently proves constant `scf.for`
 bounds and rejects a constrained `scf.while` because no general termination
-bound is available. The compiler rejects a constant range when MLIR's native
-trip-count result disagrees with widened arithmetic. A zero, unknown, or
-misapplied constraint makes that capability group unusable. Missing or
-incomplete optional metadata never implies support.
+bound is available. MLIR computes static trip counts; full unrolling
+additionally requires bounds and scaled steps that fit its signed arithmetic. A
+zero, unknown, or misapplied constraint makes that capability group unusable.
+Missing or incomplete optional metadata never implies support.
 
 This stage checks structural control flow only. Later lowering stages remain
 responsible for scalar types and operations, measurement provenance, function
