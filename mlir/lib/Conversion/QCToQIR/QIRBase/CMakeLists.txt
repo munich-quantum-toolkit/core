@@ -24,9 +24,6 @@ add_mlir_conversion_library(
   MLIRArithDialect
   MLIRTransforms
   MLIRFuncDialect
-  MLIRFuncToLLVM
-  MLIRMathDialect
-  MLIRMathToLLVM
-  MLIRReconcileUnrealizedCasts)
+  MLIRFuncToLLVM)
 
 mqt_mlir_target_use_project_options(MLIRQCToQIRBase)

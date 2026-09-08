@@ -20,8 +20,10 @@ add_mlir_library(
   MLIRTransforms
   MLIRLLVMDialect
   MLIRLLVMCommonConversion
-  MLIRFuncToLLVM
   MLIRControlFlowToLLVM
+  MLIRMathDialect
+  MLIRMathToLLVM
+  MLIRReconcileUnrealizedCasts
   MLIRArithToLLVM
   MLIRMemRefDialect
   MLIRMQTDialect

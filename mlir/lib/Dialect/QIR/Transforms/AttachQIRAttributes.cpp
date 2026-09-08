@@ -206,15 +206,15 @@ private:
     const auto setTypes = [&](const StringRef name,
                               const llvm::SmallSet<std::string, 4>& types) {
       if (types.empty()) {
-        m->removeAttr(name);
         return;
       }
       SmallVector<StringRef> values(types.begin(), types.end());
       llvm::sort(values);
-      m->setAttr(name, rewriter.getStrArrayAttr(values));
+      flags.emplace_back(createFlag(LLVM::ModFlagBehavior::Append, name,
+                                    rewriter.getStrArrayAttr(values)));
     };
-    setTypes("qir.int_computations", metadata.integerTypes);
-    setTypes("qir.float_computations", metadata.floatingTypes);
+    setTypes("int_computations", metadata.integerTypes);
+    setTypes("float_computations", metadata.floatingTypes);
     LLVM::ModuleFlagsOp::create(rewriter, m.getLoc(),
                                 rewriter.getArrayAttr(flags));
   }
