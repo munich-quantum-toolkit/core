@@ -406,7 +406,7 @@ def DecomposeMultiControlled
     | X/Z | 4 | Elementary CCCX/CCCZ |
     | X/Z | 5 | Specialized ancilla-free relative-phase `C^4(Z)` |
     | X/Z | 6–33 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
-    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with a compile-time CX policy table |
+    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with one dirty helper for odd control counts and two for even counts |
     | Y | ≥3 | X decomposition with `S†` before and `S` after on the target |
     | RX/RY/RZ | ≥3 | Balanced control halves with exact MCX and quarter-angle rotations; RX uses H-conjugated RZ |
     | Phase | 3 | Optimized `C^2(P)` |

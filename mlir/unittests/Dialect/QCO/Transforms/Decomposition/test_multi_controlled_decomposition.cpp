@@ -23,6 +23,7 @@
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/ScopeExit.h>
 #include <llvm/Support/Error.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -64,8 +65,10 @@ static constexpr std::array<size_t, 20> K_DD_CONTROL_COUNTS = {
 };
 static constexpr size_t K_MATRIX_DD_MAX_PAULI = 8;
 static constexpr size_t K_MATRIX_DD_MAX_MCP = 6;
-static constexpr std::array<size_t, 6> K_COHERENT_HP24_CONTROL_COUNTS = {
-    10, 11, 21, 22, 23, 33,
+/// Retain representative SP22 widths and cover the HP24 crossover, both
+/// dirty-helper modes, and wide phase ladders that can fold to identity.
+static constexpr std::array<size_t, 12> K_COHERENT_PAULI_CONTROL_COUNTS = {
+    10, 11, 21, 22, 23, 32, 33, 34, 47, 48, 63, 64,
 };
 static constexpr std::array<size_t, 2> K_COHERENT_MCP_CONTROL_COUNTS = {7, 12};
 /// Additional fully-lowered/CX smoke checks for k > 20 through the SP22 MCX
@@ -384,6 +387,21 @@ static void expectImplementsControlledPauli(func::FuncOp funcOp,
   dd->decRef(*decomposedDD);
 }
 
+/// Compare the complete states, including phase, without requiring identical
+/// DD nodes after floating-point synthesis.
+static void expectStatesNear(dd::Package& package, const dd::VectorDD& actual,
+                             const dd::VectorDD& expected) {
+  auto negativeExpected = expected;
+  negativeExpected.w = package.cn.lookup(-dd::RealNumber::val(expected.w.r),
+                                         -dd::RealNumber::val(expected.w.i));
+  const auto difference = package.add(actual, negativeExpected);
+  package.incRef(difference);
+  constexpr double tolerance = 1e-11;
+  EXPECT_LE(package.innerProduct(difference, difference).r,
+            tolerance * tolerance);
+  package.decRef(difference);
+}
+
 static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
                                                 size_t numControls,
                                                 ControlledPauli pauli) {
@@ -413,11 +431,7 @@ static void expectMatchesReferenceOnBasisStates(func::FuncOp funcOp,
     ASSERT_TRUE(succeeded(decomposedOutput));
     const auto referenceOutput = dd->applyOperation(
         referenceGate, dd::makeBasisState(numQubits, basisState, *dd));
-    EXPECT_EQ(decomposedOutput->p, referenceOutput.p);
-    EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.r),
-                dd::RealNumber::val(referenceOutput.w.r), 1e-11);
-    EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.i),
-                dd::RealNumber::val(referenceOutput.w.i), 1e-11);
+    expectStatesNear(*dd, *decomposedOutput, referenceOutput);
     dd->decRef(*decomposedOutput);
     dd->decRef(referenceOutput);
   }
@@ -439,6 +453,12 @@ static void
 expectMatchesReferenceOnCoherentState(func::FuncOp funcOp, size_t numControls,
                                       bool targetOne,
                                       const dd::GateMatrix& referenceMatrix) {
+  /// Resolve small SP22 ladder phases before comparing the whole-state error.
+  const auto previousTolerance = dd::RealNumber::eps;
+  const auto restoreTolerance = llvm::make_scope_exit([previousTolerance] {
+    dd::ComplexNumbers::setTolerance(previousTolerance);
+  });
+  dd::ComplexNumbers::setTolerance(1e-15);
   const auto numQubits = countStaticQubits(funcOp);
   ASSERT_EQ(numQubits, numControls + 1);
   expectFullyDecomposed(funcOp);
@@ -452,11 +472,7 @@ expectMatchesReferenceOnCoherentState(func::FuncOp funcOp, size_t numControls,
       makeControlledGateDD(*dd, numControls, referenceMatrix),
       makeCoherentControlInput(numControls, targetOne, *dd));
 
-  EXPECT_EQ(decomposedOutput->p, referenceOutput.p);
-  EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.r),
-              dd::RealNumber::val(referenceOutput.w.r), 1e-11);
-  EXPECT_NEAR(dd::RealNumber::val(decomposedOutput->w.i),
-              dd::RealNumber::val(referenceOutput.w.i), 1e-11);
+  expectStatesNear(*dd, *decomposedOutput, referenceOutput);
 
   dd->decRef(*decomposedOutput);
   dd->decRef(referenceOutput);
@@ -591,7 +607,7 @@ INSTANTIATE_TEST_SUITE_P(
     DdRange, McrDdTest,
     testing::Combine(testing::Values(RotationAxis::X, RotationAxis::Y,
                                      RotationAxis::Z),
-                     testing::Values(2U, 3U, 4U, 5U, 6U, 7U, 8U)),
+                     testing::Values(2U, 3U, 4U, 5U, 6U, 7U, 8U, 9U, 10U)),
     ([](const testing::TestParamInfo<std::tuple<RotationAxis, size_t>>& info) {
       const auto [axis, numControls] = info.param;
       return std::string(axis == RotationAxis::X   ? "Rx"
@@ -794,8 +810,8 @@ INSTANTIATE_TEST_SUITE_P(DdRange, McpDdTest,
                          });
 
 TEST_F(MultiControlledDecompositionTest,
-       CoherentStatesMatchAcrossHp24PolicyBoundaries) {
-  for (const auto k : K_COHERENT_HP24_CONTROL_COUNTS) {
+       CoherentStatesMatchAcrossSynthesisBoundaries) {
+  for (const auto k : K_COHERENT_PAULI_CONTROL_COUNTS) {
     for (const auto pauli :
          {ControlledPauli::X, ControlledPauli::Y, ControlledPauli::Z}) {
       SCOPED_TRACE(testing::Message()

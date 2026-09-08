@@ -1,6 +1,7 @@
 # Multi-controlled Pauli rotations
 
-Status: complete.
+Status: implemented. Rebased onto main
+`4c5e45855e5bb50c42b68ddbf4f9a4dababb8737`.
 
 ## Goal and scope
 
@@ -30,7 +31,7 @@ API or dependency was added.
 
 ## Validation
 
-The complete `mqt-core-mlir-unittest-decomposition` binary passes 297 tests.
+The complete `mqt-core-mlir-unittest-decomposition` binary passes 303 tests.
 These check phase-exact operators, runtime and region-local angles, native
 target and threshold policy, and numeric and symbolic rotation CX budgets
 through 64 controls. Shared Pauli tests cover X, Y, and Z with the same CX
@@ -49,18 +50,20 @@ experiment are recorded in
 
 MCY import, decomposition, and export preserve the exact operator at 2, 3, and 5
 controls. General lint, stub generation, and whole-changed-file C++ lint pass
-with no remaining findings.
+with no remaining findings. Stub generation leaves no diff. The complete
+`uvx nox --non-interactive -s docs` HTML build passes, as does the native
+`mlir-doc` target. The compiler help lists the supported gate families.
 
 ## Performance and limits
 
-Compare Qiskit 2.5 public `mcrx`/`mcry`/`mcrz` synthesis with Core's
-decomposition pass, using no extra qubits and the `u,cx` basis. At 2 and 3
-controls, RX/RY use 4 and 14 CX gates versus Qiskit's 8 and 20. All other
-sampled widths through 64 controls match Qiskit's CX count, for numeric and
-symbolic angles.
+The reproducible benchmark and applied audit findings are recorded in
+[`pr2467-controlled-synthesis-review.md`](../audits/pr2467-controlled-synthesis-review.md).
+Core uses fewer CX gates than Qiskit 2.5.2 for two- and three-control RX/RY and
+matches other sampled counts through 64 controls. Larger outputs are up to 15
+layers deeper. Fair synthesis-only timings are slower for Core in this run;
+previous timing claims are superseded.
 
-With identical level-3 post-optimization, larger Core outputs are 15 layers
-deeper: RY has depth 186 versus 171 at 8 controls and 1978 versus 1963 at 64.
-Local nine-sample median synthesis times were lower for all sampled cases in a
-MinSizeRel build. These timings exclude frontend import, basis normalization,
-routing, and full target compilation; they are not an end-to-end speed claim.
+A reversed-helper prototype beats Qiskit's depth at sampled widths from nine
+through 64 controls, with unchanged CX counts. An unbalanced eight-control split
+saves eight CX gates but increases depth. These are measured follow-up
+candidates, not production changes or an optimality claim.
