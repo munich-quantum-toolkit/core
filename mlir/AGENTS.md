@@ -18,6 +18,9 @@ normative. This file is its short, scoped routing layer.
   conversions and exporters check their supported subset. Diagnose unsupported
   valid IR instead of asserting, silently widening support, or emitting partial
   success. Failed rewrite matches must leave IR unchanged.
+- Treat QCO qubits and QTensors as exactly-one-use values in valid IR. Rely on
+  `qco::verifyLinearity` at boundaries; do not add redundant rewrite guards.
+  Linearity does not imply positional wire correspondence.
 - Preserve deterministic output; never expose pointer or unordered traversal
   order.
 - Search upstream MLIR before adding an MQT-specific operation, interface,

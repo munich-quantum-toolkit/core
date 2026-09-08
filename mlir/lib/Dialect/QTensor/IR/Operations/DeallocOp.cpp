@@ -32,7 +32,7 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
     // qtensor::AllocOp.
     auto tensor = op.getTensor();
     auto allocOp = tensor.getDefiningOp<AllocOp>();
-    if (!allocOp || !allocOp->hasOneUse()) {
+    if (!allocOp) {
       return failure();
     }
 

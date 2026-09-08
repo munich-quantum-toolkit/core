@@ -27,7 +27,7 @@ support remains a separate contract under #2428.
 
 ## Validation
 
-All 1,978 tests passed in the corresponding release binaries:
+Before rebasing, all 1,978 tests passed in the corresponding release binaries:
 
 | Suite               | Tests |
 | ------------------- | ----: |
@@ -44,5 +44,30 @@ All 1,978 tests passed in the corresponding release binaries:
 The release build also includes `mqt-cc`. `uvx nox -s lint`,
 `cmake --build --preset release --target mlir-doc`, and `git diff --check`
 passed. The final full-file C++ lint comparison is pinned to the PR merge base,
-`3be5ee96f3907659bd99fdd6d54cd74c4eea7da9`, to exclude unrelated changes to
+`ec799daa09f855bd0edcbc5592a5fedd90836516`, to exclude unrelated changes to
 main.
+
+After rebasing on that main commit, all 505 conversion, round-trip, and compiler
+tests passed again, as did lint and full-file C++ lint. The complete strict
+`uvx nox --non-interactive -s docs` build, including notebook execution, passed
+after qualifying the inherited PennyLane capability reference with a local
+attribute docstring. This fixes the Read the Docs failure in PR #2464.
+
+## Linearity and modifier follow-up
+
+The development policy and MLIR agent guide state the exactly-one-use contract.
+Five redundant rewrite guards are removed; the boundary verifier, debug
+assertions, and classical/reference use checks remain. Native MLIR use-list
+iterators provide constant-time access without a new type interface or wrapper.
+Extract/insert cancellation uses a rewrite that deletes both operations,
+avoiding the temporary duplicate tensor use left by a root-only fold.
+
+DCX cancellation requires reversed target order. A lone controlled SWAP remains
+a conditional unitary; it cannot become an unconditional output permutation.
+Exact-matrix tests cover both DCX orientations and controlled SWAP behavior. The
+rebase on `11d983fa59831007a8ce7e8bf17b2f06f85b3a20` retains the upstream
+PennyLane documentation fix. The follow-up passed 880 tests: QCO IR (509),
+QTensor IR (37), QC-to-QCO (175), QCO-to-QC (153), and round trip (6). Strict
+Sphinx documentation, lint, and full-file C++ lint passed. Local release
+validation uses `ENABLE_IPO=OFF` to avoid a GCC/LTO duplicate symbol in the
+installed MLIR library; no source workaround is included.

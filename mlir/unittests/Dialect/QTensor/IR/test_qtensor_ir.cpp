@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
@@ -479,15 +480,19 @@ TEST_F(QTensorTest, AdjacentInsertExtractKeepsPotentialDynamicAlias) {
 TEST_F(QTensorTest, InsertChainCanonicalizationRemainsLocal) {
   auto program = buildTwoQubitInsertChainProgram(context.get(), false, false);
   ASSERT_TRUE(program);
-  EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
-  EXPECT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(verify(*program).succeeded());
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
 
   auto reference = buildTwoQubitInsertChainProgram(context.get(), true, false);
   ASSERT_TRUE(reference);
-  EXPECT_TRUE(verify(*reference).succeeded());
+  ASSERT_TRUE(verify(*reference).succeeded());
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*reference)));
   EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
-  EXPECT_TRUE(verify(*reference).succeeded());
+  ASSERT_TRUE(verify(*reference).succeeded());
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*reference)));
 
   EXPECT_EQ(countOps<InsertOp>(*program), 2U);
   EXPECT_EQ(countOps<InsertOp>(*reference), 0U);

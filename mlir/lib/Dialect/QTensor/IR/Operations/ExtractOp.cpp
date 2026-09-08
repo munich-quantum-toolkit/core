@@ -84,7 +84,7 @@ struct FoldExtractAfterInsertPattern final : OpRewritePattern<ExtractOp> {
   LogicalResult matchAndRewrite(ExtractOp extract,
                                 PatternRewriter& rewriter) const override {
     auto insert = extract.getTensor().getDefiningOp<InsertOp>();
-    if (!insert || !insert->hasOneUse() ||
+    if (!insert ||
         !isEqualConstantIntOrValue(insert.getIndex(), extract.getIndex())) {
       return failure();
     }

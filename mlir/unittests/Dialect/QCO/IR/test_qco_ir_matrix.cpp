@@ -976,6 +976,66 @@ TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/DcxOp.cpp
 /// @{
+TEST_F(QCOMatrixTest, DcxInverseReversesTargets) {
+  const auto forward = DCXOp::getUnitaryMatrix().embedInNqubit(2, 0, 1);
+  const auto reverse = DCXOp::getUnitaryMatrix().embedInNqubit(2, 1, 0);
+  EXPECT_TRUE(reverse.isApprox(forward.adjoint()));
+  EXPECT_TRUE((reverse * forward).isApprox(DynamicMatrix::identity(4)));
+  EXPECT_FALSE((forward * forward).isApprox(DynamicMatrix::identity(4)));
+}
+
+TEST_F(QCOMatrixTest, DcxCancellationPreservesOrderedOutputs) {
+  for (const bool reversed : {false, true}) {
+    SCOPED_TRACE(reversed);
+    auto program = QCOProgramBuilder::build(context.get(), [&](auto& builder) {
+      auto in0 = builder.staticQubit(0);
+      auto in1 = builder.staticQubit(1);
+      auto [q0, q1] = builder.dcx(in0, in1);
+      if (reversed) {
+        std::tie(q1, q0) = builder.dcx(q1, q0);
+      } else {
+        std::tie(q0, q1) = builder.dcx(q0, q1);
+      }
+      return SmallVector<Value>{q0, q1};
+    });
+    ASSERT_TRUE(program);
+    OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*program)->clone()));
+    ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*program)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*program)));
+    ::mqt::test::expectFullUnitaryEqual(*expected, *program, 2);
+    auto function = *program->getOps<func::FuncOp>().begin();
+    EXPECT_EQ(llvm::range_size(function.getBody().getOps<DCXOp>()),
+              reversed ? 0 : 2);
+  }
+}
+
+TEST_F(QCOMatrixTest, ControlledSwapRemainsConditional) {
+  auto program = QCOProgramBuilder::build(context.get(), [&](auto& builder) {
+    auto control = builder.staticQubit(0);
+    auto q0 = builder.staticQubit(1);
+    auto q1 = builder.staticQubit(2);
+    auto [controls, targets] =
+        builder.ctrl({control}, {q0, q1}, [&](ValueRange args) {
+          auto [out0, out1] = builder.swap(args[0], args[1]);
+          return SmallVector<Value>{out0, out1};
+        });
+    return SmallVector<Value>{controls[0], targets[0], targets[1]};
+  });
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*program)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*program)));
+  auto function = *program->getOps<func::FuncOp>().begin();
+  auto controls = llvm::to_vector(function.getBody().getOps<CtrlOp>());
+  ASSERT_EQ(controls.size(), 1U);
+  const auto matrix = controls.front().getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+  auto expected = DynamicMatrix::identity(8);
+  expected.setBottomRightCorner(SWAPOp::getUnitaryMatrix());
+  EXPECT_TRUE(matrix->isApprox(expected));
+  EXPECT_FALSE(
+      matrix->isApprox(SWAPOp::getUnitaryMatrix().embedInNqubit(3, 1, 2)));
+}
+
 TEST_F(QCOMatrixTest, DCXOpMatrix) {
   const auto matrix = DCXOp::getUnitaryMatrix();
   const auto expected = Matrix4x4::fromElements(1, 0, 0, 0,  // row 0

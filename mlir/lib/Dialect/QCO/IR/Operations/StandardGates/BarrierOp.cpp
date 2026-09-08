@@ -47,7 +47,7 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
 
     for (size_t i = 0; i < qubitsIn.size(); ++i) {
       if (auto output = op.getQubitsOut()[i];
-          output.hasOneUse() && isa<BarrierOp>(*output.user_begin())) {
+          isa<BarrierOp>(*output.user_begin())) {
         anythingToMerge = true;
       } else {
         newQubitsIn.push_back(qubitsIn[i]);
