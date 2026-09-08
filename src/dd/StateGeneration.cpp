@@ -18,11 +18,9 @@
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 
-#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
-#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -30,85 +28,31 @@
 namespace dd {
 namespace {
 /**
- * @brief Validate that the package is suitable for the use with up to @p n
- * qubits.
- * @throws `std::invalid_argument`, if `dd.qubits() < n`.
+ * @brief Validate that @p n qubits starting at @p start fit in the package.
+ * @throws std::invalid_argument If the qubit interval exceeds the capacity.
  */
-void suitablePackage(const std::size_t n, const Package& dd) {
+void suitablePackage(const size_t n, const Package& dd,
+                     const size_t start = 0) {
   const std::size_t nqubits = dd.qubits();
-  if (nqubits < n) {
+  if (start > nqubits || n > nqubits - start) {
     throw std::invalid_argument{
-        "Requested state with " + std::to_string(n) +
-        " qubits, but current package configuration only supports up to " +
+        "Requested state with " + std::to_string(n) + " qubits starting at " +
+        std::to_string(start) +
+        ", but current package configuration only supports up to " +
         std::to_string(nqubits) +
         " qubits. Please allocate a larger package instance."};
   }
 }
 
-/**
- * @brief Constructs a decision diagram (DD) from a state vector using a
- * recursive algorithm.
- *
- * @param begin Iterator pointing to the beginning of the state vector.
- * @param end Iterator pointing to the end of the state vector.
- * @param v The current level of recursion. Starts at the highest level of
- * the state vector (log base 2 of the vector size - 1).
- * @param dd The DD package to use.
- * @return A vCachedEdge representing the root node of the created DD.
- *
- * @details This function recursively breaks down the state vector into halves
- * until each half has only one element. At each level of recursion, two new
- * edges are created, one for each half of the state vector. The two resulting
- * decision diagram edges are used to create a new decision diagram node at
- * the current level, and this node is returned as the result of the current
- * recursive call. At the base case of recursion, the state vector has only
- * two elements, which are converted into terminal nodes of the decision
- * diagram.
- *
- * @note This function assumes that the state vector size is a power of two.
- */
-vCachedEdge makeStateFromVector(const CVec::const_iterator& begin,
-                                const CVec::const_iterator& end, const Qubit v,
-                                Package& dd) {
-  if (v == 0U) {
-    const auto zeroSuccessor = vCachedEdge::terminal(*begin);
-    const auto oneSuccessor = vCachedEdge::terminal(*(begin + 1));
-    return dd.makeDDNode<vNode, CachedEdge>(0, {zeroSuccessor, oneSuccessor});
-  }
-
-  const auto pivot = std::next(begin, std::distance(begin, end) / 2);
-  const auto zeroSuccessor = makeStateFromVector(begin, pivot, v - 1, dd);
-  const auto oneSuccessor = makeStateFromVector(pivot, end, v - 1, dd);
-  return dd.makeDDNode<vNode, CachedEdge>(v, {zeroSuccessor, oneSuccessor});
-}
-
-} // namespace
-
-VectorDD makeZeroState(const std::size_t n, Package& dd,
-                       const std::size_t start) {
-  const std::vector<BasisStates> state(n, BasisStates::zero);
-  return makeBasisState(n, state, dd, start);
-}
-
-VectorDD makeBasisState(const std::size_t n, const std::vector<bool>& state,
-                        Package& dd, const std::size_t start) {
-  const auto op = [](bool b) {
-    return b ? BasisStates::one : BasisStates::zero;
-  };
-  std::vector<BasisStates> bState(state.size());
-  std::ranges::transform(state, bState.begin(), op);
-  return makeBasisState(n, bState, dd, start);
-}
-
-VectorDD makeBasisState(const std::size_t n,
-                        const std::vector<BasisStates>& state, Package& dd,
-                        const std::size_t start) {
-  suitablePackage(n + start, dd);
-
-  if (state.size() < n) {
+template <class BasisEntry>
+VectorDD buildBasisState(const size_t n, const size_t available,
+                         const BasisEntry& entry, Package& dd,
+                         const size_t start) {
+  suitablePackage(n, dd, start);
+  if (available < n) {
     throw std::invalid_argument(
         "Insufficient qubit states provided. Requested " + std::to_string(n) +
-        ", but received " + std::to_string(state.size()));
+        ", but received " + std::to_string(available));
   }
 
   vCachedEdge f = vCachedEdge::one();
@@ -116,7 +60,7 @@ VectorDD makeBasisState(const std::size_t n,
     std::array<vCachedEdge, RADIX> edges{};
 
     const auto v = static_cast<Qubit>(p + start);
-    switch (state[p]) {
+    switch (entry(p)) {
     case BasisStates::zero:
       edges = {f, vCachedEdge::zero()};
       break;
@@ -141,6 +85,30 @@ VectorDD makeBasisState(const std::size_t n,
   const vEdge e{.p = f.p, .w = dd.cn.lookup(f.w)};
   dd.incRef(e);
   return e;
+}
+
+} // namespace
+
+VectorDD makeZeroState(const size_t n, Package& dd, const size_t start) {
+  return buildBasisState(
+      n, n, [](size_t) { return BasisStates::zero; }, dd, start);
+}
+
+VectorDD makeBasisState(const size_t n, const std::vector<bool>& state,
+                        Package& dd, const size_t start) {
+  return buildBasisState(
+      n, state.size(),
+      [&state](const size_t i) {
+        return state[i] ? BasisStates::one : BasisStates::zero;
+      },
+      dd, start);
+}
+
+VectorDD makeBasisState(const size_t n, const std::vector<BasisStates>& state,
+                        Package& dd, const size_t start) {
+  return buildBasisState(
+      n, state.size(), [&state](const size_t i) { return state[i]; }, dd,
+      start);
 }
 
 VectorDD makeGHZState(const std::size_t n, Package& dd) {
@@ -210,28 +178,7 @@ VectorDD makeWState(const std::size_t n, Package& dd) {
 }
 
 VectorDD makeStateFromVector(const CVec& vec, Package& dd) {
-  const std::size_t sz = vec.size();
-
-  if ((sz & (sz - 1)) != 0) {
-    throw std::invalid_argument(
-        "State vector must have a length of a power of two.");
-  }
-
-  if (sz == 0) {
-    return vEdge::one();
-  }
-
-  if (sz == 1) {
-    return vEdge::terminal(dd.cn.lookup(vec[0]));
-  }
-
-  const auto v = static_cast<Qubit>(std::log2(sz) - 1);
-  suitablePackage(v, dd);
-
-  const vCachedEdge state = makeStateFromVector(vec.begin(), vec.end(), v, dd);
-
-  const vEdge ret{.p = state.p, .w = dd.cn.lookup(state.w)};
-  dd.incRef(ret);
-  return ret;
+  return makeStateFromVector(
+      vec.size(), [&vec](const size_t index) { return vec[index]; }, dd);
 }
 } // namespace dd

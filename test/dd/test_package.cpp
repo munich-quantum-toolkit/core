@@ -25,6 +25,7 @@
 #include <nlohmann/json.hpp>
 #include <nlohmann/json_fwd.hpp>
 
+#include <algorithm>
 #include <array>
 #include <bit>
 #include <cmath>
@@ -38,6 +39,7 @@
 #include <limits>
 #include <memory>
 #include <random>
+#include <span>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -985,6 +987,16 @@ TEST(DDPackageTest, RejectsOverlappingGateQubits) {
       std::runtime_error);
 }
 
+TEST(DDPackageTest, RejectsConflictingControlPolarities) {
+  Package package(5);
+  const Controls controls{{0, Control::Type::Neg}, {0, Control::Type::Pos}};
+  EXPECT_THROW(package.makeGateDD(X_MAT, controls, 1), std::runtime_error);
+  EXPECT_THROW(package.makeTwoQubitGateDD(SWAP_MAT, controls, 1, 2),
+               std::runtime_error);
+  EXPECT_THROW(package.makeThreeQubitGateDD(THREE_QUBIT_MAT, controls, 1, 2, 3),
+               std::runtime_error);
+}
+
 TEST(DDPackageTest, PackageReset) {
   auto dd = std::make_unique<Package>(1);
 
@@ -1238,6 +1250,85 @@ TEST(DDPackageTest, KroneckerRespectsIndexModeAcrossCalls) {
   }
 }
 
+TEST(DDPackageTest, EmbedsDenseMatricesInOperandOrder) {
+  Package package(6);
+  for (const size_t count : {1U, 2U, 3U, 4U}) {
+    const std::array<Qubit, 4> wires{4, 1, 5, 2};
+    const auto targets = std::span{wires}.first(count);
+    const auto dimension = size_t{1} << count;
+    std::vector<std::complex<fp>> entries(dimension * dimension);
+    for (size_t i = 0; i < entries.size(); ++i) {
+      entries[i] = {std::sin(static_cast<fp>(i)),
+                    std::cos(static_cast<fp>(2 * i))};
+    }
+    for (const auto& controls :
+         {Controls{}, Controls{{0, Control::Type::Neg}, {3}}}) {
+      if (count > 3 && !controls.empty()) {
+        continue;
+      }
+      const auto actual =
+          package.makeGateDD(entries, targets, controls).getMatrix(6);
+      const auto localIndex = [targets](const size_t index) {
+        size_t result = 0;
+        for (const auto target : targets) {
+          result = (result << 1U) | ((index >> target) & 1U);
+        }
+        return result;
+      };
+      size_t targetMask = 0;
+      for (const auto target : targets) {
+        targetMask |= size_t{1} << target;
+      }
+      for (size_t row = 0; row < actual.size(); ++row) {
+        for (size_t col = 0; col < actual.size(); ++col) {
+          const auto active =
+              std::ranges::all_of(controls, [col](const auto& control) {
+                return ((col >> control.qubit) & 1U) ==
+                       static_cast<size_t>(control.type == Control::Type::Pos);
+              });
+          std::complex<fp> expected{};
+          if (!active) {
+            expected = row == col ? 1. : 0.;
+          } else if (((row ^ col) & ~targetMask) == 0) {
+            expected = entries[(localIndex(row) * dimension) + localIndex(col)];
+          }
+          EXPECT_NEAR(std::abs(actual[row][col] - expected), 0., 1e-12);
+        }
+      }
+    }
+  }
+}
+
+TEST(DDPackageTest, MatrixViewsValidateDimensionsAndQubits) {
+  Package package(4);
+  const std::array scalar{std::complex<fp>{0.25, 0.5}};
+  EXPECT_EQ(package.makeGateDD(scalar, {}),
+            mEdge::terminal(package.cn.lookup(scalar[0])));
+  const auto entry = [&scalar](size_t, size_t) { return scalar[0]; };
+  EXPECT_TRUE(package.makeDDFromMatrix(0, entry).isOneTerminal());
+  EXPECT_EQ(package.makeDDFromMatrix(1, entry), package.makeGateDD(scalar, {}));
+  EXPECT_THROW(package.makeDDFromMatrix(3, entry), std::invalid_argument);
+  EXPECT_THROW(package.makeDDFromMatrix(32, entry), std::runtime_error);
+  EXPECT_THROW(package.makeDDFromMatrix(CMat(32, CVec(32))),
+               std::runtime_error);
+  const std::array<Qubit, 4> targets{3, 0, 2, 1};
+  const std::vector<std::complex<fp>> matrix(256);
+  EXPECT_THROW(package.makeGateDD(scalar, targets), std::invalid_argument);
+  EXPECT_THROW(package.makeGateDD(matrix, targets, Controls{{0}}),
+               std::invalid_argument);
+  EXPECT_THROW(package.makeGateDD(scalar, {}, Controls{{0}}),
+               std::invalid_argument);
+  const std::array<Qubit, 4> duplicates{3, 0, 2, 2};
+  EXPECT_THROW(package.makeGateDD(matrix, duplicates), std::runtime_error);
+  const std::array<Qubit, 4> outside{4, 0, 2, 1};
+  EXPECT_THROW(package.makeGateDD(matrix, outside), std::runtime_error);
+  const std::array<Qubit, std::numeric_limits<size_t>::digits> tooMany{};
+  EXPECT_THROW(package.makeGateDD(scalar, tooMany), std::invalid_argument);
+  Package empty(0);
+  EXPECT_EQ(empty.makeGateDD(scalar, {}),
+            mEdge::terminal(empty.cn.lookup(scalar[0])));
+}
+
 TEST(DDPackageTest, MatrixConstructionRejectsRaggedRows) {
   Package package(1);
   for (const CMat& matrix : {
@@ -1372,6 +1463,88 @@ TEST(DDPackageTest, DestructiveMeasurementOne) {
   ASSERT_EQ(vAfter[2], SQRT2_2);
   ASSERT_EQ(vAfter[1], 0.);
   ASSERT_EQ(vAfter[3], 0.);
+}
+
+TEST(DDPackageTest, MeasurementRejectsMissingQubits) {
+  Package package(8);
+  std::mt19937_64 rng(17);
+  const auto initialRng = rng;
+  for (const size_t width : {0U, 2U}) {
+    auto state = makeZeroState(width, package);
+    const auto original = state;
+    for (const Qubit index :
+         {static_cast<Qubit>(width), std::numeric_limits<Qubit>::max()}) {
+      EXPECT_THROW(Package::determineMeasurementProbabilities(state, index),
+                   std::invalid_argument);
+      EXPECT_THROW(package.measureOneCollapsing(state, index, rng),
+                   std::invalid_argument);
+      EXPECT_THROW(package.performCollapsingMeasurement(state, index, 1., true),
+                   std::invalid_argument);
+      EXPECT_EQ(state, original);
+      EXPECT_EQ(rng, initialRng);
+    }
+    package.decRef(state);
+  }
+  auto offsetState = makeZeroState(1, package, 2);
+  EXPECT_THROW(Package::determineMeasurementProbabilities(offsetState, 0),
+               std::invalid_argument);
+  EXPECT_THROW(package.performCollapsingMeasurement(offsetState, 0, 1., true),
+               std::invalid_argument);
+  package.decRef(offsetState);
+}
+
+TEST(DDPackageTest, CollapsingMeasurementPreservesComplexAmplitudes) {
+  Package package(3);
+  for (const std::complex<fp> phase :
+       {std::complex<fp>{1., 0.}, {0., 1.}, {-1., 0.}}) {
+    CVec amplitudes{
+        0., {0.25, 0.25}, {-0.5, 0.5}, 0., {0.25, -0.25}, 0., 0.5, 0.,
+    };
+    for (auto& amplitude : amplitudes) {
+      amplitude *= phase;
+    }
+    const auto original = makeStateFromVector(amplitudes, package);
+    for (Qubit qubit = 0; qubit < 3; ++qubit) {
+      for (const bool measureZero : {true, false}) {
+        fp probability = 0.;
+        for (size_t i = 0; i < amplitudes.size(); ++i) {
+          if (((i >> qubit) & 1U) == (measureZero ? 0U : 1U)) {
+            probability += std::norm(amplitudes[i]);
+          }
+        }
+        auto state = original;
+        package.incRef(state);
+        package.performCollapsingMeasurement(state, qubit, probability,
+                                             measureZero);
+        const auto actual = state.getVector();
+        for (size_t i = 0; i < amplitudes.size(); ++i) {
+          const auto expected = ((i >> qubit) & 1U) == (measureZero ? 0U : 1U)
+                                    ? amplitudes[i] / std::sqrt(probability)
+                                    : std::complex<fp>{};
+          EXPECT_NEAR(std::abs(actual[i] - expected), 0., 1e-12);
+        }
+        package.decRef(state);
+      }
+    }
+    package.decRef(original);
+    package.garbageCollect(true);
+    EXPECT_EQ(package.vUniqueTable.getNumEntries(), 0);
+  }
+}
+
+TEST(DDPackageTest, FullMeasurementPreservesBitOrder) {
+  Package package(17);
+  std::vector<bool> bits(17);
+  bits[0] = bits[5] = bits[16] = true;
+  auto state = makeBasisState(17, bits, package);
+  std::string expected(17, '0');
+  expected[0] = expected[11] = expected[16] = '1';
+  std::mt19937_64 actualRng(17);
+  for (const bool collapse : {false, true}) {
+    EXPECT_EQ(package.measureAll(state, collapse, actualRng), expected);
+    EXPECT_EQ(state.getValueByIndex((1U << 16U) | (1U << 5U) | 1U), 1.);
+  }
+  package.decRef(state);
 }
 
 TEST(DDPackageTest, ExportPolarPhaseFormatted) {
@@ -2032,6 +2205,57 @@ TEST(DDPackageTest, ThreeQubitGateDDConstruction) {
         }
       }
     }
+  }
+}
+
+TEST(DDPackageTest, ArithmeticAcrossSkippedMatrixLevels) {
+  constexpr auto qubits = 6U;
+  constexpr auto dimension = 1U << qubits;
+  Package package(qubits);
+  auto x = package.multiply(package.makeGateDD(H_MAT, qubits - 1),
+                            package.makeGateDD(X_MAT, 0));
+  x.w = package.cn.lookup(ComplexValue{x.w} * ComplexValue{0.3, -0.7});
+  const auto y = package.multiply(
+      package.makeGateDD(GateMatrix{0, {0, -1}, {0, 1}, 0}, qubits - 1),
+      package.makeGateDD(S_MAT, 0));
+  const auto low = package.makeGateDD(H_MAT, 0);
+  const std::array operands{x, y, low};
+  for (const auto& operand : operands) {
+    package.incRef(operand);
+  }
+  for (const auto& left : operands) {
+    for (const auto& right : operands) {
+      const auto a = left.getMatrix(qubits);
+      const auto b = right.getMatrix(qubits);
+      for (const bool collect : {false, true}) {
+        if (collect) {
+          package.garbageCollect(true);
+        }
+        const auto sum = package.add(left, right).getMatrix(qubits);
+        const auto product = package.multiply(left, right).getMatrix(qubits);
+        for (size_t row = 0; row < dimension; ++row) {
+          for (size_t col = 0; col < dimension; ++col) {
+            std::complex<fp> expected{};
+            for (size_t inner = 0; inner < dimension; ++inner) {
+              expected += a[row][inner] * b[inner][col];
+            }
+            EXPECT_NEAR(std::abs(product[row][col] - expected), 0., 1e-12);
+            EXPECT_NEAR(std::abs(sum[row][col] - a[row][col] - b[row][col]), 0.,
+                        1e-12);
+          }
+        }
+      }
+    }
+  }
+  /// A scalar vector still needs zero extension through skipped matrix levels.
+  const auto vector = package.multiply(x, vEdge::one()).getVector();
+  const auto matrix = x.getMatrix(qubits);
+  ASSERT_EQ(vector.size(), dimension);
+  for (size_t row = 0; row < dimension; ++row) {
+    EXPECT_NEAR(std::abs(vector[row] - matrix[row][0]), 0., 1e-12);
+  }
+  for (const auto& operand : operands) {
+    package.decRef(operand);
   }
 }
 

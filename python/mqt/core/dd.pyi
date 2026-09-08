@@ -392,11 +392,11 @@ class DDPackage:
             The resulting state is guaranteed to have its reference count increased.
         """
 
-    def from_vector(self, state: Annotated[NDArray[np.complex128], {"shape": (None,)}]) -> VectorDD:
+    def from_vector(self, state: Annotated[NDArray[np.complex128], {"shape": (None,), "writable": False}]) -> VectorDD:
         """Create a DD from a state vector.
 
         Args:
-            state: The state vector.
+            state: The state vector. Read-only and strided arrays are supported.
                 Must have a length that is a power of 2.
                 Must not require more qubits than the DDPackage is configured with.
 
@@ -540,11 +540,14 @@ class DDPackage:
             The DD for the multi-controlled two-qubit gate.
         """
 
-    def from_matrix(self, matrix: Annotated[NDArray[np.complex128], {"shape": (None, None)}]) -> MatrixDD:
+    def from_matrix(
+        self, matrix: Annotated[NDArray[np.complex128], {"shape": (None, None), "writable": False}]
+    ) -> MatrixDD:
         """Create a DD from a matrix.
 
         Args:
             matrix: The matrix. Must be square and have a size that is a power of 2.
+                Read-only and strided arrays are supported.
 
         Returns:
             The DD for the matrix.
