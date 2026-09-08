@@ -19,11 +19,14 @@
 #include "dd/Package.hpp"
 #include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 
+#include <llvm/ADT/SmallVector.h>
+
 #include <array>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <random>
 #include <span>
@@ -84,14 +87,11 @@ public:
     /// If @c dd is currently populated, the existing package's `decRef` plus
     /// `garbageCollect` path is used so the package (and its internal caches)
     /// is kept warm.
-    /// If @c dd was moved out (e.g., by @ref Runtime::takeState), a new package
-    /// is allocated.
+    /// A moved-out package is recreated on the next quantum operation.
     auto reset() -> void {
       if (dd) {
         dd->decRef(edge);
         dd->garbageCollect();
-      } else {
-        dd = std::make_unique<dd::Package>();
       }
       edge = dd::vEdge::one();
       numQubits = 0;
@@ -109,11 +109,16 @@ private:
 
   ResourceMode qubitMode;
   std::unordered_map<const Qubit*, dd::Qubit> qRegister;
+  std::vector<dd::Qubit> freeQubits_;
   // swap gates are not executed, they are tracked here
   std::vector<dd::Qubit> qubitPermutation;
   static constexpr uintptr_t MIN_DYN_RESULT_ADDRESS = 0x10000;
   ResourceMode resultMode;
   std::unordered_map<Result*, ResultStruct> rRegister;
+  std::optional<size_t> staticQubits_;
+  std::optional<size_t> staticResults_;
+  std::vector<ResultStruct> resultValues_;
+  bool deferMeasurements_ = false;
   std::string measurements;
   uintptr_t currentMaxQubitAddress;
   size_t currentMaxQubitId;
@@ -127,6 +132,9 @@ private:
   std::vector<std::pair<std::string, std::string>> metadata;
 
   auto enlargeState(size_t maxQubit) -> void;
+  void configureStaticResources(std::optional<size_t> qubits,
+                                std::optional<size_t> results);
+  auto sampleMeasurements(std::span<const uintptr_t> qubits) -> std::string;
   static auto staticQubitId(const Qubit* qubit) -> dd::Qubit {
     const auto id = reinterpret_cast<uintptr_t>(qubit);
     if (id >= dd::Package::MAX_POSSIBLE_QUBITS) {
@@ -139,7 +147,7 @@ private:
   auto resolveAddress(const Qubit* qubit) -> dd::Qubit;
   auto translateAddresses(std::span<Qubit* const> qubits,
                           std::span<Qubit* const> additionalQubits = {})
-      -> std::vector<dd::Qubit>;
+      -> llvm::SmallVector<dd::Qubit, 5>;
 
   // Helper function to output a type (bool, int...) to @c os, honoring the
   // active @c outputSchema.
@@ -175,6 +183,7 @@ public:
     apply(matrix.entries(), controls, targets);
   }
   auto applyGlobalPhase(dd::fp phase) -> void;
+  auto measure(Qubit* qubit, Result* result) -> void;
   template <typename... Args> auto measure(Args... args) -> void {
     const auto qubits = packOfType<Qubit*>(args...);
     const auto results = packOfType<Result*>(args...);
@@ -186,12 +195,8 @@ public:
         qubits.size() + results.size() == sizeof...(Args),
         "Number of qubits and results must match the number of arguments. "
         "First, all qubits followed then by all results.");
-    auto targets = translateAddresses(qubits);
-    for (size_t i = 0; i < targets.size(); ++i) {
-      targets[i] = qubitPermutation[targets[i]];
-      const auto result =
-          qState.dd->measureOneCollapsing(qState.edge, targets[i], mt);
-      deref(results[i]).r = result == '1';
+    for (size_t i = 0; i < qubits.size(); ++i) {
+      measure(qubits[i], results[i]);
     }
   }
   auto reset(std::span<Qubit* const> qubits) -> void;
@@ -217,6 +222,9 @@ public:
 
   auto setOstream(std::ostream& other) -> void;
   auto resetOstream() -> void;
+  /// Disable textual records while retaining measurement bits.
+  auto disableOutput() -> void;
+  [[nodiscard]] auto hasOutput() const -> bool { return os != nullptr; }
 
   /// Emit `OUTPUT\tRESULT\t<0|1>[\tlabel]\n` to the output stream.
   auto outputResult(bool value, const char* label) const -> void;

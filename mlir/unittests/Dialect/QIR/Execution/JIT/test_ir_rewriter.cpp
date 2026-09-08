@@ -23,11 +23,13 @@
 #include <llvm/Support/raw_ostream.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 static std::size_t countCallsTo(const llvm::Module& m, llvm::StringRef name) {
   std::size_t count = 0;
@@ -161,3 +163,107 @@ attributes #0 = { "entry_point" }
 }
 
 } // namespace
+
+static auto samplingOutputs(llvm::StringRef ir) {
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic error;
+  auto llvmModule = llvm::parseAssemblyString(ir, error, context);
+  if (!llvmModule) {
+    throw std::runtime_error(error.getMessage().str());
+  }
+  return qir::getStaticSamplingOutputs(*llvmModule->getFunction("main"));
+}
+
+TEST(QIRSamplingPlan, PreservesRepeatedOutputsAndOverwrittenResults) {
+  const auto outputs = samplingOutputs(R"(
+define i64 @main() #0 {
+entry:
+  call void @__quantum__rt__initialize(ptr null)
+  call void @__quantum__qis__h__body(ptr null)
+  br label %measure
+measure:
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  call void @__quantum__qis__mz__body(ptr inttoptr (i64 2 to ptr), ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  ret i64 0
+}
+declare void @__quantum__rt__initialize(ptr)
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+)");
+  ASSERT_TRUE(outputs.has_value());
+  EXPECT_EQ(*outputs, (std::vector<uintptr_t>{0, 2, 2}));
+}
+
+TEST(QIRSamplingPlan, DoesNotDeferMeasurementsBeforeQuantumWork) {
+  EXPECT_FALSE(samplingOutputs(R"(
+define i64 @main() #0 {
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  call void @__quantum__qis__x__body(ptr null)
+  ret i64 0
+}
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__qis__x__body(ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+)")
+                   .has_value());
+}
+
+TEST(QIRSamplingPlan, RejectsUnknownCallsAndHiddenQuantumEffects) {
+  EXPECT_FALSE(samplingOutputs(R"(
+define i64 @main() #0 {
+  call void @helper()
+  ret i64 0
+}
+define void @helper() {
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  ret void
+}
+declare void @__quantum__qis__mz__body(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+)")
+                   .has_value());
+  EXPECT_FALSE(samplingOutputs(R"(
+define i64 @main() #0 {
+  call void @external()
+  ret i64 0
+}
+declare void @external()
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+)")
+                   .has_value());
+}
+
+TEST(QIRSamplingPlan, RejectsControlFlowMemoryAndResets) {
+  for (const auto* body : {
+           "br label %loop\nloop: br label %loop",
+           "br i1 true, label %left, label %right\nleft: ret i64 0\nright: ret "
+           "i64 0",
+           "store i64 1, ptr @counter\nret i64 0",
+           "call void @__quantum__qis__reset__body(ptr null)\nret i64 0",
+           "call void @__quantum__qis__mz__body(ptr null, ptr null)\n"
+           "%r = call i1 @__quantum__rt__read_result(ptr null)\nret i64 0",
+           "call void @__quantum__qis__x__body(ptr null)\n"
+           "call void @__quantum__rt__initialize(ptr null)\nret i64 0",
+           "ret i64 1",
+       }) {
+    SCOPED_TRACE(body);
+    const std::string ir = std::string(R"(
+@counter = global i64 0
+define i64 @main() #0 {
+)") + body + R"(
+}
+declare void @__quantum__qis__reset__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__qis__x__body(ptr)
+declare void @__quantum__rt__initialize(ptr)
+declare i1 @__quantum__rt__read_result(ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+)";
+    EXPECT_FALSE(samplingOutputs(ir).has_value());
+  }
+}

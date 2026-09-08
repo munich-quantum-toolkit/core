@@ -17,11 +17,14 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ExecutionEngine/Orc/LLJIT.h>
 #include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
-#include <llvm/IR/LLVMContext.h>
 #include <llvm/Support/Error.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace qir {
 
@@ -42,7 +45,7 @@ enum class Execution { Sampling, StateExtraction };
  * @brief In-process JIT executor for QIR programs.
  * @details The session does the following, in order:
  * - Loads an LLVM module from an in-memory buffer,
- * - JIT-compiles it via LLVM's OrcJIT with lazy compilation.
+ * - JIT-compiles it via LLVM's OrcJIT,
  * - wires up the QIR runtime symbols, and
  * - runs the module function marked as its QIR entry point.
  * A session owns a single LLJIT instance and is not meant to be reused across
@@ -60,11 +63,13 @@ public:
    * @param irBytes Byte view of the IR.
    * @param bufferName Identifier used in diagnostics.
    * @param execution Execution mode.
+   * @param randomSeed Optional deterministic runtime seed.
    * @throws std::runtime_error if the IR cannot be parsed or the JIT fails
    * to initialize.
    */
   JitSession(llvm::StringRef irBytes, llvm::StringRef bufferName,
-             Execution execution = Execution::Sampling);
+             Execution execution = Execution::Sampling,
+             std::optional<uint64_t> randomSeed = std::nullopt);
 
   /// Tears down the LLJIT and any JIT'd resources owned by the session.
   ~JitSession();
@@ -75,22 +80,31 @@ public:
    */
   int64_t run();
 
+  /// Execute a batch, preserving recorded-result order and returning the first
+  /// nonzero exit code. With textual output disabled, eligible static Base
+  /// programs are executed once with deferred measurements, then sampled.
+  /// Other programs execute normally for every shot. State-extraction sessions
+  /// cannot be sampled. The supplied vector is replaced, including for zero
+  /// shots.
+  int64_t sample(size_t shots, std::vector<std::string>& results);
+
   [[nodiscard]] auto runtime() -> Runtime&;
 
 private:
-  llvm::orc::ThreadSafeContext tsCtx_{std::make_unique<llvm::LLVMContext>()};
-  llvm::orc::ThreadSafeModule module_;
   std::unique_ptr<Runtime> runtime_;
   std::unique_ptr<llvm::orc::LLJIT> jit_;
   EntryPointFn* entryPointFn_ = nullptr;
+  std::optional<std::vector<uintptr_t>> samplingOutputs_;
+  bool initializesRuntime_ = false;
+  Execution execution_;
 
   /// Initializes the native target, asm printer and asm parser.
   /// Safe to call multiple times; the work runs only on the first call.
   static void initNativeTargets();
 
   /// Parses LLVM IR (textual or bitcode) from @p irBytes using the session's
-  /// thread-safe context. @p bufferName is used in diagnostics.
-  llvm::Expected<llvm::orc::ThreadSafeModule>
+  /// own thread-safe context. @p bufferName is used in diagnostics.
+  static llvm::Expected<llvm::orc::ThreadSafeModule>
   loadModuleFromMemory(llvm::StringRef irBytes, llvm::StringRef bufferName);
 
   /// Prepares the session to run the program:

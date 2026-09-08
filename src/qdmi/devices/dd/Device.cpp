@@ -47,7 +47,6 @@
 #include <optional>
 #include <ranges>
 #include <span>
-#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -582,26 +581,18 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
                                  p.size());
         },
         program_);
-    auto jitSession = qir::JitSession(irBytes, "QDMI job");
-    auto& runtime = jitSession.runtime();
-    if (seed_.has_value()) {
-      runtime.seed(static_cast<uint64_t>(*seed_));
+    const auto seed =
+        seed_ ? std::optional<uint64_t>{static_cast<uint64_t>(*seed_)}
+              : std::nullopt;
+    auto jitSession =
+        qir::JitSession(irBytes, "QDMI job", qir::Execution::Sampling, seed);
+    jitSession.runtime().disableOutput();
+    if (const auto rc = jitSession.sample(numShots_, shots_); rc != 0) {
+      std::cerr << "Error: QIR program failed with error: " << rc << '\n';
+      return false;
     }
-    std::ostringstream output;
-    runtime.setOstream(output);
-    runtime.outputProgramHeader();
-    shots_.reserve(numShots_);
-    for (size_t i = 0; i < numShots_; ++i) {
-      runtime.reset();
-      runtime.outputShotStart();
-      const auto rc = jitSession.run();
-      runtime.outputShotEnd(rc);
-      if (rc != 0) {
-        std::cerr << "Error: QIR program failed with error: " << rc << '\n';
-        return false;
-      }
-      shots_.push_back(runtime.getMeasurements());
-      ++counts_[shots_.back()];
+    for (const auto& shot : shots_) {
+      ++counts_[shot];
     }
     return true;
   });
@@ -625,8 +616,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
     auto jitSession =
         qir::JitSession(irBytes, "QDMI job", qir::Execution::StateExtraction);
     auto& runtime = jitSession.runtime();
-    std::ostringstream output;
-    runtime.setOstream(output);
+    runtime.disableOutput();
     if (const auto rc = jitSession.run(); rc != 0) {
       std::cerr << "Error: QIR program failed with error: " << rc << '\n';
       return false;
