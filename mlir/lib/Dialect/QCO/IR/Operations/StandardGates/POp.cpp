@@ -29,23 +29,6 @@ using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::mqt;
 
-namespace {
-
-/**
- * @brief Merge subsequent P operations on the same qubit by adding their
- * angles.
- */
-struct MergeSubsequentP final : OpRewritePattern<POp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(POp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeOneTargetOneParameter(op, rewriter);
-  }
-};
-
-} // namespace
-
 void POp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                 const std::variant<double, Value>& theta) {
   auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
@@ -61,8 +44,8 @@ OpFoldResult POp::fold(FoldAdaptor /*adaptor*/) {
 }
 
 void POp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* context) {
-  results.add<MergeSubsequentP>(context);
+                                      MLIRContext* /*context*/) {
+  results.add(&mergeOneTargetOneParameter<POp>);
 }
 
 Matrix2x2 POp::unitaryMatrix(const double theta) {

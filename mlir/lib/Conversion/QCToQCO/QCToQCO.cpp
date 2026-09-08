@@ -78,7 +78,7 @@ struct RegisterAccess {
 
 /// Indices already used for one register by a quantum operation.
 struct SeenRegisterIndices {
-  DenseMap<int64_t, Value> constants;
+  DenseSet<int64_t> constants;
   llvm::SmallDenseSet<Value, 4> dynamicValues;
 };
 
@@ -127,7 +127,7 @@ struct LoweringState {
   ///
   /// Keys are `Operation::getParentRegion()` for ops being converted
   /// (typically a `func.func` body or a modifier region).
-  DenseMap<Region*, DenseMap<Value, Value>> qubitMap;
+  DenseMap<Region*, llvm::MapVector<Value, Value>> qubitMap;
 
   /// Per-region map from stable register identifiers to their latest QTensor
   /// SSA values.
@@ -220,10 +220,10 @@ private:
 /// Finds the nearest region-local map containing @p reference and
 /// returns the pair containing the map and a mutable reference to the value in
 /// the map.
-template <typename Key>
-[[nodiscard]] static std::pair<DenseMap<Key, Value>*, Value*>
-findRegionLocalMap(DenseMap<Region*, DenseMap<Key, Value>>& map,
-                   Operation* anchor, Key reference) {
+template <typename Map, typename Key>
+[[nodiscard]] static std::pair<Map*, Value*>
+findRegionLocalMap(DenseMap<Region*, Map>& map, Operation* anchor,
+                   Key reference) {
   for (auto* current = anchor->getParentRegion(); current != nullptr;
        current = current->getParentRegion()) {
     if (auto it = map.find(current); it != map.end()) {
@@ -638,10 +638,7 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
 
       auto& seen = registerIndices[access->second.reg];
       if (const auto constant = getConstantIntValue(access->second.index)) {
-        const auto [it, inserted] =
-            seen.constants.try_emplace(*constant, access->second.index);
-        if (!inserted &&
-            isEqualConstantIntOrValue(it->second, access->second.index)) {
+        if (!seen.constants.insert(*constant).second) {
           operation->emitOpError(
               "requires distinct qubit operands; register-backed operands "
               "have the same constant index");
@@ -751,7 +748,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     DenseSet<Value> liveQubits;
     for (auto [qcOperand, adaptorOperand] :
          llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
-      if (auto it = map.find(qcOperand); it != map.end()) {
+      if (auto* it = map.find(qcOperand); it != map.end()) {
         auto latest = it->second;
         returnValues.emplace_back(latest);
         liveQubits.insert(latest);
@@ -761,7 +758,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     }
     auto function = op->getParentOfType<func::FuncOp>();
     for (Value argument : state.functionQubitArguments[function]) {
-      const auto current = map.find(argument);
+      auto* const current = map.find(argument);
       if (current == map.end()) {
         return op.emitOpError(
             "cannot convert a function that consumes a qubit argument");

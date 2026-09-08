@@ -20,25 +20,11 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove subsequent SWAP operations on the same qubits.
- */
-struct RemoveSubsequentSWAP final : OpRewritePattern<SWAPOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(SWAPOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter, true);
-  }
-};
-
-} // namespace
-
 void SWAPOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                         MLIRContext* context) {
-  results.add<RemoveSubsequentSWAP>(context);
+                                         MLIRContext* /*context*/) {
+  results.add(+[](SWAPOp op, PatternRewriter& rewriter) {
+    return removeInversePairTwoTargetZeroParameter<SWAPOp>(op, rewriter, true);
+  });
 }
 
 Matrix4x4 SWAPOp::getUnitaryMatrix() {

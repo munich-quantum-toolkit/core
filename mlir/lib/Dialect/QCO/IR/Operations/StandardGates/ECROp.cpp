@@ -23,25 +23,11 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove subsequent ECR operations on the same qubits.
- */
-struct RemoveSubsequentECR final : OpRewritePattern<ECROp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(ECROp op,
-                                PatternRewriter& rewriter) const override {
-    return removeInversePairTwoTargetZeroParameter<ECROp>(op, rewriter);
-  }
-};
-
-} // namespace
-
 void ECROp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                        MLIRContext* context) {
-  results.add<RemoveSubsequentECR>(context);
+                                        MLIRContext* /*context*/) {
+  results.add(+[](ECROp op, PatternRewriter& rewriter) {
+    return removeInversePairTwoTargetZeroParameter<ECROp>(op, rewriter);
+  });
 }
 
 Matrix4x4 ECROp::getUnitaryMatrix() {
