@@ -27,6 +27,11 @@ class SourceMgr;
 
 namespace mlir::oq3::frontend {
 
+/// Builtin floating constants reserved by the source language.
+[[nodiscard]] std::optional<double> getBuiltinConstant(llvm::StringRef name);
+/// Whether the whole spelling is an identifier that can be declared.
+[[nodiscard]] bool isValidIdentifier(llvm::StringRef name);
+
 using ExpressionId = uint32_t;
 using BitVectorExpressionId = uint32_t;
 using RegisterId = uint32_t;
@@ -232,7 +237,6 @@ enum class ConditionKind : uint8_t {
   Not,
   And,
   Or,
-  RegisterComparison,
   BitVectorComparison,
   Comparison,
 };
@@ -246,8 +250,6 @@ struct ConditionExpression {
   QubitReference measurement;
   ConditionId lhs = 0;
   ConditionId rhs = 0;
-  RegisterId reg = 0;
-  llvm::APInt expected = llvm::APInt(1, 0);
   BitVectorExpressionId bitVectorComparisonLhs = 0;
   BitVectorExpressionId bitVectorComparisonRhs = 0;
   ExpressionId comparisonLhs = 0;

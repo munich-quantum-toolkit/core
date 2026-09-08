@@ -14,6 +14,8 @@
 
 #include <mlir/IR/OwningOpRef.h>
 
+#include <cstddef>
+
 namespace mlir {
 class MLIRContext;
 class ModuleOp;
@@ -27,7 +29,7 @@ getOpenQASMLocation(const oq3::frontend::SourceLocation& source,
 
 [[nodiscard]] OwningOpRef<ModuleOp>
 emitOpenQASMToQC(const oq3::frontend::TypedProgram& program,
-                 MLIRContext& context);
+                 MLIRContext& context, size_t operationLimit = 10'000'000);
 
 } // namespace qc::detail
 } // namespace mlir

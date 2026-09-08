@@ -10,13 +10,12 @@
 
 #pragma once
 
-#include "mlir/Target/OpenQASM/Detail/OpenQASMParser.h"
-
 #include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/StringSwitch.h>
 #include <llvm/Support/SMLoc.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -28,6 +27,153 @@
 namespace mlir::oq3::frontend::detail {
 
 using SyntaxExpressionId = uint32_t;
+
+/// An exact OpenQASM version, preserving the decimal minor component.
+struct Version {
+  uint32_t major = 0;
+  uint32_t minor = 0;
+};
+
+enum class ScalarKind : uint8_t { Bool, Int, Uint, Float, Angle };
+
+/**
+ * @defgroup ParseVocabulary Parser vocabulary
+ * @brief The vocabulary the parser hands to a sink.
+ *
+ * @details
+ * Expressions use IDs in the persistent syntax arena. Gate-call arrays borrow
+ * parser-local storage until the builder records the statement.
+ */
+
+/**
+ * @ingroup ParseVocabulary
+ * @brief A (sub-)expression.
+ *
+ * @details
+ * Expression kinds shared by parsing and semantic analysis.
+ */
+struct Expr {
+  enum class Kind : uint8_t {
+    Int,
+    Float,
+    BitString,
+    FloatCast,
+    Bool,
+    Identifier,
+    IntCast,
+    BoolCast,
+    BitCast,
+    UintCast,
+    AngleCast,
+    Index,
+    Neg,
+    Not,
+    BitNot,
+    Add,
+    Sub,
+    Mul,
+    Div,
+    Equal,
+    NotEqual,
+    Less,
+    LessEqual,
+    Greater,
+    GreaterEqual,
+    And,
+    Or,
+    BitAnd,
+    BitOr,
+    BitXor,
+    ShiftLeft,
+    ShiftRight,
+    /// Built-in math functions
+    ArcCos,
+    ArcSin,
+    ArcTan,
+    Ceiling,
+    Cos,
+    Exp,
+    Floor,
+    Log,
+    Mod,
+    BuiltinMod,
+    PopCount,
+    BuiltinPow,
+    Pow,
+    RotateLeft,
+    RotateRight,
+    Sin,
+    Sqrt,
+    Tan,
+  };
+};
+
+/// Get the kind of the built-in math function @p name.
+[[nodiscard]] inline std::optional<Expr::Kind>
+getMathFunctionKind(StringRef name) {
+  return llvm::StringSwitch<std::optional<Expr::Kind>>(name)
+      .Case("arccos", Expr::Kind::ArcCos)
+      .Case("arcsin", Expr::Kind::ArcSin)
+      .Case("arctan", Expr::Kind::ArcTan)
+      .Case("ceiling", Expr::Kind::Ceiling)
+      .Case("cos", Expr::Kind::Cos)
+      .Case("exp", Expr::Kind::Exp)
+      .Case("floor", Expr::Kind::Floor)
+      .Case("log", Expr::Kind::Log)
+      .Case("mod", Expr::Kind::BuiltinMod)
+      .Case("popcount", Expr::Kind::PopCount)
+      .Case("pow", Expr::Kind::BuiltinPow)
+      .Case("rotl", Expr::Kind::RotateLeft)
+      .Case("rotr", Expr::Kind::RotateRight)
+      .Case("sin", Expr::Kind::Sin)
+      .Case("sqrt", Expr::Kind::Sqrt)
+      .Case("tan", Expr::Kind::Tan)
+      .Default(std::nullopt);
+}
+
+/**
+ * @ingroup ParseVocabulary
+ * @brief A gate modifier: `inv @`, `pow(e) @`, `ctrl(e) @`, or `negctrl(e) @`.
+ */
+struct Modifier {
+  enum class Kind : uint8_t { Inv, Pow, Ctrl, NegCtrl };
+  Kind kind = Kind::Inv;
+  std::optional<SyntaxExpressionId> argument = std::nullopt;
+};
+
+/**
+ * @ingroup ParseVocabulary
+ * @brief A gate operand: a (possibly indexed) identifier, or a hardware qubit.
+ */
+struct Operand {
+  SMLoc loc;
+  StringRef identifier;
+  std::optional<SyntaxExpressionId> index = std::nullopt;
+  std::optional<uint64_t> hardwareQubit;
+};
+
+/// A (possibly indexed) classical reference (e.g., `c` or `c[0]`).
+struct BitReference {
+  SMLoc loc;
+  StringRef identifier;
+  std::optional<SyntaxExpressionId> index = std::nullopt;
+};
+
+/**
+ * @ingroup ParseVocabulary
+ * @brief A parsed gate call.
+ *
+ * @details
+ * Array members are borrowed for the duration of the sink call.
+ */
+struct GateCall {
+  SMLoc loc;
+  StringRef identifier;
+  ArrayRef<Modifier> modifiers;
+  ArrayRef<SyntaxExpressionId> parameters;
+  ArrayRef<Operand> operands;
+};
+
 using SyntaxStatementId = uint32_t;
 using SyntaxIncludeContextId = size_t;
 
@@ -201,22 +347,28 @@ struct SyntaxDiagnostic {
 
 class SyntaxBuilder {
 public:
+  [[nodiscard]] SyntaxExpressionId
+  addExpression(const SyntaxExpression& expression);
   [[nodiscard]] LogicalResult error(SMLoc location, const Twine& message);
   [[nodiscard]] LogicalResult version(SMLoc location, Version value);
   [[nodiscard]] LogicalResult include(SMLoc location, StringRef filename);
   [[nodiscard]] SyntaxStatementId
   standardLibraryInclude(SMLoc location, StandardLibraryKind kind);
-  [[nodiscard]] LogicalResult scalarDecl(SMLoc location, ScalarKind kind,
-                                         StringRef identifier, const Expr* size,
-                                         const Expr* initializer, bool isConst,
-                                         bool output);
   [[nodiscard]] LogicalResult
-  assignment(SMLoc location, const BitReference& target, const Expr& value);
+  scalarDecl(SMLoc location, ScalarKind kind, StringRef identifier,
+             std::optional<SyntaxExpressionId> size,
+             std::optional<SyntaxExpressionId> initializer, bool isConst,
+             bool output);
+  [[nodiscard]] LogicalResult assignment(SMLoc location,
+                                         const BitReference& target,
+                                         SyntaxExpressionId value);
   [[nodiscard]] LogicalResult
-  qubitRegister(SMLoc location, StringRef identifier, const Expr* size);
+  qubitRegister(SMLoc location, StringRef identifier,
+                std::optional<SyntaxExpressionId> size);
   [[nodiscard]] LogicalResult
-  classicalRegister(SMLoc location, StringRef identifier, const Expr* size,
-                    const Expr* initializer, bool output);
+  classicalRegister(SMLoc location, StringRef identifier,
+                    std::optional<SyntaxExpressionId> size,
+                    std::optional<SyntaxExpressionId> initializer, bool output);
   [[nodiscard]] LogicalResult
   measure(SMLoc location, const BitReference* target, const Operand& source);
   [[nodiscard]] LogicalResult reset(SMLoc location, const Operand& operand);
@@ -228,23 +380,23 @@ public:
                  ArrayRef<StringRef> parameters, ArrayRef<StringRef> qubits,
                  function_ref<LogicalResult()> continuation);
   [[nodiscard]] LogicalResult
-  ifStmt(SMLoc location, const Expr& condition,
+  ifStmt(SMLoc location, SyntaxExpressionId condition,
          function_ref<LogicalResult()> thenContinuation,
          function_ref<LogicalResult()> elseContinuation);
   [[nodiscard]] LogicalResult
   forStmt(SMLoc location, StringRef inductionVariable, bool isUnsigned,
-          const Expr& start, const Expr& step, const Expr& stop,
-          function_ref<LogicalResult()> continuation);
+          SyntaxExpressionId start, SyntaxExpressionId step,
+          SyntaxExpressionId stop, function_ref<LogicalResult()> continuation);
   [[nodiscard]] LogicalResult breakStmt(SMLoc location);
   [[nodiscard]] LogicalResult continueStmt(SMLoc location);
   [[nodiscard]] LogicalResult
-  whileStmt(SMLoc location, const Expr& condition,
+  whileStmt(SMLoc location, SyntaxExpressionId condition,
             function_ref<LogicalResult()> continuation);
   [[nodiscard]] LogicalResult
-  switchStmt(SMLoc location, const Expr& control,
+  switchStmt(SMLoc location, SyntaxExpressionId control,
              function_ref<LogicalResult()> continuation);
   [[nodiscard]] LogicalResult
-  switchCase(SMLoc location, ArrayRef<const Expr*> labels,
+  switchCase(SMLoc location, ArrayRef<SyntaxExpressionId> labels,
              function_ref<LogicalResult()> continuation);
   [[nodiscard]] LogicalResult
   switchDefault(SMLoc location, function_ref<LogicalResult()> continuation);
@@ -265,7 +417,6 @@ public:
       std::vector<SyntaxIncludeContext> contexts);
 
 private:
-  [[nodiscard]] SyntaxExpressionId copyExpression(const Expr& expression);
   [[nodiscard]] SyntaxOperand copyOperand(const Operand& operand);
   [[nodiscard]] SyntaxBitReference
   copyBitReference(const BitReference& reference);

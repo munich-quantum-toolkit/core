@@ -11,6 +11,7 @@
 #pragma once
 
 #include "mlir/Target/OpenQASM/Detail/OpenQASMLexer.h"
+#include "mlir/Target/OpenQASM/Detail/OpenQASMSyntax.h"
 
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/STLExtras.h>
@@ -19,7 +20,6 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/StringSwitch.h>
 #include <llvm/ADT/Twine.h>
-#include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <llvm/Support/SMLoc.h>
 #include <mlir/Support/LLVM.h>
@@ -27,232 +27,21 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <memory>
-#include <new>
 #include <optional>
 #include <utility>
 
 namespace mlir::oq3::frontend::detail {
-
-/// An exact OpenQASM version, preserving the decimal minor component.
-struct Version {
-  uint32_t major = 0;
-  uint32_t minor = 0;
-};
-
-enum class ScalarKind : uint8_t { Bool, Int, Uint, Float, Angle };
-
-/**
- * @defgroup ParseVocabulary Transient parse vocabulary
- * @brief The vocabulary the parser hands to a sink.
- *
- * @details
- * These types are cheap and trivially destructible. Expressions are allocated
- * in a bump allocator; other values borrow parser-local storage for the
- * duration of a sink call. `SyntaxBuilder` copies each completed construct into
- * the persistent, owning syntax program.
- */
-
-/**
- * @ingroup ParseVocabulary
- * @brief A (sub-)expression.
- *
- * @details
- * Bump-allocated; children are borrowed pointers.
- */
-struct Expr {
-  enum class Kind : uint8_t {
-    Int,
-    Float,
-    Bool,
-    Identifier,
-    IntCast,
-    BoolCast,
-    BitCast,
-    UintCast,
-    AngleCast,
-    Index,
-    Neg,
-    Not,
-    BitNot,
-    Add,
-    Sub,
-    Mul,
-    Div,
-    Equal,
-    NotEqual,
-    Less,
-    LessEqual,
-    Greater,
-    GreaterEqual,
-    And,
-    Or,
-    BitAnd,
-    BitOr,
-    BitXor,
-    ShiftLeft,
-    ShiftRight,
-    // Built-in math functions
-    ArcCos,
-    ArcSin,
-    ArcTan,
-    Ceiling,
-    Cos,
-    Exp,
-    Floor,
-    Log,
-    Mod,
-    BuiltinMod,
-    PopCount,
-    BuiltinPow,
-    Pow,
-    RotateLeft,
-    RotateRight,
-    Sin,
-    Sqrt,
-    Tan,
-  };
-
-  SMLoc loc;
-  Kind kind = Kind::Int;
-  uint64_t intValue = 0;
-  double floatValue = 0.0;
-  bool boolValue = false;
-  StringRef identifier;
-  StringRef wideInteger;
-  std::optional<uint64_t> hardwareQubit;
-  const Expr* lhs = nullptr;
-  const Expr* rhs = nullptr;
-};
-
-/// Get the kind of the built-in math function @p name.
-[[nodiscard]] inline std::optional<Expr::Kind>
-getMathFunctionKind(StringRef name) {
-  return llvm::StringSwitch<std::optional<Expr::Kind>>(name)
-      .Case("arccos", Expr::Kind::ArcCos)
-      .Case("arcsin", Expr::Kind::ArcSin)
-      .Case("arctan", Expr::Kind::ArcTan)
-      .Case("ceiling", Expr::Kind::Ceiling)
-      .Case("cos", Expr::Kind::Cos)
-      .Case("exp", Expr::Kind::Exp)
-      .Case("floor", Expr::Kind::Floor)
-      .Case("log", Expr::Kind::Log)
-      .Case("mod", Expr::Kind::BuiltinMod)
-      .Case("popcount", Expr::Kind::PopCount)
-      .Case("pow", Expr::Kind::BuiltinPow)
-      .Case("rotl", Expr::Kind::RotateLeft)
-      .Case("rotr", Expr::Kind::RotateRight)
-      .Case("sin", Expr::Kind::Sin)
-      .Case("sqrt", Expr::Kind::Sqrt)
-      .Case("tan", Expr::Kind::Tan)
-      .Default(std::nullopt);
-}
-
-/**
- * @ingroup ParseVocabulary
- * @brief A gate modifier: `inv @`, `pow(e) @`, `ctrl(e) @`, or `negctrl(e) @`.
- */
-struct Modifier {
-  enum class Kind : uint8_t { Inv, Pow, Ctrl, NegCtrl };
-  Kind kind = Kind::Inv;
-  const Expr* argument = nullptr;
-};
-
-/**
- * @ingroup ParseVocabulary
- * @brief A gate operand: a (possibly indexed) identifier, or a hardware qubit.
- */
-struct Operand {
-  SMLoc loc;
-  StringRef identifier;
-  const Expr* index = nullptr;
-  std::optional<uint64_t> hardwareQubit;
-};
-
-/// A (possibly indexed) classical reference (e.g., `c` or `c[0]`).
-struct BitReference {
-  SMLoc loc;
-  StringRef identifier;
-  const Expr* index = nullptr;
-};
-
-/**
- * @ingroup ParseVocabulary
- * @brief A parsed gate call.
- *
- * @details
- * Array members are borrowed for the duration of the sink call.
- */
-struct GateCall {
-  SMLoc loc;
-  StringRef identifier;
-  ArrayRef<Modifier> modifiers;
-  ArrayRef<const Expr*> parameters;
-  ArrayRef<Operand> operands;
-};
-
-//===----------------------------------------------------------------------===//
-// Sink concept
-//===----------------------------------------------------------------------===//
-
-/**
- * @brief The interface a `Parser` drives to materialize parsed constructs.
- *
- * @details
- * A sink consumes the events produced by `Parser`. The production sink copies
- * them into target-independent persistent syntax; the parser is templated so
- * dispatch remains static. Diagnostics are routed through `error`.
- *
- * Control flow uses continuations so the persistent syntax builder can select
- * the destination body while the parser recursively consumes a source block.
- */
-template <class S>
-concept QASMSink =
-    requires(S s, SMLoc loc, StringRef str, const Expr& expr,
-             const Operand& operand, const BitReference& reference,
-             const GateCall& call, ArrayRef<Operand> operands,
-             ArrayRef<StringRef> names, ArrayRef<const Expr*> expressions,
-             function_ref<LogicalResult()> cont, Version version, bool flag) {
-      s.error(loc, str);
-      s.version(loc, version);
-      s.include(loc, str);
-      s.scalarDecl(loc, ScalarKind::Int, str, &expr, &expr, flag, flag);
-      s.assignment(loc, reference, expr);
-      s.qubitRegister(loc, str, &expr);
-      s.classicalRegister(loc, str, &expr, &expr, flag);
-      s.measure(loc, &reference, operand);
-      s.reset(loc, operand);
-      s.barrier(loc, operands);
-      s.gateCall(call);
-      s.gateDefinition(loc, str, names, names, cont);
-      s.ifStmt(loc, expr, cont, cont);
-      s.forStmt(loc, str, flag, expr, expr, expr, cont);
-      s.whileStmt(loc, expr, cont);
-      s.breakStmt(loc);
-      s.continueStmt(loc);
-      s.switchStmt(loc, expr, cont);
-      s.switchCase(loc, expressions, cont);
-      s.switchDefault(loc, cont);
-    };
-
-//===----------------------------------------------------------------------===//
-// Parser
-//===----------------------------------------------------------------------===//
 
 /**
  * @brief A single-pass recursive-descent parser for OpenQASM 3.
  *
  * @details
  * The parser is target-independent. Its builder materializes a persistent
- * syntax program; expressions and temporary gate-definition vocabulary are
- * bump-allocated only for the duration of parsing.
+ * syntax program and stores expressions directly in its ID arena.
  */
-template <class Sink>
-  requires QASMSink<Sink>
 class Parser {
 public:
-  Parser(Lexer& lexer, Sink& sink, llvm::BumpPtrAllocator& allocator)
-      : lexer(lexer), sink(sink), allocator(allocator) {
+  Parser(Lexer& lexer, SyntaxBuilder& sink) : lexer(lexer), sink(sink) {
     currentToken = lexer.next();
     nextToken = lexer.next();
   }
@@ -322,10 +111,6 @@ private:
   }
 
   //===--- Allocation helpers -------------------------------------------===//
-
-  [[nodiscard]] Expr* makeExpr() {
-    return std::construct_at(allocator.Allocate<Expr>());
-  }
 
   //===--- Program and statements ---------------------------------------===//
 
@@ -447,7 +232,7 @@ private:
 
   //===--- Helpers ------------------------------------------------------===//
 
-  [[nodiscard]] FailureOr<const Expr*> parseDesignator() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseDesignator() {
     if (failed(expect(TokenKind::LBracket))) {
       return failure();
     }
@@ -554,7 +339,7 @@ private:
     }
     advance(); // type
 
-    const Expr* size = nullptr;
+    std::optional<SyntaxExpressionId> size;
     if ((kind == TokenKind::Angle || kind == TokenKind::Int ||
          kind == TokenKind::Uint) &&
         current().kind == TokenKind::LBracket) {
@@ -585,7 +370,7 @@ private:
                                  "' requires an initializer");
     }
 
-    const Expr* initializer = nullptr;
+    std::optional<SyntaxExpressionId> initializer;
     std::optional<Operand> measureSource;
     if (hasInitializer) {
       if (current().kind == TokenKind::Measure) {
@@ -621,7 +406,8 @@ private:
       return failure();
     }
     if (measureSource) {
-      const BitReference target{.loc = loc, .identifier = id, .index = nullptr};
+      const BitReference target{
+          .loc = loc, .identifier = id, .index = std::nullopt};
       return sink.measure(loc, &target, *measureSource);
     }
     return success();
@@ -631,7 +417,7 @@ private:
   [[nodiscard]] LogicalResult parseQuantumDecl() {
     const auto loc = current().loc;
     advance(); // qubit
-    const Expr* size = nullptr;
+    std::optional<SyntaxExpressionId> size;
     if (current().kind == TokenKind::LBracket) {
       auto designator = parseDesignator();
       if (failed(designator)) {
@@ -659,7 +445,7 @@ private:
     }
     const auto id = current().identifier;
     advance();
-    const Expr* size = nullptr;
+    std::optional<SyntaxExpressionId> size;
     if (current().kind == TokenKind::LBracket) {
       auto designator = parseDesignator();
       if (failed(designator)) {
@@ -700,7 +486,7 @@ private:
   [[nodiscard]] LogicalResult parseClassicalDecl(bool isOutput) {
     const auto loc = current().loc;
     advance(); // bit
-    const Expr* size = nullptr;
+    std::optional<SyntaxExpressionId> size;
     if (current().kind == TokenKind::LBracket) {
       auto designator = parseDesignator();
       if (failed(designator)) {
@@ -714,7 +500,7 @@ private:
     const auto id = current().identifier;
     advance();
 
-    const Expr* initializer = nullptr;
+    std::optional<SyntaxExpressionId> initializer;
     std::optional<Operand> measureSource;
     if (isOutput && current().kind == TokenKind::Equals) {
       return sink.error(
@@ -747,7 +533,8 @@ private:
       return failure();
     }
     if (measureSource) {
-      const BitReference target{.loc = loc, .identifier = id, .index = nullptr};
+      const BitReference target{
+          .loc = loc, .identifier = id, .index = std::nullopt};
       return sink.measure(loc, &target, *measureSource);
     }
     return success();
@@ -762,7 +549,7 @@ private:
     }
     const auto id = current().identifier;
     advance();
-    const Expr* size = nullptr;
+    std::optional<SyntaxExpressionId> size;
     if (current().kind == TokenKind::LBracket) {
       auto designator = parseDesignator();
       if (failed(designator)) {
@@ -773,7 +560,7 @@ private:
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.classicalRegister(loc, id, size, /*initializer=*/nullptr,
+    return sink.classicalRegister(loc, id, size, /*initializer=*/std::nullopt,
                                   /*output=*/false);
   }
 
@@ -791,7 +578,7 @@ private:
     const auto compoundLocation = current().loc;
     const auto compoundSpelling = current().spelling;
     if (compound) {
-      if (target->index != nullptr) {
+      if (target->index.has_value()) {
         return sink.error(current().loc,
                           "indexed compound assignments are not supported");
       }
@@ -816,7 +603,7 @@ private:
     if (failed(value)) {
       return failure();
     }
-    const Expr* assignedValue = *value;
+    SyntaxExpressionId assignedValue = *value;
     if (compound) {
       const auto kind = llvm::StringSwitch<std::optional<Expr::Kind>>(
                             compoundSpelling.drop_back())
@@ -836,17 +623,17 @@ private:
         return sink.error(compoundLocation,
                           "unsupported compound assignment operator");
       }
-      auto* previous = makeExpr();
-      previous->loc = loc;
-      previous->kind = Expr::Kind::Identifier;
-      previous->identifier = target->identifier;
-      assignedValue =
-          makeBinary(*kind, previous, assignedValue, compoundLocation);
+      SyntaxExpression previous;
+      previous.location = loc;
+      previous.kind = Expr::Kind::Identifier;
+      previous.identifier = target->identifier;
+      assignedValue = makeBinary(*kind, sink.addExpression(previous),
+                                 assignedValue, compoundLocation);
     }
     if (failed(expect(TokenKind::Semicolon))) {
       return failure();
     }
-    return sink.assignment(loc, *target, *assignedValue);
+    return sink.assignment(loc, *target, assignedValue);
   }
 
   //===--- Measure ------------------------------------------------------===//
@@ -953,7 +740,7 @@ private:
     // The scratch buffers must outlive the sink call, so they live here rather
     // than inside `parseGateCall`.
     SmallVector<Modifier> modifiers;
-    SmallVector<const Expr*> parameters;
+    SmallVector<SyntaxExpressionId> parameters;
     SmallVector<Operand> operands;
     auto call = parseGateCall(modifiers, parameters, operands);
     if (failed(call)) {
@@ -964,7 +751,7 @@ private:
 
   [[nodiscard]] FailureOr<GateCall>
   parseGateCall(SmallVectorImpl<Modifier>& modifiers,
-                SmallVectorImpl<const Expr*>& parameters,
+                SmallVectorImpl<SyntaxExpressionId>& parameters,
                 SmallVectorImpl<Operand>& operands) {
     GateCall call;
     call.loc = current().loc;
@@ -1110,7 +897,7 @@ private:
     }
     operand.identifier = current().identifier;
     advance();
-    const Expr* index = nullptr;
+    std::optional<SyntaxExpressionId> index;
     if (current().kind == TokenKind::LBracket) {
       auto designator = parseDesignator();
       if (failed(designator)) {
@@ -1130,7 +917,7 @@ private:
     }
     reference.identifier = current().identifier;
     advance();
-    const Expr* index = nullptr;
+    std::optional<SyntaxExpressionId> index;
     if (current().kind == TokenKind::LBracket) {
       auto designator = parseDesignator();
       if (failed(designator)) {
@@ -1176,7 +963,7 @@ private:
       return failure();
     }
     return sink.ifStmt(
-        loc, **conditionOrFailure, [this] { return parseBlock(); },
+        loc, *conditionOrFailure, [this] { return parseBlock(); },
         [this] { return parseElse(); });
   }
 
@@ -1198,8 +985,7 @@ private:
     if (failed(control) || failed(expect(TokenKind::RParen))) {
       return failure();
     }
-    return sink.switchStmt(loc, **control,
-                           [this] { return parseSwitchBody(); });
+    return sink.switchStmt(loc, *control, [this] { return parseSwitchBody(); });
   }
 
   [[nodiscard]] LogicalResult parseSwitchBody() {
@@ -1216,7 +1002,7 @@ private:
         }
         sawCase = true;
         advance(); // case
-        SmallVector<const Expr*> labels;
+        SmallVector<SyntaxExpressionId> labels;
         while (true) {
           auto label = parseExpression();
           if (failed(label)) {
@@ -1289,8 +1075,8 @@ private:
       return failure();
     }
 
-    const Expr* step = nullptr;
-    const Expr* stop = nullptr;
+    SyntaxExpressionId step = 0;
+    SyntaxExpressionId stop = 0;
     if (current().kind == TokenKind::Colon) {
       advance();
       auto third = parseExpression();
@@ -1300,18 +1086,18 @@ private:
       step = *second;
       stop = *third;
     } else {
-      auto* one = makeExpr();
-      one->loc = loc;
-      one->kind = Expr::Kind::Int;
-      one->intValue = 1;
-      step = one;
+      SyntaxExpression one;
+      one.location = loc;
+      one.kind = Expr::Kind::Int;
+      one.integer = 1;
+      step = sink.addExpression(one);
       stop = *second;
     }
     if (failed(expect(TokenKind::RBracket))) {
       return failure();
     }
 
-    return sink.forStmt(loc, iv.identifier, isUnsigned, **start, *step, *stop,
+    return sink.forStmt(loc, iv.identifier, isUnsigned, *start, step, stop,
                         [this] { return parseBlock(); });
   }
 
@@ -1328,19 +1114,19 @@ private:
     if (failed(expect(TokenKind::RParen))) {
       return failure();
     }
-    return sink.whileStmt(loc, **conditionOrFailure,
+    return sink.whileStmt(loc, *conditionOrFailure,
                           [this] { return parseBlock(); });
   }
 
   //===--- Expressions --------------------------------------------------===//
 
   /// Parse an expression using OpenQASM's precedence hierarchy.
-  [[nodiscard]] FailureOr<const Expr*> parseExpression() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseExpression() {
     auto lhs = parseLogicalAnd();
     if (failed(lhs)) {
       return failure();
     }
-    const Expr* result = *lhs;
+    SyntaxExpressionId result = *lhs;
     while (current().kind == TokenKind::PipePipe) {
       const auto loc = current().loc;
       advance();
@@ -1353,12 +1139,12 @@ private:
     return result;
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parseLogicalAnd() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseLogicalAnd() {
     auto lhs = parseBitwiseOr();
     if (failed(lhs)) {
       return failure();
     }
-    const Expr* result = *lhs;
+    SyntaxExpressionId result = *lhs;
     while (current().kind == TokenKind::AmpAmp) {
       const auto loc = current().loc;
       advance();
@@ -1371,12 +1157,12 @@ private:
     return result;
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parseBitwiseOr() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseBitwiseOr() {
     auto lhs = parseBitwiseXor();
     if (failed(lhs)) {
       return failure();
     }
-    const Expr* result = *lhs;
+    SyntaxExpressionId result = *lhs;
     while (current().kind == TokenKind::Pipe) {
       const auto loc = current().loc;
       advance();
@@ -1389,12 +1175,12 @@ private:
     return result;
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parseBitwiseXor() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseBitwiseXor() {
     auto lhs = parseBitwiseAnd();
     if (failed(lhs)) {
       return failure();
     }
-    const Expr* result = *lhs;
+    SyntaxExpressionId result = *lhs;
     while (current().kind == TokenKind::Caret) {
       const auto loc = current().loc;
       advance();
@@ -1407,12 +1193,12 @@ private:
     return result;
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parseBitwiseAnd() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseBitwiseAnd() {
     auto lhs = parseEquality();
     if (failed(lhs)) {
       return failure();
     }
-    const Expr* result = *lhs;
+    SyntaxExpressionId result = *lhs;
     while (current().kind == TokenKind::Amp) {
       const auto loc = current().loc;
       advance();
@@ -1425,12 +1211,12 @@ private:
     return result;
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parseEquality() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseEquality() {
     auto lhs = parseRelational();
     if (failed(lhs)) {
       return failure();
     }
-    const Expr* result = *lhs;
+    SyntaxExpressionId result = *lhs;
     while (current().kind == TokenKind::EqualsEquals ||
            current().kind == TokenKind::NotEquals) {
       const auto kind = current().kind == TokenKind::EqualsEquals
@@ -1447,7 +1233,7 @@ private:
     return result;
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parseRelational() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseRelational() {
     auto lhs = parseShift();
     if (failed(lhs)) {
       return failure();
@@ -1478,12 +1264,12 @@ private:
     return makeBinary(*kind, *lhs, *rhs, loc);
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parseShift() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseShift() {
     auto lhs = parseAdditive();
     if (failed(lhs)) {
       return failure();
     }
-    const Expr* result = *lhs;
+    SyntaxExpressionId result = *lhs;
     while (current().kind == TokenKind::ShiftLeft ||
            current().kind == TokenKind::ShiftRight) {
       const auto kind = current().kind == TokenKind::ShiftLeft
@@ -1500,12 +1286,12 @@ private:
     return result;
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parseAdditive() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseAdditive() {
     auto lhs = parseTerm();
     if (failed(lhs)) {
       return failure();
     }
-    const Expr* result = *lhs;
+    SyntaxExpressionId result = *lhs;
     while (current().kind == TokenKind::Plus ||
            current().kind == TokenKind::Minus) {
       const auto kind =
@@ -1521,12 +1307,12 @@ private:
     return result;
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parseTerm() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseTerm() {
     auto lhs = parseUnary();
     if (failed(lhs)) {
       return failure();
     }
-    const Expr* result = *lhs;
+    SyntaxExpressionId result = *lhs;
     while (current().kind == TokenKind::Asterisk ||
            current().kind == TokenKind::Slash ||
            current().kind == TokenKind::Percent) {
@@ -1547,7 +1333,7 @@ private:
     return result;
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parseUnary() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parseUnary() {
     ++recursiveExpressionDepth;
     auto depthGuard =
         llvm::make_scope_exit([&] { --recursiveExpressionDepth; });
@@ -1572,16 +1358,16 @@ private:
       if (failed(operand)) {
         return failure();
       }
-      auto* expr = makeExpr();
-      expr->loc = loc;
-      expr->kind = kind;
-      expr->lhs = *operand;
-      return expr;
+      SyntaxExpression expr;
+      expr.location = loc;
+      expr.kind = kind;
+      expr.lhs = *operand;
+      return sink.addExpression(expr);
     }
     return parsePower();
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parsePower() {
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parsePower() {
     auto lhs = parsePrimary();
     if (failed(lhs) || current().kind != TokenKind::DoubleAsterisk) {
       return lhs;
@@ -1595,37 +1381,50 @@ private:
     return makeBinary(Expr::Kind::Pow, *lhs, *rhs, loc);
   }
 
-  [[nodiscard]] FailureOr<const Expr*> parsePrimary() {
-    auto* expr = makeExpr();
-    expr->loc = current().loc;
+  [[nodiscard]] FailureOr<SyntaxExpressionId> parsePrimary() {
+    SyntaxExpression expr;
+    expr.location = current().loc;
     switch (current().kind) {
-    case TokenKind::True:
-    case TokenKind::False:
-      expr->kind = Expr::Kind::Bool;
-      expr->boolValue = current().kind == TokenKind::True;
-      advance();
-      return expr;
-    case TokenKind::FloatLiteral:
-      expr->kind = Expr::Kind::Float;
-      expr->floatValue = current().floatValue;
-      advance();
-      return expr;
-    case TokenKind::IntegerLiteral:
-      expr->kind = Expr::Kind::Int;
-      expr->intValue = current().intValue;
-      if (current().wideInteger) {
-        expr->wideInteger = current().stringValue;
+    case TokenKind::StringLiteral:
+      expr.kind = Expr::Kind::BitString;
+      expr.identifier = current().stringValue;
+      if (expr.identifier.empty() ||
+          !llvm::all_of(
+              expr.identifier,
+              [](char c) { return c == '0' || c == '1' || c == '_'; }) ||
+          llvm::all_of(expr.identifier, [](char c) { return c == '_'; })) {
+        return sink.error(current().loc, "bit strings require binary digits");
       }
       advance();
-      return expr;
+      return sink.addExpression(expr);
+    case TokenKind::True:
+    case TokenKind::False:
+      expr.kind = Expr::Kind::Bool;
+      expr.boolean = current().kind == TokenKind::True;
+      advance();
+      return sink.addExpression(expr);
+    case TokenKind::FloatLiteral:
+      expr.kind = Expr::Kind::Float;
+      expr.floatingPoint = current().floatValue;
+      advance();
+      return sink.addExpression(expr);
+    case TokenKind::IntegerLiteral:
+      expr.kind = Expr::Kind::Int;
+      expr.integer = current().intValue;
+      if (current().wideInteger) {
+        expr.wideInteger = current().stringValue;
+      }
+      advance();
+      return sink.addExpression(expr);
     case TokenKind::Bool:
     case TokenKind::Bit:
     case TokenKind::Int:
     case TokenKind::Uint:
+    case TokenKind::Float:
     case TokenKind::Angle: {
       const auto type = current().kind;
       advance();
-      const Expr* size = nullptr;
+      std::optional<SyntaxExpressionId> size;
       if (current().kind == TokenKind::LBracket) {
         auto designator = parseDesignator();
         if (failed(designator)) {
@@ -1640,14 +1439,15 @@ private:
       if (failed(operand) || failed(expect(TokenKind::RParen))) {
         return failure();
       }
-      expr->kind = type == TokenKind::Int    ? Expr::Kind::IntCast
-                   : type == TokenKind::Uint ? Expr::Kind::UintCast
-                   : type == TokenKind::Bool ? Expr::Kind::BoolCast
-                   : type == TokenKind::Bit  ? Expr::Kind::BitCast
+      expr.kind = type == TokenKind::Int     ? Expr::Kind::IntCast
+                  : type == TokenKind::Uint  ? Expr::Kind::UintCast
+                  : type == TokenKind::Bool  ? Expr::Kind::BoolCast
+                  : type == TokenKind::Float ? Expr::Kind::FloatCast
+                  : type == TokenKind::Bit   ? Expr::Kind::BitCast
                                              : Expr::Kind::AngleCast;
-      expr->lhs = size;
-      expr->rhs = *operand;
-      return expr;
+      expr.lhs = size;
+      expr.rhs = *operand;
+      return sink.addExpression(expr);
     }
     case TokenKind::Identifier: {
       if (peek().kind == TokenKind::LParen) {
@@ -1658,18 +1458,18 @@ private:
         }
         return parseMathCall(*kind, expr);
       }
-      expr->kind = Expr::Kind::Identifier;
-      expr->identifier = current().identifier;
+      expr.kind = Expr::Kind::Identifier;
+      expr.identifier = current().identifier;
       advance();
       if (current().kind == TokenKind::LBracket) {
         auto designator = parseDesignator();
         if (failed(designator)) {
           return failure();
         }
-        expr->kind = Expr::Kind::Index;
-        expr->lhs = *designator;
+        expr.kind = Expr::Kind::Index;
+        expr.lhs = *designator;
       }
-      return expr;
+      return sink.addExpression(expr);
     }
     // `pow` is also a gate modifier, so it has a dedicated token.
     case TokenKind::Pow:
@@ -1693,9 +1493,9 @@ private:
   }
 
   /// Parse the argument list of a call to the built-in math function @p kind.
-  [[nodiscard]] FailureOr<const Expr*> parseMathCall(Expr::Kind kind,
-                                                     Expr* expr) {
-    expr->kind = kind;
+  [[nodiscard]] FailureOr<SyntaxExpressionId>
+  parseMathCall(Expr::Kind kind, SyntaxExpression expr) {
+    expr.kind = kind;
     advance(); // function name
 
     if (failed(expect(TokenKind::LParen))) {
@@ -1706,7 +1506,7 @@ private:
     if (failed(lhs)) {
       return failure();
     }
-    expr->lhs = *lhs;
+    expr.lhs = *lhs;
 
     if (kind == Expr::Kind::BuiltinMod || kind == Expr::Kind::BuiltinPow ||
         kind == Expr::Kind::RotateLeft || kind == Expr::Kind::RotateRight) {
@@ -1717,29 +1517,30 @@ private:
       if (failed(rhs)) {
         return failure();
       }
-      expr->rhs = *rhs;
+      expr.rhs = *rhs;
     }
 
     if (failed(expect(TokenKind::RParen))) {
       return failure();
     }
-    return expr;
+    return sink.addExpression(expr);
   }
 
-  [[nodiscard]] Expr* makeBinary(const Expr::Kind kind, const Expr* lhs,
-                                 const Expr* rhs, const SMLoc loc) {
-    auto* expr = makeExpr();
-    expr->loc = loc;
-    expr->kind = kind;
-    expr->lhs = lhs;
-    expr->rhs = rhs;
-    return expr;
+  [[nodiscard]] SyntaxExpressionId makeBinary(const Expr::Kind kind,
+                                              SyntaxExpressionId lhs,
+                                              SyntaxExpressionId rhs,
+                                              const SMLoc loc) {
+    SyntaxExpression expr;
+    expr.location = loc;
+    expr.kind = kind;
+    expr.lhs = lhs;
+    expr.rhs = rhs;
+    return sink.addExpression(expr);
   }
 
   // Parser collaborators are mandatory and outlive this single parse.
   Lexer& lexer;
-  Sink& sink;
-  llvm::BumpPtrAllocator& allocator;
+  SyntaxBuilder& sink;
   Token currentToken;
   Token nextToken;
   size_t blockDepth = 0;

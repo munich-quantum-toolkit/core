@@ -45,6 +45,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 #include <variant>
@@ -420,33 +421,23 @@ private:
     llvm::DynamicAPInt constant{0};
   };
 
-  struct DynamicBitFact {
-    ExpressionId expression = 0;
-    std::vector<std::pair<uint64_t, uint64_t>> dependencies;
-  };
   using BitInitialization = std::vector<bool>;
-  using DynamicBitFactSet = std::vector<DynamicBitFact>;
   struct InitializationState {
     std::vector<std::shared_ptr<BitInitialization>> bits;
     std::vector<bool> scalars;
     std::vector<uint64_t> scalarGenerations;
-    std::vector<uint64_t> bitGenerations;
     bool continuing = false;
   };
   SmallVector<SmallVector<InitializationState>> loopExits;
   bool reachable = true;
   bool activePath = true;
 
-  void mergeExitGenerations(ArrayRef<InitializationState> exits, size_t scalars,
-                            size_t registers) {
+  void mergeExitGenerations(ArrayRef<InitializationState> exits,
+                            size_t scalars) {
     for (const auto& exit : exits) {
       for (size_t scalar = 0; scalar < scalars; ++scalar) {
         scalarGenerations[scalar] =
             std::max(scalarGenerations[scalar], exit.scalarGenerations[scalar]);
-      }
-      for (size_t reg = 0; reg < registers; ++reg) {
-        bitGenerations[reg] =
-            std::max(bitGenerations[reg], exit.bitGenerations[reg]);
       }
     }
   }
@@ -473,7 +464,6 @@ private:
   SmallVector<llvm::StringMap<Symbol>> scopes;
   llvm::StringMap<GateSignature> customGates;
   std::vector<std::shared_ptr<BitInitialization>> initializedBits;
-  std::vector<std::shared_ptr<DynamicBitFactSet>> dynamicBitFacts;
   std::vector<bool> initializedScalars;
   std::vector<uint64_t> scalarGenerations;
   std::vector<std::optional<ExpressionId>> affineScalarValues;
@@ -481,7 +471,6 @@ private:
   llvm::DenseSet<ScalarId> loopVariantScalars;
   presburger::IntegerPolyhedron affineDomain{
       presburger::PresburgerSpace::getSetSpace()};
-  std::vector<uint64_t> bitGenerations;
   std::vector<ProgramOutput> implicitOutputs;
   std::vector<ProgramOutput> explicitOutputs;
   mutable std::vector<int8_t> constantExpressionStatus;
@@ -630,7 +619,23 @@ private:
   }
 
   [[nodiscard]] std::optional<AffineForm>
-  buildAffineForm(const ExpressionId expression) const {
+  buildAffineForm(ExpressionId expression) const {
+    /// Facts depend on the active scope and induction domains.
+    llvm::DenseMap<ExpressionId, std::optional<AffineForm>> cache;
+    return buildAffineForm(expression, cache, 0);
+  }
+
+  [[nodiscard]] std::optional<AffineForm> buildAffineForm(
+      ExpressionId expression,
+      llvm::DenseMap<ExpressionId, std::optional<AffineForm>>& cache,
+      size_t depth) const {
+    if (const auto found = cache.find(expression); found != cache.end()) {
+      return found->second;
+    }
+    if (depth == 256 || cache.size() == 4096) {
+      return std::nullopt;
+    }
+    cache.try_emplace(expression, std::nullopt);
     const auto& value = program.expressions.at(expression);
     if (value.integerWidth != 0) {
       return std::nullopt;
@@ -658,25 +663,26 @@ private:
       }
       if (value.variable < affineScalarValues.size() &&
           affineScalarValues[value.variable]) {
-        result = buildAffineForm(*affineScalarValues[value.variable]);
+        result = buildAffineForm(*affineScalarValues[value.variable], cache,
+                                 depth + 1);
       }
       break;
     }
     case ExpressionKind::Cast:
       if (isInteger(value.type) &&
           isInteger(program.expressions.at(value.lhs).type)) {
-        result = buildAffineForm(value.lhs);
+        result = buildAffineForm(value.lhs, cache, depth + 1);
       }
       break;
     case ExpressionKind::Negate:
-      if (auto operand = buildAffineForm(value.lhs)) {
+      if (auto operand = buildAffineForm(value.lhs, cache, depth + 1)) {
         result = negateAffineForm(*operand);
       }
       break;
     case ExpressionKind::Add:
     case ExpressionKind::Subtract: {
-      auto lhs = buildAffineForm(value.lhs);
-      auto rhs = buildAffineForm(value.rhs);
+      auto lhs = buildAffineForm(value.lhs, cache, depth + 1);
+      auto rhs = buildAffineForm(value.rhs, cache, depth + 1);
       if (lhs && rhs) {
         result = addAffineForms(*lhs, value.kind == ExpressionKind::Add
                                           ? *rhs
@@ -685,8 +691,8 @@ private:
       break;
     }
     case ExpressionKind::Multiply: {
-      auto lhs = buildAffineForm(value.lhs);
-      auto rhs = buildAffineForm(value.rhs);
+      auto lhs = buildAffineForm(value.lhs, cache, depth + 1);
+      auto rhs = buildAffineForm(value.rhs, cache, depth + 1);
       if (!lhs || !rhs) {
         break;
       }
@@ -703,6 +709,7 @@ private:
     if (!result || !affineFormFitsType(*result, value.type)) {
       return std::nullopt;
     }
+    cache[expression] = result;
     return result;
   }
 
@@ -877,27 +884,13 @@ private:
   void restoreStatePrefix(
       const std::vector<std::shared_ptr<BitInitialization>>& bitsInitialized,
       const std::vector<bool>& scalarsInitialized,
-      const std::vector<uint64_t>& generations,
-      const std::vector<uint64_t>& registerGenerations) {
+      const std::vector<uint64_t>& generations) {
     for (size_t reg = 0; reg < bitsInitialized.size(); ++reg) {
       initializedBits[reg] = bitsInitialized[reg];
     }
     for (size_t scalar = 0; scalar < scalarsInitialized.size(); ++scalar) {
       initializedScalars[scalar] = scalarsInitialized[scalar];
       scalarGenerations[scalar] = generations[scalar];
-    }
-    for (size_t reg = 0; reg < registerGenerations.size(); ++reg) {
-      bitGenerations[reg] = registerGenerations[reg];
-    }
-  }
-
-  void restoreDynamicFactsPrefix(
-      const std::vector<std::shared_ptr<DynamicBitFactSet>>& facts) {
-    for (size_t reg = 0; reg < facts.size(); ++reg) {
-      dynamicBitFacts[reg] = facts[reg];
-    }
-    for (size_t reg = facts.size(); reg < dynamicBitFacts.size(); ++reg) {
-      dynamicBitFacts[reg] = std::make_shared<DynamicBitFactSet>();
     }
   }
 
@@ -915,169 +908,6 @@ private:
           std::make_shared<BitInitialization>(*initializedBits[reg]);
     }
     return *initializedBits[reg];
-  }
-
-  [[nodiscard]] DynamicBitFactSet&
-  mutableDynamicBitFacts(const RegisterId reg) {
-    if (dynamicBitFacts[reg].use_count() != 1) {
-      dynamicBitFacts[reg] =
-          std::make_shared<DynamicBitFactSet>(*dynamicBitFacts[reg]);
-    }
-    return *dynamicBitFacts[reg];
-  }
-
-  [[nodiscard]] bool sameExpression(const ExpressionId lhs,
-                                    const ExpressionId rhs) const {
-    const auto& left = program.expressions[lhs];
-    const auto& right = program.expressions[rhs];
-    if (left.kind != right.kind || left.type != right.type ||
-        left.constant != right.constant || left.parameter != right.parameter ||
-        left.variable != right.variable ||
-        left.integerWidth != right.integerWidth) {
-      return false;
-    }
-    switch (left.kind) {
-    case ExpressionKind::Constant:
-    case ExpressionKind::GateParameter:
-    case ExpressionKind::Variable:
-      return true;
-    case ExpressionKind::PopCount:
-    case ExpressionKind::BitVectorCast:
-      return sameBitVectorExpression(left.bitVector, right.bitVector);
-    case ExpressionKind::Condition:
-      return left.condition == right.condition;
-    case ExpressionKind::BitNot:
-    case ExpressionKind::Cast:
-    case ExpressionKind::Negate:
-    case ExpressionKind::ArcCos:
-    case ExpressionKind::ArcSin:
-    case ExpressionKind::ArcTan:
-    case ExpressionKind::Ceiling:
-    case ExpressionKind::Sin:
-    case ExpressionKind::Cos:
-    case ExpressionKind::Floor:
-    case ExpressionKind::Tan:
-    case ExpressionKind::Exp:
-    case ExpressionKind::Log:
-    case ExpressionKind::Sqrt:
-      return sameExpression(left.lhs, right.lhs);
-    default:
-      return sameExpression(left.lhs, right.lhs) &&
-             sameExpression(left.rhs, right.rhs);
-    }
-  }
-
-  [[nodiscard]] bool
-  sameBitVectorExpression(const BitVectorExpressionId lhs,
-                          const BitVectorExpressionId rhs) const {
-    const auto& left = program.bitVectorExpressions[lhs];
-    const auto& right = program.bitVectorExpressions[rhs];
-    if (left.kind != right.kind || left.width != right.width) {
-      return false;
-    }
-    switch (left.kind) {
-    case BitVectorExpressionKind::ScalarCast:
-      return sameExpression(left.scalar, right.scalar);
-    case BitVectorExpressionKind::Constant:
-      return left.constant == right.constant;
-    case BitVectorExpressionKind::Register:
-      return left.reg == right.reg;
-    case BitVectorExpressionKind::Not:
-      return sameBitVectorExpression(left.operand, right.operand);
-    case BitVectorExpressionKind::And:
-    case BitVectorExpressionKind::Or:
-    case BitVectorExpressionKind::Xor:
-      return sameBitVectorExpression(left.operand, right.operand) &&
-             sameBitVectorExpression(left.rhs, right.rhs);
-    case BitVectorExpressionKind::ShiftLeft:
-    case BitVectorExpressionKind::ShiftRight:
-    case BitVectorExpressionKind::RotateLeft:
-    case BitVectorExpressionKind::RotateRight:
-      return sameBitVectorExpression(left.operand, right.operand) &&
-             sameExpression(left.distance, right.distance);
-    }
-    llvm_unreachable("unknown bit-vector expression kind");
-  }
-
-  void collectBitVectorDependencies(
-      const BitVectorExpressionId expression,
-      std::vector<std::pair<uint64_t, uint64_t>>& dependencies) const {
-    const auto& value = program.bitVectorExpressions[expression];
-    switch (value.kind) {
-    case BitVectorExpressionKind::ScalarCast:
-      collectDependencies(value.scalar, dependencies);
-      return;
-    case BitVectorExpressionKind::Constant:
-      return;
-    case BitVectorExpressionKind::Register:
-      dependencies.emplace_back(value.reg, bitGenerations[value.reg]);
-      return;
-    case BitVectorExpressionKind::Not:
-      collectBitVectorDependencies(value.operand, dependencies);
-      return;
-    case BitVectorExpressionKind::And:
-    case BitVectorExpressionKind::Or:
-    case BitVectorExpressionKind::Xor:
-      collectBitVectorDependencies(value.operand, dependencies);
-      collectBitVectorDependencies(value.rhs, dependencies);
-      return;
-    case BitVectorExpressionKind::ShiftLeft:
-    case BitVectorExpressionKind::ShiftRight:
-    case BitVectorExpressionKind::RotateLeft:
-    case BitVectorExpressionKind::RotateRight:
-      collectBitVectorDependencies(value.operand, dependencies);
-      collectDependencies(value.distance, dependencies);
-      return;
-    }
-    llvm_unreachable("unknown bit-vector expression kind");
-  }
-
-  void collectDependencies(
-      const ExpressionId expression,
-      std::vector<std::pair<uint64_t, uint64_t>>& dependencies) const {
-    const auto& value = program.expressions[expression];
-    if (value.kind == ExpressionKind::Variable) {
-      dependencies.emplace_back((uint64_t{1} << 63U) | value.variable,
-                                scalarGenerations[value.variable]);
-      return;
-    }
-    if (value.kind == ExpressionKind::Constant ||
-        value.kind == ExpressionKind::GateParameter) {
-      return;
-    }
-    if (value.kind == ExpressionKind::PopCount ||
-        value.kind == ExpressionKind::BitVectorCast) {
-      collectBitVectorDependencies(value.bitVector, dependencies);
-      return;
-    }
-    if (value.kind == ExpressionKind::Condition) {
-      /// Boolean expressions used as indices depend on the current classical
-      /// state.
-      for (const auto [id, generation] : llvm::enumerate(scalarGenerations)) {
-        dependencies.emplace_back((uint64_t{1} << 63U) | id, generation);
-      }
-      for (const auto [id, generation] : llvm::enumerate(bitGenerations)) {
-        dependencies.emplace_back(id, generation);
-      }
-      return;
-    }
-    collectDependencies(value.lhs, dependencies);
-    if (value.kind != ExpressionKind::BitNot &&
-        value.kind != ExpressionKind::Cast &&
-        value.kind != ExpressionKind::Negate &&
-        value.kind != ExpressionKind::ArcCos &&
-        value.kind != ExpressionKind::ArcSin &&
-        value.kind != ExpressionKind::ArcTan &&
-        value.kind != ExpressionKind::Ceiling &&
-        value.kind != ExpressionKind::Sin &&
-        value.kind != ExpressionKind::Cos &&
-        value.kind != ExpressionKind::Floor &&
-        value.kind != ExpressionKind::Tan &&
-        value.kind != ExpressionKind::Exp &&
-        value.kind != ExpressionKind::Log &&
-        value.kind != ExpressionKind::Sqrt) {
-      collectDependencies(value.rhs, dependencies);
-    }
   }
 
   [[nodiscard]] FailureOr<std::optional<bool>>
@@ -1475,17 +1305,8 @@ private:
 
   [[nodiscard]] static std::optional<Constant>
   builtinConstant(StringRef identifier) {
-    if (identifier == "pi" || identifier == "π") {
-      return Constant{.type = ScalarType::Float, .value = std::numbers::pi};
-    }
-    if (identifier == "tau" || identifier == "τ") {
-      return Constant{
-          .type = ScalarType::Float,
-          .value = 2.0 * std::numbers::pi,
-      };
-    }
-    if (identifier == "euler" || identifier == "ℇ") {
-      return Constant{.type = ScalarType::Float, .value = std::numbers::e};
+    if (const auto value = getBuiltinConstant(identifier)) {
+      return Constant{.type = ScalarType::Float, .value = *value};
     }
     return std::nullopt;
   }
@@ -1530,6 +1351,15 @@ private:
         }
         return *symbol->constant;
       }
+      case Expr::Kind::FloatCast: {
+        MQT_OQ3_TRY_ASSIGN(
+            width, bitVectorCastWidth(expression.lhs, expression.location));
+        if (width != 64) {
+          return fail(expression.location, "float casts support only width 64");
+        }
+        MQT_OQ3_TRY_ASSIGN(operand, evaluateConstant(*expression.rhs));
+        return Constant{.type = ScalarType::Float, .value = asDouble(operand)};
+      }
       case Expr::Kind::AngleCast: {
         MQT_OQ3_TRY_ASSIGN(width,
                            angleWidth(expression.lhs, expression.location));
@@ -1546,6 +1376,7 @@ private:
             .value = asDouble(operand) != 0,
         };
       }
+      case Expr::Kind::BitString:
       case Expr::Kind::BitCast:
         return fail(expression.location,
                     "bit-register value is not a scalar constant");
@@ -1891,7 +1722,9 @@ private:
         }
         return symbol->constant->type;
       }
+      case Expr::Kind::FloatCast:
       case Expr::Kind::BoolCast:
+      case Expr::Kind::BitString:
       case Expr::Kind::BitCast:
       case Expr::Kind::AngleCast: {
         MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(id));
@@ -2398,6 +2231,7 @@ private:
         return true;
       case Expr::Kind::Index:
       case Expr::Kind::PopCount:
+      case Expr::Kind::BitString:
       case Expr::Kind::BitCast:
       case Expr::Kind::RotateLeft:
       case Expr::Kind::RotateRight:
@@ -2438,6 +2272,7 @@ private:
              !program.registers[symbol->id].isScalar;
     }
     switch (expression.kind) {
+    case Expr::Kind::BitString:
     case Expr::Kind::BitCast:
       return true;
     case Expr::Kind::BitNot:
@@ -2460,6 +2295,25 @@ private:
       const SyntaxExpressionId syntaxId,
       const std::optional<uint64_t> expectedWidth = std::nullopt) {
     const auto& expression = syntax.expressions[syntaxId];
+    if (expression.kind == Expr::Kind::BitString) {
+      llvm::SmallString<64> digits;
+      for (char digit : expression.identifier) {
+        if (digit != '_') {
+          digits.push_back(digit);
+        }
+      }
+      if (digits.size() > REGISTER_WIDTH_LIMIT ||
+          (expectedWidth && *expectedWidth != digits.size())) {
+        return fail(expression.location,
+                    "bit-string width must match the supported register width");
+      }
+      return addBitVectorExpression({
+          .kind = BitVectorExpressionKind::Constant,
+          .width = digits.size(),
+          .constant =
+              llvm::APInt(static_cast<unsigned>(digits.size()), digits, 2),
+      });
+    }
     if (expression.kind == Expr::Kind::BitCast) {
       MQT_OQ3_TRY_ASSIGN(
           width, bitVectorCastWidth(expression.lhs, expression.location));
@@ -2698,6 +2552,15 @@ private:
       MQT_OQ3_TRY_ASSIGN(constant, evaluateConstant(syntaxId));
       return addConstant(constant);
     }
+    if (expression.kind == Expr::Kind::FloatCast) {
+      MQT_OQ3_TRY_ASSIGN(
+          width, bitVectorCastWidth(expression.lhs, expression.location));
+      if (width != 64) {
+        return fail(expression.location, "float casts support only width 64");
+      }
+      MQT_OQ3_TRY_ASSIGN(operand, analyzeExpression(*expression.rhs));
+      return castExpression(operand, ScalarType::Float, expression.location);
+    }
     if (expression.kind == Expr::Kind::PopCount) {
       MQT_OQ3_TRY_ASSIGN(bitVector,
                          analyzeBitVectorExpression(*expression.lhs));
@@ -2789,10 +2652,12 @@ private:
 
     auto kind = ExpressionKind::Constant;
     switch (expression.kind) {
+    case Expr::Kind::FloatCast:
     case Expr::Kind::IntCast:
     case Expr::Kind::UintCast:
     case Expr::Kind::BoolCast:
       llvm_unreachable("handled cast");
+    case Expr::Kind::BitString:
     case Expr::Kind::BitCast:
       return fail(expression.location, "expected a scalar, not a bit register");
     case Expr::Kind::AngleCast:
@@ -3274,7 +3139,7 @@ private:
                   .bits = initializedBits,
                   .scalars = initializedScalars,
                   .scalarGenerations = scalarGenerations,
-                  .bitGenerations = bitGenerations,
+
                   .continuing = continuing,
               });
             }
@@ -3455,22 +3320,9 @@ private:
   }
 
   void markBitInitialized(const frontend::BitReference& target) {
-    ++bitGenerations[target.reg];
     if (!target.dynamicIndex) {
       mutableBitInitialization(target.reg)[target.index] = true;
       return;
-    }
-    DynamicBitFact fact{
-        .expression = *target.dynamicIndex,
-        .dependencies = {},
-    };
-    collectDependencies(*target.dynamicIndex, fact.dependencies);
-    auto& facts = mutableDynamicBitFacts(target.reg);
-    if (llvm::none_of(facts, [&](const auto& existing) {
-          return existing.dependencies == fact.dependencies &&
-                 sameExpression(existing.expression, fact.expression);
-        })) {
-      facts.push_back(std::move(fact));
     }
   }
 
@@ -3581,8 +3433,6 @@ private:
     const bool initiallyInitialized = !isQubit && program.openQASM2;
     initializedBits.push_back(
         std::make_shared<BitInitialization>(width, initiallyInitialized));
-    dynamicBitFacts.push_back(std::make_shared<DynamicBitFactSet>());
-    bitGenerations.push_back(0);
     if (failed(declare(location, identifier,
                        {
                            .kind = SymbolKind::Register,
@@ -3883,8 +3733,6 @@ private:
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
     const auto beforeAffineScalarValues = affineScalarValues;
-    const auto beforeBitGenerations = bitGenerations;
-    const auto beforeDynamicBitFacts = dynamicBitFacts;
     scopes.emplace_back();
     const auto thenResult =
         analyzeBody(conditional.thenStatements, result.thenStatements,
@@ -3899,14 +3747,11 @@ private:
     const auto afterThenInitialized = initializedScalars;
     const auto afterThenGenerations = scalarGenerations;
     const auto afterThenAffineScalarValues = affineScalarValues;
-    const auto afterThenBitGenerations = bitGenerations;
-    const auto afterThenDynamicBitFacts = dynamicBitFacts;
     scopes.pop_back();
 
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
-                       beforeGenerations, beforeBitGenerations);
+                       beforeGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
-    restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     activePath = entryActive && (!knownCondition || !*knownCondition);
     reachable = entryReachable;
     scopes.emplace_back();
@@ -3925,8 +3770,6 @@ private:
     const auto afterElseInitialized = initializedScalars;
     const auto afterElseGenerations = scalarGenerations;
     const auto afterElseAffineScalarValues = affineScalarValues;
-    const auto afterElseBitGenerations = bitGenerations;
-    const auto afterElseDynamicBitFacts = dynamicBitFacts;
     scopes.pop_back();
 
     if (!thenReachable && elseReachable) {
@@ -3934,9 +3777,8 @@ private:
     }
     if (thenReachable && !elseReachable) {
       restoreStatePrefix(afterThenBitsInitialized, afterThenInitialized,
-                         afterThenGenerations, afterThenBitGenerations);
+                         afterThenGenerations);
       restoreAffineScalarValuesPrefix(afterThenAffineScalarValues);
-      restoreDynamicFactsPrefix(afterThenDynamicBitFacts);
       return addStatement(location, std::move(result));
     }
     if (knownCondition) {
@@ -3949,40 +3791,20 @@ private:
       const auto& knownAffineScalarValues = *knownCondition
                                                 ? afterThenAffineScalarValues
                                                 : afterElseAffineScalarValues;
-      const auto& knownBitGenerations =
-          *knownCondition ? afterThenBitGenerations : afterElseBitGenerations;
-      const auto& knownDynamicBitFacts =
-          *knownCondition ? afterThenDynamicBitFacts : afterElseDynamicBitFacts;
       restoreStatePrefix(knownBitsInitialized, knownInitialized,
-                         knownGenerations, knownBitGenerations);
+                         knownGenerations);
       restoreAffineScalarValuesPrefix(knownAffineScalarValues);
-      restoreDynamicFactsPrefix(knownDynamicBitFacts);
       return addStatement(location, std::move(result));
     }
 
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
-                       beforeGenerations, beforeBitGenerations);
+                       beforeGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
-    restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
       auto& merged = mutableBitInitialization(static_cast<RegisterId>(reg));
       for (size_t bit = 0; bit < beforeBitsInitialized[reg]->size(); ++bit) {
         merged[bit] = (*afterThenBitsInitialized[reg])[bit] &&
                       (*afterElseBitsInitialized[reg])[bit];
-      }
-    }
-    for (size_t reg = 0; reg < beforeDynamicBitFacts.size(); ++reg) {
-      auto& merged = mutableDynamicBitFacts(static_cast<RegisterId>(reg));
-      merged.clear();
-      for (const auto& thenFact : *afterThenDynamicBitFacts[reg]) {
-        if (llvm::any_of(
-                *afterElseDynamicBitFacts[reg], [&](const auto& elseFact) {
-                  return thenFact.dependencies == elseFact.dependencies &&
-                         sameExpression(thenFact.expression,
-                                        elseFact.expression);
-                })) {
-          merged.push_back(thenFact);
-        }
       }
     }
     for (size_t scalar = 0; scalar < beforeInitialized.size(); ++scalar) {
@@ -3998,10 +3820,6 @@ private:
       } else {
         affineScalarValues[scalar].reset();
       }
-    }
-    for (size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
-      bitGenerations[reg] =
-          std::max(afterThenBitGenerations[reg], afterElseBitGenerations[reg]);
     }
     return addStatement(location, std::move(result));
   }
@@ -4059,8 +3877,6 @@ private:
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
     const auto beforeAffineScalarValues = affineScalarValues;
-    const auto beforeBitGenerations = bitGenerations;
-    const auto beforeDynamicBitFacts = dynamicBitFacts;
     scopes.emplace_back();
     const auto scalar = static_cast<ScalarId>(program.scalars.size());
     const auto type = loop.isUnsigned ? ScalarType::Uint : ScalarType::Int;
@@ -4119,19 +3935,15 @@ private:
     }
     const auto afterBodyBitsInitialized = initializedBits;
     const auto afterBodyInitialized = initializedScalars;
-    mergeExitGenerations(exits, beforeGenerations.size(),
-                         beforeBitGenerations.size());
+    mergeExitGenerations(exits, beforeGenerations.size());
     const auto afterBodyGenerations = scalarGenerations;
-    const auto afterBodyBitGenerations = bitGenerations;
-    const auto afterBodyDynamicBitFacts = dynamicBitFacts;
     activeInductions.erase(scalar);
     affineDomain = outerDomain;
     loopVariantScalars = outerLoopVariantScalars;
     scopes.pop_back();
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
-                       beforeGenerations, beforeBitGenerations);
+                       beforeGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
-    restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     bool rangeMayExecute = true;
     if (isConstantExpression(loop.start) && isConstantExpression(loop.step) &&
         isConstantExpression(loop.stop)) {
@@ -4178,12 +3990,6 @@ private:
           initializedScalars[scalar] = afterBodyInitialized[scalar];
           scalarGenerations[scalar] = afterBodyGenerations[scalar];
         }
-        for (size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
-          bitGenerations[reg] = afterBodyBitGenerations[reg];
-        }
-        for (size_t reg = 0; reg < beforeDynamicBitFacts.size(); ++reg) {
-          dynamicBitFacts[reg] = afterBodyDynamicBitFacts[reg];
-        }
       }
     }
     if (rangeMayExecute) {
@@ -4213,8 +4019,6 @@ private:
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
     const auto beforeAffineScalarValues = affineScalarValues;
-    const auto beforeBitGenerations = bitGenerations;
-    const auto beforeDynamicBitFacts = dynamicBitFacts;
     scopes.emplace_back();
     const auto outerLoopVariantScalars = loopVariantScalars;
     llvm::DenseSet<StringRef> blockLocalScalars;
@@ -4231,24 +4035,17 @@ private:
     if (failed(bodyResult)) {
       return failure();
     }
-    mergeExitGenerations(exits, beforeGenerations.size(),
-                         beforeBitGenerations.size());
+    mergeExitGenerations(exits, beforeGenerations.size());
     const auto afterBodyGenerations = scalarGenerations;
-    const auto afterBodyBitGenerations = bitGenerations;
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
-                       beforeGenerations, beforeBitGenerations);
+                       beforeGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
-    restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     for (size_t scalar = 0; scalar < beforeGenerations.size(); ++scalar) {
       scalarGenerations[scalar] =
           std::max(beforeGenerations[scalar], afterBodyGenerations[scalar]);
       if (afterBodyGenerations[scalar] != beforeGenerations[scalar]) {
         affineScalarValues[scalar].reset();
       }
-    }
-    for (size_t reg = 0; reg < beforeBitGenerations.size(); ++reg) {
-      bitGenerations[reg] =
-          std::max(beforeBitGenerations[reg], afterBodyBitGenerations[reg]);
     }
     llvm::erase_if(exits, [](const auto& state) { return state.continuing; });
     MQT_OQ3_TRY_ASSIGN(knownCondition, constantCondition(loop.condition));
@@ -4286,10 +4083,7 @@ private:
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
     const auto beforeAffineScalarValues = affineScalarValues;
-    const auto beforeBitGenerations = bitGenerations;
-    const auto beforeDynamicBitFacts = dynamicBitFacts;
     auto mergedScalarGenerations = beforeGenerations;
-    auto mergedBitGenerations = beforeBitGenerations;
     std::vector<std::vector<std::shared_ptr<BitInitialization>>>
         branchBitsInitialized;
     std::vector<std::vector<bool>> branchScalarsInitialized;
@@ -4299,9 +4093,8 @@ private:
         [&](const ArrayRef<SyntaxStatementId> syntaxStatements,
             std::vector<StatementId>& statements) -> LogicalResult {
       restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
-                         beforeGenerations, beforeBitGenerations);
+                         beforeGenerations);
       restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
-      restoreDynamicFactsPrefix(beforeDynamicBitFacts);
       reachable = entryReachable;
       scopes.emplace_back();
       const auto branchResult =
@@ -4320,10 +4113,6 @@ private:
       for (size_t index = 0; index < beforeGenerations.size(); ++index) {
         mergedScalarGenerations[index] =
             std::max(mergedScalarGenerations[index], scalarGenerations[index]);
-      }
-      for (size_t index = 0; index < beforeBitGenerations.size(); ++index) {
-        mergedBitGenerations[index] =
-            std::max(mergedBitGenerations[index], bitGenerations[index]);
       }
       return success();
     };
@@ -4368,9 +4157,8 @@ private:
     }
 
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
-                       mergedScalarGenerations, mergedBitGenerations);
+                       mergedScalarGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
-    restoreDynamicFactsPrefix(beforeDynamicBitFacts);
     for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
       auto& initialized =
           mutableBitInitialization(static_cast<RegisterId>(reg));
@@ -4458,6 +4246,7 @@ private:
         return fail(condition.location, "bool casts do not have a width");
       }
       return analyzeBoolValue(*condition.rhs);
+    case Expr::Kind::BitString:
     case Expr::Kind::BitCast:
       return fail(condition.location,
                   "bit registers require an explicit comparison");
@@ -4620,13 +4409,23 @@ private:
         } else if (expectedBits.getBitWidth() > bits.size()) {
           expectedBits = expectedBits.trunc(static_cast<unsigned>(bits.size()));
         }
+        const auto reg = addBitVectorExpression({
+            .kind = BitVectorExpressionKind::Register,
+            .width = bits.size(),
+            .reg = registerSymbol->id,
+        });
+        const auto expected = addBitVectorExpression({
+            .kind = BitVectorExpressionKind::Constant,
+            .width = bits.size(),
+            .constant = std::move(expectedBits),
+        });
         return addCondition({
-            .kind = ConditionKind::RegisterComparison,
+            .kind = ConditionKind::BitVectorComparison,
             .location = getSourceLocation(condition.location),
             .bit = {},
             .measurement = {},
-            .reg = registerSymbol->id,
-            .expected = std::move(expectedBits),
+            .bitVectorComparisonLhs = reg,
+            .bitVectorComparisonRhs = expected,
             .comparison = registerComparison,
         });
       }
@@ -4712,6 +4511,7 @@ private:
     case Expr::Kind::Int:
     case Expr::Kind::Float:
     case Expr::Kind::Bool:
+    case Expr::Kind::FloatCast:
     case Expr::Kind::IntCast:
     case Expr::Kind::UintCast:
     case Expr::Kind::AngleCast:
@@ -4952,13 +4752,34 @@ private:
         application.qubits.push_back(
             selection[selection.size() == 1 ? 0 : index]);
       }
-      for (const auto [position, qubit] : llvm::enumerate(application.qubits)) {
-        for (const auto& previous :
-             ArrayRef(application.qubits).take_front(position)) {
-          if (!proveDistinct(previous, qubit, affineComparisons)) {
-            return fail(call.location,
-                        "cannot prove that gate operands reference distinct "
-                        "qubits");
+      llvm::DenseSet<std::tuple<QubitReferenceKind, uint32_t, uint64_t>>
+          staticQubits;
+      llvm::DenseMap<RegisterId, SmallVector<const QubitReference*>>
+          registerQubits;
+      for (const auto& qubit : application.qubits) {
+        if (!qubit.provenIndex &&
+            !staticQubits.insert({qubit.kind, qubit.symbol, qubit.index})
+                 .second) {
+          return fail(
+              call.location,
+              "cannot prove that gate operands reference distinct qubits");
+        }
+        if (qubit.kind == QubitReferenceKind::Register) {
+          registerQubits[qubit.symbol].push_back(&qubit);
+        }
+      }
+      for (const auto& qubit : application.qubits) {
+        if (!qubit.provenIndex) {
+          continue;
+        }
+        for (const auto* other : registerQubits[qubit.symbol]) {
+          if (other == &qubit || (other->provenIndex && other < &qubit)) {
+            continue;
+          }
+          if (!proveDistinct(*other, qubit, affineComparisons)) {
+            return fail(
+                call.location,
+                "cannot prove that gate operands reference distinct qubits");
           }
         }
       }
@@ -5130,14 +4951,6 @@ private:
     if (bit.dynamicIndex) {
       if (llvm::all_of(*initializedBits[bit.reg],
                        [](const bool initialized) { return initialized; })) {
-        return success();
-      }
-      std::vector<std::pair<uint64_t, uint64_t>> dependencies;
-      collectDependencies(*bit.dynamicIndex, dependencies);
-      if (llvm::any_of(*dynamicBitFacts[bit.reg], [&](const auto& fact) {
-            return fact.dependencies == dependencies &&
-                   sameExpression(fact.expression, *bit.dynamicIndex);
-          })) {
         return success();
       }
       return fail(location,
