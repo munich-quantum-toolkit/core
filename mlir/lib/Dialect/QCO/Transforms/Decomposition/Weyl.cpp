@@ -734,15 +734,7 @@ bool TwoQubitWeylDecomposition::applySpecialization(
 
 constexpr double EIGHTH_PI = std::numbers::pi / 8.;
 
-static Matrix4x4 sqrtISwapMatrix() {
-  const auto s = std::numbers::sqrt2 / 2.;
-  return Matrix4x4::fromElements(1., 0., 0., 0.,            // row 0
-                                 0., s, Complex(0., s), 0., // row 1
-                                 0., Complex(0., s), s, 0., // row 2
-                                 0., 0., 0., 1.);           // row 3
-}
-
-// Attach U's outer local factors to a synthesis of its canonical matrix.
+/// Attach U's outer local factors to a synthesis of its canonical matrix.
 static void attachLocalFactors(TwoQubitNativeDecomposition& result,
                                const TwoQubitWeylDecomposition& target) {
   auto& factors = result.singleQubitFactors;
@@ -753,7 +745,7 @@ static void attachLocalFactors(TwoQubitNativeDecomposition& result,
   result.globalPhase += target.globalPhase();
 }
 
-// Convert a circuit locally equivalent to target to an exact realization.
+/// Convert a circuit locally equivalent to target to an exact realization.
 static void align(TwoQubitNativeDecomposition& result,
                   const TwoQubitWeylDecomposition& circuit,
                   const TwoQubitWeylDecomposition& target) {
@@ -764,9 +756,9 @@ static void align(TwoQubitNativeDecomposition& result,
       circuit.k1r().adjoint() * factors[factors.size() - 2];
   factors.back() = circuit.k1l().adjoint() * factors.back();
   result.globalPhase -= circuit.globalPhase();
-  // On x=pi/4, opposite signs of z denote the same local class.
-  // Y on the left qubit reverses XX and ZZ; i(XX) then shifts
-  // -pi/4 back to pi/4. Their product is -(Z tensor X).
+  /// On x=pi/4, opposite signs of z denote the same local class.
+  /// Y on the left qubit reverses XX and ZZ; i(XX) then shifts
+  /// -pi/4 back to pi/4. Their product is -(Z tensor X).
   if (circuit.c() * target.c() < 0. &&
       std::abs(circuit.a() - std::numbers::pi / 4.) <= WEYL_TOLERANCE &&
       std::abs(target.a() - std::numbers::pi / 4.) <= WEYL_TOLERANCE) {
@@ -789,21 +781,18 @@ oneGate(const TwoQubitWeylDecomposition& target) {
       .singleQubitFactors = {identity, identity, identity, identity},
       .globalPhase = 0.,
   };
-  static const auto BASIS =
-      TwoQubitWeylDecomposition::create(sqrtISwapMatrix(), std::nullopt);
-  align(result, BASIS, target);
+  attachLocalFactors(result, target);
   return result;
 }
 
-// See supplemental Eqs. (3), (5)-(7): doi:10.1103/PhysRevLett.130.070601.
+/// See supplemental Eqs. (3), (5)-(7): doi:10.1103/PhysRevLett.130.070601.
 static TwoQubitNativeDecomposition
 twoGates(const TwoQubitWeylDecomposition& target) {
   const double x = target.a(), y = target.b(), z = target.c();
   const double c = std::sin(x + y - z) * std::sin(x - y + z) *
                    std::sin(-x - y - z) * std::sin(-x + y + z);
   const auto split = 2. * std::sqrt(std::max(0., c));
-  const auto center = std::cos(2. * x) - std::cos(2. * y) + std::cos(2. * z);
-  // Rationalize sin^2(alpha/2) to avoid cancellation near alpha=0.
+  /// Rationalize sin^2(alpha/2) to avoid cancellation near alpha=0.
   const auto sinX = std::sin(x);
   const auto sinY = std::sin(y);
   const auto sinZ = std::sin(z);
@@ -813,12 +802,17 @@ twoGates(const TwoQubitWeylDecomposition& target) {
   const auto sinAlphaSquared = sum > 0. ? product * product / sum : 0.;
   const auto alpha =
       2. * std::asin(std::sqrt(std::clamp(sinAlphaSquared, 0., 1.)));
-  const auto beta = std::acos(std::clamp(center - split, -1., 1.));
+  /// Use the half-angle form near zero without losing precision near pi.
+  const auto beta =
+      sum < .5 ? 2. * std::asin(std::sqrt(std::clamp(sum, 0., 1.)))
+               : std::acos(std::clamp(std::cos(2. * x) - std::cos(2. * y) +
+                                          std::cos(2. * z) - split,
+                                      -1., 1.));
   const auto t = 2. * std::cos(x) * std::cos(z) * std::sin(y);
   const auto numerator = t * t;
   const auto denominator =
       numerator + std::cos(2. * x) * std::cos(2. * y) * std::cos(2. * z);
-  // At CNOT the ratio is 0/0. Either limiting phase gives the same class.
+  /// At CNOT the ratio is 0/0. Either limiting phase gives the same class.
   const auto ratio = denominator > 0. ? numerator / denominator : 0.;
   const auto gamma =
       std::acos((z < 0. ? -1. : 1.) * std::sqrt(std::clamp(ratio, 0., 1.)));
@@ -842,13 +836,13 @@ twoGates(const TwoQubitWeylDecomposition& target) {
           },
       .globalPhase = 0.,
   };
-  const auto gate = sqrtISwapMatrix();
+  const auto gate = XXPlusYYOp::unitaryMatrix(-WEYL_PI / 2., 0.);
   const auto sandwich = gate * Matrix4x4::kron(left, right) * gate;
   align(result, TwoQubitWeylDecomposition::create(sandwich, std::nullopt),
         target);
   return result;
 }
-TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
+static TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
   const auto kak = TwoQubitWeylDecomposition::create(target, std::nullopt);
   if (kak.a() <= WEYL_TOLERANCE) {
     TwoQubitNativeDecomposition result{
@@ -868,33 +862,16 @@ TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
     return twoGates(kak);
   }
 
-  // Choose the residual furthest inside the two-gate region.
-  std::optional<TwoQubitWeylDecomposition> residual;
-  std::optional<TwoQubitWeylDecomposition> prefix;
-  double bestMargin = -1.;
-  for (size_t zero = 0; zero < 3; ++zero) {
-    for (double first : {-EIGHTH_PI, EIGHTH_PI}) {
-      for (double second : {-EIGHTH_PI, EIGHTH_PI}) {
-        std::array<double, 3> coordinates{};
-        coordinates[(zero + 1) % 3] = first;
-        coordinates[(zero + 2) % 3] = second;
-        const auto gate = TwoQubitWeylDecomposition::getCanonicalMatrix(
-            coordinates[0], coordinates[1], coordinates[2]);
-        const auto candidate = TwoQubitWeylDecomposition::create(
-            kak.getCanonicalMatrix() * gate.adjoint(), std::nullopt);
-        const auto margin =
-            candidate.a() - candidate.b() - std::abs(candidate.c());
-        if (margin > bestMargin) {
-          bestMargin = margin;
-          residual = candidate;
-          prefix = TwoQubitWeylDecomposition::create(gate, std::nullopt);
-        }
-      }
-    }
-  }
-  assert(residual && prefix && bestMargin >= -WEYL_TOLERANCE);
-  auto before = oneGate(*prefix);
-  auto after = twoGates(*residual);
+  /// Lemma 2 in the supplement puts this residual in the two-gate region.
+  const auto gate = TwoQubitWeylDecomposition::getCanonicalMatrix(
+      kak.a() <= EIGHTH_PI ? -EIGHTH_PI : 0.,
+      kak.a() <= EIGHTH_PI ? 0. : EIGHTH_PI,
+      kak.c() < 0. ? -EIGHTH_PI : EIGHTH_PI);
+  const auto residual = TwoQubitWeylDecomposition::create(
+      kak.getCanonicalMatrix() * gate.adjoint(), std::nullopt);
+  const auto prefix = TwoQubitWeylDecomposition::create(gate, std::nullopt);
+  auto before = oneGate(prefix);
+  auto after = twoGates(residual);
   auto& factors = before.singleQubitFactors;
   factors[2] = after.singleQubitFactors[0] * factors[2];
   factors[3] = after.singleQubitFactors[1] * factors[3];

@@ -642,16 +642,7 @@ reconstructSqrtISwap(const TwoQubitNativeDecomposition& result) {
                               0., s, qco::Complex(0., s), 0., // row 1
                               0., qco::Complex(0., s), s, 0., // row 2
                               0., 0., 0., 1.);                // row 3
-  auto matrix = Matrix4x4::identity();
-  for (size_t i = 0; i <= result.numBasisUses; ++i) {
-    matrix = Matrix4x4::kron(result.singleQubitFactors[2 * i + 1],
-                             result.singleQubitFactors[2 * i]) *
-             matrix;
-    if (i < result.numBasisUses) {
-      matrix = gate * matrix;
-    }
-  }
-  return std::polar(1., result.globalPhase) * matrix;
+  return unitaryMatrix(result, gate);
 }
 
 TEST(SqrtISwap, ChamberGridWithLocalFactorsAndPhase) {
@@ -668,7 +659,8 @@ TEST(SqrtISwap, ChamberGridWithLocalFactorsAndPhase) {
                             TwoQubitWeylDecomposition::getCanonicalMatrix(
                                 a * step, b * step, c * step) *
                             right;
-        const auto result = decomposeSqrtISwap(target);
+        const auto result =
+            decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::SQRTISWAP);
         SCOPED_TRACE(::testing::Message() << a << "," << b << "," << c);
         const int expected = a == 0                                         ? 0
                              : (a == steps / 2 && b == steps / 2 && c == 0) ? 1
@@ -695,7 +687,8 @@ TEST(SqrtISwap, NearChamberBoundaries) {
          }) {
       const auto target = TwoQubitWeylDecomposition::getCanonicalMatrix(
           coordinates[0], coordinates[1], coordinates[2]);
-      const auto result = decomposeSqrtISwap(target);
+      const auto result =
+          decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::SQRTISWAP);
       SCOPED_TRACE(::testing::Message()
                    << coordinates[0] << "," << coordinates[1] << ","
                    << coordinates[2] << " eps=" << epsilon);
@@ -730,11 +723,32 @@ TEST(SqrtISwap, RandomInteractionsAndLocalFactors) {
                         TwoQubitWeylDecomposition::getCanonicalMatrix(
                             coordinates[0], coordinates[1], coordinates[2]) *
                         right;
-    const auto result = decomposeSqrtISwap(target);
+    const auto result =
+        decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::SQRTISWAP);
     SCOPED_TRACE(i);
     EXPECT_EQ(result.numBasisUses,
               coordinates[0] >= coordinates[1] + std::abs(coordinates[2]) ? 2
                                                                           : 3);
     EXPECT_TRUE(reconstructSqrtISwap(result).isApprox(target, 1e-9));
+  }
+}
+
+TEST(SqrtISwap, PreservesSmallInteractions) {
+  for (double epsilon : {1e-6, 1e-8, 3e-9, 1e-10}) {
+    for (const auto& coordinates : {
+             std::array{epsilon, 0., 0.},
+             std::array{epsilon, epsilon / 3., epsilon / 5.},
+             std::array{epsilon, epsilon, epsilon},
+         }) {
+      const auto target = TwoQubitWeylDecomposition::getCanonicalMatrix(
+          coordinates[0], coordinates[1], coordinates[2]);
+      const auto result =
+          decomposeUnitary2QWeyl(target, CompilerTarget::GateKind::SQRTISWAP);
+      SCOPED_TRACE(::testing::Message()
+                   << coordinates[0] << "," << coordinates[1] << ","
+                   << coordinates[2]);
+      EXPECT_TRUE(
+          reconstructSqrtISwap(result).isApprox(target, WEYL_TOLERANCE));
+    }
   }
 }
