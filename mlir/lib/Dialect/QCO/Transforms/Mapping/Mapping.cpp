@@ -1232,16 +1232,41 @@ private:
                   Value bit = m.getResult();
 
                   assert(qubit.hasOneUse());
-                  Operation* user = *qubit.user_begin();
-                  if (!isa<MeasureOp, SinkOp>(user)) {
+                  if (!isa<MeasureOp, SinkOp>(*qubit.user_begin())) {
                     return true;
+                  }
+
+                  // Verify side-effect dependencies: Does an operation exist
+                  // which reads this value after write? If so, this is an
+                  // adaptive-profile program.
+
+                  if (bit.hasOneUse()) {
+                    if (auto store =
+                            dyn_cast<cbit::StoreOp>(*bit.user_begin())) {
+                      return any_of(
+                          store.getReg().getUsers(), [&](Operation* op) {
+                            if (op == store ||
+                                op->getBlock() != store->getBlock() ||
+                                !store->isBeforeInBlock(op)) {
+                              return false;
+                            }
+                            return TypeSwitch<Operation*, bool>(op)
+                                .Case<cbit::LoadOp, cbit::StoreOp>(
+                                    [&](auto ls) {
+                                      return ls.getIndex() == store.getIndex();
+                                    })
+                                .template Case<cbit::ReadOp, cbit::WriteOp>(
+                                    [](auto) { return true; })
+                                .Default([](Operation*) { return false; });
+                          });
+                    }
                   }
 
                   SetVector<Operation*> slice;
                   getForwardSlice(bit, &slice);
                   return any_of(slice, [](Operation* op) {
                     return isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp,
-                               UnitaryOpInterface, cbit::StoreOp>(op);
+                               UnitaryOpInterface>(op);
                   });
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
