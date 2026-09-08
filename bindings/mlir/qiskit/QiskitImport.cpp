@@ -84,13 +84,9 @@ using ValidationParameters = llvm::StringMap<Parameter>;
 
 namespace {
 struct GateImportState {
-  explicit GateImportState(ParameterGroupRegistry& groups)
-      : parameterGroups(groups) {}
-
   llvm::DenseMap<uintptr_t, mlir::func::FuncOp> gates;
   llvm::StringSet<> functionNames;
   llvm::StringMap<size_t> nextFunctionSuffix;
-  ParameterGroupRegistry& parameterGroups;
 };
 } // namespace
 
@@ -1968,21 +1964,6 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
             mlir::mqt::MQTDialect::SourceNameAttrHelper::getNameStr(),
             builder.getStringAttr(instruction.name));
       }
-      for (const auto [parameterIndex, parameter] :
-           llvm::enumerate(definitionParameters)) {
-        const auto* symbol = parameter.getSymbol();
-        function.setArgAttr(
-            parameterIndex,
-            mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
-            builder.getStringAttr(symbol->name));
-        if (symbol->group) {
-          gateState.parameterGroups.add(*symbol->group);
-          function.setArgAttr(
-              parameterIndex,
-              mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr(),
-              parameterGroupAttribute(builder, *symbol->group));
-        }
-      }
       gateState.gates.insert({identity, function});
     }
 
@@ -2951,7 +2932,7 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
   std::iota(qubitMap.begin(), qubitMap.end(), 0U);
   std::iota(clbitMap.begin(), clbitMap.end(), 0U);
   ImportedVariables variables;
-  GateImportState gateState(parameterGroups);
+  GateImportState gateState;
   gateState.functionNames.insert(function.getName());
   translateCircuit(builder, *view, qubitMap, clbitMap, qubitMap, clbitMap,
                    qubits, classicalBits, {}, globalParameters, gateState, 0U,

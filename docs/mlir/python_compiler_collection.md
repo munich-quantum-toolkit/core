@@ -202,6 +202,20 @@ containing circuit. This includes values used only by the condition or switch
 target and not by a control-flow block. External runtime inputs remain
 unsupported.
 
+Private gate parameters bind by position and receive generated local names
+during Qiskit export; their original names and grouping are not preserved.
+Public program inputs still require explicit names. OpenQASM custom gates can
+therefore use `QCProgram.from_qasm_str(source).to_qiskit()` directly within the
+supported subset below.
+
+Export folds scalar expressions on a copy of the QC program. Constant
+arithmetic, casts, and idempotent expressions can therefore disappear;
+expression-tree shape is not preserved. Quantum-resource and classical-snapshot
+canonicalization patterns are not applied, because they can change circuit width
+or introduce scratch bits. Call `cleanup()` explicitly when those broader
+transformations are wanted. Live free parameters retain their identities; unused
+named program inputs remain unsupported.
+
 Free symbols become named {code}`f64` program inputs. Parameter-vector elements
 retain their grouping and index, preserving vector order and positional binding
 across a round trip; similarly named standalone parameters remain standalone.
@@ -211,7 +225,8 @@ combined declared size in one translated circuit are each limited to 65,536
 elements. Parameter-expression trees support at most 64 levels and 4,096 nodes.
 Import and export support real addition, subtraction, multiplication, division,
 power, negation, trigonometric and inverse trigonometric functions, exponential,
-logarithm, absolute value, and real conjugation. Other parameter-expression
+logarithm, absolute value, and real conjugation. Export also folds signed and
+unsigned integer-to-float casts of constants. Other parameter-expression
 functions are rejected. Lexically bound {code}`for`-loop induction parameters
 are supported and remain distinct from free symbols. Parameterized
 custom-instruction definitions are expanded after their symbols and expressions

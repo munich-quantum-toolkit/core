@@ -1220,26 +1220,40 @@ def test_qiskit_export_rejects_measurement_with_multiple_destinations() -> None:
         program.to_qiskit()
 
 
-def test_qiskit_export_rejects_dynamic_measurement_destination() -> None:
-    """Require each Qiskit measurement destination to be static."""
-    program = QCProgram.from_mlir_str(
-        """module {
-  func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
-    %c0 = arith.constant 0 : index
-    %index = arith.addi %c0, %c0 : index
-    %q = qc.alloc : !qc.qubit
-    %c = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<1>
-    %result = qc.measure %q : !qc.qubit -> i1
-    cbit.store %result, %c[%index] : !cbit.reg<1>
-    qc.dealloc %q : !qc.qubit
-    return %c : !cbit.reg<1>
-  }
-}
-"""
+@pytest.mark.parametrize("dynamic", [False, True])
+def test_qiskit_measurement_destination_requires_foldable_index(*, dynamic: bool) -> None:
+    """Fold a constant index, but reject a measurement-dependent destination."""
+    index = (
+        """%initial = qc.measure %q : !qc.qubit -> i1
+    cbit.store %initial, %c[%c0] : !cbit.reg<2>
+    %bit = cbit.load %c[%c0] : !cbit.reg<2>
+    %index = arith.index_castui %bit : i1 to index"""
+        if dynamic
+        else "%index = arith.addi %c0, %c0 : index"
     )
-
-    with pytest.raises(RuntimeError, match="dynamic classical destination"):
-        program.to_qiskit()
+    program = QCProgram.from_mlir_str(f"""module {{
+  func.func @main() -> !cbit.reg<2> attributes {{mqt.entry_point}} {{
+    %c0 = arith.constant 0 : index
+    %q = qc.alloc : !qc.qubit
+    %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+    {index}
+    %result = qc.measure %q : !qc.qubit -> i1
+    cbit.store %result, %c[%index] : !cbit.reg<2>
+    qc.dealloc %q : !qc.qubit
+    return %c : !cbit.reg<2>
+  }}
+}}
+""")
+    source_ir = program.ir
+    if dynamic:
+        with pytest.raises(RuntimeError, match="dynamic classical destination"):
+            program.to_qiskit()
+    else:
+        restored = program.to_qiskit()
+        assert restored.count_ops() == {"measure": 1}
+        assert restored.find_bit(restored.data[0].clbits[0]).index == 0
+        assert restored.num_clbits == 2
+    assert program.ir == source_ir
 
 
 def test_layout_is_accepted_and_ignored() -> None:
@@ -1609,6 +1623,54 @@ def test_custom_gate_export_checks_longest_shared_call_path() -> None:
         program.to_qiskit()
 
 
+def test_unnamed_custom_gate_parameters_export_without_mutation() -> None:
+    """Bind local formals by position regardless of existing name metadata."""
+    program = QCProgram.from_mlir_str("""module {
+  func.func private @custom(%first: f64, %second: f64 {mqt.input_name = "p0"}, %q: !qc.qubit) attributes {mqt.unitary} {
+    qc.rx(%first) %q : !qc.qubit
+    qc.ry(%second) %q : !qc.qubit
+    return
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %first = arith.constant 0.2 : f64
+    %second = arith.constant 0.3 : f64
+    qc.call @custom(%first, %second, %q) : f64, f64, !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+""")
+    source_ir = program.ir
+    expected = QuantumCircuit(1)
+    expected.rx(0.2, 0)
+    expected.ry(0.3, 0)
+
+    restored = program.to_qiskit()
+
+    assert np.allclose(Operator(restored).data, Operator(expected).data)
+    assert restored == program.to_qiskit()
+    assert program.ir == source_ir
+
+
+@pytest.mark.parametrize(("cast", "angle"), [("sitofp", -1.0), ("uitofp", 255.0)])
+def test_constant_integer_cast_gate_parameter(cast: str, angle: float) -> None:
+    """Preserve the signedness of constant integer-to-float gate parameters."""
+    program = QCProgram.from_mlir_str(f"""module {{
+  func.func @main() attributes {{mqt.entry_point}} {{
+    %q = qc.alloc : !qc.qubit
+    %integer = arith.constant -1 : i8
+    %angle = arith.{cast} %integer : i8 to f64
+    qc.rx(%angle) %q : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }}
+}}
+""")
+
+    assert program.to_qiskit().data[0].operation.params == [angle]
+
+
 def test_constant_unary_custom_gate_argument_is_folded() -> None:
     """Fold constant expressions before reconstructing Python parameters."""
     program = QCProgram.from_mlir_str(
@@ -1634,8 +1696,9 @@ def test_constant_unary_custom_gate_argument_is_folded() -> None:
     assert restored.data[0].operation.params == [pytest.approx(np.sin(0.5))]
 
 
-def test_float_castable_custom_gate_argument_keeps_its_symbol() -> None:
-    """Do not fold a unary expression whose operand still tracks a symbol."""
+@pytest.mark.parametrize("cleanup", [False, True])
+def test_float_castable_custom_gate_argument_keeps_its_symbol(*, cleanup: bool) -> None:
+    """Preserve a live symbol through normalization and numeric binding."""
     program = QCProgram.from_mlir_str(
         """module {
   func.func private @custom(%angle: f64 {mqt.input_name = "angle"}, %q: !qc.qubit) attributes {mqt.unitary} {
@@ -1654,10 +1717,22 @@ def test_float_castable_custom_gate_argument_keeps_its_symbol() -> None:
 """
     )
 
+    if cleanup:
+        program.cleanup()
+    source_ir = program.ir
     restored = program.to_qiskit()
 
     assert {parameter.name for parameter in restored.parameters} == {"theta"}
     assert restored.data[0].operation.params[0].parameters == restored.parameters
+
+    expected = QuantumCircuit(1)
+    expected.rx(0, 0)
+    for theta in (-0.5, 0.0, 1.25):
+        assert np.allclose(
+            Operator(_assign_parameter_values(restored, {"theta": theta})).data,
+            Operator(expected).data,
+        )
+    assert program.ir == source_ir
 
 
 def test_distinct_custom_gate_specializations_round_trip() -> None:
@@ -2250,18 +2325,31 @@ def test_constant_index_switch_exports() -> None:
     assert [labels for labels, _ in switch.cases_specifier()] == [(0,), (CASE_DEFAULT,)]
 
 
-def test_shared_expression_dag_expansion_is_bounded() -> None:
-    """Bound tree expansion when both operands reuse the same SSA value."""
+@pytest.mark.parametrize("foldable", [False, True])
+def test_shared_expression_dag_expansion_is_bounded(*, foldable: bool) -> None:
+    """Simplify idempotent trees; retain the size bound for repeated squaring."""
     operations = [
         '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
-        "%zero = arith.constant 0 : index",
-        "%value0 = cbit.load %classical[%zero] : !cbit.reg<1>",
+        "%zero = arith.constant 0 : i64",
+        "%bit = cbit.read %classical : !cbit.reg<1> -> i1",
+        "%value0 = arith.extui %bit : i1 to i64",
     ]
-    operations.extend(f"%value{index} = arith.andi %value{index - 1}, %value{index - 1} : i1" for index in range(1, 15))
-    operations.extend(["scf.if %value14 {", "  qc.x %q : !qc.qubit", "}"])
+    operation = "andi" if foldable else "muli"
+    operations.extend(
+        f"%value{index} = arith.{operation} %value{index - 1}, %value{index - 1} : i64" for index in range(1, 15)
+    )
+    operations.extend([
+        "%condition = arith.cmpi ne, %value14, %zero : i64",
+        "scf.if %condition { qc.x %q : !qc.qubit }",
+    ])
     program = _single_qubit_program(operations, returns_classical=True)
-    with pytest.raises(RuntimeError, match="size limit of 16384 nodes"):
-        program.to_qiskit()
+    source_ir = program.ir
+    if foldable:
+        assert program.to_qiskit().count_ops() == {"if_else": 1}
+    else:
+        with pytest.raises(RuntimeError, match="size limit of 16384 nodes"):
+            program.to_qiskit()
+    assert program.ir == source_ir
 
 
 @pytest.mark.parametrize("initial", [False, True])
@@ -2607,20 +2695,20 @@ def test_conditional_measurement_does_not_initialize_returned_cbit() -> None:
     ("expression", "error"),
     [
         (
-            """%left = arith.constant 0 : index
+            """%left = arith.index_castui %bit : i1 to index
     %right = arith.constant 1 : index
     %condition = arith.cmpi eq, %left, %right : index""",
             "integer comparisons require integer operands",
         ),
         (
-            """%left = arith.constant 0 : i65
+            """%left = arith.extui %bit : i1 to i65
     %right = arith.constant 1 : i65
     %condition = arith.cmpi eq, %left, %right : i65""",
             "unsigned classical values must be between 1 and 64 bits",
         ),
         (
             """%infinity = arith.constant 0x7FF0000000000000 : f64
-    %zero = arith.constant 0.0 : f64
+    %zero = arith.uitofp %bit : i1 to f64
     %condition = arith.cmpf oeq, %infinity, %zero : f64""",
             "floating-point literals must be finite",
         ),
@@ -2630,6 +2718,9 @@ def test_conditional_measurement_does_not_initialize_returned_cbit() -> None:
 def test_unsupported_export_expressions_fail_closed(expression: str, error: str) -> None:
     """Reject unsupported expression forms before modifying the source program."""
     program = _single_qubit_program([
+        '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
+        "%index = arith.constant 0 : index",
+        "%bit = cbit.load %classical[%index] : !cbit.reg<1>",
         *expression.splitlines(),
         "scf.if %condition {",
         "  qc.x %q : !qc.qubit",
@@ -2686,7 +2777,7 @@ def test_bool_uint_and_float_expressions(condition: expr.Expr, operation: str) -
 
 
 def test_index_expression_export_preserves_low_bit() -> None:
-    """Export integer truncation as bit indexing instead of a truthiness cast."""
+    """Folding preserves the low bit rather than using a truthiness cast."""
     condition = expr.index(expr.lift(2, types.Uint(3)), expr.lift(0, types.Uint(3)))
     circuit = QuantumCircuit(1)
     with circuit.if_test(condition):
@@ -2697,11 +2788,12 @@ def test_index_expression_export_preserves_low_bit() -> None:
 
     restored = program.to_qiskit()
     restored_condition = restored.data[0].operation.condition
-    assert isinstance(restored_condition, expr.Expr)
-    assert expr.structurally_equivalent(restored_condition, condition)
+    assert isinstance(restored_condition, expr.Value)
+    assert restored_condition.type == types.Bool()
+    assert not restored_condition.value
 
 
-def test_integer_truncation_exports_as_low_bit_index() -> None:
+def test_integer_truncation_folds_to_low_bit() -> None:
     """Preserve the low-bit semantics of a generic integer truncation."""
     program = _single_qubit_program([
         "%two = arith.constant 2 : i3",
@@ -2713,9 +2805,9 @@ def test_integer_truncation_exports_as_low_bit_index() -> None:
 
     restored = program.to_qiskit()
     restored_condition = restored.data[0].operation.condition
-    expected = expr.index(expr.lift(2, types.Uint(3)), expr.lift(0, types.Uint(3)))
-    assert isinstance(restored_condition, expr.Expr)
-    assert expr.structurally_equivalent(restored_condition, expected)
+    assert isinstance(restored_condition, expr.Value)
+    assert restored_condition.type == types.Bool()
+    assert not restored_condition.value
 
 
 def _cbit_load_indices(ir: str) -> list[int]:
@@ -3330,8 +3422,9 @@ def test_partially_bound_symbolic_expression_round_trip() -> None:
     )
 
 
-def test_float_castable_symbolic_expression_keeps_parameter_identity() -> None:
-    """Do not collapse a float-castable expression that still tracks a symbol."""
+@pytest.mark.parametrize("cleanup", [False, True])
+def test_float_castable_symbolic_expression_keeps_parameter_identity(*, cleanup: bool) -> None:
+    """Preserve live parameter identity and values through normalization."""
     theta = Parameter("theta")
     angle = (theta - theta) + 2
     assert angle.parameters == {theta}
@@ -3340,15 +3433,20 @@ def test_float_castable_symbolic_expression_keeps_parameter_identity() -> None:
     circuit.rz(angle, 0)
 
     program = QCProgram.from_qiskit(circuit)
+    if cleanup:
+        program.cleanup()
+    source_ir = program.ir
     restored = program.to_qiskit()
 
     assert 'mqt.input_name = "theta"' in program.ir
     assert {parameter.name for parameter in restored.parameters} == {"theta"}
-    values = {"theta": 0.3}
-    assert np.allclose(
-        Operator(_assign_parameter_values(restored, values)).data,
-        Operator(_assign_parameter_values(circuit, values)).data,
-    )
+    for value in (-0.5, 0.0, 1.25):
+        values = {"theta": value}
+        assert np.allclose(
+            Operator(_assign_parameter_values(restored, values)).data,
+            Operator(_assign_parameter_values(circuit, values)).data,
+        )
+    assert program.ir == source_ir
 
 
 def test_parameterized_custom_definition_round_trip() -> None:

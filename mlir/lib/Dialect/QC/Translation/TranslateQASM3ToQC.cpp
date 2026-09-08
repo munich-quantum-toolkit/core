@@ -34,13 +34,15 @@ emitDiagnostics(const ArrayRef<oq3::frontend::Diagnostic> diagnostics,
 }
 
 OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
-                                         MLIRContext* context) {
-  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr);
+                                         MLIRContext* context,
+                                         const QASM3ImportOptions& options) {
+  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr, options.gatePolicy);
   if (!analyzed) {
     emitDiagnostics(analyzed.diagnostics, *context);
     return nullptr;
   }
-  auto moduleOp = detail::emitOpenQASMToQC(*analyzed.program, *context);
+  auto moduleOp = detail::emitOpenQASMToQC(*analyzed.program, *context,
+                                           options.maxOperations);
   if (!moduleOp) {
     return nullptr;
   }
@@ -51,11 +53,12 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
 }
 
 OwningOpRef<ModuleOp> translateQASM3ToQC(const StringRef source,
-                                         MLIRContext* context) {
+                                         MLIRContext* context,
+                                         const QASM3ImportOptions& options) {
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(
       llvm::MemoryBuffer::getMemBufferCopy(source, "<input>"), llvm::SMLoc());
-  return translateQASM3ToQC(sourceMgr, context);
+  return translateQASM3ToQC(sourceMgr, context, options);
 }
 
 } // namespace mlir::qc

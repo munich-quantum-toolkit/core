@@ -59,6 +59,29 @@ using namespace mlir::oq3::test;
 
 namespace {
 
+TEST(OpenQASMTargetTest, LoopLocalBitStorageHasNoGlobalRegisterName) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+output bit result;
+for int i in [0:1] {
+  bit local = true;
+  result = local;
+}
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t localRegisters = 0;
+  moduleOp->walk([&](cbit::AllocOp allocation) {
+    if (!isa<func::FuncOp>(allocation->getParentOp())) {
+      ++localRegisters;
+      EXPECT_FALSE(allocation->hasAttr("mqt.register_name"));
+    }
+  });
+  EXPECT_EQ(localRegisters, 1);
+}
+
 TEST(OpenQASMTargetTest, FirstIterationInitializationHasRepresentableState) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
@@ -2801,6 +2824,70 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
           << "each imported while-loop body must retain its gate behavior";
     }
   }
+}
+
+TEST(OpenQASMTargetTest, StopsEmissionAtEveryOperationBudgetBoundary) {
+  constexpr std::array sources{
+      R"qasm(OPENQASM 3.1; output int result; int x = 2; result = (x + x) ** 3;)qasm",
+      R"qasm(OPENQASM 3.1; output bool result; int x = 2; result = !(x == 1) && (x < 3 || x > 4);)qasm",
+      R"qasm(OPENQASM 3.1; bit[4] c = "0000"; int i = 1; c[i] = true; output bool result; result = c[i];)qasm",
+      R"qasm(OPENQASM 3.1; output int result; result = 0; for int i in [0:2] { result += i; })qasm",
+      R"qasm(OPENQASM 3.1; output int result; result = 0; for int i in [0:2] { if (i == 1) { continue; } result += i; })qasm",
+      R"qasm(OPENQASM 3.1; output int result; result = 0; while (result < 2) { result += 1; })qasm",
+      R"qasm(OPENQASM 3.1; output int result; result = 0; while (result < 2) { result += 1; if (result == 1) { continue; } break; })qasm",
+      R"qasm(OPENQASM 3.1; output int result; int i = 1; switch(i) { case 1, 2 { result = i + 1; } default { result = 0; } })qasm",
+      R"qasm(OPENQASM 3.1; qubit[3] q; for int i in [0:2] { x q[i]; })qasm",
+      R"qasm(OPENQASM 3.1; qubit[3] q; for int i in [0:2] { x q[i]; if (i == 1) { break; } })qasm",
+      R"qasm(OPENQASM 3.1; qubit[3] q; negctrl(2) @ x q[0], q[1], q[2]; bit[3] c = measure q;)qasm",
+      R"qasm(OPENQASM 3.1; qubit[8] q; barrier q; reset q;)qasm",
+      R"qasm(OPENQASM 3.1; gate custom(a) q { inv @ U(a, 0.2, 0.3) q; } qubit[2] q; ctrl @ pow(2) @ custom(0.1) q[0], q[1];)qasm",
+      R"qasm(OPENQASM 3.1; gate repeated(a) q { for int i in [0:2] { rx(a) q; } } qubit q; repeated(0.1) q;)qasm",
+      R"qasm(OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[-i * 1 + 3]; })qasm",
+      R"qasm(OPENQASM 3.1; bit[8] c = "00000001"; int n = 1; c = (~c & c) | (c ^ c); c = (c << uint(n + 1)) >> uint(n); c = rotl(~c, n + 1); c = rotr(c, 2);)qasm",
+      R"qasm(OPENQASM 3.1; output uint[8] result; uint[8] n = 1; result = (~n & n) | (n ^ n); result = (result << uint(n + 1)) >> n; result = uint[8](-int(sin(float(n + 1))));)qasm",
+  };
+  for (const auto* source : sources) {
+    SCOPED_TRACE(source);
+    bool succeededOnce = false;
+    for (size_t limit = 0; limit <= 256; ++limit) {
+      SCOPED_TRACE(limit);
+      MLIRContext context;
+      size_t diagnostics = 0;
+      ScopedDiagnosticHandler handler(&context, [&](Diagnostic&) {
+        ++diagnostics;
+        return success();
+      });
+      auto moduleOp =
+          qc::translateQASM3ToQC(source, &context, {.maxOperations = limit});
+      if (moduleOp) {
+        EXPECT_TRUE(succeeded(verify(*moduleOp)));
+        EXPECT_EQ(diagnostics, 0);
+        size_t operations = 0;
+        moduleOp->walk([&](Operation* operation) {
+          operations += static_cast<size_t>(!isa<ModuleOp>(operation));
+        });
+        EXPECT_LE(operations, limit);
+        succeededOnce = true;
+        break;
+      }
+      EXPECT_EQ(diagnostics, 1);
+    }
+    EXPECT_TRUE(succeededOnce);
+  }
+}
+
+TEST(OpenQASMTargetTest, DynamicStoresDoNotChargeForEveryRegisterBit) {
+  std::string source = "OPENQASM 3.1; bit[99999] c; output int i; i = 0;";
+  for (size_t i = 0; i < 40; ++i) {
+    source += "c[i] = false;";
+  }
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t stores = 0;
+  moduleOp->walk([&](cbit::StoreOp) { ++stores; });
+  EXPECT_EQ(stores, 40);
 }
 
 } // namespace

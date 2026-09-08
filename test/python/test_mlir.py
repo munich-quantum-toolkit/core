@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 import qiskit
 from packaging import version
-from qiskit import QuantumCircuit, qasm3
+from qiskit import QuantumCircuit
 from qiskit.circuit import Gate, library
 from qiskit.quantum_info import Operator
 
@@ -300,7 +300,7 @@ def test_openqasm_helper_gate_matrix(gate: Gate) -> None:
     circuit.append(gate, range(gate.num_qubits))
 
     source = QCProgram.from_qiskit(circuit).to_openqasm3().source
-    round_tripped = qasm3.loads(source)
+    round_tripped = QCProgram.from_qasm_str(source).to_qiskit()
 
     assert np.allclose(Operator(round_tripped).data, Operator(circuit).data)
 

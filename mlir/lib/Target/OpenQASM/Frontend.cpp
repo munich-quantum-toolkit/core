@@ -21,7 +21,6 @@
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Allocator.h>
 #include <llvm/Support/MemoryBuffer.h>
 #include <llvm/Support/SourceMgr.h>
 #include <llvm/Support/VirtualFileSystem.h>
@@ -30,6 +29,7 @@
 #include <cstddef>
 #include <iterator>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -37,6 +37,28 @@
 #include <vector>
 
 namespace mlir::oq3::frontend {
+
+std::optional<double> getBuiltinConstant(llvm::StringRef name) {
+  if (name == "pi" || name == "π") {
+    return std::numbers::pi;
+  }
+  if (name == "tau" || name == "τ") {
+    return 2.0 * std::numbers::pi;
+  }
+  if (name == "euler" || name == "ℇ") {
+    return std::numbers::e;
+  }
+  return std::nullopt;
+}
+
+bool isValidIdentifier(llvm::StringRef name) {
+  detail::Lexer lexer(name);
+  const auto token = lexer.next();
+  return token.kind == detail::TokenKind::Identifier &&
+         token.identifier == name &&
+         lexer.next().kind == detail::TokenKind::Eof &&
+         !getBuiltinConstant(name);
+}
 
 struct ParsedProgram::Impl {
   std::unique_ptr<llvm::SourceMgr> sources;
@@ -94,7 +116,6 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
     }
   }
 
-  llvm::BumpPtrAllocator allocator;
   detail::SyntaxBuilder builder;
   bool failedParsing = false;
   const auto reportIncludeNestingLimit = [&](const llvm::SMLoc location) {
@@ -124,7 +145,7 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
     const auto bodyBegin = builder.getBody().size();
     const auto includeBegin = builder.getIncludes().size();
     detail::Lexer lexer(sources->getMemoryBuffer(bufferId)->getBuffer());
-    detail::Parser parser(lexer, builder, allocator);
+    detail::Parser parser(lexer, builder);
     if (failed(parser.parseProgram())) {
       failedParsing = true;
     }
@@ -336,27 +357,27 @@ ParseResult parseOpenQASM(const llvm::StringRef source) {
 }
 
 AnalysisResult analyzeOpenQASM(const ParsedProgram& parsedProgram,
-                               const FrontendOptions& options) {
+                               GatePolicy gatePolicy) {
   return detail::analyzeSyntaxProgram(parsedProgram.impl->syntax,
-                                      *parsedProgram.impl->sources, options);
+                                      *parsedProgram.impl->sources, gatePolicy);
 }
 
 AnalysisResult analyzeOpenQASM(llvm::SourceMgr& sourceMgr,
-                               const FrontendOptions& options) {
+                               GatePolicy gatePolicy) {
   auto parsed = parseOpenQASM(sourceMgr);
   if (!parsed) {
     return {.diagnostics = std::move(parsed.diagnostics)};
   }
-  return analyzeOpenQASM(*parsed.program, options);
+  return analyzeOpenQASM(*parsed.program, gatePolicy);
 }
 
 AnalysisResult analyzeOpenQASM(const llvm::StringRef source,
-                               const FrontendOptions& options) {
+                               GatePolicy gatePolicy) {
   auto parsed = parseOpenQASM(source);
   if (!parsed) {
     return {.diagnostics = std::move(parsed.diagnostics)};
   }
-  return analyzeOpenQASM(*parsed.program, options);
+  return analyzeOpenQASM(*parsed.program, gatePolicy);
 }
 
 } // namespace mlir::oq3::frontend

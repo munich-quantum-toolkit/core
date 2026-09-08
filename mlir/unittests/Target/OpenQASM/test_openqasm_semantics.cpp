@@ -288,8 +288,7 @@ cu3(0.1, 0.2, 0.3) q[0], q[1];
 )qasm";
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(source));
 
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   auto analyzed = oq3::frontend::analyzeOpenQASM(source, strict);
   ASSERT_FALSE(analyzed);
   ASSERT_FALSE(analyzed.diagnostics.empty());
@@ -298,8 +297,7 @@ cu3(0.1, 0.2, 0.3) q[0], q[1];
 }
 
 TEST(OpenQASMFrontendTest, PreservesStandardLibraryIdentity) {
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
 
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(R"qasm(
 OPENQASM 3.1;
@@ -342,8 +340,7 @@ swap q[0], q[1];
 }
 
 TEST(OpenQASMFrontendTest, AcceptsHybridOpenQASM2Libraries) {
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(R"qasm(
 OPENQASM 2.0;
 include "stdgates.inc";
@@ -362,8 +359,7 @@ gate x q {
 qubit q;
 x q;
 )qasm";
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(source, strict));
 }
 
@@ -656,7 +652,7 @@ if (rotr(value, 1)) { x q; }
       "OPENQASM 3.1; bit[2] value; uint n = popcount(value, 1);"));
 }
 
-TEST(OpenQASMFrontendTest, InvalidatesPopcountIndexFactsOnBitMutation) {
+TEST(OpenQASMFrontendTest, RequiresFullInitializationForPopcountIndices) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 bit[2] source;
@@ -690,10 +686,11 @@ output bit out;
 out = true;
 )qasm";
   auto preserved = oq3::frontend::analyzeOpenQASM(noMutation);
-  EXPECT_TRUE(preserved) << preserved.diagnostics.front().message;
+  EXPECT_FALSE(preserved);
 }
 
-TEST(OpenQASMFrontendTest, InvalidatesBitRegisterCastIndexFactsOnBitMutation) {
+TEST(OpenQASMFrontendTest,
+     RequiresFullInitializationForBitRegisterCastIndices) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 bit[2] source;
@@ -727,7 +724,7 @@ output bit out;
 out = true;
 )qasm";
   auto preserved = oq3::frontend::analyzeOpenQASM(noMutation);
-  EXPECT_TRUE(preserved) << preserved.diagnostics.front().message;
+  EXPECT_FALSE(preserved);
 }
 
 TEST(OpenQASMFrontendTest, RejectsBoolMeasurementTargetsInAllSourceModes) {
@@ -764,7 +761,7 @@ TEST(OpenQASMFrontendTest, RejectsBoolMeasurementTargetsInAllSourceModes) {
   EXPECT_EQ(located.diagnostics.front().location.column, 1);
 }
 
-TEST(OpenQASMFrontendTest, InvalidatesDynamicBitFactsOnIndexChanges) {
+TEST(OpenQASMFrontendTest, RejectsDynamicReadsOfPartiallyInitializedRegisters) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 qubit[2] q;
@@ -875,7 +872,7 @@ TEST(OpenQASMFrontendTest, RejectsShadowingBuiltInConstants) {
   }
 }
 
-TEST(OpenQASMFrontendTest, PropagatesDynamicBitFactsThroughKnownControlFlow) {
+TEST(OpenQASMFrontendTest, DynamicWritesDoNotProveWholeRegisterInitialization) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 qubit[2] q;
@@ -887,14 +884,16 @@ output bit result;
 result = measure q[0];
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
-  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  ASSERT_FALSE(analyzed);
+  EXPECT_NE(analyzed.diagnostics.front().message.find("uninitialized bit"),
+            std::string::npos);
 }
 
 TEST(OpenQASMFrontendTest, SelectsKnownBranchStateForWideRegisters) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 qubit q;
-bit[99998] c;
+bit[99998] c = 0;
 int i = 99997;
 int selected;
 if (true) {
@@ -935,8 +934,7 @@ if (true) {
 }
 
 TEST(OpenQASMFrontendTest, ActivatesStandardGatesSequentially) {
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   auto beforeInclude = oq3::frontend::analyzeOpenQASM(R"qasm(
 OPENQASM 3.1;
 qubit q;
@@ -1795,8 +1793,8 @@ r(0.5, 0.25) q;
   EXPECT_TRUE(llvm::none_of(compatible.program->gates,
                             [](const auto& gate) { return gate.name == "r"; }));
 
-  auto strict = oq3::frontend::analyzeOpenQASM(
-      source, {.gatePolicy = oq3::frontend::GatePolicy::Strict});
+  auto strict =
+      oq3::frontend::analyzeOpenQASM(source, oq3::frontend::GatePolicy::Strict);
   ASSERT_TRUE(strict) << strict.diagnostics.front().message;
   EXPECT_TRUE(llvm::any_of(strict.program->gates,
                            [](const auto& gate) { return gate.name == "r"; }));
@@ -1848,10 +1846,11 @@ if(c==1180591620717411303433) x q[0];
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
-    return c.kind == oq3::frontend::ConditionKind::RegisterComparison &&
-           c.expected[70];
-  }));
+  EXPECT_TRUE(
+      llvm::any_of(analyzed.program->bitVectorExpressions, [](const auto& c) {
+        return c.kind == oq3::frontend::BitVectorExpressionKind::Constant &&
+               c.width == 80 && c.constant[70];
+      }));
 }
 
 TEST(OpenQASMFrontendTest, PromotesNarrowUnsignedBitRegisterCastToInt) {
@@ -1972,10 +1971,11 @@ if(c==1_180_591_620_717_411_303_433) x q[0];
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
-    return c.kind == oq3::frontend::ConditionKind::RegisterComparison &&
-           c.expected[70];
-  }));
+  EXPECT_TRUE(
+      llvm::any_of(analyzed.program->bitVectorExpressions, [](const auto& c) {
+        return c.kind == oq3::frontend::BitVectorExpressionKind::Constant &&
+               c.width == 80 && c.constant[70];
+      }));
 }
 
 TEST(OpenQASMFrontendTest,
@@ -2017,10 +2017,11 @@ if(c==1) x q[0];
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   /// Truncating to 64 bits would omit the leading zero bits.
-  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
-    return c.kind == oq3::frontend::ConditionKind::RegisterComparison &&
-           c.expected.getBitWidth() == 80U && c.expected == 1U;
-  }));
+  EXPECT_TRUE(
+      llvm::any_of(analyzed.program->bitVectorExpressions, [](const auto& c) {
+        return c.kind == oq3::frontend::BitVectorExpressionKind::Constant &&
+               c.constant.getBitWidth() == 80U && c.constant == 1U;
+      }));
 }
 
 TEST(OpenQASMFrontendTest, RejectsNegativeOpenQASM2RegisterCondition) {
@@ -2069,6 +2070,39 @@ TEST(OpenQASMFrontendTest,
               std::string::npos)
         << analyzed.diagnostics.front().message;
   }
+}
+
+TEST(OpenQASMFrontendTest, BoundsAffineProofWorkAcrossAssignments) {
+  std::string source = "OPENQASM 3.1; int a = 1;";
+  for (size_t i = 0; i < 60; ++i) {
+    source += "a = a + a;";
+  }
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, DeduplicatesLargeStaticControlledGateOperands) {
+  constexpr size_t width = 16000;
+  std::string source = "OPENQASM 3.1; qubit[" + std::to_string(width) +
+                       "] q; ctrl(" + std::to_string(width - 1) + ") @ x ";
+  for (size_t i = 0; i < width; ++i) {
+    source += "q[" + std::to_string(i) + "]" + (i + 1 == width ? ";" : ",");
+  }
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(source));
+  source.replace(source.rfind("q["), std::string::npos, "q[0];");
+  EXPECT_FALSE(oq3::frontend::analyzeOpenQASM(source));
+}
+
+TEST(OpenQASMFrontendTest, AcceptsExactWidthBitStringsAndFloatCasts) {
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; bit[5] b = \"10_001\"; float f = float(int[64](1));"));
+  EXPECT_FALSE(
+      oq3::frontend::analyzeOpenQASM("OPENQASM 3.1; bit[4] b = \"10_001\";"));
+  EXPECT_FALSE(
+      oq3::frontend::analyzeOpenQASM("OPENQASM 3.1; bit[3] b = \"102\";"));
+  EXPECT_FALSE(oq3::frontend::analyzeOpenQASM("OPENQASM 3.1; bit b = \"_\";"));
+  EXPECT_FALSE(
+      oq3::frontend::analyzeOpenQASM("OPENQASM 3.1; float f = float[32](1);"));
 }
 
 } // namespace
