@@ -637,9 +637,10 @@ TEST_F(WeylSynthesisMlirTest, ReconstructionRejectsUnhandledOps) {
 static Matrix4x4
 reconstructSqrtISwap(const TwoQubitNativeDecomposition& result) {
   const double s = std::numbers::sqrt2 / 2.;
-  const auto gate =
-      Matrix4x4::fromElements(1., 0., 0., 0., 0., s, Complex(0., s), 0., 0.,
-                              Complex(0., s), s, 0., 0., 0., 0., 1.);
+  const auto gate = Matrix4x4::fromElements(1., 0., 0., 0.,            // row 0
+                                            0., s, Complex(0., s), 0., // row 1
+                                            0., Complex(0., s), s, 0., // row 2
+                                            0., 0., 0., 1.);           // row 3
   auto matrix = Matrix4x4::identity();
   for (size_t i = 0; i <= result.numBasisUses; ++i) {
     matrix = Matrix4x4::kron(result.singleQubitFactors[2 * i + 1],
