@@ -1,7 +1,6 @@
 # Preserve classical control during target mapping
 
-Status: complete on main `3f801880a`. The routing cycle is fixed; separate
-Benchpress integration and exporter gaps remain.
+Status: complete. The routing regressions and required local checks pass.
 
 ## Goal and scope
 
@@ -23,33 +22,26 @@ whole-register write followed by an indexed load during dominance repair.
   repair a cycle introduced by routing.
 - Do not require measurement/store adjacency in the mapper. Native Qiskit export
   supports intervening quantum operations since #2439.
-- Retain the mapper's decrement, insert, and increment protocol. Before the
-  first use of each SWAP endpoint, rewind its wire only if it crossed a
-  `qco.if`, `qco.index_switch`, `scf.for`, or `scf.while` beyond the earliest
-  unresolved frontier. Rewinding every endpoint changes valid pure-quantum
-  routing state.
-- Leave the existing composite-boundary helper unchanged. No public API or
-  dependency changes are required.
+- Defer composites while an earlier wire operation still needs routing. Terminal
+  sinks and output-only measurements must not block independent quantum work.
+- Use one measurement classification for advancement and composite deferral.
+  Follow all SSA result uses and the sorter's whole-register effect order until
+  reaching quantum work. Output-only loads and overwrites remain terminal;
+  register accesses inside quantum composites still impose ordering.
+- Keep consecutive measurements in scope so an earlier measurement does not hide
+  a later result used for quantum control. Reuse LLVM slice analysis and a
+  bounded worklist; no public API or dependency changes are required.
 
 ## Validation
 
-- The isolated routing regression aborts at the sorter's cyclic-dependency
-  assertion on main. With this fix, it passes 25 consecutive repetitions.
-- All 96 mapping, 185 QCO utility, and 167 compiler tests pass.
-- A fresh Python wheel passes all 306 Qiskit translation tests and the two
-  one-qubit synthesis regressions. All 68 Benchpress integration tests pass.
-- Repository lint and whole-changed-file C++ lint pass without findings.
+Build the release mapping, QCO utility, and compiler unit-test targets. The
+mapping binary passes all 100 tests, the QCO utility binary passes all 187, and
+the compiler binary passes all 171. The focused mapping tests cover terminal
+measurements and sinks before independent control, consecutive measurements,
+multiple result users, output-only register reads and overwrites, and register
+writes inside a quantum conditional.
 
-## Remaining Benchpress gaps
-
-The constrained feed-forward matrix is not fully enabled by this change. Six of
-31 guarded profiles pass unchanged; 25 stop at the integration's strict textual
-event-order check. The check rejects reordered independent events, so these
-failures alone do not establish a semantic regression. The small deterministic
-feed-forward counterexample now preserves its measured result.
-
-BV100 still fails native Qiskit export when mapping groups measurements before
-their stores. The exporter supports intervening quantum operations, but not
-another measurement. This restriction belongs in the exporter, not SWAP
-placement. Keep the integration guards and export fallback until their separate
-contracts are resolved; no full Benchpress corpus result is claimed here.
+Run `uvx nox -s lint` and `uvx nox -s cpp-lint -- <main-base>` for the change.
+The repository hooks pass. Full-file C++ lint passes for all three C++ files in
+the PR, using main base `b75b02fa9`. These are local checks, not hosted CI or a
+full Benchpress corpus run.

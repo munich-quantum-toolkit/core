@@ -491,6 +491,147 @@ TEST_F(MappingPassFixture,
   EXPECT_TRUE(isa<SWAPOp>(*measurement.getQubitOut().getUsers().begin()));
 }
 
+TEST_F(MappingPassFixture, RouteIndependentControlAfterTerminalWire) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, Connectivity::fromCouplings({{0, 1}, {1, 2}, {0, 2}}),
+      NativeOperations::unrestricted()));
+
+  for (const bool measure : {false, true}) {
+    SCOPED_TRACE(measure);
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    auto q0 = builder.allocQubit();
+    auto q1 = builder.allocQubit();
+    auto q2 = builder.allocQubit();
+    if (measure) {
+      q0 = builder.measure(q0).first;
+    }
+    builder.sink(q0);
+    q1 = builder.qcoIf(true, q1, [&](Value qubit) { return builder.x(qubit); });
+    std::tie(q1, q2) = builder.cx(q1, q2);
+    builder.sink(q1);
+    builder.sink(q2);
+    auto moduleOp = builder.finalize();
+
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(runPass(
+        *moduleOp, target, MappingPassOptions{.ntrials = 1, .seed = 42})));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+  }
+}
+
+TEST_F(MappingPassFixture, RouteControlAfterConsecutiveMeasurements) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, Connectivity::fromCouplings({{0, 1}, {1, 2}, {0, 2}}),
+      NativeOperations::unrestricted()));
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+  auto q2 = builder.allocQubit();
+  q0 = builder.measure(q0).first;
+  Value bit;
+  std::tie(q0, bit) = builder.measure(q0);
+  builder.sink(q0);
+  q1 = builder.qcoIf(bit, q1, [&](Value qubit) { return builder.x(qubit); });
+  std::tie(q1, q2) = builder.cx(q1, q2);
+  builder.sink(q1);
+  builder.sink(q2);
+  auto moduleOp = builder.finalize();
+
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runPass(*moduleOp, target,
+                                MappingPassOptions{.ntrials = 1, .seed = 42})));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+}
+
+TEST_F(MappingPassFixture, KeepMeasurementStoreBeforeConditionalOverwrite) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      3, Connectivity::fromCouplings({{0, 1}, {1, 2}, {0, 2}}),
+      NativeOperations::unrestricted()));
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto reg = builder.allocClassicalBitRegister(1);
+  Value index = arith::ConstantIndexOp::create(builder, 0);
+  auto q0 = builder.allocQubit();
+  auto q1 = builder.allocQubit();
+  auto q2 = builder.allocQubit();
+  Value bit;
+  std::tie(q0, bit) = builder.measure(q0);
+  builder.storeClassicalBit(bit, reg, index);
+  builder.sink(q0);
+  q1 = builder.qcoIf(true, q1, [&](Value qubit) {
+    Value zero = arith::ConstantIntOp::create(builder, 0, 1);
+    builder.storeClassicalBit(zero, reg, index);
+    return builder.x(qubit);
+  });
+  std::tie(q1, q2) = builder.cx(q1, q2);
+  builder.sink(q1);
+  builder.sink(q2);
+  auto moduleOp = builder.finalize();
+
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runPass(*moduleOp, target,
+                                MappingPassOptions{.ntrials = 1, .seed = 42})));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto entry = getEntryPoint(*moduleOp);
+  EXPECT_TRUE(isExecutable(entry, target));
+  auto store = *entry.getOps<StoreOp>().begin();
+  auto conditional = *entry.getOps<IfOp>().begin();
+  EXPECT_TRUE(store->isBeforeInBlock(conditional));
+}
+
+TEST_F(MappingPassFixture, KeepOutputOnlyRegisterMeasurementsTerminal) {
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
+
+  for (const bool returnRead : {false, true}) {
+    SCOPED_TRACE(returnRead);
+    QCOProgramBuilder builder(context.get());
+    Type resultType = builder.getI1Type();
+    if (!returnRead) {
+      resultType = cbit::RegisterType::get(context.get(), 1);
+    }
+    builder.initialize({resultType});
+    auto reg = builder.allocClassicalBitRegister(1);
+    Value index = arith::ConstantIndexOp::create(builder, 0);
+    auto q0 = builder.allocQubit();
+    auto q1 = builder.allocQubit();
+    auto q2 = builder.allocQubit();
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    std::tie(q0, q2) = builder.cx(q0, q2);
+    Value bit;
+    std::tie(q0, bit) = builder.measure(q0);
+    builder.storeClassicalBit(bit, reg, index);
+    builder.sink(q0);
+    std::tie(q1, q2) = builder.cx(q1, q2);
+    std::tie(q1, bit) = builder.measure(q1);
+    builder.storeClassicalBit(bit, reg, index);
+    builder.sink(q1);
+    builder.sink(q2);
+    Value output = reg;
+    if (returnRead) {
+      output = cbit::ReadOp::create(builder, builder.getI1Type(), reg);
+    }
+    auto moduleOp = builder.finalize(output);
+
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(runPass(
+        *moduleOp, target, MappingPassOptions{.ntrials = 1, .seed = 0})));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+    moduleOp->walk([](MeasureOp measurement) {
+      ASSERT_TRUE(measurement.getQubitOut().hasOneUse());
+      // Output-only measurements must remain valid for the QIR base profile.
+      EXPECT_TRUE((isa<MeasureOp, SinkOp>(
+          *measurement.getQubitOut().getUsers().begin())));
+    });
+  }
+}
+
 TEST_F(MappingPassFixture, PreserveNoncontiguousTargetSiteIds) {
   constexpr int64_t size = 3;
 
@@ -706,14 +847,17 @@ TEST_F(MappingPassFixture, KeepWorkspaceSparseOnLargeTarget) {
 TEST_F(MappingPassFixture, PreserveStoredRegisterControlDuringRouting) {
   constexpr StringLiteral source = R"mlir(
     module {
-      func.func @main() attributes {mqt.entry_point} {
+      func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %extra = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
         %q0 = qco.alloc : !qco.qubit
         %q1 = qco.alloc : !qco.qubit
         %q2 = qco.alloc : !qco.qubit
         %measured, %bit = qco.measure %q0 : !qco.qubit
         cbit.store %bit, %reg[%c0] : !cbit.reg<1>
+        cbit.store %bit, %extra[%c0] : !cbit.reg<1>
+        qco.sink %measured : !qco.qubit
         %one = arith.constant 1 : i64
         %two = arith.addi %one, %one : i64
         %snapshot = cbit.read %reg : !cbit.reg<1> -> i1
@@ -734,10 +878,9 @@ TEST_F(MappingPassFixture, PreserveStoredRegisterControlDuringRouting) {
         }
         %next1, %next2 = qco.swap %controlled1, %q2
             : !qco.qubit, !qco.qubit -> !qco.qubit, !qco.qubit
-        qco.sink %measured : !qco.qubit
         qco.sink %next1 : !qco.qubit
         qco.sink %next2 : !qco.qubit
-        return
+        return %extra : !cbit.reg<1>
       }
     }
   )mlir";

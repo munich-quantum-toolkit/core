@@ -27,6 +27,7 @@
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/Sequence.h>
+#include <llvm/ADT/SetVector.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -45,6 +46,7 @@
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
@@ -1155,26 +1157,98 @@ private:
     stats.nswaps += swaps.size();
   }
 
-  /// Advance past all executable gates and return operations with nested
-  /// regions and the respective wire indices. Stops when no more executable
-  /// gates are found. The function positions each wire on a non-executable
-  /// two-qubit gate or a composite unitary, if possible. The function never
-  /// advances past sink-like operation and thus, each wire will never reach the
-  /// sentinel state.
+  /// Return whether quantum work follows a measurement through its wire, SSA
+  /// results, or the register-effect order preserved by the topological sorter.
+  static bool measurementNeedsRouting(MeasureOp measurement) {
+    SetVector<Operation*> worklist;
+    const auto addSlice = [&](Operation* root) {
+      SetVector<Operation*> slice;
+      ForwardSliceOptions options;
+      options.inclusive = true;
+      options.filter = [&](Operation* op) { return !worklist.contains(op); };
+      getForwardSlice(root, &slice, options);
+      worklist.insert(slice.begin(), slice.end());
+    };
+
+    // A later measurement on this wire can feed quantum work even when the
+    // first result is only returned to the caller.
+    for (auto current = measurement;;) {
+      auto qubit = current.getQubitOut();
+      assert(qubit.hasOneUse());
+      Operation* next = *qubit.getUsers().begin();
+      if (!isa<MeasureOp, SinkOp>(next)) {
+        return true;
+      }
+      for (Operation* user : current.getResult().getUsers()) {
+        addSlice(user);
+      }
+      if (isa<SinkOp>(next)) {
+        break;
+      }
+      current = cast<MeasureOp>(next);
+    }
+
+    Block* block = measurement->getBlock();
+    DenseMap<Value, Operation*> firstEffect;
+    for (size_t index = 0; index < worklist.size(); ++index) {
+      Operation* op = worklist[index];
+      if (isa<UnitaryOpInterface>(op) ||
+          (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op) &&
+           any_of(op->getResultTypes(),
+                  [](Type type) { return isa<QubitType>(type); }))) {
+        return true;
+      }
+
+      // Captures and nested register accesses also constrain their enclosing
+      // composite, whose placement threads every physical wire through it.
+      Operation* ancestor = block->findAncestorOpInBlock(*op);
+      if (ancestor != op) {
+        if (ancestor != nullptr) {
+          addSlice(ancestor);
+        }
+        continue;
+      }
+
+      const auto effects = getEffectsRecursively(op);
+      if (!effects) {
+        continue;
+      }
+      for (const auto& effect : *effects) {
+        auto reg = effect.getValue();
+        if (!reg || !isa<cbit::RegisterType>(reg.getType())) {
+          continue;
+        }
+        auto [it, inserted] = firstEffect.try_emplace(reg, op);
+        if (!inserted && !op->isBeforeInBlock(it->second)) {
+          continue;
+        }
+        it->second = op;
+
+        // Match the sorter's whole-register effect order, including overwrites.
+        // Output-only reads and writes do not require quantum work.
+        for (Operation* user : reg.getUsers()) {
+          Operation* next = block->findAncestorOpInBlock(*user);
+          if (next != nullptr && next != op && op->isBeforeInBlock(next)) {
+            addSlice(next);
+          }
+        }
+      }
+    }
+    return false;
+  }
+
+  /// Advance past executable gates and return ready composite operations.
+  /// Leave wires at non-executable gates, composites, terminal measurements,
+  /// or sink-like operations, never at the sentinel.
   template <WireDirection Direction>
   SmallVector<CompositeUnitary> advance(Wires& wires, const WireInfos& infos,
                                         const Layout& layout) {
     DenseSet<Operation*> visited;
     SmallVector<CompositeUnitary> composites;
 
-    // The walkProgramGraph driver currently only respects quantum semantics; it
-    // does not follow classical def-use (side-effect) chains (TODO!).
-    // Consequently, whenever an operation using non-qubit values is ready there
-    // may still be classical dependencies. As of now, the easiest solution is
-    // to defer such a candidate operation until all wires either point at a
-    // sink (backward: allocs), the candidate itself, or any operation
-    // after (backward: before) the candidate (from an IR perspective). Hence,
-    // this function returns true if any of these cases is not fulfilled.
+    // The wire traversal does not follow classical dependencies. Defer a
+    // composite until earlier routing work is complete, but let independent
+    // composites pass terminal wires. Reverse block order for backward routing.
 
     const auto defer = [&wires](Operation* candidate) {
       return any_of(wires, [&](WireIterator& it) {
@@ -1188,8 +1262,11 @@ private:
         if (isa<AllocOp, StaticOp, SinkOp>(op)) {
           return false;
         }
-
         if constexpr (Direction == WireDirection::Forward) {
+          if (auto measurement = dyn_cast<MeasureOp>(op);
+              measurement && !measurementNeedsRouting(measurement)) {
+            return false;
+          }
           return op->isBeforeInBlock(candidate);
         }
 
@@ -1223,51 +1300,7 @@ private:
                     return true;
                   }
 
-                  /// Only advance past measurements in adaptive-profile
-                  /// scenarios, where a qubit is used after measurement
-                  /// (multiple subsequent measurements are fine) or a bit is
-                  /// used to determine a subsequent chain of unitaries.
-                  /// The forward slice follows SSA def-use chains only.
-
-                  Value qubit = m.getQubitOut();
-                  Value bit = m.getResult();
-
-                  assert(qubit.hasOneUse());
-                  if (!isa<MeasureOp, SinkOp>(*qubit.user_begin())) {
-                    return true;
-                  }
-
-                  // Verify side-effect dependencies: Does an operation exist
-                  // which reads this value after write? If so, this is an
-                  // adaptive-profile program.
-
-                  if (bit.hasOneUse()) {
-                    if (auto store =
-                            dyn_cast<cbit::StoreOp>(*bit.user_begin())) {
-                      return any_of(
-                          store.getReg().getUsers(), [&](Operation* op) {
-                            if (op == store ||
-                                op->getBlock() != store->getBlock() ||
-                                !store->isBeforeInBlock(op)) {
-                              return false;
-                            }
-                            return TypeSwitch<Operation*, bool>(op)
-                                .Case<cbit::LoadOp>([&](cbit::LoadOp ls) {
-                                  return ls.getIndex() == store.getIndex();
-                                })
-                                .template Case<cbit::ReadOp>(
-                                    [](cbit::ReadOp) { return true; })
-                                .Default([](Operation*) { return false; });
-                          });
-                    }
-                  }
-
-                  SetVector<Operation*> slice;
-                  getForwardSlice(bit, &slice);
-                  return any_of(slice, [](Operation* op) {
-                    return isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp,
-                               UnitaryOpInterface>(op);
-                  });
+                  return measurementNeedsRouting(m);
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
                     [](auto&) { return Direction == WireDirection::Forward; })
