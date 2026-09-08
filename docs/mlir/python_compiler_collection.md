@@ -142,9 +142,10 @@ See {doc}`OpenQASM` for the complete support table.
 
 ## Use Qiskit circuits directly
 
-Install the optional Qiskit integration with {code}`mqt-core[qiskit]`. Qiskit
-2.5.x circuits can be translated directly between
-{py:class}`~qiskit.circuit.QuantumCircuit` and
+Install the optional Qiskit integration with {code}`mqt-core[qiskit]`. The extra
+also supports SDK uses with older Qiskit releases; direct compiler translation
+requires a registered version, currently Qiskit 2.5.x. These circuits can be
+translated between {py:class}`~qiskit.circuit.QuantumCircuit` and
 {py:class}`~mqt.core.mlir.QCProgram`:
 
 ```{code-cell} ipython3
@@ -166,8 +167,10 @@ assert compiled_qiskit.is_valid
 
 This compiler route is the Qiskit circuit interface in MQT Core v4.
 
-Qiskit 2.5's C API cannot construct classical expressions or structured control
-flow, so export uses Qiskit's public Python classes for these operations.
+Each output block owns one private Python circuit. Numeric instructions use a
+borrowed C API view; symbolic gates, classical expressions, and control flow use
+Python construction. Blocks share their parent's exact bits and lexical variable
+captures. Parameters and parameter vectors are created once per export.
 
 | Circuit feature                                                         | Import               | Export                             |
 | ----------------------------------------------------------------------- | -------------------- | ---------------------------------- |
@@ -175,7 +178,8 @@ flow, so export uses Qiskit's public Python classes for these operations.
 | Other finite numeric modifiers                                          | Supported            | Rejected                           |
 | Measurement, reset, and barrier                                         | Supported            | Supported                          |
 | Canonical named registers and leading loose bits                        | Supported            | Explicit registers                 |
-| Custom instructions with finite, acyclic definitions                    | Recursively expanded | Not applicable                     |
+| Custom Gates with finite, acyclic definitions                           | Reusable functions   | Custom Gates                       |
+| Generic instructions with finite, acyclic definitions                   | Recursively expanded | Expanded operations                |
 | Nested `if`/`else`, `for`, `while`, and `switch`                        | Supported            | Supported                          |
 | Classical-bit and register conditions                                   | Supported            | Supported                          |
 | Constant Boolean, `Uint` up to 64 bits, and `Float` expressions         | Supported            | Supported                          |
@@ -198,6 +202,20 @@ containing circuit. This includes values used only by the condition or switch
 target and not by a control-flow block. External runtime inputs remain
 unsupported.
 
+Private gate parameters bind by position and receive generated local names
+during Qiskit export; their original names and grouping are not preserved.
+Public program inputs still require explicit names. OpenQASM custom gates can
+therefore use `QCProgram.from_qasm_str(source).to_qiskit()` directly within the
+supported subset below.
+
+Export folds scalar expressions on a copy of the QC program. Constant
+arithmetic, casts, and idempotent expressions can therefore disappear;
+expression-tree shape is not preserved. Quantum-resource and classical-snapshot
+canonicalization patterns are not applied, because they can change circuit width
+or introduce scratch bits. Call `cleanup()` explicitly when those broader
+transformations are wanted. Live free parameters retain their identities; unused
+named program inputs remain unsupported.
+
 Free symbols become named {code}`f64` program inputs. Parameter-vector elements
 retain their grouping and index, preserving vector order and positional binding
 across a round trip; similarly named standalone parameters remain standalone.
@@ -207,7 +225,8 @@ combined declared size in one translated circuit are each limited to 65,536
 elements. Parameter-expression trees support at most 64 levels and 4,096 nodes.
 Import and export support real addition, subtraction, multiplication, division,
 power, negation, trigonometric and inverse trigonometric functions, exponential,
-logarithm, absolute value, and real conjugation. Other parameter-expression
+logarithm, absolute value, and real conjugation. Export also folds signed and
+unsigned integer-to-float casts of constants. Other parameter-expression
 functions are rejected. Lexically bound {code}`for`-loop induction parameters
 are supported and remain distinct from free symbols. Parameterized
 custom-instruction definitions are expanded after their symbols and expressions
@@ -281,9 +300,12 @@ Conditions and switch targets may read a zero-initialized CBit register. An
 undefined CBit may be read only after a definite write to that bit, and every
 bit of an undefined returned register must be definitely initialized. Branches
 intersect their initialization facts. A while loop's before region executes at
-least once; its after region may execute zero times. A captured classical
-snapshot must be materialized before a later write to the same register or
-satisfy the existing snapshot checks.
+least once; its after region may execute zero times. The exporter saves
+supported scalar snapshots in local variables when a later write, control-flow
+edge, or region crossing prevents safe re-evaluation. It bounds expression depth
+by saving intermediate runtime values. This policy does not depend on unused
+control-flow results and remains valid after compiler cleanup. Reads wider than
+64 bits remain subject to the snapshot checks.
 
 Each exported measurement must write to one static public CBit in the same
 block. Destinations may be reused; later measurements overwrite earlier values
@@ -293,9 +315,8 @@ keeps the measurement at its original position and writes the destination there.
 Other intervening operations, including classical accesses and control flow, are
 rejected because this earlier write may change the program's meaning. The
 measurement result may feed supported classical expressions after that store.
-General scalar control flow saves live measurement results in native variables
-before later writes. Deferred measurement expressions require an unchanged
-destination CBit.
+Live measurement results are saved in local variables before later writes.
+Deferred measurement expressions require an unchanged destination CBit.
 
 Dense numeric unitaries remain explicit matrix operations during import and
 export. Target compilation synthesizes supported one- and two-qubit matrices to
@@ -307,6 +328,13 @@ Other powers require canonicalization or synthesis.
 A circuit remains valid when {code}`circ.layout` is present. The importer
 translates the circuit operations and deliberately does not preserve physical or
 virtual layout metadata.
+
+Names passed between Qiskit and the compiler must not contain NUL characters.
+The importer checks names before native access. Arithmetic-progression loop
+lists without jumps use range lowering. List loops with jumps and
+variable-bearing switch cases use balanced dispatch. The 64-level nesting limit
+also applies to generated SCF, and expansion limits account for duplicated
+switch bodies.
 
 Input validation finishes before an MLIR module is created. Generic output
 validation finishes before Qiskit construction starts; the version-specific

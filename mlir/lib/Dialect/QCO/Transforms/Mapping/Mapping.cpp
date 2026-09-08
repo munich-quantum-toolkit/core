@@ -11,11 +11,13 @@
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/Graph.h"
 #include "mlir/Dialect/QCO/Utils/Layout.h"
@@ -175,30 +177,15 @@ static LogicalResult validateRoutingOperations(func::FuncOp func) {
 static FailureOr<Computation> discoverComputation(func::FuncOp func) {
   Computation computation;
 
-  const auto discovery = func.walk([&](Operation* op) {
-    if (!isa<AllocOp, qtensor::AllocOp>(op)) {
-      return WalkResult::advance();
-    }
-    if (op->getParentRegion() == &func.getFunctionBody()) {
-      TypeSwitch<Operation*>(op)
-          .Case([&](AllocOp alloc) {
-            computation.scalarAllocations.emplace_back(alloc);
-          })
-          .Case([&](qtensor::AllocOp alloc) {
-            computation.tensorAllocations.emplace_back(
-                TensorAllocation{.allocation = alloc});
-          });
-      return WalkResult::advance();
-    }
-
-    op->emitError()
-        << "target placement requires dynamic qubit allocations in the entry "
-           "function body";
-    return WalkResult::interrupt();
-  });
-
-  if (discovery.wasInterrupted()) {
-    return failure();
+  for (Operation& op : func.getBody().front()) {
+    TypeSwitch<Operation*>(&op)
+        .Case([&](AllocOp alloc) {
+          computation.scalarAllocations.emplace_back(alloc);
+        })
+        .Case([&](qtensor::AllocOp alloc) {
+          computation.tensorAllocations.emplace_back(
+              TensorAllocation{.allocation = alloc});
+        });
   }
 
   for (auto alloc : computation.scalarAllocations) {
@@ -337,6 +324,10 @@ struct PlacementPass final
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
+    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     auto func = mqt::getEntryPoint(moduleOp);
     if (!func) {
       moduleOp.emitError() << "does not contain an entry point function";
@@ -566,22 +557,27 @@ public:
   explicit MappingPass(const MappingPassOptions& options)
       : MappingPassBase(options) {}
 
-  /// Construct mapping for a compiler target.
-  explicit MappingPass(const CompilerTarget& compilerTarget,
-                       const MappingPassOptions& options)
-      : MappingPassBase(options), target(compilerTarget) {}
-
 protected:
   void runOnOperation() override {
     assert(alpha > 0 && "expected alpha > 0");
     assert(niterations > 0 && "expected niterations > 0");
     assert(ntrials > 0 && "expected ntrials > 0");
 
-    if (!target) {
-      llvm::reportFatalUsageError("No compiler target specified!");
-    }
-
     auto moduleOp = getOperation();
+    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
+    const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!environment) {
+      moduleOp.emitError()
+          << "place-and-route requires a valid mqt.target_env: "
+          << environment.error();
+      signalPassFailure();
+      return;
+    }
+    target = &environment.environment().target();
+
     if (target->connectivityKind() !=
         CompilerTarget::Connectivity::Kind::Explicit) {
       moduleOp.emitError()
@@ -1190,8 +1186,10 @@ private:
 
     Block* block = measurement->getBlock();
     DenseMap<Value, Operation*> firstEffect;
-    for (size_t index = 0; index < worklist.size(); ++index) {
-      Operation* op = worklist[index];
+    // addSlice can append work, so do not retain iterators or cache the end.
+    size_t index = 0;
+    while (index < worklist.size()) {
+      Operation* op = worklist[index++];
       if (isa<UnitaryOpInterface>(op) ||
           (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op) &&
            any_of(op->getResultTypes(),
@@ -1769,18 +1767,13 @@ private:
     return stats;
   }
 
-  std::optional<CompilerTarget> target;
+  const CompilerTarget* target = nullptr;
 };
 
 } // namespace
 
 std::unique_ptr<Pass> createPlacementPass(const CompilerTarget& target) {
   return std::make_unique<PlacementPass>(target);
-}
-
-std::unique_ptr<Pass> createMappingPass(const CompilerTarget& target,
-                                        MappingPassOptions options) {
-  return std::make_unique<MappingPass>(target, options);
 }
 
 } // namespace mlir::qco

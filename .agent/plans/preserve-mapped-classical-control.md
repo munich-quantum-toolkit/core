@@ -30,18 +30,21 @@ whole-register write followed by an indexed load during dominance repair.
   register accesses inside quantum composites still impose ordering.
 - Keep consecutive measurements in scope so an earlier measurement does not hide
   a later result used for quantum control. Reuse LLVM slice analysis and a
-  bounded worklist; no public API or dependency changes are required.
+  bounded worklist. Traverse it by index because discovering more effects can
+  append entries and invalidate iterators. No public API or dependency changes
+  are required.
 
 ## Validation
 
 Build the release mapping, QCO utility, and compiler unit-test targets. The
-mapping binary passes all 100 tests, the QCO utility binary passes all 187, and
-the compiler binary passes all 171. The focused mapping tests cover terminal
+mapping binary passes all 96 tests, the QCO utility binary passes all 192, and
+the compiler binary passes all 180. The focused mapping tests cover terminal
 measurements and sinks before independent control, consecutive measurements,
 multiple result users, output-only register reads and overwrites, and register
-writes inside a quantum conditional.
+writes inside a quantum conditional. All six focused regressions also pass 25
+consecutive repetitions.
 
 Run `uvx nox -s lint` and `uvx nox -s cpp-lint -- <main-base>` for the change.
 The repository hooks pass. Full-file C++ lint passes for all three C++ files in
-the PR, using main base `b75b02fa9`. These are local checks, not hosted CI or a
+the PR, using main base `4c5e45855`. These are local checks, not hosted CI or a
 full Benchpress corpus run.

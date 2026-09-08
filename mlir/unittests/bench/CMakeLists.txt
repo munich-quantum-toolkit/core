@@ -6,12 +6,22 @@
 #
 # Licensed under the MIT License
 
-add_executable(mqt-core-mlir-unittests-benchmark test_benchmark_generate.cpp)
+add_executable(
+  mqt-core-mlir-unittests-benchmark
+  test_benchmark_generate.cpp
+  test_benchmark_generate_bv.cpp
+  test_benchmark_generate_ghz.cpp
+  test_benchmark_generate_grover.cpp
+  test_benchmark_generate_multiplexer.cpp
+  test_benchmark_generate_qft.cpp
+  test_benchmark_generate_qft_adder.cpp
+  test_benchmark_generate_qpe.cpp
+  test_benchmark_generate_teleportation.cpp)
 
-target_link_libraries(mqt-core-mlir-unittests-benchmark PRIVATE GTest::gtest_main
-                                                                MQT::CoreBenchGenerate)
+target_link_libraries(mqt-core-mlir-unittests-benchmark
+                      PRIVATE GTest::gtest_main MQT::CoreBenchGenerate MLIRQCODDFunctionality)
 
-mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-benchmark)
+mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-benchmark REQUIRES_EH)
 
 gtest_discover_tests(mqt-core-mlir-unittests-benchmark PROPERTIES LABELS mqt-mlir-unittests
                                                                   DISCOVERY_TIMEOUT 60)

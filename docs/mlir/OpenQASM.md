@@ -16,6 +16,11 @@ auto fromString = mlir::QCProgram::fromQASMString(source);
 auto fromFile = mlir::QCProgram::fromQASMFile("program.qasm");
 ```
 
+The lower-level `mlir::qc::translateQASM3ToQC` importer accepts
+`QASM3ImportOptions`. Its `frontend` field selects the gate policy, and
+`maxOperations` limits the number of inserted QC operations (10,000,000 by
+default). Exceeding the limit emits a diagnostic and returns no program.
+
 Python provides the corresponding constructors:
 
 ```python
@@ -23,6 +28,7 @@ from mqt.core.mlir import QCProgram
 
 from_string = QCProgram.from_qasm_str(source)
 from_file = QCProgram.from_qasm_file("program.qasm")
+qiskit_circuit = QCProgram.from_qasm_str(source).to_qiskit()
 ```
 
 `mqt-cc` recognizes `.qasm` files automatically. Use `--input-format=qasm` when
@@ -51,6 +57,15 @@ Sized `uint[N](bits)` and `int[N](bits)` casts accept an initialized `bit[N]`
 register when the constant width is 1 through 64. Bit zero is the least
 significant bit. Signed casts use two's-complement representation, with bit
 `N - 1` as the sign bit.
+
+`float(value)` and `float[64](value)` accept numeric and Boolean values.
+Bit-string literals contain binary digits, optionally separated by underscores,
+and must match the destination register width.
+
+Textual includes use LLVM SourceMgr lookup: paths are tried relative to the
+process working directory, then in the include directories supplied to
+SourceMgr. They are not resolved relative to the including file. The built-in
+standard libraries do not require files on disk.
 
 Syntax and semantic diagnostics retain source locations and include stacks.
 Classical-index bounds and integer-power preconditions are represented
@@ -111,20 +126,24 @@ Branch conditions do not add proof facts. Classical bit indexing and loops that
 do not index qubits keep their runtime behavior.
 
 Bit registers use `!cbit.reg<N>` in QC. OpenQASM 2 initializes each register to
-zero. OpenQASM 3 leaves each register undefined until a statement writes it.
-Whole-register reads and writes lower to `cbit.read` and `cbit.write`. Standard
-integer operations represent computation, including all comparisons: `cbit.read`
-produces the snapshot, `arith.constant` the comparison constant, and
-`arith.cmpi` determines signedness. CBit operations carry storage memory
-effects. jeff legalization preserves native widths and promotes other widths up
-to 64 to 8, 16, 32, or 64 bits, masking results to retain exact-width semantics.
-Wider register-versus-constant comparisons remain supported; wider general
-integer expressions are rejected. Integer-to-floating-point casts (for example,
-using a runtime population count as a rotation angle) remain outside the jeff
-subset. Explicit outputs and implicit global outputs are returned by the entry
-function; internal CBit allocations are not outputs. Other scalar outputs use
-builtin MLIR scalar types. A scalar `qubit` lowers to `qc.alloc`, while
-`qubit[1]` remains a one-element qubit register.
+zero. OpenQASM 3 leaves each register undefined until a statement writes it. A
+static read requires its bit to be initialized. A dynamic read requires the
+whole register to be initialized; writing one dynamic index does not prove that
+a later dynamic read accesses an initialized bit. Whole-register reads and
+writes lower to `cbit.read` and `cbit.write`. Standard integer operations
+represent computation, including all comparisons: `cbit.read` produces the
+snapshot, `arith.constant` the comparison constant, and `arith.cmpi` determines
+signedness. CBit operations carry storage memory effects. jeff legalization
+preserves native widths and promotes other widths up to 64 to 8, 16, 32, or 64
+bits, masking results to retain exact-width semantics. Wider
+register-versus-constant comparisons remain supported; wider general integer
+expressions are rejected. Integer-to-floating-point casts (for example, using a
+runtime population count as a rotation angle) remain outside the jeff subset.
+Explicit outputs and implicit global outputs are returned by the entry function;
+internal CBit allocations are not outputs. Other scalar outputs use builtin MLIR
+scalar types. Programs without classical outputs have a void entry function; a
+returned integer zero is ordinary output data. A scalar `qubit` lowers to
+`qc.alloc`, while `qubit[1]` remains a one-element qubit register.
 
 ## Export OpenQASM
 
@@ -185,15 +204,15 @@ bypasses that QCO optimization round trip.
 
 ### Export and round-trip support
 
-| QC or MLIR concept        | Export support                                                                                                                                                                                                               |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Qubits and classical bits | Logical and physical qubits, scalar qubit allocations, static rank-one qubit memrefs, and CBit registers. Qubit memory indices must resolve statically. CBit indices can be dynamic.                                         |
-| Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u2` uses the standard compatibility alias. |
-| Reusable gates            | Private functions with leading `f64` parameters followed by scalar qubit arguments and no results. Straight-line `mqt.unitary` functions use `qc.call`; loop-containing gate functions use `func.call`.                      |
-| Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body with target qubits becomes a private generated gate.                                                                                                        |
-| Scalar values             | Integers of widths 1–64, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                    |
-| Structured control        | `scf.if`, `scf.index_switch`, signed `scf.for` with positive constant steps, and general two-region `scf.while`, including scalar arguments and results. Index switches use native `switch`, `case`, and `default`.          |
-| Results                   | Multiple scalar and bit-register outputs using the canonical type and naming rules below.                                                                                                                                    |
+| QC or MLIR concept        | Export support                                                                                                                                                                                                                                                      |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Qubits and classical bits | Logical and physical qubits, scalar qubit allocations, static rank-one qubit memrefs, and CBit registers. Qubit memory indices must resolve statically. CBit indices can be dynamic.                                                                                |
+| Quantum operations        | Measurement, reset, barrier, deallocation, global phase, and QC unitary operations. The exporter uses standard gates where available; for example, `sxdg` becomes `inv @ sx` and `u` and `u2` use a shared helper that compensates the OpenQASM 3 `U` global phase. |
+| Reusable gates            | Private functions with leading `f64` parameters followed by scalar qubit arguments and no results. Straight-line `mqt.unitary` functions use `qc.call`; loop-containing gate functions use `func.call`.                                                             |
+| Gate modifiers            | Nested `ctrl`, `inv`, and `pow`. A multi-operation modifier body with target qubits becomes a private generated gate.                                                                                                                                               |
+| Scalar values             | Integers of widths 1–64, `f64`, and internal `index` values, including arithmetic, comparisons, Boolean operations, value-preserving casts, and supported math functions.                                                                                           |
+| Structured control        | `scf.if`, `scf.index_switch`, signed `scf.for` with positive constant steps, and general two-region `scf.while`, including scalar arguments and results. Index switches use native `switch`, `case`, and `default`.                                                 |
+| Results                   | Multiple scalar and bit-register outputs using the canonical type and naming rules below.                                                                                                                                                                           |
 
 For loops preserve their exclusive upper bound when exported to an inclusive
 OpenQASM range. Dynamic bounds are supported in the entry function and are
@@ -208,12 +227,13 @@ a final increment that wraps cannot cause another iteration. This supports round
 trips without restricting the signed range of the endpoints. Other range forms
 can still require wider arithmetic or runtime checks that the exporter rejects.
 
-Ordinary while loops retain `while (condition)` when the condition region can be
-expressed directly. Loops with executable statements before their condition use
-`while (true)` and a conditional `break`. The before and after regions may have
-different argument counts and types. Local variables preserve scalar state, exit
-values, and simultaneous updates such as swaps. The condition and its forwarded
-values are evaluated before any continuation updates.
+Entry-function while loops use `while (true)` and a conditional `break`, so
+condition-region expressions are evaluated once per iteration. Gate functions
+retain direct `while (condition)` syntax because they cannot declare local
+state. The before and after regions may have different argument counts and
+types. Local variables preserve scalar state, exit values, and simultaneous
+updates such as swaps. The condition and its forwarded values are evaluated
+before any continuation updates.
 
 For example, this terminating do-while form executes its body three times:
 
@@ -266,15 +286,20 @@ Output types follow a deliberately small canonical mapping:
 | Other integers of 2–63 bits       | `uint[N]`       |
 | `f64`                             | `float`         |
 
-A lone constant-zero `i64` result is treated as the frontend's status return and
-is not emitted. Import and export do not preserve `uint`, fixed-angle spelling
-or width, scalar-versus-one-element bit spelling, or scalar output names.
-Integer computations use explicit `int[N]`/`uint[N]` casts, so signedness is
-chosen by each MLIR operation rather than inferred from its source register.
-Truncation, sign/zero extension, arithmetic, bitwise operations, comparisons,
-shifts, and integer selection are supported. Selection uses a fixed-width bit
-mask and does not allocate a temporary register. The frontend accepts the casts
-and expressions emitted by the exporter, including Boolean/integer conversions.
+Outputs preserve function-result order, including mixed scalar and register
+results and constant-zero integers. Returning the same register more than once
+is diagnosed because OpenQASM outputs cannot preserve that aliasing. Programs
+without results keep generated classical temporaries in a local scope to avoid
+implicit outputs. Unused measurement results need no temporary.
+
+Import and export do not preserve `uint`, fixed-angle spelling or width,
+scalar-versus-one-element bit spelling, or scalar output names. Integer
+computations use explicit `int[N]`/`uint[N]` casts, so signedness is chosen by
+each MLIR operation rather than inferred from its source register. Truncation,
+sign/zero extension, arithmetic, bitwise operations, comparisons, shifts, and
+integer selection are supported. Selection uses a fixed-width bit mask and does
+not allocate a temporary register. The frontend accepts the casts and
+expressions emitted by the exporter, including Boolean/integer conversions.
 
 ### Export limitations
 
@@ -284,7 +309,8 @@ by scalar qubit arguments and no results. Gate functions may contain supported
 scalar expressions, quantum operations, calls, and loops. Measurement, reset,
 barrier, allocation, classical storage, conditionals, switches, and
 `arith.select` are rejected in gate functions. For-loop bounds in gate functions
-must remain constant.
+must remain constant. Gate while loops require a pure condition region and no
+loop-carried values.
 
 The exporter rejects arbitrary CFGs, multi-block SCF regions, recursive or
 unresolved calls, dynamic qubit indices, dynamic for-loop steps, unsigned
@@ -302,24 +328,31 @@ Rotation counts must be constant or represented by at most 64 bits, optionally
 zero-extended to the register width. Qiskit interoperability uses the common
 subset described in the Python compiler documentation.
 
-The exporter inlines a whole-register read only in the block that contains the
-read and only when no later write to that register precedes the expression use.
-It rejects stale and cross-region snapshots instead of reading newer register
-state. Shift interpretation is determined by the MLIR operation, not by the
-history of its operands. Arithmetic right shifts are encoded with unsigned
-bitwise operations and explicit sign-bit biasing.
+The exporter stores used scalar expressions and bit-register reads in local
+variables at their definition. These variables preserve snapshots across later
+writes and nested regions and prevent repeated expansion of shared expressions.
+Wide bit-vector expressions use local bit registers. Zero-initialized registers
+use one exact-width bit-string initializer. Shift interpretation is determined
+by the MLIR operation, not by the history of its operands. Arithmetic right
+shifts are encoded with unsigned bitwise operations and explicit sign-bit
+biasing.
 
-Export accepts an expression nesting depth of at most 256 and an expansion
-budget of 4,096 values per expression. The total width of classical registers is
-limited to 1,048,576 bits.
+Inline expressions, including those in gate functions, have a nesting limit of
+256 and an expansion budget of 4,096 values per expression. The total width of
+classical registers, including wide snapshots, is limited to 1,048,576 bits.
+Import limits affine proofs to 256 levels and 4,096 distinct expressions per
+proof and QC emission to 10,000,000 inserted operations.
 
 The exporter does not reconstruct the runtime checks created for dynamic indices
 or checked integer arithmetic. Surviving assertions, checked-index control flow,
 or live poison values cause an explicit diagnostic. Programs with static qubit
 and bit indices and supported integer/Boolean casts can be exported and parsed
-again through the strict frontend. Floating-point/integer conversions remain
-outside that round-trip subset. Programs that rely on the input safety machinery
-must continue through another output path such as QIR.
+again through the strict frontend. Integer-to-floating-point conversions support
+this round trip. Compile-time floating-point-to-integer conversions remain
+outside the input subset. Floating-point `!=` uses unordered-or-not-equal
+semantics, including NaNs; ordered-not-equal MLIR comparisons are rejected.
+Programs that rely on the input safety machinery must continue through another
+output path such as QIR.
 
 :::{important}
 The compiler removes dead code. A circuit that only prepares a state has no

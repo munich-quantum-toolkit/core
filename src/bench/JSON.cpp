@@ -17,7 +17,9 @@
 #include "bench/Grover.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
+#include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
+#include "bench/Teleportation.hpp"
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
@@ -422,6 +424,45 @@ parseMultiplexerParameters(const Json& parameters,
   }
 }
 
+[[nodiscard]] QFTAdder parseQFTAdderParameters(const Json& parameters,
+                                               const std::string_view source) {
+  rejectUnknownKeys(parameters, {"addend", "accumulator", "method", "overflow"},
+                    source, "$/parameters");
+  QFTAdderOptions options{
+      .addend =
+          stringValue(required(parameters, "addend", source, "$/parameters"),
+                      source, "$/parameters/addend"),
+      .accumulator = stringValue(
+          required(parameters, "accumulator", source, "$/parameters"), source,
+          "$/parameters/accumulator"),
+  };
+  if (const auto it = parameters.find("method"); it != parameters.end()) {
+    const auto value = stringValue(*it, source, "$/parameters/method");
+    if (value == "register") {
+      options.method = QFTAdderMethod::Register;
+    } else if (value == "constant") {
+      options.method = QFTAdderMethod::Constant;
+    } else {
+      fail(source, "$/parameters/method", "must be 'register' or 'constant'");
+    }
+  }
+  if (const auto it = parameters.find("overflow"); it != parameters.end()) {
+    const auto value = stringValue(*it, source, "$/parameters/overflow");
+    if (value == "wrap") {
+      options.overflow = QFTAdderOverflow::Wrap;
+    } else if (value == "carry") {
+      options.overflow = QFTAdderOverflow::Carry;
+    } else {
+      fail(source, "$/parameters/overflow", "must be 'wrap' or 'carry'");
+    }
+  }
+  try {
+    return QFTAdder(std::move(options));
+  } catch (const std::invalid_argument& error) {
+    fail(source, "$/parameters", error.what());
+  }
+}
+
 [[nodiscard]] QPE parseQPEParameters(const Json& parameters,
                                      const std::string_view source) {
   rejectUnknownKeys(parameters, {"precision", "phase", "method"}, source,
@@ -459,6 +500,13 @@ parseMultiplexerParameters(const Json& parameters,
   } catch (const std::invalid_argument& error) {
     fail(source, "$/parameters", error.what());
   }
+}
+
+[[nodiscard]] Teleportation
+parseTeleportationParameters(const Json& parameters,
+                             const std::string_view source) {
+  rejectUnknownKeys(parameters, {}, source, "$/parameters");
+  return Teleportation{};
 }
 
 [[nodiscard]] std::string_view topologyName(const GHZTopology topology) {
@@ -519,6 +567,22 @@ parseMultiplexerParameters(const Json& parameters,
   };
 }
 
+[[nodiscard]] Json parametersJSON(const QFTAdder& benchmark) {
+  const auto& options = benchmark.options();
+  return {
+      {"addend", options.addend},
+      {"accumulator", options.accumulator},
+      {
+          "method",
+          options.method == QFTAdderMethod::Register ? "register" : "constant",
+      },
+      {
+          "overflow",
+          options.overflow == QFTAdderOverflow::Wrap ? "wrap" : "carry",
+      },
+  };
+}
+
 [[nodiscard]] Json parametersJSON(const QPE& benchmark) {
   const auto& options = benchmark.options();
   return {
@@ -532,6 +596,10 @@ parseMultiplexerParameters(const Json& parameters,
       },
       {"precision", options.precision},
   };
+}
+
+[[nodiscard]] Json parametersJSON(const Teleportation& /*unused*/) {
+  return Json::object();
 }
 
 [[nodiscard]] Json referenceJSON(const BV& benchmark) {
@@ -586,12 +654,37 @@ parseMultiplexerParameters(const Json& parameters,
   };
 }
 
+[[nodiscard]] Json referenceJSON(const QFTAdder& benchmark) {
+  Json reference = {
+      {"kind", "analytic"},
+      {"model", "qft_adder"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"version", 1},
+  };
+  if (benchmark.expectedResult()) {
+    reference["success_outcome"] = *benchmark.expectedResult();
+  }
+  return reference;
+}
+
 [[nodiscard]] Json referenceJSON(const QPE& benchmark) {
   return {
       {"kind", "analytic"},
       {"model", "qpe_dirichlet"},
       {"outcome_order", "big_endian"},
       {"output", benchmark.output().name},
+      {"version", 1},
+  };
+}
+
+[[nodiscard]] Json referenceJSON(const Teleportation& benchmark) {
+  return {
+      {"kind", "analytic"},
+      {"model", "teleportation"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"success_outcome", "0"},
       {"version", 1},
   };
 }
@@ -853,6 +946,108 @@ template <class Benchmark>
   });
 }
 
+[[nodiscard]] Json qftAdderInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<QFTAdder>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "addend",
+                  {
+                      {"type", "string"},
+                      {"minLength", 1},
+                      {"maxLength", QFTAdderOptions::MAX_QUBITS},
+                      {"pattern", "^[01+]+$"},
+                  },
+              },
+              {
+                  "accumulator",
+                  {
+                      {"type", "string"},
+                      {"minLength", 1},
+                      {"maxLength", QFTAdderOptions::MAX_QUBITS},
+                      {"pattern", "^[01]+$"},
+                  },
+              },
+              {
+                  "method",
+                  {
+                      {"type", "string"},
+                      {"enum", {"register", "constant"}},
+                      {"default", "register"},
+                  },
+              },
+              {
+                  "overflow",
+                  {
+                      {"type", "string"},
+                      {"enum", {"wrap", "carry"}},
+                      {"default", "wrap"},
+                  },
+              },
+          },
+      },
+      {
+          "allOf",
+          {
+              {
+                  {
+                      "if",
+                      {
+                          {"properties", {{"method", {{"const", "constant"}}}}},
+                          {"required", {"method"}},
+                      },
+                  },
+                  {
+                      "then",
+                      {{"properties", {{"addend", {{"pattern", "^[01]+$"}}}}}},
+                  },
+              },
+              {
+                  {
+                      "if",
+                      {
+                          {"properties", {{"overflow", {{"const", "carry"}}}}},
+                          {"required", {"overflow"}},
+                      },
+                  },
+                  {
+                      "then",
+                      {
+                          {
+                              "properties",
+                              {
+                                  {
+                                      "addend",
+                                      {
+                                          {
+                                              "maxLength",
+                                              QFTAdderOptions::MAX_QUBITS - 1U,
+                                          },
+                                      },
+                                  },
+                                  {
+                                      "accumulator",
+                                      {
+                                          {
+                                              "maxLength",
+                                              QFTAdderOptions::MAX_QUBITS - 1U,
+                                          },
+                                      },
+                                  },
+                              },
+                          },
+                      },
+                  },
+              },
+          },
+      },
+      {"required", {"addend", "accumulator"}},
+      {"type", "object"},
+  });
+}
+
 [[nodiscard]] Json qpeInstanceSpecificationSchema() {
   return baseInstanceSpecificationSchema<QPE>({
       {"additionalProperties", false},
@@ -912,6 +1107,14 @@ template <class Benchmark>
           },
       },
       {"required", {"precision", "phase"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json teleportationInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<Teleportation>({
+      {"additionalProperties", false},
+      {"properties", Json::object()},
       {"type", "object"},
   });
 }

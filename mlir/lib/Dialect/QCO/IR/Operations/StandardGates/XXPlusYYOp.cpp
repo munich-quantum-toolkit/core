@@ -30,23 +30,6 @@ using namespace mlir;
 using namespace mlir::qco;
 using namespace mlir::mqt;
 
-namespace {
-
-/**
- * @brief Merge subsequent XXPlusYY operations on the same qubits by adding
- * their thetas.
- */
-struct MergeSubsequentXXPlusYY final : OpRewritePattern<XXPlusYYOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(XXPlusYYOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeXXPlusMinusYY(op, rewriter);
-  }
-};
-
-} // namespace
-
 void XXPlusYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                        Value qubit0In, Value qubit1In,
                        const std::variant<double, Value>& theta,
@@ -68,8 +51,8 @@ LogicalResult XXPlusYYOp::fold(FoldAdaptor /*adaptor*/,
 }
 
 void XXPlusYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                             MLIRContext* context) {
-  results.add<MergeSubsequentXXPlusYY>(context);
+                                             MLIRContext* /*context*/) {
+  results.add(&mergeXXPlusMinusYY<XXPlusYYOp>);
 }
 
 Matrix4x4 XXPlusYYOp::unitaryMatrix(const double theta, const double beta) {

@@ -20,25 +20,9 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove subsequent Z operations on the same qubit.
- */
-struct RemoveSubsequentZ final : OpRewritePattern<ZOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(ZOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeInversePairOneTargetZeroParameter<ZOp>(op, rewriter);
-  }
-};
-
-} // namespace
-
 void ZOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* context) {
-  results.add<RemoveSubsequentZ>(context);
+                                      MLIRContext* /*context*/) {
+  results.add(&removeInversePairOneTargetZeroParameter<ZOp, ZOp>);
 }
 
 Matrix2x2 ZOp::getUnitaryMatrix() {

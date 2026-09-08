@@ -193,8 +193,14 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   return qubit;
 }
 
-Value QIRProgramBuilder::staticResult(const int64_t index, const bool record) {
+Value QIRProgramBuilder::staticResult(int64_t index, bool record) {
+  return getResult(index, record, AllocationMode::Static);
+}
+
+Value QIRProgramBuilder::getResult(int64_t index, bool record,
+                                   AllocationMode mode) {
   checkFinalized();
+  ensureResultAllocationMode(mode);
 
   // Save current insertion point
   InsertionGuard guard(*this);
@@ -207,16 +213,25 @@ Value QIRProgramBuilder::staticResult(const int64_t index, const bool record) {
   }
 
   Value result;
-  if (const auto it = staticResults.find(index); it != staticResults.end()) {
+  if (const auto it = scalarResults.find(index); it != scalarResults.end()) {
     result = it->second.pointer;
     if (record) {
       it->second.record = true;
     }
   } else {
-    result = createPointerFromIndex(*this, getLoc(), index);
-    staticResults.try_emplace(
+    if (mode == AllocationMode::Dynamic) {
+      auto signature = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
+      auto declaration = getOrCreateFunctionDeclaration(
+          *this, module, QIR_RESULT_ALLOC, signature);
+      auto zero = LLVM::ZeroOp::create(*this, ptrType);
+      result = LLVM::CallOp::create(*this, declaration, zero.getResult())
+                   .getResult();
+      resultPtrs.insert(result);
+    } else {
+      result = createPointerFromIndex(*this, getLoc(), index);
+    }
+    scalarResults.try_emplace(
         index, qir::StaticResult{.pointer = result, .record = record});
-    resultPtrs.insert(result);
   }
 
   // Update result count
@@ -324,7 +339,8 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   setInsertionPoint(entryBlock->getTerminator());
 
   if (profile == Profile::Adaptive) {
-    // Adaptive Profile: Create a dynamic result array
+    /// Adaptive Profile: Create a dynamic result array.
+    ensureResultAllocationMode(AllocationMode::Dynamic);
     auto fnSig =
         LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType, ptrType});
     auto fnDec = getOrCreateFunctionDeclaration(*this, module,
@@ -386,7 +402,10 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t index,
   setInsertionPoint(entryBlock->getTerminator());
 
   // Get or create result pointer
-  auto result = staticResult(index, record);
+  auto result =
+      getResult(index, record,
+                profile == Profile::Adaptive ? AllocationMode::Dynamic
+                                             : AllocationMode::Static);
 
   // Only set the insertion point if the Base Profile is used
   if (profile == Profile::Base) {
@@ -970,12 +989,22 @@ void QIRProgramBuilder::ensureAllocationMode(
   llvm::reportFatalUsageError(message.c_str());
 }
 
+void QIRProgramBuilder::ensureResultAllocationMode(
+    AllocationMode requestedMode) {
+  if (resultAllocationMode != AllocationMode::Unset &&
+      resultAllocationMode != requestedMode) {
+    llvm::reportFatalUsageError("Cannot mix static and dynamic result "
+                                "allocation modes in QIRProgramBuilder");
+  }
+  resultAllocationMode = requestedMode;
+}
+
 void QIRProgramBuilder::generateOutputRecording() {
   InsertionGuard guard(*this);
   setInsertionPoint(outputBlock->getTerminator());
   emitOutputRecording(*this, module,
                       llvm::to_vector(llvm::make_second_range(cregs)),
-                      staticResults);
+                      scalarResults);
 }
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {
@@ -992,13 +1021,7 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
   // Save current insertion point
   InsertionGuard guard(*this);
 
-  // Add return statement with the given return values to the main function
-  setInsertionPointToEnd(outputBlock);
-  LLVM::ReturnOp::create(*this, returnValue);
-
-  // Release resources in output block
-  setInsertionPoint(outputBlock->getTerminator());
-
+  /// Release owned qubits at the finalization point, before leaving the body.
   if (isAdaptive) {
     for (auto qubit : qubitPtrs) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
@@ -1015,6 +1038,10 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
       LLVM::CallOp::create(*this, dec, ValueRange{size, array});
     }
   }
+
+  setInsertionPointToEnd(outputBlock);
+  LLVM::ReturnOp::create(*this, returnValue);
+  setInsertionPoint(outputBlock->getTerminator());
 
   // Generate output recording in output block
   generateOutputRecording();

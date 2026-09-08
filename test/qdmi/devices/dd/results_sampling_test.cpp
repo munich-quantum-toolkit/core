@@ -371,3 +371,27 @@ TEST(ResultsSampling, StateAndProbRequestsAreInvalidWhenShotsPositive) {
                 nullptr),
             QDMI_ERROR_INVALIDARGUMENT);
 }
+
+TEST_F(QIRHistogramTestString, StaticSamplingPreservesRepeatedOutputOrder) {
+  constexpr std::string_view program = R"(
+define i64 @main() #0 {
+  call void @__quantum__qis__x__body(ptr null)
+  call void @__quantum__qis__swap__body(ptr null, ptr inttoptr (i64 2 to ptr))
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  call void @__quantum__qis__mz__body(ptr inttoptr (i64 2 to ptr), ptr inttoptr (i64 1 to ptr))
+  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
+  ret i64 0
+}
+declare void @__quantum__qis__x__body(ptr)
+declare void @__quantum__qis__swap__body(ptr, ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="3" "required_num_results"="2" }
+)";
+  const auto [keys, values] =
+      runProgram(QDMI_PROGRAM_FORMAT_QIRBASESTRING, program);
+  EXPECT_EQ(keys, std::vector<std::string>{"101"});
+  EXPECT_EQ(values, std::vector<size_t>{NUM_SHOTS});
+}

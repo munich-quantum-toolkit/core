@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/QIR/Execution/JIT/Session.h"
+#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
 
 #include <gmock/gmock-matchers.h>
@@ -24,6 +25,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <vector>
 
 static std::string getProgram(const std::string_view file) {
   const auto path = std::filesystem::path(QIR_FILES_DIR) / file;
@@ -378,3 +380,287 @@ attributes #0 = { "entry_point" }
 }
 
 } // namespace
+
+TEST(QIRBatchSampling, PreservesLogicalOutputOrderAndRepeatedMeasurements) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+  call void @__quantum__rt__initialize(ptr null)
+  call void @__quantum__qis__x__body(ptr null)
+  call void @__quantum__qis__swap__body(ptr null, ptr inttoptr (i64 2 to ptr))
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  call void @__quantum__qis__mz__body(ptr inttoptr (i64 2 to ptr), ptr inttoptr (i64 1 to ptr))
+  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
+  ret i64 0
+}
+declare void @__quantum__rt__initialize(ptr)
+declare void @__quantum__qis__x__body(ptr)
+declare void @__quantum__qis__swap__body(ptr, ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="3" "required_num_results"="2" }
+)";
+  qir::JitSession session(ir, "output-order");
+  session.runtime().disableOutput();
+  std::vector<std::string> results;
+  ASSERT_EQ(session.sample(32, results), 0);
+  EXPECT_EQ(results, std::vector<std::string>(32, "101"));
+  ASSERT_EQ(session.sample(2, results), 0);
+  EXPECT_EQ(results, std::vector<std::string>(2, "101"));
+  ASSERT_EQ(session.sample(0, results), 0);
+  EXPECT_TRUE(results.empty());
+}
+
+TEST(QIRBatchSampling, SeedReproducesBellSamples) {
+  const auto ir = getProgram("BellPairStatic.ll");
+  qir::JitSession first(ir, "first", qir::Execution::Sampling, 42);
+  qir::JitSession second(ir, "second", qir::Execution::Sampling, 42);
+  first.runtime().disableOutput();
+  second.runtime().disableOutput();
+  std::vector<std::string> a;
+  std::vector<std::string> b;
+  ASSERT_EQ(first.sample(256, a), 0);
+  ASSERT_EQ(second.sample(256, b), 0);
+  EXPECT_EQ(a, b);
+  EXPECT_THAT(a, testing::Each(testing::AnyOf("00", "11")));
+  EXPECT_THAT(a, testing::Contains("00"));
+  EXPECT_THAT(a, testing::Contains("11"));
+}
+
+TEST(QIRBatchSampling, TextOutputKeepsPerShotRecords) {
+  const auto ir = getProgram("BellPairStatic.ll");
+  qir::JitSession session(ir, "text", qir::Execution::Sampling, 42);
+  std::ostringstream output;
+  session.runtime().setOstream(output);
+  std::vector<std::string> results;
+  ASSERT_EQ(session.sample(4, results), 0);
+  EXPECT_EQ(results.size(), 4);
+  const auto text = output.str();
+  size_t ends = 0;
+  for (size_t pos = text.find("END\t0\n"); pos != std::string::npos;
+       pos = text.find("END\t0\n", pos + 1)) {
+    ++ends;
+  }
+  EXPECT_EQ(ends, 4);
+}
+
+TEST(QIRBatchSampling, ExecutesClassicalSideEffectsOnEveryShot) {
+  constexpr llvm::StringRef ir = R"(
+@counter = internal global i64 0
+define i64 @main() #0 {
+  %old = load i64, ptr @counter
+  %new = add i64 %old, 1
+  store i64 %new, ptr @counter
+  %failed = icmp eq i64 %new, 3
+  %code = zext i1 %failed to i64
+  ret i64 %code
+}
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+)";
+  qir::JitSession session(ir, "side-effects");
+  session.runtime().disableOutput();
+  std::vector<std::string> results;
+  EXPECT_EQ(session.sample(5, results), 1);
+  EXPECT_EQ(results.size(), 2);
+}
+
+TEST(QIRBatchSampling, ResetsProgramsWithoutInitializeBetweenShots) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+  call void @__quantum__qis__x__body(ptr null)
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  %measured = call i1 @__quantum__rt__read_result(ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  ret i64 0
+}
+declare void @__quantum__qis__x__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare i1 @__quantum__rt__read_result(ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
+)";
+  qir::JitSession session(ir, "no-initialize");
+  session.runtime().disableOutput();
+  std::vector<std::string> results;
+  ASSERT_EQ(session.sample(32, results), 0);
+  EXPECT_EQ(results, std::vector<std::string>(32, "1"));
+}
+
+TEST(QIRStaticResources, ExtractsDeclaredWidthIncludingUnusedQubits) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+  call void @__quantum__qis__x__body(ptr null)
+  ret i64 0
+}
+declare void @__quantum__qis__x__body(ptr)
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="3" }
+)";
+  qir::JitSession session(ir, "declared-width",
+                          qir::Execution::StateExtraction);
+  for (size_t job = 0; job < 2; ++job) {
+    ASSERT_EQ(session.run(), 0);
+    auto state = session.runtime().takeState();
+    EXPECT_EQ(state.numQubits, 3);
+    EXPECT_EQ(state.dd->qubits(), 3);
+    const auto values = state.edge.getVector();
+    ASSERT_EQ(values.size(), 8);
+    EXPECT_EQ(values[1], 1.);
+    state.dd->decRef(state.edge);
+  }
+  std::vector<std::string> results;
+  EXPECT_THROW(session.sample(1, results), std::logic_error);
+}
+
+TEST(QIRStaticResources, RejectsQubitCapacityBeyondDDRange) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" "required_num_qubits"="65537" }
+)";
+  EXPECT_THROW(qir::JitSession(ir, "excess-qubit-capacity"), std::out_of_range);
+}
+
+TEST(QIRStaticResources, RejectsMalformedResourceCapacities) {
+  for (const auto* attribute : {
+           R"("required_num_qubits"="-1")",
+           R"("required_num_results"="18446744073709551616")",
+       }) {
+    SCOPED_TRACE(attribute);
+    const std::string ir = std::string("define i64 @main() #0 { ret i64 0 }\n"
+                                       "attributes #0 = { \"entry_point\" ") +
+                           attribute + " }";
+    EXPECT_THROW(qir::JitSession(ir, "invalid-capacity"),
+                 std::invalid_argument);
+  }
+}
+
+TEST(QIRStaticResources, ConfiguresRuntimeResourceBounds) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" "required_num_qubits"="1" "required_num_results"="1" }
+)";
+  qir::JitSession session(ir, "resource-bounds");
+  auto& runtime = session.runtime();
+  Qubit* zeroQubit = nullptr;
+  Result* zeroResult = nullptr;
+  EXPECT_NO_THROW(runtime.measure(zeroQubit, zeroResult));
+  EXPECT_THROW(
+      runtime.measure(reinterpret_cast<Qubit*>(uintptr_t{1}), zeroResult),
+      std::out_of_range);
+  EXPECT_THROW(
+      runtime.measure(zeroQubit, reinterpret_cast<Result*>(uintptr_t{1})),
+      std::out_of_range);
+}
+
+TEST(QIRJIT, ResolvesProcessSymbolsWithDefaultGenerator) {
+  constexpr llvm::StringRef ir = R"(
+@text = private constant [5 x i8] c"test\00"
+define i64 @main() #0 {
+  %length = call i64 @strlen(ptr @text)
+  ret i64 %length
+}
+declare i64 @strlen(ptr)
+attributes #0 = { "entry_point" }
+)";
+  qir::JitSession session(ir, "process-symbol");
+  EXPECT_EQ(session.run(), 4);
+}
+
+TEST(QIRJIT, RejectsTargetIncompatibleWithInProcessExecution) {
+  constexpr llvm::StringRef ir = R"(
+target triple = "wasm32-unknown-unknown"
+define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" }
+)";
+  EXPECT_THROW(qir::JitSession(ir, "incompatible-target"),
+               std::invalid_argument);
+}
+
+TEST(QIRBatchSampling, PreservesWideSeededOutputMappings) {
+  constexpr size_t width = 64;
+  std::vector<std::string> reference;
+  for (size_t mode = 0; mode < 4; ++mode) {
+    SCOPED_TRACE(mode);
+    std::vector<size_t> outputs;
+    if (mode == 2) {
+      outputs = {0, 5, 0, 2, 63};
+    } else {
+      for (size_t q = 0; q < width; ++q) {
+        outputs.push_back(mode == 1 ? width - 1 - q : q);
+      }
+    }
+    const auto pointer = [](size_t q) {
+      return "ptr inttoptr (i64 " + std::to_string(q) + " to ptr)";
+    };
+    std::ostringstream ir;
+    ir << "define i64 @main() #0 {\n";
+    for (const size_t q : {0, 5, 63}) {
+      ir << "call void @__quantum__qis__x__body(" << pointer(q) << ")\n";
+    }
+    ir << "call void @__quantum__qis__h__body(" << pointer(2) << ")\n";
+    if (mode == 3) {
+      ir << "call void @__quantum__qis__swap__body(" << pointer(0) << ", "
+         << pointer(10) << ")\n";
+    }
+    for (size_t q = 0; q < width; ++q) {
+      ir << "call void @__quantum__qis__mz__body(" << pointer(q) << ", "
+         << pointer(q) << ")\n";
+    }
+    for (const auto q : outputs) {
+      ir << "call void @__quantum__rt__result_record_output(" << pointer(q)
+         << ", ptr null)\n";
+    }
+    ir << R"(ret i64 0
+}
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__x__body(ptr)
+declare void @__quantum__qis__swap__body(ptr, ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_qubits"="64" "required_num_results"="64" }
+)";
+    qir::JitSession session(ir.str(), "wide-output", qir::Execution::Sampling,
+                            42);
+    session.runtime().disableOutput();
+    std::vector<std::string> shots;
+    ASSERT_EQ(session.sample(32, shots), 0);
+    ASSERT_EQ(shots.size(), 32);
+    EXPECT_EQ(session.runtime().getMeasurements(), shots.back());
+    if (mode == 0) {
+      reference = shots;
+    }
+    for (size_t shot = 0; shot < shots.size(); ++shot) {
+      ASSERT_EQ(shots[shot].size(), outputs.size());
+      for (size_t bit = 0; bit < outputs.size(); ++bit) {
+        auto q = outputs[bit];
+        if (mode == 3 && (q == 0 || q == 10)) {
+          q = 10 - q;
+        }
+        EXPECT_EQ(shots[shot][bit], reference[shot][q]);
+        if (q != 2) {
+          EXPECT_EQ(shots[shot][bit], q == 0 || q == 5 || q == 63 ? '1' : '0');
+        }
+      }
+    }
+    session.runtime().seed(42);
+    std::vector<std::string> repeated;
+    ASSERT_EQ(session.sample(32, repeated), 0);
+    EXPECT_EQ(repeated, shots);
+  }
+}
+
+TEST(QIRStaticResources, EmptyStatesKeepZeroCapacityAfterTransfer) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="0" }
+)";
+  qir::JitSession session(ir, "empty-state", qir::Execution::StateExtraction);
+  for (size_t job = 0; job < 2; ++job) {
+    ASSERT_EQ(session.run(), 0);
+    auto state = session.runtime().takeState();
+    ASSERT_NE(state.dd, nullptr);
+    EXPECT_EQ(state.dd->qubits(), 0);
+    EXPECT_EQ(state.numQubits, 0);
+    EXPECT_TRUE(state.edge.isOneTerminal());
+  }
+}

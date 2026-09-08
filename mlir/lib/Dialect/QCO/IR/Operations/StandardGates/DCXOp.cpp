@@ -20,27 +20,12 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove a DCX operation followed by a DCX operation with swapped
- *        targets.
- */
-struct RemoveInversePairDCX final : OpRewritePattern<DCXOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(DCXOp op,
-                                PatternRewriter& rewriter) const override {
+void DCXOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                        MLIRContext* /*context*/) {
+  results.add(+[](DCXOp op, PatternRewriter& rewriter) {
     return removeInversePairTwoTargetZeroParameter<DCXOp>(op, rewriter, false,
                                                           true);
-  }
-};
-
-} // namespace
-
-void DCXOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                        MLIRContext* context) {
-  results.add<RemoveInversePairDCX>(context);
+  });
 }
 
 Matrix4x4 DCXOp::getUnitaryMatrix() {

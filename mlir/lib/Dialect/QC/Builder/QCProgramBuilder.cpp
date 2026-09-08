@@ -961,6 +961,15 @@ void QCProgramBuilder::checkFinalized() const {
 
 void QCProgramBuilder::ensureAllocationMode(
     const AllocationMode requestedMode) {
+  if (requestedMode == AllocationMode::Dynamic) {
+    auto entryPoint = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
+    if (!entryPoint || entryPoint.getBody().empty() ||
+        getInsertionBlock() != &entryPoint.getBody().front()) {
+      llvm::reportFatalUsageError(
+          "Dynamic qubit allocation requires the entry block of the "
+          "mqt.entry_point function");
+    }
+  }
   if (allocationMode == AllocationMode::Unset) {
     allocationMode = requestedMode;
     return;

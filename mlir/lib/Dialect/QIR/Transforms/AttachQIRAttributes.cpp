@@ -116,7 +116,7 @@ private:
   /// - `output_labeling_schema`: labeled
   /// - `qir_profiles`: base_profile
   /// - `required_num_qubits`: Capacity through the highest static qubit ID
-  /// - `required_num_results`: Capacity through the highest recorded result ID
+  /// - `required_num_results`: Capacity through the highest static result ID
   /// - `qir_major_version`: 2
   /// - `qir_minor_version`: 1
   /// - `dynamic_qubit_management`: true/false
@@ -323,7 +323,7 @@ private:
     return numQubits;
   }
 
-  /// Return the capacity required to address every recorded static result ID.
+  /// Return the capacity required to address every static result ID.
   static FailureOr<uint64_t> getNumResults(LLVM::LLVMFuncOp& main) {
     FailureOr<uint64_t> numResults = uint64_t{0};
     main->walk([&](LLVM::CallOp callOp) {
@@ -331,11 +331,17 @@ private:
         return;
       }
 
-      if (*callOp.getCallee() != QIR_RECORD_OUTPUT) {
+      const auto callee = *callOp.getCallee();
+      if (callee != QIR_RECORD_OUTPUT && callee != QIR_MEASURE &&
+          callee != QIR_READ_RESULT) {
+        return;
+      }
+      const auto index = callee == QIR_MEASURE ? 1U : 0U;
+      if (callOp.getNumOperands() <= index) {
         return;
       }
 
-      auto operand = callOp->getOperand(0);
+      auto operand = callOp->getOperand(index);
       auto toPtrOp = dyn_cast<LLVM::IntToPtrOp>(operand.getDefiningOp());
       if (!toPtrOp) {
         return;

@@ -14,6 +14,7 @@
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <qdmi/client.h>
 #include <qdmi/constants.h>
 
 #include <array>
@@ -52,6 +53,21 @@ TEST(SlurmAdapterTest, AcceptsBusyDevice) {
   const ScopedEnvironmentVariable licenses("SLURM_JOB_LICENSES",
                                            "test.slurm.busy");
   EXPECT_EQ(openDeviceFromLicense().getStatus(), QDMI_DEVICE_STATUS_BUSY);
+}
+
+TEST(SlurmAdapterTest, KeepsSessionsFreshAndReportsUnknownDevice) {
+  registerStatusDevice("test.slurm.fresh", "idle");
+  const ScopedEnvironmentVariable licenses("SLURM_JOB_LICENSES",
+                                           "test.slurm.fresh:1");
+  const auto first = openDeviceFromLicense();
+  const auto second = openDeviceFromLicense();
+  EXPECT_NE(static_cast<QDMI_Device>(first), static_cast<QDMI_Device>(second));
+  const ScopedEnvironmentVariable unknown("SLURM_JOB_LICENSES",
+                                          "test.slurm.unknown");
+  EXPECT_THAT([] { return openDeviceFromLicense(); },
+              testing::ThrowsMessage<std::runtime_error>(
+                  testing::HasSubstr("Slurm license 'test.slurm.unknown' is "
+                                     "not a registered QDMI device ID")));
 }
 
 TEST(SlurmAdapterTest, RejectsMissingAndMalformedValues) {

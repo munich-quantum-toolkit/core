@@ -123,7 +123,9 @@ def test_benchmark_cli(script_runner: ScriptRunner) -> None:
     assert '"ghz"' in ret.stdout
     assert '"grover"' in ret.stdout
     assert '"multiplexer"' in ret.stdout
+    assert '"qft-adder"' in ret.stdout
     assert '"qpe"' in ret.stdout
+    assert '"teleportation"' in ret.stdout
 
 
 @pytest.mark.parametrize(("platform", "suffix"), [("linux", ""), ("win32", ".exe")])

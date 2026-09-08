@@ -148,13 +148,13 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
     reg.results.reserve(static_cast<size_t>(*size));
-    const auto base = static_cast<int64_t>(state.staticResults.size());
+    const auto base = static_cast<int64_t>(state.scalarResults.size());
     for (int64_t i = 0; i < *size; ++i) {
       const auto index = base + i;
       auto result = createPointerFromIndex(rewriter, op.getLoc(), index);
       reg.results.push_back(result);
       // The results are recorded as part of the register
-      state.staticResults.try_emplace(
+      state.scalarResults.try_emplace(
           index, qir::StaticResult{.pointer = result, .record = false});
     }
 
@@ -373,7 +373,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     }
     auto result = *registerResult;
     if (!result) {
-      result = getResultPtr(state, op.getOperation(), rewriter);
+      result = getResultPtr(state, op.getOperation(), rewriter, false);
     }
 
     /// Preserve instruction order until terminal measurements are verified.
@@ -478,6 +478,10 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto moduleOp = getOperation();
+    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     auto entryPoint = mqt::getEntryPoint(moduleOp);
     if (!entryPoint) {
       moduleOp->emitError("no main function with mqt.entry_point found");

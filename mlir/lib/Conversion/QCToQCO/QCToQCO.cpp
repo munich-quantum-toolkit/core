@@ -23,6 +23,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 
 #include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/MapVector.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/ScopeExit.h>
 #include <llvm/ADT/TypeSwitch.h>
@@ -39,6 +40,7 @@
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
@@ -78,7 +80,7 @@ struct RegisterAccess {
 
 /// Indices already used for one register by a quantum operation.
 struct SeenRegisterIndices {
-  DenseMap<int64_t, Value> constants;
+  DenseSet<int64_t> constants;
   llvm::SmallDenseSet<Value, 4> dynamicValues;
 };
 
@@ -115,6 +117,8 @@ enum class AllocationMode : std::uint8_t {
 /// - %q1 after the H gate
 /// - %q2 after the X gate
 struct LoweringState {
+  /// Function symbols remain in place while their signatures are converted.
+  SymbolTableCollection symbolTables;
   /// Original scalar-qubit arguments, retained while signatures are rewritten.
   DenseMap<Operation*, SmallVector<Value>> functionQubitArguments;
   struct StructuredValues {
@@ -123,11 +127,12 @@ struct LoweringState {
   };
 
   /// Per-region map from original QC qubit reference to its latest QCO SSA
-  /// value.
+  /// value. Consumed qubits retain a null entry to avoid linear-time erasure
+  /// from the ordered map; the entries are discarded with the region.
   ///
   /// Keys are `Operation::getParentRegion()` for ops being converted
   /// (typically a `func.func` body or a modifier region).
-  DenseMap<Region*, DenseMap<Value, Value>> qubitMap;
+  DenseMap<Region*, llvm::MapVector<Value, Value>> qubitMap;
 
   /// Per-region map from stable register identifiers to their latest QTensor
   /// SSA values.
@@ -220,16 +225,16 @@ private:
 /// Finds the nearest region-local map containing @p reference and
 /// returns the pair containing the map and a mutable reference to the value in
 /// the map.
-template <typename Key>
-[[nodiscard]] static std::pair<DenseMap<Key, Value>*, Value*>
-findRegionLocalMap(DenseMap<Region*, DenseMap<Key, Value>>& map,
-                   Operation* anchor, Key reference) {
+template <typename Map, typename Key>
+[[nodiscard]] static std::pair<Map*, Value*>
+findRegionLocalMap(DenseMap<Region*, Map>& map, Operation* anchor,
+                   Key reference) {
   for (auto* current = anchor->getParentRegion(); current != nullptr;
        current = current->getParentRegion()) {
     if (auto it = map.find(current); it != map.end()) {
       auto& regionMap = it->second;
       if (auto valueIt = regionMap.find(reference);
-          valueIt != regionMap.end()) {
+          valueIt != regionMap.end() && valueIt->second) {
         return {&regionMap, &valueIt->second};
       }
       return {&regionMap, nullptr};
@@ -448,6 +453,20 @@ static void commitQubits(LoweringState& state, Operation* anchor,
   return qcoTargets;
 }
 
+/// Checks whether static references already satisfy the lowering normal form.
+[[nodiscard]] static bool staticsAlreadyNormalized(ModuleOp moduleOp) {
+  DenseMap<Operation*, DenseSet<uint64_t>> seen;
+  auto result = moduleOp.walk([&](qc::StaticOp op) {
+    auto func = op->getParentOfType<func::FuncOp>();
+    if (!func || op->getBlock() != &func.getBody().front() ||
+        !seen[func].insert(op.getIndex()).second) {
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return !result.wasInterrupted();
+}
+
 /// Hoist static qubit references and let CSE coalesce them.
 [[nodiscard]] static LogicalResult normalizeStaticQubits(ModuleOp moduleOp) {
   RewritePatternSet patterns(moduleOp.getContext());
@@ -638,10 +657,7 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
 
       auto& seen = registerIndices[access->second.reg];
       if (const auto constant = getConstantIntValue(access->second.index)) {
-        const auto [it, inserted] =
-            seen.constants.try_emplace(*constant, access->second.index);
-        if (!inserted &&
-            isEqualConstantIntOrValue(it->second, access->second.index)) {
+        if (!seen.constants.insert(*constant).second) {
           operation->emitOpError(
               "requires distinct qubit operands; register-backed operands "
               "have the same constant index");
@@ -751,7 +767,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     DenseSet<Value> liveQubits;
     for (auto [qcOperand, adaptorOperand] :
          llvm::zip_equal(op.getOperands(), adaptor.getOperands())) {
-      if (auto it = map.find(qcOperand); it != map.end()) {
+      if (auto* it = map.find(qcOperand); it != map.end() && it->second) {
         auto latest = it->second;
         returnValues.emplace_back(latest);
         liveQubits.insert(latest);
@@ -761,8 +777,8 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     }
     auto function = op->getParentOfType<func::FuncOp>();
     for (Value argument : state.functionQubitArguments[function]) {
-      const auto current = map.find(argument);
-      if (current == map.end()) {
+      auto* const current = map.find(argument);
+      if (current == map.end() || !current->second) {
         return op.emitOpError(
             "cannot convert a function that consumes a qubit argument");
       }
@@ -772,7 +788,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
 
     // Deallocate dead qubit values
     for (auto qcoQubit : llvm::make_second_range(map)) {
-      if (!liveQubits.contains(qcoQubit)) {
+      if (qcoQubit && !liveQubits.contains(qcoQubit)) {
         SinkOp::create(rewriter, op.getLoc(), qcoQubit);
       }
     }
@@ -872,7 +888,7 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
   LogicalResult
   matchAndRewrite(func::CallOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+    auto callee = getState().symbolTables.lookupNearestSymbolFrom<func::FuncOp>(
         op, op.getCalleeAttr());
     if (!callee) {
       return rewriter.notifyMatchFailure(op, "callee is not defined");
@@ -1124,8 +1140,8 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
     // Create the sink operation
     rewriter.replaceOpWithNewOp<SinkOp>(op, qcoQubit);
 
-    // Remove from state as qubit is no longer in use
-    qubitMap.erase(qcQubit);
+    /// Retain the slot so deallocation does not shift the ordered map.
+    qubitMap[qcQubit] = nullptr;
 
     return success();
   }
@@ -1981,7 +1997,10 @@ protected:
       return;
     }
 
-    if (failed(normalizeStaticQubits(moduleOp))) {
+    /// Register indices still need normalization for alias validation.
+    if ((!preflightState.registerIds.empty() ||
+         !staticsAlreadyNormalized(moduleOp)) &&
+        failed(normalizeStaticQubits(moduleOp))) {
       signalPassFailure();
       return;
     }
@@ -2097,6 +2116,9 @@ protected:
     state.regionQubitMap.clear();
     state.regionRegisterMap.clear();
 
+    if (state.structuredValues.empty()) {
+      return;
+    }
     ConversionTarget terminatorTarget(*context);
     terminatorTarget.markUnknownOpDynamicallyLegal(
         [](Operation*) { return true; });

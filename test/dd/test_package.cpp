@@ -19,6 +19,7 @@
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 #include "dd/UnaryComputeTable.hpp"
+#include "dd/UniqueTable.hpp"
 #include "dd/statistics/PackageStatistics.hpp"
 
 #include <gtest/gtest.h>
@@ -1116,6 +1117,96 @@ TEST(DDPackageTest, trackTwiceThenuntrackTwice) {
 
   // node should now be reclaimed
   EXPECT_EQ(dd->mUniqueTable.getNumEntries(), 0);
+}
+
+TEST(DDPackageTest, UniqueTableGrowthPreservesLookupsStatisticsAndRoots) {
+  Package package(0);
+  package.resize(1);
+  const auto state = makeZeroState(1, package);
+  const GateMatrix x{0., 1., 1., 0.};
+  const auto gate = package.makeGateDD(x, 0);
+  package.incRef(gate);
+  const auto vectorStats = package.vUniqueTable.getStats(0).toString();
+  const auto matrixStats = package.mUniqueTable.getStats(0).toString();
+  for (const size_t width : {1, 4, 4}) {
+    package.resize(width);
+    EXPECT_EQ(package.vUniqueTable.getStats(0).toString(), vectorStats);
+    EXPECT_EQ(package.mUniqueTable.getStats(0).toString(), matrixStats);
+    for (const auto* table : {&package.vUniqueTable, &package.mUniqueTable}) {
+      for (size_t q = 1; q < width; ++q) {
+        const auto& stats = table->getStats(q);
+        EXPECT_EQ(stats.numEntries, 0);
+        EXPECT_EQ(stats.lookups, 0);
+        EXPECT_EQ(stats.entrySize, table->getStats(0).entrySize);
+        EXPECT_EQ(stats.numBuckets, table->getStats(0).numBuckets);
+        EXPECT_EQ(table->getTables()[q].size(), stats.numBuckets);
+      }
+    }
+  }
+  EXPECT_EQ(package.makeDDNode(0, std::array{vEdge::one(), vEdge::zero()}),
+            state);
+  EXPECT_EQ(package.makeGateDD(x, 0), gate);
+  const auto largerState = makeZeroState(4, package);
+  const auto largerGate = package.makeGateDD(x, 3);
+  package.incRef(largerGate);
+  package.decRef(largerState);
+  package.decRef(largerGate);
+  package.garbageCollect(true);
+  EXPECT_EQ(package.vUniqueTable.getNumEntries(), 1);
+  EXPECT_EQ(package.mUniqueTable.getNumEntries(), 1);
+  EXPECT_EQ(package.makeDDNode(0, std::array{vEdge::one(), vEdge::zero()}),
+            state);
+  EXPECT_EQ(package.makeGateDD(x, 0), gate);
+  package.decRef(state);
+  package.decRef(gate);
+  package.garbageCollect(true);
+  EXPECT_EQ(package.vUniqueTable.getNumEntries(), 0);
+  EXPECT_EQ(package.mUniqueTable.getNumEntries(), 0);
+  package.resize(0);
+  package.resize(1);
+  const auto fresh = makeZeroState(1, package);
+  EXPECT_EQ(fresh.getVector(), (CVec{1., 0.}));
+  package.decRef(fresh);
+}
+
+TEST(DDPackageTest, UniqueTableEntryCountControlsCollection) {
+  auto manager = MemoryManager::create<vNode>(4);
+  UniqueTable table(manager, {.nBuckets = 4, .initialGCLimit = 2});
+  table.resize(2);
+  auto* low = manager.get<vNode>();
+  low->v = 0;
+  low->e = {vEdge::one(), vEdge::zero()};
+  ASSERT_EQ(table.lookup(low), low);
+  EXPECT_EQ(table.getNumEntries(), 1);
+  EXPECT_EQ(table.lookup(low), low);
+  EXPECT_EQ(table.getNumEntries(), 1);
+  EXPECT_FALSE(table.possiblyNeedsCollection());
+
+  auto* high = manager.get<vNode>();
+  high->v = 1;
+  high->e = {vEdge{.p = low, .w = Complex::one()}, vEdge::zero()};
+  ASSERT_EQ(table.lookup(high), high);
+  EXPECT_EQ(table.getNumEntries(), 2);
+  EXPECT_TRUE(table.possiblyNeedsCollection());
+  low->mark();
+  EXPECT_EQ(table.garbageCollect(), 1);
+  EXPECT_EQ(table.getNumEntries(), 1);
+  EXPECT_FALSE(table.possiblyNeedsCollection());
+  table.resize(1);
+  table.resize(4);
+  EXPECT_EQ(table.getNumEntries(), 1);
+  low->unmark();
+  EXPECT_EQ(table.garbageCollect(true), 1);
+  EXPECT_EQ(table.getNumEntries(), 0);
+
+  auto* fresh = manager.get<vNode>();
+  fresh->v = 0;
+  fresh->e = {vEdge::one(), vEdge::zero()};
+  ASSERT_EQ(table.lookup(fresh), fresh);
+  EXPECT_EQ(table.getNumEntries(), 1);
+  table.clear();
+  EXPECT_EQ(table.getNumEntries(), 0);
+  EXPECT_FALSE(table.possiblyNeedsCollection());
 }
 
 TEST(DDPackageTest, UniqueTableAllocation) {

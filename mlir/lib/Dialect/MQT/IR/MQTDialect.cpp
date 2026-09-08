@@ -26,6 +26,7 @@
 #include <llvm/ADT/StringRef.h>
 #include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
 #include <llvm/Support/Casting.h>
+#include <llvm/Support/VersionTuple.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -38,6 +39,7 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Verifier.h>
+#include <mlir/IR/Visitors.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
@@ -64,6 +66,88 @@ void MQTDialect::initialize() {
 
 #define GET_ATTRDEF_CLASSES
 #include "mlir/Dialect/MQT/IR/MQTAttributes.cpp.inc"
+
+[[nodiscard]] static bool isCanonicalPayloadVersion(const StringRef version) {
+  llvm::VersionTuple parsed;
+  return !parsed.tryParse(version) && !parsed.getBuild() &&
+         parsed.getAsString() == version;
+}
+
+LogicalResult
+PayloadFormatAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                          const StringAttr id, const StringAttr version,
+                          const StringAttr profile,
+                          const PayloadEncoding /*encoding*/) {
+  if (id.getValue().empty() || version.getValue().empty()) {
+    return emitError() << "payload format requires an ID and version";
+  }
+  if (id.getValue().contains('\0') || version.getValue().contains('\0') ||
+      profile.getValue().contains('\0')) {
+    return emitError()
+           << "payload format fields must not contain null characters";
+  }
+  if (!isCanonicalPayloadVersion(version.getValue())) {
+    return emitError()
+           << "payload format version must use major[.minor[.patch]]";
+  }
+  return success();
+}
+
+LogicalResult ProgramConstraintAttr::verify(
+    const function_ref<InFlightDiagnostic()> emitError, const StringAttr id,
+    const uint64_t /*value*/) {
+  if (id.getValue().empty()) {
+    return emitError() << "program constraint ID must not be empty";
+  }
+  if (id.getValue().contains('\0')) {
+    return emitError() << "program constraint ID must not contain a null "
+                          "character";
+  }
+  return success();
+}
+
+LogicalResult ProgramCapabilityAttr::verify(
+    const function_ref<InFlightDiagnostic()> emitError, const StringAttr id,
+    const uint64_t /*value*/,
+    const ArrayRef<ProgramConstraintAttr> constraints) {
+  if (id.getValue().empty()) {
+    return emitError() << "program capability ID must not be empty";
+  }
+  if (id.getValue().contains('\0')) {
+    return emitError()
+           << "program capability ID must not contain a null character";
+  }
+
+  llvm::SmallDenseSet<StringRef> seen;
+  seen.reserve(constraints.size());
+  for (const ProgramConstraintAttr constraint : constraints) {
+    if (!seen.insert(constraint.getId().getValue()).second) {
+      return emitError() << "program capability contains duplicate constraint '"
+                         << constraint.getId().getValue() << "'";
+    }
+  }
+  return success();
+}
+
+LogicalResult
+PayloadSpecAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
+                        const PayloadFormatAttr /*format*/,
+                        const ArrayRef<ProgramCapabilityAttr> capabilities,
+                        const bool /*optionalCapabilitiesKnown*/) {
+  llvm::SmallDenseSet<std::pair<StringRef, uint64_t>> seen;
+  seen.reserve(capabilities.size());
+  for (const ProgramCapabilityAttr capability : capabilities) {
+    const auto key =
+        std::pair(capability.getId().getValue(), capability.getValue());
+    if (!seen.insert(key).second) {
+      return emitError()
+             << "payload specification contains duplicate capability '"
+             << capability.getId().getValue() << "' with value "
+             << capability.getValue();
+    }
+  }
+  return success();
+}
 
 LogicalResult
 DurationUnitAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
@@ -285,6 +369,35 @@ LogicalResult CompilationTargetAttr::verify(
   return success();
 }
 
+LogicalResult mlir::mqt::verifyQuantumAllocations(ModuleOp moduleOp) {
+  auto entryPoint = getEntryPoint(moduleOp);
+  Block* entryBlock = entryPoint && !entryPoint.isExternal()
+                          ? &entryPoint.getBody().front()
+                          : nullptr;
+  const auto result =
+      moduleOp.walk<WalkOrder::PreOrder>([&](Operation* operation) {
+        if (isa<ModuleOp>(operation) && operation != moduleOp.getOperation()) {
+          return WalkResult::skip();
+        }
+        bool allocatesQubits =
+            isa<qc::AllocOp, qco::AllocOp, qtensor::AllocOp>(operation);
+        if (isa<memref::AllocOp>(operation) &&
+            operation->getNumResults() == 1) {
+          auto type = dyn_cast<MemRefType>(operation->getResult(0).getType());
+          allocatesQubits = type && isa<qc::QubitType>(type.getElementType());
+        }
+        if (allocatesQubits &&
+            (!entryBlock || operation->getBlock() != entryBlock)) {
+          operation->emitOpError(
+              "dynamic quantum allocations must be in the entry "
+              "block of the 'mqt.entry_point' function");
+          return WalkResult::interrupt();
+        }
+        return WalkResult::advance();
+      });
+  return success(!result.wasInterrupted());
+}
+
 [[nodiscard]] static LogicalResult
 verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
   if (!isa<UnitAttr>(attribute.getValue())) {
@@ -308,7 +421,7 @@ verifyEntryPoint(Operation* operation, const NamedAttribute attribute) {
              << "module must contain at most one program entry point";
     }
   }
-  return success();
+  return verifyQuantumAllocations(moduleOp);
 }
 
 template <typename CallOp>
@@ -630,6 +743,19 @@ verifyRegisterName(Operation* operation, const NamedAttribute attribute) {
 LogicalResult
 MQTDialect::verifyOperationAttribute(Operation* operation,
                                      const NamedAttribute attribute) {
+  if (attribute.getName() == TargetEnvAttr::name) {
+    if (!isa<ModuleOp>(operation)) {
+      return operation->emitError()
+             << "attribute '" << attribute.getName().getValue()
+             << "' is only valid on a module";
+    }
+    if (!isa<TargetEnvAttr>(attribute.getValue())) {
+      return operation->emitError()
+             << "attribute '" << attribute.getName().getValue()
+             << "' must be an mqt target environment";
+    }
+    return success();
+  }
   if (attribute.getName() == EntryPointAttrHelper::getNameStr()) {
     return verifyEntryPoint(operation, attribute);
   }

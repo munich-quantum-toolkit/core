@@ -22,25 +22,9 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove subsequent Y operations on the same qubit.
- */
-struct RemoveSubsequentY final : OpRewritePattern<YOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(YOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeInversePairOneTargetZeroParameter<YOp>(op, rewriter);
-  }
-};
-
-} // namespace
-
 void YOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* context) {
-  results.add<RemoveSubsequentY>(context);
+                                      MLIRContext* /*context*/) {
+  results.add(&removeInversePairOneTargetZeroParameter<YOp, YOp>);
 }
 
 Matrix2x2 YOp::getUnitaryMatrix() {

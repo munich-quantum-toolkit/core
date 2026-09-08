@@ -896,9 +896,7 @@ bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
  * `V` is unitary and `V^{-1} = V^\dagger`; this is verified before use because
  * the eigensolver does not orthogonalize degenerate eigenspaces.
  *
- * The body matrix `U` comes either from a single inner unitary (e.g.
- * `pow(p) { h }`) or, for a composed body (e.g. `pow(p) { h; x }`), from
- * @ref composeBodyMatrix over all targets.
+ * The body matrix `U` comes from @ref composeBodyMatrix over all targets.
  *
  * @return `U^p`, or `std::nullopt` if the exponent is non-constant, the body is
  * not fully compile-time known, or `V` is not unitary.
@@ -951,17 +949,6 @@ std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
     return v * powDiagonal * v.adjoint();
   };
 
-  // Single inner unitary (e.g. `pow(p) { h }`, `pow(p) { rz(theta) }`).
-  if (auto bodyUnitary =
-          mqt::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
-    if (const auto targetMatrix =
-            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
-      return raiseToPow(*targetMatrix);
-    }
-    return std::nullopt;
-  }
-
-  // Composed body (e.g., `pow(p) { h; x }`).
   if (const auto composed = composeBodyMatrix(*getBody(), getNumTargets())) {
     return raiseToPow(*composed);
   }

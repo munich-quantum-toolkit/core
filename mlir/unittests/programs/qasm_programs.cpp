@@ -120,11 +120,15 @@ c[1] = measure q;
 const std::string globalPhase = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 gphase(0.123);
+output int result;
+result = 0;
 )qasm";
 
 const std::string inverseGlobalPhase = R"qasm(OPENQASM 3.0;
 include "stdgates.inc";
 inv @ gphase(-0.123);
+output int result;
+result = 0;
 )qasm";
 
 const std::string identity = R"qasm(OPENQASM 3.0;
@@ -1503,12 +1507,6 @@ llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms() {
           .name = "affine-index-alias",
           .source = expressionDynamicIntIndex,
       },
-  };
-  return programs;
-}
-
-llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
-  static const std::array programs{
       OpenQASMProgram{
           .name = "integer-to-floating-gate-parameter",
           .source = bitVectorBuiltins,
@@ -1517,6 +1515,12 @@ llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
           .name = "checked-integer-state",
           .source = checkedIntegerState,
       },
+  };
+  return programs;
+}
+
+llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms() {
+  static const std::array programs{
       OpenQASMProgram{.name = "dynamic-range", .source = dynamicRange},
   };
   return programs;

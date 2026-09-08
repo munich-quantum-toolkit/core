@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Support/Passes.h"
 #include "qc_programs.h"
@@ -90,6 +91,151 @@ static LogicalResult runQCOToQCConversion(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createQCOToQC());
   return pm.run(moduleOp);
+}
+
+TEST(QCOToQCRegressionTest, RejectsBranchWirePermutation) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
+                  func::FuncDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+ func.func @main(%c: i1) -> i1 attributes {mqt.entry_point} {
+  %a = qco.alloc : !qco.qubit
+  %b = qco.alloc : !qco.qubit
+  %x = qco.x %a : !qco.qubit -> !qco.qubit
+  %r:2 = qco.if %c args(%u = %x, %v = %b) -> (!qco.qubit, !qco.qubit) {
+   qco.yield %v, %u : !qco.qubit, !qco.qubit
+  } else args(%u = %x, %v = %b) {
+   qco.yield %u, %v : !qco.qubit, !qco.qubit
+  }
+  %q, %m = qco.measure %r#0 : !qco.qubit
+  qco.sink %q : !qco.qubit
+  qco.sink %r#1 : !qco.qubit
+  return %m : i1
+ }
+}
+)mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_NE(diagnostics.find("positional quantum state correspondence"),
+            std::string::npos);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+TEST(QCOToQCRegressionTest, RejectsLoopWirePermutation) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
+                  func::FuncDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+ func.func @main(%n: index) -> i1 attributes {mqt.entry_point} {
+  %c0 = arith.constant 0 : index
+  %c1 = arith.constant 1 : index
+  %a = qco.alloc : !qco.qubit
+  %b = qco.alloc : !qco.qubit
+  %x = qco.x %a : !qco.qubit -> !qco.qubit
+  %r:2 = scf.for %iv = %c0 to %n step %c1 iter_args(%u = %x, %v = %b) -> (!qco.qubit, !qco.qubit) {
+   scf.yield %v, %u : !qco.qubit, !qco.qubit
+  }
+  %q, %m = qco.measure %r#0 : !qco.qubit
+  qco.sink %q : !qco.qubit
+  qco.sink %r#1 : !qco.qubit
+  return %m : i1
+ }
+}
+)mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_NE(diagnostics.find("positional quantum state correspondence"),
+            std::string::npos);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+TEST(QCOToQCRegressionTest, RejectsChangingQuantumWhileArity) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
+                  func::FuncDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+ func.func @main() attributes {mqt.entry_point} {
+  %false = arith.constant false
+  %q = qco.alloc : !qco.qubit
+  %r:2 = scf.while (%u = %q) : (!qco.qubit) -> (!qco.qubit, !qco.qubit) {
+   %extra = qco.alloc : !qco.qubit
+   scf.condition(%false) %u, %extra : !qco.qubit, !qco.qubit
+  } do {
+  ^bb0(%a: !qco.qubit, %b: !qco.qubit):
+   qco.sink %b : !qco.qubit
+   scf.yield %a : !qco.qubit
+  }
+  qco.sink %r#0 : !qco.qubit
+  qco.sink %r#1 : !qco.qubit
+  return
+ }
+}
+)mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_NE(diagnostics.find("positional quantum state correspondence"),
+            std::string::npos);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+TEST(QCOToQCRegressionTest, FindsAllocationModeBeforeConvertingCaller) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, func::FuncDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+ func.func @main() attributes {mqt.entry_point} {
+  %q = func.call @make() : () -> !qco.qubit
+  qco.sink %q : !qco.qubit
+  return
+ }
+ func.func private @make() -> !qco.qubit {
+  %q = qco.alloc : !qco.qubit
+  return %q : !qco.qubit
+ }
+}
+)mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto caller = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto call = *caller.getOps<func::CallOp>().begin();
+  auto dealloc = *caller.getOps<qc::DeallocOp>().begin();
+  EXPECT_EQ(dealloc.getQubit(), call.getResult(0));
 }
 
 TEST(QCOToQCRegressionTest, StripsPositionalQubitResultsFromUnitaryCalls) {
@@ -1343,3 +1489,82 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
             MQT_NAMED_BUILDER(
                 aliasSafeNestedForLoopCtrlOpWithExtractedQubit)}));
+
+TEST(QCOToQCRegressionTest, RejectsPermutationsInEveryRegionForm) {
+  DialectRegistry registry;
+  registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
+                  func::FuncDialect, scf::SCFDialect>();
+  MLIRContext context(registry);
+  context.loadAllAvailableDialects();
+  const std::array bodies = {
+      R"mlir(
+      %r:2 = qco.index_switch %index -> (!qco.qubit, !qco.qubit)
+      case 0 args(%u = %a, %v = %b) {
+        qco.yield %v, %u : !qco.qubit, !qco.qubit
+      }
+      default args(%u = %a, %v = %b) {
+        qco.yield %u, %v : !qco.qubit, !qco.qubit
+      }
+    )mlir",
+      R"mlir(
+      %r:2 = scf.while (%u = %a, %v = %b)
+          : (!qco.qubit, !qco.qubit) -> (!qco.qubit, !qco.qubit) {
+        scf.condition(%flag) %v, %u : !qco.qubit, !qco.qubit
+      } do {
+      ^bb0(%u: !qco.qubit, %v: !qco.qubit):
+        scf.yield %u, %v : !qco.qubit, !qco.qubit
+      }
+    )mlir",
+      R"mlir(
+      %r:2 = scf.while (%u = %a, %v = %b)
+          : (!qco.qubit, !qco.qubit) -> (!qco.qubit, !qco.qubit) {
+        scf.condition(%flag) %u, %v : !qco.qubit, !qco.qubit
+      } do {
+      ^bb0(%u: !qco.qubit, %v: !qco.qubit):
+        scf.yield %v, %u : !qco.qubit, !qco.qubit
+      }
+    )mlir",
+      R"mlir(
+      %r:2 = qco.inv (%u = %a, %v = %b) {
+        qco.yield %v, %u : !qco.qubit, !qco.qubit
+      } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
+    )mlir",
+      R"mlir(
+      %p = arith.constant 2.0 : f64
+      %r:2 = qco.pow(%p) (%u = %a, %v = %b) {
+        qco.yield %v, %u : !qco.qubit, !qco.qubit
+      } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
+    )mlir",
+      R"mlir(
+      %c = qco.alloc : !qco.qubit
+      %control, %r:2 = qco.ctrl(%c) targets(%u = %a, %v = %b) {
+        qco.yield %v, %u : !qco.qubit, !qco.qubit
+      } : ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+      qco.sink %control : !qco.qubit
+    )mlir",
+  };
+  for (const auto* body : bodies) {
+    SCOPED_TRACE(body);
+    const std::string source = std::string(R"mlir(
+      func.func @test(%flag: i1, %index: index,
+                      %a: !qco.qubit, %b: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit) {
+    )mlir") + body + R"mlir(
+        return %r#0, %r#1 : !qco.qubit, !qco.qubit
+      }
+    )mlir";
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+    EXPECT_NE(diagnostics.find("positional quantum state correspondence"),
+              std::string::npos);
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  }
+}

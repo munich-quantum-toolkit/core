@@ -22,7 +22,7 @@ namespace dd {
 /**
  * @brief Apply global phase to a given DD.
  *
- * @param in The input DD
+ * @param in The input DD, with an owned reference that is replaced in place
  * @param phase The phase to apply
  * @param dd The DD package to use
  * @return The output DD

@@ -48,7 +48,10 @@ classical bit before submitting its generated OpenQASM 3 program.
 
 Sampling returns ordered bitstrings through `QDMI_JOB_RESULT_SHOTS` and their
 histogram through `QDMI_JOB_RESULT_HIST_KEYS` and `QDMI_JOB_RESULT_HIST_VALUES`.
-Both results come from the same samples, including mid-circuit measurements.
+Both results come from the same samples, including mid-circuit measurements. QIR
+Base or Adaptive programs with a static terminal measurement region can sample
+one prepared DD; other QIR programs run once per shot. See the
+[QIR execution contract](../qir/index.md) for eligibility and resource limits.
 OpenQASM classical registers use reverse declaration order, with each register
 most-significant-bit first. QIR samples follow the program's recorded outputs.
 
@@ -58,16 +61,23 @@ The compiler can snapshot the DDSIM device as an all-to-all target, compile a
 program to QIR, and submit the resulting bitcode to the same device:
 
 ```python
-from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
+from mqt.core.mlir import (
+    CompilerTarget,
+    PayloadFormat,
+    PayloadEncoding,
+    PayloadSpecification,
+    TargetEnvironment,
+    compile_program,
+)
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
 device = open_device("mqt.ddsim.default")
 target = CompilerTarget.from_device(device)
+payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.BINARY))
 program = compile_program(
     "bell.qasm",
-    target=target,
-    output=OutputFormat.QIR_BASE,
+    target_environment=TargetEnvironment(target, payload),
 )
 
 job = device.submit_job(

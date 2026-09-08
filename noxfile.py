@@ -94,7 +94,15 @@ def cpp_lint(session: nox.Session) -> None:
         env=compiler_env,
         external=True,
     )
-    session.run("cmake", "--build", "build/cpp-lint", env=compiler_env, external=True)
+    session.run(
+        "cmake",
+        "--build",
+        "build/cpp-lint",
+        "--target",
+        "mqt-core-lint-headers",
+        env=compiler_env,
+        external=True,
+    )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         output = Path(temp_dir) / "github-output"

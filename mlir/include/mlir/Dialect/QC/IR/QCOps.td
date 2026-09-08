@@ -1021,7 +1021,7 @@ def CallOp
 // Modifiers
 //===----------------------------------------------------------------------===//
 
-def YieldOp : QCOp<"yield", traits = [Terminator]> {
+def YieldOp : QCOp<"yield", traits = [Pure, Terminator]> {
   let summary = "Yield from a modifier region";
   let description = [{
         Terminates a modifier region, yielding control back to the enclosing operation.

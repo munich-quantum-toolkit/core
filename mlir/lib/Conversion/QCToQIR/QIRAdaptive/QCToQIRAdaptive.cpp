@@ -446,21 +446,15 @@ struct ConvertMemRefDeallocOp final
     auto i64Type = rewriter.getI64Type();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
 
-    // Save current insertion point
-    const OpBuilder::InsertionGuard guard(rewriter);
-
-    // Release resources in output block
-    rewriter.setInsertionPoint(state.outputBlock->getTerminator());
+    auto size = state.qregSizes.lookup(op.getMemref());
+    if (!size) {
+      return rewriter.notifyMatchFailure(op, "unknown qubit register");
+    }
 
     auto fnSig = LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx),
                                              {i64Type, ptrType});
     auto fnDec = getOrCreateFunctionDeclaration(rewriter, op,
                                                 QIR_QUBIT_ARRAY_RELEASE, fnSig);
-
-    auto size = state.qregSizes.lookup(op.getMemref());
-    if (!size) {
-      return rewriter.notifyMatchFailure(op, "unknown qubit register");
-    }
 
     // Create the release call
     LLVM::CallOp::create(rewriter, op.getLoc(), fnDec,
@@ -529,15 +523,8 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   LogicalResult
   matchAndRewrite(DeallocOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto& state = getState();
     auto* ctx = getContext();
     auto ptrType = LLVM::LLVMPointerType::get(ctx);
-
-    // Save current insertion point
-    const OpBuilder::InsertionGuard guard(rewriter);
-
-    // Release resources in output block
-    rewriter.setInsertionPoint(state.outputBlock->getTerminator());
 
     auto fnSig =
         LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), {ptrType});
@@ -594,7 +581,7 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
  * @details
  * For measurements with register information, a result array is allocated and
  * all result pointers are loaded.
- * For measurements without register information, a static result pointer is
+ * For measurements without register information, a dynamic result pointer is
  * used.
  * If the operation has an user, a read result call operation is created to
  * convert the result !llvm.ptr to an i1 value.
@@ -623,7 +610,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     auto result =
         resolveRegisterMeasurement(state, op.getOperation(), rewriter);
     if (!result) {
-      result = getResultPtr(state, op.getOperation(), rewriter);
+      result = getResultPtr(state, op.getOperation(), rewriter, true);
     }
 
     // Create measure call
@@ -683,8 +670,8 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
    * 1. **Entry block**: Contains constant operations and initialization
    * 2. **Intermediate blocks**: Original function structure containing
    * quantum operations
-   * 3. **Output block**: Contains output recording calls and qubit release
-   * calls
+   * 3. **Output block**: Contains output recording and result release calls.
+   * Quantum releases remain at their source locations.
    *
    * @param main The main LLVM function to restructure
    * @param state The LoweringState of the conversion pass
@@ -692,7 +679,9 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
     OpBuilder builder(main.getBody());
     auto* firstBlock = &main.front();
-    auto* lastBlock = &main.back();
+    LLVM::ReturnOp returnOp;
+    main.walk([&](LLVM::ReturnOp op) { returnOp = op; });
+    auto* returnBlock = returnOp->getBlock();
 
     auto* entryBlock = builder.createBlock(&main.getBody());
     main.getBlocks().splice(Region::iterator(firstBlock), main.getBlocks(),
@@ -704,10 +693,9 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
 
     builder.setInsertionPointToEnd(entryBlock);
     LLVM::BrOp::create(builder, main->getLoc(), firstBlock);
-    auto* terminatorOp = lastBlock->getTerminator();
-    terminatorOp->moveBefore(outputBlock, outputBlock->end());
+    returnOp->moveBefore(outputBlock, outputBlock->end());
 
-    builder.setInsertionPointToEnd(lastBlock);
+    builder.setInsertionPointToEnd(returnBlock);
     LLVM::BrOp::create(builder, main->getLoc(), outputBlock);
 
     // Move up all constants to the beginning
@@ -736,7 +724,7 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
 
     builder.setInsertionPoint(state->outputBlock->getTerminator());
 
-    for (auto& [_, result] : state->staticResults) {
+    for (auto& [_, result] : state->scalarResults) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
       auto dec = getOrCreateFunctionDeclaration(builder, main,
                                                 QIR_RESULT_RELEASE, sig);
@@ -758,6 +746,10 @@ protected:
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto moduleOp = getOperation();
+    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     auto entryPoint = mqt::getEntryPoint(moduleOp);
     if (!entryPoint) {
       moduleOp->emitError("no main function with mqt.entry_point found");
@@ -775,6 +767,11 @@ protected:
 
     target.addLegalDialect<LLVM::LLVMDialect>();
 
+    if (failed(prepareClassicalResults(moduleOp, state))) {
+      signalPassFailure();
+      return;
+    }
+
     // Stage 1: Convert scf dialect to cf
     {
       RewritePatternSet scfPatterns(ctx);
@@ -789,11 +786,6 @@ protected:
       }
     }
 
-    // Stage 2.0: Prepare classical result registers
-    if (failed(prepareClassicalResults(moduleOp, state))) {
-      signalPassFailure();
-      return;
-    }
     {
       RewritePatternSet patterns(ctx);
       cbit::populateCBitDecompositionPatterns(patterns);

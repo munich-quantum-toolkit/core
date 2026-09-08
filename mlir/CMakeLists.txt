@@ -40,6 +40,27 @@ endfunction()
 # add main library code
 add_subdirectory(bench)
 add_subdirectory(include)
+
+# Prepare generated headers for clang-tidy without compiling or linking the project.
+add_dependencies(
+  mqt-core-lint-headers
+  mlir-headers
+  mlir-generic-headers
+  MLIRJeffEnumsIncGen
+  JeffToNativeIncGen
+  NativeToJeffIncGen
+  JeffToQCOIncGen
+  CBitToMemRefIncGen
+  QCOToJeffIncGen
+  QCOToQCIncGen
+  QCToQCOIncGen
+  QCToQIRAdaptiveIncGen
+  QCToQIRBaseIncGen
+  MLIRMQTTransformsIncGen
+  MLIRQCTransformsIncGen
+  MLIRQCOTransformsIncGen
+  MLIRQIRTransformsIncGen
+  MLIRQTensorTransformsIncGen)
 add_subdirectory(lib)
 add_subdirectory(tools)
 

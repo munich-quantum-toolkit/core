@@ -31,8 +31,11 @@
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
 #include <mlir/IR/Builders.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -159,10 +162,10 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry
-        .insert<cbit::CBitDialect, QCODialect, qtensor::QTensorDialect,
-                arith::ArithDialect, cf::ControlFlowDialect, func::FuncDialect,
-                math::MathDialect, memref::MemRefDialect, scf::SCFDialect>();
+    registry.insert<cbit::CBitDialect, QCODialect, qtensor::QTensorDialect,
+                    arith::ArithDialect, cf::ControlFlowDialect,
+                    func::FuncDialect, math::MathDialect, memref::MemRefDialect,
+                    scf::SCFDialect, tensor::TensorDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -1276,17 +1279,28 @@ TEST_F(QCODDFunctionalityTest, SampleUnitaryXIsDeterministic) {
 
 TEST_F(QCODDFunctionalityTest, SamplePreservesDeclaredStaticWidth) {
   constexpr auto index = static_cast<int64_t>(dd::Package::DEFAULT_QUBITS);
-  auto mod = buildModule([index](QCOProgramBuilder& b) {
-    auto q = b.staticQubit(index);
-    b.sink(q);
-    return b.intConstant(0);
-  });
-  ASSERT_TRUE(mod);
+  for (const bool dynamic : {false, true}) {
+    SCOPED_TRACE(dynamic);
+    auto mod = buildModule([index, dynamic](QCOProgramBuilder& b) {
+      auto q = b.staticQubit(index);
+      if (dynamic) {
+        q = b.reset(q);
+      }
+      b.sink(b.x(q));
+      b.sink(b.x(b.staticQubit(0)));
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(mod);
 
-  const auto histogram = sample(mainFunc(*mod), 8, 1);
-  ASSERT_TRUE(succeeded(histogram));
-  const auto outcome = std::string(static_cast<size_t>(index + 1), '0');
-  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{outcome, 8}}));
+    std::vector<std::string> orderedShots;
+    const auto histogram =
+        sample(mainFunc(*mod), 8, 1, DDArgumentBindings{}, &orderedShots);
+    ASSERT_TRUE(succeeded(histogram));
+    auto outcome = std::string(static_cast<size_t>(index + 1), '0');
+    outcome.front() = outcome.back() = '1';
+    EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{outcome, 8}}));
+    EXPECT_EQ(orderedShots, std::vector<std::string>(8, outcome));
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, SampleHadamardApproximatelyBalanced) {
@@ -1951,6 +1965,35 @@ TEST_F(QCODDFunctionalityTest, ScfForSnapshotsYieldedInductionValue) {
   expectSimulatesFromZero(mainFunc(*mod), false);
 }
 
+TEST_F(QCODDFunctionalityTest, RepeatedCallsRespectNearestSymbolTable) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @gate(%q: !qco.qubit) -> !qco.qubit {
+        %out = qco.x %q : !qco.qubit -> !qco.qubit
+        return %out : !qco.qubit
+      }
+      module @nested {
+        func.func @gate(%q: !qco.qubit) -> !qco.qubit {
+          %out = qco.h %q : !qco.qubit -> !qco.qubit
+          return %out : !qco.qubit
+        }
+        func.func @main(%q: !qco.qubit) -> !qco.qubit {
+          %a = func.call @gate(%q) : (!qco.qubit) -> !qco.qubit
+          %b = func.call @gate(%a) : (!qco.qubit) -> !qco.qubit
+          %c = func.call @gate(%b) : (!qco.qubit) -> !qco.qubit
+          return %c : !qco.qubit
+        }
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  ASSERT_TRUE(succeeded(verify(*mod)));
+  auto nested = mod->lookupSymbol<ModuleOp>("nested");
+  ASSERT_TRUE(nested);
+  expectEqualToReference(mainFunc(nested), 1, {referenceGate<HOp>({0})});
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
   auto selfRecursive = parseSourceString<ModuleOp>(R"mlir(
     module {
@@ -2356,6 +2399,68 @@ TEST_F(QCODDFunctionalityTest, FuncCallSharesClassicalCBitStorage) {
   expectSimulatesFromZero(mainFunc(*mod), true);
 }
 
+TEST_F(QCODDFunctionalityTest, ReadsDenseFloatTablesInStructuredLoops) {
+  for (const auto angles : {
+           std::array{0., std::numbers::pi},
+           std::array{std::numbers::pi / 2., std::numbers::pi / 2.},
+       }) {
+    auto moduleOp = buildModule([&](QCOProgramBuilder& b) {
+      auto type = RankedTensorType::get({2}, b.getF64Type());
+      auto table = arith::ConstantOp::create(
+          b, DenseFPElementsAttr::get(type, ArrayRef<double>(angles)));
+      auto q = b.h(b.staticQubit(0));
+      auto result =
+          b.scfFor(0, 2, 1, ValueRange{q},
+                   [&](Value index, ValueRange args) -> SmallVector<Value> {
+                     auto angle =
+                         tensor::ExtractOp::create(b, table, ValueRange{index});
+                     return {b.p(angle, args[0])};
+                   });
+      b.sink(b.h(result[0]));
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(moduleOp);
+    expectEqualToReference(mainFunc(*moduleOp), 1, {referenceGate<XOp>({0})});
+    const auto counts = sample(mainFunc(*moduleOp), 8, 1);
+    ASSERT_TRUE(succeeded(counts));
+    EXPECT_EQ(*counts, (std::map<std::string, size_t>{{"1", 8}}));
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsOutOfBoundsFloatTableIndices) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%index: index) {
+        %table = arith.constant dense<[0.0, 1.0]> : tensor<2xf64>
+        %angle = tensor.extract %table[%index] : tensor<2xf64>
+        qco.gphase(%angle)
+        return
+      }
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  auto func = mainFunc(*moduleOp);
+  auto dd = std::make_unique<dd::Package>(0);
+  for (const auto index : {-1, 2}) {
+    DDArgumentBindings bindings;
+    bindings[func.getArgument(0)] =
+        IntegerAttr::get(IndexType::get(context.get()), index);
+    EXPECT_TRUE(failed(buildFunctionality(func, *dd, bindings)));
+    EXPECT_TRUE(failed(sample(func, 1, 1, bindings)));
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsUnsupportedTensorConstants) {
+  for (const auto* type :
+       {"tensor<2xf32>", "tensor<1x2xf64>", "vector<2xf64>"}) {
+    const auto code = std::string("module { func.func @main() { "
+                                  "%table = arith.constant dense<0.0> : ") +
+                      type + " return } }";
+    expectMlirSimulationFails(0, code);
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsUnsupportedClassicalMemRefs) {
   for (const StringRef source : {
            R"mlir(module {
@@ -2689,6 +2794,50 @@ TEST_F(QCODDFunctionalityTest, StructuredScfAndWhileCarryValues) {
                              referenceGate<ZOp>({0}),
                              referenceGate<XOp>({0}),
                          });
+}
+
+TEST_F(QCODDFunctionalityTest, AllocationPreservesComplexInputAmplitudes) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @scalar(%q: !qco.qubit) {
+        %new = qco.alloc : !qco.qubit
+        qco.sink %new : !qco.qubit
+        qco.sink %q : !qco.qubit
+        return
+      }
+      func.func @tensor(%q: !qco.qubit) {
+        %one = arith.constant 1 : index
+        %new = qtensor.alloc(%one) : tensor<?x!qco.qubit>
+        qtensor.dealloc %new : tensor<?x!qco.qubit>
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  ASSERT_TRUE(succeeded(verify(*mod)));
+  for (StringRef name : {"scalar", "tensor"}) {
+    SCOPED_TRACE(name.str());
+    dd::Package package(1);
+    const double amplitude = std::sqrt(0.5);
+    const dd::CVec input{{0., amplitude}, amplitude};
+    auto state =
+        simulate(mod->lookupSymbol<func::FuncOp>(name),
+                 dd::makeStateFromVector(input, package), package, rng);
+    ASSERT_TRUE(succeeded(state));
+    const dd::CVec expected{input[0], input[1], 0., 0.};
+    const auto actual = state->getVector();
+    ASSERT_EQ(actual.size(), expected.size());
+    for (size_t i = 0; i < actual.size(); ++i) {
+      EXPECT_NEAR(std::abs(actual[i] - expected[i]), 0., 1e-12);
+    }
+    package.garbageCollect(true);
+    EXPECT_EQ(state->getVector(), actual);
+    package.decRef(*state);
+    package.garbageCollect(true);
+    EXPECT_EQ(package.vUniqueTable.getNumEntries(), 0);
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, DynamicAllocationsAndQTensorBookkeeping) {

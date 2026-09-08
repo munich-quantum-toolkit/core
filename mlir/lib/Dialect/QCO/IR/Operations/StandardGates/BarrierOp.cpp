@@ -11,7 +11,6 @@
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
@@ -41,16 +40,15 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
     auto qubitsIn = op.getQubitsIn();
 
     auto anythingToMerge = false;
-    DenseMap<size_t, Value> newQubitsOutMap;
+    SmallVector<Value> newQubitsOut(qubitsIn);
 
     SmallVector<Value> newQubitsIn;
     SmallVector<size_t> indicesToFill;
 
     for (size_t i = 0; i < qubitsIn.size(); ++i) {
-      if (isa<BarrierOp>(
-              *op.getOutputForInput(qubitsIn[i]).getUsers().begin())) {
+      if (auto output = op.getQubitsOut()[i];
+          isa<BarrierOp>(*output.user_begin())) {
         anythingToMerge = true;
-        newQubitsOutMap[i] = qubitsIn[i];
       } else {
         newQubitsIn.push_back(qubitsIn[i]);
         indicesToFill.push_back(i);
@@ -64,13 +62,7 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
     auto newBarrier = BarrierOp::create(rewriter, op.getLoc(), newQubitsIn);
 
     for (size_t i = 0; i < indicesToFill.size(); ++i) {
-      newQubitsOutMap[indicesToFill[i]] = newBarrier.getQubitsOut()[i];
-    }
-
-    SmallVector<Value> newQubitsOut;
-    newQubitsOut.reserve(op.getQubitsIn().size());
-    for (size_t i = 0; i < op.getQubitsIn().size(); ++i) {
-      newQubitsOut.push_back(newQubitsOutMap[i]);
+      newQubitsOut[indicesToFill[i]] = newBarrier.getQubitsOut()[i];
     }
 
     rewriter.replaceOp(op, newQubitsOut);
@@ -79,6 +71,13 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
 };
 
 } // namespace
+
+LogicalResult BarrierOp::verify() {
+  if (getQubitsIn().size() != getQubitsOut().size()) {
+    return emitOpError("requires one output qubit for each input qubit");
+  }
+  return success();
+}
 
 Value BarrierOp::getInputForOutput(Value output) {
   if (auto result = dyn_cast<OpResult>(output);

@@ -363,10 +363,8 @@ bool CtrlOp::hasCompileTimeKnownUnitaryMatrix() {
 }
 
 std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
-  if (getNumControls() >= 32) {
-    llvm::reportFatalUsageError(
-        "Creating the unitary matrix for a CtrlOp with more than 31 controls "
-        "is not supported due to memory constraints.");
+  if (getNumQubits() > kMaxModifierTargetQubits) {
+    return std::nullopt;
   }
 
   const auto numControls = getNumControls();
@@ -382,18 +380,6 @@ std::optional<DynamicMatrix> CtrlOp::getUnitaryMatrix() {
     return matrix;
   };
 
-  // Single inner unitary (e.g. `ctrl { h }`, `ctrl { cx }`).
-  if (auto bodyUnitary =
-          mqt::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
-    if (const auto targetMatrix =
-            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
-      assert(targetMatrix->cols() == targetMatrix->rows());
-      return controlledMatrix(targetMatrix->cols(), *targetMatrix);
-    }
-    return std::nullopt;
-  }
-
-  // Composed body (e.g., `ctrl { h; x }` or `ctrl { swap; ry }`)
   if (const auto composed = composeBodyMatrix(*getBody(), getNumTargets())) {
     return controlledMatrix(composed->rows(), *composed);
   }

@@ -160,6 +160,63 @@ TEST_F(QIRTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QIRTest, AdaptiveBuilderOwnsScalarAndRegisterResults) {
+  QIRProgramBuilder builder(context.get());
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto scalar = builder.measure(q, 0);
+  auto reg = builder.allocClassicalBitRegister(1);
+  builder.measure(q, reg, 0);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  auto allocation = scalar.getDefiningOp<LLVM::CallOp>();
+  ASSERT_TRUE(allocation);
+  EXPECT_EQ(allocation.getCallee(), QIR_RESULT_ALLOC);
+  size_t scalarReleases = 0;
+  size_t arrayReleases = 0;
+  module->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == QIR_RESULT_RELEASE) {
+      ++scalarReleases;
+      EXPECT_EQ(call.getOperand(0), scalar);
+    }
+    if (call.getCallee() == QIR_RESULT_ARRAY_RELEASE) {
+      ++arrayReleases;
+    }
+  });
+  EXPECT_EQ(scalarReleases, 1);
+  EXPECT_EQ(arrayReleases, 1);
+}
+
+TEST_F(QIRTest, AdaptiveBuilderDoesNotReleaseExplicitStaticResults) {
+  QIRProgramBuilder builder(context.get());
+  builder.initialize();
+  builder.staticResult(0);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_FALSE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_RESULT_RELEASE));
+}
+
+TEST_F(QIRTest, BuilderRejectsMixedResultAllocationModes) {
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.staticResult(0);
+        builder.allocClassicalBitRegister(1);
+      },
+      "Cannot mix static and dynamic result allocation modes");
+  EXPECT_DEATH(
+      {
+        QIRProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.allocClassicalBitRegister(1);
+        builder.staticResult(0);
+      },
+      "Cannot mix static and dynamic result allocation modes");
+}
+
 TEST_F(QIRTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
   EXPECT_DEATH(
       {
@@ -317,7 +374,7 @@ TEST_F(QIRTest, PreservesUnrelatedMetadataIdempotently) {
       OperationEquivalence::Flags::None));
 }
 
-TEST_F(QIRTest, MetadataDeclaresCapacityForStaticResourceIds) {
+TEST_F(QIRTest, MetadataDeclaresResourceCapacities) {
   struct CapacityCase {
     SmallVector<int64_t> indices;
     StringRef requiredCapacity;
@@ -360,7 +417,12 @@ TEST_F(QIRTest, MetadataDeclaresCapacityForStaticResourceIds) {
            {"required_num_qubits", "required_num_results"}) {
         EXPECT_TRUE(llvm::is_contained(
             passthrough,
-            builder.getStrArrayAttr({attribute, testCase.requiredCapacity})));
+            builder.getStrArrayAttr(
+                {attribute,
+                 attribute == "required_num_results" &&
+                         profile == QIRProgramBuilder::Profile::Adaptive
+                     ? StringRef("0")
+                     : testCase.requiredCapacity})));
       }
     }
   }
@@ -1117,3 +1179,36 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(staticQubitsWithDuplicates),
                     MQT_NAMED_BUILDER(staticQubitsCanonical)}));
 /// @}
+
+TEST_F(QIRTest, MetadataIncludesUnrecordedMeasuredAndReadResults) {
+  for (const auto* call : {
+           "llvm.call @__quantum__qis__mz__body(%qubit, %result) : (!llvm.ptr, "
+           "!llvm.ptr) -> ()",
+           "%value = llvm.call @__quantum__rt__read_result(%result) : "
+           "(!llvm.ptr) "
+           "-> i1",
+       }) {
+    SCOPED_TRACE(call);
+    const std::string ir = std::string(R"mlir(module {
+      llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+      llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
+      llvm.func @main() attributes {passthrough = ["entry_point"]} {
+        %zero = llvm.mlir.constant(0 : i64) : i64
+        %seven = llvm.mlir.constant(7 : i64) : i64
+        %qubit = llvm.inttoptr %zero : i64 to !llvm.ptr
+        %result = llvm.inttoptr %seven : i64 to !llvm.ptr
+    )mlir") + call + R"mlir(
+        llvm.return
+      }
+    })mlir";
+    auto moduleOp = parseSourceString<ModuleOp>(ir, context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
+    auto main = getMainFunction(*moduleOp);
+    OpBuilder builder(context.get());
+    EXPECT_TRUE(llvm::is_contained(
+        main.getPassthroughAttr(),
+        builder.getStrArrayAttr({"required_num_results", "8"})));
+  }
+}

@@ -11,26 +11,19 @@
 from __future__ import annotations
 
 import math
-import os
 
 import pytest
 import qiskit
-from packaging.version import Version
 from qiskit import QuantumCircuit, qasm3
 from qiskit.circuit import Parameter
 from qiskit.circuit.classical import expr, types
+from qiskit_support import supports_qiskit_translation
 
 from mqt.core.dd import DDPackage
 from mqt.core.mlir import JeffProgram, QCProgram
 
-if not (
-    Version("2.5.0") <= Version(qiskit.__version__) < Version("2.6.0")
-    or qiskit.__version__ == os.environ.get("MQT_QISKIT_TEST_CANDIDATE_VERSION")
-):
-    pytest.skip(
-        f"Loop interchange tests require Qiskit 2.5.x (installed: {qiskit.__version__})",
-        allow_module_level=True,
-    )
+if not supports_qiskit_translation():
+    pytest.skip(f"No registered Qiskit adapter for {qiskit.__version__}", allow_module_level=True)
 
 
 def observe(program: QCProgram) -> int:
@@ -119,18 +112,21 @@ result = false;
 
 @pytest.mark.parametrize("stale", [False, True])
 def test_wide_register_condition_in_do_while(*, stale: bool) -> None:
-    """Preserve direct wide comparisons and reject snapshots read before a store."""
+    """Preserve wide snapshots across stores in OpenQASM loop conditions."""
     read = "%bits = cbit.read %out : !cbit.reg<65> -> i65"
     program = QCProgram.from_mlir_str(f"""
 module {{
   func.func @main() -> !cbit.reg<65> attributes {{mqt.entry_point}} {{
     %q = qc.alloc : !qc.qubit
+    %parity = qc.alloc : !qc.qubit
     %out = cbit.alloc(#cbit.init<zero>) : !cbit.reg<65>
+    %lowest = arith.constant 0 : index
     %highest = arith.constant 64 : index
     %expected = arith.constant {1 << 64} : i65
     scf.while : () -> () {{
       qc.reset %q : !qc.qubit
       qc.x %q : !qc.qubit
+      qc.x %parity : !qc.qubit
       {read if stale else ""}
       %measured = qc.measure %q : !qc.qubit -> i1
       cbit.store %measured, %out[%highest] : !cbit.reg<65>
@@ -141,6 +137,9 @@ module {{
       scf.yield
     }}
     qc.dealloc %q : !qc.qubit
+    %odd = qc.measure %parity : !qc.qubit -> i1
+    cbit.store %odd, %out[%lowest] : !cbit.reg<65>
+    qc.dealloc %parity : !qc.qubit
     return %out : !cbit.reg<65>
   }}
 }}
@@ -148,10 +147,9 @@ module {{
     if stale:
         with pytest.raises(RuntimeError, match="stale classical snapshot"):
             program.to_qiskit()
-        with pytest.raises(RuntimeError, match="stale classical snapshot"):
-            program.to_openqasm3()
+        assert observe(QCProgram.from_qasm_str(program.to_openqasm3().source)) == 1 << 64
     else:
-        check_paths(program, 1 << 64)
+        check_paths(program, (1 << 64) | 1)
         assert program.to_qiskit().num_clbits == 65
 
 
@@ -486,9 +484,10 @@ module {
     assert "constant or symbolic" in str(error.value)
 
 
-def test_loop_resource_allocation_is_actionable() -> None:
-    """Constant-true loops are valid; resource allocation inside them is a target restriction."""
-    program = QCProgram.from_mlir_str("""
+def test_loop_resource_allocation_is_rejected_at_import(capfd: pytest.CaptureFixture[str]) -> None:
+    """Reject loop-local quantum allocations when constructing the program."""
+    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        QCProgram.from_mlir_str("""
 module {
   func.func @main() attributes {mqt.entry_point} {
     %true = arith.constant true
@@ -504,12 +503,9 @@ module {
   }
 }
 """)
-    with pytest.raises(RuntimeError, match="allocate") as qasm_error:
-        program.to_openqasm3()
-    assert "OpenQASM" in str(qasm_error.value)
-    with pytest.raises(RuntimeError, match="allocate them before the loop") as qiskit_error:
-        program.to_qiskit()
-    assert "qc.alloc" in str(qiskit_error.value)
+    diagnostic = capfd.readouterr().err
+    assert "'qc.alloc' op dynamic quantum allocations must be in the entry block" in diagnostic
+    assert "of the 'mqt.entry_point' function" in diagnostic
 
 
 def test_first_measurement_initializes_do_while_output() -> None:
