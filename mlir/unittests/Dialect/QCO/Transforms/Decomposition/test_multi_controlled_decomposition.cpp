@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/DDAdapter.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
@@ -25,17 +26,22 @@
 #include <llvm/Support/Error.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -123,6 +129,7 @@ static constexpr std::array<size_t, 34> K_EXPECTED_MCX_CX = {
 
 namespace {
 enum class ControlledPauli : uint8_t { X, Z };
+enum class RotationAxis : uint8_t { X, Y, Z };
 } // namespace
 
 [[nodiscard]] static dd::Controls makeControls(size_t numControls) {
@@ -182,6 +189,9 @@ class MczSmokeTest : public MultiControlledDecompositionTest,
                      public testing::WithParamInterface<size_t> {};
 class McpSmokeTest : public MultiControlledDecompositionTest,
                      public testing::WithParamInterface<size_t> {};
+class McrDdTest
+    : public MultiControlledDecompositionTest,
+      public testing::WithParamInterface<std::tuple<RotationAxis, size_t>> {};
 
 } // namespace
 
@@ -230,6 +240,74 @@ buildMcpModule(MLIRContext* context, size_t numControls, double theta) {
       });
 }
 
+[[nodiscard]] static Value applyRotation(QCOProgramBuilder& builder,
+                                         RotationAxis axis, Value theta,
+                                         Value target) {
+  if (axis == RotationAxis::X) {
+    return builder.rx(theta, target);
+  }
+  if (axis == RotationAxis::Y) {
+    return builder.ry(theta, target);
+  }
+  return builder.rz(theta, target);
+}
+
+static void buildControlledRotation(QCOProgramBuilder& builder,
+                                    size_t numControls, RotationAxis axis,
+                                    Value theta, bool regionLocal = false) {
+  SmallVector<Value> wires;
+  for (size_t i = 0; i <= numControls; ++i) {
+    wires.push_back(builder.staticQubit(i));
+  }
+  const size_t target = numControls / 2;
+  SmallVector<Value> controls;
+  for (size_t i = numControls + 1; i-- > 0;) {
+    if (i != target) {
+      controls.push_back(wires[i]);
+    }
+  }
+  builder.ctrl(controls, wires[target], [&](Value targetArg) {
+    auto angle =
+        regionLocal ? arith::NegFOp::create(builder, theta).getResult() : theta;
+    return applyRotation(builder, axis, angle, targetArg);
+  });
+}
+
+[[nodiscard]] static OwningOpRef<ModuleOp> buildMcrModule(MLIRContext* context,
+                                                          size_t numControls,
+                                                          RotationAxis axis,
+                                                          double theta) {
+  return QCOProgramBuilder::build(context, [&](QCOProgramBuilder& builder) {
+    buildControlledRotation(builder, numControls, axis,
+                            builder.floatConstant(theta));
+    return SmallVector<Value>{};
+  });
+}
+
+// R_a(theta) = cos(theta/2) I - i sin(theta/2) sigma_a.
+[[nodiscard]] static dd::GateMatrix rotationMatrix(RotationAxis axis,
+                                                   double theta) {
+  const double cosine = std::cos(theta / 2);
+  const double sine = std::sin(theta / 2);
+  if (axis == RotationAxis::X) {
+    return {
+        cosine,
+        std::complex<double>{0, -sine},
+        std::complex<double>{0, -sine},
+        cosine,
+    };
+  }
+  if (axis == RotationAxis::Y) {
+    return {cosine, -sine, sine, cosine};
+  }
+  return {
+      std::complex<double>{cosine, -sine},
+      0,
+      0,
+      std::complex<double>{cosine, sine},
+  };
+}
+
 [[nodiscard]] static OwningOpRef<ModuleOp>
 buildRCCXModule(MLIRContext* context) {
   return QCOProgramBuilder::build(context, [](QCOProgramBuilder& b) {
@@ -245,6 +323,28 @@ buildRCCXModule(MLIRContext* context) {
         std::max(numQubits, static_cast<size_t>(staticOp.getIndex()) + 1);
   }
   return numQubits;
+}
+
+static void expectImplementsControlledRotation(
+    func::FuncOp funcOp, size_t numControls, RotationAxis axis, double theta,
+    const DDArgumentBindings& bindings = DDArgumentBindings()) {
+  ASSERT_EQ(countStaticQubits(funcOp), numControls + 1);
+  const auto package = std::make_unique<dd::Package>(numControls + 1);
+  const auto actual = buildFunctionality(funcOp, *package, bindings);
+  ASSERT_TRUE(succeeded(actual));
+  const auto target = static_cast<dd::Qubit>(numControls / 2);
+  dd::Controls controls;
+  for (size_t i = 0; i <= numControls; ++i) {
+    if (i != static_cast<size_t>(target)) {
+      controls.emplace(static_cast<dd::Qubit>(i));
+    }
+  }
+  const auto expected =
+      package->makeGateDD(rotationMatrix(axis, theta), controls, target);
+  // Full operator equality preserves phase and restores every borrowed control,
+  // including when controls are entangled with other qubits.
+  EXPECT_EQ(*actual, expected);
+  package->decRef(*actual);
 }
 
 static void expectFullyDecomposed(func::FuncOp funcOp) {
@@ -444,9 +544,159 @@ static void expectFullyLowered(ModuleOp moduleOp) {
 
 static LogicalResult runDecomposeMultiControlled(
     ModuleOp moduleOp, const DecomposeMultiControlledOptions& options = {}) {
+  if (failed(verify(moduleOp)) || failed(verifyLinearity(moduleOp))) {
+    return failure();
+  }
   PassManager pm(moduleOp.getContext());
   pm.addPass(createDecomposeMultiControlled(options));
-  return pm.run(moduleOp);
+  if (failed(pm.run(moduleOp))) {
+    return failure();
+  }
+  return success(succeeded(verify(moduleOp)) &&
+                 succeeded(verifyLinearity(moduleOp)));
+}
+
+//===----------------------------------------------------------------------===//
+// Multi-controlled rotations
+//===----------------------------------------------------------------------===//
+
+TEST_P(McrDdTest, PreservesFullOperatorAndBorrowedControls) {
+  const auto [axis, numControls] = GetParam();
+  for (const double theta : {0.0, 0.73, -1.21, 2 * std::numbers::pi}) {
+    SCOPED_TRACE(testing::Message() << "theta=" << theta);
+    auto moduleOp = buildMcrModule(context(), numControls, axis, theta);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(runDecomposeMultiControlled(moduleOp.get())));
+    expectFullyLowered(moduleOp.get());
+    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+    expectFullyDecomposed(funcOp);
+    expectImplementsControlledRotation(funcOp, numControls, axis, theta);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    DdRange, McrDdTest,
+    testing::Combine(testing::Values(RotationAxis::X, RotationAxis::Y,
+                                     RotationAxis::Z),
+                     testing::Values(2U, 3U, 4U, 5U, 6U, 7U, 8U)),
+    ([](const testing::TestParamInfo<std::tuple<RotationAxis, size_t>>& info) {
+      const auto [axis, numControls] = info.param;
+      return std::string(axis == RotationAxis::X   ? "Rx"
+                         : axis == RotationAxis::Y ? "Ry"
+                                                   : "Rz") +
+             "k" + std::to_string(numControls);
+    }));
+
+TEST_F(MultiControlledDecompositionTest, RotationsPreserveRuntimeAngles) {
+  constexpr size_t numControls = 8;
+  for (const auto axis : {RotationAxis::X, RotationAxis::Y, RotationAxis::Z}) {
+    for (const bool regionLocal : {false, true}) {
+      SCOPED_TRACE(testing::Message() << "axis=" << static_cast<unsigned>(axis)
+                                      << " regionLocal=" << regionLocal);
+      Value parameter;
+      auto moduleOp =
+          QCOProgramBuilder::build(context(), [&](QCOProgramBuilder& builder) {
+            parameter = builder.floatConstant(0.73);
+            buildControlledRotation(builder, numControls, axis, parameter,
+                                    regionLocal);
+            return SmallVector<Value>{};
+          });
+      ASSERT_TRUE(moduleOp);
+      auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+      funcOp.insertArgument(0, Float64Type::get(context()), {},
+                            funcOp.getLoc());
+      parameter.replaceAllUsesWith(funcOp.getArgument(0));
+      ASSERT_TRUE(succeeded(runDecomposeMultiControlled(moduleOp.get())));
+      expectFullyLowered(moduleOp.get());
+      expectFullyDecomposed(funcOp);
+      for (const double theta : {-0.91, 2 * std::numbers::pi}) {
+        const DDArgumentBindings bindings{
+            {
+                funcOp.getArgument(0),
+                FloatAttr::get(Float64Type::get(context()), theta),
+            },
+        };
+        expectImplementsControlledRotation(
+            funcOp, numControls, axis, regionLocal ? -theta : theta, bindings);
+      }
+    }
+  }
+}
+
+TEST_F(MultiControlledDecompositionTest,
+       RotationsUseLinearResourcesWithoutExtraQubits) {
+  for (const auto axis : {RotationAxis::X, RotationAxis::Y, RotationAxis::Z}) {
+    for (const size_t numControls : {16U, 32U, 64U}) {
+      SCOPED_TRACE(testing::Message() << "axis=" << static_cast<unsigned>(axis)
+                                      << " controls=" << numControls);
+      auto moduleOp = buildMcrModule(context(), numControls, axis, 0.73);
+      ASSERT_TRUE(moduleOp);
+      ASSERT_TRUE(succeeded(runDecomposeMultiControlled(moduleOp.get())));
+      expectFullyLowered(moduleOp.get());
+      auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+      expectFullyDecomposed(funcOp);
+      EXPECT_EQ(countStaticQubits(funcOp), numControls + 1);
+      funcOp.walk([](AllocOp) { ADD_FAILURE() << "unexpected helper qubit"; });
+      // The linear synthesis bound permits cancellation and gate substitutions.
+      EXPECT_LE(countElementaryCxOps(moduleOp.get()), 16 * numControls);
+      size_t elementaryGates = 0;
+      funcOp.walk([&](UnitaryOpInterface op) {
+        if (op->getNumRegions() == 0) {
+          ++elementaryGates;
+        }
+      });
+      EXPECT_LE(elementaryGates, 60 * numControls);
+    }
+  }
+}
+
+TEST_F(MultiControlledDecompositionTest, RotationsRespectMinQubits) {
+  for (const auto axis : {RotationAxis::X, RotationAxis::Y, RotationAxis::Z}) {
+    auto moduleOp = buildMcrModule(context(), 3, axis, 0.73);
+    ASSERT_TRUE(moduleOp);
+    DecomposeMultiControlledOptions options;
+    options.minQubits = 5;
+    ASSERT_TRUE(
+        succeeded(runDecomposeMultiControlled(moduleOp.get(), options)));
+    EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
+    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+    expectImplementsControlledRotation(funcOp, 3, axis, 0.73);
+
+    options.minQubits = 4;
+    ASSERT_TRUE(
+        succeeded(runDecomposeMultiControlled(moduleOp.get(), options)));
+    EXPECT_EQ(countMultiControlledOps(moduleOp.get(), 3), 0U);
+    expectImplementsControlledRotation(funcOp, 3, axis, 0.73);
+  }
+}
+
+TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeRotations) {
+  using TargetOperation = CompilerTarget::Operation;
+  const std::vector operations{
+      llvm::cantFail(TargetOperation::create(
+          "rx", TargetOperation::Arity::variadic(4), 1)),
+      llvm::cantFail(TargetOperation::create(
+          "ry", TargetOperation::Arity::variadic(4), 1)),
+      llvm::cantFail(TargetOperation::create(
+          "rz", TargetOperation::Arity::variadic(4), 1)),
+  };
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      4, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations(operations)));
+  for (const auto axis : {RotationAxis::X, RotationAxis::Y, RotationAxis::Z}) {
+    auto moduleOp = buildMcrModule(context(), 3, axis, 0.73);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(moduleOp.get())));
+    ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
+    PassManager pm(context());
+    pm.addPass(createDecomposeMultiControlled(target));
+    ASSERT_TRUE(succeeded(pm.run(moduleOp.get())));
+    ASSERT_TRUE(succeeded(verify(moduleOp.get())));
+    ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
+    EXPECT_EQ(countMultiControlledOps(moduleOp.get()), 1U);
+    auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
+    expectImplementsControlledRotation(funcOp, 3, axis, 0.73);
+  }
 }
 
 //===----------------------------------------------------------------------===//
@@ -607,6 +857,9 @@ TEST_F(MultiControlledDecompositionTest, LeavesSingleControlledUntouched) {
       QCOProgramBuilder::build(context(), [](QCOProgramBuilder& builder) {
         builder.cx(builder.staticQubit(0), builder.staticQubit(1));
         builder.cz(builder.staticQubit(2), builder.staticQubit(3));
+        builder.crx(0.73, builder.staticQubit(4), builder.staticQubit(5));
+        builder.cry(0.73, builder.staticQubit(6), builder.staticQubit(7));
+        builder.crz(0.73, builder.staticQubit(8), builder.staticQubit(9));
         return SmallVector<Value>{};
       });
   ASSERT_TRUE(moduleOp);
@@ -618,7 +871,7 @@ TEST_F(MultiControlledDecompositionTest, LeavesSingleControlledUntouched) {
       ++singleControlled;
     }
   });
-  EXPECT_EQ(singleControlled, 2U);
+  EXPECT_EQ(singleControlled, 5U);
 }
 
 TEST_F(MultiControlledDecompositionTest, DecomposesRCCX) {

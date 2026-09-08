@@ -82,6 +82,14 @@ public:
     setWire(q, POp::create(*builder_, loc_, wire(q), theta).getOutputQubit(0));
   }
 
+  void ry(size_t q, Value theta) {
+    setWire(q, RYOp::create(*builder_, loc_, wire(q), theta).getOutputQubit(0));
+  }
+
+  void rz(size_t q, Value theta) {
+    setWire(q, RZOp::create(*builder_, loc_, wire(q), theta).getOutputQubit(0));
+  }
+
   void t(size_t q) {
     setWire(q, TOp::create(*builder_, loc_, wire(q)).getOutputQubit(0));
   }
@@ -1074,6 +1082,69 @@ static BorrowedControlPartition partitionControls(size_t numControls) {
   return {.k1 = (numControls + 1) / 2, .k2 = numControls / 2};
 }
 
+/// Synthesize a controlled Pauli rotation using X R(a) X = R(-a) for Y/Z.
+static SmallVector<Value>
+synthesizeMultiControlledRotation(OpBuilder& builder, Location loc,
+                                  ValueRange controls, Value target,
+                                  UnitaryOpInterface rotation) {
+  const size_t numControls = controls.size();
+  const auto [k1, k2] = partitionControls(numControls);
+  SmallVector<Value> wires(controls);
+  wires.push_back(target);
+  GateEmitter emitter(builder, loc, wires);
+
+  const auto halfMcx = [&](size_t begin, size_t count) {
+    SmallVector<size_t> map;
+    map.reserve(numControls + 1);
+    for (size_t control = begin; control < begin + count; ++control) {
+      map.push_back(control);
+    }
+    map.push_back(numControls);
+    // The balanced split provides at least count - 2 dirty helpers. Each
+    // exact MCX restores these opposite controls before the next rotation.
+    for (size_t control = 0; control < numControls; ++control) {
+      if (control < begin || control >= begin + count) {
+        map.push_back(control);
+      }
+    }
+    CircuitPlan plan;
+    appendRemapped(plan, planBorrowedHelperMcx(count), map);
+    return plan;
+  };
+  const CircuitPlan firstHalf = halfMcx(0, k1);
+  const CircuitPlan secondHalf = halfMcx(k1, k2);
+
+  auto quarter =
+      arith::MulFOp::create(builder, loc, rotation.getParameters()[0],
+                            mqt::constantFromScalar(builder, loc, 0.25));
+  auto negativeQuarter = arith::NegFOp::create(builder, loc, quarter);
+  const bool isY = isa<RYOp>(rotation.getOperation());
+  const bool isX = isa<RXOp>(rotation.getOperation());
+  const auto rotate = [&](Value angle) {
+    if (isY) {
+      emitter.ry(numControls, angle);
+    } else {
+      emitter.rz(numControls, angle);
+    }
+  };
+
+  // RX(theta) = H RZ(theta) H. In either remaining axis, the four rotations
+  // sum to theta exactly when both control halves are all ones, else to zero.
+  if (isX) {
+    emitter.h(numControls);
+  }
+  for (size_t repeat = 0; repeat < 2; ++repeat) {
+    lowerPlan(emitter, firstHalf);
+    rotate(negativeQuarter);
+    lowerPlan(emitter, secondHalf);
+    rotate(quarter);
+  }
+  if (isX) {
+    emitter.h(numControls);
+  }
+  return wires;
+}
+
 // Vale + Barenco-relative residual at this MCP width.
 static constexpr size_t K_MCP_VALE_RELATIVE_RESIDUAL_CONTROLS = 4;
 
@@ -1389,6 +1460,17 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
 
     if (op.getNumTargets() != 1) {
       return failure();
+    }
+    if (isa<RXOp, RYOp, RZOp>(inner.getOperation())) {
+      // Verified support operations cannot depend on the body's qubits.
+      // Hoist them so region-local symbolic angles survive the replacement.
+      mqt::hoistSupportingOpsBefore(*op.getBody(), inner.getOperation(), op,
+                                    rewriter);
+      rewriter.setInsertionPoint(op);
+      rewriter.replaceOp(op, synthesizeMultiControlledRotation(
+                                 rewriter, op.getLoc(), op.getControlsIn(),
+                                 op.getInputTarget(0), inner));
+      return success();
     }
     const auto spec = matchControlledTarget(inner);
     if (!spec) {
