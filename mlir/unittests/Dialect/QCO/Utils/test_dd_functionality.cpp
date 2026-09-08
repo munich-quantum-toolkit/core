@@ -1279,17 +1279,28 @@ TEST_F(QCODDFunctionalityTest, SampleUnitaryXIsDeterministic) {
 
 TEST_F(QCODDFunctionalityTest, SamplePreservesDeclaredStaticWidth) {
   constexpr auto index = static_cast<int64_t>(dd::Package::DEFAULT_QUBITS);
-  auto mod = buildModule([index](QCOProgramBuilder& b) {
-    auto q = b.staticQubit(index);
-    b.sink(q);
-    return b.intConstant(0);
-  });
-  ASSERT_TRUE(mod);
+  for (const bool dynamic : {false, true}) {
+    SCOPED_TRACE(dynamic);
+    auto mod = buildModule([index, dynamic](QCOProgramBuilder& b) {
+      auto q = b.staticQubit(index);
+      if (dynamic) {
+        q = b.reset(q);
+      }
+      b.sink(b.x(q));
+      b.sink(b.x(b.staticQubit(0)));
+      return b.intConstant(0);
+    });
+    ASSERT_TRUE(mod);
 
-  const auto histogram = sample(mainFunc(*mod), 8, 1);
-  ASSERT_TRUE(succeeded(histogram));
-  const auto outcome = std::string(static_cast<size_t>(index + 1), '0');
-  EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{outcome, 8}}));
+    std::vector<std::string> orderedShots;
+    const auto histogram =
+        sample(mainFunc(*mod), 8, 1, DDArgumentBindings{}, &orderedShots);
+    ASSERT_TRUE(succeeded(histogram));
+    auto outcome = std::string(static_cast<size_t>(index + 1), '0');
+    outcome.front() = outcome.back() = '1';
+    EXPECT_EQ(*histogram, (std::map<std::string, size_t>{{outcome, 8}}));
+    EXPECT_EQ(orderedShots, std::vector<std::string>(8, outcome));
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, SampleHadamardApproximatelyBalanced) {
@@ -1952,6 +1963,35 @@ TEST_F(QCODDFunctionalityTest, ScfForSnapshotsYieldedInductionValue) {
                                          context.get());
   ASSERT_TRUE(mod);
   expectSimulatesFromZero(mainFunc(*mod), false);
+}
+
+TEST_F(QCODDFunctionalityTest, RepeatedCallsRespectNearestSymbolTable) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @gate(%q: !qco.qubit) -> !qco.qubit {
+        %out = qco.x %q : !qco.qubit -> !qco.qubit
+        return %out : !qco.qubit
+      }
+      module @nested {
+        func.func @gate(%q: !qco.qubit) -> !qco.qubit {
+          %out = qco.h %q : !qco.qubit -> !qco.qubit
+          return %out : !qco.qubit
+        }
+        func.func @main(%q: !qco.qubit) -> !qco.qubit {
+          %a = func.call @gate(%q) : (!qco.qubit) -> !qco.qubit
+          %b = func.call @gate(%a) : (!qco.qubit) -> !qco.qubit
+          %c = func.call @gate(%b) : (!qco.qubit) -> !qco.qubit
+          return %c : !qco.qubit
+        }
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  ASSERT_TRUE(succeeded(verify(*mod)));
+  auto nested = mod->lookupSymbol<ModuleOp>("nested");
+  ASSERT_TRUE(nested);
+  expectEqualToReference(mainFunc(nested), 1, {referenceGate<HOp>({0})});
 }
 
 TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
@@ -2754,6 +2794,50 @@ TEST_F(QCODDFunctionalityTest, StructuredScfAndWhileCarryValues) {
                              referenceGate<ZOp>({0}),
                              referenceGate<XOp>({0}),
                          });
+}
+
+TEST_F(QCODDFunctionalityTest, AllocationPreservesComplexInputAmplitudes) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @scalar(%q: !qco.qubit) {
+        %new = qco.alloc : !qco.qubit
+        qco.sink %new : !qco.qubit
+        qco.sink %q : !qco.qubit
+        return
+      }
+      func.func @tensor(%q: !qco.qubit) {
+        %one = arith.constant 1 : index
+        %new = qtensor.alloc(%one) : tensor<?x!qco.qubit>
+        qtensor.dealloc %new : tensor<?x!qco.qubit>
+        qco.sink %q : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  ASSERT_TRUE(succeeded(verify(*mod)));
+  for (StringRef name : {"scalar", "tensor"}) {
+    SCOPED_TRACE(name.str());
+    dd::Package package(1);
+    const double amplitude = std::sqrt(0.5);
+    const dd::CVec input{{0., amplitude}, amplitude};
+    auto state =
+        simulate(mod->lookupSymbol<func::FuncOp>(name),
+                 dd::makeStateFromVector(input, package), package, rng);
+    ASSERT_TRUE(succeeded(state));
+    const dd::CVec expected{input[0], input[1], 0., 0.};
+    const auto actual = state->getVector();
+    ASSERT_EQ(actual.size(), expected.size());
+    for (size_t i = 0; i < actual.size(); ++i) {
+      EXPECT_NEAR(std::abs(actual[i] - expected[i]), 0., 1e-12);
+    }
+    package.garbageCollect(true);
+    EXPECT_EQ(state->getVector(), actual);
+    package.decRef(*state);
+    package.garbageCollect(true);
+    EXPECT_EQ(package.vUniqueTable.getNumEntries(), 0);
+  }
 }
 
 TEST_F(QCODDFunctionalityTest, DynamicAllocationsAndQTensorBookkeeping) {

@@ -10,6 +10,8 @@
 
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 
+#include "dd/CachedEdge.hpp"
+#include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
@@ -53,6 +55,7 @@
 #include <mlir/Support/WalkResult.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -183,6 +186,7 @@ struct WalkState {
   DenseSet<dd::Qubit>* deferredMeasuredWires = nullptr;
   size_t remainingExecutionSteps = MAX_CONTROL_FLOW_STEPS;
   DenseSet<Operation*> activeCalls;
+  SymbolTableCollection symbols;
 };
 
 using RuntimeValue = std::variant<dd::Qubit, TensorState, Attribute,
@@ -1104,10 +1108,23 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
   }
 
   const size_t first = walk.qubits->numQubits;
-  auto zeros = dd::makeZeroState(count, *walk.dd, first);
-  auto extended = walk.dd->kronecker(zeros, state, first, /*incIdx=*/false);
-  walk.dd->incRef(extended);
-  walk.dd->decRef(zeros);
+  dd::VectorDD extended;
+  if (count == 1 && !state.w.approximatelyZero()) {
+    /// Append a normalized zero wire and preserve the existing root weight.
+    const auto node = walk.dd->makeDDNode(
+        static_cast<dd::Qubit>(first),
+        std::array{
+            dd::vCachedEdge{state.p, dd::ComplexValue{1., 0.}},
+            dd::vCachedEdge::zero(),
+        });
+    extended = {.p = node.p, .w = state.w};
+    walk.dd->incRef(extended);
+  } else {
+    auto zeros = dd::makeZeroState(count, *walk.dd, first);
+    extended = walk.dd->kronecker(zeros, state, first, /*incIdx=*/false);
+    walk.dd->incRef(extended);
+    walk.dd->decRef(zeros);
+  }
   walk.dd->decRef(state);
   state = extended;
 
@@ -1123,6 +1140,7 @@ static FailureOr<TensorSlots> allocateZeroQubits(size_t count, WalkState& walk,
 static LogicalResult checkDeferredMeasurementUse(UnitaryOpInterface unitary,
                                                  WalkState& walk) {
   if (walk.deferredMeasuredWires == nullptr ||
+      walk.deferredMeasuredWires->empty() ||
       isa<BarrierOp>(unitary.getOperation())) {
     return success();
   }
@@ -1476,7 +1494,7 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
         }
       })
       .Case([&](func::CallOp call) -> LogicalResult {
-        auto callee = SymbolTable::lookupNearestSymbolFrom<func::FuncOp>(
+        auto callee = walk.symbols.lookupNearestSymbolFrom<func::FuncOp>(
             call, call.getCalleeAttr());
         if (!callee) {
           return call.emitError() << "func.call callee '" << call.getCallee()
@@ -1878,9 +1896,9 @@ simulateStatevector(func::FuncOp func, dd::Package& dd,
 
 static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
                                             const ClassicalEnv& classical,
-                                            StringRef basis) {
+                                            std::string basis) {
   if (outputs.empty()) {
-    return basis.str();
+    return basis;
   }
   std::string outcome;
   for (Value value : llvm::reverse(outputs)) {
@@ -1929,8 +1947,8 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
   }
 
   const auto record = [&](const ClassicalEnv& classical,
-                          StringRef basis) -> LogicalResult {
-    auto outcome = encodeOutcome(plan->outputs, classical, basis);
+                          std::string basis) -> LogicalResult {
+    auto outcome = encodeOutcome(plan->outputs, classical, std::move(basis));
     if (failed(outcome)) {
       return failure();
     }
@@ -1972,10 +1990,10 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
       return failure();
     }
     const auto guard = llvm::make_scope_exit([&] { dd.decRef(*state); });
-    const std::string basis = plan->outputs.empty()
-                                  ? dd.measureAll(*state, false, rng)
-                                  : std::string{};
-    if (failed(record(classical, basis))) {
+    std::string basis = plan->outputs.empty()
+                            ? dd.measureAll(*state, false, rng)
+                            : std::string{};
+    if (failed(record(classical, std::move(basis)))) {
       return failure();
     }
   }
