@@ -230,11 +230,10 @@ bool QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
 
 bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
                                   bool enableTiming, bool enableStatistics) {
-  attachTargetEnvironment(mod(), environment);
   return succeeded(runQCOTransformPasses(
       mod(),
       [&environment](OpPassManager& pm) {
-        populateTargetCompilationPipeline(pm, environment.target());
+        populateTargetCompilationPipeline(pm, environment);
       },
       "failed to compile the QCO program for the target", enableTiming,
       enableStatistics));

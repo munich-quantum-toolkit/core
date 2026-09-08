@@ -122,13 +122,17 @@ Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` with the target
 environment to apply target compilation to an existing QCO program. Compilation
 runs in place. If a pass fails, the environment and earlier pass changes remain
 on the program. Copy the program before compilation if the caller must preserve
-the input. The target passes read the typed `mqt.target_env` module attribute.
-The mapping, native-synthesis, and conformance factories also work in textual
-MLIR pass pipelines. Target compilation keeps deterministic placement on
-all-to-all targets and uses mapping only for explicit topology. The high-level
-program API registers the required inliner extensions; callers that populate the
-low-level target pipeline directly must register inliner extensions for every
-callable dialect in their context.
+the input. The pipeline takes one `TargetEnvironment`, replaces any existing
+`mqt.target_env` module attribute, and shares the prepared target with all
+target passes without rebuilding its connectivity tables. The selected
+environment must remain unchanged during pipeline execution. Standalone passes
+decode the typed module attribute once through a cached analysis. The mapping,
+native-synthesis, and conformance factories also work in textual MLIR pass
+pipelines. Target compilation keeps deterministic placement on all-to-all
+targets and uses mapping only for explicit topology. The high-level program API
+registers the required inliner extensions; callers that populate the low-level
+target pipeline directly must register inliner extensions for every callable
+dialect in their context.
 
 Target compilation preserves quantum operations even when their final qubit
 values are not measured or returned. This supports measurement-free programs,

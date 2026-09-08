@@ -17,7 +17,6 @@ add_mlir_dialect_library(
   PRIVATE
   LLVMSupport
   MLIRCBitDialect
-  MLIRDLTIDialect
   MLIRFuncDialect
   MLIRIR
   MLIRMemRefDialect

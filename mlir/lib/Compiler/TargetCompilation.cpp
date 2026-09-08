@@ -11,17 +11,46 @@
 #include "mlir/Compiler/TargetCompilation.h"
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 
+#include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <memory>
+#include <utility>
+
 namespace mlir {
+namespace {
+
+class InitializeTargetEnvironmentPass
+    : public PassWrapper<InitializeTargetEnvironmentPass,
+                         OperationPass<ModuleOp>> {
+public:
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(InitializeTargetEnvironmentPass)
+
+  explicit InitializeTargetEnvironmentPass(TargetEnvironment environment)
+      : environment_(std::move(environment)) {}
+
+protected:
+  void runOnOperation() override {
+    getAnalysis<TargetEnvironmentAnalysis>().initialize(environment_);
+    markAnalysesPreserved<TargetEnvironmentAnalysis>();
+  }
+
+private:
+  TargetEnvironment environment_;
+};
+
+} /* namespace */
 
 void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const CompilerTarget& target) {
+                                       const TargetEnvironment& environment) {
+  pm.addPass(std::make_unique<InitializeTargetEnvironmentPass>(environment));
+  const auto& target = environment.target();
   pm.addPass(createInlinerPass());
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createDecomposeMultiControlled(target));

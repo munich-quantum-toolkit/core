@@ -260,8 +260,7 @@ TargetEnvironment::payloadSpecification() const noexcept {
 
 mqt::TargetEnvAttr TargetEnvironment::materialize(MLIRContext& context) const {
   return mqt::TargetEnvAttr::get(&context, target_.materialize(context),
-                                 payloadSpecification_.materialize(context),
-                                 {});
+                                 payloadSpecification_.materialize(context));
 }
 
 void attachTargetEnvironment(ModuleOp moduleOp,
@@ -273,7 +272,20 @@ void attachTargetEnvironment(ModuleOp moduleOp,
 TargetEnvironmentAnalysis::TargetEnvironmentAnalysis(Operation* operation)
     : moduleOp_(cast<ModuleOp>(operation)),
       attribute_(moduleOp_->getAttrOfType<mqt::TargetEnvAttr>(
-          mqt::TargetEnvAttr::name)) {
+          mqt::TargetEnvAttr::name)) {}
+
+void TargetEnvironmentAnalysis::initialize(
+    const TargetEnvironment& environment) {
+  attachTargetEnvironment(moduleOp_, environment);
+  attribute_ = moduleOp_->getAttr(mqt::TargetEnvAttr::name);
+  environment_ = environment;
+  error_.clear();
+}
+
+void TargetEnvironmentAnalysis::resolve() const {
+  if (environment_ || !error_.empty()) {
+    return;
+  }
   if (!attribute_) {
     error_ = "module does not contain mqt.target_env";
     return;
@@ -288,16 +300,19 @@ TargetEnvironmentAnalysis::TargetEnvironmentAnalysis(Operation* operation)
 }
 
 TargetEnvironmentAnalysis::operator bool() const noexcept {
+  resolve();
   return environment_.has_value();
 }
 
 const TargetEnvironment&
 TargetEnvironmentAnalysis::environment() const noexcept {
+  resolve();
   assert(environment_.has_value());
   return *environment_;
 }
 
 llvm::StringRef TargetEnvironmentAnalysis::error() const noexcept {
+  resolve();
   return error_;
 }
 

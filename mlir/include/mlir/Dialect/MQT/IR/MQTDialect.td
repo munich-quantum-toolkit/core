@@ -12,7 +12,6 @@
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/EnumAttr.td"
 include "mlir/IR/OpBase.td"
-include "mlir/Interfaces/DataLayoutInterfaces.td"
 
 def MQTDialect : Dialect {
   let name = "mqt";
@@ -300,12 +299,10 @@ def PayloadSpecAttr : MQTAttr<"PayloadSpec", "payload_spec"> {
   let genVerifyDecl = 1;
 }
 
-def TargetEnvAttr : MQTAttr<"TargetEnv", "target_env", [DLTIQueryInterface]> {
+def TargetEnvAttr : MQTAttr<"TargetEnv", "target_env"> {
   let summary = "Selected compilation and payload specification";
   let description = [{
     Combines typed compiler-target facts with the selected payload contract.
-    Optional DLTI extensions carry provider-specific facts. Direct access to
-    the typed fields is authoritative.
 
     The following environment pairs a one-site target with a producer-defined
     payload:
@@ -322,19 +319,8 @@ def TargetEnvAttr : MQTAttr<"TargetEnv", "target_env", [DLTIQueryInterface]> {
     ```
   }];
   let parameters = (ins "CompilationTargetAttr":$compilation_target,
-      "PayloadSpecAttr":$payload_specification,
-      OptionalParameter<"::mlir::MapAttr">:$extensions);
+      "PayloadSpecAttr":$payload_specification);
   let assemblyFormat = "`<` struct(params) `>`";
-  let genVerifyDecl = 1;
-  let extraClassDeclaration = [{
-    static constexpr ::llvm::StringLiteral kCompilationTargetKey =
-        "mqt.compilation_target";
-    static constexpr ::llvm::StringLiteral kPayloadSpecificationKey =
-        "mqt.payload_specification";
-
-    ::mlir::FailureOr<::mlir::Attribute>
-    query(::mlir::DataLayoutEntryKey key) const;
-  }];
 }
 
 #endif // MLIR_DIALECT_MQT_IR_MQTDIALECT_TD

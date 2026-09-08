@@ -1814,6 +1814,9 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   const auto target = makeSparseUCZTarget(true);
   const auto payload = makePayloadSpecification();
   const TargetEnvironment targetEnvironment(target, payload);
+  /// The supplied environment must replace stale metadata before all passes.
+  attachTargetEnvironment(
+      qco->module(), TargetEnvironment(makeSparseUCZTarget(false), payload));
   ASSERT_TRUE(qco->compileForTarget(targetEnvironment));
 
   auto compiled = parseRecordedModule(qco->str());

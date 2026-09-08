@@ -22,7 +22,6 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/AsmParser/AsmParser.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/DLTI/DLTI.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/IR/Attributes.h>
@@ -32,7 +31,6 @@
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
-#include <mlir/Interfaces/DataLayoutInterfaces.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Support/LLVM.h>
 
@@ -49,9 +47,9 @@ protected:
 
   void SetUp() override {
     DialectRegistry registry;
-    registry.insert<DLTIDialect, arith::ArithDialect, cbit::CBitDialect,
-                    func::FuncDialect, memref::MemRefDialect, mqt::MQTDialect,
-                    qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect>();
+    registry.insert<arith::ArithDialect, cbit::CBitDialect, func::FuncDialect,
+                    memref::MemRefDialect, mqt::MQTDialect, qc::QCDialect,
+                    qco::QCODialect, qtensor::QTensorDialect>();
     context = std::make_unique<MLIRContext>(registry);
     context->loadAllAvailableDialects();
   }
@@ -744,8 +742,7 @@ TEST_F(MQTIRTest, RoundTripsTypedTargetEnvironment) {
                   version = "4.2.0", profile = "dynamic", encoding = binary>,
               capabilities = [<id = "integer-computation", value = 64,
                   constraints = [<id = "max-control-flow-depth", value = 8>]>],
-              optional_capabilities_known = false>,
-          extensions = #dlti.map<"vendor.queue_depth" = 8 : i64>>
+              optional_capabilities_known = false>>
     } {
       func.func @main() { return }
     }
@@ -786,21 +783,6 @@ TEST_F(MQTIRTest, RoundTripsTypedTargetEnvironment) {
   ASSERT_EQ(
       payloadSpecification.getCapabilities().front().getConstraints().size(),
       1U);
-
-  auto query = cast<DLTIQueryInterface>(targetEnv);
-  auto targetResult = query.query(StringAttr::get(
-      context.get(), mqt::TargetEnvAttr::kCompilationTargetKey));
-  ASSERT_TRUE(succeeded(targetResult));
-  EXPECT_EQ(*targetResult, compilationTarget);
-  auto payloadResult = query.query(StringAttr::get(
-      context.get(), mqt::TargetEnvAttr::kPayloadSpecificationKey));
-  ASSERT_TRUE(succeeded(payloadResult));
-  EXPECT_EQ(*payloadResult, payloadSpecification);
-  auto extensionResult =
-      query.query(StringAttr::get(context.get(), "vendor.queue_depth"));
-  ASSERT_TRUE(succeeded(extensionResult));
-  EXPECT_EQ(cast<IntegerAttr>(*extensionResult).getInt(), 8);
-  EXPECT_TRUE(failed(query.query(IntegerType::get(context.get(), 32))));
 
   const auto reparsed = roundTrip(*moduleOp);
   ASSERT_TRUE(reparsed);
@@ -845,27 +827,6 @@ TEST_F(MQTIRTest, RejectsInvalidPayloadContracts) {
       capabilities = [<id = "loops", value = 1, constraints = []>,
                       <id = "loops", value = 1, constraints = []>],
       optional_capabilities_known = true>)mlir"));
-}
-
-TEST_F(MQTIRTest, RejectsInvalidTargetEnvironmentExtensions) {
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.target_env<
-      compilation_target = #mqt.compilation_target<
-          sites = [<id = 0>], connectivity = all_to_all, couplings = [],
-          native_operations = unrestricted, operations = []>,
-      payload_specification = #mqt.payload_spec<
-          format = #mqt.payload_format<id = "qir", version = "2.1.0",
-              profile = "base", encoding = binary>, capabilities = [],
-          optional_capabilities_known = false>,
-      extensions = #dlti.map<"unnamespaced" = 1 : i64>>)mlir"));
-  EXPECT_FALSE(parseAttr(R"mlir(#mqt.target_env<
-      compilation_target = #mqt.compilation_target<
-          sites = [<id = 0>], connectivity = all_to_all, couplings = [],
-          native_operations = unrestricted, operations = []>,
-      payload_specification = #mqt.payload_spec<
-          format = #mqt.payload_format<id = "qir", version = "2.1.0",
-              profile = "base", encoding = binary>, capabilities = [],
-          optional_capabilities_known = false>,
-      extensions = #dlti.map<"mqt.payload_specification" = 1 : i64>>)mlir"));
 }
 
 TEST_F(MQTIRTest, RejectsTargetEnvironmentOutsideModule) {

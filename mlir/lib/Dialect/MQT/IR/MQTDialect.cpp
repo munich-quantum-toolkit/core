@@ -27,7 +27,6 @@
 #include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
 #include <llvm/Support/Casting.h>
 #include <llvm/Support/VersionTuple.h>
-#include <mlir/Dialect/DLTI/DLTI.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -40,7 +39,6 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Verifier.h>
-#include <mlir/Interfaces/DataLayoutInterfaces.h>
 #include <mlir/Interfaces/FunctionInterfaces.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
@@ -368,59 +366,6 @@ LogicalResult CompilationTargetAttr::verify(
            << "compiler target timing metadata requires a duration unit";
   }
   return success();
-}
-
-[[nodiscard]] static bool isNamespacedExtensionKey(const StringRef key) {
-  SmallVector<StringRef, 4> components;
-  key.split(components, '.');
-  return components.size() > 1 &&
-         llvm::none_of(components, [](const StringRef component) {
-           return component.empty();
-         });
-}
-
-LogicalResult
-TargetEnvAttr::verify(const function_ref<InFlightDiagnostic()> emitError,
-                      const CompilationTargetAttr /*compilationTarget*/,
-                      const PayloadSpecAttr /*payloadSpecification*/,
-                      const MapAttr extensions) {
-  if (!extensions) {
-    return success();
-  }
-  for (const DataLayoutEntryInterface entry : extensions.getEntries()) {
-    const auto key = entry.getKey().dyn_cast<StringAttr>();
-    if (!key) {
-      return emitError()
-             << "target environment extension keys must be identifiers";
-    }
-    const auto value = key.getValue();
-    if (!isNamespacedExtensionKey(value)) {
-      return emitError() << "target environment extension key '" << value
-                         << "' must be provider or dialect namespaced";
-    }
-    if (value == kCompilationTargetKey || value == kPayloadSpecificationKey) {
-      return emitError() << "target environment extension key '" << value
-                         << "' is reserved by MQT";
-    }
-  }
-  return success();
-}
-
-FailureOr<Attribute> TargetEnvAttr::query(const DataLayoutEntryKey key) const {
-  const auto identifier = key.dyn_cast<StringAttr>();
-  if (!identifier) {
-    return failure();
-  }
-  if (identifier.getValue() == kCompilationTargetKey) {
-    return getCompilationTarget();
-  }
-  if (identifier.getValue() == kPayloadSpecificationKey) {
-    return getPayloadSpecification();
-  }
-  if (MapAttr extensions = getExtensions()) {
-    return extensions.query(key);
-  }
-  return failure();
 }
 
 [[nodiscard]] static LogicalResult

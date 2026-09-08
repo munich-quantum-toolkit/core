@@ -13,7 +13,6 @@ target_link_libraries(
   PRIVATE GTest::gtest_main
           MLIRArithDialect
           MLIRCBitDialect
-          MLIRDLTIDialect
           MLIRFuncDialect
           MLIRMemRefDialect
           MLIRMQTDialect

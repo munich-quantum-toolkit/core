@@ -209,6 +209,41 @@ TEST(PayloadSpecificationTest, NormalizesTypedVersionShorthand) {
             "2.1.0");
 }
 
+TEST(TargetEnvironmentTest, ReusesPreparedTargetStorage) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  mlir::OwningOpRef moduleOp =
+      mlir::ModuleOp::create(mlir::UnknownLoc::get(&context));
+  const auto target =
+      valid(Target::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                           NativeOperations::unrestricted()));
+  const mlir::TargetEnvironment environment(
+      target, valid(mlir::PayloadSpecification::create(
+                  {.id = "qir", .version = "2.1.0", .profile = "base"})));
+  mlir::ModuleAnalysisManager moduleAnalysisManager(moduleOp.get(), nullptr);
+  mlir::AnalysisManager analysisManager = moduleAnalysisManager;
+  auto& analysis =
+      analysisManager.getAnalysis<mlir::TargetEnvironmentAnalysis>();
+  analysis.initialize(environment);
+  ASSERT_TRUE(analysis);
+  EXPECT_EQ(analysis.environment().target().sites().data(),
+            target.sites().data());
+  EXPECT_EQ(analysis.environment().target().couplings().data(),
+            target.couplings().data());
+  EXPECT_EQ((*moduleOp)->getAttr(mlir::mqt::TargetEnvAttr::name),
+            environment.materialize(context));
+  mlir::AnalysisManager::PreservedAnalyses preserved;
+  analysisManager.invalidate(preserved);
+  ASSERT_TRUE(
+      analysisManager.getCachedAnalysis<mlir::TargetEnvironmentAnalysis>());
+  EXPECT_EQ(analysisManager.getAnalysis<mlir::TargetEnvironmentAnalysis>()
+                .environment()
+                .target()
+                .sites()
+                .data(),
+            target.sites().data());
+}
+
 TEST(TargetEnvironmentTest, InvalidatesCachedAnalysisAfterAttributeChange) {
   mlir::MLIRContext context;
   context.loadDialect<mlir::mqt::MQTDialect>();

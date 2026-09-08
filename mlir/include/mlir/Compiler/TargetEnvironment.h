@@ -143,6 +143,9 @@ class TargetEnvironmentAnalysis {
 public:
   explicit TargetEnvironmentAnalysis(Operation* operation);
 
+  /// Attach and cache a prepared environment without rebuilding its target.
+  void initialize(const TargetEnvironment& environment);
+
   /// Return whether the module contains a valid target environment.
   [[nodiscard]] explicit operator bool() const noexcept;
 
@@ -157,10 +160,13 @@ public:
   isInvalidated(const AnalysisManager::PreservedAnalyses& analyses) const;
 
 private:
+  /// Decode IR only when no prepared environment was supplied.
+  void resolve() const;
+
   ModuleOp moduleOp_;
   Attribute attribute_;
-  std::optional<TargetEnvironment> environment_;
-  std::string error_;
+  mutable std::optional<TargetEnvironment> environment_;
+  mutable std::string error_;
 };
 
 } // namespace mlir

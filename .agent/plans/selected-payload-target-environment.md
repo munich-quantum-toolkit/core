@@ -1,7 +1,6 @@
 # Independent compiler capability prototype
 
-Status: independently rebased and locally validated; ready for human contract
-review.
+Status: implemented.
 
 ## Scope and release boundary
 
@@ -27,8 +26,11 @@ The canonical pipeline keeps target-aware decomposition and deterministic
 placement for all-to-all connectivity, with routing only for explicit graphs.
 Mapping, native synthesis, and conformance consume the validated module
 environment through MLIR's analysis manager. Placement and decomposition retain
-their current target-taking factories. The pipeline builder receives the same
-validated target that was attached to the module.
+their current target-taking factories. The pipeline builder receives the
+selected environment, attaches it at entry, and seeds the analysis with its
+prepared target. Standalone passes decode the module attribute on demand. The
+environment is immutable during compilation. The typed pair has no unused DLTI
+extension or query layer.
 
 ## Implementation
 
@@ -54,3 +56,15 @@ The prior capability-snapshot validation passed the release build and 3,879
 native tests, with one existing optional-device skip. All 558 targeted Python
 tests passed with the superconducting reference device enabled. Stub generation
 and C++ lint passed.
+
+## Audit decisions and validation
+
+The selected environment is the pipeline's only input. Its initialization pass
+attaches the typed pair and seeds the analysis with the prepared immutable
+target; standalone passes decode IR on demand. Regression tests cover shared
+target storage, cache retention and invalidation, and replacement of stale
+metadata. The unused DLTI extension and query layer is removed.
+
+The optimized native build passed all 3,204 configured tests, with one existing
+optional-device skip. Repository lint passed. C++ lint covers whole changed
+files in the PR diff.

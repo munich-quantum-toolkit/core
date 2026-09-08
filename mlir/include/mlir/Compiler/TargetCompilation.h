@@ -12,7 +12,7 @@
 
 namespace mlir {
 
-class CompilerTarget;
+class TargetEnvironment;
 class OpPassManager;
 
 /// Populate the canonical compiler-target pipeline.
@@ -22,10 +22,10 @@ class OpPassManager;
 /// synthesizes native operations, performs a final local cleanup, and verifies
 /// target conformance. The context that runs this low-level pipeline must
 /// register inliner extensions for its callable dialects.
-/// The input module must have an attached `mqt.target_env` whose compiler
-/// target matches `target`. Use `attachTargetEnvironment` before running the
-/// pipeline.
+/// The supplied environment is authoritative: the pipeline attaches it to the
+/// module and shares its prepared target with every target-dependent pass.
+/// The environment must remain unchanged during pipeline execution.
 void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const CompilerTarget& target);
+                                       const TargetEnvironment& environment);
 
 } // namespace mlir
