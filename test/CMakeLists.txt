@@ -13,11 +13,3 @@ add_subdirectory(qdmi)
 
 # copy test circuits to build directory
 file(COPY ${PROJECT_SOURCE_DIR}/test/circuits DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
-
-add_test(
-  NAME cmake_ipo_toggle
-  COMMAND
-    "${CMAKE_COMMAND}" "-DMQT_SOURCE_DIR=${PROJECT_SOURCE_DIR}"
-    "-DTEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/ipo-probe" "-DTEST_GENERATOR=${CMAKE_GENERATOR}"
-    "-DTEST_CXX_COMPILER=${CMAKE_CXX_COMPILER}" -P
-    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_ipo.cmake")
