@@ -528,8 +528,10 @@ TEST_F(TargetSynthesisTest, SqrtISwapCapabilityRequiresFixedParameters) {
 TEST_F(TargetSynthesisTest, SqrtISwapCapabilityHonorsPlacement) {
   const auto target = valid(Target::create(
       2, Connectivity::allToAll(),
-      NativeOperations::fromOperations({valid(Operation::create(
-          "sqrt_iswap", 2, 0, {valid(Target::SiteTuple::create({0, 1}))}))})));
+      NativeOperations::fromOperations({
+          valid(Operation::create("sqrt_iswap", 2, 0,
+                                  {valid(Target::SiteTuple::create({0, 1}))})),
+      })));
   auto program = build([](QCOProgramBuilder& builder) {
     [[maybe_unused]] auto [q0, q1] =
         builder.xx_plus_yy(-std::numbers::pi / 2., 0., builder.staticQubit(0),
