@@ -245,19 +245,3 @@ and creates a canonical physical Qiskit circuit. The circuit has one register
 named {code}`q` with {py:attr}`~mqt.core.mlir.CompilerTarget.num_sites` qubits.
 This option does not run target compilation or emit Qiskit layout metadata.
 Target-aware export requires static qubits whose site IDs belong to that target.
-
-## Square-root iSWAP targets
-
-The fixed operation `sqrt_iswap` has arity two and zero parameters. Pair it with
-a supported single-qubit basis, such as `u`. The compiler emits
-`xx_plus_yy(-pi/2, 0)` for this capability and checks its ordered placement.
-Other parameter values do not satisfy the fixed capability. Existing entangler
-preferences take precedence when the target exposes multiple entanglers.
-
-For one numeric 4x4 unitary, synthesis minimizes the number of square-root iSWAP
-gates (zero to three), within the Weyl interaction tolerance, and preserves
-local factors and global phase. This does not guarantee a minimum count for a
-whole program. The target pipeline skips generic CX/CZ-cost fusion when
-square-root iSWAP is the selected entangler, because that fusion can increase
-the final native gate count. Target-aware fusion costs are required before
-enabling that optimization for this basis.
