@@ -79,6 +79,14 @@ that an old API still exists or a follow-up was resolved. Reconcile remote
 status only when it matters to the task; do not turn document cleanup into CI
 monitoring.
 
+## Performance evidence
+
+For a performance change, identify the workload, baseline, correctness checks,
+and relevant quality measures before implementation. Follow the
+[benchmark experiment rules](../AGENTS.md#benchmark-experiments), and link the
+self-contained `.agents/benchmarks/<scope>/` record from the plan. Keep the
+measured result and its limits in the completed decision record.
+
 ## Validation
 
 Use repository build and test entry points. Record the focused command, the

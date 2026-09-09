@@ -17,7 +17,7 @@ regions already have single-block verifiers; the entry-function restriction is
 checked by mapping. No payload capability checks were duplicated.
 
 The optional mapping benchmark and its data, figure, and reproduction steps are
-in `.agent/benchmarks/routing/README.md`. Identical mapped-IR hashes and SWAP
+in `.agents/benchmarks/routing/README.md`. Identical mapped-IR hashes and SWAP
 counts accompany a 1.56–1.82 times speedup for unchanged branch layouts. The
 routing workload is essentially unchanged. Graph measurements are synthetic.
 
@@ -35,3 +35,12 @@ combined compiler suite passed 193 of 195 tests. Its two failing tests,
 allocate qubits outside the entry block. Both failures were reproduced with the
 routing changes removed, before the mapping pass runs. Updating those #2162
 inputs is outside this PR's scope.
+
+The benchmark is self-contained under `.agents/benchmarks/routing/`, including
+an explicit CMake hook. It builds against baseline and candidate checkouts
+without source-tree edits or test targets. Relocation checks matched all 45
+outputs per revision to the recorded hashes and SWAP counts; a candidate build
+with tests disabled and a normal build without the benchmark target verified
+isolation. The collection and plotting scripts were exercised separately from
+the preserved historical timing data. Shared benchmark rules live in
+`AGENTS.md`, with links from the plan and audit guides.

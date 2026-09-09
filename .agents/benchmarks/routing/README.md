@@ -1,8 +1,10 @@
 # Routing cleanup benchmarks
 
 Compare upstream main `91a9e0ba514af938680cdd394d6d63195872dc9a` with the
-routing changes in this PR. The same benchmark source and build settings were
-used for both executables.
+routing changes at `c38c99cf3a8974abf1b8967bb94648f2e49e2271`. The same
+benchmark source and build settings were used for both executables. The recorded
+results predate the relocation of this harness; relocation validation checks
+output equivalence without replacing those timing samples.
 
 ![Before and after routing cleanup](before-after.png)
 
@@ -52,19 +54,27 @@ the recorded measurement run.
 
 ## Reproduce
 
-The optional executable lives under
-`mlir/unittests/Dialect/QCO/Transforms/Mapping/benchmark_mapping.cpp`. It is
-excluded from the default build and from CTest.
+All benchmark source, build integration, scripts, raw samples, and plots live in
+this directory. The CMake top-level include adds the optional target after MQT
+Core defines its libraries. Normal builds and CTest do not include it. No
+source-tree edits or benchmark copies into the baseline are needed.
 
-Create a detached checkout at the baseline and copy only the benchmark source
-and its CMake target into that checkout. Configure both checkouts with the same
-compiler and dependency versions:
+Create separate checkouts for the baseline and candidate. For each checkout,
+configure an isolated build directory with the same compiler and dependencies.
+Use the **same absolute path** to this benchmark's `enable.cmake` for both:
 
 ```sh
-cmake --preset release -DBUILD_MQT_CORE_MLIR=ON -DBUILD_MQT_CORE_TESTS=ON \
-  -DBUILD_MQT_CORE_BINDINGS=OFF -DCMAKE_INTERPROCEDURAL_OPTIMIZATION=OFF
-cmake --build --preset release --target mqt-core-mlir-benchmark-mapping
+cmake -S /path/to/checkout -B /path/to/build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release -DENABLE_IPO=OFF \
+  -DBUILD_MQT_CORE_MLIR=ON -DBUILD_MQT_CORE_TESTS=OFF \
+  -DBUILD_MQT_CORE_BINDINGS=OFF \
+  -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/absolute/path/to/.agents/benchmarks/routing/enable.cmake
+cmake --build /path/to/build --target mqt-core-mlir-benchmark-mapping
 ```
+
+The executable is
+`/path/to/build/routing-benchmark/mqt-core-mlir-benchmark-mapping` (on
+multi-configuration generators, also select and use the Release directory).
 
 Copy the resulting executables to distinct paths before rebuilding either
 checkout. From this directory, collect and render the results:

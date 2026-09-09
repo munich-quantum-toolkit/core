@@ -23,8 +23,3 @@ target_link_libraries(
 mqt_mlir_configure_unittest_target(${target_name})
 
 gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
-
-add_executable(mqt-core-mlir-benchmark-mapping EXCLUDE_FROM_ALL benchmark_mapping.cpp)
-target_link_libraries(mqt-core-mlir-benchmark-mapping PRIVATE MLIRQCOProgramBuilder
-                                                              MLIRQCOTransforms MQTCompilerTarget)
-mqt_mlir_configure_unittest_target(mqt-core-mlir-benchmark-mapping)

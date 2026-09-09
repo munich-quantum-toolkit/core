@@ -14,14 +14,14 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Graph.h"
 
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
-#include <llvm/Support/xxhash.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -35,7 +35,7 @@
 
 #include <chrono>
 #include <cstddef>
-#include <cstdint>
+#include <ratio>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -45,11 +45,13 @@ using namespace mlir;
 using namespace mlir::qco;
 using Clock = std::chrono::steady_clock;
 
-static CompilerTarget grid(size_t side) {
+namespace {
+
+CompilerTarget grid(size_t side) {
   std::vector<CompilerTarget::Coupling> edges;
   for (size_t row = 0; row < side; ++row) {
     for (size_t col = 0; col < side; ++col) {
-      const auto vertex = row * side + col;
+      const auto vertex = (row * side) + col;
       if (col + 1 < side) {
         edges.emplace_back(vertex, vertex + 1);
       }
@@ -63,7 +65,7 @@ static CompilerTarget grid(size_t side) {
       CompilerTarget::NativeOperations::unrestricted()));
 }
 
-static OwningOpRef<ModuleOp> circuit(MLIRContext& context, bool conditional) {
+OwningOpRef<ModuleOp> circuit(MLIRContext& context, bool conditional) {
   QCOProgramBuilder builder(&context);
   builder.initialize();
   SmallVector<Value> qubits;
@@ -80,16 +82,16 @@ static OwningOpRef<ModuleOp> circuit(MLIRContext& context, bool conditional) {
   } else {
     for (size_t layer = 0; layer < 8; ++layer) {
       for (size_t i = 0; i < qubits.size(); ++i) {
-        const auto j = (i + 1 + layer % 3) % qubits.size();
+        const auto j = (i + 1 + (layer % 3)) % qubits.size();
         std::tie(qubits[i], qubits[j]) = builder.cx(qubits[i], qubits[j]);
       }
     }
   }
-  for (Value qubit : qubits) {
-    builder.sink(qubit);
-  }
+  llvm::for_each(qubits, [&](Value qubit) { builder.sink(qubit); });
   return builder.finalize();
 }
+
+} // namespace
 
 /// CSV times cover only pass execution; cloning, printing, and verification
 /// are outside the timed interval. Every run reports a deterministic IR hash.
@@ -104,8 +106,8 @@ int main() {
   const auto payload =
       llvm::cantFail(PayloadSpecification::create(std::move(format)));
   llvm::outs() << "workload,size,sample,milliseconds,swaps,hash\n";
-  for (bool conditional : {true, false}) {
-    for (size_t side : {4U, 8U, 16U}) {
+  for (const bool conditional : {true, false}) {
+    for (const size_t side : {4U, 8U, 16U}) {
       auto input = circuit(context, conditional);
       attachTargetEnvironment(*input, TargetEnvironment(grid(side), payload));
       if (failed(verify(*input))) {
@@ -138,7 +140,7 @@ int main() {
       }
     }
   }
-  for (size_t size : {128U, 512U, 2048U}) {
+  for (const size_t size : {128U, 512U, 2048U}) {
     SmallVector<size_t> nodes;
     for (size_t i = 0; i < size; ++i) {
       nodes.push_back(i);
