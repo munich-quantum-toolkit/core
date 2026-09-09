@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "dd/Package.hpp"
 #include "dd/Package_fwd.hpp"
 
 #include <llvm/ADT/DenseMap.h>
@@ -21,6 +22,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <random>
 #include <string>
 #include <vector>
@@ -32,6 +34,13 @@ namespace mlir::qco {
 /// Values must be integer, index, or `f64` attributes. An index value sets the
 /// size of a dynamic one-dimensional QTensor argument.
 using DDArgumentBindings = DenseMap<Value, Attribute>;
+
+/// An uncollapsed sampling state and the package that owns its DD nodes.
+/// A null package means that sampling did not retain a state.
+struct DDSamplingState {
+  std::unique_ptr<dd::Package> dd;
+  dd::VectorDD state{};
+};
 
 /// Build a matrix DD for a unitary QCO function.
 ///
@@ -110,9 +119,12 @@ FailureOr<dd::VectorDD> simulateStatevector(
 /// @param argumentBindings Scalar values and dynamic QTensor argument sizes.
 /// @param shotResults Optional output, cleared then filled in sampling order.
 /// On failure, it may contain an incomplete sequence.
+/// @param retainedState Optional output, cleared before sampling and populated
+/// only after successful terminal sampling. It owns the uncollapsed state.
 /// @return Outcome counts, or failure for an unsupported program.
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed = 0,
        const DDArgumentBindings& argumentBindings = DDArgumentBindings(),
-       std::vector<std::string>* shotResults = nullptr);
+       std::vector<std::string>* shotResults = nullptr,
+       DDSamplingState* retainedState = nullptr);
 } // namespace mlir::qco

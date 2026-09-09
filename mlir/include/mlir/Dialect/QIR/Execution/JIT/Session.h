@@ -89,7 +89,11 @@ public:
   /// sampled. Other programs execute normally for every shot. State-extraction
   /// sessions cannot be sampled. The supplied vector is replaced, including for
   /// zero shots.
-  int64_t sample(size_t shots, std::vector<std::string>& results);
+  /// If supplied, stateAvailable is set only when successful terminal sampling
+  /// leaves an uncollapsed state. The caller may then use runtime().takeState()
+  /// before executing the session again.
+  int64_t sample(size_t shots, std::vector<std::string>& results,
+                 bool* stateAvailable = nullptr);
 
   [[nodiscard]] auto runtime() -> Runtime&;
 

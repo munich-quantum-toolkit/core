@@ -534,14 +534,17 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQASMProgramSampling()
       std::cerr << "Error: QCO program has no entry point\n";
       return false;
     }
-    auto counts = mlir::qco::sample(entryPoint, numShots_,
-                                    static_cast<uint64_t>(seed_.value_or(0)),
-                                    mlir::qco::DDArgumentBindings{}, &shots_);
+    mlir::qco::DDSamplingState retainedState;
+    auto counts = mlir::qco::sample(
+        entryPoint, numShots_, static_cast<uint64_t>(seed_.value_or(0)),
+        mlir::qco::DDArgumentBindings{}, &shots_, &retainedState);
     if (mlir::failed(counts)) {
       std::cerr << "Error: failed to sample the QCO program\n";
       return false;
     }
     counts_ = std::move(*counts);
+    dd_ = std::move(retainedState.dd);
+    stateVecDD_ = retainedState.state;
     return true;
   });
 }
@@ -587,12 +590,19 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
     auto jitSession =
         qir::JitSession(irBytes, "QDMI job", qir::Execution::Sampling, seed);
     jitSession.runtime().disableOutput();
-    if (const auto rc = jitSession.sample(numShots_, shots_); rc != 0) {
+    bool stateAvailable = false;
+    if (const auto rc = jitSession.sample(numShots_, shots_, &stateAvailable);
+        rc != 0) {
       std::cerr << "Error: QIR program failed with error: " << rc << '\n';
       return false;
     }
     for (const auto& shot : shots_) {
       ++counts_[shot];
+    }
+    if (stateAvailable) {
+      auto state = jitSession.runtime().takeState();
+      dd_ = std::move(state.dd);
+      stateVecDD_ = state.edge;
     }
     return true;
   });
@@ -761,10 +771,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
                                                       void* data,
                                                       size_t* sizeRet)
     -> QDMI_STATUS {
-  if (stateVecDD_.isTerminal()) {
-    return reportEmptyResult(sizeRet);
-  }
-  const auto numQubits = static_cast<size_t>(stateVecDD_.p->v) + 1;
+  const auto numQubits = stateVecDD_.isTerminal()
+                             ? 0U
+                             : static_cast<size_t>(stateVecDD_.p->v) + 1U;
   constexpr size_t elementSize = 2 * sizeof(double);
   if (numQubits >= std::numeric_limits<size_t>::digits ||
       (std::numeric_limits<size_t>::max() >> numQubits) < elementSize) {
@@ -791,12 +800,11 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
     const QDMI_Job_Result result, const size_t size, void* data,
     size_t* sizeRet) -> QDMI_STATUS {
-  if (stateVecDD_.isTerminal()) {
-    return reportEmptyResult(sizeRet);
-  }
   std::call_once(stateVecSparseOnce_,
                  [this] { stateVecSparse_ = stateVecDD_.getSparseVector(); });
-  const size_t numQubits = static_cast<size_t>(stateVecDD_.p->v) + 1U;
+  const auto numQubits = stateVecDD_.isTerminal()
+                             ? 0U
+                             : static_cast<size_t>(stateVecDD_.p->v) + 1U;
   switch (result) {
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS:
   case QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS: {
@@ -869,10 +877,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProbabilities(const size_t size,
                                                         void* data,
                                                         size_t* sizeRet)
     -> QDMI_STATUS {
-  if (stateVecDD_.isTerminal()) {
-    return reportEmptyResult(sizeRet);
-  }
-  const auto numQubits = static_cast<size_t>(stateVecDD_.p->v) + 1;
+  const auto numQubits = stateVecDD_.isTerminal()
+                             ? 0U
+                             : static_cast<size_t>(stateVecDD_.p->v) + 1U;
   constexpr size_t elementSize = sizeof(double);
   if (numQubits >= std::numeric_limits<size_t>::digits ||
       (std::numeric_limits<size_t>::max() >> numQubits) < elementSize) {
@@ -924,21 +931,21 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
     }
     return getHistogram(result, size, data, sizeRet);
   case QDMI_JOB_RESULT_STATEVECTOR_DENSE:
-    if (numShots_ > 0) {
-      return QDMI_ERROR_INVALIDARGUMENT;
+    if (!dd_) {
+      return QDMI_ERROR_NOTSUPPORTED;
     }
     return getStateVector(size, data, sizeRet);
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS:
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES:
   case QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS:
   case QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES:
-    if (numShots_ > 0) {
-      return QDMI_ERROR_INVALIDARGUMENT;
+    if (!dd_) {
+      return QDMI_ERROR_NOTSUPPORTED;
     }
     return getSparseResults(result, size, data, sizeRet);
   case QDMI_JOB_RESULT_PROBABILITIES_DENSE:
-    if (numShots_ > 0) {
-      return QDMI_ERROR_INVALIDARGUMENT;
+    if (!dd_) {
+      return QDMI_ERROR_NOTSUPPORTED;
     }
     return getProbabilities(size, data, sizeRet);
   default:

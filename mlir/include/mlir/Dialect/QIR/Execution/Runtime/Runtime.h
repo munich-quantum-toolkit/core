@@ -220,8 +220,8 @@ public:
 
   /// Move the quantum state out of the runtime.
   /// Then reset the runtime to a clean state ready for the next job.
-  /// Intended for use after a @c JitSession constructed with
-  /// @c Execution::StateExtraction has finished running.
+  /// Intended for use after state extraction or successful terminal sampling
+  /// that reported an available uncollapsed state.
   /// @returns the moved @c QState from the runtime.
   auto takeState() -> QState;
 

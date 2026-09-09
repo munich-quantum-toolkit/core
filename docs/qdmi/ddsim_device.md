@@ -31,6 +31,15 @@ i.e., compute a representation of the full state vector. Set the
 `QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` parameter to the desired number of shots
 for weak simulation or to `0` for strong simulation.
 
+Sampling jobs also retain an uncollapsed state when the existing terminal
+sampling path prepares one state for all shots. Such jobs provide statevector
+and probability results alongside shots and counts. Dense and sparse vectors are
+materialized only when queried; queries do not rerun simulation or change the
+samples. Jobs that execute separately for each shot do not expose their last
+trajectory as a statevector and return `QDMI_ERROR_NOTSUPPORTED` for state
+queries. Zero-shot extraction remains useful for eligible programs outside the
+terminal-sampling fast path.
+
 State extraction defers terminal measurements without collapsing the returned
 state. Measurement-dependent computation, resets and subsequent operations on
 measured wires are unsupported. Adaptive QIR may still execute classical loops,

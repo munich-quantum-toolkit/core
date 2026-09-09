@@ -1926,7 +1926,8 @@ static FailureOr<std::string> encodeOutcome(ArrayRef<Value> outputs,
 static FailureOr<std::map<std::string, size_t>>
 sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
            size_t shots, std::mt19937_64& rng, const PreparedState& prepared,
-           std::vector<std::string>* shotResults) {
+           std::vector<std::string>* shotResults,
+           std::optional<dd::VectorDD>* retainedState) {
   const auto inputGuard = llvm::make_scope_exit([&] { dd.decRef(in); });
   auto plan = getSamplingPlan(func);
   if (failed(plan)) {
@@ -1974,6 +1975,10 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
           return failure();
         }
       }
+      if (retainedState != nullptr) {
+        *retainedState = *state;
+        dd.incRef(*state);
+      }
       return counts;
     }
     if (deferredMeasurementUse == nullptr) {
@@ -2003,7 +2008,10 @@ sampleImpl(func::FuncOp func, const dd::VectorDD& in, dd::Package& dd,
 FailureOr<std::map<std::string, size_t>>
 sample(func::FuncOp func, size_t shots, uint64_t seed,
        const DDArgumentBindings& argumentBindings,
-       std::vector<std::string>* shotResults) {
+       std::vector<std::string>* shotResults, DDSamplingState* retainedState) {
+  if (retainedState != nullptr) {
+    *retainedState = {};
+  }
   if (shotResults != nullptr) {
     shotResults->clear();
     shotResults->reserve(shots);
@@ -2014,8 +2022,15 @@ sample(func::FuncOp func, size_t shots, uint64_t seed,
   if (failed(prepared)) {
     return failure();
   }
-  return sampleImpl(func, dd::makeZeroState(prepared->qubits.numQubits, *dd),
-                    *dd, shots, rng, *prepared, shotResults);
+  std::optional<dd::VectorDD> state;
+  auto counts = sampleImpl(
+      func, dd::makeZeroState(prepared->qubits.numQubits, *dd), *dd, shots, rng,
+      *prepared, shotResults, retainedState != nullptr ? &state : nullptr);
+  if (succeeded(counts) && state && retainedState != nullptr) {
+    retainedState->state = *state;
+    retainedState->dd = std::move(dd);
+  }
+  return counts;
 }
 
 } // namespace mlir::qco

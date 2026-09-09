@@ -398,7 +398,11 @@ int64_t JitSession::run() {
   return code;
 }
 
-int64_t JitSession::sample(size_t shots, std::vector<std::string>& results) {
+int64_t JitSession::sample(size_t shots, std::vector<std::string>& results,
+                           bool* stateAvailable) {
+  if (stateAvailable != nullptr) {
+    *stateAvailable = false;
+  }
   if (execution_ != Execution::Sampling) {
     throw std::logic_error("Cannot sample a QIR state-extraction session");
   }
@@ -422,6 +426,9 @@ int64_t JitSession::sample(size_t shots, std::vector<std::string>& results) {
       return code;
     }
     runtime_->sampleMeasurements(*samplingOutputs_, shots, results);
+    if (stateAvailable != nullptr) {
+      *stateAvailable = true;
+    }
     return 0;
   }
   for (size_t i = 0; i < shots; ++i) {

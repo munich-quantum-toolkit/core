@@ -94,7 +94,9 @@ releases may include breaking changes.
 #### Other additions
 
 - ✨ Support DDSIM QDMI statevector extraction for Adaptive Profile QIR with
-  classical control flow, dynamic allocation, and terminal measurements.
+  classical control flow, dynamic allocation, and terminal measurements. Retain
+  the uncollapsed state after eligible OpenQASM and QIR sampling for lazy
+  statevector and probability queries ([#2494]) ([**@burgholzer**]).
 - ✨ Expose ordered shots from DDSIM QDMI QIR jobs, with matching histograms
   ([#2368]) ([**@burgholzer**])
 - 🐳 Add dev container configuration for a consistent local development
@@ -931,6 +933,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2494]: https://github.com/munich-quantum-toolkit/core/pull/2494
 [#2493]: https://github.com/munich-quantum-toolkit/core/pull/2493
 [#2478]: https://github.com/munich-quantum-toolkit/core/pull/2478
 [#2468]: https://github.com/munich-quantum-toolkit/core/pull/2468
