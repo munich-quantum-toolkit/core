@@ -17,7 +17,8 @@
 
 namespace mqt::bench {
 
-/// Teleport the fixed |+> state and measure Bob's qubit in the X basis.
+/// Teleport the fixed \f$|+\rangle\f$ state and measure Bob's qubit in the
+/// \f$X\f$ basis.
 /// The one-bit result is zero on success; Alice's measurements stay internal.
 class MQT_CORE_BENCH_EXPORT Teleportation final {
 public:

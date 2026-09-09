@@ -32,7 +32,8 @@ void registerMultiplexer(const nb::module_& m) {
               "The total number of control and target qubits.");
 
   auto multiplexer = nb::class_<bench::Multiplexer>(
-      m, "Multiplexer", "A validated quantum multiplexer benchmark.");
+      m, "Multiplexer",
+      R"pb(Prepare uniform controls and apply their encoded :math:`R_y` rotation to the target.)pb");
   multiplexer.def(nb::init<bench::MultiplexerOptions>(), "options"_a)
       .def_prop_ro("options", &bench::Multiplexer::options,
                    nb::rv_policy::reference_internal,

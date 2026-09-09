@@ -34,7 +34,7 @@ class Options:
         """The circuit method."""
 
 class BV:
-    """A validated Bernstein--Vazirani benchmark."""
+    """Recover the configured hidden bitstring with Bernstein--Vazirani."""
 
     def __init__(self, options: Options) -> None: ...
     @property

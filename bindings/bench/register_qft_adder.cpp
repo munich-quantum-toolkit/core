@@ -24,7 +24,7 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-/// NOLINTNEXTLINE(misc-use-internal-linkage)
+// NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerQFTAdder(const nb::module_& m) {
   nb::enum_<bench::QFTAdderMethod>(m, "Method",
                                    "How the addend enters the circuit.")
@@ -72,7 +72,7 @@ Draper's register addition and its constant-input Fourier specialization.)pb");
                    "The logical output register.")
       .def_prop_ro(
           "expected_result", &bench::QFTAdder::expectedResult,
-          "The unique logical outcome, or None for a superposed addend.")
+          "The unique logical outcome, or ``None`` for a superposed addend.")
       .def("probability", &bench::QFTAdder::probability, "outcome"_a,
            "Return the ideal probability of an outcome.")
       .def("evaluate", &bench::QFTAdder::evaluate, "counts"_a,

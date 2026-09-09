@@ -74,7 +74,7 @@ class QFTAdder:
 
     @property
     def expected_result(self) -> str | None:
-        """The unique logical outcome, or None for a superposed addend."""
+        """The unique logical outcome, or ``None`` for a superposed addend."""
 
     def probability(self, outcome: str) -> float:
         """Return the ideal probability of an outcome."""

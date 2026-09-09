@@ -31,14 +31,14 @@ class Options:
 
     @property
     def period_exponent(self) -> int:
-        """The base-two input-period exponent."""
+        """The exponent :math:`k` of the input period :math:`2^k`."""
 
     @property
     def method(self) -> Method:
         """The circuit method."""
 
 class QFT:
-    """A validated QFT benchmark."""
+    """Apply the QFT to a uniform superposition with the configured power-of-two period."""
 
     def __init__(self, options: Options) -> None: ...
     @property

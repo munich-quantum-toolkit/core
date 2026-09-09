@@ -22,7 +22,7 @@ class Options:
         """The total number of control and target qubits."""
 
 class Multiplexer:
-    """A validated quantum multiplexer benchmark."""
+    """Prepare uniform controls and apply their encoded :math:`R_y` rotation to the target."""
 
     def __init__(self, options: Options) -> None: ...
     @property

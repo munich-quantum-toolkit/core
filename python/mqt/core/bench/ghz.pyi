@@ -45,7 +45,7 @@ class Options:
         """The measurement basis."""
 
 class GHZ:
-    """A validated GHZ benchmark."""
+    """Prepare a GHZ state and measure it in the configured :math:`X` or :math:`Z` basis."""
 
     def __init__(self, options: Options) -> None: ...
     @property

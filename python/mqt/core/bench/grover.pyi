@@ -26,7 +26,7 @@ class Options:
         """The iteration count, or ``None`` for automatic selection."""
 
 class Grover:
-    """A validated single-solution Grover benchmark."""
+    """Search for the configured marked bitstring with Grover's algorithm."""
 
     def __init__(self, options: Options) -> None: ...
     @property

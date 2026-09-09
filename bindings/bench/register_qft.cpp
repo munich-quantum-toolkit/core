@@ -38,10 +38,12 @@ void registerQFT(const nb::module_& m) {
       .def_ro("qubits", &bench::QFTOptions::qubits,
               "The number of transformed qubits.")
       .def_ro("period_exponent", &bench::QFTOptions::periodExponent,
-              "The base-two input-period exponent.")
+              R"pb(The exponent :math:`k` of the input period :math:`2^k`.)pb")
       .def_ro("method", &bench::QFTOptions::method, "The circuit method.");
 
-  auto qft = nb::class_<bench::QFT>(m, "QFT", "A validated QFT benchmark.");
+  auto qft = nb::class_<bench::QFT>(m, "QFT",
+                                    "Apply the QFT to a uniform superposition "
+                                    "with the configured power-of-two period.");
   qft.def(nb::init<bench::QFTOptions>(), "options"_a)
       .def_prop_ro("options", &bench::QFT::options,
                    nb::rv_policy::reference_internal,

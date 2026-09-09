@@ -29,13 +29,17 @@ struct ModularMultiplierOptions {
   std::string multiplier;
   /// Big-endian canonical modulus with the same width as the multiplier.
   std::string modulus;
-  /// Big-endian multiplicand of the same width; '+' prepares a |+> qubit.
+  /// Big-endian multiplicand of the same width; '+' prepares a
+  /// \f$|+\rangle\f$ qubit.
   std::string multiplicand;
-  /// Initial control bit: '0', '1', or '+' for |+>.
+  /// Initial control bit: '0', '1', or '+' for \f$|+\rangle\f$.
   char control = '1';
 };
 
-/// A validated modular multiplier and its analytic reference.
+/// Compute \f$c \cdot a \cdot x \bmod N\f$ in an initially zero product
+/// register.
+/// Here, \f$c\f$ is the control, \f$a\f$ is the classical multiplier,
+/// \f$x\f$ is the multiplicand, and \f$N\f$ is the modulus.
 class MQT_CORE_BENCH_EXPORT ModularMultiplier final {
 public:
   explicit ModularMultiplier(ModularMultiplierOptions options);

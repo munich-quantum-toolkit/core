@@ -264,7 +264,7 @@ Before evaluation, normalize backend results to the manifest's big-endian
 The `qft-adder` family adds two equal-width operands. `REGISTER` stores the
 addend in qubits and applies controlled phases; `CONSTANT` combines the known
 addend into one phase per accumulator qubit. Both use the same exact QFT and
-inverse QFT. `WRAP` keeps an n-bit sum, while `CARRY` keeps an extra sum bit.
+inverse QFT. `WRAP` keeps an $n$-bit sum, while `CARRY` keeps an extra sum bit.
 
 ```{code-cell} ipython3
 from mqt.core import mlir
@@ -294,10 +294,15 @@ total sum width, including an optional carry bit, is limited to 1024.
 The `modular-multiplier` family uses the controlled modular arithmetic circuit
 from Figures 5 and 6 of
 [Beauregard's circuit for Shor's algorithm](https://arxiv.org/abs/quant-ph/0205095).
-It computes `control || multiplicand || product`, with
-`product = control * multiplier * multiplicand mod modulus`. The product
-register starts at zero and retains its leading overflow bit; a work qubit must
-return to zero. This is an out-of-place multiplier.
+It computes `control || multiplicand || product`, where
+
+```{math}
+\mathtt{product} = \mathtt{control} \cdot \mathtt{multiplier} \cdot
+\mathtt{multiplicand} \bmod \mathtt{modulus}.
+```
+
+The product register starts at zero and retains its leading overflow bit; a work
+qubit must return to zero. This is an out-of-place multiplier.
 
 The classical `multiplier` and canonical `modulus` are equal-width binary
 strings with $0 < \mathtt{multiplier} < \mathtt{modulus}$. The required
