@@ -28,7 +28,8 @@ SDK, nanobind 3.0.1, CPython 3.14.7.
   nanobind's binding optimization defaults.
 - With full Core LTO in addition to section GC, the local wheel is 42,732,712
   bytes, using the original native SDK.
-- Assertion-free Linux/macOS SDKs now contain full-LTO archives. Linux SDK and
+- Assertion-free Linux SDKs contain full-LTO archives; macOS uses ThinLTO
+  archives with the native link cache to fit hosted build limits. Linux SDK and
   Core wheels share pinned manylinux image digests; macOS selects Xcode 26.6.
   Linux uses CMake IPO for parallel GCC code generation, with one link job.
   Assertion-enabled CI SDKs and Windows SDKs retain native archives.
@@ -88,6 +89,54 @@ Raw data and logs are under `build/release-optimization/`:
 `bolt-bench-results.json`, `lite-bench.log`, `bolt-wheel-lite.log`, and
 `final-lite-tests.log`. SDK logs are under the toolchain worktree's
 `build/lto-bolt/`.
+
+## Assertion-enabled versus optimized release
+
+On 2026-09-09, rebuild Core at `3d28fb593` with GCC 14.2.1 in the same pinned
+manylinux ARM64 image, using the assertion-enabled SDK from toolchain CI run
+`34286319228`. Compare its native SDK, disabled Core IPO, and no BOLT against
+the previously validated assertion-free SDK/Core full-LTO plus BOLT wheel. This
+measures the combined release policy, not assertion removal alone. The
+twelve-process held-out protocol above uses the same Python environment and CPU,
+with no concurrent build or BOLT process.
+
+| Workload              | Assertions enabled | Assertions off + LTO + BOLT | Time reduction |
+| --------------------- | -----------------: | --------------------------: | -------------: |
+| Vector import/export  |           1.916 ms |                    1.742 ms |           9.1% |
+| Matrix multiplication |           3.101 ms |                    2.786 ms |          10.2% |
+| OpenQASM to QCO       |           6.649 ms |                    5.374 ms |          19.2% |
+| Qiskit import/export  |           3.050 ms |                    2.639 ms |          13.5% |
+
+Process-median IQRs are 0.021-0.039 ms. Numerical and round-trip checks pass.
+Raw results: `build/release-optimization/matched-assertions-comparison.log` and
+`matched-assertions-results.json`. These measurements apply to Linux ARM64 and
+these workloads; macOS ThinLTO performance is unmeasured.
+
+## Hosted build limits
+
+Toolchain run `34286319228` killed both assertion-free Linux jobs during
+`mlir-opt` BOLT instrumentation. A local four-CPU container with 14 GiB RAM and
+no swap reproduces SIGKILL with `memory.events: oom_kill 1`; disabling BOLT
+threads also fails. With the same RAM and a 16 GiB swap allowance,
+instrumentation completes in 424 seconds, uses 9.5 GiB peak swap, and records no
+OOM events. Training, optimization, the remaining two SDK tools, and post-strip
+training pass under the same limits; those stages take another 63 seconds with a
+4.9 GiB peak RSS and no swap. Raw logs are `limited-instrument.log`,
+`sequential-instrument.log`, `swap-instrument.log`, and `swap-validation.log`
+under the SDK worktree's `build/lto-bolt/`. The SDK workflow adds 16 GiB swap
+only to assertion-free Linux builds and removes the source/build trees after
+installation to free disk space before rewriting and packaging. The x86-64 fix
+still needs hosted validation.
+
+The assertion-free macOS job reaches 5,134 of 5,157 Ninja steps before the
+six-hour timeout; repeated full-LTO LLVM tool links take several minutes each.
+The SDK now uses ThinLTO, which enables LLVM's native Darwin link cache, while
+retaining one link job for the 7 GB runner. Core and the SDK integration test
+retain full LTO for their own objects. Apple ld64 processes ThinLTO and full-LTO
+objects separately, reducing optimization across that boundary. A local Clang
+23/LLD probe links a ThinLTO archive to a full-LTO consumer for ELF and Mach-O,
+and runs the ELF result. This is not Xcode validation: build duration, complete
+AppleClang consumer linking, and runtime performance remain hosted gates.
 
 ## Earlier native SDK runtime measurements
 

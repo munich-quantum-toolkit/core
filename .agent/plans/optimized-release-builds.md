@@ -20,6 +20,9 @@ experiment.
   matched compilers. Assertion-enabled CI SDKs and all Windows SDKs remain
   native.
 - Linux builds share immutable manylinux digests; macOS selects Xcode 26.6.
+  Linux uses full-LTO SDK archives; macOS uses ThinLTO and LLVM's native link
+  cache to reduce repeated tool-link costs. Core retains full LTO for its own
+  objects. Linux SDK jobs add 16 GiB of swap for BOLT instrumentation.
 - Use GNU ld for Linux BOLT builds: mold 2.42.0 produced invalid relocation
   symbol indices with the full-LTO SDK and compiler extension.
 - BOLT runs after final linking, with fresh instrumentation profiles and
@@ -42,6 +45,8 @@ experiment.
 - [x] Add the portable SDK variant and validate setup selection locally.
 - [x] Validate matched SDK LTO and BOLT end to end with a manylinux Core wheel.
 - [x] Compare BOLT runtime and artifact size on held-out workloads.
+- [x] Compare the assertion-enabled policy against assertions-off plus LTO/BOLT
+      with matching GCC 14 builds: 9.1-19.2% less time on held-out workloads.
 - [ ] External gate: publish the new SDK archives and finish hosted Core matrix
       validation after the companion changes land.
 - [x] Benchmark LTO and computational bindings; remove obsolete `/Zm10`.
