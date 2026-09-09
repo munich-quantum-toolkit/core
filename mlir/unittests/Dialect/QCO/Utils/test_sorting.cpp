@@ -143,3 +143,56 @@ TEST_F(TopologicalSortingTest, PreservesReadyOperationDiscoveryOrder) {
   EXPECT_TRUE(mul->isBeforeInBlock(adds[1]));
   EXPECT_TRUE(adds[1]->isBeforeInBlock(adds[2]));
 }
+
+TEST_F(TopologicalSortingTest, PreservesRepeatedStoresToSameRegisterElement) {
+  auto moduleOp = parse(R"mlir(
+    func.func @test(%q0: !qco.qubit, %q1: !qco.qubit)
+        -> (!qco.qubit, !qco.qubit) {
+      %index = arith.constant 0 : index
+      %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+      %flipped = qco.x %q0 : !qco.qubit -> !qco.qubit
+      %out0, %bit0 = qco.measure %flipped : !qco.qubit
+      cbit.store %bit0, %reg[%index] : !cbit.reg<1>
+      %out1, %bit1 = qco.measure %q1 : !qco.qubit
+      cbit.store %bit1, %reg[%index] : !cbit.reg<1>
+      return %out0, %out1 : !qco.qubit, !qco.qubit
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto flipped = *function.getOps<qco::XOp>().begin();
+  auto stores = llvm::to_vector(function.getOps<cbit::StoreOp>());
+  ASSERT_EQ(stores.size(), 2U);
+  flipped->moveAfter(stores.back());
+
+  sort(*moduleOp);
+
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(stores.front()->isBeforeInBlock(stores.back()));
+}
+
+TEST_F(TopologicalSortingTest,
+       KeepsRegisterWriteBeforeIndexedLoadDuringRepair) {
+  auto moduleOp = parse(R"mlir(
+    func.func @test() -> i1 {
+      %index = arith.constant 0 : index
+      %value = arith.constant 0 : i2
+      %reg = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+      cbit.write %value, %reg : i2, !cbit.reg<2>
+      %loaded = cbit.load %reg[%index] : !cbit.reg<2>
+      return %loaded : i1
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  auto write = *function.getOps<cbit::WriteOp>().begin();
+  auto load = *function.getOps<cbit::LoadOp>().begin();
+  write.getValue().getDefiningOp()->moveAfter(load);
+
+  sort(*moduleOp);
+
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(write->isBeforeInBlock(load));
+}

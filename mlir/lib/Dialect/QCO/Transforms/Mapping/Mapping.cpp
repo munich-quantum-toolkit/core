@@ -12,6 +12,8 @@
 
 #include "mlir/Compiler/Target.h"
 #include "mlir/Compiler/TargetEnvironment.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -25,12 +27,13 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/PriorityQueue.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/Sequence.h>
+#include <llvm/ADT/SetVector.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/Allocator.h>
-#include <llvm/Support/Debug.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/Analysis/SliceAnalysis.h>
 #include <mlir/Analysis/TopologicalSortUtils.h>
@@ -47,6 +50,8 @@
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <mlir/Pass/Pass.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
 
@@ -777,33 +782,16 @@ private:
     return newWhileOp;
   }
 
-  /// Return the value whose wire edge crosses a composite in block order.
+  /// Return the wire value before a composite, even if advancement passed it.
   static Value valueBeforeBoundary(WireIterator iterator, Operation* boundary) {
-    assert(boundary != nullptr && boundary->getBlock() != nullptr);
-
-    // Independent wires can advance beyond `boundary`. Rewind to the qubit
-    // value that crosses it so extending the composite does not move later
-    // operations before the boundary.
     if (iterator == std::default_sentinel) {
       --iterator;
     }
-
     while (iterator.operation() != nullptr &&
            !iterator.operation()->isBeforeInBlock(boundary)) {
-      assert(iterator.operation()->getBlock() == boundary->getBlock());
       --iterator;
     }
-
-    Value value = iterator.qubit();
-    assert(value && "expected a qubit value before the composite boundary");
-    assert(value.hasOneUse() && "expected linear qubit use at boundary");
-    Operation* consumer = boundary->getBlock()->findAncestorOpInBlock(
-        *value.use_begin()->getOwner());
-    assert(consumer != nullptr && "expected consumer in boundary block");
-    assert((consumer == boundary || boundary->isBeforeInBlock(consumer) ||
-            isa<SinkOp>(consumer)) &&
-           "selected qubit value does not cross composite boundary");
-    return value;
+    return iterator.qubit();
   }
 
   /// Execute `ntrials` many (parallel) initial layout refinement trials and
@@ -1179,17 +1167,148 @@ private:
     stats.nswaps += swaps.size();
   }
 
-  /// Advance past all executable gates and return operations with nested
-  /// regions and the respective wire indices. Stops when no more executable
-  /// gates are found. The function positions each wire on a non-executable
-  /// two-qubit gate or a composite unitary, if possible. The function never
-  /// advances past sink-like operation and thus, each wire will never reach the
-  /// sentinel state.
+  /// Classify a consecutive measurement run from its end, so each suffix is
+  /// visited once. The cache is valid only while the IR remains unchanged.
+  static bool measurementNeedsRouting(MeasureOp measurement,
+                                      DenseMap<Operation*, bool>& cache) {
+    SmallVector<MeasureOp> measurements;
+    bool needsRouting = false;
+    WireIterator it(measurement.getQubitOut());
+    for (; it != std::default_sentinel; ++it) {
+      Operation* op = it.operation();
+      if (const auto cached = cache.find(op); cached != cache.end()) {
+        needsRouting = cached->second;
+        break;
+      }
+      if (auto next = dyn_cast<MeasureOp>(op)) {
+        measurements.push_back(next);
+        continue;
+      }
+      needsRouting = !isa<SinkOp>(op);
+      break;
+    }
+
+    Block* const block = measurement->getBlock();
+
+    const auto addSlice = [](Operation* root, SetVector<Operation*>& worklist) {
+      SetVector<Operation*> slice;
+      ForwardSliceOptions options;
+      options.inclusive = true;
+      options.filter = [&](Operation* op) { return !worklist.contains(op); };
+      getForwardSlice(root, &slice, options);
+      worklist.insert(slice.begin(), slice.end());
+    };
+
+    SetVector<Operation*> worklist;
+
+    DenseSet<TypedValue<cbit::RegisterType>> processed;
+
+    size_t cursor = 0;
+    const auto resultNeedsRouting = [&](MeasureOp next) {
+      for_each(next.getResult().getUsers(),
+               [&](Operation* user) { addSlice(user, worklist); });
+      for (; cursor < worklist.size(); ++cursor) {
+        Operation* op = worklist[cursor];
+
+        /// Quantum consumers require the measurement to advance, independent
+        /// of the selected target's permission to reuse measured qubits.
+
+        if (any_of(op->getOperandTypes(),
+                   [](auto type) { return isa<QubitType>(type); })) {
+          return true;
+        }
+
+        // Captures and nested register accesses also constrain their enclosing
+        // composite, whose placement threads every physical wire through it.
+
+        if (op->getBlock() != block) {
+          if (Operation* ancestor = block->findAncestorOpInBlock(*op);
+              ancestor != nullptr) {
+            addSlice(ancestor, worklist);
+          }
+        }
+
+        const auto effects = getEffectsRecursively(op);
+        if (!effects) {
+          continue;
+        }
+
+        for (const auto& effect : *effects) {
+          auto value = effect.getValue();
+          auto reg = dyn_cast_if_present<TypedValue<cbit::RegisterType>>(value);
+          if (!reg) {
+            continue;
+          }
+
+          auto [it, inserted] = processed.insert(reg);
+          if (!inserted) {
+            continue;
+          }
+
+          for (Operation* user : reg.getUsers()) {
+            Operation* ancestor = block->findAncestorOpInBlock(*user);
+            if (user == op ||
+                (ancestor && !measurement->isBeforeInBlock(ancestor))) {
+              continue;
+            }
+
+            addSlice(user, worklist);
+          }
+        }
+      }
+
+      return false;
+    };
+
+    for (auto next : llvm::reverse(measurements)) {
+      needsRouting = needsRouting || resultNeedsRouting(next);
+      cache.try_emplace(next, needsRouting);
+    }
+    return needsRouting;
+  }
+
+  /// Advance past executable gates and return ready composite operations.
+  /// Leave wires at non-executable gates, composites, terminal measurements,
+  /// or sink-like operations. Backward traversal can exhaust block arguments.
   template <WireDirection Direction>
   SmallVector<CompositeUnitary> advance(Wires& wires, const WireInfos& infos,
                                         const Layout& layout) {
     DenseSet<Operation*> visited;
     SmallVector<CompositeUnitary> composites;
+    /// Advancement only moves iterators. Discard classifications before routing
+    /// inserts SWAPs or replaces composites.
+    DenseMap<Operation*, bool> measurementRouting;
+
+    // The wire traversal does not follow classical dependencies. Defer a
+    // composite until earlier routing work is complete, but let independent
+    // composites pass terminal wires. Reverse block order for backward routing.
+
+    const auto defer = [&wires, &measurementRouting](Operation* candidate) {
+      return any_of(wires, [&](WireIterator& it) {
+        if (it == std::default_sentinel) {
+          return false;
+        }
+
+        Operation* op = it.operation();
+        if (op == nullptr || op == candidate) {
+          return false;
+        }
+
+        if (isa<AllocOp, StaticOp, SinkOp>(op)) {
+          return false;
+        }
+        if constexpr (Direction == WireDirection::Forward) {
+          if (auto measurement = dyn_cast<MeasureOp>(op);
+              measurement &&
+              !measurementNeedsRouting(measurement, measurementRouting)) {
+            return false;
+          }
+          return op->isBeforeInBlock(candidate);
+        }
+
+        return candidate->isBeforeInBlock(op);
+      });
+    };
 
     // Advance wires past all executable gates and push composite unitaries
     // and the respective wire indices of their inputs onto the vector.
@@ -1212,32 +1331,12 @@ private:
                   return target->areAdjacent(hw0, hw1);
                 })
                 .Case([](ResetOp&) { return true; })
-                .Case([](MeasureOp& m) {
+                .Case([&](MeasureOp& m) {
                   if (Direction == WireDirection::Backward) {
                     return true;
                   }
 
-                  /// Only advance past measurements in adaptive-profile
-                  /// scenarios, where a qubit is used after measurement
-                  /// (multiple subsequent measurements are fine) or a bit is
-                  /// used to determine a subsequent chain of unitaries.
-                  /// The forward slice follows SSA def-use chains only.
-
-                  Value qubit = m.getQubitOut();
-                  Value bit = m.getResult();
-
-                  assert(qubit.hasOneUse());
-                  Operation* user = *qubit.user_begin();
-                  if (!isa<MeasureOp, SinkOp>(user)) {
-                    return true;
-                  }
-
-                  SetVector<Operation*> slice;
-                  getForwardSlice(bit, &slice);
-                  return any_of(slice, [](Operation* op) {
-                    return isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp,
-                               UnitaryOpInterface>(op);
-                  });
+                  return measurementNeedsRouting(m, measurementRouting);
                 })
                 .template Case<AllocOp, StaticOp, qtensor::ExtractOp>(
                     [](auto&) { return Direction == WireDirection::Forward; })
@@ -1245,11 +1344,8 @@ private:
                                scf::YieldOp, scf::ConditionOp>(
                     [](auto&) { return Direction == WireDirection::Backward; })
                 .template Case<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(
-                    [&](auto&) {
-                      if (indices.size() == 1) {
-                        return true;
-                      }
-                      if (visited.insert(op).second) {
+                    [&](auto& cf) {
+                      if (!defer(cf) && visited.insert(op).second) {
                         composites.emplace_back(op, indices);
                       }
                       return false;
@@ -1272,31 +1368,12 @@ private:
     // become ready at once. Hot routing threads every qubit through each
     // composite, so processing a later operation first could introduce a
     // use-before-definition for an earlier operation.
+
     llvm::sort(composites,
                [](const CompositeUnitary& lhs, const CompositeUnitary& rhs) {
                  assert(lhs.op->getBlock() == rhs.op->getBlock());
                  return lhs.op->isBeforeInBlock(rhs.op);
                });
-
-    // Defer a composite while another active wire points to an operation that
-    // precedes it in the traversal direction. Otherwise, dispatch would remove
-    // that operation from the routing frontier.
-    llvm::erase_if(composites, [&](const CompositeUnitary& composite) {
-      return llvm::any_of(wires, [&](const WireIterator& iterator) {
-        if (iterator == std::default_sentinel) {
-          return false;
-        }
-        Operation* operation = iterator.operation();
-        if (operation == nullptr || operation == composite.op) {
-          return false;
-        }
-        assert(operation->getBlock() == composite.op->getBlock());
-        if constexpr (Direction == WireDirection::Forward) {
-          return operation->isBeforeInBlock(composite.op);
-        }
-        return composite.op->isBeforeInBlock(operation);
-      });
-    });
 
     return composites;
   }
@@ -1657,7 +1734,6 @@ private:
     auto& [wires, infos, layout] = bundle;
 
     Statistics stats;
-
     while (true) {
       while (true) {
         auto composites = advance<Direction>(wires, infos, layout);
