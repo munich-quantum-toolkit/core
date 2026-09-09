@@ -222,9 +222,8 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
   }
 };
 
-/// @brief Fold pow(r) around gates into simpler operations.
+/// Fold pow(r) around gates into simpler operations.
 ///
-/// @details
 /// - Rotation gates: multiply a constant angle by an integer exponent when
 ///   the product meets the constant-angle rounding bound
 /// - Phase/diagonal gates: named gate if angle matches, else `P` gate,
@@ -501,7 +500,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
   }
 };
 
-/// @brief Erase power modifiers that do not have any body unitaries.
+/// Erase power modifiers that do not have any body unitaries.
 struct EraseEmptyPow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
@@ -515,7 +514,7 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
   }
 };
 
-/// @brief Drop the qubits that the body does not use.
+/// Drop the qubits that the body does not use.
 struct DropUnusedPowQubits final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
 

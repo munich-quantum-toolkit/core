@@ -290,9 +290,8 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
   }
 };
 
-/// @brief Fold pow(r) around gates into simpler operations.
+/// Fold pow(r) around gates into simpler operations.
 ///
-/// @details
 /// - Rotation gates: multiply a constant angle by an integer exponent when
 ///   the product meets the constant-angle rounding bound
 /// - Phase/diagonal gates: named gate if angle matches, else `P` gate,

@@ -9,7 +9,7 @@
  */
 
 /// @file
-/// @brief Tests for bounded angle arithmetic and named phase classification.
+/// Tests for bounded angle arithmetic and named phase classification.
 
 #include "mlir/Dialect/MQT/Utils/Angles.h"
 #include "mlir/Dialect/MQT/Utils/Parameters.h"

@@ -219,18 +219,16 @@ LogicalResult mergeOneTargetZeroParameter(OpType op,
   return success();
 }
 
-/**
- * @brief Merge two compatible one-target, one-parameter operations
- *
- * @details
- * Merge constant angles only when their sum satisfies the arithmetic error
- * bound in @ref mqt::addConstantAngles. Dynamic parameters have no known bound.
- *
- * @tparam OpType The type of the operation to be merged.
- * @param op The operation instance.
- * @param rewriter The pattern rewriter.
- * @return LogicalResult Success or failure of the merge.
- */
+/// Merge two compatible one-target, one-parameter operations.
+///
+/// Merge constant angles only when their sum satisfies the arithmetic error
+/// bound in @ref mqt::addConstantAngles. Dynamic parameters have no known
+/// bound.
+///
+/// @tparam OpType The type of the operation to be merged.
+/// @param op The operation instance.
+/// @param rewriter The pattern rewriter.
+/// @return LogicalResult Success or failure of the merge.
 template <typename OpType>
 LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the same operation

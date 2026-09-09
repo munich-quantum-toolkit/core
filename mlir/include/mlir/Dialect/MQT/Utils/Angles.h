@@ -22,8 +22,10 @@ namespace mlir::mqt {
 inline constexpr double MAX_GLOBAL_PHASE_ANGLE = 1.0e4;
 
 /// Add finite constant angles when the absolute rounding error is no greater
-/// than PARAMETER_COMPARISON_TOLERANCE. Return no value on overflow or excess
-/// error. This bounds a rewrite's arithmetic, not the accepted input angles.
+/// than PARAMETER_COMPARISON_TOLERANCE.
+///
+/// Return no value on overflow or excess error. This bounds a rewrite's
+/// arithmetic, not the accepted input angles.
 [[nodiscard]] std::optional<double> addConstantAngles(double lhs, double rhs);
 
 /// Multiply finite constants with the same error bound as addConstantAngles.
@@ -34,6 +36,7 @@ inline constexpr double MAX_GLOBAL_PHASE_ANGLE = 1.0e4;
 enum class PhaseGate { Identity, Z, S, Sdg, T, Tdg };
 
 /// Classify a finite phase angle modulo 2*pi using the parameter tolerance.
+///
 /// Return no value when the angle needs a general P gate.
 [[nodiscard]] std::optional<PhaseGate> classifyPhaseGate(double angle);
 
