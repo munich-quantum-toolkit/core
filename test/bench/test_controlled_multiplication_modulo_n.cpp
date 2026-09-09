@@ -14,6 +14,7 @@
 #include <gtest/gtest.h>
 
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <stdexcept>
 #include <string>
@@ -112,7 +113,35 @@ TEST(ControlledMultiplicationModuloN,
   const auto evaluation = benchmark.evaluate(exact);
   EXPECT_DOUBLE_EQ(evaluation.totalVariationDistance, 0.);
   EXPECT_DOUBLE_EQ(evaluation.squaredHellingerFidelity, 1.);
-  EXPECT_FALSE(evaluation.successProbability);
+  EXPECT_EQ(evaluation.successProbability, 1.);
+}
+
+TEST(ControlledMultiplicationModuloN, ScoresTheArithmeticRelationByShotCount) {
+  const ControlledMultiplicationModuloN benchmark{
+      {.multiplier = "011", .modulus = "101"}};
+  EXPECT_EQ(
+      benchmark.evaluate({{"10010011", 3}, {"10010010", 1}}).successProbability,
+      0.75);
+  EXPECT_EQ(
+      benchmark.evaluate({{"01110001", 7}, {"10010011", 0}}).successProbability,
+      0.);
+  EXPECT_THROW(static_cast<void>(benchmark.evaluate({})),
+               std::invalid_argument);
+  EXPECT_THROW(static_cast<void>(benchmark.evaluate({{"00000000", 0}})),
+               std::invalid_argument);
+}
+
+TEST(ControlledMultiplicationModuloN,
+     SeparatesRelationSuccessFromDistributionFit) {
+  const ControlledMultiplicationModuloN benchmark{
+      {
+          .multiplier = std::string(19, '0') + "1",
+          .modulus = std::string(20, '1'),
+      },
+  };
+  const auto result = benchmark.evaluate({{std::string(42, '0'), 16'384}});
+  EXPECT_EQ(result.successProbability, 1.);
+  EXPECT_DOUBLE_EQ(result.totalVariationDistance, 1. - std::ldexp(1., -21));
 }
 
 TEST(ControlledMultiplicationModuloN,
@@ -137,6 +166,7 @@ TEST(ControlledMultiplicationModuloN,
   const auto accumulator = "0" + std::string(width - 2U, '1') + "01";
   const auto outcome = "1" + multiplicand + accumulator;
   EXPECT_GT(benchmark.probability(outcome), 0.);
+  EXPECT_EQ(benchmark.evaluate({{outcome, 1}}).successProbability, 1.);
 }
 
 } // namespace

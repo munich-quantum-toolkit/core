@@ -286,3 +286,13 @@ The result is the big-endian concatenation
 accumulator remains zero. When the control is one, the accumulator contains
 $\mathtt{multiplier} \cdot \mathtt{multiplicand} \bmod \mathtt{modulus}$. Every
 valid outcome has probability $2^{-(n + 1)}$.
+
+The evaluation's `success_probability` is the shot-weighted fraction of outcomes
+that satisfy this arithmetic relation. It remains useful at large widths: with
+$S$ shots, empirical TVD is at least $\max(0,1-S/2^{n+1})$, even for ideal
+execution. At $n=20$ and $S=16,384$, that lower bound is 0.9921875. TVD and
+squared Hellinger fidelity still compare the full distribution.
+
+Relation success alone does not verify uniform inputs or coherence: an
+always-zero output passes the relation. Inspect control and multiplicand balance
+separately, and retain phase-sensitive validation of the circuit.

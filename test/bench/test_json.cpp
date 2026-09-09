@@ -520,7 +520,7 @@ TEST(BenchmarkJSON, ParsesCountsAndSerializesEvaluations) {
       toManifestJSON(controlledMultiplicationModuloN),
       R"({"schema_version":1,"counts":{"00000000":1,"10000000":1,"00010000":1,"10010011":1,"00100000":1,"10100001":1,"00110000":1,"10110100":1,"01000000":1,"11000010":1,"01010000":1,"11010000":1,"01100000":1,"11100011":1,"01110000":1,"11110001":1}})");
   EXPECT_NE(controlledMultiplicationModuloNEvaluation.find(
-                "\"success_probability\":null"),
+                "\"success_probability\":1.0"),
             std::string::npos);
   EXPECT_NE(controlledMultiplicationModuloNEvaluation.find(
                 "\"total_variation_distance\":0.0"),

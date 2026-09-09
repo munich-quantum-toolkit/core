@@ -51,7 +51,7 @@ def test_controlled_multiplication_modulo_n_evaluation() -> None:
     evaluation = _make_benchmark().evaluate(_exact_counts())
     assert evaluation.total_variation_distance == pytest.approx(0)
     assert evaluation.squared_hellinger_fidelity == pytest.approx(1)
-    assert evaluation.success_probability is None
+    assert evaluation.success_probability == pytest.approx(1)
 
 
 def test_controlled_multiplication_modulo_n_json_roundtrip() -> None:

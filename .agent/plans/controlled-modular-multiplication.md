@@ -78,3 +78,17 @@ registry test covers the jeff round trip.
 - [x] Validate focused native, MLIR, CLI, and Python behavior.
 - [x] Create a draft pull request on the classical-input QFT-adder branch and
       add its number to the rolling structured-benchmark changelog entry.
+
+## Scalable evaluation
+
+The existing `successProbability` field reports the shot-weighted fraction
+satisfying the arithmetic relation. Reuse `probability(outcome) > 0`; the
+smallest reference weight remains representable at the supported maximum width.
+The shared evaluator validates counts and total-shot overflow before relation
+counts are accumulated. TVD and fidelity retain their full-distribution meaning.
+Sparse samples can have relation success one and TVD near one.
+
+An all-zero output satisfies the relation, so this metric does not establish
+uniformity or coherence. Separate balance diagnostics and the existing coherent
+state tests remain necessary. Approximate QFT and in-place/order-finding
+extensions remain outside this change.

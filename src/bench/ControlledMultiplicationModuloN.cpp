@@ -127,9 +127,21 @@ double ControlledMultiplicationModuloN::probability(
 
 Evaluation
 ControlledMultiplicationModuloN::evaluate(const Counts& counts) const {
-  return detail::evaluate(
-      output_, counts,
-      [this](const std::string_view outcome) { return probability(outcome); });
+  auto result =
+      detail::evaluate(output_, counts, [this](const std::string_view outcome) {
+        return probability(outcome);
+      });
+  size_t totalShots = 0;
+  size_t successShots = 0;
+  for (const auto& [outcome, count] : counts) {
+    totalShots += count;
+    if (probability(outcome) > 0.) {
+      successShots += count;
+    }
+  }
+  result.successProbability =
+      static_cast<double>(successShots) / static_cast<double>(totalShots);
+  return result;
 }
 
 } // namespace mqt::bench
