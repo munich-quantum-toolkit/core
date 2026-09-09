@@ -102,19 +102,21 @@ findBenchmark(const std::string_view benchmark) {
   return nullptr;
 }
 
-[[nodiscard]] uint64_t definitionVersion(const std::string_view benchmark) {
-  if (const auto* entry = findBenchmark(benchmark)) {
-    return entry->definitionVersion;
-  }
-  throw std::invalid_argument("unsupported benchmark '" +
-                              std::string(benchmark) + "'");
-}
-
 [[noreturn]] void fail(const std::string_view source,
                        const std::string_view pointer,
                        const std::string_view message) {
   throw std::invalid_argument(std::string(source) + ":" + std::string(pointer) +
                               " " + std::string(message));
+}
+
+template <class Factory>
+[[nodiscard]] auto constructBenchmark(const std::string_view source,
+                                      const Factory& factory) {
+  try {
+    return factory();
+  } catch (const std::invalid_argument& error) {
+    fail(source, "$/parameters", error.what());
+  }
 }
 
 [[nodiscard]] Json parseJSON(const std::string_view text,
@@ -220,19 +222,15 @@ void requireSchemaVersion(const Json& root, const std::string_view source) {
   }
 }
 
-[[nodiscard]] bool isKnownBenchmark(const std::string_view benchmark) {
-  return findBenchmark(benchmark) != nullptr;
-}
-
-[[nodiscard]] std::string requireBenchmarkId(const Json& root,
-                                             const std::string_view source) {
-  auto benchmark = stringValue(required(root, "benchmark", source, "$"), source,
-                               "$/benchmark");
-  if (!isKnownBenchmark(benchmark)) {
-    fail(source, "$/benchmark",
-         "selects unsupported benchmark '" + benchmark + "'");
+[[nodiscard]] const RegistryEntry&
+requireBenchmarkEntry(const Json& root, const std::string_view source) {
+  const auto benchmark = stringValue(required(root, "benchmark", source, "$"),
+                                     source, "$/benchmark");
+  if (const auto* entry = findBenchmark(benchmark)) {
+    return *entry;
   }
-  return benchmark;
+  fail(source, "$/benchmark",
+       "selects unsupported benchmark '" + benchmark + "'");
 }
 
 [[nodiscard]] Json
@@ -243,7 +241,7 @@ instanceSpecificationEnvelope(const std::string_view text,
   rejectUnknownKeys(root, {"schema_version", "benchmark", "parameters"}, source,
                     "$");
   requireSchemaVersion(root, source);
-  static_cast<void>(requireBenchmarkId(root, source));
+  static_cast<void>(requireBenchmarkEntry(root, source));
   requireObject(required(root, "parameters", source, "$"), source,
                 "$/parameters");
   return root;
@@ -265,11 +263,11 @@ instanceSpecificationEnvelope(const std::string_view text,
                     },
                     source, "$");
   requireSchemaVersion(root, source);
-  const auto benchmark = requireBenchmarkId(root, source);
+  const auto& benchmark = requireBenchmarkEntry(root, source);
   const auto definition =
       unsignedInteger(required(root, "definition_version", source, "$"), source,
                       "$/definition_version");
-  const auto expectedDefinition = definitionVersion(benchmark);
+  const auto expectedDefinition = benchmark.definitionVersion;
   if (definition != expectedDefinition) {
     fail(source, "$/definition_version",
          "must be " + std::to_string(expectedDefinition));
@@ -315,11 +313,8 @@ void requireBenchmark(const Json& root, const std::string_view expected,
       fail(source, "$/parameters/method", "must be 'static' or 'dynamic'");
     }
   }
-  try {
-    return BV(std::move(options));
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
+  return constructBenchmark(source,
+                            [&options] { return BV(std::move(options)); });
 }
 
 [[nodiscard]] ModularMultiplier
@@ -336,7 +331,7 @@ parseModularMultiplierParameters(const Json& parameters,
   if (control.size() != 1U) {
     fail(source, "$/parameters/control", "must be '0', '1', or '+'");
   }
-  try {
+  return constructBenchmark(source, [&] {
     return ModularMultiplier({
         .multiplier = stringValue(
             required(parameters, "multiplier", source, "$/parameters"), source,
@@ -349,9 +344,7 @@ parseModularMultiplierParameters(const Json& parameters,
             source, "$/parameters/multiplicand"),
         .control = control.front(),
     });
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
+  });
 }
 
 [[nodiscard]] GHZ parseGHZParameters(const Json& parameters,
@@ -384,11 +377,7 @@ parseModularMultiplierParameters(const Json& parameters,
       fail(source, "$/parameters/basis", "must be 'z' or 'x'");
     }
   }
-  try {
-    return GHZ(options);
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
+  return constructBenchmark(source, [&options] { return GHZ(options); });
 }
 
 [[nodiscard]] Grover parseGroverParameters(const Json& parameters,
@@ -405,26 +394,21 @@ parseModularMultiplierParameters(const Json& parameters,
     options.iterations =
         sizeValue(*iterations, source, "$/parameters/iterations");
   }
-  try {
-    return Grover(std::move(options));
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
+  return constructBenchmark(source,
+                            [&options] { return Grover(std::move(options)); });
 }
 
 [[nodiscard]] Multiplexer
 parseMultiplexerParameters(const Json& parameters,
                            const std::string_view source) {
   rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
-  try {
+  return constructBenchmark(source, [&] {
     return Multiplexer({
         .qubits =
             sizeValue(required(parameters, "qubits", source, "$/parameters"),
                       source, "$/parameters/qubits"),
     });
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
+  });
 }
 
 [[nodiscard]] QFT parseQFTParameters(const Json& parameters,
@@ -451,11 +435,7 @@ parseMultiplexerParameters(const Json& parameters,
            "must be 'standard' or 'semiclassical'");
     }
   }
-  try {
-    return QFT(options);
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
+  return constructBenchmark(source, [&options] { return QFT(options); });
 }
 
 [[nodiscard]] QFTAdder parseQFTAdderParameters(const Json& parameters,
@@ -490,11 +470,8 @@ parseMultiplexerParameters(const Json& parameters,
       fail(source, "$/parameters/overflow", "must be 'wrap' or 'carry'");
     }
   }
-  try {
-    return QFTAdder(std::move(options));
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
+  return constructBenchmark(
+      source, [&options] { return QFTAdder(std::move(options)); });
 }
 
 [[nodiscard]] QPE parseQPEParameters(const Json& parameters,
@@ -525,15 +502,13 @@ parseMultiplexerParameters(const Json& parameters,
       fail(source, "$/parameters/method", "must be 'standard' or 'iterative'");
     }
   }
-  try {
+  return constructBenchmark(source, [&] {
     return QPE({
         .precision = precision,
         .phase = Phase(numerator, denominator),
         .method = method,
     });
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
+  });
 }
 
 [[nodiscard]] RepeatUntilSuccess
@@ -545,11 +520,8 @@ parseRepeatUntilSuccessParameters(const Json& parameters,
       width != parameters.end()) {
     options.dataQubits = sizeValue(*width, source, "$/parameters/data_qubits");
   }
-  try {
-    return RepeatUntilSuccess(options);
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
+  return constructBenchmark(source,
+                            [&options] { return RepeatUntilSuccess(options); });
 }
 
 [[nodiscard]] Teleportation
@@ -666,115 +638,64 @@ parseTeleportationParameters(const Json& parameters,
   return Json::object();
 }
 
-[[nodiscard]] Json referenceJSON(const BV& benchmark) {
-  return {
+[[nodiscard]] Json analyticReferenceJSON(
+    const Output& output, const std::string_view model,
+    const std::optional<std::string_view> successOutcome = std::nullopt) {
+  Json reference = {
       {"kind", "analytic"},
-      {"model", "bernstein_vazirani"},
+      {"model", std::string(model)},
       {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"success_outcome", benchmark.options().hiddenBitstring},
+      {"output", output.name},
       {"version", 1},
   };
+  if (successOutcome) {
+    reference["success_outcome"] = std::string(*successOutcome);
+  }
+  return reference;
+}
+
+[[nodiscard]] Json referenceJSON(const BV& benchmark) {
+  return analyticReferenceJSON(benchmark.output(), "bernstein_vazirani",
+                               benchmark.options().hiddenBitstring);
 }
 
 [[nodiscard]] Json referenceJSON(const ModularMultiplier& benchmark) {
-  Json reference = {
-      {"kind", "analytic"},
-      {"model", "modular_multiplier"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"version", 1},
-  };
-  if (benchmark.expectedResult()) {
-    reference["success_outcome"] = *benchmark.expectedResult();
-  }
-  return reference;
+  return analyticReferenceJSON(benchmark.output(), "modular_multiplier",
+                               benchmark.expectedResult());
 }
 
 [[nodiscard]] Json referenceJSON(const GHZ& benchmark) {
-  return {
-      {"kind", "analytic"},
-      {"model", "ghz"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"version", 1},
-  };
+  return analyticReferenceJSON(benchmark.output(), "ghz");
 }
 
 [[nodiscard]] Json referenceJSON(const Grover& benchmark) {
-  return {
-      {"kind", "analytic"},
-      {"model", "grover_single_marked"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"success_outcome", benchmark.options().markedBitstring},
-      {"version", 1},
-  };
+  return analyticReferenceJSON(benchmark.output(), "grover_single_marked",
+                               benchmark.options().markedBitstring);
 }
 
 [[nodiscard]] Json referenceJSON(const Multiplexer& benchmark) {
-  return {
-      {"kind", "analytic"},
-      {"model", "multiplexer"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"version", 1},
-  };
+  return analyticReferenceJSON(benchmark.output(), "multiplexer");
 }
 
 [[nodiscard]] Json referenceJSON(const QFT& benchmark) {
-  return {
-      {"kind", "analytic"},
-      {"model", "qft_power_of_two_period"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"version", 1},
-  };
+  return analyticReferenceJSON(benchmark.output(), "qft_power_of_two_period");
 }
 
 [[nodiscard]] Json referenceJSON(const QFTAdder& benchmark) {
-  Json reference = {
-      {"kind", "analytic"},
-      {"model", "qft_adder"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"version", 1},
-  };
-  if (benchmark.expectedResult()) {
-    reference["success_outcome"] = *benchmark.expectedResult();
-  }
-  return reference;
+  return analyticReferenceJSON(benchmark.output(), "qft_adder",
+                               benchmark.expectedResult());
 }
 
 [[nodiscard]] Json referenceJSON(const QPE& benchmark) {
-  return {
-      {"kind", "analytic"},
-      {"model", "qpe_dirichlet"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"version", 1},
-  };
+  return analyticReferenceJSON(benchmark.output(), "qpe_dirichlet");
 }
 
 [[nodiscard]] Json referenceJSON(const RepeatUntilSuccess& benchmark) {
-  return {
-      {"kind", "analytic"},
-      {"model", "repeat_until_success"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"version", 1},
-  };
+  return analyticReferenceJSON(benchmark.output(), "repeat_until_success");
 }
 
 [[nodiscard]] Json referenceJSON(const Teleportation& benchmark) {
-  return {
-      {"kind", "analytic"},
-      {"model", "teleportation"},
-      {"outcome_order", "big_endian"},
-      {"output", benchmark.output().name},
-      {"success_outcome", "0"},
-      {"version", 1},
-  };
+  return analyticReferenceJSON(benchmark.output(), "teleportation", "0");
 }
 
 [[nodiscard]] Json semanticJSON(const std::string_view id,
@@ -1308,13 +1229,14 @@ template <class Benchmark>
 std::string
 benchmarkIdFromInstanceSpecificationJSON(const std::string_view json,
                                          const std::string_view source) {
-  return requireBenchmarkId(instanceSpecificationEnvelope(json, source),
-                            source);
+  return instanceSpecificationEnvelope(json, source)
+      .at("benchmark")
+      .get<std::string>();
 }
 
 std::string benchmarkIdFromManifestJSON(const std::string_view json,
                                         const std::string_view source) {
-  return requireBenchmarkId(manifestEnvelope(json, source), source);
+  return manifestEnvelope(json, source).at("benchmark").get<std::string>();
 }
 
 std::string listBenchmarksJSON() {

@@ -27,10 +27,7 @@ double Teleportation::probability(const std::string_view outcome) const {
 }
 
 Evaluation Teleportation::evaluate(const Counts& counts) const {
-  return detail::evaluate(
-      output_, counts,
-      [this](const std::string_view outcome) { return probability(outcome); },
-      "0");
+  return detail::evaluate(*this, counts, "0");
 }
 
 } // namespace mqt::bench

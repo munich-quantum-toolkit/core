@@ -157,10 +157,7 @@ double ModularMultiplier::probability(const std::string_view outcome) const {
 }
 
 Evaluation ModularMultiplier::evaluate(const Counts& counts) const {
-  auto result =
-      detail::evaluate(output_, counts, [this](const std::string_view outcome) {
-        return probability(outcome);
-      });
+  auto result = detail::evaluate(*this, counts);
   size_t totalShots = 0;
   size_t successShots = 0;
   for (const auto& [outcome, count] : counts) {

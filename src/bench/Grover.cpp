@@ -81,10 +81,6 @@ size_t Grover::qubits() const noexcept { return output_.width; }
 
 const Output& Grover::output() const noexcept { return output_; }
 
-double Grover::markedProbability() const noexcept { return markedProbability_; }
-
-double Grover::otherProbability() const noexcept { return otherProbability_; }
-
 double Grover::probability(const std::string_view outcome) const {
   detail::validateOutcome(outcome, output_.width);
   return outcome == options_.markedBitstring ? markedProbability_
@@ -92,10 +88,7 @@ double Grover::probability(const std::string_view outcome) const {
 }
 
 Evaluation Grover::evaluate(const Counts& counts) const {
-  return detail::evaluate(
-      output_, counts,
-      [this](const std::string_view outcome) { return probability(outcome); },
-      options_.markedBitstring);
+  return detail::evaluate(*this, counts, options_.markedBitstring);
 }
 
 } // namespace mqt::bench

@@ -89,4 +89,16 @@ evaluate(const Output& output, const Counts& counts,
   };
 }
 
+template <class Benchmark>
+[[nodiscard]] Evaluation
+evaluate(const Benchmark& benchmark, const Counts& counts,
+         const std::optional<std::string_view> successOutcome = std::nullopt) {
+  return evaluate(
+      benchmark.output(), counts,
+      [&benchmark](const std::string_view outcome) {
+        return benchmark.probability(outcome);
+      },
+      successOutcome);
+}
+
 } // namespace mqt::bench::detail
