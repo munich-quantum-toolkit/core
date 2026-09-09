@@ -34,8 +34,7 @@ decision diagrams
 
 Pauli string
   **Preferred term:** Pauli string. **Accepted alias:** Pauli product. A tensor
-  product of single-qubit identity or Pauli X, Y, and Z operators. The
-  repeat-until-success benchmark uses X on every data qubit.
+  product of single-qubit identity or Pauli X, Y, and Z operators.
 
 IR
 intermediate representation
