@@ -2288,6 +2288,74 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
 }
 
 TEST_F(CompilerPipelineTest,
+       PayloadControlChecksUnrolledStepWidth) {
+  struct LoopCase {
+    int64_t lower;
+    int64_t upper;
+    int64_t step;
+    bool unsignedComparison;
+    bool safe;
+  };
+  for (const auto& test : {
+           LoopCase{-120, 110, 80, false, false},
+           LoopCase{-120, -10, 40, false, true},
+           LoopCase{0, 110, 80, true, true},
+       }) {
+    std::string source;
+    llvm::raw_string_ostream stream(source);
+    stream << "module {\n"
+           << "  func.func private @observe(i8)\n"
+           << "  func.func @main(%q: !qco.qubit) -> !qco.qubit "
+              "attributes {mqt.entry_point} {\n"
+           << "    %lower = arith.constant " << test.lower << " : i8\n"
+           << "    %upper = arith.constant " << test.upper << " : i8\n"
+           << "    %step = arith.constant " << test.step << " : i8\n"
+           << "    %result = scf.for "
+           << (test.unsignedComparison ? "unsigned " : "")
+           << "%i = %lower to %upper step %step "
+              "iter_args(%state = %q) -> (!qco.qubit) : i8 {\n"
+           << "      func.call @observe(%i) : (i8) -> ()\n"
+           << "      %next = qco.x %state : !qco.qubit -> !qco.qubit\n"
+           << "      scf.yield %next : !qco.qubit\n"
+           << "    }\n    return %result : !qco.qubit\n  }\n}\n";
+    SCOPED_TRACE(source);
+    auto program = QCOProgram::fromMLIRString(source);
+    ASSERT_TRUE(program);
+    attachTargetEnvironment(
+        program->module(),
+        TargetEnvironment(makeUnrestrictedTarget(),
+                          makeControlPayloadSpecification({})));
+    const auto before = program->str();
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(program->module()->getContext(),
+                                    [&](Diagnostic& diagnostic) {
+                                      diagnostics += diagnostic.str();
+                                      return success();
+                                    });
+    const bool transformed = program->runPassPipeline("unroll-loops-for-payload");
+    ASSERT_EQ(transformed, test.safe) << diagnostics;
+    if (!test.safe) {
+      EXPECT_TRUE(StringRef(diagnostics).contains("cannot safely apply MLIR"));
+      EXPECT_EQ(program->str(), before);
+      continue;
+    }
+    EXPECT_TRUE(succeeded(verify(program->module())));
+    std::vector<int64_t> observed;
+    program->module().walk([&](func::CallOp call) {
+      IntegerAttr value;
+      ASSERT_TRUE(matchPattern(call.getOperand(0), m_Constant(&value)));
+      observed.push_back(value.getInt());
+    });
+    std::vector<int64_t> expected;
+    for (auto value = test.lower; value < test.upper; value += test.step) {
+      expected.push_back(value);
+    }
+    EXPECT_EQ(observed, expected);
+    EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+  }
+}
+
+TEST_F(CompilerPipelineTest,
        PayloadControlPreservesOrLowersQCOIndexSwitchAtBoundaries) {
   const auto target = makeUnrestrictedTarget();
   const auto multiway = [](const uint64_t maximum) {

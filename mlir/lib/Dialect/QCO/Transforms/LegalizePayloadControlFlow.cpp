@@ -25,6 +25,7 @@
 #include <mlir/Dialect/SCF/Utils/Utils.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinOps.h>
+#include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Visitors.h>
 #include <mlir/Interfaces/ControlFlowInterfaces.h>
@@ -300,9 +301,15 @@ static LogicalResult foldStaticBranches(ModuleOp moduleOp) {
 
   int64_t scaledStep = 0;
   int64_t unrolledUpperBound = 0;
-  return llvm::MulOverflow(*step, static_cast<int64_t>(iterations),
-                           scaledStep) == 0 &&
-         llvm::AddOverflow(*lowerBound, scaledStep, unrolledUpperBound) == 0;
+  if (llvm::MulOverflow(*step, static_cast<int64_t>(iterations), scaledStep) ||
+      llvm::AddOverflow(*lowerBound, scaledStep, unrolledUpperBound)) {
+    return false;
+  }
+  const auto type = dyn_cast<IntegerType>(loop.getInductionVar().getType());
+  return !type ||
+         (loop.getUnsignedCmp()
+              ? llvm::isUIntN(type.getWidth(), static_cast<uint64_t>(scaledStep))
+              : llvm::isIntN(type.getWidth(), scaledStep));
 }
 
 static void inlineDefaultRegion(Operation* operation, Block& block,
