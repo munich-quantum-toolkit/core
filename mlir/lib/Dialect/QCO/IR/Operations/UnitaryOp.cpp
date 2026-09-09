@@ -83,8 +83,6 @@ LogicalResult UnitaryOp::fold(FoldAdaptor /*adaptor*/,
   if (!mqt::isExactIdentityMatrix(getMatrix())) {
     return failure();
   }
-  for (auto qubit : getQubitsIn()) {
-    results.emplace_back(qubit);
-  }
+  llvm::append_range(results, getQubitsIn());
   return success();
 }
