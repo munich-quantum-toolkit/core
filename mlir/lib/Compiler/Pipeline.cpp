@@ -513,7 +513,11 @@ runDefaultPipelineImpl(CompilerInput&& program, ProgramFormat output,
     return CompilerProgram(std::move(*qc));
   }
   if (output == ProgramFormat::OpenQASM3) {
-    return qc->toOpenQASM3();
+    auto source = qc::translateQCToOpenQASM3(qc->module());
+    if (failed(source)) {
+      return std::nullopt;
+    }
+    return OpenQASMProgram(std::move(*source));
   }
 
   const auto profile = output == ProgramFormat::QIRAdaptive
