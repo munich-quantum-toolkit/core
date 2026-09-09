@@ -262,6 +262,23 @@ for int i in [0:0] { pair q[i], q[i + 1], other; }
   ASSERT_TRUE(broadcast) << broadcast.diagnostics.front().message;
 }
 
+TEST(OpenQASMFrontendTest, AcceptsWideBarrierWithUnrelatedAffineOperand) {
+  auto analyzed = oq3::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; qubit[64000] q; qubit[2] r; "
+      "for int i in [0:1] { barrier q, r[i]; }");
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  for (const auto& statement : analyzed.program->statements) {
+    if (const auto* barrier =
+            std::get_if<oq3::frontend::BarrierStatement>(&statement.data)) {
+      ASSERT_EQ(barrier->qubits.size(), 64001);
+      EXPECT_NE(barrier->qubits.front().symbol, barrier->qubits.back().symbol);
+      EXPECT_TRUE(barrier->qubits.back().provenIndex.has_value());
+      return;
+    }
+  }
+  FAIL() << "expected a barrier";
+}
+
 TEST(OpenQASMFrontendTest, RejectsDuplicateBarrierQubits) {
   constexpr auto sources = std::to_array<llvm::StringLiteral>({
       "OPENQASM 3.1; qubit q; barrier q, q;",
