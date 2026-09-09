@@ -52,7 +52,7 @@ namespace mlir::qco {
 namespace {
 
 constexpr uint64_t MAX_UNROLLED_OPERATIONS = 65536U;
-// ponytail: bound linear expansion; use balanced trees for larger switches.
+// Bound generated nesting to keep recursive IR processing manageable.
 constexpr uint64_t MAX_SWITCH_EXPANSION_DEPTH = 256U;
 
 enum class ControlFeature : uint8_t {
@@ -337,8 +337,9 @@ static LogicalResult foldStaticBranches(ModuleOp moduleOp) {
 
   int64_t scaledStep = 0;
   int64_t unrolledUpperBound = 0;
-  if (llvm::MulOverflow(*step, static_cast<int64_t>(iterations), scaledStep) ||
-      llvm::AddOverflow(*lowerBound, scaledStep, unrolledUpperBound)) {
+  if (llvm::MulOverflow(*step, static_cast<int64_t>(iterations), scaledStep) !=
+          0 ||
+      llvm::AddOverflow(*lowerBound, scaledStep, unrolledUpperBound) != 0) {
     return false;
   }
   const auto type = dyn_cast<IntegerType>(loop.getInductionVar().getType());
@@ -528,13 +529,10 @@ protected:
       }
 
       for (auto& [loop, tripCount] : loops) {
-        if (tripCount.isZero()) {
-          rewriter.replaceOp(loop, loop.getInitArgs());
-          continue;
-        }
-        if (tripCount.isOne()) {
+        if (tripCount.ule(1)) {
           if (failed(loop.promoteIfSingleIteration(rewriter))) {
-            loop.emitError("failed to promote a single-iteration loop");
+            loop.emitError(
+                "failed to simplify a zero- or single-iteration loop");
             signalPassFailure();
             return;
           }

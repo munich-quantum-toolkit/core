@@ -1,48 +1,40 @@
 # Compiler-only control-flow legalization
 
-Status: implemented.
+Status: implemented. Latest local validation: 2026-09-09.
 
-## Scope and release boundary
+## Scope
 
-Core #2162 follows #2219 without QDMI runtime or adapter ancestry and targets
-Core 4.0. Core #2365 and QDMI #523 track the separate Core 4.1/QDMI 1.4
-adaptation and do not gate this prototype. The rebase preserves the capability
-snapshot; human review must still settle the provider-neutral vocabulary.
+Legalize structured QCO/SCF control flow for the selected payload. Producers
+normalize CFG branches before target compilation. Scalar operations, measurement
+provenance, allocation, functions, and final payload-profile verification remain
+separate checks.
 
-Legalize structural control flow against the selected target environment. Retain
-supported constructs, lower unsupported static loops and switches where
-possible, and fail closed when residual control flow cannot be represented.
-Scalar computation, measurement provenance, allocation, functions and final QIR
-profile verification remain separate work.
+The implementation is in
+`mlir/lib/Dialect/QCO/Transforms/LegalizePayloadControlFlow.cpp`; compiler tests
+are in `mlir/unittests/Compiler/test_compiler_pipeline.cpp`. Public contracts
+are in `docs/mlir/target_compilation.md` and the QCO `Passes.td`.
 
-## Implementation
+## Decisions
 
-Keep two passes in one source: bounded static-loop unrolling before cleanup,
-then dialect conversion for residual branches and loops. Reuse MLIR symbol DCE,
-SCCP, native static trip counts, loop unrolling and conversion legality. Require
-structured QCO/SCF input; producers normalize CFG branches before compilation.
-Preserve literal-bound proofs, the 65,536 cloned-operation limit, and signed
-arithmetic safety checks for full unrolling. Reject invalid linear captures;
-carry quantum values explicitly through regions.
-
-The canonical pipeline receives one selected TargetEnvironment and shares its
-prepared target with all passes. It does not reintroduce removed cleanup passes
-or unknown-target fallbacks. Both legalization passes consume the existing
-cached TargetEnvironmentAnalysis. Capability names and constraints remain
-provisional.
-
-Single-case switches require only multiway branching. Cleanup after mapping
-remains; the redundant cleanup immediately after control legalization is
-removed.
+- Keep SCCP and QCO cleanup between unrolling and residual legality checks:
+  unrolling exposes constant bounds and branches.
+- Reuse MLIR trip counts, zero/one-trip promotion, and full unrolling. Require
+  literal bounds, signed-arithmetic safety, and a scaled step that fits the IV
+  type. Limit the pass to 65,536 cloned body operations.
+- Build switch fallbacks iteratively. Preflight the payload's branch-depth limit
+  and a compiler limit of 256 total control-flow levels, including moved case
+  bodies. Retained native multiway switches do not use this expansion limit.
+- Require explicit quantum iteration arguments and QCO branch state transport.
+  Exactly one SSA use does not exclude captures in repeated regions. Keep
+  negative fixtures valid under allocation verification so they test this rule.
+- Reuse the cached `TargetEnvironment`. Capability IDs remain a compiler
+  snapshot; the QDMI adapter and final payload-profile checks stay separate.
 
 ## Validation
 
-The optimized native build passed all 3,217 configured tests, with one existing
-optional-device skip. The compiler suite passed all 191 tests, including early
-CFG rejection, runtime assertions, single-case quantum and classical switches,
-full-width trip counts, unroll bounds, and linear-state constraints. MLIR
-documentation, repository lint, and whole changed-file C++ lint passed.
-
-Simon Hofmann's human co-authorship and the existing review history are
-preserved. The child commits are restacked on the shared-environment
-implementation in #2219.
+After rebasing on main `2bd6a88e1`, the LLVM/MLIR 23.1.0 release build passed
+all 201 compiler tests. The full native suite passed 3,388 tests with one
+optional `QueryJobId` skip. MLIR documentation generation, repository lint, and
+whole changed-file C++ lint passed. Focused regressions cover IV values,
+cumulative cloning, switch depth, case/default selection, quantum-state
+forwarding, and invalid captures.

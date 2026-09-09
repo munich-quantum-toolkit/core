@@ -2297,11 +2297,41 @@ TEST_F(CompilerPipelineTest, PayloadControlChecksUnrolledStepWidth) {
     bool safe;
   };
   for (const auto& test : {
-           LoopCase{-120, 110, 80, false, false},
-           LoopCase{-120, -10, 40, false, true},
-           LoopCase{-120, -120, 40, false, true},
-           LoopCase{-120, -119, 40, false, true},
-           LoopCase{0, 110, 80, true, true},
+           LoopCase{
+               .lower = -120,
+               .upper = 110,
+               .step = 80,
+               .unsignedComparison = false,
+               .safe = false,
+           },
+           LoopCase{
+               .lower = -120,
+               .upper = -10,
+               .step = 40,
+               .unsignedComparison = false,
+               .safe = true,
+           },
+           LoopCase{
+               .lower = -120,
+               .upper = -120,
+               .step = 40,
+               .unsignedComparison = false,
+               .safe = true,
+           },
+           LoopCase{
+               .lower = -120,
+               .upper = -119,
+               .step = 40,
+               .unsignedComparison = false,
+               .safe = true,
+           },
+           LoopCase{
+               .lower = 0,
+               .upper = 110,
+               .step = 80,
+               .unsignedComparison = true,
+               .safe = true,
+           },
        }) {
     std::string source;
     llvm::raw_string_ostream stream(source);
@@ -2522,15 +2552,17 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsSwitchLowering) {
              {5000, false, 0, false},
              {5000, true, 0, true},
              {2, false, 1, false},
-             {2, false, 2, true}}) {
+             {2, false, 2, true},
+         }) {
       SCOPED_TRACE(cases);
       SCOPED_TRACE(native);
       SCOPED_TRACE(depth);
       auto program =
           QCOProgram::fromMLIRString(makePayloadSwitchSource(cases, quantum));
       ASSERT_TRUE(program);
-      ProgramCapability capability{.id = native ? "multiway-branching"
-                                                : "forward-branching"};
+      ProgramCapability capability{
+          .id = native ? "multiway-branching" : "forward-branching",
+      };
       if (depth != 0) {
         capability.constraints.push_back(
             {.id = "max-control-flow-nesting-depth", .value = depth});
@@ -2579,13 +2611,28 @@ TEST_F(CompilerPipelineTest, PayloadControlChecksMovedCaseDepthByCapability) {
           program->module(),
           TargetEnvironment(
               makeUnrestrictedTarget(),
-              makeControlPayloadSpecification(
-                  {{.id = "forward-branching",
-                    .constraints = {{.id = "max-control-flow-nesting-depth",
-                                     .value = 2}}},
-                   {.id = "conditional-loop",
-                    .constraints = {{.id = "max-control-flow-nesting-depth",
-                                     .value = 3}}}})));
+              makeControlPayloadSpecification({
+                  {
+                      .id = "forward-branching",
+                      .constraints =
+                          {
+                              {
+                                  .id = "max-control-flow-nesting-depth",
+                                  .value = 2,
+                              },
+                          },
+                  },
+                  {
+                      .id = "conditional-loop",
+                      .constraints =
+                          {
+                              {
+                                  .id = "max-control-flow-nesting-depth",
+                                  .value = 3,
+                              },
+                          },
+                  },
+              })));
       const auto before = program->str();
       ScopedDiagnosticHandler handler(program->module()->getContext(),
                                       [](Diagnostic&) { return success(); });

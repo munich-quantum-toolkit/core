@@ -98,9 +98,9 @@ unrolled when this clones at most 65,536 body operations. Cleanup runs again
 because unrolling can make nested bounds and conditions constant. An unsupported
 index switch is lowered to a linear chain of nested forward branches when that
 form fits the selected contract. Before expansion, the compiler checks the
-selected forward-branching nesting limit and a compiler safety limit of 256 total
-control-flow levels, including enclosing control flow. This compiler limit is
-not a QDMI requirement and does not apply to switches retained under multiway
+selected forward-branching nesting limit and a compiler safety limit of 256
+total control-flow levels, including enclosing control flow. This compiler limit
+is not a QDMI requirement and does not apply to switches retained under multiway
 branching.
 
 Generic SCF branches cannot capture or return QCO qubits or quantum tensors; use
