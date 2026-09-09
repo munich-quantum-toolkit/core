@@ -556,7 +556,7 @@ public:
 protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
-    if (!std::isfinite(alpha) || alpha <= 0 || niterations == 0 ||
+    if (!std::isfinite(alpha.getValue()) || alpha <= 0 || niterations == 0 ||
         ntrials == 0) {
       moduleOp.emitError("mapping requires finite alpha > 0, niterations > 0, "
                          "and ntrials > 0");
