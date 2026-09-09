@@ -23,6 +23,7 @@ add_mlir_library(
   MLIRMQTDialect
   MLIRMQTTransforms
   MLIRMQTUtils
+  MLIRSCFDialect
   MLIRSCFUtils
   MLIRTransformUtils
   DEPENDS

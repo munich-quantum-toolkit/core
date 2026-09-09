@@ -23,6 +23,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -74,6 +75,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -262,7 +264,7 @@ makeCZTarget(std::initializer_list<NameAndCount> singleQubitGates) {
       },
       {
           {
-              .id = "forward-branching",
+              .id = ProgramCapability::FORWARD_BRANCHING.str(),
               .constraints =
                   {
                       {
@@ -274,6 +276,67 @@ makeCZTarget(std::initializer_list<NameAndCount> singleQubitGates) {
       },
       true));
 }
+
+[[nodiscard]] static PayloadSpecification
+makeControlPayloadSpecification(std::vector<ProgramCapability> capabilities,
+                                const bool optionalCapabilitiesKnown = true) {
+  return llvm::cantFail(PayloadSpecification::create(
+      {
+          .id = "test.payload",
+          .version = "1.2.3",
+          .profile = "dynamic",
+          .encoding = PayloadEncoding::Binary,
+      },
+      std::move(capabilities), optionalCapabilitiesKnown));
+}
+
+[[nodiscard]] static CompilerTarget makeUnrestrictedTarget() {
+  return llvm::cantFail(
+      CompilerTarget::create(1, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+}
+
+[[nodiscard]] static bool
+compileForTargetWithDiagnostics(QCOProgram& program,
+                                const PayloadSpecification& payload,
+                                std::string& diagnostics) {
+  diagnostics.clear();
+  ScopedDiagnosticHandler handler(program.module()->getContext(),
+                                  [&](Diagnostic& diagnostic) {
+                                    if (!diagnostics.empty()) {
+                                      diagnostics += '\n';
+                                    }
+                                    diagnostics += diagnostic.str();
+                                    return success();
+                                  });
+  return program.compileForTarget(
+      TargetEnvironment(makeUnrestrictedTarget(), payload));
+}
+
+constexpr llvm::StringLiteral QCO_INDEX_SWITCH_SOURCE = R"mlir(
+  module {
+    func.func @main(%selector: index) -> i64 attributes {mqt.entry_point} {
+      %q0 = qco.alloc : !qco.qubit
+      %state, %q1 = qco.index_switch %selector -> (i64, !qco.qubit)
+      case 0 args(%arg0 = %q0) {
+        %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+        %value = arith.constant 0 : i64
+        qco.yield %value, %q2 : i64, !qco.qubit
+      }
+      case 1 args(%arg0 = %q0) {
+        %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+        %value = arith.constant 1 : i64
+        qco.yield %value, %q2 : i64, !qco.qubit
+      }
+      default args(%arg0 = %q0) {
+        %value = arith.constant 2 : i64
+        qco.yield %value, %arg0 : i64, !qco.qubit
+      }
+      qco.sink %q1 : !qco.qubit
+      return %state : i64
+    }
+  }
+)mlir";
 
 TEST_P(CompilerPipelineTest, EndToEndPipeline) {
   const auto& testCase = GetParam();
@@ -1972,6 +2035,1096 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
       TargetEnvironment(makeSparseUCZTarget(false), payload)));
   EXPECT_TRUE(
       unsupportedQCO->module()->hasAttr(mlir::mqt::TargetEnvAttr::name));
+}
+
+// Handwritten MLIR isolates unsupported-input and capability-boundary behavior.
+// Frontend-backed cases below are named FromOpenQASM.
+TEST_F(CompilerPipelineTest,
+       PayloadControlRejectsUnsupportedResidualOperations) {
+  constexpr llvm::StringLiteral forwardBranch = R"mlir(
+    module {
+      func.func @main(%condition: i1) attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = qco.if %condition args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          qco.yield %q2 : !qco.qubit
+        } else args(%arg0 = %q0) {
+          qco.yield %arg0 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  constexpr llvm::StringLiteral countedLoop = R"mlir(
+    module {
+      func.func @main(%upper: index) attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %index = %c0 to %upper step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q2 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  constexpr llvm::StringLiteral conditionalLoop = R"mlir(
+    module {
+      func.func @main(%condition: i1) attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
+          scf.condition(%condition) %arg0 : !qco.qubit
+        } do {
+        ^bb0(%arg0: !qco.qubit):
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q2 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  const auto payload = makeControlPayloadSpecification({}, true);
+  const std::vector<std::pair<llvm::StringRef, llvm::StringRef>> cases{
+      {forwardBranch, "qco.if"},
+      {countedLoop, "scf.for"},
+      {conditionalLoop, "scf.while"},
+      {QCO_INDEX_SWITCH_SOURCE, "qco.index_switch"},
+  };
+  for (const auto& [source, operation] : cases) {
+    SCOPED_TRACE(operation.str());
+    auto program = QCOProgram::fromMLIRString(source.str());
+    ASSERT_TRUE(program);
+    std::string diagnostics;
+    EXPECT_FALSE(
+        compileForTargetWithDiagnostics(*program, payload, diagnostics));
+    EXPECT_TRUE(StringRef(diagnostics).contains(operation)) << diagnostics;
+  }
+
+  const std::vector<ProgramCapability> invalid{
+      {.id = "forward-branching", .value = 1},
+      {
+          .id = "forward-branching",
+          .constraints = {{.id = "max-case-count", .value = 1}},
+      },
+      {
+          .id = "forward-branching",
+          .constraints = {{.id = "max-control-flow-nesting-depth", .value = 0}},
+      },
+  };
+  for (const auto& capability : invalid) {
+    SCOPED_TRACE(capability.id);
+    auto program = QCOProgram::fromMLIRString(forwardBranch.str());
+    ASSERT_TRUE(program);
+    std::string diagnostics;
+    EXPECT_FALSE(compileForTargetWithDiagnostics(
+        *program, makeControlPayloadSpecification({capability}), diagnostics));
+    EXPECT_TRUE(StringRef(diagnostics).contains("qco.if")) << diagnostics;
+  }
+}
+
+TEST_F(CompilerPipelineTest,
+       PayloadControlFromOpenQASMUsesInclusiveIterationConstraint) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+for int i in [0:2] { x q; }
+)qasm";
+  auto qc = QCProgram::fromQASMString(source);
+  ASSERT_TRUE(qc);
+  auto input = std::move(*qc).intoQCO();
+  ASSERT_TRUE(input);
+  ASSERT_TRUE(StringRef(input->str()).contains("scf.for"));
+  const auto payload = [](const uint64_t maximum) {
+    return makeControlPayloadSpecification({
+        {
+            .id = "counted-iteration",
+            .constraints = {{.id = "max-iteration-count", .value = maximum}},
+        },
+    });
+  };
+
+  auto atBoundary = input->copy();
+  ASSERT_TRUE(atBoundary.compileForTarget(
+      TargetEnvironment(makeUnrestrictedTarget(), payload(3))));
+  EXPECT_TRUE(StringRef(atBoundary.str()).contains("scf.for"));
+
+  auto aboveBoundary = input->copy();
+  ASSERT_TRUE(aboveBoundary.compileForTarget(
+      TargetEnvironment(makeUnrestrictedTarget(), payload(2))));
+  EXPECT_FALSE(StringRef(aboveBoundary.str()).contains("scf.for"));
+}
+
+TEST_F(CompilerPipelineTest,
+       PayloadControlFromOpenQASMUnrollsNewlyStaticNestedLoops) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+for int outer in [0:2] {
+  for int inner in [0:outer - 1] {
+    if (inner == 0) { x q; }
+    else { h q; }
+  }
+}
+)qasm";
+
+  auto qc = QCProgram::fromQASMString(source);
+  ASSERT_TRUE(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(program);
+  ASSERT_EQ(StringRef(program->str()).count("scf.for"), 2U);
+  ASSERT_TRUE(StringRef(program->str()).contains("qco.if"));
+  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
+      makeUnrestrictedTarget(), makeControlPayloadSpecification({}, true))));
+  EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+  EXPECT_FALSE(StringRef(program->str()).contains("qco.if"));
+}
+
+TEST_F(CompilerPipelineTest,
+       PayloadControlFromOpenQASMUnrollsStatePermutation) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+int a = 0;
+int b = 1;
+for int i in [0:2] {
+  int tmp = a;
+  a = b;
+  b = tmp;
+}
+rx(a) q;
+bit c;
+c = measure q;
+)qasm";
+  auto qc = QCProgram::fromQASMString(source);
+  ASSERT_TRUE(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
+      makeUnrestrictedTarget(), makeControlPayloadSpecification({}))));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+  auto entry = program->module().lookupSymbol<func::FuncOp>("main");
+  auto result = cast<func::ReturnOp>(entry.getBody().front().getTerminator());
+  for (auto [operand, expected] :
+       llvm::zip_equal(result.getOperands().take_front(2), std::array{1, 0})) {
+    IntegerAttr value;
+    ASSERT_TRUE(matchPattern(operand, m_Constant(&value)));
+    EXPECT_EQ(value.getInt(), expected);
+  }
+}
+
+TEST_F(CompilerPipelineTest,
+       PayloadControlUnrollsTerminatorOnlyInductionValue) {
+  constexpr llvm::StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> index attributes {mqt.entry_point} {
+        %lb = arith.constant 2 : index
+        %ub = arith.constant 10 : index
+        %step = arith.constant 3 : index
+        %out = scf.for %i = %lb to %ub step %step
+            iter_args(%value = %lb) -> (index) {
+          scf.yield %i : index
+        }
+        return %out : index
+      }
+    }
+  )mlir";
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  attachTargetEnvironment(
+      program->module(),
+      TargetEnvironment(makeUnrestrictedTarget(),
+                        makeControlPayloadSpecification({})));
+  ASSERT_TRUE(program->runPassPipeline("unroll-loops-for-payload"));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+  auto entry = program->module().lookupSymbol<func::FuncOp>("main");
+  auto result = cast<func::ReturnOp>(entry.getBody().front().getTerminator());
+  IntegerAttr value;
+  ASSERT_TRUE(matchPattern(result.getOperand(0), m_Constant(&value)));
+  EXPECT_EQ(value.getInt(), 8);
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
+  constexpr llvm::StringLiteral source = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %limit = arith.constant 65538 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %index = %c0 to %limit step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q2 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, makeControlPayloadSpecification({}, true), diagnostics));
+  EXPECT_TRUE(StringRef(diagnostics).contains("65536 loop-body operations"))
+      << diagnostics;
+
+  constexpr llvm::StringLiteral nonconstantBounds = R"mlir(
+    module {
+      func.func @main(%lower: index) attributes {mqt.entry_point} {
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %upper = arith.addi %lower, %c2 overflow<nsw> : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %index = %lower to %upper step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q2 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  auto unsafe = QCOProgram::fromMLIRString(nonconstantBounds.str());
+  ASSERT_TRUE(unsafe);
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *unsafe, makeControlPayloadSpecification({}, true), diagnostics));
+  EXPECT_TRUE(StringRef(diagnostics).contains("scf.for")) << diagnostics;
+
+  constexpr llvm::StringLiteral overflowingRange = R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %min = arith.constant -9223372036854775808 : index
+        %max = arith.constant 9223372036854775807 : index
+        %c1 = arith.constant 1 : index
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.for %index = %min to %max step %c1
+            iter_args(%arg0 = %q0) -> (!qco.qubit) {
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q2 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  auto overflowing = QCOProgram::fromMLIRString(overflowingRange.str());
+  ASSERT_TRUE(overflowing);
+  diagnostics.clear();
+  ASSERT_TRUE(compileForTargetWithDiagnostics(
+      *overflowing,
+      makeControlPayloadSpecification({{.id = "counted-iteration"}}),
+      diagnostics));
+  size_t largeLoops = 0U;
+  overflowing->module().walk([&](scf::ForOp loop) {
+    const auto trips = loop.getStaticTripCount();
+    ASSERT_TRUE(trips);
+    EXPECT_EQ(trips->getZExtValue(), std::numeric_limits<uint64_t>::max());
+    ++largeLoops;
+  });
+  EXPECT_EQ(largeLoops, 1U);
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlChecksUnrolledStepWidth) {
+  struct LoopCase {
+    int64_t lower;
+    int64_t upper;
+    int64_t step;
+    bool unsignedComparison;
+    bool safe;
+  };
+  for (const auto& test : {
+           LoopCase{
+               .lower = -120,
+               .upper = 110,
+               .step = 80,
+               .unsignedComparison = false,
+               .safe = false,
+           },
+           LoopCase{
+               .lower = -120,
+               .upper = -10,
+               .step = 40,
+               .unsignedComparison = false,
+               .safe = true,
+           },
+           LoopCase{
+               .lower = -120,
+               .upper = -120,
+               .step = 40,
+               .unsignedComparison = false,
+               .safe = true,
+           },
+           LoopCase{
+               .lower = -120,
+               .upper = -119,
+               .step = 40,
+               .unsignedComparison = false,
+               .safe = true,
+           },
+           LoopCase{
+               .lower = 128,
+               .upper = 160,
+               .step = 10,
+               .unsignedComparison = true,
+               .safe = true,
+           },
+           LoopCase{
+               .lower = 0,
+               .upper = 110,
+               .step = 80,
+               .unsignedComparison = true,
+               .safe = true,
+           },
+       }) {
+    std::string source;
+    llvm::raw_string_ostream stream(source);
+    stream << "module {\n"
+           << "  func.func private @observe(i8)\n"
+           << "  func.func @main(%q: !qco.qubit) -> !qco.qubit "
+              "attributes {mqt.entry_point} {\n"
+           << "    %lower = arith.constant " << test.lower << " : i8\n"
+           << "    %upper = arith.constant " << test.upper << " : i8\n"
+           << "    %step = arith.constant " << test.step << " : i8\n"
+           << "    %result = scf.for "
+           << (test.unsignedComparison ? "unsigned " : "")
+           << "%i = %lower to %upper step %step "
+              "iter_args(%state = %q) -> (!qco.qubit) : i8 {\n"
+           << "      func.call @observe(%i) : (i8) -> ()\n"
+           << "      %next = qco.x %state : !qco.qubit -> !qco.qubit\n"
+           << "      scf.yield %next : !qco.qubit\n"
+           << "    }\n    return %result : !qco.qubit\n  }\n}\n";
+    SCOPED_TRACE(source);
+    auto program = QCOProgram::fromMLIRString(source);
+    ASSERT_TRUE(program);
+    attachTargetEnvironment(
+        program->module(),
+        TargetEnvironment(makeUnrestrictedTarget(),
+                          makeControlPayloadSpecification({})));
+    const auto before = program->str();
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(program->module()->getContext(),
+                                    [&](Diagnostic& diagnostic) {
+                                      diagnostics += diagnostic.str();
+                                      return success();
+                                    });
+    const bool transformed =
+        program->runPassPipeline("unroll-loops-for-payload");
+    ASSERT_EQ(transformed, test.safe) << diagnostics;
+    if (!test.safe) {
+      EXPECT_TRUE(StringRef(diagnostics).contains("cannot safely apply MLIR"));
+      EXPECT_EQ(program->str(), before);
+      continue;
+    }
+    EXPECT_TRUE(succeeded(verify(program->module())));
+    std::vector<int64_t> observed;
+    program->module().walk([&](func::CallOp call) {
+      IntegerAttr value;
+      ASSERT_TRUE(matchPattern(call.getOperand(0), m_Constant(&value)));
+      observed.push_back(
+          test.unsignedComparison
+              ? static_cast<int64_t>(value.getValue().getZExtValue())
+              : value.getInt());
+    });
+    std::vector<int64_t> expected;
+    for (auto value = test.lower; value < test.upper; value += test.step) {
+      expected.push_back(value);
+    }
+    EXPECT_EQ(observed, expected);
+    EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+  }
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlBoundsTotalLoopCloning) {
+  for (const auto trips : {32769, 32770}) {
+    SCOPED_TRACE(trips);
+    std::string source;
+    llvm::raw_string_ostream stream(source);
+    stream << "module {\n"
+           << "  func.func @main(%q: !qco.qubit) -> !qco.qubit "
+              "attributes {mqt.entry_point} {\n"
+           << "    %c0 = arith.constant 0 : index\n"
+           << "    %c1 = arith.constant 1 : index\n"
+           << "    %limit = arith.constant " << trips << " : index\n";
+    for (const auto index : {0, 1}) {
+      stream << "    %out" << index << " = scf.for %i" << index
+             << " = %c0 to %limit step %c1 iter_args(%state" << index << " = "
+             << (index == 0 ? "%q" : "%out0") << ") -> (!qco.qubit) {\n"
+             << "      %next" << index << " = qco.x %state" << index
+             << " : !qco.qubit -> !qco.qubit\n"
+             << "      scf.yield %next" << index << " : !qco.qubit\n    }\n";
+    }
+    stream << "    return %out1 : !qco.qubit\n  }\n}\n";
+    auto program = QCOProgram::fromMLIRString(source);
+    ASSERT_TRUE(program);
+    attachTargetEnvironment(
+        program->module(),
+        TargetEnvironment(makeUnrestrictedTarget(),
+                          makeControlPayloadSpecification({})));
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(program->module()->getContext(),
+                                    [&](Diagnostic& diagnostic) {
+                                      diagnostics += diagnostic.str();
+                                      return success();
+                                    });
+    EXPECT_EQ(program->runPassPipeline("unroll-loops-for-payload"),
+              trips == 32769)
+        << diagnostics;
+    EXPECT_TRUE(succeeded(verify(program->module())));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+    if (trips == 32770) {
+      EXPECT_TRUE(
+          StringRef(diagnostics).contains("65536 loop-body operations"));
+    } else {
+      EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest,
+       PayloadControlFromOpenQASMPreservesOrLowersSwitchAtBoundaries) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit[2] bits;
+h q;
+bits[0] = measure q;
+h q;
+bits[1] = measure q;
+uint[2] selector = uint[2](bits);
+output int result;
+switch (selector) {
+  case 0 { x q; result = 0; }
+  case 1 { h q; result = 1; }
+  default { result = 2; }
+}
+)qasm";
+  auto qc = QCProgram::fromQASMString(source);
+  ASSERT_TRUE(qc);
+  auto input = std::move(*qc).intoQCO();
+  ASSERT_TRUE(input);
+  ASSERT_TRUE(StringRef(input->str()).contains("qco.index_switch"));
+  const auto target = makeUnrestrictedTarget();
+  const auto multiway = [](const uint64_t maximum) {
+    return ProgramCapability{
+        .id = "multiway-branching",
+        .constraints = {{.id = "max-case-count", .value = maximum}},
+    };
+  };
+  const auto forward = [](const uint64_t maximum) {
+    return ProgramCapability{
+        .id = "forward-branching",
+        .constraints =
+            {
+                {.id = "max-control-flow-nesting-depth", .value = maximum},
+            },
+    };
+  };
+
+  auto preserved = input->copy();
+  ASSERT_TRUE(preserved.compileForTarget(TargetEnvironment(
+      target, makeControlPayloadSpecification({multiway(2)}))));
+  EXPECT_TRUE(StringRef(preserved.str()).contains("qco.index_switch"));
+
+  auto lowered = input->copy();
+  ASSERT_TRUE(lowered.compileForTarget(TargetEnvironment(
+      target, makeControlPayloadSpecification({multiway(1), forward(2)}))));
+  EXPECT_FALSE(StringRef(lowered.str()).contains("qco.index_switch"));
+  EXPECT_EQ(StringRef(lowered.str()).count("qco.if"), 2U);
+
+  auto tooDeep = input->copy();
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      tooDeep, makeControlPayloadSpecification({multiway(1), forward(1)}),
+      diagnostics));
+  EXPECT_TRUE(StringRef(diagnostics).contains("qco.index_switch"))
+      << diagnostics;
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlLowersClassicalSCFIndexSwitch) {
+  constexpr llvm::StringLiteral source = R"mlir(
+    module {
+      func.func @main(%selector: index) -> i64 attributes {mqt.entry_point} {
+        %result = scf.index_switch %selector -> i64
+        default {
+          %nested = scf.index_switch %selector -> i64
+          case 0 {
+            %zero = arith.constant 0 : i64
+            scf.yield %zero : i64
+          }
+          case 1 {
+            %one = arith.constant 1 : i64
+            scf.yield %one : i64
+          }
+          default {
+            %two = arith.constant 2 : i64
+            scf.yield %two : i64
+          }
+          scf.yield %nested : i64
+        }
+        return %result : i64
+      }
+    }
+  )mlir";
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  attachTargetEnvironment(
+      program->module(), TargetEnvironment(makeUnrestrictedTarget(),
+                                           makeControlPayloadSpecification(
+                                               {{.id = "forward-branching"}})));
+  ASSERT_TRUE(program->runPassPipeline("legalize-control-flow"));
+  EXPECT_FALSE(StringRef(program->str()).contains("scf.index_switch"));
+  EXPECT_EQ(StringRef(program->str()).count("scf.if"), 2U);
+}
+
+[[nodiscard]] static std::string
+makePayloadSwitchSource(size_t cases, bool quantum,
+                        StringRef lastCaseBody = {}) {
+  std::string source = "module {\n";
+  if (!lastCaseBody.empty()) {
+    source += "func.func private @effect()\n";
+  }
+  source += "func.func @main(%selector: index, %condition: i1";
+  source += quantum ? ", %q: !qco.qubit) -> (i64, !qco.qubit)\n" : ") -> i64\n";
+  source += "attributes {mqt.entry_point} {\n";
+  source +=
+      quantum
+          ? "%result, %out = qco.index_switch %selector -> (i64, !qco.qubit)\n"
+          : "%result = scf.index_switch %selector -> i64\n";
+  for (size_t i = 0; i <= cases; ++i) {
+    source += i == cases ? "default" : "case " + std::to_string(i);
+    source += quantum ? " args(%arg = %q) {\n" : " {\n";
+    if (i + 1 == cases) {
+      source += lastCaseBody.str();
+    }
+    source += "%value = arith.constant " +
+              (i == cases ? "-1" : std::to_string(i)) + " : i64\n";
+    source += quantum ? "qco.yield %value, %arg : i64, !qco.qubit\n}\n"
+                      : "scf.yield %value : i64\n}\n";
+  }
+  source += quantum ? "return %result, %out : i64, !qco.qubit\n"
+                    : "return %result : i64\n";
+  return source + "}\n}\n";
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlBoundsSwitchLowering) {
+  for (bool quantum : {false, true}) {
+    SCOPED_TRACE(quantum);
+    for (const auto& [cases, native, depth, expected] :
+         std::vector<std::tuple<size_t, bool, uint64_t, bool>>{
+             {256, false, 0, true},
+             {257, false, 0, false},
+             {5000, false, 0, false},
+             {5000, true, 0, true},
+             {2, false, 1, false},
+             {2, false, 2, true},
+         }) {
+      SCOPED_TRACE(cases);
+      SCOPED_TRACE(native);
+      SCOPED_TRACE(depth);
+      auto program =
+          QCOProgram::fromMLIRString(makePayloadSwitchSource(cases, quantum));
+      ASSERT_TRUE(program);
+      ProgramCapability capability{
+          .id = native ? "multiway-branching" : "forward-branching",
+      };
+      if (depth != 0) {
+        capability.constraints.push_back(
+            {.id = "max-control-flow-nesting-depth", .value = depth});
+      }
+      attachTargetEnvironment(
+          program->module(),
+          TargetEnvironment(makeUnrestrictedTarget(),
+                            makeControlPayloadSpecification({capability})));
+      const auto before = program->str();
+      ScopedDiagnosticHandler handler(program->module()->getContext(),
+                                      [](Diagnostic&) { return success(); });
+      EXPECT_EQ(program->runPassPipeline("legalize-control-flow"), expected);
+      EXPECT_TRUE(succeeded(verify(program->module())));
+      EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+      if (expected) {
+        EXPECT_EQ(StringRef(program->str()).contains("index_switch"), native);
+      } else {
+        EXPECT_EQ(program->str(), before);
+      }
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlChecksMovedCaseDepthByCapability) {
+  constexpr llvm::StringLiteral nestedBranch = R"mlir(
+    scf.if %condition {
+      func.call @effect() : () -> ()
+    }
+  )mlir";
+  constexpr llvm::StringLiteral nestedLoop = R"mlir(
+    scf.while : () -> () {
+      scf.condition(%condition)
+    } do {
+      func.call @effect() : () -> ()
+      scf.yield
+    }
+  )mlir";
+  for (bool quantum : {false, true}) {
+    for (bool loop : {false, true}) {
+      SCOPED_TRACE(quantum);
+      SCOPED_TRACE(loop);
+      auto program = QCOProgram::fromMLIRString(makePayloadSwitchSource(
+          2, quantum, loop ? nestedLoop : nestedBranch));
+      ASSERT_TRUE(program);
+      attachTargetEnvironment(
+          program->module(),
+          TargetEnvironment(
+              makeUnrestrictedTarget(),
+              makeControlPayloadSpecification({
+                  {
+                      .id = "forward-branching",
+                      .constraints =
+                          {
+                              {
+                                  .id = "max-control-flow-nesting-depth",
+                                  .value = 2,
+                              },
+                          },
+                  },
+                  {
+                      .id = "conditional-loop",
+                      .constraints =
+                          {
+                              {
+                                  .id = "max-control-flow-nesting-depth",
+                                  .value = 3,
+                              },
+                          },
+                  },
+              })));
+      const auto before = program->str();
+      ScopedDiagnosticHandler handler(program->module()->getContext(),
+                                      [](Diagnostic&) { return success(); });
+      EXPECT_EQ(program->runPassPipeline("legalize-control-flow"), loop);
+      EXPECT_TRUE(succeeded(verify(program->module())));
+      EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+      if (!loop) {
+        EXPECT_EQ(program->str(), before);
+      }
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlPreservesSwitchSelectionAndState) {
+  for (bool quantum : {false, true}) {
+    for (int64_t selector : {0, 1, 2, 99}) {
+      SCOPED_TRACE(quantum);
+      SCOPED_TRACE(selector);
+      auto program =
+          QCOProgram::fromMLIRString(makePayloadSwitchSource(3, quantum));
+      ASSERT_TRUE(program);
+      attachTargetEnvironment(
+          program->module(),
+          TargetEnvironment(
+              makeUnrestrictedTarget(),
+              makeControlPayloadSpecification({{.id = "forward-branching"}})));
+      ASSERT_TRUE(program->runPassPipeline("legalize-control-flow"));
+      EXPECT_FALSE(StringRef(program->str()).contains("index_switch"));
+      auto function = program->module().lookupSymbol<func::FuncOp>("main");
+      OpBuilder builder(function.getContext());
+      builder.setInsertionPointToStart(&function.getBody().front());
+      auto value =
+          arith::ConstantIndexOp::create(builder, function.getLoc(), selector);
+      function.getArgument(0).replaceAllUsesWith(value.getResult());
+      ASSERT_TRUE(program->runPassPipeline("canonicalize"));
+      auto result =
+          cast<func::ReturnOp>(function.getBody().front().getTerminator());
+      IntegerAttr returned;
+      ASSERT_TRUE(matchPattern(result.getOperand(0), m_Constant(&returned)));
+      EXPECT_EQ(returned.getInt(), selector == 99 ? -1 : selector);
+      EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+      if (quantum) {
+        EXPECT_EQ(result.getOperand(1), function.getArgument(2));
+      }
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlBoundsMovedCaseDepth) {
+  for (bool quantum : {false, true}) {
+    for (size_t cases : {255U, 256U}) {
+      SCOPED_TRACE(quantum);
+      SCOPED_TRACE(cases);
+      auto program = QCOProgram::fromMLIRString(
+          makePayloadSwitchSource(cases, quantum, R"mlir(
+            scf.if %condition {
+              func.call @effect() : () -> ()
+            }
+          )mlir"));
+      ASSERT_TRUE(program);
+      attachTargetEnvironment(
+          program->module(),
+          TargetEnvironment(
+              makeUnrestrictedTarget(),
+              makeControlPayloadSpecification({{.id = "forward-branching"}})));
+      const auto before = program->str();
+      ScopedDiagnosticHandler handler(program->module()->getContext(),
+                                      [](Diagnostic&) { return success(); });
+      EXPECT_EQ(program->runPassPipeline("legalize-control-flow"),
+                cases == 255);
+      EXPECT_TRUE(succeeded(verify(program->module())));
+      EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+      if (cases == 256) {
+        EXPECT_EQ(program->str(), before);
+      }
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest,
+       PayloadControlRejectsLinearStateInGenericSCFControl) {
+  constexpr llvm::StringLiteral ifResult = R"mlir(
+    module {
+      func.func @main(%condition: i1, %left: !qco.qubit, %right: !qco.qubit)
+          attributes {mqt.entry_point} {
+        %result = scf.if %condition -> !qco.qubit {
+          %x = qco.x %left : !qco.qubit -> !qco.qubit
+          scf.yield %x : !qco.qubit
+        } else {
+          %h = qco.h %right : !qco.qubit -> !qco.qubit
+          scf.yield %h : !qco.qubit
+        }
+        qco.sink %result : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  constexpr llvm::StringLiteral switchResult = R"mlir(
+    module {
+      func.func @main(%selector: index, %left: tensor<1x!qco.qubit>,
+                      %right: tensor<1x!qco.qubit>)
+          -> tensor<1x!qco.qubit> attributes {mqt.entry_point} {
+        %result = scf.index_switch %selector -> tensor<1x!qco.qubit>
+        case 0 {
+          scf.yield %left : tensor<1x!qco.qubit>
+        }
+        default {
+          scf.yield %right : tensor<1x!qco.qubit>
+        }
+        return %result : tensor<1x!qco.qubit>
+      }
+    }
+  )mlir";
+  constexpr llvm::StringLiteral forCapture = R"mlir(
+    module {
+      func.func @main(%upper: index, %q: !qco.qubit)
+          attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        scf.for %index = %c0 to %upper step %c1 {
+          %next = qco.x %q : !qco.qubit -> !qco.qubit
+          qco.sink %next : !qco.qubit
+        }
+        return
+      }
+    }
+  )mlir";
+  constexpr llvm::StringLiteral whileCapture = R"mlir(
+    module {
+      func.func @main(%condition: i1, %q: !qco.qubit)
+          attributes {mqt.entry_point} {
+        scf.while : () -> () {
+          scf.condition(%condition)
+        } do {
+          %next = qco.x %q : !qco.qubit -> !qco.qubit
+          qco.sink %next : !qco.qubit
+          scf.yield
+        }
+        return
+      }
+    }
+  )mlir";
+  constexpr llvm::StringLiteral nestedForCapture = R"mlir(
+    module {
+      func.func @main(%upper: index, %q: !qco.qubit)
+          attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        scf.for %outer = %c0 to %upper step %c1 {
+          scf.for %inner = %c0 to %c1 step %c1 {
+            %next = qco.x %q : !qco.qubit -> !qco.qubit
+            qco.sink %next : !qco.qubit
+          }
+        }
+        return
+      }
+    }
+  )mlir";
+  constexpr llvm::StringLiteral nestedWhileCapture = R"mlir(
+    module {
+      func.func @main(%upper: index, %condition: i1, %q: !qco.qubit)
+          attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %result = scf.for %outer = %c0 to %upper step %c1
+            iter_args(%arg = %q) -> (!qco.qubit) {
+          %inner = scf.while : () -> !qco.qubit {
+            scf.condition(%condition) %arg : !qco.qubit
+          } do {
+          ^bb0(%value: !qco.qubit):
+            qco.sink %value : !qco.qubit
+            scf.yield
+          }
+          scf.yield %inner : !qco.qubit
+        }
+        qco.sink %result : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+
+  const auto payload = makeControlPayloadSpecification({
+      {.id = "forward-branching"},
+      {.id = "counted-iteration"},
+      {.id = "conditional-loop"},
+      {.id = "multiway-branching"},
+  });
+  const std::vector<std::pair<llvm::StringRef, llvm::StringRef>> cases{
+      {ifResult, "scf.if"},
+      {switchResult, "scf.index_switch"},
+      {forCapture, "iteration arguments"},
+      {whileCapture, "scf.while"},
+  };
+  for (const auto& [source, expected] : cases) {
+    SCOPED_TRACE(expected.str());
+    auto program = QCOProgram::fromMLIRString(source.str());
+    ASSERT_TRUE(program);
+    std::string diagnostics;
+    EXPECT_FALSE(
+        compileForTargetWithDiagnostics(*program, payload, diagnostics));
+    EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
+  }
+
+  for (StringRef source : {
+           forCapture,
+           whileCapture,
+           nestedForCapture,
+           nestedWhileCapture,
+       }) {
+    SCOPED_TRACE(source.str());
+    for (const auto* pass :
+         {"unroll-loops-for-payload", "legalize-control-flow"}) {
+      SCOPED_TRACE(pass);
+      auto program = QCOProgram::fromMLIRString(source.str());
+      ASSERT_TRUE(program);
+      attachTargetEnvironment(
+          program->module(),
+          TargetEnvironment(makeUnrestrictedTarget(),
+                            makeControlPayloadSpecification({})));
+      const auto before = program->str();
+      std::string diagnostics;
+      ScopedDiagnosticHandler handler(program->module()->getContext(),
+                                      [&](Diagnostic& diagnostic) {
+                                        diagnostics += diagnostic.str();
+                                        return success();
+                                      });
+      EXPECT_FALSE(program->runPassPipeline(pass));
+      EXPECT_TRUE(StringRef(diagnostics).contains("iteration arguments"))
+          << diagnostics;
+      EXPECT_EQ(program->str(), before);
+    }
+  }
+}
+
+TEST_F(CompilerPipelineTest,
+       PayloadControlDiagnosesIllegalControlNestedInLegalBranch) {
+  constexpr llvm::StringLiteral source = R"mlir(
+    module {
+      func.func private @effect()
+      func.func @main(%condition: i1) attributes {mqt.entry_point} {
+        scf.if %condition {
+          scf.while : () -> () {
+            scf.condition(%condition)
+          } do {
+            func.call @effect() : () -> ()
+            scf.yield
+          }
+        }
+        return
+      }
+    }
+  )mlir";
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program,
+      makeControlPayloadSpecification(
+          {{.id = "forward-branching",
+            .constraints = {{.id = "max-control-flow-nesting-depth",
+                             .value = 2}}}}),
+      diagnostics));
+  EXPECT_TRUE(StringRef(diagnostics).contains("scf.while")) << diagnostics;
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlRejectsUnstructuredCFG) {
+  constexpr llvm::StringLiteral source = R"mlir(
+    module {
+      func.func @main(%condition: i1) -> i64 attributes {mqt.entry_point} {
+        cf.cond_br %condition, ^then, ^otherwise
+      ^then:
+        %one = arith.constant 1 : i64
+        cf.br ^merge(%one : i64)
+      ^otherwise:
+        %two = arith.constant 2 : i64
+        cf.br ^merge(%two : i64)
+      ^merge(%value: i64):
+        return %value : i64
+      }
+    }
+  )mlir";
+  const auto payload = makeControlPayloadSpecification({
+      {
+          .id = "forward-branching",
+          .constraints =
+              {
+                  {.id = "max-control-flow-nesting-depth", .value = 1},
+              },
+      },
+  });
+  std::string diagnostics;
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  EXPECT_FALSE(compileForTargetWithDiagnostics(*program, payload, diagnostics));
+  EXPECT_TRUE(StringRef(diagnostics).contains("structured QCO/SCF input"))
+      << diagnostics;
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlRejectsConstantCFGBeforeCleanup) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        cf.br ^exit
+      ^exit:
+        return
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(program);
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *program, makeControlPayloadSpecification({}), diagnostics));
+  EXPECT_TRUE(StringRef(diagnostics).contains("structured QCO/SCF input"))
+      << diagnostics;
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlAllowsRuntimeAssertions) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(
+    module {
+      func.func @main(%condition: i1) attributes {mqt.entry_point} {
+        cf.assert %condition, "runtime precondition"
+        return
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
+      makeUnrestrictedTarget(), makeControlPayloadSpecification({}))));
+  EXPECT_TRUE(StringRef(program->str()).contains("cf.assert"));
+}
+
+TEST_F(CompilerPipelineTest, PayloadControlPreservesSingleCaseNativeSwitches) {
+  constexpr llvm::StringLiteral quantum = R"mlir(
+    module {
+      func.func @main(%selector: index) attributes {mqt.entry_point} {
+        %q = qco.alloc : !qco.qubit
+        %r = qco.index_switch %selector -> (!qco.qubit)
+        case 0 args(%a = %q) {
+          %x = qco.x %a : !qco.qubit -> !qco.qubit
+          qco.yield %x : !qco.qubit
+        }
+        default args(%a = %q) {
+          %h = qco.h %a : !qco.qubit -> !qco.qubit
+          qco.yield %h : !qco.qubit
+        }
+        qco.sink %r : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  constexpr llvm::StringLiteral classical = R"mlir(
+    module {
+      func.func @main(%selector: index) -> i64 attributes {mqt.entry_point} {
+        %r = scf.index_switch %selector -> i64
+        case 0 {
+          %one = arith.constant 1 : i64
+          scf.yield %one : i64
+        }
+        default {
+          %two = arith.constant 2 : i64
+          scf.yield %two : i64
+        }
+        return %r : i64
+      }
+    }
+  )mlir";
+  for (auto source : {quantum, classical}) {
+    auto program = QCOProgram::fromMLIRString(source.str());
+    ASSERT_TRUE(program);
+    ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
+        makeUnrestrictedTarget(),
+        makeControlPayloadSpecification(
+            {{.id = "multiway-branching",
+              .constraints = {{.id = "max-case-count", .value = 1}}}}))));
+    EXPECT_TRUE(StringRef(program->str()).contains("index_switch"));
+  }
+}
+
+TEST_F(CompilerPipelineTest,
+       PayloadControlRequiresProofForConstrainedConditionalLoop) {
+  constexpr llvm::StringLiteral source = R"mlir(
+    module {
+      func.func @main(%condition: i1) attributes {mqt.entry_point} {
+        %q0 = qco.alloc : !qco.qubit
+        %q1 = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
+          scf.condition(%condition) %arg0 : !qco.qubit
+        } do {
+        ^bb0(%arg0: !qco.qubit):
+          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
+          scf.yield %q2 : !qco.qubit
+        }
+        qco.sink %q1 : !qco.qubit
+        return
+      }
+    }
+  )mlir";
+  auto unconstrained = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(unconstrained);
+  ASSERT_TRUE(unconstrained->compileForTarget(TargetEnvironment(
+      makeUnrestrictedTarget(),
+      makeControlPayloadSpecification({{.id = "conditional-loop"}}))));
+  EXPECT_TRUE(StringRef(unconstrained->str()).contains("scf.while"));
+
+  auto constrained = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(constrained);
+  std::string diagnostics;
+  EXPECT_FALSE(compileForTargetWithDiagnostics(
+      *constrained,
+      makeControlPayloadSpecification(
+          {{.id = "conditional-loop",
+            .constraints = {{.id = "max-iteration-count", .value = 4}}}}),
+      diagnostics));
+  EXPECT_TRUE(StringRef(diagnostics).contains("scf.while")) << diagnostics;
 }
 
 /// Test: target passes use the canonical environment in textual form.

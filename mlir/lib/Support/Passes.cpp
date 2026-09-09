@@ -54,6 +54,7 @@ void registerMQTCompilerPasses() {
     qco::registerDecomposeMultiControlled();
     qco::registerFuseSingleQubitUnitaryRuns();
     qco::registerHadamardLifting();
+    qco::registerLegalizeControlFlow();
     qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerPauliTwirl2QGates();
@@ -63,6 +64,7 @@ void registerMQTCompilerPasses() {
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
     qco::registerTargetNativeSynthesis();
+    qco::registerUnrollLoopsForPayload();
     qco::registerVerifyTargetConformance();
     mqt::registerNormalizeGlobalPhases();
     mqt::registerUnrollModifiers();

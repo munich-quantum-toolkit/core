@@ -16,8 +16,10 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Support/Passes.h"
 
+#include <mlir/IR/Visitors.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
+#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/Passes.h>
 
 #include <memory>
@@ -26,18 +28,31 @@
 namespace mlir {
 namespace {
 
-class InitializeTargetEnvironmentPass
-    : public PassWrapper<InitializeTargetEnvironmentPass,
+class PrepareTargetCompilationPass
+    : public PassWrapper<PrepareTargetCompilationPass,
                          OperationPass<ModuleOp>> {
 public:
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(InitializeTargetEnvironmentPass)
+  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PrepareTargetCompilationPass)
 
-  explicit InitializeTargetEnvironmentPass(TargetEnvironment environment)
+  explicit PrepareTargetCompilationPass(TargetEnvironment environment)
       : environment_(std::move(environment)) {}
 
 protected:
   void runOnOperation() override {
     getAnalysis<TargetEnvironmentAnalysis>().initialize(environment_);
+    auto result = getOperation().walk([](Operation* operation) {
+      if (operation->getNumSuccessors() == 0) {
+        return WalkResult::advance();
+      }
+      operation->emitError(
+          "target compilation requires structured QCO/SCF input; normalize "
+          "CFG branches before compilation");
+      return WalkResult::interrupt();
+    });
+    if (result.wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
     markAnalysesPreserved<TargetEnvironmentAnalysis>();
   }
 
@@ -49,10 +64,15 @@ private:
 
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment) {
-  pm.addPass(std::make_unique<InitializeTargetEnvironmentPass>(environment));
+  pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment));
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
+  pm.addPass(createSymbolDCEPass());
+  pm.addPass(createSCCPPass());
+  pm.addPass(qco::createUnrollLoopsForPayload());
+  pm.addPass(createSCCPPass());
   populateQCOCleanupPipeline(pm);
+  pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   populateDefaultQCOOptimizationPipeline(pm);
   /// ponytail: CX/CZ-cost fusion can increase square-root iSWAP counts;

@@ -111,6 +111,44 @@ def QuantumLoopUnroll
 }
 
 //===----------------------------------------------------------------------===//
+// Payload legalization passes
+//===----------------------------------------------------------------------===//
+
+def UnrollLoopsForPayload : Pass<"unroll-loops-for-payload", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::arith::ArithDialect",
+                           "mlir::scf::SCFDialect"];
+  let summary = "Unroll static loops unsupported by the selected payload";
+  let description = [{
+    Reads the selected payload from `mqt.target_env` and fully unrolls static
+    `scf.for` operations that its counted-iteration capability does not cover.
+    The pass limits the total number of cloned body operations to 65,536.
+    Run constant propagation and QCO cleanup after this pass, then
+    `legalize-control-flow` to check the remaining branches and loops.
+    After folding static branches, the pass checks that all SCF loops carry
+    linear QCO state through iteration arguments instead of capturing it.
+  }];
+}
+
+def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect",
+                           "mlir::arith::ArithDialect"];
+  let summary = "Legalize control flow for the selected payload";
+  let description = [{
+    Reads the selected payload from `mqt.target_env`. The pass retains covered
+    QCO and SCF branches and loops, lowers unsupported index switches to nested
+    forward branches when possible, and rejects residual structural control
+    flow that the payload does not support.
+    Switch expansion checks the selected forward-branching depth limit before
+    rewriting and limits the resulting total control-flow nesting depth to 256.
+    This compiler safety limit does not restrict retained native switches.
+    Run this pass after `unroll-loops-for-payload`, constant propagation, and
+    QCO cleanup so newly constant control flow can fold before legality checks.
+    Before conversion, the pass checks that all SCF loops carry linear QCO
+    state through iteration arguments instead of capturing it.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
 
