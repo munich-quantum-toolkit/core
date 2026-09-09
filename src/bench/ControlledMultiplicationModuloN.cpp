@@ -33,9 +33,10 @@ static_assert(ControlledMultiplicationModuloNOptions::MAX_BITS <
 [[nodiscard]] std::optional<uint64_t>
 binaryValue(const std::string_view bitstring) {
   uint64_t value = 0;
-  const auto [end, error] =
-      std::from_chars(bitstring.begin(), bitstring.end(), value, /*base=*/2);
-  if (error != std::errc{} || end != bitstring.end()) {
+  const auto* const end = bitstring.data() + bitstring.size();
+  const auto [parsedEnd, error] =
+      std::from_chars(bitstring.data(), end, value, /*base=*/2);
+  if (error != std::errc{} || parsedEnd != end) {
     return std::nullopt;
   }
   return value;
