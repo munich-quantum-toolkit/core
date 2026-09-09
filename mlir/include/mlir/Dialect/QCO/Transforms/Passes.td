@@ -114,8 +114,7 @@ def QuantumLoopUnroll
 // Payload legalization passes
 //===----------------------------------------------------------------------===//
 
-def UnrollUnsupportedPayloadLoops
-    : Pass<"unroll-unsupported-payload-loops", "mlir::ModuleOp"> {
+def UnrollLoopsForPayload : Pass<"unroll-loops-for-payload", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::arith::ArithDialect",
                            "mlir::scf::SCFDialect"];
   let summary = "Unroll static loops unsupported by the selected payload";
@@ -123,14 +122,14 @@ def UnrollUnsupportedPayloadLoops
     Reads the selected payload from `mqt.target_env` and fully unrolls static
     `scf.for` operations that its counted-iteration capability does not cover.
     The pass limits the total number of cloned body operations to 65,536.
-    Dynamic loops remain for payload control-flow legalization.
+    Run constant propagation and QCO cleanup after this pass, then
+    `legalize-control-flow` to check the remaining branches and loops.
     After folding static branches, the pass checks that all SCF loops carry
     linear QCO state through iteration arguments instead of capturing it.
   }];
 }
 
-def LegalizePayloadControlFlow
-    : Pass<"legalize-payload-control-flow", "mlir::ModuleOp"> {
+def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect",
                            "mlir::arith::ArithDialect"];
   let summary = "Legalize control flow for the selected payload";
@@ -139,6 +138,8 @@ def LegalizePayloadControlFlow
     QCO and SCF branches and loops, lowers unsupported index switches to nested
     forward branches when possible, and rejects residual structural control
     flow that the payload does not support.
+    Run this pass after `unroll-loops-for-payload`, constant propagation, and
+    QCO cleanup so newly constant control flow can fold before legality checks.
     Before conversion, the pass checks that all SCF loops carry linear QCO
     state through iteration arguments instead of capturing it.
   }];

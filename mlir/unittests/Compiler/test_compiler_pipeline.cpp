@@ -2363,7 +2363,7 @@ TEST_F(CompilerPipelineTest, PayloadControlLowersClassicalSCFIndexSwitch) {
       program->module(), TargetEnvironment(makeUnrestrictedTarget(),
                                            makeControlPayloadSpecification(
                                                {{.id = "forward-branching"}})));
-  ASSERT_TRUE(program->runPassPipeline("legalize-payload-control-flow"));
+  ASSERT_TRUE(program->runPassPipeline("legalize-control-flow"));
   EXPECT_FALSE(StringRef(program->str()).contains("scf.index_switch"));
   EXPECT_EQ(StringRef(program->str()).count("scf.if"), 2U);
 }
@@ -2478,8 +2478,8 @@ TEST_F(CompilerPipelineTest,
            nestedForCapture,
        }) {
     SCOPED_TRACE(source.str());
-    for (const auto* pass : {"unroll-unsupported-payload-loops",
-                             "legalize-payload-control-flow"}) {
+    for (const auto* pass :
+         {"unroll-loops-for-payload", "legalize-control-flow"}) {
       SCOPED_TRACE(pass);
       auto program = QCOProgram::fromMLIRString(source.str());
       ASSERT_TRUE(program);

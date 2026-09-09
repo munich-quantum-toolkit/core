@@ -69,10 +69,10 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());
   pm.addPass(createSCCPPass());
-  pm.addPass(qco::createUnrollUnsupportedPayloadLoops());
+  pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
   populateQCOCleanupPipeline(pm);
-  pm.addPass(qco::createLegalizePayloadControlFlow());
+  pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   populateDefaultQCOOptimizationPipeline(pm);
   /// ponytail: CX/CZ-cost fusion can increase square-root iSWAP counts;

@@ -82,7 +82,9 @@ Target compilation requires structured QCO/SCF input. Producers of raw CFG
 branches must normalize them before target compilation; runtime assertions are
 allowed. The pipeline removes unused symbols, propagates constants, unrolls
 unsupported static loops, and then runs the standard QCO cleanup pipeline. It
-applies these structural capabilities to the remaining control flow:
+uses `unroll-loops-for-payload` before cleanup and `legalize-control-flow` after
+cleanup, so unrolling can expose constant branches before legality checks. The
+latter pass applies these structural capabilities to the remaining control flow:
 
 | Capability           | Residual operations                                 |
 | -------------------- | --------------------------------------------------- |

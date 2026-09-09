@@ -43,8 +43,8 @@
 
 namespace mlir::qco {
 
-#define GEN_PASS_DEF_LEGALIZEPAYLOADCONTROLFLOW
-#define GEN_PASS_DEF_UNROLLUNSUPPORTEDPAYLOADLOOPS
+#define GEN_PASS_DEF_LEGALIZECONTROLFLOW
+#define GEN_PASS_DEF_UNROLLLOOPSFORPAYLOAD
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
@@ -445,9 +445,9 @@ private:
   const PayloadControlSupport* support;
 };
 
-struct UnrollUnsupportedPayloadLoops final
-    : impl::UnrollUnsupportedPayloadLoopsBase<UnrollUnsupportedPayloadLoops> {
-  using UnrollUnsupportedPayloadLoopsBase::UnrollUnsupportedPayloadLoopsBase;
+struct UnrollLoopsForPayload final
+    : impl::UnrollLoopsForPayloadBase<UnrollLoopsForPayload> {
+  using UnrollLoopsForPayloadBase::UnrollLoopsForPayloadBase;
 
 protected:
   void runOnOperation() override {
@@ -547,9 +547,9 @@ protected:
   }
 };
 
-struct LegalizePayloadControlFlow final
-    : impl::LegalizePayloadControlFlowBase<LegalizePayloadControlFlow> {
-  using LegalizePayloadControlFlowBase::LegalizePayloadControlFlowBase;
+struct LegalizeControlFlow final
+    : impl::LegalizeControlFlowBase<LegalizeControlFlow> {
+  using LegalizeControlFlowBase::LegalizeControlFlowBase;
 
 protected:
   void runOnOperation() override {
