@@ -2357,7 +2357,7 @@ TEST_F(QCOTest, PowBarrierFoldPreservesReorderedBodyResults) {
   EXPECT_EQ(measurements[1].getQubitIn(), barriers[0].getOutputQubits()[0]);
 }
 
-TEST_F(QCOTest, EvenPowFoldPreservesReorderedBodyResults) {
+TEST_F(QCOTest, EvenPowerRetainsBodyYieldPermutation) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(powEvenSwapWithReorderedBody));
   ASSERT_TRUE(program);
@@ -2368,14 +2368,16 @@ TEST_F(QCOTest, EvenPowFoldPreservesReorderedBodyResults) {
   ASSERT_TRUE(succeeded(pm.run(*program)));
   ASSERT_TRUE(succeeded(verify(*program)));
 
-  SmallVector<AllocOp> allocations;
+  SmallVector<PowOp> powers;
   SmallVector<MeasureOp> measurements;
-  program->walk([&](AllocOp alloc) { allocations.push_back(alloc); });
+  program->walk([&](PowOp power) { powers.push_back(power); });
   program->walk([&](MeasureOp measure) { measurements.push_back(measure); });
-  ASSERT_EQ(allocations.size(), 2);
-  ASSERT_EQ(measurements.size(), 2);
-  EXPECT_EQ(measurements[0].getQubitIn(), allocations[1].getResult());
-  EXPECT_EQ(measurements[1].getQubitIn(), allocations[0].getResult());
+  // The yielded permutation belongs to the powered body. Folding only SWAP
+  // would apply that permutation once instead of powering the complete body.
+  ASSERT_EQ(powers.size(), 1U);
+  ASSERT_EQ(measurements.size(), 2U);
+  EXPECT_EQ(measurements[0].getQubitIn(), powers[0].getOutputQubit(0));
+  EXPECT_EQ(measurements[1].getQubitIn(), powers[0].getOutputQubit(1));
 }
 
 // pow(-0.5) { h } cannot fold a negative fractional exponent
@@ -3260,7 +3262,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(alloc2QubitRegister)},
         QCOTestCase{"TwoXXPlusYYSwappedTargets",
                     MQT_NAMED_BUILDER(twoXxPlusYYSwappedTargets),
-                    MQT_NAMED_BUILDER(xxPlusYY)},
+                    MQT_NAMED_BUILDER(twoXxPlusYYSwappedTargets)},
         QCOTestCase{"PowXxPlusYYScaled", MQT_NAMED_BUILDER(powXxPlusYYScaled),
                     MQT_NAMED_BUILDER(powXxPlusYYScaledRef)}));
 

@@ -378,13 +378,15 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
         })
         // pow(n) { u(theta, phi, lambda) } =>
         // gphase(delta); u(theta', phi', lambda')
-        .Case([&](UOp) {
+        .Case([&](UOp gate) {
           if (std::abs(normalizeAngle(uPower->phase)) >
               PARAMETER_COMPARISON_TOLERANCE) {
             GPhaseOp::create(rewriter, loc, uPower->phase);
           }
-          rewriter.replaceOpWithNewOp<UOp>(op, op.getTarget(0), uPower->theta,
-                                           uPower->phi, uPower->lambda);
+          rewriter.replaceOpWithNewOp<UOp>(
+              op,
+              mqt::getValueFromBlockArgument(gate.getTarget(0), op.getQubits()),
+              uPower->theta, uPower->phi, uPower->lambda);
           return success();
         })
         // --- Pauli gates: decompose to rotation + global phase ---

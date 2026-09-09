@@ -11,6 +11,7 @@
 #include "ModifierUtils.h"
 
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
+#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -57,6 +58,20 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   }
 
   return success();
+}
+
+bool hasPositionalBodyYields(Block& body) {
+  for (auto [argument, yielded] : llvm::zip_equal(
+           body.getArguments(), body.getTerminator()->getOperands())) {
+    Value origin = yielded;
+    while (auto unitary = origin.getDefiningOp<UnitaryOpInterface>()) {
+      origin = unitary.getInputForOutput(origin);
+    }
+    if (origin != argument) {
+      return false;
+    }
+  }
+  return true;
 }
 
 SmallVector<size_t> getUsedQubitIndices(Block& body) {

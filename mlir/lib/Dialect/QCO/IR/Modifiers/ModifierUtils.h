@@ -31,6 +31,11 @@ namespace qco::detail {
 [[nodiscard]] LogicalResult verifyModifierBody(Operation* modifierOp,
                                                Block& body);
 
+/// Check whether a valid modifier body yields each wire in argument order.
+/// Follow the unitary operations' input/output correspondence without treating
+/// a permutation in the terminator as part of any individual body gate.
+[[nodiscard]] bool hasPositionalBodyYields(Block& body);
+
 /**
  * @brief Return the positions of the qubits that the body of a modifier uses.
  *
