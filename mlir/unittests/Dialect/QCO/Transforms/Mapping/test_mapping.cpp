@@ -17,6 +17,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Sorting.h"
@@ -595,6 +596,58 @@ TEST_F(MappingPassFixture, RouteIndependentControlAfterTerminalWire) {
         *moduleOp, target, MappingPassOptions{.ntrials = 1, .seed = 42})));
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+  }
+}
+
+TEST_F(MappingPassFixture, RouteControlAcrossTensorWireBoundaries) {
+  const auto target = llvm::cantFail(
+      CompilerTarget::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                             NativeOperations::unrestricted()));
+
+  for (const bool lateExtract : {false, true}) {
+    SCOPED_TRACE(lateExtract ? "late extract" : "early insert");
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    Value tensor = builder.qtensorAlloc(3);
+    Value q0;
+    Value q1;
+    Value q2;
+    std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
+    std::tie(tensor, q1) = builder.qtensorExtract(tensor, 1);
+    if (!lateExtract) {
+      std::tie(tensor, q2) = builder.qtensorExtract(tensor, 2);
+    }
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    if (!lateExtract) {
+      tensor = builder.qtensorInsert(q1, tensor, 1);
+    }
+    q0 = builder.qcoIf(true, q0, [&](Value qubit) { return builder.h(qubit); });
+    if (lateExtract) {
+      std::tie(tensor, q2) = builder.qtensorExtract(tensor, 2);
+      tensor = builder.qtensorInsert(q1, tensor, 1);
+    }
+    std::tie(q0, q2) = builder.cx(q0, q2);
+    tensor = builder.qtensorInsert(q0, tensor, 0);
+    tensor = builder.qtensorInsert(q2, tensor, 2);
+    builder.qtensorDealloc(tensor);
+    auto moduleOp = builder.finalize();
+
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    ASSERT_TRUE(succeeded(runPass(
+        *moduleOp, target, MappingPassOptions{.ntrials = 1, .seed = 0})));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+
+    size_t numConditionals = 0;
+    size_t numConditionalGates = 0;
+    moduleOp->walk([&](IfOp conditional) {
+      ++numConditionals;
+      conditional->walk([&](HOp) { ++numConditionalGates; });
+    });
+    EXPECT_EQ(numConditionals, 1);
+    EXPECT_EQ(numConditionalGates, 1);
   }
 }
 
