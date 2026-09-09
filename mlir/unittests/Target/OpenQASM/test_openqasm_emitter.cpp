@@ -59,6 +59,16 @@ using namespace mlir::oq3::test;
 
 namespace {
 
+TEST(OpenQASMTargetTest, ImportsNonNullTerminatedSourceView) {
+  std::string storage = "OPENQASM 3.1; qubit q; U(0, 0, 0) q;invalid suffix";
+  const auto source = StringRef(storage).take_front(storage.find("invalid"));
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  storage.assign(storage.size(), 'x');
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
 TEST(OpenQASMTargetTest, LoopLocalBitStorageHasNoGlobalRegisterName) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;

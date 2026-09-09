@@ -531,7 +531,7 @@ private:
       }
       valueNames[argument] = std::move(name);
     }
-    auto argumentGuard = llvm::make_scope_exit([&] {
+    auto argumentGuard = llvm::scope_exit([&] {
       for (Value argument : gate.getArguments()) {
         valueNames.erase(argument);
       }
