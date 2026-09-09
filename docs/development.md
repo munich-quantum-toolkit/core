@@ -160,3 +160,26 @@ relying on prose.
 [commit-messages]: https://chris.beams.io/posts/git-commit/
 [google-cpp]: https://google.github.io/styleguide/cppguide.html
 [llvm-coding-standards]: https://llvm.org/docs/CodingStandards.html
+
+## Documentation validation
+
+Install Python 3.14, LLVM/MLIR 23.1, Doxygen, and Graphviz before building the
+complete documentation. The Doxygen configuration is validated with Ubuntu
+24.04's version 1.9.8 and version 1.17. Use `uvx nox --non-interactive -s docs`
+to build generated references and execute the MyST notebooks. This command fails
+on Sphinx and Doxygen diagnostics and checks local links in the generated HTML,
+including the native C++ reference. Use
+`uvx nox --non-interactive -s docs -- -b linkcheck` to check external links
+separately.
+
+Notebook execution is forced on each build. The docs session isolates the QDMI
+registry from system, user, project, and inline environment definitions while
+retaining packaged devices. Executable examples use local DDSIM and require no
+credentials. Configuration recipes for external providers do not execute.
+
+Use `{code-cell}` blocks in pages with MyST-NB front matter. Keep required setup
+visible or collapsible with `hide-input`, display useful computed output, and
+assert the demonstrated semantics. Use checked subprocess calls for CLI
+examples. Ordinary code fences document configuration or interfaces without
+executing them. Give figures descriptive alternative text and preserve full
+contracts in linked references when they would interrupt a tutorial.

@@ -54,7 +54,6 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
-    "sphinx.ext.viewcode",
     "sphinxcontrib.bibtex",
     "sphinxext.opengraph",
 ]
@@ -106,7 +105,7 @@ myst_heading_anchors = 3
 
 # -- Options for {MyST}NB ----------------------------------------------------
 
-nb_execution_mode = "cache"
+nb_execution_mode = "force"
 nb_execution_raise_on_error = True
 
 
@@ -167,6 +166,8 @@ nitpick_ignore_regex = [
     ("py:class", r"pennylane\.transforms\.core\.CompilePipeline"),
     ("py:class", r"pennylane\.typing\.(Result|ResultBatch)"),
     ("py:class", r"qiskit\.primitives\.containers\.(Estimator|Sampler)PubLike"),
+    # PennyLane inherits this unqualified reference without exporting its target.
+    ("py:class", r"DeviceCapabilities"),
 ]
 
 # ACM and SIAM reject automated requests after resolving their valid DOI links.

@@ -18,8 +18,9 @@ publicly available on GitHub at
 [munich-quantum-toolkit/core](https://github.com/munich-quantum-toolkit/core),
 while pre-built binaries are available via
 [PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and
-all modern Python versions. MQT Core is fully compatible with Qiskit 1.0 and
-above.
+all supported Python versions. See the
+{doc}`Qiskit compatibility guide <mlir/qiskit>` for the supported backend and
+compiler interfaces.
 
 ```{toctree}
 :hidden:
@@ -64,6 +65,7 @@ support
 :hidden:
 
 api/mqt/core/index
+cpp_api
 ```
 
 ## Contributors and Supporters

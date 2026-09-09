@@ -135,7 +135,9 @@ cannot be proven. Extracted amplitudes preserve global phase and logical qubit
 order, including SWAPs. LLVM target triples must match the host architecture and
 operating system because the JIT executes in process.
 
-The generic submission APIs intentionally reject QDMI calibration and batch-job
-formats. Calibration jobs do not carry a program, while batch jobs contain job
-handles rather than serialized program bytes. Their format identifiers remain
-available for capability discovery; they require dedicated typed APIs.
+The generic submission APIs reject QDMI calibration and batch-job formats. Use
+{py:meth}`~mqt.core.qdmi.Device.submit_calibration_job` or
+{cpp-api:func}`qdmi::Device::submitCalibrationJob` for calibration. These APIs
+accept an optional provider-defined configuration payload and no shot count; the
+payload is not an executable circuit. Batch jobs contain job handles rather than
+serialized program bytes and require a separate typed API.
