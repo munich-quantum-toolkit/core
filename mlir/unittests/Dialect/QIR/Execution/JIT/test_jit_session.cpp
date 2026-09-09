@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "dd/DDDefinitions.hpp"
 #include "mlir/Dialect/QIR/Execution/JIT/Session.h"
 #include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
 #include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
@@ -15,6 +16,8 @@
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
 
+#include <array>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
@@ -71,22 +74,25 @@ TEST_F(JitSessionTest, StateExtractionLeavesNoRecordedOutputs) {
   EXPECT_TRUE(session.runtime().getMeasurements().empty());
 }
 
-TEST_F(JitSessionTest, StateExtractionRejectsAdaptiveProfile) {
-  constexpr std::string_view ir = R"(
-define i64 @main() #0 { ret i64 0 }
-attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
-)";
-  EXPECT_THROW(
-      {
-        try {
-          const qir::JitSession session(ir, "Adaptive.ll",
-                                        qir::Execution::StateExtraction);
-        } catch (const std::invalid_argument& error) {
-          EXPECT_THAT(error.what(), ::testing::HasSubstr("Base Profile"));
-          throw;
-        }
-      },
-      std::invalid_argument);
+TEST_F(JitSessionTest, StateExtractionSupportsAdaptiveControlAndLifetimes) {
+  const auto ir = getProgram("StatevectorAdaptive.ll");
+  qir::JitSession session(ir, "Adaptive.ll", qir::Execution::StateExtraction);
+  session.runtime().setOstream(sink);
+  for (size_t run = 0; run < 2; ++run) {
+    ASSERT_EQ(session.run(), 0);
+    EXPECT_TRUE(session.runtime().getMeasurements().empty());
+    EXPECT_TRUE(sink.str().empty());
+    auto state = session.runtime().takeState();
+    EXPECT_EQ(state.numQubits, 4);
+    const auto values = state.edge.getVector();
+    ASSERT_EQ(values.size(), 16);
+    for (size_t i = 0; i < values.size(); ++i) {
+      const auto expected = i == 4 || i == 7 ? std::polar(dd::SQRT2_2, 0.3)
+                                             : std::complex<double>{};
+      EXPECT_NEAR(std::abs(values[i] - expected), 0., 1e-12);
+    }
+    state.dd->decRef(state.edge);
+  }
 }
 
 TEST_F(JitSessionTest, StateExtractionRejectsNonTerminalMeasurement) {
@@ -663,4 +669,106 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubi
     EXPECT_EQ(state.numQubits, 0);
     EXPECT_TRUE(state.edge.isOneTerminal());
   }
+}
+
+TEST(QIRAdaptiveStatevector,
+     RejectsOperationsOnMeasuredWiresAfterReturningFromJIT) {
+  for (const auto* operation : {
+           "call void @__quantum__qis__x__body(ptr null)",
+           "call void @__quantum__qis__cx__body(ptr null, ptr inttoptr (i64 1 "
+           "to ptr))",
+           "call void @__quantum__qis__swap__body(ptr null, ptr inttoptr (i64 "
+           "1 to ptr))",
+           "call void @helper(ptr null)",
+       }) {
+    SCOPED_TRACE(operation);
+    const auto ir = std::string(R"(
+define i64 @main() #0 {
+  call void @__quantum__qis__h__body(ptr null)
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+)") + operation + R"(
+  ret i64 0
+}
+define void @helper(ptr %q) {
+  call void @__quantum__qis__x__body(ptr %q)
+  ret void
+}
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__x__body(ptr)
+declare void @__quantum__qis__cx__body(ptr, ptr)
+declare void @__quantum__qis__swap__body(ptr, ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
+)";
+    qir::JitSession session(ir, "non-terminal",
+                            qir::Execution::StateExtraction);
+    EXPECT_THROW(session.run(), std::invalid_argument);
+    EXPECT_THROW(session.runtime().takeState(), std::invalid_argument);
+  }
+}
+
+TEST(QIRAdaptiveStatevector,
+     RejectsFeedbackResetAndUnknownEffectsBeforeExecution) {
+  for (const auto* body : {
+           R"(%r = call i1 @__quantum__rt__read_result(ptr null)
+br i1 %r, label %left, label %right
+left: ret i64 0
+right: ret i64 0)",
+           "call void @__quantum__qis__reset__body(ptr null)\nret i64 0",
+           "call void @feedback()\nret i64 0",
+           "%f = load ptr, ptr @function\ncall void %f()\nret i64 0",
+           "call void @external()\nret i64 0",
+           "%code = call i64 @main()\nret i64 %code",
+           "call void @__quantum__rt__initialize(ptr null)\nret i64 0",
+       }) {
+    SCOPED_TRACE(body);
+    const auto ir = std::string(R"(
+@function = global ptr @external
+define i64 @main() #0 {
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+)") + body + R"(
+}
+define void @feedback() {
+  %r = call i1 @__quantum__rt__read_result(ptr null)
+  br i1 %r, label %left, label %right
+left: ret void
+right: ret void
+}
+declare void @external()
+declare void @__quantum__rt__initialize(ptr)
+declare void @__quantum__qis__reset__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare i1 @__quantum__rt__read_result(ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
+)";
+    EXPECT_THROW(
+        qir::JitSession(ir, "unsupported", qir::Execution::StateExtraction),
+        std::invalid_argument);
+  }
+}
+
+TEST(QIRAdaptiveStatevector, PreservesExitCodesAndResetsValidationBetweenRuns) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+  br i1 false, label %unused, label %exit
+unused:
+  %q = call ptr @__quantum__rt__qubit_allocate(ptr null)
+  br label %exit
+exit:
+  ret i64 7
+}
+declare ptr @__quantum__rt__qubit_allocate(ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
+)";
+  qir::JitSession session(ir, "unused-allocation",
+                          qir::Execution::StateExtraction);
+  ASSERT_EQ(session.run(), 7);
+  auto state = session.runtime().takeState();
+  EXPECT_EQ(state.numQubits, 0);
+  EXPECT_TRUE(state.edge.isOneTerminal());
+  const std::array<Qubit*, 1> qubits{nullptr};
+  session.runtime().reset(qubits);
+  EXPECT_THROW(session.runtime().takeState(), std::invalid_argument);
+  ASSERT_EQ(session.run(), 7);
+  EXPECT_NO_THROW(session.runtime().takeState());
 }

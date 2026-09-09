@@ -88,6 +88,63 @@ static void requireTerminalIrreversibleRegion(llvm::CallInst& boundary) {
   }
 }
 
+static void validateAdaptiveStateExtraction(llvm::Function& entryPoint) {
+  llvm::SmallPtrSet<llvm::Function*, 8> visited;
+  llvm::SmallVector<llvm::Function*, 8> pending{&entryPoint};
+  while (!pending.empty()) {
+    auto* function = pending.pop_back_val();
+    if (!visited.insert(function).second) {
+      continue;
+    }
+    for (auto& block : *function) {
+      for (auto& instruction : block) {
+        const auto* call = llvm::dyn_cast<llvm::CallBase>(&instruction);
+        if (call == nullptr) {
+          continue;
+        }
+        auto* callee = llvm::dyn_cast<llvm::Function>(
+            call->getCalledOperand()->stripPointerCasts());
+        if (!llvm::isa<llvm::CallInst>(call) || callee == nullptr ||
+            callee == &entryPoint) {
+          throw std::invalid_argument(
+              "Adaptive QIR state extraction requires direct calls without "
+              "entry-point recursion");
+        }
+        if (!callee->isDeclaration()) {
+          pending.push_back(callee);
+          continue;
+        }
+        const auto name = callee->getName();
+        const bool outputOnlyRead =
+            std::ranges::all_of(call->users(), [](const auto* user) {
+              const auto* output = llvm::dyn_cast<llvm::CallInst>(user);
+              return output != nullptr &&
+                     output->getCalledFunction() != nullptr &&
+                     output->getCalledFunction()->isDeclaration() &&
+                     output->getCalledFunction()->getName() ==
+                         "__quantum__rt__bool_record_output";
+            });
+        if ((name == "__quantum__rt__read_result" && !outputOnlyRead) ||
+            name == "__quantum__qis__reset__body" ||
+            (isIrreversible(*call) && name != "__quantum__qis__mz__body")) {
+          throw std::invalid_argument(
+              "Adaptive QIR state extraction does not support "
+              "measurement-dependent computation or resets");
+        }
+        if (!callee->isIntrinsic() && !name.starts_with("__quantum__")) {
+          throw std::invalid_argument("Adaptive QIR state extraction cannot "
+                                      "prove external call effects");
+        }
+        if (name == "__quantum__rt__initialize" &&
+            &instruction != &entryPoint.getEntryBlock().front()) {
+          throw std::invalid_argument(
+              "Adaptive QIR state extraction requires initialization at entry");
+        }
+      }
+    }
+  }
+}
+
 bool prepareForStateExtraction(llvm::Function& entryPoint) {
   if (!entryPoint.getReturnType()->isIntegerTy(64) || !entryPoint.arg_empty()) {
     throw std::invalid_argument(
@@ -95,10 +152,15 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
   }
 
   const auto profile = entryPoint.getFnAttribute(QIR_PROFILES_ATTR);
+  if (profile.isStringAttribute() &&
+      profile.getValueAsString().compare(ADAPTIVE_PROFILE) == 0) {
+    validateAdaptiveStateExtraction(entryPoint);
+    return false;
+  }
   if (!profile.isStringAttribute() ||
       profile.getValueAsString().compare(BASE_PROFILE) != 0) {
     throw std::invalid_argument(
-        "QIR state extraction requires a Base Profile entry point");
+        "QIR state extraction requires a Base or Adaptive Profile entry point");
   }
 
   llvm::SmallVector<llvm::CallInst*, 8> irreversibleCalls;

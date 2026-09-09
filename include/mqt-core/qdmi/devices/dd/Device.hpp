@@ -280,7 +280,8 @@ private:
   auto submitQIRProgram() -> QDMI_STATUS;
   /// Sampling path for a QIR program (@c numShots_ > 0).
   auto submitQIRProgramSampling() -> QDMI_STATUS;
-  /// State-extraction path for a QIR Base Profile program (@c numShots_ == 0).
+  /// State-extraction path for a QIR Base or Adaptive Profile program (@c
+  /// numShots_ == 0).
   auto submitQIRProgramStateExtraction() -> QDMI_STATUS;
 
 public:

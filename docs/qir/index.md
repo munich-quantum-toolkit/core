@@ -122,18 +122,34 @@ When provided for static resources, `required_num_qubits` and
 `required_num_results` specify capacities, and out-of-range IDs are rejected.
 Extracted states include unused qubits within the declared capacity, initialized
 to zero. Programs without those attributes retain the runtime's inference of
-static IDs or dynamic allocations. Dynamic qubit release resets and recycles the
-simulator wire; the qubit limit applies to peak simultaneous allocations rather
-than their cumulative number in a shot. Released handles remain invalid.
+static IDs or dynamic allocations. During sampling, dynamic qubit release resets
+and recycles the simulator wire; the qubit limit applies to peak simultaneous
+allocations rather than their cumulative number in a shot. Released handles
+remain invalid.
 
-Statevector extraction is limited to Base formats: the JIT stops the selected
-entry point immediately before the first call to a function marked
-`irreversible`, following the semantic boundary defined by the Base Profile. It
-rejects other profiles and Base Profile programs whose irreversible region is
-not terminal, as well as defined or indirect helper calls whose quantum effects
-cannot be proven. Extracted amplitudes preserve global phase and logical qubit
-order, including SWAPs. LLVM target triples must match the host architecture and
-operating system because the JIT executes in process.
+Statevector extraction supports Base and Adaptive formats. Base extraction stops
+before the first `irreversible` call and requires a terminal irreversible
+region; defined or indirect helpers remain unsupported for that path.
+
+Adaptive extraction executes classical loops, branches, dynamically computed
+gate arguments, dynamic allocations and direct helper calls while deferring Z
+measurements. A measured wire cannot participate in later gates, controls or
+SWAPs; independent wires may still evolve. Resets and measurement-dependent
+computation are unsupported. Result reads must be unused or feed only direct
+boolean output records. Indirect calls and unknown external functions are
+rejected before execution. Calls cannot re-enter the entry point.
+Initialization, when present, must be the first instruction of the entry point.
+These restrictions also apply inside helpers.
+
+During Adaptive extraction, each executed allocation adds a zero-initialized
+wire. Release calls mark lifetimes without resetting or recycling simulator
+wires, so the exported state retains all allocated wires in allocation order,
+including unused and released wires. The qubit limit therefore applies to all
+allocations in one extraction run. Each run resets the quantum runtime. Output
+records are suppressed, and unsupported operations produce a failed QDMI job.
+Both profiles preserve global phase and logical wire order, including SWAPs.
+LLVM target triples must match the host architecture and operating system
+because the JIT executes in process.
 
 The generic submission APIs reject QDMI calibration and batch-job formats. Use
 {py:meth}`~mqt.core.qdmi.Device.submit_calibration_job` or

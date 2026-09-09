@@ -26,23 +26,22 @@ QDMI program formats, and payload contracts.
 
 The device can perform weak simulation for every supported format, i.e., sample
 from the distribution produced by the program. It can also perform strong
-simulation for OpenQASM and QIR Base Profile programs, i.e., compute a
-representation of the full state vector. Set the
+simulation for OpenQASM and eligible QIR Base or Adaptive Profile programs,
+i.e., compute a representation of the full state vector. Set the
 `QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` parameter to the desired number of shots
-for weak simulation or to `0` for strong simulation. QIR Adaptive Profile
-programs require at least one shot because their measurement-dependent control
-flow cannot be represented by state extraction.
+for weak simulation or to `0` for strong simulation.
 
-For OpenQASM state extraction, terminal output measurements are deferred. They
-do not collapse the returned state. Mid-circuit measurements still execute and
-may therefore collapse the state before subsequent operations.
+State extraction defers terminal measurements without collapsing the returned
+state. Measurement-dependent computation, resets and subsequent operations on
+measured wires are unsupported. Adaptive QIR may still execute classical loops,
+branches, dynamic allocations and direct helpers; see the
+[QIR extraction contract](../qir/index.md) for result-use and lifetime rules.
 
 For reproducible stochastic execution, set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM1`
 to a positive `int` seed. The Python API exposes the same parameter as
 `custom1`. If `custom1` is absent, the device seeds the random-number generator
-from the system. The seed controls OpenQASM and QIR sampling. During OpenQASM
-state extraction, it also controls mid-circuit measurements and resets; QIR Base
-state extraction does not use it.
+from the system. The seed controls OpenQASM and QIR sampling. State extraction
+does not use this seed.
 
 Under the hood, the QDMI device imports OpenQASM into the compiler's QC
 representation, lowers it to QCO, and executes it with the QCO DD utilities.

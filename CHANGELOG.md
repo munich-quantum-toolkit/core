@@ -92,6 +92,8 @@ releases may include breaking changes.
 
 #### Other additions
 
+- ✨ Support DDSIM QDMI statevector extraction for Adaptive Profile QIR with
+  classical control flow, dynamic allocation, and terminal measurements.
 - ✨ Expose ordered shots from DDSIM QDMI QIR jobs, with matching histograms
   ([#2368]) ([**@burgholzer**])
 - 🐳 Add dev container configuration for a consistent local development

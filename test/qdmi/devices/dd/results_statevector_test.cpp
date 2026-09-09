@@ -17,6 +17,12 @@
 #include "mqt_ddsim_qdmi/device.h"
 
 #include <gtest/gtest.h>
+#include <llvm/AsmParser/Parser.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/Support/SourceMgr.h>
+#include <llvm/Support/raw_ostream.h>
 
 #include <array>
 #include <cmath>
@@ -279,5 +285,81 @@ TEST(ResultsStatevector, DenseSizesDoNotMaterializeUnaddressableVectors) {
                 QDMI_ERROR_INVALIDARGUMENT);
       EXPECT_EQ(output, 42);
     }
+  }
+}
+
+TEST(ResultsStatevector, QIRAdaptiveStringAndBitcodePreserveDynamicState) {
+  const auto text = qdmi_test::getQIRProgram("StatevectorAdaptive.ll");
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic error;
+  const auto llvmModule = llvm::parseAssemblyString(text, error, context);
+  ASSERT_NE(llvmModule, nullptr);
+  std::string bitcode;
+  llvm::raw_string_ostream stream(bitcode);
+  llvm::WriteBitcodeToFile(*llvmModule, stream);
+  stream.flush();
+  for (const auto format : {
+           QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+           QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+       }) {
+    SCOPED_TRACE(format);
+    const qdmi_test::SessionGuard session{};
+    const qdmi_test::JobGuard job{session.session};
+    const auto& program =
+        format == QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING ? text : bitcode;
+    ASSERT_EQ(qdmi_test::setProgram(job.job, format, program), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::setShots(job.job, 0), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+    QDMI_Job_Status status{};
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(job.job, &status), QDMI_SUCCESS);
+    ASSERT_EQ(status, QDMI_JOB_STATUS_DONE);
+    const auto values = qdmi_test::getDenseState(job.job);
+    ASSERT_EQ(values.size(), 16);
+    for (size_t i = 0; i < values.size(); ++i) {
+      const auto expected = i == 4 || i == 7
+                                ? std::polar(1. / std::numbers::sqrt2, 0.3)
+                                : std::complex<double>{};
+      EXPECT_NEAR(std::abs(values[i] - expected), 0., 1e-12);
+    }
+  }
+}
+
+TEST(ResultsStatevector, QIRAdaptiveRejectsNonTerminalMeasurementsAndFeedback) {
+  for (const auto* body : {
+           "call void @__quantum__qis__x__body(ptr null)\nret i64 0",
+           "call void @__quantum__qis__reset__body(ptr null)\nret i64 0",
+           "%r = call i1 @__quantum__rt__read_result(ptr null)\n"
+           "br i1 %r, label %left, label %right\nleft: ret i64 0\nright: ret "
+           "i64 0",
+       }) {
+    SCOPED_TRACE(body);
+    const auto program = std::string(R"(
+define i64 @main() #0 {
+  call void @__quantum__qis__h__body(ptr null)
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+)") + body + R"(
+}
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__x__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__qis__reset__body(ptr)
+declare i1 @__quantum__rt__read_result(ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" }
+)";
+    const qdmi_test::SessionGuard session{};
+    const qdmi_test::JobGuard job{session.session};
+    ASSERT_EQ(qdmi_test::setProgram(
+                  job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program),
+              QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::setShots(job.job, 0), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+    QDMI_Job_Status status{};
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(job.job, &status), QDMI_SUCCESS);
+    EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED);
+    size_t size = 0;
+    EXPECT_EQ(
+        MQT_DDSIM_QDMI_device_job_get_results(
+            job.job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0, nullptr, &size),
+        QDMI_ERROR_BADSTATE);
   }
 }

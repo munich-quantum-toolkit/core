@@ -384,10 +384,18 @@ JitSession::JitSession(const llvm::StringRef irBytes,
 JitSession::~JitSession() { deinitialize(); }
 
 int64_t JitSession::run() {
+  if (runtime_->extractState_ && !initializesRuntime_) {
+    runtime_->reset();
+  }
   auto* previous = Runtime::bind(runtime_.get());
   const auto restoreRuntime =
       llvm::make_scope_exit([previous] { Runtime::bind(previous); });
-  return entryPointFn_();
+  const auto code = entryPointFn_();
+  if (runtime_->invalidStateExtraction_) {
+    throw std::invalid_argument(
+        "QIR state extraction cannot reset or operate on a measured qubit");
+  }
+  return code;
 }
 
 int64_t JitSession::sample(size_t shots, std::vector<std::string>& results) {
@@ -491,6 +499,9 @@ void JitSession::initialize(
     runtime_->setMetadata(std::move(metadata));
     if (execution == Execution::StateExtraction) {
       prepareForStateExtraction(entryPoint);
+      runtime_->extractState_ = entryPoint.getFnAttribute(QIR_PROFILES_ATTR)
+                                    .getValueAsString()
+                                    .compare(ADAPTIVE_PROFILE) == 0;
     }
     runtimeSymbols = selectRuntimeSymbols(module);
     runtime_->configureStaticResources(

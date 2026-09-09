@@ -35,6 +35,7 @@
 #include <string_view>
 #include <type_traits>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -119,6 +120,9 @@ private:
   std::optional<size_t> staticResults_;
   std::vector<ResultStruct> resultValues_;
   bool deferMeasurements_ = false;
+  bool extractState_ = false;
+  bool invalidStateExtraction_ = false;
+  std::unordered_set<dd::Qubit> measuredQubits_;
   std::string measurements;
   uintptr_t currentMaxQubitAddress;
   size_t currentMaxQubitId;
@@ -225,7 +229,9 @@ public:
   auto resetOstream() -> void;
   /// Disable textual records while retaining measurement bits.
   auto disableOutput() -> void;
-  [[nodiscard]] auto hasOutput() const -> bool { return os != nullptr; }
+  [[nodiscard]] auto hasOutput() const -> bool {
+    return os != nullptr && !extractState_;
+  }
 
   /// Emit `OUTPUT\tRESULT\t<0|1>[\tlabel]\n` to the output stream.
   auto outputResult(bool value, const char* label) const -> void;
