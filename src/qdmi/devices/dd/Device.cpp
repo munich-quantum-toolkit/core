@@ -599,13 +599,6 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
 }
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
     -> QDMI_STATUS {
-  // State extraction stops the entry point at its first irreversible operation.
-  // This preserves Base Profile semantics because measurements are terminal,
-  // whereas Adaptive Profile measurements may feed later quantum control.
-  if (format_ != QDMI_PROGRAM_FORMAT_QIRBASEMODULE &&
-      format_ != QDMI_PROGRAM_FORMAT_QIRBASESTRING) {
-    return QDMI_ERROR_NOTSUPPORTED;
-  }
   return submitProgramAsync([this] {
     auto const irBytes = std::visit(
         [](const auto& p) {

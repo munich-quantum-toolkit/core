@@ -79,6 +79,8 @@ auto Runtime::reset() -> void {
   rRegister.clear();
   std::ranges::fill(resultValues_, ResultStruct{});
   measurements.clear();
+  measuredQubits_.clear();
+  invalidStateExtraction_ = false;
   currentMaxQubitAddress = MIN_DYN_QUBIT_ADDRESS;
   currentMaxQubitId = 0;
   currentMaxResultAddress = MIN_DYN_RESULT_ADDRESS;
@@ -187,6 +189,12 @@ auto Runtime::translateAddresses(const std::span<Qubit* const> qubits,
   for (const auto* qubit : additionalQubits) {
     qubitIds.push_back(resolveAddress(qubit));
   }
+  if (extractState_ && std::ranges::any_of(qubitIds, [&](const auto id) {
+        return measuredQubits_.contains(id);
+      })) {
+    /// Report after JIT execution returns without unwinding generated frames.
+    invalidStateExtraction_ = true;
+  }
   if (!qubitIds.empty()) {
     enlargeState(*std::ranges::max_element(qubitIds));
   }
@@ -197,6 +205,9 @@ auto Runtime::apply(const std::span<const std::complex<dd::fp>> matrix,
                     std::span<Qubit* const> controls,
                     std::span<Qubit* const> targets) -> void {
   auto addresses = translateAddresses(controls, targets);
+  if (invalidStateExtraction_) {
+    return;
+  }
   if (!qState.dd) {
     qState.dd = std::make_unique<dd::Package>(0);
   }
@@ -225,7 +236,9 @@ auto Runtime::measure(Qubit* qubit, Result* result) -> void {
   const auto target = resolveAddress(qubit);
   enlargeState(target);
   auto& value = deref(result);
-  if (!deferMeasurements_) {
+  if (extractState_) {
+    measuredQubits_.insert(target);
+  } else if (!deferMeasurements_) {
     value.r = qState.dd->measureOneCollapsing(
                   qState.edge, qubitPermutation[target], mt) == '1';
   }
@@ -266,6 +279,10 @@ auto Runtime::sampleMeasurements(std::span<const uintptr_t> qubits,
 }
 
 auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
+  if (extractState_) {
+    invalidStateExtraction_ = true;
+    return;
+  }
   auto targets = translateAddresses(qubits);
   std::ranges::transform(targets, targets.begin(), [&](const auto target) {
     return qubitPermutation[target];
@@ -285,6 +302,9 @@ auto Runtime::reset(std::span<Qubit* const> qubits) -> void {
 // NOLINTNEXTLINE(bugprone-exception-escape)
 auto Runtime::swap(Qubit* qubit1, Qubit* qubit2) -> void {
   const auto targets = translateAddresses(std::array{qubit1, qubit2});
+  if (invalidStateExtraction_) {
+    return;
+  }
   std::swap(qubitPermutation[targets[0]], qubitPermutation[targets[1]]);
 }
 
@@ -307,6 +327,9 @@ auto Runtime::qAlloc() -> Qubit* {
     freeQubits_.pop_back();
   }
   qRegister.emplace(qubit, id);
+  if (extractState_) {
+    enlargeState(id);
+  }
   return qubit;
 }
 
@@ -316,10 +339,13 @@ auto Runtime::qFree(Qubit* qubit) -> void {
     throw std::out_of_range("QIR qubit was not dynamically allocated");
   }
   const auto id = it->second;
-  if (id < qState.numQubits) {
-    reset(std::array{qubit});
+  /// Extraction retains released wires as part of the exported state.
+  if (!extractState_) {
+    if (id < qState.numQubits) {
+      reset(std::array{qubit});
+    }
+    freeQubits_.push_back(id);
   }
-  freeQubits_.push_back(id);
   qRegister.erase(it);
 }
 
@@ -364,7 +390,9 @@ auto Runtime::deref(Result* result) -> ResultStruct& {
 }
 
 auto Runtime::appendMeasurementBit(bool result) -> void {
-  measurements.push_back(result ? '1' : '0');
+  if (!extractState_) {
+    measurements.push_back(result ? '1' : '0');
+  }
 }
 
 auto Runtime::getMeasurements() const -> const std::string& {
@@ -372,6 +400,10 @@ auto Runtime::getMeasurements() const -> const std::string& {
 }
 
 auto Runtime::takeState() -> QState {
+  if (invalidStateExtraction_) {
+    throw std::invalid_argument(
+        "QIR state extraction cannot reset or operate on a measured qubit");
+  }
   if (staticQubits_ && *staticQubits_ != 0) {
     enlargeState(*staticQubits_ - 1);
   }

@@ -32,15 +32,20 @@ namespace qir {
  * defined by the QIR Base Profile instead of relying on a fixed list of
  * measurement and output function names.
  *
- * The transform requires an entry point marked with @c base_profile. Adaptive
- * Profile measurements may feed classical control flow and cannot be removed
- * without changing the program's meaning.
+ * Base Profile entry points use this terminal-region transform. Adaptive
+ * Profile entry points are validated for runtime measurement deferral instead:
+ * direct helpers and classical control flow are supported, but resets,
+ * measurement-dependent computation and unknown external effects are rejected.
+ * Reads used only by boolean output records are allowed. The runtime must
+ * reject operations on measured wires when executing a validated Adaptive
+ * entry.
  *
  * @param entryPoint QIR entry point to rewrite in place.
  * @return Whether an irreversible boundary was found and truncated.
- * @throws std::invalid_argument if the entry point is not Base Profile, does
- * not use the QIR 2.x @c i64() signature, or has non-terminal irreversible
- * operations or calls to defined or indirect callees.
+ * @throws std::invalid_argument for an unsupported profile, signature or
+ * effects. Base Profile extraction additionally rejects non-terminal
+ * irreversible regions and defined helpers; neither profile supports indirect
+ * calls.
  */
 bool prepareForStateExtraction(llvm::Function& entryPoint);
 

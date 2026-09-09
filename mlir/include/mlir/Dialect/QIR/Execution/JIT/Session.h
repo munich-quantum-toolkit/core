@@ -37,7 +37,10 @@ class Runtime;
  * @details In @c StateExtraction mode the session stops a Base Profile entry
  * point at its first irreversible operation before JIT-compiling, so the
  * runtime's quantum state remains intact without executing measurements or
- * output recording. Adaptive Profile entry points are rejected.
+ * output recording. Adaptive Profile execution starts fresh, defers
+ * measurements, preserves released wires, and rejects measurement-dependent
+ * computation, resets and operations on measured wires. Classical control flow
+ * and direct helpers are supported; recorded outputs are suppressed.
  */
 enum class Execution { Sampling, StateExtraction };
 
