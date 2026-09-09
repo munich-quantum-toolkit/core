@@ -49,6 +49,13 @@ struct PayloadFormat {
 
 /// One typed constraint on a payload capability.
 struct ProgramConstraint {
+  /// IDs of control-flow constraints understood by the compiler.
+  static constexpr llvm::StringLiteral MAX_NESTING_DEPTH =
+      "max-control-flow-nesting-depth";
+  static constexpr llvm::StringLiteral MAX_ITERATION_COUNT =
+      "max-iteration-count";
+  static constexpr llvm::StringLiteral MAX_CASE_COUNT = "max-case-count";
+
   std::string id;
   uint64_t value = 0;
 
@@ -58,6 +65,13 @@ struct ProgramConstraint {
 
 /// One extensible payload execution capability.
 struct ProgramCapability {
+  /// IDs of structural control-flow capabilities understood by the compiler.
+  static constexpr llvm::StringLiteral FORWARD_BRANCHING = "forward-branching";
+  static constexpr llvm::StringLiteral COUNTED_ITERATION = "counted-iteration";
+  static constexpr llvm::StringLiteral CONDITIONAL_LOOP = "conditional-loop";
+  static constexpr llvm::StringLiteral MULTIWAY_BRANCHING =
+      "multiway-branching";
+
   std::string id;
   uint64_t value = 0;
   std::vector<ProgramConstraint> constraints;

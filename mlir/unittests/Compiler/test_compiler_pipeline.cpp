@@ -262,7 +262,7 @@ makeCZTarget(std::initializer_list<NameAndCount> singleQubitGates) {
       },
       {
           {
-              .id = "forward-branching",
+              .id = ProgramCapability::FORWARD_BRANCHING.str(),
               .constraints =
                   {
                       {

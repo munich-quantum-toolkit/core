@@ -49,16 +49,6 @@ namespace mlir::qco {
 
 namespace {
 
-constexpr llvm::StringLiteral FORWARD_BRANCHING = "forward-branching";
-constexpr llvm::StringLiteral COUNTED_ITERATION = "counted-iteration";
-constexpr llvm::StringLiteral CONDITIONAL_LOOP = "conditional-loop";
-constexpr llvm::StringLiteral MULTIWAY_BRANCHING = "multiway-branching";
-
-constexpr llvm::StringLiteral MAX_NESTING_DEPTH =
-    "max-control-flow-nesting-depth";
-constexpr llvm::StringLiteral MAX_ITERATION_COUNT = "max-iteration-count";
-constexpr llvm::StringLiteral MAX_CASE_COUNT = "max-case-count";
-
 constexpr uint64_t MAX_UNROLLED_OPERATIONS = 65536U;
 
 enum class ControlFeature : uint8_t {
@@ -93,10 +83,14 @@ public:
     for (const ProgramCapability& capability : payload.capabilities()) {
       const auto feature =
           llvm::StringSwitch<std::optional<ControlFeature>>(capability.id)
-              .Case(FORWARD_BRANCHING, ControlFeature::ForwardBranching)
-              .Case(COUNTED_ITERATION, ControlFeature::CountedIteration)
-              .Case(CONDITIONAL_LOOP, ControlFeature::ConditionalLoop)
-              .Case(MULTIWAY_BRANCHING, ControlFeature::MultiwayBranching)
+              .Case(ProgramCapability::FORWARD_BRANCHING,
+                    ControlFeature::ForwardBranching)
+              .Case(ProgramCapability::COUNTED_ITERATION,
+                    ControlFeature::CountedIteration)
+              .Case(ProgramCapability::CONDITIONAL_LOOP,
+                    ControlFeature::ConditionalLoop)
+              .Case(ProgramCapability::MULTIWAY_BRANCHING,
+                    ControlFeature::MultiwayBranching)
               .Default(std::nullopt);
       if (!feature) {
         continue;
@@ -175,17 +169,18 @@ private:
       group.usable = false;
       return;
     }
-    if (id == MAX_NESTING_DEPTH) {
+    if (id == ProgramConstraint::MAX_NESTING_DEPTH) {
       group.maxNestingDepth = value;
       return;
     }
-    if (id == MAX_ITERATION_COUNT &&
+    if (id == ProgramConstraint::MAX_ITERATION_COUNT &&
         (feature == ControlFeature::CountedIteration ||
          feature == ControlFeature::ConditionalLoop)) {
       group.maxIterationCount = value;
       return;
     }
-    if (id == MAX_CASE_COUNT && feature == ControlFeature::MultiwayBranching) {
+    if (id == ProgramConstraint::MAX_CASE_COUNT &&
+        feature == ControlFeature::MultiwayBranching) {
       group.maxCaseCount = value;
       return;
     }
