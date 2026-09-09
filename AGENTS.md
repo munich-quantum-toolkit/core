@@ -207,7 +207,7 @@ Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
 
 ## Benchmark experiments
 
-Keep one-off benchmarks in `.agents/benchmarks/<scope>/`, outside normal build
+Keep one-off benchmarks in `.agent/benchmarks/<scope>/`, outside normal build
 and test targets. Include the harness, reproduction commands, exact revisions,
 environment, raw measurements, and generated before/after plots.
 

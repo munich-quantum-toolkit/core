@@ -14,7 +14,7 @@ ci:
   autofix_commit_msg: "🎨 pre-commit fixes"
   skip: [ty]
 
-exclude: ^\.agents/benchmarks/
+exclude: ^\.agent/benchmarks/
 
 repos:
   ## Standard hooks

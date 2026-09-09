@@ -68,7 +68,7 @@ cmake -S /path/to/checkout -B /path/to/build -G Ninja \
   -DCMAKE_BUILD_TYPE=Release -DENABLE_IPO=OFF \
   -DBUILD_MQT_CORE_MLIR=ON -DBUILD_MQT_CORE_TESTS=OFF \
   -DBUILD_MQT_CORE_BINDINGS=OFF \
-  -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/absolute/path/to/.agents/benchmarks/routing/enable.cmake
+  -DCMAKE_PROJECT_TOP_LEVEL_INCLUDES=/absolute/path/to/.agent/benchmarks/routing/enable.cmake
 cmake --build /path/to/build --target mqt-core-mlir-benchmark-mapping
 ```
 
