@@ -1713,10 +1713,7 @@ static void indexWrites(mlir::Block& block, ExportState::WriteIndex& index) {
   index.try_emplace(&block);
   for (auto& operation : block) {
     llvm::DenseSet<mlir::Value> modified;
-    if (auto measure = llvm::dyn_cast<mlir::qc::MeasureOp>(operation)) {
-      /// Fusion writes the destination at the measurement's position.
-      modified.insert(measurementDestination(measure).getReg());
-    } else if (auto store = llvm::dyn_cast<mlir::cbit::StoreOp>(operation)) {
+    if (auto store = llvm::dyn_cast<mlir::cbit::StoreOp>(operation)) {
       modified.insert(store.getReg());
     } else if (auto write = llvm::dyn_cast<mlir::cbit::WriteOp>(operation)) {
       modified.insert(write.getReg());
@@ -2100,13 +2097,6 @@ canFuseMeasurementAcross(mlir::Operation& operation,
               // deliberately broad.
               return mlir::WalkResult::skip();
             })
-            .Case([&](mlir::qc::MeasureOp measure) {
-              auto store = measurementDestination(measure);
-              return disjointClassicalBit(store.getReg(), store.getIndex(),
-                                          destination)
-                         ? mlir::WalkResult::advance()
-                         : mlir::WalkResult::interrupt();
-            })
             .Case([&](mlir::MemoryEffectOpInterface mem) {
               llvm::SmallVector<mlir::MemoryEffects::EffectInstance> effects;
               mem.getEffects(effects);
@@ -2154,6 +2144,31 @@ canFuseMeasurementAcross(mlir::Operation& operation,
     }
   }
   return true;
+}
+
+/// Put each supported measurement store at its emitted position before
+/// snapshot analysis. Quantum operations keep their order.
+static void prepareMeasurementStores(mlir::func::FuncOp function) {
+  function.walk([&](mlir::qc::MeasureOp measure) {
+    auto destination = measurementDestination(measure);
+    const auto index = mlir::getConstantIntValue(destination.getIndex());
+    if (!index) {
+      throw std::runtime_error(
+          "QC measurement uses a dynamic classical destination");
+    }
+    if (!isFusableMeasurementStore(measure, destination)) {
+      throw std::runtime_error("QC measurement destination must follow the "
+                               "measurement in the same block");
+    }
+    if (auto* definition = destination.getIndex().getDefiningOp();
+        definition && definition->getBlock() == measure->getBlock() &&
+        measure->isBeforeInBlock(definition)) {
+      mlir::OpBuilder builder(measure);
+      destination.getIndexMutable().assign(mlir::arith::ConstantIndexOp::create(
+          builder, measure.getLoc(), *index));
+    }
+    destination->moveAfter(measure);
+  });
 }
 
 [[nodiscard]] static ClassicalVariable
@@ -2666,11 +2681,6 @@ collectSwitch(mlir::scf::IndexSwitchOp switchOp, ExportedCircuit& containing,
           throw std::runtime_error(
               "QC measurement uses a dynamic classical destination");
         }
-        if (!isFusableMeasurementStore(measure, destination)) {
-          throw std::runtime_error(
-              "QC measurement destination must follow the measurement in the "
-              "same block");
-        }
         const auto checked = checkedIndex(*index, "classical-bit");
         if (checked >= info->second.size) {
           throw std::runtime_error(
@@ -3005,6 +3015,7 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                                    "target qubit count");
   }
   collectResources(function, state, target);
+  prepareMeasurementStores(function);
   indexWrites(function.getBody().front(), state.writes);
   auto circuit = collectBlock(function.getBody().front(), state, 0U);
   for (const auto& [reg, info] : state.classicalRegisterInfo) {

@@ -2595,6 +2595,69 @@ def test_delayed_measurement_store_across_quantum_operations(gate: str, *, via_q
 
 
 @pytest.mark.parametrize("via_qco", [False, True], ids=["qc", "qco"])
+@pytest.mark.parametrize(
+    ("intervening", "expected", "variables"),
+    [
+        pytest.param(
+            "scf.if %first { qc.x %q1 : !qc.qubit }\n    cbit.store %first, %c[%zero] : !cbit.reg<2>",
+            "11",
+            1,
+            id="measurement-result-control",
+        ),
+        pytest.param(
+            "%old = cbit.load %c[%one] : !cbit.reg<2>\n"
+            "    cbit.store %first, %c[%zero] : !cbit.reg<2>\n"
+            "    scf.if %old { qc.x %q1 : !qc.qubit }",
+            "01",
+            0,
+            id="disjoint-bit-snapshot",
+        ),
+        pytest.param(
+            "%late = arith.constant 0 : index\n    cbit.store %first, %c[%late] : !cbit.reg<2>",
+            "01",
+            0,
+            id="late-destination-index",
+        ),
+    ],
+)
+def test_delayed_measurement_store_preserves_scalar_uses(
+    intervening: str, expected: str, variables: int, *, via_qco: bool
+) -> None:
+    """Preserve measured and loaded bits without redundant scalar snapshots."""
+    program = QCProgram.from_mlir_str(
+        f"""module {{
+  func.func @main() -> !cbit.reg<2> attributes {{mqt.entry_point}} {{
+    %q0 = qc.alloc : !qc.qubit
+    %q1 = qc.alloc : !qc.qubit
+    %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    qc.x %q0 : !qc.qubit
+    %first = qc.measure %q0 : !qc.qubit -> i1
+    {intervening}
+    %second = qc.measure %q1 : !qc.qubit -> i1
+    cbit.store %second, %c[%one] : !cbit.reg<2>
+    qc.dealloc %q0 : !qc.qubit
+    qc.dealloc %q1 : !qc.qubit
+    return %c : !cbit.reg<2>
+  }}
+}}
+"""
+    )
+    if via_qco:
+        program = program.to_qco().to_qc()
+    original = str(program)
+
+    restored = program.to_qiskit()
+
+    assert str(program) == original
+    assert restored.num_clbits == 2
+    assert restored.num_vars == variables
+    assert sample(program, shots=1, seed=1) == {expected: 1}
+    assert sample(QCProgram.from_qiskit(restored), shots=1, seed=1) == {expected: 1}
+
+
+@pytest.mark.parametrize("via_qco", [False, True], ids=["qc", "qco"])
 @pytest.mark.parametrize("case", ["same-register", "distinct-registers", "reverse-stores", "repeated-qubit"])
 def test_delayed_measurement_store_across_measurements(case: str, *, via_qco: bool) -> None:
     """Preserve each grouped measurement's destination and quantum ordering."""
@@ -2768,8 +2831,10 @@ def test_delayed_measurement_store_across_allocation(*, allocate_destination: bo
 
 
 @pytest.mark.parametrize("via_qco", [False, True], ids=["qc", "qco"])
-def test_grouped_measurements_reject_shared_destination(*, via_qco: bool) -> None:
-    """Do not silently reverse writes when two measurements share a destination."""
+@pytest.mark.parametrize("reverse_stores", [False, True], ids=["ordered", "reversed"])
+def test_grouped_measurements_preserve_shared_destination_order(*, via_qco: bool, reverse_stores: bool) -> None:
+    """Fuse a shared destination only when measurement and store order agree."""
+    values = ["second", "first"] if reverse_stores else ["first", "second"]
     program = _single_qubit_program(
         [
             '%classical = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "c"} : !cbit.reg<1>',
@@ -2778,16 +2843,21 @@ def test_grouped_measurements_reject_shared_destination(*, via_qco: bool) -> Non
             "%first = qc.measure %q : !qc.qubit -> i1",
             "qc.x %q : !qc.qubit",
             "%second = qc.measure %q : !qc.qubit -> i1",
-            "cbit.store %second, %classical[%zero] : !cbit.reg<1>",
-            "cbit.store %first, %classical[%zero] : !cbit.reg<1>",
+            *(f"cbit.store %{value}, %classical[%zero] : !cbit.reg<1>" for value in values),
         ],
         returns_classical=True,
     )
     if via_qco:
         program = program.to_qco().to_qc()
 
-    with pytest.raises(RuntimeError, match="destination must follow the measurement"):
-        program.to_qiskit()
+    if reverse_stores:
+        with pytest.raises(RuntimeError, match="destination must follow the measurement"):
+            program.to_qiskit()
+    else:
+        restored = program.to_qiskit()
+        assert restored.num_clbits == 1
+        assert sample(program, shots=1, seed=1) == {"0": 1}
+        assert sample(QCProgram.from_qiskit(restored), shots=1, seed=1) == {"0": 1}
 
 
 @pytest.mark.parametrize(
@@ -2829,8 +2899,8 @@ def test_delayed_measurement_store_rejects_intervening_write(write: str) -> None
 
 @pytest.mark.parametrize("via_qco", [False, True], ids=["qc", "qco"])
 @pytest.mark.parametrize("consume_before_store", [True, False], ids=["before-store", "after-store"])
-def test_delayed_measurement_store_is_rejected(*, consume_before_store: bool, via_qco: bool) -> None:
-    """Reject a delayed write that would change a captured bit snapshot."""
+def test_delayed_measurement_store_preserves_snapshot(*, consume_before_store: bool, via_qco: bool) -> None:
+    """Capture a bit before its destination is written by a fused measurement."""
     consumer = "scf.if %old { qc.x %controlled_qubit : !qc.qubit }"
     program = QCProgram.from_mlir_str(
         f"""module {{
@@ -2845,6 +2915,8 @@ def test_delayed_measurement_store_is_rejected(*, consume_before_store: bool, vi
     {consumer if consume_before_store else ""}
     cbit.store %measured, %classical[%zero] : !cbit.reg<1>
     {"" if consume_before_store else consumer}
+    %final = qc.measure %controlled_qubit : !qc.qubit -> i1
+    cbit.store %final, %classical[%zero] : !cbit.reg<1>
     qc.dealloc %measured_qubit : !qc.qubit
     qc.dealloc %controlled_qubit : !qc.qubit
     return %classical : !cbit.reg<1>
@@ -2855,8 +2927,10 @@ def test_delayed_measurement_store_is_rejected(*, consume_before_store: bool, vi
     if via_qco:
         program = program.to_qco().to_qc()
 
-    with pytest.raises(RuntimeError, match="cannot preserve a stale classical snapshot"):
-        program.to_qiskit()
+    restored = program.to_qiskit()
+    assert restored.num_clbits == 1
+    assert sample(program, shots=1, seed=1) == {"0": 1}
+    assert sample(QCProgram.from_qiskit(restored), shots=1, seed=1) == {"0": 1}
 
 
 def test_multi_result_boolean_select_round_trip() -> None:
