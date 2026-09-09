@@ -12,6 +12,7 @@
 
 #include "mlir/Compiler/Target.h"
 #include "mlir/Compiler/TargetEnvironment.h"
+#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -1154,10 +1155,12 @@ private:
   }
 
   /// Return whether quantum work follows a measurement through its wire, SSA
-  /// results, or the register-effect order preserved by the topological sorter.
+  /// results, or any register effects. This function assumes the direction
+  /// WireDirection::Forward.
   static bool measurementNeedsRouting(MeasureOp measurement) {
-    SetVector<Operation*> worklist;
-    const auto addSlice = [&](Operation* root) {
+    Block* const block = measurement->getBlock();
+
+    const auto addSlice = [](Operation* root, SetVector<Operation*>& worklist) {
       SetVector<Operation*> slice;
       ForwardSliceOptions options;
       options.inclusive = true;
@@ -1166,72 +1169,77 @@ private:
       worklist.insert(slice.begin(), slice.end());
     };
 
-    // A later measurement on this wire can feed quantum work even when the
-    // first result is only returned to the caller.
-    for (auto current = measurement;;) {
-      auto qubit = current.getQubitOut();
-      assert(qubit.hasOneUse());
-      Operation* next = *qubit.getUsers().begin();
-      if (!isa<MeasureOp, SinkOp>(next)) {
-        return true;
+    SetVector<Operation*> worklist;
+
+    // Find adaptive-profile scenarios, where a measured qubit is fed into
+    // further quantum work (multiple consecutive measurements are fine).
+
+    WireIterator it(measurement.getQubitOut());
+    for (; it != std::default_sentinel; ++it) {
+      if (auto meas = dyn_cast<MeasureOp>(it.operation())) {
+        Value bit = meas.getResult();
+        for_each(bit.getUsers(),
+                 [&](Operation* user) { addSlice(user, worklist); });
+        continue;
       }
-      for (Operation* user : current.getResult().getUsers()) {
-        addSlice(user);
-      }
-      if (isa<SinkOp>(next)) {
+
+      if (isa<SinkOp>(it.operation())) {
         break;
       }
-      current = cast<MeasureOp>(next);
+
+      return true;
     }
 
-    Block* block = measurement->getBlock();
-    DenseMap<Value, Operation*> firstEffect;
-    // addSlice can append work, so do not retain iterators or cache the end.
-    size_t index = 0;
-    while (index < worklist.size()) {
-      Operation* op = worklist[index++];
-      if (isa<UnitaryOpInterface>(op) ||
-          (isa<IfOp, IndexSwitchOp, scf::ForOp, scf::WhileOp>(op) &&
-           any_of(op->getResultTypes(),
-                  [](Type type) { return isa<QubitType>(type); }))) {
+    DenseSet<TypedValue<cbit::RegisterType>> processed;
+
+    for (size_t cursor = 0; cursor < worklist.size(); ++cursor) {
+      Operation* op = worklist[cursor];
+
+      // If any transitive dependency of the measurement consumes qubits, the
+      // program fulfills the adaptive profile.
+
+      if (any_of(op->getOperandTypes(),
+                 [](auto type) { return isa<QubitType>(type); })) {
         return true;
       }
 
       // Captures and nested register accesses also constrain their enclosing
       // composite, whose placement threads every physical wire through it.
-      Operation* ancestor = block->findAncestorOpInBlock(*op);
-      if (ancestor != op) {
-        if (ancestor != nullptr) {
-          addSlice(ancestor);
+
+      if (op->getBlock() != block) {
+        if (Operation* ancestor = block->findAncestorOpInBlock(*op);
+            ancestor != nullptr) {
+          addSlice(ancestor, worklist);
         }
-        continue;
       }
 
       const auto effects = getEffectsRecursively(op);
       if (!effects) {
         continue;
       }
-      for (const auto& effect : *effects) {
-        auto reg = effect.getValue();
-        if (!reg || !isa<cbit::RegisterType>(reg.getType())) {
-          continue;
-        }
-        auto [it, inserted] = firstEffect.try_emplace(reg, op);
-        if (!inserted && !op->isBeforeInBlock(it->second)) {
-          continue;
-        }
-        it->second = op;
 
-        // Match the sorter's whole-register effect order, including overwrites.
-        // Output-only reads and writes do not require quantum work.
+      for (const auto& effect : *effects) {
+        auto value = effect.getValue();
+        auto reg = dyn_cast_if_present<TypedValue<cbit::RegisterType>>(value);
+        if (!reg) {
+          continue;
+        }
+
+        auto [it, inserted] = processed.insert(reg);
+        if (!inserted) {
+          continue;
+        }
+
         for (Operation* user : reg.getUsers()) {
-          Operation* next = block->findAncestorOpInBlock(*user);
-          if (next != nullptr && next != op && op->isBeforeInBlock(next)) {
-            addSlice(next);
+          if (user == op) {
+            continue;
           }
+
+          addSlice(user, worklist);
         }
       }
     }
+
     return false;
   }
 
@@ -1330,6 +1338,7 @@ private:
     // become ready at once. Hot routing threads every qubit through each
     // composite, so processing a later operation first could introduce a
     // use-before-definition for an earlier operation.
+
     llvm::sort(composites,
                [](const CompositeUnitary& lhs, const CompositeUnitary& rhs) {
                  assert(lhs.op->getBlock() == rhs.op->getBlock());
