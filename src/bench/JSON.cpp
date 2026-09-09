@@ -321,6 +321,25 @@ void requireBenchmark(const Json& root, const std::string_view expected,
   }
 }
 
+[[nodiscard]] ControlledMultiplicationModuloN
+parseControlledMultiplicationModuloNParameters(const Json& parameters,
+                                               const std::string_view source) {
+  rejectUnknownKeys(parameters, {"multiplier", "modulus"}, source,
+                    "$/parameters");
+  try {
+    return ControlledMultiplicationModuloN({
+        .multiplier = stringValue(
+            required(parameters, "multiplier", source, "$/parameters"), source,
+            "$/parameters/multiplier"),
+        .modulus =
+            stringValue(required(parameters, "modulus", source, "$/parameters"),
+                        source, "$/parameters/modulus"),
+    });
+  } catch (const std::invalid_argument& error) {
+    fail(source, "$/parameters", error.what());
+  }
+}
+
 [[nodiscard]] GHZ parseGHZParameters(const Json& parameters,
                                      const std::string_view source) {
   rejectUnknownKeys(parameters, {"qubits", "topology", "basis"}, source,
@@ -420,25 +439,6 @@ parseMultiplexerParameters(const Json& parameters,
   }
   try {
     return QFT(options);
-  } catch (const std::invalid_argument& error) {
-    fail(source, "$/parameters", error.what());
-  }
-}
-
-[[nodiscard]] ControlledMultiplicationModuloN
-parseControlledMultiplicationModuloNParameters(const Json& parameters,
-                                               const std::string_view source) {
-  rejectUnknownKeys(parameters, {"multiplier", "modulus"}, source,
-                    "$/parameters");
-  try {
-    return ControlledMultiplicationModuloN({
-        .multiplier = stringValue(
-            required(parameters, "multiplier", source, "$/parameters"), source,
-            "$/parameters/multiplier"),
-        .modulus =
-            stringValue(required(parameters, "modulus", source, "$/parameters"),
-                        source, "$/parameters/modulus"),
-    });
   } catch (const std::invalid_argument& error) {
     fail(source, "$/parameters", error.what());
   }
