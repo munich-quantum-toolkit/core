@@ -132,8 +132,9 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     First, the pass assigns static qubits to the dynamically allocated ones by creating an initial dynamic-to-static
     mapping, which is referred to as the initial layout. The layout covers the
-    complete target virtually, while only program qubits and vacant sites used
-    as routing workspace are materialized. Then, the pass traverses the circuit
+    complete target. The pass materializes all target sites as routing workspace
+    and carries them through structured control flow. Cleanup after mapping
+    removes unused sites. The pass traverses the circuit
     and inserts `qco.swap` operations to ensure that all two-qubit operations
     are executable on the target architecture, a process known as routing.
 
@@ -168,7 +169,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
   let options = [Option<"nlookahead", "nlookahead", "std::size_t", "1",
                         "The number of lookahead steps.">,
                  Option<"alpha", "alpha", "float", "1.0F",
-                        "The alpha factor in the cost function. Must be > 0.">,
+                        "The alpha cost factor. Must be finite and > 0.">,
                  Option<"lambda", "lambda", "float", "0.5F",
                         "The lambda factor in the cost function.">,
                  Option<"niterations", "niterations", "std::size_t", "1",

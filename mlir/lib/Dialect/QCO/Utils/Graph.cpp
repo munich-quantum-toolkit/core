@@ -19,7 +19,6 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <utility>
 
@@ -33,46 +32,8 @@ ArrayRef<size_t> Graph::getNeighbours(size_t id) const { return adj_.at(id); }
 
 SmallVector<size_t> Graph::getNodes() const { return to_vector(adj_.keys()); }
 
-size_t Graph::getMaxDegree() const {
-  size_t deg = 0;
-  for (const auto& [u, nbrs] : adj_) {
-    deg = std::ranges::max(deg, nbrs.size());
-  }
-  return deg;
-}
-
 void Graph::clearEdges() {
   for_each(adj_, [](auto& kv) { kv.second.clear(); });
-}
-
-Graph::DistanceMatrix Graph::getDistMatrix() const {
-  const auto n = getNumNodes();
-
-  Graph::DistanceMatrix dist(n, std::numeric_limits<size_t>::max());
-  for (const auto& [u, nbrs] : adj_) {
-    for (const auto& v : nbrs) {
-      dist[u][v] = 1;
-    }
-  }
-  for (size_t v = 0; v < n; ++v) {
-    dist[v][v] = 0;
-  }
-
-  for (size_t k = 0; k < n; ++k) {
-    for (size_t i = 0; i < n; ++i) {
-      for (size_t j = 0; j < n; ++j) {
-        if (dist[i][k] == std::numeric_limits<size_t>::max() ||
-            dist[k][j] == std::numeric_limits<size_t>::max()) {
-          continue; // Avoid overflow with "infinite" distances.
-        }
-
-        const size_t sum = dist[i][k] + dist[k][j];
-        dist[i][j] = std::min(dist[i][j], sum);
-      }
-    }
-  }
-
-  return dist;
 }
 
 std::optional<SmallVector<size_t>> Graph::findCycle() const {
@@ -108,7 +69,7 @@ std::optional<SmallVector<size_t>> Graph::findCycle() const {
 
       auto it = adj_.find(top.id);
       assert(it != adj_.end() && "expected node id in adjacency map");
-      const auto nbrs = it->getSecond();
+      const auto& nbrs = it->getSecond();
 
       // Once all neighbours have been visited (indicated by the index
       // exceeding the number of neighbours - 1), set the frame on node to

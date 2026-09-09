@@ -34,6 +34,7 @@
 #include <llvm/Support/LogicalResult.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinOps.h>
@@ -56,6 +57,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <random>
 #include <string>
@@ -323,7 +325,7 @@ protected:
     DialectRegistry registry;
     registry.insert<mqt::MQTDialect, QCODialect, qtensor::QTensorDialect,
                     CBitDialect, scf::SCFDialect, arith::ArithDialect,
-                    func::FuncDialect>();
+                    func::FuncDialect, cf::ControlFlowDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -2500,3 +2502,113 @@ INSTANTIATE_TEST_SUITE_P(FourByFourSquareGrid, MappingPassTest,
                          testing::Values(getSquareGridTarget(4)));
 INSTANTIATE_TEST_SUITE_P(TenByTenSquareGrid, MappingPassTest,
                          testing::Values(getSquareGridTarget(10)));
+
+TEST_F(MappingPassFixture, RejectQuantumCallsBeforeMutation) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @helper(!qco.qubit) -> !qco.qubit
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qco.alloc : !qco.qubit
+        %r = func.call @helper(%q) : (!qco.qubit) -> !qco.qubit
+        qco.sink %r : !qco.qubit
+        return
+      }
+    })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  const auto target = getSquareGridTarget(2);
+  attachTestEnvironment(*moduleOp, target);
+  const auto before = printModule(*moduleOp);
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(*moduleOp, target, MappingPassOptions{})));
+  EXPECT_NE(diagnostics.find("inline calls that carry qubits before mapping"),
+            std::string::npos)
+      << diagnostics;
+  EXPECT_EQ(printModule(*moduleOp), before);
+}
+
+TEST_F(MappingPassFixture, RejectEntryControlFlowBeforeMutation) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qco.alloc : !qco.qubit
+        cf.br ^exit(%q : !qco.qubit)
+      ^exit(%r : !qco.qubit):
+        qco.sink %r : !qco.qubit
+        return
+      }
+    })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  const auto target = getSquareGridTarget(2);
+  attachTestEnvironment(*moduleOp, target);
+  const auto before = printModule(*moduleOp);
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runPass(*moduleOp, target, MappingPassOptions{})));
+  EXPECT_NE(diagnostics.find("mapping requires a single-block entry function"),
+            std::string::npos)
+      << diagnostics;
+  EXPECT_EQ(printModule(*moduleOp), before);
+}
+
+TEST_F(MappingPassFixture, RejectInvalidOptionsBeforeMutation) {
+  const auto target = getSquareGridTarget(2);
+  for (const auto& options : {
+           MappingPassOptions{.ntrials = 0},
+           MappingPassOptions{.niterations = 0},
+           MappingPassOptions{.alpha = 0},
+           MappingPassOptions{.alpha = -1},
+           MappingPassOptions{.alpha = std::numeric_limits<float>::infinity()},
+           MappingPassOptions{.alpha = std::numeric_limits<float>::quiet_NaN()},
+       }) {
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+    builder.sink(builder.allocQubit());
+    auto moduleOp = builder.finalize();
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    attachTestEnvironment(*moduleOp, target);
+    const auto before = printModule(*moduleOp);
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(runPass(*moduleOp, target, options)));
+    EXPECT_NE(diagnostics.find("mapping requires finite alpha > 0"),
+              std::string::npos)
+        << diagnostics;
+    EXPECT_EQ(printModule(*moduleOp), before);
+  }
+}
+
+TEST_F(MappingPassFixture, PreserveClassicalCalls) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @classical()
+      func.func @main() attributes {mqt.entry_point} {
+        %q = qco.alloc : !qco.qubit
+        func.call @classical() : () -> ()
+        qco.sink %q : !qco.qubit
+        return
+      }
+    })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runPass(*moduleOp, getSquareGridTarget(2),
+                                MappingPassOptions{.ntrials = 1})));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  size_t calls = 0;
+  moduleOp->walk([&](func::CallOp) { ++calls; });
+  EXPECT_EQ(calls, 1);
+}
