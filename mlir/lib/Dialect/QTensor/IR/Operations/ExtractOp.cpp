@@ -11,6 +11,7 @@
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
+#include <llvm/ADT/DenseSet.h>
 #include <mlir/Dialect/QCO/IR/QCOOps.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
@@ -18,26 +19,28 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstdint>
+
 using namespace mlir;
 using namespace mlir::qtensor;
 
-/// Check whether an extract reads from a tensor allocated in this IR.
-static bool originatesFromAlloc(ExtractOp extract) {
+/// Find the allocation proving that an extracted constant slot is fresh.
+static AllocOp findFreshAllocation(ExtractOp extract) {
   auto current = extract.getTensor();
-  const auto extractIndex = extract.getIndex();
+  auto extractIndex = extract.getIndex();
   if (!getConstantIntValue(extractIndex)) {
-    return false;
+    return {};
   }
 
   while (auto* definingOp = current.getDefiningOp()) {
-    if (isa<AllocOp>(definingOp)) {
-      return true;
+    if (auto alloc = dyn_cast<AllocOp>(definingOp)) {
+      return alloc;
     }
 
     if (auto nestedExtract = dyn_cast<ExtractOp>(definingOp)) {
       if (!getConstantIntValue(nestedExtract.getIndex()) ||
           areEquivalentIndices(extractIndex, nestedExtract.getIndex())) {
-        return false;
+        return {};
       }
       current = nestedExtract.getTensor();
       continue;
@@ -46,16 +49,16 @@ static bool originatesFromAlloc(ExtractOp extract) {
     if (auto insert = dyn_cast<InsertOp>(definingOp)) {
       if (!getConstantIntValue(insert.getIndex()) ||
           areEquivalentIndices(extractIndex, insert.getIndex())) {
-        return false;
+        return {};
       }
       current = insert.getDest();
       continue;
     }
 
-    return false;
+    return {};
   }
 
-  return false;
+  return {};
 }
 
 namespace {
@@ -65,12 +68,52 @@ struct RemoveResetAfterExtract final : OpRewritePattern<qco::ResetOp> {
 
   LogicalResult matchAndRewrite(qco::ResetOp reset,
                                 PatternRewriter& rewriter) const override {
-    const auto extract = reset.getQubitIn().getDefiningOp<ExtractOp>();
-    if (extract == nullptr || !originatesFromAlloc(extract)) {
+    auto extract = reset.getQubitIn().getDefiningOp<ExtractOp>();
+    if (!extract) {
       return failure();
     }
+    auto alloc = findFreshAllocation(extract);
+    if (!alloc) {
+      return failure();
+    }
+    if (extract.getTensor() == alloc.getResult()) {
+      rewriter.replaceOp(reset, reset.getQubitIn());
+      return success();
+    }
 
-    rewriter.replaceOp(reset, reset.getQubitIn());
+    /// Reuse the allocation proof for every fresh slot in this linear chain.
+    /// Folding them together avoids one backward traversal per reset.
+    auto* resetBlock = reset->getBlock();
+    llvm::SmallDenseSet<int64_t> accessed;
+    auto tensor = alloc.getResult();
+    while (true) {
+      auto* user = *tensor.user_begin();
+      if (auto nextExtract = dyn_cast<ExtractOp>(user)) {
+        const auto index = getConstantIntValue(nextExtract.getIndex());
+        if (!index) {
+          break;
+        }
+        if (accessed.insert(*index).second) {
+          if (auto nextReset =
+                  dyn_cast<qco::ResetOp>(*nextExtract.getResult().user_begin());
+              nextReset && nextReset->getBlock() == resetBlock) {
+            rewriter.replaceOp(nextReset, nextReset.getQubitIn());
+          }
+        }
+        tensor = nextExtract.getOutTensor();
+        continue;
+      }
+      if (auto insert = dyn_cast<InsertOp>(user)) {
+        const auto index = getConstantIntValue(insert.getIndex());
+        if (!index) {
+          break;
+        }
+        accessed.insert(*index);
+        tensor = insert.getResult();
+        continue;
+      }
+      break;
+    }
     return success();
   }
 };
