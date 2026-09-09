@@ -16,9 +16,8 @@ the multiplier must satisfy `0 < multiplier < modulus`. The benchmark prepares
 the control and multiplicand registers in the uniform superposition. The
 accumulator and one work qubit start in zero. The logical output is
 `control || multiplicand || accumulator`; the accumulator includes its leading
-overflow qubit. Accept `2 <= n <= 63`; the current QCO-to-jeff pipeline supports
-general integer expressions of at most 64 bits, and the modular recurrence needs
-`n+1` bits.
+overflow qubit. Accept `2 <= n <= 63`. The limit lets the analytic reference use
+`uint64_t` modular addition without overflow and bounds the phase-angle table.
 
 ## Circuit contract
 
@@ -45,31 +44,30 @@ After all multiplicand bits, apply the inverse QFT. Do not control the complete
 modular block and do not decompose its multi-controlled phase gates. Use P gates
 for every Fourier addition.
 
-Represent the current `d_i` as a signless `i(n+1)` MLIR value carried by the
-outer loop and use unsigned arithmetic operations. Update it as
-`(d_i << 1) urem modulus`; the extra bit prevents an overflow during doubling.
-Build each phase angle in a target loop that carries the angle and a
-right-shifted copy of `d_i`. Test the low bit with integer operations and use an
-`scf.if` to choose whether to add pi. Multiply by -1 for inverse phases. This
-form avoids `arith.uitofp`, `arith.negf`, and index-to-wide-integer casts, which
-the current QCO-to-jeff pipeline cannot lower. It also keeps the circuit
-structured, avoids fixed-width host integers, and stays within the pipeline's
-64-bit integer limit.
+Precompute the phase angles for every `d_i` and for the modulus. Store the rows
+in one rank-one tensor and extract each angle in the target loop. Compute the
+row offset from the outer multiplicand-bit loop index. This form keeps the
+circuit structured and removes runtime integer arithmetic and conditionals from
+the phase additions. The rank-one layout matches the tensor constants supported
+by the QCO-to-jeff conversion.
 
 ## Reference and tests
 
 Every valid outcome has probability `2^-(n+1)`. For control zero, the
 accumulator is zero. For control one, it is the zero-extended value
-`multiplier * multiplicand mod modulus`. Compute this relation with bitstring
-double-and-add arithmetic, not native fixed-width integers.
+`multiplier * multiplicand mod modulus`. Parse the bitstrings with
+`std::from_chars` and compute this relation with overflow-safe `uint64_t`
+double-and-add arithmetic. The 63-bit input limit ensures that adding two
+reduced residues fits in `uint64_t`.
 
 Use `multiplier = 011` and `modulus = 101` as the main three-bit case. It covers
 both control values, all multiplicand bits, modular wraparound, and values of
-the multiplicand greater than or equal to the modulus. Structural tests must
-assert every Figure 5 stage in order, all controls and targets, and cleanup of
-the work qubit by construction. Execution tests must sample the full
-control/multiplicand/accumulator correlation. Add boundary and invalid-input
-tests. The shared registry test covers the jeff round trip.
+the multiplicand greater than or equal to the modulus. Statevector tests must
+check the coherent mapping, including relative phases and cleanup of the work
+qubit. Sampling tests must check the complete control/multiplicand/accumulator
+correlation. A maximum-width test must keep the program structured and all
+precomputed angles finite. Add boundary and invalid-input tests. The shared
+registry test covers the jeff round trip.
 
 ## Work remaining
 

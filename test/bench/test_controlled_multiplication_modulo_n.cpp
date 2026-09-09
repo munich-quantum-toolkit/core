@@ -129,12 +129,13 @@ TEST(ControlledMultiplicationModuloN,
 TEST(ControlledMultiplicationModuloN,
      KeepsTheLargestReferenceWeightRepresentable) {
   constexpr auto width = ControlledMultiplicationModuloNOptions::MAX_BITS;
-  const auto multiplier = std::string(width - 1U, '0') + "1";
-  const auto modulus = "1" + std::string(width - 1U, '0');
+  const auto multiplier = std::string(width - 1U, '1') + "0";
+  const auto modulus = std::string(width, '1');
   const ControlledMultiplicationModuloN benchmark{
       {.multiplier = multiplier, .modulus = modulus}};
-  const auto outcome =
-      "1" + std::string(width, '1') + "00" + std::string(width - 1U, '1');
+  const auto multiplicand = std::string(width - 2U, '0') + "10";
+  const auto accumulator = "0" + std::string(width - 2U, '1') + "01";
+  const auto outcome = "1" + multiplicand + accumulator;
   EXPECT_GT(benchmark.probability(outcome), 0.);
 }
 

@@ -14,6 +14,7 @@
 #include "bench/mqt_core_bench_export.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <string_view>
 
@@ -46,6 +47,8 @@ public:
 private:
   ControlledMultiplicationModuloNOptions options_;
   Output output_;
+  uint64_t multiplierValue_ = 0;
+  uint64_t modulusValue_ = 0;
 };
 
 } // namespace mqt::bench

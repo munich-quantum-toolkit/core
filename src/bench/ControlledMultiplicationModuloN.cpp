@@ -13,71 +13,45 @@
 #include "EvaluationUtils.hpp"
 #include "bench/Evaluation.hpp"
 
-#include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
+#include <limits>
+#include <optional>
 #include <stdexcept>
-#include <string>
 #include <string_view>
+#include <system_error>
 #include <utility>
 
 namespace mqt::bench {
 namespace {
 
-[[nodiscard]] bool isBitstring(const std::string_view value) {
-  return std::ranges::all_of(
-      value, [](const char bit) { return bit == '0' || bit == '1'; });
+static_assert(ControlledMultiplicationModuloNOptions::MAX_BITS <
+              static_cast<size_t>(std::numeric_limits<uint64_t>::digits));
+
+[[nodiscard]] std::optional<uint64_t>
+binaryValue(const std::string_view bitstring) {
+  uint64_t value = 0;
+  const auto [end, error] =
+      std::from_chars(bitstring.begin(), bitstring.end(), value, /*base=*/2);
+  if (error != std::errc{} || end != bitstring.end()) {
+    return std::nullopt;
+  }
+  return value;
 }
 
-[[nodiscard]] std::string subtract(const std::string_view minuend,
-                                   const std::string_view subtrahend) {
-  auto difference = std::string(minuend);
-  auto borrow = 0;
-  for (size_t index = difference.size(); index > 0; --index) {
-    const auto position = index - 1U;
-    auto bit =
-        (minuend[position] - '0') - (subtrahend[position] - '0') - borrow;
-    if (bit < 0) {
-      bit += 2;
-      borrow = 1;
-    } else {
-      borrow = 0;
+[[nodiscard]] uint64_t multiplyModulo(const uint64_t multiplier,
+                                      uint64_t multiplicand,
+                                      const uint64_t modulus) {
+  uint64_t result = 0;
+  auto addend = multiplier;
+  while (multiplicand != 0) {
+    if ((multiplicand & uint64_t{1}) != 0) {
+      result = (result + addend) % modulus;
     }
-    difference[position] = static_cast<char>('0' + bit);
-  }
-  return difference;
-}
-
-[[nodiscard]] std::string addModulo(const std::string_view lhs,
-                                    const std::string_view rhs,
-                                    const std::string_view modulus) {
-  const auto width = lhs.size();
-  auto sum = std::string(width + 1U, '0');
-  auto carry = 0;
-  for (size_t index = width; index > 0; --index) {
-    const auto position = index - 1U;
-    const auto bit = (lhs[position] - '0') + (rhs[position] - '0') + carry;
-    sum[index] = static_cast<char>('0' + (bit % 2));
-    carry = bit / 2;
-  }
-  sum[0] = static_cast<char>('0' + carry);
-
-  const auto extendedModulus = std::string{"0"} + std::string{modulus};
-  if (sum >= extendedModulus) {
-    sum = subtract(sum, extendedModulus);
-  }
-  return sum.substr(1);
-}
-
-[[nodiscard]] std::string multiplyModulo(const std::string_view multiplier,
-                                         const std::string_view multiplicand,
-                                         const std::string_view modulus) {
-  auto result = std::string(multiplier.size(), '0');
-  for (const auto bit : multiplicand) {
-    result = addModulo(result, result, modulus);
-    if (bit == '1') {
-      result = addModulo(result, multiplier, modulus);
-    }
+    addend = (addend + addend) % modulus;
+    multiplicand >>= 1U;
   }
   return result;
 }
@@ -101,7 +75,9 @@ ControlledMultiplicationModuloN::ControlledMultiplicationModuloN(
     throw std::invalid_argument(
         "controlled multiplication modulo N inputs must have equal widths");
   }
-  if (!isBitstring(options_.multiplier) || !isBitstring(options_.modulus)) {
+  const auto multiplier = binaryValue(options_.multiplier);
+  const auto modulus = binaryValue(options_.modulus);
+  if (!multiplier || !modulus) {
     throw std::invalid_argument(
         "controlled multiplication modulo N inputs must contain only '0' and "
         "'1'");
@@ -110,13 +86,13 @@ ControlledMultiplicationModuloN::ControlledMultiplicationModuloN(
     throw std::invalid_argument(
         "controlled multiplication modulo N modulus must be canonical");
   }
-  if (std::ranges::all_of(options_.multiplier,
-                          [](const char bit) { return bit == '0'; }) ||
-      options_.multiplier >= options_.modulus) {
+  if (*multiplier == 0 || *multiplier >= *modulus) {
     throw std::invalid_argument(
         "controlled multiplication modulo N multiplier must satisfy 0 < a < "
         "N");
   }
+  multiplierValue_ = *multiplier;
+  modulusValue_ = *modulus;
 }
 
 const ControlledMultiplicationModuloNOptions&
@@ -137,10 +113,10 @@ double ControlledMultiplicationModuloN::probability(
   const auto accumulator = outcome.substr(width + 1U);
   const auto expected =
       control == '0'
-          ? std::string(width + 1U, '0')
-          : std::string{"0"} + multiplyModulo(options_.multiplier, multiplicand,
-                                              options_.modulus);
-  if (accumulator != expected) {
+          ? uint64_t{0}
+          : multiplyModulo(multiplierValue_, binaryValue(multiplicand).value(),
+                           modulusValue_);
+  if (binaryValue(accumulator).value() != expected) {
     return 0.;
   }
   return std::ldexp(1., -static_cast<int>(width + 1U));

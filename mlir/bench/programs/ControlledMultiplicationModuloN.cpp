@@ -15,125 +15,120 @@
 #include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
 #include <llvm/ADT/APInt.h>
+#include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
+#include <mlir/Dialect/Tensor/IR/Tensor.h>
+#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <numbers>
-#include <string>
 
 namespace mqt::bench {
 
 using namespace mlir;
 
-[[nodiscard]] static Value
-unsignedIntegerConstant(qc::QCProgramBuilder& builder, StringRef bits) {
-  const auto width = static_cast<unsigned>(bits.size() + 1U);
-  auto type = builder.getIntegerType(width);
-  auto value = llvm::APInt(width, bits, 2);
-  return arith::ConstantOp::create(builder,
-                                   builder.getIntegerAttr(type, value));
+struct PhaseData {
+  int64_t width;
+  Value angles;
+  Value rowStride;
+  Value modulusOffset;
+  Value negativeOne;
+};
+
+static void appendPhaseAngles(SmallVectorImpl<double>& angles,
+                              const llvm::APInt& value) {
+  long double angle = 0.L;
+  for (unsigned bit = 0; bit < value.getBitWidth(); ++bit) {
+    angle /= 2.L;
+    if (value[bit]) {
+      angle += std::numbers::pi_v<long double>;
+    }
+    angles.push_back(static_cast<double>(angle));
+  }
 }
 
-[[nodiscard]] static Value
-unsignedIntegerConstant(qc::QCProgramBuilder& builder, IntegerType type,
-                        uint64_t value) {
-  return arith::ConstantOp::create(
-      builder,
-      builder.getIntegerAttr(type, llvm::APInt(type.getWidth(), value)));
+[[nodiscard]] static PhaseData phaseData(qc::QCProgramBuilder& builder,
+                                         const StringRef multiplier,
+                                         const StringRef modulus) {
+  const auto bits = multiplier.size();
+  const auto width = static_cast<unsigned>(bits + 1U);
+  auto addend = llvm::APInt(width, multiplier, /*radix=*/2);
+  const auto modulusValue = llvm::APInt(width, modulus, /*radix=*/2);
+
+  SmallVector<double> angles;
+  angles.reserve((bits + 1U) * width);
+  for (size_t bit = 0; bit < bits; ++bit) {
+    appendPhaseAngles(angles, addend);
+    addend = addend.shl(1).urem(modulusValue);
+  }
+  appendPhaseAngles(angles, modulusValue);
+
+  const auto type = RankedTensorType::get({static_cast<int64_t>(angles.size())},
+                                          builder.getF64Type());
+  const auto value = DenseElementsAttr::get(type, ArrayRef<double>(angles));
+  return {
+      .width = static_cast<int64_t>(width),
+      .angles = arith::ConstantOp::create(builder, value).getResult(),
+      .rowStride = builder.indexConstant(static_cast<int64_t>(width)),
+      .modulusOffset =
+          builder.indexConstant(static_cast<int64_t>(bits * width)),
+      .negativeOne = builder.floatConstant(-1.),
+  };
 }
 
 static void phaseAdd(qc::QCProgramBuilder& builder, Value accumulator,
-                     int64_t width, Value addend, ValueRange controls,
-                     bool inverse) {
-  auto integerType = cast<IntegerType>(addend.getType());
-  auto zero = builder.indexConstant(0);
-  auto upper = builder.indexConstant(width);
-  auto one = builder.indexConstant(1);
-  auto zeroAngle = builder.floatConstant(0.);
-  auto half = builder.floatConstant(0.5);
-  auto pi = builder.floatConstant(std::numbers::pi);
-  auto negativeOne = builder.floatConstant(-1.);
-  auto zeroBit = unsignedIntegerConstant(builder, integerType, 0);
-  auto oneBit = unsignedIntegerConstant(builder, integerType, 1);
-
-  auto loop = scf::ForOp::create(builder, zero, upper, one,
-                                 ValueRange{zeroAngle, addend});
-  OpBuilder::InsertionGuard guard(builder);
-  builder.setInsertionPointToStart(loop.getBody());
-
-  auto target = loop.getInductionVar();
-  auto remaining = loop.getRegionIterArg(1);
-  auto bit = arith::AndIOp::create(builder, remaining, oneBit).getResult();
-  auto hasBit =
-      arith::CmpIOp::create(builder, arith::CmpIPredicate::ne, bit, zeroBit)
-          .getResult();
-  auto previous = loop.getRegionIterArg(0);
-  auto decayed = arith::MulFOp::create(builder, previous, half).getResult();
-  auto selectAngle =
-      scf::IfOp::create(builder, builder.getF64Type(), hasBit, true);
-  {
-    OpBuilder::InsertionGuard selectGuard(builder);
-    auto& thenBlock = selectAngle.getThenRegion().front();
-    if (!thenBlock.empty()) {
-      thenBlock.back().erase();
+                     const PhaseData& data, Value offset, ValueRange controls,
+                     const bool inverse) {
+  builder.scfFor(0, data.width, 1, [&](Value target) {
+    auto angleIndex =
+        arith::AddIOp::create(builder, offset, target).getResult();
+    auto angle =
+        tensor::ExtractOp::create(builder, data.angles, ValueRange{angleIndex})
+            .getResult();
+    if (inverse) {
+      angle =
+          arith::MulFOp::create(builder, angle, data.negativeOne).getResult();
     }
-    builder.setInsertionPointToEnd(&thenBlock);
-    auto angle = arith::AddFOp::create(builder, decayed, pi).getResult();
-    scf::YieldOp::create(builder, ValueRange{angle});
-
-    auto& elseBlock = selectAngle.getElseRegion().front();
-    if (!elseBlock.empty()) {
-      elseBlock.back().erase();
+    auto qubit = builder.loadQubit(accumulator, target);
+    if (controls.empty()) {
+      builder.p(angle, qubit);
+    } else if (controls.size() == 1U) {
+      builder.cp(angle, controls.front(), qubit);
+    } else {
+      builder.mcp(angle, controls, qubit);
     }
-    builder.setInsertionPointToEnd(&elseBlock);
-    scf::YieldOp::create(builder, ValueRange{decayed});
-  }
-  auto angle = selectAngle.getResult(0);
-  auto gateAngle =
-      inverse ? arith::MulFOp::create(builder, angle, negativeOne).getResult()
-              : angle;
-  auto qubit = builder.loadQubit(accumulator, target);
-  if (controls.empty()) {
-    builder.p(gateAngle, qubit);
-  } else if (controls.size() == 1U) {
-    builder.cp(gateAngle, controls.front(), qubit);
-  } else {
-    builder.mcp(gateAngle, controls, qubit);
-  }
-  auto next = arith::ShRUIOp::create(builder, remaining, oneBit).getResult();
-  scf::YieldOp::create(builder, ValueRange{angle, next});
+  });
 }
 
 static void modularAdd(qc::QCProgramBuilder& builder, Value accumulator,
-                       int64_t width, Value addend, Value modulus,
+                       const PhaseData& data, Value addendOffset,
                        ValueRange controls, Value work) {
-  auto overflowIndex = builder.indexConstant(width - 1);
+  auto overflowIndex = builder.indexConstant(data.width - 1);
 
-  phaseAdd(builder, accumulator, width, addend, controls, false);
-  phaseAdd(builder, accumulator, width, modulus, {}, true);
+  phaseAdd(builder, accumulator, data, addendOffset, controls, false);
+  phaseAdd(builder, accumulator, data, data.modulusOffset, {}, true);
 
-  detail::inverseQFT(builder, accumulator, width);
+  detail::inverseQFT(builder, accumulator, data.width);
   builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
-  detail::forwardQFT(builder, accumulator, width);
+  detail::forwardQFT(builder, accumulator, data.width);
 
-  phaseAdd(builder, accumulator, width, modulus, work, false);
-  phaseAdd(builder, accumulator, width, addend, controls, true);
+  phaseAdd(builder, accumulator, data, data.modulusOffset, work, false);
+  phaseAdd(builder, accumulator, data, addendOffset, controls, true);
 
-  detail::inverseQFT(builder, accumulator, width);
+  detail::inverseQFT(builder, accumulator, data.width);
   builder.x(builder.loadQubit(accumulator, overflowIndex));
   builder.cx(builder.loadQubit(accumulator, overflowIndex), work);
   builder.x(builder.loadQubit(accumulator, overflowIndex));
-  detail::forwardQFT(builder, accumulator, width);
+  detail::forwardQFT(builder, accumulator, data.width);
 
-  phaseAdd(builder, accumulator, width, addend, controls, false);
+  phaseAdd(builder, accumulator, data, addendOffset, controls, false);
 }
 
 SmallVector<Value> controlledMultiplicationModuloN(
@@ -157,32 +152,16 @@ SmallVector<Value> controlledMultiplicationModuloN(
 
   detail::forwardQFT(builder, accumulator, width);
 
-  auto addend = unsignedIntegerConstant(builder, options.multiplier);
-  auto modulus = unsignedIntegerConstant(builder, options.modulus);
-  auto integerType = cast<IntegerType>(addend.getType());
-  auto zero = builder.indexConstant(0);
-  auto upper = builder.indexConstant(bits);
-  auto one = builder.indexConstant(1);
-  auto multiplierLoop =
-      scf::ForOp::create(builder, zero, upper, one, ValueRange{addend});
-  {
-    OpBuilder::InsertionGuard guard(builder);
-    builder.setInsertionPointToStart(multiplierLoop.getBody());
-    auto index = multiplierLoop.getInductionVar();
-    auto currentAddend = multiplierLoop.getRegionIterArg(0);
+  const auto phases = phaseData(builder, options.multiplier, options.modulus);
+  builder.scfFor(0, bits, 1, [&](Value index) {
+    auto addendOffset =
+        arith::MulIOp::create(builder, index, phases.rowStride).getResult();
     SmallVector<Value, 2> controls{
         control,
         builder.loadQubit(multiplicand, index),
     };
-    modularAdd(builder, accumulator, width, currentAddend, modulus, controls,
-               work);
-
-    auto oneBit = unsignedIntegerConstant(builder, integerType, 1);
-    auto doubled =
-        arith::ShLIOp::create(builder, currentAddend, oneBit).getResult();
-    auto next = arith::RemUIOp::create(builder, doubled, modulus).getResult();
-    scf::YieldOp::create(builder, ValueRange{next});
-  }
+    modularAdd(builder, accumulator, phases, addendOffset, controls, work);
+  });
 
   detail::inverseQFT(builder, accumulator, width);
 
