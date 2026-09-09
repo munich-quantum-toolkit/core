@@ -1,7 +1,8 @@
 # Optimized release builds
 
-Status: local Linux AArch64 validation complete; SDK artifact publication and
-hosted matrix validation remain external gates.
+Status: native Linux SDK links, fat-LTO consumers, and Core CD validated
+locally. The distribution-components experiment is complete; retain the full SDK
+inventory. SDK publication and hosted matrix validation remain external gates.
 
 ## Goal and scope
 
@@ -20,9 +21,10 @@ experiment.
   matched compilers. Assertion-enabled CI SDKs and all Windows SDKs remain
   native.
 - Linux builds share immutable manylinux digests; macOS selects Xcode 26.6.
-  Linux uses full-LTO SDK archives; macOS uses ThinLTO and LLVM's native link
-  cache to reduce repeated tool-link costs. Core retains full LTO for its own
-  objects. Linux SDK jobs add 16 GiB of swap for BOLT instrumentation.
+  Linux uses fat-LTO archives and native SDK tool links; macOS uses ThinLTO and
+  LLVM's native link cache. Core retains full LTO for its own objects. Apply
+  BOLT only to final Core binaries; the SDK supplies the optimizer and runtime
+  without rewriting its own tools.
 - Use GNU ld for Linux BOLT builds: mold 2.42.0 produced invalid relocation
   symbol indices with the full-LTO SDK and compiler extension.
 - BOLT runs after final linking, with fresh instrumentation profiles and
@@ -42,6 +44,9 @@ experiment.
 
 ## Work remaining
 
+- [x] Validate fat-LTO archives with native and LTO consumers and Core CD.
+- [x] Measure selected distribution components locally without narrowing the
+      published SDK tool inventory.
 - [x] Add the portable SDK variant and validate setup selection locally.
 - [x] Validate matched SDK LTO and BOLT end to end with a manylinux Core wheel.
 - [x] Compare BOLT runtime and artifact size on held-out workloads.

@@ -28,23 +28,106 @@ SDK, nanobind 3.0.1, CPython 3.14.7.
   nanobind's binding optimization defaults.
 - With full Core LTO in addition to section GC, the local wheel is 42,732,712
   bytes, using the original native SDK.
-- Assertion-free Linux SDKs contain full-LTO archives; macOS uses ThinLTO
-  archives with the native link cache to fit hosted build limits. Linux SDK and
+- Assertion-free Linux SDKs contain fat-LTO archives and use native SDK tool
+  links; macOS uses ThinLTO archives with the native link cache. Linux SDK and
   Core wheels share pinned manylinux image digests; macOS selects Xcode 26.6.
-  Linux uses CMake IPO for parallel GCC code generation, with one link job.
   Assertion-enabled CI SDKs and Windows SDKs retain native archives.
 - Split the SDK's space-separated `LLVM_DEFINITIONS` into CMake arguments before
   adding definitions. Otherwise the explicit C++ ABI definition absorbs
   subsequent flags, and nanobind rejects the installed wheel at import.
-- Linux BOLT profiles and rewrites SDK optimizer/translator/table-generator
-  executables and Core's DD library/binding, compiler binding, DDSIM device, and
-  benchmark executable. A shared SDK helper restores the original binary if
-  instrumentation, training, optimization, or validation fails. Use `-lite` to
-  rewrite only functions covered by the profile. Core uses `llvm-strip`, repairs
-  wheels, regenerates RECORD hashes, and validates the repaired archive. GNU
-  `strip` broke the rewritten SDK executable at startup in the local check.
+- Linux BOLT profiles and rewrites Core's DD library/binding, compiler binding,
+  DDSIM device, and benchmark executable. The SDK supplies BOLT and its runtime
+  without rewriting its own tools. A shared SDK helper restores the original
+  binary if instrumentation, training, optimization, or validation fails. Use
+  `-lite` to rewrite only functions covered by the profile. Core uses
+  `llvm-strip`, repairs wheels, regenerates RECORD hashes, and validates the
+  repaired archive. GNU `strip` broke the rewritten SDK executable at startup in
+  the local check.
 
-## Matched SDK and BOLT evaluation
+## Native SDK links and distribution experiment
+
+The SDK retains GCC LTO IR for Core while building its own tools through native
+links. Compile with `-flto=auto -ffat-lto-objects`, use GCC archive tools, and
+link SDK executables/shared libraries with `-fno-lto`. Disable CMake IPO for
+this build because its GCC flags would select slim LTO objects. Preserve the GCC
+partitioning restriction needed by Core's BOLT links. The SDK no longer
+BOLT-rewrites its tools or provisions extra swap for that step.
+
+The updated installation test explicitly checks native linking and full-LTO
+linking against the assertion-free SDK, then BOLT success and byte-for-byte
+recovery after failed training. The native check rejects the previous slim-LTO
+SDK. The assertion-enabled SDK still passes its native consumer test.
+
+A controlled local link comparison uses the same fat archives, one warm-cache
+run per mode, four CPUs, 14 GiB RAM, and a 16 GiB swap allowance. Both binaries
+pass `--version`; both `mlir-opt` variants pass canonicalization.
+
+| Tool          | Native link | Full-LTO link | Native peak RSS | LTO peak RSS |
+| ------------- | ----------: | ------------: | --------------: | -----------: |
+| `mlir-opt`    |     10.21 s |      983.02 s |        2.70 GiB |     9.98 GiB |
+| `mlir-tblgen` |     0.279 s |       15.18 s |        68.4 MiB |    204.4 MiB |
+
+These single-link measurements isolate repeated linking cost, not total hosted
+build time or SDK tool runtime performance. The complete local fat SDK build
+used 16 CPUs and took about 14.2 minutes; its final executable link finished
+66.6 seconds after its final compile. That build is not comparable to the hosted
+x86-64 runner. Raw data: `fat-link-results.json`, `fat-link-bench.log`, and
+`fat-full.ninja_log` in the SDK worktree's `build/lto-bolt/`.
+
+The local distribution candidate includes the complete LLVM/MLIR library and
+header groups, CMake exports, runtime libraries, BOLT/runtime, FileCheck, and
+selected command-line tools. Its generated build graph contains 3,384 compile
+commands and 22 executable links, compared with 3,694 and 118 in the full SDK.
+This removes 8.4% of compilation commands and 81.4% of executable links. These
+are graph counts, not measured clean-build time reductions. The published
+component inventory remains unchanged. The selected installation preserves every
+header and library path, all nine shared runtime libraries, and resolving
+symlinks. It omits 95 executable names and the optional `opt-viewer` Python
+files, reducing installed bytes from 5,349,035,347 to 3,936,371,338 (26.4%).
+Examples of removed tools include `lli`, `llvm-profdata`, `llvm-symbolizer`, and
+MLIR language servers. Those omissions change the SDK's public tool surface;
+build-graph savings alone do not justify that decision.
+
+With identical production zstd settings (`-19 --long=31 --threads=16`), the full
+archive is 1,650,594,629 bytes (1.54 GiB); the selected archive is 1,512,140,071
+bytes (1.41 GiB). The download saving is 132 MiB (8.4%). Both exact archives
+pass native/full-LTO linking, BOLT rewriting, and failure recovery after
+relocation. Headers and non-BOLT libraries are byte-identical; CMake exports
+reflect the selected tools, and BOLT archives change with their compiled install
+prefix. The experiment reuses the full build, so it does not establish a
+clean-build wall-time saving.
+
+Keep the full SDK inventory: native linking already removes the expensive LTO
+link tail, while an 8.4% smaller download is a modest return for dropping useful
+tools. Revisit component selection if installation/download size becomes a
+concrete constraint. Raw evidence: `distribution-graph.json`,
+`distribution-install-results.json`, `fat-finalize.log`, and
+`fat-dist-finalize.log` in the SDK worktree's `build/lto-bolt/`.
+
+A fresh Core full-LTO build against the fat SDK passes BOLT rewriting of all
+five targets, LLVM stripping, wheel repair, and repaired-wheel training. The
+39,808,921-byte wheel passes 1,184 Python tests (one optional `qirrunner` module
+skipped), plus the installed CMake consumer and driver session check. An initial
+pytest invocation omitted the virtual environment from `PATH` and failed two CLI
+tests; the corrected invocation passes the full suite.
+
+Repeating the twelve-process held-out protocol below, with no concurrent builds,
+confirms that retaining SDK IR preserves Core performance on these workloads:
+
+| Workload              | Earlier LTO/BOLT SDK | Fat SDK, Core LTO/BOLT |
+| --------------------- | -------------------: | ---------------------: |
+| Vector import/export  |             1.750 ms |               1.748 ms |
+| Matrix multiplication |             2.797 ms |               2.796 ms |
+| OpenQASM to QCO       |             5.380 ms |               5.384 ms |
+| Qiskit import/export  |             2.656 ms |               2.656 ms |
+
+The differences are below 0.2%, within process-median IQRs of 0.015-0.050 ms.
+This is a bounded regression check, not evidence of an additional runtime gain.
+Raw Core logs: `fat-sdk-wheel-build.log`, `fat-sdk-bolt.log`,
+`fat-wheel-tests-final.log`, `fat-consumer.log`, `fat-sdk-bench.log`, and
+`fat-sdk-bench-results.json` under `build/release-optimization/`.
+
+## Earlier matched SDK and BOLT evaluation
 
 The Linux AArch64 build uses the pinned manylinux 2.28 container, GCC 14.2.1,
 LLVM/MLIR 23.1.0 with assertions disabled, full SDK/Core LTO, and GNU ld. The
@@ -123,10 +206,13 @@ OOM events. Training, optimization, the remaining two SDK tools, and post-strip
 training pass under the same limits; those stages take another 63 seconds with a
 4.9 GiB peak RSS and no swap. Raw logs are `limited-instrument.log`,
 `sequential-instrument.log`, `swap-instrument.log`, and `swap-validation.log`
-under the SDK worktree's `build/lto-bolt/`. The SDK workflow adds 16 GiB swap
-only to assertion-free Linux builds and removes the source/build trees after
-installation to free disk space before rewriting and packaging. The x86-64 fix
-still needs hosted validation.
+under the SDK worktree's `build/lto-bolt/`. An intervening workflow added 16 GiB
+swap. Run `34317328143` then built the ARM64 SDK in 4h22m and passed
+installation tests, but x86-64 still timed out at six hours. Its final compile
+finished at 07:47:22 UTC; the remaining 114 executable links ended at 11:38:28,
+a 3h51m tail. BOLT instrumentation started at 11:38:48 and had not finished when
+the job timed out at 12:19. Native SDK links and removal of SDK BOLT address
+both costs; their x86-64 hosted result remains pending.
 
 The assertion-free macOS job reaches 5,134 of 5,157 Ninja steps before the
 six-hour timeout; repeated full-LTO LLVM tool links take several minutes each.
@@ -135,8 +221,9 @@ retaining one link job for the 7 GB runner. Core and the SDK integration test
 retain full LTO for their own objects. Apple ld64 processes ThinLTO and full-LTO
 objects separately, reducing optimization across that boundary. A local Clang
 23/LLD probe links a ThinLTO archive to a full-LTO consumer for ELF and Mach-O,
-and runs the ELF result. This is not Xcode validation: build duration, complete
-AppleClang consumer linking, and runtime performance remain hosted gates.
+and runs the ELF result. Subsequently, hosted run `34317328143` built the
+assertion-free macOS SDK in 3h12m and passed both installation tests. Runtime
+performance on macOS remains unmeasured.
 
 ## Earlier native SDK runtime measurements
 
