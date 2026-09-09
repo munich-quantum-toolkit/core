@@ -325,19 +325,19 @@ class QDMIDevice(Device):
             msg = f"QDMI returned {len(bitstrings)} samples for a {shots}-shot job."
             raise ExecutionError(msg)
 
-        rows: list[list[int]] = []
         width = len(converted.wire_map)
+        cleaned: list[str] = []
         for bitstring in bitstrings:
             clean = bitstring.replace(" ", "")
-            if len(clean) != width or any(bit not in "01" for bit in clean):
+            if len(clean) != width or clean.strip("01"):
                 msg = f"QDMI returned an invalid {width}-wire shot: {bitstring!r}."
                 raise ExecutionError(msg)
-            # QDMI bit strings use the conventional basis-state spelling with
-            # the highest-index site on the left. PennyLane sample columns use
-            # the declared wire order, starting with wire zero.
-            wire_order = clean[::-1]
-            rows.append([int(wire_order[index]) for index in converted.measurement_order])
-        return np.asarray(rows, dtype=np.int8)
+            cleaned.append(clean)
+        if not bitstrings:
+            return np.asarray([], dtype=np.int8)
+        packed = np.frombuffer("".join(cleaned).encode("ascii"), dtype=np.int8).reshape(shots, width)
+        # QDMI spells the highest-index site first; PennyLane starts with wire zero.
+        return packed[:, ::-1][:, converted.measurement_order] - ord("0")
 
     @staticmethod
     def _require_done(job: QDMIJobHandle) -> None:

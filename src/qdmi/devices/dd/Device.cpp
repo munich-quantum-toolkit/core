@@ -771,13 +771,23 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
   if (stateVecDD_.isTerminal()) {
     return reportEmptyResult(sizeRet);
   }
-  std::call_once(stateVecOnce_,
-                 [this] { stateVec_ = stateVecDD_.getVector(); });
-  const size_t reqSize = stateVec_.size() * 2 * sizeof(double);
+  const auto numQubits = static_cast<size_t>(stateVecDD_.p->v) + 1;
+  constexpr size_t elementSize = 2 * sizeof(double);
+  if (numQubits >= std::numeric_limits<size_t>::digits ||
+      (std::numeric_limits<size_t>::max() >> numQubits) < elementSize) {
+    return QDMI_ERROR_OUTOFMEM;
+  }
+  const size_t dimension = size_t{1} << numQubits;
+  const size_t reqSize = dimension * elementSize;
   if (data != nullptr) {
     if (size < reqSize) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
+    if (dimension > stateVec_.max_size()) {
+      return QDMI_ERROR_OUTOFMEM;
+    }
+    std::call_once(stateVecOnce_,
+                   [this] { stateVec_ = stateVecDD_.getVector(); });
     std::memcpy(data, stateVec_.data(), reqSize);
   }
   if (sizeRet != nullptr) {
@@ -869,14 +879,23 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getProbabilities(const size_t size,
   if (stateVecDD_.isTerminal()) {
     return reportEmptyResult(sizeRet);
   }
-  if (stateVec_.empty()) {
-    stateVec_ = stateVecDD_.getVector();
+  const auto numQubits = static_cast<size_t>(stateVecDD_.p->v) + 1;
+  constexpr size_t elementSize = sizeof(double);
+  if (numQubits >= std::numeric_limits<size_t>::digits ||
+      (std::numeric_limits<size_t>::max() >> numQubits) < elementSize) {
+    return QDMI_ERROR_OUTOFMEM;
   }
-  const size_t reqSize = stateVec_.size() * sizeof(double);
+  const size_t dimension = size_t{1} << numQubits;
+  const size_t reqSize = dimension * elementSize;
   if (data != nullptr) {
     if (size < reqSize) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
+    if (dimension > stateVec_.max_size()) {
+      return QDMI_ERROR_OUTOFMEM;
+    }
+    std::call_once(stateVecOnce_,
+                   [this] { stateVec_ = stateVecDD_.getVector(); });
     // NOLINTNEXTLINE(misc-const-correctness): fills a mutable output buffer.
     auto* dataPtr = static_cast<double*>(data);
     for (const auto& c : stateVec_) {

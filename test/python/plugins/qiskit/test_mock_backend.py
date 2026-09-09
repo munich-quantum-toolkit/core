@@ -15,6 +15,7 @@ import secrets
 import string
 import warnings
 from typing import TYPE_CHECKING, ClassVar, NoReturn
+from unittest.mock import Mock
 
 import pytest
 from qiskit import qasm2, qasm3
@@ -962,3 +963,34 @@ def test_target_rejects_incomplete_site_tuple(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(operation, "sites", device.sites)
     with pytest.raises(UnsupportedOperationError, match="incomplete 3-qubit site tuple"):
         QDMIBackend(device)  # ty: ignore[invalid-argument-type] Intentional device double.
+
+
+@pytest.mark.parametrize("duration", [None, 0, 20])
+def test_target_snapshots_duration_conversion_once(monkeypatch: pytest.MonkeyPatch, duration: int | None) -> None:
+    """Read units lazily once across placements, and refresh them for a new target."""
+    device = MockQDMIDevice(num_qubits=3, operations=["x", "h", "measure"])
+    unit = Mock(return_value="us")
+    scale = Mock(return_value=0.5)
+    monkeypatch.setattr(device, "duration_unit", unit, raising=False)
+    monkeypatch.setattr(device, "duration_scale_factor", scale, raising=False)
+    for operation in device.operations()[:2]:
+        monkeypatch.setattr(operation, "sites", device.sites)
+        monkeypatch.setattr(operation, "duration", lambda **_kwargs: duration)
+    for factor in [0.5, 2.0]:
+        scale.return_value = factor
+        unit.reset_mock()
+        scale.reset_mock()
+        backend = QDMIBackend(device)  # ty: ignore[invalid-argument-type] Intentional device double.
+        if duration is None:
+            unit.assert_not_called()
+            scale.assert_not_called()
+        else:
+            unit.assert_called_once()
+            scale.assert_called_once()
+        for name in ["x", "h"]:
+            for site in range(3):
+                properties = backend.target[name][site,]
+                if duration is None:
+                    assert properties is None
+                else:
+                    assert properties.duration == pytest.approx(duration * factor * 1e-6)

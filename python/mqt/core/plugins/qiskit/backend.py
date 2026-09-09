@@ -423,6 +423,7 @@ class QDMIBackend(BackendV2):
         Returns:
             Target object with device operations and properties.
         """
+        self._duration_conversion: tuple[float, float] | None = None
         target = Target(
             description=f"QDMI device: {self._device.name()}",
             num_qubits=self._target_num_qubits(),
@@ -537,18 +538,21 @@ class QDMIBackend(BackendV2):
         """
         if duration is None:
             return None
-        unit = self._device.duration_unit()
-        seconds_per_unit = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12, "fs": 1e-15}
-        if unit not in seconds_per_unit:
-            msg = f"Cannot convert operation duration with device duration unit {unit!r} to seconds"
-            raise UnsupportedOperationError(msg)
-        scale = self._device.duration_scale_factor()
-        if scale is None:
-            scale = 1.0
-        if not isfinite(scale) or scale <= 0:
-            msg = f"Device duration scale factor must be positive and finite, got {scale!r}"
-            raise UnsupportedOperationError(msg)
-        return duration * scale * seconds_per_unit[unit]
+        if self._duration_conversion is None:
+            unit = self._device.duration_unit()
+            seconds_per_unit = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12, "fs": 1e-15}
+            if unit not in seconds_per_unit:
+                msg = f"Cannot convert operation duration with device duration unit {unit!r} to seconds"
+                raise UnsupportedOperationError(msg)
+            scale = self._device.duration_scale_factor()
+            if scale is None:
+                scale = 1.0
+            if not isfinite(scale) or scale <= 0:
+                msg = f"Device duration scale factor must be positive and finite, got {scale!r}"
+                raise UnsupportedOperationError(msg)
+            self._duration_conversion = scale, seconds_per_unit[unit]
+        scale, seconds_per_unit_value = self._duration_conversion
+        return duration * scale * seconds_per_unit_value
 
     @staticmethod
     def _get_operation_site_tuples(op: QDMIDevice.Operation) -> Sequence[tuple[QDMIDevice.Site, ...]] | None:
