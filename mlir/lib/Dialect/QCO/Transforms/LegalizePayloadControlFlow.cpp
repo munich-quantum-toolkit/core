@@ -36,6 +36,7 @@
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 #include <mlir/Transforms/RegionUtils.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -51,6 +52,8 @@ namespace mlir::qco {
 namespace {
 
 constexpr uint64_t MAX_UNROLLED_OPERATIONS = 65536U;
+// ponytail: bound linear expansion; use balanced trees for larger switches.
+constexpr uint64_t MAX_SWITCH_EXPANSION_DEPTH = 256U;
 
 enum class ControlFeature : uint8_t {
   ForwardBranching,
@@ -143,12 +146,40 @@ public:
     return !group.maxCaseCount || caseCount <= *group.maxCaseCount;
   }
 
+  /// Check expansion of a switch with at least one explicit case.
+  [[nodiscard]] bool canLowerSwitch(Operation* operation,
+                                    uint64_t caseCount) const {
+    const auto& group = get(ControlFeature::ForwardBranching);
+    const auto depth = controlDepth(operation);
+    const auto maximum =
+        std::min(MAX_SWITCH_EXPANSION_DEPTH,
+                 group.maxNestingDepth.value_or(MAX_SWITCH_EXPANSION_DEPTH));
+    if (!group.usable || depth > maximum || caseCount > maximum - depth + 1U) {
+      return false;
+    }
+    // Region zero is the default; explicit case i gains i enclosing branches.
+    for (auto [index, region] : llvm::enumerate(operation->getRegions())) {
+      const auto extraDepth = index == 0 ? caseCount - 1U : index - 1U;
+      if (region
+              .walk<WalkOrder::PreOrder>([&](Operation* nested) {
+                return isStructuredControl(nested) &&
+                               controlDepth(nested) >
+                                   MAX_SWITCH_EXPANSION_DEPTH - extraDepth
+                           ? WalkResult::interrupt()
+                           : WalkResult::advance();
+              })
+              .wasInterrupted()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   [[nodiscard]] static uint64_t controlDepth(Operation* operation) {
     uint64_t depth = 1U;
     for (Operation* parent = operation->getParentOp(); parent != nullptr;
          parent = parent->getParentOp()) {
-      if (isa<IfOp, IndexSwitchOp, scf::IfOp, scf::IndexSwitchOp, scf::ForOp,
-              scf::WhileOp>(parent)) {
+      if (isStructuredControl(parent)) {
         ++depth;
       }
     }
@@ -156,6 +187,11 @@ public:
   }
 
 private:
+  [[nodiscard]] static bool isStructuredControl(Operation* operation) {
+    return isa<IfOp, IndexSwitchOp, scf::IfOp, scf::IndexSwitchOp, scf::ForOp,
+               scf::WhileOp>(operation);
+  }
+
   [[nodiscard]] CapabilityGroup& get(const ControlFeature feature) {
     return groups[static_cast<size_t>(feature)];
   }
@@ -306,10 +342,10 @@ static LogicalResult foldStaticBranches(ModuleOp moduleOp) {
     return false;
   }
   const auto type = dyn_cast<IntegerType>(loop.getInductionVar().getType());
-  return !type ||
-         (loop.getUnsignedCmp()
-              ? llvm::isUIntN(type.getWidth(), static_cast<uint64_t>(scaledStep))
-              : llvm::isIntN(type.getWidth(), scaledStep));
+  return !type || (loop.getUnsignedCmp()
+                       ? llvm::isUIntN(type.getWidth(),
+                                       static_cast<uint64_t>(scaledStep))
+                       : llvm::isIntN(type.getWidth(), scaledStep));
 }
 
 static void inlineDefaultRegion(Operation* operation, Block& block,
@@ -341,13 +377,15 @@ public:
                           adaptor.getTargets(), rewriter);
       return success();
     }
-    if (!support->get(ControlFeature::ForwardBranching).usable) {
+    if (!support->canLowerSwitch(operation, cases.size())) {
       return rewriter.notifyMatchFailure(
-          operation, "selected payload cannot use forward branches");
+          operation,
+          "switch requires unsupported or excessive branching depth");
     }
 
-    const auto build = [&](auto&& self, const size_t index,
-                           ValueRange targets) -> IfOp {
+    IfOp replacement;
+    ValueRange targets = adaptor.getTargets();
+    for (size_t index = 0; index < cases.size(); ++index) {
       auto constant = arith::ConstantIndexOp::create(
           rewriter, operation.getLoc(), operation.getCases()[index]);
       auto condition = arith::CmpIOp::create(
@@ -357,25 +395,26 @@ public:
                                operation.getClassicalResults().getTypes(),
                                operation.getLinearResults().getTypes(),
                                condition, targets);
+      if (index == 0) {
+        replacement = ifOp;
+      } else {
+        YieldOp::create(rewriter, operation.getLoc(), ifOp.getResults());
+      }
       rewriter.inlineRegionBefore(cases[index], ifOp.getThenRegion(),
                                   ifOp.getThenRegion().end());
       if (index + 1U == cases.size()) {
         rewriter.inlineRegionBefore(*defaultRegion, ifOp.getElseRegion(),
                                     ifOp.getElseRegion().end());
-        return ifOp;
+        break;
       }
 
       Block& elseBlock = ifOp.getElseRegion().emplaceBlock();
       elseBlock.addArguments(targets.getTypes(),
                              SmallVector(targets.size(), operation.getLoc()));
-      const OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToEnd(&elseBlock);
-      IfOp nested = self(self, index + 1U, elseBlock.getArguments());
-      YieldOp::create(rewriter, operation.getLoc(), nested.getResults());
-      return ifOp;
-    };
+      targets = elseBlock.getArguments();
+    }
 
-    IfOp replacement = build(build, 0U, adaptor.getTargets());
     rewriter.replaceOp(operation, replacement.getResults());
     return success();
   }
@@ -406,12 +445,14 @@ public:
       inlineDefaultRegion(operation, defaultRegion->front(), {}, rewriter);
       return success();
     }
-    if (!support->get(ControlFeature::ForwardBranching).usable) {
+    if (!support->canLowerSwitch(operation, cases.size())) {
       return rewriter.notifyMatchFailure(
-          operation, "selected payload cannot use forward branches");
+          operation,
+          "switch requires unsupported or excessive branching depth");
     }
 
-    const auto build = [&](auto&& self, const size_t index) -> scf::IfOp {
+    scf::IfOp replacement;
+    for (size_t index = 0; index < cases.size(); ++index) {
       auto constant = arith::ConstantIndexOp::create(
           rewriter, operation.getLoc(), operation.getCases()[index]);
       auto condition = arith::CmpIOp::create(
@@ -420,6 +461,11 @@ public:
       auto ifOp =
           scf::IfOp::create(rewriter, operation.getLoc(),
                             operation.getResultTypes(), condition, true);
+      if (index == 0) {
+        replacement = ifOp;
+      } else {
+        scf::YieldOp::create(rewriter, operation.getLoc(), ifOp.getResults());
+      }
       rewriter.eraseBlock(&ifOp.getThenRegion().front());
       rewriter.eraseBlock(&ifOp.getElseRegion().front());
       rewriter.inlineRegionBefore(cases[index], ifOp.getThenRegion(),
@@ -427,18 +473,13 @@ public:
       if (index + 1U == cases.size()) {
         rewriter.inlineRegionBefore(*defaultRegion, ifOp.getElseRegion(),
                                     ifOp.getElseRegion().end());
-        return ifOp;
+        break;
       }
 
       Block& elseBlock = ifOp.getElseRegion().emplaceBlock();
-      const OpBuilder::InsertionGuard guard(rewriter);
       rewriter.setInsertionPointToEnd(&elseBlock);
-      scf::IfOp nested = self(self, index + 1U);
-      scf::YieldOp::create(rewriter, operation.getLoc(), nested.getResults());
-      return ifOp;
-    };
+    }
 
-    scf::IfOp replacement = build(build, 0U);
     rewriter.replaceOp(operation, replacement.getResults());
     return success();
   }

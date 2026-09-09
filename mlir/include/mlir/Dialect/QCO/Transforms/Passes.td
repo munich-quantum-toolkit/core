@@ -138,6 +138,9 @@ def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
     QCO and SCF branches and loops, lowers unsupported index switches to nested
     forward branches when possible, and rejects residual structural control
     flow that the payload does not support.
+    Switch expansion checks the selected forward-branching depth limit before
+    rewriting and limits the resulting total control-flow nesting depth to 256.
+    This compiler safety limit does not restrict retained native switches.
     Run this pass after `unroll-loops-for-payload`, constant propagation, and
     QCO cleanup so newly constant control flow can fold before legality checks.
     Before conversion, the pass checks that all SCF loops carry linear QCO

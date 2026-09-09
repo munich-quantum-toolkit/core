@@ -96,13 +96,19 @@ latter pass applies these structural capabilities to the remaining control flow:
 A finite `scf.for` that exceeds the selected counted-iteration contract is fully
 unrolled when this clones at most 65,536 body operations. Cleanup runs again
 because unrolling can make nested bounds and conditions constant. An unsupported
-index switch is lowered to nested forward branches when that form fits the
-selected contract. Generic SCF branches cannot capture or return QCO qubits or
-quantum tensors; use the corresponding QCO branch operation for linear quantum
-state. SCF loops must carry linear quantum state through their iteration
-arguments instead of capturing it. Both control-flow passes validate this loop
-input restriction before transforming loops or lowering switches. It is separate
-from QCO's exactly-one-SSA-use check.
+index switch is lowered to a linear chain of nested forward branches when that
+form fits the selected contract. Before expansion, the compiler checks the
+selected forward-branching nesting limit and a compiler safety limit of 256 total
+control-flow levels, including enclosing control flow. This compiler limit is
+not a QDMI requirement and does not apply to switches retained under multiway
+branching.
+
+Generic SCF branches cannot capture or return QCO qubits or quantum tensors; use
+the corresponding QCO branch operation for linear quantum state. SCF loops must
+carry linear quantum state through their iteration arguments instead of
+capturing it. Both control-flow passes validate this loop input restriction
+before transforming loops or lowering switches. It is separate from QCO's
+exactly-one-SSA-use check.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and
@@ -111,10 +117,12 @@ default region. One explicit case plus a default is a supported index switch and
 does not require forward branching. Limits are inclusive. The compiler must
 prove a constrained loop's trip count. It currently proves constant `scf.for`
 bounds and rejects a constrained `scf.while` because no general termination
-bound is available. MLIR computes static trip counts; full unrolling
-additionally requires bounds and scaled steps that fit its signed arithmetic. A
-zero, unknown, or misapplied constraint makes that capability group unusable.
-Missing or incomplete optional metadata never implies support.
+bound is available. The proof requires literal loop bounds and a literal step;
+it does not infer a trip count from symbolic bounds. MLIR computes static trip
+counts; full unrolling additionally requires bounds and scaled steps that fit
+its signed arithmetic. The scaled step must also fit the loop induction-variable
+type. A zero, unknown, or misapplied constraint makes that capability group
+unusable. Missing or incomplete optional metadata never implies support.
 
 This stage checks structural control flow only. Later lowering stages remain
 responsible for scalar types and operations, measurement provenance, function
