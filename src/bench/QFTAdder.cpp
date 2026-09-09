@@ -107,11 +107,7 @@ double QFTAdder::probability(const std::string_view outcome) const {
 }
 
 Evaluation QFTAdder::evaluate(const Counts& counts) const {
-  return detail::evaluate(
-      output_, counts,
-      [this](const std::string_view outcome) { return probability(outcome); },
-      expectedResult_ ? std::optional<std::string_view>(*expectedResult_)
-                      : std::nullopt);
+  return detail::evaluate(*this, counts, expectedResult_);
 }
 
 } // namespace mqt::bench

@@ -31,7 +31,7 @@ class Options:
 
     @property
     def period_exponent(self) -> int:
-        """The base-two input-period exponent."""
+        """The exponent :math:`k` of the input period :math:`2^k`."""
 
     @property
     def method(self) -> Method:

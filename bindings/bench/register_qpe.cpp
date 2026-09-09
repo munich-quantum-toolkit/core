@@ -57,14 +57,15 @@ namespace {
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerQPE(const nb::module_& m) {
-  nb::class_<bench::Phase>(m, "Phase",
-                           "An exact phase in turns modulo one turn.")
+  nb::class_<bench::Phase>(
+      m, "Phase",
+      R"pb(An exact phase :math:`\phi=p/q` in turns, reduced modulo one turn.)pb")
       .def(nb::init<uint64_t, uint64_t>(), nb::kw_only(), "numerator"_a,
            "denominator"_a)
       .def_prop_ro("numerator", &bench::Phase::numerator,
-                   "The reduced numerator.")
+                   R"pb(The reduced numerator :math:`p`.)pb")
       .def_prop_ro("denominator", &bench::Phase::denominator,
-                   "The reduced denominator.");
+                   R"pb(The reduced denominator :math:`q`.)pb");
 
   nb::enum_<bench::QPEMethod>(
       m, "Method",

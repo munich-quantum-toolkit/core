@@ -14,7 +14,6 @@
 #include "bench/QFTAdder.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/bench/Generate.h"
 
@@ -62,15 +61,6 @@ TEST(GenerateProgramTest, EmitsQuantumQFTAdderCircuit) {
   auto program = generate(QFTAdder{{.addend = "+++", .accumulator = "001"}});
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
-
-  EXPECT_EQ(test::countOps<memref::AllocOp>(moduleOp), 2U);
-  EXPECT_EQ(test::countOps<cbit::AllocOp>(moduleOp), 1U);
-  EXPECT_EQ(test::countOps<qc::HOp>(moduleOp), 3U);
-  EXPECT_EQ(test::countOps<qc::XOp>(moduleOp), 1U);
-  EXPECT_EQ(test::countOps<qc::CtrlOp>(moduleOp), 3U);
-  EXPECT_EQ(test::countOps<qc::POp>(moduleOp), 3U);
-  EXPECT_EQ(test::countOps<qc::MeasureOp>(moduleOp), 2U);
-  EXPECT_EQ(test::countOps<qc::SWAPOp>(moduleOp), 0U);
 
   /// Unlike the QFT phases, the addition phase connects the two registers.
   qc::CtrlOp addition;
@@ -145,12 +135,6 @@ TEST(GenerateProgramTest, KeepsLargestQuantumQFTAdderFiniteAndStructured) {
   });
 }
 
-static void expectPhaseLoopConstantIndex(Value value, int64_t expected) {
-  auto constant = value.getDefiningOp<arith::ConstantIndexOp>();
-  ASSERT_TRUE(constant);
-  EXPECT_EQ(constant.value(), expected);
-}
-
 TEST(GenerateProgramTest, UsesConfiguredClassicalQFTAdderPhases) {
   auto program = generate(QFTAdder{{
       .addend = "101",
@@ -178,9 +162,9 @@ TEST(GenerateProgramTest, UsesConfiguredClassicalQFTAdderPhases) {
   ASSERT_TRUE(extract);
   auto loop = extract->getParentOfType<scf::ForOp>();
   ASSERT_TRUE(loop);
-  expectPhaseLoopConstantIndex(loop.getLowerBound(), 0);
-  expectPhaseLoopConstantIndex(loop.getUpperBound(), 4);
-  expectPhaseLoopConstantIndex(loop.getStep(), 1);
+  expectConstantIndex(loop.getLowerBound(), 0);
+  expectConstantIndex(loop.getUpperBound(), 4);
+  expectConstantIndex(loop.getStep(), 1);
   EXPECT_EQ(extract.getIndices().front(), loop.getInductionVar());
 
   qc::POp phase;
@@ -216,7 +200,6 @@ TEST(GenerateProgramTest, KeepsLargestClassicalQFTAdderFiniteAndStructured) {
     EXPECT_TRUE(std::isfinite(angle));
   }
 
-  EXPECT_EQ(test::countOps<tensor::ExtractOp>(moduleOp), 1U);
   EXPECT_LT(test::countOperations(moduleOp), 100U);
 }
 

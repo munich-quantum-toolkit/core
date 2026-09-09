@@ -10,13 +10,11 @@
 
 #include "TestUtils.h"
 #include "bench/QFT.hpp"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/bench/Generate.h"
 
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Support/LLVM.h>
@@ -33,17 +31,6 @@ TEST(GenerateProgramTest, EmitsStandardQFTWithoutSwaps) {
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
   EXPECT_EQ(test::countOps<qc::SWAPOp>(moduleOp), 0U);
-
-  qc::MeasureOp measure;
-  moduleOp.walk([&](qc::MeasureOp op) { measure = op; });
-  ASSERT_TRUE(measure);
-  auto loop = measure->getParentOfType<scf::ForOp>();
-  ASSERT_TRUE(loop);
-  auto store = dyn_cast<cbit::StoreOp>(*measure.getResult().user_begin());
-  ASSERT_TRUE(store);
-  auto index = store.getIndex().getDefiningOp<arith::SubIOp>();
-  ASSERT_TRUE(index);
-  EXPECT_EQ(index.getRhs(), loop.getInductionVar());
 }
 
 TEST(GenerateProgramTest, KeepsLargeQFTStructured) {

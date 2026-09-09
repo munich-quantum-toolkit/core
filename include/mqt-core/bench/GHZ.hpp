@@ -23,15 +23,16 @@ namespace mqt::bench {
 enum class GHZTopology : uint8_t {
   /// Entangle each qubit with its next neighbor.
   Linear,
-  /// Entangle every other qubit directly with the first qubit.
+  /// Entangle each remaining qubit directly with the first qubit.
   Star,
 };
 
 /// Measurement basis used to verify the prepared GHZ state.
 enum class GHZBasis : uint8_t {
-  /// Measure the two computational-basis outcomes.
+  /// Measure the two computational-basis outcomes in the \f$Z\f$ basis.
   Z,
-  /// Measure the uniform distribution over even-parity outcomes.
+  /// Measure the uniform distribution over even-parity outcomes in the
+  /// \f$X\f$ basis.
   X,
 };
 
@@ -48,7 +49,7 @@ struct GHZOptions {
   GHZBasis basis = GHZBasis::Z;
 };
 
-/// A validated GHZ benchmark instance and its analytic reference.
+/// A validated GHZ benchmark.
 class MQT_CORE_BENCH_EXPORT GHZ final {
 public:
   explicit GHZ(GHZOptions options);

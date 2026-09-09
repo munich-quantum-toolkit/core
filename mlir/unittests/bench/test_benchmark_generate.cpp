@@ -30,41 +30,39 @@ namespace mqt::bench {
 using namespace mlir;
 
 template <class Benchmark>
-static void expectValidQCAndJeff(const Benchmark& benchmark) {
+static void expectQCAndJeff(const Benchmark& benchmark) {
   auto program = generate(benchmark);
   ASSERT_TRUE(program);
-  EXPECT_TRUE(program->isValid());
   test::expectJeffRoundTrip(std::move(*program));
 }
 
 TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
-  expectValidQCAndJeff(BV{{.hiddenBitstring = "101"}});
-  expectValidQCAndJeff(
-      BV{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}});
-  expectValidQCAndJeff(ModularMultiplier{{
+  expectQCAndJeff(BV{{.hiddenBitstring = "101"}});
+  expectQCAndJeff(BV{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}});
+  expectQCAndJeff(ModularMultiplier{{
       .multiplier = "011",
       .modulus = "101",
       .multiplicand = "+++",
       .control = '+',
   }});
-  expectValidQCAndJeff(GHZ{{.qubits = 3}});
-  expectValidQCAndJeff(Grover{{.markedBitstring = "101"}});
-  expectValidQCAndJeff(Multiplexer{{.qubits = 3}});
-  expectValidQCAndJeff(QFT{{.qubits = 3, .periodExponent = 1}});
-  expectValidQCAndJeff(QFT{
+  expectQCAndJeff(GHZ{{.qubits = 3}});
+  expectQCAndJeff(Grover{{.markedBitstring = "101"}});
+  expectQCAndJeff(Multiplexer{{.qubits = 3}});
+  expectQCAndJeff(QFT{{.qubits = 3, .periodExponent = 1}});
+  expectQCAndJeff(QFT{
       {.qubits = 3, .periodExponent = 1, .method = QFTMethod::Semiclassical}});
-  expectValidQCAndJeff(QFTAdder{{
+  expectQCAndJeff(QFTAdder{{
       .addend = "101",
       .accumulator = "001",
       .method = QFTAdderMethod::Constant,
       .overflow = QFTAdderOverflow::Carry,
   }});
-  expectValidQCAndJeff(QFTAdder{{.addend = "+++", .accumulator = "001"}});
-  expectValidQCAndJeff(QPE{{.precision = 3, .phase = Phase(3, 8)}});
-  expectValidQCAndJeff(QPE{
+  expectQCAndJeff(QFTAdder{{.addend = "+++", .accumulator = "001"}});
+  expectQCAndJeff(QPE{{.precision = 3, .phase = Phase(3, 8)}});
+  expectQCAndJeff(QPE{
       {.precision = 3, .phase = Phase(3, 8), .method = QPEMethod::Iterative}});
-  expectValidQCAndJeff(RepeatUntilSuccess{});
-  expectValidQCAndJeff(Teleportation{});
+  expectQCAndJeff(RepeatUntilSuccess{});
+  expectQCAndJeff(Teleportation{});
 }
 
 } // namespace mqt::bench

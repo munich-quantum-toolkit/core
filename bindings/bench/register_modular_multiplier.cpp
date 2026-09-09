@@ -35,14 +35,20 @@ void registerModularMultiplier(const nb::module_& m) {
               "The big-endian classical multiplier.")
       .def_ro("modulus", &bench::ModularMultiplierOptions::modulus,
               "The canonical big-endian modulus.")
-      .def_ro("multiplicand", &bench::ModularMultiplierOptions::multiplicand,
-              "The big-endian multiplicand; ``+`` prepares a plus state.")
-      .def_ro("control", &bench::ModularMultiplierOptions::control,
-              "The control input (``0``, ``1``, or ``+``).");
+      .def_ro(
+          "multiplicand", &bench::ModularMultiplierOptions::multiplicand,
+          R"pb(The big-endian multiplicand; ``+`` prepares :math:`|+\rangle`.)pb")
+      .def_ro(
+          "control", &bench::ModularMultiplierOptions::control,
+          R"pb(The control input (``0``, ``1``, or ``+``); ``+`` prepares :math:`|+\rangle`.)pb");
 
   auto modularMultiplier = nb::class_<bench::ModularMultiplier>(
       m, "ModularMultiplier",
-      R"pb(A validated modular multiplier benchmark.)pb");
+      R"pb(A validated modular multiplier benchmark.
+
+The initially zero product register stores :math:`c \cdot a \cdot x \bmod N`,
+where :math:`c` is the control, :math:`a` is the classical multiplier,
+:math:`x` is the multiplicand, and :math:`N` is the modulus.)pb");
   modularMultiplier
       .def(nb::init<bench::ModularMultiplierOptions>(), "options"_a)
       .def_prop_ro("options", &bench::ModularMultiplier::options,
@@ -52,7 +58,7 @@ void registerModularMultiplier(const nb::module_& m) {
                    nb::rv_policy::reference_internal,
                    "The logical control, multiplicand, and accumulator output.")
       .def_prop_ro("expected_result", &bench::ModularMultiplier::expectedResult,
-                   "The unique outcome, or None for superposed inputs.")
+                   "The unique outcome, or ``None`` for superposed inputs.")
       .def("probability", &bench::ModularMultiplier::probability, "outcome"_a,
            "Return the ideal probability of an outcome.")
       .def("evaluate", &bench::ModularMultiplier::evaluate, "counts"_a,

@@ -27,14 +27,19 @@ class Options:
 
     @property
     def multiplicand(self) -> str:
-        """The big-endian multiplicand; ``+`` prepares a plus state."""
+        """The big-endian multiplicand; ``+`` prepares :math:`|+\\rangle`."""
 
     @property
     def control(self) -> str:
-        """The control input (``0``, ``1``, or ``+``)."""
+        """The control input (``0``, ``1``, or ``+``); ``+`` prepares :math:`|+\\rangle`."""
 
 class ModularMultiplier:
-    """A validated modular multiplier benchmark."""
+    """A validated modular multiplier benchmark.
+
+    The initially zero product register stores :math:`c \\cdot a \\cdot x \\bmod N`,
+    where :math:`c` is the control, :math:`a` is the classical multiplier,
+    :math:`x` is the multiplicand, and :math:`N` is the modulus.
+    """
 
     def __init__(self, options: Options) -> None: ...
     @property
@@ -47,7 +52,7 @@ class ModularMultiplier:
 
     @property
     def expected_result(self) -> str | None:
-        """The unique outcome, or None for superposed inputs."""
+        """The unique outcome, or ``None`` for superposed inputs."""
 
     def probability(self, outcome: str) -> float:
         """Return the ideal probability of an outcome."""

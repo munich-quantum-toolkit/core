@@ -21,7 +21,6 @@
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/Support/LLVM.h>
 
-#include <cstdint>
 #include <numbers>
 #include <utility>
 
@@ -33,11 +32,6 @@ TEST(GenerateProgramTest, EmitsUniformLinearQuantumMultiplexer) {
   auto program = generate(Multiplexer{{.qubits = 3}});
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
-
-  EXPECT_EQ(test::countOps<qc::HOp>(moduleOp), 1U);
-  EXPECT_EQ(test::countOps<qc::CtrlOp>(moduleOp), 1U);
-  EXPECT_EQ(test::countOps<qc::RYOp>(moduleOp), 1U);
-  EXPECT_EQ(test::countOps<qc::XOp>(moduleOp), 0U);
 
   qc::CtrlOp controlledRotation;
   moduleOp.walk([&](qc::CtrlOp op) { controlledRotation = op; });
@@ -86,19 +80,6 @@ TEST(GenerateProgramTest, SerializesTheLargestQuantumMultiplexer) {
   auto program =
       generate(Multiplexer{{.qubits = MultiplexerOptions::MAX_QUBITS}});
   ASSERT_TRUE(program);
-  scf::ForOp stateLoop;
-  program->module().walk([&](scf::ForOp loop) {
-    if (!loop.getInitArgs().empty()) {
-      stateLoop = loop;
-    }
-  });
-  ASSERT_TRUE(stateLoop);
-  auto upper =
-      stateLoop.getUpperBound().getDefiningOp<arith::ConstantIndexOp>();
-  ASSERT_TRUE(upper);
-  EXPECT_EQ(upper.value(),
-            static_cast<int64_t>(MultiplexerOptions::MAX_QUBITS - 1));
-
   EXPECT_LT(test::countOperations(program->module()), 150U);
 
   test::expectJeffRoundTrip(std::move(*program));

@@ -16,16 +16,16 @@ import mqt.core.bench
 import mqt.core.mlir
 
 class Phase:
-    """An exact phase in turns modulo one turn."""
+    """An exact phase :math:`\\phi=p/q` in turns, reduced modulo one turn."""
 
     def __init__(self, *, numerator: int, denominator: int) -> None: ...
     @property
     def numerator(self) -> int:
-        """The reduced numerator."""
+        """The reduced numerator :math:`p`."""
 
     @property
     def denominator(self) -> int:
-        """The reduced denominator."""
+        """The reduced denominator :math:`q`."""
 
 class Method(enum.Enum):
     """Full-register or iterative measurement-and-feed-forward method."""

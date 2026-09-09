@@ -13,17 +13,29 @@
 #include "mlir/bench/Generate.h"
 
 #include <gtest/gtest.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
 
 namespace mqt::bench {
 
-TEST(GenerateProgramTest, EmitsConfiguredGHZWithoutEagerRegisterLoads) {
-  const GHZ benchmark(
-      {.qubits = 64, .topology = GHZTopology::Star, .basis = GHZBasis::X});
-  auto program = generate(benchmark);
-  ASSERT_TRUE(program);
+TEST(GenerateProgramTest, SamplesEveryGHZVariantAgainstReference) {
+  for (const auto topology : {GHZTopology::Linear, GHZTopology::Star}) {
+    for (const auto basis : {GHZBasis::Z, GHZBasis::X}) {
+      SCOPED_TRACE(static_cast<int>(topology));
+      SCOPED_TRACE(static_cast<int>(basis));
+      test::expectSamplingMatchesReference(
+          GHZ{{.qubits = 3, .topology = topology, .basis = basis}});
+    }
+  }
+}
 
-  EXPECT_LT(test::countOps<mlir::memref::LoadOp>(program->module()), 10U);
+TEST(GenerateProgramTest, KeepsLargestGHZStructured) {
+  for (const auto topology : {GHZTopology::Linear, GHZTopology::Star}) {
+    auto program = generate(GHZ{{
+        .qubits = GHZOptions::MAX_QUBITS,
+        .topology = topology,
+    }});
+    ASSERT_TRUE(program);
+    EXPECT_LT(test::countOperations(program->module()), 100U);
+  }
 }
 
 } // namespace mqt::bench

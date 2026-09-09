@@ -22,26 +22,42 @@
 namespace mqt::bench {
 
 /// Store the addend in a quantum register or compile it into constant phases.
-enum class QFTAdderMethod : uint8_t { Register, Constant };
+enum class QFTAdderMethod : uint8_t {
+  /// Store the addend in a quantum register.
+  Register,
+  /// Compile the addend into constant phases.
+  Constant,
+};
 /// Wrap the sum at the operand width or retain an extra carry bit.
-enum class QFTAdderOverflow : uint8_t { Wrap, Carry };
+enum class QFTAdderOverflow : uint8_t {
+  /// Compute the sum modulo \f$2^n\f$.
+  Wrap,
+  /// Retain the carry in an extra sum qubit.
+  Carry,
+};
 
 /// Parameters for a QFT adder benchmark.
 struct QFTAdderOptions {
+  /// Maximum sum-register width, including an optional carry bit.
   static constexpr size_t MAX_QUBITS = 1'024;
 
-  /// Big-endian addend; register inputs also allow '+' for a |+> qubit.
+  /// Big-endian addend; register inputs also allow '+' for a
+  /// \f$|+\rangle\f$ qubit.
   std::string addend;
   /// Big-endian binary accumulator, with the same width as the addend.
   std::string accumulator;
+  /// How the addend enters the circuit.
   QFTAdderMethod method = QFTAdderMethod::Register;
+  /// Wrap or carry behavior for the sum.
   QFTAdderOverflow overflow = QFTAdderOverflow::Wrap;
 };
 
-/// Add two configured operands using an exact no-swap QFT circuit.
+/// A validated QFT adder benchmark.
+///
 /// Register results concatenate the addend and sum; constant results contain
-/// only the sum. Carry mode extends the sum by one bit. All strings are
-/// big-endian; leading zeros determine the operand width.
+/// only the sum. Wrap mode computes \f$(a+b) \bmod 2^n\f$; carry mode extends
+/// the sum by one bit. All strings are big-endian; leading zeros determine the
+/// operand width.
 class MQT_CORE_BENCH_EXPORT QFTAdder final {
 public:
   explicit QFTAdder(QFTAdderOptions options);

@@ -34,13 +34,13 @@ struct QFTOptions {
 
   /// Number of transformed qubits.
   size_t qubits;
-  /// The input period is two raised to this exponent.
+  /// Exponent \f$k\f$ of the input period \f$2^k\f$.
   size_t periodExponent;
   /// Full-register or semiclassical circuit method.
   QFTMethod method = QFTMethod::Standard;
 };
 
-/// A validated QFT benchmark instance and its analytic reference.
+/// A validated QFT benchmark.
 class MQT_CORE_BENCH_EXPORT QFT final {
 public:
   explicit QFT(QFTOptions options);

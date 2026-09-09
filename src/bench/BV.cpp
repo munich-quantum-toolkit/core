@@ -45,10 +45,7 @@ double BV::probability(const std::string_view outcome) const {
 }
 
 Evaluation BV::evaluate(const Counts& counts) const {
-  return detail::evaluate(
-      output_, counts,
-      [this](const std::string_view outcome) { return probability(outcome); },
-      options_.hiddenBitstring);
+  return detail::evaluate(*this, counts, options_.hiddenBitstring);
 }
 
 } // namespace mqt::bench

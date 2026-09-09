@@ -51,7 +51,7 @@ class Options:
         """Wrap or carry behavior."""
 
 class QFTAdder:
-    """Add equal-width operands with an exact no-swap QFT circuit.
+    """A validated QFT adder benchmark.
 
     Register addition uses controlled phases and returns the addend followed by the
     sum. Constant addition compiles the addend into phases and returns only the sum.
@@ -74,7 +74,7 @@ class QFTAdder:
 
     @property
     def expected_result(self) -> str | None:
-        """The unique logical outcome, or None for a superposed addend."""
+        """The unique logical outcome, or ``None`` for a superposed addend."""
 
     def probability(self, outcome: str) -> float:
         """Return the ideal probability of an outcome."""

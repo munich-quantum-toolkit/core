@@ -30,8 +30,8 @@ TEST(Grover, ResolvesTheDefaultIterationCountOnce) {
   EXPECT_EQ(*grover.options().iterations, 1);
   EXPECT_EQ(grover.qubits(), 2);
   EXPECT_EQ(grover.output(), (Output{"result", 2}));
-  EXPECT_DOUBLE_EQ(grover.markedProbability(), 1.);
-  EXPECT_NEAR(grover.otherProbability(), 0., 1e-31);
+  EXPECT_DOUBLE_EQ(grover.probability("10"), 1.);
+  EXPECT_NEAR(grover.probability("00"), 0., 1e-31);
 }
 
 TEST(Grover, ResolvesLargeDefaultIterationCountsWithoutProbabilityRounding) {
@@ -42,8 +42,6 @@ TEST(Grover, ResolvesLargeDefaultIterationCountsWithoutProbabilityRounding) {
 TEST(Grover, AcceptsAnExplicitZeroIterationCount) {
   const Grover grover{{.markedBitstring = "01", .iterations = 0}};
   EXPECT_EQ(*grover.options().iterations, 0);
-  EXPECT_DOUBLE_EQ(grover.markedProbability(), 0.25);
-  EXPECT_DOUBLE_EQ(grover.otherProbability(), 0.25);
   EXPECT_DOUBLE_EQ(grover.probability("01"), 0.25);
   EXPECT_DOUBLE_EQ(grover.probability("11"), 0.25);
 }

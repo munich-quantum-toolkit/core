@@ -20,13 +20,15 @@
 
 namespace mqt::bench {
 
-/// An exact phase in turns, reduced modulo one turn.
+/// An exact phase \f$\phi\f$ in turns, reduced modulo one turn.
 class MQT_CORE_BENCH_EXPORT Phase final {
 public:
-  /// Construct `numerator / denominator` turns.
+  /// Construct \f$\phi=\mathrm{numerator}/\mathrm{denominator}\f$ turns.
   Phase(uint64_t numerator, uint64_t denominator);
 
+  /// Return the reduced numerator of \f$\phi\f$.
   [[nodiscard]] uint64_t numerator() const noexcept;
+  /// Return the reduced denominator of \f$\phi\f$.
   [[nodiscard]] uint64_t denominator() const noexcept;
 
   friend bool operator==(const Phase&, const Phase&) = default;
@@ -56,7 +58,7 @@ struct QPEOptions {
   QPEMethod method = QPEMethod::Standard;
 };
 
-/// A validated QPE benchmark instance and its analytic reference.
+/// A validated QPE benchmark.
 class MQT_CORE_BENCH_EXPORT QPE final {
 public:
   explicit QPE(QPEOptions options);

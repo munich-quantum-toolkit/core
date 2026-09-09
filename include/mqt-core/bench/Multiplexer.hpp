@@ -26,7 +26,7 @@ struct MultiplexerOptions {
   size_t qubits;
 };
 
-/// A validated quantum multiplexer benchmark and its analytic reference.
+/// A validated quantum multiplexer benchmark.
 class MQT_CORE_BENCH_EXPORT Multiplexer final {
 public:
   explicit Multiplexer(MultiplexerOptions options);

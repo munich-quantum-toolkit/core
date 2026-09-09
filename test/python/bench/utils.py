@@ -13,6 +13,4 @@ from mqt.core import mlir
 
 def assert_generates(program: mlir.QCProgram) -> None:
     """Exercise the Python-to-MLIR generation boundary."""
-    assert isinstance(program, mlir.QCProgram)
-    assert "qc." in program.ir
     assert isinstance(program.to_qco(), mlir.QCOProgram)

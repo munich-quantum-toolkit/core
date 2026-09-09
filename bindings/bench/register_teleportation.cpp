@@ -25,9 +25,11 @@ using namespace nb::literals;
 void registerTeleportation(const nb::module_& m) {
   auto teleportation = nb::class_<bench::Teleportation>(
       m, "Teleportation",
-      R"pb(Teleport the fixed :math:`|+\rangle` state and measure Bob's qubit in the X basis.
+      R"pb(A validated quantum teleportation benchmark.
 
-The one-bit result is zero on success; Alice's measurements stay internal.)pb");
+The circuit teleports the fixed :math:`|+\rangle` state and measures Bob's qubit
+in the :math:`X` basis. The one-bit result is zero on success; Alice's
+measurements stay internal.)pb");
   teleportation.def(nb::init<>())
       .def_prop_ro("output", &bench::Teleportation::output,
                    nb::rv_policy::reference_internal,

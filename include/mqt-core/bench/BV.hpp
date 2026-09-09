@@ -38,7 +38,7 @@ struct BVOptions {
   BVMethod method = BVMethod::Static;
 };
 
-/// A validated Bernstein--Vazirani instance and its analytic reference.
+/// A validated Bernstein--Vazirani benchmark.
 class MQT_CORE_BENCH_EXPORT BV final {
 public:
   explicit BV(BVOptions options);

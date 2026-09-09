@@ -28,16 +28,15 @@ struct GroverOptions {
   std::optional<size_t> iterations = std::nullopt;
 };
 
-/// A validated Grover benchmark instance and its analytic reference.
+/// A validated single-solution Grover benchmark.
 class MQT_CORE_BENCH_EXPORT Grover final {
 public:
   explicit Grover(GroverOptions options);
 
   [[nodiscard]] const GroverOptions& options() const noexcept;
+  /// Return the number of search qubits.
   [[nodiscard]] size_t qubits() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
-  [[nodiscard]] double markedProbability() const noexcept;
-  [[nodiscard]] double otherProbability() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
   [[nodiscard]] double probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
