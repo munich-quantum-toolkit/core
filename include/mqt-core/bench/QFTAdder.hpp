@@ -52,7 +52,8 @@ struct QFTAdderOptions {
   QFTAdderOverflow overflow = QFTAdderOverflow::Wrap;
 };
 
-/// Add two configured operands using an exact no-swap QFT circuit.
+/// A validated QFT adder benchmark.
+///
 /// Register results concatenate the addend and sum; constant results contain
 /// only the sum. Wrap mode computes \f$(a+b) \bmod 2^n\f$; carry mode extends
 /// the sum by one bit. All strings are big-endian; leading zeros determine the

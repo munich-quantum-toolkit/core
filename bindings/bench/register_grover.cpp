@@ -38,8 +38,7 @@ void registerGrover(const nb::module_& m) {
               "The iteration count, or ``None`` for automatic selection.");
 
   auto grover = nb::class_<bench::Grover>(
-      m, "Grover",
-      "Search for the configured marked bitstring with Grover's algorithm.");
+      m, "Grover", "A validated single-solution Grover benchmark.");
   grover.def(nb::init<bench::GroverOptions>(), "options"_a)
       .def_prop_ro("options", &bench::Grover::options,
                    nb::rv_policy::reference_internal,

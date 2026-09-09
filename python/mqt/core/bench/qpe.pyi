@@ -51,7 +51,7 @@ class Options:
         """The circuit method."""
 
 class QPE:
-    """Estimate the configured eigenphase to the configured bit precision."""
+    """A validated QPE benchmark."""
 
     def __init__(self, options: Options) -> None: ...
     @property

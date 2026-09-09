@@ -14,9 +14,11 @@ import mqt.core.bench
 import mqt.core.mlir
 
 class Teleportation:
-    """Teleport the fixed :math:`|+\\rangle` state and measure Bob's qubit in the :math:`X` basis.
+    """A validated quantum teleportation benchmark.
 
-    The one-bit result is zero on success; Alice's measurements stay internal.
+    The circuit teleports the fixed :math:`|+\\rangle` state and measures Bob's qubit
+    in the :math:`X` basis. The one-bit result is zero on success; Alice's
+    measurements stay internal.
     """
 
     def __init__(self) -> None: ...

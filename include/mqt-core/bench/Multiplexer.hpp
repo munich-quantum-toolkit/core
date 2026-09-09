@@ -26,8 +26,7 @@ struct MultiplexerOptions {
   size_t qubits;
 };
 
-/// Prepare uniform controls and apply their encoded \f$R_y\f$ rotation to the
-/// target.
+/// A validated quantum multiplexer benchmark.
 class MQT_CORE_BENCH_EXPORT Multiplexer final {
 public:
   explicit Multiplexer(MultiplexerOptions options);

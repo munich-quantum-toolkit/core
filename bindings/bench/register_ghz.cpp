@@ -43,9 +43,7 @@ void registerGHZ(const nb::module_& m) {
               "The entangling topology.")
       .def_ro("basis", &bench::GHZOptions::basis, "The measurement basis.");
 
-  auto ghz = nb::class_<bench::GHZ>(
-      m, "GHZ",
-      R"pb(Prepare a GHZ state and measure it in the configured :math:`X` or :math:`Z` basis.)pb");
+  auto ghz = nb::class_<bench::GHZ>(m, "GHZ", "A validated GHZ benchmark.");
   ghz.def(nb::init<bench::GHZOptions>(), "options"_a)
       .def_prop_ro("options", &bench::GHZ::options,
                    nb::rv_policy::reference_internal,

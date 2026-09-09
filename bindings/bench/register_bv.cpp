@@ -38,9 +38,8 @@ void registerBV(const nb::module_& m) {
               "The big-endian hidden bitstring.")
       .def_ro("method", &bench::BVOptions::method, "The circuit method.");
 
-  auto bv = nb::class_<bench::BV>(
-      m, "BV",
-      "Recover the configured hidden bitstring with Bernstein--Vazirani.");
+  auto bv = nb::class_<bench::BV>(m, "BV",
+                                  "A validated Bernstein--Vazirani benchmark.");
   bv.def(nb::init<bench::BVOptions>(), "options"_a)
       .def_prop_ro("options", &bench::BV::options,
                    nb::rv_policy::reference_internal,

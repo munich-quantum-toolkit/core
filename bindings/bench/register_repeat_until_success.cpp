@@ -33,11 +33,12 @@ void registerRepeatUntilSuccess(const nb::module_& m) {
               "The number of data qubits, excluding the ancilla.");
   auto repeatUntilSuccess = nb::class_<bench::RepeatUntilSuccess>(
       m, "RepeatUntilSuccess",
-      R"pb(Apply a repeat-until-success implementation of :math:`(I + i\sqrt{2}X^{\otimes n}) / \sqrt{3}`.
+      R"pb(A validated Pauli-string repeat-until-success benchmark.
 
-Each attempt measures an ancilla prepared from :math:`|0\rangle` and retries on
-failure. After success, return the parity of a :math:`Y \otimes X^{\otimes(n-1)}`
-measurement on the data qubits.)pb");
+The circuit applies :math:`(I + i\sqrt{2}X^{\otimes n}) / \sqrt{3}`. Each
+attempt measures an ancilla prepared from :math:`|0\rangle` and retries on
+failure. After success, return the parity of a
+:math:`Y \otimes X^{\otimes(n-1)}` measurement on the data qubits.)pb");
   repeatUntilSuccess
       .def(nb::init<bench::RepeatUntilSuccessOptions>(),
            "options"_a = bench::RepeatUntilSuccessOptions{})

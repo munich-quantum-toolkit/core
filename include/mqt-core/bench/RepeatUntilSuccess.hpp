@@ -26,7 +26,9 @@ struct RepeatUntilSuccessOptions {
   size_t dataQubits = 1;
 };
 
-/// Apply the Paetznick--Svore repeat-until-success implementation of
+/// A validated Pauli-string repeat-until-success benchmark.
+///
+/// The circuit applies
 /// \f$(I+i\sqrt{2}X^{\otimes n})/\sqrt{3}\f$.
 class MQT_CORE_BENCH_EXPORT RepeatUntilSuccess final {
 public:

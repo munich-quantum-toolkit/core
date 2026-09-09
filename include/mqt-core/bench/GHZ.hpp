@@ -49,7 +49,7 @@ struct GHZOptions {
   GHZBasis basis = GHZBasis::Z;
 };
 
-/// Prepare a GHZ state and measure it in the configured basis.
+/// A validated GHZ benchmark.
 class MQT_CORE_BENCH_EXPORT GHZ final {
 public:
   explicit GHZ(GHZOptions options);

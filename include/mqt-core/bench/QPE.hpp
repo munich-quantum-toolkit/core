@@ -58,7 +58,7 @@ struct QPEOptions {
   QPEMethod method = QPEMethod::Standard;
 };
 
-/// Estimate the configured eigenphase to the configured bit precision.
+/// A validated QPE benchmark.
 class MQT_CORE_BENCH_EXPORT QPE final {
 public:
   explicit QPE(QPEOptions options);

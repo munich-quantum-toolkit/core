@@ -44,9 +44,10 @@ void registerModularMultiplier(const nb::module_& m) {
 
   auto modularMultiplier = nb::class_<bench::ModularMultiplier>(
       m, "ModularMultiplier",
-      R"pb(Compute :math:`c \cdot a \cdot x \bmod N` in an initially zero product register.
+      R"pb(A validated modular multiplier benchmark.
 
-Here, :math:`c` is the control, :math:`a` is the classical multiplier,
+The initially zero product register stores :math:`c \cdot a \cdot x \bmod N`,
+where :math:`c` is the control, :math:`a` is the classical multiplier,
 :math:`x` is the multiplicand, and :math:`N` is the modulus.)pb");
   modularMultiplier
       .def(nb::init<bench::ModularMultiplierOptions>(), "options"_a)

@@ -38,7 +38,7 @@ struct BVOptions {
   BVMethod method = BVMethod::Static;
 };
 
-/// Recover the configured hidden bitstring with Bernstein--Vazirani.
+/// A validated Bernstein--Vazirani benchmark.
 class MQT_CORE_BENCH_EXPORT BV final {
 public:
   explicit BV(BVOptions options);

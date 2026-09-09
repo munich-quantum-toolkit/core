@@ -100,9 +100,7 @@ void registerQPE(const nb::module_& m) {
           "The reduced phase in turns.")
       .def_ro("method", &bench::QPEOptions::method, "The circuit method.");
 
-  auto qpe = nb::class_<bench::QPE>(
-      m, "QPE",
-      "Estimate the configured eigenphase to the configured bit precision.");
+  auto qpe = nb::class_<bench::QPE>(m, "QPE", "A validated QPE benchmark.");
   qpe.def(nb::init<bench::QPEOptions>(), "options"_a)
       .def_prop_ro("options", &bench::QPE::options,
                    nb::rv_policy::reference_internal,

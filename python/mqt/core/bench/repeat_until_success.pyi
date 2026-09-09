@@ -22,11 +22,12 @@ class Options:
         """The number of data qubits, excluding the ancilla."""
 
 class RepeatUntilSuccess:
-    """Apply a repeat-until-success implementation of :math:`(I + i\\sqrt{2}X^{\\otimes n}) / \\sqrt{3}`.
+    """A validated Pauli-string repeat-until-success benchmark.
 
-    Each attempt measures an ancilla prepared from :math:`|0\\rangle` and retries on
-    failure. After success, return the parity of a :math:`Y \\otimes X^{\\otimes(n-1)}`
-    measurement on the data qubits.
+    The circuit applies :math:`(I + i\\sqrt{2}X^{\\otimes n}) / \\sqrt{3}`. Each
+    attempt measures an ancilla prepared from :math:`|0\\rangle` and retries on
+    failure. After success, return the parity of a
+    :math:`Y \\otimes X^{\\otimes(n-1)}` measurement on the data qubits.
     """
 
     def __init__(self, options: Options = ...) -> None: ...

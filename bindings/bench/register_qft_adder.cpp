@@ -51,9 +51,9 @@ void registerQFTAdder(const nb::module_& m) {
       .def_ro("overflow", &bench::QFTAdderOptions::overflow,
               "Wrap or carry behavior.");
 
-  auto qftAdder = nb::class_<bench::QFTAdder>(
-      m, "QFTAdder",
-      R"pb(Add equal-width operands with an exact no-swap QFT circuit.
+  auto qftAdder =
+      nb::class_<bench::QFTAdder>(m, "QFTAdder",
+                                  R"pb(A validated QFT adder benchmark.
 
 Register addition uses controlled phases and returns the addend followed by the
 sum. Constant addition compiles the addend into phases and returns only the sum.

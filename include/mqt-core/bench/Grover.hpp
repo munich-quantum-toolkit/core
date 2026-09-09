@@ -28,7 +28,7 @@ struct GroverOptions {
   std::optional<size_t> iterations = std::nullopt;
 };
 
-/// Search for the configured marked bitstring with Grover's algorithm.
+/// A validated single-solution Grover benchmark.
 class MQT_CORE_BENCH_EXPORT Grover final {
 public:
   explicit Grover(GroverOptions options);

@@ -40,8 +40,7 @@ struct QFTOptions {
   QFTMethod method = QFTMethod::Standard;
 };
 
-/// Apply the QFT to a uniform superposition with the configured power-of-two
-/// period.
+/// A validated QFT benchmark.
 class MQT_CORE_BENCH_EXPORT QFT final {
 public:
   explicit QFT(QFTOptions options);

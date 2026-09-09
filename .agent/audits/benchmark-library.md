@@ -51,10 +51,11 @@ The exported marked and unmarked probability getters had no production or
 binding callers. `probability()` already provides both values, so the redundant
 getters and their dedicated assertions were removed.
 
-### Describe behavior and render mathematical notation
+### Use consistent class summaries and render mathematical notation
 
-Every benchmark class description now states the operation that it performs.
-Doxygen and Python binding text use their math roles for states, bases, phases,
+Every benchmark class uses the dry summary "A validated ... benchmark." Longer
+Python descriptions retain algorithm details where they already exist. Doxygen
+and Python binding text use their math roles for states, bases, phases,
 rotations, and arithmetic. Generated stubs preserve the required escaped LaTeX.
 
 ## Unresolved questions

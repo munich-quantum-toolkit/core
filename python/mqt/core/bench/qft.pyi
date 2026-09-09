@@ -38,7 +38,7 @@ class Options:
         """The circuit method."""
 
 class QFT:
-    """Apply the QFT to a uniform superposition with the configured power-of-two period."""
+    """A validated QFT benchmark."""
 
     def __init__(self, options: Options) -> None: ...
     @property

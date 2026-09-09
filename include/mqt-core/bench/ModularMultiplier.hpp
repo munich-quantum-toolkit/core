@@ -36,10 +36,12 @@ struct ModularMultiplierOptions {
   char control = '1';
 };
 
-/// Compute \f$c \cdot a \cdot x \bmod N\f$ in an initially zero product
-/// register.
-/// Here, \f$c\f$ is the control, \f$a\f$ is the classical multiplier,
-/// \f$x\f$ is the multiplicand, and \f$N\f$ is the modulus.
+/// A validated modular multiplier benchmark.
+///
+/// The initially zero product register stores
+/// \f$c \cdot a \cdot x \bmod N\f$, where \f$c\f$ is the control, \f$a\f$ is
+/// the classical multiplier, \f$x\f$ is the multiplicand, and \f$N\f$ is the
+/// modulus.
 class MQT_CORE_BENCH_EXPORT ModularMultiplier final {
 public:
   explicit ModularMultiplier(ModularMultiplierOptions options);
