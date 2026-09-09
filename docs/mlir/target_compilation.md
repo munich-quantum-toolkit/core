@@ -98,7 +98,9 @@ index switch is lowered to nested forward branches when that form fits the
 selected contract. Generic SCF branches cannot capture or return QCO qubits or
 quantum tensors; use the corresponding QCO branch operation for linear quantum
 state. SCF loops must carry linear quantum state through their iteration
-arguments instead of capturing it.
+arguments instead of capturing it. Both control-flow passes validate this loop
+input restriction before transforming loops or lowering switches. It is separate
+from QCO's exactly-one-SSA-use check.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and

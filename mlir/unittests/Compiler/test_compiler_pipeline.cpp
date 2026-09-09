@@ -2433,6 +2433,22 @@ TEST_F(CompilerPipelineTest,
       }
     }
   )mlir";
+  constexpr llvm::StringLiteral nestedForCapture = R"mlir(
+    module {
+      func.func @main(%upper: index) attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        scf.for %outer = %c0 to %upper step %c1 {
+          %q = qco.alloc : !qco.qubit
+          scf.for %inner = %c0 to %c1 step %c1 {
+            %next = qco.x %q : !qco.qubit -> !qco.qubit
+            qco.sink %next : !qco.qubit
+          }
+        }
+        return
+      }
+    }
+  )mlir";
 
   const auto payload = makeControlPayloadSpecification({
       {.id = "forward-branching"},
@@ -2454,6 +2470,35 @@ TEST_F(CompilerPipelineTest,
     EXPECT_FALSE(
         compileForTargetWithDiagnostics(*program, payload, diagnostics));
     EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
+  }
+
+  for (StringRef source : {
+           forCapture,
+           whileCapture,
+           nestedForCapture,
+       }) {
+    SCOPED_TRACE(source.str());
+    for (const auto* pass : {"unroll-unsupported-payload-loops",
+                             "legalize-payload-control-flow"}) {
+      SCOPED_TRACE(pass);
+      auto program = QCOProgram::fromMLIRString(source.str());
+      ASSERT_TRUE(program);
+      attachTargetEnvironment(
+          program->module(),
+          TargetEnvironment(makeUnrestrictedTarget(),
+                            makeControlPayloadSpecification({})));
+      const auto before = program->str();
+      std::string diagnostics;
+      ScopedDiagnosticHandler handler(program->module()->getContext(),
+                                      [&](Diagnostic& diagnostic) {
+                                        diagnostics += diagnostic.str();
+                                        return success();
+                                      });
+      EXPECT_FALSE(program->runPassPipeline(pass));
+      EXPECT_TRUE(StringRef(diagnostics).contains("iteration arguments"))
+          << diagnostics;
+      EXPECT_EQ(program->str(), before);
+    }
   }
 }
 

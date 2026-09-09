@@ -124,6 +124,8 @@ def UnrollUnsupportedPayloadLoops
     `scf.for` operations that its counted-iteration capability does not cover.
     The pass limits the total number of cloned body operations to 65,536.
     Dynamic loops remain for payload control-flow legalization.
+    After folding static branches, the pass checks that all SCF loops carry
+    linear QCO state through iteration arguments instead of capturing it.
   }];
 }
 
@@ -137,6 +139,8 @@ def LegalizePayloadControlFlow
     QCO and SCF branches and loops, lowers unsupported index switches to nested
     forward branches when possible, and rejects residual structural control
     flow that the payload does not support.
+    Before conversion, the pass checks that all SCF loops carry linear QCO
+    state through iteration arguments instead of capturing it.
   }];
 }
 

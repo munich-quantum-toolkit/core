@@ -210,6 +210,21 @@ private:
          hasLinearCapture(operation);
 }
 
+// Check the supported loop input form once before transforming control flow.
+// Exactly one SSA use does not exclude captures in repeated regions.
+static LogicalResult verifyLoopCarriedState(ModuleOp moduleOp) {
+  const auto result = moduleOp.walk([](Operation* operation) {
+    if (isa<scf::ForOp, scf::WhileOp>(operation) &&
+        hasLinearCapture(operation)) {
+      operation->emitOpError(
+          "captures QCO linear values; pass them as iteration arguments");
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return result.wasInterrupted() ? failure() : success();
+}
+
 /// Require literal bounds; do not infer constrained iteration from symbolic IR.
 [[nodiscard]] static std::optional<llvm::APInt>
 getExactConstantTripCount(scf::ForOp loop) {
@@ -248,15 +263,13 @@ static LogicalResult foldStaticBranches(ModuleOp moduleOp) {
 
 [[nodiscard]] static bool isLegal(scf::ForOp operation,
                                   const PayloadControlSupport& support) {
-  return !hasLinearCapture(operation) &&
-         support.coversIteration(ControlFeature::CountedIteration, operation,
+  return support.coversIteration(ControlFeature::CountedIteration, operation,
                                  getExactConstantTripCount(operation));
 }
 
 [[nodiscard]] static bool isLegal(scf::WhileOp operation,
                                   const PayloadControlSupport& support) {
-  return !hasLinearCapture(operation) &&
-         support.coversIteration(ControlFeature::ConditionalLoop, operation,
+  return support.coversIteration(ControlFeature::ConditionalLoop, operation,
                                  operation.getStaticTripCount());
 }
 
@@ -445,7 +458,8 @@ protected:
       return;
     }
 
-    if (failed(foldStaticBranches(getOperation()))) {
+    if (failed(foldStaticBranches(getOperation())) ||
+        failed(verifyLoopCarriedState(getOperation()))) {
       signalPassFailure();
       return;
     }
@@ -454,29 +468,18 @@ protected:
     IRRewriter rewriter(&getContext());
     while (true) {
       SmallVector<std::pair<scf::ForOp, llvm::APInt>> loops;
-      const WalkResult result =
-          getOperation().walk<WalkOrder::PreOrder>([&](scf::ForOp loop) {
-            if (hasLinearCapture(loop)) {
-              loop.emitError(
-                  "SCF loop captures QCO linear values; pass them as "
-                  "iteration arguments");
-              return WalkResult::interrupt();
-            }
-            const auto tripCount = getExactConstantTripCount(loop);
-            if (support->coversIteration(ControlFeature::CountedIteration, loop,
-                                         tripCount)) {
-              return WalkResult::advance();
-            }
-            if (!tripCount) {
-              return WalkResult::skip();
-            }
-            loops.emplace_back(loop, *tripCount);
-            return WalkResult::skip();
-          });
-      if (result.wasInterrupted()) {
-        signalPassFailure();
-        return;
-      }
+      getOperation().walk<WalkOrder::PreOrder>([&](scf::ForOp loop) {
+        const auto tripCount = getExactConstantTripCount(loop);
+        if (support->coversIteration(ControlFeature::CountedIteration, loop,
+                                     tripCount)) {
+          return WalkResult::advance();
+        }
+        if (!tripCount) {
+          return WalkResult::skip();
+        }
+        loops.emplace_back(loop, *tripCount);
+        return WalkResult::skip();
+      });
       if (loops.empty()) {
         return;
       }
@@ -552,7 +555,7 @@ protected:
   void runOnOperation() override {
     const auto support = PayloadControlSupport::read(
         getOperation(), getAnalysis<TargetEnvironmentAnalysis>());
-    if (!support) {
+    if (!support || failed(verifyLoopCarriedState(getOperation()))) {
       signalPassFailure();
       return;
     }
