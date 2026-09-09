@@ -66,7 +66,7 @@ static OwningOpRef<ModuleOp> grover(MLIRContext* context, const int64_t nqubits,
                                     const int64_t niterations,
                                     const std::string& markedBitstring) {
   QCOProgramBuilder builder(context);
-  builder.initialize(SmallVector<Type>(nqubits, builder.getI1Type()));
+  builder.initialize();
 
   SmallVector<Value> qubits(nqubits);
   SmallVector<Value> bits(nqubits);
@@ -138,7 +138,7 @@ static OwningOpRef<ModuleOp> grover(MLIRContext* context, const int64_t nqubits,
 
   builder.qtensorDealloc(tensor);
 
-  return builder.finalize(bits);
+  return builder.finalize();
 }
 
 static OwningOpRef<ModuleOp> vqe(MLIRContext* context, const int64_t nqubits,
@@ -147,7 +147,7 @@ static OwningOpRef<ModuleOp> vqe(MLIRContext* context, const int64_t nqubits,
   constexpr double vqeInitialAngle = llvm::numbers::pi / 2.0;
 
   QCOProgramBuilder builder(context);
-  builder.initialize(SmallVector<Type>{builder.getF64Type()});
+  builder.initialize();
 
   SmallVector<Value> bits(nqubits);
   SmallVector<Value> qubits(nqubits);
@@ -242,14 +242,14 @@ static OwningOpRef<ModuleOp> vqe(MLIRContext* context, const int64_t nqubits,
 
   builder.qtensorDealloc(tensor);
 
-  return builder.finalize(outArgs[1]);
+  return builder.finalize();
 }
 
 static OwningOpRef<ModuleOp> qaoa(MLIRContext* context, const int64_t nqubits,
                                   const int64_t nlayers, const double gamma,
                                   const double beta) {
   QCOProgramBuilder builder(context);
-  builder.initialize(SmallVector<Type>(nqubits, builder.getI1Type()));
+  builder.initialize();
 
   SmallVector<Value> qubits(nqubits);
   SmallVector<Value> bits(nqubits);
@@ -295,7 +295,7 @@ static OwningOpRef<ModuleOp> qaoa(MLIRContext* context, const int64_t nqubits,
 
   builder.qtensorDealloc(tensor);
 
-  return builder.finalize(bits);
+  return builder.finalize();
 }
 
 static OwningOpRef<ModuleOp> mlqae(MLIRContext* context,
@@ -361,7 +361,7 @@ static OwningOpRef<ModuleOp> mlqae(MLIRContext* context,
     auto power = arith::AddIOp::create(builder, one, iv);
 
     qubits =
-        builder.scfFor(0, power, 1, qubits, [&](Value iv, ValueRange args) {
+        builder.scfFor(0, 1000, 1, qubits, [&](Value iv, ValueRange args) {
           return innerLoop(builder, iv, args);
         });
 
@@ -369,7 +369,7 @@ static OwningOpRef<ModuleOp> mlqae(MLIRContext* context,
   };
 
   QCOProgramBuilder builder(context);
-  builder.initialize(SmallVector<Type>(nqubits, builder.getI1Type()));
+  builder.initialize();
 
   auto c = builder.allocClassicalBitRegister(nqubits - 1, "c");
 
@@ -405,7 +405,7 @@ static OwningOpRef<ModuleOp> mlqae(MLIRContext* context,
 
   builder.qtensorDealloc(tensor);
 
-  return builder.finalize(bits);
+  return builder.finalize();
 }
 
 static void writeMLIR(ModuleOp mod, const std::string& filename) {
