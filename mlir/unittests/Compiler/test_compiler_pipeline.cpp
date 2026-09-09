@@ -2036,6 +2036,8 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
       unsupportedQCO->module()->hasAttr(mlir::mqt::TargetEnvAttr::name));
 }
 
+// Handwritten MLIR isolates unsupported-input and capability-boundary behavior.
+// Frontend-backed cases below are named FromOpenQASM.
 TEST_F(CompilerPipelineTest,
        PayloadControlRejectsUnsupportedResidualOperations) {
   constexpr llvm::StringLiteral forwardBranch = R"mlir(
@@ -2126,24 +2128,18 @@ TEST_F(CompilerPipelineTest,
 }
 
 TEST_F(CompilerPipelineTest,
-       PayloadControlUsesInclusiveCountedIterationConstraint) {
-  constexpr llvm::StringLiteral source = R"mlir(
-    module {
-      func.func @main() attributes {mqt.entry_point} {
-        %c0 = arith.constant 0 : index
-        %c1 = arith.constant 1 : index
-        %c3 = arith.constant 3 : index
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = scf.for %index = %c0 to %c3 step %c1
-            iter_args(%arg0 = %q0) -> (!qco.qubit) {
-          %q2 = qco.x %arg0 : !qco.qubit -> !qco.qubit
-          scf.yield %q2 : !qco.qubit
-        }
-        qco.sink %q1 : !qco.qubit
-        return
-      }
-    }
-  )mlir";
+       PayloadControlFromOpenQASMUsesInclusiveIterationConstraint) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+for int i in [0:2] { x q; }
+)qasm";
+  auto qc = QCProgram::fromQASMString(source);
+  ASSERT_TRUE(qc);
+  auto input = std::move(*qc).intoQCO();
+  ASSERT_TRUE(input);
+  ASSERT_TRUE(StringRef(input->str()).contains("scf.for"));
   const auto payload = [](const uint64_t maximum) {
     return makeControlPayloadSpecification({
         {
@@ -2153,52 +2149,37 @@ TEST_F(CompilerPipelineTest,
     });
   };
 
-  auto atBoundary = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(atBoundary);
-  ASSERT_TRUE(atBoundary->compileForTarget(
+  auto atBoundary = input->copy();
+  ASSERT_TRUE(atBoundary.compileForTarget(
       TargetEnvironment(makeUnrestrictedTarget(), payload(3))));
-  EXPECT_TRUE(StringRef(atBoundary->str()).contains("scf.for"));
+  EXPECT_TRUE(StringRef(atBoundary.str()).contains("scf.for"));
 
-  auto aboveBoundary = QCOProgram::fromMLIRString(source.str());
-  ASSERT_TRUE(aboveBoundary);
-  ASSERT_TRUE(aboveBoundary->compileForTarget(
+  auto aboveBoundary = input->copy();
+  ASSERT_TRUE(aboveBoundary.compileForTarget(
       TargetEnvironment(makeUnrestrictedTarget(), payload(2))));
-  EXPECT_FALSE(StringRef(aboveBoundary->str()).contains("scf.for"));
+  EXPECT_FALSE(StringRef(aboveBoundary.str()).contains("scf.for"));
 }
 
 TEST_F(CompilerPipelineTest,
-       PayloadControlUnrollsNewlyStaticNestedLoopsToFixedPoint) {
-  constexpr llvm::StringLiteral source = R"mlir(
-    module {
-      func.func @main() attributes {mqt.entry_point} {
-        %c0 = arith.constant 0 : index
-        %c1 = arith.constant 1 : index
-        %c3 = arith.constant 3 : index
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = scf.for %outer = %c0 to %c3 step %c1
-            iter_args(%outerQubit = %q0) -> (!qco.qubit) {
-          %q2 = scf.for %inner = %c0 to %outer step %c1
-              iter_args(%innerQubit = %outerQubit) -> (!qco.qubit) {
-            %condition = arith.cmpi eq, %inner, %c0 : index
-            %q3 = qco.if %condition args(%arg0 = %innerQubit) -> (!qco.qubit) {
-              %then = qco.x %arg0 : !qco.qubit -> !qco.qubit
-              qco.yield %then : !qco.qubit
-            } else args(%arg0 = %innerQubit) {
-              %otherwise = qco.h %arg0 : !qco.qubit -> !qco.qubit
-              qco.yield %otherwise : !qco.qubit
-            }
-            scf.yield %q3 : !qco.qubit
-          }
-          scf.yield %q2 : !qco.qubit
-        }
-        qco.sink %q1 : !qco.qubit
-        return
-      }
-    }
-  )mlir";
+       PayloadControlFromOpenQASMUnrollsNewlyStaticNestedLoops) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+for int outer in [0:2] {
+  for int inner in [0:outer - 1] {
+    if (inner == 0) { x q; }
+    else { h q; }
+  }
+}
+)qasm";
 
-  auto program = QCOProgram::fromMLIRString(source.str());
+  auto qc = QCProgram::fromQASMString(source);
+  ASSERT_TRUE(qc);
+  auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(program);
+  ASSERT_EQ(StringRef(program->str()).count("scf.for"), 2U);
+  ASSERT_TRUE(StringRef(program->str()).contains("qco.if"));
   ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
       makeUnrestrictedTarget(), makeControlPayloadSpecification({}, true))));
   EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
@@ -2435,7 +2416,29 @@ TEST_F(CompilerPipelineTest, PayloadControlBoundsTotalLoopCloning) {
 }
 
 TEST_F(CompilerPipelineTest,
-       PayloadControlPreservesOrLowersQCOIndexSwitchAtBoundaries) {
+       PayloadControlFromOpenQASMPreservesOrLowersSwitchAtBoundaries) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit[2] bits;
+h q;
+bits[0] = measure q;
+h q;
+bits[1] = measure q;
+uint[2] selector = uint[2](bits);
+output int result;
+switch (selector) {
+  case 0 { x q; result = 0; }
+  case 1 { h q; result = 1; }
+  default { result = 2; }
+}
+)qasm";
+  auto qc = QCProgram::fromQASMString(source);
+  ASSERT_TRUE(qc);
+  auto input = std::move(*qc).intoQCO();
+  ASSERT_TRUE(input);
+  ASSERT_TRUE(StringRef(input->str()).contains("qco.index_switch"));
   const auto target = makeUnrestrictedTarget();
   const auto multiway = [](const uint64_t maximum) {
     return ProgramCapability{
@@ -2453,24 +2456,21 @@ TEST_F(CompilerPipelineTest,
     };
   };
 
-  auto preserved = QCOProgram::fromMLIRString(QCO_INDEX_SWITCH_SOURCE.str());
-  ASSERT_TRUE(preserved);
-  ASSERT_TRUE(preserved->compileForTarget(TargetEnvironment(
+  auto preserved = input->copy();
+  ASSERT_TRUE(preserved.compileForTarget(TargetEnvironment(
       target, makeControlPayloadSpecification({multiway(2)}))));
-  EXPECT_TRUE(StringRef(preserved->str()).contains("qco.index_switch"));
+  EXPECT_TRUE(StringRef(preserved.str()).contains("qco.index_switch"));
 
-  auto lowered = QCOProgram::fromMLIRString(QCO_INDEX_SWITCH_SOURCE.str());
-  ASSERT_TRUE(lowered);
-  ASSERT_TRUE(lowered->compileForTarget(TargetEnvironment(
+  auto lowered = input->copy();
+  ASSERT_TRUE(lowered.compileForTarget(TargetEnvironment(
       target, makeControlPayloadSpecification({multiway(1), forward(2)}))));
-  EXPECT_FALSE(StringRef(lowered->str()).contains("qco.index_switch"));
-  EXPECT_EQ(StringRef(lowered->str()).count("qco.if"), 2U);
+  EXPECT_FALSE(StringRef(lowered.str()).contains("qco.index_switch"));
+  EXPECT_EQ(StringRef(lowered.str()).count("qco.if"), 2U);
 
-  auto tooDeep = QCOProgram::fromMLIRString(QCO_INDEX_SWITCH_SOURCE.str());
-  ASSERT_TRUE(tooDeep);
+  auto tooDeep = input->copy();
   std::string diagnostics;
   EXPECT_FALSE(compileForTargetWithDiagnostics(
-      *tooDeep, makeControlPayloadSpecification({multiway(1), forward(1)}),
+      tooDeep, makeControlPayloadSpecification({multiway(1), forward(1)}),
       diagnostics));
   EXPECT_TRUE(StringRef(diagnostics).contains("qco.index_switch"))
       << diagnostics;
