@@ -179,3 +179,40 @@ def test_measurement_rejects_missing_qubits() -> None:
             package.measure_collapsing(state, width)
         assert np.array_equal(state.get_vector(), before)
         package.dec_ref_vec(state)
+
+
+@pytest.mark.parametrize("width", [0, 1, 3])
+def test_indexing(width: int) -> None:
+    """Use logical vector length for positive and negative indices."""
+    package = DDPackage(width)
+    state = package.computational_basis_state(width, [True] * width)
+    dense = state.get_vector()
+    for index in range(-len(dense), len(dense)):
+        assert state[index] == dense[index]
+    for index in (-len(dense) - 1, len(dense), -(1 << 63)):
+        with pytest.raises(IndexError):
+            _ = state[index]
+    package.dec_ref_vec(state)
+
+
+@pytest.mark.parametrize("width", [63, 64, 65])
+def test_wide_indexing(width: int) -> None:
+    """Normalize negative indices without overflowing the native width."""
+    package = DDPackage(width)
+    for index in (0, 1, -1, -2, -(1 << 63)):
+        normalized = index % (1 << width)
+        state = package.computational_basis_state(width, [bool(normalized & (1 << bit)) for bit in range(width)])
+        assert state[index] == 1
+        assert state[index + 1] == 0
+        package.dec_ref_vec(state)
+
+
+@pytest.mark.parametrize("decisions", ["2", "9", "/", "x"])
+def test_invalid_path(decisions: str) -> None:
+    """Raise a Python exception for invalid vector path digits."""
+    package = DDPackage(1)
+    state = package.zero_state(1)
+    with pytest.raises(ValueError, match="invalid digit"):
+        state.get_amplitude(1, decisions)
+    assert state.get_amplitude(1, "0ignored") == 1
+    package.dec_ref_vec(state)

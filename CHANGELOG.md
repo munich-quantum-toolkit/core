@@ -96,6 +96,12 @@ releases may include breaking changes.
 - 🐳 Add dev container configuration for a consistent local development
   environment ([#1786]) ([**@denialhaag**])
 
+### Fixed
+
+- 🐛 Correct DD amplitude index bounds and reject invalid decision paths.
+  Traverse integer indices without temporary strings, skip magnitude checks
+  during unpruned export, and avoid copying initial memory-pool chunks.
+
 ### Changed
 
 - 💥 Require CMake 3.28 or newer for source builds and embedded projects, use

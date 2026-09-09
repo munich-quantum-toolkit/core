@@ -19,10 +19,10 @@ namespace dd {
 
 MemoryManager::MemoryManager(size_t entrySize,
                              const std::size_t initialAllocationSize)
-    : entrySize_(entrySize), available(nullptr),
-      chunks(1, Chunk(initialAllocationSize * entrySize)),
-      chunkIt(chunks[0].begin()), chunkEndIt(chunks[0].end()),
-      stats(entrySize) {
+    : entrySize_(entrySize), available(nullptr), chunks(1), stats(entrySize) {
+  chunks[0].resize(initialAllocationSize * entrySize);
+  chunkIt = chunks[0].begin();
+  chunkEndIt = chunks[0].end();
   stats.numAllocations = 1U;
   stats.numAllocated = initialAllocationSize;
 }

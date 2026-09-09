@@ -21,6 +21,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <string>
 
@@ -60,14 +61,30 @@ void registerVectorDDs(const nb::module_& m) {
   vec.def(
       "__getitem__",
       [](const dd::vEdge& v, nb::ssize_t idx) {
-        const auto n = static_cast<nb::ssize_t>(v.size());
-        if (idx < 0) {
-          idx += n;
+        const auto numQubits =
+            v.isTerminal() ? 0U : static_cast<size_t>(v.p->v) + 1U;
+        auto index = static_cast<size_t>(idx);
+        constexpr auto digits = std::numeric_limits<size_t>::digits;
+        if (numQubits < digits) {
+          const auto length = size_t{1} << numQubits;
+          if (idx < 0) {
+            if (size_t{0} - index > length) {
+              throw nb::index_error();
+            }
+            index += length;
+          }
+          if (index >= length) {
+            throw nb::index_error();
+          }
+        } else if (idx < 0 && numQubits > digits) {
+          /// Sign-extend negative indices beyond the native index width.
+          auto decisions = std::string(numQubits, '1');
+          for (auto bit = 0U; bit < digits; ++bit) {
+            decisions[bit] = ((index >> bit) & 1U) != 0U ? '1' : '0';
+          }
+          return v.getValueByPath(numQubits, decisions);
         }
-        if (idx < 0 || idx >= n) {
-          throw nb::index_error();
-        }
-        return v.getValueByIndex(static_cast<std::size_t>(idx));
+        return v.getValueByIndex(index);
       },
       "key"_a, "Get the amplitude of a basis state by index.");
 

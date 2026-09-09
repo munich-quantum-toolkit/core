@@ -232,3 +232,13 @@ def test_serialization(*, binary: bool) -> None:
 
         restored = MatrixDD.from_bytes(DDPackage(3), data, binary=binary)
         assert np.allclose(restored.get_matrix(num_qubits), dd.get_matrix(num_qubits))
+
+
+@pytest.mark.parametrize("decisions", ["4", "9", "/", "x"])
+def test_invalid_identity_path(decisions: str) -> None:
+    """Validate matrix digits even when all identity levels are implicit."""
+    package = DDPackage(1)
+    identity = package.identity()
+    with pytest.raises(ValueError, match="invalid digit"):
+        identity.get_entry_by_path(1, decisions)
+    assert identity.get_entry_by_path(1, "3ignored") == 1
