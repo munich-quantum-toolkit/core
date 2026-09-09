@@ -13,15 +13,26 @@
 #include "bench/Evaluation.hpp"
 #include "bench/mqt_core_bench_export.h"
 
+#include <cstddef>
 #include <string_view>
 
 namespace mqt::bench {
+
+/// Parameters for a Pauli-string repeat-until-success benchmark.
+struct RepeatUntilSuccessOptions {
+  static constexpr size_t MAX_DATA_QUBITS = 1'000'000;
+
+  /// Number of data qubits in `[1, MAX_DATA_QUBITS]`, excluding the ancilla.
+  size_t dataQubits = 1;
+};
 
 /// The Paetznick--Svore repeat-until-success benchmark and its analytic
 /// reference.
 class MQT_CORE_BENCH_EXPORT RepeatUntilSuccess final {
 public:
-  RepeatUntilSuccess();
+  explicit RepeatUntilSuccess(RepeatUntilSuccessOptions options = {});
+
+  [[nodiscard]] const RepeatUntilSuccessOptions& options() const noexcept;
 
   [[nodiscard]] const Output& output() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
@@ -30,6 +41,7 @@ public:
   [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
 
 private:
+  RepeatUntilSuccessOptions options_;
   Output output_;
 };
 

@@ -13,15 +13,27 @@ from collections.abc import Mapping
 import mqt.core.bench
 import mqt.core.mlir
 
+class Options:
+    """Parameters for a Pauli-string repeat-until-success benchmark."""
+
+    def __init__(self, *, data_qubits: int = 1) -> None: ...
+    @property
+    def data_qubits(self) -> int:
+        """The number of data qubits, excluding the ancilla."""
+
 class RepeatUntilSuccess:
-    """Apply a repeat-until-success implementation of :math:`(I + i\\sqrt{2}X) / \\sqrt{3}`.
+    """Apply a repeat-until-success implementation of :math:`(I + i\\sqrt{2}X^{\\otimes n}) / \\sqrt{3}`.
 
     Each attempt measures an ancilla prepared from :math:`|0\\rangle` and retries on
-    failure. After success, the circuit applies :math:`S^\\dagger` and :math:`H` to
-    the data qubit before measurement.
+    failure. After success, return the parity of a :math:`Y \\otimes X^{\\otimes(n-1)}`
+    measurement on the data qubits.
     """
 
-    def __init__(self) -> None: ...
+    def __init__(self, options: Options = ...) -> None: ...
+    @property
+    def options(self) -> Options:
+        """The resolved benchmark parameters."""
+
     @property
     def output(self) -> mqt.core.bench.Output:
         """The logical output register."""

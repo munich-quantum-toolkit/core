@@ -14,12 +14,23 @@
 #include "bench/Evaluation.hpp"
 
 #include <numbers>
+#include <stdexcept>
 #include <string_view>
 
 namespace mqt::bench {
 
-RepeatUntilSuccess::RepeatUntilSuccess()
-    : output_{.name = "result", .width = 1} {}
+RepeatUntilSuccess::RepeatUntilSuccess(RepeatUntilSuccessOptions options)
+    : options_(options), output_{.name = "result", .width = 1} {
+  if (options_.dataQubits == 0 ||
+      options_.dataQubits > RepeatUntilSuccessOptions::MAX_DATA_QUBITS) {
+    throw std::invalid_argument(
+        "repeat-until-success data qubits must be between 1 and 1000000");
+  }
+}
+
+const RepeatUntilSuccessOptions& RepeatUntilSuccess::options() const noexcept {
+  return options_;
+}
 
 const Output& RepeatUntilSuccess::output() const noexcept { return output_; }
 

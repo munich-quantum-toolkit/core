@@ -315,15 +315,32 @@ every input.
 
 ### Repeat until success
 
-The `repeat-until-success` family implements the two-$T$-gate circuit from
+The `repeat-until-success` family generalizes the two-$T$-gate circuit from
 Figure 8 of Paetznick and Svore's
-[repeat-until-success decomposition](https://arxiv.org/abs/1311.1074v2). Each
-attempt measures an ancilla. Outcome zero applies $(I + i\sqrt{2}X) / \sqrt{3}$
-to the data qubit. Outcome one leaves the data qubit unchanged, restores the
-ancilla to $|0\rangle$, and repeats the attempt. The structured program
-represents this post-test retry with an unbounded `scf.while`.
+[repeat-until-success decomposition](https://arxiv.org/abs/1311.1074v2) to
+$P=X^{\otimes n}$. Set `data_qubits` to $n$ (default 1, range 1–1,000,000); the
+circuit uses one additional ancilla. Both registers start in zero.
 
-After a successful attempt, the benchmark applies $S^\dagger$ and $H$ to the
-data qubit. The one-bit result has probabilities $P(0) = 1/2 + \sqrt{2}/3$ and
-$P(1) = 1/2 - \sqrt{2}/3$. This readout tests the relative phase of the
-implemented unitary.
+Each attempt applies $(I + i\sqrt{2}P)/\sqrt{3}$ with probability $3/4$. Failure
+leaves the data unchanged up to global phase. The circuit restores the ancilla
+to zero and retries through an unbounded `scf.while`. Two controlled Pauli
+strings require $2n$ CNOT gates per attempt. Structured loops keep the generated
+QC program compact; execution still takes linear work per attempt.
+
+After success, the data state is $(|0^n\rangle+i\sqrt{2}|1^n\rangle)/\sqrt{3}$.
+The benchmark measures $Y\otimes X^{\otimes(n-1)}$ by changing basis and
+accumulating parity on the first data qubit. The one-bit `result` has
+probabilities $P(0)=1/2+\sqrt{2}/3$ and $P(1)=1/2-\sqrt{2}/3$ at every width.
+This readout checks the relative phase without an exponentially large output
+distribution.
+
+```json
+{"schema_version":1,"benchmark":"repeat-until-success","parameters":{"data_qubits":32}}
+```
+
+The empty parameter object still selects one data qubit. Canonical JSON includes
+`data_qubits`, and semantic case IDs distinguish widths. The width limit bounds
+input size; it does not guarantee that a compiler or execution backend supports
+that many qubits. This family scales width and adaptive execution, while its
+state remains simple for decision diagrams and its expected $T$ count stays
+$8/3$. It does not model magic-state distillation or cultivation.

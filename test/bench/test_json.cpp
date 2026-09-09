@@ -131,6 +131,22 @@ TEST(BenchmarkJSON, ResolvesModularMultiplierInputs) {
       std::invalid_argument);
 }
 
+TEST(BenchmarkJSON, ValidatesRepeatUntilSuccessWidth) {
+  for (const auto* width : {"0", "1000001", "-1", "1.5", "true", "\"5\""}) {
+    EXPECT_THROW(
+        static_cast<void>(repeatUntilSuccessFromInstanceSpecificationJSON(
+            std::string(
+                R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{"data_qubits":)") +
+            width + "}}")),
+        std::invalid_argument);
+  }
+  const RepeatUntilSuccess benchmark({.dataQubits = 32});
+  EXPECT_EQ(repeatUntilSuccessFromManifestJSON(toManifestJSON(benchmark))
+                .options()
+                .dataQubits,
+            32U);
+}
+
 TEST(BenchmarkJSON,
      ParsesInstanceSpecificationsAndSerializesResolvedParameters) {
   const auto bv = bvFromInstanceSpecificationJSON(
@@ -198,7 +214,7 @@ TEST(BenchmarkJSON,
       R"({"schema_version":1,"benchmark":"repeat-until-success","parameters":{}})");
   EXPECT_EQ(
       toInstanceSpecificationJSON(repeatUntilSuccess),
-      R"({"benchmark":"repeat-until-success","parameters":{},"schema_version":1})");
+      R"({"benchmark":"repeat-until-success","parameters":{"data_qubits":1},"schema_version":1})");
 
   const auto teleportation = teleportationFromInstanceSpecificationJSON(
       R"({"schema_version":1,"benchmark":"teleportation","parameters":{}})");
@@ -285,8 +301,9 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   EXPECT_NE(
       repeatUntilSuccessManifest.find("\"model\":\"repeat_until_success\""),
       std::string::npos);
-  EXPECT_NE(repeatUntilSuccessManifest.find("\"parameters\":{}"),
-            std::string::npos);
+  EXPECT_NE(
+      repeatUntilSuccessManifest.find("\"parameters\":{\"data_qubits\":1}"),
+      std::string::npos);
   EXPECT_NE(teleportationManifest.find("\"model\":\"teleportation\""),
             std::string::npos);
   EXPECT_NE(teleportationManifest.find("\"parameters\":{}"), std::string::npos);
@@ -329,8 +346,9 @@ TEST(BenchmarkJSON, UsesStableSemanticCaseIds) {
   EXPECT_NE(caseId(Multiplexer{{.qubits = 7}}),
             caseId(Multiplexer{{.qubits = 6}}));
   EXPECT_EQ(caseId(RepeatUntilSuccess{}),
-            "sha256-3ff9fff1db965d838e4d0e3078cebe17"
-            "f5ff18cdf6a63610e9fdb3159080a4fc");
+            caseId(RepeatUntilSuccess{{.dataQubits = 1}}));
+  EXPECT_NE(caseId(RepeatUntilSuccess{}),
+            caseId(RepeatUntilSuccess{{.dataQubits = 5}}));
   EXPECT_EQ(caseId(Teleportation{}), "sha256-de1348477e2604539b963a28bc19f5d3"
                                      "ed27ed86fc6608366bbc6eb9b55855f6");
   EXPECT_EQ(caseId(linear), "sha256-a222c0c57bcecb4f5e7ea72bab439683"
@@ -549,7 +567,7 @@ TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_NE(qpe.find("\"iterative\""), std::string::npos);
   EXPECT_NE(
       repeatUntilSuccess.find(
-          R"("parameters":{"additionalProperties":false,"properties":{},"type":"object"})"),
+          R"("data_qubits":{"default":1,"maximum":1000000,"minimum":1,"type":"integer"})"),
       std::string::npos);
   EXPECT_NE(
       teleportation.find(

@@ -20,10 +20,23 @@ namespace {
 
 using mqt::bench::Output;
 using mqt::bench::RepeatUntilSuccess;
+using mqt::bench::RepeatUntilSuccessOptions;
 
 TEST(RepeatUntilSuccess, HasTheOutput) {
   const RepeatUntilSuccess benchmark;
   EXPECT_EQ(benchmark.output(), (Output{"result", 1}));
+}
+
+TEST(RepeatUntilSuccess, ValidatesDataWidth) {
+  EXPECT_EQ(RepeatUntilSuccess{}.options().dataQubits, 1U);
+  EXPECT_EQ(RepeatUntilSuccess({.dataQubits = 5}).options().dataQubits, 5U);
+  EXPECT_NO_THROW(RepeatUntilSuccess(
+      {.dataQubits = RepeatUntilSuccessOptions::MAX_DATA_QUBITS}));
+  EXPECT_THROW(RepeatUntilSuccess({.dataQubits = 0}), std::invalid_argument);
+  EXPECT_THROW(
+      RepeatUntilSuccess(
+          {.dataQubits = RepeatUntilSuccessOptions::MAX_DATA_QUBITS + 1}),
+      std::invalid_argument);
 }
 
 TEST(RepeatUntilSuccess, HasThePhaseSensitiveReference) {

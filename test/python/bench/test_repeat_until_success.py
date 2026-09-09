@@ -37,10 +37,12 @@ def test_repeat_until_success_evaluation() -> None:
     assert evaluation.success_probability is None
 
 
-def test_repeat_until_success_json_roundtrip() -> None:
+@pytest.mark.parametrize("width", [1, 5, 32])
+def test_repeat_until_success_json_roundtrip(width: int) -> None:
     """Preserve the benchmark identity through both JSON representations."""
-    benchmark = repeat_until_success.RepeatUntilSuccess()
-    assert json.loads(benchmark.instance_specification_json)["parameters"] == {}
+    benchmark = repeat_until_success.RepeatUntilSuccess(repeat_until_success.Options(data_qubits=width))
+    assert benchmark.options.data_qubits == width
+    assert json.loads(benchmark.instance_specification_json)["parameters"] == {"data_qubits": width}
 
     instance_copy = repeat_until_success.RepeatUntilSuccess.from_instance_specification_json(
         benchmark.instance_specification_json
@@ -51,4 +53,4 @@ def test_repeat_until_success_json_roundtrip() -> None:
 
 def test_repeat_until_success_generation() -> None:
     """Generate a repeat-until-success program."""
-    assert_generates(repeat_until_success.RepeatUntilSuccess().generate())
+    assert_generates(repeat_until_success.RepeatUntilSuccess(repeat_until_success.Options(data_qubits=5)).generate())

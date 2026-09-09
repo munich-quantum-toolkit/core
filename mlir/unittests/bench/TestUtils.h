@@ -45,7 +45,8 @@ generateQCO(const Benchmark& benchmark) {
 }
 
 template <class Benchmark>
-void expectSamplingMatchesReference(const Benchmark& benchmark) {
+void expectSamplingMatchesReference(const Benchmark& benchmark,
+                                    double tolerance = 0.03) {
   auto program = generateQCO(benchmark);
   ASSERT_TRUE(program);
   constexpr size_t shots = 16'384;
@@ -57,7 +58,7 @@ void expectSamplingMatchesReference(const Benchmark& benchmark) {
     total += count;
   }
   EXPECT_EQ(total, shots);
-  EXPECT_LT(benchmark.evaluate(*counts).totalVariationDistance, 0.03);
+  EXPECT_LT(benchmark.evaluate(*counts).totalVariationDistance, tolerance);
 }
 
 [[nodiscard]] inline mlir::DenseElementsAttr
