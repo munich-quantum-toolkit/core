@@ -358,6 +358,109 @@ TEST_F(QCOMatrixTest, DenseUnitaryComposesThroughModifiers) {
   EXPECT_TRUE(poweredMatrix->isApprox(
       DynamicMatrix(SOp::getUnitaryMatrix().adjoint())));
 }
+
+TEST_F(QCOMatrixTest, ModifierMatricesRespectBodyWireOrderAndArity) {
+  for (StringRef kind : {"inv", "ctrl", "pow"}) {
+    for (const size_t numTargets : {0U, 2U, 3U}) {
+      SCOPED_TRACE(kind.str() + ": " + std::to_string(numTargets));
+      auto moduleOp = QCOProgramBuilder::build(
+          context.get(), [&](QCOProgramBuilder& builder) {
+            SmallVector<Value> qubits;
+            for (size_t i = 0; i < numTargets; ++i) {
+              qubits.push_back(builder.staticQubit(i));
+            }
+            const auto body = [&](ValueRange args) -> SmallVector<Value> {
+              if (numTargets == 0) {
+                builder.gphase(0.25);
+                return {};
+              }
+              if (numTargets == 2) {
+                auto [q1, q0] = builder.dcx(args[1], args[0]);
+                return {q0, q1}; // Yield in the original wire order.
+              }
+              auto [q0, q1, q2] = builder.rccx(args[0], args[1], args[2]);
+              return {q0, q1, q2};
+            };
+            if (kind == "inv") {
+              std::ignore = builder.inv(qubits, body);
+            } else if (kind == "ctrl") {
+              std::ignore = builder.ctrl(
+                  ValueRange{builder.staticQubit(numTargets)}, qubits, body);
+            } else {
+              std::ignore = builder.pow(1.0, qubits, body);
+            }
+            return SmallVector<Value>{};
+          });
+      ASSERT_TRUE(moduleOp);
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+
+      DynamicMatrix body;
+      if (numTargets == 0) {
+        body.assignFrom(Matrix1x1::fromElements(std::polar(1.0, 0.25)));
+      } else if (numTargets == 2) {
+        body.assignFrom(DCXOp::getUnitaryMatrix().reorderForQubits(1, 0));
+      } else {
+        // Full-width gates use the dense path rather than embedded 1Q/2Q
+        // kernels.
+        body.assignFrom(RCCXOp::getUnitaryMatrix());
+      }
+      std::optional<DynamicMatrix> actual;
+      DynamicMatrix expected;
+      if (kind == "inv") {
+        actual = firstInvOp(*moduleOp).getUnitaryMatrix();
+        expected = body.adjoint();
+      } else if (kind == "ctrl") {
+        actual = firstCtrlOp(*moduleOp).getUnitaryMatrix();
+        expected = DynamicMatrix::identity(2 * body.rows());
+        expected.setBottomRightCorner(body);
+      } else {
+        actual = firstPowOp(*moduleOp).getUnitaryMatrix();
+        expected = body;
+      }
+      ASSERT_TRUE(actual);
+      EXPECT_TRUE(actual->isApprox(expected));
+    }
+  }
+}
+
+TEST_F(QCOMatrixTest, ComposeBodyMatrixPreservesWireOrderAndPhase) {
+  for (const size_t numTargets : {2U, 3U}) {
+    SCOPED_TRACE(numTargets);
+    auto moduleOp = QCOProgramBuilder::build(
+        context.get(), [&](QCOProgramBuilder& builder) {
+          SmallVector<Value> qubits;
+          for (size_t i = 0; i < numTargets; ++i) {
+            qubits.push_back(builder.staticQubit(i));
+          }
+          std::ignore = builder.inv(qubits, [&](ValueRange args) {
+            SmallVector<Value> wires(args);
+            wires.front() = builder.h(wires.front());
+            auto afterBarrier = builder.barrier(wires);
+            wires.assign(afterBarrier.begin(), afterBarrier.end());
+            std::tie(wires.back(), wires.front()) =
+                builder.dcx(wires.back(), wires.front());
+            wires.back() = builder.ry(0.37, wires.back());
+            builder.gphase(0.25);
+            return wires;
+          });
+          return SmallVector<Value>{};
+        });
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+
+    const DynamicMatrix expected =
+        RYOp::unitaryMatrix(0.37).embedInNqubit(numTargets, numTargets - 1) *
+        DCXOp::getUnitaryMatrix().embedInNqubit(numTargets, numTargets - 1, 0) *
+        HOp::getUnitaryMatrix().embedInNqubit(numTargets, 0) *
+        std::polar(1.0, 0.25);
+    const auto actual =
+        composeBodyMatrix(*firstInvOp(*moduleOp).getBody(), numTargets);
+    ASSERT_TRUE(actual);
+    EXPECT_TRUE(actual->isApprox(expected));
+  }
+}
 /// @}
 
 /// \name QCO/Modifiers/CtrlOp.cpp
@@ -406,8 +509,8 @@ TEST_F(QCOMatrixTest, ControlledInverseHTOpMatrix) {
   const auto matrix = firstCtrlOp(*moduleOp).getUnitaryMatrix();
   ASSERT_TRUE(matrix);
 
-  const auto expected = controlledMatrix(
-      (TOp::getUnitaryMatrix() * HOp::getUnitaryMatrix()).adjoint());
+  const auto body = TOp::getUnitaryMatrix() * HOp::getUnitaryMatrix();
+  const auto expected = controlledMatrix(body.adjoint());
 
   ASSERT_TRUE(matrix->isApprox(expected));
 }
@@ -701,7 +804,7 @@ TEST_F(QCOMatrixTest, PhaseProducingPowFoldsPreserveFullMatrixUnderControl) {
         })mlir";
     auto moduleOp = parseSourceString<ModuleOp>(source, context.get());
     ASSERT_TRUE(moduleOp);
-    OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*moduleOp)->clone()));
+    OwningOpRef<ModuleOp> expected = moduleOp->clone();
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
@@ -735,7 +838,7 @@ TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
       return SmallVector<Value>{control, target};
     });
     ASSERT_TRUE(moduleOp);
-    OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*moduleOp)->clone()));
+    OwningOpRef<ModuleOp> expected = moduleOp->clone();
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
@@ -772,7 +875,7 @@ TEST_F(QCOMatrixTest, RejectedPowURemainsUnchanged) {
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-    OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*moduleOp)->clone()));
+    OwningOpRef<ModuleOp> expected = moduleOp->clone();
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
@@ -808,7 +911,7 @@ TEST_F(QCOMatrixTest, SensitiveIntegralPowUPreservesFullMatrix) {
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
-    OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*moduleOp)->clone()));
+    OwningOpRef<ModuleOp> expected = moduleOp->clone();
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
@@ -1015,7 +1118,7 @@ TEST_F(QCOMatrixTest, DcxCancellationPreservesOrderedOutputs) {
       return SmallVector<Value>{q0, q1};
     });
     ASSERT_TRUE(program);
-    OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*program)->clone()));
+    OwningOpRef<ModuleOp> expected = program->clone();
     ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*program)));
     ASSERT_TRUE(succeeded(verifyLinearity(*program)));
     ::mqt::test::expectFullUnitaryEqual(*expected, *program, 2);

@@ -25,6 +25,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -46,9 +47,25 @@ Value constantFromScalar(OpBuilder& builder, Location loc, const bool value) {
 
 LogicalResult verifyFiniteConstantParameters(Operation* operation,
                                              ValueRange parameters) {
+  const auto verifyFinite = [&](Attribute constant,
+                                size_t index) -> LogicalResult {
+    if (auto floating = dyn_cast<FloatAttr>(constant);
+        floating && !floating.getValue().isFinite()) {
+      return operation->emitOpError()
+             << "constant parameter expression at index " << index
+             << " must be finite";
+    }
+    return success();
+  };
   DenseMap<Value, std::optional<Attribute>> constantCache;
   DenseSet<Value> visited;
   for (const auto [index, parameter] : llvm::enumerate(parameters)) {
+    if (auto constant = parameter.getDefiningOp<arith::ConstantOp>()) {
+      if (failed(verifyFinite(constant.getValue(), index))) {
+        return failure();
+      }
+      continue;
+    }
     SmallVector<Value> worklist{parameter};
     while (!worklist.empty()) {
       auto value = worklist.pop_back_val();
@@ -56,11 +73,8 @@ LogicalResult verifyFiniteConstantParameters(Operation* operation,
         continue;
       }
       if (const auto constant = valueToConstantAttr(value, constantCache)) {
-        if (auto floating = dyn_cast<FloatAttr>(*constant);
-            floating && !floating.getValue().isFinite()) {
-          return operation->emitOpError()
-                 << "constant parameter expression at index " << index
-                 << " must be finite";
+        if (failed(verifyFinite(*constant, index))) {
+          return failure();
         }
       }
       Operation* definingOp = value.getDefiningOp();

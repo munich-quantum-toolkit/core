@@ -111,6 +111,44 @@ def QuantumLoopUnroll
 }
 
 //===----------------------------------------------------------------------===//
+// Payload legalization passes
+//===----------------------------------------------------------------------===//
+
+def UnrollLoopsForPayload : Pass<"unroll-loops-for-payload", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::arith::ArithDialect",
+                           "mlir::scf::SCFDialect"];
+  let summary = "Unroll static loops unsupported by the selected payload";
+  let description = [{
+    Reads the selected payload from `mqt.target_env` and fully unrolls static
+    `scf.for` operations that its counted-iteration capability does not cover.
+    The pass limits the total number of cloned body operations to 65,536.
+    Run constant propagation and QCO cleanup after this pass, then
+    `legalize-control-flow` to check the remaining branches and loops.
+    After folding static branches, the pass checks that all SCF loops carry
+    linear QCO state through iteration arguments instead of capturing it.
+  }];
+}
+
+def LegalizeControlFlow : Pass<"legalize-control-flow", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect", "mlir::scf::SCFDialect",
+                           "mlir::arith::ArithDialect"];
+  let summary = "Legalize control flow for the selected payload";
+  let description = [{
+    Reads the selected payload from `mqt.target_env`. The pass retains covered
+    QCO and SCF branches and loops, lowers unsupported index switches to nested
+    forward branches when possible, and rejects residual structural control
+    flow that the payload does not support.
+    Switch expansion checks the selected forward-branching depth limit before
+    rewriting and limits the resulting total control-flow nesting depth to 256.
+    This compiler safety limit does not restrict retained native switches.
+    Run this pass after `unroll-loops-for-payload`, constant propagation, and
+    QCO cleanup so newly constant control flow can fold before legality checks.
+    Before conversion, the pass checks that all SCF loops carry linear QCO
+    state through iteration arguments instead of capturing it.
+  }];
+}
+
+//===----------------------------------------------------------------------===//
 // Transpilation Passes
 //===----------------------------------------------------------------------===//
 
@@ -197,6 +235,9 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     metadata is unknown, no complete basis exists, or an operation has no
     compile-time unitary matrix and cannot be synthesized as a parameterized
     single-qubit gate.
+
+    Numerical decomposition failure is diagnosed before emitting a replacement.
+    The input may be modified on failure.
   }];
 }
 
@@ -407,7 +448,7 @@ def DecomposeMultiControlled
     | X/Z | 4 | Elementary CCCX/CCCZ |
     | X/Z | 5 | Specialized ancilla-free relative-phase `C^4(Z)` |
     | X/Z | 6–33 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
-    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with one dirty helper for odd control counts and two for even counts |
+    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with partitioned incrementers |
     | Y | ≥3 | X decomposition with `S†` before and `S` after on the target |
     | RX/RY/RZ | ≥3 | Balanced control halves with exact MCX and quarter-angle rotations; RX uses H-conjugated RZ |
     | Phase | 3 | Optimized `C^2(P)` |
@@ -418,6 +459,10 @@ def DecomposeMultiControlled
 
     Width is the total number of qubits the gate acts on (controls plus
     targets).
+
+    HP24 uses one dirty helper for an odd number of controls and two for an
+    even number. These helpers are borrowed from the gate's qubits and restored;
+    no additional qubits are allocated.
 
     Rotation synthesis uses a linear number of gates and no additional
     qubits. Each half-MCX may borrow controls from the opposite half and

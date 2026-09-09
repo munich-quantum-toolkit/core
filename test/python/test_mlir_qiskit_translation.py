@@ -46,6 +46,7 @@ from mqt.core.mlir import (
     PayloadEncoding,
     PayloadFormat,
     PayloadSpecification,
+    ProgramCapability,
     QCProgram,
     TargetEnvironment,
     compile_program,
@@ -2016,6 +2017,47 @@ def test_nested_structured_control_and_bound_loop_parameter() -> None:
         ["z"],
     ]
     QCProgram.from_qiskit(restored)
+
+
+@pytest.mark.parametrize("capability", ["multiway-branching", "forward-branching", None])
+def test_classical_switch_compiles_for_selected_payload_capabilities(capability: str | None) -> None:
+    """Preserve, lower, or reject a live imported classical switch."""
+    circuit = QuantumCircuit(1, 2)
+    circuit.h(0)
+    circuit.measure(0, 0)
+    circuit.h(0)
+    circuit.measure(0, 1)
+    with circuit.switch(circuit.cregs[0], None, None, None, label=None) as case:
+        with case(0):
+            circuit.store(circuit.cregs[0], expr.lift(3, types.Uint(2)))
+        with case(1):
+            circuit.store(circuit.cregs[0], expr.lift(2, types.Uint(2)))
+        with case(case.DEFAULT):
+            circuit.store(circuit.cregs[0], expr.lift(0, types.Uint(2)))
+    original = circuit.copy()
+    program = QCProgram.from_qiskit(circuit).to_qco()
+    assert "scf.index_switch" in program.ir
+
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    payload = PayloadSpecification(
+        PayloadFormat("qir", "2.1.0", "adaptive", PayloadEncoding.BINARY),
+        [ProgramCapability(capability)] if capability is not None else [],
+        optional_capabilities_known=True,
+    )
+    environment = TargetEnvironment(target, payload)
+    if capability is None:
+        with pytest.raises(RuntimeError, match="MLIR operation failed"):
+            program.compile_for_target(environment)
+    else:
+        program.compile_for_target(environment)
+        assert program.is_valid
+        assert ("scf.index_switch" in program.ir) is (capability == "multiway-branching")
+        assert ("scf.if" in program.ir) is (capability == "forward-branching")
+    assert circuit == original
 
 
 def test_control_flow_and_controlled_unitary_preserve_instruction_order() -> None:

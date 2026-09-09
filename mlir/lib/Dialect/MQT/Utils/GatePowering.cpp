@@ -110,12 +110,9 @@ powerUParameters(double theta, double phi, double lambda, double exponent) {
   const auto phase = std::polar(1.0, resultPhase);
   for (size_t i = 0; i < reconstructed.size(); ++i) {
     reconstructed[i] *= phase;
-    if (!std::isfinite(sourcePower[i].real()) ||
-        !std::isfinite(sourcePower[i].imag()) ||
-        !std::isfinite(reconstructed[i].real()) ||
-        !std::isfinite(reconstructed[i].imag()) ||
-        std::abs(sourcePower[i] - reconstructed[i]) >
-            U_POWER_EQUIVALENCE_TOLERANCE) {
+    // The negated comparison also rejects NaN.
+    if (!(std::abs(sourcePower[i] - reconstructed[i]) <=
+          U_POWER_EQUIVALENCE_TOLERANCE)) {
       return std::nullopt;
     }
   }

@@ -15,7 +15,7 @@ target_link_libraries(
           GTest::gtest_main
           MQTCompilerTarget
           MLIRQCOProgramBuilder
-          MLIRQCODDFunctionality
+          MLIRExactUnitaryTest
           MLIRQCOUtils
           MLIRQCOTransforms
           MLIRPass

@@ -39,11 +39,12 @@ releases may include breaking changes.
   direct lowering and dense-array helpers for supported compiler inputs
   ([#1915], [#1973], [#2077], [#2078], [#2079], [#2334]) ([**@simon1hofmann**],
   [**@burgholzer**])
-- ✨ Add immutable MLIR compiler targets, selected payload specifications, QDMI
-  device integration, ordered operation applicability, directional native
-  synthesis, and target compilation through C++, Python, and `mqt-cc` ([#2285],
-  [#2219], [#2049], [#1999], [#1993], [#1687]) ([**@MatthiasReumann**],
-  [**@simon1hofmann**], [**@burgholzer**])
+- ✨ Add immutable MLIR compiler targets, selected payload specifications,
+  payload-aware control-flow legalization, QDMI device integration, ordered
+  operation applicability, directional native synthesis, and target compilation
+  through C++, Python, and `mqt-cc` ([#2285], [#2219], [#2162], [#2049],
+  [#1999], [#1993], [#1687]) ([**@MatthiasReumann**], [**@simon1hofmann**],
+  [**@burgholzer**])
 
 #### Import and export
 
@@ -83,11 +84,11 @@ releases may include breaking changes.
   [#2015]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add single-qubit optimization passes for unitary fusion, Hadamard lifting,
   and rotation merging ([#1407], [#1605], [#1672], [#1674], [#2002], [#2038],
-  [#2228]) ([**@J4MMlE**], [**@lirem101**], [**@burgholzer**],
+  [#2228], [#2478]) ([**@J4MMlE**], [**@lirem101**], [**@burgholzer**],
   [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
 - ✨ Add multi-qubit decomposition, fusion, and target-native synthesis passes
   ([#1774], [#1802], [#1803], [#1809], [#1810], [#1814], [#1832], [#1850],
-  [#1865], [#1961], [#1996], [#1998], [#2001], [#2467], [#2468])
+  [#1865], [#1961], [#1996], [#1998], [#2001], [#2467], [#2468], [#2478])
   ([**@simon1hofmann**], [**@burgholzer**])
 
 #### Other additions
@@ -931,6 +932,7 @@ for previous changelogs._
 <!-- PR links -->
 
 [#2493]: https://github.com/munich-quantum-toolkit/core/pull/2493
+[#2478]: https://github.com/munich-quantum-toolkit/core/pull/2478
 [#2468]: https://github.com/munich-quantum-toolkit/core/pull/2468
 [#2467]: https://github.com/munich-quantum-toolkit/core/pull/2467
 [#2457]: https://github.com/munich-quantum-toolkit/core/pull/2457
@@ -998,6 +1000,7 @@ for previous changelogs._
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
 [#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
+[#2162]: https://github.com/munich-quantum-toolkit/core/pull/2162
 [#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
 [#2156]: https://github.com/munich-quantum-toolkit/core/pull/2156

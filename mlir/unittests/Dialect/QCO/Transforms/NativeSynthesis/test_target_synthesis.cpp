@@ -8,8 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "dd/DDDefinitions.hpp"
-#include "dd/Package.hpp"
+#include "ExactUnitaryTest.h"
 #include "mlir/Compiler/Target.h"
 #include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
@@ -19,11 +18,11 @@
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Error.h>
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -102,41 +101,13 @@ template <class T> [[nodiscard]] static T valid(llvm::Expected<T> value) {
   return numQubits;
 }
 
-[[nodiscard]] static mlir::qco::DynamicMatrix
-matrixFromDD(const dd::CMat& matrix) {
-  const auto dimension = static_cast<int64_t>(matrix.size());
-  mlir::qco::DynamicMatrix result(dimension);
-  for (int64_t row = 0; row < dimension; ++row) {
-    for (int64_t column = 0; column < dimension; ++column) {
-      result(row, column) =
-          matrix[static_cast<size_t>(row)][static_cast<size_t>(column)];
-    }
-  }
-  return result;
-}
-
 static void expectEquivalent(const OwningOpRef<ModuleOp>& expected,
                              const OwningOpRef<ModuleOp>& actual) {
-  auto expectedFunction = mainFunction(*expected);
-  auto actualFunction = mainFunction(*actual);
-  const auto numQubits = countStaticQubits(expectedFunction);
-  ASSERT_EQ(numQubits, countStaticQubits(actualFunction));
+  const auto numQubits = countStaticQubits(mainFunction(*expected));
+  ASSERT_EQ(numQubits, countStaticQubits(mainFunction(*actual)));
   ASSERT_GT(numQubits, 0U);
-
-  auto package = std::make_unique<dd::Package>(numQubits);
-  const auto expectedUnitary =
-      mlir::qco::buildFunctionality(expectedFunction, *package);
-  ASSERT_TRUE(mlir::succeeded(expectedUnitary));
-  const auto actualUnitary =
-      mlir::qco::buildFunctionality(actualFunction, *package);
-  ASSERT_TRUE(mlir::succeeded(actualUnitary));
-
-  const auto expectedMatrix =
-      matrixFromDD(expectedUnitary->getMatrix(numQubits));
-  const auto actualMatrix = matrixFromDD(actualUnitary->getMatrix(numQubits));
-  package->decRef(*expectedUnitary);
-  package->decRef(*actualUnitary);
-  EXPECT_TRUE(expectedMatrix.isApprox(actualMatrix));
+  ::mqt::test::expectFullUnitaryEqual(*expected, *actual, numQubits,
+                                      mlir::qco::MATRIX_TOLERANCE);
 }
 
 template <class Op> [[nodiscard]] static size_t countOps(ModuleOp module) {
@@ -390,6 +361,81 @@ TEST_F(TargetSynthesisTest,
   expectEquivalent(expected, optimized);
 }
 
+TEST_F(TargetSynthesisTest, TwoQubitGateFusionPreservesUnevenWireRuns) {
+  const auto uneven = [](QCOProgramBuilder& builder) {
+    auto q0Input = builder.staticQubit(0);
+    auto q1Input = builder.staticQubit(1);
+    auto [q0, q1] = builder.cx(q0Input, q1Input);
+    q0 = builder.rz(0.1, q0);
+    q0 = builder.rz(0.2, q0);
+    q0 = builder.rz(0.3, q0);
+    q1 = builder.inv(q1, [&](Value qubit) {
+      qubit = builder.h(qubit);
+      qubit = builder.s(qubit);
+      return builder.h(qubit);
+    });
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    q0 = builder.h(q0);
+    q1 = builder.ry(0.4, q1);
+    q1 = builder.rz(0.5, q1);
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    return builder.intConstant(0);
+  };
+  auto expected = build(uneven);
+  auto optimized = build(uneven);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*optimized)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*optimized)));
+
+  ASSERT_TRUE(mlir::succeeded(
+      runPass(*optimized, mlir::qco::createFuseTwoQubitGates())));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*optimized)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*optimized)));
+  // The first two CX gates commute with their intervening local gates and
+  // cancel. Check that the run was rewritten, not merely left unchanged.
+  EXPECT_EQ(countOps<CtrlOp>(*optimized), 1U);
+  expectEquivalent(expected, optimized);
+}
+
+TEST_F(TargetSynthesisTest,
+       TwoQubitSynthesisHandlesNumericalFailureWithoutRewriting) {
+  for (const bool required : {false, true}) {
+    SCOPED_TRACE(required ? "native synthesis" : "optional fusion");
+    auto moduleOp = build([&](QCOProgramBuilder& builder) {
+      auto q0 = builder.staticQubit(0);
+      auto q1 = builder.staticQubit(1);
+      auto matrix = mlir::qco::Matrix4x4::identity();
+      matrix(0, 3) = 4e-11;
+      auto outputs = builder.unitary(ValueRange{q0, q1},
+                                     denseMatrix(builder, 4, matrix.data));
+      if (!required) {
+        // Optional fusion needs at least two operations in the run.
+        static_cast<void>(builder.h(outputs[0]));
+      }
+      return builder.intConstant(0);
+    });
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+    if (required) {
+      attachTestEnvironment(*moduleOp, makeUCxTarget());
+    }
+    const auto before = printModule(*moduleOp);
+
+    if (required) {
+      const auto diagnostics =
+          expectFailure(*moduleOp, mlir::qco::createTargetNativeSynthesis());
+      EXPECT_NE(diagnostics.find("unitary matrix could not be numerically "
+                                 "decomposed"),
+                std::string::npos);
+    } else {
+      ASSERT_TRUE(mlir::succeeded(
+          runPass(*moduleOp, mlir::qco::createFuseTwoQubitGates())));
+    }
+    EXPECT_EQ(printModule(*moduleOp), before);
+    EXPECT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
+    EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*moduleOp)));
+  }
+}
+
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionExposesEarlierRunContinuations) {
   const auto adjacentRuns = [](QCOProgramBuilder& builder) {
     auto q0 = builder.staticQubit(0);
@@ -507,6 +553,113 @@ TEST_F(TargetSynthesisTest, SqrtISwapSynthesisIsMinimalAndConforms) {
     ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
     expectEquivalent(expected, synthesized);
   }
+}
+
+TEST_F(TargetSynthesisTest,
+       RepeatedTwoQubitMatricesPreserveWiresDirectionAndPhase) {
+  const auto circuit = [](QCOProgramBuilder& builder) {
+    std::array qubits{
+        builder.staticQubit(0),
+        builder.staticQubit(1),
+        builder.staticQubit(2),
+    };
+    mlir::qco::Matrix4x4 cx;
+    cx.data = CX_MATRIX;
+    auto phasedCx = cx;
+    for (auto& value : phasedCx.data) {
+      value *= std::polar(1., 0.37);
+    }
+    auto cz = mlir::qco::Matrix4x4::identity();
+    cz(3, 3) = -1.;
+    const auto apply = [&](const mlir::qco::Matrix4x4& matrix, size_t first,
+                           size_t second) {
+      auto outputs = builder.unitary(ValueRange{qubits[first], qubits[second]},
+                                     denseMatrix(builder, 4, matrix.data));
+      qubits[first] = outputs[0];
+      qubits[second] = outputs[1];
+    };
+
+    apply(cx, 0, 1);
+    qubits[2] = builder.h(qubits[2]);
+    apply(cx, 0, 2);
+    qubits[0] = builder.ry(0.43, qubits[0]);
+    apply(cx, 1, 0);
+    apply(cx.reorderForQubits(1, 0), 2, 0);
+    apply(phasedCx, 0, 1);
+    qubits[2] = builder.h(qubits[2]);
+    apply(phasedCx, 0, 2);
+    apply(cx, 0, 1);
+    apply(cz, 0, 2);
+    apply(cx, 0, 1);
+    for (auto qubit : qubits) {
+      builder.sink(qubit);
+    }
+    return builder.intConstant(0);
+  };
+
+  for (const bool useRxx : {false, true}) {
+    SCOPED_TRACE(useRxx ? "R/RXX" : "U/sqrtISWAP");
+    const auto target = valid(Target::create(
+        3, Connectivity::allToAll(),
+        NativeOperations::fromOperations({
+            valid(Operation::create(useRxx ? "r" : "u", 1, useRxx ? 2 : 3)),
+            valid(Operation::create(useRxx ? "rxx" : "sqrt_iswap", 2,
+                                    useRxx ? 1 : 0,
+                                    {
+                                        valid(SiteTuple::create({0, 1})),
+                                        valid(SiteTuple::create({0, 2})),
+                                        valid(SiteTuple::create({1, 2})),
+                                    })),
+            valid(Operation::create("gphase", 0, 1)),
+        })));
+    auto expected = build(circuit);
+    auto synthesized = build(circuit);
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+    EXPECT_EQ(countOps<UnitaryOp>(*synthesized), 0U);
+    EXPECT_EQ(countStaticQubits(mainFunction(*synthesized)), 3U);
+    EXPECT_GT(useRxx ? countOps<RXXOp>(*synthesized)
+                     : countOps<mlir::qco::XXPlusYYOp>(*synthesized),
+              0U);
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *synthesized, target, mlir::qco::createVerifyTargetConformance())));
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+    ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
+    expectEquivalent(expected, synthesized);
+  }
+}
+
+TEST_F(TargetSynthesisTest, NativeSynthesisSharesRepeatedParameterConstants) {
+  const auto hadamards = [](QCOProgramBuilder& builder) {
+    for (int64_t wire = 0; wire < 2; ++wire) {
+      auto qubit = builder.staticQubit(wire);
+      builder.sink(builder.h(qubit));
+    }
+    return builder.intConstant(0);
+  };
+  auto expected = build(hadamards);
+  auto synthesized = build(hadamards);
+  const auto target = makeUCxTarget();
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+
+  auto gates = llvm::to_vector(mainFunction(*synthesized).getOps<UOp>());
+  ASSERT_EQ(gates.size(), 2U);
+  // Standalone synthesis must avoid duplicate constants without a CSE pass.
+  for (auto [first, second] :
+       llvm::zip_equal(gates[0].getParameters(), gates[1].getParameters())) {
+    ASSERT_TRUE(first.getDefiningOp<mlir::arith::ConstantOp>());
+    EXPECT_EQ(first, second);
+  }
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *synthesized, target, mlir::qco::createVerifyTargetConformance())));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*synthesized)));
+  expectEquivalent(expected, synthesized);
 }
 
 TEST_F(TargetSynthesisTest, SqrtISwapCapabilityRequiresFixedParameters) {
@@ -1294,6 +1447,28 @@ TEST_F(TargetSynthesisTest,
   EXPECT_EQ(countOps<GPhaseOp>(*module), 1U);
   EXPECT_EQ(llvm::range_size(functions[0].getOps<GPhaseOp>()), 1U);
   EXPECT_EQ(llvm::range_size(functions[1].getOps<GPhaseOp>()), 0U);
+}
+
+TEST_F(TargetSynthesisTest,
+       SingleQubitFusionPreservesControlledGlobalPhaseSemantics) {
+  const auto controlledPhase = [](QCOProgramBuilder& builder) {
+    auto control = builder.staticQubit(0);
+    static_cast<void>(builder.cgphase(0.25, control));
+    return builder.intConstant(0);
+  };
+  auto expected = build(controlledPhase);
+  auto optimized = build(controlledPhase);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*optimized)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*optimized)));
+  mlir::qco::FuseSingleQubitUnitaryRunsOptions options;
+  options.basis = "u";
+
+  ASSERT_TRUE(mlir::succeeded(runPass(
+      *optimized, mlir::qco::createFuseSingleQubitUnitaryRuns(options))));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*optimized)));
+  ASSERT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*optimized)));
+  EXPECT_EQ(countOps<CtrlOp>(*optimized), 0U);
+  expectEquivalent(expected, optimized);
 }
 
 TEST_F(TargetSynthesisTest,

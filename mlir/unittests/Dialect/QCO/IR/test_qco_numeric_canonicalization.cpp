@@ -9,7 +9,6 @@
  */
 
 #include "ExactUnitaryTest.h"
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -46,8 +45,7 @@ protected:
   MLIRContext context_;
 
   void SetUp() override {
-    context_.loadDialect<mlir::mqt::MQTDialect, QCODialect, arith::ArithDialect,
-                         func::FuncDialect>();
+    context_.loadDialect<QCODialect, arith::ArithDialect, func::FuncDialect>();
   }
 
   OwningOpRef<ModuleOp> canonicalize(StringRef source) {
