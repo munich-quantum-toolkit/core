@@ -1401,6 +1401,34 @@ TEST_F(CompilerPipelineTest, TypedOpenQASMExportDropsUnusedGates) {
   EXPECT_EQ(exported->source().find("gate unused"), std::string::npos);
 }
 
+TEST_F(CompilerPipelineTest, PipelineOpenQASMMatchesPreparedQCExport) {
+  constexpr auto source = R"(OPENQASM 3.1;
+include "stdgates.inc";
+gate unused q { x q; }
+qubit[4] q;
+gphase(0.125);
+h q[1];
+ctrl @ x q[1], q[3];
+bit[2] c;
+c[0] = measure q[1];
+c[1] = measure q[3];
+)";
+  auto program = QCProgram::fromQASMString(source);
+  ASSERT_TRUE(program);
+  auto prepared =
+      runDefaultPipeline(CompilerInput(program->copy()), ProgramFormat::QC);
+  ASSERT_TRUE(prepared);
+  auto reference = std::get<QCProgram>(*prepared).toOpenQASM3();
+  ASSERT_TRUE(reference);
+  auto output = runDefaultPipeline(CompilerInput(std::move(*program)),
+                                   ProgramFormat::OpenQASM3);
+  ASSERT_TRUE(output);
+  const auto& exported = std::get<OpenQASMProgram>(*output);
+  EXPECT_EQ(exported.source(), reference->source());
+  EXPECT_EQ(exported.source().find("gate unused"), std::string::npos);
+  EXPECT_TRUE(QCProgram::fromQASMString(exported.source()));
+}
+
 TEST_F(CompilerPipelineTest, TypedOpenQASMExportReportsUnsupportedQC) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main(%value: i64) attributes {mqt.entry_point} {

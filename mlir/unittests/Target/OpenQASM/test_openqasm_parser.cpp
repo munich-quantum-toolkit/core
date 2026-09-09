@@ -306,34 +306,38 @@ TEST(OpenQASMFrontendTest, LimitsIncludeNesting) {
 }
 
 TEST(OpenQASMFrontendTest, LimitsTextualIncludeExpansion) {
-  llvm::SourceMgr sourceMgr;
-  sourceMgr.AddNewSourceBuffer(
-      llvm::MemoryBuffer::getMemBufferCopy(
-          "OPENQASM 3.1; include \"level-0.inc\";", "main.qasm"),
-      llvm::SMLoc());
-  for (size_t index = 0; index < 21; ++index) {
-    std::string source;
-    if (index == 20) {
-      source = "int leaf = 1;";
-    } else {
-      const auto next = "level-" + std::to_string(index + 1) + ".inc";
-      source.append("include \"")
-          .append(next)
-          .append("\"; include \"")
-          .append(next)
-          .append("\";");
-    }
+  for (const bool emptyLeaf : {false, true}) {
+    SCOPED_TRACE(emptyLeaf);
+    llvm::SourceMgr sourceMgr;
     sourceMgr.AddNewSourceBuffer(
         llvm::MemoryBuffer::getMemBufferCopy(
-            source, "level-" + std::to_string(index) + ".inc"),
+            "OPENQASM 3.1; include \"level-0.inc\";", "main.qasm"),
         llvm::SMLoc());
-  }
+    for (size_t index = 0; index < 21; ++index) {
+      std::string source;
+      if (index == 20) {
+        source = emptyLeaf ? "" : "int a = 1; int b = 2; int c = 3;";
+      } else {
+        const auto next = "level-" + std::to_string(index + 1) + ".inc";
+        source.append("include \"")
+            .append(next)
+            .append("\"; include \"")
+            .append(next)
+            .append("\";");
+      }
+      sourceMgr.AddNewSourceBuffer(
+          llvm::MemoryBuffer::getMemBufferCopy(
+              source, "level-" + std::to_string(index) + ".inc"),
+          llvm::SMLoc());
+    }
 
-  auto parsed = oq3::frontend::parseOpenQASM(sourceMgr);
-  ASSERT_FALSE(parsed);
-  ASSERT_FALSE(parsed.diagnostics.empty());
-  EXPECT_NE(parsed.diagnostics.front().message.find("statement limit"),
-            std::string::npos);
+    auto parsed = oq3::frontend::parseOpenQASM(sourceMgr);
+    ASSERT_FALSE(parsed);
+    ASSERT_FALSE(parsed.diagnostics.empty());
+    EXPECT_NE(parsed.diagnostics.front().message.find(
+                  emptyLeaf ? "include expansion" : "statement limit"),
+              std::string::npos);
+  }
 }
 
 TEST(OpenQASMFrontendTest, EnforcesUnicodeIdentifierCategoriesAndUtf8) {

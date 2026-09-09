@@ -57,7 +57,8 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(const StringRef source,
                                          const QASM3ImportOptions& options) {
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(
-      llvm::MemoryBuffer::getMemBufferCopy(source, "<input>"), llvm::SMLoc());
+      llvm::MemoryBuffer::getMemBuffer(source, "<input>", false),
+      llvm::SMLoc());
   return translateQASM3ToQC(sourceMgr, context, options);
 }
 

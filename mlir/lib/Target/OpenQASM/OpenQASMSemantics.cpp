@@ -52,6 +52,10 @@
 #include <vector>
 
 namespace mlir::oq3::frontend::detail {
+
+static SourceLocation sourcePosition(const llvm::SourceMgr& sources,
+                                     llvm::SMLoc location);
+
 namespace {
 
 constexpr uint64_t REGISTER_WIDTH_LIMIT = 100'000;
@@ -482,15 +486,14 @@ private:
   mutable std::optional<Diagnostic> failureDiagnostic;
 
   [[nodiscard]] SourceLocation getSourceLocation(const SMLoc location) const {
-    auto result = sourceLocation(sources, location);
     if (!currentIncludeContext) {
-      return result;
+      return sourceLocation(sources, location);
     }
-    result.includeStack.clear();
+    auto result = sourcePosition(sources, location);
     auto context = currentIncludeContext;
     while (context) {
       const auto& include = syntax.includeContexts.at(*context);
-      const auto includeLocation = sourceLocation(sources, include.location);
+      const auto includeLocation = sourcePosition(sources, include.location);
       result.includeStack.push_back({
           .filename = includeLocation.filename,
           .line = includeLocation.line,
@@ -3691,19 +3694,24 @@ private:
 
       if (!provenRegisterQubits.empty()) {
         size_t affineComparisons = 0;
-        for (const auto [position, qubit] : llvm::enumerate(qubits)) {
-          for (const auto& previous : ArrayRef(qubits).take_front(position)) {
-            if (qubit.kind != QubitReferenceKind::Register ||
-                previous.kind != QubitReferenceKind::Register ||
-                qubit.symbol != previous.symbol ||
-                (!qubit.provenIndex && !previous.provenIndex)) {
+        llvm::DenseMap<RegisterId, SmallVector<const QubitReference*>>
+            registerQubits;
+        for (const auto& qubit : qubits) {
+          if (qubit.kind == QubitReferenceKind::Register) {
+            registerQubits[qubit.symbol].push_back(&qubit);
+          }
+        }
+        for (const auto& qubit : qubits) {
+          if (!qubit.provenIndex) {
+            continue;
+          }
+          for (const auto* other : registerQubits[qubit.symbol]) {
+            if (other == &qubit || (other->provenIndex && other < &qubit)) {
               continue;
             }
-            if (!proveDistinct(previous, qubit, affineComparisons)) {
-              return fail(
-                  location,
-                  "cannot prove that barrier operands reference distinct "
-                  "qubits");
+            if (!proveDistinct(*other, qubit, affineComparisons)) {
+              return fail(location, "cannot prove that barrier operands "
+                                    "reference distinct qubits");
             }
           }
         }
@@ -4989,8 +4997,8 @@ private:
 
 } // namespace
 
-SourceLocation sourceLocation(const llvm::SourceMgr& sources,
-                              const llvm::SMLoc location) {
+static SourceLocation sourcePosition(const llvm::SourceMgr& sources,
+                                     llvm::SMLoc location) {
   if (!location.isValid()) {
     return {};
   }
@@ -5000,12 +5008,24 @@ SourceLocation sourceLocation(const llvm::SourceMgr& sources,
   }
   const auto [line, column] = sources.getLineAndColumn(location, bufferId);
   const auto* buffer = sources.getMemoryBuffer(bufferId);
-  SourceLocation result{
+  return {
       .filename = buffer->getBufferIdentifier().str(),
       .line = line,
       .column = column,
       .includeStack = {},
   };
+}
+
+SourceLocation sourceLocation(const llvm::SourceMgr& sources,
+                              const llvm::SMLoc location) {
+  if (!location.isValid()) {
+    return {};
+  }
+  auto result = sourcePosition(sources, location);
+  const auto bufferId = sources.FindBufferContainingLoc(location);
+  if (bufferId == 0) {
+    return result;
+  }
   auto parent = sources.getParentIncludeLoc(bufferId);
   while (parent.isValid()) {
     const auto parentBufferId = sources.FindBufferContainingLoc(parent);
