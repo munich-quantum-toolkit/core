@@ -168,7 +168,7 @@ func::FuncOp QCOProgramBuilder::createFunction(
           "Function must return every qubit argument as a trailing result");
     }
   }
-  for (auto [index, result] : llvm::enumerate(results)) {
+  for (Value result : results) {
     if (isa<QubitType>(result.getType())) {
       validateQubitValue(result);
       validQubits.erase(result);
@@ -509,8 +509,8 @@ void QCOProgramBuilder::updateQubitValueTracking(ValueRange oldValues,
 void QCOProgramBuilder::checkQubitType(ValueRange values) {
   for (Type type : values.getTypes()) {
     auto isQubitType = TypeSwitch<Type, bool>(type)
-                           .Case<QubitType>([](auto) { return true; })
-                           .Case<RankedTensorType>([](RankedTensorType t) {
+                           .Case([](QubitType) { return true; })
+                           .Case([](RankedTensorType t) {
                              return isa<QubitType>(t.getElementType());
                            })
                            .Default([](Type) { return false; });
@@ -1597,6 +1597,15 @@ void QCOProgramBuilder::checkFinalized() const {
 
 void QCOProgramBuilder::ensureAllocationMode(
     const AllocationMode requestedMode) {
+  if (requestedMode == AllocationMode::Dynamic) {
+    auto entryPoint = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
+    if (!entryPoint || entryPoint.getBody().empty() ||
+        getInsertionBlock() != &entryPoint.getBody().front()) {
+      llvm::reportFatalUsageError(
+          "Dynamic qubit allocation requires the entry block of the "
+          "mqt.entry_point function");
+    }
+  }
   if (allocationMode == AllocationMode::Unset) {
     allocationMode = requestedMode;
     return;

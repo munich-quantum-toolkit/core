@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 # set required cmake version
-cmake_minimum_required(VERSION 3.24...4.4)
+cmake_minimum_required(VERSION 3.28...4.4)
 
 project(
   mqt-core
@@ -132,6 +132,8 @@ if(BUILD_MQT_CORE_TESTS)
   include(GoogleTest)
   add_subdirectory(test)
 endif()
+
+add_custom_target(mqt-core-lint-headers)
 
 if(BUILD_MQT_CORE_MLIR)
   add_subdirectory(mlir)

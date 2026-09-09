@@ -60,6 +60,8 @@ job = backend.run(qc, shots=1024)
 result = job.result()
 counts = result.get_counts()
 
+assert sum(counts.values()) == 1024
+assert set(counts) <= {"00", "11"}
 print(f"Results: {counts}")
 ```
 
@@ -160,24 +162,6 @@ including:
 
 ## Circuit Execution
 
-```{code-cell} ipython3
-from qiskit import QuantumCircuit
-
-# Create a circuit
-qc = QuantumCircuit(2)
-qc.h(0)
-qc.cx(0, 1)
-qc.measure_all()
-
-# Run on the backend
-job = backend.run(qc, shots=500)
-result = job.result()
-counts = result.get_counts()
-
-print(f"Counts: {counts}")
-print(f"Total shots: {sum(counts.values())}")
-```
-
 Circuits must meet the following requirements before execution:
 
 1. **All parameters must be bound**: Circuits with unbound parameters raise
@@ -192,25 +176,28 @@ The backend supports automatic parameter binding through the `parameter_values`
 argument. You can pass parameter values either as dictionaries or as sequences
 of values:
 
-```python
+```{code-cell} ipython3
 from qiskit.circuit import Parameter
 
 # Option 1: Bind parameters manually
 theta = Parameter("theta")
-qc = QuantumCircuit(1)
-qc.ry(theta, 0)
-qc.measure_all()
+parameterized = QuantumCircuit(1)
+parameterized.ry(theta, 0)
+parameterized.measure_all()
 
-qc_bound = qc.assign_parameters({theta: 1.5708})
+qc_bound = parameterized.assign_parameters({theta: 1.5708})
 job = backend.run(qc_bound, shots=100)
 
 # Option 2: Use parameter_values argument (recommended)
-job = backend.run(qc, parameter_values=[{theta: 1.5708}], shots=100)
+job = backend.run(parameterized, parameter_values=[{theta: 1.5708}], shots=100)
 
 # For multiple circuits with different parameters
-circuits = [qc, qc, qc]
+circuits = [parameterized, parameterized, parameterized]
 param_values = [{theta: 0.5}, {theta: 1.0}, {theta: 1.5}]
 job = backend.run(circuits, parameter_values=param_values, shots=100)
+bound_results = job.result()
+assert len(bound_results.results) == 3
+print([bound_results.get_counts(i) for i in range(3)])
 ```
 
 ## Job Handling
@@ -256,7 +243,7 @@ print(f"Success: {exp_result.success}")
 The backend supports both single-circuit and multi-circuit execution. You can
 submit multiple circuits in a single call:
 
-```python
+```{code-cell} ipython3
 # Create multiple circuits
 qc1 = QuantumCircuit(2)
 qc1.h(0)
@@ -285,16 +272,6 @@ for idx in range(len(circuits)):
     print(f"Circuit {idx} results: {counts}")
 ```
 
-Alternatively, you can still submit circuits individually:
-
-```python
-results = []
-for qc in circuits:
-    job = backend.run(qc, shots=1000)
-    result = job.result()
-    results.append(result)
-```
-
 ## Qiskit Primitives
 
 Use Qiskit's
@@ -304,14 +281,25 @@ and
 The backend factories construct these native objects with typed keyword options.
 Qiskit supplies the defaults and validates the options:
 
-```python
+```{code-cell} ipython3
+from qiskit.quantum_info import SparsePauliOp
+
+measured_circuit = QuantumCircuit(2)
+measured_circuit.h(0)
+measured_circuit.cx(0, 1)
+measured_circuit.measure_all()
+circuit = measured_circuit.remove_final_measurements(inplace=False)
 sampler = backend.sampler(default_shots=1024)
 estimator = backend.estimator(default_precision=0.1, abelian_grouping=True)
 
 samples = sampler.run([measured_circuit]).result()[0]
 counts = samples.data.meas.get_counts()
 estimate = estimator.run([(circuit, SparsePauliOp("ZZ"))]).result()[0]
-expectation, standard_error = estimate.data.evs, estimate.data.stds
+assert sum(counts.values()) == 1024
+assert set(counts) <= {"00", "11"}
+assert float(estimate.data.evs) == 1.0
+print("Bell counts:", counts)
+print("ZZ expectation:", float(estimate.data.evs))
 ```
 
 Sampler defaults to 1024 shots. Estimator requires positive precision and
@@ -415,6 +403,17 @@ When you run a circuit, the backend:
 3. Submits the program to the QDMI device via `device.submit_job()`
 4. Returns a {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob`
 
+The built-in OpenQASM serializers validate circuit width and ordered operation
+placements against native QDMI metadata after preprocessing. They reject an
+invalid circuit before any job in its batch is submitted. This check uses the
+native device sites because a backend extension may hide sites from its public
+Target or use preprocessing to address them. It does not route circuits.
+
+Control-flow instructions require explicit support in the backend's Target;
+their bodies are checked recursively using the enclosing circuit's qubits.
+Advertising OpenQASM 3 alone does not enable control flow. Custom serializers
+retain responsibility for validating the native programs they produce.
+
 ### Program Serializers
 
 A _program serializer_ turns one circuit into one program in one program format.
@@ -494,8 +493,16 @@ The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 
 1. Querying the QDMI device for available operations
 2. Mapping each operation to the corresponding Qiskit gate
-3. Determining qubit connectivity from the device's coupling map
+3. Preserving each operation's ordered site tuples, including gates on three or
+   more qubits
 4. Including operation properties (duration, fidelity) if available
+
+Instruction durations use seconds: the backend multiplies raw QDMI durations by
+the device's duration scale factor and converts the advertised time unit. An
+absent scale factor defaults to one. A reported duration with a missing or
+unsupported unit, or an invalid scale factor, raises
+{py:class}`~mqt.core.plugins.qiskit.exceptions.UnsupportedOperationError`.
+Operations without duration metadata remain uncalibrated.
 
 ## API Reference
 

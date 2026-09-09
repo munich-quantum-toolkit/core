@@ -29,8 +29,10 @@
 #include <llvm/Support/raw_ostream.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
+#include <mlir/Dialect/Func/Extensions/InlinerExtension.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h>
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
@@ -61,6 +63,13 @@
 
 namespace mlir {
 
+static void ensureInlinerExtensions(MLIRContext* context) {
+  DialectRegistry registry;
+  func::registerInlinerExtension(registry);
+  LLVM::registerInlinerInterface(registry);
+  context->appendDialectRegistry(registry);
+}
+
 std::shared_ptr<MLIRContext> createCompilerContext() {
   DialectRegistry registry;
   registry.insert<cbit::CBitDialect, mqt::MQTDialect, qc::QCDialect,
@@ -72,6 +81,7 @@ std::shared_ptr<MLIRContext> createCompilerContext() {
   registerLLVMDialectTranslation(registry);
 
   auto context = std::make_shared<MLIRContext>(registry);
+  ensureInlinerExtensions(context.get());
   context->loadAllAvailableDialects();
   return context;
 }
@@ -143,7 +153,11 @@ parseTypedProgram(Parse&& parse) {
 // Program
 //===----------------------------------------------------------------------===//
 
-Program::Program(Storage storage) : storage_(std::move(storage)) {}
+Program::Program(Storage storage) : storage_(std::move(storage)) {
+  if (storage_.context) {
+    ensureInlinerExtensions(storage_.context.get());
+  }
+}
 
 bool Program::isValid() const noexcept {
   return static_cast<bool>(storage_.mod);
@@ -170,8 +184,10 @@ Program::Storage Program::cloneStorage() const {
 
 Program::Storage Program::releaseStorage() && {
   assert(storage_.mod && "compiler program was already consumed");
-  return {.context = std::move(storage_.context),
-          .mod = std::move(storage_.mod)};
+  return {
+      .context = std::move(storage_.context),
+      .mod = std::move(storage_.mod),
+  };
 }
 
 //===----------------------------------------------------------------------===//
@@ -266,11 +282,16 @@ QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
         "cannot construct a QC program with a different MLIR context");
     return std::nullopt;
   }
-  if (failed(verify(*storage.mod))) {
+  storage.context->getOrLoadDialect<mqt::MQTDialect>();
+  if (failed(verify(*storage.mod)) ||
+      (!mqt::getEntryPoint(*storage.mod) &&
+       failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
     return std::nullopt;
   }
-  if (!moduleUsesDialect(*storage.mod, "qc")) {
-    storage.mod->emitError("expected a module using the 'qc' dialect");
+  if (moduleUsesDialect(*storage.mod, "qco") ||
+      moduleUsesDialect(*storage.mod, "qtensor")) {
+    storage.mod->emitError(
+        "QC programs must not contain QCO or QTensor operations");
     return std::nullopt;
   }
   return QCProgram(std::move(storage));
@@ -359,11 +380,14 @@ QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
         "cannot construct a QCO program with a different MLIR context");
     return std::nullopt;
   }
-  if (failed(verify(*storage.mod))) {
+  storage.context->getOrLoadDialect<mqt::MQTDialect>();
+  if (failed(verify(*storage.mod)) ||
+      (!mqt::getEntryPoint(*storage.mod) &&
+       failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
     return std::nullopt;
   }
-  if (!moduleUsesDialect(*storage.mod, "qco")) {
-    storage.mod->emitError("expected a module using the 'qco' dialect");
+  if (moduleUsesDialect(*storage.mod, "qc")) {
+    storage.mod->emitError("QCO programs must not contain QC operations");
     return std::nullopt;
   }
   if (failed(qco::verifyLinearity(*storage.mod))) {

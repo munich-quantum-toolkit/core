@@ -12,8 +12,20 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
   let summary = "Convert QCO dialect to QC dialect.";
 
   let description = [{
-    This pass converts all operations from the QCO dialect to their equivalent operations in the QC dialect.
-    It handles the transformation of qubit values in QCO to qubit references in QC, ensuring that the semantics of quantum operations are preserved during the conversion process.
+    Convert QCO qubit values to QC references and QTensor registers to memrefs.
+    Scalar function arguments become in-place references; each function must
+    return its qubit arguments as a positional suffix. Other results remain
+    explicit, including qubits created by a function.
+
+    Before rewriting, prove that quantum values yielded by modifiers, branches,
+    and loops correspond positionally to their region arguments. Reject wire
+    permutations and changes to quantum loop-state counts or types. Classical
+    loop state can change type in `scf.while`. QTensor insertions can update
+    register slots and become stores when the slot value changes.
+
+    Determine the module's allocation mode before converting any function.
+    Dynamic qubit sinks become deallocations; static qubit sinks are removed.
+    Mixing static and dynamic allocation roots is unsupported.
   }];
 
   let dependentDialects = ["mlir::memref::MemRefDialect",

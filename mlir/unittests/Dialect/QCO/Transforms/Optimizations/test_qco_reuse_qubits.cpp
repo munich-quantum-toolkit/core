@@ -15,13 +15,16 @@
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/STLExtras.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Parser/Parser.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
@@ -228,6 +231,110 @@ TEST_F(QCOQubitReuseTest, preserveEffectfulUserOrder) {
   EXPECT_EQ(callees[1], "record0");
 }
 
+TEST_F(QCOQubitReuseTest, PreservesHelpersInsideNestedSymbolTables) {
+  module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @outer() {
+        builtin.module {
+          func.func private @helper(%q: !qco.qubit) -> !qco.qubit
+              attributes {mqt.unitary} {
+            %unused = arith.constant 0.25 : f64
+            %out = qco.x %q : !qco.qubit -> !qco.qubit
+            return %out : !qco.qubit
+          }
+          func.func @inner() {
+            %q = qco.alloc : !qco.qubit
+            qco.sink %q : !qco.qubit
+            return
+          }
+        }
+        return
+      }
+    }
+  )mlir",
+                                       &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  PassManager pm(&context);
+  pm.addPass(createReuseQubits());
+  ASSERT_TRUE(succeeded(pm.run(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  size_t constants = 0;
+  module->walk([&](arith::ConstantOp) { ++constants; });
+  /// Even unused classical operations in summarized helpers stay unchanged.
+  EXPECT_EQ(constants, 1);
+}
+
+TEST_F(QCOQubitReuseTest, ReuseAcrossTransitivePhaseFreeUnitaryCalls) {
+  for (const bool hasPhase : {false, true}) {
+    SCOPED_TRACE(hasPhase);
+    module = parseSourceString<ModuleOp>(R"mlir(
+      module {
+        func.func private @record0(i1)
+        func.func private @record1(i1)
+        func.func private @flip(%q: !qco.qubit) -> !qco.qubit
+            attributes {mqt.unitary, no_inline} {
+          %out = qco.x %q : !qco.qubit -> !qco.qubit
+          return %out : !qco.qubit
+        }
+        func.func private @left(%q: !qco.qubit) -> !qco.qubit
+            attributes {mqt.unitary, no_inline} {
+          %out = qco.inv (%arg = %q) {
+            %called = qco.call @flip(%arg) : (!qco.qubit) -> !qco.qubit
+            qco.yield %called : !qco.qubit
+          } : {!qco.qubit} -> {!qco.qubit}
+          return %out : !qco.qubit
+        }
+        func.func private @diamond(%q: !qco.qubit) -> !qco.qubit
+            attributes {mqt.unitary, no_inline} {
+          %left = qco.call @left(%q) : (!qco.qubit) -> !qco.qubit
+          %out = qco.call @flip(%left) : (!qco.qubit) -> !qco.qubit
+          return %out : !qco.qubit
+        }
+        func.func @main() attributes {mqt.entry_point} {
+          %q0 = qco.alloc : !qco.qubit
+          %h = qco.h %q0 : !qco.qubit -> !qco.qubit
+          %q1 = qco.alloc : !qco.qubit
+          %x = qco.call @diamond(%q1) : (!qco.qubit) -> !qco.qubit
+          %m0, %b0 = qco.measure %h : !qco.qubit
+          func.call @record0(%b0) : (i1) -> ()
+          qco.sink %m0 : !qco.qubit
+          %m1, %b1 = qco.measure %x : !qco.qubit
+          func.call @record1(%b1) : (i1) -> ()
+          qco.sink %m1 : !qco.qubit
+          return
+        }
+      }
+    )mlir",
+                                         &context);
+    ASSERT_TRUE(module);
+    if (hasPhase) {
+      auto flip = module->lookupSymbol<func::FuncOp>("flip");
+      OpBuilder builder(flip.getBody().front().getTerminator());
+      GPhaseOp::create(builder, flip.getLoc(), 0.25);
+    }
+    ASSERT_TRUE(succeeded(verify(*module)));
+    PassManager pm(&context);
+    pm.addPass(createReuseQubits());
+    ASSERT_TRUE(succeeded(pm.run(*module)));
+    ASSERT_TRUE(succeeded(verify(*module)));
+    auto main = module->lookupSymbol<func::FuncOp>("main");
+    EXPECT_EQ(llvm::range_size(main.getOps<AllocOp>()), hasPhase ? 2 : 1);
+    EXPECT_EQ(llvm::range_size(main.getOps<ResetOp>()), hasPhase ? 0 : 1);
+    EXPECT_EQ(llvm::range_size(main.getOps<CallOp>()), 1);
+    if (hasPhase) {
+      auto flip = module->lookupSymbol<func::FuncOp>("flip");
+      auto phases = flip.getOps<GPhaseOp>();
+      ASSERT_EQ(llvm::range_size(phases), 1);
+      (*phases.begin()).erase();
+      ASSERT_TRUE(succeeded(pm.run(*module)));
+      ASSERT_TRUE(succeeded(verify(*module)));
+      EXPECT_EQ(llvm::range_size(main.getOps<AllocOp>()), 1);
+      EXPECT_EQ(llvm::range_size(main.getOps<ResetOp>()), 1);
+    }
+  }
+}
+
 /**
  * @brief Qubit reuse must skip allocations with users in another block.
  */
@@ -270,9 +377,11 @@ TEST_F(QCOQubitReuseTest, skipReuseAcrossBlocks) {
  * three qubits.
  */
 TEST_F(QCOQubitReuseTest, reuseOneOfThreeQubits) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -294,9 +403,11 @@ TEST_F(QCOQubitReuseTest, reuseOneOfThreeQubits) {
   programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
@@ -332,9 +443,11 @@ TEST_F(QCOQubitReuseTest, reuseOneOfThreeQubits) {
  * qubits that can all be reused.
  */
 TEST_F(QCOQubitReuseTest, reuseAllThreeQubits) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -356,9 +469,11 @@ TEST_F(QCOQubitReuseTest, reuseAllThreeQubits) {
   programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
 
   Value cr0;
@@ -389,9 +504,11 @@ TEST_F(QCOQubitReuseTest, reuseAllThreeQubits) {
  * connected.
  */
 TEST_F(QCOQubitReuseTest, reuseIfPathExists) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -413,9 +530,11 @@ TEST_F(QCOQubitReuseTest, reuseIfPathExists) {
   programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
@@ -499,9 +618,11 @@ TEST_F(QCOQubitReuseTest, singleReuseWithLift) {
  * replacing controls.
  */
 TEST_F(QCOQubitReuseTest, singleReuseWithControlLift) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   auto q0 = programBuilder.allocQubit();
   auto q1 = programBuilder.allocQubit();
   auto q2 = programBuilder.allocQubit();
@@ -524,9 +645,11 @@ TEST_F(QCOQubitReuseTest, singleReuseWithControlLift) {
   programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
   auto r1 = referenceBuilder.allocQubit();
 
@@ -666,9 +789,11 @@ TEST_F(QCOQubitReuseTest, singleReuseThroughComplexLift) {
  * into an if/else block.
  */
 TEST_F(QCOQubitReuseTest, multiReuseLiftOutOfIf) {
-  programBuilder.initialize({programBuilder.getI1Type(),
-                             programBuilder.getI1Type(),
-                             programBuilder.getI1Type()});
+  programBuilder.initialize({
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+      programBuilder.getI1Type(),
+  });
   // As qubit reuse is built on a heuristic, the order of qubit allocations
   // matters. For this test, we need q0 to be allocated last.
   auto q1 = programBuilder.allocQubit();
@@ -692,9 +817,11 @@ TEST_F(QCOQubitReuseTest, multiReuseLiftOutOfIf) {
   programBuilder.sink(q2);
   module = programBuilder.finalize({c0, c1, c2});
 
-  referenceBuilder.initialize({referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type(),
-                               referenceBuilder.getI1Type()});
+  referenceBuilder.initialize({
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+      referenceBuilder.getI1Type(),
+  });
   auto r0 = referenceBuilder.allocQubit();
 
   Value cr0;

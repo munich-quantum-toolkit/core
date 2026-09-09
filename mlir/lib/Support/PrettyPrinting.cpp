@@ -50,19 +50,19 @@ static StringRef getSpaces() {
 int calculateDisplayWidth(StringRef str) {
   auto displayWidth = 0;
   for (size_t i = 0; i < str.size();) {
-    if (const unsigned char c = str[i]; (c & 0x80) == 0) {
+    if (const unsigned char c = str[i]; (c & 0x80U) == 0U) {
       // ASCII character (1 byte)
       ++displayWidth;
       ++i;
-    } else if ((c & 0xE0) == 0xC0) {
+    } else if ((c & 0xE0U) == 0xC0U) {
       // 2-byte UTF-8 character
       ++displayWidth;
       i += 2;
-    } else if ((c & 0xF0) == 0xE0) {
+    } else if ((c & 0xF0U) == 0xE0U) {
       // 3-byte UTF-8 character (like → and ✓)
       ++displayWidth;
       i += 3;
-    } else if ((c & 0xF8) == 0xF0) {
+    } else if ((c & 0xF8U) == 0xF0U) {
       // 4-byte UTF-8 character (most emojis take 2 display columns)
       displayWidth += 2;
       i += 4;

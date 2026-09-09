@@ -16,6 +16,11 @@ def QIRSetAttributesAndMetadata
   let dependentDialects = ["mlir::LLVM::LLVMDialect"];
   let summary = "Sets the required attributes to the entry point function and "
                 "adds the required module flags, compliant with QIR 2.1";
+  let description = [{
+    Static resource counts specify the capacity through the highest qubit ID
+    used by a quantum instruction and the highest recorded result ID. Rejects
+    IDs whose required capacity cannot fit in an unsigned 64-bit integer.
+  }];
   let options = [Option<"useAdaptive", "use-adaptive", "bool",
                         /*default= */ "true", "Specifies the profile.">];
 }

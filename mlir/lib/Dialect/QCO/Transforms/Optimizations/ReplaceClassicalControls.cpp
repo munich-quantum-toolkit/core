@@ -295,7 +295,7 @@ static void trySwapControlAndTargetOfPhaseGate(CtrlOp op,
     Value controlOut = op.getControlsOut()[controlIndex];
     Value targetOut = op.getTargetsOut()[0];
 
-    rewriter.modifyOpInPlace(op, [&]() {
+    rewriter.modifyOpInPlace(op, [&] {
       op.getTargetsInMutable()[0].set(control);
       op.getControlsInMutable()[controlIndex].set(target);
     });

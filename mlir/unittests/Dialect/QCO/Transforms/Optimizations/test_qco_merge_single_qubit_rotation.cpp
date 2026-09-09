@@ -255,7 +255,7 @@ protected:
     builder.sink(q);
 
     module = builder.finalize();
-    OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
+    OwningOpRef<ModuleOp> original = module->clone();
     const auto result = runMergePass(*module);
     if (succeeded(result)) {
       ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
@@ -284,7 +284,7 @@ enum class FixedGateType : std::uint8_t {
   Tdg,
   SX,
   SXdg,
-  Id
+  Id,
 };
 
 class MergeFixedSingleQubitGateTest
@@ -713,7 +713,7 @@ TEST_P(MergeFixedSingleQubitGateTest, PreservesMatrix) {
   builder.sink(q);
   module = builder.finalize();
 
-  OwningOpRef<ModuleOp> original = cast<ModuleOp>(module->clone());
+  OwningOpRef<ModuleOp> original = module->clone();
   ASSERT_TRUE(runMergePass(*module).succeeded());
 
   ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
@@ -776,17 +776,23 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeManyGates) {
 TEST_F(MergeSingleQubitRotationGatesTest, mergeManyWithUnmergeable) {
   auto reg = builder.allocQubitRegister(1);
   auto q = reg[0];
-  q = buildRotations({{.type = GateType::U, .angles = {1., 2., 3.}},
-                      {.type = GateType::RX, .angles = {1.}},
-                      {.type = GateType::RY, .angles = {2.}},
-                      {.type = GateType::RZ, .angles = {3.}}},
-                     q);
+  q = buildRotations(
+      {
+          {.type = GateType::U, .angles = {1., 2., 3.}},
+          {.type = GateType::RX, .angles = {1.}},
+          {.type = GateType::RY, .angles = {2.}},
+          {.type = GateType::RZ, .angles = {3.}},
+      },
+      q);
   q = builder.barrier({q})[0];
-  q = buildRotations({{.type = GateType::RZ, .angles = {4.}},
-                      {.type = GateType::RY, .angles = {5.}},
-                      {.type = GateType::RX, .angles = {6.}},
-                      {.type = GateType::U, .angles = {4., 5., 6.}}},
-                     q);
+  q = buildRotations(
+      {
+          {.type = GateType::RZ, .angles = {4.}},
+          {.type = GateType::RY, .angles = {5.}},
+          {.type = GateType::RX, .angles = {6.}},
+          {.type = GateType::U, .angles = {4., 5., 6.}},
+      },
+      q);
 
   module = builder.finalize();
 
@@ -1089,8 +1095,12 @@ TEST_F(MergeSingleQubitRotationGatesTest,
   const std::complex<double> upperPhase = std::polar(1.0, -halfAngle);
   const std::complex<double> lowerPhase = std::polar(1.0, halfAngle);
   const double invSqrtTwo = 1.0 / std::numbers::sqrt2;
-  const Matrix2x2 expected{upperPhase * invSqrtTwo, upperPhase * invSqrtTwo,
-                           lowerPhase * invSqrtTwo, -lowerPhase * invSqrtTwo};
+  const Matrix2x2 expected{
+      upperPhase * invSqrtTwo,
+      upperPhase * invSqrtTwo,
+      lowerPhase * invSqrtTwo,
+      -lowerPhase * invSqrtTwo,
+  };
   EXPECT_TRUE(actual.isApprox(expected, 1e-8));
 }
 

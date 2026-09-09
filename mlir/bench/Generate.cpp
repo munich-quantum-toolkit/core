@@ -62,8 +62,12 @@ generateInstance(const std::string_view id, const Benchmark& benchmark) {
   if (!program) {
     return std::nullopt;
   }
-  return GeneratedBenchmark{std::string(id), caseId(benchmark),
-                            toManifestJSON(benchmark), std::move(*program)};
+  return GeneratedBenchmark{
+      std::string(id),
+      caseId(benchmark),
+      toManifestJSON(benchmark),
+      std::move(*program),
+  };
 }
 
 using GenerateFunction =

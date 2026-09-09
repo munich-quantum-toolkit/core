@@ -117,6 +117,12 @@ static void propagateWireIds(UnitaryOpInterface unitary,
 embedUnitaryInBody(UnitaryOpInterface unitary, size_t numTargets,
                    const DenseMap<Value, size_t>& wireIds) {
   const auto numOpQubits = unitary.getNumQubits();
+  if (numOpQubits == numTargets &&
+      llvm::all_of(llvm::enumerate(unitary.getInputQubits()), [&](auto entry) {
+        return lookupWireId(wireIds, entry.value()) == entry.index();
+      })) {
+    return unitary.getUnitaryMatrix<DynamicMatrix>();
+  }
   if (numOpQubits == 0 || numOpQubits > 2) {
     return std::nullopt;
   }
@@ -147,14 +153,13 @@ embedUnitaryInBody(UnitaryOpInterface unitary, size_t numTargets,
 
 std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
                                                size_t numTargets) {
-  if (numTargets == 0 || numTargets > kMaxModifierTargetQubits ||
+  if (numTargets > kMaxModifierTargetQubits ||
       block.getNumArguments() != numTargets) {
     return std::nullopt;
   }
 
   std::optional<DynamicMatrix> acc;
   Complex global{1.0, 0.0};
-  bool found = false;
 
   DenseMap<Value, size_t> wireIds;
   for (size_t i = 0; i < numTargets; ++i) {
@@ -164,20 +169,19 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
   for (Operation& op : block.without_terminator()) {
     const bool handled =
         TypeSwitch<Operation*, bool>(&op)
-            .Case<BarrierOp>([&](BarrierOp barrier) {
+            .Case([&](BarrierOp barrier) {
               propagateWireIds(barrier, wireIds);
               return true;
             })
-            .Case<GPhaseOp>([&](GPhaseOp gphase) {
+            .Case([&](GPhaseOp gphase) {
               const auto matrix = gphase.getUnitaryMatrix();
               if (!matrix) {
                 return false;
               }
               global *= matrix->value;
-              found = true;
               return true;
             })
-            .Case<UnitaryOpInterface>([&](UnitaryOpInterface unitary) {
+            .Case([&](UnitaryOpInterface unitary) {
               auto embedded = embedUnitaryInBody(unitary, numTargets, wireIds);
               if (!embedded.has_value()) {
                 return false;
@@ -187,7 +191,6 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
               } else {
                 acc->premultiplyBy(*embedded);
               }
-              found = true;
               propagateWireIds(unitary, wireIds);
               return true;
             })
@@ -204,7 +207,11 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
     }
   }
 
-  if (!found) {
+  auto yield = dyn_cast<YieldOp>(block.getTerminator());
+  if (!yield || yield.getTargets().size() != numTargets ||
+      !llvm::all_of(llvm::enumerate(yield.getTargets()), [&](auto entry) {
+        return lookupWireId(wireIds, entry.value()) == entry.index();
+      })) {
     return std::nullopt;
   }
   if (!acc.has_value()) {

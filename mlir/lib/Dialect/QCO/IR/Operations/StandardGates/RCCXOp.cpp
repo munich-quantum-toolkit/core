@@ -20,25 +20,9 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove subsequent RCCX operations on the same qubits.
- */
-struct RemoveSubsequentRCCX final : OpRewritePattern<RCCXOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RCCXOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeInversePairThreeTargetZeroParameter<RCCXOp>(op, rewriter);
-  }
-};
-
-} // namespace
-
 void RCCXOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                         MLIRContext* context) {
-  results.add<RemoveSubsequentRCCX>(context);
+                                         MLIRContext* /*context*/) {
+  results.add(&removeInversePairThreeTargetZeroParameter<RCCXOp, RCCXOp>);
 }
 
 Matrix8x8 RCCXOp::getUnitaryMatrix() {

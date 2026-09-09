@@ -22,7 +22,9 @@ class GHZ;
 class Grover;
 class Multiplexer;
 class QFT;
+class QFTAdder;
 class QPE;
+class Teleportation;
 
 /// A generated program and the normalized semantic instance that produced it.
 struct GeneratedBenchmark {
@@ -48,8 +50,16 @@ generate(const Multiplexer& benchmark);
 /// Generate a configured quantum Fourier-transform benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const QFT& benchmark);
 
+/// Generate a configured QFT adder benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generate(const QFTAdder& benchmark);
+
 /// Generate the QC program for a configured QPE benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const QPE& benchmark);
+
+/// Generate the quantum teleportation benchmark.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generate(const Teleportation& benchmark);
 
 /// Parse a benchmark instance specification and generate the benchmark.
 [[nodiscard]] std::optional<GeneratedBenchmark>

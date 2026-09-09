@@ -5,6 +5,8 @@
       "name": "base",
       "hidden": true,
       "binaryDir": "${sourceDir}/build/${presetName}",
+      "description": "Default configuration. Uses the Ninja generator",
+      "generator": "Ninja",
       "cacheVariables": {
         "MLIR_DIR": "$env{MLIR_DIR}",
         "CMAKE_UNITY_BUILD": "ON"
@@ -20,41 +22,8 @@
       }
     },
     {
-      "name": "base-unix",
-      "hidden": true,
-      "inherits": "base",
-      "condition": {
-        "type": "inList",
-        "string": "${hostSystemName}",
-        "list": ["Linux", "Darwin"]
-      },
-      "description": "Default configuration for Linux and macOS builds. Uses the Ninja generator",
-      "generator": "Ninja"
-    },
-    {
-      "name": "base-unix-no-mlir",
-      "hidden": true,
-      "inherits": ["base-unix", "base-no-mlir"]
-    },
-    {
-      "name": "base-windows",
-      "hidden": true,
-      "inherits": "base",
-      "condition": {
-        "type": "equals",
-        "lhs": "${hostSystemName}",
-        "rhs": "Windows"
-      },
-      "description": "Default configuration for Windows builds. Uses the default generator"
-    },
-    {
-      "name": "base-windows-no-mlir",
-      "hidden": true,
-      "inherits": ["base-windows", "base-no-mlir"]
-    },
-    {
       "name": "debug",
-      "inherits": "base-unix",
+      "inherits": "base",
       "displayName": "Debug config",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -63,7 +32,7 @@
     },
     {
       "name": "debug-no-mlir",
-      "inherits": "base-unix-no-mlir",
+      "inherits": "base-no-mlir",
       "displayName": "Debug config without MLIR",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug"
@@ -71,7 +40,7 @@
     },
     {
       "name": "release",
-      "inherits": "base-unix",
+      "inherits": "base",
       "displayName": "Release config",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
@@ -79,7 +48,7 @@
     },
     {
       "name": "release-no-mlir",
-      "inherits": "base-unix-no-mlir",
+      "inherits": "base-no-mlir",
       "displayName": "Release config without MLIR",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
@@ -87,7 +56,7 @@
     },
     {
       "name": "coverage",
-      "inherits": "base-unix",
+      "inherits": "base",
       "displayName": "Coverage config",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
@@ -96,46 +65,13 @@
     },
     {
       "name": "lint",
-      "inherits": "base-unix",
+      "inherits": "base",
       "displayName": "Lint config",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Debug",
         "BUILD_MQT_CORE_BINDINGS": "ON",
         "CMAKE_UNITY_BUILD": "OFF",
         "CMAKE_VERIFY_INTERFACE_HEADER_SETS": "ON"
-      }
-    },
-    {
-      "name": "debug-windows",
-      "inherits": "base-windows",
-      "displayName": "Windows Debug config",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug",
-        "LLVM_ENABLE_ASSERTIONS": "ON"
-      }
-    },
-    {
-      "name": "debug-windows-no-mlir",
-      "inherits": "base-windows-no-mlir",
-      "displayName": "Windows Debug config without MLIR",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
-      }
-    },
-    {
-      "name": "release-windows",
-      "inherits": "base-windows",
-      "displayName": "Windows Release config",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
-      }
-    },
-    {
-      "name": "release-windows-no-mlir",
-      "inherits": "base-windows-no-mlir",
-      "displayName": "Windows Release config without MLIR",
-      "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
       }
     }
   ],
@@ -163,26 +99,6 @@
     {
       "name": "lint",
       "configurePreset": "lint"
-    },
-    {
-      "name": "debug-windows",
-      "configurePreset": "debug-windows",
-      "configuration": "Debug"
-    },
-    {
-      "name": "debug-windows-no-mlir",
-      "configurePreset": "debug-windows-no-mlir",
-      "configuration": "Debug"
-    },
-    {
-      "name": "release-windows",
-      "configurePreset": "release-windows",
-      "configuration": "Release"
-    },
-    {
-      "name": "release-windows-no-mlir",
-      "configurePreset": "release-windows-no-mlir",
-      "configuration": "Release"
     }
   ],
   "testPresets": [
@@ -216,30 +132,6 @@
       "name": "coverage",
       "inherits": "base",
       "configurePreset": "coverage"
-    },
-    {
-      "name": "debug-windows",
-      "inherits": "base",
-      "configurePreset": "debug-windows",
-      "configuration": "Debug"
-    },
-    {
-      "name": "debug-windows-no-mlir",
-      "inherits": "base",
-      "configurePreset": "debug-windows-no-mlir",
-      "configuration": "Debug"
-    },
-    {
-      "name": "release-windows",
-      "inherits": "base",
-      "configurePreset": "release-windows",
-      "configuration": "Release"
-    },
-    {
-      "name": "release-windows-no-mlir",
-      "inherits": "base",
-      "configurePreset": "release-windows-no-mlir",
-      "configuration": "Release"
     }
   ]
 }

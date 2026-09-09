@@ -27,10 +27,13 @@
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -43,10 +46,10 @@ namespace {
 
 /// State object for tracking QIR metadata during conversion
 struct Metadata {
-  /// Number of qubits used in the module
-  size_t numQubits{0};
-  /// Number of measurement results stored in the module
-  size_t numResults{0};
+  /// Required capacity for static qubit IDs
+  uint64_t numQubits{0};
+  /// Required capacity for static result IDs
+  uint64_t numResults{0};
   /// Whether the module uses dynamic qubit management
   bool useDynamicQubit{false};
   /// Whether the module uses dynamic result management
@@ -81,7 +84,23 @@ protected:
       return;
     }
 
-    Metadata metadata = useAdaptive ? getAdaptive(main) : getBase(main);
+    Metadata metadata = useAdaptive ? getAdaptive(main) : Metadata{};
+    if (!metadata.useDynamicQubit) {
+      const auto numQubits = getNumQubits(main);
+      if (failed(numQubits)) {
+        signalPassFailure();
+        return;
+      }
+      metadata.numQubits = *numQubits;
+    }
+    if (!metadata.useDynamicResult) {
+      const auto numResults = getNumResults(main);
+      if (failed(numResults)) {
+        signalPassFailure();
+        return;
+      }
+      metadata.numResults = *numResults;
+    }
     if (useAdaptive) {
       collectOptionalFeatures(getOperation(), main, metadata);
     }
@@ -96,8 +115,8 @@ private:
   /// - `entry_point`: Marks the main entry point function
   /// - `output_labeling_schema`: labeled
   /// - `qir_profiles`: base_profile
-  /// - `required_num_qubits`: Number of qubits used
-  /// - `required_num_results`: Number of measurement results
+  /// - `required_num_qubits`: Capacity through the highest static qubit ID
+  /// - `required_num_results`: Capacity through the highest static result ID
   /// - `qir_major_version`: 2
   /// - `qir_minor_version`: 1
   /// - `dynamic_qubit_management`: true/false
@@ -137,30 +156,32 @@ private:
       attributes.append(passthrough.begin(), passthrough.end());
     }
     llvm::erase_if(attributes, isQIRFunctionMetadata);
-    attributes.append(
-        {rewriter.getStrArrayAttr(
-             {::qir::OUTPUT_LABELING_SCHEMA_ATTR, ::qir::LABELED_SCHEMA}),
-         rewriter.getStrArrayAttr(
-             {::qir::QIR_PROFILES_ATTR,
-              useAdaptive ? ::qir::ADAPTIVE_PROFILE : ::qir::BASE_PROFILE}),
-         rewriter.getStrArrayAttr(
-             {"required_num_qubits", std::to_string(metadata.numQubits)}),
-         rewriter.getStrArrayAttr(
-             {"required_num_results", std::to_string(metadata.numResults)})});
+    attributes.append({
+        rewriter.getStrArrayAttr(
+            {::qir::OUTPUT_LABELING_SCHEMA_ATTR, ::qir::LABELED_SCHEMA}),
+        rewriter.getStrArrayAttr({
+            ::qir::QIR_PROFILES_ATTR,
+            useAdaptive ? ::qir::ADAPTIVE_PROFILE : ::qir::BASE_PROFILE,
+        }),
+        rewriter.getStrArrayAttr(
+            {"required_num_qubits", std::to_string(metadata.numQubits)}),
+        rewriter.getStrArrayAttr(
+            {"required_num_results", std::to_string(metadata.numResults)}),
+    });
 
     main.setPassthroughAttr(rewriter.getArrayAttr(attributes));
 
     rewriter.setInsertionPointToEnd(m.getBody());
 
     SmallVector<Attribute> flags = collectUnrelatedModuleFlags(m, rewriter);
-    flags.append(
-        {createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
-         createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1),
-         createBoolFlag(LLVM::ModFlagBehavior::Error,
-                        "dynamic_qubit_management", metadata.useDynamicQubit),
-         createBoolFlag(LLVM::ModFlagBehavior::Error,
-                        "dynamic_result_management",
-                        metadata.useDynamicResult)});
+    flags.append({
+        createI32Flag(LLVM::ModFlagBehavior::Error, "qir_major_version", 2),
+        createI32Flag(LLVM::ModFlagBehavior::Max, "qir_minor_version", 1),
+        createBoolFlag(LLVM::ModFlagBehavior::Error, "dynamic_qubit_management",
+                       metadata.useDynamicQubit),
+        createBoolFlag(LLVM::ModFlagBehavior::Error,
+                       "dynamic_result_management", metadata.useDynamicResult),
+    });
 
     if (useAdaptive) {
       flags.emplace_back(createI32Flag(LLVM::ModFlagBehavior::Error,
@@ -185,15 +206,15 @@ private:
     const auto setTypes = [&](const StringRef name,
                               const llvm::SmallSet<std::string, 4>& types) {
       if (types.empty()) {
-        m->removeAttr(name);
         return;
       }
       SmallVector<StringRef> values(types.begin(), types.end());
       llvm::sort(values);
-      m->setAttr(name, rewriter.getStrArrayAttr(values));
+      flags.emplace_back(createFlag(LLVM::ModFlagBehavior::Append, name,
+                                    rewriter.getStrArrayAttr(values)));
     };
-    setTypes("qir.int_computations", metadata.integerTypes);
-    setTypes("qir.float_computations", metadata.floatingTypes);
+    setTypes("int_computations", metadata.integerTypes);
+    setTypes("float_computations", metadata.floatingTypes);
     LLVM::ModuleFlagsOp::create(rewriter, m.getLoc(),
                                 rewriter.getArrayAttr(flags));
   }
@@ -226,15 +247,28 @@ private:
     return preserved;
   }
 
-  /// Count the number of uniquely indexed qubit pointers.
+  /// Extend the resource capacity to include an ID without overflow.
+  static FailureOr<uint64_t> includeResourceId(IntegerAttr index,
+                                               uint64_t capacity,
+                                               Operation* operation) {
+    const auto& value = index.getValue();
+    if (value.getActiveBits() > 64 ||
+        value.getZExtValue() == std::numeric_limits<uint64_t>::max()) {
+      return operation->emitError("static QIR resource ID requires a capacity "
+                                  "that does not fit in 64 bits");
+    }
+    return std::max(capacity, value.getZExtValue() + 1);
+  }
+
+  /// Return the capacity required to address every static qubit ID.
   /// Assumes that qubits are constant integers that are converted to
   /// an integer pointer and then used in (at least) one quantum instruction.
-  static size_t getNumQubits(LLVM::LLVMFuncOp& main) {
+  static FailureOr<uint64_t> getNumQubits(LLVM::LLVMFuncOp& main) {
     static constexpr StringRef QIS_PREFIX = "__quantum__qis";
 
-    DenseSet<APInt> seen;
+    FailureOr<uint64_t> numQubits = uint64_t{0};
     main->walk([&](LLVM::ConstantOp constOp) {
-      if (constOp.use_empty()) {
+      if (failed(numQubits) || constOp.use_empty()) {
         return;
       }
 
@@ -283,26 +317,31 @@ private:
         return;
       }
 
-      // The set ensures that we don't insert the same index multiple times.
-      seen.insert(intAttr.getValue());
+      numQubits = includeResourceId(intAttr, *numQubits, constOp);
     });
 
-    return seen.size();
+    return numQubits;
   }
 
-  /// Count the number of uniquely indexed result_record_output statements.
-  static size_t getNumResults(LLVM::LLVMFuncOp& main) {
-    DenseSet<APInt> seen;
+  /// Return the capacity required to address every static result ID.
+  static FailureOr<uint64_t> getNumResults(LLVM::LLVMFuncOp& main) {
+    FailureOr<uint64_t> numResults = uint64_t{0};
     main->walk([&](LLVM::CallOp callOp) {
-      if (!callOp.getCallee()) {
+      if (failed(numResults) || !callOp.getCallee()) {
         return;
       }
 
-      if (*callOp.getCallee() != QIR_RECORD_OUTPUT) {
+      const auto callee = *callOp.getCallee();
+      if (callee != QIR_RECORD_OUTPUT && callee != QIR_MEASURE &&
+          callee != QIR_READ_RESULT) {
+        return;
+      }
+      const auto index = callee == QIR_MEASURE ? 1U : 0U;
+      if (callOp.getNumOperands() <= index) {
         return;
       }
 
-      auto operand = callOp->getOperand(0);
+      auto operand = callOp->getOperand(index);
       auto toPtrOp = dyn_cast<LLVM::IntToPtrOp>(operand.getDefiningOp());
       if (!toPtrOp) {
         return;
@@ -319,11 +358,10 @@ private:
         return;
       }
 
-      // The set ensures that we don't insert the same index multiple times.
-      seen.insert(intAttr.getValue());
+      numResults = includeResourceId(intAttr, *numResults, constOp);
     });
 
-    return seen.size();
+    return numResults;
   }
 
   /// Determine whether a loop (as a set of blocks) is an iterative loop (true)
@@ -485,17 +523,7 @@ private:
     });
   }
 
-  /// Return the metadata for a QIR base profile compliant program.
-  static Metadata getBase(LLVM::LLVMFuncOp& main) {
-    return {.numQubits = getNumQubits(main),
-            .numResults = getNumResults(main),
-            .useDynamicQubit = false,
-            .useDynamicResult = false,
-            .useArrays = false,
-            .backwardsBranching = 0};
-  }
-
-  /// Return the metadata for a QIR adaptive profile compliant program.
+  /// Return the dynamic resource and control flow metadata for QIR adaptive.
   Metadata getAdaptive(LLVM::LLVMFuncOp& main) {
     const auto& domInfo = getAnalysis<DominanceInfo>();
     const auto [useIteration, useCondTerm] =
@@ -507,14 +535,6 @@ private:
     md.useDynamicQubit = useDynamicQubit;
     md.useDynamicResult = useDynamicResult;
     md.useArrays = useArrays;
-
-    if (!useDynamicQubit) {
-      md.numQubits = getNumQubits(main);
-    }
-
-    if (!useDynamicResult) {
-      md.numResults = getNumResults(main);
-    }
 
     if (useIteration) {
       md.backwardsBranching = useCondTerm ? 3 : 1;

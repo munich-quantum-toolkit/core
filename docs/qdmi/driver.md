@@ -23,6 +23,12 @@ via {cpp-api:func}`qdmi::Driver::registerDevice` and
 registered through
 [versioned QDMI device configuration](configuration.md).
 
+The driver shares a loaded provider across path aliases with the same symbol
+prefix and retains it for the process lifetime. Closing a device session frees
+that session without finalizing the provider while another session may use it.
+Initialization is serialized within each loaded module. A slow provider
+initializer does not hold the driver cache lock while other modules are opened.
+
 ## Building the Bundled Devices
 
 Standalone MQT Core builds include the DDSIM and superconducting QDMI device
@@ -55,6 +61,13 @@ interface. The C++ QDMI library adds owning wrappers for QDMI devices, sites,
 operations, and jobs. The Python module exposes these QDMI entities through
 {py:mod}`mqt.core.qdmi`. Its {py:mod}`mqt.core.qdmi.driver` submodule provides
 device discovery, registration, and opening.
+
+Native device opening, property queries, job calls, and compiler-target
+snapshots release Python's GIL. Other Python threads can run while a provider
+waits for a remote response. Python argument and result conversion still holds
+the GIL. Concurrent calls into a shared device or job must satisfy the
+provider's thread safety contract; releasing the GIL does not serialize provider
+access.
 
 ## Usage
 

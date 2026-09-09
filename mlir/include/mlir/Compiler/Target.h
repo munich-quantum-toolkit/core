@@ -284,6 +284,7 @@ public:
     CZ,
     CX,
     ECR,
+    SQRTISWAP,
   };
 
   /// Recognized globally usable single-qubit synthesis basis.
@@ -297,10 +298,10 @@ public:
     ZXZ,  ///< `RZ(phi) * RX(theta) * RZ(lambda)`.
   };
 
-  /// One single-qubit basis and entangler usable across the target.
+  /// One single-qubit basis and optional entangler usable across the target.
   struct SynthesisBasis {
     SingleQubitBasis singleQubit;
-    GateKind entangler;
+    std::optional<GateKind> entangler;
 
     friend bool operator==(const SynthesisBasis&,
                            const SynthesisBasis&) = default;
@@ -413,7 +414,7 @@ public:
   /// Return the recognized gates supported by the target.
   [[nodiscard]] llvm::ArrayRef<GateKind> supportedGates() const noexcept;
 
-  /// Return one complete globally usable synthesis basis, if available.
+  /// Return a globally usable single-qubit basis with an optional entangler.
   [[nodiscard]] std::optional<SynthesisBasis> synthesisBasis() const noexcept;
 
   /// Materialize the source target facts as a typed MLIR attribute.

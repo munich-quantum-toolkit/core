@@ -104,13 +104,7 @@ void IfOp::getSuccessorRegions(RegionBranchPoint point,
 
   regions.push_back(RegionSuccessor(&getThenRegion()));
 
-  // If the else region is empty, execution continues after the parent op.
-  Region* elseRegion = &getElseRegion();
-  if (elseRegion->empty()) {
-    regions.push_back(RegionSuccessor(getOperation()));
-  } else {
-    regions.push_back(RegionSuccessor(elseRegion));
-  }
+  regions.push_back(RegionSuccessor(&getElseRegion()));
 }
 
 void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
@@ -121,13 +115,8 @@ void IfOp::getEntrySuccessorRegions(ArrayRef<Attribute> operands,
     regions.push_back(RegionSuccessor(&getThenRegion()));
   }
 
-  // If the else region is empty, execution continues after the parent op.
   if (!boolAttr || !boolAttr.getValue()) {
-    if (!getElseRegion().empty()) {
-      regions.push_back(RegionSuccessor(&getElseRegion()));
-    } else {
-      regions.push_back(RegionSuccessor(getOperation()));
-    }
+    regions.push_back(RegionSuccessor(&getElseRegion()));
   }
 }
 
@@ -222,7 +211,7 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
         }
 
         rewriter.modifyOpInPlace(use.getOwner(),
-                                 [&]() { use.set(constantTrue); });
+                                 [&] { use.set(constantTrue); });
       } else if (op.getElseRegion().isAncestor(
                      use.getOwner()->getParentRegion())) {
         changed = true;
@@ -233,7 +222,7 @@ struct ConditionPropagation : public OpRewritePattern<IfOp> {
         }
 
         rewriter.modifyOpInPlace(use.getOwner(),
-                                 [&]() { use.set(constantFalse); });
+                                 [&] { use.set(constantFalse); });
       }
     }
 
@@ -313,18 +302,19 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
         yieldOperandsToErase.set(result.getResultNumber());
       }
     }
-    rewriter.modifyOpInPlace(op.thenYield(), [&]() {
+    rewriter.modifyOpInPlace(op.thenYield(), [&] {
       op.thenYield()->eraseOperands(yieldOperandsToErase);
     });
-    rewriter.modifyOpInPlace(op.elseYield(), [&]() {
+    rewriter.modifyOpInPlace(op.elseYield(), [&] {
       op.elseYield()->eraseOperands(yieldOperandsToErase);
     });
 
     auto replacement = cast<IfOp>(rewriter.eraseOpResults(op, resultsToErase));
-    rewriter.modifyOpInPlace(replacement, [&]() {
-      replacement.getProperties().setResultSegmentSizes(
-          ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
-                             static_cast<int32_t>(numLinearResults)}));
+    rewriter.modifyOpInPlace(replacement, [&] {
+      replacement.getProperties().setResultSegmentSizes(ArrayRef<int32_t>({
+          static_cast<int32_t>(numClassicalResults),
+          static_cast<int32_t>(numLinearResults),
+      }));
     });
     return success();
   }

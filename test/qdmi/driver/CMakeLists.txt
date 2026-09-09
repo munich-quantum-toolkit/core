@@ -91,7 +91,7 @@ if(TARGET MQT::CoreQDMIDriver)
     PRIVATE
       "MQT_CORE_QDMI_TEST_CONFIG_FILE=\"${config_file}\""
       "MQT_CORE_QDMI_METADATA_MANIFEST=\"${metadata_manifest_file}\""
-      "MQT_CORE_QDMI_SESSION_DEVICE=\"$<TARGET_FILE:mqt-core-qdmi-session-device>\""
+      "MQT_CORE_QDMI_SESSION_DEVICE=\"$<TARGET_FILE_DIR:${TARGET_NAME}>/$<TARGET_FILE_NAME:mqt-core-qdmi-session-device>\""
       "MQT_CORE_QDMI_CUSTOM_SC_FILE=\"${custom_sc_file}\""
       "MQT_CORE_QDMI_DEFAULT_SC_FILE=\"${PROJECT_SOURCE_DIR}/json/sc/mqt-core-qdmi-sc-device.json\""
       "MQT_CORE_QDMI_SC_LIBRARY=\"$<TARGET_FILE:MQT::CoreQDMIScDevice>\""
@@ -100,6 +100,11 @@ if(TARGET MQT::CoreQDMIDriver)
   mqt_copy_qdmi_runtime(${TARGET_NAME})
   mqt_copy_qdmi_runtime(${TARGET_NAME} mqt-core-qdmi-metadata-device)
   add_dependencies(${TARGET_NAME} mqt-core-qdmi-session-device)
+  add_custom_command(
+    TARGET ${TARGET_NAME}
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:mqt-core-qdmi-session-device>"
+            "$<TARGET_FILE_DIR:${TARGET_NAME}>")
 
   set(imported_device_build_dir "${CMAKE_CURRENT_BINARY_DIR}/imported-device-consumer")
   set(imported_device_configure_command

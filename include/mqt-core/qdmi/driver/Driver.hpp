@@ -175,6 +175,12 @@ class DynamicDeviceLibrary final : public DeviceLibrary {
   /// @brief Handle to the dynamic library
   void* libHandle_;
 
+  DynamicDeviceLibrary(void* handle, const std::string& libName,
+                       const std::string& prefix);
+  friend auto getDynamicDeviceLibrary(const std::string& libName,
+                                      const std::string& prefix)
+      -> std::shared_ptr<DynamicDeviceLibrary>;
+
 public:
   /**
    * @brief Constructs a DynamicDeviceLibrary object.
@@ -199,8 +205,8 @@ public:
  * library. A session can be either allocated or initialized.
  */
 enum class SessionStatus : uint8_t {
-  ALLOCATED,  ///< The session has been allocated but not initialized
-  INITIALIZED ///< The session has been initialized and is ready for use
+  ALLOCATED,   ///< The session has been allocated but not initialized
+  INITIALIZED, ///< The session has been initialized and is ready for use
 };
 } // namespace qdmi
 
@@ -406,10 +412,6 @@ private:
   std::vector<QDMI_Device> devices_;
 
 public:
-  /// @brief Constructor for the QDMI session.
-  explicit QDMI_Session_impl_d(
-      const std::vector<std::unique_ptr<QDMI_Device_impl_d>>& devices);
-
   /// @brief Constructor from an explicit device-handle snapshot.
   explicit QDMI_Session_impl_d(const std::vector<QDMI_Device>& devices);
 

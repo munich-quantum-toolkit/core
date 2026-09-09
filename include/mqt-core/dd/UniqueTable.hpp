@@ -116,6 +116,7 @@ public:
     p->setNext(tables[v][key]);
     tables[v][key] = p;
     stats[v].trackInsert();
+    ++entryCount_;
 
     return p;
   }
@@ -197,6 +198,9 @@ private:
 
   /// A collection of statistics
   std::vector<UniqueTableStatistics> stats;
+
+  /// Total entries across all levels, used by per-operation collection checks.
+  std::size_t entryCount_ = 0U;
 
   /**
    * @brief Search for a node in the hash table with the given key.

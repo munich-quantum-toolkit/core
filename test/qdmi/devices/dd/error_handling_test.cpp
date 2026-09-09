@@ -12,6 +12,7 @@
  * DDSIM QDMI Device - Error handling and invalid arguments
  */
 #include "helpers/circuits.hpp"
+#include "helpers/controlled_job.hpp"
 #include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
@@ -74,20 +75,14 @@ TEST_F(ErrorHandling, NullptrArguments) {
 TEST_F(ErrorHandling, GetResultsBeforeDone) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_HEAVY_SAMPLING),
-            QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 16384), QDMI_SUCCESS);
-  // Before submit → invalid
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
             QDMI_ERROR_BADSTATE);
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j.job), QDMI_SUCCESS);
-  // After submit but not necessarily done → still invalid or waits; contract
-  // says invalid
+  qdmi_test::ControlledJob running{j.job};
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
             QDMI_ERROR_BADSTATE);
+  running.release();
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
 }
 

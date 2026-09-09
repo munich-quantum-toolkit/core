@@ -12,9 +12,8 @@
 
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/StringMap.h>
-#include <llvm/Support/Allocator.h>
-#include <llvm/Support/StringSaver.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/BuiltinTypes.h>
@@ -30,9 +29,9 @@ namespace mlir {
 
 /// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
-  Unset,  //!< No allocation mode has been established yet.
-  Static, //!< The module uses static qubit allocation.
-  Dynamic //!< The module uses dynamic qubit allocation.
+  Unset,   //!< No allocation mode has been established yet.
+  Static,  //!< The module uses static qubit allocation.
+  Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
 /// State object for tracking lowering information during QIR conversion
@@ -45,6 +44,9 @@ struct LoweringState {
 
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;
+
+  /// Canonical Base-profile pointers for constant qubit-register elements.
+  DenseMap<std::pair<Value, int64_t>, Value> staticRegisterQubits;
 
   /// Cache qubit register sizes for reuse
   DenseMap<Value, Value> qregSizes;
@@ -61,20 +63,16 @@ struct LoweringState {
   /// Destination register index and bit index of each stored measurement.
   DenseMap<Operation*, std::pair<size_t, Value>> cregMeasurements;
 
-  /// Map from index to `StaticResult`
-  DenseMap<int64_t, qir::StaticResult> staticResults;
+  /// Indexed scalar results, dynamically allocated in Adaptive and static in
+  /// Base.
+  DenseMap<int64_t, qir::StaticResult> scalarResults;
 
-  /// Metadata for returned static measurement results. Each entry is a defining
+  /// Metadata for returned scalar measurement results. Each entry is a defining
   /// `qc::MeasureOp`
-  DenseSet<Operation*> returnedStaticResults;
+  DenseSet<Operation*> returnedScalarResults;
 
-  /// Modifier information
-  bool inCtrlOp = false;
-  SmallVector<Value> controls;
-
-  /// Allocator and StringSaver for stable StringRefs
-  llvm::BumpPtrAllocator allocator;
-  llvm::StringSaver stringSaver{allocator};
+  /// Converted controls associated with their specific body unitary.
+  DenseMap<Operation*, SmallVector<Value>> controlledGates;
 
   /// Block information
   Block* entryBlock{};
@@ -88,6 +86,11 @@ struct LoweringState {
   [[nodiscard]] LogicalResult ensureAllocationMode(AllocationMode requestedMode,
                                                    Operation* op);
 };
+
+/// Lower remaining classical dialects and reconcile casts for either profile.
+[[nodiscard]] LogicalResult
+finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
+                      LLVMTypeConverter& typeConverter);
 
 struct QCToQIRTypeConverter final : LLVMTypeConverter {
   explicit QCToQIRTypeConverter(MLIRContext* ctx);
@@ -161,7 +164,7 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
  *
  * @param main The main LLVM function
  * @param ctx The MLIR context
- * @param state The lowering state containing measurement information
+ * @param state The lowering state whose returned register records are consumed
  */
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state);
@@ -170,15 +173,15 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
  * @brief Prepares classical result registers for QIR conversion
  *
  * @details
- * Inventories classical result registers, records the destination of each
- * stored measurement, consumes supported classical-register stores, and strips
- * classical results from `func::ReturnOp` operations so QIR output recording
- * can replace them.
- *
- * A direct measurement-result store is consumed because the QIR measurement
- * call writes to the corresponding result slot. Other classical-register
- * stores are rejected. Register initialization comes from `cbit.alloc` and
- * needs no operation-order recognition.
+ * Requires a single entry-function return. Inventories classical result
+ * registers and validates output stores before rewriting returns or stores.
+ * A returned-register store must share a block with its measurement and use
+ * an index available there (or a constant). Intervening operations must be
+ * effect-free, affect only quantum resources, or store to a provably distinct
+ * constant index of the same register. The QIR measurement can then write
+ * directly to the destination without changing observable order or control
+ * flow. Other stores to returned registers are rejected; local CBit stores
+ * retain their ordinary semantics.
  *
  * This must be called **before** func-to-LLVM conversion, while
  * `func::ReturnOp`, `qc::MeasureOp`, and `cbit::StoreOp` are still in the IR.
@@ -194,6 +197,6 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
  * returned classical bit register
  */
 Value getResultPtr(LoweringState& state, Operation* op,
-                   ConversionPatternRewriter& rewriter);
+                   ConversionPatternRewriter& rewriter, bool dynamic);
 
 } // namespace mlir

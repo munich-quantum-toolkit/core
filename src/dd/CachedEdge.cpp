@@ -100,9 +100,12 @@ auto CachedEdge<Node>::normalize(Node* p,
   requires IsMatrix<Node>
 {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
-  const auto zero =
-      std::array{e[0].w.approximatelyZero(), e[1].w.approximatelyZero(),
-                 e[2].w.approximatelyZero(), e[3].w.approximatelyZero()};
+  const auto zero = std::array{
+      e[0].w.approximatelyZero(),
+      e[1].w.approximatelyZero(),
+      e[2].w.approximatelyZero(),
+      e[3].w.approximatelyZero(),
+  };
 
   if (std::all_of(zero.begin(), zero.end(), [](auto b) { return b; })) {
     mm.returnEntry(*p);

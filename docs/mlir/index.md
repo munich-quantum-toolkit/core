@@ -7,8 +7,9 @@ Representation (MLIR). For an overview, see {cite:p}`MQTCompilerCollection2026`.
 The {doc}`Python compiler guide <python_compiler_collection>` describes how to
 compile and inspect quantum programs from Python. The
 {doc}`target-compilation guide <target_compilation>` shows how to compile for
-QDMI devices from Python, C++, and `mqt-cc`. The remaining pages are the
-technical reference for the underlying MLIR infrastructure.
+QDMI devices from Python, C++, and `mqt-cc`. The interface guides describe
+OpenQASM and Qiskit interoperability, followed by the MLIR technical reference
+and compiler development guidance.
 
 We define multiple dialects, each with its dedicated purpose:
 
@@ -39,7 +40,8 @@ directly to QC and emits structured OpenQASM from QC.
 
 python_compiler_collection
 target_compilation
-development
+OpenQASM
+qiskit
 MQT
 QC
 QCO
@@ -47,7 +49,7 @@ QTensor
 CBit
 Transforms
 Conversions
-OpenQASM
+development
 ```
 
 :::{note}

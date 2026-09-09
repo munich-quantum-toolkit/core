@@ -89,8 +89,8 @@ protected:
 void QCTest::SetUp() {
   // Register all necessary dialects
   DialectRegistry registry;
-  registry.insert<QCDialect, arith::ArithDialect, func::FuncDialect,
-                  memref::MemRefDialect, scf::SCFDialect>();
+  registry.insert<mlir::mqt::MQTDialect, QCDialect, arith::ArithDialect,
+                  func::FuncDialect, memref::MemRefDialect, scf::SCFDialect>();
   context = std::make_unique<MLIRContext>();
   context->appendDialectRegistry(registry);
   context->loadAllAvailableDialects();
@@ -233,7 +233,9 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
         });
       },
       "Cannot mix dynamic and static qubit allocation modes");
+}
 
+TEST_F(QCTest, BuilderRejectsDynamicAllocationOutsideEntryBlock) {
   EXPECT_DEATH(
       {
         QCProgramBuilder builder(context.get());
@@ -242,9 +244,36 @@ TEST_F(QCTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
           builder.allocQubit();
           return SmallVector<Value>{};
         });
-        builder.staticQubit(0);
       },
-      "Cannot mix dynamic and static qubit allocation modes");
+      "Dynamic qubit allocation requires the entry block");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.createFunction("dynamic_helper", {}, [&](ValueRange) {
+          builder.allocQubitRegister(1);
+          return SmallVector<Value>{};
+        });
+      },
+      "Dynamic qubit allocation requires the entry block");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.allocQubit();
+        builder.scfIf(true, [&] { builder.allocQubit(); });
+      },
+      "Dynamic qubit allocation requires the entry block");
+
+  EXPECT_DEATH(
+      {
+        QCProgramBuilder builder(context.get());
+        builder.initialize();
+        builder.scfIf(true, [&] { builder.allocQubitRegisterStorage(1); });
+      },
+      "Dynamic qubit allocation requires the entry block");
 }
 
 TEST_F(QCTest, BuilderRejectsOutOfBoundsClassicalRegisterIndices) {
@@ -437,11 +466,14 @@ TEST_F(QCTest, BuilderFinalizesRenamedEntryPoint) {
   builder.initialize();
   auto entry = cast<func::FuncOp>(builder.getInsertionBlock()->getParentOp());
   entry.setName("entry");
+  builder.allocQubit();
+  builder.allocQubitRegister(1);
 
   auto moduleOp = builder.finalize();
 
   ASSERT_TRUE(moduleOp);
   EXPECT_EQ(mlir::mqt::getEntryPoint(*moduleOp).getName(), "entry");
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST_F(QCTest, BuilderCreatesFunctionLocalStaticQubits) {
@@ -542,11 +574,6 @@ TEST_F(QCTest, UnitaryFunctionMarkerRequiresFunctionReturn) {
 }
 
 TEST_F(QCTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
-  DialectRegistry registry;
-  registry.insert<mlir::mqt::MQTDialect>();
-  context->appendDialectRegistry(registry);
-  context->getOrLoadDialect<mlir::mqt::MQTDialect>();
-
   constexpr std::array<StringLiteral, 9> invalidPrograms{
       R"mlir(module {
         func.func private @bad(%q: !qc.qubit)
@@ -625,6 +652,54 @@ TEST_F(QCTest, UnitaryVerifierRejectsInvalidFunctionAndCallContracts) {
   EXPECT_TRUE(failed(call.verifySymbolUses(symbols)));
 }
 
+TEST_F(QCTest, CleanupPrunesUnitaryFunctionsAndSignatures) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @used(%theta: f64, %unusedTheta: f64,
+                            %q: !qc.qubit, %unusedQubit: !qc.qubit)
+        attributes {mqt.unitary} {
+      qc.rz(%theta) %q : !qc.qubit
+      return
+    }
+    func.func private @unused(%q: !qc.qubit) attributes {mqt.unitary} {
+      qc.h %q : !qc.qubit
+      return
+    }
+    func.func private @conditional(%q: !qc.qubit) attributes {mqt.unitary} {
+      qc.z %q : !qc.qubit
+      return
+    }
+    func.func @main() attributes {mqt.entry_point} {
+      %theta = arith.constant 1.0 : f64
+      %unusedTheta = arith.constant 2.0 : f64
+      %q = qc.alloc : !qc.qubit
+      %unusedQubit = qc.alloc : !qc.qubit
+      %false = arith.constant false
+      scf.if %false {
+        qc.call @conditional(%q) : !qc.qubit
+      }
+      qc.call @used(%theta, %unusedTheta, %q, %unusedQubit)
+          : f64, f64, !qc.qubit, !qc.qubit
+      qc.dealloc %q : !qc.qubit
+      qc.dealloc %unusedQubit : !qc.qubit
+      return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  auto used = moduleOp->lookupSymbol<func::FuncOp>("used");
+  ASSERT_TRUE(used);
+  EXPECT_EQ(used.getNumArguments(), 2);
+  auto call =
+      *mlir::mqt::getEntryPoint(*moduleOp).getBody().getOps<CallOp>().begin();
+  EXPECT_EQ(call.getNumOperands(), 2);
+  EXPECT_FALSE(moduleOp->lookupSymbol<func::FuncOp>("unused"));
+  EXPECT_FALSE(moduleOp->lookupSymbol<func::FuncOp>("conditional"));
+  EXPECT_TRUE(mlir::mqt::getEntryPoint(*moduleOp));
+}
+
 TEST_F(QCTest, DirectSingleQubitPowBuilder) {
   QCProgramBuilder builder(context.get());
   builder.initialize();
@@ -670,7 +745,8 @@ TEST_F(QCTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
             return
           }
         }
-      )mlir"};
+      )mlir",
+  };
 
   for (const auto source : invalidPrograms) {
     bool sawExpectedDiagnostic = false;
@@ -689,7 +765,8 @@ TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
   const auto matrixType = RankedTensorType::get(
       {2, 2}, ComplexType::get(Float64Type::get(context.get())));
   const std::array<std::complex<double>, 4> xValues{
-      {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}}};
+      {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}},
+  };
   const auto xMatrix = DenseElementsAttr::get(
       matrixType, llvm::ArrayRef<std::complex<double>>(xValues));
 
@@ -712,7 +789,8 @@ TEST_F(QCTest, DenseUnitaryBuilderVerifiesAndCanonicalizesIdentity) {
   EXPECT_EQ(unitaries.front().getMatrix(), xMatrix);
 
   const std::array<std::complex<double>, 4> identityValues{
-      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}},
+  };
   unitaries.front()->setAttr(
       "matrix",
       DenseElementsAttr::get(
@@ -737,16 +815,19 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsNonUnitaryMatrix) {
   };
 
   const std::array<std::complex<double>, 4> nonUnitaryValues{
-      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.5, 0.0}}};
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.5, 0.0}},
+  };
   expectRejected(nonUnitaryValues);
 
   const std::array<std::complex<double>, 4> nonOrthogonalValues{
-      {{1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}}};
+      {{1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}},
+  };
   expectRejected(nonOrthogonalValues);
 
   const auto maximum = std::numeric_limits<double>::max();
   const std::array<std::complex<double>, 4> overflowingValues{
-      {{maximum, maximum}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+      {{maximum, maximum}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}},
+  };
   expectRejected(overflowingValues);
 }
 
@@ -820,24 +901,26 @@ TEST_F(QCTest, DenseUnitaryVerifierRejectsRepeatedQubit) {
   auto qubit = builder.allocQubit();
   const auto matrixType =
       RankedTensorType::get({4, 4}, ComplexType::get(builder.getF64Type()));
-  const std::array<std::complex<double>, 16> identityValues{{
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-  }};
+  const std::array<std::complex<double>, 16> identityValues{
+      {
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+      },
+  };
   const auto identity = DenseElementsAttr::get(
       matrixType, llvm::ArrayRef<std::complex<double>>(identityValues));
   auto unitary = UnitaryOp::create(builder, identity, ValueRange{qubit, qubit});
@@ -880,7 +963,10 @@ enum class ForbiddenModifierBodyOp : std::uint8_t {
   CBitAlloc,
   CBitRead,
   CBitLoad,
-  CBitStore
+  CBitStore,
+  MemoryLoad,
+  MemoryStore,
+  StructuredControlFlow,
 };
 
 } // namespace
@@ -919,6 +1005,12 @@ static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
     return "cbit.load";
   case ForbiddenModifierBodyOp::CBitStore:
     return "cbit.store";
+  case ForbiddenModifierBodyOp::MemoryLoad:
+    return "memref.load";
+  case ForbiddenModifierBodyOp::MemoryStore:
+    return "memref.store";
+  case ForbiddenModifierBodyOp::StructuredControlFlow:
+    return "scf.if";
   }
   llvm_unreachable("unknown forbidden modifier operation");
 }
@@ -926,8 +1018,9 @@ static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
 static void emitForbiddenModifierBodyOperation(QCProgramBuilder& builder,
                                                ForbiddenModifierBodyOp kind,
                                                Value argument, Value qubitReg,
-                                               Value cbitReg, Value index,
-                                               Value bit) {
+                                               Value cbitReg, Value buffer,
+                                               Value index, Value bit,
+                                               Value value) {
   switch (kind) {
   case ForbiddenModifierBodyOp::Alloc:
     AllocOp::create(builder);
@@ -961,6 +1054,15 @@ static void emitForbiddenModifierBodyOperation(QCProgramBuilder& builder,
   case ForbiddenModifierBodyOp::CBitStore:
     cbit::StoreOp::create(builder, bit, cbitReg, index);
     return;
+  case ForbiddenModifierBodyOp::MemoryLoad:
+    memref::LoadOp::create(builder, buffer, index);
+    return;
+  case ForbiddenModifierBodyOp::MemoryStore:
+    memref::StoreOp::create(builder, value, buffer, index);
+    return;
+  case ForbiddenModifierBodyOp::StructuredControlFlow:
+    builder.scfIf(true, [] {});
+    return;
   }
   llvm_unreachable("unknown forbidden modifier operation");
 }
@@ -977,11 +1079,14 @@ buildInvalidNestedModifierProgram(MLIRContext* context,
   auto cbitReg = builder.allocClassicalBitRegister(1);
   auto bit = builder.boolConstant(false);
   auto index = arith::ConstantIndexOp::create(builder, 0);
+  auto value = arith::ConstantIntOp::create(builder, builder.getI32Type(), 1);
+  auto buffer = memref::AllocOp::create(
+      builder, MemRefType::get({1}, builder.getI32Type()));
   const auto modifierBody = [&](Value argument) {
-    builder.scfIf(true, [&] {
-      emitForbiddenModifierBodyOperation(builder, forbiddenOperation, argument,
-                                         qubitReg, cbitReg, index.getResult(),
-                                         bit);
+    builder.inv(argument, [&](Value nestedArgument) {
+      emitForbiddenModifierBodyOperation(builder, forbiddenOperation,
+                                         nestedArgument, qubitReg, cbitReg,
+                                         buffer, index.getResult(), bit, value);
     });
   };
 
@@ -1000,9 +1105,11 @@ buildInvalidNestedModifierProgram(MLIRContext* context,
 }
 
 TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
-  constexpr std::array modifiers{VerifierModifierKind::Inv,
-                                 VerifierModifierKind::Ctrl,
-                                 VerifierModifierKind::Pow};
+  constexpr std::array modifiers{
+      VerifierModifierKind::Inv,
+      VerifierModifierKind::Ctrl,
+      VerifierModifierKind::Pow,
+  };
   constexpr std::array forbiddenOperations{
       ForbiddenModifierBodyOp::Alloc,
       ForbiddenModifierBodyOp::Dealloc,
@@ -1013,7 +1120,11 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
       ForbiddenModifierBodyOp::CBitAlloc,
       ForbiddenModifierBodyOp::CBitRead,
       ForbiddenModifierBodyOp::CBitLoad,
-      ForbiddenModifierBodyOp::CBitStore};
+      ForbiddenModifierBodyOp::CBitStore,
+      ForbiddenModifierBodyOp::MemoryLoad,
+      ForbiddenModifierBodyOp::MemoryStore,
+      ForbiddenModifierBodyOp::StructuredControlFlow,
+  };
 
   for (auto modifier : modifiers) {
     for (const auto forbiddenOperation : forbiddenOperations) {
@@ -1024,16 +1135,19 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
       auto moduleOp = buildInvalidNestedModifierProgram(context.get(), modifier,
                                                         forbiddenOperation);
       ASSERT_TRUE(moduleOp);
+      // Check the modifier contract independently of program allocation scope.
+      mlir::mqt::removeEntryPoint(mlir::mqt::getEntryPoint(*moduleOp));
 
       bool sawExpectedDiagnostic = false;
-      ScopedDiagnosticHandler handler(
-          context.get(), [&](Diagnostic& diagnostic) {
-            sawExpectedDiagnostic |=
-                StringRef(diagnostic.str())
-                    .contains("body must not contain non-unitary operations or "
-                              "access registers");
-            return success();
-          });
+      ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic&
+                                                             diagnostic) {
+        sawExpectedDiagnostic |=
+            StringRef(diagnostic.str())
+                .contains(
+                    "body must contain only unitary operations and "
+                    "memory-effect-free classical operations without regions");
+        return success();
+      });
       EXPECT_TRUE(failed(verify(*moduleOp)));
       EXPECT_TRUE(sawExpectedDiagnostic);
     }
@@ -1072,9 +1186,11 @@ buildInvalidModifierCaptureProgram(MLIRContext* context,
 }
 
 TEST_F(QCTest, ModifiersRejectDirectAndNestedQubitCaptures) {
-  constexpr std::array modifiers{VerifierModifierKind::Inv,
-                                 VerifierModifierKind::Ctrl,
-                                 VerifierModifierKind::Pow};
+  constexpr std::array modifiers{
+      VerifierModifierKind::Inv,
+      VerifierModifierKind::Ctrl,
+      VerifierModifierKind::Pow,
+  };
 
   for (const auto modifier : modifiers) {
     for (const bool nested : {false, true}) {
@@ -2131,6 +2247,37 @@ static LogicalResult runUnrollModifiers(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(mlir::mqt::createUnrollModifiers());
   return pm.run(moduleOp);
+}
+
+TEST_F(QCTest, UnrollModifiersInlinesUnitaryCalls) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @flip(%q: !qc.qubit) attributes {mqt.unitary} {
+      qc.x %q : !qc.qubit
+      return
+    }
+    func.func @main(%q: !qc.qubit) {
+      %two = arith.constant 2.0 : f64
+      qc.pow(%two) (%arg = %q) {
+        qc.call @flip(%arg) : !qc.qubit
+        qc.yield
+      } : !qc.qubit
+      return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runUnrollModifiers(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  size_t calls = 0;
+  size_t xGates = 0;
+  main.walk([&](Operation* op) {
+    calls += isa<CallOp>(op);
+    xGates += isa<XOp>(op);
+  });
+  EXPECT_EQ(calls, 0);
+  EXPECT_EQ(xGates, 1);
 }
 
 /// Unrolls @p program and checks that it matches @p reference.

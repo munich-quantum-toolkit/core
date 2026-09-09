@@ -8,6 +8,4 @@ tocdepth: 3
 
 ## Passes
 
-```{include} Passes/MQTTransforms.md
-
-```
+See {doc}`Transforms` for shared metadata and modifier passes.

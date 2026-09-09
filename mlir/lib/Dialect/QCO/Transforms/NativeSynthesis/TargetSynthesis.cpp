@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
@@ -33,6 +34,7 @@
 #include <mlir/IR/IRMapping.h>
 #include <mlir/IR/Iterators.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -55,6 +57,10 @@ namespace mlir::qco {
 
 using decomposition::decomposeUnitary2QWeyl;
 using decomposition::emitUnitary2QWeyl;
+
+#define GEN_PASS_DEF_TARGETNATIVESYNTHESIS
+#define GEN_PASS_DEF_VERIFYTARGETCONFORMANCE
+#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
 
@@ -269,7 +275,7 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
     return false;
   }
 
-  const auto native = decomposeUnitary2QWeyl(run.composed, basis.entangler);
+  const auto native = decomposeUnitary2QWeyl(run.composed, *basis.entangler);
   if (native.numBasisUses >= run.numTwoQ) {
     return false;
   }
@@ -295,8 +301,8 @@ using SiteMap = DenseMap<Value, SiteId>;
 } // namespace
 
 static SmallVector<Value> getQubitValues(ValueRange values) {
-  return llvm::to_vector(llvm::make_filter_range(
-      values, [](Value value) { return isa<QubitType>(value.getType()); }));
+  return llvm::filter_to_vector(
+      values, [](Value value) { return isa<QubitType>(value.getType()); });
 }
 
 /// Propagate exact sites, rejecting unknown inputs or inconsistent joins.
@@ -436,6 +442,9 @@ static bool isOperandSwapInvariant(UnitaryOpInterface unitary) {
   if (isa<SWAPOp, iSWAPOp, RXXOp, RYYOp, RZZOp>(operation)) {
     return true;
   }
+  if (auto exchange = dyn_cast<XXPlusYYOp>(operation)) {
+    return matchPattern(exchange.getBeta(), m_AnyZeroFloat());
+  }
   auto controlled = dyn_cast<CtrlOp>(operation);
   return controlled && controlled.getNumControls() == 1 &&
          controlled.getNumTargets() == 1 &&
@@ -502,13 +511,16 @@ static LogicalResult synthesizeTargetOperation(
     return success();
   }
 
+  if (!basis->entangler) {
+    return unsupported("the target has no usable two-qubit entangler");
+  }
   Matrix4x4 matrix;
   if (!assignTwoQubitOpMatrix(op, matrix)) {
     return unsupported("its unitary matrix is not available at compile time");
   }
-  const bool reverseEntangler = !target.supports(basis->entangler, sites);
+  const bool reverseEntangler = !target.supports(*basis->entangler, sites);
   if (reverseEntangler &&
-      !target.supports(basis->entangler, std::array{sites[1], sites[0]})) {
+      !target.supports(*basis->entangler, std::array{sites[1], sites[0]})) {
     return operation->emitError()
            << "no supported synthesis-basis placement is known for its "
               "static sites";
@@ -520,7 +532,7 @@ static LogicalResult synthesizeTargetOperation(
     matrix = matrix.reorderForQubits(1, 0);
     std::swap(input0, input1);
   }
-  const auto native = decomposeUnitary2QWeyl(matrix, basis->entangler);
+  const auto native = decomposeUnitary2QWeyl(matrix, *basis->entangler);
   const auto synthesized = emitUnitary2QWeyl(rewriter, operation->getLoc(),
                                              input0, input1, native, *basis);
   decomposition::emitGPhaseIfNeeded(rewriter, operation->getLoc(),
@@ -538,7 +550,8 @@ static LogicalResult synthesizeTargetOperation(
 static LogicalResult fuseTwoQubitGates(ModuleOp moduleOp) {
   constexpr CompilerTarget::SynthesisBasis basis{
       .singleQubit = CompilerTarget::SingleQubitBasis::U,
-      .entangler = CompilerTarget::GateKind::CZ};
+      .entangler = CompilerTarget::GateKind::CZ,
+  };
 
   bool changed = false;
   IRRewriter rewriter(moduleOp.getContext());
@@ -577,23 +590,24 @@ protected:
 };
 
 struct TargetNativeSynthesisPass final
-    : PassWrapper<TargetNativeSynthesisPass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(TargetNativeSynthesisPass)
-
-  explicit TargetNativeSynthesisPass(const CompilerTarget& targetIn)
-      : target(targetIn) {}
-
-  void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect, arith::ArithDialect, math::MathDialect>();
-  }
+    : impl::TargetNativeSynthesisBase<TargetNativeSynthesisPass> {
 
 protected:
   void runOnOperation() override {
+    ModuleOp moduleOp = getOperation();
+    const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!environment) {
+      moduleOp.emitError()
+          << "target-native synthesis requires a valid mqt.target_env: "
+          << environment.error();
+      signalPassFailure();
+      return;
+    }
+    const CompilerTarget& target = environment.environment().target();
     if (target.nativeOperationsKind() ==
         CompilerTarget::NativeOperations::Kind::Unrestricted) {
       return;
     }
-    ModuleOp moduleOp = getOperation();
     const auto targetBasis = target.synthesisBasis();
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
@@ -629,25 +643,29 @@ protected:
       signalPassFailure();
     }
   }
-
-  CompilerTarget target;
 };
 
 struct VerifyTargetConformancePass final
-    : PassWrapper<VerifyTargetConformancePass, OperationPass<ModuleOp>> {
-  MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(VerifyTargetConformancePass)
-
-  explicit VerifyTargetConformancePass(const CompilerTarget& targetIn)
-      : target(targetIn) {}
+    : impl::VerifyTargetConformanceBase<VerifyTargetConformancePass> {
 
 protected:
   void runOnOperation() override {
-    auto sites = collectStaticSites(getOperation());
+    ModuleOp moduleOp = getOperation();
+    const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+    if (!environment) {
+      moduleOp.emitError()
+          << "target conformance requires a valid mqt.target_env: "
+          << environment.error();
+      signalPassFailure();
+      return;
+    }
+    const CompilerTarget& target = environment.environment().target();
+    auto sites = collectStaticSites(moduleOp);
     if (failed(sites)) {
       signalPassFailure();
       return;
     }
-    WalkResult result = getOperation()->walk([&](Operation* operation) {
+    WalkResult result = moduleOp->walk([&](Operation* operation) {
       if (auto staticOp = dyn_cast<StaticOp>(operation)) {
         const auto site =
             static_cast<CompilerTarget::SiteId>(staticOp.getIndex());
@@ -685,24 +703,12 @@ protected:
       signalPassFailure();
     }
   }
-
-  CompilerTarget target;
 };
 
 } // namespace
 
 std::unique_ptr<Pass> createFuseTwoQubitGates() {
   return std::make_unique<FuseTwoQubitGatesPass>();
-}
-
-std::unique_ptr<Pass>
-createTargetNativeSynthesis(const CompilerTarget& target) {
-  return std::make_unique<TargetNativeSynthesisPass>(target);
-}
-
-std::unique_ptr<Pass>
-createVerifyTargetConformance(const CompilerTarget& target) {
-  return std::make_unique<VerifyTargetConformancePass>(target);
 }
 
 } // namespace mlir::qco

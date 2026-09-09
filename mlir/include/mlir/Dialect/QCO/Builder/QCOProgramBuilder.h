@@ -54,6 +54,8 @@ namespace qco {
 /// allocation
 /// (`allocQubit`, `allocQubitRegister`, or `qtensorAlloc`), never both. The
 /// builder terminates with a usage error if the modes are mixed.
+/// Dynamic allocation is only allowed directly in the entry block of the
+/// `mqt.entry_point` function. Helpers receive allocated qubits as arguments.
 ///
 /// @par Example Usage:
 /// ```c++
@@ -106,6 +108,7 @@ public:
   ///
   /// The callback must return one trailing qubit for every qubit argument, in
   /// qubit-argument order.
+  /// The body must not dynamically allocate qubits or qubit tensors.
   func::FuncOp
   createFunction(StringRef name, TypeRange argumentTypes,
                  function_ref<SmallVector<Value>(ValueRange)> body);
@@ -182,13 +185,13 @@ public:
     /// @param value The underlying qubit SSA value
     /// @param regId ID of the register containing the qubit, or `-1`
     /// @param regIndex Index of the qubit within its register, if applicable
-    // NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(misc-explicit-constructor)
     Qubit(Value value, int64_t regId = -1, Value regIndex = {})
         : value(value), regId(regId), regIndex(regIndex) {}
 
     /// Implicitly convert this tracked qubit to its underlying SSA value.
     /// @return The underlying `Value`
-    // NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(misc-explicit-constructor)
     operator Value() const { return value; }
 
     /// Get the type of the underlying SSA value.
@@ -218,13 +221,13 @@ public:
     /// Implicitly construct a tracked tensor from an SSA value.
     /// @param value The underlying tensor SSA value
     /// @param regId ID of the corresponding register, or `-1`
-    // NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(misc-explicit-constructor)
     Tensor(Value value, int64_t regId = -1) : value(value), regId(regId) {}
 
     /// Implicitly convert this tracked tensor to its underlying SSA
     /// value.
     /// @return The underlying `Value`
-    // NOLINTNEXTLINE(google-explicit-constructor)
+    // NOLINTNEXTLINE(misc-explicit-constructor)
     operator Value() const { return value; }
 
     /// Get the type of the underlying SSA value.
@@ -262,6 +265,7 @@ public:
   };
 
   /// Allocate a single qubit initialized to |0⟩
+  /// Requires an insertion point in the entry block of `mqt.entry_point`.
   /// @return A tracked qubit handle (convertible to `Value`)
   ///
   /// @par Example:
@@ -287,6 +291,7 @@ public:
   Qubit staticQubit(uint64_t index);
 
   /// Allocate a qubit tensor and eagerly extract every element
+  /// Requires an insertion point in the entry block of `mqt.entry_point`.
   /// @param size Number of qubits (must be positive)
   /// @param name Optional source-level register name
   /// @return A `QubitRegister` containing the residual tensor and one
@@ -344,6 +349,7 @@ public:
   /// `!qco.qubit` values. No elements are extracted. If the size is a constant,
   /// the tensor has static size; otherwise it has dynamic size. Its qubits are
   /// initialized in the |0> state, and the tensor is tracked automatically.
+  /// Requires an insertion point in the entry block of `mqt.entry_point`.
   ///
   /// @param size Number of qubits (must be positive)
   /// @return The allocated tensor
@@ -1948,6 +1954,7 @@ private:
   AllocationMode allocationMode = AllocationMode::Unset;
 
   /// Ensure static and dynamic qubit allocation modes are not mixed.
+  /// Dynamic allocation also requires the entry-point entry block.
   void ensureAllocationMode(AllocationMode requestedMode);
 };
 } // namespace qco

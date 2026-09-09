@@ -73,6 +73,26 @@ Use diagnostics for invalid input or unsupported behavior. Reserve assertions
 for internal invariants that valid input cannot violate. Diagnostics must state
 what failed and, when useful, which form is supported.
 
+## Linear quantum values
+
+Every `!qco.qubit` and one-dimensional qubit tensor or vector SSA value in valid
+QCO IR has exactly one use, including block arguments. `qco::verifyLinearity`
+owns this whole-IR check; ordinary MLIR operation verification alone does not
+establish it. Builders and transformations must preserve the invariant, and
+public QCO pipeline boundaries must validate it.
+
+Rewrites on valid QCO IR can use `*value.user_begin()` to obtain the sole
+consumer, or `*value.use_begin()` for its `OpOperand` and operand number. Do not
+repeat `hasOneUse()` guards in these rewrites. Keep linearity checks in the
+verifier and optional debug assertions at internal boundaries. This rule does
+not apply to QC references or classical SSA values, and does not permit assuming
+that results preserve wire order: linearity and wire correspondence are separate
+contracts.
+
+When forwarding a linear value requires deleting its producer, use a rewrite
+that removes both operations. A fold can only change its root; do not rely on
+later dead-code elimination to restore linearity before other rewrites run.
+
 ## Data structures and performance
 
 Use LLVM views and abstract range types at MLIR-facing boundaries. Prefer an

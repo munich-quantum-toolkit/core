@@ -36,10 +36,10 @@ conversion, execution, and finite-shot result reconstruction.
 ```{code-cell} ipython3
 import pennylane as qp
 
-bell_device = qp.device("mqt.ddsim.default", wires=2, shots=1000)
+bell_device = qp.device("mqt.ddsim.default", wires=2, job_parameters={"custom1": 7})
 
 
-@qp.qnode(bell_device)
+@qp.qnode(bell_device, shots=1000)
 def bell_state():
     qp.Hadamard(0)
     qp.CNOT(wires=[0, 1])
@@ -47,7 +47,9 @@ def bell_state():
 
 
 bell_counts = bell_state()
-bell_counts
+assert sum(bell_counts.values()) == 1000
+assert set(bell_counts) <= {"00", "11"}
+print({str(key): int(value) for key, value in sorted(bell_counts.items())})
 ```
 
 Only the computational-basis states $00$ and $11$ have nonzero probability, up
@@ -113,6 +115,9 @@ plt.rcParams.update(
 ```
 
 ```{code-cell} ipython3
+:tags: [hide-input]
+:mystnb: {image: {alt: "Four-node MaxCut graph with edges 01, 02, 12, and 23."}}
+
 graph = nx.Graph([(0, 1), (0, 2), (1, 2), (2, 3)])
 positions = {
     0: (-1.0, 0.75),
@@ -152,16 +157,16 @@ def ansatz(parameters):
     qp.qaoa.mixer_layer(parameters[1], mixer_hamiltonian)
 
 
-qaoa_device = qp.device("mqt.ddsim.default", wires=4, shots=1000)
+qaoa_device = qp.device("mqt.ddsim.default", wires=4, job_parameters={"custom1": 7})
 
 
-@qp.qnode(qaoa_device, diff_method="parameter-shift")
+@qp.qnode(qaoa_device, shots=1000, diff_method="parameter-shift")
 def cost(parameters):
     ansatz(parameters)
     return qp.expval(cost_hamiltonian)
 
 
-@qp.qnode(qaoa_device)
+@qp.qnode(qaoa_device, shots=1000)
 def sample(parameters):
     ansatz(parameters)
     return qp.sample(wires=range(4))
@@ -230,7 +235,10 @@ bit-string distribution, and the highest-cut partition observed in the final
 sample. Orange edges cross that partition.
 
 ```{code-cell} ipython3
-figure, axes = plt.subplots(1, 3, figsize=(14, 3.8))
+:tags: [hide-input]
+:mystnb: {image: {alt: "QAOA objective estimates, final counts, and best sampled graph partition."}}
+
+figure, axes = plt.subplots(3, 1, figsize=(7, 10))
 
 axes[0].plot(
     range(len(objective_values)),
@@ -306,7 +314,6 @@ device_id = "stable ID returned by the QDMI device registration"
 device = QDMIDevice(
     device_id=device_id,
     wires=["a", "b", "c", "d"],
-    shots=[(100, 2), 500],
     session_parameters={
         "base_url": "device endpoint or selector",
         "token": "...",
@@ -327,16 +334,30 @@ from mqt.core.qdmi import slurm
 
 device = QDMIDevice(
     device=slurm.open_device_from_license(),
-    shots=1000,
 )
 ```
 
 Arbitrary PennyLane wire labels map deterministically to contiguous QASM
-indices. The converter validates the one- and two-qubit loci advertised through
-QDMI but does not route circuits. A topology-incompatible program therefore
-fails before submission. Shot vectors, batches, and parameter-shift tapes are
-submitted in order before their results are collected in the same order. The
-PennyLane call remains synchronous, and every execution requires finite shots.
+indices. The converter validates fixed-arity loci and finite parameters for both
+OpenQASM formats against the QDMI capabilities but does not route circuits. A
+topology-incompatible program therefore fails before submission. Shot vectors,
+batches, and parameter-shift tapes are submitted in order before their results
+are collected in the same order. The PennyLane call remains synchronous, and
+every execution requires finite shots. Set shots on the QNode or use
+`qp.set_shots` to override them. Devices do not accept a `shots` argument or
+provide a default shot count. Omitting finite shots fails before submission.
+
+Use `with qp.Tracker(device) as tracker:` to record submitted jobs
+(`executions`), requested shots, batches, and the number of tapes in each batch
+(`batch_len`). Shot-vector copies count as separate jobs. Tracking records
+accepted submissions, including jobs whose execution subsequently fails.
+
+Mid-circuit measurements use PennyLane's deferred-measurement transform. Reset
+and feedback may require unused device wires; custom wire labels are supported.
+The plugin rejects programs requiring more wires than are available and rejects
+postselection. Explicit `one-shot` and `tree-traversal` requests are
+unsupported; the plugin does not infer native dynamic-circuit support from gate
+names.
 
 ## Supported gate-level scope
 
@@ -344,7 +365,11 @@ The OpenQASM 3 path covers identity and Pauli gates; H, S, T, SX and supported
 adjoints; RX, RY, RZ, and phase shift; controlled Pauli and phase gates;
 Toffoli, SWAP, and CSWAP; ISWAP, PSWAP, and ECR; and Ising XX, XY, YY, and ZZ
 rotations. PennyLane decomposes higher-level operations when their
-decompositions reach operations advertised by the QDMI device.
+decompositions reach operations advertised by the QDMI device. Enabling
+`qp.decomposition.enable_graph()` also lets PennyLane choose registered graph
+decompositions targeting those operations. The target set reflects the selected
+OpenQASM serializer and advertised operation names; it does not imply native
+hardware gates or provide routing.
 
 The interface does not implement pulse programming, device-specific non-gate
 properties, routing, analytic execution, or QDMI batch jobs.

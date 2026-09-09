@@ -221,10 +221,8 @@ static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
   }
 }
 
-/**
- * @brief Gets the name of the entry point from the module attributes
- */
-static FailureOr<StringRef> getEntryPointName(ModuleOp moduleOp) {
+/// Resolve the entry point by its index in the function table.
+static FailureOr<func::FuncOp> getEntryPoint(ModuleOp moduleOp) {
   auto entryPointAttr = moduleOp->getAttrOfType<IntegerAttr>("jeff.entrypoint");
   if (!entryPointAttr || !entryPointAttr.getType().isUnsignedInteger()) {
     return moduleOp.emitError(
@@ -232,20 +230,14 @@ static FailureOr<StringRef> getEntryPointName(ModuleOp moduleOp) {
   }
   auto entryPoint = entryPointAttr.getUInt();
 
-  auto stringsAttr = moduleOp->getAttrOfType<ArrayAttr>("jeff.strings");
-  if (!stringsAttr) {
-    return moduleOp.emitError("requires an array 'jeff.strings' attribute");
+  for (auto [index, function] :
+       llvm::enumerate(moduleOp.getOps<func::FuncOp>())) {
+    if (index == entryPoint) {
+      return function;
+    }
   }
-
-  if (entryPoint >= stringsAttr.size()) {
-    return moduleOp.emitError("'jeff.entrypoint' index is out of bounds");
-  }
-
-  auto name = dyn_cast<StringAttr>(stringsAttr[entryPoint]);
-  if (!name) {
-    return moduleOp.emitError("'jeff.entrypoint' must index a string");
-  }
-  return name.getValue();
+  return moduleOp.emitError(
+      "'jeff.entrypoint' function index is out of bounds");
 }
 
 /**
@@ -1037,51 +1029,6 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
 
     auto inValues = adaptor.getInValues();
 
-    /// Pure selections are ordinary SSA values, not mutable register aliases.
-    const bool pureSelection =
-        llvm::all_of(op.getBranches(), [](Region& region) {
-          return llvm::all_of(
-              region.front().without_terminator(), [](Operation& nested) {
-                return isa<jeff::IntConst1Op, jeff::IntConst8Op,
-                           jeff::IntConst16Op, jeff::IntConst32Op,
-                           jeff::IntConst64Op, arith::ConstantOp>(nested);
-              });
-        });
-    if (pureSelection && llvm::all_of(op.getResultTypes(), [](Type type) {
-          return isa<IntegerType>(type);
-        })) {
-      SmallVector<Value> falseValues;
-      SmallVector<Value> trueValues;
-      for (auto [index, region] : llvm::enumerate(op.getBranches())) {
-        auto yield = cast<jeff::YieldOp>(region.front().getTerminator());
-        auto& values = index == 0 ? falseValues : trueValues;
-        for (auto value : yield.getOperands()) {
-          auto argument = dyn_cast<BlockArgument>(value);
-          if (argument && argument.getOwner() == &region.front()) {
-            values.push_back(inValues[argument.getArgNumber()]);
-          } else if (auto* constant = value.getDefiningOp();
-                     isa_and_nonnull<jeff::IntConst1Op, jeff::IntConst8Op,
-                                     jeff::IntConst16Op, jeff::IntConst32Op,
-                                     jeff::IntConst64Op, arith::ConstantOp>(
-                         constant)) {
-            values.push_back(rewriter.clone(*constant)->getResult(0));
-          } else {
-            return rewriter.notifyMatchFailure(
-                op, "selection must yield an input or integer constant");
-          }
-        }
-      }
-      SmallVector<Value> results;
-      for (auto [trueValue, falseValue] :
-           llvm::zip_equal(trueValues, falseValues)) {
-        results.push_back(arith::SelectOp::create(rewriter, op.getLoc(),
-                                                  adaptor.getSelection(),
-                                                  trueValue, falseValue));
-      }
-      rewriter.replaceOp(op, results);
-      return success();
-    }
-
     SmallVector<Value> qubits;
     for (auto [argument, adapted] : llvm::zip_equal(
              op.getBranches()[0].front().getArguments(), inValues)) {
@@ -1340,12 +1287,15 @@ struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
  * ```
  */
 struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
-  using OpConversionPattern::OpConversionPattern;
+  ConvertJeffMainToQCO(TypeConverter& typeConverter, MLIRContext* context,
+                       func::FuncOp entryPoint)
+      : OpConversionPattern(typeConverter, context, PatternBenefit(2)),
+        entryPoint_(entryPoint) {}
 
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getSymName() != getEntryPointName(op->getParentOfType<ModuleOp>())) {
+    if (op != entryPoint_) {
       return failure();
     }
 
@@ -1368,7 +1318,7 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
       return failure();
     }
 
-    /// A result-less jeff entry point uses the compiler's legacy status result.
+    // A result-less jeff entry point uses the compiler's legacy status result.
     const bool needsStatusResult = resultTypes.empty();
     if (needsStatusResult) {
       resultTypes.push_back(rewriter.getI64Type());
@@ -1391,6 +1341,9 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
 
     return success();
   }
+
+private:
+  func::FuncOp entryPoint_;
 };
 
 /**
@@ -1433,8 +1386,8 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto moduleOp = getOperation();
-    auto entryPointName = getEntryPointName(moduleOp);
-    if (failed(entryPointName)) {
+    auto entryPoint = getEntryPoint(moduleOp);
+    if (failed(entryPoint)) {
       signalPassFailure();
       return;
     }
@@ -1480,6 +1433,23 @@ protected:
     RewritePatternSet patterns(context);
     JeffToQCOTypeConverter typeConverter(context);
 
+    for (auto function : moduleOp.getOps<func::FuncOp>()) {
+      if (function == *entryPoint) {
+        function.setPublic();
+        continue;
+      }
+      if (llvm::any_of(function.getArgumentTypes(), [&](Type type) {
+            return isa<cbit::RegisterType>(typeConverter.convertType(type));
+          })) {
+        function.emitError("classical register arguments in helper functions "
+                           "are not supported");
+        signalPassFailure();
+        return;
+      }
+      // A jeff module is a complete program with one external entry point.
+      function.setPrivate();
+    }
+
     // Configure conversion target
     target.addIllegalDialect<jeff::JeffDialect>();
     target
@@ -1488,23 +1458,25 @@ protected:
                          tensor::TensorDialect, scf::SCFDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return (op.getSymName() != *entryPointName || mqt::isEntryPoint(op)) &&
+      return (op != *entryPoint || mqt::isEntryPoint(op)) &&
              typeConverter.isSignatureLegal(op.getFunctionType()) &&
              typeConverter.isLegal(&op.getBody());
     });
-    target.addDynamicallyLegalOp<func::ReturnOp>(
-        [&](func::ReturnOp op) { return typeConverter.isLegal(op); });
+    target.addDynamicallyLegalOp<func::CallOp, func::ReturnOp>(
+        [&](Operation* op) { return typeConverter.isLegal(op); });
 
     // Register operation conversion patterns
     jeff::populateJeffToNativeConversionPatterns(patterns);
     populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
         patterns, typeConverter);
     populateReturnOpTypeConversionPattern(patterns, typeConverter);
+    populateCallOpTypeConversionPattern(patterns, typeConverter);
+    patterns.add<ConvertJeffMainToQCO>(typeConverter, context, *entryPoint);
     patterns.add<ConvertJeffIntArraySetIndexOpToCBit>(typeConverter, context,
                                                       sharedArrayUpdates);
     patterns.add<ConvertJeffIntArrayZeroOpToCBit, ConvertJeffLogicalShift,
-                 ConvertJeffIntArrayGetIndexOpToCBit, ConvertJeffMainToQCO>(
-        typeConverter, context, PatternBenefit(2));
+                 ConvertJeffIntArrayGetIndexOpToCBit>(typeConverter, context,
+                                                      PatternBenefit(2));
     patterns.add<
         ConvertJeffQuregAllocOpToQCO, ConvertJeffQuregExtractIndexOpToQCO,
         ConvertJeffQuregInsertIndexOpToQCO, ConvertJeffQuregFreeZeroOpToQCO,

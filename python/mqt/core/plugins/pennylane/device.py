@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 import numpy as np
 import pennylane as qp
-from pennylane.devices import Device, ExecutionConfig
+from pennylane.devices import Device, DeviceCapabilities, ExecutionConfig
 from pennylane.devices.preprocess import (
     decompose,
     measurements_from_samples,
@@ -55,6 +55,7 @@ if TYPE_CHECKING:
 
     from pennylane.tape import QuantumScript, QuantumScriptOrBatch
     from pennylane.typing import Result, ResultBatch
+    from pennylane.wires import Wires
 
     from mqt.core.typing import QDMIJobParameters, QDMISessionParameters
 
@@ -107,6 +108,29 @@ def _validate_finite_shots(tape: QuantumScript) -> tuple[tuple[QuantumScript], A
     return (tape,), operator.itemgetter(0)
 
 
+@qp.transform
+def _defer_on_device_wires(tape: QuantumScript, wires: Wires) -> tuple[tuple[QuantumScript], Any]:
+    """Defer measurements using unused device wires, including custom labels.
+
+    Returns:
+        The transformed tape and PennyLane's result postprocessor.
+
+    Raises:
+        PennyLaneValidationError: If deferral requires more wires than the device exposes.
+    """
+    if not any(isinstance(operation, qp.ops.MidMeasure) for operation in tape.operations):
+        return (tape,), operator.itemgetter(0)
+    ordered_wires = [*tape.wires, *(wire for wire in wires if wire not in tape.wires)]
+    wire_map = {wire: index for index, wire in enumerate(ordered_wires)}
+    (mapped,), _ = qp.map_wires(tape, wire_map)
+    (deferred,), postprocess = defer_measurements(mapped, allow_postselect=False)
+    if any(wire >= len(wires) for wire in deferred.wires):
+        msg = "Deferred measurements require more wires than the QDMI device exposes."
+        raise ValidationError(msg)
+    (restored,), _ = qp.map_wires(deferred, dict(enumerate(ordered_wires)))
+    return (restored,), postprocess
+
+
 class QDMIDevice(Device):
     """Execute PennyLane programs on a gate-based QDMI device.
 
@@ -115,18 +139,19 @@ class QDMIDevice(Device):
             argument or ``device``.
         wires: PennyLane wire labels or number of wires. By default all QDMI
             qubits are exposed as consecutive integer wires.
-        shots: Finite default shot configuration.
         device: An already-open QDMI device. Use this for a session selected by
             an integration such as Slurm.
         session_parameters: QDMI device-session keyword arguments.
         job_parameters: QDMI custom job keyword arguments.
     """
 
+    capabilities = DeviceCapabilities(supported_mcm_methods=[])
+    """Backend capabilities described by :class:`~pennylane.devices.capabilities.DeviceCapabilities`."""
+
     def __init__(
         self,
         device_id: str | None = None,
         wires: int | Sequence[Hashable] | None = None,
-        shots: int | Sequence[int | tuple[int, int]] | Shots | None = 1024,
         *,
         device: QDMIDeviceHandle | None = None,
         session_parameters: QDMISessionParameters | None = None,
@@ -173,12 +198,7 @@ class QDMIDevice(Device):
             )
             raise ConfigurationError(msg)
 
-        # PennyLane deprecates passing device-level shots to Device.__init__,
-        # but still reads Device.shots as the default. Set the validated value
-        # after initializing the base class to preserve the finite default
-        # without emitting a deprecation warning for every plugin instance.
-        super().__init__(wires=resolved_wires, shots=None)
-        self._shots = Shots(shots)
+        super().__init__(wires=resolved_wires)
         self._program_format = self._select_program_format()
         self._converter = _ProgramConverter(self._qdmi_device, self.wires, self._program_format)
         self._submitted_jobs = 0
@@ -230,8 +250,8 @@ class QDMIDevice(Device):
         del execution_config
         pipeline = CompilePipeline()
         pipeline.add_transform(_validate_finite_shots)
-        pipeline.add_transform(defer_measurements, allow_postselect=False, num_wires=len(self.wires))
         pipeline.add_transform(validate_device_wires, self.wires, name=self.name)
+        pipeline.add_transform(_defer_on_device_wires, self.wires)
         pipeline.add_transform(
             validate_measurements,
             analytic_measurements=lambda _measurement: False,
@@ -243,7 +263,7 @@ class QDMIDevice(Device):
         pipeline.add_transform(
             decompose,
             stopping_condition=self._converter.supports,
-            stopping_condition_shots=self._converter.supports,
+            target_gates=self._converter.target_gates,
             skip_initial_state_prep=False,
             device_wires=self.wires,
             name=self.name,
@@ -387,13 +407,21 @@ class QDMIDevice(Device):
         if not prepared:
             return cast("ResultBatch", ())
 
+        if self.tracker.active:
+            self.tracker.update(batches=1, batch_len=len(tapes))
+            self.tracker.record()
+
         submitted: list[tuple[int, _ConvertedProgram, int, QDMIJobHandle]] = []
+        tape_results: list[list[np.ndarray]] = [[] for _ in tapes]
         started = monotonic()
         try:
             for index, (converted, shot_copies) in enumerate(prepared):
-                submitted.extend((index, converted, shots, self._submit(converted, shots)) for shots in shot_copies)
+                for shots in shot_copies:
+                    submitted.append((index, converted, shots, self._submit(converted, shots)))
+                    if self.tracker.active:
+                        self.tracker.update(executions=1, shots=shots)
+                        self.tracker.record()
 
-            tape_results: list[list[np.ndarray]] = [[] for _ in tapes]
             for index, converted, shots, job in submitted:
                 tape_results[index].append(self._result(job, converted, shots))
         except BaseException:
@@ -419,7 +447,6 @@ class DDSIMDevice(QDMIDevice):
     def __init__(
         self,
         wires: int | Sequence[Hashable] | None = None,
-        shots: int | Sequence[int | tuple[int, int]] | Shots | None = 1024,
         *,
         session_parameters: QDMISessionParameters | None = None,
         job_parameters: QDMIJobParameters | None = None,
@@ -428,7 +455,6 @@ class DDSIMDevice(QDMIDevice):
         super().__init__(
             "mqt.ddsim.default",
             wires=wires,
-            shots=shots,
             session_parameters=session_parameters,
             job_parameters=job_parameters,
         )

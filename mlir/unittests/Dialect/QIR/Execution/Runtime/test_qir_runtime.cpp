@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <array>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -28,6 +29,7 @@
 #include <limits>
 #include <sstream>
 #include <stdexcept>
+#include <string>
 
 #ifdef _WIN32
 #define SYSTEM _wsystem
@@ -733,11 +735,17 @@ TEST_F(QIRRuntimeTest, BellPairDynamicReverse) {
 
 TEST_F(QIRRuntimeTest, GHZ4Static) {
   const std::array q = {
-      reinterpret_cast<Qubit*>(0UL), reinterpret_cast<Qubit*>(1UL),
-      reinterpret_cast<Qubit*>(2UL), reinterpret_cast<Qubit*>(3UL)};
+      reinterpret_cast<Qubit*>(0UL),
+      reinterpret_cast<Qubit*>(1UL),
+      reinterpret_cast<Qubit*>(2UL),
+      reinterpret_cast<Qubit*>(3UL),
+  };
   const std::array r = {
-      reinterpret_cast<Result*>(0UL), reinterpret_cast<Result*>(1UL),
-      reinterpret_cast<Result*>(2UL), reinterpret_cast<Result*>(3UL)};
+      reinterpret_cast<Result*>(0UL),
+      reinterpret_cast<Result*>(1UL),
+      reinterpret_cast<Result*>(2UL),
+      reinterpret_cast<Result*>(3UL),
+  };
   __quantum__rt__initialize(nullptr);
   __quantum__qis__h__body(q[0]);
   __quantum__qis__cx__body(q[0], q[1]);
@@ -775,8 +783,11 @@ TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
   __quantum__qis__mz__body(q[2], r[2]);
   __quantum__qis__mz__body(q[3], r[3]);
   const std::array m = {
-      __quantum__rt__read_result(r[0]), __quantum__rt__read_result(r[1]),
-      __quantum__rt__read_result(r[2]), __quantum__rt__read_result(r[3])};
+      __quantum__rt__read_result(r[0]),
+      __quantum__rt__read_result(r[1]),
+      __quantum__rt__read_result(r[2]),
+      __quantum__rt__read_result(r[3]),
+  };
   EXPECT_EQ(m[0], m[1]);
   EXPECT_EQ(m[1], m[2]);
   EXPECT_EQ(m[2], m[3]);
@@ -789,8 +800,7 @@ TEST_F(QIRRuntimeTest, GHZ4Dynamic) {
 }
 
 TEST_F(QIRRuntimeTest, PackageResizeWhenEnlargingState) {
-  // dd::Package starts at 32 qubits.
-  // Acting on qubit 32 forces qState.dd->resize.
+  /// Acting on qubit 32 must extend the initially empty state.
   auto* q32 = reinterpret_cast<Qubit*>(32UL);
   __quantum__rt__initialize(nullptr);
   __quantum__qis__h__body(q32);
@@ -892,3 +902,135 @@ TEST_P(QIRFilesTest, Executables) {
   EXPECT_EQ(result, 0);
 }
 } // namespace qir
+
+namespace qir {
+
+TEST_F(QIRRuntimeTest, PreservesPhaseBeforeFirstQubitAndFollowingGates) {
+  __quantum__rt__initialize(nullptr);
+  __quantum__qis__gphase__body(0.3);
+  __quantum__qis__x__body(nullptr);
+  __quantum__qis__gphase__body(0.4);
+  __quantum__qis__x__body(nullptr);
+  auto state = Runtime::getInstance().takeState();
+  state.dd->garbageCollect(true);
+  const auto values = state.edge.getVector();
+  ASSERT_EQ(values.size(), 2);
+  EXPECT_NEAR(std::abs(values[0] - std::polar(1., 0.7)), 0., 1e-12);
+  EXPECT_EQ(values[1], 0.);
+  state.dd->decRef(state.edge);
+  EXPECT_NO_THROW(__quantum__rt__initialize(nullptr));
+}
+
+TEST_F(QIRRuntimeTest, ExtractsLogicalOrderAfterSwapCycle) {
+  __quantum__rt__initialize(nullptr);
+  auto* q0 = reinterpret_cast<Qubit*>(0);
+  auto* q1 = reinterpret_cast<Qubit*>(1);
+  auto* q2 = reinterpret_cast<Qubit*>(2);
+  __quantum__qis__x__body(q0);
+  __quantum__qis__swap__body(q0, q1);
+  __quantum__qis__swap__body(q1, q2);
+  auto state = Runtime::getInstance().takeState();
+  const auto values = state.edge.getVector();
+  ASSERT_EQ(values.size(), 8);
+  for (size_t i = 0; i < values.size(); ++i) {
+    EXPECT_EQ(values[i], i == 4 ? 1. : 0.);
+  }
+  state.dd->decRef(state.edge);
+}
+
+TEST_F(QIRRuntimeTest, ReusesReleasedWiresWithoutReusingHandles) {
+  __quantum__rt__initialize(nullptr);
+  auto* first = __quantum__rt__qubit_allocate(nullptr);
+  __quantum__qis__x__body(first);
+  __quantum__rt__qubit_release(first);
+  for (size_t i = 0; i < 32; ++i) {
+    auto* qubit = __quantum__rt__qubit_allocate(nullptr);
+    EXPECT_NE(qubit, first);
+    __quantum__qis__mz__body(qubit, nullptr);
+    EXPECT_FALSE(__quantum__rt__read_result(nullptr));
+    __quantum__qis__x__body(qubit);
+    __quantum__rt__qubit_release(qubit);
+  }
+  EXPECT_THROW(__quantum__qis__x__body(first), std::out_of_range);
+  auto state = Runtime::getInstance().takeState();
+  EXPECT_EQ(state.numQubits, 1);
+  state.dd->decRef(state.edge);
+}
+
+TEST_F(QIRRuntimeTest, ReleasedSwappedWireIsResetBeforeReuse) {
+  __quantum__rt__initialize(nullptr);
+  auto* a = __quantum__rt__qubit_allocate(nullptr);
+  auto* b = __quantum__rt__qubit_allocate(nullptr);
+  __quantum__qis__x__body(a);
+  __quantum__qis__swap__body(a, b);
+  __quantum__rt__qubit_release(b);
+  auto* c = __quantum__rt__qubit_allocate(nullptr);
+  __quantum__qis__mz__body(c, nullptr);
+  EXPECT_FALSE(__quantum__rt__read_result(nullptr));
+  __quantum__qis__x__body(a);
+  __quantum__qis__mz__body(c, nullptr);
+  EXPECT_FALSE(__quantum__rt__read_result(nullptr));
+  auto state = Runtime::getInstance().takeState();
+  EXPECT_EQ(state.numQubits, 2);
+  state.dd->decRef(state.edge);
+}
+
+TEST_F(QIRRuntimeTest, ReleasingUnusedQubitsDoesNotEnlargeState) {
+  __quantum__rt__initialize(nullptr);
+  for (size_t i = 0; i <= dd::Package::MAX_POSSIBLE_QUBITS; ++i) {
+    __quantum__rt__qubit_release(__quantum__rt__qubit_allocate(nullptr));
+  }
+  auto state = Runtime::getInstance().takeState();
+  EXPECT_EQ(state.numQubits, 0);
+}
+
+TEST_F(QIRRuntimeTest, DisabledTextOutputStillRecordsResults) {
+  auto& runtime = Runtime::getInstance();
+  __quantum__rt__initialize(nullptr);
+  runtime.disableOutput();
+  runtime.outputProgramHeader();
+  runtime.outputShotStart();
+  __quantum__qis__x__body(nullptr);
+  __quantum__qis__mz__body(nullptr, nullptr);
+  __quantum__rt__result_record_output(nullptr, "one");
+  std::array<Result*, 2> results{nullptr, nullptr};
+  __quantum__rt__result_array_record_output(2, results.data(), "pair");
+  __quantum__rt__bool_record_output(true, nullptr);
+  __quantum__rt__int_record_output(42, nullptr);
+  __quantum__rt__double_record_output(0.3, nullptr);
+  __quantum__rt__tuple_record_output(1, nullptr);
+  __quantum__rt__array_record_output(1, nullptr);
+  runtime.outputShotEnd();
+  EXPECT_EQ(runtime.getMeasurements(), "111");
+  EXPECT_TRUE(sink.str().empty());
+  runtime.setOstream(sink);
+  __quantum__rt__result_record_output(nullptr, "one");
+  EXPECT_FALSE(sink.str().empty());
+}
+
+} // namespace qir
+
+TEST(QIRRuntimeGrowth, PreservesStateAndPhaseAcrossGrowthAndTransfer) {
+  constexpr size_t width = 65;
+  const std::array<std::complex<dd::fp>, 4> x{0., 1., 1., 0.};
+  for (const bool dynamic : {false, true}) {
+    qir::Runtime runtime(42);
+    for (size_t job = 0; job < 2; ++job) {
+      runtime.applyGlobalPhase(dd::PI);
+      for (size_t q = 0; q < width; ++q) {
+        auto* qubit = dynamic ? runtime.qAlloc() : reinterpret_cast<Qubit*>(q);
+        const std::array targets{qubit};
+        runtime.apply(x, {}, targets);
+      }
+      auto state = runtime.takeState();
+      EXPECT_EQ(state.numQubits, width);
+      EXPECT_GE(state.dd->qubits(), width);
+      EXPECT_LT(state.dd->qubits(), 2 * width);
+      const auto amplitude =
+          state.edge.getValueByPath(width, std::string(width, '1'));
+      EXPECT_NEAR(amplitude.real(), -1., 1e-12);
+      EXPECT_NEAR(amplitude.imag(), 0., 1e-12);
+      state.dd->decRef(state.edge);
+    }
+  }
+}

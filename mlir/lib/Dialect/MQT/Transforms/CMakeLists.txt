@@ -15,12 +15,15 @@ add_mlir_library(
   LINK_LIBS
   PRIVATE
   MLIRArithDialect
+  MLIRFuncInlinerExtension
   MLIRIR
+  MLIRLLVMIRTransforms
   MLIRMQTUtils
   MLIRPass
   MLIRQCDialect
   MLIRQCODialect
   MLIRSideEffectInterfaces
+  MLIRTransformUtils
   DEPENDS
   MLIRMQTTransformsIncGen)
 

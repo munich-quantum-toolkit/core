@@ -1133,16 +1133,20 @@ def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
   let builders = [OpBuilder<(ins "ValueRange":$qubits)>];
 
   let hasCanonicalizer = 1;
+  let hasVerifier = 1;
 }
 
 def CallOp
-    : QCOOp<"call",
-            traits = [CallOpInterface, UnitaryOpInterface,
-                      DeclareOpInterfaceMethods<SymbolUserOpInterface>, Pure]> {
+    : QCOOp<"call", traits = [CallOpInterface, UnitaryOpInterface,
+                              DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+                              MemoryEffects<[MemWrite]>]> {
   let summary = "Call a unitary QCO function";
   let description = [{
     Calls a private `func.func` marked with `mqt.unitary`. Parameters precede
     qubit operands. Each qubit result continues the corresponding qubit input.
+    Calls conservatively carry a write effect and are not speculatable.
+    Module-level analyses may prove more precise effects for individual
+    optimizations. Generic effect queries do not inspect other function bodies.
 
     Example:
     ```mlir
@@ -1241,8 +1245,8 @@ def CtrlOp : QCOOp<"ctrl",
                    traits = [UnitaryOpInterface, AttrSizedOperandSegments,
                              AttrSizedResultSegments, SameOperandsAndResultType,
                              SameOperandsAndResultShape,
-                             SingleBlockImplicitTerminator<"YieldOp">, Pure,
-                             RecursiveMemoryEffects]> {
+                             SingleBlockImplicitTerminator<"YieldOp">,
+                             RecursivelySpeculatable, RecursiveMemoryEffects]> {
   let summary = "Apply a control modifier to a collection of gates";
   let description = [{
         A modifier operation that adds control qubits to the gates defined in its body region.
@@ -1251,11 +1255,13 @@ def CtrlOp : QCOOp<"ctrl",
         The operation takes a variadic number of control and target qubits as inputs and produces corresponding output qubits.
         Control qubits are not modified by the operation and simply pass through to the outputs.
 
-        The body region may contain an arbitrary amount of unitary and classical operations.
+        The body region may contain unitary operations and memory-effect-free classical operations without regions.
+        Parameter computation is eager, as specified by the `mqt.unitary` contract; it need not be speculatable.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
-        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
+        Classical memory access and non-unitary region operations are not allowed.
+        Unitary operations retain their required effects, including global phase.
 
         Example:
         ```mlir
@@ -1326,9 +1332,10 @@ def CtrlOp : QCOOp<"ctrl",
   let hasVerifier = 1;
 }
 
-def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
-                                   SingleBlockImplicitTerminator<"YieldOp">,
-                                   Pure, RecursiveMemoryEffects]> {
+def InvOp
+    : QCOOp<"inv", traits = [UnitaryOpInterface,
+                             SingleBlockImplicitTerminator<"YieldOp">,
+                             RecursivelySpeculatable, RecursiveMemoryEffects]> {
   let summary =
       "Apply an inverse (i.e., adjoint) modifier to a collection of gates";
   let description = [{
@@ -1336,11 +1343,13 @@ def InvOp : QCOOp<"inv", traits = [UnitaryOpInterface,
 
         The operation takes a variadic number of qubits as inputs and produces corresponding output qubits.
 
-        The body region may contain an arbitrary amount of unitary and classical operations.
+        The body region may contain unitary operations and memory-effect-free classical operations without regions.
+        Parameter computation is eager, as specified by the `mqt.unitary` contract; it need not be speculatable.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
-        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
+        Classical memory access and non-unitary region operations are not allowed.
+        Unitary operations retain their required effects, including global phase.
 
         Example:
         ```mlir
@@ -1406,7 +1415,7 @@ def PowOp
     : QCOOp<"pow",
             traits = [UnitaryOpInterface,
                       SingleBlockImplicitTerminator<"::mlir::qco::YieldOp">,
-                      RecursiveMemoryEffects]> {
+                      RecursivelySpeculatable, RecursiveMemoryEffects]> {
   let summary = "Raise a unitary operation to a power";
   let description = [{
         A modifier operation that raises the gates defined in its body region to a given power.
@@ -1419,11 +1428,13 @@ def PowOp
         - r = 0: identity (no-op).
         - r < 0: equivalent to inv @ pow(-r) @ g.
 
-        The body region may contain an arbitrary amount of unitary and classical operations.
+        The body region may contain unitary operations and memory-effect-free classical operations without regions.
+        Parameter computation is eager, as specified by the `mqt.unitary` contract; it need not be speculatable.
         Classical SSA values may be captured from above, but every qubit used
         in the body must be passed through a modifier operand and accessed via
         its aliased block argument.
-        Non-unitary operations, such as `AllocOp` and `MeasureOp`, are not allowed.
+        Classical memory access and non-unitary region operations are not allowed.
+        Unitary operations retain their required effects, including global phase.
 
         Example:
         ```mlir
@@ -1505,8 +1516,9 @@ def IfOp
                                                   "getRegionInvocationBounds",
                                                   "getEntrySuccessorRegions",
                                                   "getEntrySuccessorOperands"]>,
-                    SingleBlock, SingleBlockImplicitTerminator<"YieldOp">, Pure,
-                    RecursiveMemoryEffects, AttrSizedResultSegments]> {
+                    SingleBlock, SingleBlockImplicitTerminator<"YieldOp">,
+                    RecursivelySpeculatable, RecursiveMemoryEffects,
+                    AttrSizedResultSegments]> {
 
   let summary = "If-then-else operation with classical and linear results";
   let description = [{
@@ -1644,8 +1656,9 @@ def IndexSwitchOp
                         RegionBranchOpInterface, ["getRegionInvocationBounds",
                                                   "getEntrySuccessorRegions",
                                                   "getEntrySuccessorOperands"]>,
-                    SingleBlockImplicitTerminator<"YieldOp">, Pure,
-                    RecursiveMemoryEffects, AttrSizedResultSegments]> {
+                    SingleBlockImplicitTerminator<"YieldOp">,
+                    RecursivelySpeculatable, RecursiveMemoryEffects,
+                    AttrSizedResultSegments]> {
 
   let summary =
       "Index-based switch operation with classical and linear results";

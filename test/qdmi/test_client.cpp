@@ -138,26 +138,32 @@ cx q[0], q[1];
 TEST(CustomPropertyTest, SelectorsMapToEveryQDMIPropertyFamily) {
   constexpr std::array properties{
       CustomProperty::Custom1, CustomProperty::Custom2, CustomProperty::Custom3,
-      CustomProperty::Custom4, CustomProperty::Custom5};
+      CustomProperty::Custom4, CustomProperty::Custom5,
+  };
   constexpr std::array deviceProperties{
       QDMI_DEVICE_PROPERTY_CUSTOM1, QDMI_DEVICE_PROPERTY_CUSTOM2,
       QDMI_DEVICE_PROPERTY_CUSTOM3, QDMI_DEVICE_PROPERTY_CUSTOM4,
-      QDMI_DEVICE_PROPERTY_CUSTOM5};
+      QDMI_DEVICE_PROPERTY_CUSTOM5,
+  };
   constexpr std::array siteProperties{
       QDMI_SITE_PROPERTY_CUSTOM1, QDMI_SITE_PROPERTY_CUSTOM2,
       QDMI_SITE_PROPERTY_CUSTOM3, QDMI_SITE_PROPERTY_CUSTOM4,
-      QDMI_SITE_PROPERTY_CUSTOM5};
+      QDMI_SITE_PROPERTY_CUSTOM5,
+  };
   constexpr std::array operationProperties{
       QDMI_OPERATION_PROPERTY_CUSTOM1, QDMI_OPERATION_PROPERTY_CUSTOM2,
       QDMI_OPERATION_PROPERTY_CUSTOM3, QDMI_OPERATION_PROPERTY_CUSTOM4,
-      QDMI_OPERATION_PROPERTY_CUSTOM5};
+      QDMI_OPERATION_PROPERTY_CUSTOM5,
+  };
   constexpr std::array jobProperties{
       QDMI_JOB_PROPERTY_CUSTOM1, QDMI_JOB_PROPERTY_CUSTOM2,
       QDMI_JOB_PROPERTY_CUSTOM3, QDMI_JOB_PROPERTY_CUSTOM4,
-      QDMI_JOB_PROPERTY_CUSTOM5};
+      QDMI_JOB_PROPERTY_CUSTOM5,
+  };
   constexpr std::array jobResults{
       QDMI_JOB_RESULT_CUSTOM1, QDMI_JOB_RESULT_CUSTOM2, QDMI_JOB_RESULT_CUSTOM3,
-      QDMI_JOB_RESULT_CUSTOM4, QDMI_JOB_RESULT_CUSTOM5};
+      QDMI_JOB_RESULT_CUSTOM4, QDMI_JOB_RESULT_CUSTOM5,
+  };
 
   for (size_t i = 0; i < properties.size(); ++i) {
     EXPECT_EQ(detail::toDeviceProperty(properties[i]), deviceProperties[i]);
@@ -184,10 +190,78 @@ TEST(CustomPropertyTest, RejectsInvalidSelector) {
                std::invalid_argument);
 }
 
+TEST(StandardPropertyTest, PreservesValuesAndOptionalSupport) {
+  const auto bytes = bytesOf(size_t{42});
+  const auto query = queryBytes(bytes);
+  EXPECT_EQ(detail::queryProperty<size_t>(query, "value", "size"), 42);
+  EXPECT_EQ(
+      detail::queryProperty<std::optional<size_t>>(query, "value", "size"), 42);
+  EXPECT_EQ(detail::queryProperty<std::vector<size_t>>(query, "value", "size"),
+            std::vector<size_t>{42});
+  const std::vector<std::byte> text{std::byte{'x'}, std::byte{0}};
+  EXPECT_EQ(
+      detail::queryProperty<std::string>(queryBytes(text), "value", "size"),
+      "x");
+
+  const auto unsupported = [](size_t, void*, size_t*) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  };
+  EXPECT_EQ(detail::queryProperty<std::optional<size_t>>(unsupported, "value",
+                                                         "size"),
+            std::nullopt);
+  EXPECT_EQ(detail::queryProperty<std::optional<std::string>>(unsupported,
+                                                              "value", "size"),
+            std::nullopt);
+  EXPECT_EQ(detail::queryProperty<std::optional<std::vector<size_t>>>(
+                unsupported, "value", "size"),
+            std::nullopt);
+  EXPECT_THROW(std::ignore =
+                   detail::queryProperty<size_t>(unsupported, "value", "size"),
+               std::runtime_error);
+}
+
+TEST(StandardPropertyTest, RejectsMalformedSizesBeforeReading) {
+  bool read = false;
+  const auto query = [&read](size_t, void* value, size_t* sizeRet) {
+    if (sizeRet != nullptr) {
+      *sizeRet = sizeof(size_t) + 1;
+    }
+    read |= value != nullptr;
+    return QDMI_SUCCESS;
+  };
+  EXPECT_THROW(std::ignore = detail::queryProperty<std::vector<size_t>>(
+                   query, "value", "size"),
+               std::runtime_error);
+  EXPECT_THROW(std::ignore =
+                   detail::queryProperty<std::optional<std::vector<size_t>>>(
+                       query, "value", "size"),
+               std::runtime_error);
+  EXPECT_FALSE(read);
+}
+
+TEST(StandardPropertyTest, ValidatesStringsAndPreservesEmptyValues) {
+  const std::vector<std::byte> empty;
+  EXPECT_TRUE(detail::queryProperty<std::vector<size_t>>(queryBytes(empty),
+                                                         "value", "size")
+                  .empty());
+  EXPECT_THROW(std::ignore = detail::queryProperty<std::string>(
+                   queryBytes(empty), "value", "size"),
+               std::runtime_error);
+  const std::vector<std::byte> unterminated{std::byte{'x'}};
+  EXPECT_THROW(std::ignore = detail::queryProperty<std::optional<std::string>>(
+                   queryBytes(unterminated), "value", "size"),
+               std::runtime_error);
+  const std::vector<std::byte> terminated{std::byte{0}};
+  EXPECT_EQ(detail::queryProperty<std::string>(queryBytes(terminated), "value",
+                                               "size"),
+            "");
+}
+
 TEST(CustomPropertyTest, DecodesSupportedTypes) {
-  const std::vector<std::byte> stringBytes{std::byte{'v'}, std::byte{'a'},
-                                           std::byte{'l'}, std::byte{'u'},
-                                           std::byte{'e'}, std::byte{0}};
+  const std::vector<std::byte> stringBytes{
+      std::byte{'v'}, std::byte{'a'}, std::byte{'l'},
+      std::byte{'u'}, std::byte{'e'}, std::byte{0},
+  };
   EXPECT_EQ(detail::queryCustomValue<std::string>(queryBytes(stringBytes),
                                                   "test property"),
             "value");
@@ -453,21 +527,23 @@ TEST(QDMITest, BinaryProgramFormatClassification) {
 
   // Every program format QDMI defines. A format added to QDMI must be added
   // here as well so that the loop below covers it.
-  constexpr std::array formats{QDMI_PROGRAM_FORMAT_QASM2,
-                               QDMI_PROGRAM_FORMAT_QASM3,
-                               QDMI_PROGRAM_FORMAT_QIRBASESTRING,
-                               QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
-                               QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
-                               QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
-                               QDMI_PROGRAM_FORMAT_CALIBRATION,
-                               QDMI_PROGRAM_FORMAT_QPY,
-                               QDMI_PROGRAM_FORMAT_IQMJSON,
-                               QDMI_PROGRAM_FORMAT_BATCHJOB,
-                               QDMI_PROGRAM_FORMAT_CUSTOM1,
-                               QDMI_PROGRAM_FORMAT_CUSTOM2,
-                               QDMI_PROGRAM_FORMAT_CUSTOM3,
-                               QDMI_PROGRAM_FORMAT_CUSTOM4,
-                               QDMI_PROGRAM_FORMAT_CUSTOM5};
+  constexpr std::array formats{
+      QDMI_PROGRAM_FORMAT_QASM2,
+      QDMI_PROGRAM_FORMAT_QASM3,
+      QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+      QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+      QDMI_PROGRAM_FORMAT_CALIBRATION,
+      QDMI_PROGRAM_FORMAT_QPY,
+      QDMI_PROGRAM_FORMAT_IQMJSON,
+      QDMI_PROGRAM_FORMAT_BATCHJOB,
+      QDMI_PROGRAM_FORMAT_CUSTOM1,
+      QDMI_PROGRAM_FORMAT_CUSTOM2,
+      QDMI_PROGRAM_FORMAT_CUSTOM3,
+      QDMI_PROGRAM_FORMAT_CUSTOM4,
+      QDMI_PROGRAM_FORMAT_CUSTOM5,
+  };
 
   for (const auto format : formats) {
     EXPECT_EQ(qdmi::isBinaryProgramFormat(format), expected(format))
@@ -898,7 +974,7 @@ TEST_F(DDSimulatorDeviceTest, CalibrationJobReachesTheDevice) {
 TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
   constexpr auto qasm3Program = "OPENQASM 3.0;";
 
-  auto submitWithCustoms = [&](auto custom, const size_t which) {
+  auto const submitWithCustoms = [&](auto custom, const size_t which) {
     try {
       switch (which) {
       case 1:
@@ -1262,10 +1338,10 @@ TEST(AuthenticationTest, SessionConstructionWithAuthFile) {
 
   // Existing file (should succeed even if parameter is unsupported)
   const auto tempDir = std::filesystem::temp_directory_path();
-  auto tmpPath = tempDir / ("qdmi_test_auth_" +
-                            std::to_string(std::hash<std::thread::id>{}(
-                                std::this_thread::get_id())) +
-                            ".txt");
+  auto const tmpPath = tempDir / ("qdmi_test_auth_" +
+                                  std::to_string(std::hash<std::thread::id>{}(
+                                      std::this_thread::get_id())) +
+                                  ".txt");
   {
     std::ofstream tmpFile(tmpPath);
     ASSERT_TRUE(tmpFile.is_open()) << "Failed to create temporary file";
@@ -1377,7 +1453,7 @@ TEST(AuthenticationTest, SessionConstructionWithCustomParameters) {
 
 TEST(AuthenticationTest, SessionGetDevicesReturnsList) {
   Session session;
-  auto devices = session.getDevices();
+  auto const devices = session.getDevices();
 
   EXPECT_FALSE(devices.empty());
 
@@ -1392,8 +1468,8 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
   Session session1;
   Session session2;
 
-  auto devices1 = session1.getDevices();
-  auto devices2 = session2.getDevices();
+  auto const devices1 = session1.getDevices();
+  auto const devices2 = session2.getDevices();
 
   // Both should return devices
   EXPECT_FALSE(devices1.empty());
@@ -1405,7 +1481,7 @@ TEST(AuthenticationTest, SessionMultipleInstances) {
 
 TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
   const auto site = [] {
-    auto device = Session::openDevice("mqt.sc.default");
+    auto const device = Session::openDevice("mqt.sc.default");
     return device.getSites().front();
   }();
 
@@ -1414,7 +1490,7 @@ TEST(DeviceOwnershipTest, SiteKeepsFreshSessionAlive) {
 
 TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
   const auto operation = [] {
-    auto device = Session::openDevice("mqt.sc.default");
+    auto const device = Session::openDevice("mqt.sc.default");
     return device.getOperations().front();
   }();
 
@@ -1423,7 +1499,7 @@ TEST(DeviceOwnershipTest, OperationKeepsFreshSessionAlive) {
 
 TEST(DeviceOwnershipTest, SiteFromOperationKeepsFreshSessionAlive) {
   const auto site = [] {
-    auto device = Session::openDevice("mqt.sc.default");
+    auto const device = Session::openDevice("mqt.sc.default");
     const auto operation = device.getOperations().front();
     return operation.getSites().value().front();
   }();

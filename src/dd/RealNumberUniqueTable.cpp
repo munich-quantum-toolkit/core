@@ -38,8 +38,7 @@ RealNumberUniqueTable::RealNumberUniqueTable(MemoryManager& manager,
 std::int64_t RealNumberUniqueTable::hash(const fp val) noexcept {
   static constexpr std::int64_t MASK = NBUCKET - 1;
   assert(val >= 0);
-  const auto key = static_cast<std::int64_t>(std::nearbyint(val * MASK));
-  return std::min<std::int64_t>(key, MASK);
+  return static_cast<std::int64_t>(std::nearbyint(std::min(val, 1.0) * MASK));
 }
 
 RealNumber* RealNumberUniqueTable::lookup(const fp val) {
@@ -122,9 +121,9 @@ RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
   // Depending on which border of the bucket the value lies, a value either
   // needs to be inserted in the front or the back of the bucket.
   if (key == lowerKey) {
-    return insertFront(key, val);
+    return insertBack(key, val);
   }
-  return insertBack(key, val);
+  return insertFront(key, val);
 }
 
 bool RealNumberUniqueTable::possiblyNeedsCollection() const noexcept {
@@ -194,7 +193,7 @@ void RealNumberUniqueTable::print() const {
   const auto precision = std::cout.precision();
   std::cout.precision(std::numeric_limits<dd::fp>::max_digits10);
   for (std::size_t key = 0; key < table.size(); ++key) {
-    auto* p = table[key];
+    const auto* p = table[key];
     if (p != nullptr) {
       std::cout << key << ": \n";
     }
@@ -213,7 +212,7 @@ void RealNumberUniqueTable::print() const {
 }
 
 std::ostream& RealNumberUniqueTable::printBucketDistribution(std::ostream& os) {
-  for (auto* bucket : table) {
+  for (const auto* bucket : table) {
     if (bucket == nullptr) {
       os << "0\n";
       continue;

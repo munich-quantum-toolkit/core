@@ -17,26 +17,33 @@
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
+#include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
 #include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
-#include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
+#include <mlir/Conversion/MathToLLVM/MathToLLVM.h>
 #include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
+#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/Dialect/LLVMIR/LLVMTypes.h>
+#include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/MemRef/IR/MemRef.h>
+#include <mlir/Dialect/Utils/StaticValueUtils.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/BuiltinTypeInterfaces.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Dominance.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Types.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
+#include <mlir/Pass/Pass.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -64,6 +71,24 @@ LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
       "cannot mix static and dynamic qubit allocation modes in conversion");
 }
 
+LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
+                                    LLVMTypeConverter& typeConverter) {
+  auto* ctx = moduleOp.getContext();
+  RewritePatternSet patterns(ctx);
+  target.addIllegalDialect<arith::ArithDialect, cf::ControlFlowDialect,
+                           math::MathDialect>();
+  cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
+  cf::populateAssertToLLVMConversionPattern(typeConverter, patterns);
+  arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
+  populateMathToLLVMConversionPatterns(typeConverter, patterns);
+  if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
+    return failure();
+  }
+  PassManager manager(ctx);
+  manager.addPass(createReconcileUnrealizedCastsPass());
+  return manager.run(moduleOp);
+}
+
 QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
     : LLVMTypeConverter(ctx) {
   addConversion([ctx](QubitType) { return LLVM::LLVMPointerType::get(ctx); });
@@ -85,7 +110,7 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
  * @param op The QC operation instance to convert
  * @param adaptor The OpAdaptor of the QC operation
  * @param rewriter The pattern rewriter
- * @param state The lowering state
+ * @param controls Converted controls for this gate
  * @param fnName The name of the QIR function to call
  * @param numTargets The number of targets
  * @param numParams The number of parameters
@@ -94,22 +119,13 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
 template <typename QCOpType, typename QCOpAdaptorType>
 static LogicalResult
 convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
-                       ConversionPatternRewriter& rewriter,
-                       LoweringState& state, StringRef fnName,
-                       const size_t numTargets, const size_t numParams) {
-  // Query state for modifier information
-  const SmallVector<Value> controls =
-      state.inCtrlOp ? state.controls : SmallVector<Value>{};
+                       ConversionPatternRewriter& rewriter, ValueRange controls,
+                       StringRef fnName, const size_t numTargets,
+                       const size_t numParams) {
   auto convertedOperands = adaptor.getOperands();
   auto targets = convertedOperands.take_front(numTargets);
   auto parameters = convertedOperands.drop_front(numTargets);
   assert(parameters.size() == numParams && "unexpected gate parameter count");
-
-  // Clean up modifier information
-  if (state.inCtrlOp) {
-    state.inCtrlOp = false;
-    state.controls.clear();
-  }
 
   qir::emitQISCall(rewriter, op, op.getLoc(), parameters, controls, targets,
                    fnName);
@@ -214,10 +230,17 @@ struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
   matchAndRewrite(OpType op, OpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    const size_t numCtrls = state.inCtrlOp ? state.controls.size() : 0;
-    const auto fnName = GetFnName(numCtrls);
-    return convertUnitaryToCallOp(op, adaptor, rewriter, state, fnName,
-                                  NumTargets, NumParams);
+    const auto it = state.controlledGates.find(op);
+    ValueRange controls = it != state.controlledGates.end()
+                              ? ValueRange(it->second)
+                              : ValueRange{};
+    const auto fnName = GetFnName(controls.size());
+    auto result = convertUnitaryToCallOp(op, adaptor, rewriter, controls,
+                                         fnName, NumTargets, NumParams);
+    if (it != state.controlledGates.end()) {
+      state.controlledGates.erase(it);
+    }
+    return result;
   }
 };
 
@@ -296,11 +319,11 @@ struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
   matchAndRewrite(GPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    if (state.inCtrlOp) {
+    if (state.controlledGates.contains(op)) {
       return op.emitError("Controlled GPhaseOps cannot be converted to QIR");
     }
-    return convertUnitaryToCallOp(op, adaptor, rewriter, state, QIR_GPHASE, 0,
-                                  1);
+    return convertUnitaryToCallOp(op, adaptor, rewriter, ValueRange{},
+                                  QIR_GPHASE, 0, 1);
   }
 };
 
@@ -331,7 +354,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    if (state.inCtrlOp) {
+    if (state.controlledGates.contains(op)) {
       return rewriter.notifyMatchFailure(op,
                                          "Nested CtrlOps are not supported");
     }
@@ -342,15 +365,11 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
               "unroll-modifiers pass before the conversion");
     }
 
-    // Empty control bodies and controls around no-op unitaries do not need
-    // lowering state. In particular, barrier lowering erases the operation
-    // without consuming that state, which would otherwise control the next
-    // gate.
     auto bodyUnitary = op.getNumBodyUnitaries() == 1 ? op.getBodyUnitary(0)
                                                      : UnitaryOpInterface{};
     if (bodyUnitary && !isa<BarrierOp, IdOp>(bodyUnitary.getOperation())) {
-      state.inCtrlOp = true;
-      state.controls = llvm::to_vector(adaptor.getControls());
+      state.controlledGates.try_emplace(bodyUnitary.getOperation(),
+                                        llvm::to_vector(adaptor.getControls()));
     }
 
     // Inline block and remove operation
@@ -399,9 +418,9 @@ void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
   SmallVector<qir::ClassicalRegister> returnedRegisters;
   returnedRegisters.reserve(state.returnedCregs.size());
   for (const auto registerIndex : state.returnedCregs) {
-    returnedRegisters.push_back(state.cregs[registerIndex]);
+    returnedRegisters.push_back(std::move(state.cregs[registerIndex]));
   }
-  emitOutputRecording(builder, main, returnedRegisters, state.staticResults);
+  emitOutputRecording(builder, main, returnedRegisters, state.scalarResults);
 }
 
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
@@ -419,13 +438,25 @@ void populateQCToQIRPatterns(RewritePatternSet& patterns,
 }
 
 Value getResultPtr(LoweringState& state, Operation* op,
-                   ConversionPatternRewriter& rewriter) {
+                   ConversionPatternRewriter& rewriter, bool dynamic) {
   OpBuilder::InsertionGuard guard(rewriter);
   rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-  const auto index = static_cast<int64_t>(state.staticResults.size());
-  const auto record = state.returnedStaticResults.contains(op);
-  auto result = createPointerFromIndex(rewriter, op->getLoc(), index);
-  state.staticResults.try_emplace(
+  const auto index = static_cast<int64_t>(state.scalarResults.size());
+  const auto record = state.returnedScalarResults.contains(op);
+  Value result;
+  if (dynamic) {
+    auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+    auto signature = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
+    auto declaration = getOrCreateFunctionDeclaration(
+        rewriter, op, QIR_RESULT_ALLOC, signature);
+    auto zero = LLVM::ZeroOp::create(rewriter, op->getLoc(), ptrType);
+    result = LLVM::CallOp::create(rewriter, op->getLoc(), declaration,
+                                  zero.getResult())
+                 .getResult();
+  } else {
+    result = createPointerFromIndex(rewriter, op->getLoc(), index);
+  }
+  state.scalarResults.try_emplace(
       index, qir::StaticResult{.pointer = result, .record = record});
   return result;
 }
@@ -451,121 +482,156 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
   if (hasInvalidMemory) {
     return failure();
   }
+  auto funcOp = mqt::getEntryPoint(cast<ModuleOp>(moduleOp));
+  SmallVector<func::ReturnOp> returns;
+  funcOp.walk([&](func::ReturnOp op) { returns.push_back(op); });
+  if (returns.size() != 1) {
+    return funcOp.emitError(
+        "QIR output requires a single return in the entry function");
+  }
+  auto returnOp = returns.front();
+  SmallVector<Value> keptOperands;
+  SmallVector<Type> keptReturnTypes;
   SmallVector<cbit::StoreOp> consumedStores;
-  moduleOp->walk([&](func::FuncOp funcOp) {
-    if (!mqt::isEntryPoint(funcOp)) {
+  DominanceInfo dominance(funcOp);
+
+  funcOp.walk([&](memref::AllocOp allocOp) {
+    const auto type = allocOp.getType();
+    if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
+      allocOp.emitError(
+          "QIR conversion only supports generic memrefs for "
+          "one-dimensional qc.qubit registers; use CBit for classical "
+          "registers");
+      hasInvalidMemory = true;
+    }
+  });
+
+  funcOp.walk([&](cbit::AllocOp allocOp) {
+    const auto [it, inserted] = state.cregIndices.try_emplace(
+        allocOp.getOperation(), state.cregs.size());
+    if (inserted) {
+      state.cregs.emplace_back();
+    }
+    auto& reg = state.cregs[it->second];
+    reg.record = false;
+    if (const auto name = allocOp->getAttrOfType<StringAttr>(
+            mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
+      reg.label = name.str();
+    }
+    const auto size = allocOp.getResult().getType().getWidth();
+    reg.size = size;
+  });
+
+  const auto markRegisterForRecording = [&](const size_t registerIndex) {
+    auto& reg = state.cregs[registerIndex];
+    if (reg.record) {
       return;
     }
+    if (reg.label.empty()) {
+      reg.label = "c" + std::to_string(state.returnedCregs.size());
+    }
+    reg.record = true;
+    state.returnedCregs.push_back(registerIndex);
+  };
 
-    funcOp.walk([&](memref::AllocOp allocOp) {
-      const auto type = allocOp.getType();
-      if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
-        allocOp.emitError(
-            "QIR conversion only supports generic memrefs for "
-            "one-dimensional qc.qubit registers; use CBit for classical "
-            "registers");
-        hasInvalidMemory = true;
-      }
-    });
+  for (auto operand : returnOp.getOperands()) {
+    if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
+      state.returnedScalarResults.insert(measureOp.getOperation());
+    } else if (auto allocOp = operand.getDefiningOp<cbit::AllocOp>();
+               allocOp && state.cregIndices.contains(allocOp.getOperation())) {
+      markRegisterForRecording(state.cregIndices.at(allocOp.getOperation()));
+    } else {
+      keptOperands.push_back(operand);
+      keptReturnTypes.push_back(operand.getType());
+    }
+  }
 
-    funcOp.walk([&](cbit::AllocOp allocOp) {
-      const auto [it, inserted] = state.cregIndices.try_emplace(
-          allocOp.getOperation(), state.cregs.size());
-      if (inserted) {
-        state.cregs.emplace_back();
+  funcOp.walk([&](cbit::StoreOp storeOp) {
+    auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
+    if (!allocOp || !state.cregIndices.contains(allocOp.getOperation())) {
+      storeOp.emitError(
+          "QIR conversion requires direct CBit register allocations");
+      hasInvalidMemory = true;
+      return;
+    }
+    const auto registerIndex = state.cregIndices.at(allocOp.getOperation());
+    if (!state.cregs[registerIndex].record) {
+      return;
+    }
+    auto measureOp = storeOp.getValue().getDefiningOp<MeasureOp>();
+    if (!measureOp) {
+      storeOp.emitError(
+          "QIR conversion does not support non-measurement stores to "
+          "returned CBit registers");
+      hasInvalidMemory = true;
+      return;
+    }
+    auto* indexProducer = storeOp.getIndex().getDefiningOp();
+    bool canFuse =
+        measureOp->getBlock() == storeOp->getBlock() &&
+        (dominance.dominates(storeOp.getIndex(), measureOp) ||
+         (indexProducer && indexProducer->hasTrait<OpTrait::ConstantLike>()));
+    for (auto* next = measureOp->getNextNode();
+         canFuse && next != storeOp.getOperation();
+         next = next->getNextNode()) {
+      /// These unscoped quantum effects cannot access CBit storage.
+      if (isa<qc::AllocOp, qc::DeallocOp, qc::GPhaseOp>(next)) {
+        continue;
       }
-      auto& reg = state.cregs[it->second];
-      reg.record = false;
-      if (const auto name = allocOp->getAttrOfType<StringAttr>(
-              mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
-        reg.label = name.str();
-      }
-      const auto size = allocOp.getResult().getType().getWidth();
-      reg.size = size;
-      reg.results.assign(static_cast<size_t>(size), Value{});
-    });
-
-    const auto markRegisterForRecording = [&](const size_t registerIndex) {
-      auto& reg = state.cregs[registerIndex];
-      if (reg.record) {
-        return;
-      }
-      if (reg.label.empty()) {
-        reg.label = "c" + std::to_string(state.returnedCregs.size());
-      }
-      reg.record = true;
-      state.returnedCregs.push_back(registerIndex);
-    };
-
-    funcOp.walk([&](func::ReturnOp returnOp) {
-      SmallVector<Value> keptOperands;
-      SmallVector<Type> keptReturnTypes;
-
-      for (auto operand : returnOp.getOperands()) {
-        if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
-          state.returnedStaticResults.insert(measureOp.getOperation());
-        } else if (auto allocOp = operand.getDefiningOp<cbit::AllocOp>();
-                   allocOp &&
-                   state.cregIndices.contains(allocOp.getOperation())) {
-          markRegisterForRecording(
-              state.cregIndices.at(allocOp.getOperation()));
-        } else {
-          keptOperands.push_back(operand);
-          keptReturnTypes.push_back(operand.getType());
+      if (auto otherStore = dyn_cast<cbit::StoreOp>(next);
+          otherStore && otherStore.getReg() == storeOp.getReg()) {
+        const auto index = getConstantIntValue(storeOp.getIndex());
+        const auto otherIndex = getConstantIntValue(otherStore.getIndex());
+        if (index && otherIndex && *index != *otherIndex) {
+          continue;
         }
       }
-
-      if (keptOperands.empty() && !returnOp.getOperands().empty()) {
-        OpBuilder builder(returnOp);
-        auto zero =
-            arith::ConstantIntOp::create(builder, returnOp.getLoc(), 0, 64);
-        keptOperands.push_back(zero);
-        keptReturnTypes.push_back(zero.getType());
-      }
-
-      returnOp.getOperandsMutable().assign(keptOperands);
-
-      funcOp.setFunctionType(FunctionType::get(
-          funcOp.getContext(), funcOp.getFunctionType().getInputs(),
-          keptReturnTypes));
-    });
-
-    funcOp.walk([&](cbit::StoreOp storeOp) {
-      auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
-      if (!allocOp || !state.cregIndices.contains(allocOp.getOperation())) {
-        storeOp.emitError(
-            "QIR conversion requires direct CBit register allocations");
-        hasInvalidMemory = true;
-        return;
-      }
-      const auto registerIndex = state.cregIndices.at(allocOp.getOperation());
-      if (!state.cregs[registerIndex].record) {
-        return;
-      }
-      auto measureOp = storeOp.getValue().getDefiningOp<MeasureOp>();
-      if (!measureOp) {
-        storeOp.emitError(
-            "QIR conversion does not support non-measurement stores to "
-            "returned CBit registers");
-        hasInvalidMemory = true;
-        return;
-      }
-      const auto destination =
-          std::pair<size_t, Value>{registerIndex, storeOp.getIndex()};
-      const auto [it, inserted] = state.cregMeasurements.try_emplace(
-          measureOp.getOperation(), destination);
-      if (!inserted && it->second != destination) {
-        storeOp.emitError(
-            "a measurement result cannot be stored in multiple classical "
-            "register locations during QIR conversion");
-        hasInvalidMemory = true;
-      }
-      consumedStores.push_back(storeOp);
-    });
+      const auto effects = getEffectsRecursively(next);
+      canFuse = effects && llvm::all_of(*effects, [](const auto& effect) {
+                  auto value = effect.getValue();
+                  if (!value) {
+                    return false;
+                  }
+                  if (isa<QubitType>(value.getType())) {
+                    return true;
+                  }
+                  auto memref = dyn_cast<MemRefType>(value.getType());
+                  return memref && isa<QubitType>(memref.getElementType());
+                });
+    }
+    if (!canFuse) {
+      storeOp.emitError("QIR output cannot fuse this measurement/store pair: "
+                        "require the same "
+                        "block, an index available at measurement, and no "
+                        "intervening classical memory effects");
+      hasInvalidMemory = true;
+      return;
+    }
+    const auto destination =
+        std::pair<size_t, Value>{registerIndex, storeOp.getIndex()};
+    const auto [it, inserted] = state.cregMeasurements.try_emplace(
+        measureOp.getOperation(), destination);
+    if (!inserted && it->second != destination) {
+      storeOp.emitError("a measurement result cannot be stored in multiple "
+                        "classical register locations during QIR conversion");
+      hasInvalidMemory = true;
+    }
+    consumedStores.push_back(storeOp);
   });
   if (hasInvalidMemory) {
     return failure();
   }
+
+  if (keptOperands.empty() && !returnOp.getOperands().empty()) {
+    OpBuilder builder(returnOp);
+    auto zero = arith::ConstantIntOp::create(builder, returnOp.getLoc(), 0, 64);
+    keptOperands.push_back(zero);
+    keptReturnTypes.push_back(zero.getType());
+  }
+  returnOp.getOperandsMutable().assign(keptOperands);
+  funcOp.setFunctionType(FunctionType::get(funcOp.getContext(),
+                                           funcOp.getFunctionType().getInputs(),
+                                           keptReturnTypes));
   for (auto storeOp : consumedStores) {
     storeOp.erase();
   }

@@ -17,7 +17,9 @@
 #include "bench/Grover.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
+#include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
+#include "bench/Teleportation.hpp"
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
 
@@ -250,9 +252,15 @@ instanceSpecificationEnvelope(const std::string_view text,
   auto root = parseJSON(text, source);
   requireObject(root, source, "$");
   rejectUnknownKeys(root,
-                    {"schema_version", "case_id", "benchmark",
-                     "definition_version", "parameters", "outputs",
-                     "reference"},
+                    {
+                        "schema_version",
+                        "case_id",
+                        "benchmark",
+                        "definition_version",
+                        "parameters",
+                        "outputs",
+                        "reference",
+                    },
                     source, "$");
   requireSchemaVersion(root, source);
   const auto benchmark = requireBenchmarkId(root, source);
@@ -289,10 +297,11 @@ void requireBenchmark(const Json& root, const std::string_view expected,
                                    const std::string_view source) {
   rejectUnknownKeys(parameters, {"hidden_bitstring", "method"}, source,
                     "$/parameters");
-  BVOptions options{.hiddenBitstring =
-                        stringValue(required(parameters, "hidden_bitstring",
-                                             source, "$/parameters"),
-                                    source, "$/parameters/hidden_bitstring")};
+  BVOptions options{
+      .hiddenBitstring = stringValue(
+          required(parameters, "hidden_bitstring", source, "$/parameters"),
+          source, "$/parameters/hidden_bitstring"),
+  };
   if (const auto method = parameters.find("method");
       method != parameters.end()) {
     const auto value = stringValue(*method, source, "$/parameters/method");
@@ -315,9 +324,11 @@ void requireBenchmark(const Json& root, const std::string_view expected,
                                      const std::string_view source) {
   rejectUnknownKeys(parameters, {"qubits", "topology", "basis"}, source,
                     "$/parameters");
-  GHZOptions options{.qubits = sizeValue(
-                         required(parameters, "qubits", source, "$/parameters"),
-                         source, "$/parameters/qubits")};
+  GHZOptions options{
+      .qubits =
+          sizeValue(required(parameters, "qubits", source, "$/parameters"),
+                    source, "$/parameters/qubits"),
+  };
   if (const auto topology = parameters.find("topology");
       topology != parameters.end()) {
     const auto value = stringValue(*topology, source, "$/parameters/topology");
@@ -353,7 +364,8 @@ void requireBenchmark(const Json& root, const std::string_view expected,
   GroverOptions options{
       .markedBitstring = stringValue(
           required(parameters, "marked_bitstring", source, "$/parameters"),
-          source, "$/parameters/marked_bitstring")};
+          source, "$/parameters/marked_bitstring"),
+  };
   if (const auto iterations = parameters.find("iterations");
       iterations != parameters.end()) {
     options.iterations =
@@ -371,9 +383,11 @@ parseMultiplexerParameters(const Json& parameters,
                            const std::string_view source) {
   rejectUnknownKeys(parameters, {"qubits"}, source, "$/parameters");
   try {
-    return Multiplexer({.qubits = sizeValue(required(parameters, "qubits",
-                                                     source, "$/parameters"),
-                                            source, "$/parameters/qubits")});
+    return Multiplexer({
+        .qubits =
+            sizeValue(required(parameters, "qubits", source, "$/parameters"),
+                      source, "$/parameters/qubits"),
+    });
   } catch (const std::invalid_argument& error) {
     fail(source, "$/parameters", error.what());
   }
@@ -389,7 +403,8 @@ parseMultiplexerParameters(const Json& parameters,
                     source, "$/parameters/qubits"),
       .periodExponent = sizeValue(
           required(parameters, "period_exponent", source, "$/parameters"),
-          source, "$/parameters/period_exponent")};
+          source, "$/parameters/period_exponent"),
+  };
   if (const auto method = parameters.find("method");
       method != parameters.end()) {
     const auto value = stringValue(*method, source, "$/parameters/method");
@@ -404,6 +419,45 @@ parseMultiplexerParameters(const Json& parameters,
   }
   try {
     return QFT(options);
+  } catch (const std::invalid_argument& error) {
+    fail(source, "$/parameters", error.what());
+  }
+}
+
+[[nodiscard]] QFTAdder parseQFTAdderParameters(const Json& parameters,
+                                               const std::string_view source) {
+  rejectUnknownKeys(parameters, {"addend", "accumulator", "method", "overflow"},
+                    source, "$/parameters");
+  QFTAdderOptions options{
+      .addend =
+          stringValue(required(parameters, "addend", source, "$/parameters"),
+                      source, "$/parameters/addend"),
+      .accumulator = stringValue(
+          required(parameters, "accumulator", source, "$/parameters"), source,
+          "$/parameters/accumulator"),
+  };
+  if (const auto it = parameters.find("method"); it != parameters.end()) {
+    const auto value = stringValue(*it, source, "$/parameters/method");
+    if (value == "register") {
+      options.method = QFTAdderMethod::Register;
+    } else if (value == "constant") {
+      options.method = QFTAdderMethod::Constant;
+    } else {
+      fail(source, "$/parameters/method", "must be 'register' or 'constant'");
+    }
+  }
+  if (const auto it = parameters.find("overflow"); it != parameters.end()) {
+    const auto value = stringValue(*it, source, "$/parameters/overflow");
+    if (value == "wrap") {
+      options.overflow = QFTAdderOverflow::Wrap;
+    } else if (value == "carry") {
+      options.overflow = QFTAdderOverflow::Carry;
+    } else {
+      fail(source, "$/parameters/overflow", "must be 'wrap' or 'carry'");
+    }
+  }
+  try {
+    return QFTAdder(std::move(options));
   } catch (const std::invalid_argument& error) {
     fail(source, "$/parameters", error.what());
   }
@@ -438,19 +492,28 @@ parseMultiplexerParameters(const Json& parameters,
     }
   }
   try {
-    return QPE({.precision = precision,
-                .phase = Phase(numerator, denominator),
-                .method = method});
+    return QPE({
+        .precision = precision,
+        .phase = Phase(numerator, denominator),
+        .method = method,
+    });
   } catch (const std::invalid_argument& error) {
     fail(source, "$/parameters", error.what());
   }
 }
 
-[[nodiscard]] std::string topologyName(const GHZTopology topology) {
+[[nodiscard]] Teleportation
+parseTeleportationParameters(const Json& parameters,
+                             const std::string_view source) {
+  rejectUnknownKeys(parameters, {}, source, "$/parameters");
+  return Teleportation{};
+}
+
+[[nodiscard]] std::string_view topologyName(const GHZTopology topology) {
   return topology == GHZTopology::Linear ? "linear" : "star";
 }
 
-[[nodiscard]] std::string basisName(const GHZBasis basis) {
+[[nodiscard]] std::string_view basisName(const GHZBasis basis) {
   return basis == GHZBasis::Z ? "z" : "x";
 }
 
@@ -468,21 +531,27 @@ parseMultiplexerParameters(const Json& parameters,
 
 [[nodiscard]] Json parametersJSON(const BV& benchmark) {
   const auto& options = benchmark.options();
-  return {{"hidden_bitstring", options.hiddenBitstring},
-          {"method", methodName(options.method)}};
+  return {
+      {"hidden_bitstring", options.hiddenBitstring},
+      {"method", methodName(options.method)},
+  };
 }
 
 [[nodiscard]] Json parametersJSON(const GHZ& benchmark) {
   const auto& options = benchmark.options();
-  return {{"basis", basisName(options.basis)},
-          {"qubits", options.qubits},
-          {"topology", topologyName(options.topology)}};
+  return {
+      {"basis", basisName(options.basis)},
+      {"qubits", options.qubits},
+      {"topology", topologyName(options.topology)},
+  };
 }
 
 [[nodiscard]] Json parametersJSON(const Grover& benchmark) {
   const auto& options = benchmark.options();
-  return {{"iterations", *options.iterations},
-          {"marked_bitstring", options.markedBitstring}};
+  return {
+      {"iterations", *options.iterations},
+      {"marked_bitstring", options.markedBitstring},
+  };
 }
 
 [[nodiscard]] Json parametersJSON(const Multiplexer& benchmark) {
@@ -491,80 +560,149 @@ parseMultiplexerParameters(const Json& parameters,
 
 [[nodiscard]] Json parametersJSON(const QFT& benchmark) {
   const auto& options = benchmark.options();
-  return {{"method", methodName(options.method)},
-          {"period_exponent", options.periodExponent},
-          {"qubits", options.qubits}};
+  return {
+      {"method", methodName(options.method)},
+      {"period_exponent", options.periodExponent},
+      {"qubits", options.qubits},
+  };
+}
+
+[[nodiscard]] Json parametersJSON(const QFTAdder& benchmark) {
+  const auto& options = benchmark.options();
+  return {
+      {"addend", options.addend},
+      {"accumulator", options.accumulator},
+      {
+          "method",
+          options.method == QFTAdderMethod::Register ? "register" : "constant",
+      },
+      {
+          "overflow",
+          options.overflow == QFTAdderOverflow::Wrap ? "wrap" : "carry",
+      },
+  };
 }
 
 [[nodiscard]] Json parametersJSON(const QPE& benchmark) {
   const auto& options = benchmark.options();
-  return {{"method", methodName(options.method)},
-          {"phase",
-           {{"denominator", options.phase.denominator()},
-            {"numerator", options.phase.numerator()}}},
-          {"precision", options.precision}};
+  return {
+      {"method", methodName(options.method)},
+      {
+          "phase",
+          {
+              {"denominator", options.phase.denominator()},
+              {"numerator", options.phase.numerator()},
+          },
+      },
+      {"precision", options.precision},
+  };
+}
+
+[[nodiscard]] Json parametersJSON(const Teleportation& /*unused*/) {
+  return Json::object();
 }
 
 [[nodiscard]] Json referenceJSON(const BV& benchmark) {
-  return {{"kind", "analytic"},
-          {"model", "bernstein_vazirani"},
-          {"outcome_order", "big_endian"},
-          {"output", benchmark.output().name},
-          {"success_outcome", benchmark.options().hiddenBitstring},
-          {"version", 1}};
+  return {
+      {"kind", "analytic"},
+      {"model", "bernstein_vazirani"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"success_outcome", benchmark.options().hiddenBitstring},
+      {"version", 1},
+  };
 }
 
 [[nodiscard]] Json referenceJSON(const GHZ& benchmark) {
-  return {{"kind", "analytic"},
-          {"model", "ghz"},
-          {"outcome_order", "big_endian"},
-          {"output", benchmark.output().name},
-          {"version", 1}};
+  return {
+      {"kind", "analytic"},
+      {"model", "ghz"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"version", 1},
+  };
 }
 
 [[nodiscard]] Json referenceJSON(const Grover& benchmark) {
-  return {{"kind", "analytic"},
-          {"model", "grover_single_marked"},
-          {"outcome_order", "big_endian"},
-          {"output", benchmark.output().name},
-          {"success_outcome", benchmark.options().markedBitstring},
-          {"version", 1}};
+  return {
+      {"kind", "analytic"},
+      {"model", "grover_single_marked"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"success_outcome", benchmark.options().markedBitstring},
+      {"version", 1},
+  };
 }
 
 [[nodiscard]] Json referenceJSON(const Multiplexer& benchmark) {
-  return {{"kind", "analytic"},
-          {"model", "multiplexer"},
-          {"outcome_order", "big_endian"},
-          {"output", benchmark.output().name},
-          {"version", 1}};
+  return {
+      {"kind", "analytic"},
+      {"model", "multiplexer"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"version", 1},
+  };
 }
 
 [[nodiscard]] Json referenceJSON(const QFT& benchmark) {
-  return {{"kind", "analytic"},
-          {"model", "qft_power_of_two_period"},
-          {"outcome_order", "big_endian"},
-          {"output", benchmark.output().name},
-          {"version", 1}};
+  return {
+      {"kind", "analytic"},
+      {"model", "qft_power_of_two_period"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"version", 1},
+  };
+}
+
+[[nodiscard]] Json referenceJSON(const QFTAdder& benchmark) {
+  Json reference = {
+      {"kind", "analytic"},
+      {"model", "qft_adder"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"version", 1},
+  };
+  if (benchmark.expectedResult()) {
+    reference["success_outcome"] = *benchmark.expectedResult();
+  }
+  return reference;
 }
 
 [[nodiscard]] Json referenceJSON(const QPE& benchmark) {
-  return {{"kind", "analytic"},
-          {"model", "qpe_dirichlet"},
-          {"outcome_order", "big_endian"},
-          {"output", benchmark.output().name},
-          {"version", 1}};
+  return {
+      {"kind", "analytic"},
+      {"model", "qpe_dirichlet"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"version", 1},
+  };
+}
+
+[[nodiscard]] Json referenceJSON(const Teleportation& benchmark) {
+  return {
+      {"kind", "analytic"},
+      {"model", "teleportation"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"success_outcome", "0"},
+      {"version", 1},
+  };
 }
 
 [[nodiscard]] Json semanticJSON(const std::string_view id,
                                 const uint64_t definitionVersionValue,
                                 const Json& parameters, const Output& output,
                                 const Json& reference) {
-  return {{"benchmark", std::string(id)},
-          {"definition_version", definitionVersionValue},
-          {"outputs",
-           Json::array({{{"name", output.name}, {"width", output.width}}})},
-          {"parameters", parameters},
-          {"reference", reference}};
+  return {
+      {"benchmark", std::string(id)},
+      {"definition_version", definitionVersionValue},
+      {
+          "outputs",
+          Json::array({{{"name", output.name}, {"width", output.width}}}),
+      },
+      {"parameters", parameters},
+      {"reference", reference},
+  };
 }
 
 template <class Benchmark>
@@ -592,9 +730,11 @@ template <class Benchmark>
 
 template <class Benchmark>
 [[nodiscard]] Json instanceSpecificationJSON(const Benchmark& benchmark) {
-  return {{"benchmark", std::string(BenchmarkMetadata<Benchmark>::id)},
-          {"parameters", parametersJSON(benchmark)},
-          {"schema_version", SCHEMA_VERSION}};
+  return {
+      {"benchmark", std::string(BenchmarkMetadata<Benchmark>::id)},
+      {"parameters", parametersJSON(benchmark)},
+      {"schema_version", SCHEMA_VERSION},
+  };
 }
 
 template <class Benchmark, class ParseParameters>
@@ -624,125 +764,359 @@ template <class Benchmark, class ParseParameters>
 template <class Benchmark>
 [[nodiscard]] Json baseInstanceSpecificationSchema(Json parameters) {
   using Metadata = BenchmarkMetadata<Benchmark>;
-  return {{"$schema", "https://json-schema.org/draft/2020-12/schema"},
-          {"additionalProperties", false},
-          {"properties",
-           {{"benchmark", {{"const", std::string(Metadata::id)}}},
-            {"parameters", std::move(parameters)},
-            {"schema_version", {{"const", SCHEMA_VERSION}}}}},
-          {"required", {"schema_version", "benchmark", "parameters"}},
-          {"type", "object"},
-          {"x-mqt-definition-version", Metadata::definitionVersion}};
+  return {
+      {"$schema", "https://json-schema.org/draft/2020-12/schema"},
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {"benchmark", {{"const", std::string(Metadata::id)}}},
+              {"parameters", std::move(parameters)},
+              {"schema_version", {{"const", SCHEMA_VERSION}}},
+          },
+      },
+      {"required", {"schema_version", "benchmark", "parameters"}},
+      {"type", "object"},
+      {"x-mqt-definition-version", Metadata::definitionVersion},
+  };
 }
 
 [[nodiscard]] Json bvInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<BV>(
-      {{"additionalProperties", false},
-       {"properties",
-        {{"hidden_bitstring",
-          {{"maxLength", BVOptions::MAX_BITS},
-           {"minLength", 1},
-           {"pattern", "^[01]+$"},
-           {"type", "string"}}},
-         {"method", {{"default", "static"}, {"enum", {"static", "dynamic"}}}}}},
-       {"required", {"hidden_bitstring"}},
-       {"type", "object"}});
+  return baseInstanceSpecificationSchema<BV>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "hidden_bitstring",
+                  {
+                      {"maxLength", BVOptions::MAX_BITS},
+                      {"minLength", 1},
+                      {"pattern", "^[01]+$"},
+                      {"type", "string"},
+                  },
+              },
+              {
+                  "method",
+                  {{"default", "static"}, {"enum", {"static", "dynamic"}}},
+              },
+          },
+      },
+      {"required", {"hidden_bitstring"}},
+      {"type", "object"},
+  });
 }
 
 [[nodiscard]] Json ghzInstanceSpecificationSchema() {
   Json parameters{
       {"additionalProperties", false},
-      {"properties",
-       {{"basis", {{"default", "z"}, {"enum", {"z", "x"}}}},
-        {"qubits",
-         {{"maximum", GHZOptions::MAX_QUBITS},
-          {"minimum", 1},
-          {"type", "integer"}}},
-        {"topology", {{"default", "linear"}, {"enum", {"linear", "star"}}}}}},
+      {
+          "properties",
+          {
+              {"basis", {{"default", "z"}, {"enum", {"z", "x"}}}},
+              {
+                  "qubits",
+                  {
+                      {"maximum", GHZOptions::MAX_QUBITS},
+                      {"minimum", 1},
+                      {"type", "integer"},
+                  },
+              },
+              {
+                  "topology",
+                  {{"default", "linear"}, {"enum", {"linear", "star"}}},
+              },
+          },
+      },
       {"required", {"qubits"}},
-      {"type", "object"}};
-  parameters["allOf"] = Json::array(
-      {{{"if",
-         {{"properties", {{"basis", {{"const", "x"}}}}},
-          {"required", {"basis"}}}},
-        {"then",
-         {{"properties",
-           {{"qubits", {{"maximum", GHZOptions::MAX_X_BASIS_QUBITS}}}}}}}}});
+      {"type", "object"},
+  };
+  parameters["allOf"] = Json::array({
+      {
+          {
+              "if",
+              {
+                  {"properties", {{"basis", {{"const", "x"}}}}},
+                  {"required", {"basis"}},
+              },
+          },
+          {
+              "then",
+              {
+                  {
+                      "properties",
+                      {
+                          {
+                              "qubits",
+                              {{"maximum", GHZOptions::MAX_X_BASIS_QUBITS}},
+                          },
+                      },
+                  },
+              },
+          },
+      },
+  });
   return baseInstanceSpecificationSchema<GHZ>(std::move(parameters));
 }
 
 [[nodiscard]] Json groverInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<Grover>(
-      {{"additionalProperties", false},
-       {"properties",
-        {{"iterations",
-          {{"maximum", std::numeric_limits<int32_t>::max()},
-           {"minimum", 0},
-           {"type", "integer"}}},
-         {"marked_bitstring",
-          {{"maxLength", 62},
-           {"minLength", 2},
-           {"pattern", "^[01]+$"},
-           {"type", "string"}}}}},
-       {"required", {"marked_bitstring"}},
-       {"type", "object"}});
+  return baseInstanceSpecificationSchema<Grover>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "iterations",
+                  {
+                      {"maximum", std::numeric_limits<int32_t>::max()},
+                      {"minimum", 0},
+                      {"type", "integer"},
+                  },
+              },
+              {
+                  "marked_bitstring",
+                  {
+                      {"maxLength", 62},
+                      {"minLength", 2},
+                      {"pattern", "^[01]+$"},
+                      {"type", "string"},
+                  },
+              },
+          },
+      },
+      {"required", {"marked_bitstring"}},
+      {"type", "object"},
+  });
 }
 
 [[nodiscard]] Json multiplexerInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<Multiplexer>(
-      {{"additionalProperties", false},
-       {"properties",
-        {{"qubits",
-          {{"maximum", MultiplexerOptions::MAX_QUBITS},
-           {"minimum", 2},
-           {"type", "integer"}}}}},
-       {"required", {"qubits"}},
-       {"type", "object"}});
+  return baseInstanceSpecificationSchema<Multiplexer>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "qubits",
+                  {
+                      {"maximum", MultiplexerOptions::MAX_QUBITS},
+                      {"minimum", 2},
+                      {"type", "integer"},
+                  },
+              },
+          },
+      },
+      {"required", {"qubits"}},
+      {"type", "object"},
+  });
 }
 
 [[nodiscard]] Json qftInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<QFT>(
-      {{"additionalProperties", false},
-       {"properties",
-        {{"method",
-          {{"default", "standard"}, {"enum", {"standard", "semiclassical"}}}},
-         {"period_exponent",
-          {{"maximum", QFTOptions::MAX_PERIOD_EXPONENT},
-           {"minimum", 0},
-           {"type", "integer"}}},
-         {"qubits",
-          {{"maximum", QFTOptions::MAX_QUBITS},
-           {"minimum", 1},
-           {"type", "integer"}}}}},
-       {"required", {"qubits", "period_exponent"}},
-       {"type", "object"}});
+  return baseInstanceSpecificationSchema<QFT>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "method",
+                  {
+                      {"default", "standard"},
+                      {"enum", {"standard", "semiclassical"}},
+                  },
+              },
+              {
+                  "period_exponent",
+                  {
+                      {"maximum", QFTOptions::MAX_PERIOD_EXPONENT},
+                      {"minimum", 0},
+                      {"type", "integer"},
+                  },
+              },
+              {
+                  "qubits",
+                  {
+                      {"maximum", QFTOptions::MAX_QUBITS},
+                      {"minimum", 1},
+                      {"type", "integer"},
+                  },
+              },
+          },
+      },
+      {"required", {"qubits", "period_exponent"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json qftAdderInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<QFTAdder>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "addend",
+                  {
+                      {"type", "string"},
+                      {"minLength", 1},
+                      {"maxLength", QFTAdderOptions::MAX_QUBITS},
+                      {"pattern", "^[01+]+$"},
+                  },
+              },
+              {
+                  "accumulator",
+                  {
+                      {"type", "string"},
+                      {"minLength", 1},
+                      {"maxLength", QFTAdderOptions::MAX_QUBITS},
+                      {"pattern", "^[01]+$"},
+                  },
+              },
+              {
+                  "method",
+                  {
+                      {"type", "string"},
+                      {"enum", {"register", "constant"}},
+                      {"default", "register"},
+                  },
+              },
+              {
+                  "overflow",
+                  {
+                      {"type", "string"},
+                      {"enum", {"wrap", "carry"}},
+                      {"default", "wrap"},
+                  },
+              },
+          },
+      },
+      {
+          "allOf",
+          {
+              {
+                  {
+                      "if",
+                      {
+                          {"properties", {{"method", {{"const", "constant"}}}}},
+                          {"required", {"method"}},
+                      },
+                  },
+                  {
+                      "then",
+                      {{"properties", {{"addend", {{"pattern", "^[01]+$"}}}}}},
+                  },
+              },
+              {
+                  {
+                      "if",
+                      {
+                          {"properties", {{"overflow", {{"const", "carry"}}}}},
+                          {"required", {"overflow"}},
+                      },
+                  },
+                  {
+                      "then",
+                      {
+                          {
+                              "properties",
+                              {
+                                  {
+                                      "addend",
+                                      {
+                                          {
+                                              "maxLength",
+                                              QFTAdderOptions::MAX_QUBITS - 1U,
+                                          },
+                                      },
+                                  },
+                                  {
+                                      "accumulator",
+                                      {
+                                          {
+                                              "maxLength",
+                                              QFTAdderOptions::MAX_QUBITS - 1U,
+                                          },
+                                      },
+                                  },
+                              },
+                          },
+                      },
+                  },
+              },
+          },
+      },
+      {"required", {"addend", "accumulator"}},
+      {"type", "object"},
+  });
 }
 
 [[nodiscard]] Json qpeInstanceSpecificationSchema() {
-  return baseInstanceSpecificationSchema<QPE>(
-      {{"additionalProperties", false},
-       {"properties",
-        {{"method",
-          {{"default", "standard"}, {"enum", {"standard", "iterative"}}}},
-         {"phase",
-          {{"additionalProperties", false},
-           {"properties",
-            {{"denominator",
-              {{"maximum", std::numeric_limits<uint64_t>::max()},
-               {"minimum", 1},
-               {"type", "integer"}}},
-             {"numerator",
-              {{"maximum", std::numeric_limits<uint64_t>::max()},
-               {"minimum", 0},
-               {"type", "integer"}}}}},
-           {"required", {"numerator", "denominator"}},
-           {"type", "object"}}},
-         {"precision",
-          {{"maximum", QPEOptions::MAX_PRECISION},
-           {"minimum", 1},
-           {"type", "integer"}}}}},
-       {"required", {"precision", "phase"}},
-       {"type", "object"}});
+  return baseInstanceSpecificationSchema<QPE>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "method",
+                  {
+                      {"default", "standard"},
+                      {"enum", {"standard", "iterative"}},
+                  },
+              },
+              {
+                  "phase",
+                  {
+                      {"additionalProperties", false},
+                      {
+                          "properties",
+                          {
+                              {
+                                  "denominator",
+                                  {
+                                      {
+                                          "maximum",
+                                          std::numeric_limits<uint64_t>::max(),
+                                      },
+                                      {"minimum", 1},
+                                      {"type", "integer"},
+                                  },
+                              },
+                              {
+                                  "numerator",
+                                  {
+                                      {
+                                          "maximum",
+                                          std::numeric_limits<uint64_t>::max(),
+                                      },
+                                      {"minimum", 0},
+                                      {"type", "integer"},
+                                  },
+                              },
+                          },
+                      },
+                      {"required", {"numerator", "denominator"}},
+                      {"type", "object"},
+                  },
+              },
+              {
+                  "precision",
+                  {
+                      {"maximum", QPEOptions::MAX_PRECISION},
+                      {"minimum", 1},
+                      {"type", "integer"},
+                  },
+              },
+          },
+      },
+      {"required", {"precision", "phase"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json teleportationInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<Teleportation>({
+      {"additionalProperties", false},
+      {"properties", Json::object()},
+      {"type", "object"},
+  });
 }
 
 template <class Benchmark>
@@ -790,12 +1164,15 @@ std::string benchmarkIdFromManifestJSON(const std::string_view json,
 std::string listBenchmarksJSON() {
   auto benchmarks = Json::array();
   for (const auto& entry : REGISTRY) {
-    benchmarks.emplace_back(
-        Json{{"definition_version", entry.definitionVersion},
-             {"id", std::string(entry.id)}});
+    benchmarks.emplace_back(Json{
+        {"definition_version", entry.definitionVersion},
+        {"id", std::string(entry.id)},
+    });
   }
-  return Json{{"benchmarks", std::move(benchmarks)},
-              {"schema_version", SCHEMA_VERSION}}
+  return Json{
+      {"benchmarks", std::move(benchmarks)},
+      {"schema_version", SCHEMA_VERSION},
+  }
       .dump();
 }
 
@@ -896,12 +1273,20 @@ std::string evaluationToJSON(const std::string_view caseIdValue,
   }
   return Json{
       {"case_id", std::string(caseIdValue)},
-      {"metrics",
-       {{"squared_hellinger_fidelity", evaluation.squaredHellingerFidelity},
-        {"success_probability", std::move(success)},
-        {"total_variation_distance", evaluation.totalVariationDistance}}},
+      {
+          "metrics",
+          {
+              {
+                  "squared_hellinger_fidelity",
+                  evaluation.squaredHellingerFidelity,
+              },
+              {"success_probability", std::move(success)},
+              {"total_variation_distance", evaluation.totalVariationDistance},
+          },
+      },
       {"schema_version", SCHEMA_VERSION},
-      {"shots", shots}}
+      {"shots", shots},
+  }
       .dump();
 }
 

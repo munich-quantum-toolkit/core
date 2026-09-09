@@ -31,6 +31,7 @@
 #include "dd/UniqueTable.hpp"
 
 #include <array>
+#include <bit>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -115,10 +116,12 @@ private:
 public:
   /// The memory manager for vector nodes
   MemoryManager vMemoryManager{
-      MemoryManager::create<vNode>(config_.utVecInitialAllocationSize)};
+      MemoryManager::create<vNode>(config_.utVecInitialAllocationSize),
+  };
   /// The memory manager for matrix nodes
   MemoryManager mMemoryManager{
-      MemoryManager::create<mNode>(config_.utMatInitialAllocationSize)};
+      MemoryManager::create<mNode>(config_.utMatInitialAllocationSize),
+  };
   /**
    * @brief The memory manager for complex numbers
    * @note The real and imaginary part of complex numbers are treated
@@ -222,7 +225,7 @@ private:
 
     /// @brief Add to respective root set.
     template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
-      ++(getRoots<Node>()[e]);
+      ++getRoots<Node>()[e];
     }
 
     /// @brief Remove from respective root set.
@@ -468,37 +471,72 @@ public:
    * @return A decision diagram representing the matrix.
    * @throws std::invalid_argument If the given matrix is not square or its
    * length is not a power of two.
+   * @throws std::runtime_error If the matrix exceeds the package capacity.
    */
   mEdge makeDDFromMatrix(const CMat& matrix);
 
+  /// Construct a matrix DD without copying its storage.
+  /// @param dimension Number of rows and columns; zero yields the identity.
+  /// @param entry Callable returning the complex entry at (row, column).
+  /// @pre entry is valid for all indices smaller than dimension.
+  /// @throws std::invalid_argument If dimension is not a power of two.
+  /// @throws std::runtime_error If the matrix exceeds the package capacity.
+  template <class MatrixEntry>
+  mEdge makeDDFromMatrix(const size_t dimension, const MatrixEntry& entry) {
+    if (dimension == 0) {
+      return mEdge::one();
+    }
+    if (!std::has_single_bit(dimension)) {
+      throw std::invalid_argument(
+          "Matrix must have a length of a power of two.");
+    }
+    const auto levels = std::bit_width(dimension) - 1;
+    if (levels > qubits()) {
+      throw std::runtime_error("Matrix exceeds the package qubit capacity.");
+    }
+    if (levels == 0) {
+      return mEdge::terminal(cn.lookup(entry(0, 0)));
+    }
+    const auto operand = [](const size_t level) {
+      return std::pair{static_cast<Qubit>(level), size_t{1} << level};
+    };
+    const auto root = buildMatrixDD(entry, operand, levels - 1, 0, 0);
+    return {.p = root.p, .w = cn.lookup(root.w)};
+  }
+
+  /// Embed a row-major local matrix on targets in most-significant-bit order.
+  /// Missing DD levels represent identity wires. An empty target list takes a
+  /// single scalar entry. Controls are supported for one to three targets.
+  /// @throws std::invalid_argument If the matrix size does not match the target
+  /// count or controls accompany zero or more than three targets.
+  /// @throws std::runtime_error If qubits exceed package capacity, targets are
+  /// duplicated, controls have conflicting polarities, or controls overlap
+  /// targets.
+  mEdge makeGateDD(std::span<const std::complex<fp>> matrix,
+                   std::span<const Qubit> targets,
+                   const Controls& controls = {});
+
 private:
-  /**
-   * @brief Constructs a decision diagram (DD) from a complex matrix using a
-   * recursive algorithm.
-   *
-   * @param matrix The complex matrix from which to create the DD.
-   * @param level The current level of recursion. Starts at the highest level of
-   * the matrix (log base 2 of the matrix size - 1).
-   * @param rowStart The starting row of the quadrant being processed.
-   * @param rowEnd The ending row of the quadrant being processed.
-   * @param colStart The starting column of the quadrant being processed.
-   * @param colEnd The ending column of the quadrant being processed.
-   * @return An mCachedEdge representing the root node of the created DD.
-   *
-   * @details This function recursively breaks down the matrix into quadrants
-   * until each quadrant has only one element. At each level of recursion, four
-   * new edges are created, one for each quadrant of the matrix. The four
-   * resulting decision diagram edges are used to create a new decision diagram
-   * node at the current level, and this node is returned as the result of the
-   * current recursive call. At the base case of recursion, the matrix has only
-   * one element, which is converted into a terminal node of the decision
-   * diagram.
-   *
-   * @note This function assumes that the matrix size is a power of two.
-   */
-  mCachedEdge makeDDFromMatrix(const CMat& matrix, Qubit level,
-                               std::size_t rowStart, std::size_t rowEnd,
-                               std::size_t colStart, std::size_t colEnd);
+  /// Read matrix bits in DD level order, which may differ from operand order.
+  template <class MatrixEntry, class Operand>
+  mCachedEdge buildMatrixDD(const MatrixEntry& entry, const Operand& operand,
+                            const size_t level, const size_t row,
+                            const size_t col) {
+    const auto [wire, mask] = operand(level);
+    if (level == 0) {
+      return makeDDNode<mNode, CachedEdge>(
+          wire, {mCachedEdge::terminal(entry(row, col)),
+                 mCachedEdge::terminal(entry(row, col | mask)),
+                 mCachedEdge::terminal(entry(row | mask, col)),
+                 mCachedEdge::terminal(entry(row | mask, col | mask))});
+    }
+    return makeDDNode<mNode, CachedEdge>(
+        wire,
+        {buildMatrixDD(entry, operand, level - 1, row, col),
+         buildMatrixDD(entry, operand, level - 1, row, col | mask),
+         buildMatrixDD(entry, operand, level - 1, row | mask, col),
+         buildMatrixDD(entry, operand, level - 1, row | mask, col | mask)});
+  }
 
 public:
   /**
@@ -662,6 +700,9 @@ private:
   static fp assignProbabilities(const vEdge& edge,
                                 std::unordered_map<const vNode*, fp>& probs);
 
+  /// Project a state, caching the result without its incoming weight.
+  vCachedEdge project(const vEdge& state, mNode* projector, bool measureZero);
+
 public:
   /**
    * @brief Determine the measurement probabilities for a given qubit index.
@@ -676,8 +717,9 @@ public:
    * for a given qubit index in the decision diagram. It uses a breadth-first
    * search to traverse the decision diagram and accumulate the measurement
    * probabilities. The function maintains a map of measurement probabilities
-   * for each node and a set of visited nodes to avoid redundant calculations.
+   * for each node to avoid redundant calculations.
    * It also uses a queue to process nodes level by level.
+   * @throws std::invalid_argument If the qubit is outside the state.
    */
   static std::pair<fp, fp>
   determineMeasurementProbabilities(const vEdge& rootEdge, Qubit index);
@@ -693,6 +735,7 @@ public:
    * @return the measurement result ('0' or '1')
    * @throws std::runtime_error if a numerical instability is detected during
    * the measurement.
+   * @throws std::invalid_argument If the qubit is outside the state.
    */
   char measureOneCollapsing(vEdge& rootEdge, Qubit index, std::mt19937_64& mt,
                             fp epsilon = 0.001);
@@ -706,6 +749,7 @@ public:
    * normalization)
    * @param measureZero whether or not to measure '0' (otherwise '1' is
    * measured)
+   * @throws std::invalid_argument If the qubit is outside the state.
    */
   void performCollapsingMeasurement(vEdge& rootEdge, Qubit index,
                                     fp probability, bool measureZero);
@@ -775,7 +819,7 @@ public:
     if (!x.isTerminal()) {
       var = x.p->v;
     }
-    if (!y.isTerminal() && (y.p->v) > var) {
+    if (!y.isTerminal() && y.p->v > var) {
       var = y.p->v;
     }
 
@@ -783,6 +827,26 @@ public:
     return cn.lookup(result);
   }
 
+private:
+  /// Select a successor at this level and apply the incoming edge weight.
+  template <class Node>
+  static CachedEdge<Node> weightedSuccessor(const CachedEdge<Node>& edge,
+                                            const Qubit var,
+                                            const std::size_t index) {
+    if constexpr (IsMatrix<Node>) {
+      if (edge.isIdentity() || edge.p->v < var) {
+        return index == 0 || index == 3 ? edge : CachedEdge<Node>{};
+      }
+    }
+    const auto& successor = edge.p->e[index];
+    auto result = CachedEdge<Node>{successor.p, 0};
+    if (!successor.w.exactlyZero()) {
+      result.w = edge.w * successor.w;
+    }
+    return result;
+  }
+
+public:
   /**
    * @brief Internal function to add two decision diagrams.
    *
@@ -820,53 +884,8 @@ public:
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
-      CachedEdge<Node> e1{};
-      if constexpr (IsMatrix<Node>) {
-        if (x.isIdentity() || x.p->v < var) {
-          // [ 0 | 1 ]   [ x | 0 ]
-          // --------- = ---------
-          // [ 2 | 3 ]   [ 0 | x ]
-          if (i == 0 || i == 3) {
-            e1 = x;
-          }
-        } else {
-          auto& xSuccessor = x.p->e[i];
-          e1 = {xSuccessor.p, 0};
-          if (!xSuccessor.w.exactlyZero()) {
-            e1.w = x.w * xSuccessor.w;
-          }
-        }
-      } else {
-        auto& xSuccessor = x.p->e[i];
-        e1 = {xSuccessor.p, 0};
-        if (!xSuccessor.w.exactlyZero()) {
-          e1.w = x.w * xSuccessor.w;
-        }
-      }
-      CachedEdge<Node> e2{};
-      if constexpr (IsMatrix<Node>) {
-        if (y.isIdentity() || y.p->v < var) {
-          // [ 0 | 1 ]   [ y | 0 ]
-          // --------- = ---------
-          // [ 2 | 3 ]   [ 0 | y ]
-          if (i == 0 || i == 3) {
-            e2 = y;
-          }
-        } else {
-          auto& ySuccessor = y.p->e[i];
-          e2 = {ySuccessor.p, 0};
-          if (!ySuccessor.w.exactlyZero()) {
-            e2.w = y.w * ySuccessor.w;
-          }
-        }
-      } else {
-        auto& ySuccessor = y.p->e[i];
-        e2 = {ySuccessor.p, 0};
-        if (!ySuccessor.w.exactlyZero()) {
-          e2.w = y.w * ySuccessor.w;
-        }
-      }
-      edge[i] = add2(e1, e2, var - 1);
+      edge[i] = add2(weightedSuccessor(x, var, i), weightedSuccessor(y, var, i),
+                     var - 1);
     }
     auto r = makeDDNode(var, edge);
     computeTable.insert(x, y, r);
@@ -912,47 +931,8 @@ public:
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
-      CachedEdge<Node> e1{};
-      if constexpr (IsMatrix<Node>) {
-        if (x.isIdentity() || x.p->v < var) {
-          if (i == 0 || i == 3) {
-            e1 = x;
-          }
-        } else {
-          auto& xSuccessor = x.p->e[i];
-          e1 = {xSuccessor.p, 0};
-          if (!xSuccessor.w.exactlyZero()) {
-            e1.w = x.w * xSuccessor.w;
-          }
-        }
-      } else {
-        auto& xSuccessor = x.p->e[i];
-        e1 = {xSuccessor.p, 0};
-        if (!xSuccessor.w.exactlyZero()) {
-          e1.w = x.w * xSuccessor.w;
-        }
-      }
-      CachedEdge<Node> e2{};
-      if constexpr (IsMatrix<Node>) {
-        if (y.isIdentity() || y.p->v < var) {
-          if (i == 0 || i == 3) {
-            e2 = y;
-          }
-        } else {
-          auto& ySuccessor = y.p->e[i];
-          e2 = {ySuccessor.p, 0};
-          if (!ySuccessor.w.exactlyZero()) {
-            e2.w = y.w * ySuccessor.w;
-          }
-        }
-      } else {
-        auto& ySuccessor = y.p->e[i];
-        e2 = {ySuccessor.p, 0};
-        if (!ySuccessor.w.exactlyZero()) {
-          e2.w = y.w * ySuccessor.w;
-        }
-      }
-      edge[i] = addMagnitudes(e1, e2, var - 1);
+      edge[i] = addMagnitudes(weightedSuccessor(x, var, i),
+                              weightedSuccessor(y, var, i), var - 1);
     }
     auto r = makeDDNode(var, edge);
     computeTable.insert(x, y, r);
@@ -1106,7 +1086,7 @@ private:
   template <class LeftOperandNode, class RightOperandNode>
   CachedEdge<RightOperandNode> multiply2(const Edge<LeftOperandNode>& x,
                                          const Edge<RightOperandNode>& y,
-                                         const Qubit var) {
+                                         Qubit var) {
     using LEdge = Edge<LeftOperandNode>;
     using REdge = Edge<RightOperandNode>;
     using ResultEdge = CachedEdge<RightOperandNode>;
@@ -1133,48 +1113,59 @@ private:
       return {r->p, r->w * rWeight};
     }
 
+    if constexpr (IsMatrix<RightOperandNode>) {
+      var = std::max(x.p->v, y.p->v);
+    }
+
     constexpr std::size_t n = std::tuple_size_v<decltype(y.p->e)>;
 
     constexpr std::size_t rows = RADIX;
     constexpr std::size_t cols = n == NEDGE ? RADIX : 1U;
 
     std::array<ResultEdge, n> edge{};
-    for (auto i = 0U; i < rows; i++) {
-      for (auto j = 0U; j < cols; j++) {
-        auto idx = (cols * i) + j;
-        edge[idx] = ResultEdge::zero();
-        for (auto k = 0U; k < rows; k++) {
-          const auto xIdx = (rows * i) + k;
-          LEdge e1{};
-          if (x.p != nullptr && x.p->v == var) {
-            e1 = x.p->e[xIdx];
-          } else {
-            if (xIdx == 0 || xIdx == 3) {
-              e1 = LEdge{x.p, Complex::one()};
+    if (x.p->v < var && !y.isTerminal() && y.p->v == var) {
+      /// The left operand acts as identity at this level.
+      for (std::size_t i = 0; i < n; ++i) {
+        edge[i] = multiply2(LEdge{x.p, Complex::one()}, y.p->e[i], var - 1);
+      }
+    } else {
+      for (auto i = 0U; i < rows; i++) {
+        for (auto j = 0U; j < cols; j++) {
+          auto idx = (cols * i) + j;
+          edge[idx] = ResultEdge::zero();
+          for (auto k = 0U; k < rows; k++) {
+            const auto xIdx = (rows * i) + k;
+            LEdge e1{};
+            if (x.p != nullptr && x.p->v == var) {
+              e1 = x.p->e[xIdx];
             } else {
-              e1 = LEdge::zero();
+              if (xIdx == 0 || xIdx == 3) {
+                e1 = LEdge{x.p, Complex::one()};
+              } else {
+                e1 = LEdge::zero();
+              }
             }
-          }
 
-          const auto yIdx = j + (cols * k);
-          REdge e2{};
-          if (y.p != nullptr && y.p->v == var) {
-            e2 = y.p->e[yIdx];
-          } else {
-            if (yIdx == 0 || yIdx == 3) {
-              e2 = REdge{y.p, Complex::one()};
+            const auto yIdx = j + (cols * k);
+            REdge e2{};
+            if (y.p != nullptr && y.p->v == var) {
+              e2 = y.p->e[yIdx];
             } else {
-              e2 = REdge::zero();
+              if (yIdx == 0 || yIdx == 3) {
+                e2 = REdge{y.p, Complex::one()};
+              } else {
+                e2 = REdge::zero();
+              }
             }
-          }
 
-          const auto v = static_cast<Qubit>(var - 1);
-          auto m = multiply2(e1, e2, v);
+            const auto v = static_cast<Qubit>(var - 1);
+            auto m = multiply2(e1, e2, v);
 
-          if (k == 0 || edge[idx].w.exactlyZero()) {
-            edge[idx] = m;
-          } else if (!m.w.exactlyZero()) {
-            edge[idx] = add2(edge[idx], m, v);
+            if (k == 0 || edge[idx].w.exactlyZero()) {
+              edge[idx] = m;
+            } else if (!m.w.exactlyZero()) {
+              edge[idx] = add2(edge[idx], m, v);
+            }
           }
         }
       }
@@ -1315,19 +1306,37 @@ public:
    * @param x The first decision diagram.
    * @param y The second decision diagram.
    * @param yNumQubits The number of qubits in the second decision diagram.
-   * @param incIdx Whether to increment the index of the nodes in the second
-   * decision diagram.
+   * @param incIdx Whether to shift the first DD above the second DD.
+   * @details Matrix widths include leading identity levels omitted from the DD.
+   * The compute table is reused while the index shift remains unchanged.
    * @return The resulting decision diagram after computing the Kronecker
    * product.
    */
   template <class Node>
   Edge<Node> kronecker(const Edge<Node>& x, const Edge<Node>& y,
                        const std::size_t yNumQubits, const bool incIdx = true) {
-    const auto e = kronecker2(x, y, yNumQubits, incIdx);
+    size_t shift = 0;
+    if (incIdx) {
+      if constexpr (IsMatrix<Node>) {
+        shift = yNumQubits;
+      } else if (!y.isTerminal()) {
+        shift = static_cast<size_t>(y.p->v) + 1;
+      }
+    }
+    auto& cachedShift =
+        IsVector<Node> ? vectorKroneckerShift_ : matrixKroneckerShift_;
+    if (cachedShift != shift) {
+      getKroneckerComputeTable<Node>().clear();
+      cachedShift = shift;
+    }
+    const auto e = kronecker2(x, y, shift);
     return cn.lookup(e);
   }
 
 private:
+  size_t vectorKroneckerShift_ = 0;
+  size_t matrixKroneckerShift_ = 0;
+
   /**
    * @brief Internal function to compute the Kronecker product of two decision
    * diagrams.
@@ -1339,14 +1348,12 @@ private:
    * @tparam Node The type of the node.
    * @param x The first decision diagram.
    * @param y The second decision diagram.
-   * @param yNumQubits The number of qubits in the second decision diagram.
-   * @param incIdx Whether to increment the qubit index.
+   * @param shift The qubit index offset for nodes from the first DD.
    * @return The resulting decision diagram after the Kronecker product.
    */
   template <class Node>
   CachedEdge<Node> kronecker2(const Edge<Node>& x, const Edge<Node>& y,
-                              const std::size_t yNumQubits,
-                              const bool incIdx = true) {
+                              const size_t shift) {
     if (x.w.exactlyZero() || y.w.exactlyZero()) {
       return CachedEdge<Node>::zero();
     }
@@ -1389,24 +1396,10 @@ private:
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (auto i = 0U; i < n; ++i) {
-      edge[i] = kronecker2(x.p->e[i], y, yNumQubits, incIdx);
+      edge[i] = kronecker2(x.p->e[i], y, shift);
     }
 
-    // Increase the qubit index
-    Qubit idx = x.p->v;
-    if (incIdx) {
-      // use the given number of qubits if y is an identity
-      if constexpr (IsMatrix<Node>) {
-        if (y.isIdentity()) {
-          idx += static_cast<Qubit>(yNumQubits);
-        } else {
-          idx += static_cast<Qubit>(y.p->v + 1U);
-        }
-      } else {
-        idx += static_cast<Qubit>(y.p->v + 1U);
-      }
-    }
-    auto e = makeDDNode(idx, edge);
+    auto e = makeDDNode(static_cast<Qubit>(x.p->v + shift), edge);
     computeTable.insert(x.p, y.p, {e.p, e.w});
     return {e.p, rWeight};
   }
@@ -1432,7 +1425,7 @@ public:
    *
    * @param a The matrix decision diagram.
    * @param eliminate A vector of booleans indicating which qubits to trace out.
-   * @return The resulting matrix decision diagram after the partial trace.
+   * @return The normalized partial trace, divided by two per eliminated qubit.
    */
   mEdge partialTrace(const mEdge& a, const std::vector<bool>& eliminate);
 
@@ -1441,7 +1434,7 @@ public:
    *
    * @param a The decision diagram.
    * @param numQubits The number of qubits in the decision diagram.
-   * @return The trace of the decision diagram as a complex value.
+   * @return The normalized trace, divided by the matrix dimension.
    */
   ComplexValue trace(const mEdge& a, std::size_t numQubits);
 
@@ -1478,8 +1471,7 @@ private:
    * each level marked for elimination, thereby ensuring that the result is
    * mapped to the interval [0,1] (as opposed to the interval [0,2^N]).
    */
-  mCachedEdge trace(const mEdge& a, const std::vector<bool>& eliminate,
-                    std::size_t level, std::size_t alreadyEliminated = 0);
+  mCachedEdge trace(const mEdge& a, std::span<const size_t> eliminatedBelow);
 
   /**
    * @brief Recursively checks if a given matrix is close to the identity

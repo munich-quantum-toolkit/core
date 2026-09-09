@@ -20,12 +20,9 @@
 #include "mlir/Dialect/QIR/QIRDefinitions.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
-#include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
+#include <llvm/ADT/DenseSet.h>
 #include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
 #include <mlir/Conversion/LLVMCommon/TypeConverter.h>
-#include <mlir/Conversion/MathToLLVM/MathToLLVM.h>
-#include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
@@ -40,8 +37,8 @@
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Region.h>
+#include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
-#include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/DialectConversion.h>
@@ -49,6 +46,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <utility>
 #include <variant>
 
@@ -85,6 +83,39 @@ static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
   return results[static_cast<size_t>(*indexValue)];
 }
 
+/// Validates canonical qubit pointers before moving measurements out of order.
+static LogicalResult moveTerminalMeasurements(Block& body,
+                                              Block& measurements) {
+  DenseSet<Value> measuredQubits;
+  SmallVector<LLVM::CallOp> measurementCalls;
+  for (auto call : body.getOps<LLVM::CallOp>()) {
+    if (!call.getCallee() ||
+        !call.getCallee()->starts_with("__quantum__qis__")) {
+      continue;
+    }
+    const bool isMeasurement = call.getCallee() == QIR_MEASURE;
+    /// Measurement's second pointer identifies a result, not a qubit.
+    auto operands = call.getOperands();
+    if (isMeasurement) {
+      operands = operands.take_front(1);
+    }
+    for (auto operand : operands) {
+      if (measuredQubits.contains(operand)) {
+        return call.emitError(
+            "QIR Base Profile forbids using a qubit after measurement");
+      }
+    }
+    if (isMeasurement) {
+      measuredQubits.insert(call.getOperand(0));
+      measurementCalls.push_back(call);
+    }
+  }
+  for (auto call : measurementCalls) {
+    call->moveBefore(measurements.getTerminator());
+  }
+  return success();
+}
+
 namespace {
 
 /**
@@ -92,7 +123,7 @@ namespace {
  * pointers represented by `llvm.inttoptr` operations
  *
  * @details
- * Static qubit pointers are allocated during by `ConvertMemRefLoadOp`.
+ * Allocate static result pointers for each bit in a classical register.
  */
 struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -116,13 +147,14 @@ struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
 
     OpBuilder::InsertionGuard guard(rewriter);
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-    const auto base = static_cast<int64_t>(state.staticResults.size());
+    reg.results.reserve(static_cast<size_t>(*size));
+    const auto base = static_cast<int64_t>(state.scalarResults.size());
     for (int64_t i = 0; i < *size; ++i) {
       const auto index = base + i;
       auto result = createPointerFromIndex(rewriter, op.getLoc(), index);
-      reg.results[i] = result;
+      reg.results.push_back(result);
       // The results are recorded as part of the register
-      state.staticResults.try_emplace(
+      state.scalarResults.try_emplace(
           index, qir::StaticResult{.pointer = result, .record = false});
     }
 
@@ -171,6 +203,9 @@ struct ConvertMemRefAllocOp final
   LogicalResult
   matchAndRewrite(memref::AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
+    if (failed(getState().ensureAllocationMode(AllocationMode::Dynamic, op))) {
+      return failure();
+    }
     rewriter.eraseOp(op);
     return success();
   }
@@ -206,16 +241,23 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
       return rewriter.notifyMatchFailure(
           op, "Only one-dimensional registers are supported");
     }
-    // Save current insertion point
-    const OpBuilder::InsertionGuard guard(rewriter);
-
-    // Switch to entry block
-    rewriter.setInsertionPoint(state.entryBlock->getTerminator());
-
-    auto nqubits = state.staticQubits.size();
-    auto qubit = createPointerFromIndex(rewriter, op.getLoc(),
-                                        static_cast<int64_t>(nqubits));
-    state.staticQubits.try_emplace(static_cast<int64_t>(nqubits), qubit);
+    const auto index = getConstantIntValue(op.getIndices().front());
+    if (!index || ShapedType::isDynamic(shape.front()) ||
+        !op.getMemref().getDefiningOp<memref::AllocOp>()) {
+      return op.emitError("QIR Base Profile requires constant indices into "
+                          "statically allocated qubit registers");
+    }
+    if (*index < 0 || *index >= shape.front()) {
+      return op.emitError("qubit-register index is out of bounds");
+    }
+    auto& qubit = state.staticRegisterQubits[{op.getMemref(), *index}];
+    if (!qubit) {
+      const OpBuilder::InsertionGuard guard(rewriter);
+      rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+      const auto id = static_cast<int64_t>(state.staticQubits.size());
+      qubit = createPointerFromIndex(rewriter, op.getLoc(), id);
+      state.staticQubits.try_emplace(id, qubit);
+    }
     rewriter.replaceOp(op, qubit);
 
     return success();
@@ -262,6 +304,9 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   matchAndRewrite(AllocOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
+    if (failed(state.ensureAllocationMode(AllocationMode::Dynamic, op))) {
+      return failure();
+    }
 
     const OpBuilder::InsertionGuard guard(rewriter);
 
@@ -328,11 +373,11 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
     }
     auto result = *registerResult;
     if (!result) {
-      result = getResultPtr(state, op.getOperation(), rewriter);
+      result = getResultPtr(state, op.getOperation(), rewriter, false);
     }
 
-    // Emit the measurement in the measurements block
-    rewriter.setInsertionPoint(state.measurementsBlock->getTerminator());
+    /// Preserve instruction order until terminal measurements are verified.
+    rewriter.setInsertionPoint(op);
     auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
     auto fnDec =
         getOrCreateFunctionDeclaration(rewriter, op, QIR_MEASURE, fnSig);
@@ -362,28 +407,8 @@ static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
 }
 
 namespace {
-/**
- * @brief Pass for converting QC dialect operations to QIR
- *
- * @details
- * This pass converts QC dialect quantum operations to QIR (Quantum
- * Intermediate Representation) by lowering them to LLVM dialect operations
- * that call QIR runtime functions.
- *
- * Conversion stages:
- * 1. Convert func dialect to LLVM
- * 2. Ensure proper block structure for QIR base profile
- * 3. Add QIR initialization call
- * 4. Convert QC operations to QIR calls
- * 5. Set QIR metadata attributes
- * 6. Convert arith and cf dialects to LLVM
- * 7. Reconcile unrealized casts
- *
- * @pre
- * The input entry function must consist of a single block. The pass will
- * restructure it into four blocks. Multi-block input functions are
- * currently not supported.
- */
+/// Lower supported QC operations to QIR Base runtime calls and LLVM IR.
+/// QIR attributes and module flags are attached by the separate metadata pass.
 struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
   using QCToQIRBaseBase::QCToQIRBaseBase;
 
@@ -450,37 +475,13 @@ struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
   }
 
 protected:
-  /**
-   * @brief Executes the QC to QIR conversion pass
-   *
-   * @details
-   * Performs the conversion in six stages:
-   *
-   * **Stage 1: Func to LLVM**
-   * Convert func dialect operations (main function) to LLVM dialect
-   * equivalents.
-   *
-   * **Stage 2: Block structure**
-   * Create proper 4-block structure for QIR base profile (entry, main,
-   * irreversible, output).
-   *
-   * **Stage 3: Initialization**
-   * Insert the `__quantum__rt__initialize` call.
-   *
-   * **Stage 4: QC to LLVM**
-   * Convert QC dialect operations to QIR calls and add output recording to the
-   * output block.
-   *
-   * **Stage 5: Standard dialects to LLVM**
-   * Convert arith and control flow dialects to LLVM (for index arithmetic and
-   * function control flow).
-   *
-   * **Stage 6: Reconcile casts**
-   * Clean up any unrealized cast operations introduced during type conversion.
-   */
   void runOnOperation() override {
     MLIRContext* ctx = &getContext();
     auto moduleOp = getOperation();
+    if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
+      signalPassFailure();
+      return;
+    }
     auto entryPoint = mqt::getEntryPoint(moduleOp);
     if (!entryPoint) {
       moduleOp->emitError("no main function with mqt.entry_point found");
@@ -554,33 +555,15 @@ protected:
         return;
       }
 
-      addOutputRecording(main, ctx, state);
-    }
-
-    // Stage 5: Convert standard dialects to LLVM
-    {
-      RewritePatternSet stdPatterns(ctx);
-      target.addIllegalDialect<arith::ArithDialect>();
-      target.addIllegalDialect<cf::ControlFlowDialect>();
-      target.addIllegalDialect<math::MathDialect>();
-
-      cf::populateControlFlowToLLVMConversionPatterns(typeConverter,
-                                                      stdPatterns);
-      cf::populateAssertToLLVMConversionPattern(typeConverter, stdPatterns);
-      arith::populateArithToLLVMConversionPatterns(typeConverter, stdPatterns);
-      populateMathToLLVMConversionPatterns(typeConverter, stdPatterns);
-
-      if (applyPartialConversion(moduleOp, target, std::move(stdPatterns))
-              .failed()) {
+      auto& body = *std::next(main.getBody().begin());
+      if (failed(moveTerminalMeasurements(body, *state.measurementsBlock))) {
         signalPassFailure();
         return;
       }
+      addOutputRecording(main, ctx, state);
     }
 
-    // Stage 6: Reconcile unrealized casts
-    PassManager passManager(ctx);
-    passManager.addPass(createReconcileUnrealizedCastsPass());
-    if (passManager.run(moduleOp).failed()) {
+    if (failed(finalizeQIRConversion(moduleOp, target, typeConverter))) {
       signalPassFailure();
     }
   }

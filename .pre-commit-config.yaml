@@ -45,7 +45,7 @@ repos:
 
   ## Check for security issues in GitHub Actions workflows
   - repo: https://github.com/zizmorcore/zizmor-pre-commit
-    rev: v1.29.0
+    rev: v1.30.0
     hooks:
       - id: zizmor
         priority: 0
@@ -60,7 +60,7 @@ repos:
 
   ## Check pyproject.toml file
   - repo: https://github.com/henryiii/validate-pyproject-schema-store
-    rev: 2026.08.28
+    rev: 2026.08.29
     hooks:
       - id: validate-pyproject
         priority: 0
@@ -143,6 +143,13 @@ repos:
         priority: 5
       - id: rumdl-fmt
         priority: 6
+
+  ## Format pyproject.toml with pyproject-fmt
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: v2.29.3
+    hooks:
+      - id: pyproject-fmt
+        priority: 5
 
   ## Format CMake files with cmake-format
   - repo: https://github.com/cheshirekow/cmake-format-precommit

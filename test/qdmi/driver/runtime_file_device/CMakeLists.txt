@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-cmake_minimum_required(VERSION 3.24)
+cmake_minimum_required(VERSION 3.28)
 project(mqt-core-qdmi-runtime-file-device-test LANGUAGES CXX)
 
 if(NOT MQT_CORE_QDMI_HELPER OR NOT MQT_CORE_QDMI_TEST_SOURCE_DIR)

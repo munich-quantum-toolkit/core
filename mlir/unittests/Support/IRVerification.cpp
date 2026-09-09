@@ -829,9 +829,11 @@ bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
   IRMapping m;
   SetVector<Operation*> lhsClosed;
   SetVector<Operation*> rhsClosed;
-  TensorMapping tm{.lhsEquivGroups = getEquivGroup(lhs),
-                   .rhsEquivGroups = getEquivGroup(rhs),
-                   .equivGroupMapping = DenseMap<size_t, size_t>{}};
+  TensorMapping tm{
+      .lhsEquivGroups = getEquivGroup(lhs),
+      .rhsEquivGroups = getEquivGroup(rhs),
+      .equivGroupMapping = DenseMap<size_t, size_t>{},
+  };
 
   return compareRegions(lhs.getBodyRegion(), rhs.getBodyRegion(), lhsClosed,
                         rhsClosed, m, tm);

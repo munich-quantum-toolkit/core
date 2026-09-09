@@ -8,15 +8,16 @@
  * Licensed under the MIT License
  */
 
+#include "TestUtils.hpp"
 #include "qdmi/Slurm.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include <gmock/gmock-matchers.h>
 #include <gtest/gtest.h>
+#include <qdmi/client.h>
 #include <qdmi/constants.h>
 
 #include <array>
-#include <cstdlib>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -25,58 +26,16 @@
 namespace qdmi::slurm {
 namespace {
 
-class ScopedSlurmLicenses {
-public:
-  explicit ScopedSlurmLicenses(const std::optional<std::string>& value)
-      : originalValue(getValue()) {
-    setValue(value);
-  }
-
-  ~ScopedSlurmLicenses() { setValue(originalValue); }
-
-  ScopedSlurmLicenses(const ScopedSlurmLicenses&) = delete;
-  ScopedSlurmLicenses& operator=(const ScopedSlurmLicenses&) = delete;
-  ScopedSlurmLicenses(ScopedSlurmLicenses&&) = delete;
-  ScopedSlurmLicenses& operator=(ScopedSlurmLicenses&&) = delete;
-
-private:
-  [[nodiscard]] static auto getValue() -> std::optional<std::string> {
-    if (const auto* const value = std::getenv("SLURM_JOB_LICENSES")) {
-      return value;
-    }
-    return std::nullopt;
-  }
-
-  static void setValue(const std::optional<std::string>& value) {
-#ifdef _WIN32
-    if (_putenv_s("SLURM_JOB_LICENSES", value.value_or("").c_str()) != 0) {
-      std::abort();
-    }
-#else
-    int result = 0;
-    if (value.has_value()) {
-      // NOLINTNEXTLINE(misc-include-cleaner)
-      result = setenv("SLURM_JOB_LICENSES", value->c_str(), 1);
-    } else {
-      // NOLINTNEXTLINE(misc-include-cleaner)
-      result = unsetenv("SLURM_JOB_LICENSES");
-    }
-    if (result != 0) {
-      std::abort();
-    }
-#endif
-  }
-
-  std::optional<std::string> originalValue;
-};
+using mqt::test::ScopedEnvironmentVariable;
 
 void registerStatusDevice(const std::string& id,
                           const std::string& configuredStatus) {
-  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent(
-      {.id = id,
-       .library = MQT_CORE_QDMI_SLURM_TEST_DEVICE,
-       .prefix = "TEST_SESSION",
-       .session = {.custom4 = configuredStatus}}));
+  static_cast<void>(qdmi::Driver::get().registerDeviceIfAbsent({
+      .id = id,
+      .library = MQT_CORE_QDMI_SLURM_TEST_DEVICE,
+      .prefix = "TEST_SESSION",
+      .session = {.custom4 = configuredStatus},
+  }));
 }
 
 } // namespace
@@ -84,15 +43,31 @@ void registerStatusDevice(const std::string& id,
 TEST(SlurmAdapterTest, AcceptsImplicitAndExplicitUnitCounts) {
   registerStatusDevice("test.slurm.idle", "idle");
   for (const auto* const value : {"test.slurm.idle", "test.slurm.idle:1"}) {
-    const ScopedSlurmLicenses licenses(value);
+    const ScopedEnvironmentVariable licenses("SLURM_JOB_LICENSES", value);
     EXPECT_EQ(openDeviceFromLicense().getStatus(), QDMI_DEVICE_STATUS_IDLE);
   }
 }
 
 TEST(SlurmAdapterTest, AcceptsBusyDevice) {
   registerStatusDevice("test.slurm.busy", "busy");
-  const ScopedSlurmLicenses licenses("test.slurm.busy");
+  const ScopedEnvironmentVariable licenses("SLURM_JOB_LICENSES",
+                                           "test.slurm.busy");
   EXPECT_EQ(openDeviceFromLicense().getStatus(), QDMI_DEVICE_STATUS_BUSY);
+}
+
+TEST(SlurmAdapterTest, KeepsSessionsFreshAndReportsUnknownDevice) {
+  registerStatusDevice("test.slurm.fresh", "idle");
+  const ScopedEnvironmentVariable licenses("SLURM_JOB_LICENSES",
+                                           "test.slurm.fresh:1");
+  const auto first = openDeviceFromLicense();
+  const auto second = openDeviceFromLicense();
+  EXPECT_NE(static_cast<QDMI_Device>(first), static_cast<QDMI_Device>(second));
+  const ScopedEnvironmentVariable unknown("SLURM_JOB_LICENSES",
+                                          "test.slurm.unknown");
+  EXPECT_THAT([] { return openDeviceFromLicense(); },
+              testing::ThrowsMessage<std::runtime_error>(
+                  testing::HasSubstr("Slurm license 'test.slurm.unknown' is "
+                                     "not a registered QDMI device ID")));
 }
 
 TEST(SlurmAdapterTest, RejectsMissingAndMalformedValues) {
@@ -114,7 +89,7 @@ TEST(SlurmAdapterTest, RejectsMissingAndMalformedValues) {
   };
 
   for (const auto& value : invalidValues) {
-    const ScopedSlurmLicenses licenses(value);
+    const ScopedEnvironmentVariable licenses("SLURM_JOB_LICENSES", value);
     EXPECT_THROW(static_cast<void>(openDeviceFromLicense()), std::runtime_error)
         << "value: " << value.value_or("<unset>");
   }
@@ -129,7 +104,7 @@ TEST(SlurmAdapterTest, RejectsUnknownRemoteAndCompoundLicenses) {
   };
 
   for (const auto* const value : invalidValues) {
-    const ScopedSlurmLicenses licenses(value);
+    const ScopedEnvironmentVariable licenses("SLURM_JOB_LICENSES", value);
     EXPECT_THROW(static_cast<void>(openDeviceFromLicense()), std::runtime_error)
         << "value: " << value;
   }
@@ -147,7 +122,7 @@ TEST(SlurmAdapterTest, RejectsUnavailableDeviceWithIdAndStatus) {
   for (const auto& [configuredStatus, reportedStatus] : rejectedStates) {
     const auto id = std::string{"test.slurm."} + configuredStatus;
     registerStatusDevice(id, configuredStatus);
-    const ScopedSlurmLicenses licenses(id);
+    const ScopedEnvironmentVariable licenses("SLURM_JOB_LICENSES", id);
     EXPECT_THAT(
         [] { return openDeviceFromLicense(); },
         testing::ThrowsMessage<std::runtime_error>(testing::AllOf(

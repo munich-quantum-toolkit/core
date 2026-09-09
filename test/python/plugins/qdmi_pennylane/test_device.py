@@ -46,7 +46,7 @@ def test_uses_already_open_qdmi_device(monkeypatch: pytest.MonkeyPatch) -> None:
         lambda *_args, **_kwargs: pytest.fail("The adapter reopened the QDMI device."),
     )
 
-    device = QDMIDevice(device=cast("QDMIDeviceHandle", qdmi), wires=2, shots=10)
+    device = QDMIDevice(device=cast("QDMIDeviceHandle", qdmi), wires=2)
 
     assert device.qdmi_device is qdmi
     assert device.device_id is None
@@ -56,9 +56,9 @@ def test_samples_counts_probabilities_expectations_and_variances(monkeypatch: py
     """Reconstruct common PennyLane result types from raw QDMI samples."""
     qdmi = stub_device()
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=["left", "right"], shots=100)
+    device = QDMIDevice("fake.qdmi", wires=["left", "right"])
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=100)
     def circuit() -> tuple[object, ...]:
         return (
             qp.sample(wires=["left", "right"]),
@@ -83,9 +83,9 @@ def test_histogram_only_device_reconstructs_samples(monkeypatch: pytest.MonkeyPa
     """Reconstruct raw samples when a QDMI implementation exposes only counts."""
     qdmi = stub_device(expose_shots=False)
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=8)
+    device = QDMIDevice("fake.qdmi", wires=2)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=8)
     def circuit():
         return qp.sample(wires=[0, 1])
 
@@ -101,9 +101,9 @@ def test_execution_time_accumulates_batch_wall_time(monkeypatch: pytest.MonkeyPa
     patch_open_device(monkeypatch, qdmi)
     readings = iter([0.0, 1.5, 10.0, 12.25])
     monkeypatch.setattr("mqt.core.plugins.pennylane.device.monotonic", lambda: next(readings))
-    device = QDMIDevice("fake.qdmi", wires=2, shots=[(5, 2), 7])
+    device = QDMIDevice("fake.qdmi", wires=2)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=[(5, 2), 7])
     def circuit():
         return qp.probs(wires=[0, 1])
 
@@ -118,9 +118,9 @@ def test_shot_vectors_submit_before_waiting(monkeypatch: pytest.MonkeyPatch) -> 
     """Submit every shot-vector copy before waiting for the first job."""
     qdmi = stub_device()
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=[(5, 2), 7])
+    device = QDMIDevice("fake.qdmi", wires=2)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=[(5, 2), 7])
     def circuit():
         return qp.probs(wires=[0, 1])
 
@@ -142,7 +142,7 @@ def test_batches_execute_in_input_order(monkeypatch: pytest.MonkeyPatch) -> None
 
     qdmi = stub_device(result_factory=basis_state_results)
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=6)
+    device = QDMIDevice("fake.qdmi", wires=2)
     tapes = (
         qp.tape.QuantumScript([qp.PauliX(0)], [qp.probs(wires=[0, 1])], shots=6),
         qp.tape.QuantumScript([qp.PauliX(1)], [qp.probs(wires=[0, 1])], shots=6),
@@ -190,11 +190,13 @@ def test_execution_failure_cancels_submitted_jobs(
 
     monkeypatch.setattr(qdmi, "submit_job", submit)
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=[2, 3, 4])
+    device = QDMIDevice("fake.qdmi", wires=2)
     tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=[2, 3, 4])
 
-    with pytest.raises(PennyLaneExecutionError, match="wait failed"):
+    with qp.Tracker(device) as tracker, pytest.raises(PennyLaneExecutionError, match="wait failed"):
         device.execute(tape)
+
+    assert tracker.totals == {"batches": 1, "batch_len": 1, "executions": 3, "shots": 9}
 
     assert qdmi.events == [
         "submit:1",
@@ -211,9 +213,9 @@ def test_parameter_shift_gradient_uses_multiple_qdmi_jobs(monkeypatch: pytest.Mo
     """Differentiate sampled execution through PennyLane's parameter-shift rule."""
     qdmi = stub_device(qubits=1, result_factory=rotation_results)
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=["theta"], shots=4000)
+    device = QDMIDevice("fake.qdmi", wires=["theta"])
 
-    @qp.qnode(device, diff_method="parameter-shift")
+    @qp.qnode(device, shots=4000, diff_method="parameter-shift")
     def circuit(angle: float):
         qp.RY(angle, wires="theta")
         return qp.expval(qp.PauliZ("theta"))
@@ -232,10 +234,10 @@ def test_hamiltonian_and_non_commuting_measurements_split(monkeypatch: pytest.Mo
     """Let PennyLane split and aggregate Hamiltonian and non-commuting terms."""
     qdmi = stub_device()
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=100)
+    device = QDMIDevice("fake.qdmi", wires=2)
     hamiltonian = 0.5 * qp.PauliZ(0) + 0.5 * qp.PauliZ(1)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=100)
     def circuit():
         return qp.expval(hamiltonian), qp.expval(qp.PauliX(0))
 
@@ -250,9 +252,9 @@ def test_qasm2_diagonalizes_observable_once(monkeypatch: pytest.MonkeyPatch) -> 
     """Do not duplicate the X-basis rotation in PennyLane's QASM2 serializer."""
     qdmi = stub_device(program_format=ProgramFormat.QASM2)
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=10)
+    device = QDMIDevice("fake.qdmi", wires=2)
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=10)
     def circuit():
         return qp.expval(qp.PauliX(0))
 
@@ -265,7 +267,7 @@ def test_rejects_analytic_execution_before_submission(monkeypatch: pytest.Monkey
     """Reject analytic tapes before a QDMI job is created."""
     qdmi = stub_device()
     patch_open_device(monkeypatch, qdmi)
-    device = QDMIDevice("fake.qdmi", wires=2, shots=None)
+    device = QDMIDevice("fake.qdmi", wires=2)
 
     @qp.qnode(device)
     def circuit():
@@ -319,13 +321,63 @@ def test_forwards_job_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
     device = QDMIDevice(
         "fake.qdmi",
         wires=2,
-        shots=4,
         job_parameters={"custom1": "bucket", "custom2": "prefix"},
     )
 
-    @qp.qnode(device)
+    @qp.qnode(device, shots=4)
     def circuit():
         return qp.sample(wires=[0, 1])
 
     circuit()
     assert qdmi.submissions[0][3] == {"custom1": "bucket", "custom2": "prefix"}
+
+
+@pytest.mark.parametrize("method", ["one-shot", "tree-traversal"])
+def test_rejects_unsupported_mid_circuit_methods(method: str) -> None:
+    """Do not silently replace a requested native MCM method with deferral."""
+    qdmi = stub_device()
+    device = QDMIDevice(device=cast("QDMIDeviceHandle", qdmi), wires=2)
+
+    @qp.qnode(device, shots=5, mcm_method=method)
+    def circuit():
+        return qp.sample(wires=0)
+
+    with pytest.raises(qp.exceptions.QuantumFunctionError, match="unsupported by the device"):
+        circuit()
+    assert not qdmi.submissions
+
+
+def test_rejects_deferred_measurement_without_spare_wire() -> None:
+    """Fail before submission when resetting a measured wire needs an ancilla."""
+    qdmi = stub_device()
+    device = QDMIDevice(device=cast("QDMIDeviceHandle", qdmi), wires=["a", "b"])
+
+    @qp.qnode(device, shots=5)
+    def circuit():
+        measured = qp.measure("a", reset=True)
+        qp.cond(measured, qp.X)("b")
+        return qp.sample(wires=["b", "a"])
+
+    with pytest.raises(PennyLaneValidationError, match="require more wires"):
+        circuit()
+    assert not qdmi.submissions
+
+
+def test_qnode_shots_and_tracker() -> None:
+    """Track actual jobs and shot copies while QNode shots specify execution budgets."""
+    qdmi = stub_device()
+    device = QDMIDevice(device=cast("QDMIDeviceHandle", qdmi), wires=2)
+
+    @qp.qnode(device, shots=7)
+    def circuit():
+        return qp.sample(wires=[0, 1])
+
+    with qp.Tracker(device) as tracker:
+        assert circuit().shape == (7, 2)
+        results = qp.set_shots(circuit, shots=[(3, 2), 5])()
+    assert [result.shape for result in results] == [(3, 2), (3, 2), (5, 2)]
+    assert tracker.totals == {"batches": 2, "batch_len": 2, "executions": 4, "shots": 18}
+    assert device.submitted_jobs == 4
+    assert device.shots.total_shots is None
+    circuit()
+    assert tracker.totals["executions"] == 4

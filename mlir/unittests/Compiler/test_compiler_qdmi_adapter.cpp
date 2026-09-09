@@ -21,6 +21,7 @@
 
 #include <cassert>
 #include <initializer_list>
+#include <memory>
 #include <numeric>
 #include <string>
 #include <utility>
@@ -85,6 +86,47 @@ TEST(CompilerQDMIAdapterTest, SnapshotsIQMCalibrationAndLifetime) {
   EXPECT_EQ(target.synthesisBasis()->entangler, CompilerTarget::GateKind::CZ);
 }
 
+TEST(CompilerQDMIAdapterTest, QueriesNamesAndSiteIndicesOncePerSnapshot) {
+  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
+      MQT_CORE_MLIR_SC_DEVICE_LIBRARY, "MQT_SC");
+  static thread_local decltype(QDMI_device_session_query_site_property)*
+      querySite = nullptr;
+  static thread_local decltype(QDMI_device_session_query_operation_property)*
+      queryOperation = nullptr;
+  static thread_local size_t indexQueries = 0;
+  static thread_local size_t nameQueries = 0;
+  querySite = library->device_session_query_site_property;
+  queryOperation = library->device_session_query_operation_property;
+  library->device_session_query_site_property =
+      [](QDMI_Device_Session session, QDMI_Site site,
+         QDMI_Site_Property property, size_t size, void* value,
+         size_t* sizeRet) {
+        indexQueries += property == QDMI_SITE_PROPERTY_INDEX;
+        return querySite(session, site, property, size, value, sizeRet);
+      };
+  library->device_session_query_operation_property =
+      [](QDMI_Device_Session session, QDMI_Operation operation, size_t numSites,
+         const QDMI_Site* sites, size_t numParams, const double* params,
+         QDMI_Operation_Property property, size_t size, void* value,
+         size_t* sizeRet) {
+        nameQueries += property == QDMI_OPERATION_PROPERTY_NAME;
+        return queryOperation(session, operation, numSites, sites, numParams,
+                              params, property, size, value, sizeRet);
+      };
+  QDMI_Device_impl_d rawDevice(library);
+  const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
+  for (int snapshot = 0; snapshot < 2; ++snapshot) {
+    indexQueries = 0;
+    nameQueries = 0;
+    const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
+    /// Bound provider calls independently of coupling and operation counts.
+    EXPECT_EQ(indexQueries, target.numSites());
+    EXPECT_EQ(nameQueries, 2 * target.operations().size());
+    EXPECT_EQ(target.numSites(), 100);
+    EXPECT_EQ(target.operations().size(), 3);
+  }
+}
+
 TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
   const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
@@ -99,12 +141,14 @@ TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
             CompilerTarget::Operation::Arity::Kind::Fixed);
   EXPECT_EQ(gphase.arity().value(), 0);
   for (const auto [name, minimum] :
-       std::initializer_list<std::pair<llvm::StringRef, size_t>>{{"id", 1},
-                                                                 {"h", 1},
-                                                                 {"rx", 1},
-                                                                 {"swap", 2},
-                                                                 {"rxx", 2},
-                                                                 {"rccx", 3}}) {
+       std::initializer_list<std::pair<llvm::StringRef, size_t>>{
+           {"id", 1},
+           {"h", 1},
+           {"rx", 1},
+           {"swap", 2},
+           {"rxx", 2},
+           {"rccx", 3},
+       }) {
     const auto& operation = findOperation(target, name);
     EXPECT_EQ(operation.arity().kind(),
               CompilerTarget::Operation::Arity::Kind::Variadic)
@@ -173,7 +217,8 @@ TEST(CompilerQDMIAdapterTest, SnapshotsHomogeneousHigherArityOperation) {
 TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
-      MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG};
+      MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG,
+  };
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 
@@ -192,7 +237,8 @@ TEST(CompilerQDMIAdapterTest, PreservesOneWayDirectionalOperationSupport) {
 
 TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
   qdmi::DeviceSessionConfig overrides;
-  overrides.deviceConfiguration = qdmi::InlineDeviceConfiguration{.json = R"({
+  overrides.deviceConfiguration = qdmi::InlineDeviceConfiguration{
+      .json = R"({
     "schema-version": 1,
     "name": "Unavailable operation",
     "numQubits": 1,
@@ -202,7 +248,8 @@ TEST(CompilerQDMIAdapterTest, OmitsOperationsWithNoSupportedPlacements) {
     "operations": [
       {"name": "x", "numQubits": 1, "numParameters": 0, "sites": []}
     ]
-  })"};
+  })",
+  };
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
   EXPECT_EQ(target.nativeOperationsKind(),
@@ -215,7 +262,8 @@ TEST(CompilerQDMIAdapterTest,
      PreservesDirectionalCalibrationWhenBothOrientationsExist) {
   qdmi::DeviceSessionConfig overrides;
   overrides.deviceConfiguration = qdmi::FileDeviceConfiguration{
-      MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG};
+      MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG,
+  };
   const auto device = qdmi::Session::openDevice("mqt.sc.default", overrides);
   const auto target = llvm::cantFail(mlir::compilerTargetFromDevice(device));
 

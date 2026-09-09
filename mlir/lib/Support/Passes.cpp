@@ -57,10 +57,13 @@ void registerMQTCompilerPasses() {
     qco::registerMeasurementLifting();
     qco::registerMergeSingleQubitRotationGates();
     qco::registerPauliTwirl2QGates();
+    qco::registerMappingPass();
     qco::registerQuantumLoopUnroll();
     qco::registerRemoveDeadGates();
     qco::registerReplaceClassicalControls();
     qco::registerReuseQubits();
+    qco::registerTargetNativeSynthesis();
+    qco::registerVerifyTargetConformance();
     mqt::registerNormalizeGlobalPhases();
     mqt::registerUnrollModifiers();
     PassPipelineRegistration<>("mqt-qco-default",
@@ -77,6 +80,13 @@ void registerMQTCompilerPasses() {
 
 void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
   pm.addPass(qco::createMergeSingleQubitRotationGates());
+}
+
+void populateQIRPreparationPipeline(OpPassManager& pm) {
+  pm.addPass(createInlinerPass());
+  pm.addPass(mqt::createNormalizeGlobalPhases());
+  pm.addPass(mqt::createUnrollModifiers());
+  pm.addPass(createCanonicalizerPass());
 }
 
 void populateQubitReusePipeline(OpPassManager& pm) {
@@ -121,6 +131,7 @@ void populateQCExportPipeline(OpPassManager& pm) {
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
+  pm.addPass(createSymbolDCEPass());
 }
 
 void populateQCCleanupPipeline(OpPassManager& pm) {
@@ -134,6 +145,7 @@ void populateQCOCleanupPipeline(OpPassManager& pm) {
   pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
   pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  pm.addPass(createSymbolDCEPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
 

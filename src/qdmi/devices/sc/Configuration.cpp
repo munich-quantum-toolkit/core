@@ -58,10 +58,9 @@ void object(const Json& value, const std::string_view source,
 void keys(const Json& value,
           const std::initializer_list<std::string_view> known,
           const std::string_view source, const std::string_view pointer) {
-  const std::set<std::string_view> allowed(known);
   for (const auto& [key, unused] : value.items()) {
     static_cast<void>(unused);
-    if (!allowed.contains(key)) {
+    if (std::ranges::find(known, key) == known.end()) {
       fail(source, pointer, "contains unknown key '" + key + "'");
     }
   }
@@ -136,7 +135,8 @@ calibration(const Json& value, const std::string_view source,
   keys(value, {"t1", "t2"}, source, pointer);
   auto result = Device::QubitCalibration{
       .t1 = optional<uint64_t>(value, "t1", source, pointer),
-      .t2 = optional<uint64_t>(value, "t2", source, pointer)};
+      .t2 = optional<uint64_t>(value, "t2", source, pointer),
+  };
   if ((result.t1 && *result.t1 == 0) || (result.t2 && *result.t2 == 0)) {
     fail(source, pointer, "t1 and t2 must be positive when present");
   }
@@ -155,12 +155,25 @@ void validateFidelity(const std::optional<double>& fidelity,
 [[nodiscard]] Device parse(const Json& root, const std::string_view source) {
   object(root, source, "$");
   keys(root,
-       {"schema-version", "name", "numQubits", "durationUnit",
-        "qubitProperties", "couplings", "operations"},
+       {
+           "schema-version",
+           "name",
+           "numQubits",
+           "durationUnit",
+           "qubitProperties",
+           "couplings",
+           "operations",
+       },
        source, "$");
-  for (const auto* const key :
-       {"schema-version", "name", "numQubits", "durationUnit",
-        "qubitProperties", "couplings", "operations"}) {
+  for (const auto* const key : {
+           "schema-version",
+           "name",
+           "numQubits",
+           "durationUnit",
+           "qubitProperties",
+           "couplings",
+           "operations",
+       }) {
     if (!root.contains(key)) {
       fail(source, "$/" + std::string(key), "is required");
     }
@@ -172,8 +185,8 @@ void validateFidelity(const std::optional<double>& fidelity,
     fail(source, "$/schema-version", "must be 1");
   }
   result.name = required<std::string>(root, "name", source, "$");
-  if (result.name.empty()) {
-    fail(source, "$/name", "must not be empty");
+  if (result.name.empty() || result.name.find('\0') != std::string::npos) {
+    fail(source, "$/name", "must be non-empty and contain no NUL bytes");
   }
   result.numQubits = required<uint64_t>(root, "numQubits", source, "$");
   if (result.numQubits == 0 ||
@@ -225,7 +238,8 @@ void validateFidelity(const std::optional<double>& fidelity,
         entry.t1 = optional<uint64_t>(value, "t1", source, pointer);
         entry.t2 = optional<uint64_t>(value, "t2", source, pointer);
         if (entry.qubit >= result.numQubits ||
-            (entry.name && entry.name->empty()) ||
+            (entry.name && (entry.name->empty() ||
+                            entry.name->find('\0') != std::string::npos)) ||
             (entry.t1 && *entry.t1 == 0) || (entry.t2 && *entry.t2 == 0) ||
             (!entry.name && !entry.t1 && !entry.t2) ||
             !overridden.emplace(entry.qubit).second) {
@@ -270,8 +284,15 @@ void validateFidelity(const std::optional<double>& fidelity,
     const auto& value = operations[i];
     object(value, source, pointer);
     keys(value,
-         {"name", "numParameters", "numQubits", "sites", "duration", "fidelity",
-          "siteOverrides"},
+         {
+             "name",
+             "numParameters",
+             "numQubits",
+             "sites",
+             "duration",
+             "fidelity",
+             "siteOverrides",
+         },
          source, pointer);
     Device::Operation operation;
     operation.name = required<std::string>(value, "name", source, pointer);
@@ -282,19 +303,21 @@ void validateFidelity(const std::optional<double>& fidelity,
     operation.duration = optional<uint64_t>(value, "duration", source, pointer);
     operation.fidelity = optional<double>(value, "fidelity", source, pointer);
     validateFidelity(operation.fidelity, source, pointer + "/fidelity");
-    if (operation.name.empty() || operation.numQubits == 0 ||
-        operation.numQubits > result.numQubits ||
+    if (operation.name.empty() ||
+        operation.name.find('\0') != std::string::npos ||
+        operation.numQubits == 0 || operation.numQubits > result.numQubits ||
         operation.numParameters > std::numeric_limits<size_t>::max() ||
         !names.emplace(operation.name).second) {
       fail(source, pointer,
-           "must have a unique non-empty name and representable counts");
+           "must have a unique non-empty name without NUL bytes and "
+           "representable counts");
     }
+    std::set<std::vector<uint64_t>> uniqueSites;
     if (const auto sites = value.find("sites"); sites != value.end()) {
       if (!sites->is_array()) {
         fail(source, pointer + "/sites", "must be an array");
       }
       operation.sites.emplace();
-      std::set<std::vector<uint64_t>> uniqueSites;
       for (size_t j = 0; j < sites->size(); ++j) {
         auto tuple = indices((*sites)[j], source,
                              pointer + "/sites/" + std::to_string(j));
@@ -351,15 +374,12 @@ void validateFidelity(const std::optional<double>& fidelity,
         auto supported = false;
         if (override.sites.size() == operation.numQubits) {
           if (operation.sites) {
-            supported = std::ranges::find(*operation.sites, override.sites) !=
-                        operation.sites->end();
+            supported = uniqueSites.contains(override.sites);
           } else if (operation.numQubits == 1) {
             supported = true;
           } else if (operation.numQubits == 2) {
-            supported = std::ranges::find(
-                            result.couplings,
-                            std::pair{override.sites[0], override.sites[1]}) !=
-                        result.couplings.end();
+            supported = uniqueCouplings.contains(
+                std::pair{override.sites[0], override.sites[1]});
           }
         }
         if (override.sites.size() != operation.numQubits ||

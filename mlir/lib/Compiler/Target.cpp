@@ -11,6 +11,7 @@
 #include "mlir/Compiler/Target.h"
 
 #include "mlir/Dialect/MQT/IR/MQTAttributes.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
@@ -36,6 +37,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <system_error>
@@ -57,37 +59,101 @@ struct GateSpecification {
 
 constexpr std::array GATE_SPECIFICATIONS{
     GateSpecification{
-        .kind = GateKind::U, .name = "u", .arity = 1, .numParameters = 3},
+        .kind = GateKind::U,
+        .name = "u",
+        .arity = 1,
+        .numParameters = 3,
+    },
     GateSpecification{
-        .kind = GateKind::X, .name = "x", .arity = 1, .numParameters = 0},
+        .kind = GateKind::X,
+        .name = "x",
+        .arity = 1,
+        .numParameters = 0,
+    },
     GateSpecification{
-        .kind = GateKind::SX, .name = "sx", .arity = 1, .numParameters = 0},
+        .kind = GateKind::SX,
+        .name = "sx",
+        .arity = 1,
+        .numParameters = 0,
+    },
     GateSpecification{
-        .kind = GateKind::RZ, .name = "rz", .arity = 1, .numParameters = 1},
+        .kind = GateKind::RZ,
+        .name = "rz",
+        .arity = 1,
+        .numParameters = 1,
+    },
     GateSpecification{
-        .kind = GateKind::RX, .name = "rx", .arity = 1, .numParameters = 1},
+        .kind = GateKind::RX,
+        .name = "rx",
+        .arity = 1,
+        .numParameters = 1,
+    },
     GateSpecification{
-        .kind = GateKind::RY, .name = "ry", .arity = 1, .numParameters = 1},
+        .kind = GateKind::RY,
+        .name = "ry",
+        .arity = 1,
+        .numParameters = 1,
+    },
     GateSpecification{
-        .kind = GateKind::R, .name = "r", .arity = 1, .numParameters = 2},
+        .kind = GateKind::R,
+        .name = "r",
+        .arity = 1,
+        .numParameters = 2,
+    },
     GateSpecification{
-        .kind = GateKind::RXX, .name = "rxx", .arity = 2, .numParameters = 1},
+        .kind = GateKind::RXX,
+        .name = "rxx",
+        .arity = 2,
+        .numParameters = 1,
+    },
     GateSpecification{
-        .kind = GateKind::RYY, .name = "ryy", .arity = 2, .numParameters = 1},
+        .kind = GateKind::RYY,
+        .name = "ryy",
+        .arity = 2,
+        .numParameters = 1,
+    },
     GateSpecification{
-        .kind = GateKind::RZX, .name = "rzx", .arity = 2, .numParameters = 1},
+        .kind = GateKind::RZX,
+        .name = "rzx",
+        .arity = 2,
+        .numParameters = 1,
+    },
     GateSpecification{
-        .kind = GateKind::RZZ, .name = "rzz", .arity = 2, .numParameters = 1},
-    GateSpecification{.kind = GateKind::ISWAP,
-                      .name = "iswap",
-                      .arity = 2,
-                      .numParameters = 0},
+        .kind = GateKind::RZZ,
+        .name = "rzz",
+        .arity = 2,
+        .numParameters = 1,
+    },
     GateSpecification{
-        .kind = GateKind::CZ, .name = "cz", .arity = 2, .numParameters = 0},
+        .kind = GateKind::SQRTISWAP,
+        .name = "sqrt_iswap",
+        .arity = 2,
+        .numParameters = 0,
+    },
     GateSpecification{
-        .kind = GateKind::CX, .name = "cx", .arity = 2, .numParameters = 0},
+        .kind = GateKind::ISWAP,
+        .name = "iswap",
+        .arity = 2,
+        .numParameters = 0,
+    },
     GateSpecification{
-        .kind = GateKind::ECR, .name = "ecr", .arity = 2, .numParameters = 0},
+        .kind = GateKind::CZ,
+        .name = "cz",
+        .arity = 2,
+        .numParameters = 0,
+    },
+    GateSpecification{
+        .kind = GateKind::CX,
+        .name = "cx",
+        .arity = 2,
+        .numParameters = 0,
+    },
+    GateSpecification{
+        .kind = GateKind::ECR,
+        .name = "ecr",
+        .arity = 2,
+        .numParameters = 0,
+    },
 };
 
 } // namespace
@@ -642,7 +708,8 @@ bool CompilerTarget::Storage::supportsGate(
        supportsOperation("z", 2, 0, orderedSites, /*variadicOnly=*/true))) {
     return true;
   }
-  const decltype(GATE_SPECIFICATIONS.cbegin()) specification =
+  /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
+  const auto specification =
       std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
   assert(specification != GATE_SPECIFICATIONS.end() &&
          "unknown compiler target gate");
@@ -704,7 +771,8 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
         (gate == GateKind::CZ && supportsEveryPlacement("z", 2, 0, true))) {
       return true;
     }
-    const decltype(GATE_SPECIFICATIONS.cbegin()) specification =
+    /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
+    const auto specification =
         std::ranges::find(GATE_SPECIFICATIONS, gate, &GateSpecification::kind);
     assert(specification != GATE_SPECIFICATIONS.end() &&
            "unknown compiler target gate");
@@ -733,15 +801,22 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
   };
 
   constexpr std::array entanglerPreference{
-      GateKind::RXX,   GateKind::RYY, GateKind::RZX, GateKind::RZZ,
-      GateKind::ISWAP, GateKind::CZ,  GateKind::CX,  GateKind::ECR,
+      GateKind::RXX, GateKind::RYY,   GateKind::RZX,
+      GateKind::RZZ, GateKind::ISWAP, GateKind::CZ,
+      GateKind::CX,  GateKind::ECR,   GateKind::SQRTISWAP,
   };
-  const decltype(entanglerPreference.cbegin()) entangler =
+  /// NOLINTNEXTLINE(readability-qualified-auto): portable iterator type.
+  const auto entangler =
       std::ranges::find_if(entanglerPreference, supportsOnEveryCoupling);
-  if (!singleQubit || entangler == entanglerPreference.end()) {
+  if (!singleQubit) {
     return std::nullopt;
   }
-  return SynthesisBasis{.singleQubit = *singleQubit, .entangler = *entangler};
+  return SynthesisBasis{
+      .singleQubit = *singleQubit,
+      .entangler = entangler == entanglerPreference.end()
+                       ? std::nullopt
+                       : std::optional{*entangler},
+  };
 }
 
 llvm::Expected<CompilerTarget>
@@ -1072,6 +1147,17 @@ bool CompilerTarget::supportsImpl(::mlir::Operation* operation,
         return storage_->supportsOperation("cz", 2, 0, sites);
       }
       return false;
+    }
+    if (auto exchange = dyn_cast<qco::XXPlusYYOp>(operation)) {
+      const auto theta = mqt::valueToDouble(exchange.getTheta());
+      const auto beta = mqt::valueToDouble(exchange.getBeta());
+      if (theta && beta &&
+          std::abs(*theta + std::numbers::pi / 2.) <=
+              mqt::PARAMETER_COMPARISON_TOLERANCE &&
+          std::abs(*beta) <= mqt::PARAMETER_COMPARISON_TOLERANCE &&
+          storage_->supportsOperation("sqrt_iswap", 2, 0, sites)) {
+        return true;
+      }
     }
     return storage_->supportsOperation(unitary.getBaseSymbol(),
                                        unitary.getNumQubits(),

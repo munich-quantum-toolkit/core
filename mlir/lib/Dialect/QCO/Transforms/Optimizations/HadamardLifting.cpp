@@ -68,19 +68,19 @@ struct LiftHadamardsAbovePauliGatesPattern final
                                              PatternRewriter& rewriter) {
     auto* op = gate.getOperation();
     return TypeSwitch<Operation*, LogicalResult>(op)
-        .Case<XOp>([&](auto) {
+        .Case([&](XOp) {
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
           rewriter.replaceOpWithNewOp<ZOp>(hadamardGate,
                                            hadamardGate.getInputQubit(0));
           return success();
         })
-        .Case<ZOp>([&](auto) {
+        .Case([&](ZOp) {
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
           rewriter.replaceOpWithNewOp<XOp>(hadamardGate,
                                            hadamardGate.getInputQubit(0));
           return success();
         })
-        .Case<YOp>([&](auto) {
+        .Case([&](YOp) {
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
           auto yGate = rewriter.replaceOpWithNewOp<YOp>(
               hadamardGate, hadamardGate.getInputQubit(0));
@@ -196,7 +196,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     auto h2 = HOp::create(rewriter, cnotGate->getLoc(), origCtrlIn);
 
     // Rewire the CNOT operands in-place so that the roles are swapped
-    rewriter.modifyOpInPlace(cnotGate, [&]() {
+    rewriter.modifyOpInPlace(cnotGate, [&] {
       cnotGate->setOperand(controlIndex, h1.getOutputTarget(0));
       cnotGate->setOperand(cnotGate.getNumControls(), h2.getOutputTarget(0));
     });
@@ -206,7 +206,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     rewriter.moveOpAfter(hadamardGate, cnotGate);
 
     // Feed the MeasureOp directly from origCtrlOut (the new control output).
-    rewriter.modifyOpInPlace(op, [&]() { op->setOperand(0, origCtrlOut); });
+    rewriter.modifyOpInPlace(op, [&] { op->setOperand(0, origCtrlOut); });
 
     // Every other downstream user of origCtrlOut except for the MeasureOp
     // should now see hadamardGate's output.

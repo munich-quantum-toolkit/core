@@ -88,7 +88,7 @@ static void makePowBodyParameterDynamic(ModuleOp module) {
   firstPowOp(module).getBodyUnitary(0)->setOperand(1, funcOp.getArgument(0));
 }
 
-static Value powUnsupportedThreeQubitBody(QCOProgramBuilder& b) {
+static Value powThreeQubitBody(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   auto powOut = b.pow(2.0, q.qubits, [&](ValueRange args) {
     auto [q0, q1, q2] = b.rccx(args[0], args[1], args[2]);
@@ -149,15 +149,6 @@ static void assertInvBodyAdjoint(MLIRContext* ctx, Builder&& build,
   ASSERT_TRUE(matrix->isApprox(body.adjoint()));
 }
 
-template <typename Builder>
-static void expectComposeNTargetFails(MLIRContext* ctx, Builder&& build,
-                                      size_t numTargets) {
-  auto moduleOp = QCOProgramBuilder::build(ctx, std::forward<Builder>(build));
-  ASSERT_TRUE(moduleOp);
-  EXPECT_FALSE(composeBodyMatrix(*firstInvOp(*moduleOp).getBody(), numTargets)
-                   .has_value());
-}
-
 namespace {
 
 struct QCOMatrixTestCase {
@@ -191,7 +182,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryBuilderExposesMatrixAndFoldsIdentity) {
   const auto matrixType =
       RankedTensorType::get({2, 2}, ComplexType::get(builder.getF64Type()));
   const std::array<std::complex<double>, 4> xValues{
-      {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}}};
+      {{0.0, 0.0}, {1.0, 0.0}, {1.0, 0.0}, {0.0, 0.0}},
+  };
   builder.unitary(
       ValueRange{qubit},
       DenseElementsAttr::get(matrixType,
@@ -225,7 +217,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryBuilderExposesMatrixAndFoldsIdentity) {
                             "Given qubit is not an input of UnitaryOp");
 
   const std::array<std::complex<double>, 4> identityValues{
-      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}},
+  };
   unitaries.front()->setAttr(
       "matrix",
       DenseElementsAttr::get(
@@ -240,24 +233,26 @@ TEST_F(QCOMatrixTest, DenseUnitaryVerifierRejectsRepeatedQubit) {
   const auto qubit = builder.allocQubit();
   const auto matrixType =
       RankedTensorType::get({4, 4}, ComplexType::get(builder.getF64Type()));
-  const std::array<std::complex<double>, 16> identityValues{{
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {0.0, 0.0},
-      {1.0, 0.0},
-  }};
+  const std::array<std::complex<double>, 16> identityValues{
+      {
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {0.0, 0.0},
+          {1.0, 0.0},
+      },
+  };
   const auto identity = DenseElementsAttr::get(
       matrixType, llvm::ArrayRef<std::complex<double>>(identityValues));
   auto unitary = UnitaryOp::create(builder, ValueRange{qubit, qubit}, identity);
@@ -295,7 +290,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryVerifierRejectsOutputArityMismatch) {
   const auto matrixType =
       RankedTensorType::get({2, 2}, ComplexType::get(builder.getF64Type()));
   const std::array<std::complex<double>, 4> identityValues{
-      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}}};
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {1.0, 0.0}},
+  };
   const auto identity = DenseElementsAttr::get(
       matrixType, llvm::ArrayRef<std::complex<double>>(identityValues));
   OperationState state(builder.getLoc(), UnitaryOp::getOperationName());
@@ -313,7 +309,8 @@ TEST_F(QCOMatrixTest, DenseUnitaryComposesThroughModifiers) {
   const auto matrixType = RankedTensorType::get(
       {2, 2}, ComplexType::get(Float64Type::get(context.get())));
   const std::array<std::complex<double>, 4> sValues{
-      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.0, 1.0}}};
+      {{1.0, 0.0}, {0.0, 0.0}, {0.0, 0.0}, {0.0, 1.0}},
+  };
   const auto sMatrix = DenseElementsAttr::get(
       matrixType, llvm::ArrayRef<std::complex<double>>(sValues));
 
@@ -502,8 +499,10 @@ TEST_F(QCOMatrixTest, ComposeNTargetRejectsExcessiveTargets) {
                    .has_value());
 }
 
-TEST_F(QCOMatrixTest, ComposeNTargetRejectsThreeQubitOp) {
-  expectComposeNTargetFails(context.get(), inverseWithThreeQubitOpInBody, 3);
+TEST_F(QCOMatrixTest, ComposeNTargetSupportsFullWidthThreeQubitOp) {
+  auto expected = DynamicMatrix::identity(8);
+  expected.setBottomRightCorner(XOp::getUnitaryMatrix());
+  assertInvBodyAdjoint(context.get(), inverseWithThreeQubitOpInBody, expected);
 }
 
 TEST_F(QCOMatrixTest, ComposeNTargetRejectsRuntimeGphase) {
@@ -596,14 +595,17 @@ TEST_F(QCOMatrixTest, PowMatrixAvailabilityContract) {
   ASSERT_TRUE(emptyModule);
   auto empty = firstPowOp(*emptyModule);
   EXPECT_TRUE(empty.hasCompileTimeKnownUnitaryMatrix());
-  EXPECT_FALSE(empty.getUnitaryMatrix().has_value());
+  ASSERT_TRUE(empty.getUnitaryMatrix());
+  EXPECT_TRUE(empty.getUnitaryMatrix()->isApprox(DynamicMatrix::identity(4)));
 
-  auto unsupportedModule =
-      QCOProgramBuilder::build(context.get(), powUnsupportedThreeQubitBody);
-  ASSERT_TRUE(unsupportedModule);
-  auto unsupported = firstPowOp(*unsupportedModule);
-  EXPECT_TRUE(unsupported.hasCompileTimeKnownUnitaryMatrix());
-  EXPECT_FALSE(unsupported.getUnitaryMatrix().has_value());
+  auto threeQubitModule =
+      QCOProgramBuilder::build(context.get(), powThreeQubitBody);
+  ASSERT_TRUE(threeQubitModule);
+  auto threeQubit = firstPowOp(*threeQubitModule);
+  EXPECT_TRUE(threeQubit.hasCompileTimeKnownUnitaryMatrix());
+  ASSERT_TRUE(threeQubit.getUnitaryMatrix());
+  EXPECT_TRUE(
+      threeQubit.getUnitaryMatrix()->isApprox(DynamicMatrix::identity(8)));
 
   auto dynamicBodyModule = QCOProgramBuilder::build(context.get(), powRxScaled);
   ASSERT_TRUE(dynamicBodyModule);
@@ -670,10 +672,12 @@ TEST_F(QCOMatrixTest, CanonicalizedPowThirdSxdgPreservesFullMatrix) {
 }
 
 TEST_F(QCOMatrixTest, PhaseProducingPowFoldsPreserveFullMatrixUnderControl) {
-  for (const auto& [gate, exponent] :
-       {std::pair{"x", "0.3333333333333333"}, std::pair{"y", "0.5"},
-        std::pair{"sx", "0.3333333333333333"},
-        std::pair{"sxdg", "0.3333333333333333"}}) {
+  for (const auto& [gate, exponent] : {
+           std::pair{"x", "0.3333333333333333"},
+           std::pair{"y", "0.5"},
+           std::pair{"sx", "0.3333333333333333"},
+           std::pair{"sxdg", "0.3333333333333333"},
+       }) {
     SCOPED_TRACE(gate);
     const std::string source = std::string{R"mlir(module {
           func.func @test(%control: !qco.qubit, %target: !qco.qubit)
@@ -710,13 +714,15 @@ TEST_F(QCOMatrixTest, PhaseProducingPowFoldsPreserveFullMatrixUnderControl) {
 }
 
 TEST_F(QCOMatrixTest, IntegralPowUFoldsPreserveFullMatrixUnderControl) {
-  for (const auto& [theta, phi, lambda, exponent] :
-       {std::tuple{0.1, 0.2, 0.3, 2.0}, std::tuple{1.7, -2.1, 0.4, 3.0},
-        std::tuple{std::numbers::pi, 0.7, -1.2, 8.0},
-        std::tuple{0.0, 0.3, 0.8, 17.0},
-        std::tuple{
-            0.1, 0.2, 0.3,
-            static_cast<double>(mlir::mqt::MAX_SAFE_U_POWER_EXPONENT)}}) {
+  for (const auto& [theta, phi, lambda, exponent] : {
+           std::tuple{0.1, 0.2, 0.3, 2.0},
+           std::tuple{1.7, -2.1, 0.4, 3.0},
+           std::tuple{std::numbers::pi, 0.7, -1.2, 8.0},
+           std::tuple{0.0, 0.3, 0.8, 17.0},
+           std::tuple{
+               0.1, 0.2, 0.3,
+               static_cast<double>(mlir::mqt::MAX_SAFE_U_POWER_EXPONENT)},
+       }) {
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
@@ -766,11 +772,12 @@ TEST_F(QCOMatrixTest, PowUBeyondSafeExponentRemainsUnchanged) {
 }
 
 TEST_F(QCOMatrixTest, NumericallyUnstableIntegralPowURemainsUnchanged) {
-  for (const auto& [theta, phi, lambda, exponent] :
-       {std::tuple{-4.7851911486806245, -18.3028077007916, -18.79029150092365,
-                   1017.0},
-        std::tuple{1123.1619760536523, -8607.999542206799, -9908.553022954226,
-                   2.0}}) {
+  for (const auto& [theta, phi, lambda, exponent] : {
+           std::tuple{-4.7851911486806245, -18.3028077007916,
+                      -18.79029150092365, 1017.0},
+           std::tuple{1123.1619760536523, -8607.999542206799,
+                      -9908.553022954226, 2.0},
+       }) {
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
@@ -810,8 +817,11 @@ TEST_F(QCOMatrixTest, FractionalPowURemainsUnchanged) {
 }
 
 TEST_F(QCOMatrixTest, FractionalParameterizedPowDoesNotFold) {
-  for (const double angle : {std::numbers::pi - 1e-12, std::numbers::pi + 1e-12,
-                             3.0 * std::numbers::pi}) {
+  for (const double angle : {
+           std::numbers::pi - 1e-12,
+           std::numbers::pi + 1e-12,
+           3.0 * std::numbers::pi,
+       }) {
     SCOPED_TRACE(angle);
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
       auto q = b.allocQubit();
@@ -926,7 +936,8 @@ TEST_F(QCOMatrixTest, InverseTwoBarriersInInvOpMatrix) {
   auto moduleOp =
       QCOProgramBuilder::build(context.get(), inverseTwoBarriersInInv);
   ASSERT_TRUE(moduleOp);
-  EXPECT_FALSE(invMatrix(*moduleOp).has_value());
+  ASSERT_TRUE(invMatrix(*moduleOp));
+  EXPECT_TRUE(invMatrix(*moduleOp)->isApprox(DynamicMatrix::identity(2)));
 }
 
 TEST_F(QCOMatrixTest, InvTwoOpMatrix) {
@@ -965,6 +976,66 @@ TEST_F(QCOMatrixTest, InverseDynamicRzXOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/DcxOp.cpp
 /// @{
+TEST_F(QCOMatrixTest, DcxInverseReversesTargets) {
+  const auto forward = DCXOp::getUnitaryMatrix().embedInNqubit(2, 0, 1);
+  const auto reverse = DCXOp::getUnitaryMatrix().embedInNqubit(2, 1, 0);
+  EXPECT_TRUE(reverse.isApprox(forward.adjoint()));
+  EXPECT_TRUE((reverse * forward).isApprox(DynamicMatrix::identity(4)));
+  EXPECT_FALSE((forward * forward).isApprox(DynamicMatrix::identity(4)));
+}
+
+TEST_F(QCOMatrixTest, DcxCancellationPreservesOrderedOutputs) {
+  for (const bool reversed : {false, true}) {
+    SCOPED_TRACE(reversed);
+    auto program = QCOProgramBuilder::build(context.get(), [&](auto& builder) {
+      auto in0 = builder.staticQubit(0);
+      auto in1 = builder.staticQubit(1);
+      auto [q0, q1] = builder.dcx(in0, in1);
+      if (reversed) {
+        std::tie(q1, q0) = builder.dcx(q1, q0);
+      } else {
+        std::tie(q0, q1) = builder.dcx(q0, q1);
+      }
+      return SmallVector<Value>{q0, q1};
+    });
+    ASSERT_TRUE(program);
+    OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*program)->clone()));
+    ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*program)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*program)));
+    ::mqt::test::expectFullUnitaryEqual(*expected, *program, 2);
+    auto function = *program->getOps<func::FuncOp>().begin();
+    EXPECT_EQ(llvm::range_size(function.getBody().getOps<DCXOp>()),
+              reversed ? 0 : 2);
+  }
+}
+
+TEST_F(QCOMatrixTest, ControlledSwapRemainsConditional) {
+  auto program = QCOProgramBuilder::build(context.get(), [&](auto& builder) {
+    auto control = builder.staticQubit(0);
+    auto q0 = builder.staticQubit(1);
+    auto q1 = builder.staticQubit(2);
+    auto [controls, targets] =
+        builder.ctrl({control}, {q0, q1}, [&](ValueRange args) {
+          auto [out0, out1] = builder.swap(args[0], args[1]);
+          return SmallVector<Value>{out0, out1};
+        });
+    return SmallVector<Value>{controls[0], targets[0], targets[1]};
+  });
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*program)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*program)));
+  auto function = *program->getOps<func::FuncOp>().begin();
+  auto controls = llvm::to_vector(function.getBody().getOps<CtrlOp>());
+  ASSERT_EQ(controls.size(), 1U);
+  const auto matrix = controls.front().getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+  auto expected = DynamicMatrix::identity(8);
+  expected.setBottomRightCorner(SWAPOp::getUnitaryMatrix());
+  EXPECT_TRUE(matrix->isApprox(expected));
+  EXPECT_FALSE(
+      matrix->isApprox(SWAPOp::getUnitaryMatrix().embedInNqubit(3, 1, 2)));
+}
+
 TEST_F(QCOMatrixTest, DCXOpMatrix) {
   const auto matrix = DCXOp::getUnitaryMatrix();
   const auto expected = Matrix4x4::fromElements(1, 0, 0, 0,  // row 0
@@ -1504,3 +1575,93 @@ TEST_F(QCOMatrixTest, ZOpMatrix) {
   ASSERT_TRUE(matrix.isApprox(expected));
 }
 /// @}
+
+TEST_F(QCOMatrixTest, ModifierMatricesIncludeIdleTargets) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& b) {
+        auto q = b.allocQubitRegister(3);
+        auto subset = [&](ValueRange args) {
+          return SmallVector<Value>{args[0], b.x(args[1])};
+        };
+        auto inv = b.inv({q[1], q[2]}, subset);
+        auto pow = b.pow(1.0, inv, subset);
+        auto [controls, targets] = b.ctrl({q[0]}, pow, subset);
+        return b.measure(targets[0]).second;
+      });
+  ASSERT_TRUE(moduleOp);
+  const auto targetMatrix = XOp::getUnitaryMatrix().embedInNqubit(2, 1);
+  auto inv = firstInvOp(*moduleOp).getUnitaryMatrix();
+  auto pow = firstPowOp(*moduleOp).getUnitaryMatrix();
+  ASSERT_TRUE(inv);
+  ASSERT_TRUE(pow);
+  EXPECT_TRUE(inv->isApprox(targetMatrix));
+  EXPECT_TRUE(pow->isApprox(targetMatrix));
+  auto expected = DynamicMatrix::identity(8);
+  expected.setBottomRightCorner(targetMatrix);
+  moduleOp->walk([&](CtrlOp op) {
+    const auto matrix = op.getUnitaryMatrix();
+    ASSERT_TRUE(matrix);
+    EXPECT_TRUE(matrix->isApprox(expected));
+  });
+}
+
+TEST_F(QCOMatrixTest, ModifierMatrixRejectsReorderedYield) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& b) {
+        auto q = b.allocQubitRegister(2);
+        auto out = b.inv(q.qubits, [&](ValueRange args) {
+          return SmallVector<Value>{b.x(args[1]), args[0]};
+        });
+        return b.measure(out[0]).second;
+      });
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(firstInvOp(*moduleOp).getUnitaryMatrix());
+}
+
+TEST_F(QCOMatrixTest, ModifierMatricesRespectTotalWidthLimit) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& b) {
+        auto q = b.allocQubitRegister(kMaxModifierTargetQubits + 1);
+        auto out = b.inv(q.qubits, [](ValueRange args) { return args; });
+        auto powered = b.pow(0.0, out, [](ValueRange args) { return args; });
+        auto [controls, targets] =
+            b.ctrl(powered.drop_back(), powered.back(),
+                   [&](Value target) { return b.x(target); });
+        return b.measure(targets).second;
+      });
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(firstInvOp(*moduleOp).getUnitaryMatrix());
+  EXPECT_FALSE(firstPowOp(*moduleOp).getUnitaryMatrix());
+  moduleOp->walk([](CtrlOp op) { EXPECT_FALSE(op.getUnitaryMatrix()); });
+}
+
+TEST_F(QCOMatrixTest, ModifierMatrixEmbedsReversedGateInputs) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& b) {
+        auto q = b.allocQubitRegister(2);
+        auto out = b.inv(q.qubits, [&](ValueRange args) {
+          auto [second, first] = b.rzx(0.42, args[1], args[0]);
+          return SmallVector<Value>{first, second};
+        });
+        return b.measure(out[0]).second;
+      });
+  ASSERT_TRUE(moduleOp);
+  const auto matrix = firstInvOp(*moduleOp).getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+  EXPECT_TRUE(matrix->isApprox(
+      RZXOp::unitaryMatrix(0.42).embedInNqubit(2, 1, 0).adjoint()));
+}
+
+TEST_F(QCOMatrixTest, ModifierMatrixRejectsUnsupportedSubsetEmbedding) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& b) {
+        auto q = b.allocQubitRegister(4);
+        auto out = b.inv(q.qubits, [&](ValueRange args) {
+          auto [first, second, third] = b.rccx(args[0], args[1], args[2]);
+          return SmallVector<Value>{first, second, third, args[3]};
+        });
+        return b.measure(out[0]).second;
+      });
+  ASSERT_TRUE(moduleOp);
+  EXPECT_FALSE(firstInvOp(*moduleOp).getUnitaryMatrix());
+}

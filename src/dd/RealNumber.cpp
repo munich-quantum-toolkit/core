@@ -20,9 +20,9 @@
 
 namespace dd {
 namespace {
-constexpr std::uintptr_t NEG_FLAG = (1UL << 0);
-constexpr std::uintptr_t MARK_FLAG = (1UL << 1);
-constexpr std::uintptr_t IMMORTAL_FLAG = (1UL << 2);
+constexpr std::uintptr_t NEG_FLAG = std::uintptr_t{1} << 0U;
+constexpr std::uintptr_t MARK_FLAG = std::uintptr_t{1} << 1U;
+constexpr std::uintptr_t IMMORTAL_FLAG = std::uintptr_t{1} << 2U;
 }; // namespace
 
 RealNumber* RealNumber::next() const noexcept {

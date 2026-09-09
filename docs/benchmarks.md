@@ -17,21 +17,29 @@ big-endian: the highest-index result bit is the leftmost character.
 ## Discover the catalog
 
 The command-line registry is the current list of available families. Each family
-has its own instance specification schema.
+has its own instance specification schema. These cells execute the CLI and fail
+if it exits unsuccessfully; JSON formatting only makes its output easier to
+read.
 
 ```{code-cell} ipython3
-!mqt-core-bench list
+import json
+import subprocess
+
+catalog = subprocess.run(["mqt-core-bench", "list"], check=True, capture_output=True, text=True)
+print(json.dumps(json.loads(catalog.stdout), indent=2))
 ```
 
 ```{code-cell} ipython3
-!mqt-core-bench describe qft
+description = subprocess.run(["mqt-core-bench", "describe", "qft"], check=True, capture_output=True, text=True)
+print(json.dumps(json.loads(description.stdout), indent=2))
 ```
 
 ## Configure a typed instance
 
-Python exposes benchmark-specific option types. The QFT input below is the
-uniform superposition of multiples of two. Both circuit methods use the same
-logical output and reference.
+Python exposes each benchmark through a family-specific type. Parameterized
+families also expose option types. The QFT input below is the uniform
+superposition of multiples of two. Both circuit methods use the same logical
+output and reference.
 
 ```{code-cell} ipython3
 from mqt.core.bench import qft
@@ -49,7 +57,8 @@ print("Output:", benchmark.output.name)
 print("Width:", benchmark.output.width)
 ```
 
-Each benchmark family validates its options when it creates an instance.
+Each family validates its instance when it creates one. Fixed families need no
+options.
 
 ## Inspect the canonical instance specification and manifest
 
@@ -86,6 +95,7 @@ For three output bits and period exponent one, QFT has two equal peaks.
 probabilities = {
     outcome: benchmark.probability(outcome) for outcome in ("000", "100", "010")
 }
+assert probabilities == {"000": 0.5, "100": 0.5, "010": 0.0}
 print(json.dumps(probabilities, indent=2))
 ```
 
@@ -127,7 +137,7 @@ The CLI writes the program first and its manifest last. A manifest is therefore
 the completion marker. Existing output files always cause an error.
 
 ```{code-cell} ipython3
-:tags: [remove-cell]
+:tags: [hide-input]
 
 import tempfile
 from pathlib import Path
@@ -153,7 +163,13 @@ counts_path.write_text(
 ```
 
 ```{code-cell} ipython3
-!mqt-core-bench generate --instance-specification {instance_specification_path} --format qc --output {output_directory}
+generation = subprocess.run(
+    ["mqt-core-bench", "generate", "--instance-specification", str(instance_specification_path),
+     "--format", "qc", "--output", str(output_directory)],
+    check=True, capture_output=True, text=True,
+)
+generated = json.loads(generation.stdout)
+print("Generated", generated["benchmark"], "as", generated["format"])
 ```
 
 ```{code-cell} ipython3
@@ -164,7 +180,13 @@ print("Manifest:", manifest_path.name)
 ```
 
 ```{code-cell} ipython3
-!mqt-core-bench evaluate --manifest {manifest_path} --counts {counts_path}
+evaluation_result = subprocess.run(
+    ["mqt-core-bench", "evaluate", "--manifest", str(manifest_path), "--counts", str(counts_path)],
+    check=True, capture_output=True, text=True,
+)
+metrics = json.loads(evaluation_result.stdout)["metrics"]
+assert metrics["total_variation_distance"] == 0
+print(json.dumps(metrics, indent=2))
 ```
 
 ```{code-cell} ipython3
@@ -211,9 +233,10 @@ Adding a family requires five extension points:
    `include/mqt-core/bench/BenchmarkFamilies.inc`. Its expansions provide the
    public JSON declarations and the synchronized semantic and MLIR registry
    glue.
-2. Add typed options, validation, an analytic reference, and evaluation under
-   `include/mqt-core/bench/` and `src/bench/`. Add the family-specific parameter
-   JSON, reference JSON, parser, and schema body to `src/bench/JSON.cpp`.
+2. Add the typed instance, any options and validation, an analytic reference,
+   and evaluation under `include/mqt-core/bench/` and `src/bench/`. Add the
+   family-specific parameter JSON, reference JSON, parser, and schema body to
+   `src/bench/JSON.cpp`.
 3. Declare and implement the structured emitter under `mlir/bench/`, add its
    source to the program library, and declare the typed `generate(...)`
    overload. The catalog supplies the generation wrapper and JSON dispatch row.
@@ -233,3 +256,35 @@ does not depend on a path or output format. Parsing a manifest checks its
 resolved parameters, logical output, reference, definition version, and case ID.
 Before evaluation, normalize backend results to the manifest's big-endian
 `result` order.
+
+## Benchmark families
+
+### QFT addition
+
+The `qft-adder` family adds two equal-width operands. `REGISTER` stores the
+addend in qubits and applies controlled phases; `CONSTANT` combines the known
+addend into one phase per accumulator qubit. Both use the same exact QFT and
+inverse QFT. `WRAP` keeps an n-bit sum, while `CARRY` keeps an extra sum bit.
+
+```{code-cell} ipython3
+from mqt.core import mlir
+from mqt.core.bench import qft_adder
+
+adder = qft_adder.QFTAdder(
+    qft_adder.Options(
+        addend="110",
+        accumulator="011",
+        method=qft_adder.Method.CONSTANT,
+        overflow=qft_adder.Overflow.CARRY,
+    )
+)
+assert mlir.sample(adder.generate(), shots=128, seed=17) == {"1001": 128}
+```
+
+Operands are big-endian strings; leading zeros set their common width. The
+accumulator and constant addends must be binary. Register addends may also use
+`+` for independently prepared $|+\rangle$ qubits, such as `addend="1+0"`.
+Register results concatenate the addend and sum so their correlation remains
+observable. Constant results contain only the sum. `expected_result` is the
+unique logical outcome for basis inputs and `None` for a superposed addend. The
+total sum width, including an optional carry bit, is limited to 1024.

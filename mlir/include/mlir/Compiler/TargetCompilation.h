@@ -12,18 +12,20 @@
 
 namespace mlir {
 
-class CompilerTarget;
+class TargetEnvironment;
 class OpPassManager;
 
-/**
- * @brief Populate the canonical compiler-target pipeline.
- *
- * @details Decomposes supported multi-controlled gates, performs
- * target-independent optimization, maps to the target topology, synthesizes
- * native operations, performs a final local cleanup, and verifies target
- * conformance.
- */
+/// Populate the canonical compiler-target pipeline.
+///
+/// Inlines reusable functions, decomposes supported multi-controlled gates,
+/// performs target-independent optimization, maps to the target topology,
+/// synthesizes native operations, performs a final local cleanup, and verifies
+/// target conformance. The context that runs this low-level pipeline must
+/// register inliner extensions for its callable dialects.
+/// The supplied environment is authoritative: the pipeline attaches it to the
+/// module and shares its prepared target with every target-dependent pass.
+/// The environment must remain unchanged during pipeline execution.
 void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const CompilerTarget& target);
+                                       const TargetEnvironment& environment);
 
 } // namespace mlir

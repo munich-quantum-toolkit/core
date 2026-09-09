@@ -24,7 +24,9 @@ void registerGHZ(const nb::module_& m);
 void registerGrover(const nb::module_& m);
 void registerMultiplexer(const nb::module_& m);
 void registerQFT(const nb::module_& m);
+void registerQFTAdder(const nb::module_& m);
 void registerQPE(const nb::module_& m);
+void registerTeleportation(const nb::module_& m);
 
 // The nanobind module macro requires its module handle by value.
 // NOLINTNEXTLINE(performance-unnecessary-value-param)
@@ -68,9 +70,17 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       m.def_submodule("qft", "QFT benchmark instances and options.");
   registerQFT(qft);
 
+  const nb::module_ qftAdder = m.def_submodule(
+      "qft_adder", "QFT adder benchmark instances and options.");
+  registerQFTAdder(qftAdder);
+
   const nb::module_ qpe =
       m.def_submodule("qpe", "QPE benchmark instances and options.");
   registerQPE(qpe);
+
+  const nb::module_ teleportation = m.def_submodule(
+      "teleportation", "Quantum teleportation benchmark instance.");
+  registerTeleportation(teleportation);
 }
 
 } // namespace mqt

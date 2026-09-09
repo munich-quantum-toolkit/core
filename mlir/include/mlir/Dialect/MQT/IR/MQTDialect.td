@@ -32,10 +32,25 @@ def MQTDialect : Dialect {
     `mqt.register_name` records the source-level name of a quantum or classical
     register allocation. Input and register names share one function-wide
     namespace.
-    `mqt.entry_point` marks the single defined program entry function in a
-    module.
+    `mqt.entry_point` marks the single public, defined `func.func` program entry
+    in a module. Dynamic quantum allocations (`qc.alloc`, `qco.alloc`,
+    qubit `memref.alloc`, and `qtensor.alloc`) must appear directly in its
+    entry block. Other functions receive quantum resources as arguments;
+    they cannot allocate them. Classical allocations and static qubit references
+    are not subject to this restriction.
     `mqt.unitary` marks a private function that defines a unitary operation.
+    Its body admits unitary operations and memory-effect-free, region-free
+    classical computation, matching the quantum modifier-body contract. Parameter
+    computation is evaluated eagerly when the invocation is reached; it need not
+    be speculatable. The quantum action is unitary on the computation's defined
+    input domain. Modifiers transform that action, not the parameter computation:
+    inverse does not reverse it, control does not conditionally evaluate it, and
+    power does not repeat it, including at exponent zero. Undefined inputs do not
+    guarantee traps. Unitary operations may retain effects such as a scoped
+    global-phase contribution.
     `#mqt.compilation_target` records compiler-target facts as typed IR.
+    `mqt.target_env` records compiler-target facts and the selected payload
+    execution contract.
   }];
 
   let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
@@ -208,6 +223,108 @@ def CompilationTargetAttr : MQTAttr<"CompilationTarget", "compilation_target"> {
       MQTArrayRefParameter<"NativeOperationAttr">:$operations);
   let assemblyFormat = "`<` struct(params) `>`";
   let genVerifyDecl = 1;
+}
+
+def PayloadEncoding : I32EnumAttr<"PayloadEncoding", "Payload encoding",
+                                  [I32EnumAttrCase<"Text", 0, "text">,
+                                   I32EnumAttrCase<"Binary", 1, "binary">]> {
+  let cppNamespace = "::mlir::mqt";
+  let genSpecializedAttr = 0;
+}
+
+def PayloadFormatAttr : MQTAttr<"PayloadFormat", "payload_format"> {
+  let summary = "Exact payload identity";
+  let description = [{
+    Identifies a payload by format ID, exact version, optional profile ID, and
+    encoding. Every field takes part in identity. An empty profile denotes a
+    payload without a named profile.
+
+    The following identity selects binary QIR 2.1 with the base profile:
+
+    ```mlir
+    #mqt.payload_format<id = "qir", version = "2.1",
+        profile = "base", encoding = binary>
+    ```
+  }];
+  let parameters = (ins "StringAttr":$id, "StringAttr":$version,
+      "StringAttr":$profile, EnumParameter<PayloadEncoding>:$encoding);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def ProgramConstraintAttr : MQTAttr<"ProgramConstraint", "program_constraint"> {
+  let summary = "One constraint on a payload capability";
+  let description = [{
+    Records one extensible constraint ID and its constraint-specific value.
+  }];
+  let parameters = (ins "StringAttr":$id, "uint64_t":$value);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def ProgramCapabilityAttr : MQTAttr<"ProgramCapability", "program_capability"> {
+  let summary = "One payload execution capability";
+  let description = [{
+    Records one extensible capability ID, its feature-specific value, and all
+    constraints on that capability. Unknown IDs remain valid so newer
+    producers can round-trip through older consumers.
+  }];
+  let parameters = (ins "StringAttr":$id, "uint64_t":$value,
+      MQTArrayRefParameter<"ProgramConstraintAttr">:$constraints);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def PayloadSpecAttr : MQTAttr<"PayloadSpec", "payload_spec"> {
+  let summary = "Selected payload execution contract";
+  let description = [{
+    Records the exact payload and its effective capabilities. Producers expand
+    format baselines before creating this attribute. The capability list
+    remains available when optional capability metadata is unknown;
+    `optional_capabilities_known` records whether that optional metadata is
+    complete.
+
+    The following producer-defined format reports bounded forward branching.
+    Its optional capability metadata is incomplete:
+
+    ```mlir
+    #mqt.payload_spec<
+        format = <id = "vendor-ir", version = "1.0.0", profile = "",
+            encoding = binary>,
+        capabilities = [<id = "forward-branching", value = 0,
+            constraints = [<id = "max-control-flow-nesting-depth", value = 4>]>],
+        optional_capabilities_known = false>
+    ```
+  }];
+  let parameters = (ins "PayloadFormatAttr":$format,
+      MQTArrayRefParameter<"ProgramCapabilityAttr">:$capabilities,
+      "bool":$optional_capabilities_known);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def TargetEnvAttr : MQTAttr<"TargetEnv", "target_env"> {
+  let summary = "Selected compilation and payload specification";
+  let description = [{
+    Combines typed compiler-target facts with the selected payload contract.
+
+    The following environment pairs a one-site target with a producer-defined
+    payload:
+
+    ```mlir
+    #mqt.target_env<
+        compilation_target = #mqt.compilation_target<
+            sites = [<id = 0>], connectivity = all_to_all, couplings = [],
+            native_operations = unrestricted, operations = []>,
+        payload_specification = #mqt.payload_spec<
+            format = <id = "vendor-ir", version = "1.0.0", profile = "",
+                encoding = binary>,
+            capabilities = [], optional_capabilities_known = false>>
+    ```
+  }];
+  let parameters = (ins "CompilationTargetAttr":$compilation_target,
+      "PayloadSpecAttr":$payload_specification);
+  let assemblyFormat = "`<` struct(params) `>`";
 }
 
 #endif // MLIR_DIALECT_MQT_IR_MQTDIALECT_TD

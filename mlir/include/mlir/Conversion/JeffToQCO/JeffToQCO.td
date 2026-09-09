@@ -21,12 +21,17 @@ def JeffToQCO : Pass<"jeff-to-qco", "mlir::ModuleOp"> {
 
     - Only specific `CustomOp`s are currently supported
     - Only specific `PPROp`s are currently supported
-    - Support for multiple functions is currently limited
+    - Mutable classical-register arguments in helper functions are not supported
+
+    Function definitions and calls are preserved. Only the designated entry
+    point remains public; helper functions become private. Calls remain generic
+    `func.call` operations because jeff does not specify function unitarity.
   }];
 
   let dependentDialects = ["mlir::arith::ArithDialect",
-                           "mlir::cbit::CBitDialect", "mlir::math::MathDialect",
-                           "mlir::mqt::MQTDialect", "mlir::scf::SCFDialect",
+                           "mlir::func::FuncDialect", "mlir::cbit::CBitDialect",
+                           "mlir::math::MathDialect", "mlir::mqt::MQTDialect",
+                           "mlir::scf::SCFDialect",
                            "mlir::tensor::TensorDialect",
                            "mlir::qco::QCODialect",
                            "mlir::qtensor::QTensorDialect",

@@ -45,12 +45,9 @@ namespace mlir::qir {
 /// Normalize QIR profile module flags after MLIR-to-LLVM translation.
 ///
 /// MLIR translates integer-valued `llvm.module_flags` attributes to i32
-/// metadata and only supports array-valued flags for LLVM's own CG profile.
-/// QIR instead requires i1/i2 capability flags and metadata tuples describing
-/// the integer and floating-point widths used by Adaptive Profile classical
-/// computations. This function repairs the scalar flag widths and serializes
-/// type metadata that the MLIR pipeline derived before translation.
-void normalizeQIRModuleFlags(llvm::Module& moduleOp, ModuleOp sourceModule);
+/// metadata. QIR requires i1/i2 capability flags, so translation callers
+/// must repair those scalar widths.
+void normalizeQIRModuleFlags(llvm::Module& moduleOp);
 
 // QIR function names
 
@@ -217,7 +214,7 @@ struct ClassicalRegister {
   Value array;
 };
 
-/// A static result (i.e., a result that is not part of a classical register).
+/// An indexed scalar result for output recording; its pointer may be dynamic.
 struct StaticResult {
   /// The result pointer.
   Value pointer;

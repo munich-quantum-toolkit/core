@@ -187,6 +187,21 @@ TEST(ScConfigurationTest, AcceptsOptionalSiteNames) {
   EXPECT_FALSE(qubitOverride.t2);
 }
 
+TEST(ScConfigurationTest, RejectsNamesContainingNul) {
+  for (const auto& name :
+       {std::string("\0hidden", 7), std::string("x\0different", 11)}) {
+    expectInvalid([&name](auto& root) { root["name"] = name; }, "name");
+    expectInvalid(
+        [&name](auto& root) {
+          root["qubitProperties"]["overrides"].push_back(
+              {{"qubit", 8}, {"name", name}});
+        },
+        "qubitProperties/overrides");
+    expectInvalid([&name](auto& root) { root["operations"][0]["name"] = name; },
+                  "operations");
+  }
+}
+
 TEST(ScConfigurationTest, RejectsInvalidOrderedTopology) {
   expectInvalid(
       [](auto& root) { root["couplings"].push_back(root["couplings"][0]); },
@@ -253,13 +268,16 @@ TEST(ScConfigurationTest, AcceptsExplicitHigherAritySites) {
   root["numQubits"] = 3;
   root["couplings"] = Json::array();
   root["qubitProperties"]["overrides"] = Json::array();
-  root["operations"] = Json::array(
-      {{{"name", "three"},
-        {"numParameters", 1},
-        {"numQubits", 3},
-        {"sites", {{2, 0, 1}}},
-        {"duration", 0},
-        {"siteOverrides", {{{"sites", {2, 0, 1}}, {"fidelity", 0.75}}}}}});
+  root["operations"] = Json::array({
+      {
+          {"name", "three"},
+          {"numParameters", 1},
+          {"numQubits", 3},
+          {"sites", {{2, 0, 1}}},
+          {"duration", 0},
+          {"siteOverrides", {{{"sites", {2, 0, 1}}, {"fidelity", 0.75}}}},
+      },
+  });
   const auto parsed = readJSON(root.dump(), "higher-arity");
   ASSERT_EQ(parsed.operations.size(), 1);
   ASSERT_TRUE(parsed.operations[0].sites.has_value());

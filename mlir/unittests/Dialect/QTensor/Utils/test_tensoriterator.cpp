@@ -77,9 +77,7 @@ TEST_F(TensorIteratorTest, Traversal) {
   auto tensor6 = builder.qtensorInsert(q11, tensor5, 1);
   auto tensor7 = builder.scfFor(
       1, n, 1, {tensor6}, [&builder](Value iv, ValueRange iterArgs) {
-        Value loopTensor = iterArgs[0];
-        Value q;
-        std::tie(loopTensor, q) = builder.qtensorExtract(loopTensor, iv);
+        auto [loopTensor, q] = builder.qtensorExtract(iterArgs[0], iv);
         q = builder.h(q);
         loopTensor = builder.qtensorInsert(q, loopTensor, 0);
         return SmallVector{loopTensor};
@@ -113,7 +111,8 @@ TEST_F(TensorIteratorTest, Traversal) {
       })[0];
   const auto identity = [](ValueRange args) { return llvm::to_vector(args); };
   const SmallVector<function_ref<SmallVector<Value>(ValueRange)>> caseBodies{
-      identity};
+      identity,
+  };
   auto tensor9 = builder.qcoIndexSwitch(0, tensor8, SmallVector<int64_t>{0},
                                         caseBodies, identity)[0];
   builder.qtensorDealloc(tensor9);
@@ -400,9 +399,11 @@ TEST_F(TensorIteratorTest, TraversesWhileCarriedTensors) {
                                     locations);
   builder.setInsertionPointToStart(after);
   scf::YieldOp::create(builder, builder.getLoc(),
-                       ValueRange{builder.floatConstant(2.0),
-                                  after->getArgument(2),
-                                  after->getArgument(1)});
+                       ValueRange{
+                           builder.floatConstant(2.0),
+                           after->getArgument(2),
+                           after->getArgument(1),
+                       });
   builder.setInsertionPointAfter(loop);
   auto tensor0Result = loop.getResult(2);
   auto tensor1Result = loop.getResult(1);

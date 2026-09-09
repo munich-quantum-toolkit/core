@@ -17,6 +17,8 @@
 
 #include "dd/statistics/TableStatistics.hpp"
 
+#include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <functional>
 #include <stdexcept>
@@ -37,7 +39,7 @@ public:
   /// Default constructor
   explicit UnaryComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
     // numBuckets must be a power of two
-    if ((numBuckets & (numBuckets - 1)) != 0) {
+    if (!std::has_single_bit(numBuckets)) {
       throw std::invalid_argument("Number of buckets must be a power of two.");
     }
     stats.entrySize = sizeof(Entry);
@@ -108,7 +110,7 @@ public:
    * @brief Clear the compute table
    * @details Sets all entries to invalid.
    */
-  void clear() { valid = std::vector(stats.numBuckets, false); }
+  void clear() { std::fill(valid.begin(), valid.end(), false); }
 
 private:
   /// The actual table storing the entries

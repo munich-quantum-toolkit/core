@@ -65,7 +65,7 @@ TEST_F(CNTest, ComplexNumberCreation) {
   EXPECT_EQ(RealNumber::val(cn.lookup(c).i), -1.);
   std::cout << c << "\n";
 
-  auto e = cn.lookup(1., -1.);
+  auto const e = cn.lookup(1., -1.);
   std::cout << e << "\n";
   std::cout << ComplexValue{1., 1.} << "\n";
   std::cout << ComplexValue{1., -1.} << "\n";
@@ -75,7 +75,7 @@ TEST_F(CNTest, ComplexNumberCreation) {
 }
 
 TEST_F(CNTest, NearZeroLookup) {
-  auto d = cn.lookup(RealNumber::eps / 10., RealNumber::eps / 10.);
+  auto const d = cn.lookup(RealNumber::eps / 10., RealNumber::eps / 10.);
   EXPECT_TRUE(d.exactlyZero());
 }
 
@@ -86,7 +86,8 @@ TEST_F(CNTest, SortedBuckets) {
       num + (2. * RealNumber::eps), num - (2. * RealNumber::eps),
       num + (4. * RealNumber::eps), num,
       num - (4. * RealNumber::eps), num + (6. * RealNumber::eps),
-      num + (8. * RealNumber::eps)};
+      num + (8. * RealNumber::eps),
+  };
 
   const auto theBucket =
       static_cast<std::size_t>(RealNumberUniqueTable::hash(num));
@@ -111,6 +112,33 @@ TEST_F(CNTest, SortedBuckets) {
   EXPECT_EQ(counter, numbers.size());
 }
 
+TEST_F(CNTest, ReusesEntriesAtOccupiedBucketBorders) {
+  const auto mask = static_cast<fp>(ut.getTable().size() - 1);
+  for (const fp side : {-1., 1.}) {
+    const fp border = (side < 0 ? 8191.5 : 16383.5) / mask;
+    const fp interior = border + (side * 1e-6);
+    const fp nearBorder = border + (side * RealNumber::eps / 4);
+    const auto* interiorEntry = ut.lookup(interior);
+    const auto* borderEntry = ut.lookup(nearBorder);
+    const auto entries = ut.getStats().numEntries;
+    for (size_t repeat = 0; repeat < 3; ++repeat) {
+      EXPECT_EQ(ut.lookup(nearBorder), borderEntry);
+      EXPECT_EQ(ut.lookup(interior), interiorEntry);
+    }
+    EXPECT_EQ(ut.getStats().numEntries, entries);
+  }
+}
+
+TEST_F(CNTest, HashesLargeFiniteValuesIntoLastBucket) {
+  const auto lastBucket = RealNumberUniqueTable::hash(1.);
+  for (const fp value : {1e15, std::numeric_limits<fp>::max()}) {
+    EXPECT_EQ(RealNumberUniqueTable::hash(value), lastBucket);
+    const auto* entry = ut.lookup(value);
+    EXPECT_EQ(entry->value, value);
+    EXPECT_EQ(ut.lookup(value), entry);
+  }
+}
+
 TEST_F(CNTest, GarbageCollectSomeInBucket) {
   EXPECT_EQ(ut.garbageCollect(), 0);
 
@@ -120,7 +148,7 @@ TEST_F(CNTest, GarbageCollectSomeInBucket) {
   ASSERT_NE(i, nullptr);
 
   const fp num2 = num + (2. * RealNumber::eps);
-  auto lookup2 = cn.lookup(num2, 0.0);
+  auto const lookup2 = cn.lookup(num2, 0.0);
   ASSERT_NE(lookup2.r, nullptr);
   ASSERT_NE(lookup2.i, nullptr);
   lookup2.mark();
@@ -151,7 +179,7 @@ TEST_F(CNTest, LookupInNeighbouringBuckets) {
   const auto mask = ut.getTable().size() - 1;
   const auto fpMask = static_cast<fp>(mask);
   const std::size_t nbucket = mask + 1U;
-  auto preHash = [fpMask](const fp val) { return val * fpMask; };
+  auto const preHash = [fpMask](const fp val) { return val * fpMask; };
 
   // lower border of a bucket
   const fp numBucketBorder = ((0.25 * fpMask) - 0.5) / fpMask;
@@ -246,19 +274,19 @@ TEST(DDComplexTest, LowestFractions) {
 }
 
 TEST_F(CNTest, NumberPrintingToString) {
-  auto imag = cn.lookup(0., 1.);
-  auto imagStr = imag.toString(false);
+  auto const imag = cn.lookup(0., 1.);
+  auto const imagStr = imag.toString(false);
   EXPECT_STREQ(imagStr.c_str(), "1i");
-  auto imagStrFormatted = imag.toString(true);
+  auto const imagStrFormatted = imag.toString(true);
   EXPECT_STREQ(imagStrFormatted.c_str(), "+i");
 
-  auto superposition = cn.lookup(SQRT2_2, SQRT2_2);
-  auto superpositionStr = superposition.toString(false, 3);
+  auto const superposition = cn.lookup(SQRT2_2, SQRT2_2);
+  auto const superpositionStr = superposition.toString(false, 3);
   EXPECT_STREQ(superpositionStr.c_str(), "0.707+0.707i");
-  auto superpositionStrFormatted = superposition.toString(true, 3);
+  auto const superpositionStrFormatted = superposition.toString(true, 3);
   EXPECT_STREQ(superpositionStrFormatted.c_str(), "1/√2(1+i)");
-  auto negSuperposition = cn.lookup(SQRT2_2, -SQRT2_2);
-  auto negSuperpositionStrFormatted = negSuperposition.toString(true, 3);
+  auto const negSuperposition = cn.lookup(SQRT2_2, -SQRT2_2);
+  auto const negSuperpositionStrFormatted = negSuperposition.toString(true, 3);
   EXPECT_STREQ(negSuperpositionStrFormatted.c_str(), "1/√2(1-i)");
 }
 

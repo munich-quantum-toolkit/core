@@ -8,7 +8,9 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Dialect/MQT/IR/MQTAttributes.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
@@ -19,11 +21,16 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/Support/Error.h>
+#include <mlir/AsmParser/AsmParser.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/DialectRegistry.h>
+#include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/Operation.h>
+#include <mlir/IR/OwningOpRef.h>
+#include <mlir/Pass/AnalysisManager.h>
 #include <mlir/Support/LLVM.h>
 
 #include <array>
@@ -63,6 +70,217 @@ using Site = Target::Site;
 using SiteId = Target::SiteId;
 using SiteTuple = Target::SiteTuple;
 
+TEST(PayloadSpecificationTest, ValidatesAndRoundTripsTypedAttribute) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+
+  const auto payload = valid(mlir::PayloadSpecification::create(
+      {
+          .id = "vendor.ir",
+          .version = "4.2.0",
+          .profile = "dynamic",
+          .encoding = mlir::PayloadEncoding::Binary,
+      },
+      {
+          {
+              .id = "forward-branching",
+              .constraints =
+                  {
+                      {
+                          .id = "max-control-flow-nesting-depth",
+                          .value = 8,
+                      },
+                  },
+          },
+      },
+      true));
+  const auto attribute = payload.materialize(context);
+  const auto reconstructed =
+      valid(mlir::PayloadSpecification::create(attribute));
+
+  EXPECT_EQ(reconstructed.format(), payload.format());
+  EXPECT_EQ(reconstructed.capabilities(), payload.capabilities());
+  EXPECT_TRUE(reconstructed.optionalCapabilitiesKnown());
+  EXPECT_EQ(reconstructed.materialize(context), attribute);
+
+  expectInvalid(
+      mlir::PayloadSpecification::create(mlir::mqt::PayloadSpecAttr{}),
+      "Invalid payload specification: Payload specification attribute must "
+      "not be null");
+  expectInvalid(mlir::PayloadSpecification::create(
+                    {.id = "qir", .version = "2.1.0.1", .profile = "base"}),
+                "Invalid payload specification: Payload format version must "
+                "use major[.minor[.patch]]");
+  expectInvalid(
+      mlir::PayloadSpecification::create({.id = "", .version = "2.1.0"}),
+      "Invalid payload specification: Payload format requires an ID and "
+      "version");
+  expectInvalid(
+      mlir::PayloadSpecification::create(
+          {.id = std::string("qir\0", 4), .version = "2.1.0"}),
+      "Invalid payload specification: Payload format fields must not contain "
+      "null characters");
+  expectInvalid(
+      mlir::PayloadSpecification::create({.id = "qir", .version = "2.1.0"},
+                                         {{.id = ""}}),
+      "Invalid payload specification: Program capability ID must not be "
+      "empty");
+  expectInvalid(
+      mlir::PayloadSpecification::create({.id = "qir", .version = "2.1.0"},
+                                         {{.id = std::string("x\0", 2)}}),
+      "Invalid payload specification: Program capability ID must not contain "
+      "a null character");
+  expectInvalid(
+      mlir::PayloadSpecification::create(
+          {.id = "qir", .version = "2.1.0"},
+          {{.id = "capability", .constraints = {{.id = ""}}}}),
+      "Invalid payload specification: Program constraint ID must not be "
+      "empty");
+  expectInvalid(
+      mlir::PayloadSpecification::create(
+          {.id = "qir", .version = "2.1.0"},
+          {
+              {
+                  .id = "capability",
+                  .constraints = {{.id = std::string("x\0", 2)}},
+              },
+          }),
+      "Invalid payload specification: Program constraint ID must not contain "
+      "a null character");
+  expectInvalid(
+      mlir::PayloadSpecification::create(
+          {.id = "qir", .version = "2.1.0", .profile = "base"},
+          {
+              {
+                  .id = "integer-computation",
+                  .constraints = {{.id = "width"}, {.id = "width"}},
+              },
+          }),
+      "Invalid payload specification: Program capability contains a duplicate "
+      "constraint ID");
+  expectInvalid(mlir::PayloadSpecification::create(
+                    {.id = "qir", .version = "2.1.0", .profile = "base"},
+                    {
+                        {.id = "integer-computation", .value = 64},
+                        {.id = "integer-computation", .value = 64},
+                    }),
+                "Invalid payload specification: Payload specification contains "
+                "a duplicate capability ID/value pair");
+}
+
+TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
+  for (const auto& [input, expected] : std::array{
+           std::pair{"2", "2.0.0"},
+           std::pair{"2.1", "2.1.0"},
+           std::pair{"2.1.3", "2.1.3"},
+       }) {
+    SCOPED_TRACE(input);
+    const auto payload = valid(mlir::PayloadSpecification::create(
+        {.id = "qir", .version = input, .profile = "base"}));
+    EXPECT_EQ(payload.format().version, expected);
+  }
+
+  const auto qir = valid(mlir::PayloadSpecification::create(
+      {.id = "qir", .version = "2.1", .profile = "base"}));
+  EXPECT_EQ(valid(qir.compilerOutput()), mlir::ProgramFormat::QIRBase);
+  const auto qasm = valid(
+      mlir::PayloadSpecification::create({.id = "openqasm", .version = "3"}));
+  EXPECT_EQ(valid(qasm.compilerOutput()), mlir::ProgramFormat::OpenQASM3);
+  const auto exactMajor = valid(mlir::PayloadSpecification::create(
+      {.id = "qir", .version = "2", .profile = "base"}));
+  expectInvalid(exactMajor.compilerOutput(),
+                "Invalid payload specification: MQT Compiler cannot emit the "
+                "selected payload format");
+}
+
+TEST(PayloadSpecificationTest, NormalizesTypedVersionShorthand) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  const auto attribute = mlir::dyn_cast_if_present<mlir::mqt::PayloadSpecAttr>(
+      mlir::parseAttribute(R"mlir(#mqt.payload_spec<
+        format = <id = "qir", version = "2.1", profile = "base", encoding = text>,
+        capabilities = [], optional_capabilities_known = false>)mlir",
+                           &context));
+  ASSERT_TRUE(attribute);
+  const auto payload = valid(mlir::PayloadSpecification::create(attribute));
+  EXPECT_EQ(payload.format().version, "2.1.0");
+  EXPECT_EQ(valid(payload.compilerOutput()), mlir::ProgramFormat::QIRBase);
+  EXPECT_EQ(payload.materialize(context).getFormat().getVersion().getValue(),
+            "2.1.0");
+}
+
+TEST(TargetEnvironmentTest, ReusesPreparedTargetStorage) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  mlir::OwningOpRef moduleOp =
+      mlir::ModuleOp::create(mlir::UnknownLoc::get(&context));
+  const auto target =
+      valid(Target::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                           NativeOperations::unrestricted()));
+  const mlir::TargetEnvironment environment(
+      target, valid(mlir::PayloadSpecification::create(
+                  {.id = "qir", .version = "2.1.0", .profile = "base"})));
+  mlir::ModuleAnalysisManager moduleAnalysisManager(moduleOp.get(), nullptr);
+  mlir::AnalysisManager analysisManager = moduleAnalysisManager;
+  auto& analysis =
+      analysisManager.getAnalysis<mlir::TargetEnvironmentAnalysis>();
+  analysis.initialize(environment);
+  ASSERT_TRUE(analysis);
+  EXPECT_EQ(analysis.environment().target().sites().data(),
+            target.sites().data());
+  EXPECT_EQ(analysis.environment().target().couplings().data(),
+            target.couplings().data());
+  EXPECT_EQ((*moduleOp)->getAttr(mlir::mqt::TargetEnvAttr::name),
+            environment.materialize(context));
+  mlir::AnalysisManager::PreservedAnalyses preserved;
+  analysisManager.invalidate(preserved);
+  ASSERT_TRUE(
+      analysisManager.getCachedAnalysis<mlir::TargetEnvironmentAnalysis>());
+  EXPECT_EQ(analysisManager.getAnalysis<mlir::TargetEnvironmentAnalysis>()
+                .environment()
+                .target()
+                .sites()
+                .data(),
+            target.sites().data());
+}
+
+TEST(TargetEnvironmentTest, InvalidatesCachedAnalysisAfterAttributeChange) {
+  mlir::MLIRContext context;
+  context.loadDialect<mlir::mqt::MQTDialect>();
+  mlir::OwningOpRef module =
+      mlir::ModuleOp::create(mlir::UnknownLoc::get(&context));
+  const auto payload = valid(mlir::PayloadSpecification::create(
+      {.id = "qir", .version = "2.1.0", .profile = "base"}));
+  mlir::attachTargetEnvironment(
+      *module, mlir::TargetEnvironment(
+                   valid(Target::create(1, Connectivity::allToAll(),
+                                        NativeOperations::unrestricted())),
+                   payload));
+  mlir::ModuleAnalysisManager moduleAnalysisManager(module.get(), nullptr);
+  mlir::AnalysisManager analysisManager = moduleAnalysisManager;
+
+  const auto& initial =
+      analysisManager.getAnalysis<mlir::TargetEnvironmentAnalysis>();
+  ASSERT_TRUE(initial);
+  EXPECT_EQ(initial.environment().target().numSites(), 1);
+
+  mlir::attachTargetEnvironment(
+      *module, mlir::TargetEnvironment(
+                   valid(Target::create(2, Connectivity::allToAll(),
+                                        NativeOperations::unrestricted())),
+                   payload));
+  mlir::AnalysisManager::PreservedAnalyses preserved;
+  preserved.preserve<mlir::TargetEnvironmentAnalysis>();
+  analysisManager.invalidate(preserved);
+  EXPECT_FALSE(
+      analysisManager.getCachedAnalysis<mlir::TargetEnvironmentAnalysis>());
+
+  const auto& updated =
+      analysisManager.getAnalysis<mlir::TargetEnvironmentAnalysis>();
+  ASSERT_TRUE(updated);
+  EXPECT_EQ(updated.environment().target().numSites(), 2);
+}
+
 TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   std::vector<Site> sites;
   sites.emplace_back(valid(Site::create(7, "left", 100, 80)));
@@ -70,9 +288,11 @@ TEST(CompilerTargetTest, ConstructsDetailedNamedTargetAndSharesStorage) {
   sites.emplace_back(valid(Site::create(11, "right")));
 
   std::vector<Operation> operations;
-  std::vector siteTuples{valid(SiteTuple::create({7}, 0, 0.99)),
-                         valid(SiteTuple::create({2}, 5, 0.98)),
-                         valid(SiteTuple::create({11}))};
+  std::vector siteTuples{
+      valid(SiteTuple::create({7}, 0, 0.99)),
+      valid(SiteTuple::create({2}, 5, 0.98)),
+      valid(SiteTuple::create({11})),
+  };
   operations.emplace_back(
       valid(Operation::create(" PRX ", 1, 2, std::move(siteTuples), 0, 0.97)));
 
@@ -174,8 +394,10 @@ TEST(CompilerTargetTest, PreservesFullNonnegativeSiteIdDomain) {
   constexpr auto maxSite = std::numeric_limits<SiteId>::max();
   constexpr auto nextSite = maxSite - 1;
   auto siteTuple = valid(SiteTuple::create({maxSite, nextSite}));
-  std::vector sites{valid(Site::create(maxSite)),
-                    valid(Site::create(nextSite))};
+  std::vector sites{
+      valid(Site::create(maxSite)),
+      valid(Site::create(nextSite)),
+  };
   const auto target = valid(Target::create(
       std::move(sites), Connectivity::fromCouplings({{maxSite, nextSite}}),
       NativeOperations::fromOperations(
@@ -193,8 +415,11 @@ TEST(CompilerTargetTest, PreservesFullNonnegativeSiteIdDomain) {
 }
 
 TEST(CompilerTargetTest, CanonicalizesConnectedTopologyAndCachesDistances) {
-  std::vector sites{valid(Site::create(7)), valid(Site::create(2)),
-                    valid(Site::create(11))};
+  std::vector sites{
+      valid(Site::create(7)),
+      valid(Site::create(2)),
+      valid(Site::create(11)),
+  };
   const auto target = valid(Target::create(
       std::move(sites),
       Connectivity::fromCouplings({{11, 2}, {2, 11}, {7, 2}, {2, 7}}),
@@ -271,8 +496,10 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
                         std::vector{valid(SiteTuple::create({0, 1}))}),
       "Compiler target operation site tuple does not match its arity");
   expectInvalid(Operation::create("x", 1, 0,
-                                  std::vector{valid(SiteTuple::create({0})),
-                                              valid(SiteTuple::create({0}))}),
+                                  std::vector{
+                                      valid(SiteTuple::create({0})),
+                                      valid(SiteTuple::create({0})),
+                                  }),
                 "Compiler target operation contains a duplicate site tuple");
   expectInvalid(
       Operation::create("x", 1, 0, {}, std::nullopt,
@@ -297,14 +524,17 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
                     Connectivity::allToAll(), NativeOperations::unrestricted()),
                 "Compiler target timing metadata requires a duration unit");
   expectInvalid(Target::create(1, Connectivity::allToAll(),
-                               NativeOperations::fromOperations({valid(
-                                   Operation::create("x", 1, 0, {}, 1))})),
+                               NativeOperations::fromOperations({
+                                   valid(Operation::create("x", 1, 0, {}, 1)),
+                               })),
                 "Compiler target timing metadata requires a duration unit");
   expectInvalid(
       Target::create(
           1, Connectivity::allToAll(),
-          NativeOperations::fromOperations({valid(Operation::create(
-              "x", 1, 0, std::vector{valid(SiteTuple::create({0}, 1))}))})),
+          NativeOperations::fromOperations({
+              valid(Operation::create(
+                  "x", 1, 0, std::vector{valid(SiteTuple::create({0}, 1))})),
+          })),
       "Compiler target timing metadata requires a duration unit");
   expectInvalid(Target::create(2, Connectivity::fromCouplings({{0, 0}}),
                                NativeOperations::unrestricted()),
@@ -318,8 +548,10 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
   expectInvalid(
       Target::create(
           2, Connectivity::allToAll(),
-          NativeOperations::fromOperations({valid(Operation::create(
-              "x", 1, 0, std::vector{valid(SiteTuple::create({2}))}))})),
+          NativeOperations::fromOperations({
+              valid(Operation::create(
+                  "x", 1, 0, std::vector{valid(SiteTuple::create({2}))})),
+          })),
       "Compiler target operation site tuple references an unknown site");
   expectInvalid(Target::create(1, Connectivity::allToAll(),
                                NativeOperations::fromOperations(
@@ -327,8 +559,9 @@ TEST(CompilerTargetTest, RejectsInvalidMetadata) {
                 "Compiler target operation arity exceeds its site count");
   expectInvalid(
       Target::create(2, Connectivity::allToAll(),
-                     NativeOperations::fromOperations({valid(
-                         Operation::create("h", Arity::variadic(3), 0))})),
+                     NativeOperations::fromOperations({
+                         valid(Operation::create("h", Arity::variadic(3), 0)),
+                     })),
       "Compiler target operation variadic minimum exceeds its site count");
 }
 
@@ -337,13 +570,14 @@ TEST(CompilerTargetTest, DistinguishesOperationSupport) {
       2, Connectivity::allToAll(), NativeOperations::unrestricted()));
   const auto closed = valid(Target::create(
       2, Connectivity::allToAll(), NativeOperations::fromOperations({})));
-  const auto variadic = valid(Target::create(
-      4, Connectivity::allToAll(),
-      NativeOperations::fromOperations(
-          {valid(Operation::create("gphase", Arity::fixed(0), 1)),
-           valid(Operation::create("h", Arity::variadic(1), 0)),
-           valid(Operation::create("rxx", Arity::variadic(2), 1)),
-           valid(Operation::create("I", Arity::fixed(1), 0))})));
+  const auto variadic = valid(
+      Target::create(4, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(Operation::create("gphase", Arity::fixed(0), 1)),
+                         valid(Operation::create("h", Arity::variadic(1), 0)),
+                         valid(Operation::create("rxx", Arity::variadic(2), 1)),
+                         valid(Operation::create("I", Arity::fixed(1), 0)),
+                     })));
 
   EXPECT_EQ(unrestricted.nativeOperationsKind(),
             NativeOperations::Kind::Unrestricted);
@@ -378,11 +612,13 @@ TEST(CompilerTargetTest, DistinguishesOperationSupport) {
 TEST(CompilerTargetTest, PreservesCalibrationAndResolvesHomogeneousBasis) {
   const std::vector<Coupling> chain{{0, 1}, {1, 2}};
   const auto globalU = valid(Operation::create("U3", 1, 3));
-  const auto cz = valid(
-      Operation::create("cz", 2, 0,
-                        std::vector{valid(SiteTuple::create({1, 0}, 5, 0.99)),
-                                    valid(SiteTuple::create({1, 2}))},
-                        7, 0.98));
+  const auto cz =
+      valid(Operation::create("cz", 2, 0,
+                              std::vector{
+                                  valid(SiteTuple::create({1, 0}, 5, 0.99)),
+                                  valid(SiteTuple::create({1, 2})),
+                              },
+                              7, 0.98));
   const auto target =
       valid(Target::create(3, Connectivity::fromCouplings(chain),
                            NativeOperations::fromOperations({globalU, cz}),
@@ -413,17 +649,21 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
   mlir::MLIRContext context;
   context.loadDialect<mlir::mqt::MQTDialect>();
 
-  std::vector sites{valid(Site::create(7, "left", 100, 80)),
-                    valid(Site::create(2, std::nullopt, 120, std::nullopt)),
-                    valid(Site::create(11, "right"))};
+  std::vector sites{
+      valid(Site::create(7, "left", 100, 80)),
+      valid(Site::create(2, std::nullopt, 120, std::nullopt)),
+      valid(Site::create(11, "right")),
+  };
   std::vector operations{
-      valid(
-          Operation::create(" PRX ", 1, 2,
-                            std::vector{valid(SiteTuple::create({7}, 0, 0.99)),
-                                        valid(SiteTuple::create({2}, 5, 0.98))},
-                            0, 0.97)),
+      valid(Operation::create(" PRX ", 1, 2,
+                              std::vector{
+                                  valid(SiteTuple::create({7}, 0, 0.99)),
+                                  valid(SiteTuple::create({2}, 5, 0.98)),
+                              },
+                              0, 0.97)),
       valid(Operation::create("gphase", Arity::fixed(0), 1)),
-      valid(Operation::create("h", Arity::variadic(1), 0))};
+      valid(Operation::create("h", Arity::variadic(1), 0)),
+  };
   const auto target =
       valid(Target::create("device", std::move(sites),
                            Connectivity::fromCouplings({{7, 2}, {2, 11}}),
@@ -448,12 +688,16 @@ TEST(CompilerTargetTest, RoundTripsTypedCompilationTargetAttribute) {
 TEST(CompilerTargetTest, SupportsMaximumSiteIds) {
   constexpr auto maxSite = std::numeric_limits<SiteId>::max();
   constexpr auto nextSite = maxSite - 1;
-  std::vector sites{valid(Site::create(nextSite)),
-                    valid(Site::create(maxSite))};
-  const auto x = valid(
-      Operation::create("x", 1, 0,
-                        std::vector{valid(SiteTuple::create({nextSite})),
-                                    valid(SiteTuple::create({maxSite}))}));
+  std::vector sites{
+      valid(Site::create(nextSite)),
+      valid(Site::create(maxSite)),
+  };
+  const auto x =
+      valid(Operation::create("x", 1, 0,
+                              std::vector{
+                                  valid(SiteTuple::create({nextSite})),
+                                  valid(SiteTuple::create({maxSite})),
+                              }));
   const auto cx = valid(Operation::create(
       "cx", 2, 0, std::vector{valid(SiteTuple::create({nextSite, maxSite}))}));
   const auto target =
@@ -502,15 +746,20 @@ TEST(CompilerTargetTest, RoundTripsSupportedTargetStates) {
 }
 
 TEST(CompilerTargetTest, EnforcesExactOrderedOperationApplicability) {
-  std::vector sites{valid(Site::create(10)), valid(Site::create(20)),
-                    valid(Site::create(30))};
+  std::vector sites{
+      valid(Site::create(10)),
+      valid(Site::create(20)),
+      valid(Site::create(30)),
+  };
   const auto globalU = valid(Operation::create("u", 1, 3));
   const auto restrictedX = valid(Operation::create(
       "x", 1, 0, std::vector{valid(SiteTuple::create({10}))}));
   const auto directionalCX =
       valid(Operation::create("cx", 2, 0,
-                              std::vector{valid(SiteTuple::create({10, 20})),
-                                          valid(SiteTuple::create({20, 30}))}));
+                              std::vector{
+                                  valid(SiteTuple::create({10, 20})),
+                                  valid(SiteTuple::create({20, 30})),
+                              }));
   const auto exactCZ = valid(Operation::create(
       "cz", 2, 0, std::vector{valid(SiteTuple::create({10, 20}))}));
   const auto threeQubit = valid(
@@ -545,16 +794,37 @@ TEST(CompilerTargetTest, EnforcesExactOrderedOperationApplicability) {
       target.supportsOperation("device.operation", 3, 0, {30, 20, 10}));
 }
 
+TEST(CompilerTargetTest, ResolvesSingleQubitBasisWithoutEntangler) {
+  for (size_t numSites : {1U, 2U}) {
+    SCOPED_TRACE(numSites);
+    const auto target =
+        valid(Target::create(numSites, Connectivity::allToAll(),
+                             NativeOperations::fromOperations({
+                                 valid(Operation::create("sx", 1, 0)),
+                                 valid(Operation::create("x", 1, 0)),
+                                 valid(Operation::create("rz", 1, 1)),
+                             })));
+
+    ASSERT_TRUE(target.synthesisBasis());
+    EXPECT_EQ(target.synthesisBasis()->singleQubit,
+              Target::SingleQubitBasis::ZSXX);
+    EXPECT_FALSE(target.synthesisBasis()->entangler);
+  }
+}
+
 TEST(CompilerTargetTest, ClassifiesEveryEntangler) {
   using Entangler = std::tuple<GateKind, std::string_view, size_t>;
-  const std::array entanglers{Entangler{GateKind::CZ, "cz", 0},
-                              Entangler{GateKind::RXX, "rxx", 1},
-                              Entangler{GateKind::RYY, "ryy", 1},
-                              Entangler{GateKind::RZZ, "rzz", 1},
-                              Entangler{GateKind::ISWAP, "iswap", 0},
-                              Entangler{GateKind::CX, "cx", 0},
-                              Entangler{GateKind::ECR, "ecr", 0},
-                              Entangler{GateKind::RZX, "rzx", 1}};
+  const std::array entanglers{
+      Entangler{GateKind::CZ, "cz", 0},
+      Entangler{GateKind::RXX, "rxx", 1},
+      Entangler{GateKind::RYY, "ryy", 1},
+      Entangler{GateKind::RZZ, "rzz", 1},
+      Entangler{GateKind::ISWAP, "iswap", 0},
+      Entangler{GateKind::SQRTISWAP, "sqrt_iswap", 0},
+      Entangler{GateKind::CX, "cx", 0},
+      Entangler{GateKind::ECR, "ecr", 0},
+      Entangler{GateKind::RZX, "rzx", 1},
+  };
   const std::vector<Coupling> chain{{0, 1}, {1, 2}};
   const auto globalU = valid(Operation::create("u", 1, 3));
 
@@ -598,11 +868,12 @@ TEST(CompilerTargetTest, DerivesControlledEntanglersFromVariadicBases) {
 
 TEST(CompilerTargetTest, ResolvesLargeAllToAllVariadicBasis) {
   constexpr size_t numSites = 65'535;
-  const auto target = valid(Target::create(
-      numSites, Connectivity::allToAll(),
-      NativeOperations::fromOperations(
-          {valid(Operation::create("u", 1, 3)),
-           valid(Operation::create("x", Arity::variadic(1), 0))})));
+  const auto target = valid(
+      Target::create(numSites, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(Operation::create("u", 1, 3)),
+                         valid(Operation::create("x", Arity::variadic(1), 0)),
+                     })));
 
   ASSERT_TRUE(target.synthesisBasis());
   EXPECT_EQ(target.synthesisBasis()->singleQubit, Target::SingleQubitBasis::U);
@@ -680,7 +951,8 @@ TEST(CompilerTargetTest, SupportsRealQCOOperationsAndStructuralOps) {
       valid(Operation::create("measure", 1, 0)),
       valid(Operation::create("reset", 1, 0)),
       valid(Operation::create("cnot", 2, 0, std::move(directionalTuples))),
-      valid(Operation::create("cz", 2, 0))};
+      valid(Operation::create("cz", 2, 0)),
+  };
   const auto target =
       valid(Target::create(std::move(sites), Connectivity::allToAll(),
                            NativeOperations::fromOperations(operations)));
@@ -742,11 +1014,12 @@ TEST(CompilerTargetTest, SupportsArbitrarilyControlledBaseOperations) {
 
   const auto target = valid(Target::create(
       5, Connectivity::allToAll(),
-      NativeOperations::fromOperations(
-          {valid(Operation::create("h", Arity::variadic(1), 0)),
-           valid(Operation::create("rx", Arity::variadic(1), 1)),
-           valid(Operation::create("rxx", Arity::variadic(2), 1)),
-           valid(Operation::create("rccx", Arity::variadic(3), 0))})));
+      NativeOperations::fromOperations({
+          valid(Operation::create("h", Arity::variadic(1), 0)),
+          valid(Operation::create("rx", Arity::variadic(1), 1)),
+          valid(Operation::create("rxx", Arity::variadic(2), 1)),
+          valid(Operation::create("rccx", Arity::variadic(3), 0)),
+      })));
   for (auto* controlled : supportedControls) {
     EXPECT_TRUE(target.supports(controlled));
   }
@@ -765,14 +1038,18 @@ TEST(CompilerTargetTest, SupportsArbitrarilyControlledBaseOperations) {
                          {builder.staticQubit(2), builder.staticQubit(3)},
                          [&](mlir::ValueRange targets) {
                            return llvm::SmallVector<mlir::Value>{
-                               builder.h(targets[0]), builder.x(targets[1])};
+                               builder.h(targets[0]),
+                               builder.x(targets[1]),
+                           };
                          }));
         static_cast<void>(
             builder.ctrl({builder.staticQubit(4)},
                          {builder.staticQubit(5), builder.staticQubit(6)},
                          [&](mlir::ValueRange targets) {
                            return llvm::SmallVector<mlir::Value>{
-                               builder.h(targets[0]), targets[1]};
+                               builder.h(targets[0]),
+                               targets[1],
+                           };
                          }));
         return builder.intConstant(0);
       });

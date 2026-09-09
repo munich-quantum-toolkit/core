@@ -298,6 +298,8 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
           return mqt::getValueFromBlockArgument(t, outerQubits);
         });
 
+    mqt::hoistSupportingOpsBefore(*op.getBody(), innerCtrlOp, op, rewriter);
+
     auto newCtrl = CtrlOp::create(
         rewriter, op.getLoc(), controls, targets,
         [&](ValueRange targetArgs) -> SmallVector<Value> {
@@ -399,7 +401,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
         TypeSwitch<Operation*, LogicalResult>(innerOp)
             // --- Rotation gates: multiply angle by exponent ---
             // pow(r) { gphase(θ) } => gphase(r*θ)
-            .Case<GPhaseOp>([&](auto gate) {
+            .Case([&](GPhaseOp gate) {
               auto newParam = scaleByExponent(gate.getTheta(), op, rewriter);
               rewriter.replaceOpWithNewOp<GPhaseOp>(op, newParam);
               return success();
@@ -429,7 +431,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // pow(r) { r(θ, φ) } => r(r*θ, φ)
-            .Case<ROp>([&](auto gate) {
+            .Case([&](ROp gate) {
               auto mul = scaleByExponent(gate.getTheta(), op, rewriter);
               rewriter.replaceOpWithNewOp<ROp>(
                   op,
@@ -454,7 +456,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             })
             // pow(n) { u(theta, phi, lambda) } =>
             // gphase(delta); u(theta', phi', lambda')
-            .Case<UOp>([&](auto) {
+            .Case([&](UOp) {
               if (std::abs(normalizeAngle(uPower->phase)) >
                   PARAMETER_COMPARISON_TOLERANCE) {
                 GPhaseOp::create(rewriter, loc, uPower->phase);
@@ -468,7 +470,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { x } => gphase(r*π/2); rx(r*π)
             // pow(1/2) x => sx      (X^(1/2) = SX exactly)
             // pow(-1/2) x => sxdg   (X^(-1/2) = SXdg exactly)
-            .Case<XOp>([&](auto gate) {
+            .Case([&](XOp gate) {
               if (std::abs(r - 0.5) < PARAMETER_COMPARISON_TOLERANCE) {
                 rewriter.replaceOpWithNewOp<SXOp>(
                     op, mqt::getValueFromBlockArgument(gate.getInputTarget(0),
@@ -494,7 +496,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // pow(r) { y } => gphase(r*π/2); ry(r*π)
-            .Case<YOp>([&](auto gate) {
+            .Case([&](YOp gate) {
               GPhaseOp::create(
                   rewriter, loc,
                   mqt::constantFromScalar(rewriter, op.getLoc(),
@@ -508,7 +510,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // pow(r) { z } => named gate if angle matches, else p(r*π)
-            .Case<ZOp>([&](auto gate) {
+            .Case([&](ZOp gate) {
               const double angle = r * std::numbers::pi;
               if (succeeded(tryReplacePOpWithNamedGate(
                       angle, op,
@@ -528,7 +530,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // --- Phase/diagonal gates: named gate if angle matches, else P
             // gate
             // --- pow(r) { s } => named gate if angle matches, else p(r*π/2)
-            .Case<SOp>([&](auto gate) {
+            .Case([&](SOp gate) {
               const double angle = r * std::numbers::pi / 2.0;
               if (succeeded(tryReplacePOpWithNamedGate(
                       angle, op,
@@ -546,7 +548,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // pow(r) { sdg } => named gate if angle matches, else p(-r*π/2)
-            .Case<SdgOp>([&](auto gate) {
+            .Case([&](SdgOp gate) {
               const double angle = r * -std::numbers::pi / 2.0;
               if (succeeded(tryReplacePOpWithNamedGate(
                       angle, op,
@@ -564,7 +566,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // pow(r) { t } => named gate if angle matches, else p(r*π/4)
-            .Case<TOp>([&](auto gate) {
+            .Case([&](TOp gate) {
               const double angle = r * std::numbers::pi / 4.0;
               if (succeeded(tryReplacePOpWithNamedGate(
                       angle, op,
@@ -582,7 +584,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
               return success();
             })
             // pow(r) { tdg } => named gate if angle matches, else p(-r*π/4)
-            .Case<TdgOp>([&](auto gate) {
+            .Case([&](TdgOp gate) {
               const double angle = r * -std::numbers::pi / 4.0;
               if (succeeded(tryReplacePOpWithNamedGate(
                       angle, op,
@@ -602,7 +604,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // --- SX/SXdg gates: decompose to rotation + global phase ---
             // pow(r) { sx } => gphase(r*π/4); rx(r*π/2)
             // pow(±2) sx => x
-            .Case<SXOp>([&](auto gate) {
+            .Case([&](SXOp gate) {
               if (std::abs(std::abs(r) - 2.0) <
                   PARAMETER_COMPARISON_TOLERANCE) {
                 rewriter.replaceOpWithNewOp<XOp>(
@@ -624,7 +626,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             })
             // pow(r) { sxdg } => gphase(-r*π/4); rx(-r*π/2)
             // pow(±2) sxdg => x
-            .Case<SXdgOp>([&](auto gate) {
+            .Case([&](SXdgOp gate) {
               if (std::abs(std::abs(r) - 2.0) <
                   PARAMETER_COMPARISON_TOLERANCE) {
                 rewriter.replaceOpWithNewOp<XOp>(
@@ -664,7 +666,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             // pow(r) { iswap } => xx_plus_yy(-r*π, 0)
             // β=0: axis is aligned with XX, matching the iSWAP interaction
             // plane
-            .Case<iSWAPOp>([&](auto gate) {
+            .Case([&](iSWAPOp gate) {
               auto replacement = XXPlusYYOp::create(
                   rewriter, op.getLoc(),
                   mqt::getValueFromBlockArgument(gate.getInputTarget(0),
@@ -680,14 +682,14 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
             })
             // --- Identity and barrier: pass through unchanged ---
             // pow(r) { id } => id
-            .Case<IdOp>([&](auto gate) {
+            .Case([&](IdOp gate) {
               rewriter.replaceOpWithNewOp<IdOp>(
                   op, mqt::getValueFromBlockArgument(gate.getInputTarget(0),
                                                      op.getQubitsIn()));
               return success();
             })
             // pow(r) { barrier } => barrier
-            .Case<BarrierOp>([&](auto gate) {
+            .Case([&](BarrierOp gate) {
               const auto inputs =
                   llvm::map_to_vector(gate.getInputQubits(), [&](Value input) {
                     return mqt::getValueFromBlockArgument(input,
@@ -894,9 +896,7 @@ bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
  * `V` is unitary and `V^{-1} = V^\dagger`; this is verified before use because
  * the eigensolver does not orthogonalize degenerate eigenspaces.
  *
- * The body matrix `U` comes either from a single inner unitary (e.g.
- * `pow(p) { h }`) or, for a composed body (e.g. `pow(p) { h; x }`), from
- * @ref composeBodyMatrix over all targets.
+ * The body matrix `U` comes from @ref composeBodyMatrix over all targets.
  *
  * @return `U^p`, or `std::nullopt` if the exponent is non-constant, the body is
  * not fully compile-time known, or `V` is not unitary.
@@ -949,17 +949,6 @@ std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
     return v * powDiagonal * v.adjoint();
   };
 
-  // Single inner unitary (e.g. `pow(p) { h }`, `pow(p) { rz(theta) }`).
-  if (auto bodyUnitary =
-          mqt::getSoleBodyUnitary<UnitaryOpInterface>(*getBody())) {
-    if (const auto targetMatrix =
-            bodyUnitary.getUnitaryMatrix<DynamicMatrix>()) {
-      return raiseToPow(*targetMatrix);
-    }
-    return std::nullopt;
-  }
-
-  // Composed body (e.g., `pow(p) { h; x }`).
   if (const auto composed = composeBodyMatrix(*getBody(), getNumTargets())) {
     return raiseToPow(*composed);
   }

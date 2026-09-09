@@ -251,15 +251,17 @@ TEST(OperationProperties, ArbitraryPositiveControlsMetadata) {
   constexpr std::string_view expectedMetadata =
       "mqt.compiler-target.v1:arbitrary-positive-controls";
   const std::set<std::string> expectedMarked{
-      "i",   "x",   "y",           "z",          "h",   "s",   "sdg", "t",
-      "tdg", "sx",  "sxdg",        "r",          "rx",  "ry",  "rz",  "p",
-      "u2",  "u",   "swap",        "iswap",      "dcx", "ecr", "rxx", "ryy",
-      "rzz", "rzx", "xx_minus_yy", "xx_plus_yy", "rccx"};
+      "i",   "x",   "y",           "z",          "h",    "s",   "sdg", "t",
+      "tdg", "sx",  "sxdg",        "r",          "rx",   "ry",  "rz",  "p",
+      "u2",  "u",   "swap",        "iswap",      "dcx",  "ecr", "rxx", "ryy",
+      "rzz", "rzx", "xx_minus_yy", "xx_plus_yy", "rccx",
+  };
   const std::set<std::string> expectedUnmarked{
-      "gphase",  "cx",    "ccx",     "mcx",    "cy",  "cz",  "ccz",
-      "ch",      "cs",    "csdg",    "csx",    "crx", "cry", "crz",
-      "cp",      "mcp",   "u1",      "cu1",    "u3",  "cu3", "cswap",
-      "measure", "reset", "barrier", "if_else"};
+      "gphase",  "cx",    "ccx",     "mcx",     "cy",  "cz",  "ccz",
+      "ch",      "cs",    "csdg",    "csx",     "crx", "cry", "crz",
+      "cp",      "mcp",   "u1",      "cu1",     "u3",  "cu3", "cswap",
+      "measure", "reset", "barrier", "if_else",
+  };
 
   const qdmi_test::SessionGuard s{};
   std::set<std::string> marked{};

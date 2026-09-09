@@ -16,13 +16,14 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h>
 
+#include <charconv>
 #include <cstddef>
 #include <exception>
-#include <limits>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <system_error>
 
 namespace mqt::bindings::qiskit {
 namespace nb = nanobind;
@@ -38,21 +39,14 @@ struct InstalledVersion {
 
 [[nodiscard]] static unsigned int parseComponent(std::string_view text,
                                                  size_t& offset) {
-  const auto start = offset;
   unsigned int value = 0;
-  while (offset < text.size() && text[offset] >= '0' && text[offset] <= '9') {
-    const auto digit = static_cast<unsigned int>(text[offset] - '0');
-    if (value > (std::numeric_limits<unsigned int>::max() - digit) / 10U) {
-      throw std::runtime_error("invalid Qiskit version '" + std::string(text) +
-                               "'");
-    }
-    value = (value * 10U) + digit;
-    ++offset;
-  }
-  if (offset == start) {
+  const auto [end, error] =
+      std::from_chars(text.data() + offset, text.data() + text.size(), value);
+  if (error != std::errc{}) {
     throw std::runtime_error("invalid Qiskit version '" + std::string(text) +
                              "'");
   }
+  offset = static_cast<size_t>(end - text.data());
   return value;
 }
 
@@ -130,7 +124,11 @@ translationFactory(const InstalledVersion& version) {
         "'; supported versions: " + supportedVersionRanges());
   }
   const InstalledVersion result{
-      .major = major, .minor = minor, .patch = patch, .text = text};
+      .major = major,
+      .minor = minor,
+      .patch = patch,
+      .text = text,
+  };
   return result;
 }
 

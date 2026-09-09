@@ -47,9 +47,8 @@ static OwningOpRef<ModuleOp> getGHZ(MLIRContext* context, int64_t n) {
   QCOProgramBuilder builder(context);
   builder.initialize();
 
-  Value tensor = builder.qtensorAlloc(n);
-  Value q0;
-  std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
+  const auto inputTensor = builder.qtensorAlloc(n);
+  auto [tensor, q0] = builder.qtensorExtract(inputTensor, 0);
   q0 = builder.h(q0);
   tensor = builder.qtensorInsert(q0, tensor, 0);
 
@@ -122,7 +121,7 @@ TEST_F(QuantumLoopUnrollTest, NoOp) {
 
 TEST_F(QuantumLoopUnrollTest, UnrollFull) {
   auto m = getGHZ(context.get(), 3);
-  auto entry = *(m->getOps<func::FuncOp>().begin());
+  auto entry = *m->getOps<func::FuncOp>().begin();
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
@@ -149,9 +148,7 @@ TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
           auto lower = arith::AddIOp::create(b, outer, step).getResult();
           return b.scfFor(
               lower, upper, step, outerArgs, [&](Value, ValueRange innerArgs) {
-                auto tensor = innerArgs.front();
-                Value qubit;
-                std::tie(tensor, qubit) = b.qtensorExtract(tensor, 0);
+                auto [tensor, qubit] = b.qtensorExtract(innerArgs.front(), 0);
                 tensor = b.qtensorInsert(b.h(qubit), tensor, 0);
                 return SmallVector{tensor};
               });
@@ -193,7 +190,7 @@ TEST_F(QuantumLoopUnrollTest, PreservesYieldOnlyPermutation) {
 
 TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
   auto m = getGHZ(context.get(), 9);
-  auto entry = *(m->getOps<func::FuncOp>().begin());
+  auto entry = *m->getOps<func::FuncOp>().begin();
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
@@ -213,7 +210,7 @@ TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
 
-  Region& body = (*(entry.getOps<scf::ForOp>().begin())).getRegion();
+  Region& body = (*entry.getOps<scf::ForOp>().begin()).getRegion();
   EXPECT_EQ(range_size(body.getOps<qtensor::ExtractOp>()), 4);
   EXPECT_EQ(range_size(body.getOps<qtensor::InsertOp>()), 4);
 }

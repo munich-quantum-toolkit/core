@@ -21,6 +21,7 @@ void registerSlurm(nb::module_& qdmiModule) {
   auto slurm = qdmiModule.def_submodule(
       "slurm", "Open a QDMI device named by the Slurm license environment.");
   slurm.def("open_device_from_license", &qdmi::slurm::openDeviceFromLicense,
+            nb::call_guard<nb::gil_scoped_release>(),
             R"pb(Open the QDMI device named by the Slurm license environment.
 
 ``SLURM_JOB_LICENSES`` must contain one local license whose name equals a

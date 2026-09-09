@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mlir/Dialect/MQT/Transforms/Passes.h"
 #include "mlir/Dialect/MQT/Utils/GatePowering.h"
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
@@ -22,18 +23,24 @@
 #include <llvm/ADT/SmallVectorExtras.h>
 #include <llvm/ADT/TypeSwitch.h>
 #include <llvm/Support/Debug.h>
+#include <mlir/Dialect/Func/Extensions/InlinerExtension.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/IRMapping.h>
 #include <mlir/IR/OpDefinition.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
+#include <mlir/IR/SymbolTable.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
+#include <mlir/Transforms/Inliner.h>
 
 #include <cstddef>
+#include <utility>
 
 #define DEBUG_TYPE "unroll-modifiers"
 
@@ -42,12 +49,8 @@ namespace mlir::mqt {
 #define GEN_PASS_DEF_UNROLLMODIFIERS
 #include "mlir/Dialect/MQT/Transforms/Passes.h.inc"
 
-/**
- *@brief Move the classical operations of @p body in front of @p modifier.
- *
- * @details Fails if a classical operation is impure or depends on values
- * defined in @p body.
- */
+/// Move eager, memory-effect-free parameter computation before the modifier.
+/// Keep dependency order and reject dependencies on the body's qubits.
 template <typename UnitaryOpInterface>
 static LogicalResult hoistClassicalOps(Block& body, Operation* modifier,
                                        RewriterBase& rewriter) {
@@ -57,9 +60,12 @@ static LogicalResult hoistClassicalOps(Block& body, Operation* modifier,
   };
   for (auto& op : body) {
     if (isClassical(op) &&
-        (!isPure(&op) || llvm::any_of(op.getOperands(), [&](Value operand) {
-          return operand.getParentBlock() == &body;
-        }))) {
+        (op.getNumRegions() != 0 || !isMemoryEffectFree(&op) ||
+         llvm::any_of(op.getOperands(), [&](Value operand) {
+           return operand.getParentBlock() == &body &&
+                  (!operand.getDefiningOp() ||
+                   !isClassical(*operand.getDefiningOp()));
+         }))) {
       return failure();
     }
   }
@@ -333,9 +339,67 @@ static LogicalResult unrollModifier(qco::PowOp op, RewriterBase& rewriter) {
 
 namespace {
 
+struct ModifierInliner final : InlinerInterface {
+  using InlinerInterface::InlinerInterface;
+
+  SmallVector<CallOpInterface> calls;
+
+  void processInlinedBlocks(iterator_range<Region::iterator> blocks) override {
+    for (auto& block : blocks) {
+      block.walk([&](CallOpInterface call) {
+        if (isa<qc::CallOp, qco::CallOp>(call.getOperation())) {
+          calls.push_back(call);
+        }
+      });
+    }
+  }
+};
+
 struct UnrollModifiers final : impl::UnrollModifiersBase<UnrollModifiers> {
+  void getDependentDialects(DialectRegistry& registry) const override {
+    UnrollModifiersBase::getDependentDialects(registry);
+    func::registerInlinerExtension(registry);
+    LLVM::registerInlinerInterface(registry);
+  }
+
 protected:
   void runOnOperation() override {
+    SmallVector<CallOpInterface> calls;
+    getOperation()->walk([&](CallOpInterface call) {
+      if (!isa<qc::CallOp, qco::CallOp>(call.getOperation())) {
+        return;
+      }
+      for (auto* parent = call->getParentOp(); parent != nullptr;
+           parent = parent->getParentOp()) {
+        if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qco::CtrlOp, qco::InvOp,
+                qco::PowOp>(parent)) {
+          calls.push_back(call);
+          return;
+        }
+      }
+    });
+    if (!calls.empty()) {
+      ModifierInliner inliner(&getContext());
+      inliner.calls = std::move(calls);
+      const InlinerConfig config;
+      SymbolTableCollection symbols;
+      bool changed = false;
+      while (!inliner.calls.empty()) {
+        auto call = inliner.calls.pop_back_val();
+        auto callee = dyn_cast_or_null<func::FuncOp>(
+            call.resolveCallableInTable(&symbols));
+        if (callee && succeeded(inlineCall(inliner, config.getCloneCallback(),
+                                           call, callee, &callee.getBody()))) {
+          call->erase();
+          changed = true;
+        }
+      }
+      if (changed && failed(normalizeGlobalPhases(getOperation()))) {
+        signalPassFailure();
+        return;
+      }
+    }
+
     SmallVector<Operation*> modifiers;
     getOperation()->walk([&](Operation* op) {
       if (isa<qc::CtrlOp, qc::InvOp, qc::PowOp, qco::CtrlOp, qco::InvOp,

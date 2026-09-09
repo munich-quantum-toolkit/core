@@ -62,11 +62,15 @@ static void setIntegerModuleFlag(llvm::Module& moduleOp,
       llvm::ConstantInt::get(llvm::IntegerType::get(context, bitWidth), value));
 }
 
-void normalizeQIRModuleFlags(llvm::Module& moduleOp, ModuleOp sourceModule) {
-  for (const auto* const key :
-       {"dynamic_qubit_management", "dynamic_result_management", "arrays",
-        "ir_functions", "multiple_target_branching",
-        "multiple_return_points"}) {
+void normalizeQIRModuleFlags(llvm::Module& moduleOp) {
+  for (const auto* const key : {
+           "dynamic_qubit_management",
+           "dynamic_result_management",
+           "arrays",
+           "ir_functions",
+           "multiple_target_branching",
+           "multiple_return_points",
+       }) {
     if (moduleOp.getModuleFlag(key) != nullptr) {
       setIntegerModuleFlag(moduleOp, llvm::Module::Error, key, 1,
                            moduleFlagIntegerValue(moduleOp, key));
@@ -77,23 +81,6 @@ void normalizeQIRModuleFlags(llvm::Module& moduleOp, ModuleOp sourceModule) {
         moduleOp, llvm::Module::Error, "backwards_branching", 2,
         moduleFlagIntegerValue(moduleOp, "backwards_branching"));
   }
-  const auto setTypes = [&](const StringRef flag, const StringRef attribute) {
-    const auto values = sourceModule->getAttrOfType<ArrayAttr>(attribute);
-    if (!values || values.empty()) {
-      return;
-    }
-    SmallVector<llvm::Metadata*> entries;
-    entries.reserve(values.size());
-    llvm::transform(values.getAsRange<StringAttr>(),
-                    std::back_inserter(entries), [&](const StringAttr value) {
-                      return llvm::MDString::get(moduleOp.getContext(),
-                                                 value.getValue());
-                    });
-    moduleOp.setModuleFlag(llvm::Module::Append, flag,
-                           llvm::MDTuple::get(moduleOp.getContext(), entries));
-  };
-  setTypes("int_computations", "qir.int_computations");
-  setTypes("float_computations", "qir.float_computations");
 }
 
 void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
@@ -198,8 +185,10 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
         LLVM::CallOp::create(builder, loc, tupleCreate, sizeValue).getResult();
 
     for (const auto& [index, value] : llvm::enumerate(payload)) {
-      const SmallVector<LLVM::GEPArg> indices{0,
-                                              static_cast<std::int32_t>(index)};
+      const SmallVector<LLVM::GEPArg> indices{
+          0,
+          static_cast<std::int32_t>(index),
+      };
       auto element = LLVM::GEPOp::create(builder, loc, ptrType, tupleType,
                                          gateArgs, indices)
                          .getResult();
@@ -338,7 +327,7 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
   if (!main) {
     llvm::reportFatalInternalError("Main function not found");
   }
-  auto& firstBlock = *(main.getBlocks().begin());
+  auto& firstBlock = *main.getBlocks().begin();
   builder.setInsertionPointToStart(&firstBlock);
 
   auto addressOfOp = LLVM::AddressOfOp::create(

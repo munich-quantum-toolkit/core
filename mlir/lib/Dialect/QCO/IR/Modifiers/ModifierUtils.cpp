@@ -10,9 +10,7 @@
 
 #include "ModifierUtils.h"
 
-#include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 
 #include <llvm/ADT/STLExtras.h>
@@ -21,9 +19,9 @@
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/WalkResult.h>
 #include <mlir/Transforms/RegionUtils.h>
 
 #include <cstddef>
@@ -31,21 +29,6 @@
 namespace mlir::qco::detail {
 
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
-  const auto hasNonUnitaryOperation =
-      body.walk([](Operation* operation) {
-            return operation->getName().getDialectNamespace() ==
-                               cbit::CBitDialect::getDialectNamespace() ||
-                           isa<AllocOp, SinkOp, StaticOp, MeasureOp, ResetOp>(
-                               operation)
-                       ? WalkResult::interrupt()
-                       : WalkResult::advance();
-          })
-          .wasInterrupted();
-  if (hasNonUnitaryOperation) {
-    return modifierOp->emitOpError(
-        "body must not contain non-unitary operations or access registers");
-  }
-
   SetVector<Value> captures;
   getUsedValuesDefinedAbove(modifierOp->getRegions(), captures);
   if (llvm::any_of(captures, [](Value value) {
@@ -56,6 +39,23 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
         "arguments");
   }
 
+  const auto hasNonUnitaryOperation =
+      llvm::any_of(body.without_terminator(), [](Operation& operation) {
+        if (isa<UnitaryOpInterface>(operation)) {
+          return false;
+        }
+        const auto isQubit = [](Type type) { return isa<QubitType>(type); };
+        return operation.getNumRegions() != 0 ||
+               !isMemoryEffectFree(&operation) ||
+               llvm::any_of(operation.getOperandTypes(), isQubit) ||
+               llvm::any_of(operation.getResultTypes(), isQubit);
+      });
+  if (hasNonUnitaryOperation) {
+    return modifierOp->emitOpError("body must contain only unitary operations "
+                                   "and memory-effect-free classical "
+                                   "operations without regions");
+  }
+
   return success();
 }
 
@@ -64,7 +64,7 @@ SmallVector<size_t> getUsedQubitIndices(Block& body) {
   for (auto [index, arg, yielded] : llvm::enumerate(
            body.getArguments(), body.getTerminator()->getOperands())) {
     // A qubit that the body only yields back is not acted upon.
-    if (!arg.hasOneUse() || yielded != arg) {
+    if (yielded != arg) {
       used.push_back(index);
     }
   }

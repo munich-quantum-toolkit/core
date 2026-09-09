@@ -38,6 +38,10 @@ def UnrollModifiers : Pass<"unroll-modifiers", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qc::QCDialect", "mlir::qco::QCODialect"];
   let summary = "Unroll multi-operation modifiers into single-operation ones";
   let description = [{
+    Expands unitary function calls inside quantum modifiers and normalizes
+    exposed global phases before splitting modifiers. Calls outside modifiers
+    remain reusable. Functions marked `no_inline` remain calls.
+
     Splits `ctrl` and `inv` modifiers whose body holds more than one unitary
     operation into a sequence of modifiers that each hold a single operation.
     For `inv`, the order of the operations is reversed. Classical operations of
@@ -51,7 +55,7 @@ def UnrollModifiers : Pass<"unroll-modifiers", "mlir::ModuleOp"> {
     them. Modifiers nested in a `pow` body are unrolled either way.
 
     If a modifier cannot be unrolled, the modifier is left untouched. Such
-    modifiers are skipped silently; the pass never fails.
+    modifiers are skipped silently.
   }];
 }
 

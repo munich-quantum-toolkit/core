@@ -54,7 +54,6 @@ extensions = [
     "sphinx.ext.autodoc",
     "sphinx.ext.intersphinx",
     "sphinx.ext.napoleon",
-    "sphinx.ext.viewcode",
     "sphinxcontrib.bibtex",
     "sphinxext.opengraph",
 ]
@@ -106,7 +105,7 @@ myst_heading_anchors = 3
 
 # -- Options for {MyST}NB ----------------------------------------------------
 
-nb_execution_mode = "cache"
+nb_execution_mode = "force"
 nb_execution_raise_on_error = True
 
 
@@ -157,13 +156,18 @@ napoleon_numpy_docstring = False
 # AutoAPI renders these annotations as Python cross-references although they
 # are typing expressions or private Qiskit aliases, not documented objects.
 nitpick_ignore_regex = [
-    ("py:class", r"Annotated\[numpy\.typing\.NDArray\[numpy\.complex128\], \{'shape': \(.*\)\}\]"),
+    (
+        "py:class",
+        r"Annotated\[numpy\.typing\.NDArray\[numpy\.complex128\], \{'shape': \(.*\)(?:, 'writable': False)?\}\]",
+    ),
     ("py:class", r"Ellipsis"),
     ("py:class", r"ParametersType"),
     ("py:class", r"pennylane\.tape\.QuantumScriptOrBatch"),
     ("py:class", r"pennylane\.transforms\.core\.CompilePipeline"),
     ("py:class", r"pennylane\.typing\.(Result|ResultBatch)"),
     ("py:class", r"qiskit\.primitives\.containers\.(Estimator|Sampler)PubLike"),
+    # PennyLane inherits this unqualified reference without exporting its target.
+    ("py:class", r"DeviceCapabilities"),
 ]
 
 # ACM and SIAM reject automated requests after resolving their valid DOI links.

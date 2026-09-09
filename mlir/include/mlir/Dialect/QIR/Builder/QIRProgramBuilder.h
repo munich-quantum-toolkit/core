@@ -316,6 +316,11 @@ public:
    * is recorded during `finalize()`.
    *
    * @param qubit The qubit to measure
+   * Base uses static result IDs. Adaptive allocates dynamic result slots once
+   * in the entry block and releases them after output recording. An explicit
+   * `staticResult()` cannot be mixed with Adaptive measurements or result
+   * arrays.
+   *
    * @param index The index for result pointer
    * @param record Whether the measurement should be recorded in the output
    * @return An LLVM pointer to the measurement result
@@ -1233,8 +1238,8 @@ private:
   /// Map from register name to `ClassicalRegister`
   llvm::StringMap<ClassicalRegister> cregs;
 
-  /// Map from index to `StaticResult`
-  DenseMap<int64_t, StaticResult> staticResults;
+  /// Indexed scalar results for output recording.
+  DenseMap<int64_t, StaticResult> scalarResults;
 
   /// Helper variable for storing the LLVM pointer type
   Type ptrType;
@@ -1273,6 +1278,10 @@ private:
 
   /// Track whether static or dynamic qubit allocation is used.
   AllocationMode allocationMode = AllocationMode::Unset;
+  AllocationMode resultAllocationMode = AllocationMode::Unset;
+
+  Value getResult(int64_t index, bool record, AllocationMode mode);
+  void ensureResultAllocationMode(AllocationMode requestedMode);
 
   /// Track whether Base or Adaptive Profile is used.
   Profile profile = Profile::Adaptive;

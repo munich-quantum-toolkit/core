@@ -73,13 +73,13 @@ def cpp_lint(session: nox.Session) -> None:
     # Keep this group aligned with cpp-linter-action v2.21.0 and its inputs.
     session.install("--group", "cpp-lint")
 
-    clang_tidy = shutil.which("clang-tidy-22") or shutil.which("clang-tidy")
+    clang_tidy = shutil.which("clang-tidy-23") or shutil.which("clang-tidy")
     if clang_tidy is None:
-        session.error("clang-tidy 22 is required")
+        session.error("clang-tidy 23 is required")
     llvm_bin = Path(clang_tidy).resolve().parent
     version = session.run(llvm_bin / "clang-tidy", "--version", external=True, silent=True)
-    if "version 22." not in (version or ""):
-        session.error("clang-tidy 22 is required")
+    if "version 23." not in (version or ""):
+        session.error("clang-tidy 23 is required")
 
     compiler_env = {
         "CC": str(llvm_bin / "clang"),
@@ -94,7 +94,15 @@ def cpp_lint(session: nox.Session) -> None:
         env=compiler_env,
         external=True,
     )
-    session.run("cmake", "--build", "build/cpp-lint", env=compiler_env, external=True)
+    session.run(
+        "cmake",
+        "--build",
+        "build/cpp-lint",
+        "--target",
+        "mqt-core-lint-headers",
+        env=compiler_env,
+        external=True,
+    )
 
     with tempfile.TemporaryDirectory() as temp_dir:
         output = Path(temp_dir) / "github-output"
@@ -281,6 +289,10 @@ def docs(session: nox.Session) -> None:
     parser.add_argument("-b", dest="builder", default="html", help="Build target (default: html)")
     args, posargs = parser.parse_known_args(session.posargs)
 
+    # Retain packaged devices while excluding host file and inline configuration.
+    registry = Path(session.create_tmp()) / "qdmi.json"
+    registry.write_text('{"schema-version": 1, "qdmi": {"devices": []}}', encoding="utf-8")
+
     serve = args.builder == "html" and session.interactive
     if serve:
         session.install("sphinx-autobuild")
@@ -288,6 +300,8 @@ def docs(session: nox.Session) -> None:
     env = {
         "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
         "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
+        "MQT_CORE_QDMI_CONFIG_FILE": str(registry.resolve()),
+        "MQT_CORE_QDMI_CONFIG_JSON": registry.read_text(encoding="utf-8"),
         # Let scikit-build-core generate the MLIR reference pages while it
         # builds the extension used to execute the documentation examples.
         # The docs exercise only the DDSIM provider. The common Python package
@@ -322,6 +336,9 @@ def docs(session: nox.Session) -> None:
         *posargs,
         env=env,
     )
+
+    if args.builder == "html" and not serve:
+        session.run("python", "scripts/check_docs_links.py", "docs/_build/html")
 
 
 @nox.session(reuse_venv=True, venv_backend="uv")

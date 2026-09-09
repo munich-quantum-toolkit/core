@@ -11,7 +11,6 @@
 #include "qdmi/Slurm.hpp"
 
 #include "qdmi/Client.hpp"
-#include "qdmi/driver/Driver.hpp"
 
 #include <qdmi/constants.h>
 
@@ -25,7 +24,6 @@
 #include <string>
 #include <string_view>
 #include <system_error>
-#include <vector>
 
 namespace qdmi::slurm {
 namespace {
@@ -51,8 +49,7 @@ namespace {
   return "UNKNOWN";
 }
 
-[[nodiscard]] auto parseLicense(const std::string& licenseSpec,
-                                const std::vector<std::string>& registeredIds)
+[[nodiscard]] auto parseLicense(const std::string_view licenseSpec)
     -> std::string {
   if (licenseSpec.empty()) {
     throw std::runtime_error(
@@ -90,7 +87,7 @@ namespace {
   }
 
   if (countSeparator != std::string::npos) {
-    const std::string countText = licenseSpec.substr(countSeparator + 1);
+    const auto countText = licenseSpec.substr(countSeparator + 1);
     if (countText.empty()) {
       throw std::runtime_error(
           "SLURM_JOB_LICENSES contains a malformed license count");
@@ -111,25 +108,26 @@ namespace {
     }
   }
 
-  if (std::ranges::find(registeredIds, deviceId) == registeredIds.end()) {
-    throw std::runtime_error("Slurm license '" + deviceId +
-                             "' is not a registered QDMI device ID");
-  }
-  return deviceId;
+  return std::string(deviceId);
 }
 
 } // namespace
 
 Device openDeviceFromLicense() {
-  // The job can modify its environment. Use this value only to select a
-  // registered device; the provider or operating system must authorize access.
+  /// The job can modify its environment. Use this value only to select a
+  /// registered device; the provider or operating system must authorize access.
   const auto* const environmentValue = std::getenv("SLURM_JOB_LICENSES");
   const std::string licenseSpec =
       environmentValue == nullptr ? std::string{} : environmentValue;
-  const auto deviceId =
-      parseLicense(licenseSpec, qdmi::Driver::get().registeredDeviceIds());
-
-  auto device = Session::openDevice(deviceId);
+  const auto deviceId = parseLicense(licenseSpec);
+  auto device = [&] {
+    try {
+      return Session::openDevice(deviceId);
+    } catch (const std::out_of_range&) {
+      throw std::runtime_error("Slurm license '" + deviceId +
+                               "' is not a registered QDMI device ID");
+    }
+  }();
   const auto status = device.getStatus();
   if (status != QDMI_DEVICE_STATUS_IDLE && status != QDMI_DEVICE_STATUS_BUSY) {
     throw std::runtime_error("SLURM_JOB_LICENSES names QDMI device '" +

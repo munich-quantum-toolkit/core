@@ -382,6 +382,72 @@ template <typename T>
 concept maybe_optional_value_or_string_or_vector =
     value_or_string_or_vector<remove_optional_t<T>>;
 
+namespace detail {
+/// Decode a standard property while preserving optional support and
+/// diagnostics.
+template <maybe_optional_value_or_string_or_vector T, typename Query>
+[[nodiscard]] T queryProperty(Query query, const std::string& msg,
+                              const std::string& sizeMsg) {
+  if constexpr (string_or_optional_string<T>) {
+    size_t size = 0;
+    auto result = query(0, nullptr, &size);
+
+    if constexpr (is_optional<T>) {
+      if (result == QDMI_ERROR_NOTSUPPORTED) {
+        return std::nullopt;
+      }
+    }
+
+    qdmi::throwIfError(result, sizeMsg);
+    if (size == 0) {
+      throw std::runtime_error(sizeMsg + ": missing string terminator");
+    }
+    std::string value(size, '\0');
+    result = query(size, value.data(), nullptr);
+    qdmi::throwIfError(result, msg);
+    if (value.back() != '\0') {
+      throw std::runtime_error(msg + ": missing string terminator");
+    }
+    value.pop_back();
+    return value;
+  } else if constexpr (maybe_optional_size_constructible_contiguous_range<T>) {
+    size_t size = 0;
+    auto result = query(0, nullptr, &size);
+
+    if constexpr (is_optional<T>) {
+      if (result == QDMI_ERROR_NOTSUPPORTED) {
+        return std::nullopt;
+      }
+    }
+
+    qdmi::throwIfError(result, sizeMsg);
+    if (size % sizeof(typename remove_optional_t<T>::value_type) != 0) {
+      throw std::runtime_error(
+          sizeMsg + ": byte count is not a multiple of the element size");
+    }
+    remove_optional_t<T> value(
+        size / sizeof(typename remove_optional_t<T>::value_type));
+    if (size != 0) {
+      result = query(size, value.data(), nullptr);
+      qdmi::throwIfError(result, msg);
+    }
+    return value;
+  } else {
+    remove_optional_t<T> value{};
+    const auto result = query(sizeof(remove_optional_t<T>), &value, nullptr);
+
+    if constexpr (is_optional<T>) {
+      if (result == QDMI_ERROR_NOTSUPPORTED) {
+        return std::nullopt;
+      }
+    }
+
+    qdmi::throwIfError(result, msg);
+    return value;
+  }
+}
+} // namespace detail
+
 /**
  * @brief Configuration structure for session authentication parameters.
  * @details All parameters are optional. Only set the parameters needed for
@@ -460,17 +526,13 @@ private:
   /// Query a session property.
   template <size_constructible_contiguous_range T>
   [[nodiscard]] T queryProperty(const QDMI_Session_Property prop) const {
-    using StrippedValueType = remove_optional_t<T>::value_type;
-
-    size_t size = 0;
-    qdmi::throwIfError(QDMI_session_query_session_property(session_.get(), prop,
-                                                           0, nullptr, &size),
-                       std::string("Querying size ") + qdmi::toString(prop));
-    remove_optional_t<T> value(size / sizeof(StrippedValueType));
-    qdmi::throwIfError(QDMI_session_query_session_property(
-                           session_.get(), prop, size, value.data(), nullptr),
-                       std::string("Querying ") + qdmi::toString(prop));
-    return value;
+    return detail::queryProperty<T>(
+        [&](const size_t size, void* value, size_t* sizeRet) {
+          return QDMI_session_query_session_property(session_.get(), prop, size,
+                                                     value, sizeRet);
+        },
+        std::string("Querying ") + qdmi::toString(prop),
+        std::string("Querying size ") + qdmi::toString(prop));
   }
 
   std::unique_ptr<QDMI_Session_impl_d, decltype(&QDMI_session_free)> session_{
@@ -494,7 +556,7 @@ static_assert(std::is_move_assignable<Session>());
  */
 class Device {
 public:
-  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+  // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Device() const { return device_.get(); }
 
   /// @see QDMI_DEVICE_PROPERTY_NAME
@@ -668,19 +730,19 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
-  /**
-   * @brief Triggers a calibration run.
-   * @details A device that reports a nonzero
-   * `QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION` is asked to calibrate by submitting
-   * a job in the `QDMI_PROGRAM_FORMAT_CALIBRATION` format. QDMI does not
-   * require a program for such a job, so the payload is optional; when it is
-   * present, the device defines what it means, which is usually a
-   * configuration for the run. A calibration run executes no circuit, so no
-   * shot count is set.
-   * @param program The calibration payload. An empty span or `std::nullopt`
-   * means that the job has no payload.
-   * @see QDMI_job_submit
-   */
+  /// @brief Triggers a calibration run.
+  /// @details A device that reports a nonzero
+  /// `QDMI_DEVICE_PROPERTY_NEEDSCALIBRATION` is asked to calibrate by
+  /// submitting a job in the `QDMI_PROGRAM_FORMAT_CALIBRATION` format. QDMI
+  /// does not require a program for such a job, so the payload is optional;
+  /// when it is present, the device defines what it means, which is usually a
+  /// configuration for the run. A calibration run executes no circuit, so no
+  /// shot count is set.
+  /// @param program The calibration payload. An empty span or `std::nullopt`
+  /// means that the job has no payload.
+  /// @param custom1,custom2,custom3,custom4,custom5 Optional provider-defined
+  /// job parameters.
+  /// @see QDMI_job_submit
   [[nodiscard]] Job submitCalibrationJob(
       std::optional<std::span<const std::byte>> program = std::nullopt,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -689,13 +751,13 @@ public:
       const std::optional<CustomJobParameter>& custom4 = std::nullopt,
       const std::optional<CustomJobParameter>& custom5 = std::nullopt) const;
 
-  /**
-   * @brief Triggers a calibration run with a text payload.
-   * @details The terminating null byte required by QDMI text formats is
-   * included in the submitted payload.
-   * @param program The calibration payload.
-   * @see QDMI_job_submit
-   */
+  /// @brief Triggers a calibration run with a text payload.
+  /// @details The terminating null byte required by QDMI text formats is
+  /// included in the submitted payload.
+  /// @param program The calibration payload.
+  /// @param custom1,custom2,custom3,custom4,custom5 Optional provider-defined
+  /// job parameters.
+  /// @see QDMI_job_submit
   [[nodiscard]] Job submitCalibrationJob(
       const std::string& program,
       const std::optional<CustomJobParameter>& custom1 = std::nullopt,
@@ -738,59 +800,13 @@ private:
   /// Query a device property.
   template <maybe_optional_value_or_string_or_vector T>
   [[nodiscard]] T queryProperty(const QDMI_Device_Property prop) const {
-    std::string msg = "Querying ";
-    msg += qdmi::toString(prop);
-
-    if constexpr (string_or_optional_string<T>) {
-      size_t size = 0;
-      auto result = QDMI_device_query_device_property(device_.get(), prop, 0,
-                                                      nullptr, &size);
-
-      if constexpr (is_optional<T>) {
-        if (result == QDMI_ERROR_NOTSUPPORTED) {
-          return std::nullopt;
-        }
-      }
-
-      qdmi::throwIfError(result, msg);
-      std::string value(size - 1, '\0');
-      result = QDMI_device_query_device_property(device_.get(), prop, size,
-                                                 value.data(), nullptr);
-      qdmi::throwIfError(result, msg);
-      return value;
-    } else if constexpr (maybe_optional_size_constructible_contiguous_range<
-                             T>) {
-      size_t size = 0;
-      auto result = QDMI_device_query_device_property(device_.get(), prop, 0,
-                                                      nullptr, &size);
-
-      if constexpr (is_optional<T>) {
-        if (result == QDMI_ERROR_NOTSUPPORTED) {
-          return std::nullopt;
-        }
-      }
-
-      qdmi::throwIfError(result, msg);
-      remove_optional_t<T> value(
-          size / sizeof(typename remove_optional_t<T>::value_type));
-      result = QDMI_device_query_device_property(device_.get(), prop, size,
-                                                 value.data(), nullptr);
-      qdmi::throwIfError(result, msg);
-      return value;
-    } else {
-      remove_optional_t<T> value{};
-      const auto result = QDMI_device_query_device_property(
-          device_.get(), prop, sizeof(remove_optional_t<T>), &value, nullptr);
-
-      if constexpr (is_optional<T>) {
-        if (result == QDMI_ERROR_NOTSUPPORTED) {
-          return std::nullopt;
-        }
-      }
-
-      qdmi::throwIfError(result, msg);
-      return value;
-    }
+    const std::string msg = std::string("Querying ") + qdmi::toString(prop);
+    return detail::queryProperty<T>(
+        [&](const size_t size, void* value, size_t* sizeRet) {
+          return QDMI_device_query_device_property(device_.get(), prop, size,
+                                                   value, sizeRet);
+        },
+        msg, msg);
   }
 
   [[nodiscard]] Job
@@ -828,7 +844,7 @@ public:
 
   auto operator=(Job&& other) noexcept -> Job&;
 
-  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+  // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Job() const { return job_.get(); }
 
   /// @see QDMI_job_check
@@ -998,7 +1014,7 @@ static_assert(std::is_move_assignable<Job>());
  */
 class Site {
 public:
-  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+  // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Site() const { return site_; }
 
   /// @see QDMI_SITE_PROPERTY_INDEX
@@ -1075,37 +1091,13 @@ private:
   /// Query a site property.
   template <maybe_optional_value_or_string T>
   [[nodiscard]] T queryProperty(const QDMI_Site_Property prop) const {
-    if constexpr (string_or_optional_string<T>) {
-      size_t size = 0;
-      const auto result = QDMI_device_query_site_property(
-          device_.get(), site_, prop, 0, nullptr, &size);
-      if constexpr (is_optional<T>) {
-        if (result == QDMI_ERROR_NOTSUPPORTED) {
-          return std::nullopt;
-        }
-      }
-      qdmi::throwIfError(result,
-                         std::string("Querying size") + qdmi::toString(prop));
-      std::string value(size - 1, '\0');
-      qdmi::throwIfError(QDMI_device_query_site_property(device_.get(), site_,
-                                                         prop, size,
-                                                         value.data(), nullptr),
-                         std::string("Querying ") + qdmi::toString(prop));
-      return value;
-    } else {
-      remove_optional_t<T> value{};
-      const auto result = QDMI_device_query_site_property(
-          device_.get(), site_, prop, sizeof(remove_optional_t<T>), &value,
-          nullptr);
-      if constexpr (is_optional<T>) {
-        if (result == QDMI_ERROR_NOTSUPPORTED) {
-          return std::nullopt;
-        }
-      }
-      qdmi::throwIfError(result,
-                         std::string("Querying ") + qdmi::toString(prop));
-      return value;
-    }
+    const std::string msg = std::string("Querying ") + qdmi::toString(prop);
+    return detail::queryProperty<T>(
+        [&](const size_t size, void* value, size_t* sizeRet) {
+          return QDMI_device_query_site_property(device_.get(), site_, prop,
+                                                 size, value, sizeRet);
+        },
+        msg, std::string("Querying size") + qdmi::toString(prop));
   }
 
   /// @brief The QDMI device handle that owns the site.
@@ -1130,7 +1122,7 @@ private:
  */
 class Operation {
 public:
-  // NOLINTNEXTLINE(google-explicit-constructor, *-explicit-conversions)
+  // NOLINTNEXTLINE(misc-explicit-constructor, *-explicit-conversions)
   operator QDMI_Operation() const { return operation_; }
 
   /// @see QDMI_OPERATION_PROPERTY_NAME
@@ -1246,62 +1238,18 @@ private:
   [[nodiscard]] T queryProperty(const QDMI_Operation_Property prop,
                                 const std::vector<Site>& sites,
                                 const std::vector<double>& params) const {
-    std::string msg = "Querying ";
-    msg += qdmi::toString(prop);
+    const std::string msg = std::string("Querying ") + qdmi::toString(prop);
     std::vector<QDMI_Site> qdmiSites;
     qdmiSites.reserve(sites.size());
     std::ranges::transform(sites, std::back_inserter(qdmiSites),
                            [](const Site& site) -> QDMI_Site { return site; });
-    if constexpr (string_or_optional_string<T>) {
-      size_t size = 0;
-      auto result = QDMI_device_query_operation_property(
-          device_.get(), operation_, sites.size(), qdmiSites.data(),
-          params.size(), params.data(), prop, 0, nullptr, &size);
-      if constexpr (is_optional<T>) {
-        if (result == QDMI_ERROR_NOTSUPPORTED) {
-          return std::nullopt;
-        }
-      }
-      qdmi::throwIfError(result, msg);
-      std::string value(size - 1, '\0');
-      result = QDMI_device_query_operation_property(
-          device_.get(), operation_, sites.size(), qdmiSites.data(),
-          params.size(), params.data(), prop, size, value.data(), nullptr);
-      qdmi::throwIfError(result, msg);
-      return value;
-    } else if constexpr (maybe_optional_size_constructible_contiguous_range<
-                             T>) {
-      size_t size = 0;
-      auto result = QDMI_device_query_operation_property(
-          device_.get(), operation_, sites.size(), qdmiSites.data(),
-          params.size(), params.data(), prop, 0, nullptr, &size);
-      if constexpr (is_optional<T>) {
-        if (result == QDMI_ERROR_NOTSUPPORTED) {
-          return std::nullopt;
-        }
-      }
-      qdmi::throwIfError(result, msg);
-      remove_optional_t<T> value(
-          size / sizeof(typename remove_optional_t<T>::value_type));
-      result = QDMI_device_query_operation_property(
-          device_.get(), operation_, sites.size(), qdmiSites.data(),
-          params.size(), params.data(), prop, size, value.data(), nullptr);
-      qdmi::throwIfError(result, msg);
-      return value;
-    } else {
-      remove_optional_t<T> value{};
-      const auto result = QDMI_device_query_operation_property(
-          device_.get(), operation_, sites.size(), qdmiSites.data(),
-          params.size(), params.data(), prop, sizeof(remove_optional_t<T>),
-          &value, nullptr);
-      if constexpr (is_optional<T>) {
-        if (result == QDMI_ERROR_NOTSUPPORTED) {
-          return std::nullopt;
-        }
-      }
-      qdmi::throwIfError(result, msg);
-      return value;
-    }
+    return detail::queryProperty<T>(
+        [&](const size_t size, void* value, size_t* sizeRet) {
+          return QDMI_device_query_operation_property(
+              device_.get(), operation_, sites.size(), qdmiSites.data(),
+              params.size(), params.data(), prop, size, value, sizeRet);
+        },
+        msg, msg);
   }
 
   /// @brief The QDMI device handle that owns the operation.

@@ -186,6 +186,35 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
               "The number of appendix SWAPs">];
 }
 
+def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect",
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::math::MathDialect"];
+  let summary = "Synthesize operations for the native target basis";
+  let description = [{
+    Reads the typed `mqt.target_env` module attribute and lowers non-native
+    unitary operations to one complete synthesis basis supported throughout the
+    compiler target. Unknown native-operation metadata is valid when no
+    surviving unitary operation needs it. Otherwise, the pass fails when the
+    metadata is unknown, no complete basis exists, or an operation has no
+    compile-time unitary matrix and cannot be synthesized as a parameterized
+    single-qubit gate.
+  }];
+}
+
+def VerifyTargetConformance
+    : Pass<"verify-target-conformance", "mlir::ModuleOp"> {
+  let dependentDialects = ["mlir::qco::QCODialect"];
+  let summary = "Verify that a mapped program conforms to its compiler target";
+  let description = [{
+    Reads the typed `mqt.target_env` module attribute and verifies that every
+    qubit is assigned to a target site and every remaining quantum operation is
+    native for the compiler target. Unknown native-operation metadata is valid
+    when the surviving program contains no unitary, measurement, or reset
+    operation that needs the metadata.
+  }];
+}
+
 //===----------------------------------------------------------------------===//
 // Optimization Passes
 //===----------------------------------------------------------------------===//
@@ -330,6 +359,12 @@ def ReuseQubits : Pass<"reuse-qubits", "mlir::ModuleOp"> {
     `measurement-lifting` and `replace-classical-controls` passes, which can reduce the number of qubits required for a quantum program significantly.
     Only single-qubit allocations are considered for reuse, no `qtensor` allocations.
 
+    Before rewriting non-unitary functions, the pass summarizes the memory effects
+    of unitary helpers and their transitive callees. Proven effect-free calls
+    permit reuse; scoped global phases and unknown effects remain barriers.
+    Unitary helpers are not rewritten, and summaries are discarded after each
+    pass invocation.
+
     Use the `mqt-qubit-reuse` pipeline to run the preparation passes followed by this pass.
   }];
 }
@@ -358,13 +393,15 @@ def DecomposeMultiControlled
     : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];
-  let summary = "Decompose controlled X/Z/phase/SWAP gates and qco.rccx that "
-                "act on at least min-qubits qubits";
+  let summary = "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and "
+                "qco.rccx that act on at least min-qubits qubits";
   let description = [{
     Decomposes multi-qubit controlled operations that act on at least
     `min-qubits` qubits (default 3: everything wider than a two-qubit gate).
-    Supported shapes: `qco.ctrl` with a `qco.x`, `qco.z`, `qco.swap`, or
-    constant-angle `qco.p` body, and `qco.rccx`.
+    Supported shapes: `qco.ctrl` with a sole `qco.x`, `qco.y`, `qco.z`,
+    `qco.rx`, `qco.ry`, `qco.rz`, `qco.swap`, or constant-angle `qco.p` body, and
+    `qco.rccx`. Rotation angles may be constants or runtime SSA values,
+    including classical expressions inside the control region.
 
     | Family | Width (qubits) | Decomposition |
     | ------ | -------------- | ------------- |
@@ -372,7 +409,9 @@ def DecomposeMultiControlled
     | X/Z | 4 | Elementary CCCX/CCCZ |
     | X/Z | 5 | Specialized ancilla-free relative-phase `C^4(Z)` |
     | X/Z | 6–33 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
-    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with a compile-time CX policy table |
+    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with one dirty helper for odd control counts and two for even counts |
+    | Y | ≥3 | X decomposition with `S†` before and `S` after on the target |
+    | RX/RY/RZ | ≥3 | Balanced control halves with exact MCX and quarter-angle rotations; RX uses H-conjugated RZ |
     | Phase | 3 | Optimized `C^2(P)` |
     | Phase | 4–5 | Vale (Barenco-relative residual) |
     | Phase | ≥6 | da Silva-Park SP22 linear-depth |
@@ -381,6 +420,11 @@ def DecomposeMultiControlled
 
     Width is the total number of qubits the gate acts on (controls plus
     targets).
+
+    Rotation synthesis uses a linear number of gates and no additional
+    qubits. Each half-MCX may borrow controls from the opposite half and
+    restores them coherently. The decomposition preserves phase, including
+    the conditional phase of a rotation by `2π`.
 
     For controlled SWAP, `C ∪ {b}` is the original control set together with
     SWAP target `b`, and the MCX target is the other SWAP qubit `a`. The
@@ -393,9 +437,9 @@ def DecomposeMultiControlled
   }];
   let options = [Option<
       "minQubits", "min-qubits", "uint64_t", "3",
-      "Decompose controlled X/Z/phase/SWAP gates and qco.rccx that act on at "
-      "least this many qubits (must be at least 3; default 3 means wider than "
-      "two-qubit).">];
+      "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and qco.rccx "
+      "that act on at least this many qubits (must be at least 3; default 3 "
+      "means wider than two-qubit).">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

@@ -15,6 +15,7 @@
 #include "mlir/Compiler/Programs.h"
 #include "mlir/Compiler/QDMIAdapter.h"
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mlir/bench/Generate.h"
@@ -310,12 +311,26 @@ programFromInput(const nb::object& program, const bool inplace) {
 /// Run the coordinated default pipeline and return a typed program.
 [[nodiscard]] static mlir::CompilerProgram
 compileProgram(const nb::object& program, const mlir::ProgramFormat output,
-               const bool inplace, const mlir::CompilerTarget* const target,
-               const std::string& qcoPipeline, const bool enableTiming,
-               const bool enableStatistics) {
+               const bool inplace, const std::string& qcoPipeline,
+               const bool enableTiming, const bool enableStatistics) {
   return takeResult(mlir::runDefaultPipeline(programFromInput(program, inplace),
-                                             output, target, qcoPipeline,
-                                             enableTiming, enableStatistics));
+                                             output, qcoPipeline, enableTiming,
+                                             enableStatistics));
+}
+
+/// Compile for one target environment and return its selected payload.
+[[nodiscard]] static mlir::CompilerProgram
+compileProgramForTarget(const nb::object& program, const bool inplace,
+                        const mlir::TargetEnvironment& environment,
+                        const bool enableTiming, const bool enableStatistics) {
+  auto output = environment.payloadSpecification().compilerOutput();
+  if (!output) {
+    const auto message = llvm::toString(output.takeError());
+    throw nb::value_error(message.c_str());
+  }
+  return takeResult(mlir::runDefaultPipeline(programFromInput(program, inplace),
+                                             environment, enableTiming,
+                                             enableStatistics));
 }
 
 template <class Function>
@@ -392,16 +407,16 @@ sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
       std::numeric_limits<size_t>::max() / sizeof(std::complex<dd::fp>) / dim) {
     throw nb::value_error("dense unitary dimensions exceed addressable memory");
   }
-  auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(dim * dim);
+  auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
+  auto* const data = dataPtr->data();
   matrix.traverseMatrix(
       std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
-      [&dataPtr, dim](size_t i, size_t j, const std::complex<dd::fp>& value) {
-        dataPtr[(i * dim) + j] = value;
+      [data, dim](size_t i, size_t j, const std::complex<dd::fp>& value) {
+        data[i * dim + j] = value;
       },
       numQubits);
-  auto* const data = dataPtr.get();
-  const nb::capsule owner(data, [](void* ptr) noexcept {
-    delete[] static_cast<std::complex<dd::fp>*>(ptr);
+  const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
+    delete static_cast<dd::CVec*>(ptr);
   });
   [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
   return DenseMatrix(data, {dim, dim}, owner);
@@ -474,6 +489,70 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
              "QIR for the Base Profile.")
       .value("QIR_ADAPTIVE", mlir::ProgramFormat::QIRAdaptive,
              "QIR for the Adaptive Profile.");
+
+  nb::enum_<mlir::PayloadEncoding>(m, "PayloadEncoding",
+                                   "Payload representation encoding.")
+      .value("TEXT", mlir::PayloadEncoding::Text)
+      .value("BINARY", mlir::PayloadEncoding::Binary);
+
+  nb::class_<mlir::PayloadFormat>(m, "PayloadFormat", "Exact payload identity.")
+      .def(nb::init<std::string, std::string, std::string,
+                    mlir::PayloadEncoding>(),
+           "format_id"_a, "version"_a, "profile"_a = "",
+           "encoding"_a = mlir::PayloadEncoding::Text)
+      .def_rw("format_id", &mlir::PayloadFormat::id)
+      .def_rw("version", &mlir::PayloadFormat::version)
+      .def_rw("profile", &mlir::PayloadFormat::profile)
+      .def_rw("encoding", &mlir::PayloadFormat::encoding);
+
+  nb::class_<mlir::ProgramConstraint>(m, "ProgramConstraint",
+                                      "One payload capability constraint.")
+      .def(nb::init<std::string, uint64_t>(), "constraint_id"_a, "value"_a)
+      .def_rw("constraint_id", &mlir::ProgramConstraint::id)
+      .def_rw("value", &mlir::ProgramConstraint::value);
+
+  nb::class_<mlir::ProgramCapability>(m, "ProgramCapability",
+                                      "One payload execution capability.")
+      .def(nb::init<std::string, uint64_t,
+                    std::vector<mlir::ProgramConstraint>>(),
+           "capability_id"_a, "value"_a = 0,
+           "constraints"_a = std::vector<mlir::ProgramConstraint>{})
+      .def_rw("capability_id", &mlir::ProgramCapability::id)
+      .def_rw("value", &mlir::ProgramCapability::value)
+      .def_rw("constraints", &mlir::ProgramCapability::constraints);
+
+  nb::class_<mlir::PayloadSpecification>(m, "PayloadSpecification",
+                                         "Selected payload execution contract.")
+      .def(
+          "__init__",
+          [](mlir::PayloadSpecification& self, mlir::PayloadFormat format,
+             std::vector<mlir::ProgramCapability> capabilities,
+             const bool optionalCapabilitiesKnown) {
+            constructFromExpected(self, mlir::PayloadSpecification::create(
+                                            std::move(format),
+                                            std::move(capabilities),
+                                            optionalCapabilitiesKnown));
+          },
+          "payload_format"_a,
+          "capabilities"_a = std::vector<mlir::ProgramCapability>{},
+          "optional_capabilities_known"_a = false)
+      .def_prop_ro(
+          "format",
+          [](const mlir::PayloadSpecification& environment) {
+            return environment.format();
+          },
+          "The exact selected payload format.")
+      .def_prop_ro(
+          "capabilities",
+          [](const mlir::PayloadSpecification& environment) {
+            return std::vector<mlir::ProgramCapability>(
+                environment.capabilities().begin(),
+                environment.capabilities().end());
+          },
+          "The effective payload capabilities.")
+      .def_prop_ro("optional_capabilities_known",
+                   &mlir::PayloadSpecification::optionalCapabilitiesKnown,
+                   "Whether optional capability metadata is complete.");
 
   auto compilerTarget = nb::class_<mlir::CompilerTarget>(
       m, "CompilerTarget", R"pb(Immutable MLIR compiler target.
@@ -675,7 +754,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("ISWAP", mlir::CompilerTarget::GateKind::ISWAP)
       .value("CZ", mlir::CompilerTarget::GateKind::CZ)
       .value("CX", mlir::CompilerTarget::GateKind::CX)
-      .value("ECR", mlir::CompilerTarget::GateKind::ECR);
+      .value("ECR", mlir::CompilerTarget::GateKind::ECR)
+      .value("SQRTISWAP", mlir::CompilerTarget::GateKind::SQRTISWAP);
 
   nb::enum_<mlir::CompilerTarget::SingleQubitBasis>(
       compilerTarget, "SingleQubitBasis",
@@ -696,7 +776,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
               &mlir::CompilerTarget::SynthesisBasis::singleQubit,
               "The single-qubit synthesis basis.")
       .def_ro("entangler", &mlir::CompilerTarget::SynthesisBasis::entangler,
-              "The two-qubit entangler.");
+              "The two-qubit entangler, or None when none is usable.");
 
   nb::enum_<mlir::CompilerTarget::Connectivity::Kind>(
       compilerTarget, "ConnectivityKind", "The target connectivity model.")
@@ -821,7 +901,11 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .def_static(
           "from_device",
           [](const qdmi::Device& device) {
-            return takeResult(mlir::compilerTargetFromDevice(device));
+            auto target = [&device] {
+              const nb::gil_scoped_release release;
+              return mlir::compilerTargetFromDevice(device);
+            }();
+            return takeResult(std::move(target));
           },
           "device"_a, "Snapshot a circuit-model QDMI device.")
       .def_static(
@@ -853,8 +937,12 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
                 std::move(deviceConfig), std::move(deviceConfigFile),
                 std::move(custom1), std::move(custom2), std::move(custom3),
                 std::move(custom4), std::move(custom5));
-            auto device = qdmi::Session::openDevice(deviceId, overrides);
-            return takeResult(mlir::compilerTargetFromDevice(device));
+            auto target = [&] {
+              const nb::gil_scoped_release release;
+              auto device = qdmi::Session::openDevice(deviceId, overrides);
+              return mlir::compilerTargetFromDevice(device);
+            }();
+            return takeResult(std::move(target));
           },
           "device_id"_a, nb::kw_only(), "base_url"_a = std::nullopt,
           "token"_a = std::nullopt, "auth_file"_a = std::nullopt,
@@ -910,7 +998,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           },
           "Recognized native gates supported by the target.")
       .def_prop_ro("synthesis_basis", &mlir::CompilerTarget::synthesisBasis,
-                   "A complete target-wide synthesis basis, if available.")
+                   "A target-wide single-qubit basis with an optional "
+                   "entangler, or None when no single-qubit basis is usable.")
       .def(
           "supports_operation",
           [](const mlir::CompilerTarget& target, const std::string_view name,
@@ -925,6 +1014,17 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           },
           "name"_a, "arity"_a, "num_parameters"_a = nb::none(),
           "sites"_a = nb::none(), "Whether the target supports an operation.");
+
+  nb::class_<mlir::TargetEnvironment>(
+      m, "TargetEnvironment",
+      "A compiler target and its selected payload specification.")
+      .def(nb::init<mlir::CompilerTarget, mlir::PayloadSpecification>(),
+           "target"_a, "payload_specification"_a)
+      .def_prop_ro("target", &mlir::TargetEnvironment::target,
+                   "The compiler target.")
+      .def_prop_ro("payload_specification",
+                   &mlir::TargetEnvironment::payloadSpecification,
+                   "The selected payload specification.");
 
   auto program = nb::class_<mlir::Program>(
       m, "Program", R"pb(Base class for a typed MLIR compiler program.
@@ -1133,12 +1233,13 @@ operations.)pb");
            &BooleanMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
            nb::kw_only(), "min_qubits"_a = 3,
-           "Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle "
-           "phase gates that act on at least min_qubits qubits (min_qubits "
-           "must be at least 3; default 3 means wider than two-qubit).")
+           "Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and "
+           "constant-angle phase gates that act on at least min_qubits qubits "
+           "(min_qubits must be at least 3; default 3 means wider than "
+           "two-qubit).")
       .def("compile_for_target",
            &BooleanMemberAdapter<&mlir::QCOProgram::compileForTarget>::call,
-           "target"_a, nb::kw_only(), "enable_timing"_a = false,
+           "target_environment"_a, nb::kw_only(), "enable_timing"_a = false,
            "enable_statistics"_a = false,
            "Compile this QCO program for the target in place. Do not rely on "
            "its contents if compilation fails.")
@@ -1354,8 +1455,8 @@ contracts.)pb");
 
   m.def("compile_program", &compileProgram, "program"_a, nb::kw_only(),
         "output"_a = mlir::ProgramFormat::QC, "inplace"_a = false,
-        "target"_a = nb::none(), "qco_pipeline"_a = "mqt-qco-default",
-        "enable_timing"_a = false, "enable_statistics"_a = false,
+        "qco_pipeline"_a = "mqt-qco-default", "enable_timing"_a = false,
+        "enable_statistics"_a = false,
         R"pb(
 Run the coordinated default MQT compiler pipeline.
 
@@ -1369,15 +1470,33 @@ Args:
     program: Source text, a file path, a Qiskit circuit, or a typed compiler program.
     output: The requested output stage of the compiler pipeline.
     inplace: Whether a typed input program may be consumed.
-    target: An optional compiler target for decomposition, mapping, and native
-        synthesis. A target requires optimized QCO, QC, or QIR output.
     qco_pipeline: The QCO optimization pipeline to run. A custom pipeline
-        cannot be combined with a target.
+        cannot be combined with target compilation.
     enable_timing: Whether to collect pass timing information.
     enable_statistics: Whether to collect pass statistics.
 
 Returns:
     A typed compiler program for the requested output format.
+)pb");
+
+  m.def("compile_program", &compileProgramForTarget, "program"_a, nb::kw_only(),
+        "inplace"_a = false, "target_environment"_a, "enable_timing"_a = false,
+        "enable_statistics"_a = false,
+        R"pb(
+Compile a program for a target and return the selected executable payload.
+
+The payload specification determines the output format. Typed program inputs
+are copied by default; set ``inplace=True`` to consume them.
+
+Args:
+    program: Source text, a file path, a Qiskit circuit, or a typed compiler program.
+    inplace: Whether a typed input program may be consumed.
+    target_environment: The compiler target and selected payload specification.
+    enable_timing: Whether to collect pass timing information.
+    enable_statistics: Whether to collect pass statistics.
+
+Returns:
+    A typed compiler program for the selected payload format.
 )pb");
 }
 

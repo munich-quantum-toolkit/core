@@ -60,12 +60,13 @@ function(add_mqt_core_library name)
   # Always compile with position-independent code to enable usage in shared libraries
   set_target_properties(${name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-  # Set versioning information
-  set_target_properties(
-    ${name}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME Core${ARG_ALIAS_NAME})
+  set_target_properties(${name} PROPERTIES EXPORT_NAME Core${ARG_ALIAS_NAME})
+  # Wheels materialize version symlinks as duplicate libraries.
+  if(NOT SKBUILD)
+    set_target_properties(
+      ${name} PROPERTIES VERSION ${PROJECT_VERSION}
+                         SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
+  endif()
 
   # Make version available
   target_compile_definitions(${name} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")

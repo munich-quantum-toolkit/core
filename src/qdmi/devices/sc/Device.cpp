@@ -28,6 +28,7 @@
 #include <cstring>
 #include <exception>
 #include <memory>
+#include <mutex>
 #include <new>
 #include <optional>
 #include <span>
@@ -39,9 +40,11 @@
 
 namespace {
 [[nodiscard]] bool
-contains(const std::vector<std::vector<MQT_SC_QDMI_Site>>& haystack,
-         const std::vector<MQT_SC_QDMI_Site>& needle) {
-  return std::ranges::find(haystack, needle) != haystack.end();
+siteTupleLess(const std::span<const MQT_SC_QDMI_Site> first,
+              const std::span<const MQT_SC_QDMI_Site> second) {
+  return std::ranges::lexicographical_compare(first, second, {},
+                                              &MQT_SC_QDMI_Site_impl_d::id,
+                                              &MQT_SC_QDMI_Site_impl_d::id);
 }
 
 [[nodiscard]] std::vector<MQT_SC_QDMI_Site>
@@ -119,8 +122,10 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
       operation->name = operationConfiguration.name;
       operation->numParameters = operationConfiguration.numParameters;
       operation->numQubits = operationConfiguration.numQubits;
-      operation->defaults = {.duration = operationConfiguration.duration,
-                             .fidelity = operationConfiguration.fidelity};
+      operation->defaults = {
+          .duration = operationConfiguration.duration,
+          .fidelity = operationConfiguration.fidelity,
+      };
       if (operationConfiguration.sites) {
         for (const auto& tuple : *operationConfiguration.sites) {
           operation->supportedSites.emplace_back(
@@ -139,17 +144,25 @@ int MQT_SC_QDMI_Device_Session_impl_d::init() {
         operation->flattenedSites.insert(operation->flattenedSites.end(),
                                          tuple.begin(), tuple.end());
       }
+      /// Keep the public flattened site list in its configured order.
+      std::ranges::sort(operation->supportedSites, siteTupleLess);
       for (const auto& override : operationConfiguration.siteOverrides) {
         auto tuple = materializeTuple(override.sites, newSites);
-        if (!contains(operation->supportedSites, tuple)) {
+        if (!std::ranges::binary_search(operation->supportedSites, tuple,
+                                        siteTupleLess)) {
           throw std::invalid_argument(
               "operation site override is not a supported tuple");
         }
         operation->overrides.emplace_back(
-            std::move(tuple),
-            MQT_SC_QDMI_Operation_impl_d::Calibration{
-                .duration = override.duration, .fidelity = override.fidelity});
+            std::move(tuple), MQT_SC_QDMI_Operation_impl_d::Calibration{
+                                  .duration = override.duration,
+                                  .fidelity = override.fidelity,
+                              });
       }
+      std::ranges::sort(
+          operation->overrides, siteTupleLess,
+          &std::pair<std::vector<MQT_SC_QDMI_Site>,
+                     MQT_SC_QDMI_Operation_impl_d::Calibration>::first);
       newOperations.emplace_back(operation.get());
       newOperationStorage.emplace_back(std::move(operation));
     }
@@ -213,12 +226,14 @@ int MQT_SC_QDMI_Device_Session_impl_d::createDeviceJob(
   }
   auto value = std::make_unique<MQT_SC_QDMI_Device_Job_impl_d>(this);
   *job = value.get();
+  const std::scoped_lock lock(jobsMutex);
   jobs.emplace(*job, std::move(value));
   return QDMI_SUCCESS;
 }
 
 void MQT_SC_QDMI_Device_Session_impl_d::freeDeviceJob(
     MQT_SC_QDMI_Device_Job job) {
+  const std::scoped_lock lock(jobsMutex);
   jobs.erase(job);
 }
 
@@ -296,7 +311,7 @@ int MQT_SC_QDMI_Device_Session_impl_d::queryOperationProperty(
     return QDMI_ERROR_INVALIDARGUMENT;
   }
   if (suppliedSites != nullptr) {
-    for (auto* const site : std::span{suppliedSites, numSites}) {
+    for (const auto* const site : std::span{suppliedSites, numSites}) {
       if (site == nullptr || site->owner != this) {
         return QDMI_ERROR_INVALIDARGUMENT;
       }
@@ -350,14 +365,12 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
       IS_INVALID_ARGUMENT(property, QDMI_OPERATION_PROPERTY)) {
     return QDMI_ERROR_INVALIDARGUMENT;
   }
-  std::vector<MQT_SC_QDMI_Site> tuple;
+  const std::span tuple{sites, numSites};
   if (sites != nullptr) {
     if (numSites != numQubits) {
       return QDMI_ERROR_INVALIDARGUMENT;
     }
-    const std::span suppliedSites{sites, numSites};
-    tuple.assign(suppliedSites.begin(), suppliedSites.end());
-    if (!contains(supportedSites, tuple)) {
+    if (!std::ranges::binary_search(supportedSites, tuple, siteTupleLess)) {
       return QDMI_ERROR_NOTSUPPORTED;
     }
   }
@@ -374,14 +387,16 @@ int MQT_SC_QDMI_Operation_impl_d::queryProperty(
                     flattenedSites, property, size, value, sizeRet)
   const auto calibration = [&]() -> Calibration {
     if (!tuple.empty()) {
-      if (const auto found = std::ranges::find(
-              overrides, tuple,
+      if (const auto found = std::ranges::lower_bound(
+              overrides, tuple, siteTupleLess,
               &std::pair<std::vector<MQT_SC_QDMI_Site>, Calibration>::first);
-          found != overrides.end()) {
-        return {.duration = found->second.duration ? found->second.duration
-                                                   : defaults.duration,
-                .fidelity = found->second.fidelity ? found->second.fidelity
-                                                   : defaults.fidelity};
+          found != overrides.end() && std::ranges::equal(found->first, tuple)) {
+        return {
+            .duration = found->second.duration ? found->second.duration
+                                               : defaults.duration,
+            .fidelity = found->second.fidelity ? found->second.fidelity
+                                               : defaults.fidelity,
+        };
       }
     }
     return defaults;
@@ -482,8 +497,7 @@ int MQT_SC_QDMI_device_session_create_device_job(
 }
 int MQT_SC_QDMI_device_session_retrieve_device_job_by_id(
     [[maybe_unused]] MQT_SC_QDMI_Device_Session session,
-    [[maybe_unused]] const char* jobId,
-    [[maybe_unused]] MQT_SC_QDMI_Device_Job* job) {
+    [[maybe_unused]] const char* jobId, MQT_SC_QDMI_Device_Job* /*job*/) {
   return QDMI_ERROR_NOTSUPPORTED;
 }
 void MQT_SC_QDMI_device_job_free(MQT_SC_QDMI_Device_Job job) {

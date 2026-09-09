@@ -23,6 +23,7 @@ add_mlir_library(
   TranslateQASM3ToQC.cpp
   TranslateQCToOpenQASM3.cpp
   LINK_LIBS
+  MLIRAnalysis
   MLIRArithDialect
   MLIRCBitDialect
   MLIRFuncDialect

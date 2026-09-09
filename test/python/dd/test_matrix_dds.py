@@ -171,6 +171,15 @@ def test_controlled_two_qubit_gate() -> None:
                     assert arr.shape == (2**i, 2**i)
 
 
+def test_rejects_conflicting_controls() -> None:
+    """Reject opposite polarities on the same physical control qubit."""
+    package = DDPackage(2)
+    matrix = np.array([[0, 1], [1, 0]], dtype=np.complex128)
+    controls = {Control(0, Control.Type.Pos), Control(0, Control.Type.Neg)}
+    with pytest.raises(RuntimeError, match="duplicate"):
+        package.multi_controlled_single_qubit_gate(matrix, controls, 1)
+
+
 def test_from_matrix() -> None:
     """Test constructing a DD from a random unitary matrix."""
     p = DDPackage(3)
@@ -182,6 +191,33 @@ def test_from_matrix() -> None:
             dd = p.from_matrix(mat)
             mat2 = dd.get_matrix(i)
             assert np.allclose(mat, mat2)
+
+
+def test_from_strided_matrix() -> None:
+    """Read matrix views without losing offsets, negative strides, or broadcasts."""
+    package = DDPackage(3)
+    values = np.arange(256, dtype=np.float64).reshape(16, 16)
+    matrix = values + 1j * (values + 1)
+    for view in (
+        matrix[1::2, ::2],
+        matrix[:8, :8].T,
+        matrix[7::-1, 7::-1],
+        np.broadcast_to(matrix[0, :8], (8, 8)),
+    ):
+        assert np.allclose(package.from_matrix(view).get_matrix(3), view)
+
+
+def test_from_matrix_dimensions() -> None:
+    """Validate shape and capacity before reading matrix entries."""
+    package = DDPackage(1)
+    assert np.array_equal(package.from_matrix(np.empty((0, 0), dtype=np.complex128)).get_matrix(0), [[1]])
+    scalar = np.array([[0.25 + 0.5j]])
+    assert np.allclose(package.from_matrix(scalar).get_matrix(0), scalar)
+    for shape in ((2, 3), (3, 3)):
+        with pytest.raises(ValueError, match=r"square|power of two"):
+            package.from_matrix(np.zeros(shape, dtype=np.complex128))
+    with pytest.raises(RuntimeError, match="capacity"):
+        package.from_matrix(np.zeros((4, 4), dtype=np.complex128))
 
 
 @pytest.mark.parametrize("binary", [False, True])
@@ -196,3 +232,13 @@ def test_serialization(*, binary: bool) -> None:
 
         restored = MatrixDD.from_bytes(DDPackage(3), data, binary=binary)
         assert np.allclose(restored.get_matrix(num_qubits), dd.get_matrix(num_qubits))
+
+
+@pytest.mark.parametrize("decisions", ["4", "9", "/", "x"])
+def test_invalid_identity_path(decisions: str) -> None:
+    """Validate matrix digits even when all identity levels are implicit."""
+    package = DDPackage(1)
+    identity = package.identity()
+    with pytest.raises(ValueError, match="invalid digit"):
+        identity.get_entry_by_path(1, decisions)
+    assert identity.get_entry_by_path(1, "3ignored") == 1

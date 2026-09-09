@@ -35,12 +35,13 @@ using namespace mlir::oq3::test;
 namespace {
 
 TEST(OpenQASMFrontendTest, ContinuePreservesDefiniteInitialization) {
-  for (const auto* source :
-       {"OPENQASM 3.0; continue;",
-        "OPENQASM 3.0; int x; for int i in [0:1] { "
-        "continue; x = 1; } int y = x;",
-        "OPENQASM 3.0; bool c = true; int x; while (c) { c "
-        "= false; continue; x = 1; } int y = x;"}) {
+  for (const auto* source : {
+           "OPENQASM 3.0; continue;",
+           "OPENQASM 3.0; int x; for int i in [0:1] { "
+           "continue; x = 1; } int y = x;",
+           "OPENQASM 3.0; bool c = true; int x; while (c) { c "
+           "= false; continue; x = 1; } int y = x;",
+       }) {
     auto analyzed = oq3::frontend::analyzeOpenQASM(source);
     EXPECT_FALSE(analyzed);
   }
@@ -160,38 +161,64 @@ x q[i];
 TEST(OpenQASMFrontendTest, RejectsUnprovedQuantumIndices) {
   constexpr auto rejections =
       std::to_array<std::pair<llvm::StringRef, llvm::StringRef>>({
-          {"OPENQASM 3.1; qubit[4] q; for int i in [0:3] { for int j in "
-           "[0:3] { cx q[i], q[j]; } }",
-           "distinct qubits"},
-          {"OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[i + 1]; }",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[2] q; bit b = measure q[0]; int i = b; "
-           "x q[i];",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[16] q; for int i in [0:3] { x q[i * i]; }",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[i / 1]; }",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[i % 4]; }",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[4] q; for int i in [0:1] { x q[i ** 1]; }",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[2] q; for int i in [0:1] { "
-           "x q[(i + 9223372036854775807) - 9223372036854775807]; }",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[2] q; for int i in "
-           "[9223372036854775806:9223372036854775807] { "
-           "x q[i - 9223372036854775806]; }",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[4] q; for int i in [0:1] { x q[i << 1]; }",
-           "explicitly sized uint"},
-          {"OPENQASM 3.1; qubit[4] q; for int i in [3:-1:0] { x q[i]; }",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[4] q; int i = 4; if (i < 4) { x q[i]; }",
-           "cannot prove that qubit index is in bounds"},
-          {"OPENQASM 3.1; qubit[2] q; int i = 0; bit repeat = measure "
-           "q[0]; while (repeat) { x q[i]; i = 1; repeat = measure q[0]; }",
-           "cannot prove that qubit index is in bounds"},
+          {
+              "OPENQASM 3.1; qubit[4] q; for int i in [0:3] { for int j in "
+              "[0:3] { cx q[i], q[j]; } }",
+              "distinct qubits",
+          },
+          {
+              "OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[i + 1]; }",
+              "cannot prove that qubit index is in bounds",
+          },
+          {
+              "OPENQASM 3.1; qubit[2] q; bit b = measure q[0]; int i = b; "
+              "x q[i];",
+              "cannot prove that qubit index is in bounds",
+          },
+          {
+              "OPENQASM 3.1; qubit[16] q; for int i in [0:3] { x q[i * i]; }",
+              "cannot prove that qubit index is in bounds",
+          },
+          {
+              "OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[i / 1]; }",
+              "cannot prove that qubit index is in bounds",
+          },
+          {
+              "OPENQASM 3.1; qubit[4] q; for int i in [0:3] { x q[i % 4]; }",
+              "cannot prove that qubit index is in bounds",
+          },
+          {
+              "OPENQASM 3.1; qubit[4] q; for int i in [0:1] { x q[i ** 1]; }",
+              "cannot prove that qubit index is in bounds",
+          },
+          {
+              "OPENQASM 3.1; qubit[2] q; for int i in [0:1] { "
+              "x q[(i + 9223372036854775807) - 9223372036854775807]; }",
+              "cannot prove that qubit index is in bounds",
+          },
+          {
+              "OPENQASM 3.1; qubit[2] q; for int i in "
+              "[9223372036854775806:9223372036854775807] { "
+              "x q[i - 9223372036854775806]; }",
+              "cannot prove that qubit index is in bounds",
+          },
+          {
+              "OPENQASM 3.1; qubit[4] q; for int i in [0:1] { x q[i << 1]; }",
+              "explicitly sized uint",
+          },
+          {
+              "OPENQASM 3.1; qubit[4] q; for int i in [3:-1:0] { x q[i]; }",
+              "cannot prove that qubit index is in bounds",
+          },
+          {
+              "OPENQASM 3.1; qubit[4] q; int i = 4; if (i < 4) { x q[i]; }",
+              "cannot prove that qubit index is in bounds",
+          },
+          {
+              "OPENQASM 3.1; qubit[2] q; int i = 0; bit repeat = measure "
+              "q[0]; while (repeat) { x q[i]; i = 1; repeat = measure q[0]; }",
+              "cannot prove that qubit index is in bounds",
+          },
       });
 
   for (const auto& [source, diagnostic] : rejections) {
@@ -261,8 +288,7 @@ cu3(0.1, 0.2, 0.3) q[0], q[1];
 )qasm";
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(source));
 
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   auto analyzed = oq3::frontend::analyzeOpenQASM(source, strict);
   ASSERT_FALSE(analyzed);
   ASSERT_FALSE(analyzed.diagnostics.empty());
@@ -271,8 +297,7 @@ cu3(0.1, 0.2, 0.3) q[0], q[1];
 }
 
 TEST(OpenQASMFrontendTest, PreservesStandardLibraryIdentity) {
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
 
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(R"qasm(
 OPENQASM 3.1;
@@ -315,8 +340,7 @@ swap q[0], q[1];
 }
 
 TEST(OpenQASMFrontendTest, AcceptsHybridOpenQASM2Libraries) {
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(R"qasm(
 OPENQASM 2.0;
 include "stdgates.inc";
@@ -335,8 +359,7 @@ gate x q {
 qubit q;
 x q;
 )qasm";
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(source, strict));
 }
 
@@ -383,8 +406,11 @@ TEST(OpenQASMFrontendTest, CanonicalGateNamesRoundTripThroughTheCatalog) {
 }
 
 TEST(OpenQASMFrontendTest, RestrictsMathBuiltinsOnGateAngles) {
-  for (const auto function : {llvm::StringRef{"exp"}, llvm::StringRef{"log"},
-                              llvm::StringRef{"sqrt"}}) {
+  for (const auto function : {
+           llvm::StringRef{"exp"},
+           llvm::StringRef{"log"},
+           llvm::StringRef{"sqrt"},
+       }) {
     const auto source = "OPENQASM 3.1; gate invalid(theta) q { rx(" +
                         function.str() + "(theta)) q; }";
     auto analyzed = oq3::frontend::analyzeOpenQASM(source);
@@ -462,7 +488,7 @@ TEST(OpenQASMFrontendTest, RejectsUninitializedScalarOutputs) {
             std::string::npos);
 }
 
-TEST(OpenQASMFrontendTest, RejectsRecursiveCustomGatesAfterBodyAnalysis) {
+TEST(OpenQASMFrontendTest, RejectsRecursiveCustomGates) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 gate recursive q {
@@ -537,11 +563,15 @@ mcx q[a], q[b], q[c], q[d];
 TEST(OpenQASMFrontendTest, RejectsMutableGlobalCapturesInGateBodies) {
   constexpr auto fixtures =
       std::to_array<std::pair<llvm::StringLiteral, llvm::StringLiteral>>({
-          {"mutable-capture",
-           "OPENQASM 3.1; float theta = 0.5; gate g q { rx(theta) q; }"},
-          {"bit-register-capture",
-           "OPENQASM 3.1; bit[2] c; c[0] = true; c[1] = false; "
-           "gate g q { rz(uint[2](c)) q; }"},
+          {
+              "mutable-capture",
+              "OPENQASM 3.1; float theta = 0.5; gate g q { rx(theta) q; }",
+          },
+          {
+              "bit-register-capture",
+              "OPENQASM 3.1; bit[2] c; c[0] = true; c[1] = false; "
+              "gate g q { rz(uint[2](c)) q; }",
+          },
           {"declaration", "OPENQASM 3.1; gate g q { int i = 0; }"},
           {"measurement", "OPENQASM 3.1; bit c; gate g q { measure q -> c; }"},
           {"reset", "OPENQASM 3.1; gate g q { reset q; }"},
@@ -594,7 +624,23 @@ source[0] = false;
 source[1] = true;
 bit[3] target;
 target = rotr(source, 1);
-)qasm"};
+)qasm",
+      R"qasm(OPENQASM 3.1;
+qubit q;
+bit[2] value = 1;
+if (popcount(value)) { x q; }
+)qasm",
+      R"qasm(OPENQASM 3.1;
+qubit q;
+bit[2] value = 1;
+if (rotl(value, 1)) { x q; }
+)qasm",
+      R"qasm(OPENQASM 3.1;
+qubit q;
+bit[2] value = 1;
+if (rotr(value, 1)) { x q; }
+)qasm",
+  };
   for (const auto source : invalidSources) {
     auto analyzed = oq3::frontend::analyzeOpenQASM(source);
     EXPECT_FALSE(analyzed) << source.str();
@@ -606,7 +652,7 @@ target = rotr(source, 1);
       "OPENQASM 3.1; bit[2] value; uint n = popcount(value, 1);"));
 }
 
-TEST(OpenQASMFrontendTest, InvalidatesPopcountIndexFactsOnBitMutation) {
+TEST(OpenQASMFrontendTest, RequiresFullInitializationForPopcountIndices) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 bit[2] source;
@@ -640,10 +686,11 @@ output bit out;
 out = true;
 )qasm";
   auto preserved = oq3::frontend::analyzeOpenQASM(noMutation);
-  EXPECT_TRUE(preserved) << preserved.diagnostics.front().message;
+  EXPECT_FALSE(preserved);
 }
 
-TEST(OpenQASMFrontendTest, InvalidatesBitRegisterCastIndexFactsOnBitMutation) {
+TEST(OpenQASMFrontendTest,
+     RequiresFullInitializationForBitRegisterCastIndices) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 bit[2] source;
@@ -677,7 +724,7 @@ output bit out;
 out = true;
 )qasm";
   auto preserved = oq3::frontend::analyzeOpenQASM(noMutation);
-  EXPECT_TRUE(preserved) << preserved.diagnostics.front().message;
+  EXPECT_FALSE(preserved);
 }
 
 TEST(OpenQASMFrontendTest, RejectsBoolMeasurementTargetsInAllSourceModes) {
@@ -714,7 +761,7 @@ TEST(OpenQASMFrontendTest, RejectsBoolMeasurementTargetsInAllSourceModes) {
   EXPECT_EQ(located.diagnostics.front().location.column, 1);
 }
 
-TEST(OpenQASMFrontendTest, InvalidatesDynamicBitFactsOnIndexChanges) {
+TEST(OpenQASMFrontendTest, RejectsDynamicReadsOfPartiallyInitializedRegisters) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 qubit[2] q;
@@ -766,7 +813,7 @@ TEST(OpenQASMFrontendTest, BoundsExpressionAndBlockDepth) {
   for (size_t index = 0; index < 256; ++index) {
     flatExpression += " + 1";
   }
-  flatExpression += ";";
+  flatExpression += ';';
   auto flat = oq3::frontend::analyzeOpenQASM(flatExpression);
   ASSERT_FALSE(flat);
   ASSERT_FALSE(flat.diagnostics.empty());
@@ -775,9 +822,9 @@ TEST(OpenQASMFrontendTest, BoundsExpressionAndBlockDepth) {
 
   std::string nestedExpression = "OPENQASM 3.1; int value = ";
   nestedExpression.append(257, '(');
-  nestedExpression += "1";
+  nestedExpression += '1';
   nestedExpression.append(257, ')');
-  nestedExpression += ";";
+  nestedExpression += ';';
   auto nested = oq3::frontend::parseOpenQASM(nestedExpression);
   ASSERT_FALSE(nested);
   ASSERT_FALSE(nested.diagnostics.empty());
@@ -797,7 +844,7 @@ TEST(OpenQASMFrontendTest, BoundsExpressionAndBlockDepth) {
             std::string::npos);
 }
 
-TEST(OpenQASMFrontendTest, BoundsModifiersAndGateDependencies) {
+TEST(OpenQASMFrontendTest, BoundsModifierDepth) {
   std::string modifiers = "OPENQASM 3.1; qubit[66] q;";
   for (size_t depth = 0; depth < 65; ++depth) {
     modifiers += "ctrl @ ";
@@ -807,17 +854,6 @@ TEST(OpenQASMFrontendTest, BoundsModifiersAndGateDependencies) {
   ASSERT_FALSE(parsed);
   ASSERT_FALSE(parsed.diagnostics.empty());
   EXPECT_NE(parsed.diagnostics.front().message.find("modifier depth"),
-            std::string::npos);
-
-  std::string gates = "OPENQASM 3.1; gate g0 q { U(0, 0, 0) q; }\n";
-  for (size_t depth = 1; depth < 65; ++depth) {
-    gates += "gate g" + std::to_string(depth) + " q { g" +
-             std::to_string(depth - 1) + " q; }\n";
-  }
-  auto analyzed = oq3::frontend::analyzeOpenQASM(gates);
-  ASSERT_FALSE(analyzed);
-  ASSERT_FALSE(analyzed.diagnostics.empty());
-  EXPECT_NE(analyzed.diagnostics.front().message.find("dependency depth"),
             std::string::npos);
 }
 
@@ -836,7 +872,7 @@ TEST(OpenQASMFrontendTest, RejectsShadowingBuiltInConstants) {
   }
 }
 
-TEST(OpenQASMFrontendTest, PropagatesDynamicBitFactsThroughKnownControlFlow) {
+TEST(OpenQASMFrontendTest, DynamicWritesDoNotProveWholeRegisterInitialization) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 qubit[2] q;
@@ -848,14 +884,16 @@ output bit result;
 result = measure q[0];
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
-  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  ASSERT_FALSE(analyzed);
+  EXPECT_NE(analyzed.diagnostics.front().message.find("uninitialized bit"),
+            std::string::npos);
 }
 
 TEST(OpenQASMFrontendTest, SelectsKnownBranchStateForWideRegisters) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.1;
 qubit q;
-bit[99998] c;
+bit[99998] c = 0;
 int i = 99997;
 int selected;
 if (true) {
@@ -896,8 +934,7 @@ if (true) {
 }
 
 TEST(OpenQASMFrontendTest, ActivatesStandardGatesSequentially) {
-  oq3::frontend::FrontendOptions strict;
-  strict.gatePolicy = oq3::frontend::GatePolicy::Strict;
+  const auto strict = oq3::frontend::GatePolicy::Strict;
   auto beforeInclude = oq3::frontend::analyzeOpenQASM(R"qasm(
 OPENQASM 3.1;
 qubit q;
@@ -1181,8 +1218,9 @@ if (operand >= 9.0) { x q; }
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
 
-  constexpr std::array<uint64_t, 8> expectedParameters{13, 5, 36, 2,
-                                                       1,  1, 81, 81};
+  constexpr std::array<uint64_t, 8> expectedParameters{
+      13, 5, 36, 2, 1, 1, 81, 81,
+  };
   size_t parameterIndex = 0;
   size_t trueConditions = 0;
   for (const auto statement : analyzed.program->body) {
@@ -1248,20 +1286,32 @@ TEST(OpenQASMFrontendTest, RejectsInvalidConstInitializerPromotions) {
     llvm::StringRef diagnostic;
   };
   constexpr auto promotions = std::to_array<InvalidPromotion>({
-      {.source = "OPENQASM 3.1; const bool value = 1;",
-       .diagnostic = "'int' cannot"},
-      {.source = "OPENQASM 3.1; const bool value = 1.0;",
-       .diagnostic = "'float' cannot"},
-      {.source = "OPENQASM 3.1; const int value = 1.0;",
-       .diagnostic = "'float' cannot"},
-      {.source = "OPENQASM 3.1; const uint value = 1.0;",
-       .diagnostic = "'float' cannot"},
-      {.source = "OPENQASM 3.1; const uint value = -1;",
-       .diagnostic = "'int' cannot"},
-      {.source =
-           "OPENQASM 3.1; const uint source = 9223372036854775808; const int "
-           "value = source;",
-       .diagnostic = "'uint' cannot"},
+      {
+          .source = "OPENQASM 3.1; const bool value = 1;",
+          .diagnostic = "'int' cannot",
+      },
+      {
+          .source = "OPENQASM 3.1; const bool value = 1.0;",
+          .diagnostic = "'float' cannot",
+      },
+      {
+          .source = "OPENQASM 3.1; const int value = 1.0;",
+          .diagnostic = "'float' cannot",
+      },
+      {
+          .source = "OPENQASM 3.1; const uint value = 1.0;",
+          .diagnostic = "'float' cannot",
+      },
+      {
+          .source = "OPENQASM 3.1; const uint value = -1;",
+          .diagnostic = "'int' cannot",
+      },
+      {
+          .source = "OPENQASM 3.1; const uint source = 9223372036854775808; "
+                    "const int "
+                    "value = source;",
+          .diagnostic = "'uint' cannot",
+      },
   });
 
   for (const auto& promotion : promotions) {
@@ -1321,110 +1371,200 @@ TEST(OpenQASMFrontendTest, RejectsInvalidProgramsAcrossSemanticFamilies) {
     llvm::StringRef source;
   };
   const auto fixtures = std::to_array<InvalidSource>({
-      {.name = "duplicate-scalar",
-       .source = "OPENQASM 3.1; int value; int value;"},
+      {
+          .name = "duplicate-scalar",
+          .source = "OPENQASM 3.1; int value; int value;",
+      },
       {.name = "unknown-assignment", .source = "OPENQASM 3.1; value = 1;"},
-      {.name = "const-assignment",
-       .source = "OPENQASM 3.1; const int value = 1; value = 2;"},
-      {.name = "negated-signed-minimum",
-       .source =
-           "OPENQASM 3.1; const int minimum = -9223372036854775808; const int "
-           "value = -minimum;"},
-      {.name = "negation-overflow",
-       .source = "OPENQASM 3.1; const int value = -9223372036854775809;"},
-      {.name = "constant-bool-arithmetic",
-       .source = "OPENQASM 3.1; const bool value = true + false;"},
-      {.name = "mixed-bool-comparison",
-       .source = "OPENQASM 3.1; const bool value = 1 < true;"},
-      {.name = "non-finite-constant-math",
-       .source = "OPENQASM 3.1; const float value = sqrt(-1.0);"},
-      {.name = "float-division-by-zero",
-       .source = "OPENQASM 3.1; const float value = 1.0 / 0.0;"},
-      {.name = "float-modulo-by-zero",
-       .source = "OPENQASM 3.1; const float value = 1.0 % 0.0;"},
-      {.name = "float-percent",
-       .source = "OPENQASM 3.1; const float value = 5.0 % 2.0;"},
-      {.name = "integer-division-by-zero",
-       .source = "OPENQASM 3.1; const int value = 1 / 0;"},
-      {.name = "integer-division-overflow",
-       .source = "OPENQASM 3.1; const int value = -9223372036854775808 / -1;"},
-      {.name = "integer-modulo-by-zero",
-       .source = "OPENQASM 3.1; const int value = 1 % 0;"},
-      {.name = "integer-modulo-overflow",
-       .source = "OPENQASM 3.1; const int value = -9223372036854775808 % -1;"},
-      {.name = "negative-integer-power",
-       .source = "OPENQASM 3.1; const int value = 2 ** -1;"},
-      {.name = "integer-add-overflow",
-       .source = "OPENQASM 3.1; const int value = 9223372036854775807 + 1;"},
-      {.name = "integer-subtract-overflow",
-       .source = "OPENQASM 3.1; const int value = -9223372036854775808 - 1;"},
-      {.name = "integer-multiply-overflow",
-       .source = "OPENQASM 3.1; const int value = 9223372036854775807 * 2;"},
-      {.name = "bool-ordering",
-       .source =
-           "OPENQASM 3.1; bool left = true; bool right = false; if (left < "
-           "right) {}"},
+      {
+          .name = "const-assignment",
+          .source = "OPENQASM 3.1; const int value = 1; value = 2;",
+      },
+      {
+          .name = "negated-signed-minimum",
+          .source = "OPENQASM 3.1; const int minimum = -9223372036854775808; "
+                    "const int "
+                    "value = -minimum;",
+      },
+      {
+          .name = "negation-overflow",
+          .source = "OPENQASM 3.1; const int value = -9223372036854775809;",
+      },
+      {
+          .name = "constant-bool-arithmetic",
+          .source = "OPENQASM 3.1; const bool value = true + false;",
+      },
+      {
+          .name = "mixed-bool-comparison",
+          .source = "OPENQASM 3.1; const bool value = 1 < true;",
+      },
+      {
+          .name = "non-finite-constant-math",
+          .source = "OPENQASM 3.1; const float value = sqrt(-1.0);",
+      },
+      {
+          .name = "float-division-by-zero",
+          .source = "OPENQASM 3.1; const float value = 1.0 / 0.0;",
+      },
+      {
+          .name = "float-modulo-by-zero",
+          .source = "OPENQASM 3.1; const float value = 1.0 % 0.0;",
+      },
+      {
+          .name = "float-percent",
+          .source = "OPENQASM 3.1; const float value = 5.0 % 2.0;",
+      },
+      {
+          .name = "integer-division-by-zero",
+          .source = "OPENQASM 3.1; const int value = 1 / 0;",
+      },
+      {
+          .name = "integer-division-overflow",
+          .source =
+              "OPENQASM 3.1; const int value = -9223372036854775808 / -1;",
+      },
+      {
+          .name = "integer-modulo-by-zero",
+          .source = "OPENQASM 3.1; const int value = 1 % 0;",
+      },
+      {
+          .name = "integer-modulo-overflow",
+          .source =
+              "OPENQASM 3.1; const int value = -9223372036854775808 % -1;",
+      },
+      {
+          .name = "negative-integer-power",
+          .source = "OPENQASM 3.1; const int value = 2 ** -1;",
+      },
+      {
+          .name = "integer-add-overflow",
+          .source = "OPENQASM 3.1; const int value = 9223372036854775807 + 1;",
+      },
+      {
+          .name = "integer-subtract-overflow",
+          .source = "OPENQASM 3.1; const int value = -9223372036854775808 - 1;",
+      },
+      {
+          .name = "integer-multiply-overflow",
+          .source = "OPENQASM 3.1; const int value = 9223372036854775807 * 2;",
+      },
+      {
+          .name = "bool-ordering",
+          .source =
+              "OPENQASM 3.1; bool left = true; bool right = false; if (left < "
+              "right) {}",
+      },
       {.name = "zero-register", .source = "OPENQASM 3.1; qubit[0] q;"},
       {.name = "negative-register", .source = "OPENQASM 3.1; qubit[-1] q;"},
-      {.name = "dynamic-register-size",
-       .source = "OPENQASM 3.1; int size = 2; qubit[size] q;"},
+      {
+          .name = "dynamic-register-size",
+          .source = "OPENQASM 3.1; int size = 2; qubit[size] q;",
+      },
       {.name = "float-register-size", .source = "OPENQASM 3.1; qubit[1.5] q;"},
-      {.name = "out-of-bounds-qubit",
-       .source = "OPENQASM 3.1; qubit[2] q; x q[2];"},
-      {.name = "float-qubit-index",
-       .source = "OPENQASM 3.1; qubit[2] q; x q[1.0];"},
-      {.name = "measurement-width",
-       .source = "OPENQASM 3.1; qubit[2] q; bit[3] c; c = measure q;"},
+      {
+          .name = "out-of-bounds-qubit",
+          .source = "OPENQASM 3.1; qubit[2] q; x q[2];",
+      },
+      {
+          .name = "float-qubit-index",
+          .source = "OPENQASM 3.1; qubit[2] q; x q[1.0];",
+      },
+      {
+          .name = "measurement-width",
+          .source = "OPENQASM 3.1; qubit[2] q; bit[3] c; c = measure q;",
+      },
       {.name = "unknown-reset", .source = "OPENQASM 3.1; reset missing;"},
       {.name = "unknown-barrier", .source = "OPENQASM 3.1; barrier missing;"},
-      {.name = "duplicate-gate-parameter",
-       .source = "OPENQASM 3.1; gate custom(a, a) q { U(a, 0, 0) q; }"},
-      {.name = "duplicate-gate-qubit",
-       .source = "OPENQASM 3.1; gate custom q, q { cx q, q; }"},
-      {.name = "duplicate-custom-gate",
-       .source = "OPENQASM 3.1; gate custom q {} gate custom q {}"},
-      {.name = "custom-gate-conflicts-with-catalog",
-       .source = "OPENQASM 3.1; gate x q {}"},
-      {.name = "wrong-gate-parameter-count",
-       .source = "OPENQASM 3.1; qubit q; rx(1, 2) q;"},
-      {.name = "wrong-gate-qubit-count",
-       .source = "OPENQASM 3.1; qubit q; cx q;"},
-      {.name = "negative-control-count",
-       .source = "OPENQASM 3.1; qubit[2] q; ctrl(-1) @ x q[0], q[1];"},
-      {.name = "dynamic-control-count",
-       .source =
-           "OPENQASM 3.1; int n = 1; qubit[2] q; ctrl(n) @ x q[0], q[1];"},
-      {.name = "non-integer-range",
-       .source = "OPENQASM 3.1; for int i in [0.0:1.0] {}"},
-      {.name = "non-bool-condition",
-       .source = "OPENQASM 3.1; int value = 1; if (value) {}"},
-      {.name = "bool-compound-assignment",
-       .source = "OPENQASM 3.1; bool value = true; value += false;"},
-      {.name = "uninitialized-scalar",
-       .source = "OPENQASM 3.1; int x; int y = x + 1;"},
+      {
+          .name = "duplicate-gate-parameter",
+          .source = "OPENQASM 3.1; gate custom(a, a) q { U(a, 0, 0) q; }",
+      },
+      {
+          .name = "duplicate-gate-qubit",
+          .source = "OPENQASM 3.1; gate custom q, q { cx q, q; }",
+      },
+      {
+          .name = "duplicate-custom-gate",
+          .source = "OPENQASM 3.1; gate custom q {} gate custom q {}",
+      },
+      {
+          .name = "custom-gate-conflicts-with-catalog",
+          .source = "OPENQASM 3.1; gate x q {}",
+      },
+      {
+          .name = "wrong-gate-parameter-count",
+          .source = "OPENQASM 3.1; qubit q; rx(1, 2) q;",
+      },
+      {
+          .name = "wrong-gate-qubit-count",
+          .source = "OPENQASM 3.1; qubit q; cx q;",
+      },
+      {
+          .name = "negative-control-count",
+          .source = "OPENQASM 3.1; qubit[2] q; ctrl(-1) @ x q[0], q[1];",
+      },
+      {
+          .name = "dynamic-control-count",
+          .source =
+              "OPENQASM 3.1; int n = 1; qubit[2] q; ctrl(n) @ x q[0], q[1];",
+      },
+      {
+          .name = "non-integer-range",
+          .source = "OPENQASM 3.1; for int i in [0.0:1.0] {}",
+      },
+      {
+          .name = "non-bool-condition",
+          .source = "OPENQASM 3.1; int value = 1; if (value) {}",
+      },
+      {
+          .name = "bool-compound-assignment",
+          .source = "OPENQASM 3.1; bool value = true; value += false;",
+      },
+      {
+          .name = "uninitialized-scalar",
+          .source = "OPENQASM 3.1; int x; int y = x + 1;",
+      },
       {.name = "self-initialization", .source = "OPENQASM 3.1; int x = x + 1;"},
-      {.name = "uninitialized-condition",
-       .source = "OPENQASM 3.1; bool ready; if (ready) {}"},
-      {.name = "partially-initialized-branch",
-       .source =
-           "OPENQASM 3.1; qubit q; bit choose = measure q; int x; if (choose) "
-           "{ x = 1; } int y = x;"},
-      {.name = "forward-gate-call",
-       .source = "OPENQASM 3.1; qubit q; later q; gate later a { x a; }"},
-      {.name = "forward-gate-in-definition",
-       .source =
-           "OPENQASM 3.1; gate first q { second q; } gate second q { x q; }"},
-      {.name = "hardware-qubit-in-gate",
-       .source = "OPENQASM 3.1; gate invalid q { x $0; }"},
-      {.name = "negative-index-out-of-bounds",
-       .source = "OPENQASM 3.1; qubit[2] q; x q[-3];"},
-      {.name = "bool-gate-parameter",
-       .source = "OPENQASM 3.1; bool value = true; qubit q; rx(value) q;"},
-      {.name = "local-qubit",
-       .source = "OPENQASM 3.1; bool value = true; if (value) { qubit q; }"},
-      {.name = "local-output",
-       .source =
-           "OPENQASM 3.1; bool value = true; if (value) { output bit c; }"},
+      {
+          .name = "uninitialized-condition",
+          .source = "OPENQASM 3.1; bool ready; if (ready) {}",
+      },
+      {
+          .name = "partially-initialized-branch",
+          .source = "OPENQASM 3.1; qubit q; bit choose = measure q; int x; if "
+                    "(choose) "
+                    "{ x = 1; } int y = x;",
+      },
+      {
+          .name = "forward-gate-call",
+          .source = "OPENQASM 3.1; qubit q; later q; gate later a { x a; }",
+      },
+      {
+          .name = "forward-gate-in-definition",
+          .source =
+              "OPENQASM 3.1; gate first q { second q; } gate second q { x q; }",
+      },
+      {
+          .name = "hardware-qubit-in-gate",
+          .source = "OPENQASM 3.1; gate invalid q { x $0; }",
+      },
+      {
+          .name = "negative-index-out-of-bounds",
+          .source = "OPENQASM 3.1; qubit[2] q; x q[-3];",
+      },
+      {
+          .name = "bool-gate-parameter",
+          .source = "OPENQASM 3.1; bool value = true; qubit q; rx(value) q;",
+      },
+      {
+          .name = "local-qubit",
+          .source = "OPENQASM 3.1; bool value = true; if (value) { qubit q; }",
+      },
+      {
+          .name = "local-output",
+          .source =
+              "OPENQASM 3.1; bool value = true; if (value) { output bit c; }",
+      },
   });
 
   for (const auto& fixture : fixtures) {
@@ -1653,8 +1793,8 @@ r(0.5, 0.25) q;
   EXPECT_TRUE(llvm::none_of(compatible.program->gates,
                             [](const auto& gate) { return gate.name == "r"; }));
 
-  auto strict = oq3::frontend::analyzeOpenQASM(
-      source, {.gatePolicy = oq3::frontend::GatePolicy::Strict});
+  auto strict =
+      oq3::frontend::analyzeOpenQASM(source, oq3::frontend::GatePolicy::Strict);
   ASSERT_TRUE(strict) << strict.diagnostics.front().message;
   EXPECT_TRUE(llvm::any_of(strict.program->gates,
                            [](const auto& gate) { return gate.name == "r"; }));
@@ -1706,10 +1846,11 @@ if(c==1180591620717411303433) x q[0];
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
-    return c.kind == oq3::frontend::ConditionKind::RegisterComparison &&
-           c.expected[70];
-  }));
+  EXPECT_TRUE(
+      llvm::any_of(analyzed.program->bitVectorExpressions, [](const auto& c) {
+        return c.kind == oq3::frontend::BitVectorExpressionKind::Constant &&
+               c.width == 80 && c.constant[70];
+      }));
 }
 
 TEST(OpenQASMFrontendTest, PromotesNarrowUnsignedBitRegisterCastToInt) {
@@ -1739,16 +1880,22 @@ TEST(OpenQASMFrontendTest, RejectsUnsupportedBitRegisterExpressionOperands) {
     llvm::StringRef diagnostic;
   };
   constexpr auto invalidExpressions = std::to_array<InvalidExpression>({
-      {.source = "OPENQASM 3.1; qubit[3] q; bit[3] value = measure q; "
-                 "if ((value ^ 8) == 0) {}",
-       .diagnostic = "fit the operand width"},
-      {.source = "OPENQASM 3.1; qubit[3] q; bit[3] value = measure q; "
-                 "int distance = 1; "
-                 "if ((value << distance) == 0) {}",
-       .diagnostic = "must have unsigned integer type"},
-      {.source = "OPENQASM 3.1; qubit[3] q; bit[3] value = measure q; "
-                 "if ((value >> -1) == 0) {}",
-       .diagnostic = "must be nonnegative"},
+      {
+          .source = "OPENQASM 3.1; qubit[3] q; bit[3] value = measure q; "
+                    "if ((value ^ 8) == 0) {}",
+          .diagnostic = "fit the operand width",
+      },
+      {
+          .source = "OPENQASM 3.1; qubit[3] q; bit[3] value = measure q; "
+                    "int distance = 1; "
+                    "if ((value << distance) == 0) {}",
+          .diagnostic = "must have unsigned integer type",
+      },
+      {
+          .source = "OPENQASM 3.1; qubit[3] q; bit[3] value = measure q; "
+                    "if ((value >> -1) == 0) {}",
+          .diagnostic = "must be nonnegative",
+      },
   });
 
   for (const auto& invalid : invalidExpressions) {
@@ -1768,24 +1915,36 @@ TEST(OpenQASMFrontendTest, RejectsInvalidSizedBitRegisterCasts) {
     llvm::StringRef diagnostic;
   };
   constexpr auto invalidCasts = std::to_array<InvalidCast>({
-      {.source = "OPENQASM 3.1; qubit[2] q; bit[2] value = measure q; "
-                 "uint result = uint[3](value);",
-       .diagnostic = "must match the bit-register width"},
-      {.source = "OPENQASM 3.1; qubit[65] q; bit[65] value = measure q; "
-                 "uint result = uint[65](value);",
-       .diagnostic = "supports widths from 1 through 64"},
-      {.source = "OPENQASM 3.1; bit[2] value; "
-                 "uint result = uint[2](value);",
-       .diagnostic = "has not been initialized"},
-      {.source = "OPENQASM 3.1; bit[2] value; "
-                 "uint result = uint(value);",
-       .diagnostic = "has not been initialized"},
-      {.source = "OPENQASM 3.1; uint width = 2; bit[2] value; "
-                 "uint result = uint[width](value);",
-       .diagnostic = "must be a constant integer expression"},
-      {.source = "OPENQASM 3.1; bit[2] value; "
-                 "uint result = uint[true](value);",
-       .diagnostic = "must be an integer expression"},
+      {
+          .source = "OPENQASM 3.1; qubit[2] q; bit[2] value = measure q; "
+                    "uint result = uint[3](value);",
+          .diagnostic = "must match the bit-register width",
+      },
+      {
+          .source = "OPENQASM 3.1; qubit[65] q; bit[65] value = measure q; "
+                    "uint result = uint[65](value);",
+          .diagnostic = "supports widths from 1 through 64",
+      },
+      {
+          .source = "OPENQASM 3.1; bit[2] value; "
+                    "uint result = uint[2](value);",
+          .diagnostic = "has not been initialized",
+      },
+      {
+          .source = "OPENQASM 3.1; bit[2] value; "
+                    "uint result = uint(value);",
+          .diagnostic = "has not been initialized",
+      },
+      {
+          .source = "OPENQASM 3.1; uint width = 2; bit[2] value; "
+                    "uint result = uint[width](value);",
+          .diagnostic = "must be a constant integer expression",
+      },
+      {
+          .source = "OPENQASM 3.1; bit[2] value; "
+                    "uint result = uint[true](value);",
+          .diagnostic = "must be an integer expression",
+      },
   });
 
   for (const auto& invalid : invalidCasts) {
@@ -1812,10 +1971,11 @@ if(c==1_180_591_620_717_411_303_433) x q[0];
 )qasm";
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
-    return c.kind == oq3::frontend::ConditionKind::RegisterComparison &&
-           c.expected[70];
-  }));
+  EXPECT_TRUE(
+      llvm::any_of(analyzed.program->bitVectorExpressions, [](const auto& c) {
+        return c.kind == oq3::frontend::BitVectorExpressionKind::Constant &&
+               c.width == 80 && c.constant[70];
+      }));
 }
 
 TEST(OpenQASMFrontendTest,
@@ -1857,10 +2017,11 @@ if(c==1) x q[0];
   auto analyzed = oq3::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   /// Truncating to 64 bits would omit the leading zero bits.
-  EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& c) {
-    return c.kind == oq3::frontend::ConditionKind::RegisterComparison &&
-           c.expected.getBitWidth() == 80U && c.expected == 1U;
-  }));
+  EXPECT_TRUE(
+      llvm::any_of(analyzed.program->bitVectorExpressions, [](const auto& c) {
+        return c.kind == oq3::frontend::BitVectorExpressionKind::Constant &&
+               c.constant.getBitWidth() == 80U && c.constant == 1U;
+      }));
 }
 
 TEST(OpenQASMFrontendTest, RejectsNegativeOpenQASM2RegisterCondition) {
@@ -1909,6 +2070,39 @@ TEST(OpenQASMFrontendTest,
               std::string::npos)
         << analyzed.diagnostics.front().message;
   }
+}
+
+TEST(OpenQASMFrontendTest, BoundsAffineProofWorkAcrossAssignments) {
+  std::string source = "OPENQASM 3.1; int a = 1;";
+  for (size_t i = 0; i < 60; ++i) {
+    source += "a = a + a;";
+  }
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, DeduplicatesLargeStaticControlledGateOperands) {
+  constexpr size_t width = 16000;
+  std::string source = "OPENQASM 3.1; qubit[" + std::to_string(width) +
+                       "] q; ctrl(" + std::to_string(width - 1) + ") @ x ";
+  for (size_t i = 0; i < width; ++i) {
+    source += "q[" + std::to_string(i) + "]" + (i + 1 == width ? ";" : ",");
+  }
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(source));
+  source.replace(source.rfind("q["), std::string::npos, "q[0];");
+  EXPECT_FALSE(oq3::frontend::analyzeOpenQASM(source));
+}
+
+TEST(OpenQASMFrontendTest, AcceptsExactWidthBitStringsAndFloatCasts) {
+  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+      "OPENQASM 3.1; bit[5] b = \"10_001\"; float f = float(int[64](1));"));
+  EXPECT_FALSE(
+      oq3::frontend::analyzeOpenQASM("OPENQASM 3.1; bit[4] b = \"10_001\";"));
+  EXPECT_FALSE(
+      oq3::frontend::analyzeOpenQASM("OPENQASM 3.1; bit[3] b = \"102\";"));
+  EXPECT_FALSE(oq3::frontend::analyzeOpenQASM("OPENQASM 3.1; bit b = \"_\";"));
+  EXPECT_FALSE(
+      oq3::frontend::analyzeOpenQASM("OPENQASM 3.1; float f = float[32](1);"));
 }
 
 } // namespace

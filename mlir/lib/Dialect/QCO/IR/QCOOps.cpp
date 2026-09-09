@@ -15,6 +15,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h" // IWYU pragma: associated
 
 #include <llvm/ADT/STLExtras.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/OpImplementation.h>
@@ -23,6 +24,7 @@
 #include <mlir/IR/Region.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Transforms/InliningUtils.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -35,6 +37,32 @@
 
 using namespace mlir;
 using namespace mlir::qco;
+
+namespace {
+
+struct QCOInlinerInterface final : DialectInlinerInterface {
+  using DialectInlinerInterface::DialectInlinerInterface;
+
+  bool isLegalToInline(Operation* call, Operation* callable,
+                       bool /*wouldBeCloned*/) const final {
+    auto callee = dyn_cast<func::FuncOp>(callable);
+    return isa<CallOp>(call) && callee && !callee.getNoInline();
+  }
+
+  bool isLegalToInline(Region* destination, Region* source,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return destination->hasOneBlock() && source->hasOneBlock();
+  }
+
+  bool isLegalToInline(Operation* /*operation*/, Region* /*destination*/,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return true;
+  }
+};
+
+} // namespace
 
 static bool isQCOLinearType(Type type) {
   if (isa<QubitType>(type)) {
@@ -168,8 +196,10 @@ ParseResult IfOp::parse(::mlir::OpAsmParser& parser,
   }
 
   llvm::copy(
-      ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
-                         static_cast<int32_t>(numLinearResults)}),
+      ArrayRef<int32_t>({
+          static_cast<int32_t>(numClassicalResults),
+          static_cast<int32_t>(numLinearResults),
+      }),
       result.getOrAddProperties<IfOp::Properties>().resultSegmentSizes.begin());
 
   return success();
@@ -216,7 +246,7 @@ LogicalResult YieldOp::verify() {
       .Case<IfOp, IndexSwitchOp, InvOp, PowOp>([&](auto parent) {
         llvm::append_range(expectedTypes, parent.getResultTypes());
       })
-      .Case<CtrlOp>([&](CtrlOp parent) {
+      .Case([&](CtrlOp parent) {
         llvm::append_range(expectedTypes, parent.getTargetsOut().getTypes());
       })
       .Default([&](Operation*) { validParent = false; });
@@ -412,8 +442,10 @@ ParseResult IndexSwitchOp::parse(::mlir::OpAsmParser& parser,
 
   const auto numLinearResults = linearResultTypes.size();
   const auto numClassicalResults = result.types.size() - numLinearResults;
-  llvm::copy(ArrayRef<int32_t>({static_cast<int32_t>(numClassicalResults),
-                                static_cast<int32_t>(numLinearResults)}),
+  llvm::copy(ArrayRef<int32_t>({
+                 static_cast<int32_t>(numClassicalResults),
+                 static_cast<int32_t>(numLinearResults),
+             }),
              result.getOrAddProperties<IndexSwitchOp::Properties>()
                  .resultSegmentSizes.begin());
 
@@ -494,6 +526,8 @@ void QCODialect::initialize() {
 #include "mlir/Dialect/QCO/IR/QCOOps.cpp.inc"
 
       >();
+
+  addInterfaces<QCOInlinerInterface>();
 }
 
 //===----------------------------------------------------------------------===//

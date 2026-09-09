@@ -2676,12 +2676,14 @@ Value indexSwitchMultiCase(QCProgramBuilder& b) {
   }
 
   b.scfIndexSwitch(condition, SmallVector<int64_t>{1, 2, 3},
-                   SmallVector<function_ref<void()>>{[&] { b.x(reg[1]); },
-                                                     [&] { b.x(reg[0]); },
-                                                     [&] {
-                                                       b.x(reg[0]);
-                                                       b.x(reg[1]);
-                                                     }},
+                   SmallVector<function_ref<void()>>{
+                       [&] { b.x(reg[1]); },
+                       [&] { b.x(reg[0]); },
+                       [&] {
+                         b.x(reg[0]);
+                         b.x(reg[1]);
+                       },
+                   },
                    [&] { /* no-op */ });
 
   return measureAndReturn(b, reg.qubits);
@@ -2760,12 +2762,14 @@ Value nestedForLoopSwitchOp(QCProgramBuilder& b) {
     auto rem = arith::RemUIOp::create(b, {iv, c3}).getResult();
     auto q = b.loadQubit(reg.value, iv);
     b.scfIndexSwitch(rem, SmallVector<int64_t>{0, 1, 2},
-                     SmallVector<function_ref<void()>>{[&] { b.x(q); },
-                                                       [&] { b.y(q); },
-                                                       [&] {
-                                                         b.x(q);
-                                                         b.y(q);
-                                                       }},
+                     SmallVector<function_ref<void()>>{
+                         [&] { b.x(q); },
+                         [&] { b.y(q); },
+                         [&] {
+                           b.x(q);
+                           b.y(q);
+                         },
+                     },
                      [&] { /* error */ });
   });
   return measureAndReturn(b, reg.qubits);

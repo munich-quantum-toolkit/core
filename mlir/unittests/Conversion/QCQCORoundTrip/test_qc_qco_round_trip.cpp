@@ -134,7 +134,8 @@ TEST_F(QCQCORoundTripTest, PreservesReusableFunctions) {
       std::tuple{MQT_NAMED_BUILDER(qc::reusableUnitaryFunction),
                  MQT_NAMED_BUILDER(qco::reusableUnitaryFunction), true},
       std::tuple{MQT_NAMED_BUILDER(qc::reusableResetFunction),
-                 MQT_NAMED_BUILDER(qco::reusableResetFunction), false}};
+                 MQT_NAMED_BUILDER(qco::reusableResetFunction), false},
+  };
 
   for (const auto& [qcBuilder, qcoBuilder, unitary] : cases) {
     SCOPED_TRACE(qcBuilder.name);

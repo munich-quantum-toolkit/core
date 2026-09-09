@@ -33,7 +33,7 @@ class QCOProgram;
 class JeffProgram;
 class OpenQASMProgram;
 class QIRProgram;
-class CompilerTarget;
+class TargetEnvironment;
 
 /**
  * @brief The QIR profile represented by a QIR program.
@@ -160,13 +160,13 @@ public:
   [[nodiscard]] static std::optional<QCProgram>
   fromQASMFile(const std::filesystem::path& path);
 
-  /**
-   * @brief Take ownership of an MLIR module that contains a QC program.
-   *
-   * @details The context must own every dialect referenced by the module and
-   * must remain the module's context. The factory verifies the module and
-   * requires at least one operation from the QC dialect.
-   */
+  /// Take ownership of an MLIR module that contains a QC program.
+  ///
+  /// The context must own every dialect referenced by the module and must
+  /// remain the module's context. The factory verifies the module and rejects
+  /// QCO and QTensor operations. QC operations are not required. Dynamic
+  /// quantum allocations require an `mqt.entry_point` function and must appear
+  /// directly in its entry block.
   [[nodiscard]] static std::optional<QCProgram>
   fromModule(std::shared_ptr<MLIRContext> context,
              OwningOpRef<ModuleOp> moduleOp);
@@ -234,13 +234,13 @@ public:
   [[nodiscard]] static std::optional<QCOProgram>
   fromMLIRFile(const std::filesystem::path& path);
 
-  /**
-   * @brief Take ownership of an MLIR module that contains a QCO program.
-   *
-   * @details The context must own every dialect referenced by the module and
-   * must remain the module's context. The factory verifies the module, requires
-   * at least one operation from the QCO dialect, and verifies QCO linearity.
-   */
+  /// Take ownership of an MLIR module that contains a QCO program.
+  ///
+  /// The context must own every dialect referenced by the module and must
+  /// remain the module's context. The factory verifies the module and QCO
+  /// linearity and rejects QC operations. QCO operations are not required.
+  /// Dynamic quantum allocations require an `mqt.entry_point` function and
+  /// must appear directly in its entry block.
   [[nodiscard]] static std::optional<QCOProgram>
   fromModule(std::shared_ptr<MLIRContext> context,
              OwningOpRef<ModuleOp> moduleOp);
@@ -277,15 +277,15 @@ public:
   /// Prepare the program for qubit reuse and reuse eligible qubits.
   [[nodiscard]] bool runQubitReusePipeline();
 
-  /// Decompose controlled X/Z/SWAP gates, `qco.rccx`, and constant-angle phase
-  /// gates that act on at least @p minQubits qubits (@p minQubits must be at
-  /// least 3; default 3 means wider than two-qubit).
+  /// Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, `qco.rccx`, and
+  /// constant-angle phase gates that act on at least @p minQubits qubits
+  /// (@p minQubits must be at least 3; default 3 means wider than two-qubit).
   [[nodiscard]] bool decomposeMultiControlled(uint64_t minQubits = 3);
 
   /// Compile this program for a target in place.
   ///
   /// Do not rely on the program contents if compilation fails.
-  [[nodiscard]] bool compileForTarget(const CompilerTarget& target,
+  [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
                                       bool enableTiming = false,
                                       bool enableStatistics = false);
 
@@ -385,8 +385,16 @@ using CompilerProgram = std::variant<QCProgram, QCOProgram, JeffProgram,
  */
 [[nodiscard]] std::optional<CompilerProgram>
 runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
-                   const CompilerTarget* target = nullptr,
                    std::string_view qcoPipeline = "mqt-qco-default",
+                   bool enableTiming = false, bool enableStatistics = false);
+
+/// Run the coordinated default compiler pipeline for a target.
+///
+/// The supplied program is consumed. Call `copy()` before this function
+/// when the source program must remain available for another pipeline branch.
+[[nodiscard]] std::optional<CompilerProgram>
+runDefaultPipeline(CompilerInput&& program,
+                   const TargetEnvironment& environment,
                    bool enableTiming = false, bool enableStatistics = false);
 
 } // namespace mlir

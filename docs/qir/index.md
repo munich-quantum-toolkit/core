@@ -102,15 +102,42 @@ non-text formats. The `num_shots` argument is optional for device-defined
 formats that encode their repetition count in the program payload.
 
 Every DDSIM QIR job owns its JIT session, runtime, simulator state,
-random-number generator, and output sink. QIR jobs can therefore execute
-concurrently without sharing measurements or interleaving runtime output.
-Sampling supports Base and Adaptive formats. Statevector extraction is limited
-to Base formats: the JIT stops the selected entry point immediately before the
-first call to a function marked `irreversible`, following the semantic boundary
-defined by the Base Profile. It rejects other profiles and Base Profile programs
-whose irreversible region is not terminal.
+random-number generator, and output settings. QIR jobs can therefore execute
+concurrently without sharing measurements. DDSIM records result bits directly;
+it does not format or retain the textual QIR output stream. Direct runtime
+callers can still request that stream, including its per-shot framing.
 
-The generic submission APIs intentionally reject QDMI calibration and batch-job
-formats. Calibration jobs do not carry a program, while batch jobs contain job
-handles rather than serialized program bytes. Their format identifiers remain
-available for capability discovery; they require dedicated typed APIs.
+Sampling supports Base and Adaptive formats. For either profile with an acyclic,
+unconditional entry path, constant gate arguments, terminal Z measurements and
+scalar result records, DDSIM prepares the DD once and samples it for all shots.
+Repeated and reordered result records retain their program order, including
+after SWAPs. Programs with classical memory accesses, helper calls, conditional
+branches, resets, dynamic resources or generic controlled argument arrays use
+ordinary per-shot execution. These inputs remain supported by the runner; they
+are not eligible for this sampling optimization. A fixed seed reproduces a shot
+sequence for the same execution path; sequences need not match across different
+sampling algorithms or software versions.
+
+When provided for static resources, `required_num_qubits` and
+`required_num_results` specify capacities, and out-of-range IDs are rejected.
+Extracted states include unused qubits within the declared capacity, initialized
+to zero. Programs without those attributes retain the runtime's inference of
+static IDs or dynamic allocations. Dynamic qubit release resets and recycles the
+simulator wire; the qubit limit applies to peak simultaneous allocations rather
+than their cumulative number in a shot. Released handles remain invalid.
+
+Statevector extraction is limited to Base formats: the JIT stops the selected
+entry point immediately before the first call to a function marked
+`irreversible`, following the semantic boundary defined by the Base Profile. It
+rejects other profiles and Base Profile programs whose irreversible region is
+not terminal, as well as defined or indirect helper calls whose quantum effects
+cannot be proven. Extracted amplitudes preserve global phase and logical qubit
+order, including SWAPs. LLVM target triples must match the host architecture and
+operating system because the JIT executes in process.
+
+The generic submission APIs reject QDMI calibration and batch-job formats. Use
+{py:meth}`~mqt.core.qdmi.Device.submit_calibration_job` or
+{cpp-api:func}`qdmi::Device::submitCalibrationJob` for calibration. These APIs
+accept an optional provider-defined configuration payload and no shot count; the
+payload is not an executable circuit. Batch jobs contain job handles rather than
+serialized program bytes and require a separate typed API.
