@@ -17,14 +17,21 @@ big-endian: the highest-index result bit is the leftmost character.
 ## Discover the catalog
 
 The command-line registry is the current list of available families. Each family
-has its own instance specification schema.
+has its own instance specification schema. These cells execute the CLI and fail
+if it exits unsuccessfully; JSON formatting only makes its output easier to
+read.
 
 ```{code-cell} ipython3
-!mqt-core-bench list
+import json
+import subprocess
+
+catalog = subprocess.run(["mqt-core-bench", "list"], check=True, capture_output=True, text=True)
+print(json.dumps(json.loads(catalog.stdout), indent=2))
 ```
 
 ```{code-cell} ipython3
-!mqt-core-bench describe qft
+description = subprocess.run(["mqt-core-bench", "describe", "qft"], check=True, capture_output=True, text=True)
+print(json.dumps(json.loads(description.stdout), indent=2))
 ```
 
 ## Configure a typed instance
@@ -88,6 +95,7 @@ For three output bits and period exponent one, QFT has two equal peaks.
 probabilities = {
     outcome: benchmark.probability(outcome) for outcome in ("000", "100", "010")
 }
+assert probabilities == {"000": 0.5, "100": 0.5, "010": 0.0}
 print(json.dumps(probabilities, indent=2))
 ```
 
@@ -129,7 +137,7 @@ The CLI writes the program first and its manifest last. A manifest is therefore
 the completion marker. Existing output files always cause an error.
 
 ```{code-cell} ipython3
-:tags: [remove-cell]
+:tags: [hide-input]
 
 import tempfile
 from pathlib import Path
@@ -155,7 +163,13 @@ counts_path.write_text(
 ```
 
 ```{code-cell} ipython3
-!mqt-core-bench generate --instance-specification {instance_specification_path} --format qc --output {output_directory}
+generation = subprocess.run(
+    ["mqt-core-bench", "generate", "--instance-specification", str(instance_specification_path),
+     "--format", "qc", "--output", str(output_directory)],
+    check=True, capture_output=True, text=True,
+)
+generated = json.loads(generation.stdout)
+print("Generated", generated["benchmark"], "as", generated["format"])
 ```
 
 ```{code-cell} ipython3
@@ -166,7 +180,13 @@ print("Manifest:", manifest_path.name)
 ```
 
 ```{code-cell} ipython3
-!mqt-core-bench evaluate --manifest {manifest_path} --counts {counts_path}
+evaluation_result = subprocess.run(
+    ["mqt-core-bench", "evaluate", "--manifest", str(manifest_path), "--counts", str(counts_path)],
+    check=True, capture_output=True, text=True,
+)
+metrics = json.loads(evaluation_result.stdout)["metrics"]
+assert metrics["total_variation_distance"] == 0
+print(json.dumps(metrics, indent=2))
 ```
 
 ```{code-cell} ipython3

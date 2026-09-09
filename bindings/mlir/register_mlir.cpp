@@ -754,7 +754,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("ISWAP", mlir::CompilerTarget::GateKind::ISWAP)
       .value("CZ", mlir::CompilerTarget::GateKind::CZ)
       .value("CX", mlir::CompilerTarget::GateKind::CX)
-      .value("ECR", mlir::CompilerTarget::GateKind::ECR);
+      .value("ECR", mlir::CompilerTarget::GateKind::ECR)
+      .value("SQRTISWAP", mlir::CompilerTarget::GateKind::SQRTISWAP);
 
   nb::enum_<mlir::CompilerTarget::SingleQubitBasis>(
       compilerTarget, "SingleQubitBasis",
@@ -1232,9 +1233,10 @@ operations.)pb");
            &BooleanMemberAdapter<
                &mlir::QCOProgram::decomposeMultiControlled>::call,
            nb::kw_only(), "min_qubits"_a = 3,
-           "Decompose controlled X/Z/SWAP gates, qco.rccx, and constant-angle "
-           "phase gates that act on at least min_qubits qubits (min_qubits "
-           "must be at least 3; default 3 means wider than two-qubit).")
+           "Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and "
+           "constant-angle phase gates that act on at least min_qubits qubits "
+           "(min_qubits must be at least 3; default 3 means wider than "
+           "two-qubit).")
       .def("compile_for_target",
            &BooleanMemberAdapter<&mlir::QCOProgram::compileForTarget>::call,
            "target_environment"_a, nb::kw_only(), "enable_timing"_a = false,

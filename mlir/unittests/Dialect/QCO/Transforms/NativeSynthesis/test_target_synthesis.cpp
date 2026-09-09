@@ -52,6 +52,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <string>
 #include <tuple>
@@ -464,6 +465,110 @@ TEST_F(TargetSynthesisTest,
       mlir::succeeded(runPass(*module, mlir::qco::createFuseTwoQubitGates())));
   EXPECT_EQ(countOps<RXXOp>(*module), 2U);
   EXPECT_EQ(printModule(*module), before);
+}
+
+TEST_F(TargetSynthesisTest, SqrtISwapSynthesisIsMinimalAndConforms) {
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({
+                               valid(Operation::create("u", 1, 3)),
+                               valid(Operation::create("gphase", 0, 1)),
+                               valid(Operation::create("sqrt_iswap", 2, 0)),
+                           })));
+  for (int gate = 0; gate < 4; ++gate) {
+    const auto circuit = [gate](QCOProgramBuilder& builder) {
+      auto q0 = builder.staticQubit(0);
+      auto q1 = builder.staticQubit(1);
+      if (gate == 0) {
+        std::tie(q0, q1) = builder.cx(q0, q1);
+      }
+      if (gate == 1) {
+        std::tie(q0, q1) = builder.swap(q0, q1);
+      }
+      if (gate == 2) {
+        std::tie(q0, q1) = builder.iswap(q0, q1);
+      }
+      if (gate == 3) {
+        std::tie(q0, q1) =
+            builder.xx_plus_yy(-std::numbers::pi / 2., 0., q0, q1);
+      }
+      return builder.intConstant(0);
+    };
+    auto expected = build(circuit);
+    auto synthesized = build(circuit);
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+    EXPECT_EQ(countOps<mlir::qco::XXPlusYYOp>(*synthesized), gate == 3   ? 1U
+                                                             : gate == 1 ? 3U
+                                                                         : 2U);
+    ASSERT_TRUE(mlir::succeeded(runTargetPass(
+        *synthesized, target, mlir::qco::createVerifyTargetConformance())));
+    ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+    expectEquivalent(expected, synthesized);
+  }
+}
+
+TEST_F(TargetSynthesisTest, SqrtISwapCapabilityRequiresFixedParameters) {
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations(
+                         {valid(Operation::create("sqrt_iswap", 2, 0))})));
+  auto program = build([](QCOProgramBuilder& builder) {
+    auto [q0, q1] = builder.xx_plus_yy(.2, 0., builder.staticQubit(0),
+                                       builder.staticQubit(1));
+    std::tie(q0, q1) = builder.xx_plus_yy(-std::numbers::pi / 2., .1, q0, q1);
+    return builder.intConstant(0);
+  });
+  program->walk([&](mlir::qco::XXPlusYYOp op) {
+    EXPECT_FALSE(target.supports(op.getOperation()));
+  });
+}
+
+TEST_F(TargetSynthesisTest, SqrtISwapCapabilityHonorsPlacement) {
+  const auto target = valid(Target::create(
+      2, Connectivity::allToAll(),
+      NativeOperations::fromOperations({
+          valid(Operation::create("sqrt_iswap", 2, 0,
+                                  {valid(Target::SiteTuple::create({0, 1}))})),
+      })));
+  auto program = build([](QCOProgramBuilder& builder) {
+    [[maybe_unused]] auto [q0, q1] =
+        builder.xx_plus_yy(-std::numbers::pi / 2., 0., builder.staticQubit(0),
+                           builder.staticQubit(1));
+    return builder.intConstant(0);
+  });
+  ASSERT_TRUE(program);
+  program->walk([&](mlir::qco::XXPlusYYOp op) {
+    EXPECT_TRUE(target.supports(op.getOperation(), {0, 1}));
+    EXPECT_FALSE(target.supports(op.getOperation(), {1, 0}));
+  });
+}
+
+TEST_F(TargetSynthesisTest, SqrtISwapReversesPlacementWithoutSynthesisBasis) {
+  const auto target = valid(Target::create(
+      2, Connectivity::allToAll(),
+      NativeOperations::fromOperations({
+          valid(Operation::create("sqrt_iswap", 2, 0,
+                                  {valid(SiteTuple::create({0, 1}))})),
+      })));
+  ASSERT_FALSE(target.synthesisBasis());
+  const auto circuit = [](QCOProgramBuilder& builder) {
+    [[maybe_unused]] auto qubits =
+        builder.xx_plus_yy(-std::numbers::pi / 2., 0., builder.staticQubit(1),
+                           builder.staticQubit(0));
+    return builder.intConstant(0);
+  };
+  auto expected = build(circuit);
+  auto synthesized = build(circuit);
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+  EXPECT_EQ(countOps<mlir::qco::XXPlusYYOp>(*synthesized), 1U);
+  ASSERT_TRUE(mlir::succeeded(runTargetPass(
+      *synthesized, target, mlir::qco::createVerifyTargetConformance())));
+  ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
+  expectEquivalent(expected, synthesized);
 }
 
 TEST_F(TargetSynthesisTest, TargetNativeSynthesisRemovesOrdinarySwap) {

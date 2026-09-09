@@ -390,13 +390,15 @@ def DecomposeMultiControlled
     : Pass<"decompose-multi-controlled", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::qco::QCODialect",
                            "::mlir::arith::ArithDialect"];
-  let summary = "Decompose controlled X/Z/phase/SWAP gates and qco.rccx that "
-                "act on at least min-qubits qubits";
+  let summary = "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and "
+                "qco.rccx that act on at least min-qubits qubits";
   let description = [{
     Decomposes multi-qubit controlled operations that act on at least
     `min-qubits` qubits (default 3: everything wider than a two-qubit gate).
-    Supported shapes: `qco.ctrl` with a `qco.x`, `qco.z`, `qco.swap`, or
-    constant-angle `qco.p` body, and `qco.rccx`.
+    Supported shapes: `qco.ctrl` with a sole `qco.x`, `qco.y`, `qco.z`,
+    `qco.rx`, `qco.ry`, `qco.rz`, `qco.swap`, or constant-angle `qco.p` body, and
+    `qco.rccx`. Rotation angles may be constants or runtime SSA values,
+    including classical expressions inside the control region.
 
     | Family | Width (qubits) | Decomposition |
     | ------ | -------------- | ------------- |
@@ -404,7 +406,9 @@ def DecomposeMultiControlled
     | X/Z | 4 | Elementary CCCX/CCCZ |
     | X/Z | 5 | Specialized ancilla-free relative-phase `C^4(Z)` |
     | X/Z | 6–33 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
-    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with a compile-time CX policy table |
+    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with one dirty helper for odd control counts and two for even counts |
+    | Y | ≥3 | X decomposition with `S†` before and `S` after on the target |
+    | RX/RY/RZ | ≥3 | Balanced control halves with exact MCX and quarter-angle rotations; RX uses H-conjugated RZ |
     | Phase | 3 | Optimized `C^2(P)` |
     | Phase | 4–5 | Vale (Barenco-relative residual) |
     | Phase | ≥6 | da Silva-Park SP22 linear-depth |
@@ -413,6 +417,11 @@ def DecomposeMultiControlled
 
     Width is the total number of qubits the gate acts on (controls plus
     targets).
+
+    Rotation synthesis uses a linear number of gates and no additional
+    qubits. Each half-MCX may borrow controls from the opposite half and
+    restores them coherently. The decomposition preserves phase, including
+    the conditional phase of a rotation by `2π`.
 
     For controlled SWAP, `C ∪ {b}` is the original control set together with
     SWAP target `b`, and the MCX target is the other SWAP qubit `a`. The
@@ -425,9 +434,9 @@ def DecomposeMultiControlled
   }];
   let options = [Option<
       "minQubits", "min-qubits", "uint64_t", "3",
-      "Decompose controlled X/Z/phase/SWAP gates and qco.rccx that act on at "
-      "least this many qubits (must be at least 3; default 3 means wider than "
-      "two-qubit).">];
+      "Decompose controlled X/Y/Z/rotation/phase/SWAP gates and qco.rccx "
+      "that act on at least this many qubits (must be at least 3; default 3 "
+      "means wider than two-qubit).">];
 }
 
 #endif // MLIR_DIALECT_QCO_TRANSFORMS_PASSES_TD

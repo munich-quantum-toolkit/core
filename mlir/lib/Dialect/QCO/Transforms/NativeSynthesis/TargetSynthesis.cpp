@@ -34,6 +34,7 @@
 #include <mlir/IR/IRMapping.h>
 #include <mlir/IR/Iterators.h>
 #include <mlir/IR/MLIRContext.h>
+#include <mlir/IR/Matchers.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
@@ -440,6 +441,9 @@ static bool isOperandSwapInvariant(UnitaryOpInterface unitary) {
   Operation* operation = unitary.getOperation();
   if (isa<SWAPOp, iSWAPOp, RXXOp, RYYOp, RZZOp>(operation)) {
     return true;
+  }
+  if (auto exchange = dyn_cast<XXPlusYYOp>(operation)) {
+    return matchPattern(exchange.getBeta(), m_AnyZeroFloat());
   }
   auto controlled = dyn_cast<CtrlOp>(operation);
   return controlled && controlled.getNumControls() == 1 &&

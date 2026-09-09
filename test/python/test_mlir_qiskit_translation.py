@@ -262,6 +262,23 @@ def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
     assert set(restored.count_ops()) <= {"u", "cx"}
 
 
+def test_symbolic_multi_controlled_rotations_decompose_and_bind() -> None:
+    """Export and bind angle expressions produced by decomposition."""
+    theta = Parameter("theta")
+    circuit = QuantumCircuit(3)
+    circuit.append(AnnotatedOperation(library.RYGate(theta), ControlModifier(2)), circuit.qubits)
+    program = QCProgram.from_qiskit(circuit).to_qco()
+
+    program.decompose_multi_controlled()
+    restored = program.to_qc().to_qiskit()
+
+    assert {parameter.name for parameter in restored.parameters} == {theta.name}
+    assert all(item.operation.num_qubits <= 2 for item in restored.data)
+    expected = circuit.assign_parameters({theta: -0.61})
+    actual = _assign_parameter_values(restored, {theta.name: -0.61})
+    assert np.allclose(Operator(actual).data, Operator(expected).data, atol=1e-10, rtol=0)
+
+
 def test_controlled_dense_unitary_export_preserves_operation_order() -> None:
     """Export a controlled dense matrix with a Qiskit control annotation."""
     program = QCProgram.from_mlir_str(

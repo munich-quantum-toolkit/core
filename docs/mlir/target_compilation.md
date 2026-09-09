@@ -1,3 +1,11 @@
+---
+file_format: mystnb
+kernelspec:
+  name: python3
+mystnb:
+  number_source_lines: true
+---
+
 # Compile for a QDMI device
 
 An MLIR {code}`mlir::CompilerTarget` is an immutable snapshot of a circuit-model
@@ -12,9 +20,10 @@ stored, copied cheaply, and reused for multiple compilations.
 
 ## Python
 
-Open a configured QDMI device and snapshot it as a compiler target:
+Open the bundled local DDSIM device and snapshot it as a compiler target. This
+example needs no external provider or credentials:
 
-```python
+```{code-cell} ipython3
 from mqt.core.mlir import (
     CompilerTarget,
     PayloadFormat,
@@ -27,10 +36,21 @@ from mqt.core.mlir import (
 target = CompilerTarget.from_device_id("mqt.ddsim.default")
 payload = PayloadSpecification(PayloadFormat("qir", "2.1", "base", PayloadEncoding.BINARY))
 environment = TargetEnvironment(target, payload)
+bell_qasm = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] result;
+h q[0];
+cx q[0], q[1];
+result = measure q;
+"""
+
 compiled = compile_program(
-    "bell.qasm",
+    bell_qasm,
     target_environment=environment,
 )
+assert compiled.is_valid
+print(compiled.ir)
 ```
 
 The payload specification identifies the exact representation selected for the
@@ -59,7 +79,7 @@ typed `#mqt.payload_spec` attribute.
 The target can also be constructed directly. Connectivity and native-operation
 support are required:
 
-```python
+```{code-cell} ipython3
 target = CompilerTarget(
     3,
     connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
@@ -80,6 +100,11 @@ target = CompilerTarget(
         CompilerTarget.Operation("reset", arity=1, num_parameters=0),
     ]),
 )
+mapped = compile_program(
+    bell_qasm, target_environment=TargetEnvironment(target, payload)
+)
+assert mapped.is_valid
+print(mapped.ir)
 ```
 
 Use `CompilerTarget.Connectivity.all_to_all()` for an all-to-all target. An
@@ -133,12 +158,6 @@ targets and uses mapping only for explicit topology. The high-level program API
 registers the required inliner extensions; callers that populate the low-level
 target pipeline directly must register inliner extensions for every callable
 dialect in their context.
-
-Target compilation preserves quantum operations even when their final qubit
-values are not measured or returned. This supports measurement-free programs,
-such as state preparation or larger building blocks compiled to a target-native
-instruction set. Dead gates are removed only by the explicit `remove-dead-gates`
-pass and by pipelines that include it, such as `mqt-qubit-reuse`.
 
 ## Command line from a source build
 

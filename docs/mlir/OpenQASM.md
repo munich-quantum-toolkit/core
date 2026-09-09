@@ -353,9 +353,3 @@ outside the input subset. Floating-point `!=` uses unordered-or-not-equal
 semantics, including NaNs; ordered-not-equal MLIR comparisons are rejected.
 Programs that rely on the input safety machinery must continue through another
 output path such as QIR.
-
-:::{important}
-The compiler removes dead code. A circuit that only prepares a state has no
-observable effect and may be removed by optimization. Measure the relevant
-qubits and return the results when compiling a program for execution.
-:::

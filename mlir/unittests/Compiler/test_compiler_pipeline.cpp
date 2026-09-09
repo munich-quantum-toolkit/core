@@ -84,9 +84,11 @@
 #include <iosfwd>
 #include <iterator>
 #include <memory>
+#include <numbers>
 #include <optional>
 #include <span>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -2312,7 +2314,46 @@ TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
   EXPECT_FALSE(main.getArgument(0).use_empty());
 }
 
-// Test: all-to-all target compilation uses compact placement.
+TEST_F(CompilerPipelineTest,
+       SqrtISwapCompilationDoesNotIncreaseNativeGateCount) {
+  auto moduleOp =
+      QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& builder) {
+        auto q0 = builder.staticQubit(0);
+        auto q1 = builder.staticQubit(1);
+        for (int k = 1; k <= 4; ++k) {
+          std::tie(q0, q1) =
+              builder.xx_plus_yy(-std::numbers::pi / 2., 0., q0, q1);
+          q0 = builder.rx(.41 * k, q0);
+          q1 = builder.ry(.17 * k, q1);
+          q0 = builder.rz(.32 * k, q0);
+          q1 = builder.rz(.23 * k, q1);
+        }
+        return builder.intConstant(0);
+      });
+  ASSERT_TRUE(moduleOp);
+  std::string source;
+  llvm::raw_string_ostream stream(source);
+  moduleOp->print(stream);
+  auto program = QCOProgram::fromMLIRString(source);
+  ASSERT_TRUE(program);
+  using TargetOperation = CompilerTarget::Operation;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(TargetOperation::create("u", 1, 3)),
+          llvm::cantFail(TargetOperation::create("gphase", 0, 1)),
+          llvm::cantFail(TargetOperation::create("sqrt_iswap", 2, 0)),
+      })));
+  ASSERT_TRUE(program->compileForTarget(
+      TargetEnvironment(target, makePayloadSpecification())));
+  ASSERT_TRUE(succeeded(verify(program->module())));
+  size_t count = 0;
+  program->module().walk([&](mlir::qco::XXPlusYYOp) { ++count; });
+  EXPECT_GT(count, 0U);
+  EXPECT_LE(count, 4U);
+}
+
+/// Test: all-to-all target compilation uses compact placement.
 TEST_F(CompilerPipelineTest, QCOProgramUsesCompactAllToAllPlacement) {
   const std::string qasm = R"(OPENQASM 3.0;
 include "stdgates.inc";
