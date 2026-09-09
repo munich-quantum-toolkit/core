@@ -81,10 +81,9 @@ edits exist.
 
 For performance experiments, follow the
 [benchmark experiment rules](../AGENTS.md#benchmark-experiments). Keep the
-harness, raw data, plots, and reproduction steps in
-`.agents/benchmarks/<scope>/` and link them from the finding. Record neutral
-results and regressions; an untested optimization remains a candidate, not a
-measured finding.
+harness, raw data, plots, and reproduction steps in `.agent/benchmarks/<scope>/`
+and link them from the finding. Record neutral results and regressions; an
+untested optimization remains a candidate, not a measured finding.
 
 ### What an experiment proves
 

@@ -111,7 +111,7 @@ def cpp_lint(session: nox.Session) -> None:
             "--style=",
             "--tidy-checks=",
             f"--version={llvm_bin}",
-            "--ignore=build|!build/mlir/**|**/include|include|vendor/**|.agents/benchmarks/**",
+            "--ignore=build|!build/mlir/**|**/include|include|vendor/**|.agent/benchmarks/**",
             "--thread-comments=false",
             "--step-summary=false",
             "--database=build/cpp-lint",
