@@ -13,6 +13,7 @@ set_target_properties(mqt-core-mlir-unittests-compiler PROPERTIES UNITY_BUILD OF
 target_link_libraries(
   mqt-core-mlir-unittests-compiler
   PRIVATE GTest::gtest_main
+          MLIRExactUnitaryTest
           MQTCompilerQDMIAdapter
           MQTCompilerTarget
           MQTCompilerPipeline

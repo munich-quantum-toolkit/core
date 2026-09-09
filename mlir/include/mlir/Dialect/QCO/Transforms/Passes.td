@@ -235,6 +235,9 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
     metadata is unknown, no complete basis exists, or an operation has no
     compile-time unitary matrix and cannot be synthesized as a parameterized
     single-qubit gate.
+
+    Numerical decomposition failure is diagnosed before emitting a replacement.
+    The input may be modified on failure.
   }];
 }
 
@@ -445,7 +448,7 @@ def DecomposeMultiControlled
     | X/Z | 4 | Elementary CCCX/CCCZ |
     | X/Z | 5 | Specialized ancilla-free relative-phase `C^4(Z)` |
     | X/Z | 6–33 | da Silva-Park SP22 MCP(π) core (`H · MCP(π) · H` for X) |
-    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with one dirty helper for odd control counts and two for even counts |
+    | X/Z | ≥34 | Huang-Palsberg (HP24) borrowed-helper synthesis with partitioned incrementers |
     | Y | ≥3 | X decomposition with `S†` before and `S` after on the target |
     | RX/RY/RZ | ≥3 | Balanced control halves with exact MCX and quarter-angle rotations; RX uses H-conjugated RZ |
     | Phase | 3 | Optimized `C^2(P)` |
@@ -456,6 +459,10 @@ def DecomposeMultiControlled
 
     Width is the total number of qubits the gate acts on (controls plus
     targets).
+
+    HP24 uses one dirty helper for an odd number of controls and two for an
+    even number. These helpers are borrowed from the gate's qubits and restored;
+    no additional qubits are allocated.
 
     Rotation synthesis uses a linear number of gates and no additional
     qubits. Each half-MCX may borrow controls from the opposite half and

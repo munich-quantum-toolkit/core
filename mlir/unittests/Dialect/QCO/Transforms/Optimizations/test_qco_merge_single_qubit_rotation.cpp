@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
@@ -28,10 +29,13 @@
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Pass/PassManager.h>
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/WalkResult.h>
+#include <mlir/Transforms/Passes.h>
 
+#include <array>
 #include <cassert>
 #include <cmath>
 #include <complex>
@@ -891,6 +895,125 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalSmallAngles) {
   expectGPhaseParam(2.50000041668308e-7);
 }
 
+TEST_F(MergeSingleQubitRotationGatesTest,
+       preservesSmallRotationsAndSingularPhasesInBothBackends) {
+  constexpr std::array<std::array<double, 2>, 8> parameterSets{
+      {
+          {1e-10, 1e-10},
+          {1e-8, 1e-8},
+          {1e-7, 1e-7},
+          {PI, PI},
+          {-PI, PI},
+          {PI - 1e-8, 1e-8},
+          {-PI + 1e-8, 1e-8},
+          {PI, 0.3},
+      },
+  };
+  for (bool dynamic : std::array{false, true}) {
+    SCOPED_TRACE(dynamic);
+    for (const auto& angles : parameterSets) {
+      SCOPED_TRACE(testing::Message() << angles[0] << ", " << angles[1]);
+      QCOProgramBuilder circuitBuilder(&context);
+      circuitBuilder.initialize();
+      Value qubit = circuitBuilder.staticQubit(0);
+      qubit = circuitBuilder.rx(angles[0], qubit);
+      qubit = circuitBuilder.ry(angles[1], qubit);
+      circuitBuilder.sink(qubit);
+      module = circuitBuilder.finalize();
+      auto funcOp = module->lookupSymbol<func::FuncOp>("main");
+      ASSERT_TRUE(funcOp);
+      if (dynamic) {
+        funcOp.insertArgument(0, Float64Type::get(&context), {},
+                              funcOp.getLoc());
+        funcOp.insertArgument(1, Float64Type::get(&context), {},
+                              funcOp.getLoc());
+        funcOp.walk([&](RXOp op) {
+          op.getThetaMutable().assign(funcOp.getArgument(0));
+        });
+        funcOp.walk([&](RYOp op) {
+          op.getThetaMutable().assign(funcOp.getArgument(1));
+        });
+      }
+      ASSERT_TRUE(succeeded(verify(*module)));
+      OwningOpRef<ModuleOp> original = module->clone();
+      ASSERT_TRUE(succeeded(runMergePass(*module)));
+      ASSERT_TRUE(succeeded(verify(*module)));
+      EXPECT_EQ(countOps<UOp>(), 1);
+      if (dynamic) {
+        bindLeadingArgs(original->lookupSymbol<func::FuncOp>("main"), angles);
+        bindLeadingArgs(funcOp, angles);
+        PassManager pm(&context);
+        pm.addPass(createCanonicalizerPass());
+        ASSERT_TRUE(succeeded(pm.run(*module)));
+      }
+      ASSERT_TRUE(succeeded(verify(*original)));
+      ASSERT_TRUE(succeeded(verify(*module)));
+      ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+    }
+  }
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest, largePhasesPreserveControlledMatrix) {
+  for (const auto gate : {GateType::P, GateType::U2, GateType::U}) {
+    for (const auto angles : {
+             std::array{1e12, 1.0},
+             std::array{-1e16, 1.0},
+             std::array{1e308, 1e308},
+         }) {
+      for (const bool dynamic : {false, true}) {
+        SCOPED_TRACE(testing::Message()
+                     << "gate=" << static_cast<unsigned>(gate)
+                     << " phi=" << angles[0] << " lambda=" << angles[1]
+                     << " dynamic=" << dynamic);
+        module = QCOProgramBuilder::build(&context, [&](auto& b) {
+          auto [control, target] =
+              b.ctrl(b.staticQubit(0), b.staticQubit(1), [&](Value qubit) {
+                if (gate == GateType::P) {
+                  qubit = b.p(angles[0], qubit);
+                } else if (gate == GateType::U2) {
+                  qubit = b.u2(angles[0], angles[1], qubit);
+                } else {
+                  qubit = b.u(0.37, angles[0], angles[1], qubit);
+                }
+                return b.h(qubit);
+              });
+          return SmallVector<Value>{control, target};
+        });
+        ASSERT_TRUE(module);
+        auto funcOp = module->lookupSymbol<func::FuncOp>("main");
+        if (dynamic) {
+          funcOp.insertArgument(0, Float64Type::get(&context), {},
+                                funcOp.getLoc());
+          module->walk([&](UnitaryOpInterface op) {
+            if (isa<POp, U2Op, UOp>(op.getOperation())) {
+              Value parameter = op.getParameter(isa<UOp>(op) ? 1U : 0U);
+              parameter.replaceAllUsesWith(funcOp.getArgument(0));
+            }
+          });
+        }
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        OwningOpRef<ModuleOp> original = module->clone();
+        ASSERT_TRUE(succeeded(runMergePass(*module)));
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        EXPECT_EQ(countOps<HOp>(), 0);
+        if (dynamic) {
+          bindLeadingArgs(original->lookupSymbol<func::FuncOp>("main"),
+                          {angles[0]});
+          bindLeadingArgs(funcOp, {angles[0]});
+          PassManager pm(&context);
+          pm.addPass(createCanonicalizerPass());
+          ASSERT_TRUE(succeeded(pm.run(*module)));
+        }
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        ::mqt::test::expectFullUnitaryEqual(*original, *module, 2);
+      }
+    }
+  }
+}
+
 /**
  * @brief Test: RX(PI)->RY(PI) should merge into U(0, -PI, 0.)
  */
@@ -921,12 +1044,10 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyRRSameAxis) {
   expectGPhaseParam(0.0);
 }
 
-/**
- * @brief Test: U(0, -2.0360075460227076, 0)->U(0, 4.157656961105587, 0) should
- * not produce NaN. These specific numbers would produce NaN if acos parameter
- * would not be clamped to [-1, 1]
- */
-TEST_F(MergeSingleQubitRotationGatesTest, numericalAcosClampingPreventsNaN) {
+/// Pure-Z composition must keep finite Euler angles despite quaternion norm
+/// roundoff.
+TEST_F(MergeSingleQubitRotationGatesTest,
+       numericalNormRoundoffDoesNotProduceNaN) {
   ASSERT_TRUE(testGateMerge(
                   {{.type = GateType::U, .angles = {0, -2.0360075460227076, 0}},
                    {.type = GateType::U, .angles = {0, 4.157656961105587, 0}}})

@@ -28,6 +28,7 @@
 #include <mlir/Dialect/Arith/IR/Arith.h> // IWYU pragma: keep (Passes.h.inc)
 #include <mlir/Dialect/Math/IR/Math.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/DialectRegistry.h>
@@ -45,6 +46,7 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Support/TypeID.h>
 #include <mlir/Support/WalkResult.h>
+#include <mlir/Transforms/FoldUtils.h>
 
 #include <array>
 #include <cassert>
@@ -71,6 +73,14 @@ struct FusableTwoQubitRun {
   unsigned numTwoQ = 0; ///< Number of two-qubit members (entanglers consumed).
   Value tailA;          ///< Current output wires of the run's tail.
   Value tailB;
+};
+
+/// Reuse the last numerical decomposition across gates on different wires.
+///
+/// The target basis is fixed for the pass; no SSA values or locations are kept.
+struct LastTwoQubitDecomposition {
+  Matrix4x4 matrix;
+  std::optional<decomposition::TwoQubitNativeDecomposition> native;
 };
 
 } // namespace
@@ -220,6 +230,10 @@ static FusableTwoQubitRun scanFusableTwoQubitRun(UnitaryOpInterface head,
   run.ops.push_back(head.getOperation());
   run.numTwoQ = 1;
 
+  UnitaryOpInterface cachedOpA;
+  UnitaryOpInterface cachedOpB;
+  std::optional<Matrix2x2> matrixA;
+  std::optional<Matrix2x2> matrixB;
   while (true) {
     UnitaryOpInterface nextOnA = uniqueUnitaryUser(run.tailA);
     UnitaryOpInterface nextOnB = uniqueUnitaryUser(run.tailB);
@@ -235,12 +249,17 @@ static FusableTwoQubitRun scanFusableTwoQubitRun(UnitaryOpInterface head,
       continue;
     }
 
-    const auto matrixA =
-        !sameOp ? oneQubitRunMemberMatrix(nextOnA) : std::nullopt;
-    const auto matrixB =
-        !sameOp ? oneQubitRunMemberMatrix(nextOnB) : std::nullopt;
-    const bool aSingle = matrixA.has_value();
-    const bool bSingle = matrixB.has_value();
+    // Only the consumed wire advances; retain the other pending matrix.
+    if (!sameOp && nextOnA.getOperation() != cachedOpA.getOperation()) {
+      cachedOpA = nextOnA;
+      matrixA = oneQubitRunMemberMatrix(nextOnA);
+    }
+    if (!sameOp && nextOnB.getOperation() != cachedOpB.getOperation()) {
+      cachedOpB = nextOnB;
+      matrixB = oneQubitRunMemberMatrix(nextOnB);
+    }
+    const bool aSingle = !sameOp && matrixA.has_value();
+    const bool bSingle = !sameOp && matrixB.has_value();
     if (aSingle && bSingle && nextOnA->getBlock() != nextOnB->getBlock()) {
       break;
     }
@@ -276,7 +295,7 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
   }
 
   const auto native = decomposeUnitary2QWeyl(run.composed, *basis.entangler);
-  if (native.numBasisUses >= run.numTwoQ) {
+  if (!native || native->numBasisUses >= run.numTwoQ) {
     return false;
   }
 
@@ -284,7 +303,7 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
   rewriter.setInsertionPoint(firstOp);
   const auto synthesized =
       emitUnitary2QWeyl(rewriter, firstOp.getLoc(), firstOp.getInputQubit(0),
-                        firstOp.getInputQubit(1), native, basis);
+                        firstOp.getInputQubit(1), *native, basis);
   decomposition::emitGPhaseIfNeeded(rewriter, firstOp.getLoc(),
                                     synthesized.globalPhase);
   rewriter.replaceAllUsesWith(run.tailA, synthesized.qubit0);
@@ -468,7 +487,7 @@ static void reorderTwoQubitOperation(IRRewriter& rewriter,
 static LogicalResult synthesizeTargetOperation(
     IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
     const std::optional<CompilerTarget::SynthesisBasis>& basis,
-    ArrayRef<SiteId> sites) {
+    ArrayRef<SiteId> sites, LastTwoQubitDecomposition& lastDecomposition) {
   Operation* const operation = op.getOperation();
   if (target.supports(operation, sites)) {
     return success();
@@ -532,9 +551,20 @@ static LogicalResult synthesizeTargetOperation(
     matrix = matrix.reorderForQubits(1, 0);
     std::swap(input0, input1);
   }
-  const auto native = decomposeUnitary2QWeyl(matrix, *basis->entangler);
+  // Compare the full, direction-adjusted matrix exactly, including its phase.
+  if (!lastDecomposition.native ||
+      lastDecomposition.matrix.data != matrix.data) {
+    lastDecomposition.matrix = matrix;
+    lastDecomposition.native =
+        decomposeUnitary2QWeyl(matrix, *basis->entangler);
+  }
+  const auto& native = lastDecomposition.native;
+  if (!native) {
+    return unsupported(
+        "its unitary matrix could not be numerically decomposed");
+  }
   const auto synthesized = emitUnitary2QWeyl(rewriter, operation->getLoc(),
-                                             input0, input1, native, *basis);
+                                             input0, input1, *native, *basis);
   decomposition::emitGPhaseIfNeeded(rewriter, operation->getLoc(),
                                     synthesized.globalPhase);
   if (reverseEntangler) {
@@ -589,6 +619,32 @@ protected:
   }
 };
 
+/// Defer constant folding until gate builders have consumed their new values.
+class SynthesisConstantFolder final : public OpBuilder::Listener {
+public:
+  explicit SynthesisConstantFolder(MLIRContext* context) : folder_(context) {}
+
+  void notifyOperationInserted(Operation* operation,
+                               OpBuilder::InsertPoint previous) override {
+    if (!previous.isSet()) {
+      if (auto constant = dyn_cast<arith::ConstantOp>(operation)) {
+        pending_.push_back(constant);
+      }
+    }
+  }
+
+  void foldPending() {
+    for (auto constant : pending_) {
+      folder_.insertKnownConstant(constant, constant.getValue());
+    }
+    pending_.clear();
+  }
+
+private:
+  OperationFolder folder_;
+  SmallVector<arith::ConstantOp> pending_;
+};
+
 struct TargetNativeSynthesisPass final
     : impl::TargetNativeSynthesisBase<TargetNativeSynthesisPass> {
 
@@ -619,7 +675,9 @@ protected:
       return;
     }
 
-    IRRewriter rewriter(&getContext());
+    SynthesisConstantFolder constants(&getContext());
+    IRRewriter rewriter(&getContext(), &constants);
+    LastTwoQubitDecomposition lastDecomposition;
     /// Rewrite users before producers so each unvisited operation retains its
     /// original operands and their collected sites.
     const auto result = moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
@@ -629,11 +687,12 @@ protected:
               (!unitary.isSingleQubit() && !unitary.isTwoQubit())) {
             return WalkResult::advance();
           }
-          return failed(synthesizeTargetOperation(
-                     rewriter, unitary, target, targetBasis,
-                     getOperationSites(operation, *sites)))
-                     ? WalkResult::interrupt()
-                     : WalkResult::advance();
+          const auto synthesized = synthesizeTargetOperation(
+              rewriter, unitary, target, targetBasis,
+              getOperationSites(operation, *sites), lastDecomposition);
+          constants.foldPending();
+          return failed(synthesized) ? WalkResult::interrupt()
+                                     : WalkResult::advance();
         });
     if (result.wasInterrupted()) {
       signalPassFailure();

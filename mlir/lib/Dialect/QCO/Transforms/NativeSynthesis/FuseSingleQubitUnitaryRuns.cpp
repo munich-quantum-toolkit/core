@@ -77,7 +77,7 @@ static FusableRunScan
 scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
                const decomposition::SingleQubitBasis basis) {
   FusableRunScan scan;
-  for (auto* op : WireRange(head.getOutputTarget(0))) {
+  for (auto* op : WireRange(head.getOutputQubit(0))) {
     auto member = dyn_cast_or_null<UnitaryOpInterface>(op);
     if (!member) {
       break;
@@ -106,7 +106,7 @@ scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
 static void eraseFusableRun(PatternRewriter& rewriter, UnitaryOpInterface head,
                             UnitaryOpInterface tail) {
   // Tail-first: each erased op is dead once its successor is gone.
-  auto it = WireIterator(tail.getOutputTarget(0));
+  auto it = WireIterator(tail.getOutputQubit(0));
   auto* target = head.getOperation();
   while (*it != target) {
     auto* current = *it;
@@ -152,7 +152,7 @@ struct FuseSingleQubitUnitaryRunsPattern final
       return failure();
     }
     auto predecessor = dyn_cast_or_null<UnitaryOpInterface>(
-        op.getInputTarget(0).getDefiningOp());
+        op.getInputQubit(0).getDefiningOp());
     if (getRunMemberMatrix(predecessor)) {
       return failure();
     }
@@ -163,16 +163,15 @@ struct FuseSingleQubitUnitaryRunsPattern final
 
     FusableRunScan run = scanFusableRun(op, *headMatrix, basis);
     const auto synthesized = decomposition::synthesizeUnitary1QEuler(
-        rewriter, op.getLoc(), op.getInputTarget(0), run.composed,
-        run.gateCount, run.hasNonBasisGate, basis);
+        rewriter, op.getLoc(), op.getInputQubit(0), run.composed, run.gateCount,
+        run.hasNonBasisGate, basis);
     if (!synthesized) {
       return failure();
     }
     decomposition::emitGPhaseIfNeeded(rewriter, op.getLoc(),
                                       synthesized->globalPhase);
 
-    rewriter.replaceAllUsesWith(run.tail.getOutputTarget(0),
-                                synthesized->qubit);
+    rewriter.replaceAllUsesWith(run.tail.getOutputQubit(0), synthesized->qubit);
     eraseFusableRun(rewriter, op, run.tail);
     return success();
   }

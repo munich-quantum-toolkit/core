@@ -53,17 +53,15 @@ def normalize_global_phase(a: float) -> float:
 
 
 def angles_from_quaternion(w: float, x: float, y: float, z: float) -> tuple[float, float, float, float]:
-    """ZYZ Euler angles from quaternion, matching anglesFromQuaternion in the pass.
+    """Extract ZYZ Euler angles and their normalization phase from a quaternion.
 
     Returns:
         Tuple (theta, phi, lambda, phase correction) in ZYZ convention.
     """
     eps = 1e-12
 
-    # Clamp before acos to guard against floating-point drift outside [-1, 1]
-    arg = 2 * (w * w + z * z) - 1
-    arg = max(-1.0, min(1.0, arg))
-    beta = math.acos(arg)
+    # Half-angle norms retain small rotations when cos(beta) rounds to one.
+    beta = 2 * math.atan2(math.sqrt(x * x + y * y), math.sqrt(w * w + z * z))
 
     abs_beta = abs(beta)
     abs_beta_minus_pi = abs(beta - math.pi)
@@ -146,9 +144,9 @@ def compute_merge(chain: list[tuple]) -> tuple[float, float, float, float]:
 
     chain: list of (gate_type, quaternion, *angles).
 
-    Uses our own Euler extraction that matches the C++ pass exactly: same
-    atan2/acos/clamp logic, gimbal-lock handling, angle normalization, and
-    global-phase correction induced by normalizing the Euler angles.
+    SymPy composes the input quaternions independently of the C++ implementation.
+    Euler extraction uses half-angle norms and atan2, with gimbal-lock handling,
+    angle normalization, and the global-phase correction from that normalization.
 
     Returns:
         Tuple (theta, phi, lambda, gphase) all as floats.

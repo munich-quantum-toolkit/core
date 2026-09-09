@@ -95,21 +95,24 @@ inline constexpr double WEYL_SUPER_CONTROLLED_MAX_RELATIVE = 1e-9;
  */
 class TwoQubitWeylDecomposition {
 public:
-  /**
-   * @brief Decomposes a 2-qubit unitary into Weyl chamber coordinates and
-   *        single-qubit factors.
-   *
-   * @param unitaryMatrix Input 4x4 unitary (up to global phase).
-   * @param fidelity Optional average gate-fidelity floor in `[0, 1]`. When set,
-   *        @ref applySpecialization may replace `(a, b, c)` with an equivalent
-   *        specialized form whose overlap with the pre-specialization chamber
-   *        meets this bound; the result is fidelity-bounded, not necessarily
-   *        matrix-exact. When `std::nullopt`, no fidelity-driven specialization
-   *        is applied and the decomposition matches the input up to global
-   *        phase (modulo floating-point error). Invalid values (non-finite or
-   *        outside `[0, 1]`) trigger a fatal error.
-   */
-  [[nodiscard]] static TwoQubitWeylDecomposition
+  /// Decomposes a 2-qubit unitary into Weyl chamber coordinates and
+  /// single-qubit factors, returning `std::nullopt` on numerical nonconvergence
+  /// or a failed numerical postcondition.
+  ///
+  /// A matrix accepted by the dense-unitary verifier can still fail
+  /// decomposition at the stricter Weyl tolerance.
+  ///
+  /// @param unitaryMatrix Input 4x4 unitary (up to global phase).
+  /// @param fidelity Optional average gate-fidelity floor in `[0, 1]`.
+  ///
+  /// When set, @ref applySpecialization may replace `(a, b, c)` with an
+  /// equivalent specialized form whose overlap with the pre-specialization
+  /// chamber meets this bound; the result is fidelity-bounded, not necessarily
+  /// matrix-exact. When `std::nullopt`, no fidelity-driven specialization is
+  /// applied and the decomposition matches the input up to global phase (modulo
+  /// floating-point error). Invalid values (non-finite or outside `[0, 1]`)
+  /// trigger a fatal error.
+  [[nodiscard]] static std::optional<TwoQubitWeylDecomposition>
   create(const Matrix4x4& unitaryMatrix, std::optional<double> fidelity);
 
   [[nodiscard]] Matrix4x4 getCanonicalMatrix() const {
@@ -141,7 +144,7 @@ public:
 private:
   bool applySpecialization(const std::optional<double>& requestedFidelity);
 
-  void finalizeSpecializationPhase(bool flippedFromOriginal,
+  bool finalizeSpecializationPhase(bool flippedFromOriginal,
                                    double preSpecializationA,
                                    double preSpecializationB,
                                    double preSpecializationC,
@@ -234,12 +237,11 @@ public:
   twoQubitDecompose(const TwoQubitWeylDecomposition& targetDecomposition,
                     std::optional<std::uint8_t> numBasisGateUses) const;
 
-  /**
-   * @brief Decomposes @p targetUnitary using this cached basis decomposer.
-   *
-   * Only the target undergoes Weyl decomposition; basis precomputation from
-   * @ref create is reused.
-   */
+  /// Decomposes @p targetUnitary using this cached basis decomposer.
+  ///
+  /// Only the target undergoes Weyl decomposition; basis precomputation from
+  /// @ref create is reused. Returns `std::nullopt` if the target's numerical
+  /// decomposition fails or the requested basis-gate count is unsupported.
   [[nodiscard]] std::optional<TwoQubitNativeDecomposition> decomposeTarget(
       const Matrix4x4& targetUnitary,
       std::optional<std::uint8_t> numBasisGateUses = std::nullopt) const;
@@ -351,13 +353,12 @@ struct SynthesizedUnitary2Q {
   double globalPhase = 0.0;
 };
 
-/**
- * @brief Decomposes a two-qubit unitary using @p entangler.
- *
- * SQRTISWAP uses the minimum number of square-root iSWAP gates (0--3),
- * up to WEYL_TOLERANCE in the interaction coefficients.
- */
-[[nodiscard]] TwoQubitNativeDecomposition
+/// Decomposes a two-qubit unitary using @p entangler, returning `std::nullopt`
+/// if the numerical decomposition fails.
+///
+/// SQRTISWAP uses the minimum number of square-root iSWAP gates (0--3),
+/// up to WEYL_TOLERANCE in the interaction coefficients.
+[[nodiscard]] std::optional<TwoQubitNativeDecomposition>
 decomposeUnitary2QWeyl(const Matrix4x4& target,
                        CompilerTarget::GateKind entangler);
 
