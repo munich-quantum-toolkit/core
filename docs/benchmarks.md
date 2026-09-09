@@ -288,3 +288,47 @@ Register results concatenate the addend and sum so their correlation remains
 observable. Constant results contain only the sum. `expected_result` is the
 unique logical outcome for basis inputs and `None` for a superposed addend. The
 total sum width, including an optional carry bit, is limited to 1024.
+
+### Modular multiplier
+
+The `modular-multiplier` family uses the controlled modular arithmetic circuit
+from Figures 5 and 6 of
+[Beauregard's circuit for Shor's algorithm](https://arxiv.org/abs/quant-ph/0205095).
+It computes `control || multiplicand || product`, with
+`product = control * multiplier * multiplicand mod modulus`. The product
+register starts at zero and retains its leading overflow bit; a work qubit must
+return to zero. This is an out-of-place multiplier.
+
+The classical `multiplier` and canonical `modulus` are equal-width binary
+strings with $0 < \mathtt{multiplier} < \mathtt{modulus}$. The required
+`multiplicand` has the same width and accepts `0`, `1`, and `+`, as in the QFT
+adder. A `+` prepares an independent $|+\rangle$ qubit. The `control` accepts
+`"0"`, `"1"`, or `"+"`, and defaults to `"1"`. Widths range from 2 to 63 bits.
+
+```python
+from mqt.core.bench import modular_multiplier
+
+benchmark = modular_multiplier.ModularMultiplier(
+    modular_multiplier.Options(multiplier="011", modulus="101", multiplicand="111")
+)
+assert benchmark.expected_result == "11110001"  # control=1, input=7, product=1
+assert benchmark.evaluate({"11110001": 100}).success_probability == 1.0
+```
+
+Basis inputs have one exact `expected_result`, so TVD and success probability
+provide a direct check independent of width. An all-zero output fails for this
+nonzero example. Test different inputs and both control values to exercise
+wraparound and the inactive path.
+
+For superposed inputs, `expected_result` is `None`. The reference assigns
+probability $2^{-k}$ to each allowed input and its correct product, where $k$ is
+the number of `+` input bits, including the control. `success_probability` is
+the shot-weighted fraction matching both the configured inputs and the
+arithmetic relation. With $S$ shots, empirical TVD is at least
+$\max(0,1-S/2^k)$, even for ideal execution. Keep $k$ small for sampling-based
+distribution checks at large widths.
+
+Computational-basis measurements cannot detect arbitrary relative-phase errors.
+Native tests therefore also compare complete coherent states and require clean
+work-qubit recovery. A single correct basis result does not certify a unitary on
+every input.

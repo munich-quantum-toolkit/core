@@ -11,6 +11,7 @@ add_library(
   BV.cpp
   GHZ.cpp
   Grover.cpp
+  ModularMultiplier.cpp
   Multiplexer.cpp
   QFT.cpp
   QFTAdder.cpp

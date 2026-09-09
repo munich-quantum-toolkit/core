@@ -33,29 +33,6 @@ namespace mqt::bench {
 
 using namespace mlir;
 
-static void prepareRegister(qc::QCProgramBuilder& builder, Value reg,
-                            std::string_view bits) {
-  for (size_t first = 0; first < bits.size();) {
-    auto last = bits.find_first_not_of(bits[first], first);
-    if (last == std::string_view::npos) {
-      last = bits.size();
-    }
-    if (bits[first] != '0') {
-      builder.scfFor(static_cast<int64_t>(bits.size() - last),
-                     static_cast<int64_t>(bits.size() - first), 1,
-                     [&](Value index) {
-                       auto qubit = builder.loadQubit(reg, index);
-                       if (bits[first] == '+') {
-                         builder.h(qubit);
-                       } else {
-                         builder.x(qubit);
-                       }
-                     });
-    }
-    first = last;
-  }
-}
-
 static void addQuantumRegister(qc::QCProgramBuilder& builder, Value addend,
                                Value sum, int64_t qubits, bool carry) {
   auto zero = builder.indexConstant(0);
@@ -118,10 +95,10 @@ SmallVector<Value> qftAdder(qc::QCProgramBuilder& builder,
   Value addend;
   if (options.method == QFTAdderMethod::Register) {
     addend = builder.allocQubitRegisterStorage(qubits, "addend");
-    prepareRegister(builder, addend, options.addend);
+    detail::prepareRegister(builder, addend, options.addend);
   }
   auto sum = builder.allocQubitRegisterStorage(sumQubits, "sum");
-  prepareRegister(builder, sum, options.accumulator);
+  detail::prepareRegister(builder, sum, options.accumulator);
   auto result = builder.allocClassicalBitRegister(
       static_cast<int64_t>(benchmark.output().width), benchmark.output().name);
 

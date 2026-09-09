@@ -13,6 +13,7 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstdint>
+#include <string_view>
 
 namespace mlir {
 class Value;
@@ -23,6 +24,10 @@ class QCProgramBuilder;
 } // namespace mlir
 
 namespace mqt::bench::detail {
+
+/// Prepare a big-endian register from '0', '1', and '+' input bits.
+void prepareRegister(mlir::qc::QCProgramBuilder& builder, mlir::Value reg,
+                     std::string_view bits);
 
 /// Emit a loop whose phase angle follows a geometric sequence.
 void phaseRotationLoop(

@@ -20,6 +20,7 @@ namespace nb = nanobind;
 
 // forward declarations
 void registerBV(const nb::module_& m);
+void registerModularMultiplier(const nb::module_& m);
 void registerGHZ(const nb::module_& m);
 void registerGrover(const nb::module_& m);
 void registerMultiplexer(const nb::module_& m);
@@ -53,6 +54,11 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   const nb::module_ bv = m.def_submodule(
       "bv", "Bernstein--Vazirani benchmark instances and options.");
   registerBV(bv);
+
+  const nb::module_ modularMultiplier = m.def_submodule(
+      "modular_multiplier",
+      R"pb(Modular multiplier benchmark instances and options.)pb");
+  registerModularMultiplier(modularMultiplier);
 
   const nb::module_ ghz =
       m.def_submodule("ghz", "GHZ benchmark instances and options.");

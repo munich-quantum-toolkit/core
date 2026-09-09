@@ -12,6 +12,7 @@ add_executable(
   test_benchmark_generate_bv.cpp
   test_benchmark_generate_ghz.cpp
   test_benchmark_generate_grover.cpp
+  test_benchmark_generate_modular_multiplier.cpp
   test_benchmark_generate_multiplexer.cpp
   test_benchmark_generate_qft.cpp
   test_benchmark_generate_qft_adder.cpp

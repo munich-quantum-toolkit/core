@@ -13,6 +13,7 @@
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
 #include "bench/JSON.hpp"
+#include "bench/ModularMultiplier.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"
@@ -52,6 +53,9 @@ using mqt::bench::Grover;
 using mqt::bench::groverFromInstanceSpecificationJSON;
 using mqt::bench::groverFromManifestJSON;
 using mqt::bench::listBenchmarksJSON;
+using mqt::bench::ModularMultiplier;
+using mqt::bench::modularMultiplierFromInstanceSpecificationJSON;
+using mqt::bench::modularMultiplierFromManifestJSON;
 using mqt::bench::Multiplexer;
 using mqt::bench::multiplexerFromInstanceSpecificationJSON;
 using mqt::bench::multiplexerFromManifestJSON;
@@ -86,6 +90,43 @@ void expectInvalid(const std::function<void()>& operation,
   }
 }
 
+TEST(BenchmarkJSON, ResolvesModularMultiplierInputs) {
+  const auto benchmark = modularMultiplierFromInstanceSpecificationJSON(
+      R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111"}})");
+  EXPECT_EQ(benchmark.options().control, '1');
+  EXPECT_EQ(benchmark.expectedResult(), "11110001");
+  EXPECT_NE(toManifestJSON(benchmark).find("\"success_outcome\":\"11110001\""),
+            std::string::npos);
+  EXPECT_EQ(modularMultiplierFromManifestJSON(toManifestJSON(benchmark))
+                .expectedResult(),
+            benchmark.expectedResult());
+  EXPECT_EQ(caseId(benchmark), caseId(ModularMultiplier({.multiplier = "011",
+                                                         .modulus = "101",
+                                                         .multiplicand = "111",
+                                                         .control = '1'})));
+  EXPECT_NE(
+      caseId(benchmark),
+      caseId(ModularMultiplier(
+          {.multiplier = "011", .modulus = "101", .multiplicand = "110"})));
+  EXPECT_NE(caseId(benchmark), caseId(ModularMultiplier({.multiplier = "011",
+                                                         .modulus = "101",
+                                                         .multiplicand = "111",
+                                                         .control = '0'})));
+  for (const auto* control : {"\"\"", "\"11\"", "\"x\"", "true", "1"}) {
+    const auto instance =
+        std::string(
+            R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101","multiplicand":"111","control":)") +
+        control + "}}";
+    EXPECT_THROW(static_cast<void>(
+                     modularMultiplierFromInstanceSpecificationJSON(instance)),
+                 std::invalid_argument);
+  }
+  EXPECT_THROW(
+      static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+          R"({"schema_version":1,"benchmark":"modular-multiplier","parameters":{"multiplier":"011","modulus":"101"}})")),
+      std::invalid_argument);
+}
+
 TEST(BenchmarkJSON,
      ParsesInstanceSpecificationsAndSerializesResolvedParameters) {
   const auto bv = bvFromInstanceSpecificationJSON(
@@ -94,6 +135,14 @@ TEST(BenchmarkJSON,
   EXPECT_EQ(
       toInstanceSpecificationJSON(bv),
       R"({"benchmark":"bv","parameters":{"hidden_bitstring":"101","method":"static"},"schema_version":1})");
+
+  const auto modularMultiplier = modularMultiplierFromInstanceSpecificationJSON(
+      R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
+  EXPECT_EQ(modularMultiplier.options().multiplier, "011");
+  EXPECT_EQ(modularMultiplier.options().modulus, "101");
+  EXPECT_EQ(
+      toInstanceSpecificationJSON(modularMultiplier),
+      R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011"},"schema_version":1})");
 
   const auto ghz = ghzFromInstanceSpecificationJSON(
       R"({"parameters":{"qubits":3},"benchmark":"ghz","schema_version":1})");
@@ -150,6 +199,12 @@ TEST(BenchmarkJSON,
 
 TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const BV bv{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}};
+  const ModularMultiplier modularMultiplier{{
+      .multiplier = "011",
+      .modulus = "101",
+      .multiplicand = "+++",
+      .control = '+',
+  }};
   const GHZ ghz{
       {.qubits = 4, .topology = GHZTopology::Star, .basis = GHZBasis::X}};
   const Grover grover{{.markedBitstring = "001", .iterations = 2}};
@@ -162,6 +217,7 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const Teleportation teleportation;
 
   const auto bvManifest = toManifestJSON(bv);
+  const auto modularMultiplierManifest = toManifestJSON(modularMultiplier);
   const auto ghzManifest = toManifestJSON(ghz);
   const auto groverManifest = toManifestJSON(grover);
   const auto multiplexerManifest = toManifestJSON(multiplexer);
@@ -170,6 +226,9 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
   const auto qpeManifest = toManifestJSON(qpe);
   const auto teleportationManifest = toManifestJSON(teleportation);
   EXPECT_EQ(toManifestJSON(bvFromManifestJSON(bvManifest)), bvManifest);
+  EXPECT_EQ(toManifestJSON(
+                modularMultiplierFromManifestJSON(modularMultiplierManifest)),
+            modularMultiplierManifest);
   EXPECT_EQ(toManifestJSON(ghzFromManifestJSON(ghzManifest)), ghzManifest);
   EXPECT_EQ(toManifestJSON(groverFromManifestJSON(groverManifest)),
             groverManifest);
@@ -183,6 +242,8 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
       toManifestJSON(teleportationFromManifestJSON(teleportationManifest)),
       teleportationManifest);
   EXPECT_EQ(benchmarkIdFromManifestJSON(bvManifest), "bv");
+  EXPECT_EQ(benchmarkIdFromManifestJSON(modularMultiplierManifest),
+            "modular-multiplier");
   EXPECT_EQ(benchmarkIdFromManifestJSON(ghzManifest), "ghz");
   EXPECT_EQ(benchmarkIdFromManifestJSON(groverManifest), "grover");
   EXPECT_EQ(benchmarkIdFromManifestJSON(multiplexerManifest), "multiplexer");
@@ -195,6 +256,9 @@ TEST(BenchmarkJSON, RoundTripsSelfCheckingManifests) {
             std::string::npos);
   EXPECT_NE(groverManifest.find("\"success_outcome\":\"001\""),
             std::string::npos);
+  EXPECT_NE(modularMultiplierManifest.find("\"model\":\"modular_multiplier\""),
+            std::string::npos);
+  EXPECT_NE(modularMultiplierManifest.find("\"width\":8"), std::string::npos);
   EXPECT_NE(multiplexerManifest.find("\"model\":\"multiplexer\""),
             std::string::npos);
   EXPECT_NE(qftAdderManifest.find("\"model\":\"qft_adder\""),
@@ -214,6 +278,22 @@ TEST(BenchmarkJSON, UsesStableSemanticCaseIds) {
   EXPECT_NE(caseId(linear), caseId(star));
   EXPECT_NE(caseId(BV{{.hiddenBitstring = "1"}}),
             caseId(BV{{.hiddenBitstring = "1", .method = BVMethod::Dynamic}}));
+  EXPECT_EQ(caseId(ModularMultiplier{{.multiplier = "011",
+                                      .modulus = "101",
+                                      .multiplicand = "+++",
+                                      .control = '+'}}),
+            caseId(ModularMultiplier{{.multiplier = "011",
+                                      .modulus = "101",
+                                      .multiplicand = "+++",
+                                      .control = '+'}}));
+  EXPECT_NE(caseId(ModularMultiplier{{.multiplier = "011",
+                                      .modulus = "101",
+                                      .multiplicand = "+++",
+                                      .control = '+'}}),
+            caseId(ModularMultiplier{{.multiplier = "001",
+                                      .modulus = "101",
+                                      .multiplicand = "+++",
+                                      .control = '+'}}));
   EXPECT_NE(caseId(QFT{{.qubits = 3, .periodExponent = 1}}),
             caseId(QFT{{.qubits = 3,
                         .periodExponent = 1,
@@ -301,6 +381,30 @@ TEST(BenchmarkJSON,
             R"({"schema_version":1,"benchmark":"multiplexer","parameters":{"qubits":7,"angles":[]}})"));
       },
       "unknown key 'angles'");
+  expectInvalid(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"011","extra":true},"schema_version":1})"));
+      },
+      "unknown key 'extra'");
+  expectInvalid(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"1001","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
+      },
+      "equal widths");
+  expectInvalid(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"010","multiplicand":"+++","multiplier":"011"},"schema_version":1})"));
+      },
+      "canonical");
+  expectInvalid(
+      [] {
+        static_cast<void>(modularMultiplierFromInstanceSpecificationJSON(
+            R"({"benchmark":"modular-multiplier","parameters":{"control":"+","modulus":"101","multiplicand":"+++","multiplier":"101"},"schema_version":1})"));
+      },
+      "0 < a < N");
   for (const auto* parameters : {
            R"({"addend":"","accumulator":""})",
            R"({"addend":"1","accumulator":"00"})",
@@ -385,8 +489,9 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifestData) {
 TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_EQ(
       listBenchmarksJSON(),
-      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"teleportation"}],"schema_version":1})");
+      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"modular-multiplier"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"teleportation"}],"schema_version":1})");
   const auto bv = describeBenchmarkJSON("bv");
+  const auto modularMultiplier = describeBenchmarkJSON("modular-multiplier");
   const auto ghz = describeBenchmarkJSON("ghz");
   const auto grover = describeBenchmarkJSON("grover");
   const auto multiplexer = describeBenchmarkJSON("multiplexer");
@@ -400,6 +505,9 @@ TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_NE(ghz.find("\"maximum\":1000000"), std::string::npos);
   EXPECT_NE(ghz.find("\"maximum\":1075"), std::string::npos);
   EXPECT_NE(bv.find("\"dynamic\""), std::string::npos);
+  EXPECT_NE(modularMultiplier.find("\"maxLength\":63"), std::string::npos);
+  EXPECT_NE(modularMultiplier.find("\"pattern\":\"^1[01]+$\""),
+            std::string::npos);
   EXPECT_NE(grover.find("\"maxLength\":62"), std::string::npos);
   EXPECT_NE(multiplexer.find("\"maximum\":1024"), std::string::npos);
   EXPECT_NE(multiplexer.find("\"minimum\":2"), std::string::npos);
@@ -443,6 +551,21 @@ TEST(BenchmarkJSON, ParsesCountsAndSerializesEvaluations) {
             std::string::npos);
   EXPECT_NE(multiplexerEvaluation.find("\"total_variation_distance\":"),
             std::string::npos);
+
+  const ModularMultiplier modularMultiplier{{
+      .multiplier = "011",
+      .modulus = "101",
+      .multiplicand = "+++",
+      .control = '+',
+  }};
+  const auto modularMultiplierEvaluation = evaluateJSON(
+      toManifestJSON(modularMultiplier),
+      R"({"schema_version":1,"counts":{"00000000":1,"10000000":1,"00010000":1,"10010011":1,"00100000":1,"10100001":1,"00110000":1,"10110100":1,"01000000":1,"11000010":1,"01010000":1,"11010000":1,"01100000":1,"11100011":1,"01110000":1,"11110001":1}})");
+  EXPECT_NE(modularMultiplierEvaluation.find("\"success_probability\":1.0"),
+            std::string::npos);
+  EXPECT_NE(
+      modularMultiplierEvaluation.find("\"total_variation_distance\":0.0"),
+      std::string::npos);
 
   const QFTAdder qftAdder{{.addend = "++", .accumulator = "01"}};
   const auto qftAdderEvaluation = evaluateJSON(

@@ -19,11 +19,37 @@
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
 
+#include <cstddef>
+#include <cstdint>
 #include <numbers>
+#include <string_view>
 
 namespace mqt::bench::detail {
 
 using namespace mlir;
+
+void prepareRegister(qc::QCProgramBuilder& builder, Value reg,
+                     std::string_view bits) {
+  for (size_t first = 0; first < bits.size();) {
+    auto last = bits.find_first_not_of(bits[first], first);
+    if (last == std::string_view::npos) {
+      last = bits.size();
+    }
+    if (bits[first] != '0') {
+      builder.scfFor(static_cast<int64_t>(bits.size() - last),
+                     static_cast<int64_t>(bits.size() - first), 1,
+                     [&](Value index) {
+                       auto qubit = builder.loadQubit(reg, index);
+                       if (bits[first] == '+') {
+                         builder.h(qubit);
+                       } else {
+                         builder.x(qubit);
+                       }
+                     });
+    }
+    first = last;
+  }
+}
 
 void phaseRotationLoop(
     qc::QCProgramBuilder& builder, Value lower, Value upper, Value step,

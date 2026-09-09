@@ -14,6 +14,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
+#include "bench/ModularMultiplier.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"

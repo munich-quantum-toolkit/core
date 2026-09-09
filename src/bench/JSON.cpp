@@ -15,6 +15,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
+#include "bench/ModularMultiplier.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"
@@ -320,6 +321,38 @@ void requireBenchmark(const Json& root, const std::string_view expected,
   }
 }
 
+[[nodiscard]] ModularMultiplier
+parseModularMultiplierParameters(const Json& parameters,
+                                 const std::string_view source) {
+  rejectUnknownKeys(parameters,
+                    {"multiplier", "modulus", "multiplicand", "control"},
+                    source, "$/parameters");
+  auto control = std::string("1");
+  if (const auto value = parameters.find("control");
+      value != parameters.end()) {
+    control = stringValue(*value, source, "$/parameters/control");
+  }
+  if (control.size() != 1U) {
+    fail(source, "$/parameters/control", "must be '0', '1', or '+'");
+  }
+  try {
+    return ModularMultiplier({
+        .multiplier = stringValue(
+            required(parameters, "multiplier", source, "$/parameters"), source,
+            "$/parameters/multiplier"),
+        .modulus =
+            stringValue(required(parameters, "modulus", source, "$/parameters"),
+                        source, "$/parameters/modulus"),
+        .multiplicand = stringValue(
+            required(parameters, "multiplicand", source, "$/parameters"),
+            source, "$/parameters/multiplicand"),
+        .control = control.front(),
+    });
+  } catch (const std::invalid_argument& error) {
+    fail(source, "$/parameters", error.what());
+  }
+}
+
 [[nodiscard]] GHZ parseGHZParameters(const Json& parameters,
                                      const std::string_view source) {
   rejectUnknownKeys(parameters, {"qubits", "topology", "basis"}, source,
@@ -537,6 +570,16 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
+[[nodiscard]] Json parametersJSON(const ModularMultiplier& benchmark) {
+  const auto& options = benchmark.options();
+  return {
+      {"control", std::string(1, options.control)},
+      {"multiplicand", options.multiplicand},
+      {"modulus", options.modulus},
+      {"multiplier", options.multiplier},
+  };
+}
+
 [[nodiscard]] Json parametersJSON(const GHZ& benchmark) {
   const auto& options = benchmark.options();
   return {
@@ -611,6 +654,20 @@ parseTeleportationParameters(const Json& parameters,
       {"success_outcome", benchmark.options().hiddenBitstring},
       {"version", 1},
   };
+}
+
+[[nodiscard]] Json referenceJSON(const ModularMultiplier& benchmark) {
+  Json reference = {
+      {"kind", "analytic"},
+      {"model", "modular_multiplier"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"version", 1},
+  };
+  if (benchmark.expectedResult()) {
+    reference["success_outcome"] = *benchmark.expectedResult();
+  }
+  return reference;
 }
 
 [[nodiscard]] Json referenceJSON(const GHZ& benchmark) {
@@ -803,6 +860,53 @@ template <class Benchmark>
           },
       },
       {"required", {"hidden_bitstring"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json modularMultiplierInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<ModularMultiplier>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {"control", {{"default", "1"}, {"enum", {"0", "1", "+"}}}},
+              {
+                  "multiplicand",
+                  {
+                      {"type", "string"},
+                      {"minLength", 2},
+                      {"maxLength", ModularMultiplierOptions::MAX_BITS},
+                      {"pattern", "^[01+]+$"},
+                  },
+              },
+              {
+                  "modulus",
+                  {
+                      {
+                          "maxLength",
+                          ModularMultiplierOptions::MAX_BITS,
+                      },
+                      {"minLength", 2},
+                      {"pattern", "^1[01]+$"},
+                      {"type", "string"},
+                  },
+              },
+              {
+                  "multiplier",
+                  {
+                      {
+                          "maxLength",
+                          ModularMultiplierOptions::MAX_BITS,
+                      },
+                      {"minLength", 2},
+                      {"pattern", "^[01]+$"},
+                      {"type", "string"},
+                  },
+              },
+          },
+      },
+      {"required", {"multiplier", "modulus", "multiplicand"}},
       {"type", "object"},
   });
 }
