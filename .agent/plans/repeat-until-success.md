@@ -4,8 +4,7 @@ Status: complete.
 
 ## Goal and scope
 
-Add a fixed `repeat-until-success` structured benchmark from Paetznick and
-Svore's
+Add a `repeat-until-success` structured benchmark from Paetznick and Svore's
 [Repeat-Until-Success: Non-deterministic decomposition of single-qubit unitaries](https://arxiv.org/abs/1311.1074v2),
 Figure 8. Expose the benchmark through the typed C++, JSON, command-line,
 Python, and MLIR generation interfaces. The family has no options.
@@ -37,12 +36,11 @@ apply S-dagger and H to the data qubit and measure `result`. This
 phase-sensitive readout has probabilities `P(0) = 1/2 + sqrt(2)/3` and
 `P(1) = 1/2 - sqrt(2)/3`; it distinguishes U from its adjoint.
 
-Structural tests must assert the one `scf.while`, exact operation order and wire
-roles in its before region, direct measurement condition, sole failure-path X,
-and S-dagger/H/data measurement after the loop. They must reject conditionals,
-recovery gates, and retry bounds. Add native reference and JSON tests, a seeded
-QCO sampling test, shared registry and CLI checks, and a shared QC-to-jeff
-serialization test with byte round-trip.
+The MLIR test must assert the algorithm-specific loop contract: the exact
+attempt order and wire roles, the direct measurement condition, the sole
+failure-path X, and the S-dagger/H/data measurement after the loop. Add native
+reference and JSON tests, a seeded QCO sampling test, shared registry and CLI
+checks, and a shared QC-to-jeff serialization test with byte round-trip.
 
 Version 1 of the paper labels the success unitary incorrectly. Version 2 fixes
 the label, matches the stated T convention, and is the version selected by the
@@ -50,7 +48,7 @@ tracker's unversioned arXiv link.
 
 ## Work remaining
 
-- [x] Add the fixed typed family, JSON contract, binding, stubs, and analytic
+- [x] Add the typed family, JSON contract, binding, stubs, and analytic
       reference.
 - [x] Generate and structurally test the exact Figure 8 loop and readout.
 - [x] Document the source, loop semantics, and output distribution.

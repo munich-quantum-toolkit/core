@@ -21,7 +21,7 @@ namespace {
 using mqt::bench::Output;
 using mqt::bench::RepeatUntilSuccess;
 
-TEST(RepeatUntilSuccess, HasTheFixedOutput) {
+TEST(RepeatUntilSuccess, HasTheOutput) {
   const RepeatUntilSuccess benchmark;
   EXPECT_EQ(benchmark.output(), (Output{"result", 1}));
 }

@@ -17,7 +17,8 @@
 
 namespace mqt::bench {
 
-/// A fixed repeat-until-success benchmark and its analytic reference.
+/// The Paetznick--Svore repeat-until-success benchmark and its analytic
+/// reference.
 class MQT_CORE_BENCH_EXPORT RepeatUntilSuccess final {
 public:
   RepeatUntilSuccess();

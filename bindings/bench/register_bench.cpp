@@ -86,7 +86,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
   registerQPE(qpe);
 
   const nb::module_ repeatUntilSuccess = m.def_submodule(
-      "repeat_until_success", "Fixed repeat-until-success benchmark.");
+      "repeat_until_success", "Repeat-until-success benchmark instance.");
   registerRepeatUntilSuccess(repeatUntilSuccess);
 
   const nb::module_ teleportation = m.def_submodule(

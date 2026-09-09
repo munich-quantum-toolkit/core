@@ -315,7 +315,7 @@ every input.
 
 ### Repeat until success
 
-The fixed `repeat-until-success` family implements the two-$T$-gate circuit from
+The `repeat-until-success` family implements the two-$T$-gate circuit from
 Figure 8 of Paetznick and Svore's
 [repeat-until-success decomposition](https://arxiv.org/abs/1311.1074v2). Each
 attempt measures an ancilla. Outcome zero applies $(I + i\sqrt{2}X) / \sqrt{3}$

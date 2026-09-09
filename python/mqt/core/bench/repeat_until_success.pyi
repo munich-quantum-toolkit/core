@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Fixed repeat-until-success benchmark."""
+"""Repeat-until-success benchmark instance."""
 
 from collections.abc import Mapping
 

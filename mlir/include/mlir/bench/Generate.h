@@ -63,7 +63,7 @@ generate(const QFTAdder& benchmark);
 /// Generate the QC program for a configured QPE benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const QPE& benchmark);
 
-/// Generate the fixed repeat-until-success benchmark.
+/// Generate the repeat-until-success benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>
 generate(const RepeatUntilSuccess& benchmark);
 

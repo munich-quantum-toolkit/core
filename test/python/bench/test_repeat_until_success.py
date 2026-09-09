@@ -38,7 +38,7 @@ def test_repeat_until_success_evaluation() -> None:
 
 
 def test_repeat_until_success_json_roundtrip() -> None:
-    """Preserve the fixed benchmark identity through both JSON representations."""
+    """Preserve the benchmark identity through both JSON representations."""
     benchmark = repeat_until_success.RepeatUntilSuccess()
     assert json.loads(benchmark.instance_specification_json)["parameters"] == {}
 

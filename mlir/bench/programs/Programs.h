@@ -62,7 +62,7 @@ SmallVector<Value> qftAdder(qc::QCProgramBuilder& builder,
 /// Emit one configured QPE benchmark.
 SmallVector<Value> qpe(qc::QCProgramBuilder& builder, const QPE& benchmark);
 
-/// Emit the fixed repeat-until-success benchmark.
+/// Emit the repeat-until-success benchmark.
 SmallVector<Value> repeatUntilSuccess(qc::QCProgramBuilder& builder,
                                       const RepeatUntilSuccess& benchmark);
 
