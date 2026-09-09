@@ -1,8 +1,8 @@
 # Contract audit: remaining canonicalization fixes
 
-Status: complete; remaining fixes implemented and validated locally. Base:
-`7e2a2679fd6c48397f2d7ca5e3d2018d841a69a2`, including PR #2464. Date:
-2026-09-09.
+Status: implemented and validated locally. Base:
+`84b5cfd32fb25d2dc7972f581b8d28c2686e12e8`, rebased onto main
+`2bd6a88e1d3e36cad80e0869063572c8879cf5c4`. Date: 2026-09-09.
 
 The comprehensive audit, original registration inventory, and historical
 validation remain available at
@@ -12,16 +12,17 @@ The Arith dependency declarations moved to
 and gate wire mappings to
 [PR #2485](https://github.com/munich-quantum-toolkit/core/pull/2485), and
 bounded angle arithmetic to
-[PR #2486](https://github.com/munich-quantum-toolkit/core/pull/2486), which
-targets PR #2485. This record covers only the fixes that remain in PR #2477.
+[PR #2486](https://github.com/munich-quantum-toolkit/core/pull/2486), which was
+based on PR #2485. All three changes are now on main. This record covers only
+the fixes that remain in PR #2477.
 
 ## Result and scope
 
 The remaining changes stabilize R/U/U2 matrices and U2 inversion, simplify
 bounded U-power reconstruction, replace identity rewrites with folds, and remove
 redundant work in CBit, QCO If, and QTensor canonicalization. Direct pair tests
-protect immediate QCO/QTensor linearity. Larger QTensor normalization and
-provenance changes remain deferred.
+protect immediate QCO/QTensor linearity. QTensor chain normalization remains
+deferred; main already batches fresh-slot resets within a linear chain.
 
 The scope includes these canonicalizers and the shared matrix helpers that
 establish their semantics. Transformation and conversion patterns remain outside
@@ -40,9 +41,10 @@ and independent matrix oracles. Disposition: implemented and validated locally.
 
 `ROp::unitaryMatrix` formerly formed `exp(i*(+/-phi-pi/2))`. At axis angles
 `1e16` and `1e308`, rounding can erase the quarter turn and produce a nonunitary
-matrix. Its off-diagonal entries now use `-i*sin(theta/2)*exp(+/-i*phi)`. Direct
-axis-matrix and unitarity tests cover the owning helper; R merge and power tests
-compare untouched input and rewritten output.
+matrix. Its lower-left entry now uses `-i*sin(theta/2)*exp(i*phi)`; the
+upper-right entry is its negative conjugate, avoiding a second exponential.
+Direct axis-matrix and unitarity tests cover the owning helper; R merge and
+power tests compare untouched input and rewritten output.
 
 U/U2 matrices had the same problem with `lambda+pi`, while `phi+lambda` could
 absorb a phase or overflow. `computeUMatrix` now multiplies separate phase
@@ -73,7 +75,9 @@ exceed the error bound.
 
 Historical sensitive U-power cases remain under control and retain full-matrix
 checks. They no longer require a surviving Pow when the new extraction meets the
-same error bound. The helper's error and input limits remain unchanged.
+same error bound. A separate finite-input regression requires rejection at
+exponent 1024, and a controlled QCO consumer test requires Pow retention. The
+helper's error and input limits remain unchanged.
 
 ### 3. Fold only identities that can remove their own root
 
@@ -103,7 +107,10 @@ source invariants. Disposition: implemented and validated locally.
   followed by a live snapshot and scalar load formerly retained the load.
   Whole-register writes, ambiguous indices, region operations, and unknown
   register users remain barriers. The unread zero-initialization boolean is
-  removed; nullable `value` retains its existing meaning.
+  removed. The helper returns `optional<Value>`: nullopt is unknown, an engaged
+  null Value is known zero, and a non-null Value is the known stored bit.
+  Existing zero-initialization, stored-value, and write-barrier tests protect
+  all states.
 - `ForwardClassicalResults` maps ordered branch-yield pairs to their earliest
   result. Matching is expected O(N), replacing N(N-1)/2 pair comparisons for N
   distinct pairs. Output follows result order, never map traversal. Preserve
@@ -122,8 +129,12 @@ regressions and distinguishes historical measurements from current validation.
 
 Adjacent insert/extract commuting requires N(N-1)/2 successful rewrites for N
 distinct constant-index accesses. Baseline counts at N=16/64/256 were
-120/2,016/32,640. Reset provenance also revisits quadratic predecessor chains;
-decoding once reduces repeated work without changing that bound.
+120/2,016/32,640. These counts describe adjacent commuting, not reset batching.
+Main's reset pattern reuses an allocation proof in a forward walk to remove
+fresh-slot resets in the same block. Dynamic accesses and unknown tensor
+operations stop the walk; repeated indices are not fresh. This avoids repeated
+backward provenance scans for the measured all-fresh chain without a mutable
+cache. Arbitrary tensor graphs are not covered by that linear-chain result.
 
 Mapping and QTensor branch scalarization consume the all-extracts-before-inserts
 form. History #1987 records failures at the default greedy iteration limit, so
@@ -131,7 +142,7 @@ production cleanup runs to convergence. Do not remove normalization or add an
 arbitrary cap without preserving that consumer contract. A batch algorithm must
 preserve same-block/direct-SSA boundaries, dynamic and same-index barriers, wire
 identity, and deterministic order. A provenance cache needs an invalidation
-owner. Neither redesign is implemented here.
+owner. No general normalization or provenance cache is introduced here.
 
 `ScalarizeQTensorInputs` retains static tensors, distinct constant indices,
 complete reinsertion, and positional tensor yielding. Branch-specific accesses
@@ -142,21 +153,18 @@ bypassed structured updates.
 
 ## Validation
 
-The narrowed diff was rebuilt with the release preset and LLVM/MLIR 23.1.0 on
-2026-09-09. These results apply to the remaining changes, independently of the
-combined change at `79e9c347b`:
+The implementation on base `84b5cfd32`, including the changes described above,
+was checked with Clang 23, LLVM/MLIR 23.1.0, ThinLTO, and mold:
 
-- The six focused binaries passed 1,150 tests: QC 350, QCO 525, CBit 13, QTensor
-  39, MQT utilities 27, and QCO optimizations 196. XML result counts confirmed
-  that each binary ran tests.
-- `cmake --build --preset release -j8 --target all mlir-doc` passed.
-- `ctest --preset release --output-on-failure -j8` passed 3,224 tests, with
-  `ScQDMIJobSpecificationTest.QueryJobId` skipped because the device does not
-  support optional job IDs. No tests failed.
-- `uvx nox -s cpp-lint -- 7e2a2679f` passed with LLVM 23 tooling and no
-  findings.
-- `uvx nox -s lint` passed.
+- `cmake --build --preset release-clang-ipo -j8`: passed.
+- `ctest --preset release-clang-ipo --output-on-failure -j8`: 3,381 entries,
+  zero failures, one optional QDMI job-ID skip; 10.84 seconds wall time.
+- Focused binaries: 40 MQT utility, 547 QCO IR, and 13 CBit IR tests passed.
+- The new finite-input rejection test failed as expected against a disposable
+  helper with its reconstruction guard removed, closing the demonstrated gap.
+- `uvx nox -s lint`: passed.
+- `uvx nox -s cpp-lint -- 2bd6a88e1`: passed with zero findings.
 
-Transformation and conversion tests validate matrix and identity-folding
-consumers; their production patterns were not changed. Hosted CI has not yet run
-on this narrowed diff.
+The [evidence appendix](dialect-canonicalization-probes.md) records the
+numerical mutation and the isolated R-matrix benchmark. Hosted results are
+separate from local validation; other math libraries remain unverified locally.

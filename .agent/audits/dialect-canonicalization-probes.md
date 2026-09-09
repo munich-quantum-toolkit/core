@@ -1,9 +1,9 @@
 # Evidence for the remaining canonicalization fixes
 
-Status: narrowed diff rebuilt and tested locally. Base: `7e2a2679f`. The
-[main audit](dialect-canonicalization.md) links the comprehensive record at
-`79e9c347b` and the three extracted PRs. This appendix retains only matrix,
-identity-folding, local-analysis, and QTensor scaling evidence.
+This appendix retains reproducible evidence and historical measurements. The
+[main audit](dialect-canonicalization.md) owns current scope, decisions, and
+validation status. It links the comprehensive record at `79e9c347b` and the
+three extracted changes now merged into main.
 
 ## Matrix and U-power regressions
 
@@ -42,9 +42,30 @@ products; the implementation uses binary powering. Unsupported exponents and
 nonfinite angles retain separate rejection tests. Positive integral exponents up
 to 1024 remain subject to the `5e-13` reconstruction bound.
 
-These permanent regressions passed after rebuilding the narrowed diff. The
-[main audit](dialect-canonicalization.md#validation) records the current
-results.
+### Reconstruction rejection and phase-factor reuse
+
+At the rebased baseline `84b5cfd32`, removing the final reconstruction/check
+block in a disposable GatePowering.cpp copy still passed all ten gate-power
+utility tests. The finite input
+`(0.615926832310562, -2.7139721469341298, -2.7602783230969417, 1024)` was
+rejected by the unmodified helper under both Clang 23 and GCC 13 on DGX Spark.
+Without the guard, the reconstructed matrix had maximum entry error
+`3.6334658662220525e-12` against a binary matrix power, over seven times the
+`5e-13` bound. The new `RejectsFinitePowerBeyondReconstructionBound` test
+requires rejection; `RejectedPowURemainsUnchanged` checks the controlled QCO
+consumer. The new utility test fails when the reconstruction guard is removed
+from a disposable helper copy. Exact behavior on other math libraries remains
+subject to hosted validation.
+
+For R's matrix, real finite parameters imply `m01 = -conj(m10)`. Reusing the
+lower-left entry removes one exponential. An isolated Clang 23 `-O3` benchmark
+used one million varying-axis evaluations per sample, seven samples, noinline
+functions, and a consumed checksum. Median time was 28.548 ms with two
+exponentials and 17.630 ms with conjugation, 38.2% lower on this host. Zero,
+negative, ordinary, `1e16`, and `1e308` cases agreed within `1e-15`. This is a
+helper microbenchmark, not a compiler or simulation speedup. Existing
+independent axis-matrix, unitarity, merge, and power tests remain the semantic
+oracles.
 
 ## Identity and local-analysis regressions
 
@@ -87,8 +108,9 @@ oracle for decoding each provenance constant once.
 ## Historical QTensor scaling
 
 These measurements describe the investigation baseline, not a post-fix speedup.
-The large rewrite/cache redesign is deferred. Input and output passed ordinary
-verification and QCO linearity. Times are single local runs without thresholds.
+Adjacent commuting remains deferred; main already batches fresh-slot resets.
+Input and output passed ordinary verification and QCO linearity. Times are
+single local runs without thresholds.
 
 | Accesses N | Successful adjacent commutations |               Time |
 | ---------- | -------------------------------: | -----------------: |
@@ -112,29 +134,21 @@ The historical runs removed exactly N resets:
 | 256   |                 256 |  2,404 microseconds |
 | 1,024 |               1,024 | 34,883 microseconds |
 
-The reset pattern's source establishes N(N-1)/2 prior-access visits across this
-family. Caching each decoded constant reduces repeated decoding but does not
-change that asymptotic bound. Measurements alone do not justify mutable cache
-state without invalidation rules.
+The historical reset pattern made N(N-1)/2 prior-access visits across this
+family. Main now batches these fresh-slot resets using one allocation proof and
+a forward linear-chain walk. These old times do not characterize that
+implementation. They also do not establish a bound for arbitrary tensor graphs.
+No mutable provenance cache is needed for the supported batch.
 
 The
 [archived probe appendix](https://github.com/munich-quantum-toolkit/core/blob/79e9c347b30b6c6639b6422a206fdc78dba6bd16/.agent/audits/dialect-canonicalization-probes.md)
 retains the complete counted input generator and reproduction procedure.
 
-## Reproduction and validation
+## Reproduction
 
-The scaling measurements above used the investigation baseline `b75b02fa9` and
-LLVM/MLIR 23.1.0. They establish a cost to revisit, not a current speedup. The
-permanent tests name the owning contract; their source must be rebuilt before
-claiming a result.
-
-Use the release preset and pinned dependencies. The relevant targets are
-`mqt-core-mlir-unittest-qc-ir`, `mqt-core-mlir-unittest-qco-ir`,
-`mqt-core-mlir-unittest-cbit-ir`, `mqt-core-mlir-unittest-qtensor-ir`, and
-`mqt-core-mlir-unittests-mqt-utils`.
-
-Use exact suite and test names when selecting permanent regressions. A missing
-or empty selection is not a passing probe. The narrowed diff passed 1,150 tests
-in six focused binaries and 3,224 configured C++ tests, with one optional QDMI
-test skipped. The main audit records build and lint results. Results from the
-combined change at `79e9c347b` remain historical.
+The scaling measurements used baseline `b75b02fa9` and LLVM/MLIR 23.1.0. The
+archived appendix above retains the generators and commands. The new regression
+sources preserve the numerical inputs. Rebuild before running the tests; use the
+native release preset and exact suite/test names. An empty selection is not a
+passing probe. See the [main audit](dialect-canonicalization.md#validation) for
+current validation rather than duplicating results here.

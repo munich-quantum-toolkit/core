@@ -174,6 +174,13 @@ TEST(GatePoweringTest, LargeEulerPhasePowersPreserveFullMatrix) {
   }
 }
 
+TEST(GatePoweringTest, RejectsFinitePowerBeyondReconstructionBound) {
+  /// This supported exponent still exceeds the full-matrix reconstruction
+  /// bound.
+  EXPECT_FALSE(mlir::mqt::powerUParameters(
+      0.615926832310562, -2.7139721469341298, -2.7602783230969417, 1024.0));
+}
+
 TEST(GatePoweringTest, RejectsUnsupportedPowerExponents) {
   for (double exponent : std::array{
            -1.0,

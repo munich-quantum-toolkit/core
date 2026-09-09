@@ -109,8 +109,8 @@ Matrix2x2 ROp::unitaryMatrix(double theta, double phi) {
   const auto halfTheta = theta / 2;
   const auto c = std::cos(halfTheta);
   const auto s = std::sin(halfTheta);
-  const auto m01 = -1i * s * std::exp(-1i * phi);
   const auto m10 = -1i * s * std::exp(1i * phi);
+  const auto m01 = -std::conj(m10);
   return Matrix2x2::fromElements(c, m01,  // row 0
                                  m10, c); // row 1
 }
