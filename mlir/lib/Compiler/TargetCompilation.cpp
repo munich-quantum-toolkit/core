@@ -55,7 +55,12 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createDecomposeMultiControlled(target));
   populateDefaultQCOOptimizationPipeline(pm);
-  pm.addPass(qco::createFuseTwoQubitGates());
+  /// ponytail: CX/CZ-cost fusion can increase square-root iSWAP counts;
+  /// enable it for this basis when fusion uses the target entangler's cost.
+  if (const auto basis = target.synthesisBasis();
+      !basis || basis->entangler != CompilerTarget::GateKind::SQRTISWAP) {
+    pm.addPass(qco::createFuseTwoQubitGates());
+  }
   switch (target.connectivityKind()) {
   case CompilerTarget::Connectivity::Kind::Explicit:
     pm.addPass(qco::createMappingPass(qco::MappingPassOptions{}));

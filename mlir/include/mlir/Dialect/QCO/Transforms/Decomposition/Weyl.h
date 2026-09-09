@@ -353,6 +353,9 @@ struct SynthesizedUnitary2Q {
 
 /**
  * @brief Decomposes a two-qubit unitary using @p entangler.
+ *
+ * SQRTISWAP uses the minimum number of square-root iSWAP gates (0--3),
+ * up to WEYL_TOLERANCE in the interaction coefficients.
  */
 [[nodiscard]] TwoQubitNativeDecomposition
 decomposeUnitary2QWeyl(const Matrix4x4& target,

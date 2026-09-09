@@ -754,7 +754,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .value("ISWAP", mlir::CompilerTarget::GateKind::ISWAP)
       .value("CZ", mlir::CompilerTarget::GateKind::CZ)
       .value("CX", mlir::CompilerTarget::GateKind::CX)
-      .value("ECR", mlir::CompilerTarget::GateKind::ECR);
+      .value("ECR", mlir::CompilerTarget::GateKind::ECR)
+      .value("SQRTISWAP", mlir::CompilerTarget::GateKind::SQRTISWAP);
 
   nb::enum_<mlir::CompilerTarget::SingleQubitBasis>(
       compilerTarget, "SingleQubitBasis",
