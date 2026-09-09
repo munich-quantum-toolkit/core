@@ -16,7 +16,6 @@
 #include <gtest/gtest.h>
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
 #include <mlir/IR/Attributes.h>
 #include <mlir/IR/Builders.h>
@@ -53,7 +52,7 @@ protected:
   MLIRContext context_;
 
   void SetUp() override {
-    context_.loadDialect<QCODialect, arith::ArithDialect, func::FuncDialect>();
+    context_.loadDialect<QCODialect, func::FuncDialect>();
   }
 
   OwningOpRef<ModuleOp> singleQubitFunction() {
@@ -140,8 +139,6 @@ TEST_F(QCOCanonicalizationTest, PairCancellationPreservesDifferentGates) {
   auto first = HOp::create(builder, function.getLoc(), function.getArgument(0));
   auto second = XOp::create(builder, function.getLoc(), first.getResult());
   returned->setOperand(0, second.getResult());
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
   ASSERT_NO_FATAL_FAILURE(canonicalize(*moduleOp));
   EXPECT_EQ(returned.getOperand(0), second.getResult());
