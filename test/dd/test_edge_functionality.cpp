@@ -19,8 +19,11 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <limits>
 #include <memory>
+#include <stdexcept>
 #include <string>
+#include <vector>
 
 namespace dd {
 
@@ -50,6 +53,68 @@ TEST(VectorFunctionality, GetValueByIndexEndianness) {
 
   for (std::size_t i = 0U; i < state.size(); ++i) {
     EXPECT_EQ(state[i], stateDD.getValueByIndex(i));
+  }
+}
+
+TEST(VectorFunctionality, WideIndices) {
+  constexpr auto digits = std::numeric_limits<size_t>::digits;
+  auto dd = std::make_unique<Package>(digits + 1U);
+  const auto ones =
+      makeBasisState(digits, std::vector<bool>(digits, true), *dd);
+  EXPECT_EQ(ones.getValueByIndex(std::numeric_limits<size_t>::max()), 1.);
+  const auto zero = makeZeroState(digits + 1U, *dd);
+  EXPECT_EQ(zero.getValueByIndex(0), 1.);
+  EXPECT_EQ(zero.getValueByIndex(std::numeric_limits<size_t>::max()), 0.);
+  EXPECT_THROW(vEdge::one().getValueByIndex(1), std::out_of_range);
+  EXPECT_THROW(makeZeroState(3, *dd).getValueByIndex(8), std::out_of_range);
+}
+
+TEST(VectorFunctionality, InvalidPaths) {
+  auto dd = std::make_unique<Package>(2);
+  const auto zero = makeZeroState(2, *dd);
+  EXPECT_THROW(zero.getValueByPath(2, "2"), std::out_of_range);
+  for (const auto* path : {"20", "91", "/0", "x0"}) {
+    EXPECT_THROW(zero.getValueByPath(2, path), std::invalid_argument);
+  }
+  EXPECT_EQ(zero.getValueByPath(2, "00ignored"), 1.);
+}
+
+TEST(MatrixFunctionality, WideIndices) {
+  constexpr auto digits = std::numeric_limits<size_t>::digits;
+  auto dd = std::make_unique<Package>(digits + 1U);
+  const auto gate = dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, 0);
+  EXPECT_EQ(gate.getValueByIndex(digits + 1U, 0, 1), std::complex<fp>(0, -1));
+  EXPECT_EQ(gate.getValueByIndex(digits + 1U, 1, 0), std::complex<fp>(0, 1));
+  EXPECT_EQ(gate.getValueByIndex(digits + 1U, 2, 1), 0.);
+  const auto highGate =
+      dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, digits);
+  EXPECT_EQ(highGate.getValueByIndex(digits + 1U, 0, 0), 0.);
+  EXPECT_EQ(mEdge::one().getValueByIndex(digits,
+                                         std::numeric_limits<size_t>::max(),
+                                         std::numeric_limits<size_t>::max()),
+            1.);
+  EXPECT_THROW(gate.getValueByIndex(1, 2, 0), std::out_of_range);
+  EXPECT_THROW(mEdge::one().getValueByIndex(1, 0, 2), std::out_of_range);
+}
+
+TEST(MatrixFunctionality, InvalidPaths) {
+  EXPECT_THROW(mEdge::one().getValueByPath(1, ""), std::out_of_range);
+  for (const auto* path : {"4", "9", "/", "x"}) {
+    EXPECT_THROW(mEdge::one().getValueByPath(1, path), std::invalid_argument);
+  }
+  EXPECT_EQ(mEdge::one().getValueByPath(1, "3ignored"), 1.);
+}
+
+TEST(EdgeFunctionality, NonpositiveExportThresholds) {
+  auto dd = std::make_unique<Package>(1);
+  const auto vector = makeStateFromVector(CVec{0.6, {0., 0.8}}, *dd);
+  const auto matrix =
+      dd->makeGateDD(GateMatrix{0., {0., -1.}, {0., 1.}, 0.}, 0);
+  for (const auto threshold : {0., -1., std::numeric_limits<fp>::quiet_NaN()}) {
+    EXPECT_EQ(vector.getVector(threshold), vector.getVector());
+    EXPECT_EQ(vector.getSparseVector(threshold), vector.getSparseVector());
+    EXPECT_EQ(matrix.getMatrix(1, threshold), matrix.getMatrix(1));
+    EXPECT_EQ(matrix.getSparseMatrix(1, threshold), matrix.getSparseMatrix(1));
   }
 }
 
