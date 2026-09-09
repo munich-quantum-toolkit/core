@@ -75,6 +75,7 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Transforms/Passes.h>
 
+#include <array>
 #include <cctype>
 #include <cstddef>
 #include <cstdint>
@@ -2186,6 +2187,74 @@ for int outer in [0:2] {
   EXPECT_FALSE(StringRef(program->str()).contains("qco.if"));
 }
 
+TEST_F(CompilerPipelineTest,
+       PayloadControlFromOpenQASMUnrollsStatePermutation) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+int a = 0;
+int b = 1;
+for int i in [0:2] {
+  int tmp = a;
+  a = b;
+  b = tmp;
+}
+rx(a) q;
+bit c;
+c = measure q;
+)qasm";
+  auto qc = QCProgram::fromQASMString(source);
+  ASSERT_TRUE(qc);
+  auto program = std::move(*qc).intoQCO();
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
+      makeUnrestrictedTarget(), makeControlPayloadSpecification({}))));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+  auto entry = program->module().lookupSymbol<func::FuncOp>("main");
+  auto result = cast<func::ReturnOp>(entry.getBody().front().getTerminator());
+  for (auto [operand, expected] :
+       llvm::zip_equal(result.getOperands().take_front(2), std::array{1, 0})) {
+    IntegerAttr value;
+    ASSERT_TRUE(matchPattern(operand, m_Constant(&value)));
+    EXPECT_EQ(value.getInt(), expected);
+  }
+}
+
+TEST_F(CompilerPipelineTest,
+       PayloadControlUnrollsTerminatorOnlyInductionValue) {
+  constexpr llvm::StringLiteral source = R"mlir(
+    module {
+      func.func @main() -> index attributes {mqt.entry_point} {
+        %lb = arith.constant 2 : index
+        %ub = arith.constant 10 : index
+        %step = arith.constant 3 : index
+        %out = scf.for %i = %lb to %ub step %step
+            iter_args(%value = %lb) -> (index) {
+          scf.yield %i : index
+        }
+        return %out : index
+      }
+    }
+  )mlir";
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  attachTargetEnvironment(
+      program->module(),
+      TargetEnvironment(makeUnrestrictedTarget(),
+                        makeControlPayloadSpecification({})));
+  ASSERT_TRUE(program->runPassPipeline("unroll-loops-for-payload"));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+  auto entry = program->module().lookupSymbol<func::FuncOp>("main");
+  auto result = cast<func::ReturnOp>(entry.getBody().front().getTerminator());
+  IntegerAttr value;
+  ASSERT_TRUE(matchPattern(result.getOperand(0), m_Constant(&value)));
+  EXPECT_EQ(value.getInt(), 8);
+}
+
 TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
   constexpr llvm::StringLiteral source = R"mlir(
     module {
@@ -2307,6 +2376,13 @@ TEST_F(CompilerPipelineTest, PayloadControlChecksUnrolledStepWidth) {
                .safe = true,
            },
            LoopCase{
+               .lower = 128,
+               .upper = 160,
+               .step = 10,
+               .unsignedComparison = true,
+               .safe = true,
+           },
+           LoopCase{
                .lower = 0,
                .upper = 110,
                .step = 80,
@@ -2358,7 +2434,10 @@ TEST_F(CompilerPipelineTest, PayloadControlChecksUnrolledStepWidth) {
     program->module().walk([&](func::CallOp call) {
       IntegerAttr value;
       ASSERT_TRUE(matchPattern(call.getOperand(0), m_Constant(&value)));
-      observed.push_back(value.getInt());
+      observed.push_back(
+          test.unsignedComparison
+              ? static_cast<int64_t>(value.getValue().getZExtValue())
+              : value.getInt());
     });
     std::vector<int64_t> expected;
     for (auto value = test.lower; value < test.upper; value += test.step) {

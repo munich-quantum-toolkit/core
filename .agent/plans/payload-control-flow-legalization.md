@@ -20,7 +20,9 @@ are in `docs/mlir/target_compilation.md` and the QCO `Passes.td`.
   unrolling exposes constant bounds and branches.
 - Reuse MLIR trip counts, zero/one-trip promotion, and full unrolling. Require
   literal bounds, signed-arithmetic safety, and a scaled step that fits the IV
-  type. Limit the pass to 65,536 cloned body operations.
+  type. Interpret unsigned bounds with zero extension. Limit the pass to 65,536
+  cloned body operations. A temporary constant lets LLVM unroll terminator-only
+  state updates under the same budget; cleanup removes it.
 - Build switch fallbacks iteratively. Preflight the payload's branch-depth limit
   and a compiler limit of 256 total control-flow levels, including moved case
   bodies. Retained native multiway switches do not use this expansion limit.
@@ -38,3 +40,7 @@ optional `QueryJobId` skip. MLIR documentation generation, repository lint, and
 whole changed-file C++ lint passed. Focused regressions cover IV values,
 cumulative cloning, switch depth, case/default selection, quantum-state
 forwarding, and invalid captures.
+
+The loop-boundary fixes pass all 203 compiler tests, including frontend state
+permutations, terminator-only induction values, and unsigned bounds above the
+signed range of their type.

@@ -24,6 +24,7 @@
 #include <mlir/Dialect/SCF/IR/SCF.h>
 #include <mlir/Dialect/SCF/Utils/Utils.h>
 #include <mlir/Dialect/Utils/StaticValueUtils.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
 #include <mlir/IR/PatternMatch.h>
@@ -322,8 +323,14 @@ static LogicalResult foldStaticBranches(ModuleOp moduleOp) {
                                            const uint64_t iterations) {
   const auto constant = [&](Value value) -> std::optional<int64_t> {
     const auto result = getConstantAPIntValue(getAsOpFoldResult(value));
-    if (!result || (loop.getUnsignedCmp() && result->first.isNegative())) {
+    if (!result) {
       return std::nullopt;
+    }
+    if (loop.getUnsignedCmp()) {
+      if (result->first.getActiveBits() > 63) {
+        return std::nullopt;
+      }
+      return static_cast<int64_t>(result->first.getZExtValue());
     }
     return result->first.trySExtValue();
   };
@@ -546,9 +553,6 @@ protected:
             rewriter.replaceOp(loop, yielded);
             continue;
           }
-          loop.emitError("cannot fully unroll a terminator-only loop");
-          signalPassFailure();
-          return;
         }
 
         uint64_t bodyOperations = 0U;
@@ -556,6 +560,10 @@ protected:
         loop.getRegion().walk([&](Operation* operation) {
           bodyOperations += operation != terminator;
         });
+        /// LLVM skips terminator-only bodies. Budget a temporary constant so
+        /// its unroller can remap iteration arguments and induction values.
+        const bool emptyBody = bodyOperations == 0U;
+        bodyOperations = std::max(bodyOperations, uint64_t{1});
         const uint64_t remaining = MAX_UNROLLED_OPERATIONS - clonedOperations;
         const uint64_t maximumTripCount = (remaining / bodyOperations) + 1U;
         if (!tripCount.ule(maximumTripCount)) {
@@ -572,6 +580,13 @@ protected:
               "cannot safely apply MLIR full unrolling to these loop bounds");
           signalPassFailure();
           return;
+        }
+        if (emptyBody) {
+          OpBuilder::InsertionGuard guard(rewriter);
+          rewriter.setInsertionPointToStart(loop.getBody());
+          /// Remove this workaround when LLVM unrolls empty bodies. The
+          /// static-branch cleanup below removes the unused constants.
+          arith::ConstantIndexOp::create(rewriter, loop.getLoc(), 0);
         }
         if (failed(loopUnrollFull(loop))) {
           loop.emitError("failed to fully unroll a static counted loop");
