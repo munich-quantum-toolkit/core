@@ -7,7 +7,8 @@
 # Licensed under the MIT License
 
 set(qco_ir_target mqt-core-mlir-unittest-qco-ir)
-add_executable(${qco_ir_target} test_qco_ir.cpp test_qco_ir_matrix.cpp)
+add_executable(${qco_ir_target} test_qco_dialect_dependencies.cpp test_qco_ir.cpp
+                                test_qco_ir_matrix.cpp)
 target_link_libraries(
   ${qco_ir_target}
   PRIVATE MLIRParser

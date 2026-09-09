@@ -41,6 +41,7 @@ def QCDialect : Dialect {
     }];
 
   let cppNamespace = "::mlir::qc";
+  let dependentDialects = ["::mlir::arith::ArithDialect"];
 
   let useDefaultTypePrinterParser = 1;
 }

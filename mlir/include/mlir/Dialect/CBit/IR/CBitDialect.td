@@ -25,6 +25,7 @@ def CBitDialect : Dialect {
   let cppNamespace = "::mlir::cbit";
   let useDefaultAttributePrinterParser = 1;
   let useDefaultTypePrinterParser = 1;
+  let dependentDialects = ["::mlir::arith::ArithDialect"];
 
   let summary = "Classical-bit register storage shared by quantum dialects";
   let description = [{
