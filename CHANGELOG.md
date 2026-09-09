@@ -100,7 +100,8 @@ releases may include breaking changes.
 
 - 🐛 Correct DD amplitude index bounds and reject invalid decision paths.
   Traverse integer indices without temporary strings, skip magnitude checks
-  during unpruned export, and avoid copying initial memory-pool chunks.
+  during unpruned export, and avoid copying initial memory-pool chunks ([#2479])
+  ([**@burgholzer**]).
 
 ### Changed
 
@@ -933,6 +934,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2479]: https://github.com/munich-quantum-toolkit/core/pull/2479
 [#2467]: https://github.com/munich-quantum-toolkit/core/pull/2467
 [#2457]: https://github.com/munich-quantum-toolkit/core/pull/2457
 [#2436]: https://github.com/munich-quantum-toolkit/core/pull/2436
