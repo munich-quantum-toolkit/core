@@ -57,6 +57,13 @@ consumer. The new utility test fails when the reconstruction guard is removed
 from a disposable helper copy. Exact behavior on other math libraries remains
 subject to hosted validation.
 
+The ARM64 GCC 13 release job also showed why successful general powers must not
+be required at the exponent cap: `(0.3, 0.4, -0.7, 1024)` exceeds the
+reconstruction bound under GCC `-O3` but passes with the local Clang build. This
+was reproduced with GCC 13.3. General success cases use exponents 2, 3, and 17;
+diagonal and anti-diagonal tests still require success at 1024. The finite-input
+rejection regression and controlled Pow-retention test remain.
+
 For R's matrix, real finite parameters imply `m01 = -conj(m10)`. Reusing the
 lower-left entry removes one exponential. An isolated Clang 23 `-O3` benchmark
 used one million varying-axis evaluations per sample, seven samples, noinline
