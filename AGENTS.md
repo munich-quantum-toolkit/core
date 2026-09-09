@@ -205,6 +205,17 @@ Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
   pass. Rerun affected checks and required gates, then stop unless a concrete
   remaining risk warrants broader validation.
 
+## Benchmark experiments
+
+Keep one-off benchmarks in `.agents/benchmarks/<scope>/`, outside normal build
+and test targets. Include the harness, reproduction commands, exact revisions,
+environment, raw measurements, and generated before/after plots.
+
+Run matched comparisons; check correctness and output quality alongside speed.
+Report sample spread, regressions, and limits. Keep old results tied to their
+measured revisions. Exclude these folders from routine lint; validate
+experiments explicitly. Durable regression tests belong in the test tree.
+
 ## ExecPlans
 
 When writing complex features or significant refactors, use an ExecPlan (as

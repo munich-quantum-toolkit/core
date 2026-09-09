@@ -79,6 +79,13 @@ changes. Serialize experiments that share a checkout or build directory. A
 read-only investigation does not require aborting merely because unrelated user
 edits exist.
 
+For performance experiments, follow the
+[benchmark experiment rules](../AGENTS.md#benchmark-experiments). Keep the
+harness, raw data, plots, and reproduction steps in
+`.agents/benchmarks/<scope>/` and link them from the finding. Record neutral
+results and regressions; an untested optimization remains a candidate, not a
+measured finding.
+
 ### What an experiment proves
 
 - A behavior-preserving variation that breaks an assertion shows a possible

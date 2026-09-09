@@ -18,6 +18,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Drivers.h"
 #include "mlir/Dialect/QCO/Utils/Graph.h"
@@ -50,6 +51,7 @@
 #include <mlir/IR/Threading.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
+#include <mlir/Interfaces/CallInterfaces.h>
 #include <mlir/Interfaces/SideEffectInterfaces.h>
 #include <mlir/Pass/Pass.h>
 #include <mlir/Support/LLVM.h>
@@ -58,6 +60,7 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <iterator>
 #include <memory>
@@ -94,7 +97,7 @@ struct WireInfos {
   }
 
   /// Bidirectionally map a wire index to a program index.
-  /// Overwrites existing mappings.
+  /// Callers preserve a one-to-one mapping and append wire indices densely.
   void insertOrUpdate(const size_t index, const size_t prog) {
     if (index >= indexToProgram_.size()) {
       indexToProgram_.resize(index + 1);
@@ -104,12 +107,12 @@ struct WireInfos {
     }
     indexToProgram_[index] = prog;
     programToIndex_[prog] = index;
-    programs_.insert(prog);
   }
 
   /// Return whether a program index has a corresponding wire.
   [[nodiscard]] bool containsProgram(const size_t prog) const {
-    return programs_.contains(prog);
+    return prog < programToIndex_.size() &&
+           indexToProgram_[programToIndex_[prog]] == prog;
   }
 
   /// Swap two program indices.
@@ -128,8 +131,6 @@ private:
   SmallVector<size_t> indexToProgram_;
   /// Maps a program index to the i-th wire index.
   SmallVector<size_t> programToIndex_;
-  /// Program indices that have corresponding wires.
-  DenseSet<size_t> programs_;
 };
 
 struct TensorAllocation {
@@ -146,17 +147,29 @@ struct Computation {
 
 } // namespace
 
-/// Verify that every non-barrier unitary can be routed by the mapping pass.
+/// Check the structural input contract before traversing qubit wires.
 static LogicalResult validateRoutingOperations(func::FuncOp func) {
+  if (!llvm::hasSingleElement(func.getBody())) {
+    return func.emitError("mapping requires a single-block entry function");
+  }
   const auto result =
-      func.walk([](UnitaryOpInterface unitary) {
-        if (isa<BarrierOp>(unitary) || unitary.getNumQubits() <= 2) {
-          return WalkResult::advance();
+      func.walk([](Operation* operation) {
+        if (isa<CallOpInterface>(operation) &&
+            (llvm::any_of(operation->getOperandTypes(), isLinearQubitType) ||
+             llvm::any_of(operation->getResultTypes(), isLinearQubitType))) {
+          operation->emitError("inline calls that carry qubits before mapping");
+          return WalkResult::interrupt();
         }
-        unitary.emitError()
-            << "cannot route an operation acting on " << unitary.getNumQubits()
-            << " qubits; decompose it to one- and two-qubit operations first";
-        return WalkResult::interrupt();
+        if (auto unitary = dyn_cast<UnitaryOpInterface>(operation);
+            unitary && !isa<BarrierOp>(operation) &&
+            unitary.getNumQubits() > 2) {
+          unitary.emitError()
+              << "cannot route an operation acting on "
+              << unitary.getNumQubits()
+              << " qubits; decompose it to one- and two-qubit operations first";
+          return WalkResult::interrupt();
+        }
+        return WalkResult::advance();
       });
   return result.wasInterrupted() ? failure() : success();
 }
@@ -385,30 +398,11 @@ private:
     float lambda;
   };
 
-  /// Utility-struct for routing functions.
+  /// State shared by traversal and routing.
   struct RoutingBundle {
     Wires wires;
     WireInfos infos;
     Layout layout;
-
-    struct Patch {
-      std::optional<Layout> layout;
-      std::optional<WireInfos> infos;
-      std::optional<Wires> wires;
-    };
-
-    void applyPatch(Patch&& patch) {
-      Patch p = std::move(patch);
-      if (p.layout) {
-        layout = std::move(*p.layout);
-      }
-      if (p.infos) {
-        infos = std::move(*p.infos);
-      }
-      if (p.wires) {
-        wires = std::move(*p.wires);
-      }
-    }
   };
 
   /// Describes a node in the A* search graph.
@@ -561,11 +555,14 @@ public:
 
 protected:
   void runOnOperation() override {
-    assert(alpha > 0 && "expected alpha > 0");
-    assert(niterations > 0 && "expected niterations > 0");
-    assert(ntrials > 0 && "expected ntrials > 0");
-
     auto moduleOp = getOperation();
+    if (!std::isfinite(alpha.getValue()) || alpha <= 0 || niterations == 0 ||
+        ntrials == 0) {
+      moduleOp.emitError("mapping requires finite alpha > 0, niterations > 0, "
+                         "and ntrials > 0");
+      signalPassFailure();
+      return;
+    }
     if (failed(mqt::verifyQuantumAllocations(moduleOp))) {
       signalPassFailure();
       return;
@@ -954,6 +951,9 @@ private:
   /// Implements the 4-Approximation algorithm described in arXiv:1602.05150v3.
   [[nodiscard]] SmallVector<IndexPairType> restore(const Layout& from,
                                                    const Layout& to) const {
+    if (from == to) {
+      return {};
+    }
     Layout curr(from);
     FGraph f(*target);
     SmallVector<IndexPairType> swaps;
@@ -993,6 +993,9 @@ private:
   [[nodiscard]] std::tuple<Layout, SmallVector<IndexPairType>,
                            SmallVector<IndexPairType>>
   converge(const Layout& lhs, const Layout& rhs) const {
+    if (lhs == rhs) {
+      return {lhs, {}, {}};
+    }
     std::array layouts{Layout(lhs), Layout(rhs)};
     std::array graphs{FGraph(*target), FGraph(*target)};
     std::array<SmallVector<IndexPairType>, 2> swaps{};
@@ -1379,12 +1382,10 @@ private:
   }
 
   /// Extends the composite unitary's operation to cover all target qubits by
-  /// adding operands for indices not in the composite's index set. Returns a
-  /// patch with the updated wire mapping which preserves the parent's wire
-  /// infos and layout.
-  RoutingBundle::Patch place(CompositeUnitary& composite,
-                             const RoutingBundle& parent,
-                             IRRewriter& rewriter) {
+  /// adding operands for indices not in the composite's index set. Updates
+  /// the parent's wires while preserving its wire information and layout.
+  void place(CompositeUnitary& composite, RoutingBundle& parent,
+             IRRewriter& rewriter) {
     DenseSet<size_t> included; // Already included indices.
     included.reserve(composite.indices.size());
 
@@ -1435,11 +1436,7 @@ private:
       return it.operation() == composite.op;
     }));
 
-    return RoutingBundle::Patch{
-        .layout = std::nullopt,
-        .infos = std::nullopt,
-        .wires = std::move(wires),
-    };
+    parent.wires = std::move(wires);
   }
 
   /// Return `values` with only the qubit entries realigned according to the
@@ -1467,14 +1464,13 @@ private:
   }
 
   /// Processes the composite unitary by routing the nested operation and
-  /// inserting a SWAP appendix. Returns a pair of the patch to apply to the
-  /// parent bundle and the accumulated statistics, or `failure` if routing
-  /// fails.
+  /// inserting epilogue SWAPs. Updates the parent bundle and returns the
+  /// accumulated statistics, or `failure` if routing fails.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  FailureOr<std::pair<RoutingBundle::Patch, Statistics>>
-  dispatch(const CompositeUnitary& composite, const RoutingBundle& parent,
-           IRRewriter* rewriter = nullptr) {
+  FailureOr<Statistics> dispatch(const CompositeUnitary& composite,
+                                 RoutingBundle& parent,
+                                 IRRewriter* rewriter = nullptr) {
     const auto& [op, indices] = composite;
 
     SmallVector<size_t> permutation(indices.size());
@@ -1706,19 +1702,19 @@ private:
     // layout and index-to-program mapping.
 
     if (isa<scf::ForOp>(op)) {
-      return std::make_pair(RoutingBundle::Patch{}, totalStats);
+      return totalStats;
     }
 
-    RoutingBundle::Patch patch{.layout = std::nullopt, .infos = WireInfos{}};
+    WireInfos updatedInfos;
     for (size_t i = 0; i < parent.wires.size(); ++i) {
       const auto oldProg = parent.infos.lookupProgram(i);
       const auto oldHw = parent.layout.getHardwareIndex(oldProg);
       const auto newProg = exit.getProgramIndex(oldHw);
-      patch.infos->insertOrUpdate(i, newProg);
+      updatedInfos.insertOrUpdate(i, newProg);
     }
-    patch.layout = std::move(exit);
-
-    return std::make_pair(std::move(patch), totalStats);
+    parent.infos = std::move(updatedInfos);
+    parent.layout = std::move(exit);
+    return totalStats;
   }
 
   /// Iterates over a dynamically computed window of layers and uses A* search
@@ -1743,8 +1739,7 @@ private:
 
         for (auto& composite : composites) {
           if constexpr (Mode == RoutingMode::Hot) {
-            auto patch = place(composite, bundle, *rewriter);
-            bundle.applyPatch(std::move(patch));
+            place(composite, bundle, *rewriter);
           }
 
           auto res = dispatch<Direction, Mode>(composite, bundle, rewriter);
@@ -1752,8 +1747,7 @@ private:
             return failure();
           }
 
-          bundle.applyPatch(std::move(res->first));
-          stats.merge(res->second);
+          stats.merge(*res);
 
           // Once the composite is mapped, move past this op by incrementing
           // the respective wires.
