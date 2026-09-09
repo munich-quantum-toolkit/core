@@ -14,12 +14,14 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
@@ -29,6 +31,10 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
+
+#include <array>
+#include <cmath>
+#include <numbers>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -60,6 +66,183 @@ protected:
     return moduleOp;
   }
 };
+
+TEST_F(QCONumericCanonicalizationTest, RMatrixPreservesLargeAxisAngles) {
+  constexpr double theta = 0.3;
+  for (double phi : std::array{1.0e16, 1.0e308}) {
+    SCOPED_TRACE(phi);
+    const double cosine = std::cos(theta / 2.0);
+    const double sine = std::sin(theta / 2.0);
+    const double x = std::cos(phi);
+    const double y = std::sin(phi);
+    // exp(-i theta (x X + y Y) / 2), with x^2 + y^2 = 1.
+    const auto expected =
+        Matrix2x2::fromElements(cosine, qco::Complex{-sine * y, -sine * x},
+                                qco::Complex{sine * y, -sine * x}, cosine);
+    const auto matrix = ROp::unitaryMatrix(theta, phi);
+    EXPECT_TRUE(matrix.isApprox(expected, 1e-15));
+    EXPECT_TRUE((matrix.adjoint() * matrix).isIdentity(1e-15));
+  }
+}
+
+TEST_F(QCONumericCanonicalizationTest, RMergePreservesLargeAxisAngles) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @test(%q: !qco.qubit) -> !qco.qubit {
+        %theta0 = arith.constant 0.1 : f64
+        %theta1 = arith.constant 0.2 : f64
+        %phi = arith.constant 1.0e16 : f64
+        %a = qco.r(%theta0, %phi) %q : !qco.qubit -> !qco.qubit
+        %b = qco.r(%theta1, %phi) %a : !qco.qubit -> !qco.qubit
+        return %b : !qco.qubit
+      }
+    }
+  )mlir";
+  for (double phi : std::array{1.0e16, 1.0e308}) {
+    SCOPED_TRACE(phi);
+    auto original = parseSourceString<ModuleOp>(source, &context_);
+    ASSERT_TRUE(original);
+    auto originalFunction = original->lookupSymbol<func::FuncOp>("test");
+    auto firstRotation = *originalFunction.getBody().getOps<ROp>().begin();
+    auto axis = firstRotation.getPhi().getDefiningOp<arith::ConstantOp>();
+    OpBuilder builder(&context_);
+    axis.setValueAttr(builder.getF64FloatAttr(phi));
+    ASSERT_TRUE(succeeded(verify(*original)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*original)));
+    OwningOpRef<ModuleOp> rewritten(original->clone());
+    PassManager manager(&context_);
+    manager.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(succeeded(manager.run(*rewritten)));
+    ASSERT_TRUE(succeeded(verify(*rewritten)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*rewritten)));
+
+    auto function = rewritten->lookupSymbol<func::FuncOp>("test");
+    auto rotations = function.getBody().getOps<ROp>();
+    ASSERT_TRUE(llvm::hasSingleElement(rotations));
+    auto rotation = *rotations.begin();
+    auto angle = mlir::mqt::valueToDouble(rotation.getTheta());
+    ASSERT_TRUE(angle);
+    EXPECT_NEAR(*angle, 0.3, 1e-15);
+    EXPECT_EQ(mlir::mqt::valueToDouble(rotation.getPhi()), phi);
+    auto matrix = rotation.getUnitaryMatrix();
+    ASSERT_TRUE(matrix);
+    const auto expected =
+        ROp::unitaryMatrix(0.2, phi) * ROp::unitaryMatrix(0.1, phi);
+    EXPECT_TRUE(matrix->isApprox(expected, 1e-15));
+    ::mqt::test::expectFullUnitaryEqual(*original, *rewritten, 1);
+  }
+}
+
+TEST_F(QCONumericCanonicalizationTest, RPowerPreservesLargeAxisAngles) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @test(%q: !qco.qubit) -> !qco.qubit {
+        %exponent = arith.constant 2.0 : f64
+        %theta = arith.constant 0.1 : f64
+        %phi = arith.constant 1.0e16 : f64
+        %o = qco.pow(%exponent) (%a = %q) {
+          %r = qco.r(%theta, %phi) %a : !qco.qubit -> !qco.qubit
+          qco.yield %r : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %o : !qco.qubit
+      }
+    }
+  )mlir";
+  for (double phi : std::array{1.0e16, 1.0e308}) {
+    SCOPED_TRACE(phi);
+    auto original = parseSourceString<ModuleOp>(source, &context_);
+    ASSERT_TRUE(original);
+    auto originalFunction = original->lookupSymbol<func::FuncOp>("test");
+    auto power = *originalFunction.getBody().getOps<PowOp>().begin();
+    auto bodyRotation = *power.getBody()->getOps<ROp>().begin();
+    auto axis = bodyRotation.getPhi().getDefiningOp<arith::ConstantOp>();
+    OpBuilder builder(&context_);
+    axis.setValueAttr(builder.getF64FloatAttr(phi));
+    ASSERT_TRUE(succeeded(verify(*original)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*original)));
+    OwningOpRef<ModuleOp> rewritten(original->clone());
+    PassManager manager(&context_);
+    manager.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(succeeded(manager.run(*rewritten)));
+    ASSERT_TRUE(succeeded(verify(*rewritten)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*rewritten)));
+
+    auto function = rewritten->lookupSymbol<func::FuncOp>("test");
+    EXPECT_TRUE(function.getBody().getOps<PowOp>().empty());
+    auto rotations = function.getBody().getOps<ROp>();
+    ASSERT_TRUE(llvm::hasSingleElement(rotations));
+    auto rotation = *rotations.begin();
+    EXPECT_EQ(mlir::mqt::valueToDouble(rotation.getTheta()), 0.2);
+    EXPECT_EQ(mlir::mqt::valueToDouble(rotation.getPhi()), phi);
+    auto matrix = rotation.getUnitaryMatrix();
+    ASSERT_TRUE(matrix);
+    const auto bodyMatrix = ROp::unitaryMatrix(0.1, phi);
+    EXPECT_TRUE(matrix->isApprox(bodyMatrix * bodyMatrix, 1e-15));
+    ::mqt::test::expectFullUnitaryEqual(*original, *rewritten, 1);
+  }
+}
+
+TEST_F(QCONumericCanonicalizationTest, UMatricesPreserveLargeEulerAngles) {
+  for (auto [phi, lambda] : std::array{
+           std::array{1.0e16, 1.0},
+           std::array{1.0, 1.0e16},
+           std::array{1.0e16, -1.0e16},
+           std::array{1.0e308, 1.0e308},
+           std::array{-1.0e308, 1.0e308},
+       }) {
+    SCOPED_TRACE(testing::Message() << "phi=" << phi << ", lambda=" << lambda);
+    // U(theta, phi, lambda) = P(phi) RY(theta) P(lambda).
+    for (double theta : std::array{0.3, std::numbers::pi / 2.0}) {
+      SCOPED_TRACE(theta);
+      const auto expected = POp::unitaryMatrix(phi) *
+                            RYOp::unitaryMatrix(theta) *
+                            POp::unitaryMatrix(lambda);
+      const auto matrix = UOp::unitaryMatrix(theta, phi, lambda);
+      EXPECT_TRUE(matrix.isApprox(expected, 1e-15));
+      EXPECT_TRUE((matrix.adjoint() * matrix).isIdentity(1e-15));
+    }
+    const auto expected = POp::unitaryMatrix(phi) *
+                          RYOp::unitaryMatrix(std::numbers::pi / 2.0) *
+                          POp::unitaryMatrix(lambda);
+    const auto matrix = U2Op::unitaryMatrix(phi, lambda);
+    EXPECT_TRUE(matrix.isApprox(expected, 1e-15));
+    EXPECT_TRUE((matrix.adjoint() * matrix).isIdentity(1e-15));
+  }
+}
+
+TEST_F(QCONumericCanonicalizationTest, UToU2PreservesLargeEulerAngles) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @test(%q: !qco.qubit) -> !qco.qubit {
+        %theta = arith.constant 1.5707963267948966 : f64
+        %phi = arith.constant 1.0e308 : f64
+        %lambda = arith.constant 1.0e308 : f64
+        %out = qco.u(%theta, %phi, %lambda) %q : !qco.qubit -> !qco.qubit
+        return %out : !qco.qubit
+      }
+    }
+  )mlir";
+  auto original = parseSourceString<ModuleOp>(source, &context_);
+  ASSERT_TRUE(original);
+  ASSERT_TRUE(succeeded(verify(*original)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*original)));
+  auto originalFunction = original->lookupSymbol<func::FuncOp>("test");
+  auto sourceGate = *originalFunction.getBody().getOps<UOp>().begin();
+  auto expected = sourceGate.getUnitaryMatrix();
+  ASSERT_TRUE(expected);
+  EXPECT_TRUE((expected->adjoint() * *expected).isIdentity(1e-15));
+
+  auto rewritten = canonicalize(source);
+  ASSERT_TRUE(rewritten);
+  auto function = rewritten->lookupSymbol<func::FuncOp>("test");
+  EXPECT_TRUE(function.getBody().getOps<UOp>().empty());
+  auto gates = function.getBody().getOps<U2Op>();
+  ASSERT_TRUE(llvm::hasSingleElement(gates));
+  auto gate = *gates.begin();
+  auto matrix = gate.getUnitaryMatrix();
+  ASSERT_TRUE(matrix);
+  EXPECT_TRUE(matrix->isApprox(*expected, 1e-15));
+}
 
 TEST_F(QCONumericCanonicalizationTest, LargeEvenPauliPowerBecomesIdentity) {
   auto moduleOp = canonicalize(R"mlir(

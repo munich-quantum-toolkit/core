@@ -13,6 +13,8 @@
 #include <llvm/ADT/StringRef.h>
 #include <mlir/Support/LLVM.h>
 
+#include <array>
+#include <complex>
 #include <cstdint>
 #include <optional>
 
@@ -25,24 +27,25 @@ namespace mlir::mqt {
 /// exponent does not lose a fractional part.
 [[nodiscard]] unsigned getFixedGatePowerPeriod(StringRef baseSymbol);
 
-/**
- * Maximum exponent considered for safe binary64 U-gate powering.
- *
- * Even with analytical SU(2) powering, uncertainty in the input angles is
- * magnified by the exponent. Candidate rewrites are additionally checked
- * against the source matrix before they are accepted.
- */
+/// Evaluate U(theta, phi, lambda) in row-major order for finite input angles.
+/// Compose phase factors without adding angles, so large finite parameters
+/// cannot overflow or absorb a fixed phase offset. Callers validate finiteness.
+[[nodiscard]] std::array<std::complex<double>, 4>
+computeUMatrix(double theta, double phi, double lambda);
+
+/// Maximum exponent considered for safe binary64 U-gate powering.
+///
+/// Repeated matrix multiplication accumulates rounding error. Candidate
+/// rewrites are checked against the powered source matrix before acceptance.
 inline constexpr uint64_t MAX_SAFE_U_POWER_EXPONENT = 1024U;
 
 /// Maximum entry-wise matrix error accepted for a powered U-gate rewrite.
 inline constexpr double U_POWER_EQUIVALENCE_TOLERANCE = 5e-13;
 
-/**
- * @brief Parameters representing a powered U gate.
- *
- * All values are in radians. The phase satisfies
- * `U(input)^exponent = exp(i * phase) * U(theta, phi, lambda)`.
- */
+/// Parameters representing a powered U gate.
+///
+/// All values are in radians. The phase satisfies
+/// `U(input)^exponent = exp(i * phase) * U(theta, phi, lambda)`.
 struct UPowerParameters {
   double theta;  ///< Resulting U rotation angle.
   double phi;    ///< Resulting U phi angle.
@@ -56,15 +59,13 @@ struct UPowerParameters {
 /// Check whether a floating-point exponent is an even integer.
 [[nodiscard]] bool isEvenExponent(double value);
 
-/**
- * @brief Compute a positive integral power of a constant U gate.
- *
- * @return Parameters satisfying
- * `U(theta, phi, lambda)^exponent = exp(i*phase) * U(result)`, or
- * `std::nullopt` if @p exponent is not a positive integer no greater than
- * `MAX_SAFE_U_POWER_EXPONENT`, an input is not finite, or the binary64 result
- * cannot be reconstructed within `U_POWER_EQUIVALENCE_TOLERANCE`.
- */
+/// Compute a positive integral power of a constant U gate.
+///
+/// @return Parameters satisfying
+/// `U(theta, phi, lambda)^exponent = exp(i*phase) * U(result)`, or
+/// `std::nullopt` if @p exponent is not a positive integer no greater than
+/// `MAX_SAFE_U_POWER_EXPONENT`, an input is not finite, or the binary64 result
+/// cannot be reconstructed within `U_POWER_EQUIVALENCE_TOLERANCE`.
 [[nodiscard]] std::optional<UPowerParameters>
 powerUParameters(double theta, double phi, double lambda, double exponent);
 

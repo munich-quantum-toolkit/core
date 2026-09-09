@@ -31,6 +31,21 @@ unsigned getFixedGatePowerPeriod(StringRef baseSymbol) {
       .Default(0);
 }
 
+std::array<std::complex<double>, 4> computeUMatrix(double theta, double phi,
+                                                   double lambda) {
+  using namespace std::complex_literals;
+  const double cosine = std::cos(theta / 2.0);
+  const double sine = std::sin(theta / 2.0);
+  const auto phiPhase = std::exp(1i * phi);
+  const auto lambdaPhase = std::exp(1i * lambda);
+  return {
+      cosine,
+      -sine * lambdaPhase,
+      sine * phiPhase,
+      cosine * phiPhase * lambdaPhase,
+  };
+}
+
 bool isIntegerExponent(const double value) {
   return value == std::floor(value) && std::isfinite(value);
 }
@@ -39,124 +54,15 @@ bool isEvenExponent(const double value) {
   return isIntegerExponent(value) && std::fmod(std::fabs(value), 2.0) == 0.0;
 }
 
-std::optional<UPowerParameters> powerUParameters(const double theta,
-                                                 const double phi,
-                                                 const double lambda,
-                                                 const double exponent) {
+std::optional<UPowerParameters>
+powerUParameters(double theta, double phi, double lambda, double exponent) {
   if (!std::isfinite(theta) || !std::isfinite(phi) || !std::isfinite(lambda) ||
       !isIntegerExponent(exponent) || exponent <= 0.0 ||
       exponent > static_cast<double>(MAX_SAFE_U_POWER_EXPONENT)) {
     return std::nullopt;
   }
 
-  using Quaternion = std::array<double, 4>;
-  using Complex = std::complex<double>;
-  using Matrix = std::array<Complex, 4>;
-
-  /// U(theta, phi, lambda) = exp(i * (phi + lambda) / 2) *
-  /// RZ(phi) * RY(theta) * RZ(lambda). Represent the SU(2) factor by a unit
-  /// quaternion and power it analytically by multiplying its axis angle.
-  const double halfTheta = theta / 2.0;
-  const double halfPhi = phi / 2.0;
-  const double halfLambda = lambda / 2.0;
-  const double cosTheta = std::cos(halfTheta);
-  const double sinTheta = std::sin(halfTheta);
-  const double cosPhi = std::cos(halfPhi);
-  const double sinPhi = std::sin(halfPhi);
-  const double cosLambda = std::cos(halfLambda);
-  const double sinLambda = std::sin(halfLambda);
-  Quaternion quaternion{
-      cosTheta * ((cosPhi * cosLambda) - (sinPhi * sinLambda)),
-      sinTheta * ((cosPhi * sinLambda) - (sinPhi * cosLambda)),
-      sinTheta * ((cosPhi * cosLambda) + (sinPhi * sinLambda)),
-      cosTheta * ((cosPhi * sinLambda) + (sinPhi * cosLambda)),
-  };
-  const double quaternionNorm =
-      std::hypot(std::hypot(quaternion[0], quaternion[1]),
-                 std::hypot(quaternion[2], quaternion[3]));
-  if (!std::isfinite(quaternionNorm) || quaternionNorm == 0.0) {
-    return std::nullopt;
-  }
-  for (double& component : quaternion) {
-    component /= quaternionNorm;
-  }
-
-  const auto integralExponent = static_cast<uint64_t>(exponent);
-  const double vectorNorm =
-      std::hypot(std::hypot(quaternion[1], quaternion[2]), quaternion[3]);
-  Quaternion poweredQuaternion{};
-  if (vectorNorm == 0.0) {
-    poweredQuaternion[0] =
-        quaternion[0] < 0.0 && (integralExponent & 1U) != 0U ? -1.0 : 1.0;
-  } else {
-    const double axisAngle = std::atan2(vectorNorm, quaternion[0]);
-    const double poweredAxisAngle =
-        std::remainder(exponent * axisAngle, 2.0 * std::numbers::pi);
-    const double vectorScale = std::sin(poweredAxisAngle) / vectorNorm;
-    poweredQuaternion = {
-        std::cos(poweredAxisAngle),
-        quaternion[1] * vectorScale,
-        quaternion[2] * vectorScale,
-        quaternion[3] * vectorScale,
-    };
-  }
-  const double poweredNorm =
-      std::hypot(std::hypot(poweredQuaternion[0], poweredQuaternion[1]),
-                 std::hypot(poweredQuaternion[2], poweredQuaternion[3]));
-  if (!std::isfinite(poweredNorm) || poweredNorm == 0.0) {
-    return std::nullopt;
-  }
-  for (double& component : poweredQuaternion) {
-    component /= poweredNorm;
-  }
-
-  const auto [w, x, y, z] = poweredQuaternion;
-  const double transverseNorm = std::hypot(x, y);
-  const double axialNorm = std::hypot(w, z);
-  const double gimbalTolerance = 32.0 * std::numeric_limits<double>::epsilon();
-  double resultTheta = 2.0 * std::atan2(transverseNorm, axialNorm);
-  double resultPhi = 0.0;
-  double resultLambda = 0.0;
-  if (transverseNorm <= gimbalTolerance) {
-    resultTheta = 0.0;
-    resultPhi = 2.0 * std::atan2(z, w);
-  } else if (axialNorm <= gimbalTolerance) {
-    resultTheta = std::numbers::pi;
-    resultPhi = 2.0 * std::atan2(-x, y);
-  } else {
-    const double angleSum = std::atan2(z, w);
-    const double angleDifference = std::atan2(-x, y);
-    resultPhi = angleSum + angleDifference;
-    resultLambda = angleSum - angleDifference;
-  }
-
-  constexpr double fourPi = 4.0 * std::numbers::pi;
-  const double inputPhase =
-      std::remainder((std::remainder(phi, fourPi) / 2.0) +
-                         (std::remainder(lambda, fourPi) / 2.0),
-                     2.0 * std::numbers::pi);
-  const double poweredPhase =
-      std::remainder(exponent * inputPhase, 2.0 * std::numbers::pi);
-  const double resultPhase =
-      std::remainder(poweredPhase - ((resultPhi + resultLambda) / 2.0),
-                     2.0 * std::numbers::pi);
-
-  /// Binary64 evaluation of the source U matrix can itself deviate from an
-  /// exact unitary for large angles, and powering magnifies that deviation.
-  /// Reject a rewrite when the analytical unitary cannot represent the source
-  /// operation closely enough for the dialect's full-matrix contract.
-  const Complex imaginary{0.0, 1.0};
-  const auto uMatrix = [&](const double matrixTheta, const double matrixPhi,
-                           const double matrixLambda) {
-    const double matrixCos = std::cos(matrixTheta / 2.0);
-    const double matrixSin = std::sin(matrixTheta / 2.0);
-    return Matrix{
-        matrixCos,
-        matrixSin * std::exp(imaginary * (matrixLambda + std::numbers::pi)),
-        matrixSin * std::exp(imaginary * matrixPhi),
-        matrixCos * std::exp(imaginary * (matrixPhi + matrixLambda)),
-    };
-  };
+  using Matrix = std::array<std::complex<double>, 4>;
   const auto multiply = [](const Matrix& lhs, const Matrix& rhs) {
     return Matrix{
         (lhs[0] * rhs[0]) + (lhs[1] * rhs[2]),
@@ -165,9 +71,9 @@ std::optional<UPowerParameters> powerUParameters(const double theta,
         (lhs[2] * rhs[1]) + (lhs[3] * rhs[3]),
     };
   };
-  Matrix base = uMatrix(theta, phi, lambda);
+  Matrix base = computeUMatrix(theta, phi, lambda);
   Matrix sourcePower{1.0, 0.0, 0.0, 1.0};
-  auto power = integralExponent;
+  auto power = static_cast<uint64_t>(exponent);
   while (power != 0U) {
     if ((power & 1U) != 0U) {
       sourcePower = multiply(sourcePower, base);
@@ -177,12 +83,37 @@ std::optional<UPowerParameters> powerUParameters(const double theta,
       base = multiply(base, base);
     }
   }
-  Matrix reconstructed = uMatrix(resultTheta, resultPhi, resultLambda);
-  const Complex phase = std::exp(imaginary * resultPhase);
+
+  // Recover U's angles from the first column and the upper-right entry.
+  // Diagonal and anti-diagonal matrices leave one phase unconstrained.
+  const double cosine = std::abs(sourcePower[0]);
+  const double sine = std::abs(sourcePower[2]);
+  const double gimbalTolerance = 32.0 * std::numeric_limits<double>::epsilon();
+  double resultTheta = 2.0 * std::atan2(sine, cosine);
+  double resultPhase = std::arg(sourcePower[0]);
+  double resultPhi = std::arg(sourcePower[2]) - resultPhase;
+  double resultLambda = std::arg(-sourcePower[1]) - resultPhase;
+  if (sine <= gimbalTolerance) {
+    resultTheta = 0.0;
+    resultPhi = 0.0;
+    resultLambda = std::arg(sourcePower[3]) - resultPhase;
+  } else if (cosine <= gimbalTolerance) {
+    resultTheta = std::numbers::pi;
+    resultPhase = 0.0;
+    resultPhi = std::arg(sourcePower[2]);
+    resultLambda = std::arg(-sourcePower[1]);
+  }
+
+  // Reject accumulated magnitude error and near-gimbal approximations that
+  // exceed the full-matrix contract.
+  Matrix reconstructed = computeUMatrix(resultTheta, resultPhi, resultLambda);
+  const auto phase = std::polar(1.0, resultPhase);
   for (size_t i = 0; i < reconstructed.size(); ++i) {
     reconstructed[i] *= phase;
     if (!std::isfinite(sourcePower[i].real()) ||
         !std::isfinite(sourcePower[i].imag()) ||
+        !std::isfinite(reconstructed[i].real()) ||
+        !std::isfinite(reconstructed[i].imag()) ||
         std::abs(sourcePower[i] - reconstructed[i]) >
             U_POWER_EQUIVALENCE_TOLERANCE) {
       return std::nullopt;

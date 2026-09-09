@@ -12,9 +12,9 @@
 #include "mlir/Dialect/QCO/QCOUtils.h"
 
 #include <llvm/ADT/BitVector.h>
+#include <llvm/ADT/DenseMap.h>
 #include <llvm/ADT/STLExtras.h>
 #include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/Sequence.h>
 #include <llvm/ADT/SmallPtrSet.h>
 #include <llvm/ADT/SmallVector.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -34,6 +34,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -250,18 +251,17 @@ struct ForwardClassicalResults : public OpRewritePattern<IfOp> {
     auto elseValues =
         op.elseYield().getTargets().take_front(classicalResults.size());
 
+    DenseMap<std::pair<Value, Value>, Value> representatives;
     bool changed = false;
-    for (const auto [index, result] : llvm::enumerate(classicalResults)) {
+    for (auto [index, result] : llvm::enumerate(classicalResults)) {
       Value replacement;
       if (thenValues[index] == elseValues[index]) {
         replacement = thenValues[index];
       } else {
-        for (const auto candidate : llvm::seq(index)) {
-          if (thenValues[candidate] == thenValues[index] &&
-              elseValues[candidate] == elseValues[index]) {
-            replacement = classicalResults[candidate];
-            break;
-          }
+        auto [representative, inserted] = representatives.try_emplace(
+            std::pair{thenValues[index], elseValues[index]}, result);
+        if (!inserted) {
+          replacement = representative->second;
         }
       }
 
@@ -296,18 +296,10 @@ struct RemoveUnusedClassicalResults : public OpRewritePattern<IfOp> {
     const auto numClassicalResults =
         op.getClassicalResults().size() - resultsToErase.count();
 
-    llvm::BitVector yieldOperandsToErase(op.thenYield().getNumOperands());
-    for (auto result : op.getClassicalResults()) {
-      if (resultsToErase.test(result.getResultNumber())) {
-        yieldOperandsToErase.set(result.getResultNumber());
-      }
-    }
-    rewriter.modifyOpInPlace(op.thenYield(), [&] {
-      op.thenYield()->eraseOperands(yieldOperandsToErase);
-    });
-    rewriter.modifyOpInPlace(op.elseYield(), [&] {
-      op.elseYield()->eraseOperands(yieldOperandsToErase);
-    });
+    rewriter.modifyOpInPlace(
+        op.thenYield(), [&] { op.thenYield()->eraseOperands(resultsToErase); });
+    rewriter.modifyOpInPlace(
+        op.elseYield(), [&] { op.elseYield()->eraseOperands(resultsToErase); });
 
     auto replacement = cast<IfOp>(rewriter.eraseOpResults(op, resultsToErase));
     rewriter.modifyOpInPlace(replacement, [&] {

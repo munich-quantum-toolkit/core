@@ -10,6 +10,7 @@
 
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
 #include "mlir/Support/Passes.h"
@@ -90,10 +91,12 @@ TEST_F(QTensorCanonicalizationTest,
   auto moduleOp = parseSourceString<ModuleOp>(mlirCode, &context_);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
   PassManager pm(&context_);
   pm.addPass(createCanonicalizerPass());
   ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
   IfOp ifOp;
   moduleOp->walk([&](IfOp candidate) { ifOp = candidate; });
@@ -161,8 +164,10 @@ TEST_F(QTensorCanonicalizationTest, ScalarizesOnlyAccessedQTensorElements) {
   auto moduleOp = parseSourceString<ModuleOp>(mlirCode, &context_);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
   ASSERT_TRUE(succeeded(runQCOCleanupPipeline(moduleOp.get())));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
   IfOp ifOp;
   moduleOp->walk([&](IfOp candidate) { ifOp = candidate; });
@@ -213,8 +218,10 @@ TEST_F(QTensorCanonicalizationTest, ForwardsUnaccessedQTensorAroundIf) {
   auto moduleOp = parseSourceString<ModuleOp>(mlirCode, &context_);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
   ASSERT_TRUE(succeeded(runQCOCleanupPipeline(moduleOp.get())));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
   IfOp ifOp;
   moduleOp->walk([&](IfOp candidate) { ifOp = candidate; });
@@ -282,8 +289,10 @@ TEST_F(QTensorCanonicalizationTest,
   auto moduleOp = parseSourceString<ModuleOp>(mlirCode, &context_);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
   ASSERT_TRUE(succeeded(runQCOCleanupPipeline(moduleOp.get())));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
   IfOp ifOp;
   TOp postMiddle;
@@ -371,8 +380,10 @@ TEST_F(QTensorCanonicalizationTest, LeavesUnsupportedQTensorIfUnchanged) {
     auto moduleOp = parseSourceString<ModuleOp>(mlirCode, &context_);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     ASSERT_TRUE(succeeded(runQCOCleanupPipeline(moduleOp.get())));
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
 
     IfOp ifOp;
     moduleOp->walk([&](IfOp candidate) { ifOp = candidate; });

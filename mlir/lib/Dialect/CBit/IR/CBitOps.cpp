@@ -112,21 +112,16 @@ static LogicalResult verifyIndex(Operation* operation, Value registerValue,
   return success();
 }
 
-namespace {
-struct KnownLoadValue {
-  Value value;
-  bool isZeroInitialization = false;
-};
-} // namespace
-
-static std::optional<KnownLoadValue> findKnownLoadValue(LoadOp load) {
+/// Return nullopt for an unknown load, an engaged null Value for zero
+/// initialization, or a non-null Value for a known stored bit.
+static std::optional<Value> findKnownLoadValue(LoadOp load) {
   const auto loadIndex = getConstantIntValue(load.getIndex());
   for (auto* candidate = load->getPrevNode(); candidate != nullptr;
        candidate = candidate->getPrevNode()) {
     if (auto store = dyn_cast<StoreOp>(candidate);
         store && store.getReg() == load.getReg()) {
       if (store.getIndex() == load.getIndex()) {
-        return KnownLoadValue{.value = store.getValue()};
+        return store.getValue();
       }
       const auto storeIndex = getConstantIntValue(store.getIndex());
       if (loadIndex && storeIndex && *loadIndex != *storeIndex) {
@@ -138,12 +133,12 @@ static std::optional<KnownLoadValue> findKnownLoadValue(LoadOp load) {
     if (auto alloc = dyn_cast<AllocOp>(candidate);
         alloc && alloc.getResult() == load.getReg()) {
       if (alloc.getInitialization() == Initialization::Zero) {
-        return KnownLoadValue{.isZeroInitialization = true};
+        return Value{};
       }
       return std::nullopt;
     }
 
-    if (isa<LoadOp>(candidate)) {
+    if (isa<LoadOp, ReadOp>(candidate)) {
       continue;
     }
     if (candidate->getNumRegions() != 0 ||
@@ -164,8 +159,8 @@ struct ForwardKnownLoad final : OpRewritePattern<LoadOp> {
     if (!known) {
       return failure();
     }
-    if (known->value) {
-      rewriter.replaceOp(load, known->value);
+    if (*known) {
+      rewriter.replaceOp(load, *known);
       return success();
     }
     rewriter.replaceOpWithNewOp<arith::ConstantIntOp>(load, false, 1);

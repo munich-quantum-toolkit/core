@@ -2074,29 +2074,6 @@ Value trivialControlledU2(QCOProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-Value inverseU2(QCOProgramBuilder& b) {
-  constexpr double pi = std::numbers::pi;
-  auto q = b.allocQubitRegister(1);
-  auto res = b.inv(
-      q[0], [&](Value qubit) { return b.u2(-0.567 + pi, -0.234 - pi, qubit); });
-  return measureToRegister(b, res);
-}
-
-Value inverseMultipleControlledU2(QCOProgramBuilder& b) {
-  constexpr double pi = std::numbers::pi;
-  auto q = b.allocQubitRegister(3);
-  auto res = b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
-    auto [controlsOut, targetOut] =
-        b.mcu2(-0.567 + pi, -0.234 - pi, {qubits[0], qubits[1]}, qubits[2]);
-    return llvm::to_vector(
-        llvm::concat<Value>(controlsOut, ValueRange{targetOut}));
-  });
-  q[0] = res[0];
-  q[1] = res[1];
-  q[2] = res[2];
-  return measureAndReturn(b, q.qubits);
-}
-
 Value canonicalizeU2ToH(QCOProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   q[0] = b.u2(0., std::numbers::pi, q[0]);

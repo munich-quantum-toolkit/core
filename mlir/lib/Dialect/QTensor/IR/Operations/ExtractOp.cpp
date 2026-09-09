@@ -9,7 +9,6 @@
  */
 
 #include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
 
 #include <llvm/ADT/DenseSet.h>
 #include <mlir/Dialect/QCO/IR/QCOOps.h>
@@ -27,8 +26,8 @@ using namespace mlir::qtensor;
 /// Find the allocation proving that an extracted constant slot is fresh.
 static AllocOp findFreshAllocation(ExtractOp extract) {
   auto current = extract.getTensor();
-  auto extractIndex = extract.getIndex();
-  if (!getConstantIntValue(extractIndex)) {
+  const auto extractIndex = getConstantIntValue(extract.getIndex());
+  if (!extractIndex) {
     return {};
   }
 
@@ -38,8 +37,8 @@ static AllocOp findFreshAllocation(ExtractOp extract) {
     }
 
     if (auto nestedExtract = dyn_cast<ExtractOp>(definingOp)) {
-      if (!getConstantIntValue(nestedExtract.getIndex()) ||
-          areEquivalentIndices(extractIndex, nestedExtract.getIndex())) {
+      const auto index = getConstantIntValue(nestedExtract.getIndex());
+      if (!index || *index == *extractIndex) {
         return {};
       }
       current = nestedExtract.getTensor();
@@ -47,8 +46,8 @@ static AllocOp findFreshAllocation(ExtractOp extract) {
     }
 
     if (auto insert = dyn_cast<InsertOp>(definingOp)) {
-      if (!getConstantIntValue(insert.getIndex()) ||
-          areEquivalentIndices(extractIndex, insert.getIndex())) {
+      const auto index = getConstantIntValue(insert.getIndex());
+      if (!index || *index == *extractIndex) {
         return {};
       }
       current = insert.getDest();

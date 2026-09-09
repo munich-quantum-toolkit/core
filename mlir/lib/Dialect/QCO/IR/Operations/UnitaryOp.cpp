@@ -13,11 +13,10 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/SmallVector.h>
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
 #include <mlir/IR/Value.h>
 #include <mlir/IR/ValueRange.h>
 #include <mlir/Support/LLVM.h>
@@ -29,25 +28,8 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-struct FoldIdentityUnitary final : OpRewritePattern<UnitaryOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(UnitaryOp op,
-                                PatternRewriter& rewriter) const override {
-    if (!mqt::isExactIdentityMatrix(op.getMatrix())) {
-      return failure();
-    }
-    rewriter.replaceOp(op, op.getQubitsIn());
-    return success();
-  }
-};
-
-} // namespace
-
 void UnitaryOp::build(OpBuilder& /*builder*/, OperationState& state,
-                      ValueRange qubits, const ElementsAttr matrix) {
+                      ValueRange qubits, ElementsAttr matrix) {
   state.addOperands(qubits);
   state.addTypes(qubits.getTypes());
   state.addAttribute(getMatrixAttrName(state.name), matrix);
@@ -96,7 +78,13 @@ DynamicMatrix UnitaryOp::getUnitaryMatrix() {
   return result;
 }
 
-void UnitaryOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                            MLIRContext* context) {
-  results.add<FoldIdentityUnitary>(context);
+LogicalResult UnitaryOp::fold(FoldAdaptor /*adaptor*/,
+                              SmallVectorImpl<OpFoldResult>& results) {
+  if (!mqt::isExactIdentityMatrix(getMatrix())) {
+    return failure();
+  }
+  for (auto qubit : getQubitsIn()) {
+    results.emplace_back(qubit);
+  }
+  return success();
 }
