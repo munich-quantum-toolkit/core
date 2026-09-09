@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 set(mqt_utils_target mqt-core-mlir-unittests-mqt-utils)
-add_executable(${mqt_utils_target} test_constant_folding.cpp test_gate_powering.cpp)
+add_executable(${mqt_utils_target} test_angles.cpp test_constant_folding.cpp test_gate_powering.cpp)
 target_link_libraries(
   ${mqt_utils_target} PRIVATE GTest::gtest_main MLIRArithDialect MLIRFuncDialect MLIRIndexDialect
                               MLIRIR MLIRMQTUtils)

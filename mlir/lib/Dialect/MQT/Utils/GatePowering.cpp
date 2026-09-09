@@ -10,6 +10,8 @@
 
 #include "mlir/Dialect/MQT/Utils/GatePowering.h"
 
+#include <llvm/ADT/StringSwitch.h>
+
 #include <array>
 #include <cmath>
 #include <complex>
@@ -20,6 +22,14 @@
 #include <optional>
 
 namespace mlir::mqt {
+
+unsigned getFixedGatePowerPeriod(StringRef baseSymbol) {
+  return llvm::StringSwitch<unsigned>(baseSymbol)
+      .Cases({"x", "y", "z", "h", "ecr", "rccx", "swap"}, 2)
+      .Cases({"s", "sdg", "sx", "sxdg", "iswap"}, 4)
+      .Cases({"t", "tdg"}, 8)
+      .Default(0);
+}
 
 bool isIntegerExponent(const double value) {
   return value == std::floor(value) && std::isfinite(value);
