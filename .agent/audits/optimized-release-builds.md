@@ -1,6 +1,6 @@
 # Optimized release builds
 
-Status: matched Linux SDK and Core LTO/BOLT validated locally; SDK publication
+Status: native Linux SDK and Core LTO/BOLT validated locally; SDK publication
 and hosted matrix validation pending. Original baseline: `eb67c001a`,
 2026-09-08. GCC 13.3, Linux AArch64, LLVM/MLIR 23.1.0 assertion-enabled portable
 SDK, nanobind 3.0.1, CPython 3.14.7.
@@ -28,10 +28,10 @@ SDK, nanobind 3.0.1, CPython 3.14.7.
   nanobind's binding optimization defaults.
 - With full Core LTO in addition to section GC, the local wheel is 42,732,712
   bytes, using the original native SDK.
-- Assertion-free Linux SDKs contain fat-LTO archives and use native SDK tool
-  links; macOS uses ThinLTO archives with the native link cache. Linux SDK and
-  Core wheels share pinned manylinux image digests; macOS selects Xcode 26.6.
-  Assertion-enabled CI SDKs and Windows SDKs retain native archives.
+- SDK variants contain native archives on every platform. Core enables LTO for
+  its own code; BOLT runs on the final Linux wheel binaries. SDK image updates
+  are independent of Core cibuildwheel updates, and macOS uses the runner
+  default Xcode.
 - Split the SDK's space-separated `LLVM_DEFINITIONS` into CMake arguments before
   adding definitions. Otherwise the explicit C++ ABI definition absorbs
   subsequent flags, and nanobind rejects the installed wheel at import.
@@ -44,7 +44,79 @@ SDK, nanobind 3.0.1, CPython 3.14.7.
   repaired archive. GNU `strip` broke the rewritten SDK executable at startup in
   the local check.
 
-## Native SDK links and distribution experiment
+## Simplified SDK builds
+
+The SDK uses ordinary native Release builds with assertions selected per
+variant. Remove SDK LTO, GCC fat-object/archive flags, special native-link
+flags, serialized LTO links, exact Xcode selection, and Core image overrides.
+Use `llvm-strip` for Linux/macOS tools and archives. The SDK pins the manylinux
+2.28 image tag `2026.08.04-1` from cibuildwheel 4.2.0; Core follows
+cibuildwheel's own defaults. Linux still ships BOLT tooling for Core's final
+binaries.
+
+Core LTO optimizes Core's own objects but cannot optimize across a native SDK
+archive boundary. BOLT can still optimize the SDK code retained in the final
+Core binaries. Native archives avoid compiler-specific LTO IR compatibility
+requirements; the normal target, C++ ABI, and runtime-library requirements
+remain.
+
+Mold 2.42.0 has an upstream regression in emitted relocations for named local
+symbols.
+[Fix `635956d`](https://github.com/rui314/mold/commit/635956d3b7c53d72c3fb70fd084443671395d20d)
+restores local-symbol classification when choosing the symbol-table index. The
+tiny upstream assembly reproducer fails locally on ARM64: a relocation to `str`
+names `_start` instead. `--discard-none` and `--no-relax` do not fix it. This
+can occur without LTO, although the retained native `mlir-opt` link does not
+trigger it. The fix is newer than the latest release, 2.42.0.
+
+A local mold 2.42.0 build with only that upstream fix passes the reproducer.
+Relinking the same full-LTO `mlir-tblgen` reduces `readelf` bad-symbol-index
+reports from 26 to zero. BOLT then fails to relocate an ADR in the non-simple
+`p_ere` function. Linking with the patched mold plus `--no-relax` passes
+instrumentation, training, optimization, LLVM stripping, and validation. Keep
+released mold for native SDK links and BFD for Core BOLT links rather than
+shipping a patched linker and another workaround flag. Re-evaluate after the
+mold fix is released and the ARM64 BOLT relaxation path is supported. Raw SDK
+logs: `mold-local-reloc-results.json`, `mold-lto-tblgen-results.json`,
+`mold-fixed-bolt.log`, and `mold-fixed-no-relax-bolt.log` in `build/lto-bolt/`.
+
+The full native SDK builds with mold and passes LLVM stripping and the SDK
+workload. Its exact archive is 305,403,648 bytes (291 MiB), 81.5% smaller than
+the fat-LTO archive. The relocated installation passes a GCC 13.3 consumer of
+the GCC 14.2-built libraries, plus BOLT success and failure recovery with BFD.
+The host-default mold consumer runs successfully but reproduces the relocation
+bug during BOLT; the integration test now selects BFD explicitly. The SDK itself
+continues to build with mold.
+
+A fresh Core full-LTO/BFD build passes BOLT on all five targets, LLVM stripping,
+wheel repair, and repaired-wheel training. The 43,638,800-byte wheel is 9.6%
+larger than the fat-SDK wheel (39,808,921 bytes). Its installed CMake consumer
+creates a driver session, and 1,184 Python tests pass with one optional
+`qirrunner` module skipped.
+
+The same twelve-process, CPU-19 held-out protocol compares the two repaired
+wheels with no concurrent builds. Both retain Core LTO and BOLT:
+
+| Workload              | Fat-LTO SDK | Native SDK | Change |
+| --------------------- | ----------: | ---------: | -----: |
+| Vector import/export  |    1.745 ms |   1.746 ms | +0.04% |
+| Matrix multiplication |    2.793 ms |   2.802 ms | +0.34% |
+| OpenQASM to QCO       |    5.381 ms |   5.549 ms | +3.12% |
+| Qiskit import/export  |    2.652 ms |   2.697 ms | +1.70% |
+
+The DD differences are within process variation; the compiler paths show a small
+cost from dropping SDK LTO. Process-median IQRs are 0.019-0.034 ms. These ARM64
+workloads support the simpler native SDK policy, without implying identical
+performance across platforms or workloads. macOS default-Xcode builds and the
+full hosted matrix require new validation.
+
+SDK evidence: `native-build.log`, `native-finalize.log`, and
+`native-host-integration-bfd.log` under `build/lto-bolt/`. Core evidence:
+`native-sdk-wheel-build.log`, `native-sdk-bolt.log`, `native-wheel-tests.log`,
+`native-consumer.log`, `native-sdk-bench.log`, and
+`native-sdk-bench-results.json` under `build/release-optimization/`.
+
+## Earlier fat-LTO links and distribution experiment
 
 The SDK retains GCC LTO IR for Core while building its own tools through native
 links. Compile with `-flto=auto -ffat-lto-objects`, use GCC archive tools, and

@@ -1,8 +1,7 @@
 # Optimized release builds
 
-Status: native Linux SDK links, fat-LTO consumers, and Core CD validated
-locally. The distribution-components experiment is complete; retain the full SDK
-inventory. SDK publication and hosted matrix validation remain external gates.
+Status: native assertion-free SDK and Core-only LTO/BOLT validated locally. SDK
+publication and hosted matrix validation remain external gates.
 
 ## Goal and scope
 
@@ -17,16 +16,13 @@ experiment.
 - Preserve the existing assertion-enabled SDK selection. Add an explicit
   assertion-free release variant with matching generated LLVM configuration; do
   not override an installed SDK's ABI settings in Core.
-- Assertion-free Linux/macOS SDKs contain LTO archives for CD consumers with
-  matched compilers. Assertion-enabled CI SDKs and all Windows SDKs remain
-  native.
-- Linux builds share immutable manylinux digests; macOS selects Xcode 26.6.
-  Linux uses fat-LTO archives and native SDK tool links; macOS uses ThinLTO and
-  LLVM's native link cache. Core retains full LTO for its own objects. Apply
-  BOLT only to final Core binaries; the SDK supplies the optimizer and runtime
-  without rewriting its own tools.
-- Use GNU ld for Linux BOLT builds: mold 2.42.0 produced invalid relocation
-  symbol indices with the full-LTO SDK and compiler extension.
+- SDK variants contain native libraries. Core release wheels enable LTO for
+  their own code and BOLT after final linking on Linux.
+- Use the cibuildwheel 4.2.0 manylinux image tag in the SDK; let Core follow
+  cibuildwheel defaults and macOS use the runner's default Xcode.
+- Use mold for native SDK links. Keep BFD for Core BOLT links: the released mold
+  has a reproduced relocation bug; its upstream fix plus `--no-relax` works
+  locally but would add maintenance.
 - BOLT runs after final linking, with fresh instrumentation profiles and
   `-lite`, before LLVM stripping, wheel repair, and metadata generation. The
   repaired wheel passes training again. Local held-out gains are 1.4-3.4%, with
@@ -39,11 +35,14 @@ experiment.
   device and benchmark executable: the local wheel shrinks by 29.3%.
 - Enable full LTO for Linux and macOS Core release wheels and keep binding
   optimization defaults. Preserve the earlier runtime measurements as a reason
-  to re-evaluate with the optimized SDK. Release SDK and wheel compilers are
-  pinned together.
+  to re-evaluate with the optimized SDK. SDK archives carry native code and do
+  not require an exact consumer compiler match.
 
 ## Work remaining
 
+- [x] Validate the native assertion-free SDK with Core LTO/BOLT and compare
+      held-out runtime against the fat SDK.
+- [x] Reproduce mold's symbol-index bug and test its upstream fix locally.
 - [x] Validate fat-LTO archives with native and LTO consumers and Core CD.
 - [x] Measure selected distribution components locally without narrowing the
       published SDK tool inventory.
@@ -74,5 +73,5 @@ strategy are in [the audit](../audits/optimized-release-builds.md).
 
 Regular C++ and Python CI uses assertion-enabled SDKs. The CD wheel jobs,
 including their pull-request checks, use the assertion-free SDK. Windows wheel
-LTO is disabled. Linux wheel and SDK image digests match cibuildwheel 4.2.0 and
-must advance together with an SDK release.
+LTO is disabled. Linux SDK image pins and Core cibuildwheel updates are
+independent.
