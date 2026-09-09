@@ -25,10 +25,10 @@ releases may include breaking changes.
   [#1807], [#1808], [#1815], [#1824], [#1869], [#1872], [#1914], [#1925],
   [#1927], [#1935], [#1936], [#1938], [#1975], [#1976], [#2006], [#2014],
   [#2015], [#2017], [#2026], [#2028], [#2054], [#2058], [#2125], [#2136],
-  [#2149], [#2150], [#2158], [#2162], [#2194], [#2210], [#2211], [#2215],
-  [#2218], [#2220], [#2323], [#2336], [#2344]) ([**@burgholzer**],
-  [**@denialhaag**], [**@taminob**], [**@DRovara**], [**@li-mingbao**],
-  [**@Ectras**], [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
+  [#2149], [#2150], [#2158], [#2194], [#2210], [#2211], [#2215], [#2218],
+  [#2220], [#2323], [#2336], [#2344]) ([**@burgholzer**], [**@denialhaag**],
+  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
+  [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
 - ✨ Add a library for typed structured quantum benchmarks with versioned
   instance specifications, analytic references, deterministic manifests, and
   C++, Python, and command-line interfaces ([#2135], [#2299], [#2315], [#2324],
@@ -38,11 +38,12 @@ releases may include breaking changes.
   direct lowering and dense-array helpers for supported compiler inputs
   ([#1915], [#1973], [#2077], [#2078], [#2079], [#2334]) ([**@simon1hofmann**],
   [**@burgholzer**])
-- ✨ Add immutable MLIR compiler targets, selected payload specifications, QDMI
-  device integration, ordered operation applicability, directional native
-  synthesis, and target compilation through C++, Python, and `mqt-cc` ([#2285],
-  [#2219], [#2049], [#1999], [#1993], [#1687]) ([**@MatthiasReumann**],
-  [**@simon1hofmann**], [**@burgholzer**])
+- ✨ Add immutable MLIR compiler targets, selected payload specifications,
+  payload-aware control-flow legalization, QDMI device integration, ordered
+  operation applicability, directional native synthesis, and target compilation
+  through C++, Python, and `mqt-cc` ([#2285], [#2219], [#2162], [#2049],
+  [#1999], [#1993], [#1687]) ([**@MatthiasReumann**], [**@simon1hofmann**],
+  [**@burgholzer**])
 
 #### Import and export
 
