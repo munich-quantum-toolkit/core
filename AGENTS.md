@@ -207,38 +207,14 @@ Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
 
 ## Benchmark experiments
 
-Keep task-specific and one-off benchmarks self-contained under
-`.agents/benchmarks/<scope>/`. Do not put their harnesses in production or test
-source trees, add them to normal build or test targets, or add project-wide
-runtime dependencies solely for an experiment. Use an explicit build entry point
-that can target a selected checkout without editing that checkout. Durable
-regression tests still belong in the corresponding test tree.
+Keep one-off benchmarks in `.agents/benchmarks/<scope>/`, outside normal build
+and test targets. Include the harness, reproduction commands, exact revisions,
+environment, raw measurements, and generated before/after plots.
 
-Each benchmark folder must contain:
-
-- A `README.md` with the question, workload definitions, exact baseline and
-  candidate revisions, environment, build settings, commands, results, and
-  limits.
-- The harness and scripts needed to build, run, compare, and plot the
-  experiment.
-- Raw measurements in a machine-readable format and plots generated from those
-  measurements. Keep generated binaries and build output under ignored `build/`
-  directories, not in the committed benchmark folder.
-
-Run the benchmarks before making a performance claim. Compare the same harness
-and inputs under matched build and runtime settings. Record units, timed scope,
-seeds, threading, warmups, repetitions, and aggregation. Alternate before/after
-runs when practical, avoid concurrent builds or tests, and show sample spread.
-Check correctness and relevant quality measures alongside time or memory; for
-routing, this includes mapped output and SWAP counts. A faster incorrect result
-or a changed heuristic is not a behavior-preserving optimization.
-
-Report regressions and neutral results as well as improvements. Distinguish
-synthetic helper measurements from end-to-end workloads, and do not generalize
-beyond the measured cases. Include readable before/after plots and reproduction
-links in performance PRs. Preserve revision attribution when moving or updating
-a harness; label old measurements as historical and rerun affected measurements
-before attributing them to changed code.
+Run matched comparisons; check correctness and output quality alongside speed.
+Report sample spread, regressions, and limits. Keep old results tied to their
+measured revisions. Exclude these folders from routine lint; validate
+experiments explicitly. Durable regression tests belong in the test tree.
 
 ## ExecPlans
 

@@ -295,6 +295,7 @@ test-sources = []
 line-length = 120
 namespace-packages = [ "mqt" ]
 src = [ "python" ]
+extend-exclude = [ ".agents/benchmarks/**" ]
 preview = true
 fix = true
 unsafe-fixes = true
@@ -391,6 +392,7 @@ olt = "olt"
 
 [tool.ty.src]
 exclude = [
+  ".agents/benchmarks/**",
   "docs/**",
   "mlir/**",
 ]
