@@ -7,6 +7,21 @@
   color: var(--color-foreground-secondary);
 }
 
+.acknowledgements-logos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  grid-gap: 1em;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.acknowledgement {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
 /* override the default background color for literal strings */
 body:not([data-theme="light"]) .highlight .sa,
 .highlight .sb,
@@ -21,6 +36,7 @@ body:not([data-theme="light"]) .highlight .sa,
 .highlight .sr,
 .highlight .s1,
 .highlight .ss,
+.highlight .s1,
 .highlight .s {
   background-color: #00000001;
 }
