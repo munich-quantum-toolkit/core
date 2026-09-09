@@ -272,7 +272,7 @@ class _ProgramConverter:
         Raises:
             PennyLaneValidationError: If arity, parameters, or topology do not match.
         """
-        key = (qdmi_operation.name(), spec.wires)
+        key = (operation.name, spec.wires)
         if key not in self._operation_contracts:
             self._operation_contracts[key] = (
                 qdmi_operation.qubits_num(),
