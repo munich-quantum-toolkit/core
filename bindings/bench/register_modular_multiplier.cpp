@@ -36,9 +36,9 @@ void registerModularMultiplier(const nb::module_& m) {
       .def_ro("modulus", &bench::ModularMultiplierOptions::modulus,
               "The canonical big-endian modulus.")
       .def_ro("multiplicand", &bench::ModularMultiplierOptions::multiplicand,
-              "The big-endian multiplicand, allowing '+' for a |+> qubit.")
+              "The big-endian multiplicand; ``+`` prepares a plus state.")
       .def_ro("control", &bench::ModularMultiplierOptions::control,
-              "The control input: '0', '1', or '+'.");
+              "The control input (``0``, ``1``, or ``+``).");
 
   auto modularMultiplier = nb::class_<bench::ModularMultiplier>(
       m, "ModularMultiplier",

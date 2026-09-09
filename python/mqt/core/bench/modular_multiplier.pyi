@@ -27,11 +27,11 @@ class Options:
 
     @property
     def multiplicand(self) -> str:
-        """The big-endian multiplicand, allowing '+' for a |+> qubit."""
+        """The big-endian multiplicand; ``+`` prepares a plus state."""
 
     @property
     def control(self) -> str:
-        """The control input: '0', '1', or '+'."""
+        """The control input (``0``, ``1``, or ``+``)."""
 
 class ModularMultiplier:
     """A validated modular multiplier benchmark."""
