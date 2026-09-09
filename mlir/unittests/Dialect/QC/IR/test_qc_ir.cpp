@@ -1354,18 +1354,16 @@ TEST_F(QCTest, FractionalPowUDoesNotCanonicalize) {
   EXPECT_EQ(powCount, 1U);
 }
 
-TEST_F(QCTest, NestedPowAcrossBranchCutDoesNotMerge) {
+TEST_F(QCTest, NestedPowerOfSquaredPauliIsIdentity) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));
   ASSERT_TRUE(program);
   ASSERT_TRUE(runQCCleanupPipeline(program.get()).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
 
-  std::size_t powCount = 0;
-  std::size_t xCount = 0;
-  program->walk([&](PowOp) { ++powCount; });
-  program->walk([&](XOp) { ++xCount; });
-  EXPECT_EQ(powCount, 1);
-  EXPECT_EQ(xCount, 0);
+  size_t unitaryCount = 0;
+  program->walk([&](UnitaryOpInterface) { ++unitaryCount; });
+  EXPECT_EQ(unitaryCount, 0U);
 }
 
 // pow(-0.5) { h } cannot fold a negative fractional exponent

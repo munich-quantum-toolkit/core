@@ -2171,7 +2171,7 @@ TEST_F(QCOTest, PowExponentIsUnitaryParameter) {
   EXPECT_EQ(unitary.getParameters().front(), powOp.getExponent());
 }
 
-TEST_F(QCOTest, GateMergesPreserveParameterDominance) {
+TEST_F(QCOTest, UnboundedGateParametersRetainDominance) {
   auto program = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @rx(%a: f64, %b: f64) {
@@ -2222,32 +2222,22 @@ TEST_F(QCOTest, GateMergesPreserveParameterDominance) {
   program->walk([&](ROp) { ++rCount; });
   program->walk([&](RXXOp) { ++rxxCount; });
   program->walk([&](arith::AddFOp) { ++addCount; });
-  EXPECT_EQ(rxCount, 1U);
-  EXPECT_EQ(rCount, 1U);
-  EXPECT_EQ(rxxCount, 1U);
-  EXPECT_EQ(addCount, 3U);
+  EXPECT_EQ(rxCount, 2U);
+  EXPECT_EQ(rCount, 2U);
+  EXPECT_EQ(rxxCount, 2U);
+  EXPECT_EQ(addCount, 0U);
 }
 
-TEST_F(QCOTest, NestedPowAcrossBranchCutDoesNotMerge) {
+TEST_F(QCOTest, NestedPowerOfSquaredPauliIsIdentity) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));
   ASSERT_TRUE(program);
   ASSERT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
 
-  std::size_t powCount = 0;
-  std::size_t xCount = 0;
-  PowOp remainingPow;
-  program->walk([&](PowOp op) {
-    ++powCount;
-    remainingPow = op;
-  });
-  program->walk([&](XOp) { ++xCount; });
-  EXPECT_EQ(powCount, 1);
-  EXPECT_EQ(xCount, 0);
-  ASSERT_TRUE(remainingPow);
-  const auto matrix = remainingPow.getUnitaryMatrix();
-  ASSERT_TRUE(matrix);
-  EXPECT_TRUE(matrix->isApprox(DynamicMatrix::identity(2), 1e-10));
+  size_t unitaryCount = 0;
+  program->walk([&](UnitaryOpInterface) { ++unitaryCount; });
+  EXPECT_EQ(unitaryCount, 0U);
 }
 
 // pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>

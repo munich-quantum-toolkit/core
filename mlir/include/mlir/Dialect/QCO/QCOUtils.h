@@ -10,6 +10,7 @@
 
 #pragma once
 
+#include "mlir/Dialect/MQT/Utils/Angles.h"
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
@@ -222,7 +223,8 @@ LogicalResult mergeOneTargetZeroParameter(OpType op,
  * @brief Merge two compatible one-target, one-parameter operations
  *
  * @details
- * The new parameter is computed as the sum of the two original parameters.
+ * Merge constant angles only when their sum satisfies the arithmetic error
+ * bound in @ref mqt::addConstantAngles. Dynamic parameters have no known bound.
  *
  * @tparam OpType The type of the operation to be merged.
  * @param op The operation instance.
@@ -237,14 +239,19 @@ LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
     return failure();
   }
 
-  // Compute the new parameter where both operands dominate, then move the
-  // merged gate behind it.
-  rewriter.setInsertionPoint(nextOp);
-  auto newParameter = arith::AddFOp::create(
-      rewriter, op.getLoc(), op.getOperand(1), nextOp.getOperand(1));
+  const auto lhs = mqt::valueToDouble(op.getOperand(1));
+  const auto rhs = mqt::valueToDouble(nextOp.getOperand(1));
+  const auto sum =
+      lhs && rhs ? mqt::addConstantAngles(*lhs, *rhs) : std::nullopt;
+  if (!sum) {
+    return failure();
+  }
+
+  rewriter.setInsertionPoint(op);
+  auto newParameter = arith::ConstantOp::create(rewriter, op.getLoc(),
+                                                rewriter.getF64FloatAttr(*sum));
   rewriter.modifyOpInPlace(
       op, [&] { op->setOperand(1, newParameter.getResult()); });
-  rewriter.moveOpBefore(op, nextOp);
 
   // Replace the second operation with the result of the first operation
   rewriter.replaceOp(nextOp, op.getResult());
@@ -279,14 +286,19 @@ static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
 
   auto output0 = op.getOutputQubit(0);
   if (symmetric || output0 == nextOp.getInputQubit(0)) {
-    // Compute the new parameter where both operands dominate, then move the
-    // merged gate behind it.
-    rewriter.setInsertionPoint(nextOp);
-    auto newParameter = arith::AddFOp::create(
-        rewriter, op.getLoc(), op.getOperand(2), nextOp.getOperand(2));
+    const auto lhs = mqt::valueToDouble(op.getOperand(2));
+    const auto rhs = mqt::valueToDouble(nextOp.getOperand(2));
+    const auto sum =
+        lhs && rhs ? mqt::addConstantAngles(*lhs, *rhs) : std::nullopt;
+    if (!sum) {
+      return failure();
+    }
+
+    rewriter.setInsertionPoint(op);
+    auto newParameter = arith::ConstantOp::create(
+        rewriter, op.getLoc(), rewriter.getF64FloatAttr(*sum));
     rewriter.modifyOpInPlace(
         op, [&] { op->setOperand(2, newParameter.getResult()); });
-    rewriter.moveOpBefore(op, nextOp);
     rewriter.replaceOp(nextOp, nextOp.getInputQubits());
     return success();
   }

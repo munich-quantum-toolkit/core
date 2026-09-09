@@ -11,8 +11,31 @@
 #include "mlir/Dialect/MQT/Utils/GatePowering.h"
 
 #include <gtest/gtest.h>
+#include <llvm/ADT/StringRef.h>
 
 #include <limits>
+
+TEST(GatePoweringTest, RecognizesFixedGatePowerPeriods) {
+  for (llvm::StringRef gate : {"x", "y", "z", "h", "ecr", "rccx", "swap"}) {
+    SCOPED_TRACE(gate.str());
+    EXPECT_EQ(mlir::mqt::getFixedGatePowerPeriod(gate), 2U);
+  }
+  for (llvm::StringRef gate : {"s", "sdg", "sx", "sxdg", "iswap"}) {
+    SCOPED_TRACE(gate.str());
+    EXPECT_EQ(mlir::mqt::getFixedGatePowerPeriod(gate), 4U);
+  }
+  for (llvm::StringRef gate : {"t", "tdg"}) {
+    SCOPED_TRACE(gate.str());
+    EXPECT_EQ(mlir::mqt::getFixedGatePowerPeriod(gate), 8U);
+  }
+}
+
+TEST(GatePoweringTest, DoesNotAssignFixedPeriodsToOtherGates) {
+  for (llvm::StringRef gate : {"rx", "ry", "rz", "p", "u", "r", "dcx", ""}) {
+    SCOPED_TRACE(gate.str());
+    EXPECT_EQ(mlir::mqt::getFixedGatePowerPeriod(gate), 0U);
+  }
+}
 
 TEST(GatePoweringTest, recognizesIntegerExponents) {
   EXPECT_TRUE(mlir::mqt::isIntegerExponent(-2.0));
