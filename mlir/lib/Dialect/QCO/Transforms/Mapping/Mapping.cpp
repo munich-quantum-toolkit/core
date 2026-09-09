@@ -1294,7 +1294,9 @@ private:
           return false;
         }
 
-        if (isa<AllocOp, StaticOp, SinkOp>(op)) {
+        // A wire at its traversal boundary has no pending routing work.
+        if (std::next(it, WireTraversalTraits<Direction>::stride()) ==
+            std::default_sentinel) {
           return false;
         }
         if constexpr (Direction == WireDirection::Forward) {
