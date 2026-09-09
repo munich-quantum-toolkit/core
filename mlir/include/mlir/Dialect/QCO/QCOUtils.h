@@ -17,7 +17,6 @@
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
 #include <llvm/ADT/TypeSwitch.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/PatternMatch.h>
 #include <mlir/Support/LLVM.h>
@@ -246,10 +245,8 @@ LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
   }
 
   rewriter.setInsertionPoint(op);
-  auto newParameter = arith::ConstantOp::create(rewriter, op.getLoc(),
-                                                rewriter.getF64FloatAttr(*sum));
-  rewriter.modifyOpInPlace(
-      op, [&] { op->setOperand(1, newParameter.getResult()); });
+  auto newParameter = mqt::constantFromScalar(rewriter, op.getLoc(), *sum);
+  rewriter.modifyOpInPlace(op, [&] { op->setOperand(1, newParameter); });
 
   // Replace the second operation with the result of the first operation
   rewriter.replaceOp(nextOp, op.getResult());
@@ -293,10 +290,8 @@ static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
     }
 
     rewriter.setInsertionPoint(op);
-    auto newParameter = arith::ConstantOp::create(
-        rewriter, op.getLoc(), rewriter.getF64FloatAttr(*sum));
-    rewriter.modifyOpInPlace(
-        op, [&] { op->setOperand(2, newParameter.getResult()); });
+    auto newParameter = mqt::constantFromScalar(rewriter, op.getLoc(), *sum);
+    rewriter.modifyOpInPlace(op, [&] { op->setOperand(2, newParameter); });
     rewriter.replaceOp(nextOp, nextOp.getInputQubits());
     return success();
   }
