@@ -266,7 +266,7 @@ static AggregateBenchmarkResult runBenchmark(MLIRContext* context,
     MappingPassOptions options{.nlookahead = 20,
                                .lambda = 0.5,
                                .niterations = 1,
-                               .ntrials = 1,
+                               .ntrials = 18,
                                .seed = seedDist(gen)};
 
     PassManager pm(context);
