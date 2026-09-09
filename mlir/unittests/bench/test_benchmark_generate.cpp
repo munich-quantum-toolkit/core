@@ -10,9 +10,9 @@
 
 #include "TestUtils.h"
 #include "bench/BV.hpp"
-#include "bench/ControlledMultiplicationModuloN.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
+#include "bench/ModularMultiplier.hpp"
 #include "bench/Multiplexer.hpp"
 #include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"
@@ -40,8 +40,12 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
   expectValidQCAndJeff(BV{{.hiddenBitstring = "101"}});
   expectValidQCAndJeff(
       BV{{.hiddenBitstring = "101", .method = BVMethod::Dynamic}});
-  expectValidQCAndJeff(
-      ControlledMultiplicationModuloN{{.multiplier = "011", .modulus = "101"}});
+  expectValidQCAndJeff(ModularMultiplier{{
+      .multiplier = "011",
+      .modulus = "101",
+      .multiplicand = "+++",
+      .control = '+',
+  }});
   expectValidQCAndJeff(GHZ{{.qubits = 3}});
   expectValidQCAndJeff(Grover{{.markedBitstring = "101"}});
   expectValidQCAndJeff(Multiplexer{{.qubits = 3}});

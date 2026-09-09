@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Controlled multiplication modulo :math:`N` benchmark instances and options."""
+"""Modular multiplier benchmark instances and options."""
 
 from collections.abc import Mapping
 
@@ -14,9 +14,9 @@ import mqt.core.bench
 import mqt.core.mlir
 
 class Options:
-    """Parameters for a controlled multiplication modulo :math:`N` benchmark."""
+    """Parameters for a modular multiplier benchmark."""
 
-    def __init__(self, *, multiplier: str, modulus: str) -> None: ...
+    def __init__(self, *, multiplier: str, modulus: str, multiplicand: str, control: str = "1") -> None: ...
     @property
     def multiplier(self) -> str:
         """The big-endian classical multiplier."""
@@ -25,8 +25,16 @@ class Options:
     def modulus(self) -> str:
         """The canonical big-endian modulus."""
 
-class ControlledMultiplicationModuloN:
-    """A validated controlled multiplication modulo :math:`N` benchmark."""
+    @property
+    def multiplicand(self) -> str:
+        """The big-endian multiplicand, allowing '+' for a |+> qubit."""
+
+    @property
+    def control(self) -> str:
+        """The control input: '0', '1', or '+'."""
+
+class ModularMultiplier:
+    """A validated modular multiplier benchmark."""
 
     def __init__(self, options: Options) -> None: ...
     @property
@@ -36,6 +44,10 @@ class ControlledMultiplicationModuloN:
     @property
     def output(self) -> mqt.core.bench.Output:
         """The logical control, multiplicand, and accumulator output."""
+
+    @property
+    def expected_result(self) -> str | None:
+        """The unique outcome, or None for superposed inputs."""
 
     def probability(self, outcome: str) -> float:
         """Return the ideal probability of an outcome."""
@@ -59,11 +71,9 @@ class ControlledMultiplicationModuloN:
         """The stable semantic case ID."""
 
     @staticmethod
-    def from_instance_specification_json(
-        json: str, *, source: str = "<instance-specification>"
-    ) -> ControlledMultiplicationModuloN:
+    def from_instance_specification_json(json: str, *, source: str = "<instance-specification>") -> ModularMultiplier:
         """Parse a strict benchmark instance specification."""
 
     @staticmethod
-    def from_manifest_json(json: str, *, source: str = "<manifest>") -> ControlledMultiplicationModuloN:
+    def from_manifest_json(json: str, *, source: str = "<manifest>") -> ModularMultiplier:
         """Parse a strict benchmark manifest."""

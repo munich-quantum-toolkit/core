@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "bench/ControlledMultiplicationModuloN.hpp"
+#include "bench/ModularMultiplier.hpp"
 
 #include "Programs.h"
 #include "QFTUtils.h"
@@ -135,9 +135,8 @@ static void modularAdd(qc::QCProgramBuilder& builder, Value accumulator,
   phaseAdd(builder, accumulator, data, addendOffset, controls, false);
 }
 
-SmallVector<Value> controlledMultiplicationModuloN(
-    qc::QCProgramBuilder& builder,
-    const ControlledMultiplicationModuloN& benchmark) {
+SmallVector<Value> modularMultiplier(qc::QCProgramBuilder& builder,
+                                     const ModularMultiplier& benchmark) {
   const auto& options = benchmark.options();
   const auto bits = static_cast<int64_t>(options.modulus.size());
   const auto width = bits + 1;
@@ -149,10 +148,12 @@ SmallVector<Value> controlledMultiplicationModuloN(
   auto result = builder.allocClassicalBitRegister(
       static_cast<int64_t>(benchmark.output().width), benchmark.output().name);
 
-  builder.h(control);
-  builder.scfFor(0, bits, 1, [&](Value index) {
-    builder.h(builder.loadQubit(multiplicand, index));
-  });
+  if (options.control == '+') {
+    builder.h(control);
+  } else if (options.control == '1') {
+    builder.x(control);
+  }
+  detail::prepareRegister(builder, multiplicand, options.multiplicand);
 
   detail::forwardQFT(builder, accumulator, width);
 

@@ -19,7 +19,7 @@ class QCProgramBuilder;
 
 namespace mqt::bench {
 class BV;
-class ControlledMultiplicationModuloN;
+class ModularMultiplier;
 class GHZ;
 class Grover;
 class Multiplexer;
@@ -36,10 +36,9 @@ using namespace mlir;
 /// Emit one configured Bernstein--Vazirani benchmark.
 SmallVector<Value> bv(qc::QCProgramBuilder& builder, const BV& benchmark);
 
-/// Emit one configured controlled multiplication modulo N benchmark.
-SmallVector<Value> controlledMultiplicationModuloN(
-    qc::QCProgramBuilder& builder,
-    const ControlledMultiplicationModuloN& benchmark);
+/// Emit one configured modular multiplier benchmark.
+SmallVector<Value> modularMultiplier(qc::QCProgramBuilder& builder,
+                                     const ModularMultiplier& benchmark);
 
 /// Emit one configured GHZ benchmark.
 SmallVector<Value> ghz(qc::QCProgramBuilder& builder, const GHZ& benchmark);

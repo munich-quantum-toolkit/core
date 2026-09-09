@@ -6,7 +6,7 @@
 #
 # Licensed under the MIT License
 
-"""Python bindings for the controlled multiplication modulo N benchmark."""
+"""Python bindings for the modular multiplier benchmark."""
 
 from __future__ import annotations
 
@@ -14,14 +14,14 @@ import json
 
 import pytest
 
-from mqt.core.bench import controlled_multiplication_modulo_n
+from mqt.core.bench import modular_multiplier
 
 from .utils import assert_generates
 
 
-def _make_benchmark() -> controlled_multiplication_modulo_n.ControlledMultiplicationModuloN:
-    return controlled_multiplication_modulo_n.ControlledMultiplicationModuloN(
-        controlled_multiplication_modulo_n.Options(multiplier="011", modulus="101")
+def _make_benchmark() -> modular_multiplier.ModularMultiplier:
+    return modular_multiplier.ModularMultiplier(
+        modular_multiplier.Options(multiplier="011", modulus="101", multiplicand="+++", control="+")
     )
 
 
@@ -34,7 +34,7 @@ def _exact_counts() -> dict[str, int]:
     return counts
 
 
-def test_controlled_multiplication_modulo_n_reference() -> None:
+def test_modular_multiplier_reference() -> None:
     """Expose the options, output, and exact modular products."""
     benchmark = _make_benchmark()
     assert benchmark.options.multiplier == "011"
@@ -46,7 +46,7 @@ def test_controlled_multiplication_modulo_n_reference() -> None:
     assert benchmark.probability("10010000") == 0
 
 
-def test_controlled_multiplication_modulo_n_evaluation() -> None:
+def test_modular_multiplier_evaluation() -> None:
     """Evaluate exact counts against the modular-product reference."""
     evaluation = _make_benchmark().evaluate(_exact_counts())
     assert evaluation.total_variation_distance == pytest.approx(0)
@@ -54,23 +54,34 @@ def test_controlled_multiplication_modulo_n_evaluation() -> None:
     assert evaluation.success_probability == pytest.approx(1)
 
 
-def test_controlled_multiplication_modulo_n_json_roundtrip() -> None:
+def test_modular_multiplier_json_roundtrip() -> None:
     """Preserve the benchmark identity through both JSON representations."""
     benchmark = _make_benchmark()
     assert json.loads(benchmark.instance_specification_json)["parameters"] == {
+        "control": "+",
+        "multiplicand": "+++",
         "modulus": "101",
         "multiplier": "011",
     }
 
-    instance_copy = controlled_multiplication_modulo_n.ControlledMultiplicationModuloN.from_instance_specification_json(
+    instance_copy = modular_multiplier.ModularMultiplier.from_instance_specification_json(
         benchmark.instance_specification_json
     )
-    manifest_copy = controlled_multiplication_modulo_n.ControlledMultiplicationModuloN.from_manifest_json(
-        benchmark.manifest_json
-    )
+    manifest_copy = modular_multiplier.ModularMultiplier.from_manifest_json(benchmark.manifest_json)
     assert instance_copy.case_id == manifest_copy.case_id == benchmark.case_id
 
 
-def test_controlled_multiplication_modulo_n_generation() -> None:
-    """Generate a controlled modular-multiplication program."""
+def test_modular_multiplier_generation() -> None:
+    """Generate a modular multiplier program."""
     assert_generates(_make_benchmark().generate())
+
+
+def test_basis_result() -> None:
+    """Expose a deterministic reference for configured basis inputs."""
+    benchmark = modular_multiplier.ModularMultiplier(
+        modular_multiplier.Options(multiplier="011", modulus="101", multiplicand="111")
+    )
+    assert benchmark.options.control == "1"
+    assert benchmark.expected_result == "11110001"
+    assert benchmark.evaluate({"11110001": 3, "00000000": 1}).success_probability == pytest.approx(0.75)
+    assert _make_benchmark().expected_result is None

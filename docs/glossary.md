@@ -55,6 +55,10 @@ Multi-Level Intermediate Representation
   Representation. [LLVM's reusable infrastructure](https://mlir.llvm.org/) for
   building compilers with several interoperating abstraction levels.
 
+modular multiplier
+  **Preferred term:** modular multiplier. **Accepted aliases:** none. An
+  arithmetic circuit that computes a product reduced modulo a specified integer.
+
 MQSC
 Munich Quantum Software Company
   **Preferred term:** Munich Quantum Software Company. **Accepted abbreviation:**

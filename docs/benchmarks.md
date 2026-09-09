@@ -269,30 +269,46 @@ observable. Constant results contain only the sum. `expected_result` is the
 unique logical outcome for basis inputs and `None` for a superposed addend. The
 total sum width, including an optional carry bit, is limited to 1024.
 
-### Controlled multiplication modulo $N$
+### Modular multiplier
 
-The `controlled-multiplication-modulo-n` family implements the controlled
-modular multiplication circuit from Figures 5 and 6 of
+The `modular-multiplier` family uses the controlled modular arithmetic circuit
+from Figures 5 and 6 of
 [Beauregard's circuit for Shor's algorithm](https://arxiv.org/abs/quant-ph/0205095).
-The `multiplier` and `modulus` parameters are equal-width big-endian binary
-strings. The modulus uses its canonical representation, and the integer values
-satisfy $0 < \mathtt{multiplier} < \mathtt{modulus}$. Each input can contain
-between 2 and 63 bits.
+It computes `control || multiplicand || product`, with
+`product = control * multiplier * multiplicand mod modulus`. The product
+register starts at zero and retains its leading overflow bit; a work qubit must
+return to zero. This is an out-of-place multiplier.
 
-For a configured width $n$, the benchmark prepares the control and multiplicand
-in a uniform superposition. It leaves the $n + 1$ accumulator qubits at zero.
-The result is the big-endian concatenation
-`control || multiplicand || accumulator`. When the control is zero, the
-accumulator remains zero. When the control is one, the accumulator contains
-$\mathtt{multiplier} \cdot \mathtt{multiplicand} \bmod \mathtt{modulus}$. Every
-valid outcome has probability $2^{-(n + 1)}$.
+The classical `multiplier` and canonical `modulus` are equal-width binary
+strings with $0 < \mathtt{multiplier} < \mathtt{modulus}$. The required
+`multiplicand` has the same width and accepts `0`, `1`, and `+`, as in the QFT
+adder. A `+` prepares an independent $|+\rangle$ qubit. The `control` accepts
+`"0"`, `"1"`, or `"+"`, and defaults to `"1"`. Widths range from 2 to 63 bits.
 
-The evaluation's `success_probability` is the shot-weighted fraction of outcomes
-that satisfy this arithmetic relation. It remains useful at large widths: with
-$S$ shots, empirical TVD is at least $\max(0,1-S/2^{n+1})$, even for ideal
-execution. At $n=20$ and $S=16,384$, that lower bound is 0.9921875. TVD and
-squared Hellinger fidelity still compare the full distribution.
+```python
+from mqt.core.bench import modular_multiplier
 
-Relation success alone does not verify uniform inputs or coherence: an
-always-zero output passes the relation. Inspect control and multiplicand balance
-separately, and retain phase-sensitive validation of the circuit.
+benchmark = modular_multiplier.ModularMultiplier(
+    modular_multiplier.Options(multiplier="011", modulus="101", multiplicand="111")
+)
+assert benchmark.expected_result == "11110001"  # control=1, input=7, product=1
+assert benchmark.evaluate({"11110001": 100}).success_probability == 1.0
+```
+
+Basis inputs have one exact `expected_result`, so TVD and success probability
+provide a direct check independent of width. An all-zero output fails for this
+nonzero example. Test different inputs and both control values to exercise
+wraparound and the inactive path.
+
+For superposed inputs, `expected_result` is `None`. The reference assigns
+probability $2^{-k}$ to each allowed input and its correct product, where $k$ is
+the number of `+` input bits, including the control. `success_probability` is
+the shot-weighted fraction matching both the configured inputs and the
+arithmetic relation. With $S$ shots, empirical TVD is at least
+$\max(0,1-S/2^k)$, even for ideal execution. Keep $k$ small for sampling-based
+distribution checks at large widths.
+
+Computational-basis measurements cannot detect arbitrary relative-phase errors.
+Native tests therefore also compare complete coherent states and require clean
+work-qubit recovery. A single correct basis result does not certify a unitary on
+every input.

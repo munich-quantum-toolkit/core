@@ -18,7 +18,7 @@
 
 namespace mqt::bench {
 class BV;
-class ControlledMultiplicationModuloN;
+class ModularMultiplier;
 class GHZ;
 class Grover;
 class Multiplexer;
@@ -38,9 +38,9 @@ struct GeneratedBenchmark {
 /// Generate a configured Bernstein--Vazirani benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const BV& benchmark);
 
-/// Generate a configured controlled multiplication modulo N benchmark.
+/// Generate a configured modular multiplier benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>
-generate(const ControlledMultiplicationModuloN& benchmark);
+generate(const ModularMultiplier& benchmark);
 
 /// Generate the QC program for a configured GHZ benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const GHZ& benchmark);

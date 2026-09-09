@@ -15,38 +15,45 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <string_view>
 
 namespace mqt::bench {
 
-/// Parameters for one controlled multiplication modulo N benchmark instance.
-struct ControlledMultiplicationModuloNOptions {
+/// Parameters for one modular multiplier benchmark instance.
+struct ModularMultiplierOptions {
   static constexpr size_t MAX_BITS = 63;
 
   /// Big-endian classical multiplier. Leading zeros define its width.
   std::string multiplier;
   /// Big-endian canonical modulus with the same width as the multiplier.
   std::string modulus;
+  /// Big-endian multiplicand of the same width; '+' prepares a |+> qubit.
+  std::string multiplicand;
+  /// Initial control bit: '0', '1', or '+' for |+>.
+  char control = '1';
 };
 
-/// A validated controlled multiplication modulo N and its analytic reference.
-class MQT_CORE_BENCH_EXPORT ControlledMultiplicationModuloN final {
+/// A validated modular multiplier and its analytic reference.
+class MQT_CORE_BENCH_EXPORT ModularMultiplier final {
 public:
-  explicit ControlledMultiplicationModuloN(
-      ControlledMultiplicationModuloNOptions options);
+  explicit ModularMultiplier(ModularMultiplierOptions options);
 
-  [[nodiscard]] const ControlledMultiplicationModuloNOptions&
-  options() const noexcept;
+  [[nodiscard]] const ModularMultiplierOptions& options() const noexcept;
   [[nodiscard]] const Output& output() const noexcept;
+  /// Return the unique outcome, or no value for superposed inputs.
+  [[nodiscard]] const std::optional<std::string>&
+  expectedResult() const noexcept;
   /// Return the ideal probability of a big-endian logical outcome.
   [[nodiscard]] double probability(std::string_view outcome) const;
   /// Compare sampled logical outcomes with the ideal distribution.
   [[nodiscard]] Evaluation evaluate(const Counts& counts) const;
 
 private:
-  ControlledMultiplicationModuloNOptions options_;
+  ModularMultiplierOptions options_;
   Output output_;
+  std::optional<std::string> expectedResult_;
   uint64_t multiplierValue_ = 0;
   uint64_t modulusValue_ = 0;
 };
