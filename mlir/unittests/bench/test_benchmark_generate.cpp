@@ -17,6 +17,7 @@
 #include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
+#include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
 #include "mlir/bench/Generate.h"
 
@@ -62,6 +63,7 @@ TEST(GenerateProgramTest, GeneratesEveryBenchmarkMethodAsQCAndJeff) {
   expectValidQCAndJeff(QPE{{.precision = 3, .phase = Phase(3, 8)}});
   expectValidQCAndJeff(QPE{
       {.precision = 3, .phase = Phase(3, 8), .method = QPEMethod::Iterative}});
+  expectValidQCAndJeff(RepeatUntilSuccess{});
   expectValidQCAndJeff(Teleportation{});
 }
 

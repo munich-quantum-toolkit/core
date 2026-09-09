@@ -17,6 +17,7 @@ add_library(
   QFTAdder.cpp
   QFTUtils.cpp
   QPE.cpp
+  RepeatUntilSuccess.cpp
   Teleportation.cpp)
 target_link_libraries(MQTBenchmarkPrograms PUBLIC MQT::CoreBench MLIRQCProgramBuilder
                                                   MLIRArithDialect MLIRTensorDialect)

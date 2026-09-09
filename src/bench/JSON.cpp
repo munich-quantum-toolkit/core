@@ -20,6 +20,7 @@
 #include "bench/QFT.hpp"
 #include "bench/QFTAdder.hpp"
 #include "bench/QPE.hpp"
+#include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
 
 #include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
@@ -535,6 +536,22 @@ parseMultiplexerParameters(const Json& parameters,
   }
 }
 
+[[nodiscard]] RepeatUntilSuccess
+parseRepeatUntilSuccessParameters(const Json& parameters,
+                                  const std::string_view source) {
+  rejectUnknownKeys(parameters, {"data_qubits"}, source, "$/parameters");
+  RepeatUntilSuccessOptions options;
+  if (const auto width = parameters.find("data_qubits");
+      width != parameters.end()) {
+    options.dataQubits = sizeValue(*width, source, "$/parameters/data_qubits");
+  }
+  try {
+    return RepeatUntilSuccess(options);
+  } catch (const std::invalid_argument& error) {
+    fail(source, "$/parameters", error.what());
+  }
+}
+
 [[nodiscard]] Teleportation
 parseTeleportationParameters(const Json& parameters,
                              const std::string_view source) {
@@ -641,6 +658,10 @@ parseTeleportationParameters(const Json& parameters,
   };
 }
 
+[[nodiscard]] Json parametersJSON(const RepeatUntilSuccess& benchmark) {
+  return {{"data_qubits", benchmark.options().dataQubits}};
+}
+
 [[nodiscard]] Json parametersJSON(const Teleportation& /*unused*/) {
   return Json::object();
 }
@@ -729,6 +750,16 @@ parseTeleportationParameters(const Json& parameters,
   return {
       {"kind", "analytic"},
       {"model", "qpe_dirichlet"},
+      {"outcome_order", "big_endian"},
+      {"output", benchmark.output().name},
+      {"version", 1},
+  };
+}
+
+[[nodiscard]] Json referenceJSON(const RepeatUntilSuccess& benchmark) {
+  return {
+      {"kind", "analytic"},
+      {"model", "repeat_until_success"},
       {"outcome_order", "big_endian"},
       {"output", benchmark.output().name},
       {"version", 1},
@@ -1211,6 +1242,27 @@ template <class Benchmark>
           },
       },
       {"required", {"precision", "phase"}},
+      {"type", "object"},
+  });
+}
+
+[[nodiscard]] Json repeatUntilSuccessInstanceSpecificationSchema() {
+  return baseInstanceSpecificationSchema<RepeatUntilSuccess>({
+      {"additionalProperties", false},
+      {
+          "properties",
+          {
+              {
+                  "data_qubits",
+                  {
+                      {"default", 1},
+                      {"minimum", 1},
+                      {"maximum", RepeatUntilSuccessOptions::MAX_DATA_QUBITS},
+                      {"type", "integer"},
+                  },
+              },
+          },
+      },
       {"type", "object"},
   });
 }

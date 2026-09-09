@@ -32,6 +32,10 @@ decision diagrams
   for the plural. A graph representation that shares repeated substructures to
   store and manipulate quantum states and operations compactly.
 
+Pauli string
+  **Preferred term:** Pauli string. **Accepted alias:** Pauli product. A tensor
+  product of single-qubit identity or Pauli X, Y, and Z operators.
+
 IR
 intermediate representation
   **Preferred term:** intermediate representation. **Accepted abbreviation:**
