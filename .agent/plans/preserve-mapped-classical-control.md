@@ -1,6 +1,7 @@
 # Preserve classical control during target mapping
 
-Status: complete. The routing regressions and required local checks pass.
+Status: complete. Routing, terminal-measurement, and performance regressions
+pass.
 
 ## Goal and scope
 
@@ -25,26 +26,38 @@ whole-register write followed by an indexed load during dominance repair.
 - Defer composites while an earlier wire operation still needs routing. Terminal
   sinks and output-only measurements must not block independent quantum work.
 - Use one measurement classification for advancement and composite deferral.
-  Follow all SSA result uses and the sorter's whole-register effect order until
-  reaching quantum work. Output-only loads and overwrites remain terminal;
+  Follow SSA result uses and forward whole-register effects until reaching
+  quantum work. Register accesses before the measurement run do not require
+  measured-qubit reuse. Output-only loads and overwrites remain terminal;
   register accesses inside quantum composites still impose ordering.
 - Keep consecutive measurements in scope so an earlier measurement does not hide
   a later result used for quantum control. Reuse LLVM slice analysis and a
   bounded worklist. Traverse it by index because discovering more effects can
   append entries and invalidate iterators. No public API or dependency changes
   are required.
+- Cache consecutive-measurement suffix classifications within each `advance`
+  invocation, sharing slice and register work across the run. Discard the cache
+  before hot routing mutates the graph.
+- Backward traversal of an idle nested block argument can reach its sentinel;
+  that exhausted wire does not defer another composite.
+- Select the wire value crossing the composite's block-order boundary when
+  extending it. Another wire may already have advanced through a gate that
+  consumes a classical result of that composite; its current value would
+  introduce an SSA cycle.
+- Prefer terminal measurements even when the target accepts adaptive programs.
+  Target permission does not replace program dependencies or placement
+  readiness.
 
 ## Validation
 
-Build the release mapping, QCO utility, and compiler unit-test targets. The
-mapping binary passes all 96 tests, the QCO utility binary passes all 192, and
-the compiler binary passes all 180. The focused mapping tests cover terminal
-measurements and sinks before independent control, consecutive measurements,
-multiple result users, output-only register reads and overwrites, and register
-writes inside a quantum conditional. All six focused regressions also pass 25
-consecutive repetitions.
+Release unit tests pass: 100 mapping tests, 192 QCO utility tests, and 181
+compiler tests. The added cases cover idle nested wires, a conditional angle
+consumed on another wire, terminal measurements after earlier register control,
+and consecutive measurements with first/last result control and shared stores.
 
-Run `uvx nox -s lint` and `uvx nox -s cpp-lint -- <main-base>` for the change.
-The repository hooks pass. Full-file C++ lint passes for all three C++ files in
-the PR, using main base `4c5e45855`. These are local checks, not hosted CI or a
-full Benchpress corpus run.
+The consecutive-measurement probe at 4,000 measurements improved from 327.85 ms
+to 2.398 ms before the boundary and earlier-access fixes. This measures mapping
+alone on a synthetic workload, not a whole-program or corpus speedup.
+
+Repository lint and full-file C++ lint against fixed base `ce608b082` pass.
+These are local checks, not hosted CI or a full Benchpress corpus run.
