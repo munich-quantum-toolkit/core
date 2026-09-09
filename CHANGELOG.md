@@ -96,13 +96,6 @@ releases may include breaking changes.
 - 🐳 Add dev container configuration for a consistent local development
   environment ([#1786]) ([**@denialhaag**])
 
-### Fixed
-
-- 🐛 Correct DD amplitude index bounds and reject invalid decision paths.
-  Traverse integer indices without temporary strings, skip magnitude checks
-  during unpruned export, and avoid copying initial memory-pool chunks ([#2479])
-  ([**@burgholzer**]).
-
 ### Changed
 
 - 💥 Require CMake 3.28 or newer for source builds and embedded projects, use
@@ -934,7 +927,6 @@ for previous changelogs._
 
 <!-- PR links -->
 
-[#2479]: https://github.com/munich-quantum-toolkit/core/pull/2479
 [#2467]: https://github.com/munich-quantum-toolkit/core/pull/2467
 [#2457]: https://github.com/munich-quantum-toolkit/core/pull/2457
 [#2436]: https://github.com/munich-quantum-toolkit/core/pull/2436

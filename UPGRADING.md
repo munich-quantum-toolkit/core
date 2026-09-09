@@ -6,23 +6,6 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### Decision-diagram element access
-
-`VectorDD[index]` now uses the logical vector length for bounds and negative
-indices. `VectorDD.size()` still reports the DD node count. Python indices must
-still fit in a signed native integer; use `get_amplitude` with a decision path
-to address other elements of a wider state.
-
-Native `getValueByIndex` calls now throw `std::out_of_range` for indices outside
-the represented vector or the specified matrix dimension. Validate indices or
-handle the exception; Python matrix access reports `IndexError`.
-
-Decision paths must contain only valid digits in the first `num_qubits`
-positions: `0` or `1` for vectors, and `0` through `3` for matrices. Invalid
-digits raise `std::invalid_argument` (`ValueError` in Python), and short paths
-raise `std::out_of_range` (`IndexError` in Python). Extra characters remain
-ignored.
-
 ### CMake 3.28 minimum
 
 MQT Core now requires CMake 3.28 or newer. Upgrade CMake before configuring a
