@@ -34,9 +34,9 @@ namespace mlir::qco {
 #define GEN_PASS_REGISTRATION
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc" // IWYU pragma: export
 
-/**
- * @brief Create target-independent two-qubit gate fusion.
- */
+/// Create target-independent two-qubit gate fusion.
+///
+/// Runs remain unchanged when numerical decomposition fails.
 [[nodiscard]] std::unique_ptr<Pass> createFuseTwoQubitGates();
 
 /// Create multi-controlled decomposition for one compiler target.

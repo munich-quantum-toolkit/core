@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/Parameters.h"
 
 #include <gtest/gtest.h>
 #include <mlir/Dialect/Arith/IR/Arith.h>
@@ -18,17 +19,21 @@
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/BuiltinTypes.h>
+#include <mlir/IR/Diagnostics.h>
 #include <mlir/IR/Location.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OwningOpRef.h>
 #include <mlir/IR/Value.h>
+#include <mlir/IR/Verifier.h>
 #include <mlir/Support/LLVM.h>
+#include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
 #include <cstdint>
 #include <limits>
 #include <memory>
 #include <optional>
+#include <string>
 
 using namespace mlir;
 
@@ -217,6 +222,37 @@ TEST_F(ConstantFoldingTest, valueToConstantAttrIdentityFold) {
   const auto attr = mlir::mqt::valueToConstantAttr(op.getResult());
   ASSERT_TRUE(attr.has_value());
   EXPECT_DOUBLE_EQ(*mlir::mqt::attributeToDouble(*attr), expectedValue);
+}
+
+TEST_F(ConstantFoldingTest,
+       VerifyFiniteParametersChecksDirectAndHiddenConstants) {
+  auto finite =
+      arith::ConstantOp::create(*builder, builder->getF64FloatAttr(1.0));
+  auto nan = arith::ConstantOp::create(
+      *builder,
+      builder->getF64FloatAttr(std::numeric_limits<double>::quiet_NaN()));
+  auto cond = arith::ConstantOp::create(*builder, builder->getBoolAttr(true));
+  auto select = arith::SelectOp::create(*builder, cond, finite, nan);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_EQ(mlir::mqt::valueToConstantDouble(select.getResult()), 1.0);
+
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& emitted) {
+    diagnostic = emitted.str();
+    return success();
+  });
+  EXPECT_TRUE(succeeded(mlir::mqt::verifyFiniteConstantParameters(
+      module->getOperation(), {finite.getResult()})));
+  EXPECT_TRUE(diagnostic.empty());
+
+  for (Value parameter : {nan.getResult(), select.getResult()}) {
+    diagnostic.clear();
+    EXPECT_TRUE(failed(mlir::mqt::verifyFiniteConstantParameters(
+        module->getOperation(), {finite.getResult(), parameter})));
+    EXPECT_EQ(diagnostic,
+              "'builtin.module' op constant parameter expression at "
+              "index 1 must be finite");
+  }
 }
 
 TEST_F(ConstantFoldingTest, valueToConstantDoubleSharedOperandsSuccess) {

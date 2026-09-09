@@ -29,7 +29,6 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <numbers>
 #include <optional>
 #include <random>
@@ -184,15 +183,14 @@ static double normalSample(std::mt19937& rng) {
   return std::sqrt(-2.0 * std::log(u1)) * std::cos(2.0 * std::numbers::pi * u2);
 }
 
-static std::pair<Matrix4x4, std::array<Complex, 4>>
+static std::optional<std::pair<Matrix4x4, std::array<Complex, 4>>>
 diagonalizeComplexSymmetric(const Matrix4x4& m,
                             double precision = WEYL_DIAGONALIZATION_TOLERANCE) {
-  auto state = std::mt19937{2023};
+  std::optional<std::mt19937> state;
 
   const auto mReal = m.realPart();
   const auto mImag = m.imagPart();
 
-  double bestErr = std::numeric_limits<double>::max();
   constexpr auto maxDiagonalizationAttempts = 100;
   for (int i = 0; i < maxDiagonalizationAttempts; ++i) {
     double randA{};
@@ -205,8 +203,11 @@ diagonalizeComplexSymmetric(const Matrix4x4& m,
       randA = 1.2602066112249388;
       randB = 0.22317849046722027;
     } else {
-      randA = normalSample(state);
-      randB = normalSample(state);
+      if (!state) {
+        state.emplace(2023);
+      }
+      randA = normalSample(*state);
+      randB = normalSample(*state);
     }
     std::array<double, 16> m2Real{};
     for (std::size_t k = 0; k < m2Real.size(); ++k) {
@@ -219,27 +220,14 @@ diagonalizeComplexSymmetric(const Matrix4x4& m,
     const std::array<Complex, 4> d = diagonalized.diagonal();
 
     const auto compare = p * Matrix4x4::fromDiagonal(d) * p.transpose();
-    double err = 0.0;
-    for (std::size_t r = 0; r < 4; ++r) {
-      for (std::size_t cc = 0; cc < 4; ++cc) {
-        err = std::max(err, std::abs(compare(r, cc) - m(r, cc)));
-      }
-    }
-    bestErr = std::min(bestErr, err);
     if (compare.isApprox(m, precision)) {
-      assert((p.transpose() * p).isIdentity(WEYL_DIAGONALIZATION_TOLERANCE));
-      assert(std::abs(Matrix4x4::fromDiagonal(d).determinant() - 1.0) <
-             WEYL_DIAGONALIZATION_TOLERANCE);
-      return {p, d};
+      return std::pair{p, d};
     }
   }
-  llvm::reportFatalInternalError(llvm::formatv(
-      "TwoQubitWeylDecomposition: failed to diagonalize M2 ({0} iterations). "
-      "best error = {1:e}, precision = {2:e}",
-      maxDiagonalizationAttempts, bestErr, precision));
+  return std::nullopt;
 }
 
-static std::tuple<Matrix2x2, Matrix2x2, double>
+static std::optional<std::tuple<Matrix2x2, Matrix2x2, double>>
 decomposeTwoQubitProductGate(const Matrix4x4& specialUnitary) {
   Matrix2x2 r =
       Matrix2x2::fromElements(specialUnitary(0, 0), specialUnitary(0, 1),
@@ -251,8 +239,7 @@ decomposeTwoQubitProductGate(const Matrix4x4& specialUnitary) {
     detR = r.determinant();
   }
   if (std::abs(detR) < 0.1) {
-    llvm::reportFatalInternalError(
-        "decomposeTwoQubitProductGate: unable to decompose: det_r < 0.1");
+    return std::nullopt;
   }
   r *= 1.0 / std::sqrt(detR);
   const Matrix2x2 rTConj = r.adjoint();
@@ -264,13 +251,12 @@ decomposeTwoQubitProductGate(const Matrix4x4& specialUnitary) {
       Matrix2x2::fromElements(temp(0, 0), temp(0, 2), temp(2, 0), temp(2, 2));
   auto detL = l.determinant();
   if (std::abs(detL) < 0.9) {
-    llvm::reportFatalInternalError(
-        "decomposeTwoQubitProductGate: unable to decompose: detL < 0.9");
+    return std::nullopt;
   }
   l *= 1.0 / std::sqrt(detL);
   const auto phase = std::arg(detL) / 2.;
 
-  return {l, r, phase};
+  return std::tuple{l, r, phase};
 }
 
 static std::complex<double> getTrace(double a, double b, double c, double ap,
@@ -340,12 +326,16 @@ static std::pair<Matrix4x4, double> projectToSU4(const Matrix4x4& unitary) {
   return {u, std::arg(detU) / 4.0};
 }
 
-static std::tuple<Matrix4x4, Matrix4x4, std::array<double, 3>,
-                  std::array<double, 4>>
+static std::optional<std::tuple<Matrix4x4, Matrix4x4, std::array<double, 3>,
+                                std::array<double, 4>>>
 computeOrderedWeylCoordinates(const Matrix4x4& u) {
   const auto uP = magicBasisTransform(u, /*outOfMagicBasis=*/true);
   const Matrix4x4 m2 = uP.transpose() * uP;
-  auto [p, d] = diagonalizeComplexSymmetric(m2);
+  auto diagonalized = diagonalizeComplexSymmetric(m2);
+  if (!diagonalized) {
+    return std::nullopt;
+  }
+  auto& [p, d] = *diagonalized;
 
   std::array<double, 4> dReal{};
   for (std::size_t i = 0; i < d.size(); ++i) {
@@ -391,42 +381,29 @@ computeOrderedWeylCoordinates(const Matrix4x4& u) {
     }
     p.setColumn(3, lastColumn);
   }
-  assert(std::abs(p.determinant() - 1.0) < WEYL_DIAGONALIZATION_TOLERANCE);
-
-  return {uP, p, cs, dReal};
+  return std::tuple{uP, p, cs, dReal};
 }
 
-static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
-                                      Matrix4x4 p, std::array<double, 3> cs,
-                                      const std::array<double, 4>& dReal,
-                                      double globalPhase) {
+static std::optional<ChamberState>
+buildChamberState(const Matrix4x4& uP, Matrix4x4 p, std::array<double, 3> cs,
+                  const std::array<double, 4>& dReal, double globalPhase) {
   const Matrix4x4 temp =
       Matrix4x4::fromDiagonal(std::exp(1i * dReal[0]), std::exp(1i * dReal[1]),
                               std::exp(1i * dReal[2]), std::exp(1i * dReal[3]));
 
   Matrix4x4 k1 = uP * p * temp;
-  assert((k1.transpose() * k1).isIdentity(WEYL_TOLERANCE));
-  assert(k1.determinant().real() > 0.0);
   k1 = magicBasisTransform(k1, /*outOfMagicBasis=*/false);
 
   Matrix4x4 k2 = p.adjoint();
-  assert((k2.transpose() * k2).isIdentity(WEYL_TOLERANCE));
-  assert(k2.determinant().real() > 0.0);
   k2 = magicBasisTransform(k2, /*outOfMagicBasis=*/false);
 
-  assert((k1 *
-          magicBasisTransform(Matrix4x4::fromDiagonal(std::exp(-1i * dReal[0]),
-                                                      std::exp(-1i * dReal[1]),
-                                                      std::exp(-1i * dReal[2]),
-                                                      std::exp(-1i * dReal[3])),
-                              /*outOfMagicBasis=*/false) *
-          k2)
-             .isApprox(u, WEYL_TOLERANCE));
-
-  auto [k1l, k1r, phaseL] = decomposeTwoQubitProductGate(k1);
-  auto [k2l, k2r, phaseR] = decomposeTwoQubitProductGate(k2);
-  assert(Matrix4x4::kron(k1l, k1r).isApprox(k1, WEYL_TOLERANCE));
-  assert(Matrix4x4::kron(k2l, k2r).isApprox(k2, WEYL_TOLERANCE));
+  auto factors1 = decomposeTwoQubitProductGate(k1);
+  auto factors2 = decomposeTwoQubitProductGate(k2);
+  if (!factors1 || !factors2) {
+    return std::nullopt;
+  }
+  auto& [k1l, k1r, phaseL] = *factors1;
+  auto& [k2l, k2r, phaseR] = *factors2;
   globalPhase += phaseL + phaseR;
 
   if (cs[0] > (WEYL_PI / 2.0)) {
@@ -498,7 +475,7 @@ static ChamberState buildChamberState(const Matrix4x4& u, const Matrix4x4& uP,
 // TwoQubitWeylDecomposition
 //===----------------------------------------------------------------------===//
 
-void TwoQubitWeylDecomposition::finalizeSpecializationPhase(
+bool TwoQubitWeylDecomposition::finalizeSpecializationPhase(
     bool flippedFromOriginal, double preSpecializationA,
     double preSpecializationB, double preSpecializationC,
     const std::optional<double>& fidelity) {
@@ -511,15 +488,13 @@ void TwoQubitWeylDecomposition::finalizeSpecializationPhase(
   const double calculatedFidelity = traceToFidelity(trace);
   if (fidelity &&
       calculatedFidelity + WEYL_DIAGONALIZATION_TOLERANCE < *fidelity) {
-    llvm::reportFatalInternalError(llvm::formatv(
-        "TwoQubitWeylDecomposition: Calculated fidelity of "
-        "specialization is worse than requested fidelity ({0:F4} vs {1:F4})!",
-        calculatedFidelity, *fidelity));
+    return false;
   }
   globalPhase_ += std::arg(trace);
+  return true;
 }
 
-TwoQubitWeylDecomposition
+std::optional<TwoQubitWeylDecomposition>
 TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
                                   std::optional<double> fidelity) {
   if (fidelity &&
@@ -531,23 +506,36 @@ TwoQubitWeylDecomposition::create(const Matrix4x4& unitaryMatrix,
   }
 
   const auto [u, globalPhase0] = projectToSU4(unitaryMatrix);
-  auto [uP, p, cs, dReal] = computeOrderedWeylCoordinates(u);
-  const auto chamber = buildChamberState(u, uP, p, cs, dReal, globalPhase0);
+  auto coordinates = computeOrderedWeylCoordinates(u);
+  if (!coordinates) {
+    return std::nullopt;
+  }
+  const auto& [uP, p, cs, dReal] = *coordinates;
+  const auto chamber = buildChamberState(uP, p, cs, dReal, globalPhase0);
+  if (!chamber) {
+    return std::nullopt;
+  }
   TwoQubitWeylDecomposition decomposition;
-  decomposition.a_ = chamber.a;
-  decomposition.b_ = chamber.b;
-  decomposition.c_ = chamber.c;
-  decomposition.globalPhase_ = chamber.globalPhase;
-  decomposition.k1l_ = chamber.k1l;
-  decomposition.k2l_ = chamber.k2l;
-  decomposition.k1r_ = chamber.k1r;
-  decomposition.k2r_ = chamber.k2r;
+  decomposition.a_ = chamber->a;
+  decomposition.b_ = chamber->b;
+  decomposition.c_ = chamber->c;
+  decomposition.globalPhase_ = chamber->globalPhase;
+  decomposition.k1l_ = chamber->k1l;
+  decomposition.k2l_ = chamber->k2l;
+  decomposition.k1r_ = chamber->k1r;
+  decomposition.k2r_ = chamber->k2r;
 
-  assert(decomposition.unitaryMatrix().isApprox(unitaryMatrix, WEYL_TOLERANCE));
+  // Near-unitary inputs can satisfy the dense-matrix contract without meeting
+  // every exact-unitarity assumption in the intermediate factors.
+  if (!decomposition.unitaryMatrix().isApprox(unitaryMatrix, WEYL_TOLERANCE)) {
+    return std::nullopt;
+  }
 
   const bool flippedFromOriginal = decomposition.applySpecialization(fidelity);
-  decomposition.finalizeSpecializationPhase(flippedFromOriginal, chamber.a,
-                                            chamber.b, chamber.c, fidelity);
+  if (!decomposition.finalizeSpecializationPhase(
+          flippedFromOriginal, chamber->a, chamber->b, chamber->c, fidelity)) {
+    return std::nullopt;
+  }
 
   return decomposition;
 }
@@ -786,7 +774,7 @@ oneGate(const TwoQubitWeylDecomposition& target) {
 }
 
 /// See supplemental Eqs. (3), (5)-(7): doi:10.1103/PhysRevLett.130.070601.
-static TwoQubitNativeDecomposition
+static std::optional<TwoQubitNativeDecomposition>
 twoGates(const TwoQubitWeylDecomposition& target) {
   const double x = target.a(), y = target.b(), z = target.c();
   const double c = std::sin(x + y - z) * std::sin(x - y + z) *
@@ -838,12 +826,22 @@ twoGates(const TwoQubitWeylDecomposition& target) {
   };
   const auto gate = XXPlusYYOp::unitaryMatrix(-WEYL_PI / 2., 0.);
   const auto sandwich = gate * Matrix4x4::kron(left, right) * gate;
-  align(result, TwoQubitWeylDecomposition::create(sandwich, std::nullopt),
-        target);
+  const auto circuit =
+      TwoQubitWeylDecomposition::create(sandwich, std::nullopt);
+  if (!circuit) {
+    return std::nullopt;
+  }
+  align(result, *circuit, target);
   return result;
 }
-static TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
-  const auto kak = TwoQubitWeylDecomposition::create(target, std::nullopt);
+static std::optional<TwoQubitNativeDecomposition>
+decomposeSqrtISwap(const Matrix4x4& target) {
+  const auto targetDecomposition =
+      TwoQubitWeylDecomposition::create(target, std::nullopt);
+  if (!targetDecomposition) {
+    return std::nullopt;
+  }
+  const auto& kak = *targetDecomposition;
   if (kak.a() <= WEYL_TOLERANCE) {
     TwoQubitNativeDecomposition result{
         .numBasisUses = 0,
@@ -870,32 +868,32 @@ static TwoQubitNativeDecomposition decomposeSqrtISwap(const Matrix4x4& target) {
   const auto residual = TwoQubitWeylDecomposition::create(
       kak.getCanonicalMatrix() * gate.adjoint(), std::nullopt);
   const auto prefix = TwoQubitWeylDecomposition::create(gate, std::nullopt);
-  auto before = oneGate(prefix);
-  auto after = twoGates(residual);
+  if (!residual || !prefix) {
+    return std::nullopt;
+  }
+  auto before = oneGate(*prefix);
+  const auto after = twoGates(*residual);
+  if (!after) {
+    return std::nullopt;
+  }
   auto& factors = before.singleQubitFactors;
-  factors[2] = after.singleQubitFactors[0] * factors[2];
-  factors[3] = after.singleQubitFactors[1] * factors[3];
-  factors.append(after.singleQubitFactors.begin() + 2,
-                 after.singleQubitFactors.end());
+  factors[2] = after->singleQubitFactors[0] * factors[2];
+  factors[3] = after->singleQubitFactors[1] * factors[3];
+  factors.append(after->singleQubitFactors.begin() + 2,
+                 after->singleQubitFactors.end());
   before.numBasisUses = 3;
-  before.globalPhase += after.globalPhase;
+  before.globalPhase += after->globalPhase;
   attachLocalFactors(before, kak);
   return before;
 }
 
-TwoQubitNativeDecomposition
+std::optional<TwoQubitNativeDecomposition>
 decomposeUnitary2QWeyl(const Matrix4x4& target,
                        const CompilerTarget::GateKind entangler) {
   if (entangler == CompilerTarget::GateKind::SQRTISWAP) {
     return decomposeSqrtISwap(target);
   }
-  auto decomposition =
-      cachedNativeBasisDecomposer(entangler).decomposeTarget(target);
-  if (!decomposition) {
-    llvm::reportFatalInternalError(
-        "target-selected entangler failed to decompose a two-qubit unitary");
-  }
-  return std::move(*decomposition);
+  return cachedNativeBasisDecomposer(entangler).decomposeTarget(target);
 }
 
 SynthesizedUnitary2Q
@@ -923,12 +921,6 @@ emitUnitary2QWeyl(OpBuilder& builder, Location loc, Value qubit0, Value qubit1,
     const auto synthesized = synthesizeUnitary1QEuler(
         builder, loc, wire, factors[index], /*runSize=*/0,
         /*hasNonBasisGate=*/true, basis.singleQubit);
-    if (!synthesized) {
-      llvm::reportFatalInternalError(llvm::formatv(
-          "emitUnitary2QWeyl: euler synthesis failed for factor index "
-          "{0} (layer {1}, qubit {2})",
-          index, index / 2, (index % 2 == 0) ? 1 : 0));
-    }
     wire = synthesized->qubit;
     globalPhase += synthesized->globalPhase;
   };

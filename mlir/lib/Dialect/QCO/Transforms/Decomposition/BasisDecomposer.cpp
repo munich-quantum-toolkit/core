@@ -79,47 +79,58 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
 
   const auto basisWeyl =
       TwoQubitWeylDecomposition::create(basisMatrix, WEYL_DEFAULT_FIDELITY);
+  if (!basisWeyl) {
+    llvm::reportFatalInternalError(
+        "TwoQubitBasisDecomposer: basis decomposition failed");
+  }
   const auto isSuperControlled =
-      relativeEq(basisWeyl.a(), BASIS_PI_OVER_4, WEYL_DIAGONALIZATION_TOLERANCE,
+      relativeEq(basisWeyl->a(), BASIS_PI_OVER_4,
+                 WEYL_DIAGONALIZATION_TOLERANCE,
                  WEYL_SUPER_CONTROLLED_MAX_RELATIVE) &&
-      relativeEq(basisWeyl.c(), 0.0, WEYL_DIAGONALIZATION_TOLERANCE,
+      relativeEq(basisWeyl->c(), 0.0, WEYL_DIAGONALIZATION_TOLERANCE,
                  WEYL_SUPER_CONTROLLED_MAX_RELATIVE);
 
-  const auto b = basisWeyl.b();
+  const auto b = basisWeyl->b();
   const Complex expMinusB = std::exp(-1i * b);
   const Complex expPlusB = std::exp(1i * b);
   const Complex expMinus2B = expMinusB * expMinusB;
   const Complex expPlus2B = expPlusB * expPlusB;
   const double cos2B = expPlus2B.real();
   const double sin2B = expPlus2B.imag();
+  const Complex minusIExpMinusB = -1i * expMinusB;
+  const Complex minusIExpPlusB = -1i * expPlusB;
+  const Complex iExpMinusB = 1i * expMinusB;
+  const Complex iSin2B = 1i * sin2B;
+  const Complex minusIExpMinus2B = -1i * expMinus2B;
+  const Complex iExpPlus2B = 1i * expPlus2B;
 
   Complex temp{0.5, -0.5};
   const Matrix2x2 k11l =
-      Matrix2x2::fromElements(temp * (-1i * expMinusB), temp * expMinusB,
-                              temp * (-1i * expPlusB), temp * -expPlusB);
-  const Matrix2x2 k11r = Matrix2x2::fromElements(
-      INV_SQRT2 * (1i * expMinusB), INV_SQRT2 * -expMinusB,
-      INV_SQRT2 * expPlusB, INV_SQRT2 * (-1i * expPlusB));
+      Matrix2x2::fromElements(temp * minusIExpMinusB, temp * expMinusB,
+                              temp * minusIExpPlusB, temp * -expPlusB);
+  const Matrix2x2 k11r =
+      Matrix2x2::fromElements(INV_SQRT2 * iExpMinusB, INV_SQRT2 * -expMinusB,
+                              INV_SQRT2 * expPlusB, INV_SQRT2 * minusIExpPlusB);
   const Matrix2x2 k32lK21l = Matrix2x2::fromElements(
-      INV_SQRT2 * Complex{1., cos2B}, INV_SQRT2 * (1i * sin2B),
-      INV_SQRT2 * (1i * sin2B), INV_SQRT2 * Complex{1., -cos2B});
+      INV_SQRT2 * Complex{1., cos2B}, INV_SQRT2 * iSin2B, INV_SQRT2 * iSin2B,
+      INV_SQRT2 * Complex{1., -cos2B});
   temp = Complex{0.5, 0.5};
   const Matrix2x2 k21r =
-      Matrix2x2::fromElements(temp * (-1i * expMinus2B), temp * expMinus2B,
-                              temp * (1i * expPlus2B), temp * expPlus2B);
+      Matrix2x2::fromElements(temp * minusIExpMinus2B, temp * expMinus2B,
+                              temp * iExpPlus2B, temp * expPlus2B);
   const Matrix2x2 k31l =
       Matrix2x2::fromElements(INV_SQRT2 * expMinusB, INV_SQRT2 * expMinusB,
                               INV_SQRT2 * -expPlusB, INV_SQRT2 * expPlusB);
   const Matrix2x2 k31r =
       Matrix2x2::fromElements(1i * expPlusB, 0, 0, -1i * expMinusB);
-  const Matrix2x2 k32r = Matrix2x2::fromElements(
-      temp * expPlusB, temp * -expMinusB, temp * (-1i * expPlusB),
-      temp * (-1i * expMinusB));
+  const Matrix2x2 k32r =
+      Matrix2x2::fromElements(temp * expPlusB, temp * -expMinusB,
+                              temp * minusIExpPlusB, temp * minusIExpMinusB);
 
-  const auto k1lDagger = basisWeyl.k1l().adjoint();
-  const auto k1rDagger = basisWeyl.k1r().adjoint();
-  const auto k2lDagger = basisWeyl.k2l().adjoint();
-  const auto k2rDagger = basisWeyl.k2r().adjoint();
+  const auto k1lDagger = basisWeyl->k1l().adjoint();
+  const auto k1rDagger = basisWeyl->k1r().adjoint();
+  const auto k2lDagger = basisWeyl->k2l().adjoint();
+  const auto k2rDagger = basisWeyl->k2r().adjoint();
 
   const Matrix2x2 k11lK1lDagger = k11l * k1lDagger;
   const Matrix2x2 k11rK1rDagger = k11r * k1rDagger;
@@ -129,7 +140,7 @@ TwoQubitBasisDecomposer::create(const Matrix4x4& basisMatrix,
 
   TwoQubitBasisDecomposer decomposer;
   decomposer.basisFidelity = basisFidelity;
-  decomposer.basisWeyl = basisWeyl;
+  decomposer.basisWeyl = *basisWeyl;
   decomposer.isSuperControlled = isSuperControlled;
   decomposer.smb = TwoQubitBasisDecomposer::SmbPrecomputed{
       .u0l = k31l * k1lDagger,
@@ -157,38 +168,31 @@ TwoQubitBasisDecomposer::decomposeTarget(
     const std::optional<std::uint8_t> numBasisGateUses) const {
   const auto targetWeyl =
       TwoQubitWeylDecomposition::create(targetUnitary, WEYL_DEFAULT_FIDELITY);
-  return twoQubitDecompose(targetWeyl, numBasisGateUses);
+  if (!targetWeyl) {
+    return std::nullopt;
+  }
+  return twoQubitDecompose(*targetWeyl, numBasisGateUses);
 }
 
 std::optional<TwoQubitNativeDecomposition>
 TwoQubitBasisDecomposer::twoQubitDecompose(
     const TwoQubitWeylDecomposition& targetDecomposition,
     std::optional<std::uint8_t> numBasisGateUses) const {
-  const auto traceValues = traces(targetDecomposition);
-
   std::uint8_t bestNbasis = 0;
   if (numBasisGateUses) {
     bestNbasis = *numBasisGateUses;
   } else {
+    const auto traceValues = traces(targetDecomposition);
     auto bestValue = std::numeric_limits<double>::lowest();
-    auto bestIndex = -1;
     double fidelityPower = 1.0;
     for (int i = 0; std::cmp_less(i, traceValues.size()); ++i) {
       const auto value = traceToFidelity(traceValues[i]) * fidelityPower;
       fidelityPower *= basisFidelity;
-      if (std::isnan(value)) {
-        continue;
-      }
       if (value > bestValue) {
-        bestIndex = i;
+        bestNbasis = static_cast<std::uint8_t>(i);
         bestValue = value;
       }
     }
-    if (bestIndex < 0) {
-      llvm::reportFatalInternalError("Unable to select basis-gate count: all "
-                                     "candidate fidelities are NaN");
-    }
-    bestNbasis = static_cast<std::uint8_t>(bestIndex);
   }
   if (bestNbasis > 1 && !isSuperControlled) {
     return std::nullopt;
@@ -245,11 +249,6 @@ void TwoQubitBasisDecomposer::decomp1(
 void TwoQubitBasisDecomposer::decomp2Supercontrolled(
     SmallVector<Matrix2x2>& out,
     const TwoQubitWeylDecomposition& target) const {
-  if (!isSuperControlled) {
-    llvm::reportFatalInternalError(
-        "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
-        "- no guarantee for exact decomposition with two basis gates");
-  }
   out.emplace_back(smb.u3r * target.k2r());
   out.emplace_back(smb.u3l * target.k2l());
   out.emplace_back(smb.q1ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb);
@@ -261,11 +260,6 @@ void TwoQubitBasisDecomposer::decomp2Supercontrolled(
 void TwoQubitBasisDecomposer::decomp3Supercontrolled(
     SmallVector<Matrix2x2>& out,
     const TwoQubitWeylDecomposition& target) const {
-  if (!isSuperControlled) {
-    llvm::reportFatalInternalError(
-        "Basis gate of TwoQubitBasisDecomposer is not super-controlled "
-        "- no guarantee for exact decomposition with three basis gates");
-  }
   out.emplace_back(smb.u3r * target.k2r());
   out.emplace_back(smb.u3l * target.k2l());
   out.emplace_back(smb.u2ra * RZOp::unitaryMatrix(2. * target.b()) * smb.u2rb);

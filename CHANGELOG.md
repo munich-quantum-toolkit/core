@@ -84,11 +84,11 @@ releases may include breaking changes.
   [#2015]) ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add single-qubit optimization passes for unitary fusion, Hadamard lifting,
   and rotation merging ([#1407], [#1605], [#1672], [#1674], [#2002], [#2038],
-  [#2228]) ([**@J4MMlE**], [**@lirem101**], [**@burgholzer**],
+  [#2228], [#2478]) ([**@J4MMlE**], [**@lirem101**], [**@burgholzer**],
   [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
 - ✨ Add multi-qubit decomposition, fusion, and target-native synthesis passes
   ([#1774], [#1802], [#1803], [#1809], [#1810], [#1814], [#1832], [#1850],
-  [#1865], [#1961], [#1996], [#1998], [#2001], [#2467], [#2468])
+  [#1865], [#1961], [#1996], [#1998], [#2001], [#2467], [#2468], [#2478])
   ([**@simon1hofmann**], [**@burgholzer**])
 
 #### Other additions
@@ -931,6 +931,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2478]: https://github.com/munich-quantum-toolkit/core/pull/2478
 [#2468]: https://github.com/munich-quantum-toolkit/core/pull/2468
 [#2467]: https://github.com/munich-quantum-toolkit/core/pull/2467
 [#2457]: https://github.com/munich-quantum-toolkit/core/pull/2457

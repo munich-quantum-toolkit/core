@@ -41,6 +41,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cassert>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -58,7 +59,7 @@ using namespace mlir::qco;
 
 /// DD for k=2…20 plus the first HP24 width (k=33): full matrix DD through k=8
 /// (MCX/MCY/MCZ) or k=6 (MCP); basis-state DD for larger Pauli widths;
-/// coherent-state DD at selected policy boundaries and representative larger
+/// coherent-state DD at SP22/HP24 boundaries and representative larger
 /// MCP widths.
 static constexpr std::array<size_t, 20> K_DD_CONTROL_COUNTS = {
     2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 33,
@@ -79,45 +80,21 @@ static constexpr std::array<size_t, 13> K_SMOKE_CONTROL_COUNTS = {
 };
 
 /// Expected elementary Ctrl@X counts after default `min-qubits=3` lowering.
-/// Indexed by control count `k`; unused slots are zero.
+/// Defined for control counts through the first HP24 width, k=33.
 /// For `5 ≤ k ≤ 32`, MCX uses SP22 MCP(π); each CRX expands to 2 Ctrl@X while
 /// CP stays as Ctrl@P, so elementary CX is `4k² − 8k + 4`. k=33 is the first
 /// HP24 width (pinned measured CX).
-static constexpr std::array<size_t, 34> K_EXPECTED_MCX_CX = {
-    0,    0,
-    6,    // 2
-    14,   // 3
-    20,   // 4
-    64,   // 5  SP22
-    100,  // 6
-    144,  // 7
-    196,  // 8
-    256,  // 9
-    324,  // 10
-    400,  // 11
-    484,  // 12
-    576,  // 13
-    676,  // 14
-    784,  // 15
-    900,  // 16
-    1024, // 17
-    1156, // 18
-    1296, // 19
-    1444, // 20
-    1600, // 21
-    1764, // 22
-    1936, // 23
-    2116, // 24
-    2304, // 25
-    2500, // 26
-    2704, // 27
-    2916, // 28
-    3136, // 29
-    3364, // 30
-    3600, // 31
-    3844, // 32  SP22 max
-    3872, // 33  HP24
-};
+[[nodiscard]] static constexpr size_t expectedMcxCx(size_t k) {
+  assert(k <= 33);
+  if (k == 33) {
+    return 3872;
+  }
+  if (k >= 5) {
+    return 4 * (k - 1) * (k - 1);
+  }
+  constexpr std::array<size_t, 5> small = {0, 0, 6, 14, 20};
+  return small[k];
+}
 
 /// Effective CX for MCP: elementary Ctrl@X plus ~2 CX per leftover
 /// single-controlled P. For `k >= 5` this matches the SP22 LDD bound
@@ -762,7 +739,7 @@ TEST_P(McPauliDdTest, EquivalenceAndCxCount) {
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
   expectFullyLowered(moduleOp.get());
   // MCY and MCZ share MCX's CX budget; their basis changes add no CX.
-  EXPECT_EQ(countElementaryCxOps(moduleOp.get()), K_EXPECTED_MCX_CX[k])
+  EXPECT_EQ(countElementaryCxOps(moduleOp.get()), expectedMcxCx(k))
       << "k=" << k;
 
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
@@ -847,7 +824,7 @@ TEST_P(McPauliSmokeTest, FullyLowersWithExpectedCx) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(runDecomposeMultiControlled(moduleOp.get()).succeeded());
   expectFullyLowered(moduleOp.get());
-  EXPECT_EQ(countElementaryCxOps(moduleOp.get()), K_EXPECTED_MCX_CX[k])
+  EXPECT_EQ(countElementaryCxOps(moduleOp.get()), expectedMcxCx(k))
       << "k=" << k;
 }
 
@@ -1157,7 +1134,7 @@ TEST_F(MultiControlledDecompositionTest, PhasePiRoutesThroughMcz) {
           << "k=" << k << " theta=" << theta;
       expectFullyLowered(moduleOp.get());
       // ±π must take the Z path, so CX counts match MCZ/MCX.
-      EXPECT_EQ(countElementaryCxOps(moduleOp.get()), K_EXPECTED_MCX_CX[k])
+      EXPECT_EQ(countElementaryCxOps(moduleOp.get()), expectedMcxCx(k))
           << "k=" << k << " theta=" << theta;
       auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
       expectImplementsMcp(funcOp, k, theta);

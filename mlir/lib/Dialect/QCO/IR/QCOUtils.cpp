@@ -111,44 +111,66 @@ static void propagateWireIds(UnitaryOpInterface unitary,
   }
 }
 
-/// Returns the @p unitary embedded on @p numTargets modifier wires using @p
-/// wireIds.
-[[nodiscard]] static std::optional<DynamicMatrix>
-embedUnitaryInBody(UnitaryOpInterface unitary, size_t numTargets,
-                   const DenseMap<Value, size_t>& wireIds) {
+/// Embed the first unitary, then premultiply subsequent gates in place.
+[[nodiscard]] static bool
+premultiplyUnitaryInBody(UnitaryOpInterface unitary, size_t numTargets,
+                         const DenseMap<Value, size_t>& wireIds,
+                         std::optional<DynamicMatrix>& acc) {
   const auto numOpQubits = unitary.getNumQubits();
-  if (numOpQubits == numTargets &&
-      llvm::all_of(llvm::enumerate(unitary.getInputQubits()), [&](auto entry) {
-        return lookupWireId(wireIds, entry.value()) == entry.index();
-      })) {
-    return unitary.getUnitaryMatrix<DynamicMatrix>();
-  }
   if (numOpQubits == 0 || numOpQubits > 2) {
-    return std::nullopt;
+    if (numOpQubits != numTargets ||
+        !llvm::all_of(
+            llvm::enumerate(unitary.getInputQubits()), [&](auto entry) {
+              return lookupWireId(wireIds, entry.value()) == entry.index();
+            })) {
+      return false;
+    }
+    auto matrix = unitary.getUnitaryMatrix<DynamicMatrix>();
+    if (!matrix) {
+      return false;
+    }
+    if (acc) {
+      acc->premultiplyBy(*matrix);
+    } else {
+      acc.swap(matrix);
+    }
+    return true;
   }
 
   if (numOpQubits == 1) {
     const auto wire = lookupWireId(wireIds, unitary.getInputQubit(0));
     if (!wire.has_value()) {
-      return std::nullopt;
+      return false;
     }
     const auto matrix = unitary.getUnitaryMatrix<Matrix2x2>();
     if (!matrix) {
-      return std::nullopt;
+      return false;
     }
-    return matrix->embedInNqubit(numTargets, *wire);
+    if (acc) {
+      acc->premultiplyByEmbedded1Q(*matrix, numTargets, *wire);
+    } else {
+      acc = matrix->embedInNqubit(numTargets, *wire);
+    }
+    return true;
   }
 
   const auto q0 = lookupWireId(wireIds, unitary.getInputQubit(0));
   const auto q1 = lookupWireId(wireIds, unitary.getInputQubit(1));
   if (!q0.has_value() || !q1.has_value()) {
-    return std::nullopt;
+    return false;
   }
   const auto matrix = unitary.getUnitaryMatrix<Matrix4x4>();
   if (!matrix) {
-    return std::nullopt;
+    return false;
   }
-  return matrix->embedInNqubit(numTargets, *q0, *q1);
+  if (!acc) {
+    acc = matrix->embedInNqubit(numTargets, *q0, *q1);
+  } else if (numTargets == 2) {
+    acc->premultiplyByEmbedded2Q(matrix->reorderForQubits(*q0, *q1), 2, 0, 1);
+  } else {
+    acc->premultiplyByEmbedded2Q(*matrix, numTargets, *q0, *q1);
+  }
+  return true;
 }
 
 std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
@@ -182,14 +204,9 @@ std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
               return true;
             })
             .Case([&](UnitaryOpInterface unitary) {
-              auto embedded = embedUnitaryInBody(unitary, numTargets, wireIds);
-              if (!embedded.has_value()) {
+              if (!premultiplyUnitaryInBody(unitary, numTargets, wireIds,
+                                            acc)) {
                 return false;
-              }
-              if (!acc.has_value()) {
-                acc.swap(embedded);
-              } else {
-                acc->premultiplyBy(*embedded);
               }
               propagateWireIds(unitary, wireIds);
               return true;

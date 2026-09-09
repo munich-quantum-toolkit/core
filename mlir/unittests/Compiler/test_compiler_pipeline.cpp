@@ -8,6 +8,7 @@
  * Licensed under the MIT License
  */
 
+#include "ExactUnitaryTest.h"
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
 #include "mlir/Compiler/Programs.h"
@@ -24,6 +25,7 @@
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
@@ -3148,6 +3150,100 @@ x q;
       qco->runPassPipeline("place-and-route{ntrials=1},target-native-synthesis,"
                            "verify-target-conformance"));
   EXPECT_NE(qco->str().find("qco.static"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
+  using NativeOperations = CompilerTarget::NativeOperations;
+  using TargetOperation = CompilerTarget::Operation;
+  const auto cx = llvm::cantFail(TargetOperation::create("cx", 2, 0));
+  const auto dcx = llvm::cantFail(TargetOperation::create("dcx", 2, 0));
+  const auto u = llvm::cantFail(TargetOperation::create("u", 1, 3));
+  const auto gphase = llvm::cantFail(TargetOperation::create("gphase", 0, 1));
+  const auto makeTarget = [](NativeOperations operations) {
+    return llvm::cantFail(CompilerTarget::create(
+        2, CompilerTarget::Connectivity::allToAll(), std::move(operations)));
+  };
+  struct Case {
+    const char* name;
+    CompilerTarget target;
+    bool useDcx;
+    bool expectFusion;
+  };
+  const std::vector cases{
+      Case{
+          .name = "cx-only",
+          .target = makeTarget(NativeOperations::fromOperations({cx})),
+          .useDcx = false,
+          .expectFusion = false,
+      },
+      Case{
+          .name = "u-dcx",
+          .target = makeTarget(NativeOperations::fromOperations({u, dcx})),
+          .useDcx = true,
+          .expectFusion = false,
+      },
+      Case{
+          .name = "u-cx",
+          .target =
+              makeTarget(NativeOperations::fromOperations({u, cx, gphase})),
+          .useDcx = false,
+          .expectFusion = true,
+      },
+      Case{
+          .name = "unrestricted",
+          .target = makeTarget(NativeOperations::unrestricted()),
+          .useDcx = false,
+          .expectFusion = true,
+      },
+  };
+
+  for (const auto& testCase : cases) {
+    SCOPED_TRACE(testCase.name);
+    if (!testCase.expectFusion) {
+      // Cover both a missing basis and a basis without an entangler.
+      const auto basis = testCase.target.synthesisBasis();
+      EXPECT_EQ(basis.has_value(), testCase.useDcx);
+      EXPECT_FALSE(basis && basis->entangler);
+    }
+    auto ownedContext = createCompilerContext();
+    const size_t inputGateCount = testCase.useDcx ? 4 : 3;
+    auto moduleOp = QCOProgramBuilder::build(
+        ownedContext.get(), [&](QCOProgramBuilder& builder) {
+          auto q0 = builder.staticQubit(0);
+          auto q1 = builder.staticQubit(1);
+          for (size_t i = 0; i < inputGateCount; ++i) {
+            std::tie(q0, q1) =
+                testCase.useDcx ? builder.dcx(q0, q1) : builder.cx(q0, q1);
+          }
+          return builder.intConstant(0);
+        });
+    ASSERT_TRUE(verify(*moduleOp).succeeded());
+    ASSERT_TRUE(qco::verifyLinearity(*moduleOp).succeeded());
+    const TargetEnvironment environment(testCase.target,
+                                        makePayloadSpecification());
+    attachTargetEnvironment(*moduleOp, environment);
+    PassManager inputVerifier(ownedContext.get());
+    inputVerifier.addPass(qco::createVerifyTargetConformance());
+    ASSERT_TRUE(inputVerifier.run(*moduleOp).succeeded());
+    auto reference = OwningOpRef<ModuleOp>(moduleOp->clone());
+    auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
+    ASSERT_TRUE(program);
+
+    ASSERT_TRUE(program->compileForTarget(environment));
+    ASSERT_TRUE(verify(program->module()).succeeded());
+    ASSERT_TRUE(qco::verifyLinearity(program->module()).succeeded());
+    PassManager outputVerifier(ownedContext.get());
+    outputVerifier.addPass(qco::createVerifyTargetConformance());
+    ASSERT_TRUE(outputVerifier.run(program->module()).succeeded());
+    expectFullUnitaryEqual(*reference, program->module(), 2);
+    if (testCase.expectFusion) {
+      size_t numTwoQubitGates = 0;
+      program->module().walk([&](qco::UnitaryOpInterface unitary) {
+        numTwoQubitGates += unitary.isTwoQubit();
+      });
+      EXPECT_LT(numTwoQubitGates, inputGateCount);
+    }
+  }
 }
 
 TEST_F(CompilerPipelineTest, TargetCompilationInlinesReusableFunctions) {

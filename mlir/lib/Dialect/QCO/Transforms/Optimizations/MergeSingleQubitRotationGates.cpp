@@ -32,7 +32,6 @@
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/GreedyPatternRewriteDriver.h>
 
-#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -172,12 +171,12 @@ template <typename T> struct Val {
       };
     }
   }
-  [[nodiscard]] Val acos() const {
+  [[nodiscard]] Val sqrt() const {
     if constexpr (std::is_same_v<T, double>) {
-      return {std::acos(v), rewriter, loc};
+      return {std::sqrt(v), rewriter, loc};
     } else {
       return {
-          math::AcosOp::create(*rewriter, loc, v).getResult(),
+          math::SqrtOp::create(*rewriter, loc, v).getResult(),
           rewriter,
           loc,
       };
@@ -195,29 +194,6 @@ template <typename T> struct Val {
       };
     }
   }
-  [[nodiscard]] Val maximum(Val o) const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {std::max(v, o.v), rewriter, loc};
-    } else {
-      return {
-          arith::MaximumFOp::create(*rewriter, loc, v, o.v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
-  }
-  [[nodiscard]] Val minimum(Val o) const {
-    if constexpr (std::is_same_v<T, double>) {
-      return {std::min(v, o.v), rewriter, loc};
-    } else {
-      return {
-          arith::MinimumFOp::create(*rewriter, loc, v, o.v).getResult(),
-          rewriter,
-          loc,
-      };
-    }
-  }
-
   [[nodiscard]] Pred oge(Val o) const {
     if constexpr (std::is_same_v<T, double>) {
       return v >= o.v;
@@ -280,7 +256,6 @@ template <typename T> struct Quat {
 
 /// Shared numeric constants used by quaternion construction and Euler extract.
 template <typename T> struct ScalarConsts {
-  Val<T> negOne;
   Val<T> zero;
   Val<T> one;
   Val<T> two;
@@ -307,7 +282,6 @@ template <typename T>
 static ScalarConsts<T> makeConsts(RewriterBase& rewriter, Location loc) {
   auto c = [&](double x) { return Val<T>::constant(rewriter, loc, x); };
   return {
-      .negOne = c(-1.0),
       .zero = c(0.0),
       .one = c(1.0),
       .two = c(2.0),
@@ -325,8 +299,10 @@ static ScalarConsts<T> makeConsts(RewriterBase& rewriter, Location loc) {
 template <typename T>
 static Val<T> wrapToPi(Val<T> angle, const ScalarConsts<T>& c) {
   const auto twoPi = c.two * c.pi;
-  const auto floored = ((angle + c.pi) / twoPi).floor();
-  return angle - (floored * twoPi);
+  const auto shifted = angle + c.pi;
+  const auto turns = shifted / twoPi;
+  const auto floored = turns.floor();
+  return angle - floored * twoPi;
 }
 
 /**
@@ -344,10 +320,10 @@ static Val<T> wrapToPi(Val<T> angle, const ScalarConsts<T>& c) {
 template <typename T>
 static Quat<T> hamiltonProduct(const Quat<T>& q1, const Quat<T>& q2) {
   return {
-      .w = (q1.w * q2.w) - (q1.x * q2.x) - (q1.y * q2.y) - (q1.z * q2.z),
-      .x = (q1.w * q2.x) + (q1.x * q2.w) + (q1.y * q2.z) - (q1.z * q2.y),
-      .y = (q1.w * q2.y) - (q1.x * q2.z) + (q1.y * q2.w) + (q1.z * q2.x),
-      .z = (q1.w * q2.z) + (q1.x * q2.y) - (q1.y * q2.x) + (q1.z * q2.w),
+      .w = q1.w * q2.w - q1.x * q2.x - q1.y * q2.y - q1.z * q2.z,
+      .x = q1.w * q2.x + q1.x * q2.w + q1.y * q2.z - q1.z * q2.y,
+      .y = q1.w * q2.y - q1.x * q2.z + q1.y * q2.w + q1.z * q2.x,
+      .z = q1.w * q2.z + q1.x * q2.y - q1.y * q2.x + q1.z * q2.w,
   };
 }
 
@@ -403,7 +379,18 @@ static Quat<T> quaternionFromZYZ(Val<T> theta, Val<T> phi, Val<T> lambda,
   const auto qTheta = axisQuaternion(theta, RotationAxis::Y, c);
   const auto qPhi = axisQuaternion(phi, RotationAxis::Z, c);
   const auto qLambda = axisQuaternion(lambda, RotationAxis::Z, c);
-  return hamiltonProduct(hamiltonProduct(qPhi, qTheta), qLambda);
+  // Expand the sparse axis products without combining the input angles.
+  const auto w = qPhi.w * qTheta.w;
+  const auto yz = qPhi.z * qTheta.y;
+  const auto x = -yz;
+  const auto y = qPhi.w * qTheta.y;
+  const auto z = qPhi.z * qTheta.w;
+  return {
+      .w = w * qLambda.w - z * qLambda.z,
+      .x = x * qLambda.w + y * qLambda.z,
+      .y = y * qLambda.w - x * qLambda.z,
+      .z = w * qLambda.z + z * qLambda.w,
+  };
 }
 
 /**
@@ -604,41 +591,40 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
         if (!phi || !lambda) {
           return failure();
         }
-        return (*phi + *lambda) / c.two;
+        const auto phaseAngle = *phi + *lambda;
+        return phaseAngle / c.two;
       })
       .Default([](auto) -> FailureOr<Val<T>> { return failure(); });
 }
 
-/**
- * @brief Extracts ZYZ Euler angles from a unit quaternion.
- *
- * For unit quaternion q = w + x * i + y * j + z * k, extracts UOp parameters:
- *
- * - alpha = atan2(z, w) + atan2(-x, y)
- * - beta  = acos(2 * (w^2 + z^2) - 1)
- * - gamma = atan2(z, w) - atan2(-x, y)
- *
- * Based on Bernardes & Viollet (2022), simplified for unit quaternions and
- * proper ZYZ Euler angles (Chapter 3.3):
- * https://doi.org/10.1371/journal.pone.0276302
- *
- * Reference implementation:
- * https://github.com/evbernardes/quaternion_to_euler
- * SymPy also implements this paper:
- * https://docs.sympy.org/latest/modules/algebras.html#sympy.algebras.Quaternion.to_euler
- *
- * Pure-Z / XY-aligned quaternions (|x|,|y| < eps) take the beta≈0 gimbal form
- * so tiny beta drift cannot split the Z angle across phi/lambda. The host path
- * short-circuits to `{0, 2*atan2(z,w), 0}`; the `Value` path selects `beta=0`
- * under the same predicate and sanitizes the atan2 y-operand when (x,y)≈0 so
- * MLIR's constant folder never sees atan2(0,0) → NaN on a dead select input.
- *
- * @note Floating-point errors may accumulate when merging many gates.
- * Normalizing either Z angle by 2*pi flips the corresponding SU(2)
- * quaternion sign. The returned phase correction accounts for those flips.
- *
- * @return {theta, phi, lambda, phaseCorrection} suitable for UOp
- */
+/// Extracts ZYZ Euler angles from a unit quaternion.
+///
+/// For unit quaternion q = w + x * i + y * j + z * k, extracts UOp parameters:
+///
+/// - alpha = atan2(z, w) + atan2(-x, y)
+/// - beta  = 2 * atan2(sqrt(x^2 + y^2), sqrt(w^2 + z^2))
+/// - gamma = atan2(z, w) - atan2(-x, y)
+///
+/// Based on Bernardes & Viollet (2022), simplified for unit quaternions and
+/// proper ZYZ Euler angles (Chapter 3.3):
+/// https://doi.org/10.1371/journal.pone.0276302
+///
+/// Reference implementation:
+/// https://github.com/evbernardes/quaternion_to_euler
+/// SymPy also implements this paper:
+/// https://docs.sympy.org/latest/modules/algebras.html#sympy.algebras.Quaternion.to_euler
+///
+/// Pure-Z / XY-aligned quaternions (|x|,|y| < eps) take the beta≈0 gimbal form
+/// so tiny beta drift cannot split the Z angle across phi/lambda. The host path
+/// short-circuits to `{0, 2*atan2(z,w), 0}`; the `Value` path selects `beta=0`
+/// under the same predicate and sanitizes the atan2 y-operand when (x,y)≈0 so
+/// MLIR's constant folder never sees atan2(0,0) → NaN on a dead select input.
+///
+/// @note Floating-point errors may accumulate when merging many gates.
+/// Normalizing either Z angle by 2*pi flips the corresponding SU(2)
+/// quaternion sign. The returned phase correction accounts for those flips.
+///
+/// @return {theta, phi, lambda, phaseCorrection} suitable for UOp
 template <typename T>
 static std::array<Val<T>, 4> anglesFromQuaternion(const Quat<T>& q,
                                                   const ScalarConsts<T>& c) {
@@ -655,22 +641,24 @@ static std::array<Val<T>, 4> anglesFromQuaternion(const Quat<T>& q,
       const auto phi = wrapToPi(alpha, c);
       // Wrapping alpha by 2*pi flips the SU(2) representative, which is
       // compensated by half the removed angle as a global phase.
-      return {c.zero, phi, c.zero, (alpha - phi) / c.two};
+      const auto removedAngle = alpha - phi;
+      return {c.zero, phi, c.zero, removedAngle / c.two};
     }
   }
 
-  // beta = acos(clamp(2 * (w^2 + z^2) - 1, -1, 1))
-  // Force beta=0 when (x,y)≈0 so XY-aligned / pure-Z merges do not emit a
-  // drifted acos theta on the SSA path (host path already returned above).
-  const auto cosBeta = ((c.two * ((q.w * q.w) + (q.z * q.z))) - c.one)
-                           .maximum(c.negOne)
-                           .minimum(c.one);
-  const auto betaRaw = cosBeta.acos();
+  // The half-angle norms retain small rotations when cos(beta) rounds to one.
+  // Force beta=0 when (x,y)≈0, matching the host path's pure-Z shortcut.
+  const auto sinHalfBetaSquared = q.x * q.x + q.y * q.y;
+  const auto cosHalfBetaSquared = q.w * q.w + q.z * q.z;
+  const auto sinHalfBeta = sinHalfBetaSquared.sqrt();
+  const auto cosHalfBeta = cosHalfBetaSquared.sqrt();
+  const auto betaRaw = sinHalfBeta.atan2(cosHalfBeta) * c.two;
   const auto beta = Val<T>::select(xyNearZero, c.zero, betaRaw);
 
   // safe1 = |beta| >= eps; safe2 = |beta - π| >= eps
   const auto safe1 = beta.abs().oge(c.eps);
-  const auto safe2 = (beta - c.pi).abs().oge(c.eps);
+  const auto betaMinusPi = beta - c.pi;
+  const auto safe2 = betaMinusPi.abs().oge(c.eps);
   const auto notXy = Val<T>::lnot(xyNearZero, rewriter, loc);
   const auto safe = Val<T>::land(Val<T>::land(safe1, safe2, rewriter, loc),
                                  notXy, rewriter, loc);
@@ -680,7 +668,8 @@ static std::array<Val<T>, 4> anglesFromQuaternion(const Quat<T>& q,
   // Sanitize y when (x,y)≈0 for the Value backend's constant folder.
   const auto yForAtan2 = Val<T>::select(xyNearZero, c.one, q.y);
   const auto thetaPlus = q.z.atan2(q.w);
-  const auto thetaMinus = (-q.x).atan2(yForAtan2);
+  const auto minusX = -q.x;
+  const auto thetaMinus = minusX.atan2(yForAtan2);
   const auto twoThetaPlus = thetaPlus * c.two;
   const auto twoThetaMinus = thetaMinus * c.two;
 
@@ -697,7 +686,10 @@ static std::array<Val<T>, 4> anglesFromQuaternion(const Quat<T>& q,
   const auto lambda = wrapToPi(gamma, c);
   // Each removed 2*pi Z rotation flips the SU(2) representative. Half of the
   // total removed angle restores the original matrix as a global phase.
-  return {beta, phi, lambda, ((alpha - phi) + (gamma - lambda)) / c.two};
+  const auto removedAlpha = alpha - phi;
+  const auto removedGamma = gamma - lambda;
+  const auto removedAngle = removedAlpha + removedGamma;
+  return {beta, phi, lambda, removedAngle / c.two};
 }
 
 // Conjugates q by Hadamard, mapping X to Z, Y to -Y, and Z to X.
@@ -769,10 +761,10 @@ static Value emitRuntimeEulerAngles(RewriterBase& rewriter, Location loc,
     break;
   case decomposition::SingleQubitBasis::ZXZ:
     qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
-                                       lambda - (consts.pi / consts.two));
+                                       lambda - consts.pi / consts.two);
     qubit = emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, theta);
     qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit,
-                                       phi + (consts.pi / consts.two));
+                                       phi + consts.pi / consts.two);
     break;
   case decomposition::SingleQubitBasis::XZX:
     qubit = emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, lambda);
@@ -785,7 +777,7 @@ static Value emitRuntimeEulerAngles(RewriterBase& rewriter, Location loc,
     qubit = emitRotationIfNeeded<RXOp>(rewriter, loc, qubit, phi);
     break;
   case decomposition::SingleQubitBasis::U:
-    phase = phase - (sumAngles(phi, lambda) / consts.two);
+    phase = phase - sumAngles(phi, lambda) / consts.two;
     qubit = UOp::create(rewriter, loc, qubit, theta.v, phi.v, lambda.v)
                 .getQubitOut();
     break;
@@ -801,7 +793,7 @@ static Value emitRuntimeEulerAngles(RewriterBase& rewriter, Location loc,
       phase = phase - quarterPi;
       break;
     }
-    phase = phase + (consts.pi / consts.two);
+    phase = phase + consts.pi / consts.two;
     qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, lambda);
     qubit = SXOp::create(rewriter, loc, qubit).getQubitOut();
     qubit = emitRotationIfNeeded<RZOp>(rewriter, loc, qubit, theta + consts.pi);
@@ -908,7 +900,8 @@ static Value emitDirectU(RewriterBase& rewriter, UnitaryOpInterface op,
         .getQubitOut();
   }
   if (isa<RXOp>(op.getOperation())) {
-    return UOp::create(rewriter, loc, qubit, parameter(0).v, (-halfPi).v,
+    const auto minusHalfPi = -halfPi;
+    return UOp::create(rewriter, loc, qubit, parameter(0).v, minusHalfPi.v,
                        halfPi.v)
         .getQubitOut();
   }
@@ -923,15 +916,18 @@ static Value emitDirectU(RewriterBase& rewriter, UnitaryOpInterface op,
         UOp::create(rewriter, loc, qubit, consts.zero.v, consts.zero.v, angle.v)
             .getQubitOut();
     if (isa<RZOp>(op.getOperation())) {
-      emitParameterizedGPhaseIfNeeded(rewriter, loc, -(angle / consts.two));
+      const auto halfAngle = angle / consts.two;
+      emitParameterizedGPhaseIfNeeded(rewriter, loc, -halfAngle);
     }
     return qubit;
   }
 
   const auto theta = parameter(0);
   const auto phi = parameter(1);
-  return UOp::create(rewriter, loc, qubit, theta.v, (phi - halfPi).v,
-                     (halfPi - phi).v)
+  const auto phiMinusHalfPi = phi - halfPi;
+  const auto halfPiMinusPhi = halfPi - phi;
+  return UOp::create(rewriter, loc, qubit, theta.v, phiMinusHalfPi.v,
+                     halfPiMinusPhi.v)
       .getQubitOut();
 }
 
@@ -1066,8 +1062,8 @@ struct MergeSingleQubitRotationGatesPattern final
 
     const auto [theta, phi, lambda, eulerPhase] =
         anglesFromQuaternion(*qAccum, consts);
-    const auto correction =
-        phaseAccum - ((phi + lambda) / consts.two) + eulerPhase;
+    const auto phaseAngle = phi + lambda;
+    const auto correction = phaseAccum - phaseAngle / consts.two + eulerPhase;
 
     for (auto chainOp : llvm::drop_begin(chain)) {
       rewriter.replaceOp(chainOp, chainOp.getInputQubit(0));
@@ -1127,8 +1123,8 @@ struct MergeSingleQubitRotationGatesPattern final
         transformed ? anglesFromQuaternion(hadamardConjugate(*qAccum), consts)
                     : anglesFromQuaternion(*qAccum, consts);
     if (basis == decomposition::SingleQubitBasis::XZX) {
-      phi = phi + (consts.pi / consts.two);
-      lambda = lambda - (consts.pi / consts.two);
+      phi = phi + consts.pi / consts.two;
+      lambda = lambda - consts.pi / consts.two;
     } else if (basis == decomposition::SingleQubitBasis::XYX ||
                basis == decomposition::SingleQubitBasis::R) {
       phi = phi + consts.pi;
@@ -1219,6 +1215,13 @@ void decomposition::synthesizeParameterizedUnitary1Q(RewriterBase& rewriter,
 
   auto unitary = cast<UnitaryOpInterface>(op);
   rewriter.setInsertionPointAfter(op);
+  if (basis == SingleQubitBasis::R && isa<RXOp, RYOp>(op)) {
+    Value axis = mqt::constantFromScalar(
+        rewriter, op->getLoc(), isa<RXOp>(op) ? 0.0 : std::numbers::pi / 2.0);
+    rewriter.replaceOpWithNewOp<ROp>(op, unitary.getInputQubit(0),
+                                     unitary.getParameter(0), axis);
+    return;
+  }
   const bool usesDirectZYZAngles = basis == SingleQubitBasis::ZYZ ||
                                    basis == SingleQubitBasis::ZXZ ||
                                    basis == SingleQubitBasis::ZSXX;
