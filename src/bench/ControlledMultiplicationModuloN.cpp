@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string_view>
@@ -33,9 +34,10 @@ static_assert(ControlledMultiplicationModuloNOptions::MAX_BITS <
 [[nodiscard]] std::optional<uint64_t>
 binaryValue(const std::string_view bitstring) {
   uint64_t value = 0;
-  const auto* const end = bitstring.data() + bitstring.size();
+  const auto* const begin = std::to_address(bitstring.begin());
+  const auto* const end = std::to_address(bitstring.end());
   const auto [parsedEnd, error] =
-      std::from_chars(bitstring.data(), end, value, /*base=*/2);
+      std::from_chars(begin, end, value, /*base=*/2);
   if (error != std::errc{} || parsedEnd != end) {
     return std::nullopt;
   }
