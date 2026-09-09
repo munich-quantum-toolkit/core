@@ -314,20 +314,9 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
     if (!innerInvOp) {
       return failure();
     }
-    if (!mqt::getSoleBodyUnitary<UnitaryOpInterface>(*innerInvOp.getBody())) {
-      return failure();
-    }
-
-    mqt::hoistSupportingOpsBefore(*op.getBody(), innerInvOp, op, rewriter);
-
-    // inv(inv(x)) == x: inline the doubly-nested body directly onto the outer
-    // qubits. The inner body's block arguments alias the inner modifier's
-    // inputs, which in turn alias the outer qubits.
-    const auto replacements =
-        llvm::map_to_vector(innerInvOp.getQubits(), [&](Value q) {
-          return mqt::getValueFromBlockArgument(q, op.getQubits());
-        });
-    mqt::inlineModifierBody(op, *innerInvOp.getBody(), replacements, rewriter);
+    mqt::inlineModifierBody(innerInvOp, *innerInvOp.getBody(),
+                            innerInvOp.getQubits(), rewriter);
+    mqt::inlineModifierBody(op, *op.getBody(), op.getQubits(), rewriter);
     return success();
   }
 };

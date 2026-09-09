@@ -337,7 +337,9 @@ LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter) {
   if (!valuesMatchWithinTolerance(op.getBeta(), nextOp.getBeta())) {
     return failure();
   }
-  return mergeTwoTargetOneParameterImpl(op, nextOp, rewriter, true);
+  // Reversing XXPlusYY targets negates beta; XXMinusYY is symmetric.
+  return mergeTwoTargetOneParameterImpl(op, nextOp, rewriter,
+                                        isa<XXMinusYYOp>(op));
 }
 
 /**

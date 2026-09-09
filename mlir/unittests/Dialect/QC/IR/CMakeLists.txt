@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 set(target_name mqt-core-mlir-unittest-qc-ir)
-add_executable(${target_name} test_qc_ir.cpp)
+add_executable(${target_name} test_qc_ir.cpp test_qc_modifier_canonicalization.cpp)
 target_link_libraries(
   ${target_name}
   PRIVATE MLIRParser

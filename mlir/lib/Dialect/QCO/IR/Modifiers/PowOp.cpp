@@ -229,6 +229,10 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
       return failure();
     }
 
+    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
+      return failure();
+    }
+
     // The inner pow's operands alias the outer pow's block args, possibly in a
     // different order / subset. Translate them back to the outer pow's operands
     // so the merged pow's footprint matches the inner pow positionally.
@@ -280,6 +284,10 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
     // The rewrite hands the qubits of the modifier to the inner operation, so
     // it must act on all of them.
     if (innerCtrlOp.getNumQubits() != op.getNumQubits()) {
+      return failure();
+    }
+
+    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
       return failure();
     }
 
@@ -355,6 +363,16 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     if (!exponent) {
       return failure();
     }
+    if (!isa<GPhaseOp, XOp, YOp, ZOp, SOp, SdgOp, TOp, TdgOp, SXOp, SXdgOp, HOp,
+             ECROp, RCCXOp, SWAPOp, RXOp, RYOp, RZOp, POp, ROp, RXXOp, RYYOp,
+             RZXOp, RZZOp, XXPlusYYOp, XXMinusYYOp, iSWAPOp, UOp, IdOp,
+             BarrierOp>(innerOp)) {
+      return failure();
+    }
+    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
+      return failure();
+    }
+
     const double r = *exponent;
     auto loc = op.getLoc();
 
@@ -384,12 +402,6 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     // integral exponents.
     if (isa<HOp, ECROp, RCCXOp, SWAPOp>(innerOp) &&
         !mqt::isIntegerExponent(r)) {
-      return failure();
-    }
-    if (!isa<GPhaseOp, XOp, YOp, ZOp, SOp, SdgOp, TOp, TdgOp, SXOp, SXdgOp, HOp,
-             ECROp, RCCXOp, SWAPOp, RXOp, RYOp, RZOp, POp, ROp, RXXOp, RYYOp,
-             RZXOp, RZZOp, XXPlusYYOp, XXMinusYYOp, iSWAPOp, UOp, IdOp,
-             BarrierOp>(innerOp)) {
       return failure();
     }
 
@@ -717,6 +729,10 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
   LogicalResult matchAndRewrite(PowOp op,
                                 PatternRewriter& rewriter) const override {
     if (op.getNumBodyUnitaries() != 0) {
+      return failure();
+    }
+
+    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
       return failure();
     }
 
