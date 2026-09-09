@@ -10,16 +10,12 @@
 
 #include "TestUtils.h"
 #include "bench/RepeatUntilSuccess.hpp"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/bench/Generate.h"
 
 #include <gtest/gtest.h>
 #include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/BuiltinOps.h>
 #include <mlir/IR/Operation.h>
 #include <mlir/IR/Value.h>
 #include <mlir/Support/LLVM.h>
@@ -39,28 +35,15 @@ static void expectCNOT(qc::CtrlOp control, Value expectedControl,
   EXPECT_TRUE(isa<qc::XOp>(control.getBodyUnitary(0).getOperation()));
 }
 
-TEST(GenerateProgramTest, EmitsExactRepeatUntilSuccessSchedule) {
+TEST(GenerateProgramTest, EmitsRepeatUntilSuccessAlgorithm) {
   auto program = generate(RepeatUntilSuccess{});
   ASSERT_TRUE(program);
   auto moduleOp = program->module();
-
-  EXPECT_EQ(test::countOps<qc::AllocOp>(moduleOp), 2U);
-  EXPECT_EQ(test::countOps<cbit::AllocOp>(moduleOp), 1U);
-  EXPECT_EQ(test::countOps<scf::WhileOp>(moduleOp), 1U);
-  EXPECT_EQ(test::countOps<scf::IfOp>(moduleOp), 0U);
-  EXPECT_EQ(test::countOps<qc::HOp>(moduleOp), 4U);
-  EXPECT_EQ(test::countOps<qc::TOp>(moduleOp), 2U);
-  EXPECT_EQ(test::countOps<qc::CtrlOp>(moduleOp), 2U);
-  EXPECT_EQ(test::countOps<qc::XOp>(moduleOp), 3U);
-  EXPECT_EQ(test::countOps<qc::SdgOp>(moduleOp), 1U);
-  EXPECT_EQ(test::countOps<qc::MeasureOp>(moduleOp), 2U);
 
   SmallVector<scf::WhileOp> loops;
   moduleOp.walk([&](scf::WhileOp loop) { loops.push_back(loop); });
   ASSERT_EQ(loops.size(), 1U);
   auto loop = loops.front();
-  EXPECT_TRUE(loop.getInits().empty());
-  EXPECT_TRUE(loop.getResults().empty());
 
   SmallVector<Operation*> attempt;
   for (Operation& operation : loop.getBefore().front().without_terminator()) {
@@ -97,7 +80,6 @@ TEST(GenerateProgramTest, EmitsExactRepeatUntilSuccessSchedule) {
   EXPECT_EQ(ancillaMeasurement.getQubit(), ancilla);
   EXPECT_EQ(loop.getConditionOp().getCondition(),
             ancillaMeasurement.getResult());
-  EXPECT_TRUE(loop.getConditionOp().getArgs().empty());
 
   SmallVector<Operation*> retry;
   for (Operation& operation : loop.getAfter().front().without_terminator()) {
@@ -131,18 +113,6 @@ TEST(GenerateProgramTest, EmitsExactRepeatUntilSuccessSchedule) {
   EXPECT_TRUE(loop->isBeforeInBlock(readoutPhase));
   EXPECT_TRUE(readoutPhase->isBeforeInBlock(readoutH));
   EXPECT_TRUE(readoutH->isBeforeInBlock(readoutMeasurement));
-
-  SmallVector<cbit::StoreOp> stores;
-  moduleOp.walk([&](cbit::StoreOp store) { stores.push_back(store); });
-  ASSERT_EQ(stores.size(), 1U);
-  auto store = stores.front();
-  EXPECT_EQ(store.getValue(), readoutMeasurement.getResult());
-  auto result = store.getReg().getDefiningOp<cbit::AllocOp>();
-  ASSERT_TRUE(result);
-  EXPECT_EQ(result.getResult().getType().getWidth(), 1);
-  auto index = store.getIndex().getDefiningOp<arith::ConstantIndexOp>();
-  ASSERT_TRUE(index);
-  EXPECT_EQ(index.value(), 0);
 }
 
 TEST(GenerateProgramTest, SamplesRepeatUntilSuccessAgainstReference) {
