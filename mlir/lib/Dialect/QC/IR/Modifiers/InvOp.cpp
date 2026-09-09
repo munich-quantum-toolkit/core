@@ -241,16 +241,13 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
               return success();
             })
             .Case([&](U2Op g) {
-              Value pi = arith::ConstantOp::create(
-                  rewriter, loc, rewriter.getF64FloatAttr(std::numbers::pi));
-              Value newPhi =
-                  arith::NegFOp::create(rewriter, loc, g.getLambda());
-              newPhi = arith::SubFOp::create(rewriter, loc, newPhi, pi);
-              Value newLambda =
-                  arith::NegFOp::create(rewriter, loc, g.getPhi());
-              newLambda = arith::AddFOp::create(rewriter, loc, newLambda, pi);
-              rewriter.replaceOpWithNewOp<U2Op>(g, g.getTarget(0), newPhi,
-                                                newLambda);
+              Value theta = arith::ConstantOp::create(
+                  rewriter, loc,
+                  rewriter.getF64FloatAttr(-std::numbers::pi / 2.0));
+              Value phi = arith::NegFOp::create(rewriter, loc, g.getLambda());
+              Value lambda = arith::NegFOp::create(rewriter, loc, g.getPhi());
+              rewriter.replaceOpWithNewOp<UOp>(g, g.getTarget(0), theta, phi,
+                                               lambda);
               return success();
             })
             .Case([&](DCXOp g) {

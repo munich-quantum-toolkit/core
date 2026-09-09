@@ -1416,22 +1416,6 @@ Value trivialControlledU2(QCProgramBuilder& b) {
   return measureToRegister(b, q[0]);
 }
 
-Value inverseU2(QCProgramBuilder& b) {
-  constexpr double pi = std::numbers::pi;
-  auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](Value qubit) { b.u2(-0.567 + pi, -0.234 - pi, qubit); });
-  return measureToRegister(b, q[0]);
-}
-
-Value inverseMultipleControlledU2(QCProgramBuilder& b) {
-  constexpr double pi = std::numbers::pi;
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
-    b.mcu2(-0.567 + pi, -0.234 - pi, {qubits[0], qubits[1]}, qubits[2]);
-  });
-  return measureAndReturn(b, q.qubits);
-}
-
 Value u(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.u(0.1, 0.2, 0.3, q[0]);

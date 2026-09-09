@@ -788,12 +788,6 @@ Value nestedControlledU2(QCOProgramBuilder& b);
 /// Creates a circuit with a trivial controlled U2 gate.
 Value trivialControlledU2(QCOProgramBuilder& b);
 
-/// Creates a circuit with an inverse modifier applied to a U2 gate.
-Value inverseU2(QCOProgramBuilder& b);
-
-/// Creates a circuit with an inverse modifier applied to a controlled U2 gate.
-Value inverseMultipleControlledU2(QCOProgramBuilder& b);
-
 /// Creates a circuit with a U2 gate that can be canonicalized to an H gate.
 Value canonicalizeU2ToH(QCOProgramBuilder& b);
 

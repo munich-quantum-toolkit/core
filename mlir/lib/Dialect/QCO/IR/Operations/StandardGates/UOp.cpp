@@ -9,6 +9,7 @@
  */
 
 #include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mlir/Dialect/MQT/Utils/GatePowering.h"
 #include "mlir/Dialect/MQT/Utils/Parameters.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -20,7 +21,6 @@
 #include <mlir/Support/LogicalResult.h>
 
 #include <cmath>
-#include <complex>
 #include <numbers>
 #include <optional>
 #include <variant>
@@ -129,17 +129,8 @@ void UOp::getCanonicalizationPatterns(RewritePatternSet& results,
       context);
 }
 
-Matrix2x2 UOp::unitaryMatrix(const double theta, const double phi,
-                             const double lambda) {
-  using namespace std::complex_literals;
-  const auto halfTheta = theta / 2;
-  const auto c = std::cos(halfTheta);
-  const auto s = std::sin(halfTheta);
-  const auto m01 = s * std::exp(1i * (lambda + std::numbers::pi));
-  const auto m10 = s * std::exp(1i * phi);
-  const auto m11 = c * std::exp(1i * (phi + lambda));
-  return Matrix2x2::fromElements(c, m01,    // row 0
-                                 m10, m11); // row 1
+Matrix2x2 UOp::unitaryMatrix(double theta, double phi, double lambda) {
+  return {.data = computeUMatrix(theta, phi, lambda)};
 }
 
 std::optional<Matrix2x2> UOp::getUnitaryMatrix() {

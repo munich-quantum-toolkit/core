@@ -213,7 +213,7 @@ def IdOp
         [[nodiscard]] static Matrix2x2 getUnitaryMatrix();
     }];
 
-  let hasCanonicalizer = 1;
+  let hasFolder = 1;
 }
 
 def XOp
@@ -1083,7 +1083,7 @@ def UnitaryOp : QCOOp<"unitary", traits = [UnitaryOpInterface, Pure]> {
   let builders = [OpBuilder<(ins "ValueRange":$qubits,
       "ElementsAttr":$matrix)>];
 
-  let hasCanonicalizer = 1;
+  let hasFolder = 1;
   let hasVerifier = 1;
 }
 

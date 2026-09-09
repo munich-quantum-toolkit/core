@@ -706,12 +706,6 @@ Value nestedControlledU2(QCProgramBuilder& b);
 /// Creates a circuit with a trivial controlled U2 gate.
 Value trivialControlledU2(QCProgramBuilder& b);
 
-/// Creates a circuit with an inverse modifier applied to a U2 gate.
-Value inverseU2(QCProgramBuilder& b);
-
-/// Creates a circuit with an inverse modifier applied to a controlled U2 gate.
-Value inverseMultipleControlledU2(QCProgramBuilder& b);
-
 // --- UOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a U gate.

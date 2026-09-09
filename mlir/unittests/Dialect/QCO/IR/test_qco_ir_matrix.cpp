@@ -771,13 +771,16 @@ TEST_F(QCOMatrixTest, PowUBeyondSafeExponentRemainsUnchanged) {
   EXPECT_EQ(powCount, 1U);
 }
 
-TEST_F(QCOMatrixTest, NumericallyUnstableIntegralPowURemainsUnchanged) {
+TEST_F(QCOMatrixTest, SensitiveIntegralPowUPreservesFullMatrix) {
   for (const auto& [theta, phi, lambda, exponent] : {
            std::tuple{-4.7851911486806245, -18.3028077007916,
                       -18.79029150092365, 1017.0},
            std::tuple{1123.1619760536523, -8607.999542206799,
                       -9908.553022954226, 2.0},
        }) {
+    SCOPED_TRACE(testing::Message()
+                 << "theta=" << theta << ", phi=" << phi
+                 << ", lambda=" << lambda << ", exponent=" << exponent);
     auto moduleOp = QCOProgramBuilder::build(context.get(), [&](auto& b) {
       auto controlIn = b.staticQubit(0);
       auto targetIn = b.staticQubit(1);
@@ -790,14 +793,14 @@ TEST_F(QCOMatrixTest, NumericallyUnstableIntegralPowURemainsUnchanged) {
       return SmallVector<Value>{control, target};
     });
     ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     OwningOpRef<ModuleOp> expected(cast<ModuleOp>((*moduleOp)->clone()));
 
     ASSERT_TRUE(runQCOCleanupPipeline(*moduleOp).succeeded());
     ASSERT_TRUE(verify(*moduleOp).succeeded());
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
     ::mqt::test::expectFullUnitaryEqual(*expected, *moduleOp, 2);
-    size_t powCount = 0;
-    moduleOp->walk([&](PowOp) { ++powCount; });
-    EXPECT_EQ(powCount, 1U);
   }
 }
 

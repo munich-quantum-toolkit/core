@@ -17,8 +17,12 @@ target_link_libraries(
           MLIRMQTDialect
           MLIRQCProgramBuilder
           MLIRQCPrograms
+          MLIRQCToQCO
+          MLIRQCOUtils
+          MLIRQCODDFunctionality
+          MLIRExactUnitaryTest
           MLIRMQTTransforms)
-mqt_mlir_configure_unittest_target(${target_name})
+mqt_mlir_configure_unittest_target(${target_name} REQUIRES_EH)
 # These cheap verifier cases share a process; retain per-case GoogleTest results.
 add_test(NAME ${target_name}
          COMMAND ${target_name} --gtest_output=xml:${CMAKE_CURRENT_BINARY_DIR}/${target_name}.xml)

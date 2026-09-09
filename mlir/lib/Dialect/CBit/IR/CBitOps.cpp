@@ -114,8 +114,8 @@ static LogicalResult verifyIndex(Operation* operation, Value registerValue,
 
 namespace {
 struct KnownLoadValue {
+  // A null value represents zero initialization.
   Value value;
-  bool isZeroInitialization = false;
 };
 } // namespace
 
@@ -138,12 +138,12 @@ static std::optional<KnownLoadValue> findKnownLoadValue(LoadOp load) {
     if (auto alloc = dyn_cast<AllocOp>(candidate);
         alloc && alloc.getResult() == load.getReg()) {
       if (alloc.getInitialization() == Initialization::Zero) {
-        return KnownLoadValue{.isZeroInitialization = true};
+        return KnownLoadValue{};
       }
       return std::nullopt;
     }
 
-    if (isa<LoadOp>(candidate)) {
+    if (isa<LoadOp, ReadOp>(candidate)) {
       continue;
     }
     if (candidate->getNumRegions() != 0 ||

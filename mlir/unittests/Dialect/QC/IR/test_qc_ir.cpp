@@ -2056,12 +2056,7 @@ INSTANTIATE_TEST_SUITE_P(
                    MQT_NAMED_BUILDER(multipleControlledU2)},
         QCTestCase{"TrivialControlledU2",
                    MQT_NAMED_BUILDER(trivialControlledU2),
-                   MQT_NAMED_BUILDER(u2)},
-        QCTestCase{"InverseU2", MQT_NAMED_BUILDER(inverseU2),
-                   MQT_NAMED_BUILDER(u2)},
-        QCTestCase{"InverseMultipleControlledU2",
-                   MQT_NAMED_BUILDER(inverseMultipleControlledU2),
-                   MQT_NAMED_BUILDER(multipleControlledU2)}));
+                   MQT_NAMED_BUILDER(u2)}));
 
 // QC/Operations/StandardGates/UOp.cpp
 INSTANTIATE_TEST_SUITE_P(

@@ -8,7 +8,9 @@
  * Licensed under the MIT License
  */
 
+#include "ExactUnitaryTest.h"
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
 #include "mlir/Dialect/QCO/QCOUtils.h"
@@ -27,6 +29,8 @@
 #include <mlir/Support/LLVM.h>
 #include <mlir/Support/LogicalResult.h>
 #include <mlir/Transforms/Passes.h>
+
+#include <numbers>
 
 using namespace mlir;
 using namespace mlir::qco;
@@ -58,6 +62,138 @@ protected:
     return moduleOp;
   }
 };
+
+TEST_F(QCOModifierCanonicalizationTest, InverseU2PreservesLargeAngles) {
+  constexpr StringLiteral source = R"mlir(
+    module {
+      func.func @test(%q: !qco.qubit) -> !qco.qubit {
+        %phi = arith.constant 1.0e16 : f64
+        %lambda = arith.constant 0.0 : f64
+        %o = qco.inv(%a = %q) {
+          %u = qco.u2(%phi, %lambda) %a : !qco.qubit -> !qco.qubit
+          qco.yield %u : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %o : !qco.qubit
+      }
+    }
+  )mlir";
+  auto moduleOp = canonicalize(source);
+  ASSERT_TRUE(moduleOp);
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+  EXPECT_TRUE(function.getBody().getOps<InvOp>().empty());
+  auto gates = function.getBody().getOps<UOp>();
+  ASSERT_TRUE(llvm::hasSingleElement(gates));
+  auto gate = *gates.begin();
+  const auto theta = mlir::mqt::valueToDouble(gate.getTheta());
+  const auto phi = mlir::mqt::valueToDouble(gate.getPhi());
+  const auto lambda = mlir::mqt::valueToDouble(gate.getLambda());
+  ASSERT_TRUE(theta);
+  ASSERT_TRUE(phi);
+  ASSERT_TRUE(lambda);
+  EXPECT_DOUBLE_EQ(*theta, -std::numbers::pi / 2.0);
+  EXPECT_DOUBLE_EQ(*phi, 0.0);
+  EXPECT_DOUBLE_EQ(*lambda, -1.0e16);
+  auto original = parseSourceString<ModuleOp>(source, &context_);
+  ASSERT_TRUE(original);
+  ::mqt::test::expectFullUnitaryEqual(*original, *moduleOp, 1);
+}
+
+TEST_F(QCOModifierCanonicalizationTest, InverseU2PreservesDynamicAngles) {
+  auto moduleOp = canonicalize(R"mlir(
+    module {
+      func.func @test(%q: !qco.qubit, %phi: f64, %lambda: f64) -> !qco.qubit {
+        %o = qco.inv(%a = %q) {
+          %u = qco.u2(%phi, %lambda) %a : !qco.qubit -> !qco.qubit
+          qco.yield %u : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %o : !qco.qubit
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+  EXPECT_TRUE(function.getBody().getOps<InvOp>().empty());
+  auto gates = function.getBody().getOps<UOp>();
+  ASSERT_TRUE(llvm::hasSingleElement(gates));
+  auto gate = *gates.begin();
+  auto phi = gate.getPhi().getDefiningOp<arith::NegFOp>();
+  auto lambda = gate.getLambda().getDefiningOp<arith::NegFOp>();
+  ASSERT_TRUE(phi);
+  ASSERT_TRUE(lambda);
+  EXPECT_EQ(phi.getOperand(), function.getArgument(2));
+  EXPECT_EQ(lambda.getOperand(), function.getArgument(1));
+  EXPECT_TRUE(function.getBody().getOps<arith::AddFOp>().empty());
+  EXPECT_TRUE(function.getBody().getOps<arith::SubFOp>().empty());
+}
+
+TEST_F(QCOModifierCanonicalizationTest, InverseU2PreservesFullUnitary) {
+  auto moduleOp = canonicalize(R"mlir(
+    module {
+      func.func @test(%q: !qco.qubit) -> !qco.qubit {
+        %phi = arith.constant 2.5745926535897929 : f64
+        %lambda = arith.constant -3.3755926535897931 : f64
+        %o = qco.inv(%a = %q) {
+          %u = qco.u2(%phi, %lambda) %a : !qco.qubit -> !qco.qubit
+          qco.yield %u : !qco.qubit
+        } : {!qco.qubit} -> {!qco.qubit}
+        return %o : !qco.qubit
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  auto reference = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @test(%q: !qco.qubit) -> !qco.qubit {
+        %phi = arith.constant 0.234 : f64
+        %lambda = arith.constant 0.567 : f64
+        %u = qco.u2(%phi, %lambda) %q : !qco.qubit -> !qco.qubit
+        return %u : !qco.qubit
+      }
+    }
+  )mlir",
+                                               &context_);
+  ASSERT_TRUE(reference);
+  ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 1);
+}
+
+TEST_F(QCOModifierCanonicalizationTest,
+       InverseControlledU2PreservesFullUnitary) {
+  auto moduleOp = canonicalize(R"mlir(
+    module {
+      func.func @test(%q0: !qco.qubit, %q1: !qco.qubit, %q2: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit, !qco.qubit) {
+        %phi = arith.constant 2.5745926535897929 : f64
+        %lambda = arith.constant -3.3755926535897931 : f64
+        %o0, %o1, %o2 = qco.inv(%a = %q0, %b = %q1, %c = %q2) {
+          %i0, %i1, %i2 = qco.ctrl(%a, %b) targets(%d = %c) {
+            %u = qco.u2(%phi, %lambda) %d : !qco.qubit -> !qco.qubit
+            qco.yield %u : !qco.qubit
+          } : ({!qco.qubit, !qco.qubit}, {!qco.qubit}) -> ({!qco.qubit, !qco.qubit}, {!qco.qubit})
+          qco.yield %i0, %i1, %i2 : !qco.qubit, !qco.qubit, !qco.qubit
+        } : {!qco.qubit, !qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit, !qco.qubit}
+        return %o0, %o1, %o2 : !qco.qubit, !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir");
+  ASSERT_TRUE(moduleOp);
+  auto reference = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @test(%q0: !qco.qubit, %q1: !qco.qubit, %q2: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit, !qco.qubit) {
+        %phi = arith.constant 0.234 : f64
+        %lambda = arith.constant 0.567 : f64
+        %o0, %o1, %o2 = qco.ctrl(%q0, %q1) targets(%a = %q2) {
+          %u = qco.u2(%phi, %lambda) %a : !qco.qubit -> !qco.qubit
+          qco.yield %u : !qco.qubit
+        } : ({!qco.qubit, !qco.qubit}, {!qco.qubit}) -> ({!qco.qubit, !qco.qubit}, {!qco.qubit})
+        return %o0, %o1, %o2 : !qco.qubit, !qco.qubit, !qco.qubit
+      }
+    }
+  )mlir",
+                                               &context_);
+  ASSERT_TRUE(reference);
+  ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 3);
+}
 
 TEST_F(QCOModifierCanonicalizationTest, ControlledPhaseDropsUnusedTargets) {
   auto moduleOp = canonicalize(R"mlir(
