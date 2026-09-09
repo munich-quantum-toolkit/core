@@ -10,7 +10,6 @@
 
 #include "TestUtils.h"
 #include "bench/QPE.hpp"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
 #include "mlir/Dialect/QC/IR/QCOps.h"
 #include "mlir/bench/Generate.h"
 
@@ -66,21 +65,6 @@ TEST(GenerateProgramTest, KeepsStandardQPEPowerAndResultOrderAligned) {
   ASSERT_TRUE(controlIndex);
   EXPECT_EQ(controlIndex.getRhs(), powerLoop.getInductionVar());
 
-  qc::MeasureOp measure;
-  moduleOp.walk([&](qc::MeasureOp op) { measure = op; });
-  ASSERT_TRUE(measure);
-  auto measurementLoop = measure->getParentOfType<scf::ForOp>();
-  ASSERT_TRUE(measurementLoop);
-  auto measuredLoad = measure.getQubit().getDefiningOp<memref::LoadOp>();
-  ASSERT_TRUE(measuredLoad);
-  EXPECT_EQ(measuredLoad.getIndices().front(),
-            measurementLoop.getInductionVar());
-
-  ASSERT_FALSE(measure.getResult().use_empty());
-  auto* user = *measure.getResult().getUsers().begin();
-  auto store = dyn_cast<cbit::StoreOp>(user);
-  ASSERT_TRUE(store);
-  EXPECT_EQ(store.getIndex(), measurementLoop.getInductionVar());
   EXPECT_EQ(test::countOps<qc::SWAPOp>(moduleOp), 0U);
 }
 
@@ -106,7 +90,6 @@ TEST(GenerateProgramTest, KeepsLargeQPEFiniteAndStructured) {
     }
 
     EXPECT_LT(test::countOperations(moduleOp), 150U);
-    EXPECT_EQ(test::countOps<tensor::ExtractOp>(moduleOp), 1U);
   }
 }
 

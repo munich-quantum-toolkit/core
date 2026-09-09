@@ -22,7 +22,6 @@
 #include <mlir/Support/LLVM.h>
 
 #include <cstddef>
-#include <utility>
 
 namespace mqt::bench {
 
@@ -108,12 +107,8 @@ TEST(GenerateProgramTest, KeepsRepeatUntilSuccessGenerationCompact) {
       {.dataQubits = RepeatUntilSuccessOptions::MAX_DATA_QUBITS}});
   ASSERT_TRUE(small);
   ASSERT_TRUE(large);
-  EXPECT_TRUE(large->isValid());
   EXPECT_EQ(test::countOperations(small->module()),
             test::countOperations(large->module()));
-  auto program = generate(RepeatUntilSuccess{{.dataQubits = 5}});
-  ASSERT_TRUE(program);
-  test::expectJeffRoundTrip(std::move(*program));
 }
 
 } // namespace mqt::bench

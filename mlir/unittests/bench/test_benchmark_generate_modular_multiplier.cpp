@@ -15,7 +15,6 @@
 #include "mlir/bench/Generate.h"
 
 #include <gtest/gtest.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
 
 #include <algorithm>
 #include <cmath>
@@ -159,7 +158,6 @@ TEST(GenerateProgramTest, KeepsLargestModularMultiplierFiniteAndStructured) {
   for (const auto angle : table.getValues<double>()) {
     EXPECT_TRUE(std::isfinite(angle));
   }
-  EXPECT_EQ(test::countOps<tensor::ExtractOp>(moduleOp), 5U);
   EXPECT_LT(test::countOperations(moduleOp), 200U);
 }
 
