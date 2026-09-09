@@ -13,7 +13,6 @@
 #include <llvm/ADT/ArrayRef.h>
 #include <llvm/ADT/StringMap.h>
 #include <llvm/ADT/StringRef.h>
-#include <llvm/Support/ErrorHandling.h>
 
 #include <array>
 
@@ -109,73 +108,9 @@ const GateCatalogEntry* lookupGate(const llvm::StringRef name) {
 }
 
 llvm::StringRef canonicalGateName(const GateLowering lowering) {
-  switch (lowering) {
-  case GateLowering::GPhase:
-    return "gphase";
-  case GateLowering::Id:
-    return "id";
-  case GateLowering::X:
-    return "x";
-  case GateLowering::Y:
-    return "y";
-  case GateLowering::Z:
-    return "z";
-  case GateLowering::H:
-    return "h";
-  case GateLowering::S:
-    return "s";
-  case GateLowering::Sdg:
-    return "sdg";
-  case GateLowering::T:
-    return "t";
-  case GateLowering::Tdg:
-    return "tdg";
-  case GateLowering::SX:
-    return "sx";
-  case GateLowering::SXdg:
-    return "sxdg";
-  case GateLowering::P:
-    return "p";
-  case GateLowering::RX:
-    return "rx";
-  case GateLowering::RY:
-    return "ry";
-  case GateLowering::RZ:
-    return "rz";
-  case GateLowering::R:
-    return "r";
-  case GateLowering::U2:
-    return "u2";
-  case GateLowering::U3:
-    return "u3";
-  case GateLowering::BuiltinU:
-    return "U";
-  case GateLowering::CU:
-    return "cu";
-  case GateLowering::SWAP:
-    return "swap";
-  case GateLowering::ISWAP:
-    return "iswap";
-  case GateLowering::DCX:
-    return "dcx";
-  case GateLowering::ECR:
-    return "ecr";
-  case GateLowering::RCCX:
-    return "rccx";
-  case GateLowering::RXX:
-    return "rxx";
-  case GateLowering::RYY:
-    return "ryy";
-  case GateLowering::RZX:
-    return "rzx";
-  case GateLowering::RZZ:
-    return "rzz";
-  case GateLowering::XXPlusYY:
-    return "xx_plus_yy";
-  case GateLowering::XXMinusYY:
-    return "xx_minus_yy";
-  }
-  llvm_unreachable("unknown OpenQASM gate lowering");
+  return lowering == GateLowering::U3
+             ? "u3"
+             : qc::getStandardGateDescriptor(lowering).operationSymbol;
 }
 
 } // namespace mlir::oq3::frontend

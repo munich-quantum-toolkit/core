@@ -66,6 +66,10 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
       return failure();
     }
 
+    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
+      return failure();
+    }
+
     // inv(ctrl(x)) == ctrl(inv(x)). The inner control's controls and targets
     // are block arguments aliasing the inverse modifier's qubits. Pull the
     // controls out to a new control modifier and wrap the inner body in an
@@ -133,6 +137,10 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
       return failure();
     }
 
+    if (!qco::detail::hasPositionalBodyYields(*invOp.getBody())) {
+      return failure();
+    }
+
     // Move supporting ops (constants, arithmetic) out of the body so their
     // Values are accessible from outside and survive InvOp erasure.
     mqt::hoistSupportingOpsBefore(*invOp.getBody(), innerPow.getOperation(),
@@ -186,6 +194,10 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
       return failure();
     }
 
+    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
+      return failure();
+    }
+
     // A self-adjoint gate is its own inverse, so the modifier can be dropped
     // and its body applied directly to the input qubits.
     mqt::inlineModifierBody(op, *op.getBody(), op.getInputQubits(), rewriter);
@@ -208,13 +220,11 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
     if (!inner) {
       return failure();
     }
-    auto* innerOp = inner.getOperation();
-    // The modifier is replaced by a single operation, so it must not act on
-    // more qubits than its body.
-    if (inner.getNumQubits() != op.getNumQubits()) {
+    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
       return failure();
     }
 
+    auto* innerOp = inner.getOperation();
     // Replace the body gate in place with its inverse, operating on the same
     // (block-argument) operands; inlining the body afterwards substitutes those
     // block arguments with the modifier's input qubits.
@@ -362,26 +372,14 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
       return failure();
     }
 
-    // The rewrite hands the qubits of the modifier to the inner operation, so
-    // it must act on all of them.
-    if (innerInvOp.getNumQubits() != op.getNumQubits()) {
+    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
       return failure();
     }
 
-    if (!mqt::getSoleBodyUnitary<UnitaryOpInterface>(*innerInvOp.getBody())) {
-      return failure();
-    }
-
-    mqt::hoistSupportingOpsBefore(*op.getBody(), innerInvOp, op, rewriter);
-
-    // inv(inv(x)) == x: inline the doubly-nested body directly onto the outer
-    // input qubits. The inner body's block arguments alias the inner modifier's
-    // inputs, which in turn alias the outer input qubits.
-    const auto replacements =
-        llvm::map_to_vector(innerInvOp.getInputQubits(), [&](Value q) {
-          return mqt::getValueFromBlockArgument(q, op.getInputQubits());
-        });
-    mqt::inlineModifierBody(op, *innerInvOp.getBody(), replacements, rewriter);
+    // Inline each region separately so both yield mappings are preserved.
+    mqt::inlineModifierBody(innerInvOp, *innerInvOp.getBody(),
+                            innerInvOp.getInputQubits(), rewriter);
+    mqt::inlineModifierBody(op, *op.getBody(), op.getInputQubits(), rewriter);
     return success();
   }
 };
@@ -394,6 +392,10 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
     if (op.getNumBodyUnitaries() != 0) {
+      return failure();
+    }
+
+    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
       return failure();
     }
 

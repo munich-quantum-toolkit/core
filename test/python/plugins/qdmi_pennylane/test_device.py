@@ -381,3 +381,27 @@ def test_qnode_shots_and_tracker() -> None:
     assert device.shots.total_shots is None
     circuit()
     assert tracker.totals["executions"] == 4
+
+
+@pytest.mark.parametrize("order", [[0, 1], [1, 0], [1]])
+def test_sample_decoding_preserves_wire_order_and_dtype(monkeypatch: pytest.MonkeyPatch, order: list[int]) -> None:
+    """Decode spaced bit strings in the requested PennyLane wire order."""
+    qdmi = stub_device(result_factory=lambda _program, _shots: ["0 1", "10"])
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2)
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=order)], shots=2)
+    samples = device.execute(tape)
+    np.testing.assert_array_equal(samples, np.array([[1, 0], [0, 1]], dtype=np.int8)[:, order])
+    assert isinstance(samples, np.ndarray)
+    assert samples.dtype == np.int8
+
+
+@pytest.mark.parametrize("bitstrings", [["001", "0"], ["0x", "10"], ["0é", "10"], ["01"]])
+def test_sample_decoding_rejects_malformed_shots(monkeypatch: pytest.MonkeyPatch, bitstrings: list[str]) -> None:
+    """Validate each shot before packing; total character count is insufficient."""
+    qdmi = stub_device(result_factory=lambda _program, _shots: bitstrings)
+    patch_open_device(monkeypatch, qdmi)
+    device = QDMIDevice("fake.qdmi", wires=2)
+    tape = qp.tape.QuantumScript([], [qp.sample(wires=[0, 1])], shots=2)
+    with pytest.raises(PennyLaneExecutionError, match=r"invalid 2-wire shot|samples for a 2-shot job"):
+        device.execute(tape)

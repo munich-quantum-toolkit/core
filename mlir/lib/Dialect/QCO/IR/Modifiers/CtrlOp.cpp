@@ -23,7 +23,6 @@
 #include <llvm/Support/ErrorHandling.h>
 #include <mlir/IR/Block.h>
 #include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
 #include <mlir/IR/PatternMatch.h>
@@ -54,11 +53,6 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // Only proceed if body contains only one operation besides terminator
-    if (op.getBody()->getOperations().size() != 2) {
-      return failure();
-    }
-
     auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
@@ -71,6 +65,10 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     // The rewrite hands the qubits of the modifier to the inner operation, so
     // it must act on all of them.
     if (innerCtrlOp.getNumQubits() != op.getNumTargets()) {
+      return failure();
+    }
+
+    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
       return failure();
     }
 
@@ -90,6 +88,8 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
     const auto targets = llvm::map_to_vector(innerTargets, [&](Value t) {
       return mqt::getValueFromBlockArgument(t, outerTargets);
     });
+
+    mqt::hoistSupportingOpsBefore(*op.getBody(), innerCtrlOp, op, rewriter);
 
     auto merged =
         CtrlOp::create(rewriter, op.getLoc(), controls, targets,
@@ -117,6 +117,11 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
+    if (op.getNumControls() == 0) {
+      mqt::inlineModifierBody(op, *op.getBody(), op.getTargetsIn(), rewriter);
+      return success();
+    }
+
     auto inner = mqt::getSoleBodyUnitary<UnitaryOpInterface>(*op.getBody());
     if (!inner) {
       return failure();
@@ -128,8 +133,11 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // Inline ops from empty control modifiers, IdOp and BarrierOp
-    if (op.getNumControls() == 0 || isa<IdOp, BarrierOp>(innerOp)) {
+    // Control does not change an identity gate or barrier.
+    if (isa<IdOp, BarrierOp>(innerOp)) {
+      if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
+        return failure();
+      }
       auto* body = op.getBody();
       auto* terminator = body->getTerminator();
       // Controls are pass-through results outside the body yield, so the
@@ -148,10 +156,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    // Only proceed if the GPhaseOp is the only operation besides the terminator
-    if (op.getBody()->getOperations().size() != 2) {
-      return failure();
-    }
+    mqt::hoistSupportingOpsBefore(*op.getBody(), gPhaseOp, op, rewriter);
 
     // Special case for single control: replace with a single POp
     if (op.getNumControls() == 1) {
@@ -164,33 +169,14 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
       return success();
     }
 
-    // Reinterpret the last control as a target qubit and apply a phase gate to
-    // it inside the (smaller) controlled region
-    const auto opSegmentsAttrName = CtrlOp::getOperandSegmentSizeAttr();
-    auto segmentsAttr =
-        op->getAttrOfType<DenseI32ArrayAttr>(opSegmentsAttrName);
-    auto newSegments = DenseI32ArrayAttr::get(
-        rewriter.getContext(), {segmentsAttr[0] - 1, segmentsAttr[1] + 1});
-    op->setAttr(opSegmentsAttrName, newSegments);
-    const auto opResultSegmentsAttrName = CtrlOp::getResultSegmentSizeAttr();
-    op->setAttr(opResultSegmentsAttrName, newSegments);
-
-    // Add a block argument for the target qubit
-    auto arg = op.getBody()->addArgument(QubitType::get(rewriter.getContext()),
-                                         op.getLoc());
-
-    // Replace the current GPhaseOp with a PhaseOp
-    const OpBuilder::InsertionGuard guard(rewriter);
-    rewriter.setInsertionPoint(gPhaseOp);
-    auto pOp =
-        POp::create(rewriter, gPhaseOp.getLoc(), arg, gPhaseOp.getTheta());
-
-    // Add the results of the POp to the yield operation
-    auto yieldOp = cast<YieldOp>(op.getBody()->back());
-    yieldOp->setOperands(pOp->getResults());
-
-    // Erase the GPhaseOp
-    rewriter.eraseOp(gPhaseOp);
+    // The last control becomes the phase target, retaining its result position.
+    rewriter.replaceOpWithNewOp<CtrlOp>(
+        op, op.getControlsIn().drop_back(), op.getControlsIn().back(),
+        [&](Value target) -> Value {
+          return POp::create(rewriter, gPhaseOp.getLoc(), target,
+                             gPhaseOp.getTheta())
+              .getResult();
+        });
 
     return success();
   }
@@ -204,6 +190,10 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
     if (op.getNumBodyUnitaries() != 0) {
+      return failure();
+    }
+
+    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
       return failure();
     }
 

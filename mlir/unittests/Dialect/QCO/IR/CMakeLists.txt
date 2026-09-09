@@ -7,7 +7,11 @@
 # Licensed under the MIT License
 
 set(qco_ir_target mqt-core-mlir-unittest-qco-ir)
-add_executable(${qco_ir_target} test_qco_ir.cpp test_qco_ir_matrix.cpp)
+add_executable(
+  ${qco_ir_target}
+  test_qco_ir.cpp test_qco_ir_matrix.cpp test_qco_modifier_canonicalization.cpp
+  test_qco_modifier_yield_canonicalization.cpp test_qco_numeric_canonicalization.cpp
+  test_qco_wire_canonicalization.cpp)
 target_link_libraries(
   ${qco_ir_target}
   PRIVATE MLIRParser

@@ -10,10 +10,20 @@
 
 #pragma once
 
+#include <llvm/ADT/StringRef.h>
+#include <mlir/Support/LLVM.h>
+
 #include <cstdint>
 #include <optional>
 
 namespace mlir::mqt {
+
+/// Return the exact exponent period of a supported fixed named gate, or zero
+/// for a gate without such a period.
+///
+/// All returned periods are powers of two, so reducing a finite binary64
+/// exponent does not lose a fractional part.
+[[nodiscard]] unsigned getFixedGatePowerPeriod(StringRef baseSymbol);
 
 /**
  * Maximum exponent considered for safe binary64 U-gate powering.

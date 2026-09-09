@@ -284,6 +284,8 @@ def test_reuses_session_contract_checks_without_skipping_input_validation(
     qdmi = StubDevice([rx], [program_format])
     patch_open_device(monkeypatch, qdmi)
     device = QDMIDevice("fake.qdmi", wires=2)
+    query_name = Mock(wraps=rx.name)
+    monkeypatch.setattr(rx, "name", query_name)
     query_sites = Mock(wraps=rx.sites)
     monkeypatch.setattr(rx, "sites", query_sites)
 
@@ -293,6 +295,7 @@ def test_reuses_session_contract_checks_without_skipping_input_validation(
     device.execute((tape(0.1), tape(0.2)))
     device.execute(tape(0.3))
     query_sites.assert_called_once()
+    query_name.assert_not_called()
     assert len({program for program, *_ in qdmi.submissions}) == 3
     with pytest.raises(PennyLaneValidationError, match="non-finite"):
         device.execute(tape(float("nan")))

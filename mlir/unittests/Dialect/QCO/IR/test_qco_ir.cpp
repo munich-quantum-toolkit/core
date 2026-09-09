@@ -2171,7 +2171,7 @@ TEST_F(QCOTest, PowExponentIsUnitaryParameter) {
   EXPECT_EQ(unitary.getParameters().front(), powOp.getExponent());
 }
 
-TEST_F(QCOTest, GateMergesPreserveParameterDominance) {
+TEST_F(QCOTest, UnboundedGateParametersRetainDominance) {
   auto program = parseSourceString<ModuleOp>(R"mlir(
     module {
       func.func @rx(%a: f64, %b: f64) {
@@ -2222,32 +2222,22 @@ TEST_F(QCOTest, GateMergesPreserveParameterDominance) {
   program->walk([&](ROp) { ++rCount; });
   program->walk([&](RXXOp) { ++rxxCount; });
   program->walk([&](arith::AddFOp) { ++addCount; });
-  EXPECT_EQ(rxCount, 1U);
-  EXPECT_EQ(rCount, 1U);
-  EXPECT_EQ(rxxCount, 1U);
-  EXPECT_EQ(addCount, 3U);
+  EXPECT_EQ(rxCount, 2U);
+  EXPECT_EQ(rCount, 2U);
+  EXPECT_EQ(rxxCount, 2U);
+  EXPECT_EQ(addCount, 0U);
 }
 
-TEST_F(QCOTest, NestedPowAcrossBranchCutDoesNotMerge) {
+TEST_F(QCOTest, NestedPowerOfSquaredPauliIsIdentity) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(nestedPowBranchCut));
   ASSERT_TRUE(program);
   ASSERT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
+  EXPECT_TRUE(verify(*program).succeeded());
 
-  std::size_t powCount = 0;
-  std::size_t xCount = 0;
-  PowOp remainingPow;
-  program->walk([&](PowOp op) {
-    ++powCount;
-    remainingPow = op;
-  });
-  program->walk([&](XOp) { ++xCount; });
-  EXPECT_EQ(powCount, 1);
-  EXPECT_EQ(xCount, 0);
-  ASSERT_TRUE(remainingPow);
-  const auto matrix = remainingPow.getUnitaryMatrix();
-  ASSERT_TRUE(matrix);
-  EXPECT_TRUE(matrix->isApprox(DynamicMatrix::identity(2), 1e-10));
+  size_t unitaryCount = 0;
+  program->walk([&](UnitaryOpInterface) { ++unitaryCount; });
+  EXPECT_EQ(unitaryCount, 0U);
 }
 
 // pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>
@@ -2357,7 +2347,7 @@ TEST_F(QCOTest, PowBarrierFoldPreservesReorderedBodyResults) {
   EXPECT_EQ(measurements[1].getQubitIn(), barriers[0].getOutputQubits()[0]);
 }
 
-TEST_F(QCOTest, EvenPowFoldPreservesReorderedBodyResults) {
+TEST_F(QCOTest, EvenPowerRetainsBodyYieldPermutation) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(powEvenSwapWithReorderedBody));
   ASSERT_TRUE(program);
@@ -2368,14 +2358,16 @@ TEST_F(QCOTest, EvenPowFoldPreservesReorderedBodyResults) {
   ASSERT_TRUE(succeeded(pm.run(*program)));
   ASSERT_TRUE(succeeded(verify(*program)));
 
-  SmallVector<AllocOp> allocations;
+  SmallVector<PowOp> powers;
   SmallVector<MeasureOp> measurements;
-  program->walk([&](AllocOp alloc) { allocations.push_back(alloc); });
+  program->walk([&](PowOp power) { powers.push_back(power); });
   program->walk([&](MeasureOp measure) { measurements.push_back(measure); });
-  ASSERT_EQ(allocations.size(), 2);
-  ASSERT_EQ(measurements.size(), 2);
-  EXPECT_EQ(measurements[0].getQubitIn(), allocations[1].getResult());
-  EXPECT_EQ(measurements[1].getQubitIn(), allocations[0].getResult());
+  // The yielded permutation belongs to the powered body. Folding only SWAP
+  // would apply that permutation once instead of powering the complete body.
+  ASSERT_EQ(powers.size(), 1U);
+  ASSERT_EQ(measurements.size(), 2U);
+  EXPECT_EQ(measurements[0].getQubitIn(), powers[0].getOutputQubit(0));
+  EXPECT_EQ(measurements[1].getQubitIn(), powers[0].getOutputQubit(1));
 }
 
 // pow(-0.5) { h } cannot fold a negative fractional exponent
@@ -3260,7 +3252,7 @@ INSTANTIATE_TEST_SUITE_P(
                     MQT_NAMED_BUILDER(alloc2QubitRegister)},
         QCOTestCase{"TwoXXPlusYYSwappedTargets",
                     MQT_NAMED_BUILDER(twoXxPlusYYSwappedTargets),
-                    MQT_NAMED_BUILDER(xxPlusYY)},
+                    MQT_NAMED_BUILDER(twoXxPlusYYSwappedTargets)},
         QCOTestCase{"PowXxPlusYYScaled", MQT_NAMED_BUILDER(powXxPlusYYScaled),
                     MQT_NAMED_BUILDER(powXxPlusYYScaledRef)}));
 

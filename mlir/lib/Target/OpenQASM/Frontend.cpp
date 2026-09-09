@@ -81,6 +81,7 @@ struct ParseArtifacts {
 
 constexpr size_t INCLUDE_NESTING_LIMIT = 64;
 constexpr size_t EXPANDED_STATEMENT_LIMIT = 1'000'000;
+constexpr size_t INCLUDE_EXPANSION_LIMIT = 1'000'000;
 
 } // namespace
 
@@ -278,6 +279,14 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
           activeBuffers.erase(bufferId);
           return false;
         } else {
+          if (includeContexts.size() >= INCLUDE_EXPANSION_LIMIT) {
+            std::ignore = builder.error(
+                includeLocation, "include expansion exceeds the limit of " +
+                                     llvm::Twine(INCLUDE_EXPANSION_LIMIT));
+            failedParsing = true;
+            activeBuffers.erase(bufferId);
+            return false;
+          }
           const auto childContext = static_cast<detail::SyntaxIncludeContextId>(
               includeContexts.size());
           includeContexts.push_back(

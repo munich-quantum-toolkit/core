@@ -1335,8 +1335,7 @@ private:
 
   [[nodiscard]] FailureOr<SyntaxExpressionId> parseUnary() {
     ++recursiveExpressionDepth;
-    auto depthGuard =
-        llvm::make_scope_exit([&] { --recursiveExpressionDepth; });
+    auto depthGuard = llvm::scope_exit([&] { --recursiveExpressionDepth; });
     if (recursiveExpressionDepth > RECURSIVE_EXPRESSION_DEPTH_LIMIT) {
       return sink.error(
           current().loc,

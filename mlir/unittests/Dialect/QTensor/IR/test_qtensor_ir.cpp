@@ -532,6 +532,59 @@ TEST_F(QTensorTest, ResetAfterExtractThroughCommutingInsertIsEliminated) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
+TEST_F(QTensorTest, ResetsOnFreshSlotsAreRemovedAcrossAWideTensor) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto tensor = builder.qtensorAlloc(1024);
+  for (int64_t index = 0; index < 1024; ++index) {
+    Value qubit;
+    std::tie(tensor, qubit) = builder.qtensorExtract(tensor, index);
+    qubit = builder.reset(qubit);
+    qubit = builder.h(qubit);
+    tensor = builder.qtensorInsert(qubit, tensor, index);
+  }
+  auto program = builder.finalize();
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+  ASSERT_TRUE(succeeded(canonicalize(*program)));
+  EXPECT_EQ(countOps<qco::ResetOp>(*program), 0U);
+  EXPECT_EQ(countOps<qco::HOp>(*program), 1024U);
+  EXPECT_TRUE(succeeded(verify(*program)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*program)));
+}
+
+TEST_F(QTensorTest, FreshSlotResetFoldingStopsAtUnknownIndices) {
+  constexpr auto source = R"mlir(module {
+    func.func @test(%index: index) {
+      %size = arith.constant 4 : index
+      %zero = arith.constant 0 : index
+      %two = arith.constant 2 : index
+      %tensor = qtensor.alloc(%size) : tensor<4x!qco.qubit>
+      %t0, %q0 = qtensor.extract %tensor[%zero] : tensor<4x!qco.qubit>
+      %r0 = qco.reset %q0 : !qco.qubit -> !qco.qubit
+      %h0 = qco.h %r0 : !qco.qubit -> !qco.qubit
+      %t1 = qtensor.insert %h0 into %t0[%zero] : tensor<4x!qco.qubit>
+      %t2, %q1 = qtensor.extract %t1[%index] : tensor<4x!qco.qubit>
+      %h1 = qco.h %q1 : !qco.qubit -> !qco.qubit
+      %t3 = qtensor.insert %h1 into %t2[%index] : tensor<4x!qco.qubit>
+      %t4, %q2 = qtensor.extract %t3[%two] : tensor<4x!qco.qubit>
+      %r2 = qco.reset %q2 : !qco.qubit -> !qco.qubit
+      %t5 = qtensor.insert %r2 into %t4[%two] : tensor<4x!qco.qubit>
+      qtensor.dealloc %t5 : tensor<4x!qco.qubit>
+      return
+    }
+  })mlir";
+  auto program = parseSourceString<ModuleOp>(source, context.get());
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+  ASSERT_TRUE(succeeded(canonicalize(*program)));
+  EXPECT_EQ(countOps<qco::ResetOp>(*program), 1U);
+  EXPECT_TRUE(succeeded(verify(*program)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*program)));
+}
+
 TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
   auto program = buildResetWithSameIndexInsertProgram(context.get(), true);
   ASSERT_TRUE(program);

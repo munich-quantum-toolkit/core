@@ -13,6 +13,7 @@
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Decomposition/Euler.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
@@ -1117,7 +1118,7 @@ TEST(FuseSingleQubitUnitaryRunsTest, IgnoresDynamicPowerExponent) {
   EXPECT_EQ(countOps<PowOp>(funcOp), 1U);
 }
 
-TEST(FuseSingleQubitUnitaryRunsTest, MergesShortDynamicSameAxisRun) {
+TEST(FuseSingleQubitUnitaryRunsTest, PreservesUnboundedShortSameAxisRun) {
   TestFixture fx;
   fx.setUp();
   auto owned = QCOProgramBuilder::build(fx.ctx(), [](QCOProgramBuilder& b) {
@@ -1137,21 +1138,40 @@ TEST(FuseSingleQubitUnitaryRunsTest, MergesShortDynamicSameAxisRun) {
   ASSERT_EQ(rotations.size(), 2U);
   rotations[0].getThetaMutable().assign(funcOp.getArgument(0));
   rotations[1].getThetaMutable().assign(funcOp.getArgument(1));
+  ASSERT_TRUE(succeeded(verify(*owned)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*owned)));
 
   ASSERT_TRUE(succeeded(runFuse(*owned, "zyz")));
+  ASSERT_TRUE(succeeded(verify(*owned)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*owned)));
   rotations.clear();
   funcOp.walk([&](RZOp op) { rotations.push_back(op); });
-  ASSERT_EQ(rotations.size(), 1U);
-  EXPECT_TRUE(
-      valueDependsOn(rotations.front().getTheta(), funcOp.getArgument(0)));
-  EXPECT_TRUE(
-      valueDependsOn(rotations.front().getTheta(), funcOp.getArgument(1)));
+  // A short run already in the basis needs no resynthesis. Canonicalization
+  // cannot safely add its unbounded dynamic angles.
+  ASSERT_EQ(rotations.size(), 2U);
+  EXPECT_EQ(rotations[0].getTheta(), funcOp.getArgument(0));
+  EXPECT_EQ(rotations[1].getTheta(), funcOp.getArgument(1));
+  EXPECT_EQ(rotations[1].getInputTarget(0), rotations[0].getOutputTarget(0));
 
-  bindLeadingArguments(funcOp, {0.3, 0.4});
-  ASSERT_TRUE(succeeded(canonicalizeBoundValues(*owned)));
-  ASSERT_TRUE(succeeded(verify(*owned)));
-  expectMatrixPreserved(
-      funcOp, RZOp::unitaryMatrix(0.4) * RZOp::unitaryMatrix(0.3), "zyz");
+  for (auto [firstAngle, secondAngle, expectedRotations] : std::array{
+           std::tuple{0.3, 0.4, 1U},
+           std::tuple{1e16, 1.0, 2U},
+           std::tuple{1e308, 1e308, 2U},
+       }) {
+    SCOPED_TRACE(testing::Message()
+                 << "angles=" << firstAngle << ", " << secondAngle);
+    OwningOpRef<ModuleOp> bound(cast<ModuleOp>((*owned)->clone()));
+    auto boundFunc = bound->lookupSymbol<func::FuncOp>("main");
+    bindLeadingArguments(boundFunc, {firstAngle, secondAngle});
+    ASSERT_TRUE(succeeded(canonicalizeBoundValues(*bound)));
+    ASSERT_TRUE(succeeded(verify(*bound)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*bound)));
+    EXPECT_EQ(countOps<RZOp>(boundFunc), expectedRotations);
+    expectMatrixPreserved(boundFunc,
+                          RZOp::unitaryMatrix(secondAngle) *
+                              RZOp::unitaryMatrix(firstAngle),
+                          "zyz");
+  }
 }
 
 TEST(FuseSingleQubitUnitaryRunsTest, FusesNamedDynamicGatesInAllBases) {

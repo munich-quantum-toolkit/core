@@ -22,7 +22,9 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <limits>
 #include <numbers>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -228,5 +230,54 @@ attributes #1 = { "irreversible" }
     EXPECT_NEAR(std::abs(values[i] - (i == 2 ? std::polar(1., 0.3)
                                              : std::complex<double>{})),
                 0., 1e-12);
+  }
+}
+
+TEST(ResultsStatevector, DenseSizesDoNotMaterializeUnaddressableVectors) {
+  constexpr size_t bits = std::numeric_limits<size_t>::digits;
+  const qdmi_test::SessionGuard session{};
+  const std::array cases{
+      std::array<size_t, 3>{
+          bits - 5,
+          size_t{1} << (bits - 1),
+          size_t{1} << (bits - 2),
+      },
+      std::array<size_t, 3>{bits - 4, 0, size_t{1} << (bits - 1)},
+      std::array<size_t, 3>{bits - 3, 0, 0},
+      std::array<size_t, 3>{bits, 0, 0},
+  };
+  for (const auto& [qubits, stateSize, probabilitySize] : cases) {
+    SCOPED_TRACE(qubits);
+    const qdmi_test::JobGuard job{session.session};
+    const auto program =
+        "OPENQASM 3.0; qubit[" + std::to_string(qubits) + "] q; x q[0];";
+    ASSERT_EQ(
+        qdmi_test::setProgram(job.job, QDMI_PROGRAM_FORMAT_QASM3, program),
+        QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::setShots(job.job, 0), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+    for (const auto result : {
+             QDMI_JOB_RESULT_STATEVECTOR_DENSE,
+             QDMI_JOB_RESULT_PROBABILITIES_DENSE,
+         }) {
+      const auto expectedSize = result == QDMI_JOB_RESULT_STATEVECTOR_DENSE
+                                    ? stateSize
+                                    : probabilitySize;
+      size_t size = 123;
+      const auto status = MQT_DDSIM_QDMI_device_job_get_results(
+          job.job, result, 0, nullptr, &size);
+      if (expectedSize == 0) {
+        EXPECT_EQ(status, QDMI_ERROR_OUTOFMEM);
+        EXPECT_EQ(size, 123);
+        continue;
+      }
+      ASSERT_EQ(status, QDMI_SUCCESS);
+      EXPECT_EQ(size, expectedSize);
+      double output = 42;
+      EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                    job.job, result, sizeof(output), &output, nullptr),
+                QDMI_ERROR_INVALIDARGUMENT);
+      EXPECT_EQ(output, 42);
+    }
   }
 }

@@ -14,7 +14,6 @@
 #include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Utils/Matrix.h"
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/IR/MLIRContext.h>
 #include <mlir/IR/OperationSupport.h>
@@ -86,14 +85,7 @@ struct MergeSubsequentR final : OpRewritePattern<ROp> {
       return failure();
     }
 
-    rewriter.setInsertionPoint(nextOp);
-    auto newParameter = arith::AddFOp::create(rewriter, op.getLoc(),
-                                              op.getTheta(), nextOp.getTheta());
-    rewriter.modifyOpInPlace(
-        op, [&] { op->setOperand(1, newParameter.getResult()); });
-    rewriter.moveOpBefore(op, nextOp);
-    rewriter.replaceOp(nextOp, op.getResult());
-    return success();
+    return mergeOneTargetOneParameter(op, rewriter);
   }
 };
 
