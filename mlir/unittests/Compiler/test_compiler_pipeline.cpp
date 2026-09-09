@@ -2350,9 +2350,6 @@ TEST_F(CompilerPipelineTest, PayloadControlLowersClassicalSCFIndexSwitch) {
           }
           scf.yield %nested : i64
         }
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
-        qco.sink %q1 : !qco.qubit
         return %result : i64
       }
     }
@@ -2372,14 +2369,14 @@ TEST_F(CompilerPipelineTest,
        PayloadControlRejectsLinearStateInGenericSCFControl) {
   constexpr llvm::StringLiteral ifResult = R"mlir(
     module {
-      func.func @main(%condition: i1)
+      func.func @main(%condition: i1, %left: !qco.qubit, %right: !qco.qubit)
           attributes {mqt.entry_point} {
         %result = scf.if %condition -> !qco.qubit {
-          %left = qco.alloc : !qco.qubit
-          scf.yield %left : !qco.qubit
+          %x = qco.x %left : !qco.qubit -> !qco.qubit
+          scf.yield %x : !qco.qubit
         } else {
-          %right = qco.alloc : !qco.qubit
-          scf.yield %right : !qco.qubit
+          %h = qco.h %right : !qco.qubit -> !qco.qubit
+          scf.yield %h : !qco.qubit
         }
         qco.sink %result : !qco.qubit
         return
@@ -2391,8 +2388,6 @@ TEST_F(CompilerPipelineTest,
       func.func @main(%selector: index, %left: tensor<1x!qco.qubit>,
                       %right: tensor<1x!qco.qubit>)
           -> tensor<1x!qco.qubit> attributes {mqt.entry_point} {
-        %q = qco.alloc : !qco.qubit
-        qco.sink %q : !qco.qubit
         %result = scf.index_switch %selector -> tensor<1x!qco.qubit>
         case 0 {
           scf.yield %left : tensor<1x!qco.qubit>
@@ -2435,16 +2430,38 @@ TEST_F(CompilerPipelineTest,
   )mlir";
   constexpr llvm::StringLiteral nestedForCapture = R"mlir(
     module {
-      func.func @main(%upper: index) attributes {mqt.entry_point} {
+      func.func @main(%upper: index, %q: !qco.qubit)
+          attributes {mqt.entry_point} {
         %c0 = arith.constant 0 : index
         %c1 = arith.constant 1 : index
         scf.for %outer = %c0 to %upper step %c1 {
-          %q = qco.alloc : !qco.qubit
           scf.for %inner = %c0 to %c1 step %c1 {
             %next = qco.x %q : !qco.qubit -> !qco.qubit
             qco.sink %next : !qco.qubit
           }
         }
+        return
+      }
+    }
+  )mlir";
+  constexpr llvm::StringLiteral nestedWhileCapture = R"mlir(
+    module {
+      func.func @main(%upper: index, %condition: i1, %q: !qco.qubit)
+          attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %result = scf.for %outer = %c0 to %upper step %c1
+            iter_args(%arg = %q) -> (!qco.qubit) {
+          %inner = scf.while : () -> !qco.qubit {
+            scf.condition(%condition) %arg : !qco.qubit
+          } do {
+          ^bb0(%value: !qco.qubit):
+            qco.sink %value : !qco.qubit
+            scf.yield
+          }
+          scf.yield %inner : !qco.qubit
+        }
+        qco.sink %result : !qco.qubit
         return
       }
     }
@@ -2476,6 +2493,7 @@ TEST_F(CompilerPipelineTest,
            forCapture,
            whileCapture,
            nestedForCapture,
+           nestedWhileCapture,
        }) {
     SCOPED_TRACE(source.str());
     for (const auto* pass :
@@ -2508,8 +2526,6 @@ TEST_F(CompilerPipelineTest,
     module {
       func.func private @effect()
       func.func @main(%condition: i1) attributes {mqt.entry_point} {
-        %q = qco.alloc : !qco.qubit
-        qco.sink %q : !qco.qubit
         scf.if %condition {
           scf.while : () -> () {
             scf.condition(%condition)
@@ -2547,9 +2563,6 @@ TEST_F(CompilerPipelineTest, PayloadControlRejectsUnstructuredCFG) {
         %two = arith.constant 2 : i64
         cf.br ^merge(%two : i64)
       ^merge(%value: i64):
-        %q0 = qco.alloc : !qco.qubit
-        %q1 = qco.x %q0 : !qco.qubit -> !qco.qubit
-        qco.sink %q1 : !qco.qubit
         return %value : i64
       }
     }
