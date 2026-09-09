@@ -9,7 +9,9 @@
  */
 
 #include "mlir/Compiler/Target.h"
+#include "mlir/Compiler/TargetEnvironment.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
@@ -244,6 +246,13 @@ static AggregateBenchmarkResult runBenchmark(MLIRContext* context,
                                              const CompilerTarget& target,
                                              const size_t numRepeats = 10) {
 
+  static const auto PAYLOAD = [] {
+    PayloadFormat format;
+    format.id = "test.payload";
+    format.version = "1.0.0";
+    return llvm::cantFail(PayloadSpecification::create(std::move(format)));
+  }();
+
   AggregateBenchmarkResult aggStats;
   aggStats.name = entry.name;
 
@@ -263,9 +272,10 @@ static AggregateBenchmarkResult runBenchmark(MLIRContext* context,
     PassManager pm(context);
     pm.addInstrumentation(
         std::make_unique<BenchmarkPassInstrumentation>(instrumentation));
-    pm.addPass(createMappingPass(target, options));
+    pm.addPass(createMappingPass(options));
 
     auto mod = entry.fn(context);
+    attachTargetEnvironment(*mod, TargetEnvironment(target, PAYLOAD));
     if (failed(pm.run(*mod))) {
       llvm::errs() << "Pass failed for circuit: " << entry.name << "\n";
       continue;
@@ -367,7 +377,8 @@ int main(int argc, char** argv) {
   MLIRContext context;
   DialectRegistry registry;
   registry.insert<QCODialect, qtensor::QTensorDialect, scf::SCFDialect,
-                  cbit::CBitDialect, arith::ArithDialect, func::FuncDialect>();
+                  mqt::MQTDialect, cbit::CBitDialect, arith::ArithDialect,
+                  func::FuncDialect>();
   context.appendDialectRegistry(registry);
   context.loadAllAvailableDialects();
 
@@ -383,7 +394,7 @@ int main(int argc, char** argv) {
   SmallVector<AggregateBenchmarkResult> allAggStats;
   for (const auto& entry : entries) {
     llvm::dbgs() << "[benchmark] " << entry.name << " qubits!\n";
-    allAggStats.emplace_back(runBenchmark(&context, entry, target));
+    allAggStats.emplace_back(runBenchmark(&context, entry, target, 5));
   }
 
   printCSV(allAggStats);

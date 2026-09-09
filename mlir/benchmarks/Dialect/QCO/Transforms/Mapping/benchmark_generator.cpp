@@ -300,7 +300,73 @@ static OwningOpRef<ModuleOp> qaoa(MLIRContext* context, const int64_t nqubits,
 
 static OwningOpRef<ModuleOp> mlqae(MLIRContext* context,
                                    const int64_t nqubits) {
-  constexpr double mlqaeAngle = llvm::numbers::pi / 5.0;
+  const auto innerLoop = [](QCOProgramBuilder& builder, Value iv,
+                            ValueRange args) {
+    constexpr double mlqaeAngle = llvm::numbers::pi / 5.0;
+    SmallVector<Value> qubits(args);
+
+    qubits.back() = builder.z(qubits.back());
+
+    const auto out2 =
+        builder.mcry(-mlqaeAngle, ArrayRef(qubits).drop_back(), qubits.back());
+    for (size_t i = 0; i < qubits.size() - 1; ++i) {
+      qubits[i] = out2.first[i];
+    }
+    qubits.back() = out2.second;
+    for (size_t i = 0; i < qubits.size() - 1; ++i) {
+      qubits[i] = builder.h(qubits[i]);
+      qubits[i] = builder.x(qubits[i]);
+    }
+
+    qubits.back() = builder.x(qubits.back());
+
+    const auto out3 = builder.mcz(ArrayRef(qubits).drop_back(), qubits.back());
+    for (size_t i = 0; i < qubits.size() - 1; ++i) {
+      qubits[i] = out3.first[i];
+    }
+    qubits.back() = out3.second;
+
+    qubits.back() = builder.x(qubits.back());
+    for (size_t i = 0; i < qubits.size() - 1; ++i) {
+      qubits[i] = builder.x(qubits[i]);
+      qubits[i] = builder.h(qubits[i]);
+    }
+
+    const auto out4 =
+        builder.mcry(mlqaeAngle, ArrayRef(qubits).drop_back(), qubits.back());
+    for (size_t i = 0; i < qubits.size() - 1; ++i) {
+      qubits[i] = out4.first[i];
+    }
+    qubits.back() = out4.second;
+
+    return qubits;
+  };
+
+  const auto outerLoop = [&](QCOProgramBuilder& builder, Value iv,
+                             ValueRange args) {
+    constexpr double mlqaeAngle = llvm::numbers::pi / 5.0;
+    SmallVector<Value> qubits(args);
+
+    for_each(qubits, [&](auto& q) { q = builder.reset(q); });
+    for_each(qubits, [&](auto& q) { q = builder.h(q); });
+
+    const auto out =
+        builder.mcry(mlqaeAngle, ArrayRef(qubits).drop_back(), qubits.back());
+    for (size_t i = 0; i < qubits.size() - 1; ++i) {
+      qubits[i] = out.first[i];
+    }
+    qubits.back() = out.second;
+
+    auto one = builder.indexConstant(1);
+    auto power = arith::AddIOp::create(builder, one, iv);
+
+    qubits =
+        builder.scfFor(0, power, 1, qubits, [&](Value iv, ValueRange args) {
+          return innerLoop(builder, iv, args);
+        });
+
+    return qubits;
+  };
 
   QCOProgramBuilder builder(context);
   builder.initialize(SmallVector<Type>(nqubits, builder.getI1Type()));
@@ -318,72 +384,10 @@ static OwningOpRef<ModuleOp> mlqae(MLIRContext* context,
   }
   qubits[nqubits - 1] = builder.allocQubit();
 
-  // Every round prepares the state again and then applies the Grover operator
-  // a number of times that doubles from round to round. The schedule turns the
-  // bound of the inner loop into a runtime value.
-  for (int64_t i = 0; i < 5; ++i) {
-
-    for_each(qubits, [&](auto& q) { q = builder.reset(q); });
-    for_each(qubits, [&](auto& q) { q = builder.h(q); });
-
-    const auto out = builder.mcz(ArrayRef(qubits).drop_back(), qubits.back());
-    for (size_t i = 0; i < qubits.size() - 1; ++i) {
-      qubits[i] = out.first[i];
-    }
-    qubits.back() = out.second;
-
-    auto k = builder.indexConstant(i);
-    auto power = arith::ShLIOp::create(builder, one, k);
-    qubits =
-        builder.scfFor(0, power, 1, qubits, [&](Value, ValueRange innerArgs) {
-          SmallVector<Value> innerBodyQubits(innerArgs);
-
-          innerBodyQubits.back() = builder.z(innerBodyQubits.back());
-
-          // const auto out2 =
-          //     builder.mcry(-mlqaeAngle,
-          //     ArrayRef(innerBodyQubits).drop_back(),
-          //                  innerBodyQubits.back());
-          const auto out2 = builder.mcz(ArrayRef(innerBodyQubits).drop_back(),
-                                        innerBodyQubits.back());
-          for (size_t i = 0; i < innerBodyQubits.size() - 1; ++i) {
-            innerBodyQubits[i] = out2.first[i];
-          }
-          innerBodyQubits.back() = out2.second;
-          for (size_t i = 0; i < innerBodyQubits.size() - 1; ++i) {
-            innerBodyQubits[i] = builder.h(innerBodyQubits[i]);
-            innerBodyQubits[i] = builder.x(innerBodyQubits[i]);
-          }
-
-          innerBodyQubits.back() = builder.x(innerBodyQubits.back());
-
-          const auto out3 = builder.mcz(ArrayRef(innerBodyQubits).drop_back(),
-                                        innerBodyQubits.back());
-          for (size_t i = 0; i < innerBodyQubits.size() - 1; ++i) {
-            innerBodyQubits[i] = out3.first[i];
-          }
-          innerBodyQubits.back() = out3.second;
-
-          innerBodyQubits.back() = builder.x(innerBodyQubits.back());
-          for (size_t i = 0; i < innerBodyQubits.size() - 1; ++i) {
-            innerBodyQubits[i] = builder.x(innerBodyQubits[i]);
-            innerBodyQubits[i] = builder.h(innerBodyQubits[i]);
-          }
-
-          const auto out4 = builder.mcz(ArrayRef(innerBodyQubits).drop_back(),
-                                        innerBodyQubits.back());
-          for (size_t i = 0; i < innerBodyQubits.size() - 1; ++i) {
-            innerBodyQubits[i] = out4.first[i];
-          }
-          innerBodyQubits.back() = out4.second;
-
-          return innerBodyQubits;
-        });
-
-    // Value m;
-    // std::tie(m, std::ignore) = builder.measure(qubits.back(), c, k);
-    // qubits.back() = m;
-  }
+  qubits =
+      builder.scfFor(0, nqubits - 1, 1, qubits, [&](Value iv, ValueRange args) {
+        return outerLoop(builder, iv, args);
+      });
 
   qubits = builder.barrier(qubits);
 
@@ -455,7 +459,7 @@ int main(int argc, char** argv) {
   std::uniform_int_distribution<> dis(0, 1);
 
   SmallVector<std::pair<std::string, OwningOpRef<ModuleOp>>> programs;
-  for (size_t i = 2; i <= 30; ++i) {
+  for (size_t i = 2; i <= 120; ++i) {
 
     // Grover
 
@@ -469,9 +473,9 @@ int main(int argc, char** argv) {
 
     // VQE
 
-    // programs.emplace_back(
-    //     "vqe_" + std::to_string(i),
-    //     prepare(vqe(&context, static_cast<int64_t>(i), 10000, 0.5)));
+    programs.emplace_back(
+        "vqe_" + std::to_string(i),
+        prepare(vqe(&context, static_cast<int64_t>(i), 10000, 0.5)));
 
     // QAOA
 
@@ -480,7 +484,7 @@ int main(int argc, char** argv) {
         prepare(qaoa(&context, static_cast<int64_t>(i), 10000, 0.5, 0.1)));
   }
 
-  for (size_t i = 2; i <= 20; ++i) {
+  for (size_t i = 2; i <= 120; ++i) {
     // MLQAE
 
     programs.emplace_back("mlqae_" + std::to_string(i),
