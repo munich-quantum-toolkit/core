@@ -34,6 +34,8 @@ namespace mqt::bench {
 
 using namespace mlir;
 
+namespace {
+
 struct PhaseData {
   int64_t width;
   Value angles;
@@ -41,6 +43,8 @@ struct PhaseData {
   Value modulusOffset;
   Value negativeOne;
 };
+
+} // namespace
 
 static void appendPhaseAngles(SmallVectorImpl<double>& angles,
                               const llvm::APInt& value) {
