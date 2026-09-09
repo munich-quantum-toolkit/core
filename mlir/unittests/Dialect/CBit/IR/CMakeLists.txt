@@ -7,7 +7,7 @@
 # Licensed under the MIT License
 
 set(cbit_ir_target mqt-core-mlir-unittest-cbit-ir)
-add_executable(${cbit_ir_target} test_cbit_dialect_dependencies.cpp test_cbit_ir.cpp)
+add_executable(${cbit_ir_target} test_cbit_ir.cpp)
 target_link_libraries(
   ${cbit_ir_target}
   PRIVATE GTest::gtest_main
