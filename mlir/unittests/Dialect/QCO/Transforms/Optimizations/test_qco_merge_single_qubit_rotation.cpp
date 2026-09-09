@@ -14,6 +14,7 @@
 #include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mlir/Dialect/QCO/QCOUtils.h"
 #include "mlir/Dialect/QCO/Transforms/Passes.h"
 
 #include <gtest/gtest.h>
@@ -948,6 +949,67 @@ TEST_F(MergeSingleQubitRotationGatesTest,
       ASSERT_TRUE(succeeded(verify(*original)));
       ASSERT_TRUE(succeeded(verify(*module)));
       ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+    }
+  }
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest, largePhasesPreserveControlledMatrix) {
+  for (const auto gate : {GateType::P, GateType::U2, GateType::U}) {
+    for (const auto angles : {
+             std::array{1e12, 1.0},
+             std::array{-1e16, 1.0},
+             std::array{1e308, 1e308},
+         }) {
+      for (const bool dynamic : {false, true}) {
+        SCOPED_TRACE(testing::Message()
+                     << "gate=" << static_cast<unsigned>(gate)
+                     << " phi=" << angles[0] << " lambda=" << angles[1]
+                     << " dynamic=" << dynamic);
+        module = QCOProgramBuilder::build(&context, [&](auto& b) {
+          auto [control, target] =
+              b.ctrl(b.staticQubit(0), b.staticQubit(1), [&](Value qubit) {
+                if (gate == GateType::P) {
+                  qubit = b.p(angles[0], qubit);
+                } else if (gate == GateType::U2) {
+                  qubit = b.u2(angles[0], angles[1], qubit);
+                } else {
+                  qubit = b.u(0.37, angles[0], angles[1], qubit);
+                }
+                return b.h(qubit);
+              });
+          return SmallVector<Value>{control, target};
+        });
+        ASSERT_TRUE(module);
+        auto funcOp = module->lookupSymbol<func::FuncOp>("main");
+        if (dynamic) {
+          funcOp.insertArgument(0, Float64Type::get(&context), {},
+                                funcOp.getLoc());
+          module->walk([&](UnitaryOpInterface op) {
+            if (isa<POp, U2Op, UOp>(op.getOperation())) {
+              Value parameter = op.getParameter(isa<UOp>(op) ? 1U : 0U);
+              parameter.replaceAllUsesWith(funcOp.getArgument(0));
+            }
+          });
+        }
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        OwningOpRef<ModuleOp> original = module->clone();
+        ASSERT_TRUE(succeeded(runMergePass(*module)));
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        EXPECT_EQ(countOps<HOp>(), 0);
+        if (dynamic) {
+          bindLeadingArgs(original->lookupSymbol<func::FuncOp>("main"),
+                          {angles[0]});
+          bindLeadingArgs(funcOp, {angles[0]});
+          PassManager pm(&context);
+          pm.addPass(createCanonicalizerPass());
+          ASSERT_TRUE(succeeded(pm.run(*module)));
+        }
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        ::mqt::test::expectFullUnitaryEqual(*original, *module, 2);
+      }
     }
   }
 }

@@ -531,6 +531,17 @@ static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
       .Default([](auto) -> std::optional<Quat<T>> { return std::nullopt; });
 }
 
+/// Reduce before adding phases so large angles cannot absorb small terms.
+/// Trigonometric reduction preserves phase even beyond accurate fmod range.
+template <typename T> static Val<T> principalPhase(Val<T> angle) {
+  if constexpr (std::is_same_v<T, double>) {
+    if (std::abs(angle.v) <= std::numbers::pi) {
+      return angle;
+    }
+  }
+  return angle.sin().atan2(angle.cos());
+}
+
 /**
  * @brief Returns the global phase contribution of a supported gate.
  *
@@ -581,7 +592,7 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
         if (!theta) {
           return failure();
         }
-        return *theta / c.two;
+        return principalPhase(*theta / c.two);
       })
       .template Case<UOp, U2Op>([&](auto) -> FailureOr<Val<T>> {
         // phi is at different indexes for UOp and U2Op
@@ -591,8 +602,7 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
         if (!phi || !lambda) {
           return failure();
         }
-        const auto phaseAngle = *phi + *lambda;
-        return phaseAngle / c.two;
+        return principalPhase(*phi / c.two) + principalPhase(*lambda / c.two);
       })
       .Default([](auto) -> FailureOr<Val<T>> { return failure(); });
 }
