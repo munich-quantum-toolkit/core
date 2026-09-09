@@ -17,6 +17,12 @@ correspondence. Algebraic rewrites require positional outer yields because an
 extra permutation changes the body unitary. They keep nested bodies intact;
 requiring positional yields recursively would reject safe rewrites.
 
+Valid bodies with fewer than two wires need no correspondence traversal. Stop
+following each wire as soon as it reaches its expected argument, including
+direct pass-throughs. Current callers establish empty or single-unitary bodies;
+no shared cache is needed. Power folding rejects unsupported gate types before
+checking correspondence.
+
 Zero controls and power one inline the complete body, including its yields.
 Power zero erases the complete action. Double inversion inlines each region
 separately to preserve both mappings. These rewrites accept multi-gate bodies.
@@ -41,4 +47,4 @@ With LLVM/MLIR 23.1.0, the release build passes. The QC and QCO IR binaries pass
 all 357 and 549 tests, respectively. The complete release CTest run reports
 3,341 passed entries and one skip for the SC device's unsupported job-ID
 property. Full-file C++ lint against the main base `46f98eabe` and repository
-lint pass. Hosted CI has not tested this extracted change.
+lint pass. These results describe local validation.

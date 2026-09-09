@@ -363,6 +363,12 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     if (!exponent) {
       return failure();
     }
+    if (!isa<GPhaseOp, XOp, YOp, ZOp, SOp, SdgOp, TOp, TdgOp, SXOp, SXdgOp, HOp,
+             ECROp, RCCXOp, SWAPOp, RXOp, RYOp, RZOp, POp, ROp, RXXOp, RYYOp,
+             RZXOp, RZZOp, XXPlusYYOp, XXMinusYYOp, iSWAPOp, UOp, IdOp,
+             BarrierOp>(innerOp)) {
+      return failure();
+    }
     if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
       return failure();
     }
@@ -396,12 +402,6 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
     // integral exponents.
     if (isa<HOp, ECROp, RCCXOp, SWAPOp>(innerOp) &&
         !mqt::isIntegerExponent(r)) {
-      return failure();
-    }
-    if (!isa<GPhaseOp, XOp, YOp, ZOp, SOp, SdgOp, TOp, TdgOp, SXOp, SXdgOp, HOp,
-             ECROp, RCCXOp, SWAPOp, RXOp, RYOp, RZOp, POp, ROp, RXXOp, RYYOp,
-             RZXOp, RZZOp, XXPlusYYOp, XXMinusYYOp, iSWAPOp, UOp, IdOp,
-             BarrierOp>(innerOp)) {
       return failure();
     }
 

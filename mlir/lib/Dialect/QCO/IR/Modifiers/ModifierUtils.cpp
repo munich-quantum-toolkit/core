@@ -61,14 +61,20 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
 }
 
 bool hasPositionalBodyYields(Block& body) {
+  // A valid modifier cannot permute fewer than two wires.
+  if (body.getNumArguments() < 2) {
+    return true;
+  }
+
   for (auto [argument, yielded] : llvm::zip_equal(
            body.getArguments(), body.getTerminator()->getOperands())) {
     Value origin = yielded;
-    while (auto unitary = origin.getDefiningOp<UnitaryOpInterface>()) {
+    while (origin != argument) {
+      auto unitary = origin.getDefiningOp<UnitaryOpInterface>();
+      if (!unitary) {
+        return false;
+      }
       origin = unitary.getInputForOutput(origin);
-    }
-    if (origin != argument) {
-      return false;
     }
   }
   return true;
