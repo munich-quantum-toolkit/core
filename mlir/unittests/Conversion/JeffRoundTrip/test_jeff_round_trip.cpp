@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Support/Passes.h"
 
@@ -86,7 +87,7 @@ class JeffRoundTripTest : public testing::TestWithParam<JeffRoundTripTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
+  JeffRoundTripTest() {
     // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect,
@@ -370,6 +371,47 @@ static LogicalResult convertJeffToQCO(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createJeffToQCO());
   return pm.run(moduleOp);
+}
+
+TEST_F(JeffRoundTripTest, RejectsNonNormalizedModifiersBeforeMutation) {
+  for (const auto* body : {
+           "%s = qco.s %a : !qco.qubit -> !qco.qubit\n"
+           "qco.yield %s, %b : !qco.qubit, !qco.qubit",
+           "%x, %y = qco.swap %b, %a : !qco.qubit, !qco.qubit -> "
+           "!qco.qubit, !qco.qubit\n"
+           "qco.yield %y, %x : !qco.qubit, !qco.qubit",
+       }) {
+    const std::string source = std::string(R"mlir(
+      func.func @main(%q0: !qco.qubit, %q1: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit) {
+        %o0, %o1 = qco.inv(%a = %q0, %b = %q1) {
+    )mlir") + body + R"mlir(
+        } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
+        return %o0, %o1 : !qco.qubit, !qco.qubit
+      }
+    )mlir";
+    auto module = parseSourceString<ModuleOp>(source, context.get());
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*module)));
+    std::string before;
+    llvm::raw_string_ostream beforeStream(before);
+    module->print(beforeStream);
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnosed |= diagnostic.str().find("every modifier argument in order") !=
+                   std::string::npos;
+      return success();
+    });
+    PassManager pm(context.get());
+    pm.addPass(createQCOToJeff());
+    EXPECT_TRUE(failed(pm.run(*module)));
+    EXPECT_TRUE(diagnosed);
+    std::string after;
+    llvm::raw_string_ostream afterStream(after);
+    module->print(afterStream);
+    EXPECT_EQ(after, before);
+  }
 }
 
 TEST(JeffRoundTripRegressionTest, PreservesPhaseOfControlledFunctionCall) {

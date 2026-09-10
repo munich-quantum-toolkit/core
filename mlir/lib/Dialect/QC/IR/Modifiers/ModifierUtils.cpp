@@ -30,6 +30,11 @@
 namespace mlir::qc::detail {
 
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
+  auto unitary = cast<UnitaryOpInterface>(modifierOp);
+  if (!llvm::equal(body.getArgumentTypes(), unitary.getTargets().getTypes())) {
+    return modifierOp->emitOpError("body argument types must match targets");
+  }
+
   SetVector<Value> captures;
   getUsedValuesDefinedAbove(modifierOp->getRegions(), captures);
   if (llvm::any_of(captures, [](Value value) {

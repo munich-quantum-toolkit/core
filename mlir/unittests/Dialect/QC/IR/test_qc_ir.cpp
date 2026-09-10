@@ -84,12 +84,12 @@ class QCTest : public testing::TestWithParam<QCTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override;
+  QCTest();
 };
 
 } // namespace
 
-void QCTest::SetUp() {
+QCTest::QCTest() {
   // Register all necessary dialects
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, QCDialect, arith::ArithDialect,
@@ -1185,6 +1185,22 @@ buildInvalidModifierCaptureProgram(MLIRContext* context,
     break;
   }
   return builder.finalize();
+}
+
+TEST_F(QCTest, ModifierArgumentsMustMatchTargets) {
+  ScopedDiagnosticHandler handler(context.get(),
+                                  [](Diagnostic&) { return success(); });
+  EXPECT_FALSE(parseSourceString<ModuleOp>(R"mlir(
+    func.func @test(%input: !qc.qubit) {
+      "qc.inv"(%input) ({
+      ^bb0(%first: !qc.qubit, %extra: !qc.qubit):
+        qc.x %extra : !qc.qubit
+        qc.yield
+      }) : (!qc.qubit) -> ()
+      return
+    }
+  )mlir",
+                                           context.get()));
 }
 
 TEST_F(QCTest, ModifiersRejectDirectAndNestedQubitCaptures) {

@@ -2757,13 +2757,55 @@ TEST_F(MappingPassFixture, DefaultTrialsMatchAvailableCPUs) {
   }
 }
 
-TEST_F(MappingPassFixture, PreserveClassicalCalls) {
+TEST_F(MappingPassFixture, RejectTensorControlFlowBeforeMutation) {
+  for (const bool placement : {false, true}) {
+    SCOPED_TRACE(placement);
+    auto module = parseSourceString<ModuleOp>(R"mlir(
+module {
+  func.func @main(%condition: i1) attributes {mqt.entry_point} {
+    %size = arith.constant 1 : index
+    %reg = qtensor.alloc(%size) : tensor<1x!qco.qubit>
+    %out = qco.if %condition args(%arg = %reg) -> (tensor<1x!qco.qubit>) {
+      qco.yield %arg : tensor<1x!qco.qubit>
+    } else args(%arg = %reg) {
+      qco.yield %arg : tensor<1x!qco.qubit>
+    }
+    qtensor.dealloc %out : tensor<1x!qco.qubit>
+    return
+  }
+}
+    )mlir",
+                                              context.get());
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+    const auto target = getSquareGridTarget(2);
+    attachTestEnvironment(*module, target);
+    const auto before = printModule(*module);
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnosed |= diagnostic.str().find("flat qtensor") != std::string::npos;
+      return success();
+    });
+    PassManager pm(context.get());
+    pm.addPass(placement ? createPlacementPass(target)
+                         : createMappingPass(MappingPassOptions{.ntrials = 1}));
+    EXPECT_TRUE(failed(pm.run(*module)));
+    EXPECT_TRUE(diagnosed);
+    EXPECT_EQ(printModule(*module), before);
+  }
+}
+
+TEST_F(MappingPassFixture, RejectOpaqueClassicalEffectsBeforeMutation) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {
-      func.func private @classical()
-      func.func @main() attributes {mqt.entry_point} {
+      func.func private @first(i64)
+      func.func private @second()
+      func.func @main(%x: i64) attributes {mqt.entry_point} {
         %q = qco.alloc : !qco.qubit
-        func.call @classical() : () -> ()
+        %computed = arith.addi %x, %x : i64
+        func.call @first(%computed) : (i64) -> ()
+        func.call @second() : () -> ()
         qco.sink %q : !qco.qubit
         return
       }
@@ -2771,10 +2813,19 @@ TEST_F(MappingPassFixture, PreserveClassicalCalls) {
                                               context.get());
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  ASSERT_TRUE(succeeded(runPass(*moduleOp, getSquareGridTarget(2),
-                                MappingPassOptions{.ntrials = 1})));
-  EXPECT_TRUE(succeeded(verify(*moduleOp)));
-  size_t calls = 0;
-  moduleOp->walk([&](func::CallOp) { ++calls; });
-  EXPECT_EQ(calls, 1);
+  ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  attachTestEnvironment(*moduleOp, getSquareGridTarget(2));
+  const auto before = printModule(*moduleOp);
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+    diagnosed |=
+        diagnostic.str().find("classical side effects only through CBit") !=
+        std::string::npos;
+    return success();
+  });
+  PassManager pm(context.get());
+  pm.addPass(createMappingPass(MappingPassOptions{.ntrials = 1}));
+  EXPECT_TRUE(failed(pm.run(*moduleOp)));
+  EXPECT_TRUE(diagnosed);
+  EXPECT_EQ(printModule(*moduleOp), before);
 }

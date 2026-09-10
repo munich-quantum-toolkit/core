@@ -25,8 +25,8 @@
 #include "mqt/Dialect/QCO/Utils/Layout.h"
 #include "mqt/Dialect/QCO/Utils/Sorting.h"
 #include "mqt/Dialect/QCO/Utils/WireIterator.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
-#include "mqt/Dialect/QTensor/Utils/TensorIterator.h"
 
 #include "mlir/Analysis/SliceAnalysis.h"
 #include "mlir/Analysis/TopologicalSortUtils.h"
@@ -161,6 +161,15 @@ static LogicalResult validateRoutingOperations(func::FuncOp func) {
           operation->emitError("inline calls that carry qubits before mapping");
           return WalkResult::interrupt();
         }
+        if (operation->getNumRegions() == 0 &&
+            !isa<QCODialect, qtensor::QTensorDialect, cbit::CBitDialect>(
+                operation->getDialect()) &&
+            !isMemoryEffectFree(operation)) {
+          operation->emitError(
+              "mapping supports classical side effects only through CBit "
+              "operations; lower other side effects before mapping");
+          return WalkResult::interrupt();
+        }
         if (auto unitary = dyn_cast<UnitaryOpInterface>(operation);
             unitary && !isa<BarrierOp>(operation) &&
             unitary.getNumQubits() > 2) {
@@ -212,9 +221,9 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
 
   for (auto& tensor : computation.tensorAllocations) {
     bool isInitPhase = true;
-    TensorIterator it(tensor.allocation.getResult());
-    for (; it != std::default_sentinel; ++it) {
-      Operation* operation = it.operation();
+    Value current = tensor.allocation.getResult();
+    while (true) {
+      Operation* operation = *current.getUsers().begin();
       tensor.operations.emplace_back(operation);
 
       if (auto extract = dyn_cast<ExtractOp>(operation)) {
@@ -228,12 +237,21 @@ static FailureOr<Computation> discoverComputation(func::FuncOp func) {
 
         computation.wires.emplace_back(qubit);
         computation.infos.insertOrUpdate(index, index);
+        current = extract.getOutTensor();
         continue;
       }
 
-      if (isa<InsertOp>(operation)) {
+      if (auto insert = dyn_cast<InsertOp>(operation)) {
         isInitPhase = false;
+        current = insert.getResult();
+        continue;
       }
+      if (isa<DeallocOp>(operation)) {
+        break;
+      }
+      return operation->emitError(
+          "mapping requires a flat qtensor extract/insert chain ending in "
+          "deallocation; lower tensor control flow before mapping");
     }
   }
 

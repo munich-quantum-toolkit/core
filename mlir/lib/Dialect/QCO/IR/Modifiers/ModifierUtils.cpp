@@ -24,13 +24,49 @@
 #include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 
 #include <cstddef>
 
 namespace mlir::qco::detail {
 
+/// Follow unitary ties only after nested operations have been verified.
+static bool hasPositionalBodyYields(Block& body) {
+  /// A valid modifier cannot permute fewer than two wires.
+  if (body.getNumArguments() < 2) {
+    return true;
+  }
+
+  for (auto [argument, yielded] : llvm::zip_equal(
+           body.getArguments(), body.getTerminator()->getOperands())) {
+    Value origin = yielded;
+    Operation* previous = body.getTerminator();
+    while (origin != argument) {
+      auto unitary = origin.getDefiningOp<UnitaryOpInterface>();
+      /// SSA dominance is checked after operation verification.
+      if (!unitary || unitary->getBlock() != &body ||
+          !unitary->isBeforeInBlock(previous)) {
+        return false;
+      }
+      previous = unitary;
+      origin = unitary.getInputForOutput(origin);
+    }
+  }
+  return true;
+}
+
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
+  auto unitary = cast<UnitaryOpInterface>(modifierOp);
+  if (!llvm::equal(body.getArgumentTypes(),
+                   unitary.getInputTargets().getTypes())) {
+    return modifierOp->emitOpError("body argument types must match targets");
+  }
+  if (!llvm::equal(body.getTerminator()->getOperandTypes(),
+                   body.getArgumentTypes())) {
+    return modifierOp->emitOpError("yield types must match body arguments");
+  }
+
   SetVector<Value> captures;
   getUsedValuesDefinedAbove(modifierOp->getRegions(), captures);
   if (llvm::any_of(captures, [](Value value) {
@@ -58,27 +94,18 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
                                    "operations without regions");
   }
 
-  return success();
-}
-
-bool hasPositionalBodyYields(Block& body) {
-  // A valid modifier cannot permute fewer than two wires.
-  if (body.getNumArguments() < 2) {
-    return true;
+  if (!hasPositionalBodyYields(body)) {
+    return modifierOp->emitOpError(
+        "yielded qubits must continue body arguments positionally");
   }
 
-  for (auto [argument, yielded] : llvm::zip_equal(
-           body.getArguments(), body.getTerminator()->getOperands())) {
-    Value origin = yielded;
-    while (origin != argument) {
-      auto unitary = origin.getDefiningOp<UnitaryOpInterface>();
-      if (!unitary) {
-        return false;
-      }
-      origin = unitary.getInputForOutput(origin);
+  SmallPtrSet<Value, 4> uniqueQubits;
+  for (auto qubit : unitary.getInputQubits()) {
+    if (!uniqueQubits.insert(qubit).second) {
+      return modifierOp->emitOpError("duplicate qubit found");
     }
   }
-  return true;
+  return success();
 }
 
 SmallVector<size_t> getUsedQubitIndices(Block& body) {

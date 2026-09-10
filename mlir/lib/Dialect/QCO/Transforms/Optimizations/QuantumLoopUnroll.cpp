@@ -11,6 +11,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/SCF/Utils/Utils.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -113,6 +114,13 @@ protected:
             continue;
           }
 
+          if (llvm::hasSingleElement(loop.getBody()->getOperations())) {
+            // LLVM skips terminator-only bodies. Let its unroller remap the
+            // yielded permutation; greedy cleanup removes this unused constant.
+            OpBuilder builder(loop.getContext());
+            builder.setInsertionPointToStart(loop.getBody());
+            arith::ConstantIndexOp::create(builder, loop.getLoc(), 0);
+          }
           if (failed(loopUnrollFull(loop))) {
             loop.emitError() << "failed to fully unroll";
             signalPassFailure();

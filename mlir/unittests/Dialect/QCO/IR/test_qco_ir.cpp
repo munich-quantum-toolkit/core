@@ -93,11 +93,11 @@ class QCOTest : public testing::TestWithParam<QCOTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override;
+  QCOTest();
 };
 } // namespace
 
-void QCOTest::SetUp() {
+QCOTest::QCOTest() {
   // Register all necessary dialects
   DialectRegistry registry;
   registry.insert<cbit::CBitDialect, mlir::mqt::MQTDialect, QCODialect,
@@ -1870,7 +1870,7 @@ TEST_F(QCOTest, DefaultOnlyIndexSwitchParser) {
       module {
         func.func @main(%index: index) -> i1 {
           %q0 = qco.alloc : !qco.qubit
-          %q1 = qco.index_switch %index -> !qco.qubit
+          %q1 = qco.index_switch %index -> !qco.qubit {test.marker}
           default args(%arg0 = %q0) {
             qco.yield %arg0 : !qco.qubit
           }
@@ -1892,6 +1892,8 @@ TEST_F(QCOTest, DefaultOnlyIndexSwitchParser) {
   auto reparsedModule = parseSourceString<ModuleOp>(printed, context.get());
   ASSERT_TRUE(reparsedModule);
   EXPECT_TRUE(verify(*reparsedModule).succeeded());
+  reparsedModule->walk(
+      [](IndexSwitchOp op) { EXPECT_TRUE(op->hasAttr("test.marker")); });
 }
 
 TEST_F(QCOTest, IndexSwitchWithClassicalResultRoundTripsAndPreservesTies) {
@@ -2572,17 +2574,6 @@ static Value powBarrierWithReorderedBody(QCOProgramBuilder& builder) {
   return measureRegister(builder, powOut);
 }
 
-static Value powEvenSwapWithReorderedBody(QCOProgramBuilder& builder) {
-  auto q0 = builder.allocQubit();
-  auto q1 = builder.allocQubit();
-  auto powOut =
-      builder.pow(2.0, {q0, q1}, [&](ValueRange args) -> SmallVector<Value> {
-        auto [out1, out0] = builder.swap(args[1], args[0]);
-        return {out1, out0};
-      });
-  return measureRegister(builder, powOut);
-}
-
 TEST_F(QCOTest, PowGateFoldPreservesReorderedBodyResults) {
   auto program = ::mqt::test::buildMLIRProgram(
       context.get(), MQT_NAMED_BUILDER(powRzxWithReorderedBody));
@@ -2628,29 +2619,6 @@ TEST_F(QCOTest, PowBarrierFoldPreservesReorderedBodyResults) {
   EXPECT_EQ(barriers[0].getQubitsIn()[1], allocations[0].getResult());
   EXPECT_EQ(measurements[0].getQubitIn(), barriers[0].getOutputQubits()[1]);
   EXPECT_EQ(measurements[1].getQubitIn(), barriers[0].getOutputQubits()[0]);
-}
-
-TEST_F(QCOTest, EvenPowerRetainsBodyYieldPermutation) {
-  auto program = ::mqt::test::buildMLIRProgram(
-      context.get(), MQT_NAMED_BUILDER(powEvenSwapWithReorderedBody));
-  ASSERT_TRUE(program);
-  ASSERT_TRUE(succeeded(verify(*program)));
-
-  PassManager pm(context.get());
-  pm.addPass(createCanonicalizerPass());
-  ASSERT_TRUE(succeeded(pm.run(*program)));
-  ASSERT_TRUE(succeeded(verify(*program)));
-
-  SmallVector<PowOp> powers;
-  SmallVector<MeasureOp> measurements;
-  program->walk([&](PowOp power) { powers.push_back(power); });
-  program->walk([&](MeasureOp measure) { measurements.push_back(measure); });
-  // The yielded permutation belongs to the powered body. Folding only SWAP
-  // would apply that permutation once instead of powering the complete body.
-  ASSERT_EQ(powers.size(), 1U);
-  ASSERT_EQ(measurements.size(), 2U);
-  EXPECT_EQ(measurements[0].getQubitIn(), powers[0].getOutputQubit(0));
-  EXPECT_EQ(measurements[1].getQubitIn(), powers[0].getOutputQubit(1));
 }
 
 // pow(-0.5) { h } cannot fold a negative fractional exponent

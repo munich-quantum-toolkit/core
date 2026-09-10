@@ -17,7 +17,6 @@
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
-#include "mqt/Dialect/QTensor/IR/QTensorUtils.h"
 #include "mqt/Support/Passes.h"
 
 #include "Support/IRVerification.h"
@@ -62,7 +61,7 @@ class QTensorTest : public ::testing::Test {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
+  QTensorTest() {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
                     memref::MemRefDialect, QTensorDialect>();
@@ -94,33 +93,6 @@ protected:
     return count;
   }
 };
-
-// ============================================================================
-// QTensorUtils
-// ============================================================================
-
-TEST_F(QTensorTest, AreEquivalentIndicesSameValueIsEquivalent) {
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  auto c2 = arith::ConstantIndexOp::create(builder, 2);
-  EXPECT_TRUE(areEquivalentIndices(c2.getResult(), c2.getResult()));
-}
-
-TEST_F(QTensorTest, AreEquivalentIndicesSameConstantsAreEquivalent) {
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  auto lhs = arith::ConstantIndexOp::create(builder, 2);
-  auto rhs = arith::ConstantIndexOp::create(builder, 2);
-  EXPECT_TRUE(areEquivalentIndices(lhs.getResult(), rhs.getResult()));
-}
-
-TEST_F(QTensorTest, AreEquivalentIndicesDifferentConstantsAreNotEquivalent) {
-  QCOProgramBuilder builder(context.get());
-  builder.initialize();
-  auto c0 = arith::ConstantIndexOp::create(builder, 0);
-  auto c1 = arith::ConstantIndexOp::create(builder, 1);
-  EXPECT_FALSE(areEquivalentIndices(c0.getResult(), c1.getResult()));
-}
 
 // ============================================================================
 // AllocOp
@@ -281,26 +253,21 @@ TEST_F(QTensorTest, NestedRegisterAccessInsideModifierFailsVerification) {
   const auto target = builder.allocQubit();
   const auto condition = builder.boolConstant(true);
   auto index = arith::ConstantIndexOp::create(builder, 0);
-  Operation* extractOperation = nullptr;
-  Operation* insertOperation = nullptr;
 
-  qco::InvOp::create(builder, target, [&](Value argument) {
-    return qco::IfOp::create(builder, condition, argument,
-                             [&](Value nestedArgument) {
-                               auto extract = ExtractOp::create(
-                                   builder, tensor, index.getResult());
-                               auto insert = InsertOp::create(
-                                   builder, extract.getResult(),
-                                   extract.getOutTensor(), index.getResult());
-                               extractOperation = extract;
-                               insertOperation = insert;
-                               return nestedArgument;
-                             })
+  auto inverse = qco::InvOp::create(builder, target, [&](Value argument) {
+    return qco::IfOp::create(
+               builder, condition, argument,
+               [&](Value nestedArgument) {
+                 auto extract =
+                     ExtractOp::create(builder, tensor, index.getResult());
+                 InsertOp::create(builder, extract.getResult(),
+                                  extract.getOutTensor(), index.getResult());
+                 return nestedArgument;
+               })
         .getResult(0);
   });
 
-  EXPECT_TRUE(verify(extractOperation).failed());
-  EXPECT_TRUE(verify(insertOperation).failed());
+  EXPECT_TRUE(verify(inverse).failed());
 }
 
 } // namespace
@@ -765,7 +732,7 @@ class QTensorIntegrationTest
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
+  QTensorIntegrationTest() {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
                     memref::MemRefDialect, QTensorDialect>();

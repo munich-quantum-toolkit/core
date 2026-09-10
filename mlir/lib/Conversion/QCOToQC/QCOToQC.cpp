@@ -32,6 +32,7 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/ValueRange.h"
+#include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -304,7 +305,14 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
       origins[output] = origin(input);
     }
   };
-  auto result = moduleOp.walk<WalkOrder::PostOrder>([&](Operation* op) {
+  auto result = moduleOp.walk([&](Operation* op, const WalkStage& stage) {
+    if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
+      tie(unitary.getInputQubits(), unitary.getOutputQubits());
+      return WalkResult::skip();
+    }
+    if (!stage.isAfterAllRegions()) {
+      return WalkResult::advance();
+    }
     bool positional = true;
     if (auto loop = dyn_cast<scf::ForOp>(op)) {
       positional = corresponds(loop.getRegionIterArgs(),
@@ -321,21 +329,14 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
                       loop.getConditionOp().getArgs()) &&
           corresponds(loop.getAfterArguments(), loop.getYieldOp().getResults());
       tie(loop.getInits(), loop.getResults());
-    } else if (isa<qco::IfOp, qco::IndexSwitchOp, qco::InvOp, qco::CtrlOp,
-                   qco::PowOp>(op)) {
+    } else if (isa<qco::IfOp, qco::IndexSwitchOp>(op)) {
       for (auto& region : op->getRegions()) {
         positional &=
             region.hasOneBlock() &&
             corresponds(region.front().getArguments(),
                         region.front().getTerminator()->getOperands());
       }
-      if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
-        tie(unitary.getInputQubits(), unitary.getOutputQubits());
-      } else {
-        tie(op->getOperands(), op->getResults());
-      }
-    } else if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
-      tie(unitary.getInputQubits(), unitary.getOutputQubits());
+      tie(op->getOperands(), op->getResults());
     } else if (auto measure = dyn_cast<qco::MeasureOp>(op)) {
       tie(ValueRange{measure.getQubitIn()}, ValueRange{measure.getQubitOut()});
     } else if (auto reset = dyn_cast<qco::ResetOp>(op)) {

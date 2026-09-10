@@ -68,10 +68,6 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
       return failure();
     }
 
-    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
-      return failure();
-    }
-
     // The inner control's controls and targets are block arguments of the outer
     // body that alias outer targets. Re-resolve them to the outer qubits: inner
     // controls join the outer controls, inner targets become the merged
@@ -134,9 +130,6 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
 
     // Control does not change an identity gate or barrier.
     if (isa<IdOp, BarrierOp>(innerOp)) {
-      if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
-        return failure();
-      }
       auto* body = op.getBody();
       auto* terminator = body->getTerminator();
       // Controls are pass-through results outside the body yield, so the
@@ -187,10 +180,6 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
   LogicalResult matchAndRewrite(CtrlOp op,
                                 PatternRewriter& rewriter) const override {
     if (op.getNumBodyUnitaries() != 0) {
-      return failure();
-    }
-
-    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
       return failure();
     }
 
@@ -286,52 +275,11 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
   build(odsBuilder, odsState, ValueRange{control}, target, bodyBuilder);
 }
 
-LogicalResult CtrlOp::verify() {
-  auto& block = *getBody();
-  if (failed(detail::verifyModifierBody(getOperation(), block))) {
-    return failure();
+LogicalResult CtrlOp::verifyRegions() {
+  if (getControlsIn().size() != getControlsOut().size()) {
+    return emitOpError("number of output controls must match input controls");
   }
-
-  const auto numTargets = getNumTargets();
-  if (block.getArguments().size() != numTargets) {
-    return emitOpError(
-        "number of block arguments must match the number of targets");
-  }
-  auto qubitType = QubitType::get(getContext());
-  for (size_t i = 0; i < numTargets; ++i) {
-    if (block.getArgument(i).getType() != qubitType) {
-      return emitOpError("block argument type at index ")
-             << i << " does not match target type";
-    }
-  }
-  auto* blockTerminator = block.getTerminator();
-  if (const auto numYieldOperands = blockTerminator->getNumOperands();
-      numYieldOperands != numTargets) {
-    return emitOpError("yield operation must yield ")
-           << numTargets << " values, but found " << numYieldOperands;
-  }
-
-  SmallPtrSet<Value, 4> uniqueQubitsIn;
-  for (auto control : getInputQubits()) {
-    if (!uniqueQubitsIn.insert(control).second) {
-      return emitOpError("duplicate qubit found");
-    }
-  }
-
-  SmallPtrSet<Value, 4> uniqueQubitsOut;
-  for (auto control : getControlsOut()) {
-    if (!uniqueQubitsOut.insert(control).second) {
-      return emitOpError("duplicate control qubit found");
-    }
-  }
-
-  for (size_t i = 0; i < numTargets; i++) {
-    if (!uniqueQubitsOut.insert(blockTerminator->getOperand(i)).second) {
-      return emitOpError("duplicate qubit found");
-    }
-  }
-
-  return success();
+  return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,

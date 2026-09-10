@@ -646,7 +646,7 @@ TEST_F(GlobalPhaseNormalizationTest,
             targets(%lhs_arg = %lhs, %rhs_arg = %rhs) {
           %phase = arith.constant 0.25 : f64
           qco.gphase(%phase)
-          qco.yield %rhs_arg, %lhs_arg : !qco.qubit, !qco.qubit
+          qco.yield %lhs_arg, %rhs_arg : !qco.qubit, !qco.qubit
         } : ({!qco.qubit}, {!qco.qubit, !qco.qubit})
           -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
         return %control_out, %lhs_out, %rhs_out
@@ -667,8 +667,8 @@ TEST_F(GlobalPhaseNormalizationTest,
       cast<func::ReturnOp>(function.getBody().front().getTerminator());
   auto p = *function.getBody().getOps<qco::POp>().begin();
   EXPECT_EQ(returnOp.getOperand(0), p.getOutputTarget(0));
-  EXPECT_EQ(returnOp.getOperand(1), function.getArgument(2));
-  EXPECT_EQ(returnOp.getOperand(2), function.getArgument(1));
+  EXPECT_EQ(returnOp.getOperand(1), function.getArgument(1));
+  EXPECT_EQ(returnOp.getOperand(2), function.getArgument(2));
 }
 
 TEST_F(GlobalPhaseNormalizationTest,

@@ -143,17 +143,16 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
                                 PatternRewriter& rewriter) const override {
     // A Hadamard gate needs to be in front of the measurement
     auto qubitInMeasurement = op.getQubitIn();
-    auto* predecessor = qubitInMeasurement.getDefiningOp();
-    auto hadamardGate = dyn_cast<HOp>(predecessor);
+    auto hadamardGate = qubitInMeasurement.getDefiningOp<HOp>();
     if (!hadamardGate) {
       return failure();
     }
 
     // The Hadamard gate must be successor of the target of a CNOT
     auto inQubitHadamard = hadamardGate.getInputQubit(0);
-    predecessor = inQubitHadamard.getDefiningOp();
-    auto cnotGate = dyn_cast<CtrlOp>(predecessor);
-    if (!cnotGate) {
+    auto cnotGate = inQubitHadamard.getDefiningOp<CtrlOp>();
+    if (!cnotGate || cnotGate.getNumControls() == 0 ||
+        cnotGate.getNumTargets() != 1) {
       return failure();
     }
     if (auto innerUnitary =

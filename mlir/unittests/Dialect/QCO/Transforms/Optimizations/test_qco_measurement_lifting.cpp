@@ -10,6 +10,8 @@
 
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 
 #include "Support/IRVerification.h"
@@ -22,6 +24,8 @@
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
@@ -74,6 +78,37 @@ protected:
 };
 
 } // namespace
+
+TEST_F(QCOMeasurementLiftingTest, MeasuresBlockArguments) {
+  auto parsed = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @direct(%q: !qco.qubit) -> (!qco.qubit, i1) {
+        %out, %bit = qco.measure %q : !qco.qubit
+        return %out, %bit : !qco.qubit, i1
+      }
+      func.func @hadamard(%q: !qco.qubit) -> (!qco.qubit, i1) {
+        %h = qco.h %q : !qco.qubit -> !qco.qubit
+        %out, %bit = qco.measure %h : !qco.qubit
+        return %out, %bit : !qco.qubit, i1
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(succeeded(verify(*parsed)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*parsed)));
+  PassManager pm(&context);
+  pm.addPass(createMeasurementLifting());
+  ASSERT_TRUE(succeeded(pm.run(*parsed)));
+  EXPECT_TRUE(succeeded(verify(*parsed)));
+  EXPECT_TRUE(succeeded(verifyLinearity(*parsed)));
+  auto direct = parsed->lookupSymbol<func::FuncOp>("direct");
+  auto measurement = *direct.getOps<MeasureOp>().begin();
+  EXPECT_EQ(measurement.getQubitIn(), direct.getArgument(0));
+  auto hadamard = parsed->lookupSymbol<func::FuncOp>("hadamard");
+  auto h = *hadamard.getOps<HOp>().begin();
+  EXPECT_EQ(h.getQubitIn(), hadamard.getArgument(0));
+}
 
 /// Test: Measurements on control bits can be lifted over the controlled
 /// gates.

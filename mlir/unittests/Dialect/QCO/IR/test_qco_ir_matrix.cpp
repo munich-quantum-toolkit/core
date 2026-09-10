@@ -164,7 +164,7 @@ class QCOMatrixTest : public testing::TestWithParam<QCOMatrixTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
+  QCOMatrixTest() {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
                     memref::MemRefDialect>();
@@ -1625,6 +1625,19 @@ TEST_F(QCOMatrixTest, XOpMatrix) {
 
 /// \name QCO/Operations/StandardGates/XxMinusYyOp.cpp
 /// @{
+TEST_F(QCOMatrixTest, XXPlusMinusYYRemainUnitaryForLargeBeta) {
+  for (const double beta :
+       {0.456, 1e16, -1e16, std::numeric_limits<double>::max()}) {
+    SCOPED_TRACE(beta);
+    for (const auto& matrix : {
+             XXPlusYYOp::unitaryMatrix(1.0, beta),
+             XXMinusYYOp::unitaryMatrix(1.0, beta),
+         }) {
+      EXPECT_TRUE((matrix * matrix.adjoint()).isApprox(Matrix4x4::identity()));
+    }
+  }
+}
+
 TEST_F(QCOMatrixTest, XXMinusYYOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), xxMinusYY);
   ASSERT_TRUE(moduleOp);

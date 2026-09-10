@@ -11,6 +11,8 @@
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 
 #include "Support/IRVerification.h"
@@ -24,6 +26,8 @@
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
@@ -78,6 +82,76 @@ protected:
 };
 
 } // namespace
+
+TEST_F(QCOHadamardLiftingTest, MeasuresBlockArguments) {
+  auto parsed = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @direct(%q: !qco.qubit) -> (!qco.qubit, i1) {
+        %out, %bit = qco.measure %q : !qco.qubit
+        return %out, %bit : !qco.qubit, i1
+      }
+      func.func @hadamard(%q: !qco.qubit) -> (!qco.qubit, i1) {
+        %h = qco.h %q : !qco.qubit -> !qco.qubit
+        %out, %bit = qco.measure %h : !qco.qubit
+        return %out, %bit : !qco.qubit, i1
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(parsed);
+  ASSERT_TRUE(succeeded(verify(*parsed)));
+  ASSERT_TRUE(succeeded(verifyLinearity(*parsed)));
+  PassManager pm(&context);
+  pm.addPass(createHadamardLifting());
+  ASSERT_TRUE(succeeded(pm.run(*parsed)));
+  EXPECT_TRUE(succeeded(verify(*parsed)));
+  EXPECT_TRUE(succeeded(verifyLinearity(*parsed)));
+  auto direct = parsed->lookupSymbol<func::FuncOp>("direct");
+  auto measurement = *direct.getOps<MeasureOp>().begin();
+  EXPECT_EQ(measurement.getQubitIn(), direct.getArgument(0));
+  auto hadamard = parsed->lookupSymbol<func::FuncOp>("hadamard");
+  auto h = *hadamard.getOps<HOp>().begin();
+  EXPECT_EQ(h.getQubitIn(), hadamard.getArgument(0));
+}
+
+TEST_F(QCOHadamardLiftingTest, LeavesUnsupportedControlShapesUnchanged) {
+  for (const auto* source : {
+           R"mlir(
+        func.func @test(%control: !qco.qubit, %unused: !qco.qubit, %target: !qco.qubit)
+            -> (!qco.qubit, !qco.qubit, !qco.qubit, i1) {
+          %c, %u, %t = qco.ctrl(%control) targets(%a = %unused, %b = %target) {
+            %x = qco.x %b : !qco.qubit -> !qco.qubit
+            qco.yield %a, %x : !qco.qubit, !qco.qubit
+          } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+          %h = qco.h %u : !qco.qubit -> !qco.qubit
+          %out, %bit = qco.measure %h : !qco.qubit
+          return %c, %out, %t, %bit : !qco.qubit, !qco.qubit, !qco.qubit, i1
+        }
+      )mlir",
+           R"mlir(
+        func.func @test(%q: !qco.qubit) -> (!qco.qubit, i1) {
+          %t = "qco.ctrl"(%q) <{operandSegmentSizes = array<i32: 0, 1>, resultSegmentSizes = array<i32: 0, 1>}> ({
+          ^bb0(%a: !qco.qubit):
+            %x = qco.x %a : !qco.qubit -> !qco.qubit
+            qco.yield %x : !qco.qubit
+          }) : (!qco.qubit) -> !qco.qubit
+          %h = qco.h %t : !qco.qubit -> !qco.qubit
+          %out, %bit = qco.measure %h : !qco.qubit
+          return %out, %bit : !qco.qubit, i1
+        }
+      )mlir",
+       }) {
+    auto parsed = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(parsed);
+    ASSERT_TRUE(succeeded(verify(*parsed)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*parsed)));
+    OwningOpRef<ModuleOp> before = parsed->clone();
+    ASSERT_TRUE(succeeded(runHadamardLiftingPass(*parsed)));
+    EXPECT_TRUE(succeeded(verify(*parsed)));
+    EXPECT_TRUE(succeeded(verifyLinearity(*parsed)));
+    EXPECT_TRUE(areModulesEquivalentWithPermutations(*parsed, *before));
+  }
+}
 
 // ##################################################
 // # Raise Hadamard over uncontrolled Pauli gate Tests

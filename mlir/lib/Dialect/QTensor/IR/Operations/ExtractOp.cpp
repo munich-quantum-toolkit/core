@@ -42,12 +42,6 @@ struct FoldExtractAfterInsertPattern final : OpRewritePattern<ExtractOp> {
 } // namespace
 
 LogicalResult ExtractOp::verify() {
-  if (getOperation()->getParentOfType<qco::CtrlOp>() ||
-      getOperation()->getParentOfType<qco::InvOp>() ||
-      getOperation()->getParentOfType<qco::PowOp>()) {
-    return emitOpError("cannot access a qubit tensor inside a QCO modifier");
-  }
-
   auto tensorDim = getTensor().getType().getDimSize(0);
   auto index = getConstantIntValue(getIndex());
 

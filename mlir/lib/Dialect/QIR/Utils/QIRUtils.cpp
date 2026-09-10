@@ -152,7 +152,8 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
     auto element = LLVM::CallOp::create(builder, loc, arrayElement,
                                         ValueRange{controlArray, indexValue})
                        .getResult();
-    LLVM::StoreOp::create(builder, loc, control, element);
+    auto store = LLVM::StoreOp::create(builder, loc, control, element);
+    store->setAttr(QIR_QUBIT_STORE_ATTR, builder.getUnitAttr());
   }
 
   const bool usesTuple = !parameters.empty() || targets.size() != 1;
@@ -193,7 +194,10 @@ void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
       auto element = LLVM::GEPOp::create(builder, loc, ptrType, tupleType,
                                          gateArgs, indices)
                          .getResult();
-      LLVM::StoreOp::create(builder, loc, value, element);
+      auto store = LLVM::StoreOp::create(builder, loc, value, element);
+      if (index >= parameters.size()) {
+        store->setAttr(QIR_QUBIT_STORE_ATTR, builder.getUnitAttr());
+      }
     }
   }
 
