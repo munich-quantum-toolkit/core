@@ -11,12 +11,14 @@
 from __future__ import annotations
 
 import gc
+import subprocess
+import sys
 from typing import TYPE_CHECKING
 
 import pytest
 
 from mqt.core.mlir import CompiledProgram, CompilerTarget, OutputFormat, compile_program, submit_program
-from mqt.core.qdmi import Device, Job, ProgramFormat
+from mqt.core.qdmi import Job, ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
 if TYPE_CHECKING:
@@ -116,19 +118,24 @@ def test_explicit_target_requires_output_and_matching_contract() -> None:
         device.submit(mismatch)
 
 
-def test_submit_program_delegates_once(monkeypatch: pytest.MonkeyPatch) -> None:
-    """The helper resolves one destination and delegates once to Device.submit."""
-    original = Device.submit
-    calls = []
+def test_device_submit_loads_compiler_lazily() -> None:
+    """QDMI works without importing MLIR until source compilation is requested."""
+    script = """
+import sys
+from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi.driver import open_device
 
-    def submit(self: Device, program: str, *, num_shots: int) -> Job:
-        calls.append(program)
-        return original(self, program, num_shots=num_shots)
-
-    monkeypatch.setattr(Device, "submit", submit)
-    job = submit_program(BELL, target="mqt.ddsim.default", num_shots=1)
-    job.wait()
-    assert calls == [BELL]
+assert "mqt.core.mlir" not in sys.modules
+device = open_device("mqt.ddsim.default")
+source = "OPENQASM 3.0; qubit q; bit c = measure q;"
+raw = device.submit_job(source, ProgramFormat.QASM3, num_shots=1)
+assert raw.wait()
+assert "mqt.core.mlir" not in sys.modules
+job = device.submit(source, num_shots=2)
+assert job.wait()
+assert job.get_counts() == {"0": 2}
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)  # ruff: ignore[subprocess-without-shell-equals-true]
 
 
 def test_source_path_is_read_once(tmp_path: Path) -> None:

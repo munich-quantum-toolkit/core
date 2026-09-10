@@ -1077,20 +1077,6 @@ class CompiledProgram:
     def payload_specification(self) -> PayloadSpecification:
         """The payload format and capabilities used for compilation."""
 
-def _submit_to_device(
-    device: mqt.core.qdmi.Device,
-    program: object,
-    num_shots: int = 1024,
-    *,
-    program_format: mqt.core.qdmi.ProgramFormat | None = None,
-    enable_timing: bool = False,
-    enable_statistics: bool = False,
-    custom1: str | bool | float | None = None,
-    custom2: str | bool | float | None = None,
-    custom3: str | bool | float | None = None,
-    custom4: str | bool | float | None = None,
-    custom5: str | bool | float | None = None,
-) -> mqt.core.qdmi.Job: ...
 def submit_program(
     program: str
     | os.PathLike[str]
@@ -1112,8 +1098,8 @@ def submit_program(
     custom4: str | bool | float | None = None,
     custom5: str | bool | float | None = None,
 ) -> mqt.core.qdmi.Job:
-    """Open a device and call :meth:`mqt.core.qdmi.Device.submit`.
+    """Compile source or submit a compiled program to a device.
 
-    ``target`` accepts a registered device ID or an open device. Additional keyword
-    arguments are passed to ``Device.submit``.
+    ``target`` accepts a registered device ID or an open device.
+    ``Device.submit`` calls this function with its device as the target.
     """

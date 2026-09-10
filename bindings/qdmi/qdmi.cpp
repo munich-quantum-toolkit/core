@@ -26,7 +26,6 @@
 #include "qdmi/client.h"
 
 #include <cstddef>
-#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -42,7 +41,8 @@ using namespace nb::literals;
 
 namespace bindings {
 void registerSlurm(nb::module_& qdmiModule);
-}
+void registerCompiler(nb::class_<qdmi::Device>& device);
+} // namespace bindings
 
 namespace {
 template <typename Query>
@@ -396,25 +396,7 @@ The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
 
-  device.def(
-      "submit",
-      [](const qdmi::Device& self, const nb::object& program, int64_t numShots,
-         const nb::kwargs& options) {
-        if (numShots < 0) {
-          throw nb::value_error("num_shots must be nonnegative");
-        }
-        return nb::module_::import_("mqt.core.mlir")
-            .attr("_submit_to_device")(nb::cast(self, nb::rv_policy::reference),
-                                       program, numShots, **options);
-      },
-      "program"_a, "num_shots"_a = 1024, "options"_a,
-      R"pb(Compile source or submit a compiled program to this device.
-
-Compiled programs must be compatible with this device.
-
-Source inputs accept ``program_format``, ``enable_timing``, and
-``enable_statistics``. ``custom1`` through ``custom5`` are passed to the job.
-Use ``submit_job`` for raw payloads.)pb");
+  bindings::registerCompiler(device);
 
   device.def(
       "submit_job",

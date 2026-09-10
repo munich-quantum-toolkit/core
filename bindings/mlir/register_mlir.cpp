@@ -395,25 +395,21 @@ compileProgramForTarget(const nb::object& program, const nb::object& target,
   return nb::cast(std::move(compiled));
 }
 
-/// Implementation of Device.submit, loaded by the QDMI binding.
+/// Compile or submit through the shared C++ QDMI adapter.
 [[nodiscard]] static qdmi::Job
-submitToDevice(const qdmi::Device& device, const nb::object& program,
-               int64_t numShots,
-               std::optional<QDMI_Program_Format> programFormat,
-               bool enableTiming, bool enableStatistics,
-               const std::optional<qdmi::CustomJobParameter>& custom1,
-               const std::optional<qdmi::CustomJobParameter>& custom2,
-               const std::optional<qdmi::CustomJobParameter>& custom3,
-               const std::optional<qdmi::CustomJobParameter>& custom4,
-               const std::optional<qdmi::CustomJobParameter>& custom5) {
+submitProgram(const nb::object& program, const nb::object& target,
+              int64_t numShots,
+              std::optional<QDMI_Program_Format> programFormat,
+              bool enableTiming, bool enableStatistics,
+              const std::optional<qdmi::CustomJobParameter>& custom1,
+              const std::optional<qdmi::CustomJobParameter>& custom2,
+              const std::optional<qdmi::CustomJobParameter>& custom3,
+              const std::optional<qdmi::CustomJobParameter>& custom4,
+              const std::optional<qdmi::CustomJobParameter>& custom5) {
   if (numShots < 0) {
     throw nb::value_error("num_shots must be nonnegative");
   }
-  const auto submit = [&](const mlir::CompiledProgram& compiled) {
-    const nb::gil_scoped_release release;
-    return takeResult(mlir::submitProgram(device, compiled, numShots, custom1,
-                                          custom2, custom3, custom4, custom5));
-  };
+  const auto device = resolveDevice(target);
   if (nb::isinstance<mlir::CompiledProgram>(program)) {
     if (enableTiming || enableStatistics) {
       throw nb::value_error(
@@ -424,7 +420,9 @@ submitToDevice(const qdmi::Device& device, const nb::object& program,
       throw nb::value_error(
           "program_format conflicts with the compiled payload");
     }
-    return submit(compiled);
+    const nb::gil_scoped_release release;
+    return takeResult(mlir::submitProgram(device, compiled, numShots, custom1,
+                                          custom2, custom3, custom4, custom5));
   }
   auto input = programFromInput(program, false);
   const nb::gil_scoped_release release;
@@ -1667,29 +1665,16 @@ An explicit :class:`CompilerTarget` requires ``output`` to return a typed
 program, or ``program_format`` to return a :class:`CompiledProgram`.
 Typed inputs are copied unless ``inplace=True``.)pb");
 
-  m.def("_submit_to_device", &submitToDevice, "device"_a, "program"_a,
-        "num_shots"_a = 1024, nb::kw_only(), "program_format"_a = nb::none(),
+  m.def("submit_program", &submitProgram, "program"_a, nb::kw_only(),
+        "target"_a, "num_shots"_a = 1024, "program_format"_a = nb::none(),
         "enable_timing"_a = false, "enable_statistics"_a = false,
         "custom1"_a = nb::none(), "custom2"_a = nb::none(),
         "custom3"_a = nb::none(), "custom4"_a = nb::none(),
-        "custom5"_a = nb::none());
+        "custom5"_a = nb::none(),
+        R"pb(Compile source or submit a compiled program to a device.
 
-  m.def(
-      "submit_program",
-      [](const nb::object& program, const nb::object& target, int64_t numShots,
-         const nb::kwargs& options) {
-        if (numShots < 0) {
-          throw nb::value_error("num_shots must be nonnegative");
-        }
-        auto device = resolveDevice(target);
-        return nb::cast(std::move(device))
-            .attr("submit")(program, "num_shots"_a = numShots, **options);
-      },
-      "program"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024, "options"_a,
-      R"pb(Open a device and call :meth:`mqt.core.qdmi.Device.submit`.
-
-``target`` accepts a registered device ID or an open device. Additional keyword
-arguments are passed to ``Device.submit``.)pb");
+``target`` accepts a registered device ID or an open device.
+``Device.submit`` calls this function with its device as the target.)pb");
 }
 
 } // namespace mqt
