@@ -515,10 +515,18 @@ QCOProgramBuilder::getRegisterInfo(ValueRange values) const {
     if (isa<QubitType>(value.getType())) {
       validateQubitValue(value);
       const auto& qubit = *validQubits.find(value);
-      info.push_back({value.getType(), qubit.regId, qubit.regIndex});
+      info.push_back({
+          .type = value.getType(),
+          .regId = qubit.regId,
+          .regIndex = qubit.regIndex,
+      });
     } else {
       validateTensorValue(value);
-      info.push_back({value.getType(), validTensors.find(value)->regId, {}});
+      info.push_back({
+          .type = value.getType(),
+          .regId = validTensors.find(value)->regId,
+          .regIndex = {},
+      });
     }
   }
   return info;

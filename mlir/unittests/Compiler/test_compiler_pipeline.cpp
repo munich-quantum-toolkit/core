@@ -2260,6 +2260,61 @@ TEST_F(CompilerPipelineTest,
   EXPECT_EQ(value.getInt(), 8);
 }
 
+TEST_F(CompilerPipelineTest, PayloadControlPromotesNestedSingleIterationState) {
+  constexpr llvm::StringLiteral source = R"mlir(
+    module {
+      func.func private @observe(index, index)
+      func.func @main(%q: !qco.qubit) -> !qco.qubit {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %c3 = arith.constant 3 : index
+        %large = arith.constant 70000 : index
+        %result = scf.for %outer = %c2 to %c3 step %c1
+            iter_args(%arg = %q) -> (!qco.qubit) {
+          %condition = arith.cmpi ne, %outer, %c2 : index
+          scf.if %condition {
+            scf.for %unused = %c0 to %large step %c1 {
+              func.call @observe(%unused, %unused) : (index, index) -> ()
+            }
+          }
+          %next = scf.for %inner = %outer to %c3 step %c1
+              iter_args(%innerArg = %arg) -> (!qco.qubit) {
+            func.call @observe(%outer, %inner) : (index, index) -> ()
+            %x = qco.x %innerArg : !qco.qubit -> !qco.qubit
+            scf.yield %x : !qco.qubit
+          }
+          scf.yield %next : !qco.qubit
+        }
+        return %result : !qco.qubit
+      }
+    }
+  )mlir";
+  auto program = QCOProgram::fromMLIRString(source.str());
+  ASSERT_TRUE(program);
+  attachTargetEnvironment(
+      program->module(),
+      TargetEnvironment(makeUnrestrictedTarget(),
+                        makeControlPayloadSpecification({})));
+  ASSERT_TRUE(program->runPassPipeline("unroll-loops-for-payload"));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  EXPECT_FALSE(StringRef(program->str()).contains("scf.for"));
+  auto entry = program->module().lookupSymbol<func::FuncOp>("main");
+  auto calls = entry.getOps<func::CallOp>();
+  ASSERT_TRUE(llvm::hasSingleElement(calls));
+  auto call = *calls.begin();
+  for (Value operand : call.getOperands()) {
+    IntegerAttr value;
+    ASSERT_TRUE(matchPattern(operand, m_Constant(&value)));
+    EXPECT_EQ(value.getInt(), 2);
+  }
+  auto result = cast<func::ReturnOp>(entry.getBody().front().getTerminator());
+  auto gate = result.getOperand(0).getDefiningOp<qco::XOp>();
+  ASSERT_TRUE(gate);
+  EXPECT_EQ(gate->getOperand(0), entry.getArgument(0));
+}
+
 TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
   constexpr llvm::StringLiteral source = R"mlir(
     module {
@@ -2875,6 +2930,19 @@ TEST_F(CompilerPipelineTest,
       }
     }
   )mlir";
+  constexpr llvm::StringLiteral tensorForCapture = R"mlir(
+    module {
+      func.func private @consume(tensor<1x!qco.qubit>)
+      func.func @main(%upper: index, %q: tensor<1x!qco.qubit>) {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        scf.for %index = %c0 to %upper step %c1 {
+          func.call @consume(%q) : (tensor<1x!qco.qubit>) -> ()
+        }
+        return
+      }
+    }
+  )mlir";
   constexpr llvm::StringLiteral nestedWhileCapture = R"mlir(
     module {
       func.func @main(%upper: index, %condition: i1, %q: !qco.qubit)
@@ -2924,6 +2992,7 @@ TEST_F(CompilerPipelineTest,
            forCapture,
            whileCapture,
            nestedForCapture,
+           tensorForCapture,
            nestedWhileCapture,
        }) {
     SCOPED_TRACE(source.str());
