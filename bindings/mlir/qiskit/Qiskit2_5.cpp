@@ -2065,15 +2065,8 @@ public:
         parameters_(std::move(parameters)), gates_(std::move(gates)) {}
 
   [[nodiscard]] std::unique_ptr<CircuitWriter> createBlock() const override {
-    auto block = nb::module_::import_("qiskit.circuit")
-                     .attr("QuantumCircuit")(pythonCircuit_.attr("qubits"),
-                                             pythonCircuit_.attr("clbits"));
-    for (auto reg : nb::iter(pythonCircuit_.attr("qregs"))) {
-      block.attr("add_register")(reg);
-    }
-    for (auto reg : nb::iter(pythonCircuit_.attr("cregs"))) {
-      block.attr("add_register")(reg);
-    }
+    auto block =
+        pythonCircuit_.attr("copy_empty_like")(nb::arg("vars_mode") = "drop");
     return std::make_unique<NativeCircuitWriter>(std::move(block), parameters_,
                                                  gates_, variables_);
   }
