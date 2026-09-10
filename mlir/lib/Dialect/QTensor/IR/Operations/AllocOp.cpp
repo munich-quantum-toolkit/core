@@ -117,7 +117,7 @@ struct RemoveFreshSlotResets final : OpRewritePattern<AllocOp> {
     return success();
   }
 };
-} // namespace
+} /// namespace
 
 void AllocOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                           MLIRContext* context) {

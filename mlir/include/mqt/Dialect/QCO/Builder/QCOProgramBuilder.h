@@ -58,6 +58,15 @@ namespace qco {
 /// Dynamic allocation is only allowed directly in the entry block of the
 /// `mqt.entry_point` function. Helpers receive allocated qubits as arguments.
 ///
+/// @par Structured control flow:
+/// Callbacks for `qcoIf`, `qcoIndexSwitch`, `scfFor`, and `scfWhile` must
+/// preserve each input's type and tensor register association by result
+/// position. Extracted qubits must also retain their tensor slot. Equal
+/// constant indices are supported; dynamic indices must use the same SSA value
+/// as the input. Unsupported changes terminate with a usage error. Reinsert
+/// qubits inside each callback and carry the full tensor when slot associations
+/// must change.
+///
 /// @par Example Usage:
 /// ```c++
 /// QCOProgramBuilder builder(context);
@@ -1911,11 +1920,17 @@ private:
   /// @return SmallVector of the updated values of the initial values.
   SmallVector<Value> prepareInitArgs(ValueRange initArgs);
 
-  /// Prepare one initial argument by re-inserting extracted qubits into
-  /// its tensor, if necessary.
-  /// @param initArg Initial value
-  /// @return Updated initial value
-  Value prepareInitArg(Value initArg);
+  struct RegisterInfo {
+    Type type;
+    int64_t regId;
+    Value regIndex;
+  };
+
+  /// Save input associations before constructing a structured region.
+  SmallVector<RegisterInfo> getRegisterInfo(ValueRange values) const;
+
+  /// Check callback results and restore indices that dominate the region.
+  void restoreRegisterInfo(ValueRange values, ArrayRef<RegisterInfo> inputs);
 
   /// Reinsert the given extracted qubits in definition order.
   Value insertExtractedQubits(Value tensor, MutableArrayRef<Qubit> qubits);

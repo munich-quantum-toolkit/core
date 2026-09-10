@@ -25,6 +25,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinOps.h"
@@ -462,10 +463,6 @@ Value QCOProgramBuilder::insertExtractedQubits(Value tensor,
   return tensor;
 }
 
-Value QCOProgramBuilder::prepareInitArg(Value initArg) {
-  return prepareInitArgs(ValueRange{initArg}).front();
-}
-
 SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
   checkQubitType(initArgs);
   if (validQubits.empty()) {
@@ -508,6 +505,49 @@ SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
         initArg, qubitsByRegister[validTensors.find(initArg)->regId]));
   }
   return updatedArgs;
+}
+
+SmallVector<QCOProgramBuilder::RegisterInfo>
+QCOProgramBuilder::getRegisterInfo(ValueRange values) const {
+  SmallVector<RegisterInfo> info;
+  info.reserve(values.size());
+  for (auto value : values) {
+    if (isa<QubitType>(value.getType())) {
+      validateQubitValue(value);
+      const auto& qubit = *validQubits.find(value);
+      info.push_back({value.getType(), qubit.regId, qubit.regIndex});
+    } else {
+      validateTensorValue(value);
+      info.push_back({value.getType(), validTensors.find(value)->regId, {}});
+    }
+  }
+  return info;
+}
+
+void QCOProgramBuilder::restoreRegisterInfo(ValueRange values,
+                                            ArrayRef<RegisterInfo> inputs) {
+  const auto outputs = getRegisterInfo(values);
+  for (auto [value, input, output] : llvm::zip_equal(values, inputs, outputs)) {
+    if (input.type != output.type) {
+      llvm::reportFatalUsageError("Result types must match input types");
+    }
+    if (input.regId != output.regId) {
+      llvm::reportFatalUsageError(
+          "Structured body must preserve each input's tensor register");
+    }
+    if (input.regIndex == output.regIndex) {
+      continue;
+    }
+    if (!input.regIndex || !output.regIndex ||
+        !isEqualConstantIntOrValue(input.regIndex, output.regIndex)) {
+      llvm::reportFatalUsageError(
+          "Structured body must preserve each extracted qubit's tensor slot; "
+          "use equal constant indices or the same dynamic index SSA value");
+    }
+    /// The callback's equivalent index may not dominate the enclosing result.
+    validQubits.erase(value);
+    validQubits.insert(Qubit{value, input.regId, input.regIndex});
+  }
 }
 
 void QCOProgramBuilder::updateQubitValueTracking(Value oldValue,
@@ -1315,6 +1355,7 @@ ValueRange QCOProgramBuilder::scfFor(
   auto updatedArgs = prepareInitArgs(initArgs);
 
   // Create the empty for operation
+  const auto registerInfo = getRegisterInfo(updatedArgs);
   auto forOp = scf::ForOp::create(*this, lb, ub, stepSize, updatedArgs);
   auto* forBody = forOp.getBody();
   auto iv = forBody->getArgument(0);
@@ -1333,6 +1374,7 @@ ValueRange QCOProgramBuilder::scfFor(
     llvm::reportFatalUsageError(
         "scf.for body must return exactly one value per iter arg");
   }
+  restoreRegisterInfo(bodyResults, registerInfo);
   // Create the yield operation
   scf::YieldOp::create(*this, bodyResults);
 
@@ -1351,6 +1393,7 @@ ValueRange QCOProgramBuilder::scfWhile(
   // Get the updated arguments after inserting the extracted qubits
   auto updatedArgs = prepareInitArgs(initArgs);
   // Create the empty while operation
+  const auto registerInfo = getRegisterInfo(updatedArgs);
   auto whileOp = scf::WhileOp::create(*this, initArgs.getTypes(), updatedArgs);
 
   const SmallVector locs(initArgs.size(), getLoc());
@@ -1370,6 +1413,7 @@ ValueRange QCOProgramBuilder::scfWhile(
       llvm::reportFatalUsageError(
           "scf.while body must return exactly one value per iter arg");
     }
+    restoreRegisterInfo(results, registerInfo);
     if (createYield) {
       scf::YieldOp::create(*this, results);
     } else {
@@ -1411,6 +1455,7 @@ ValueRange QCOProgramBuilder::qcoIf(
   auto conditionValue = variantToValue(*this, getLoc(), condition);
   auto updatedArgs = prepareInitArgs(initArgs);
   // Create the empty if operation
+  const auto registerInfo = getRegisterInfo(updatedArgs);
   auto ifOp = IfOp::create(*this, conditionValue, updatedArgs);
 
   const SmallVector locs(initArgs.size(), getLoc());
@@ -1426,6 +1471,7 @@ ValueRange QCOProgramBuilder::qcoIf(
     llvm::reportFatalUsageError(
         "Then body must return exactly one value per input value");
   }
+  restoreRegisterInfo(thenResult, registerInfo);
   YieldOp::create(*this, thenResult);
 
   // Create the else block
@@ -1439,6 +1485,7 @@ ValueRange QCOProgramBuilder::qcoIf(
       llvm::reportFatalUsageError(
           "Else body must return exactly one value per input value");
     }
+    restoreRegisterInfo(elseResult, registerInfo);
     YieldOp::create(*this, elseResult);
     updateQubitValueTracking(elseResult, ifOp.getLinearResults());
   } else {
@@ -1465,6 +1512,7 @@ ValueRange QCOProgramBuilder::qcoIndexSwitch(
   const auto ntargets = targets.size();
   const auto types = targets.getTypes();
   const auto updatedTargets = prepareInitArgs(targets);
+  const auto registerInfo = getRegisterInfo(updatedTargets);
   auto argValue = variantToValue(*this, getLoc(), arg);
 
   auto switchOp = IndexSwitchOp::create(*this, types, argValue, cases,
@@ -1485,6 +1533,7 @@ ValueRange QCOProgramBuilder::qcoIndexSwitch(
       llvm::reportFatalUsageError(msg);
       llvm_unreachable(msg);
     }
+    restoreRegisterInfo(result, registerInfo);
 
     YieldOp::create(*this, result);
     prev = result;
@@ -1506,69 +1555,37 @@ Value QCOProgramBuilder::qcoIndexSwitch(
     const std::variant<int64_t, Value>& arg, Value target,
     ArrayRef<int64_t> cases, ArrayRef<function_ref<Value(Value)>> caseBodies,
     function_ref<Value(Value)> defaultBody) {
-  checkFinalized();
-
-  if (cases.size() != caseBodies.size()) {
-    llvm::reportFatalUsageError(
-        "Each case must have a corresponding case body function");
-  }
-
-  auto updatedTarget = prepareInitArg(target);
-  auto argValue = variantToValue(*this, getLoc(), arg);
-  auto switchOp = IndexSwitchOp::create(*this, target.getType(), argValue,
-                                        cases, updatedTarget, cases.size());
-
-  const InsertionGuard guard(*this);
-  const auto buildRegion = [&](Region& region, Value previous,
-                               function_ref<Value(Value)> body) -> Value {
-    auto& block = region.emplaceBlock();
-    auto blockArgument = block.addArgument(target.getType(), getLoc());
-    updateQubitValueTracking(previous, blockArgument);
-    setInsertionPointToStart(&block);
-    auto result = body(blockArgument);
-    YieldOp::create(*this, result);
-    return result;
-  };
-
-  Value previous = updatedTarget;
-  for (const auto [region, body] :
-       llvm::zip_equal(switchOp.getCaseRegions(), caseBodies)) {
-    previous = buildRegion(region, previous, body);
-  }
-  previous = buildRegion(switchOp.getDefaultRegion(), previous, defaultBody);
-  updateQubitValueTracking(previous, switchOp.getLinearResults().front());
-  return switchOp.getLinearResults().front();
+  auto bodies =
+      llvm::map_to_vector(caseBodies, [](function_ref<Value(Value)> body) {
+        return [body](ValueRange args) {
+          return SmallVector<Value>{body(args.front())};
+        };
+      });
+  /// Keep the adapted callbacks alive until the range overload returns.
+  SmallVector<function_ref<SmallVector<Value>(ValueRange)>> callbacks(
+      bodies.begin(), bodies.end());
+  return qcoIndexSwitch(arg, ValueRange{target}, cases, callbacks,
+                        [&](ValueRange args) {
+                          return SmallVector<Value>{defaultBody(args.front())};
+                        })
+      .front();
 }
 
 Value QCOProgramBuilder::qcoIf(const std::variant<bool, Value>& condition,
                                Value initArg,
                                function_ref<Value(Value)> thenBody,
                                function_ref<Value(Value)> elseBody) {
-  checkFinalized();
-
-  auto conditionValue = variantToValue(*this, getLoc(), condition);
-  auto updatedArg = prepareInitArg(initArg);
-  Value thenResult;
-  const auto trackedThenBody = [&](Value arg) {
-    updateQubitValueTracking(updatedArg, arg);
-    thenResult = thenBody(arg);
-    return thenResult;
+  const auto then = [&](ValueRange args) {
+    return SmallVector<Value>{thenBody(args.front())};
   };
-  if (elseBody) {
-    Value elseResult;
-    auto ifOp = IfOp::create(*this, conditionValue, updatedArg, trackedThenBody,
-                             [&](Value arg) {
-                               updateQubitValueTracking(thenResult, arg);
-                               elseResult = elseBody(arg);
-                               return elseResult;
-                             });
-    updateQubitValueTracking(elseResult, ifOp.getLinearResults().front());
-    return ifOp.getLinearResults().front();
+  if (!elseBody) {
+    return qcoIf(condition, ValueRange{initArg}, then).front();
   }
-
-  auto ifOp = IfOp::create(*this, conditionValue, updatedArg, trackedThenBody);
-  updateQubitValueTracking(thenResult, ifOp.getLinearResults().front());
-  return ifOp.getLinearResults().front();
+  return qcoIf(condition, ValueRange{initArg}, then,
+               [&](ValueRange args) {
+                 return SmallVector<Value>{elseBody(args.front())};
+               })
+      .front();
 }
 
 ValueRange QCOProgramBuilder::qcoIf(
