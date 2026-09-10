@@ -259,67 +259,55 @@ private:
     return std::max(capacity, value.getZExtValue() + 1);
   }
 
-  /// Return the capacity required to address every static qubit ID.
-  /// Assumes that qubits are constant integers that are converted to
-  /// an integer pointer and then used in (at least) one quantum instruction.
+  /// Identify scalar qubit operands of the QIS calls emitted by this compiler.
+  static bool isQubitOperand(StringRef callee, unsigned index) {
+    if (callee == QIR_MEASURE || callee == QIR_RESET) {
+      return index == 0;
+    }
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
+  if (callee == QIR_##GETTER) {                                                \
+    return index >= PARAMS && index < PARAMS + TARGETS;                        \
+  }                                                                            \
+  if (callee == QIR_C##GETTER) {                                               \
+    return index >= PARAMS && index < PARAMS + TARGETS + 1;                    \
+  }                                                                            \
+  if (callee == QIR_CC##GETTER) {                                              \
+    return index >= PARAMS && index < PARAMS + TARGETS + 2;                    \
+  }                                                                            \
+  if (callee == QIR_##GETTER##_CTL) {                                          \
+    return PARAMS == 0 && TARGETS == 1 && index == 1;                          \
+  }
+#include "mqt/Conversion/GateTable.def"
+    return false;
+  }
+
+  /// Extend capacity for a direct static resource pointer, ignoring dynamic
+  /// IDs.
+  static FailureOr<uint64_t> includeStaticResource(Value pointer,
+                                                   uint64_t capacity) {
+    auto toPtr = pointer.getDefiningOp<LLVM::IntToPtrOp>();
+    auto constant = toPtr ? toPtr.getArg().getDefiningOp<LLVM::ConstantOp>()
+                          : LLVM::ConstantOp{};
+    auto index =
+        constant ? dyn_cast<IntegerAttr>(constant.getValue()) : IntegerAttr{};
+    return index ? includeResourceId(index, capacity, constant)
+                 : FailureOr<uint64_t>(capacity);
+  }
+
+  /// Return the capacity required by scalar qubit operands of known QIS calls.
   static FailureOr<uint64_t> getNumQubits(LLVM::LLVMFuncOp& main) {
-    static constexpr StringRef QIS_PREFIX = "__quantum__qis";
-
-    FailureOr<uint64_t> numQubits = uint64_t{0};
-    main->walk([&](LLVM::ConstantOp constOp) {
-      if (failed(numQubits) || constOp.use_empty()) {
+    FailureOr<uint64_t> capacity = uint64_t{0};
+    main.walk([&](LLVM::CallOp call) {
+      if (!call.getCallee()) {
         return;
       }
-
-      const auto intAttr = dyn_cast<IntegerAttr>(constOp.getValue());
-      if (!intAttr) {
-        return;
+      for (auto [index, operand] : llvm::enumerate(call.getArgOperands())) {
+        if (succeeded(capacity) && isQubitOperand(*call.getCallee(), index)) {
+          capacity = includeStaticResource(operand, *capacity);
+        }
       }
-
-      if (!intAttr.getType().isInteger()) { // Not a ": index".
-        return;
-      }
-
-      const auto userIt =
-          llvm::find_if(constOp->getUsers(), [](Operation* user) {
-            return isa<LLVM::IntToPtrOp>(user);
-          });
-      if (userIt == constOp->user_end()) {
-        return;
-      }
-
-      auto toPtrOp = cast<LLVM::IntToPtrOp>(*userIt);
-      const auto callIt =
-          llvm::find_if(toPtrOp->getUses(), [](OpOperand& operand) {
-            auto callOp = dyn_cast<LLVM::CallOp>(operand.getOwner());
-            if (!callOp) {
-              return false;
-            }
-
-            auto callee = callOp.getCallee();
-            if (!callee.has_value()) {
-              return false;
-            }
-
-            if (*callee == QIR_MEASURE) {
-
-              // The following assumes that the first argument of a
-              // measurement call is the qubit. This may (or may not) hold in
-              // the future.
-
-              return operand.getOperandNumber() == 0;
-            }
-
-            return callee->starts_with(QIS_PREFIX);
-          });
-      if (callIt == toPtrOp->use_end()) {
-        return;
-      }
-
-      numQubits = includeResourceId(intAttr, *numQubits, constOp);
     });
-
-    return numQubits;
+    return capacity;
   }
 
   /// Return the capacity required to address every static result ID.
@@ -340,24 +328,8 @@ private:
         return;
       }
 
-      auto operand = callOp->getOperand(index);
-      auto toPtrOp = dyn_cast<LLVM::IntToPtrOp>(operand.getDefiningOp());
-      if (!toPtrOp) {
-        return;
-      }
-
-      auto arg = toPtrOp.getArg();
-      auto constOp = dyn_cast<LLVM::ConstantOp>(arg.getDefiningOp());
-      if (!constOp) {
-        return;
-      }
-
-      const auto intAttr = dyn_cast<IntegerAttr>(constOp.getValue());
-      if (!intAttr) {
-        return;
-      }
-
-      numResults = includeResourceId(intAttr, *numResults, constOp);
+      numResults =
+          includeStaticResource(callOp.getArgOperands()[index], *numResults);
     });
 
     return numResults;

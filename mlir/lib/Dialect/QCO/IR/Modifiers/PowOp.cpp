@@ -192,10 +192,6 @@ struct MergeNestedPow final : OpRewritePattern<PowOp> {
       return failure();
     }
 
-    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
-      return failure();
-    }
-
     // The inner pow's operands alias the outer pow's block args, possibly in a
     // different order / subset. Translate them back to the outer pow's operands
     // so the merged pow's footprint matches the inner pow positionally.
@@ -246,10 +242,6 @@ struct MoveCtrlOutsidePow final : OpRewritePattern<PowOp> {
     // The rewrite hands the qubits of the modifier to the inner operation, so
     // it must act on all of them.
     if (innerCtrlOp.getNumQubits() != op.getNumQubits()) {
-      return failure();
-    }
-
-    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
       return failure();
     }
 
@@ -328,10 +320,6 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
              BarrierOp>(innerOp)) {
       return failure();
     }
-    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
-      return failure();
-    }
-
     double r = *exponent;
     const auto period = getFixedGatePowerPeriod(bodyUnitary.getBaseSymbol());
     if (period != 0U) {
@@ -624,10 +612,6 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
       return failure();
     }
 
-    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
-      return failure();
-    }
-
     rewriter.replaceOp(op, op.getInputQubits());
     return success();
   }
@@ -740,28 +724,10 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
                   bodyBuilder(block.getArgument(0)));
 }
 
-LogicalResult PowOp::verify() {
+LogicalResult PowOp::verifyRegions() {
   auto& block = *getBody();
   if (failed(detail::verifyModifierBody(getOperation(), block))) {
     return failure();
-  }
-  const auto numTargets = getNumTargets();
-  if (block.getArguments().size() != numTargets) {
-    return emitOpError(
-        "number of block arguments must match the number of targets");
-  }
-  const auto qubitType = QubitType::get(getContext());
-  for (size_t i = 0; i < numTargets; ++i) {
-    if (block.getArgument(i).getType() != qubitType) {
-      return emitOpError("block argument type at index ")
-             << i << " does not match target type";
-    }
-  }
-  auto* blockTerminator = block.getTerminator();
-  if (const auto numYieldOperands = blockTerminator->getNumOperands();
-      numYieldOperands != numTargets) {
-    return emitOpError("yield operation must yield ")
-           << numTargets << " values, but found " << numYieldOperands;
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsIn;

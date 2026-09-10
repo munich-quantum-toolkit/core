@@ -1221,8 +1221,11 @@ def YieldOp
                                             "InvOp", "PowOp"]>]> {
   let summary = "Yield values from a QCO region";
   let description = [{
-        Terminates a QCO region. Modifier regions yield their transformed linear
-        values. `qco.if` and `qco.index_switch` regions may additionally yield
+        Terminates a QCO region. Modifier regions yield their transformed qubits
+        in body-argument order: following each yielded qubit through unitary
+        input/output ties must reach the argument at the same position. Wire
+        permutations must be expressed with gates, not by reordering yields.
+        `qco.if` and `qco.index_switch` regions may additionally yield
         ordinary classical SSA values before their transformed linear values.
         The operands must match the expected output signature of the parent
         operation.
@@ -1329,7 +1332,7 @@ def CtrlOp : QCOOp<"ctrl",
            "function_ref<Value(Value)>":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
-  let hasVerifier = 1;
+  let hasRegionVerifier = 1;
 }
 
 def InvOp
@@ -1408,7 +1411,7 @@ def InvOp
            "function_ref<Value(Value)>":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
-  let hasVerifier = 1;
+  let hasRegionVerifier = 1;
 }
 
 def PowOp
@@ -1501,7 +1504,7 @@ def PowOp
                       "llvm::function_ref<Value(Value)>":$bodyBuilder)>];
 
   let hasCanonicalizer = 1;
-  let hasVerifier = 1;
+  let hasRegionVerifier = 1;
 }
 
 //===----------------------------------------------------------------------===//

@@ -93,7 +93,7 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
     auto qubitVariable = op.getQubitIn();
     auto* predecessor = qubitVariable.getDefiningOp();
 
-    auto predecessorUnitary = mlir::dyn_cast<UnitaryOpInterface>(predecessor);
+    auto predecessorUnitary = qubitVariable.getDefiningOp<UnitaryOpInterface>();
 
     if (!predecessorUnitary) {
       return mlir::failure();
@@ -128,7 +128,7 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
     auto qubitVariable = op.getQubitIn();
     auto* predecessor = qubitVariable.getDefiningOp();
 
-    auto predecessorUnitary = mlir::dyn_cast<UnitaryOpInterface>(predecessor);
+    auto predecessorUnitary = qubitVariable.getDefiningOp<UnitaryOpInterface>();
 
     if (!predecessorUnitary) {
       return mlir::failure();
@@ -166,8 +166,7 @@ struct LiftMeasurementsAboveControlsPattern final
   matchAndRewrite(MeasureOp op,
                   mlir::PatternRewriter& rewriter) const override {
     auto qubitVariable = op.getQubitIn();
-    auto* predecessor = qubitVariable.getDefiningOp();
-    auto predecessorCtrl = mlir::dyn_cast<CtrlOp>(predecessor);
+    auto predecessorCtrl = qubitVariable.getDefiningOp<CtrlOp>();
 
     if (!predecessorCtrl) {
       return mlir::failure();

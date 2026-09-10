@@ -25,15 +25,9 @@ class Operation;
 
 namespace qco::detail {
 
-/// Verify the operations and SSA captures in a QCO modifier body.
+/// Verify a QCO modifier body after nested operations have been verified.
 [[nodiscard]] LogicalResult verifyModifierBody(Operation* modifierOp,
                                                Block& body);
-
-/// Check whether a valid modifier body yields each wire in argument order.
-///
-/// Follow the unitary operations' input/output correspondence without treating
-/// a permutation in the terminator as part of any individual body gate.
-[[nodiscard]] bool hasPositionalBodyYields(Block& body);
 
 /// Return the positions of the qubits that the body of a modifier uses.
 ///

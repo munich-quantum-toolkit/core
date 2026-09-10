@@ -457,9 +457,8 @@ void IndexSwitchOp::print(OpAsmPrinter& p) {
   p.printOptionalArrowTypeList(getResultTypes());
 
   // Print attributes (excluding cases which we handle specially)
-  p.printOptionalAttrDictWithKeyword(
-      getOperation()->getAttrs(),
-      /*elidedAttrs=*/{"cases", "resultSegmentSizes"});
+  p.printOptionalAttrDict(getOperation()->getAttrs(),
+                          /*elidedAttrs=*/{"cases", "resultSegmentSizes"});
 
   // Print case regions
   const auto cases = getCases();

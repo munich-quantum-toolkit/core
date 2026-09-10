@@ -525,6 +525,117 @@ TEST_F(QIRTest, MetadataDeclaresResourceCapacities) {
   }
 }
 
+TEST_F(QIRTest, MetadataCountsEveryStaticPointerUse) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+module {
+  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+  llvm.func @__quantum__rt__result_record_output(!llvm.ptr, !llvm.ptr)
+  llvm.func @main() attributes {passthrough = ["entry_point"]} {
+    %id = llvm.mlir.constant(7 : i64) : i64
+    %qubit = llvm.inttoptr %id : i64 to !llvm.ptr
+    %result = llvm.inttoptr %id : i64 to !llvm.ptr
+    %label = llvm.mlir.zero : !llvm.ptr
+    llvm.call @__quantum__qis__mz__body(%qubit, %result)
+        : (!llvm.ptr, !llvm.ptr) -> ()
+    llvm.call @__quantum__rt__result_record_output(%result, %label)
+        : (!llvm.ptr, !llvm.ptr) -> ()
+    llvm.return
+  }
+}
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*module)));
+  auto main = getMainFunction(*module);
+  OpBuilder builder(context.get());
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_qubits", "8"})));
+}
+
+TEST_F(QIRTest, MetadataDoesNotCountResultReadsAsQubits) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+module {
+  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+  llvm.func @__quantum__qis__read_result__body(!llvm.ptr) -> i1
+  llvm.func @main() attributes {passthrough = ["entry_point"]} {
+    %qubit_id = llvm.mlir.constant(0 : i64) : i64
+    %result_id = llvm.mlir.constant(7 : i64) : i64
+    %qubit = llvm.inttoptr %qubit_id : i64 to !llvm.ptr
+    %result = llvm.inttoptr %result_id : i64 to !llvm.ptr
+    llvm.call @__quantum__qis__mz__body(%qubit, %result)
+        : (!llvm.ptr, !llvm.ptr) -> ()
+    %bit = llvm.call @__quantum__qis__read_result__body(%result)
+        : (!llvm.ptr) -> i1
+    llvm.return
+  }
+}
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*module)));
+  auto main = getMainFunction(*module);
+  OpBuilder builder(context.get());
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_qubits", "1"})));
+}
+
+TEST_F(QIRTest, MetadataAcceptsDynamicPointerArguments) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+module {
+  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+  llvm.func @main(%q: !llvm.ptr, %r: !llvm.ptr)
+      attributes {passthrough = ["entry_point"]} {
+    llvm.call @__quantum__qis__mz__body(%q, %r) : (!llvm.ptr, !llvm.ptr) -> ()
+    llvm.return
+  }
+}
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*module)));
+  auto main = getMainFunction(*module);
+  OpBuilder builder(context.get());
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_qubits", "0"})));
+}
+
+TEST_F(QIRTest, MetadataIncludesMeasurementLatch) {
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+module {
+  llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+  llvm.func @__quantum__rt__read_result(!llvm.ptr) -> i1
+  llvm.func @main() attributes {passthrough = ["entry_point"]} {
+    %zero = llvm.mlir.constant(0 : i64) : i64
+    %result = llvm.inttoptr %zero : i64 to !llvm.ptr
+    llvm.br ^header
+  ^header:
+    llvm.br ^latch
+  ^latch:
+    llvm.call @__quantum__qis__mz__body(%result, %result)
+        : (!llvm.ptr, !llvm.ptr) -> ()
+    %again = llvm.call @__quantum__rt__read_result(%result)
+        : (!llvm.ptr) -> i1
+    llvm.cond_br %again, ^header, ^exit
+  ^exit:
+    llvm.return
+  }
+}
+  )mlir",
+                                            context.get());
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*module, true)));
+  auto flag = findModuleFlag(*module, "backwards_branching");
+  ASSERT_TRUE(flag);
+  EXPECT_EQ(cast<IntegerAttr>(flag.getValue()).getInt(), 2);
+}
+
 TEST_F(QIRTest, MetadataRejectsUnrepresentableStaticResourceCapacity) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
     llvm.func @__quantum__qis__x__body(!llvm.ptr)

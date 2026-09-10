@@ -30,7 +30,38 @@
 
 namespace mlir::qco::detail {
 
+// Follow unitary ties only after nested operations have been verified.
+static bool hasPositionalBodyYields(Block& body) {
+  // A valid modifier cannot permute fewer than two wires.
+  if (body.getNumArguments() < 2) {
+    return true;
+  }
+
+  for (auto [argument, yielded] : llvm::zip_equal(
+           body.getArguments(), body.getTerminator()->getOperands())) {
+    Value origin = yielded;
+    while (origin != argument) {
+      auto unitary = origin.getDefiningOp<UnitaryOpInterface>();
+      if (!unitary) {
+        return false;
+      }
+      origin = unitary.getInputForOutput(origin);
+    }
+  }
+  return true;
+}
+
 LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
+  auto unitary = cast<UnitaryOpInterface>(modifierOp);
+  if (!llvm::equal(body.getArgumentTypes(),
+                   unitary.getInputTargets().getTypes())) {
+    return modifierOp->emitOpError("body argument types must match targets");
+  }
+  if (!llvm::equal(body.getTerminator()->getOperandTypes(),
+                   body.getArgumentTypes())) {
+    return modifierOp->emitOpError("yield types must match body arguments");
+  }
+
   SetVector<Value> captures;
   getUsedValuesDefinedAbove(modifierOp->getRegions(), captures);
   if (llvm::any_of(captures, [](Value value) {
@@ -58,27 +89,11 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
                                    "operations without regions");
   }
 
+  if (!hasPositionalBodyYields(body)) {
+    return modifierOp->emitOpError(
+        "yielded qubits must continue body arguments positionally");
+  }
   return success();
-}
-
-bool hasPositionalBodyYields(Block& body) {
-  // A valid modifier cannot permute fewer than two wires.
-  if (body.getNumArguments() < 2) {
-    return true;
-  }
-
-  for (auto [argument, yielded] : llvm::zip_equal(
-           body.getArguments(), body.getTerminator()->getOperands())) {
-    Value origin = yielded;
-    while (origin != argument) {
-      auto unitary = origin.getDefiningOp<UnitaryOpInterface>();
-      if (!unitary) {
-        return false;
-      }
-      origin = unitary.getInputForOutput(origin);
-    }
-  }
-  return true;
 }
 
 SmallVector<size_t> getUsedQubitIndices(Block& body) {

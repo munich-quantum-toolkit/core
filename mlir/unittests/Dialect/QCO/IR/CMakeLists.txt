@@ -14,7 +14,7 @@ add_executable(
   test_qco_ir.cpp
   test_qco_ir_matrix.cpp
   test_qco_modifier_canonicalization.cpp
-  test_qco_modifier_yield_canonicalization.cpp
+  test_qco_modifier_verification.cpp
   test_qco_numeric_canonicalization.cpp
   test_qco_wire_canonicalization.cpp)
 target_link_libraries(

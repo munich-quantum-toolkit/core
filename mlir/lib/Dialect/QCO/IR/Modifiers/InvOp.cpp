@@ -65,10 +65,6 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
       return failure();
     }
 
-    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
-      return failure();
-    }
-
     // inv(ctrl(x)) == ctrl(inv(x)). The inner control's controls and targets
     // are block arguments aliasing the inverse modifier's qubits. Pull the
     // controls out to a new control modifier and wrap the inner body in an
@@ -134,10 +130,6 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
       return failure();
     }
 
-    if (!qco::detail::hasPositionalBodyYields(*invOp.getBody())) {
-      return failure();
-    }
-
     // Move supporting ops (constants, arithmetic) out of the body so their
     // Values are accessible from outside and survive InvOp erasure.
     mqt::hoistSupportingOpsBefore(*invOp.getBody(), innerPow.getOperation(),
@@ -189,10 +181,6 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
       return failure();
     }
 
-    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
-      return failure();
-    }
-
     // A self-adjoint gate is its own inverse, so the modifier can be dropped
     // and its body applied directly to the input qubits.
     mqt::inlineModifierBody(op, *op.getBody(), op.getInputQubits(), rewriter);
@@ -213,10 +201,6 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
     if (!inner) {
       return failure();
     }
-    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
-      return failure();
-    }
-
     auto* innerOp = inner.getOperation();
     // Replace the body gate in place with its inverse, operating on the same
     // (block-argument) operands; inlining the body afterwards substitutes those
@@ -360,10 +344,6 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
       return failure();
     }
 
-    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
-      return failure();
-    }
-
     // Inline each region separately so both yield mappings are preserved.
     mqt::inlineModifierBody(innerInvOp, *innerInvOp.getBody(),
                             innerInvOp.getInputQubits(), rewriter);
@@ -378,10 +358,6 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
   LogicalResult matchAndRewrite(InvOp op,
                                 PatternRewriter& rewriter) const override {
     if (op.getNumBodyUnitaries() != 0) {
-      return failure();
-    }
-
-    if (!qco::detail::hasPositionalBodyYields(*op.getBody())) {
       return failure();
     }
 
@@ -462,29 +438,10 @@ void InvOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
       });
 }
 
-LogicalResult InvOp::verify() {
+LogicalResult InvOp::verifyRegions() {
   auto& block = *getBody();
   if (failed(detail::verifyModifierBody(getOperation(), block))) {
     return failure();
-  }
-
-  const auto numTargets = getNumTargets();
-  if (block.getArguments().size() != numTargets) {
-    return emitOpError(
-        "number of block arguments must match the number of targets");
-  }
-  auto qubitType = QubitType::get(getContext());
-  for (size_t i = 0; i < numTargets; ++i) {
-    if (block.getArgument(i).getType() != qubitType) {
-      return emitOpError("block argument type at index ")
-             << i << " does not match target type";
-    }
-  }
-  auto* blockTerminator = block.getTerminator();
-  if (const auto numYieldOperands = blockTerminator->getNumOperands();
-      numYieldOperands != numTargets) {
-    return emitOpError("yield operation must yield ")
-           << numTargets << " values, but found " << numYieldOperands;
   }
 
   SmallPtrSet<Value, 4> uniqueQubitsIn;

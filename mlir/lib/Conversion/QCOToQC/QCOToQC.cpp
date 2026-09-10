@@ -321,19 +321,14 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
                       loop.getConditionOp().getArgs()) &&
           corresponds(loop.getAfterArguments(), loop.getYieldOp().getResults());
       tie(loop.getInits(), loop.getResults());
-    } else if (isa<qco::IfOp, qco::IndexSwitchOp, qco::InvOp, qco::CtrlOp,
-                   qco::PowOp>(op)) {
+    } else if (isa<qco::IfOp, qco::IndexSwitchOp>(op)) {
       for (auto& region : op->getRegions()) {
         positional &=
             region.hasOneBlock() &&
             corresponds(region.front().getArguments(),
                         region.front().getTerminator()->getOperands());
       }
-      if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
-        tie(unitary.getInputQubits(), unitary.getOutputQubits());
-      } else {
-        tie(op->getOperands(), op->getResults());
-      }
+      tie(op->getOperands(), op->getResults());
     } else if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
       tie(unitary.getInputQubits(), unitary.getOutputQubits());
     } else if (auto measure = dyn_cast<qco::MeasureOp>(op)) {

@@ -15,6 +15,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
 #include "mqt/Dialect/MQT/Utils/GatePowering.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
@@ -2242,6 +2243,26 @@ protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
     auto moduleOp = getOperation();
+    const auto modifiers = moduleOp.walk([](Operation* op) {
+      if (!isa<CtrlOp, InvOp, PowOp>(op)) {
+        return WalkResult::advance();
+      }
+      auto& body = op->getRegion(0).front();
+      auto unitary = mqt::getSoleBodyUnitary<UnitaryOpInterface>(body);
+      if (!unitary ||
+          !llvm::equal(unitary.getInputQubits(), body.getArguments())) {
+        op->emitError(
+            "jeff conversion requires a single body unitary using every "
+            "modifier argument in order; canonicalize or unroll modifiers "
+            "before conversion");
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
+    });
+    if (modifiers.wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
       return;

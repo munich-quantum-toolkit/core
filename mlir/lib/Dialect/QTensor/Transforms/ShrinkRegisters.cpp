@@ -122,10 +122,6 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
       return failure();
     }
 
-    if (!oldDeallocOp) {
-      return failure();
-    }
-
     SmallVector<int64_t> liveIndices(live.begin(), live.end());
     llvm::sort(liveIndices);
     const auto newSize = static_cast<int64_t>(liveIndices.size());
@@ -138,16 +134,6 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
       return failure();
     }
 
-    SmallVector<int64_t> mappedIndices;
-    mappedIndices.reserve(accesses.size());
-    for (const auto& access : accesses) {
-      const auto mapped = newIndexByOldIndex.find(access.index);
-      if (mapped == newIndexByOldIndex.end()) {
-        return failure();
-      }
-      mappedIndices.push_back(mapped->second);
-    }
-
     rewriter.setInsertionPoint(allocOp);
     auto size =
         arith::ConstantIndexOp::create(rewriter, allocOp.getLoc(), newSize);
@@ -158,8 +144,8 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
     });
 
     auto currentTensor = newAlloc.getResult();
-    for (const auto [access, mappedIndex] :
-         llvm::zip_equal(accesses, mappedIndices)) {
+    for (const auto& access : accesses) {
+      const auto mappedIndex = newIndexByOldIndex.at(access.index);
       if (auto extractOp = dyn_cast<ExtractOp>(access.operation)) {
         rewriter.setInsertionPoint(extractOp);
         auto index = arith::ConstantIndexOp::create(

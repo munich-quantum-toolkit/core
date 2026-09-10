@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
@@ -157,12 +156,6 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
 } // namespace
 
 LogicalResult InsertOp::verify() {
-  if (getOperation()->getParentOfType<qco::CtrlOp>() ||
-      getOperation()->getParentOfType<qco::InvOp>() ||
-      getOperation()->getParentOfType<qco::PowOp>()) {
-    return emitOpError("cannot access a qubit tensor inside a QCO modifier");
-  }
-
   auto dstDim = getDest().getType().getDimSize(0);
   auto index = getConstantIntValue(getIndex());
 

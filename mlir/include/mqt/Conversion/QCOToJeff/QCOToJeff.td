@@ -18,6 +18,9 @@ def QCOToJeff : Pass<"qco-to-jeff", "mlir::ModuleOp"> {
     Defined single-block functions and their calls are preserved. Mutable
     classical-register arguments in helpers are not supported. Unitary calls
     inside quantum modifiers must be expanded with `unroll-modifiers` first.
+    Each remaining modifier must contain one unitary using all body arguments
+    in order. Canonicalize or unroll modifiers outside this normal form before
+    conversion.
 
     Note that this pass is still in development as QCO and `jeff` do not have full feature parity yet.
 

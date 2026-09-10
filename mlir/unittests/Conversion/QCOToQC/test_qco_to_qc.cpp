@@ -1493,7 +1493,7 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(
                 aliasSafeNestedForLoopCtrlOpWithExtractedQubit)}));
 
-TEST(QCOToQCRegressionTest, RejectsPermutationsInEveryRegionForm) {
+TEST(QCOToQCRegressionTest, RejectsPermutationsInControlFlowRegions) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
                   func::FuncDialect, scf::SCFDialect>();
@@ -1526,25 +1526,6 @@ TEST(QCOToQCRegressionTest, RejectsPermutationsInEveryRegionForm) {
       ^bb0(%u: !qco.qubit, %v: !qco.qubit):
         scf.yield %v, %u : !qco.qubit, !qco.qubit
       }
-    )mlir",
-      R"mlir(
-      %r:2 = qco.inv (%u = %a, %v = %b) {
-        qco.yield %v, %u : !qco.qubit, !qco.qubit
-      } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
-    )mlir",
-      R"mlir(
-      %p = arith.constant 2.0 : f64
-      %r:2 = qco.pow(%p) (%u = %a, %v = %b) {
-        qco.yield %v, %u : !qco.qubit, !qco.qubit
-      } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
-    )mlir",
-      R"mlir(
-      %c = qco.alloc : !qco.qubit
-      %control, %r:2 = qco.ctrl(%c) targets(%u = %a, %v = %b) {
-        qco.yield %v, %u : !qco.qubit, !qco.qubit
-      } : ({!qco.qubit}, {!qco.qubit, !qco.qubit})
-          -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
-      qco.sink %control : !qco.qubit
     )mlir",
   };
   for (const auto* body : bodies) {
