@@ -1032,15 +1032,11 @@ private:
         }
         return (Twine("(1.0 * ") + *operand + ")").str();
       }
-      if (isa<arith::IndexCastOp, arith::IndexCastUIOp>(operation) &&
+      if (name == "arith.index_cast" &&
           (operation->getOperand(0).getType().isInteger(64) ||
            operation->getOperand(0).getType().isIndex()) &&
           (value.getType().isInteger(64) || value.getType().isIndex())) {
         return operand;
-      }
-      if (isa<arith::IndexCastUIOp>(operation)) {
-        return failExpression(value,
-                              "unsigned index casts require a 64-bit integer");
       }
       auto type = castTarget(name, value.getType());
       if (type.empty()) {
@@ -1184,7 +1180,7 @@ private:
 
   [[nodiscard]] static bool isScalarCast(const StringRef name) {
     return llvm::StringSwitch<bool>(name)
-        .Cases({"arith.index_cast", "arith.index_castui"}, true)
+        .Case("arith.index_cast", true)
         .Cases({"arith.sitofp", "arith.uitofp"}, true)
         .Cases({"arith.fptosi", "arith.fptoui"}, true)
         .Default(false);

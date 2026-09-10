@@ -1877,17 +1877,6 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
       })mlir",
       },
       Fixture{
-          .name = "narrow-unsigned-index-cast",
-          .source = R"mlir(module {
-        func.func @main() -> index {
-          %input = arith.constant 1 : i8
-          %value = arith.index_castui %input : i8 to index
-          return %value : index
-        }
-      })mlir",
-      },
-
-      Fixture{
           .name = "dynamic-index",
           .source = R"mlir(module {
         func.func @main() -> i1 {

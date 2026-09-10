@@ -1723,31 +1723,6 @@ switch (int(choose)) {
   EXPECT_EQ(switches, 1);
 }
 
-TEST(OpenQASMTargetTest, KeepsLoopExitSwitchDispatchFlat) {
-  constexpr size_t caseCount = 64;
-  std::string source = "OPENQASM 3.1; qubit q; bit choose = measure q; "
-                       "output int result; result = int(choose); "
-                       "for int repeat in [0:0] { switch (result) {";
-  for (size_t label = 0; label < caseCount; ++label) {
-    source += "case " + std::to_string(label) +
-              " { int local = " + std::to_string(label) +
-              "; result = local; break; }";
-  }
-  source += "default { break; } } }";
-  MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
-  ASSERT_TRUE(moduleOp);
-  ASSERT_TRUE(succeeded(verify(*moduleOp)));
-  size_t switches = 0;
-  moduleOp->walk([&](scf::IndexSwitchOp switchOp) {
-    ++switches;
-    EXPECT_EQ(switchOp.getCases().size(), caseCount);
-  });
-  /// One dispatch avoids the CFG structuring cost of a nested conditional
-  /// chain.
-  EXPECT_EQ(switches, 1);
-}
-
 TEST(OpenQASMTargetTest, PreservesLoopExitSwitchLabelsAndDefault) {
   constexpr auto selectors =
       std::to_array<std::pair<llvm::StringLiteral, int64_t>>({

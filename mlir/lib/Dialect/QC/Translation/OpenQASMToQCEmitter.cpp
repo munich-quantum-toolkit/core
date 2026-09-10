@@ -2462,60 +2462,43 @@ private:
     const auto type = program.expressions.at(switchStatement.control).type;
     control = emitScalarCast(builder, builder.getLoc(), control, type, type);
     if (activeLoop != nullptr && hasLoopJump(nestedStatements)) {
-      /// A flat switch avoids nested joins during CFG-to-SCF conversion.
-      auto* entry = builder.getInsertionBlock();
-      auto* region = entry->getParent();
-      auto* join = builder.createBlock(
-          region, {}, ValueRange(initialValues).getTypes(),
-          SmallVector<Location>(initialValues.size(), builder.getLoc()));
-      auto* defaultBlock = builder.createBlock(region);
-      SmallVector<Block*> destinations;
-      /// Shared case destinations introduce poison-filled dispatch results
-      /// during CFG-to-SCF conversion. Keep one block per label.
-      for ([[maybe_unused]] const auto label : labels) {
-        destinations.push_back(builder.createBlock(region));
-      }
-      builder.setInsertionPointToEnd(entry);
-      cf::SwitchOp::create(builder, control, defaultBlock, ValueRange{},
-                           builder.getI64TensorAttr(labels), destinations,
-                           SmallVector<ValueRange>(labels.size()));
-      const auto emitBranch = [&](Block* block,
-                                  ArrayRef<frontend::StatementId> statements) {
-        restoreScalars(scalarCheckpoint);
-        flowReachable = true;
-        builder.setInsertionPointToEnd(block);
-        for (auto statement : statements) {
-          emitStatement(statement, gateParameters, gateQubits);
-          if (emissionFailed || emissionBudget.isExhausted()) {
+      const auto emitCases = [&](auto&& self, size_t index) -> void {
+        if (emissionFailed || emissionBudget.isExhausted()) {
+          return;
+        }
+        if (index == switchStatement.cases.size()) {
+          for (auto statement : switchStatement.defaultStatements) {
+            emitStatement(statement, gateParameters, gateQubits);
+            if (emissionFailed || emissionBudget.isExhausted()) {
+              return;
+            }
+          }
+          return;
+        }
+        const auto& branch = switchStatement.cases[index];
+        Value match = builder.boolConstant(false);
+        for (const auto label : branch.labels) {
+          if (emissionBudget.isExhausted()) {
             return;
           }
+          auto equal = arith::CmpIOp::create(
+              builder, arith::CmpIPredicate::eq, control,
+              arith::ConstantIntOp::create(builder, control.getType(), label));
+          match = arith::OrIOp::create(builder, match, equal);
         }
-        if (flowReachable) {
-          cf::BranchOp::create(builder, join, stateValues(slots));
-        }
+        emitCFGIf(
+            match, slots,
+            [&] {
+              for (auto statement : branch.body) {
+                emitStatement(statement, gateParameters, gateQubits);
+                if (emissionFailed || emissionBudget.isExhausted()) {
+                  return;
+                }
+              }
+            },
+            [&] { self(self, index + 1); });
       };
-      size_t index = 0;
-      for (const auto& branch : switchStatement.cases) {
-        for ([[maybe_unused]] const auto label : branch.labels) {
-          emitBranch(destinations[index++], branch.body);
-          if (emissionFailed || emissionBudget.isExhausted()) {
-            return;
-          }
-        }
-      }
-      emitBranch(defaultBlock, switchStatement.defaultStatements);
-      if (emissionFailed || emissionBudget.isExhausted()) {
-        return;
-      }
-      restoreScalars(scalarCheckpoint);
-      flowReachable = !join->hasNoPredecessors();
-      assignState(slots, join->getArguments());
-      builder.setInsertionPointToEnd(join);
-      if (!flowReachable) {
-        auto state = breakPrefix;
-        llvm::append_range(state, stateValues(breakSlots));
-        activeLoop->branch(false, state);
-      }
+      emitCases(emitCases, 0);
       return;
     }
     auto selector =

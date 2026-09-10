@@ -267,9 +267,11 @@ def test_qiskit_for_jump(indexset: range | list[int], jump: str) -> None:
     check_paths(QCProgram.from_qiskit(circuit), 1 if jump == "break" else len(indexset) % 2)
 
 
-def test_continue_in_nested_loop_and_switch() -> None:
+@pytest.mark.parametrize("extra_cases", ["", "case -1, 4294967296 { value += 100; break; }"])
+def test_continue_in_nested_loop_and_switch(extra_cases: str) -> None:
     """Continue targets the inner loop and break still skips its remaining iterations."""
-    program = QCProgram.from_qasm_str("""
+    program = QCProgram.from_qasm_str(
+        """
 OPENQASM 3.1;
 output bit[8] result;
 uint[8] value = 0;
@@ -280,13 +282,15 @@ while (iteration < 4) {
   for int inner in [0:2] {
     switch (inner) {
       case 0 { continue; }
+      EXTRA_CASES
       default { value += 1; }
     }
     if (inner == 1) { break; }
   }
 }
 result = bit[8](value);
-""")
+""".replace("EXTRA_CASES", extra_cases)
+    )
     check_paths(program, 3)
 
 
