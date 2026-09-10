@@ -2243,7 +2243,7 @@ TEST_F(QCOTest, NestedPowerOfSquaredPauliIsIdentity) {
   EXPECT_EQ(unitaryCount, 0U);
 }
 
-// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} =>
+// pow(rxx) folds the exponent into the rotation angle: pow(2){rxx(θ)} →
 // rxx(2θ). Verify cleanup and the hoisted parameter's SSA dominance.
 TEST_F(QCOTest, PowRxxFold) {
   auto program =

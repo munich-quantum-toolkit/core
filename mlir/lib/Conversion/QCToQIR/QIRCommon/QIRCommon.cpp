@@ -216,7 +216,7 @@ namespace {
 /// @tparam OpType The QC operation type to convert
 /// @tparam NumTargets Number of target qubits for this operation
 /// @tparam NumParams Number of floating-point parameters for this operation
-/// @tparam GetFnName Function that maps numCtrls -> QIR function name
+/// @tparam GetFnName Function that maps numCtrls → QIR function name
 template <typename OpType, std::size_t NumTargets, std::size_t NumParams,
           auto GetFnName>
 struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {

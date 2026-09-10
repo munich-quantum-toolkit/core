@@ -1974,7 +1974,7 @@ struct ConvertSCFConditionOp final
 /// analysis.
 ///
 /// The pass operates in several phases:
-/// 1. Type conversion: !qc.qubit -> !qco.qubit
+/// 1. Type conversion: !qc.qubit → !qco.qubit
 /// 2. Operation conversion: Each QC op is converted to its QCO equivalent
 /// 3. State tracking: A LoweringState maintains qubit value mappings
 /// 4. Function/control-flow adaptation: Function signatures and control flow

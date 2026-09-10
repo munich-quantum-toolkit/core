@@ -105,7 +105,7 @@ public:
       return hashedNode;
     }
 
-    // if node not found -> add it to front of unique table bucket
+    // if node not found → add it to front of unique table bucket
     p->setNext(tables[v][key]);
     tables[v][key] = p;
     stats[v].trackInsert();

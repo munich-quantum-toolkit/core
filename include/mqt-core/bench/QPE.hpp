@@ -20,15 +20,15 @@
 
 namespace mqt::bench {
 
-/// An exact phase \f$\phi\f$ in turns, reduced modulo one turn.
+/// An exact phase φ in turns, reduced modulo one turn.
 class MQT_CORE_BENCH_EXPORT Phase final {
 public:
   /// Construct \f$\phi=\mathrm{numerator}/\mathrm{denominator}\f$ turns.
   Phase(uint64_t numerator, uint64_t denominator);
 
-  /// Return the reduced numerator of \f$\phi\f$.
+  /// Return the reduced numerator of φ.
   [[nodiscard]] uint64_t numerator() const noexcept;
-  /// Return the reduced denominator of \f$\phi\f$.
+  /// Return the reduced denominator of φ.
   [[nodiscard]] uint64_t denominator() const noexcept;
 
   friend bool operator==(const Phase&, const Phase&) = default;

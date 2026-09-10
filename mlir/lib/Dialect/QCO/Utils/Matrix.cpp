@@ -560,8 +560,8 @@ Matrix4x4 Matrix4x4::reorderForQubits(const size_t q0Index,
     return *this;
   }
   if (q0Index == 1 && q1Index == 0) {
-    // Conjugate by SWAP: out[i, j] = matrix[pi(i), pi(j)] with pi swapping |01>
-    // and |10> (basis indices 1 and 2).
+    // Conjugate by SWAP: out[i, j] = matrix[pi(i), pi(j)] with pi swapping |01⟩
+    // and |10⟩ (basis indices 1 and 2).
     const auto& m = data;
     return fromElements(m[0], m[2], m[1], m[3], m[8], m[10], m[9], m[11], m[4],
                         m[6], m[5], m[7], m[12], m[14], m[13], m[15]);

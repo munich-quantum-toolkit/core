@@ -82,7 +82,7 @@ struct Matrix1x1 {
   Matrix1x1& operator*=(const Complex& scalar);
 
   /// Returns the conjugate transpose (adjoint) of this matrix.
-  /// @return Adjoint matrix `A^\dagger`.
+  /// @return Adjoint matrix `A†`.
   [[nodiscard]] Matrix1x1 adjoint() const;
 
   /// Checks approximate equality using an absolute tolerance.
@@ -174,7 +174,7 @@ struct Matrix2x2 {
   Matrix2x2& operator*=(const Complex& scalar);
 
   /// Returns the conjugate transpose (adjoint) of this matrix.
-  /// @return Adjoint matrix `A^\dagger`.
+  /// @return Adjoint matrix `A†`.
   [[nodiscard]] Matrix2x2 adjoint() const;
 
   /// Returns the (non-conjugate) transpose of this matrix.
@@ -335,7 +335,7 @@ struct Matrix4x4 {
   Matrix4x4& operator*=(const Complex& scalar);
 
   /// Returns the conjugate transpose (adjoint) of this matrix.
-  /// @return Adjoint matrix `A^\dagger`.
+  /// @return Adjoint matrix `A†`.
   [[nodiscard]] Matrix4x4 adjoint() const;
 
   /// Returns the (non-conjugate) transpose of this matrix.
@@ -570,7 +570,7 @@ public:
 
   /// Creates a dynamic matrix holding the adjoint of a 2x2 matrix.
   /// @param src Source matrix.
-  /// @return Adjoint matrix `src^\dagger`.
+  /// @return Adjoint matrix `src†`.
   [[nodiscard]] static DynamicMatrix fromAdjoint(const Matrix2x2& src);
 
   /// Returns the number of rows.
@@ -613,7 +613,7 @@ public:
   void setBottomRightCorner(const DynamicMatrix& block);
 
   /// Returns the conjugate transpose (adjoint) of this matrix.
-  /// @return Adjoint matrix `A^\dagger`.
+  /// @return Adjoint matrix `A†`.
   [[nodiscard]] DynamicMatrix adjoint() const;
 
   /// Replaces this matrix with a copy of a 1x1 matrix.

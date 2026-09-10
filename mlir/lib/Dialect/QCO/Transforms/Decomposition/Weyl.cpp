@@ -349,7 +349,7 @@ computeOrderedWeylCoordinates(const Matrix4x4& u) {
     cs[i] = remEuclid((dReal[i] + dReal[3]) / 2.0, 2.0 * WEYL_PI);
   }
 
-  // Sort coordinates by min(x mod pi/2, pi/2 - x mod pi/2).
+  // Sort coordinates by min(x mod π/2, π/2 - x mod π/2).
   std::array<double, 3> cstemp{};
   for (std::size_t i = 0; i < cs.size(); ++i) {
     const auto tmp = remEuclid(cs[i], WEYL_PI / 2.0);
@@ -745,9 +745,9 @@ static void align(TwoQubitNativeDecomposition& result,
       circuit.k1r().adjoint() * factors[factors.size() - 2];
   factors.back() = circuit.k1l().adjoint() * factors.back();
   result.globalPhase -= circuit.globalPhase();
-  /// On x=pi/4, opposite signs of z denote the same local class.
-  /// Y on the left qubit reverses XX and ZZ; i(XX) then shifts
-  /// -pi/4 back to pi/4. Their product is -(Z tensor X).
+  /// On x=π/4, opposite signs of z denote the same local class. Y on the left
+  /// qubit reverses XX and ZZ; i(XX) then shifts -π/4 back to π/4. Their
+  /// product is -(Z tensor X).
   if (circuit.c() * target.c() < 0. &&
       std::abs(circuit.a() - std::numbers::pi / 4.) <= WEYL_TOLERANCE &&
       std::abs(target.a() - std::numbers::pi / 4.) <= WEYL_TOLERANCE) {
@@ -781,7 +781,7 @@ twoGates(const TwoQubitWeylDecomposition& target) {
   const double c = std::sin(x + y - z) * std::sin(x - y + z) *
                    std::sin(-x - y - z) * std::sin(-x + y + z);
   const auto split = 2. * std::sqrt(std::max(0., c));
-  /// Rationalize sin^2(alpha/2) to avoid cancellation near alpha=0.
+  /// Rationalize sin^2(α/2) to avoid cancellation near α=0.
   const auto sinX = std::sin(x);
   const auto sinY = std::sin(y);
   const auto sinZ = std::sin(z);
@@ -791,7 +791,7 @@ twoGates(const TwoQubitWeylDecomposition& target) {
   const auto sinAlphaSquared = sum > 0. ? product * product / sum : 0.;
   const auto alpha =
       2. * std::asin(std::sqrt(std::clamp(sinAlphaSquared, 0., 1.)));
-  /// Use the half-angle form near zero without losing precision near pi.
+  /// Use the half-angle form near zero without losing precision near π.
   const auto beta =
       sum < .5 ? 2. * std::asin(std::sqrt(std::clamp(sum, 0., 1.)))
                : std::acos(std::clamp(std::cos(2. * x) - std::cos(2. * y) +

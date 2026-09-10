@@ -88,7 +88,7 @@ static ReferenceMatrix referenceUMatrix(double theta, double phi,
   const ReferenceMatrix phasePhi{{{1.0L, 0.0L}, {0.0L, phiPhase}}};
   const ReferenceMatrix rotationY{{{cosine, -sine}, {sine, cosine}}};
   const ReferenceMatrix phaseLambda{{{1.0L, 0.0L}, {0.0L, lambdaPhase}}};
-  // U(theta, phi, lambda) = P(phi) RY(theta) P(lambda).
+  // U(θ, φ, λ) = P(φ) RY(θ) P(λ).
   return multiply(multiply(phasePhi, rotationY), phaseLambda);
 }
 

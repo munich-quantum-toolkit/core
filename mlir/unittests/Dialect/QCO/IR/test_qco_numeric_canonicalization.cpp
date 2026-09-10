@@ -76,7 +76,7 @@ TEST_F(QCONumericCanonicalizationTest, RMatrixPreservesLargeAxisAngles) {
     const double sine = std::sin(theta / 2.0);
     const double x = std::cos(phi);
     const double y = std::sin(phi);
-    // exp(-i theta (x X + y Y) / 2), with x^2 + y^2 = 1.
+    // exp(-i θ (x X + y Y) / 2), with x^2 + y^2 = 1.
     const auto expected =
         Matrix2x2::fromElements(cosine, qco::Complex{-sine * y, -sine * x},
                                 qco::Complex{sine * y, -sine * x}, cosine);
@@ -192,7 +192,7 @@ TEST_F(QCONumericCanonicalizationTest, UMatricesPreserveLargeEulerAngles) {
            std::array{-1.0e308, 1.0e308},
        }) {
     SCOPED_TRACE(testing::Message() << "phi=" << phi << ", lambda=" << lambda);
-    // U(theta, phi, lambda) = P(phi) RY(theta) P(lambda).
+    // U(θ, φ, λ) = P(φ) RY(θ) P(λ).
     for (double theta : std::array{0.3, std::numbers::pi / 2.0}) {
       SCOPED_TRACE(theta);
       const auto expected = POp::unitaryMatrix(phi) *
@@ -558,7 +558,7 @@ TEST_F(QCONumericCanonicalizationTest, NestedPowerAcrossBranchCutDoesNotMerge) {
   size_t powerCount = 0;
   moduleOp->walk([&](PowOp) { ++powerCount; });
   EXPECT_EQ(powerCount, 2U);
-  // (S X)^2 = i I, whose principal square root is exp(i pi/4) I.
+  // (S X)^2 = i I, whose principal square root is exp(i π/4) I.
   ::mqt::test::expectFullUnitaryEqual(*reference, *moduleOp, 1);
 }
 

@@ -347,7 +347,7 @@ public:
   /// Allocates and returns one intact, one-dimensional tensor of
   /// `!qco.qubit` values. No elements are extracted. If the size is a constant,
   /// the tensor has static size; otherwise it has dynamic size. Its qubits are
-  /// initialized in the |0> state, and the tensor is tracked automatically.
+  /// initialized in the |0⟩ state, and the tensor is tracked automatically.
   /// Requires an insertion point in the entry block of `mqt.entry_point`.
   ///
   /// @param size Number of qubits (must be positive)

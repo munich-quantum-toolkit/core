@@ -30,7 +30,7 @@ using namespace mlir::mqt;
 
 namespace {
 
-/// Replace U2(0, pi) with H.
+/// Replace U2(0, π) with H.
 struct ReplaceU2WithH final : OpRewritePattern<U2Op> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -47,7 +47,7 @@ struct ReplaceU2WithH final : OpRewritePattern<U2Op> {
   }
 };
 
-/// Replace U2(-pi / 2, pi / 2) with RX(pi / 2).
+/// Replace U2(-π / 2, π / 2) with RX(π / 2).
 struct ReplaceU2WithRX final : OpRewritePattern<U2Op> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -69,7 +69,7 @@ struct ReplaceU2WithRX final : OpRewritePattern<U2Op> {
   }
 };
 
-/// Replace U2(0, 0) with RY(pi / 2).
+/// Replace U2(0, 0) with RY(π / 2).
 struct ReplaceU2WithRY final : OpRewritePattern<U2Op> {
   using OpRewritePattern::OpRewritePattern;
 

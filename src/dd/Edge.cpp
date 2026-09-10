@@ -193,7 +193,7 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
   //              weights[argMin] / topWeight
   // However, the lookup of the top weight can slightly change its value.
   // Therefore, we use the following computation instead, which accounts for the
-  // potential difference (at the cost of a Complex->ComplexValue conversion).
+  // potential difference (at the cost of a Complex → ComplexValue conversion).
   const auto minWeight = weights[argMin] / r.w;
   auto& min = p->e[argMin];
   min.w = cn.lookup(minWeight);

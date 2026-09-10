@@ -53,11 +53,10 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
       .Default([](auto) { return false; });
 }
 
-/// Wraps `angle` into `[-pi, pi)`, mapping `+pi` (within tolerance) to
-/// `-pi`.
+/// Wraps `angle` into `[-π, π)`, mapping `+π` (within tolerance) to `-π`.
 ///
 /// @param angle The angle to wrap, in radians.
-/// @return The wrapped angle in `[-pi, pi)`.
+/// @return The wrapped angle in `[-π, π)`.
 [[nodiscard]] static double mod2pi(const double angle) {
   if (!std::isfinite(angle)) {
     return angle;
@@ -136,7 +135,7 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
   return {.theta = theta, .phi = phi, .lambda = lambda, .phase = phase};
 }
 
-/// Z-X-Z Euler angles via `RY(theta) = RZ(pi/2)*RX(theta)*RZ(-pi/2)`.
+/// Z-X-Z Euler angles via `RY(θ) = RZ(π/2)*RX(θ)*RZ(-π/2)`.
 ///
 /// @param matrix Single-qubit unitary to decompose.
 /// @return Z-X-Z angles and global phase.
@@ -158,12 +157,12 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
   return paramsZXZ(hadamardConjugate(matrix));
 }
 
-/// X-Y-X Euler angles via `H*RY(theta)*H = RY(-theta)`.
+/// X-Y-X Euler angles via `H*RY(θ)*H = RY(-θ)`.
 ///
 /// @param matrix Single-qubit unitary to decompose.
 /// @return X-Y-X angles and global phase.
 [[nodiscard]] static EulerAngles paramsXYX(const Matrix2x2& matrix) {
-  // Shift outer angles by pi and fix global phase.
+  // Shift outer angles by π and fix global phase.
   const auto [theta, phi, lambda, phase] = paramsZYZ(hadamardConjugate(matrix));
   return {
       .theta = theta,
@@ -178,8 +177,8 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
 /// @param matrix Single-qubit unitary to decompose.
 /// @return `U`-gate angles and global phase.
 [[nodiscard]] static EulerAngles paramsU(const Matrix2x2& matrix) {
-  // `U` differs from RZ(phi)*RY(theta)*RZ(lambda) by a global phase of
-  // -(phi + lambda)/2.
+  // `U` differs from RZ(φ)*RY(θ)*RZ(λ) by a global phase of
+  // -(φ + λ)/2.
   const auto [theta, phi, lambda, phase] = paramsZYZ(matrix);
   return {
       .theta = theta,
@@ -249,7 +248,7 @@ struct Unitary1QEulerPlan {
   /// Appends a native `R(angle, axis)` step for non-negligible angles.
   ///
   /// @param angle The rotation angle in radians.
-  /// @param axis The rotation axis in the XY-plane (`0` for `Rx`, `pi/2` for
+  /// @param axis The rotation axis in the XY-plane (`0` for `Rx`, `π/2` for
   /// `Ry`).
   void appendRStep(const double angle, const double axis) {
     if (!isNearZeroRotationAngle(angle)) {

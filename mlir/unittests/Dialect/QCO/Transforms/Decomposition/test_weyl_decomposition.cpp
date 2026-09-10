@@ -511,8 +511,8 @@ computeTwoQubitUnitaryFromFunc(func::FuncOp funcOp) {
   if (failed(u)) {
     return failure();
   }
-  // `getMatrix` is DD/LSB-first; QCO is MSB-first — index `1↔2` swaps the
-  // middle basis states (`|01>` ↔ `|10>`).
+  // `getMatrix` is DD/LSB-first; QCO is MSB-first — index `1 ↔ 2` swaps the
+  // middle basis states (`|01⟩` ↔ `|10⟩`).
   const auto& m = u->getMatrix(2);
   const Matrix4x4 matrix = Matrix4x4::fromElements(
       m[0][0], m[0][2], m[0][1], m[0][3], m[2][0], m[2][2], m[2][1], m[2][3],

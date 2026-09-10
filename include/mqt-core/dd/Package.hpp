@@ -218,7 +218,7 @@ private:
       }
     }
 
-    /// Execute mark() -> op() -> unmark().
+    /// Execute mark() → op() → unmark().
     template <class Result, typename Fn> Result execute(Fn& op) noexcept {
       mark();
       Result res = op();
@@ -583,7 +583,7 @@ public:
         for (std::size_t i = 0; i < n; i++) {
           edges[i] = i == edgeIdx
                          ? Edge<Node>::zero()
-                         : e.p->e[i]; // optimization -> node cannot occur below
+                         : e.p->e[i]; // optimization → node cannot occur below
                                       // again, since dd is assumed to be free
         }
       } else {

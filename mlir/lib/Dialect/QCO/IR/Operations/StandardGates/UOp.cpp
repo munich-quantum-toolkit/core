@@ -31,7 +31,7 @@ using namespace mlir::mqt;
 
 namespace {
 
-/// Replace U(0, 0, lambda) with P(lambda).
+/// Replace U(0, 0, λ) with P(λ).
 struct ReplaceUWithP final : OpRewritePattern<UOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -48,7 +48,7 @@ struct ReplaceUWithP final : OpRewritePattern<UOp> {
   }
 };
 
-/// Replace U(theta, -pi / 2, pi / 2) with RX(theta).
+/// Replace U(θ, -π / 2, π / 2) with RX(θ).
 struct ReplaceUWithRX final : OpRewritePattern<UOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -69,7 +69,7 @@ struct ReplaceUWithRX final : OpRewritePattern<UOp> {
   }
 };
 
-/// Replace U(theta, 0, 0) with RY(theta).
+/// Replace U(θ, 0, 0) with RY(θ).
 struct ReplaceUWithRY final : OpRewritePattern<UOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -86,7 +86,7 @@ struct ReplaceUWithRY final : OpRewritePattern<UOp> {
   }
 };
 
-/// Replace U(pi / 2, phi, lambda) with U2(phi, lambda).
+/// Replace U(π / 2, φ, λ) with U2(φ, λ).
 struct ReplaceUWithU2 final : OpRewritePattern<UOp> {
   using OpRewritePattern::OpRewritePattern;
 

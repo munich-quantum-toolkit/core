@@ -53,7 +53,7 @@ SmallVector<Value> repeatUntilSuccess(qc::QCProgramBuilder& builder,
         builder.scfCondition(failure);
       },
       [&] {
-        /// Failure leaves the data unchanged and the ancilla in |1>.
+        /// Failure leaves the data unchanged and the ancilla in |1⟩.
         builder.x(ancilla);
       });
 

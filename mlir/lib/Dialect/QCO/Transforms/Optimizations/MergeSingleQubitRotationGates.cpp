@@ -290,7 +290,7 @@ static ScalarConsts<T> makeConsts(RewriterBase& rewriter, Location loc) {
   };
 }
 
-/// Normalizes an angle to the range [-PI, PI].
+/// Normalizes an angle to the range [-π, π].
 ///
 /// Uses floor-based modular arithmetic:
 ///   normalize(a) = a - floor((a + π) / 2π) * 2π
@@ -351,20 +351,18 @@ static Quat<T> axisQuaternion(Val<T> angle, RotationAxis axis,
 
 /// Converts a ZYZ Euler angle decomposition to quaternion.
 ///
-/// U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
-/// RZ(phi).
+/// U(θ, φ, λ) uses ZYZ decomposition: RZ(λ) → RY(θ) → RZ(φ).
 ///
 /// When composing rotations, quaternion multiplication follows matrix
 /// multiplication order (right-to-left), which is the reverse of the
 /// application sequence:
-///   Sequential application: RZ(lambda), then RY(theta), then RZ(phi)
+///   Sequential application: RZ(λ), then RY(θ), then RZ(φ)
 ///   Quaternion product:     qPhi * qTheta * qLambda
 ///
-/// @note U is defined as P(phi)*RY(theta)*P(lambda), which equals
-/// e^{i*(phi+lambda)/2} * RZ(phi)*RY(theta)*RZ(lambda).
-/// Since quaternions represent SU(2), this pass works with the SU(2) part
-/// RZ(phi)*RY(theta)*RZ(lambda) and tracks the factored-out global phase
-/// (phi+lambda)/2 separately via globalPhaseOf.
+/// @note U is defined as P(φ)*RY(θ)*P(λ), which equals e^{i*(φ+λ)/2} *
+/// RZ(φ)*RY(θ)*RZ(λ). Since quaternions represent SU(2), this pass works with
+/// the SU(2) part RZ(φ)*RY(θ)*RZ(λ) and tracks the factored-out global phase
+/// (φ+λ)/2 separately via globalPhaseOf.
 template <typename T>
 static Quat<T> quaternionFromZYZ(Val<T> theta, Val<T> phi, Val<T> lambda,
                                  const ScalarConsts<T>& c) {
@@ -413,11 +411,11 @@ static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
 ///
 /// - RX, RY, RZ, P: single-axis half-angle formulas.
 /// - X, Y, Z, S, Sdg, T, Tdg, SX, SXdg: fixed-axis rotations.
-/// - H: a pi rotation around the (X + Z) / sqrt(2) axis.
+/// - H: a π rotation around the (X + Z) / sqrt(2) axis.
 /// - Id: the identity quaternion.
-/// - R(theta, phi): Q(cos(θ/2), sin(θ/2)cos(φ), sin(θ/2)sin(φ), 0).
-/// - U2(phi, lambda) = U(π/2, phi, lambda).
-/// - U(theta, phi, lambda): ZYZ via quaternionFromZYZ.
+/// - R(θ, φ): Q(cos(θ/2), sin(θ/2)cos(φ), sin(θ/2)sin(φ), 0).
+/// - U2(φ, λ) = U(π/2, φ, λ).
+/// - U(θ, φ, λ): ZYZ via quaternionFromZYZ.
 ///
 /// @note Global phase is discarded; see quaternionFromZYZ for details.
 /// @return nullopt if a required parameter cannot be represented as `T` (static
@@ -535,15 +533,15 @@ template <typename T> static Val<T> principalPhase(Val<T> angle) {
 /// Rotation gates can be factored as U = e^{i * phase} * SU(2), where SU(2)
 /// is the quaternion-representable part and phase is the global phase:
 ///
-/// - RX, RY, RZ, R         -> 0 (already SU(2))
-/// - P(theta)              -> theta / 2 (P = e^{i * theta / 2} * RZ(theta))
-/// - U(theta, phi, lambda) -> (phi + lambda) / 2
-/// - U2(phi, lambda)       -> (phi + lambda) / 2
-/// - X, Y, Z, H            -> pi / 2
-/// - S, SX                 -> pi / 4
-/// - Sdg, SXdg             -> -pi / 4
-/// - T / Tdg               -> +/- pi / 8
-/// - Id                    -> 0
+/// - RX, RY, RZ, R → 0 (already SU(2))
+/// - P(θ) → θ / 2 (P = e^{i * θ / 2} * RZ(θ))
+/// - U(θ, φ, λ) → (φ + λ) / 2
+/// - U2(φ, λ) → (φ + λ) / 2
+/// - X, Y, Z, H → π / 2
+/// - S, SX → π / 4
+/// - Sdg, SXdg → -π / 4
+/// - T / Tdg → ±π / 8
+/// - Id → 0
 ///
 /// @return Success with the phase contribution, including an explicit zero for
 /// SU(2) gates. Failure if a required parameter does not fold on the static
@@ -597,9 +595,9 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
 ///
 /// For unit quaternion q = w + x * i + y * j + z * k, extracts UOp parameters:
 ///
-/// - alpha = atan2(z, w) + atan2(-x, y)
-/// - beta  = 2 * atan2(sqrt(x^2 + y^2), sqrt(w^2 + z^2))
-/// - gamma = atan2(z, w) - atan2(-x, y)
+/// - α = atan2(z, w) + atan2(-x, y)
+/// - β = 2 * atan2(sqrt(x^2 + y^2), sqrt(w^2 + z^2))
+/// - γ = atan2(z, w) - atan2(-x, y)
 ///
 /// Based on Bernardes & Viollet (2022), simplified for unit quaternions and
 /// proper ZYZ Euler angles (Chapter 3.3):
@@ -610,17 +608,17 @@ static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
 /// SymPy also implements this paper:
 /// https://docs.sympy.org/latest/modules/algebras.html#sympy.algebras.Quaternion.to_euler
 ///
-/// Pure-Z / XY-aligned quaternions (|x|,|y| < eps) take the beta≈0 gimbal form
-/// so tiny beta drift cannot split the Z angle across phi/lambda. The host path
+/// Pure-Z / XY-aligned quaternions (|x|,|y| < eps) take the β≈0 gimbal form so
+/// tiny β drift cannot split the Z angle across φ/λ. The host path
 /// short-circuits to `{0, 2*atan2(z,w), 0}`; the `Value` path selects `beta=0`
 /// under the same predicate and sanitizes the atan2 y-operand when (x,y)≈0 so
 /// MLIR's constant folder never sees atan2(0,0) → NaN on a dead select input.
 ///
 /// @note Floating-point errors may accumulate when merging many gates.
-/// Normalizing either Z angle by 2*pi flips the corresponding SU(2)
-/// quaternion sign. The returned phase correction accounts for those flips.
+/// Normalizing either Z angle by 2*π flips the corresponding SU(2) quaternion
+/// sign. The returned phase correction accounts for those flips.
 ///
-/// @return {theta, phi, lambda, phaseCorrection} suitable for UOp
+/// @return `{theta, phi, lambda, phaseCorrection}` suitable for UOp
 template <typename T>
 static std::array<Val<T>, 4> anglesFromQuaternion(const Quat<T>& q,
                                                   const ScalarConsts<T>& c) {
@@ -635,7 +633,7 @@ static std::array<Val<T>, 4> anglesFromQuaternion(const Quat<T>& q,
     if (xyNearZero) {
       const auto alpha = q.z.atan2(q.w) * c.two;
       const auto phi = wrapToPi(alpha, c);
-      // Wrapping alpha by 2*pi flips the SU(2) representative, which is
+      // Wrapping `alpha` by 2*π flips the SU(2) representative, which is
       // compensated by half the removed angle as a global phase.
       const auto removedAngle = alpha - phi;
       return {c.zero, phi, c.zero, removedAngle / c.two};
@@ -680,7 +678,7 @@ static std::array<Val<T>, 4> anglesFromQuaternion(const Quat<T>& q,
 
   const auto phi = wrapToPi(alpha, c);
   const auto lambda = wrapToPi(gamma, c);
-  // Each removed 2*pi Z rotation flips the SU(2) representative. Half of the
+  // Each removed 2*π Z rotation flips the SU(2) representative. Half of the
   // total removed angle restores the original matrix as a global phase.
   const auto removedAlpha = alpha - phi;
   const auto removedGamma = gamma - lambda;

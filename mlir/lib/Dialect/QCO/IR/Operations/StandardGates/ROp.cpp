@@ -33,7 +33,7 @@ using namespace mlir::mqt;
 
 namespace {
 
-/// Replace R(theta, 0) with RX(theta).
+/// Replace R(θ, 0) with RX(θ).
 struct ReplaceRWithRX final : OpRewritePattern<ROp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -48,7 +48,7 @@ struct ReplaceRWithRX final : OpRewritePattern<ROp> {
   }
 };
 
-/// Replace R(theta, pi / 2) with RY(theta).
+/// Replace R(θ, π / 2) with RY(θ).
 struct ReplaceRWithRY final : OpRewritePattern<ROp> {
   using OpRewritePattern::OpRewritePattern;
 

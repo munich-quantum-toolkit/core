@@ -1150,7 +1150,7 @@ private:
         auto in0 = w0.qubit();
         auto in1 = w1.qubit();
 
-        rewriter->setInsertionPointAfterValue(in0); // Valid bc. Hot => Forward.
+        rewriter->setInsertionPointAfterValue(in0); // Valid bc. Hot → Forward.
         auto swapOp = SWAPOp::create(*rewriter, in0.getLoc(), in0, in1);
 
         auto out0 = swapOp.getQubit0Out();
