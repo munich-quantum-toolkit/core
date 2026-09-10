@@ -13,19 +13,21 @@ stop the proof; only first accesses in the allocation block can lose resets.
 The allocation rewrite replaces its root while preserving attributes. This
 follows MLIR's pattern contract without storing analysis over mutable IR.
 
-A separate re-audit finding concerns region-local indices retained by scalar
-results after a branch exits. Fixing it requires branch provenance agreement;
-constant hoisting alone can choose the wrong slot on another branch. Preserve
-this as a separate correctness finding, outside the three applied fixes.
+Structured callbacks preserve each input's type, tensor register, and extracted
+slot by result position. Equal constants reuse the dominating input index;
+dynamic indices must be the same SSA value. Other associations produce a usage
+diagnostic. Carry full tensors when changing slot associations. This fixes the
+additional region-local index escape without hoisting a branch-specific index.
 
-The three original fixes are applied in
-`37bda5bddf073039f90122d882f6f2eba98a7a38`. The final audit retains the
-additional index-provenance defect as open. Direct QCO export and overlapping PR
-findings remain outside this change.
+Scalar if/switch overloads delegate to their range counterparts. The Ponytail
+review removed 46 lines of duplicated region construction and the unused
+single-argument preparation helper. The register snapshot is local to each
+structured operation; ordinary gate tracking remains unchanged.
 
-Validation: 1,371 native tests, full-file C++ lint, repository lint, MLIR
-documentation generation, and benchmark assertions pass. Matched measurements
-show 869.81 to 26.02 ms for 1,024 used slots and 51.616 to 0.983 ms for 4,096
-registers. Fresh-slot canonicalization regresses by 7.7% at 1,024 slots; this
-tradeoff is recorded. Both reproducibility probes now produce one output across
-24 processes. See the audit and benchmark directory for raw evidence and limits.
+All four findings are implemented. Direct QCO export and overlapping PR findings
+remain outside this change. Main was integrated with a signed merge to retain
+the exact source commits referenced by the historical measurements.
+
+Final validation and measurements are recorded in the audit and benchmark
+directory. Historical performance results are retained at their original source
+revisions, including the fresh-slot regression and sample spread.

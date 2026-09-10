@@ -1,0 +1,45 @@
+{
+  "compiler": "Ubuntu clang version 23.1.1 (++20260903063729+47bafb752202-1~exp1~20260903063749.63)",
+  "machine": "aarch64",
+  "cpu": 18,
+  "preset": "release-clang-ipo",
+  "mlir": "23.1.0",
+  "warmups_per_process": 2,
+  "pairs": 5,
+  "samples_per_process": 3,
+  "base": "ad74680f1ef380456a1b89a810ef33ee8d218f69",
+  "revision": "f0b995a4450e7c93d4ef9141861cda6a1b674fd0",
+  "recorded": "2026-09-10T20:20:57.441671+00:00",
+  "sources": {
+    "mlir/include/mqt/Dialect/QCO/Builder/QCOProgramBuilder.h": "3979640e5515d4cc60428d978472dfa818091759323f2fe6013e697ed146f004",
+    "mlir/include/mqt/Dialect/QTensor/IR/QTensorOps.td": "4d77df5cf40aeb82359e46b6511315508ab76b1a668d5a857167d1da66d7eb72",
+    "mlir/lib/Dialect/QCO/Builder/QCOProgramBuilder.cpp": "2adedd9f3d7a05a9d6d340df31c46d61e658a0c17a830ec06489f44382a72d5a",
+    "mlir/lib/Dialect/QTensor/IR/Operations/AllocOp.cpp": "c690e7531f2507386e8a95e0fc6c64cb49e3a4a0a9d179718fae163d90a26401",
+    "mlir/lib/Dialect/QTensor/IR/Operations/ExtractOp.cpp": "134246f3daa58c8b09c64e4efdebd94c40f548839382e9b48ae0e6c079949954",
+    "mlir/unittests/Dialect/QCO/IR/test_qco_ir.cpp": "1d58af17162d5162e7ecded53ef8e9162de6503dbed4f5352246a882b839a9b0",
+    "mlir/unittests/Dialect/QTensor/IR/test_qtensor_ir.cpp": "98e7d510f5728cb455ab8f367a62c61c18d241f50f600a93dc90ef599924b6ca"
+  },
+  "binaries": {
+    "probe-baseline": "66db9af3b37a1baa80fa8c97b0bbdb3f5e90828971241d0b0e9566486d35bd46",
+    "probe-fixed": "1491946730497b0b267a97cb7b3f5cdf7a1eee8caafccf2fce43bf7b8620f9cd",
+    "probe-upstream-index": "bbaf664a6fa067f5396e837bdd40da04ce6caf0647074b648b0dd850d9bdd2aa",
+    "probe-fixed-index": "8d62fe3aca5f856e4dbc565a5424b162d0f12415d8c1b3a945270ac303b13cbc"
+  },
+  "pr_base": "9d6526f4827ed96f7a16880325c61fe725f2f737",
+  "host_load_average_before": [
+    14.5146484375,
+    12.087890625,
+    12.1611328125
+  ],
+  "host_note": "Shared host with concurrent LLVM/Core builds; CPU affinity does not isolate the benchmark.",
+  "completed": "2026-09-10T20:21:35.321713+00:00",
+  "host_load_average_after": [
+    14.4873046875,
+    12.134765625,
+    12.1591796875
+  ],
+  "index_reproducer_exit_codes": {
+    "upstream-index": 1,
+    "fixed-index": 0
+  }
+}

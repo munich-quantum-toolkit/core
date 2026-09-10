@@ -1,54 +1,52 @@
 # QC/QCO pre-release performance and determinism audit
 
-Date: 2026-09-10. Upstream baseline: `ad74680f1ef380456a1b89a810ef33ee8d218f69`.
-Applied fixes: `37bda5bddf073039f90122d882f6f2eba98a7a38`. A final fetch
-confirmed that upstream main still matches the baseline. Scope: QC/QCO builders,
-conversion, QTensor canonicalization, and compiler/export boundaries, following
+Date: 2026-09-10. Audit baseline: `ad74680f1ef380456a1b89a810ef33ee8d218f69`. PR
+base: `9d6526f4827ed96f7a16880325c61fe725f2f737`. The original performance fixes
+are recorded at `37bda5bddf073039f90122d882f6f2eba98a7a38`; the final source is
+`f0b995a4450e7c93d4ef9141861cda6a1b674fd0`, including the index-provenance fix
+and main above. Scope: QC/QCO builders, conversion, QTensor canonicalization,
+and compiler/export boundaries, following
 [issue #2253](https://github.com/munich-quantum-toolkit/core/issues/2253).
 
 ## Result
 
-The three original findings are fixed. No additional performance or
-reproducibility defect was confirmed in the changed paths. The final audit found
-one additional, pre-existing **P2 correctness defect** in QCO builder index
-tracking across region exits. It remains open and prevents an unconditional
-readiness verdict for the builder.
+All four confirmed findings are fixed, including the additional index-provenance
+bug found during the final audit. The final review confirmed no further defect
+in these changed paths. This does not clear the whole MLIR issue or extend the
+builder's supported control-flow subset.
 
 [Harness, raw measurements, plots, settings, and reproduction commands](../benchmarks/qc-qco-pre-release/README.md).
-No remote state was changed.
 
-## Open finding: region-local tensor indices escape through scalar results
+## Applied finding 4: preserve tensor indices across structured results
 
-Priority: P2. Confidence: high. Disposition: newly confirmed, not implemented.
+Original priority: P2. Confidence: high. Disposition: applied.
 
-`mlir/lib/Dialect/QCO/Builder/QCOProgramBuilder.cpp::qtensorExtract` records an
-SSA index in the qubit's `regIndex`. `updateQubitTracking` copies that index
-when structured builders map a branch result to an enclosing operation result.
-`insertExtractedQubits` later uses the copied value during preparation or
-finalization, even when the index was defined inside the completed branch.
+`qtensorExtract` records an SSA index in the qubit's `regIndex`. Previously,
+structured builders copied a callback's index to the enclosing result, even when
+the index was defined inside that callback's region. Later automatic reinsertion
+then emitted an operand that did not dominate its use.
+
+The builder now saves each input's type, register ID, and extracted slot before
+constructing a structured operation. Each callback must preserve that
+association by result position. Equal constant indices are accepted and replaced
+in tracking with the original dominating index. Dynamic indices must use the
+same SSA value. Changed registers, changed slots, and unprovable dynamic
+equivalence terminate with a usage diagnostic. Carry the full tensor and
+reinsert inside the callback when changing slot associations. Standalone qubits
+retain their existing tracking.
+
+The check covers both `qcoIf` branches, `scfFor`, both `scfWhile` regions, and
+every `qcoIndexSwitch` case and default. Scalar overloads delegate to the range
+overloads. The API documents these builder limits; general QCO IR is not
+restricted by this builder check. No index hoisting or persistent analysis cache
+is introduced.
 
 The [minimal reproducer](../benchmarks/qc-qco-pre-release/escaping-index.cpp)
-allocates one tensor slot, carries its tensor and extracted qubit through
-`qcoIf`, reinserts and extracts that qubit inside the then branch, and
-finalizes. The builder emits an outer `qtensor.insert` whose index belongs to
-the then region. Verification fails with
-`operand #2 does not dominate this use`.
-
-The exact baseline builder source/header and the fixed builder both reproduce
-this failure and emit identical modules. Their builds use the same dialect
-libraries, and no transformations run. The normal-form ordering changes do not
-cause this defect. The relevant extraction and tracking code is unchanged.
-
-Fix provenance at structured-region boundaries. Track the association between
-each yielded scalar, its register, and its slot across all possible branches;
-ensure any index used outside a region dominates that use. Diagnose combinations
-that the builder cannot represent. Do not merely hoist a constant: if branches
-return different slots, one branch's index is not a valid unconditional index
-for the merged result. A complete fix also needs loop and switch coverage.
-
-Until then, reinserting within each branch and carrying the full tensor across
-the boundary avoids this reproducer. The additional correctness work is separate
-from the three performance and determinism changes applied here.
+still fails with the exact upstream builder and now verifies with the final
+builder. The historical intermediate revision reproduces the same original
+failure. Durable tests cover nested reinsertion, equivalent constants, shared
+dynamic indices, changed slots in every callback, changed registers, and
+region-local dynamic indices.
 
 ## Applied finding 1: deterministic live-value disposal and reinsertion
 
@@ -69,8 +67,8 @@ claim a change in quantum probabilities.
 
 Durable tests cover scalar disposal, same-operation result ordering, tensor
 creation order, insertion order, explicit scalar arguments, and nested block
-arguments. The nested ordering test uses indices that dominate their uses; the
-separate escaping-index defect is retained as an open reproducer above.
+arguments. The nested test also covers re-extraction with region-local
+constants.
 
 ## Applied finding 2: allocation-rooted freshness discovery
 
@@ -87,6 +85,8 @@ satisfying the
 [MLIR root-rewrite contract](https://mlir.llvm.org/docs/PatternRewriter/#restrictions).
 No persistent cache over mutable IR is introduced. Root replacement can cause a
 second linear scan, which contributes to the measured fresh-slot overhead.
+
+These historical measurements compare `ad74680f1` with `37bda5bdd`:
 
 | Used slots | Upstream median | Fixed median |
 | ---------- | --------------: | -----------: |
@@ -119,6 +119,8 @@ This removes the roughly N(N+1)/2 live-set visits for N one-slot registers.
 Grouping is linear in the live values and arguments, followed by sorting within
 each register. It does not introduce linear erasure on ordinary gate updates.
 
+These historical measurements compare `ad74680f1` with `37bda5bdd`:
+
 | Registers with one extracted qubit each | Upstream median | Fixed median |
 | --------------------------------------- | --------------: | -----------: |
 | 256                                     |        0.260 ms |     0.062 ms |
@@ -150,22 +152,58 @@ contracts, redundant conversion checks, and QTensor helper/shrinking cleanup.
 Those are not counted as new findings. This report does not clear the whole MLIR
 issue or replace the outstanding contract work.
 
+## Ponytail review
+
+The review found two duplicated scalar implementations and their now-unused
+single-argument preparation helper. Both findings were applied:
+
+- `QCOProgramBuilder.cpp:L1562: shrink:` duplicated scalar switch construction.
+  Delegate to the range overload with locally owned callback adapters.
+- `QCOProgramBuilder.cpp:L1582: shrink:` duplicated scalar if construction.
+  Delegate to the range overload and delete the unused `prepareInitArg` helper.
+
+net: -46 lines possible.
+
+## Final source measurements
+
+The final source `f0b995a44` was compared with the same `ad74680f1` baseline
+using five alternating process pairs and three timed samples after two warmups.
+The complete series, output hashes, and plot are retained as `comparison-pr.*`.
+
+| Workload                              | Baseline median (range), ms | Final median (range), ms |
+| ------------------------------------- | --------------------------: | -----------------------: |
+| 1,024 used slots                      |   871.313 (866.157–881.210) |   26.061 (25.811–26.307) |
+| 1,024 fresh slots                     |      12.659 (12.498–12.743) |   13.648 (13.421–13.795) |
+| 4,096 registers with extracted qubits |     51.707 (51.617–262.692) |      1.123 (1.065–4.378) |
+| 4,096 registers without extractions   |         0.444 (0.439–0.492) |      0.524 (0.519–0.531) |
+
+The used-slot and extracted-register improvements remain substantial. The
+fresh-slot regression is **7.8%**. Boundary validation adds work to argument
+preparation: the no-extraction case is **18.0%** slower than baseline, an
+absolute increase of **0.080 ms** at 4,096 registers. These costs are retained
+with the correctness checks and conservative reset proof.
+
+Both canonicalization variants emit byte-identical IR with the required reset
+counts at every size. Both final-source reproducibility workloads produce one
+serialized module across 24 fresh processes, with verification and linearity
+checks. The host had concurrent LLVM/Core builds; CPU 18 affinity does not
+provide isolation. The complete sample spread includes scheduler outliers. These
+are microbenchmarks, not whole-compiler speedup guarantees.
+
 ## Validation
 
-- Rebuilt Release/Clang 23.1.1 targets against LLVM/MLIR 23.1.0. All
-  **1,371 tests** passed: QCO IR 583, QTensor IR 42, QC-to-QCO 178, QCO-to-QC
-  153, QC/QCO round trip 6, QCO utilities 192, QTensor utilities 4, QTensor
-  transforms 2, compiler
-  211. Counts and exit statuses are retained in `tests-fixed.json`.
-- Full-file C++ lint on the committed diff from `ad74680f1` selected all five
-  changed C++ source/test files and reported zero findings. An earlier run on
-  uncommitted files selected none and is not counted as validation.
-- Repository lint, `git diff --check`, and MLIR documentation generation passed.
-- Harness syntax, native probe compilation, output/hash assertions, and plot
-  generation passed. The new correctness reproducer fails verification as
-  expected on both builder versions and remains an open finding.
-- Native measurements alternate five process pairs, with two warmups and three
-  samples per process, pinned to CPU 18. Raw samples include scheduler outliers.
-  The preceding complete run with larger outliers is retained separately.
-- The implementation commit is signed and verified. No hosted CI, sanitizers,
-  hardware execution, or arbitrary-workload performance guarantees are claimed.
+- The final source was rebuilt with Release/Clang 23.1.1 and LLVM/MLIR 23.1.0.
+  All **1,376 native tests** passed: QCO IR 587, QTensor IR 42, QC-to-QCO 178,
+  QCO-to-QC 153, QC/QCO round trip 6, QCO utilities 192, QTensor utilities 4,
+  QTensor transforms 2, and compiler 212. Counts and exit statuses are in
+  `tests-pr.json`.
+- Full-file C++ lint from the fixed PR base `9d6526f48` selected all five
+  changed source/test files and reported zero findings. Repository lint,
+  `git diff --check`, and MLIR documentation generation passed.
+- The standalone index reproducer exits 1 with the baseline builder and 0 with
+  the final builder. Its final output verifies and passes QCO linearity.
+- Native probe compilation, benchmark assertions, Python syntax checks, and plot
+  generation passed. Source and binary hashes are in `environment-pr.json`.
+  Historical measurements and their exact source commits remain available.
+- All commits are signed and verified. These are local checks; hosted CI is
+  reported separately. No sanitizer or hardware-execution result is claimed.

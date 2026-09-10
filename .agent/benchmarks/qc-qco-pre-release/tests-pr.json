@@ -1,0 +1,47 @@
+[
+  {
+    "suite": "Dialect/QCO/IR",
+    "status": 0,
+    "passed": 587
+  },
+  {
+    "suite": "Dialect/QTensor/IR",
+    "status": 0,
+    "passed": 42
+  },
+  {
+    "suite": "Conversion/QCToQCO",
+    "status": 0,
+    "passed": 178
+  },
+  {
+    "suite": "Conversion/QCOToQC",
+    "status": 0,
+    "passed": 153
+  },
+  {
+    "suite": "Conversion/QCQCORoundTrip",
+    "status": 0,
+    "passed": 6
+  },
+  {
+    "suite": "Dialect/QCO/Utils",
+    "status": 0,
+    "passed": 192
+  },
+  {
+    "suite": "Dialect/QTensor/Utils",
+    "status": 0,
+    "passed": 4
+  },
+  {
+    "suite": "Dialect/QTensor/Transforms",
+    "status": 0,
+    "passed": 2
+  },
+  {
+    "suite": "Compiler",
+    "status": 0,
+    "passed": 212
+  }
+]
