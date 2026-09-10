@@ -53,6 +53,7 @@ UPGRADING
 contributing
 ai_usage
 development
+linux_optimization
 glossary
 tooling
 support

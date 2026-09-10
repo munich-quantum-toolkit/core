@@ -399,6 +399,7 @@ extend-ignore-re = [
 wille = "wille"
 anc = "anc"
 braket = "braket"
+delocate = "delocate"
 mch = "mch"
 ket = "ket"
 optin = "optin"

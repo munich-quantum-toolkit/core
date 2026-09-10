@@ -1,11 +1,117 @@
 # Optimized release builds
 
-Status: native Linux SDK and Core LTO/BOLT validated locally; SDK publication
-and hosted matrix validation pending. Original baseline: `eb67c001a`,
-2026-09-08. GCC 13.3, Linux AArch64, LLVM/MLIR 23.1.0 assertion-enabled portable
-SDK, nanobind 3.0.1, CPython 3.14.7.
+Status: local Linux matrix complete. All 24 PGO configurations, four quiet
+runtime cohorts, capped resource replays, and final package checks passed.
 
-## Result
+Earlier investigation baseline: `eb67c001a`, 2026-09-08. GCC 13.3, Linux
+AArch64, LLVM/MLIR 23.1.0 assertion-enabled portable SDK, nanobind 3.0.1,
+CPython 3.14.7.
+
+## Local Linux matrix
+
+The follow-up experiment fixes Core at
+`706fd8f95e38c29451d97e88cfdf6022a55020fe` and LLVM at `llvmorg-23.1.0`. It does
+not change production workflows or the assertion-enabled development SDK. Raw
+commands and measurements are under `build/linux-optimization/`; the experiment
+manifest records tool identities. The PGO results and final repeat below contain
+the current runtime recommendations. Earlier experiments are labeled separately.
+
+The pinned manylinux image contains `manylinux-install-clang`, but its published
+versions stop at Clang 22.1.8. The official LLVM 23.1.0 ARM64 archive was
+downloaded and SHA-256 verified
+(`cfb31bfc713ef453248bf5bd026312f838ad6c52c25623e987cb6a340f3050d4`). Its
+compiler needs glibc 2.34 and cannot run inside manylinux 2.28. Running that
+compiler on the host against the extracted manylinux sysroot works for a small
+ThinLTO C++ consumer. That consumer runs inside the original container and needs
+at most `GLIBC_2.17` and `GLIBCXX_3.4.9`. Viable full SDK/wheel configurations
+have since passed validation, as detailed below. The downloaded LLD also needs
+libicu 70; its loader path is limited to the compiler wrapper. No Clang compiler
+is built from source. LLVMgold is built from the fixed LLVM source to match
+Clang 23.1.0; the host's 23.1.1 plugin is not a final matrix input.
+
+Patched mold 2.42.0 passes the named-local-symbol emitted-relocation regression
+inside manylinux. Both manylinux and host experiments use the same built linker,
+SHA-256 `ca7152e6edaf5f8fddd793cf0029c794fa771c3167aed1f56a2a7805e193490a`. An
+earlier source-staging error left stock mold in two diagnostic builds; those
+artifacts are excluded and rebuilt. Source inspection and the regression test
+now gate use of the linker.
+
+GCC 13 and 14 silently drop `-mcpu=native` on this heterogeneous machine. GCC 14
+accepts explicit `-mcpu=cortex-x925`; GCC 13 only supports older tuning models,
+so its native host experiment must identify that limitation. Clang 23 resolves
+native targeting to Cortex-X925. The recorded driver commands, not the requested
+flag alone, determine whether a native row is valid.
+
+The runner records command failures, GNU time, descendant RSS and Docker cgroup
+peak memory. Descendant RSS includes separate Ninja process groups but can count
+shared pages repeatedly; cgroup memory is the aggregate measure for containers.
+Exploratory builds overlap and are not controlled build-time comparisons.
+Evaluation uses twelve rotating fresh processes on CPU 19, one thread, and no
+concurrent builds. Per-workload medians, IQRs, paired bootstrap intervals, and
+regressions above 3% are retained. Ranking weights workload families equally.
+LLVM reads the process affinity mask when choosing its thread pool size;
+evaluation pins affinity before launching the Python processes. NumPy
+statevector checks cover optimized QCO, jeff round trips, and DD simulation at
+all three held-out sizes.
+
+The initial GCC C++/MLIR check passes 3,226 tests with one deliberate SC job-ID
+skip. Each completed BOLT training/validation run passes 1,184 Python tests with
+one optional external `qirrunner` skip. Built-in QIR execution is exercised. The
+reused GCC SDK did not disable hot/cold function splitting; a new native SDK
+with the same setting as the full-LTO SDK replaces it for controlled
+comparisons. Earlier GCC results remain diagnostic.
+
+### Portable runtime screen, 2026-09-10
+
+The first controlled evaluation contains 384 fresh-process samples: twelve
+rotating rounds for 32 artifacts. Build processes were paused throughout.
+`evaluation/comparison-20260910-020511.{json,csv,ranking.json}` records exact
+artifact hashes, workload medians, IQRs, paired bootstrap intervals, and flags
+for individual workload regressions above 3%. The table uses equal weight per
+workload family; lower latency ratios are better, relative to M1/BFD/plain.
+These are screening results; the subsequent C++ matrix checks passed.
+
+| SDK/Core LTO; linker  | Plain latency | BOLT latency | BOLT wheel MiB | BOLT uncompressed MiB |
+| --------------------- | ------------: | -----------: | -------------: | --------------------: |
+| GCC off/off; BFD      |        1.0000 |       0.9622 |           45.4 |                 140.5 |
+| GCC full/full; BFD    |        0.9945 |       0.9602 |           40.0 |                 124.3 |
+| Clang off/off; LLD    |        0.9639 |       0.9294 |           39.2 |                 135.3 |
+| Clang off/full; LLD   |        0.9313 |       0.9031 |           38.5 |                 127.4 |
+| Clang thin/thin; LLD  |        0.8782 |       0.8562 |           42.3 |                 136.3 |
+| Clang thin/full; LLD  |        0.8863 |       0.8617 |           41.4 |                 133.7 |
+| Clang full/full; LLD  |        0.8620 |       0.8378 |           41.1 |                 131.4 |
+| Clang full/full; mold |             — |       0.8366 |           41.3 |                 131.4 |
+
+Clang full/full with LLD and BOLT has a 95% interval of [0.8356, 0.8408]
+relative to the GCC baseline. Its ratio to the mold equivalent is 1.0015, with
+interval [0.9983, 1.0047]. Prefer LLD for the next stage because this is within
+uncertainty and avoids the additional plugin/linker dependency.
+
+The GCC-only subset is retained in `evaluation/portable-gcc.*`. Full/full with
+BFD/BOLT is within uncertainty of full/full with mold/BOLT. A direct paired
+comparison (`evaluation/gcc-bfd-tie.*`) finds off/off BFD/BOLT 0.21% slower than
+full/full BFD/BOLT, with interval [0.036%, 0.483%]. Carry full/full BFD forward
+as the measured GCC finalist, but report its SDK build cost against this very
+small runtime difference. This screening result alone does not justify requiring
+compiler-matched full-LTO SDKs for GCC releases.
+
+Matched effects are recorded in
+`evaluation/portable-effects.results.{json,csv}`. Core-only GCC LTO with a
+native SDK increases balanced latency by 1.30% after BOLT (95% interval: 1.01%
+to 1.39%) and regresses several compiler workloads above 3%. Adding full SDK LTO
+recovers that loss. With Clang and a ThinLTO SDK, forcing Core from ThinLTO to
+full LTO increases latency by 0.64% after BOLT; full SDK LTO then improves the
+full-Core-LTO result by 2.77%. These effects explain why a blanket Core-only LTO
+rule is insufficient.
+
+The selected full/full Clang and GCC BOLT candidates have no workload above 3%
+regression versus M1/BFD/plain. The matched-effects CSV still flags local
+regressions relative to each immediate predecessor, including small parsing and
+QIR cases in the compiler comparison. Clang M5/mold relaxation improves the BOLT
+score by 0.38%; relaxation checks for the full/full default-linker finalists
+remain separate from the native-CPU comparison.
+
+## Earlier result (before the Linux matrix)
 
 - Apply section garbage collection to the DDSIM device and benchmark executable
   on ELF platforms in optimized configurations. The local wheel shrinks from
@@ -364,7 +470,7 @@ libraries shared would create a much wider distribution contract. Removing the
 CLI would change a useful public interface and needs a separate product
 decision.
 
-## PGO and post-link investigation
+## Earlier PGO and post-link investigation
 
 [Astral's Ruff PGO work](https://github.com/astral-sh/ruff/pull/27570) uses
 pinned training projects and a separate evaluation corpus. Its follow-ups report
@@ -432,7 +538,7 @@ deployment-target compatibility still need a native proof. Keep portable CPU
 baselines; no `-march=native`, relaxed floating-point semantics, or new runtime
 allocator is justified by this audit.
 
-## Validation and remaining gates
+## Earlier validation and publication gates
 
 The earlier native SDK wheel uses mold, full GCC LTO, and section GC, verified
 in its compile and link commands. A local Clang 23 consumer verifies that wheel
@@ -449,3 +555,477 @@ SDK's runtime gains. Core CI is configured to cover its supported matrix once
 the new SDK archives are published. Toolchain #94, setup-mlir #255, and
 workflows #464 must land in that dependency order before the Core integration
 can be finalized.
+
+## Local ARM64 experiment: provisioning findings
+
+The new experiment fixes Core at `706fd8f95e38c29451d97e88cfdf6022a55020fe` and
+LLVM/MLIR at `llvmorg-23.1.0`. All runtime comparisons use Python 3.14.7 and the
+same dependency lock. The first portable comparison completed twelve rotating
+fresh-process rounds without concurrent builds. Native CPU, host, optimization
+level, and compiler-PGO comparisons are now complete, as detailed below.
+
+- The pinned manylinux image contains `manylinux-install-clang`, but its
+  published version list stops at 22.1.8. The downloaded upstream Clang 23.1.0
+  ARM64 archive has SHA-256
+  `cfb31bfc713ef453248bf5bd026312f838ad6c52c25623e987cb6a340f3050d4`. Its
+  executables require newer glibc than manylinux 2.28. Running that compiler on
+  the host against the exported manylinux sysroot works: compiler resource
+  headers, GCC 14 C++ headers/runtime, startup objects, archive tools, and LLD
+  are selected explicitly. A linked C++ ThinLTO consumer runs inside the pinned
+  container; its highest required versions are GLIBC 2.17 and GLIBCXX 3.4.9.
+  Completed portable wheels also pass auditwheel repair to manylinux 2.28.
+- The downloaded compiler does not supply LLVMgold. Build the plugin from the
+  same LLVM 23.1.0 sources; using the host's LLVM 23.1.1 plugin would mix
+  compiler revisions. No Clang source build is involved.
+- mold is pinned at 2.42.0 with upstream relocation fix
+  `635956d3b7c53d72c3fb70fd084443671395d20d`. The regression must inspect
+  emitted local-symbol relocations after patching and rebuilding. A source
+  directory nested inside another Git checkout can make `git apply` skip the
+  intended patch: apply the extracted patch with `patch -p1` and inspect the
+  result. Initial wheels produced by the accidentally unpatched linker are
+  excluded.
+- Both GCC 14 in manylinux and host GCC 13 silently remove `-mcpu=native` on
+  this heterogeneous CPU. GCC 14 accepts explicit `-mcpu=cortex-x925`. GCC 13
+  rejects that CPU and Cortex-X4, but accepts
+  `-march=armv9.2-a -mtune=cortex-x3`. That older scheduling model is a
+  documented host-GCC limitation, not equivalent to Clang's detected X925.
+- Instrumentation probes confirm that SDK-only and Core-only compiler PGO can be
+  selected independently through LTO. GCC uses process-specific profile
+  directories and matching `gcov-tool`; Clang uses `%m-%p.profraw` and matching
+  `llvm-profdata`. An installed MLIR consumer linked against four instrumented
+  SDK archives successfully produces a merged Clang profile inside manylinux.
+  Rebuilding those archives with the profile and linking without instrumentation
+  runtime flags also passes. GCC native/full-LTO SDK consumers and all three
+  Clang SDK archive modes run successfully inside manylinux.
+
+The library-only SDK rebuild must keep `LLVM_BUILD_TOOLS=ON` while building only
+explicit archive targets. Turning it off omits imported `llvm-as` and `llvm-dis`
+targets from the generated exports, even when their native executables were
+copied into the SDK. Core's C++ tests exposed this packaging defect in the N2
+GCC row. Regenerating the exports restores those targets without rebuilding or
+changing the static archives; the failed configuration is retained separately
+from its retry.
+
+Training and held-out benchmarks use separate deterministic circuit structures.
+The QIR JIT fixture tracks an exact basis-state result and scales surviving QIS
+calls; cancelling H/H loops would otherwise measure nearly constant JIT setup.
+BOLT package records include the input wheel and benchmark hashes and reject a
+benchmark change during training. Correctness smoke runs under build load are
+excluded from runtime comparisons.
+
+The regular C++ matrix rejects M2/mold with either relaxation setting. Two QIR
+runtime test executables fail to link because the native SDK's `CSE.cpp.o` and
+GCC's LTO output both define the `MemoryEffects::Write` singleton and its guard.
+BFD links the same objects and passes the tests. Python wheel validation alone
+misses this failure; the affected mold variants are excluded from viable
+rankings. No multiple-definition suppression or additional linker patch is used.
+
+### Initial portable runtime comparison
+
+The score is the geometric mean of latency ratios with equal weight per workload
+family, including startup. Each family combines its small, medium, and large
+cases. Intervals resample the twelve paired measurement rounds (2,000 bootstrap
+draws); lower ratios are better. These initial screening results preceded the
+completed C++ gates and final repeat. The later PGO section gives the current
+recommendations.
+
+| Change, holding other settings fixed             | Latency ratio | 95% bootstrap interval |
+| ------------------------------------------------ | ------------: | ---------------------: |
+| GCC Core LTO, M1/BFD to M2/BFD                   |        1.0060 |          1.0041–1.0103 |
+| GCC SDK LTO, M2/BFD to M3/BFD                    |        0.9885 |          0.9847–0.9912 |
+| Clang Core full LTO, M4/LLD to M5/LLD            |        0.9662 |          0.9641–0.9680 |
+| Clang SDK full LTO, M5/LLD to M8/LLD             |        0.9257 |          0.9225–0.9278 |
+| Clang SDK ThinLTO, M5/LLD to M7/LLD              |        0.9518 |          0.9491–0.9542 |
+| Clang Core ThinLTO to full LTO, M6/LLD to M7/LLD |        1.0093 |          1.0063–1.0109 |
+| BOLT on M3/BFD                                   |        0.9655 |          0.9635–0.9680 |
+| BOLT on M8/LLD                                   |        0.9719 |          0.9700–0.9758 |
+| Patched mold versus BFD, M3 with BOLT            |        0.9986 |          0.9961–1.0010 |
+| Patched mold versus LLD, M8 with BOLT            |        0.9985 |          0.9954–1.0019 |
+
+Full SDK/Core LTO supplies the runtime finalists for subsequent experiments. BFD
+and LLD remain the compiler-specific choices for those experiments because their
+BOLT results are indistinguishable from mold in this comparison. GCC's full-LTO
+gain over no LTO is small enough that build cost remains material; Clang shows a
+larger SDK-LTO effect. Individual regressions above 3% are retained in the raw
+comparison CSV and are not hidden by the balanced score.
+
+Raw records are under `build/linux-optimization/evaluation`: the complete sample
+file is `comparison-20260910-020511.json`, and isolated effects are in
+`portable-effects.results.json` and `portable-effects.results.csv`.
+
+### Host GCC and Cortex-A53 workarounds
+
+Ubuntu GCC 13/BFD emits Cortex-A53 erratum 843419 veneers in the large MLIR
+extension. BOLT rejects these by default. `H1-gcc-plain` retains the workaround;
+`H1-gcc-bolt` is unavailable under that row's portable-CPU contract. Its failed
+instrumentation log is retained.
+
+The H2 host GCC builds explicitly require ARMv9.2 and therefore already exclude
+Cortex-A53. Their BOLT invocations use `--drop-cortex-a53-843419-veneers`,
+scoped by the recorded compiler and CPU flags. The same condition applies to
+later native GCC PGO artifacts. This option is never applied to portable
+manylinux or H1 artifacts. H2's measured BOLT effect therefore includes veneer
+removal as well as profile-directed layout changes. The original failed H2
+attempt remains in `rejected-stage-attempts`.
+
+### Installed C++ consumer boundaries
+
+The installed consumer now checks DD state-vector semantics as well as QDMI
+session allocation. It uses the producer compiler. GCC 13 requests the old
+`getVector` symbol, whereas Clang 23 and GCC 14 LTO export the constrained
+specialization with newer mangling. The GCC 14 no-LTO library also exports the
+old alias. Keep compiler matching explicit for the optimized C++ packages.
+
+On glibc 2.28 the consumer must additionally link `Threads::Threads`: the fixed
+Core revision does not propagate pthread, causing QDMI session allocation to
+throw `std::system_error`. A debugger trace and a pthread-preload probe isolated
+this from the optimization changes. The consumer now links the dependency
+explicitly and passes without preload. Source revisions remain fixed. Evidence
+is under `build/linux-optimization/consumer-abi-probe`; successful checks
+require the current consumer source hashes in each consumer input record.
+
+### CPU tuning, host toolchains, and optimization levels
+
+The second quiet comparison completed 12 rotating rounds across 39 variants (468
+fresh-process samples). All retained baseline variants passed their regular C++
+suites and installed Python/CMake checks. The Python suite reports 1,184 passed
+and one optional `qirrunner` import skip; QIR execution is exercised by the C++
+runtime/JIT suites and the scalable workloads.
+
+| Change                                   | Latency ratio | 95% bootstrap interval |
+| ---------------------------------------- | ------------: | ---------------------: |
+| gcc Core CPU tuning (plain)              |        0.9917 |          0.9888–0.9939 |
+| gcc additional SDK CPU tuning (plain)    |        1.0092 |          1.0058–1.0127 |
+| clang Core CPU tuning (plain)            |        1.0158 |          1.0125–1.0189 |
+| clang additional SDK CPU tuning (plain)  |        0.9855 |          0.9830–0.9890 |
+| gcc host toolchain/environment (plain)   |        1.0554 |          1.0525–1.0581 |
+| gcc host CPU tuning (plain)              |        0.9985 |          0.9958–1.0013 |
+| gcc portable O3 to O2 (plain)            |        1.0443 |          1.0407–1.0483 |
+| gcc native O3 to O2 (plain)              |        1.0446 |          1.0413–1.0478 |
+| clang host toolchain/environment (plain) |        1.0022 |          0.9989–1.0051 |
+| clang host CPU tuning (plain)            |        1.0001 |          0.9961–1.0047 |
+| clang host CPU tuning (BOLT)             |        1.0013 |          0.9967–1.0062 |
+| clang portable O3 to O2 (plain)          |        1.0132 |          1.0090–1.0176 |
+| clang native O3 to O2 (plain)            |        1.0146 |          1.0096–1.0201 |
+| M3-bfd relaxation (plain)                |        0.9997 |          0.9974–1.0023 |
+| M3-mold relaxation (plain)               |        0.9986 |          0.9960–1.0022 |
+| M8-lld relaxation (plain)                |        0.9980 |          0.9954–1.0022 |
+
+O3 remains the setting for all four PGO finalists. O2 regresses the balanced
+score before and after BOLT, with intervals excluding equality. The individual
+regressions include matrix multiplication and small parsing cases for Clang, and
+several compiler workloads for GCC. Exact per-workload ratios and all
+regressions above 3% are retained in `native-option-effects.results.csv`.
+
+Native CPU tuning does not supply a measurable aggregate gain for either host
+compiler. The Clang native builds regress some DD simulation cases, despite
+aggregate parity. The host GCC builds are approximately 5.5% slower than the
+portable GCC builds; GCC 13.3 versus 14.2.1 and the runtime environment differ,
+so that delta is not a CPU-tuning result. Host Clang 23.1.1 and portable Clang
+23.1.0 remain indistinguishable in this comparison.
+
+Relaxation is also indistinguishable at the aggregate level. PGO keeps the
+recorded no-relaxation baseline, full SDK/Core LTO, and BFD/LLD. The four suites
+use M3/BFD, M8/LLD, H2/GCC, and H2/Clang, each with benchmark-only and
+tests-plus-benchmarks training and separate SDK-only, Core-only, and combined
+PGO. Native PGO remains an experiment, not evidence that native CPU flags are
+always beneficial.
+
+Raw samples: `comparison-20260910-063504.json`; paired effects:
+`native-option-effects.results.json` and `.csv`; exact PGO selections:
+`build/linux-optimization/pgo-finalists.json`.
+
+The M3/BFD/BOLT and M8/LLD/BOLT baselines additionally pass the installed C++
+consumer, all scalable semantic workloads, and the same 1,184 Python tests
+inside the pinned manylinux 2.28 image using CPython 3.14.7. These checks use
+the exact installed wheel files, not a rebuild. Records are under
+`build/linux-optimization/manylinux-runtime`.
+
+### PGO training configuration checks
+
+The first manylinux GCC instrumentation build was rejected before training:
+constructing an MLIR context crashed in `ThreadLocalCache`, both on the host and
+inside the pinned container. Its CMake logs identify a harness error:
+`-fprofile-prefix-path=/experiment/.` did not match canonical source paths. GCC
+emitted a warning during compiler-flag probes; `-Werror` then made the PIC and
+semantic-interposition probes fail. The resulting SDK lacked `-fPIC` despite
+`LLVM_ENABLE_PIC=ON`.
+
+The harness now normalizes the prefix to `/experiment`, clears failed cached
+checks, and requires the successful PIC probe before building an SDK. The new
+configuration passes both C and C++ PIC probes. Failed builds, training output,
+cache, compiler-check logs, and the debugger evidence remain available under
+`build/linux-optimization/rejected-stage-attempts/M-PGO-gcc-profile-prefix` and
+the `M-PGO-gcc-*-crash` records. These failed artifacts supply no performance
+samples. The corrected build passes Python training and all 4,069 C++ tests
+using the same compiler and sources.
+
+The GCC merge checks also caught a separate histogram problem. The unmodified
+GCC 13 `gcov-tool` subtracts from an already negative accumulated top-N total
+when that accumulated profile is its first input. The APInt division histogram
+had 25,134 raw executions but only 4,288 in the merged total, making a retained
+value count of 7,456 inconsistent. Its SDK compilation correctly rejected that
+profile. A check of every histogram found 15 affected totals in benchmark-only
+training and 163 in tests-plus-benchmarks training; the corresponding host GCC
+PGO artifacts are excluded and rebuilt.
+
+The corrected fold puts a fresh raw profile first and the accumulated profile
+second. A raw process directory containing an already saturated histogram must
+be the initial accumulator; the current inputs have at most one such directory.
+The harness rejects multiple such directories rather than guessing an order. It
+retains the common-filename workaround and the matching, unmodified compiler
+tool. Both corrected datasets preserve the sum of absolute raw execution totals
+for every top-N/indirect-call histogram (78,164 and 100,630 histograms,
+respectively), and the isolated APInt compile passes. This follows the
+[signed-total handling in GCC's merge implementation](https://github.com/gcc-mirror/gcc/blob/releases/gcc-13.3.0/libgcc/libgcov-merge.c).
+Raw comparisons and a reproducer are under
+`rejected-stage-attempts/H-PGO-gcc-value-profile`. SDK and Core objects are
+cleaned before the replacement builds so an unchanged profile pathname cannot
+reuse objects compiled with the earlier data.
+
+The corrected manylinux GCC datasets also pass this invariant: 84,645
+benchmark-only and 107,340 tests-plus-benchmarks histograms, with no mismatches.
+The latter contains one saturated raw histogram, handled as the initial
+accumulator by the same merge procedure.
+
+Exploratory Core build costs retain their actual CPU settings in each command
+record. Once both Clang PGO suites finished, subsequent manylinux GCC Core
+builds used an eight-CPU quota instead of four to use the available machine. The
+in-flight benchmark-trained SDK-only Core build retained four CPUs. Compare
+these costs with their resource settings; the isolated finalist replays use the
+same four-CPU limit for every candidate.
+
+`disk-inventory.json` and `.csv` report retained directory footprints, including
+per-variant staging files, SDKs, training data, build trees, and caches. They
+are snapshots, not historical peak disk usage. PGO variants share build
+directories; the configuration table marks those shared current footprints
+explicitly. The host compiler cache is shared across builds and cannot be
+attributed to one variant. Nested directories overlap, and filesystem allocation
+counts shared or reflinked extents per path rather than exclusive physical
+storage. Dedicated finalist cache replays provide separate empty/populated-cache
+measurements.
+
+Memory columns retain the accounting method: sampled process-tree RSS can count
+shared pages more than once, while cgroup memory includes page cache. Swap is
+sampled from a cgroup where one was recorded; uncapped host exploration has no
+swap measurement and is marked unavailable, not zero. The isolated finalist
+replays record cgroup memory and swap for both host and container builds. For
+Docker commands, outer GNU time and process-tree RSS describe the Docker client;
+use cgroup memory for the container workload. Short cache probes also record
+Bash time inside the container.
+
+### PGO results and final repeat
+
+All 24 PGO configurations passed their regular C++ suites, installed Python
+suite, semantic benchmarks, and matching-compiler CMake consumer. Each has
+separate plain and freshly BOLT-optimized artifacts. The PGO comparison contains
+672 samples (56 variants, 12 rounds); the final repeat contains 216 samples (18
+variants, 12 rounds). Together with the portable and native screens, these four
+quiet cohorts contain 1,740 fresh-process measurements of 109 distinct viable
+artifacts. Four packaged M2/mold variants are retained as rejected
+C++-incompatible diagnostics and receive no runtime ranking.
+
+The following PGO table uses the first PGO cohort. Each cell is the balanced
+latency ratio before/after BOLT, relative to M3/BFD without PGO or BOLT. Lower
+is better. Full per-workload latency, throughput, startup, medians, IQRs, and
+95% bootstrap intervals are in the comparison CSV. Absolute latency and
+throughput intervals were added without changing the earlier relative results;
+`relative-summary-preservation.json` verifies those columns are unchanged.
+
+| Environment       | Training    |   Core PGO only |    SDK PGO only |            Both |
+| ----------------- | ----------- | --------------: | --------------: | --------------: |
+| Portable GCC      | bench       | 0.9495 / 0.9282 | 0.9070 / 0.8932 | 0.8620 / 0.8606 |
+| Portable GCC      | tests-bench | 0.9541 / 0.9247 | 0.9363 / 0.9164 | 0.8615 / 0.8498 |
+| Portable Clang    | bench       | 0.8344 / 0.8125 | 0.8080 / 0.7921 | 0.7798 / 0.7691 |
+| Portable Clang    | tests-bench | 0.8409 / 0.8174 | 0.8056 / 0.7922 | 0.7781 / 0.7689 |
+| Host-native GCC   | bench       | 0.9885 / 0.9647 | 0.9364 / 0.9293 | 0.8794 / 0.8772 |
+| Host-native GCC   | tests-bench | 0.9947 / 0.9632 | 0.9729 / 0.9545 | 0.8838 / 0.8719 |
+| Host-native Clang | bench       | 0.8393 / 0.8147 | 0.8051 / 0.7922 | 0.7825 / 0.7734 |
+| Host-native Clang | tests-bench | 0.8430 / 0.8187 | 0.8083 / 0.7948 | 0.7790 / 0.7695 |
+
+The final repeat supports these selections. Ratios below use its own M3/BFD
+plain reference; they are not ratios between independent cohorts.
+
+| Finalist (full/full LTO, O3, BOLT) | Latency ratio |  95% interval | Wheel MiB | ELF MiB | SDK archive MiB |
+| ---------------------------------- | ------------: | ------------: | --------: | ------: | --------------: |
+| M-PGO-gcc-tests-bench-both-bolt    |        0.8520 | 0.8491–0.8549 |      36.3 |   107.8 |          2222.1 |
+| M-PGO-clang-bench-both-bolt        |        0.7683 | 0.7657–0.7701 |      39.1 |   122.3 |           805.2 |
+| H-PGO-gcc-tests-bench-both-bolt    |        0.8692 | 0.8664–0.8710 |      36.9 |   112.9 |          2268.9 |
+| H-PGO-clang-tests-bench-both-bolt  |        0.7673 | 0.7645–0.7685 |      41.5 |   124.0 |           805.0 |
+
+Portable Clang with benchmark-only combined PGO is the preferred portable
+configuration: 23.17% lower balanced latency than the GCC full-LTO baseline (95%
+interval: 22.98%–23.43%), and 9.00% lower than Clang full-LTO/BOLT without PGO
+(8.71%–9.29%). Adding regular tests to compiler training changes its ratio by
+only −0.23% (−0.53% to +0.15%). Prefer benchmark-only compiler training; regular
+tests still gate correctness and participate in BOLT training.
+
+The same portable configuration is the recommendation for maximum measured local
+performance. Host-native Clang with tests-plus-benchmarks PGO has a ratio of
+0.9986 to it (0.9947–1.0017), but confirmed regressions above 3% on all three DD
+simulation sizes. The host-native recipe is tested and available; the data does
+not justify requiring native CPU flags. This cross-environment comparison also
+changes the compiler distribution; the earlier H1/H2 comparison isolates CPU
+tuning and found no aggregate benefit.
+
+For GCC, adding tests to benchmark training lowers final latency by 1.05%
+(portable) and 1.20% (host-native), with intervals excluding equality. For
+host-native Clang it lowers latency by 0.48%, also excluding equality in the
+repeat. Those are the subsidiary compiler finalists. The simpler host-GCC
+benchmark-only/plain variant is close in the first cohort but has confirmed
+control-flow regressions; aggregate uncertainty alone does not erase them.
+
+All four selected finalists have no workload regression above 3% against the
+common GCC baseline in the repeat. Every matched comparison retains both point
+regressions above 3% and regressions whose entire 95% interval exceeds 3%.
+Consult `pgo-effects.results.csv`, `pgo-finalist-ties.results.csv`, and
+`final-effects.results.csv` when choosing for a particular workload.
+
+Exploratory build costs below include the SDK profile-use rebuild, Core wheel
+build, separate C++ test build, and five BOLT train/rewrite/validation commands.
+These builds overlap other work and use different recorded quotas; they are cost
+records, not controlled build-speed comparisons. Instrumentation build costs and
+Python/C++ training/profile-merge costs are separate columns in
+`configuration-summary.csv`; instrumentation is shared by both datasets.
+
+| Finalist                          | SDK use rebuild s | Core wheel s | C++ build s | MLIR link s | BOLT total s |
+| --------------------------------- | ----------------: | -----------: | ----------: | ----------: | -----------: |
+| M-PGO-gcc-tests-bench-both-bolt   |             420.4 |        296.4 |       521.7 |        69.9 |        181.0 |
+| M-PGO-clang-bench-both-bolt       |             332.3 |        361.8 |       419.8 |       130.4 |        238.7 |
+| H-PGO-gcc-tests-bench-both-bolt   |             520.2 |        264.1 |       411.0 |        72.7 |        223.4 |
+| H-PGO-clang-tests-bench-both-bolt |             377.3 |        363.7 |       548.4 |       125.2 |        238.7 |
+
+All 23 SDK archive sizes and SHA-256 hashes were verified against their actual
+contents, including the patched mold binary. The 109 evaluated environments use
+the same CPython 3.14.7 executable and the same 40 installed distribution
+versions; all four cohorts use the identical held-out benchmark source hash.
+`input-consistency.json` and `sdk-archives/verified-contents.json` record these
+checks. Sizes separate compressed packages, uncompressed package bytes, and ELF
+bytes; compression is never treated as a runtime optimization.
+
+The recommended Clang wheel and the portable GCC finalist additionally pass the
+matching CMake consumer, all held-out semantic workloads, and 1,184 Python tests
+inside the original manylinux 2.28 image. BOLT recovery on the selected Clang
+binary passes all four injected failure stages (training, missing profile,
+rewrite, and validation), restoring its original bytes and permissions and
+successfully executing it afterward.
+
+### Finalist resource replays
+
+Dedicated sequential replays use CPUs 16–19, a four-CPU quota, 16 GiB RAM, and
+an additional 16 GiB swap. These are local runner-limit experiments, not hosted
+CI results. Cgroup peak memory includes child processes and page cache; RSS and
+sampled swap are retained separately. The MLIR extension link uses the selected
+SDK archives, Core objects, and compiler-PGO dataset. The portable Clang build
+was restored to its benchmark profile in the same build paths before replay;
+original package artifacts and timing records were preserved.
+
+Full LTO has no persistent linker cache. The paired times below mean first and
+repeated link invocations with the OS page cache left intact. Each worker count
+has one pair, so this is a resource/capacity screen, not a statistically powered
+build-speed ranking.
+
+| Finalist                     | LTO workers | First / repeat s | Peak RAM GiB | Peak sampled swap GiB |
+| ---------------------------- | ----------: | ---------------: | -----------: | --------------------: |
+| M-PGO-clang-bench-both       |           1 |      80.3 / 80.2 |         4.72 |                  0.00 |
+| M-PGO-clang-bench-both       |           2 |      64.9 / 65.4 |         6.23 |                  0.00 |
+| M-PGO-clang-bench-both       |           4 |      57.3 / 57.5 |         6.45 |                  0.00 |
+| M-PGO-gcc-tests-bench-both   |           1 |    212.7 / 211.7 |         3.56 |                  0.00 |
+| M-PGO-gcc-tests-bench-both   |           2 |    117.9 / 118.5 |         3.62 |                  0.00 |
+| M-PGO-gcc-tests-bench-both   |           4 |      69.5 / 70.0 |         3.80 |                  0.00 |
+| H-PGO-clang-tests-bench-both |           1 |    116.5 / 116.4 |         5.05 |                  0.00 |
+| H-PGO-clang-tests-bench-both |           2 |      95.4 / 96.0 |         6.74 |                  0.00 |
+| H-PGO-clang-tests-bench-both |           4 |      80.7 / 80.2 |         6.96 |                  0.00 |
+| H-PGO-gcc-tests-bench-both   |           1 |    204.8 / 204.1 |         3.51 |                  0.00 |
+| H-PGO-gcc-tests-bench-both   |           2 |    113.5 / 113.8 |         3.68 |                  0.00 |
+| H-PGO-gcc-tests-bench-both   |           4 |      67.0 / 67.2 |         3.85 |                  0.00 |
+
+Compiler-cache probes replay LLVM Support's `CommandLine.cpp` and Core's
+OpenQASM frontend unity translation unit with the selected flags and profiles.
+Each uses an isolated ccache 3.7.7 directory, first empty and then populated.
+The two object hashes must match; original build objects and depfiles are
+restored afterward. These probes measure representative compilation/cache
+stages, not a complete SDK rebuild under the cap. The SDK probe for portable
+Clang explicitly selects its benchmark profile without reconfiguring the shared
+SDK build tree. The exact original and replay commands are retained. A
+one-second exit hold keeps each short-lived cgroup available for its final
+peak-memory sample; an inner Bash time record excludes that hold from the
+compiler times below.
+
+| Finalist                     | Probe | Empty / populated cache s | Peak RAM GiB | Cache MiB |
+| ---------------------------- | ----- | ------------------------: | -----------: | --------: |
+| M-PGO-clang-bench-both       | sdk   |               0.54 / 0.01 |         0.06 |      0.41 |
+| M-PGO-clang-bench-both       | core  |               2.54 / 0.01 |         0.32 |      1.03 |
+| M-PGO-gcc-tests-bench-both   | sdk   |               1.01 / 0.01 |         0.25 |      1.09 |
+| M-PGO-gcc-tests-bench-both   | core  |               3.52 / 0.01 |         0.60 |      3.00 |
+| H-PGO-clang-tests-bench-both | sdk   |               0.79 / 0.01 |         0.06 |      0.40 |
+| H-PGO-clang-tests-bench-both | core  |               3.85 / 0.01 |         0.31 |      1.10 |
+| H-PGO-gcc-tests-bench-both   | sdk   |               0.91 / 0.01 |         0.25 |      1.15 |
+| H-PGO-gcc-tests-bench-both   | core  |               3.19 / 0.01 |         0.58 |      3.14 |
+
+Fresh BOLT profiles were collected under the same limits from the actual five
+wheel binaries. Each rewrite runs its training validation, followed by regular
+Python tests and the held-out semantic workloads on the complete rewritten
+stage. The original raw wheel SHA-256 is checked before extraction.
+
+| Finalist                     | Five BOLT stages s | Peak RAM GiB | Peak sampled swap GiB |
+| ---------------------------- | -----------------: | -----------: | --------------------: |
+| M-PGO-clang-bench-both       |              202.8 |         5.66 |                  0.00 |
+| M-PGO-gcc-tests-bench-both   |              164.4 |         4.72 |                  0.00 |
+| H-PGO-clang-tests-bench-both |              181.7 |         5.81 |                  0.00 |
+| H-PGO-gcc-tests-bench-both   |              170.4 |         5.04 |                  0.00 |
+
+`resource-summary.{json,csv}` contains these measurements. All exact commands,
+limits, cache statistics, sizes, and logs are under `replays/`. Exploratory
+build costs in `configuration-summary.csv` retain their actual concurrency;
+these isolated records are the evidence for runner memory/resource limits.
+
+Use four LTO workers with one large link at a time for these finalists under
+four CPUs and 16 GiB RAM. Four workers were fastest in both observed runs for
+every compiler. The highest link peak was 6.96 GiB; the highest BOLT peak was
+5.81 GiB. No replay used swap. These observations do not establish a smaller RAM
+limit or a full SDK build limit: compilation used representative probes, and
+standalone SDK tools were not BOLT-optimized.
+
+The cache harness retains the initial timing attempts under
+`rejected-stage-attempts/cache-before-exit-hold`. The corrected probes use the
+existing Bash timer because the manylinux image has no `/usr/bin/time`, retain
+the cgroup for one second after the command, and restore container-owned outputs
+inside the container. All eight corrected probes have a real direct warm-cache
+hit and identical cold/warm object hashes; restored object hashes also match
+their backups.
+
+### Final package and replay checks
+
+All 24 replayed MLIR extension outputs pass the held-out semantic workloads.
+Validation copies use package-local `lib`/`lib64` search paths; original link
+outputs are unchanged. The source guide recommends four LTO workers under the
+tested limit while retaining the measured one- and two-worker alternatives.
+
+Wheel ZIP creation and manylinux repair were replayed separately after semantic
+validation finished. Every resulting ELF entry is byte-identical to the
+corresponding canonical, tested wheel. The following quiet timings therefore
+measure packaging rather than changes in generated code. SDK archive packing
+uses recorded `zstd -T1 -3` commands and has a separate timing column in the
+configuration summary.
+
+| Finalist                     | Wheel ZIP s | manylinux repair s |
+| ---------------------------- | ----------: | -----------------: |
+| M-PGO-clang-bench-both       |        3.10 |               5.14 |
+| M-PGO-gcc-tests-bench-both   |        3.10 |               5.24 |
+| H-PGO-clang-tests-bench-both |        3.08 |     not applicable |
+| H-PGO-gcc-tests-bench-both   |        3.10 |     not applicable |
+
+The final `configuration-summary.{json,csv}` covers all 113 packaged artifacts:
+109 validated and four rejected M2/mold variants. It separates SDK/Core LTO, CPU
+flags, linker, PGO scope/training, BOLT, exploratory build and profile costs,
+archive/wheel/ELF sizes, and retained disk footprints. `measurement-inventory`
+indexes timed stages; `linker-identity.json` checks all 113 ELF linker records,
+including the host distribution's `Ubuntu LLD 23.1.1` identification.
+
+The results bundle contains raw measurements, exact commands, toolchain hashes,
+helper scripts, the implementation patch, this audit, source-build instructions,
+and a file-hash manifest. Large SDK archives, wheels, raw compiler profiles, and
+build trees remain at the paths recorded in its JSON files. No production
+release workflow, hosted experiment, macOS build, or compiler bootstrap is part
+of this local phase.
