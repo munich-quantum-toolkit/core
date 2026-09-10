@@ -254,10 +254,10 @@ target contract owns the output and required pass ordering.
 Compile a file and submit it to DDSIM:
 
 ```cpp
-#include "mlir/Compiler/QDMIAdapter.h"
+#include "mqt/Compiler/QDMIAdapter.h"
 #include "qdmi/Client.hpp"
-#include <llvm/Support/Error.h>
-#include <llvm/Support/raw_ostream.h>
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 
 auto device = qdmi::Session::openDevice("mqt.ddsim.default");
 auto input = mlir::QCProgram::fromQASMFile("input.qasm");
