@@ -1,6 +1,7 @@
 # Implement the MLIR contract audit
 
-Status: complete locally on the existing audit branch for PR #2505.
+Status: complete on the existing audit branch for PR #2505, rebased onto main at
+`7d9061796`.
 
 ## Scope and decisions
 
@@ -25,7 +26,8 @@ new performance claim is planned.
 - [x] F3/F4/F9: stabilize XX±YY matrices, match nullable producers correctly,
   and round-trip index-switch attributes.
 - [x] F5: make full quantum unrolling progress on terminator-only permutations.
-- [x] F7/F8: correct QIR resource and loop metadata.
+- [x] F7: correct QIR resource metadata. F8 is resolved by main in #2495; keep
+      the distinct measurement-latch regression and drop duplicate work.
 - [x] F2/F10: fix modifier conversion/signatures with the chosen wire contract.
 - [x] C2/C3/C4: remove stale QTensor helpers and redundant verifier/planning
       work.
@@ -35,13 +37,7 @@ new performance claim is planned.
 
 ## Validation
 
-Implementation: `1cdb98383`; lint cleanup: `b2b7af3fd`. All 2,680 tests in 15
-affected assertion-enabled GoogleTest binaries pass against LLVM/MLIR 23.1.0.
-`uvx nox -s lint` and `uvx nox -s cpp-lint` pass; the latter checks all 32
-changed C++ files, not only changed lines. No measured speedup is claimed.
-
 See the [resolution ledger](../audits/issue-2255-contracts-2026-09-10.md) for
-regression evidence, supported-subset decisions, duplicate ownership, and the
-historical evidence link. The temporary tracked probe harness is removed;
-unrelated untracked probe directories are preserved. No remote changes were
-made.
+current validation, regression evidence, supported-subset decisions, duplicate
+ownership, and the historical evidence link. The temporary tracked probe harness
+is removed; unrelated untracked probe directories are preserved.

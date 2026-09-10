@@ -2,9 +2,10 @@
 
 # MLIR audit resolution — issue #2255
 
-Status: accepted findings implemented in `1cdb98383`, except C1, owned by
+Status: accepted findings resolved, except C1, owned by
 [PR #2502](https://github.com/munich-quantum-toolkit/core/pull/2502).
-Date: 2026-09-10. Implementation baseline: `4faf68e3a`. Scope:
+Date: 2026-09-10. Rebased onto main at `7d9061796`; implementation originally
+started from `4faf68e3a`. Scope:
 [issue #2255](https://github.com/munich-quantum-toolkit/core/issues/2255),
 covering QC/QCO modifiers, conversions, optimization and mapping passes, QTensor
 cleanup, and QIR metadata.
@@ -25,7 +26,7 @@ probe harness and copied inputs.
 | F5  | Full quantum unrolling uses the existing empty-body workaround so LLVM remaps terminator-only permutations. `PreservesYieldOnlyPermutation` checks the actual wires after 1, 2, 3, and 4 iterations.                                                                                |
 | F6  | Placement discovery follows only a flat extract/insert/deallocate chain. `RejectTensorControlFlowBeforeMutation` checks valid tensor control flow, diagnostics, and unchanged IR in both placement and mapping.                                                                     |
 | F7  | QIR capacity follows known QIS operand roles and all pointer uses. Metadata tests establish shared-ID capacity 8, result-read qubit capacity 1, and safe handling of dynamic pointer arguments; sparse-ID and overflow tests remain.                                                |
-| F8  | Natural loops include their latch; classification examines every exit and has a defined fallback. `MetadataClassifiesUnconditionalLoop` expects iteration-based branching; `MetadataIncludesMeasurementLatch` expects conditional branching.                                        |
+| F8  | Resolved by main in #2495. `ClassifiesUnconditionalBackEdge` covers unconditional loops; this PR retains `MetadataIncludesMeasurementLatch` for measurement-dependent exits. Duplicate production code and the unconditional-loop test were dropped.                                |
 | F9  | `qco.index_switch` prints the bare attribute dictionary its parser accepts. `DefaultOnlyIndexSwitchParser` now round-trips and retains a discardable attribute.                                                                                                                     |
 | F10 | QC modifier body arguments must match targets; QCO control results must match control inputs. Compact owning-verifier tests cover both signature gaps and positional yields for all three modifiers.                                                                                |
 | C2  | Deleted the unused QTensor helper header and tests that only exercised those helpers. Actual alias/reset and index-boundary tests remain.                                                                                                                                           |
@@ -62,24 +63,23 @@ positional yields.
   implements removal of the QC-to-QCO modifier-verification walk and relocates
   its tests. That patch is deliberately not duplicated here. Its QIR output
   ordering, comparator, diagnostics, and lifetime fixes are distinct.
+- F8 is now implemented in main by #2495. The rebase keeps main's implementation
+  and unconditional-back-edge test, dropping the duplicate fix and regression
+  from this PR. The distinct measurement-latch regression remains here.
 
 ## Validation and limits
 
 The affected GoogleTest binaries are built with assertions enabled against
-LLVM/MLIR 23.1.0. Audit validation at `b2b7af3fd`: 2,680 tests pass across 15
-binaries (QC/QCO/QTensor/QIR IR, QCO utilities and optimizations, mapping,
+LLVM/MLIR 23.1.0. Post-rebase validation at `d0bcfa697`: 2,687 tests pass across
+15 binaries (QC/QCO/QTensor/QIR IR, QCO utilities and optimizations, mapping,
 decomposition, target synthesis, phase normalization, QTensor transforms,
 QC↔QCO, jeff round trips, and compiler pipelines). Run each under
 `build/release/mlir/unittests` with `--gtest_brief=1`.
 
 `uvx nox -s lint` and full changed-file `uvx nox -s cpp-lint` pass. The latter
-checked all 32 changed C++ files with zero findings at `b2b7af3fd`. Context-only
+checked all 32 changed C++ files with zero findings at `d0bcfa697`. Context-only
 test setup now uses constructors without naming suppressions. No sanitizer,
 hardware execution, or measured speedup is claimed.
-
-After the modifier-verifier cleanup, all 892 tests in the QCO IR, QCO-to-QC,
-jeff round-trip, and MQT transform binaries pass. Both lint sessions were rerun
-successfully, including all 32 changed C++ files.
 
 Remaining candidates are not accepted findings: QC-to-QIR entry arguments and
 measurement-bearing helper support; permissive contexts with unregistered
