@@ -78,6 +78,22 @@ typed `#mqt.payload_spec` attribute.
 
 ### Payload control flow
 
+Use the constants on {py:class}`~mqt.core.mlir.ProgramCapability` and
+{py:class}`~mqt.core.mlir.ProgramConstraint` when declaring supported control
+flow:
+
+```{code-cell} ipython3
+from mqt.core.mlir import ProgramCapability, ProgramConstraint
+
+forward_branching = ProgramCapability(
+    ProgramCapability.FORWARD_BRANCHING,
+    constraints=[ProgramConstraint(ProgramConstraint.MAX_NESTING_DEPTH, 8)],
+)
+```
+
+Add this capability to a payload specification only if the device supports it.
+Custom capability and constraint identifiers remain accepted as strings.
+
 Target compilation requires structured QCO/SCF input. Producers of raw CFG
 branches must normalize them before target compilation; runtime assertions are
 allowed. The pipeline removes unused symbols, propagates constants, unrolls
@@ -198,8 +214,10 @@ unobservable global phase of the entry point.
 Use {py:meth}`~mqt.core.mlir.QCOProgram.compile_for_target` with the target
 environment to apply target compilation to an existing QCO program. Compilation
 runs in place. If a pass fails, the environment and earlier pass changes remain
-on the program. Copy the program before compilation if the caller must preserve
-the input. The pipeline takes one `TargetEnvironment`, replaces any existing
+on the program. In Python, `compile_for_target` raises `RuntimeError` with the
+emitted MLIR diagnostics, including operation and source-location details when
+available. Copy the program before compilation if the caller must preserve the
+input. The pipeline takes one `TargetEnvironment`, replaces any existing
 `mqt.target_env` module attribute, and shares the prepared target with all
 target passes without rebuilding its connectivity tables. The selected
 environment must remain unchanged during pipeline execution. Standalone passes

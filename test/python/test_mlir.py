@@ -85,7 +85,11 @@ def _test_payload_specification() -> PayloadSpecification:
     """Return one explicit selected payload contract for target tests."""
     return PayloadSpecification(
         PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.BINARY),
-        [ProgramCapability("forward-branching", 0, [ProgramConstraint("max-control-flow-nesting-depth", 8)])],
+        [
+            ProgramCapability(
+                ProgramCapability.FORWARD_BRANCHING, 0, [ProgramConstraint(ProgramConstraint.MAX_NESTING_DEPTH, 8)]
+            )
+        ],
         optional_capabilities_known=True,
     )
 
@@ -527,13 +531,72 @@ def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
     mapped.compile_for_target(_test_target_environment(target))
     assert 0 < mapped.ir.count("qco.static") < target.num_sites
 
-    qc = mapped.to_qc(copy=True)
-    restored = qc.to_qiskit(target=target)
+    source_ir = mapped.ir
+    restored = mapped.to_qiskit(target=target)
 
     assert mapped.is_valid
+    assert mapped.ir == source_ir
+    assert restored == mapped.to_qc(copy=True).to_qiskit(target=target)
     assert restored.num_qubits == 5
     assert [(register.name, len(register)) for register in restored.qregs] == [("q", 5)]
     assert restored.layout is None
+
+
+@requires_qiskit_translation
+def test_qco_qiskit_export_preserves_program() -> None:
+    """Reuse QC export without consuming QCO, including when export fails."""
+    source = QuantumCircuit(2)
+    source.h(0)
+    source.cx(0, 1)
+    program = QCProgram.from_qiskit(source).to_qco()
+    source_ir = program.ir
+
+    assert np.allclose(Operator(program.to_qiskit()).data, Operator(source).data)
+    assert program.ir == source_ir
+
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    with pytest.raises(RuntimeError, match="requires statically mapped qubits"):
+        program.to_qiskit(target=target)
+    assert program.ir == source_ir
+
+    program.to_qc()
+    with pytest.raises(RuntimeError, match="already been consumed"):
+        program.to_qiskit()
+
+
+@pytest.mark.parametrize("capability_id", [None, "forward-branching-typo"])
+def test_target_compilation_preserves_diagnostics(capability_id: str | None) -> None:
+    """Keep native control-flow legality errors in the Python exception."""
+    program = QCProgram.from_qasm_str("""OPENQASM 3.0;
+include "stdgates.inc";
+qubit q;
+bit c;
+h q;
+c = measure q;
+if (c) { x q; }
+""").to_qco()
+    target = CompilerTarget(
+        1,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    payload = PayloadSpecification(
+        PayloadFormat("openqasm", "3.0"),
+        [ProgramCapability(capability_id)] if capability_id is not None else [],
+    )
+    valid = program.copy()
+    with pytest.raises(RuntimeError, match=r"Target compilation failed.*qco\.if"):
+        program.compile_for_target(TargetEnvironment(target, payload))
+
+    # A copy shares the context, whose diagnostic handler must be restored.
+    valid.compile_for_target(_test_target_environment(target))
+    valid.to_qc()
+    with pytest.raises(RuntimeError, match="already been consumed"):
+        valid.compile_for_target(TargetEnvironment(target, payload))
 
 
 def test_compiler_target_constructors_preserve_python_api() -> None:
@@ -629,8 +692,8 @@ def test_compiler_target_accepts_plain_site_tuples(arity: int | CompilerTarget.O
 def test_payload_specification_preserves_python_api() -> None:
     """Construct and validate one context-free selected payload contract."""
     payload_format = PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.BINARY)
-    constraint = ProgramConstraint("max-control-flow-nesting-depth", 8)
-    capability = ProgramCapability("forward-branching", 0, [constraint])
+    constraint = ProgramConstraint(ProgramConstraint.MAX_NESTING_DEPTH, 8)
+    capability = ProgramCapability(ProgramCapability.FORWARD_BRANCHING, 0, [constraint])
     environment = PayloadSpecification(
         payload_format,
         [capability],
@@ -646,6 +709,11 @@ def test_payload_specification_preserves_python_api() -> None:
     assert environment.capabilities[0].constraints[0].constraint_id == "max-control-flow-nesting-depth"
     assert environment.capabilities[0].constraints[0].value == 8
     assert environment.optional_capabilities_known
+    assert ProgramCapability.COUNTED_ITERATION == "counted-iteration"
+    assert ProgramCapability.CONDITIONAL_LOOP == "conditional-loop"
+    assert ProgramCapability.MULTIWAY_BRANCHING == "multiway-branching"
+    assert ProgramConstraint.MAX_ITERATION_COUNT == "max-iteration-count"
+    assert ProgramConstraint.MAX_CASE_COUNT == "max-case-count"
 
     payload_format.version = "9.9.9"
     exposed_descriptor = environment.format

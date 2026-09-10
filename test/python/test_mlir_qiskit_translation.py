@@ -2050,7 +2050,7 @@ def test_classical_switch_compiles_for_selected_payload_capabilities(capability:
     )
     environment = TargetEnvironment(target, payload)
     if capability is None:
-        with pytest.raises(RuntimeError, match="MLIR operation failed"):
+        with pytest.raises(RuntimeError, match=r"failed to legalize operation 'scf\.index_switch'"):
             program.compile_for_target(environment)
     else:
         program.compile_for_target(environment)
