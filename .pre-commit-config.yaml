@@ -92,6 +92,13 @@ repos:
           (?:(?:::)?mlir::)?TypedValue\s*<[^;\n]+>\s+const\b )
         files: ^(mlir|bindings/mlir)/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$
         priority: 0
+      - id: cpp-documentation-style
+        name: Use LLVM-style C++ documentation comments
+        language: pygrep
+        # Continued macros require block comments to preserve declarations.
+        entry: '(/\*\*|[\\@](brief|details)\b)(?!.*\\$)'
+        files: ^(include|src|mlir|bindings|test)/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx|inc|cu|cuh)$
+        priority: 0
 
   ## Check for typos
   - repo: https://github.com/adhtruong/mirrors-typos

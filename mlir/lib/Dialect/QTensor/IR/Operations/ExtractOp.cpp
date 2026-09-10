@@ -117,9 +117,7 @@ struct RemoveResetAfterExtract final : OpRewritePattern<qco::ResetOp> {
   }
 };
 
-/**
- * @brief Fold an insert followed immediately by an extract at the same index.
- */
+/// Fold an insert followed immediately by an extract at the same index.
 struct FoldExtractAfterInsertPattern final : OpRewritePattern<ExtractOp> {
   using OpRewritePattern::OpRewritePattern;
 

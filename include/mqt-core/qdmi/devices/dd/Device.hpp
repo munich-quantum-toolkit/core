@@ -10,9 +10,8 @@
 
 #pragma once
 
-/** @file
- * @brief The MQT QDMI device implementation for its DD-based simulator.
- */
+/// @file
+/// The MQT QDMI device implementation for its DD-based simulator.
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
@@ -67,26 +66,20 @@ class Device final : public Singleton<Device> {
   /// The number of running jobs.
   std::atomic<size_t> runningJobs_{0};
 
-  /// @brief Private constructor to enforce the singleton pattern.
+  /// Private constructor to enforce the singleton pattern.
   Device();
 
 public:
-  /**
-   * @brief Allocates a new device session.
-   * @see MQT_DDSIM_QDMI_device_session_alloc
-   */
+  /// Allocates a new device session.
+  /// @see MQT_DDSIM_QDMI_device_session_alloc
   auto sessionAlloc(MQT_DDSIM_QDMI_Device_Session* session) -> QDMI_STATUS;
 
-  /**
-   * @brief Frees a device session.
-   * @see MQT_DDSIM_QDMI_device_session_free
-   */
+  /// Frees a device session.
+  /// @see MQT_DDSIM_QDMI_device_session_free
   auto sessionFree(MQT_DDSIM_QDMI_Device_Session session) -> void;
 
-  /**
-   * @brief Query a device property.
-   * @see MQT_DDSIM_QDMI_device_session_query_device_property
-   */
+  /// Query a device property.
+  /// @see MQT_DDSIM_QDMI_device_session_query_device_property
   auto queryProperty(QDMI_Device_Property prop, size_t size, void* value,
                      size_t* sizeRet) const -> QDMI_STATUS;
 
@@ -104,9 +97,7 @@ public:
 };
 } // namespace qdmi::dd
 
-/**
- * @brief Implementation of the MQT_DDSIM_QDMI_Device_Session structure.
- */
+/// Implementation of the MQT_DDSIM_QDMI_Device_Session structure.
 struct MQT_DDSIM_QDMI_Device_Session_impl_d {
 private:
   /// The status of the session.
@@ -114,60 +105,46 @@ private:
     ALLOCATED,   ///< The session has been allocated but not initialized
     INITIALIZED, ///< The session has been initialized and is ready for use
   };
-  /// @brief The current status of the session.
+  /// The current status of the session.
   Status status_ = Status::ALLOCATED;
-  /// @brief The device jobs associated with this session.
+  /// The device jobs associated with this session.
   std::unordered_map<MQT_DDSIM_QDMI_Device_Job,
                      std::unique_ptr<MQT_DDSIM_QDMI_Device_Job_impl_d>>
       jobs_;
-  /// @brief Mutex protecting access to jobs_.
+  /// Mutex protecting access to jobs_.
   mutable std::mutex jobsMutex_;
 
 public:
-  /**
-   * @brief Initializes the device session.
-   * @see MQT_DDSIM_QDMI_device_session_init
-   */
+  /// Initializes the device session.
+  /// @see MQT_DDSIM_QDMI_device_session_init
   auto init() -> QDMI_STATUS;
 
-  /**
-   * @brief Sets a parameter for the device session.
-   * @see MQT_DDSIM_QDMI_device_session_set_parameter
-   */
+  /// Sets a parameter for the device session.
+  /// @see MQT_DDSIM_QDMI_device_session_set_parameter
   auto setParameter(QDMI_Device_Session_Parameter param, size_t size,
                     const void* value) const -> QDMI_STATUS;
 
-  /**
-   * @brief Create a new device job.
-   * @see MQT_DDSIM_QDMI_device_session_create_device_job
-   */
+  /// Create a new device job.
+  /// @see MQT_DDSIM_QDMI_device_session_create_device_job
   auto createDeviceJob(MQT_DDSIM_QDMI_Device_Job* job) -> QDMI_STATUS;
 
-  /**
-   * @brief Frees the device job.
-   * @see MQT_DDSIM_QDMI_device_job_free
-   */
+  /// Frees the device job.
+  /// @see MQT_DDSIM_QDMI_device_job_free
   auto freeDeviceJob(MQT_DDSIM_QDMI_Device_Job job) -> void;
 
-  /**
-   * @brief Forwards a query of a device property to the device.
-   * @see MQT_DDSIM_QDMI_device_session_query_device_property
-   */
+  /// Forwards a query of a device property to the device.
+  /// @see MQT_DDSIM_QDMI_device_session_query_device_property
   auto queryDeviceProperty(QDMI_Device_Property prop, size_t size, void* value,
                            size_t* sizeRet) const -> QDMI_STATUS;
 
-  /**
-   * @brief Forwards a query of a site property to the site.
-   * @see MQT_DDSIM_QDMI_device_session_query_site_property
-   */
+  /// Forwards a query of a site property to the site.
+  /// @see MQT_DDSIM_QDMI_device_session_query_site_property
   auto querySiteProperty(MQT_DDSIM_QDMI_Site site, QDMI_Site_Property prop,
                          size_t size, void* value, size_t* sizeRet) const
       -> QDMI_STATUS;
 
-  /**
-   * @brief Forwards a query of an operation property to the operation.
-   * @see MQT_DDSIM_QDMI_device_session_query_operation_property
-   */
+  /// Forwards a query of an operation property to the operation.
+  /// @see MQT_DDSIM_QDMI_device_session_query_operation_property
   auto queryOperationProperty(MQT_DDSIM_QDMI_Operation operation,
                               size_t numSites, const MQT_DDSIM_QDMI_Site* sites,
                               size_t numParams, const double* params,
@@ -176,9 +153,7 @@ public:
       -> QDMI_STATUS;
 };
 
-/**
- * @brief Implementation of the MQT_DDSIM_QDMI_Device_Job structure.
- */
+/// Implementation of the MQT_DDSIM_QDMI_Device_Job structure.
 struct MQT_DDSIM_QDMI_Device_Job_impl_d {
 private:
   /// The device session associated with the job.
@@ -290,66 +265,50 @@ public:
   explicit MQT_DDSIM_QDMI_Device_Job_impl_d(
       MQT_DDSIM_QDMI_Device_Session_impl_d* session)
       : session_(session), id_(qdmi::dd::Device::get().generateUniqueID()) {}
-  /**
-   * @brief Frees the device job.
-   * @note This function just forwards to the session's @ref
-   * MQT_DDSIM_QDMI_Device_Session_impl_d::freeDeviceJob function. This function
-   * is needed because the interface only provides the job handle to the @ref
-   * QDMI_job_free function and the job's session handle is private.
-   */
+  /// Frees the device job.
+  /// @note This function just forwards to the session's @ref
+  /// MQT_DDSIM_QDMI_Device_Session_impl_d::freeDeviceJob function. This
+  /// function is needed because the interface only provides the job handle to
+  /// the @ref QDMI_job_free function and the job's session handle is private.
   auto free() -> void;
 
-  /**
-   * @brief Sets a parameter for the job.
-   * @note When setting @c QDMI_DEVICE_JOB_PARAMETER_PROGRAM, the device uses
-   * the current @c QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT to decide whether
-   * the payload's wire @p size:
-   * - includes a trailing @c '\0' (text formats: QASM2, QASM3,
-   *   QIR Base/Adaptive String) or
-   * - is the exact byte count (binary formats: QIR Base/Adaptive Module).
-   * Callers should therefore set @c PROGRAMFORMAT before @c PROGRAM.
-   * The default of @c QDMI_PROGRAM_FORMAT_QASM3 is assumed if @c PROGRAMFORMAT
-   * is not set.
-   * @see MQT_DDSIM_QDMI_device_job_set_parameter
-   */
+  /// Sets a parameter for the job.
+  /// @note When setting @c QDMI_DEVICE_JOB_PARAMETER_PROGRAM, the device uses
+  /// the current @c QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT to decide whether
+  /// the payload's wire @p size:
+  /// - includes a trailing @c '\0' (text formats: QASM2, QASM3,
+  ///   QIR Base/Adaptive String) or
+  /// - is the exact byte count (binary formats: QIR Base/Adaptive Module).
+  /// Callers should therefore set @c PROGRAMFORMAT before @c PROGRAM.
+  /// The default of @c QDMI_PROGRAM_FORMAT_QASM3 is assumed if @c PROGRAMFORMAT
+  /// is not set.
+  /// @see MQT_DDSIM_QDMI_device_job_set_parameter
   auto setParameter(QDMI_Device_Job_Parameter param, size_t size,
                     const void* value) -> QDMI_STATUS;
 
-  /**
-   * @brief Queries a property of the job.
-   * @see MQT_DDSIM_QDMI_device_job_query_property
-   */
+  /// Queries a property of the job.
+  /// @see MQT_DDSIM_QDMI_device_job_query_property
   auto queryProperty(QDMI_Device_Job_Property prop, size_t size, void* value,
                      size_t* sizeRet) const -> QDMI_STATUS;
 
-  /**
-   * @brief Submits the job to the device.
-   * @see MQT_DDSIM_QDMI_device_job_submit
-   */
+  /// Submits the job to the device.
+  /// @see MQT_DDSIM_QDMI_device_job_submit
   auto submit() -> QDMI_STATUS;
 
-  /**
-   * @brief Cancels the job.
-   * @see MQT_DDSIM_QDMI_device_job_cancel
-   */
+  /// Cancels the job.
+  /// @see MQT_DDSIM_QDMI_device_job_cancel
   auto cancel() -> QDMI_STATUS;
 
-  /**
-   * @brief Checks the status of the job.
-   * @see MQT_DDSIM_QDMI_device_job_check
-   */
+  /// Checks the status of the job.
+  /// @see MQT_DDSIM_QDMI_device_job_check
   auto check(QDMI_Job_Status* status) const -> QDMI_STATUS;
 
-  /**
-   * @brief Waits for the job to complete but at most for the specified timeout.
-   * @see MQT_DDSIM_QDMI_device_job_wait
-   */
+  /// Waits for the job to complete but at most for the specified timeout.
+  /// @see MQT_DDSIM_QDMI_device_job_wait
   auto wait(size_t timeout) const -> QDMI_STATUS;
 
-  /**
-   * @brief Gets the results of the job.
-   * @see MQT_DDSIM_QDMI_device_job_get_results
-   */
+  /// Gets the results of the job.
+  /// @see MQT_DDSIM_QDMI_device_job_get_results
   auto getResults(QDMI_Job_Result result, size_t size, void* data,
                   size_t* sizeRet) -> QDMI_STATUS;
 };

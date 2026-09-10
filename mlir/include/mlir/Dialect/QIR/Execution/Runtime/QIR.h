@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file QIR.h
- * @brief C QIR runtime declarations.
- */
+/// @file QIR.h
+/// C QIR runtime declarations.
 
 // Implements the QIR 2.1 Base and Adaptive Profile runtime surface used by MQT
 // Core. The Array and Tuple declarations support the generic controlled

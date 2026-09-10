@@ -36,271 +36,235 @@ class ValueRange;
 
 namespace qir {
 
-/**
- * @brief Builder API for constructing QIR (Quantum Intermediate
- * Representation) programs
- *
- * @details
- * The QIRProgramBuilder provides a type-safe interface for constructing
- * quantum programs in QIR format. Like QC, QIR uses reference semantics
- * where operations modify qubits in place, but QIR programs require specific
- * boilerplate structure including proper block organization and metadata
- * attributes.
- *
- * @par QIR Base Profile Structure:
- * QIR Base Profile compliant programs follow a specific 4-block structure:
- * - Entry block: Constants and initialization (__quantum__rt__initialize)
- * - Body block: Reversible quantum operations (gates)
- * - Measurements block: Measurements, resets, deallocations
- * - Output block: Output recording calls (array-based, grouped by register)
- *
- * @par Qubit addressing:
- * A program must use either static qubits (`staticQubit`) or dynamic allocation
- * (`allocQubit`, `allocQubitRegister`), never both. The builder terminates
- * with a usage error if the modes are mixed.
- *
- * @par Example Usage:
- * ```c++
- * QIRProgramBuilder builder(context);
- * builder.initialize();
- *
- * auto q0 = builder.staticQubit(0);
- * auto q1 = builder.staticQubit(1);
- *
- * // Operations use QIR function calls
- * builder.h(q0).cx(q0, q1);
- *
- * // Measure with register info for proper output recording
- * auto c = builder.allocClassicalBitRegister(2);
- * builder.measure(q0, c, 0);
- * builder.measure(q1, c, 1);
- *
- * auto module = builder.finalize();
- * ```
- */
+/// Builder API for constructing QIR (Quantum Intermediate
+/// Representation) programs
+///
+/// The QIRProgramBuilder provides a type-safe interface for constructing
+/// quantum programs in QIR format. Like QC, QIR uses reference semantics
+/// where operations modify qubits in place, but QIR programs require specific
+/// boilerplate structure including proper block organization and metadata
+/// attributes.
+///
+/// @par QIR Base Profile Structure:
+/// QIR Base Profile compliant programs follow a specific 4-block structure:
+/// - Entry block: Constants and initialization (__quantum__rt__initialize)
+/// - Body block: Reversible quantum operations (gates)
+/// - Measurements block: Measurements, resets, deallocations
+/// - Output block: Output recording calls (array-based, grouped by register)
+///
+/// @par Qubit addressing:
+/// A program must use either static qubits (`staticQubit`) or dynamic
+/// allocation
+/// (`allocQubit`, `allocQubitRegister`), never both. The builder terminates
+/// with a usage error if the modes are mixed.
+///
+/// @par Example Usage:
+/// ```c++
+/// QIRProgramBuilder builder(context);
+/// builder.initialize();
+///
+/// auto q0 = builder.staticQubit(0);
+/// auto q1 = builder.staticQubit(1);
+///
+/// // Operations use QIR function calls
+/// builder.h(q0).cx(q0, q1);
+///
+/// // Measure with register info for proper output recording
+/// auto c = builder.allocClassicalBitRegister(2);
+/// builder.measure(q0, c, 0);
+/// builder.measure(q1, c, 1);
+///
+/// auto module = builder.finalize();
+/// ```
 class QIRProgramBuilder final : public ImplicitLocOpBuilder {
 public:
   enum class Profile : uint8_t { Base, Adaptive };
 
-  /**
-   * @brief Construct a new QIRProgramBuilder
-   * @param context The MLIR context to use for building operations
-   */
+  /// Construct a new QIRProgramBuilder
+  /// @param context The MLIR context to use for building operations
   explicit QIRProgramBuilder(MLIRContext* context);
 
   //===--------------------------------------------------------------------===//
   // Initialization
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Initialize the builder and prepare for program construction
-   *
-   * @details
-   * Creates the main function with proper QIR structure (4-block layout),
-   * adds __quantum__rt__initialize call, and sets up the builder's insertion
-   * points. Must be called before adding operations.
-   */
+  /// Initialize the builder and prepare for program construction
+  ///
+  /// Creates the main function with proper QIR structure (4-block layout),
+  /// adds __quantum__rt__initialize call, and sets up the builder's insertion
+  /// points. Must be called before adding operations.
   void initialize();
 
-  /**
-   * @brief Initialize the builder and prepare for program construction
-   * with specified return types.
-   * @param returnType The return type for the main function
-   *
-   * @details
-   * Creates a main function with an entry_point attribute. Must be called
-   * before adding operations.
-   */
+  /// Initialize the builder and prepare for program construction
+  /// with specified return types.
+  /// @param returnType The return type for the main function
+  ///
+  /// Creates a main function with an entry_point attribute. Must be called
+  /// before adding operations.
   void initialize(Type returnType);
 
-  /**
-   * @brief Modify the return type of the main function after initialization.
-   * @param returnType The new return type for the main function
-   */
+  /// Modify the return type of the main function after initialization.
+  /// @param returnType The new return type for the main function
   void retype(Type returnType);
 
   //===--------------------------------------------------------------------===//
   // Constants
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Create a constant integer value
-   * @param value The value to store in the constant
-   * @return The value produced by the constant operation
-   *
-   * @par Example:
-   * ```c++
-   * auto c = builder.intConstant(1);
-   * ```
-   * ```mlir
-   * %c = arith.constant 1 : i64
-   * ```
-   */
+  /// Create a constant integer value
+  /// @param value The value to store in the constant
+  /// @return The value produced by the constant operation
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto c = builder.intConstant(1);
+  /// ```
+  /// ```mlir
+  /// %c = arith.constant 1 : i64
+  /// ```
   Value intConstant(int64_t value);
 
-  /**
-   * @brief Create a constant double value
-   * @param value The value to store in the constant
-   * @return The value produced by the constant operation
-   *
-   * @par Example:
-   * ```c++
-   * auto c = builder.doubleConstant(0.5);
-   * ```
-   * ```mlir
-   * %c = arith.constant 0.5 : f64
-   * ```
-   */
+  /// Create a constant double value
+  /// @param value The value to store in the constant
+  /// @return The value produced by the constant operation
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto c = builder.doubleConstant(0.5);
+  /// ```
+  /// ```mlir
+  /// %c = arith.constant 0.5 : f64
+  /// ```
   Value doubleConstant(double value);
 
   //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Allocate a qubit
-   * @return An LLVM pointer representing the qubit
-   *
-   * @par Example:
-   * ```c++
-   * auto q = builder.allocQubit();
-   * ```
-   * ```mlir
-   * %zero = llvm.mlir.zero : !llvm.ptr
-   * %q = llvm.call @"@__quantum__rt__qubit_allocate"(%zero) : !llvm.ptr ->
-   * !llvm.ptr
-   * ```
-   */
+  /// Allocate a qubit
+  /// @return An LLVM pointer representing the qubit
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto q = builder.allocQubit();
+  /// ```
+  /// ```mlir
+  /// %zero = llvm.mlir.zero : !llvm.ptr
+  /// %q = llvm.call @"@__quantum__rt__qubit_allocate"(%zero) : !llvm.ptr ->
+  /// !llvm.ptr
+  /// ```
   Value allocQubit();
 
-  /**
-   * @brief Get a static qubit by index
-   * @param index The qubit index (must be non-negative)
-   * @return An LLVM pointer representing the qubit
-   *
-   * @par Example:
-   * ```c++
-   * auto q0 = builder.staticQubit(0);
-   * ```
-   * ```mlir
-   * %c0 = llvm.mlir.constant(0 : i64) : i64
-   * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
-   * ```
-   */
+  /// Get a static qubit by index
+  /// @param index The qubit index (must be non-negative)
+  /// @return An LLVM pointer representing the qubit
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto q0 = builder.staticQubit(0);
+  /// ```
+  /// ```mlir
+  /// %c0 = llvm.mlir.constant(0 : i64) : i64
+  /// %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+  /// ```
   Value staticQubit(int64_t index);
 
-  /**
-   * @brief Get a static result by index
-   * @param index The result index (must be non-negative)
-   * @param record Whether the result should be recorded in the output
-   * @return An LLVM pointer representing the result
-   *
-   * @par Example:
-   * ```c++
-   * auto r0 = builder.staticResult(0);
-   * ```
-   * ```mlir
-   * %c0 = llvm.mlir.constant(0 : i64) : i64
-   * %r0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
-   * ```
-   */
+  /// Get a static result by index
+  /// @param index The result index (must be non-negative)
+  /// @param record Whether the result should be recorded in the output
+  /// @return An LLVM pointer representing the result
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto r0 = builder.staticResult(0);
+  /// ```
+  /// ```mlir
+  /// %c0 = llvm.mlir.constant(0 : i64) : i64
+  /// %r0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+  /// ```
   Value staticResult(int64_t index, bool record = true);
 
-  /**
-   * @brief Represents a qubit register with its qubits.
-   */
+  /// Represents a qubit register with its qubits.
   struct QubitRegister {
     /// The llvm.ptr value representing the qubit register
     Value value;
     /// The allocated qubit values
     SmallVector<Value> qubits;
 
-    /**
-     * @brief Access a specific qubit in the register
-     * @param index The index of the qubit to access
-     * @return The specified qubit value
-     */
+    /// Access a specific qubit in the register
+    /// @param index The index of the qubit to access
+    /// @return The specified qubit value
     Value operator[](size_t index) const;
 
-    /**
-     * @brief Conversion to the backing MemRef value
-     * @return The llvm.ptr value representing the qubit register
-     */
+    /// Conversion to the backing MemRef value
+    /// @return The llvm.ptr value representing the qubit register
     explicit operator Value() const { return value; }
   };
 
-  /**
-   * @brief Allocate an array of qubits
-   * @param size Number of qubits (must be positive)
-   * @return A `QubitRegister` structure
-   *
-   * @par Example:
-   * ```c++
-   * auto q = builder.allocQubitRegister(3);
-   * ```
-   * ```mlir
-   * %zero = llvm.mlir.zero : !llvm.ptr
-   * %alloca = llvm.alloca %c3 x !llvm.ptr : (i64) -> !llvm.ptr
-   * llvm.call @"@__quantum__rt__qubit_array_allocate"(%c3, %alloca, %zero) :
-   * (i64, !llvm.ptr, !llvm.ptr) -> ()
-   * %q0 = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
-   * %ptr1 = llvm.getelementptr %alloca[1] : !llvm.ptr -> !llvm.ptr
-   * %q1 = llvm.load %ptr1 : !llvm.ptr -> !llvm.ptr
-   * %ptr2 = llvm.getelementptr %alloca[2] : !llvm.ptr -> !llvm.ptr
-   * %q2 = llvm.load %ptr2 : !llvm.ptr -> !llvm.ptr
-   * ```
-   */
+  /// Allocate an array of qubits
+  /// @param size Number of qubits (must be positive)
+  /// @return A `QubitRegister` structure
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto q = builder.allocQubitRegister(3);
+  /// ```
+  /// ```mlir
+  /// %zero = llvm.mlir.zero : !llvm.ptr
+  /// %alloca = llvm.alloca %c3 x !llvm.ptr : (i64) -> !llvm.ptr
+  /// llvm.call @"@__quantum__rt__qubit_array_allocate"(%c3, %alloca, %zero) :
+  /// (i64, !llvm.ptr, !llvm.ptr) -> ()
+  /// %q0 = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
+  /// %ptr1 = llvm.getelementptr %alloca[1] : !llvm.ptr -> !llvm.ptr
+  /// %q1 = llvm.load %ptr1 : !llvm.ptr -> !llvm.ptr
+  /// %ptr2 = llvm.getelementptr %alloca[2] : !llvm.ptr -> !llvm.ptr
+  /// %q2 = llvm.load %ptr2 : !llvm.ptr -> !llvm.ptr
+  /// ```
   QubitRegister allocQubitRegister(int64_t size);
 
-  /**
-   * @brief Loads a qubit from a register
-   *
-   * @param reg The qubit register
-   * @param index The index within the register
-   * @return An LLVM pointer to the loaded qubit
-   *
-   * @par Example:
-   * ```c++
-   * auto q = builder.loadQubit(reg, index);
-   * ```
-   * ```mlir
-   * %elementptr = llvm.getelementptr %reg[%index] : (!llvm.ptr, i64) ->
-   * !llvm.ptr, !llvm.ptr
-   * %q = llvm.load %elementptr : !llvm.ptr -> !llvm.ptr
-   * ```
-   */
+  /// Loads a qubit from a register
+  ///
+  /// @param reg The qubit register
+  /// @param index The index within the register
+  /// @return An LLVM pointer to the loaded qubit
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto q = builder.loadQubit(reg, index);
+  /// ```
+  /// ```mlir
+  /// %elementptr = llvm.getelementptr %reg[%index] : (!llvm.ptr, i64) ->
+  /// !llvm.ptr, !llvm.ptr
+  /// %q = llvm.load %elementptr : !llvm.ptr -> !llvm.ptr
+  /// ```
   Value loadQubit(Value reg, Value index);
 
-  /**
-   * @brief Allocate a classical bit register
-   * @param size Number of bits
-   * @param record Whether the register should be recorded in the output
-   * @return A `ClassicalRegister` structure
-   *
-   * @par Example:
-   * ```c++
-   * auto c = builder.allocClassicalBitRegister(3);
-   * ```
-   */
+  /// Allocate a classical bit register
+  /// @param size Number of bits
+  /// @param record Whether the register should be recorded in the output
+  /// @return A `ClassicalRegister` structure
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto c = builder.allocClassicalBitRegister(3);
+  /// ```
   ClassicalRegister allocClassicalBitRegister(int64_t size, bool record = true);
 
-  /**
-   * @brief Loads a classical bit from a register
-   *
-   * @param reg The classical bit register
-   * @param index The index within the register
-   * @return An LLVM pointer to the loaded classical bit
-   *
-   * @par Example:
-   * ```c++
-   * auto b = builder.loadClassicalBit(reg, index);
-   * ```
-   * ```mlir
-   * %elementptr = llvm.getelementptr %reg[%index] : (!llvm.ptr, i64) ->
-   * !llvm.ptr, !llvm.ptr
-   * %b = llvm.load %elementptr : !llvm.ptr -> !llvm.ptr
-   * ```
-   */
+  /// Loads a classical bit from a register
+  ///
+  /// @param reg The classical bit register
+  /// @param index The index within the register
+  /// @return An LLVM pointer to the loaded classical bit
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto b = builder.loadClassicalBit(reg, index);
+  /// ```
+  /// ```mlir
+  /// %elementptr = llvm.getelementptr %reg[%index] : (!llvm.ptr, i64) ->
+  /// !llvm.ptr, !llvm.ptr
+  /// %b = llvm.load %elementptr : !llvm.ptr -> !llvm.ptr
+  /// ```
   Value loadClassicalBit(const ClassicalRegister& reg,
                          const std::variant<int64_t, Value>& index);
 
@@ -308,88 +272,79 @@ public:
   // Measurement and Reset
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Measure a qubit and record the result
-   *
-   * @details
-   * Performs a Z-basis measurement using `__quantum__qis__mz__body`. The result
-   * is recorded during `finalize()`.
-   *
-   * @param qubit The qubit to measure
-   * Base uses static result IDs. Adaptive allocates dynamic result slots once
-   * in the entry block and releases them after output recording. An explicit
-   * `staticResult()` cannot be mixed with Adaptive measurements or result
-   * arrays.
-   *
-   * @param index The index for result pointer
-   * @param record Whether the measurement should be recorded in the output
-   * @return An LLVM pointer to the measurement result
-   *
-   * @par Example:
-   * ```c++
-   * auto result = builder.measure(q, 0);
-   * ```
-   * ```mlir
-   * // In entry block:
-   * %zero = llvm.mlir.zero : !llvm.ptr
-   * %b = llvm.call @__quantum__rt__result_allocate(%zero) : !llvm.ptr ->
-   * !llvm.ptr
-   *
-   * // In measurements block:
-   * llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
-   *
-   * // In output block:
-   * llvm.call @__quantum__rt__result_record_output(%b, %label) : (!llvm.ptr,
-   * !llvm.ptr) -> ()
-   * ```
-   */
+  /// Measure a qubit and record the result
+  ///
+  /// Performs a Z-basis measurement using `__quantum__qis__mz__body`. The
+  /// result is recorded during `finalize()`.
+  ///
+  /// @param qubit The qubit to measure
+  /// Base uses static result IDs. Adaptive allocates dynamic result slots once
+  /// in the entry block and releases them after output recording. An explicit
+  /// `staticResult()` cannot be mixed with Adaptive measurements or result
+  /// arrays.
+  ///
+  /// @param index The index for result pointer
+  /// @param record Whether the measurement should be recorded in the output
+  /// @return An LLVM pointer to the measurement result
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto result = builder.measure(q, 0);
+  /// ```
+  /// ```mlir
+  /// // In entry block:
+  /// %zero = llvm.mlir.zero : !llvm.ptr
+  /// %b = llvm.call @__quantum__rt__result_allocate(%zero) : !llvm.ptr ->
+  /// !llvm.ptr
+  ///
+  /// // In measurements block:
+  /// llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
+  ///
+  /// // In output block:
+  /// llvm.call @__quantum__rt__result_record_output(%b, %label) : (!llvm.ptr,
+  /// !llvm.ptr) -> ()
+  /// ```
   Value measure(Value qubit, int64_t index, bool record = true);
 
-  /**
-   * @brief Measure a qubit into a classical register
-   *
-   * @details
-   * Performs a Z-basis measurement using `__quantum__qis__mz__body`. The result
-   * is stored in the specified classical register at the given bit index. The
-   * index may be a constant or, in the Adaptive Profile, computed at runtime.
-   * The result is recorded during `finalize()`.
-   *
-   * @param qubit The qubit to measure
-   * @param reg The memref representing the classical register
-   * @param index The index within the classical register
-   * @return An LLVM pointer to the measurement result
-   *
-   * @par Example:
-   * ```c++
-   * auto c = builder.allocClassicalBitRegister(2);
-   * builder.measure(q, c, 0);
-   * ```
-   * ```mlir
-   * %gep = llvm.getelementptr %c[%zero] : (!llvm.ptr, i64) -> !llvm.ptr
-   * %b = llvm.load %gep : !llvm.ptr -> !llvm.ptr
-   * llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
-   * ```
-   */
+  /// Measure a qubit into a classical register
+  ///
+  /// Performs a Z-basis measurement using `__quantum__qis__mz__body`. The
+  /// result is stored in the specified classical register at the given bit
+  /// index. The index may be a constant or, in the Adaptive Profile, computed
+  /// at runtime. The result is recorded during `finalize()`.
+  ///
+  /// @param qubit The qubit to measure
+  /// @param reg The memref representing the classical register
+  /// @param index The index within the classical register
+  /// @return An LLVM pointer to the measurement result
+  ///
+  /// @par Example:
+  /// ```c++
+  /// auto c = builder.allocClassicalBitRegister(2);
+  /// builder.measure(q, c, 0);
+  /// ```
+  /// ```mlir
+  /// %gep = llvm.getelementptr %c[%zero] : (!llvm.ptr, i64) -> !llvm.ptr
+  /// %b = llvm.load %gep : !llvm.ptr -> !llvm.ptr
+  /// llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
+  /// ```
   Value measure(Value qubit, const ClassicalRegister& reg,
                 const std::variant<int64_t, Value>& index);
 
-  /**
-   * @brief Reset a qubit to |0⟩ state
-   *
-   * @details
-   * Resets a qubit using __quantum__qis__reset__body.
-   *
-   * @param qubit The qubit to reset
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.reset(q);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__reset__body(%q) : !llvm.ptr -> ()
-   * ```
-   */
+  /// Reset a qubit to |0⟩ state
+  ///
+  /// Resets a qubit using __quantum__qis__reset__body.
+  ///
+  /// @param qubit The qubit to reset
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.reset(q);
+  /// ```
+  /// ```mlir
+  /// llvm.call @__quantum__qis__reset__body(%q) : !llvm.ptr -> ()
+  /// ```
   QIRProgramBuilder& reset(Value qubit);
 
   //===--------------------------------------------------------------------===//
@@ -401,20 +356,18 @@ public:
 
   // GPhaseOp
 
-  /**
-   * @brief Apply a QIR gphase operation
-   *
-   * @param theta Rotation angle in radians
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.gphase(theta);
-   * ```
-   * ```mlir
-   * llvm.call @__quantum__qis__gphase__body(%theta) : (f64) -> ()
-   * ```
-   */
+  /// Apply a QIR gphase operation
+  ///
+  /// @param theta Rotation angle in radians
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.gphase(theta);
+  /// ```
+  /// ```mlir
+  /// llvm.call @__quantum__qis__gphase__body(%theta) : (f64) -> ()
+  /// ```
   QIRProgramBuilder& gphase(const std::variant<double, Value>& theta);
 
   // OneTargetZeroParameter
@@ -1037,107 +990,104 @@ public:
   // SCF Operations
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Construct a for construct in LLVM dialect
-   *
-   * @param lowerbound Lower bound of the loop
-   * @param upperbound Upper bound of the loop
-   * @param step Step size of the loop
-   * @param body Function that builds the body of the for operation
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.scfFor(lb, ub, step, [&](Value iv) {
-   *   auto q0 = builder.load(register, iv);
-   *   builder.h(q0);
-   * });
-   * ```
-   * ```mlir
-   *   llvm.br ^condition(%lowerbound : i64)
-   * ^condition(%iv: i64):
-   *   %condition = llvm.icmp "slt" %iv, %upperbound : i64
-   *   llvm.cond_br %condition, ^loop, ^next
-   * ^loop:
-   *   %gep = llvm.getelementptr %alloc[%iv] : (!llvm.ptr, i64) -> !llvm.ptr,
-   *   !llvm.ptr
-   *   %q0 = llvm.load %gep : !llvm.ptr -> !llvm.ptr
-   *   llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
-   *   %nextIv = llvm.add %iv, %step : i64
-   *   llvm.br ^condition(%nextIv : i64)
-   * ^next:
-   * ```
-   */
+  /// Construct a for construct in LLVM dialect
+  ///
+  /// @param lowerbound Lower bound of the loop
+  /// @param upperbound Upper bound of the loop
+  /// @param step Step size of the loop
+  /// @param body Function that builds the body of the for operation
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.scfFor(lb, ub, step, [&](Value iv) {
+  ///   auto q0 = builder.load(register, iv);
+  ///   builder.h(q0);
+  /// });
+  /// ```
+  /// ```mlir
+  ///   llvm.br ^condition(%lowerbound : i64)
+  /// ^condition(%iv: i64):
+  ///   %condition = llvm.icmp "slt" %iv, %upperbound : i64
+  ///   llvm.cond_br %condition, ^loop, ^next
+  /// ^loop:
+  ///   %gep = llvm.getelementptr %alloc[%iv] : (!llvm.ptr, i64) -> !llvm.ptr,
+  ///   !llvm.ptr
+  ///   %q0 = llvm.load %gep : !llvm.ptr -> !llvm.ptr
+  ///   llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
+  ///   %nextIv = llvm.add %iv, %step : i64
+  ///   llvm.br ^condition(%nextIv : i64)
+  /// ^next:
+  /// ```
   QIRProgramBuilder& scfFor(const std::variant<int64_t, Value>& lowerbound,
                             const std::variant<int64_t, Value>& upperbound,
                             const std::variant<int64_t, Value>& step,
                             const function_ref<void(Value)>& body);
 
-  /**
-   * @brief Construct an if construct in LLVM dialect
-   *
-   * @param condition Condition for the if operation
-   * @param thenBody Function that builds the then body of the if construct
-   * @param elseBody Function that builds the else body of the if construct
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.scfIf(condition, [&] {
-   *   builder.x(q0);
-   * }, [&] {
-   *   builder.z(q0);
-   * });
-   * ```
-   * ```mlir
-   *   %condition = llvm.call @__quantum__rt__read_result(%result) : (!llvm.ptr)
-   *   -> i1
-   *   llvm.cond_br %condition, ^then, ^else
-   * ^then:
-   *   llvm.call @__quantum__qis__x__body(%q0) : (!llvm.ptr) -> ()
-   *   llvm.br ^next
-   * ^else:
-   *   llvm.call @__quantum__qis__z__body(%q0) : (!llvm.ptr) -> ()
-   *   llvm.br ^next
-   * ^next:
-   * ```
-   */
+  /// Construct an if construct in LLVM dialect
+  ///
+  /// @param condition Condition for the if operation
+  /// @param thenBody Function that builds the then body of the if construct
+  /// @param elseBody Function that builds the else body of the if construct
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.scfIf(condition, [&] {
+  ///   builder.x(q0);
+  /// }, [&] {
+  ///   builder.z(q0);
+  /// });
+  /// ```
+  /// ```mlir
+  ///   %condition = llvm.call @__quantum__rt__read_result(%result) :
+  ///   (!llvm.ptr)
+  ///   -> i1
+  ///   llvm.cond_br %condition, ^then, ^else
+  /// ^then:
+  ///   llvm.call @__quantum__qis__x__body(%q0) : (!llvm.ptr) -> ()
+  ///   llvm.br ^next
+  /// ^else:
+  ///   llvm.call @__quantum__qis__z__body(%q0) : (!llvm.ptr) -> ()
+  ///   llvm.br ^next
+  /// ^next:
+  /// ```
   QIRProgramBuilder& scfIf(const std::variant<bool, Value>& condition,
                            const function_ref<void()>& thenBody,
                            const function_ref<void()>& elseBody = nullptr);
 
-  /**
-   * @brief Construct a while construct in LLVM dialect
-   *
-   * @param beforeBody Function that builds the before body of the while
-   * construct
-   * @param afterBody Function that builds the after body of the while construct
-   * @return Reference to this builder for method chaining
-   *
-   * @par Example:
-   * ```c++
-   * builder.scfWhile([&] {
-   *   auto res = builder.measure(q0);
-   *   return res;
-   * }, [&] {
-   *   builder.h(q0);
-   * });
-   * ```
-   * ```mlir
-   *   llvm.br ^before
-   * ^before:
-   *   llvm.call @__quantum__qis__mz__body(%q0, %result) : (!llvm.ptr,
-   * !llvm.ptr)
-   *   -> ()
-   *   %condition = llvm.call @__quantum__rt__read_result(%result) : (!llvm.ptr)
-   *   -> i1
-   *   llvm.cond_br %condition, ^after, ^next
-   * ^after:
-   *   llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
-   *   llvm.br ^bb2
-   * ^next:
-   * ```
-   */
+  /// Construct a while construct in LLVM dialect
+  ///
+  /// @param beforeBody Function that builds the before body of the while
+  /// construct
+  /// @param afterBody Function that builds the after body of the while
+  /// construct
+  /// @return Reference to this builder for method chaining
+  ///
+  /// @par Example:
+  /// ```c++
+  /// builder.scfWhile([&] {
+  ///   auto res = builder.measure(q0);
+  ///   return res;
+  /// }, [&] {
+  ///   builder.h(q0);
+  /// });
+  /// ```
+  /// ```mlir
+  ///   llvm.br ^before
+  /// ^before:
+  ///   llvm.call @__quantum__qis__mz__body(%q0, %result) : (!llvm.ptr,
+  /// !llvm.ptr)
+  ///   -> ()
+  ///   %condition = llvm.call @__quantum__rt__read_result(%result) :
+  ///   (!llvm.ptr)
+  ///   -> i1
+  ///   llvm.cond_br %condition, ^after, ^next
+  /// ^after:
+  ///   llvm.call @__quantum__qis__h__body(%q0) : (!llvm.ptr) -> ()
+  ///   llvm.br ^bb2
+  /// ^next:
+  /// ```
   QIRProgramBuilder& scfWhile(const function_ref<Value()>& beforeBody,
                               const function_ref<void()>& afterBody = nullptr);
 
@@ -1145,48 +1095,40 @@ public:
   // Finalization
   //===--------------------------------------------------------------------===//
 
-  /**
-   * @brief Finalize the program and return the constructed module
-   *
-   * @details
-   * Automatically deallocates all remaining allocated qubits and result
-   * pointers, generates output recording in the output block, ensures proper
-   * QIR metadata attributes are set, and transfers ownership of the module to
-   * the caller. The builder should not be used after calling this method.
-   *
-   * @return OwningOpRef containing the constructed QIR program module
-   */
+  /// Finalize the program and return the constructed module
+  ///
+  /// Automatically deallocates all remaining allocated qubits and result
+  /// pointers, generates output recording in the output block, ensures proper
+  /// QIR metadata attributes are set, and transfers ownership of the module to
+  /// the caller. The builder should not be used after calling this method.
+  ///
+  /// @return OwningOpRef containing the constructed QIR program module
   OwningOpRef<ModuleOp> finalize();
 
-  /**
-   * @brief Finalize the program with the given return value and return the
-   * constructed module
-   * @param returnValue The return value of the main function
-   *
-   * @details
-   * Automatically deallocates all remaining valid qubits and tensors of qubits,
-   * adds a return statement with the given return value, and
-   * transfers ownership of the module to the caller. The builder should not
-   * be used after calling this method.
-   *
-   * The return value must have the type indicated by the function signature
-   * of the main function, which returns an `i64` by default and can be
-   * modified by passing different arguments to the `initialize()` method.
-   *
-   * @return OwningOpRef containing the constructed quantum program module
-   */
+  /// Finalize the program with the given return value and return the
+  /// constructed module
+  /// @param returnValue The return value of the main function
+  ///
+  /// Automatically deallocates all remaining valid qubits and tensors of
+  /// qubits, adds a return statement with the given return value, and transfers
+  /// ownership of the module to the caller. The builder should not be used
+  /// after calling this method.
+  ///
+  /// The return value must have the type indicated by the function signature
+  /// of the main function, which returns an `i64` by default and can be
+  /// modified by passing different arguments to the `initialize()` method.
+  ///
+  /// @return OwningOpRef containing the constructed quantum program module
   OwningOpRef<ModuleOp> finalize(Value returnValue);
 
-  /**
-   * @brief Convenience method for building quantum programs
-   * @param context The MLIR context to use for building the program
-   * @param buildFunc A function that takes a reference to a QIRProgramBuilder
-   * and uses it to build the desired quantum program. The builder will be
-   * properly initialized before calling this function, and the resulting module
-   * will be finalized and returned after this function completes.
-   * @param profile The profile to use for the program. Defaults to Adaptive.
-   * @return The module containing the quantum program built by buildFunc.
-   */
+  /// Convenience method for building quantum programs
+  /// @param context The MLIR context to use for building the program
+  /// @param buildFunc A function that takes a reference to a QIRProgramBuilder
+  /// and uses it to build the desired quantum program. The builder will be
+  /// properly initialized before calling this function, and the resulting
+  /// module will be finalized and returned after this function completes.
+  /// @param profile The profile to use for the program. Defaults to Adaptive.
+  /// @return The module containing the quantum program built by buildFunc.
   static OwningOpRef<ModuleOp>
   build(MLIRContext* context,
         const function_ref<Value(QIRProgramBuilder&)>& buildFunc,
@@ -1253,25 +1195,20 @@ private:
   /// The number of result values.
   size_t numResults{0};
 
-  /**
-   * @brief Helper to create a LLVM CallOp
-   *
-   * @param parameters Operation parameters
-   * @param controls Control qubits
-   * @param targets Target qubits
-   * @param fnName Name of the QIR function to call
-   */
+  /// Helper to create a LLVM CallOp
+  ///
+  /// @param parameters Operation parameters
+  /// @param controls Control qubits
+  /// @param targets Target qubits
+  /// @param fnName Name of the QIR function to call
   void createCallOp(const SmallVector<std::variant<double, Value>>& parameters,
                     ValueRange controls, const SmallVector<Value>& targets,
                     StringRef fnName);
 
-  /**
-   * @brief Generate array-based output recording in the output block
-   *
-   * @details
-   * Called by `finalize()` to generate output recording calls for all tracked
-   * measurements.
-   */
+  /// Generate array-based output recording in the output block
+  ///
+  /// Called by `finalize()` to generate output recording calls for all tracked
+  /// measurements.
   void generateOutputRecording();
 
   bool isFinalized = false;

@@ -8,11 +8,11 @@
  * Licensed under the MIT License
  */
 
-/** @file StatisticsJson.hpp
- * @brief Internal JSON rendering for decision-diagram statistics.
- * @details This header is not installed. It keeps nlohmann_json out of the
- * public headers while the statistics reports stay JSON-formatted.
- */
+/// @file StatisticsJson.hpp
+/// Internal JSON rendering for decision-diagram statistics.
+///
+/// This header is not installed. It keeps nlohmann_json out of the
+/// public headers while the statistics reports stay JSON-formatted.
 
 #pragma once
 
@@ -34,12 +34,10 @@ struct UniqueTableStatistics;
 /// Render the unique-table statistics, or "unused" if it was never queried.
 [[nodiscard]] nlohmann::basic_json<> toJson(const UniqueTableStatistics& s);
 
-/**
- * @brief Render the statistics of every table in a unique table.
- * @param table The unique table
- * @param includeIndividualTables Whether to add an entry per variable
- * @return The rendered statistics, or "unused" if no table holds entries
- */
+/// Render the statistics of every table in a unique table.
+/// @param table The unique table
+/// @param includeIndividualTables Whether to add an entry per variable
+/// @return The rendered statistics, or "unused" if no table holds entries
 [[nodiscard]] nlohmann::basic_json<> toJson(const UniqueTable& table,
                                             bool includeIndividualTables);
 

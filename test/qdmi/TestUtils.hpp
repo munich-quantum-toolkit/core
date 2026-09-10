@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file TestUtils.hpp
- * @brief Shared test utilities for QDMI components.
- */
+/// @file TestUtils.hpp
+/// Shared test utilities for QDMI components.
 
 #pragma once
 

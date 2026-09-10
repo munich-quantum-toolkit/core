@@ -102,20 +102,18 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
   });
 };
 
-/**
- * @brief Helper to convert a QC operation to a LLVM CallOp
- *
- * @tparam QCOpType The operation type of the QC operation
- * @tparam QCOpAdaptorType The OpAdaptor type of the QC operation
- * @param op The QC operation instance to convert
- * @param adaptor The OpAdaptor of the QC operation
- * @param rewriter The pattern rewriter
- * @param controls Converted controls for this gate
- * @param fnName The name of the QIR function to call
- * @param numTargets The number of targets
- * @param numParams The number of parameters
- * @return LogicalResult Success or failure of the conversion
- */
+/// Helper to convert a QC operation to a LLVM CallOp
+///
+/// @tparam QCOpType The operation type of the QC operation
+/// @tparam QCOpAdaptorType The OpAdaptor type of the QC operation
+/// @param op The QC operation instance to convert
+/// @param adaptor The OpAdaptor of the QC operation
+/// @param rewriter The pattern rewriter
+/// @param controls Converted controls for this gate
+/// @param fnName The name of the QIR function to call
+/// @param numTargets The number of targets
+/// @param numParams The number of parameters
+/// @return LogicalResult Success or failure of the conversion
 template <typename QCOpType, typename QCOpAdaptorType>
 static LogicalResult
 convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
@@ -135,92 +133,89 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
 
 namespace {
 
-/**
- * @brief Generic converter for unitary QC ops to QIR calls.
- *
- * @details
- * Many QC gates lower to a QIR runtime call where the callee name depends on
- * the number of active controls. This helper factors out that boilerplate
- * without relying on preprocessor macros.
- *
- * @par Examples
- * The examples below illustrate the lowering shapes for unitary gates that
- * are registered through the shared QIR gate table in
- * `populateQCToQIRPatterns`.
- *
- * @par One target, zero parameters
- * ```mlir
- * qc.x %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
- * ```
- *
- * @par One target, one parameter
- * ```mlir
- * qc.rx(%theta) %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__rx__body(%theta, %q) : (f64, !llvm.ptr) -> ()
- * ```
- *
- * @par One target, two parameters
- * ```mlir
- * qc.r(%theta, %phi) %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__prx__body(%theta, %phi, %q)
- *     : (f64, f64, !llvm.ptr) -> ()
- * ```
- *
- * @par One target, three parameters
- * ```mlir
- * qc.u(%theta, %phi, %lambda) %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__u3__body(%theta, %phi, %lambda, %q)
- *     : (f64, f64, f64, !llvm.ptr) -> ()
- * ```
- *
- * @par Two targets, zero parameters
- * ```mlir
- * qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__swap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) ->
- * ()
- * ```
- *
- * @par Two targets, one parameter
- * ```mlir
- * qc.rxx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__rxx__body(%theta, %q0, %q1)
- *     : (f64, !llvm.ptr, !llvm.ptr) -> ()
- * ```
- *
- * @par Two targets, two parameters
- * ```mlir
- * qc.xx_plus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__xx_plus_yy__body(%theta, %beta, %q0, %q1)
- *     : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
- * ```
- *
- * @tparam OpType The QC operation type to convert
- * @tparam NumTargets Number of target qubits for this operation
- * @tparam NumParams Number of floating-point parameters for this operation
- * @tparam GetFnName Function that maps numCtrls -> QIR function name
- */
+/// Generic converter for unitary QC ops to QIR calls.
+///
+/// Many QC gates lower to a QIR runtime call where the callee name depends on
+/// the number of active controls. This helper factors out that boilerplate
+/// without relying on preprocessor macros.
+///
+/// @par Examples
+/// The examples below illustrate the lowering shapes for unitary gates that
+/// are registered through the shared QIR gate table in
+/// `populateQCToQIRPatterns`.
+///
+/// @par One target, zero parameters
+/// ```mlir
+/// qc.x %q : !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
+/// ```
+///
+/// @par One target, one parameter
+/// ```mlir
+/// qc.rx(%theta) %q : !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__rx__body(%theta, %q) : (f64, !llvm.ptr) -> ()
+/// ```
+///
+/// @par One target, two parameters
+/// ```mlir
+/// qc.r(%theta, %phi) %q : !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__prx__body(%theta, %phi, %q)
+///     : (f64, f64, !llvm.ptr) -> ()
+/// ```
+///
+/// @par One target, three parameters
+/// ```mlir
+/// qc.u(%theta, %phi, %lambda) %q : !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__u3__body(%theta, %phi, %lambda, %q)
+///     : (f64, f64, f64, !llvm.ptr) -> ()
+/// ```
+///
+/// @par Two targets, zero parameters
+/// ```mlir
+/// qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__swap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) ->
+/// ()
+/// ```
+///
+/// @par Two targets, one parameter
+/// ```mlir
+/// qc.rxx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__rxx__body(%theta, %q0, %q1)
+///     : (f64, !llvm.ptr, !llvm.ptr) -> ()
+/// ```
+///
+/// @par Two targets, two parameters
+/// ```mlir
+/// qc.xx_plus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__xx_plus_yy__body(%theta, %beta, %q0, %q1)
+///     : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
+/// ```
+///
+/// @tparam OpType The QC operation type to convert
+/// @tparam NumTargets Number of target qubits for this operation
+/// @tparam NumParams Number of floating-point parameters for this operation
+/// @tparam GetFnName Function that maps numCtrls -> QIR function name
 template <typename OpType, std::size_t NumTargets, std::size_t NumParams,
           auto GetFnName>
 struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
@@ -244,24 +239,21 @@ struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
   }
 };
 
-/**
- * @brief Converts qc.static to llvm.inttoptr
- *
- * @details
- * Converts a static qubit reference to an LLVM pointer by creating a constant
- * with the qubit index and converting it to a pointer. The pointer is cached
- * in the lowering state for reuse.
- *
- * @par Example:
- * ```mlir
- * %q0 = qc.static 0 : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * %c0 = llvm.mlir.constant(0 : i64) : i64
- * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
- * ```
- */
+/// Converts qc.static to llvm.inttoptr
+///
+/// Converts a static qubit reference to an LLVM pointer by creating a constant
+/// with the qubit index and converting it to a pointer. The pointer is cached
+/// in the lowering state for reuse.
+///
+/// @par Example:
+/// ```mlir
+/// %q0 = qc.static 0 : !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// %c0 = llvm.mlir.constant(0 : i64) : i64
+/// %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+/// ```
 struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -300,18 +292,16 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
 
 // GPhaseOp
 
-/**
- * @brief Converts qc.gphase to QIR gphase
- *
- * @par Example:
- * ```mlir
- * qc.gphase(%theta)
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__gphase__body(%theta) : (f64) -> ()
- * ```
- */
+/// Converts qc.gphase to QIR gphase
+///
+/// @par Example:
+/// ```mlir
+/// qc.gphase(%theta)
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__gphase__body(%theta) : (f64) -> ()
+/// ```
 struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -329,9 +319,7 @@ struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
 
 // BarrierOp
 
-/**
- * @brief Erases qc.barrier operation, as it is a no-op in QIR
- */
+/// Erases qc.barrier operation, as it is a no-op in QIR
 struct ConvertQCBarrierOp final : StatefulOpConversionPattern<BarrierOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -343,9 +331,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<BarrierOp> {
   }
 };
 
-/**
- * @brief Inlines qc.ctrl region removes the operation
- */
+/// Inlines qc.ctrl region removes the operation
 struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -380,9 +366,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
   }
 };
 
-/**
- * @brief Erases qc.yield operation
- */
+/// Erases qc.yield operation
 struct ConvertQCYieldOp final : StatefulOpConversionPattern<YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 

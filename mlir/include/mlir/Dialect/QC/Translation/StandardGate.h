@@ -24,7 +24,7 @@ class ValueRange;
 
 namespace mlir::qc {
 
-/** A QC standard-gate operation that frontends can emit directly. */
+/// A QC standard-gate operation that frontends can emit directly.
 enum class StandardGate : uint8_t {
   GPhase,
   Id,
@@ -77,15 +77,15 @@ struct StandardGateDescriptor {
   size_t targetCount = 0;
 };
 
-/** Return the descriptor for a standard gate. */
+/// Return the descriptor for a standard gate.
 [[nodiscard]] const StandardGateDescriptor&
 getStandardGateDescriptor(StandardGate gate);
 
-/** Return the descriptor for an operation symbol, or null if none matches. */
+/// Return the descriptor for an operation symbol, or null if none matches.
 [[nodiscard]] const StandardGateDescriptor*
 lookupStandardGateByOperationSymbol(llvm::StringRef symbol);
 
-/** Emit one primitive QC standard gate without source-language phase rules. */
+/// Emit one primitive QC standard gate without source-language phase rules.
 [[nodiscard]] LogicalResult emitStandardGate(OpBuilder& builder, Location loc,
                                              StandardGate gate,
                                              ValueRange parameters,

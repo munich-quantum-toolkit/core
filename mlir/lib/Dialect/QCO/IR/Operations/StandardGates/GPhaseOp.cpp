@@ -31,9 +31,7 @@ using namespace mlir::mqt;
 
 namespace {
 
-/**
- * @brief Remove trivial GPhase operations.
- */
+/// Remove trivial GPhase operations.
 struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
   using OpRewritePattern::OpRewritePattern;
 

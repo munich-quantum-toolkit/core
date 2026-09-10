@@ -124,9 +124,7 @@ parseMLIRFile(MLIRContext* context, const std::filesystem::path& path) {
   return std::move(mod);
 }
 
-/**
- * @brief Check whether a module contains an operation from a dialect.
- */
+/// Check whether a module contains an operation from a dialect.
 [[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
                                             const StringRef dialect) {
   return mod

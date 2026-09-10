@@ -32,37 +32,33 @@ namespace mlir::qco {
 
 namespace {
 
-/**
- * @brief This pattern is responsible for lifting Hadamard gates above Pauli
- * gates.
- *
- * This pattern swaps a Pauli gate with a Hadamard gate. This is done using the
- * commutation rules of Pauli and Hadamard gates, which are:
- * - X - H - = - H - Z -
- * - Y - H - = - H - Y -, while adding a gPhase(pi)
- * - Z - H - = - H - X -
- * This is applied to uncontrolled gates.
- * In case of Pauli-Y, a global phase is applied, as HY = -YH.
- */
+/// This pattern is responsible for lifting Hadamard gates above Pauli
+/// gates.
+///
+/// This pattern swaps a Pauli gate with a Hadamard gate. This is done using the
+/// commutation rules of Pauli and Hadamard gates, which are:
+/// - X - H - = - H - Z -
+/// - Y - H - = - H - Y -, while adding a gPhase(pi)
+/// - Z - H - = - H - X -
+/// This is applied to uncontrolled gates.
+/// In case of Pauli-Y, a global phase is applied, as HY = -YH.
 struct LiftHadamardsAbovePauliGatesPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   explicit LiftHadamardsAbovePauliGatesPattern(MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
 
-  /**
-   * @brief This method swaps a Pauli gate with a Hadamard gate.
-   *
-   * This method swaps a Pauli gate with a Hadamard gate. This is done using the
-   * commutation rules of Pauli and Hadamard gates, which are:
-   * - X - H - = - H - Z -
-   * - Y - H - = - H - Y -, while adding a gPhase(pi)
-   * - Z - H - = - H - X -
-   *
-   * @param gate The Pauli gate.
-   * @param hadamardGate The Hadamard gate.
-   * @param rewriter The used rewriter.
-   * @return success() if circuit was changed, failure() otherwise
-   */
+  /// This method swaps a Pauli gate with a Hadamard gate.
+  ///
+  /// This method swaps a Pauli gate with a Hadamard gate. This is done using
+  /// the commutation rules of Pauli and Hadamard gates, which are:
+  /// - X - H - = - H - Z -
+  /// - Y - H - = - H - Y -, while adding a gPhase(pi)
+  /// - Z - H - = - H - X -
+  ///
+  /// @param gate The Pauli gate.
+  /// @param hadamardGate The Hadamard gate.
+  /// @param rewriter The used rewriter.
+  /// @return success() if circuit was changed, failure() otherwise
   static LogicalResult swapPauliWithHadamard(UnitaryOpInterface gate,
                                              HOp hadamardGate,
                                              PatternRewriter& rewriter) {
@@ -90,13 +86,11 @@ struct LiftHadamardsAbovePauliGatesPattern final
         .Default([&](auto) { return failure(); });
   }
 
-  /**
-   * @brief Lifts Hadamard gates in front of Pauli gates.
-   *
-   * @param op The operation to match (only Pauli gates trigger the rewrite)
-   * @param rewriter Pattern rewriter for applying transformations
-   * @return success() if circuit was changed, failure() otherwise
-   */
+  /// Lifts Hadamard gates in front of Pauli gates.
+  ///
+  /// @param op The operation to match (only Pauli gates trigger the rewrite)
+  /// @param rewriter Pattern rewriter for applying transformations
+  /// @return success() if circuit was changed, failure() otherwise
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
     // op needs to be an uncontrolled Pauli gate
@@ -115,38 +109,35 @@ struct LiftHadamardsAbovePauliGatesPattern final
   }
 };
 
-/**
- * @brief This pattern removes an H gate between a CNOT and a measurement, flips
- * the CNOT and adds Hadamard gates before and after the new target and before
- * the new control.
- *
- * If there is a Hadamard gate between the target qubit of a CNOT and a
- * measurement, we flip the CNOT and apply a Hadamard gate to the incoming and
- * outcoming qubits. As H * H = id, the measurement is then the direct successor
- * of a CNOT control, which is beneficial for the qubit reuse routine. In that
- * case, measurement lifting (a routine of qubit reuse) can remove the
- * multi-qubit gate by lifting the measurement in front of the control and
- * changing the qubit-controlled Pauli-X to a classically-controlled Pauli-X.
- *
- * The procedure also works if there are additional controls. Only the target
- * and control involved in the transformation get Hadamard gates assigned.
- * The involved ctrl to be flipped with the target is chosen randomly.
- */
+/// This pattern removes an H gate between a CNOT and a measurement, flips
+/// the CNOT and adds Hadamard gates before and after the new target and before
+/// the new control.
+///
+/// If there is a Hadamard gate between the target qubit of a CNOT and a
+/// measurement, we flip the CNOT and apply a Hadamard gate to the incoming and
+/// outcoming qubits. As H * H = id, the measurement is then the direct
+/// successor of a CNOT control, which is beneficial for the qubit reuse
+/// routine. In that case, measurement lifting (a routine of qubit reuse) can
+/// remove the multi-qubit gate by lifting the measurement in front of the
+/// control and changing the qubit-controlled Pauli-X to a
+/// classically-controlled Pauli-X.
+///
+/// The procedure also works if there are additional controls. Only the target
+/// and control involved in the transformation get Hadamard gates assigned.
+/// The involved ctrl to be flipped with the target is chosen randomly.
 struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
 
   explicit LiftHadamardAboveCNOTPattern(MLIRContext* context)
       : OpRewritePattern(context) {}
 
-  /**
-   * @brief This pattern removes an H gate between a CNOT and a measurement,
-   * flips the CNOT and adds Hadamard gates before and after the new target and
-   * before the new control.
-   *
-   * @param op The operation to match (only measurements with an uncontrolled
-   * Hadamard gate before that trigger the rewrite)
-   * @param rewriter Pattern rewriter for applying transformations
-   * @return success() if circuit was changed, failure() otherwise
-   */
+  /// This pattern removes an H gate between a CNOT and a measurement,
+  /// flips the CNOT and adds Hadamard gates before and after the new target and
+  /// before the new control.
+  ///
+  /// @param op The operation to match (only measurements with an uncontrolled
+  /// Hadamard gate before that trigger the rewrite)
+  /// @param rewriter Pattern rewriter for applying transformations
+  /// @return success() if circuit was changed, failure() otherwise
   LogicalResult matchAndRewrite(MeasureOp op,
                                 PatternRewriter& rewriter) const override {
     // A Hadamard gate needs to be in front of the measurement
@@ -217,10 +208,8 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
   }
 };
 
-/**
- * @brief Pass raises Hadamard gates above controlled and uncontrolled Pauli
- * gates.
- */
+/// Pass raises Hadamard gates above controlled and uncontrolled Pauli
+/// gates.
 struct HadamardLifting final : impl::HadamardLiftingBase<HadamardLifting> {
   using HadamardLiftingBase::HadamardLiftingBase;
 

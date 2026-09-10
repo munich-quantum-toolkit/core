@@ -58,6 +58,10 @@ the following declarations after line splicing. Preserve explicit `@brief`
 commands there when Doxygen needs them to retain summaries after macro
 expansion.
 
+The `cpp-documentation-style` lint hook checks project-owned C++ files. It
+rejects block documentation and explicit summary or detail commands, except on
+continued macro lines.
+
 Keep top-level `@file` documentation and put its summary on the next line,
 without `@brief`:
 

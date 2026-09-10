@@ -167,10 +167,8 @@ static LogicalResult prepareCBitRegisterAccesses(Operation* moduleOp,
   return success(!hasInvalidAccess);
 }
 
-/**
- * @brief Returns the result pointer the `qc::MeasureOp` @p op writes to, or
- * `nullptr` if it does not write into a classical register.
- */
+/// Returns the result pointer the `qc::MeasureOp` @p op writes to, or
+/// `nullptr` if it does not write into a classical register.
 static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
                                         ConversionPatternRewriter& rewriter) {
   const auto it = state.cregMeasurements.find(op);
@@ -189,9 +187,7 @@ static Value resolveRegisterMeasurement(LoweringState& state, Operation* op,
   return LLVM::LoadOp::create(rewriter, loc, ptrType, elementptr).getResult();
 }
 
-/**
- * @brief Converts qubit-register `memref.alloc` to `llvm.alloca`
- */
+/// Converts qubit-register `memref.alloc` to `llvm.alloca`
 static LogicalResult
 convertQubitMemRefAllocOp(memref::AllocOp op, memref::AllocOp::Adaptor adaptor,
                           LoweringState& state,
@@ -358,9 +354,7 @@ struct ConvertCBitStoreOp final : StatefulOpConversionPattern<cbit::StoreOp> {
   }
 };
 
-/**
- * @brief Converts `memref.alloc` to `llvm.alloca`
- */
+/// Converts `memref.alloc` to `llvm.alloca`
 struct ConvertMemRefAllocOp final
     : StatefulOpConversionPattern<memref::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -376,19 +370,17 @@ struct ConvertMemRefAllocOp final
   }
 };
 
-/**
- * @brief Converts `memref.load` to `llvm.load`
- *
- * @par Example:
- * ```mlir
- * %q = memref.load %memref[%c1] : memref<3x!qc.qubit>
- * ```
- * is converted to
- * ```mlir
- * %ptr = llvm.getelementptr %alloca[c1] : !llvm.ptr -> !llvm.ptr
- * %q = llvm.load %ptr : !llvm.ptr -> !llvm.ptr
- * ```
- */
+/// Converts `memref.load` to `llvm.load`
+///
+/// @par Example:
+/// ```mlir
+/// %q = memref.load %memref[%c1] : memref<3x!qc.qubit>
+/// ```
+/// is converted to
+/// ```mlir
+/// %ptr = llvm.getelementptr %alloca[c1] : !llvm.ptr -> !llvm.ptr
+/// %q = llvm.load %ptr : !llvm.ptr -> !llvm.ptr
+/// ```
 struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -417,19 +409,17 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   }
 };
 
-/**
- * @brief Converts memref.dealloc to QIR qubit-array release
- *
- * @par Example:
- * ```mlir
- * memref.dealloc %memref : memref<3x!qc.qubit>
- * ```
- * is converted to
- * ```mlir
- * llvm.call @"@__quantum__rt__qubit_array_release"(%c3, %alloca) : (i64,
- * !llvm.ptr) -> ()
- * ```
- */
+/// Converts memref.dealloc to QIR qubit-array release
+///
+/// @par Example:
+/// ```mlir
+/// memref.dealloc %memref : memref<3x!qc.qubit>
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @"@__quantum__rt__qubit_array_release"(%c3, %alloca) : (i64,
+/// !llvm.ptr) -> ()
+/// ```
 struct ConvertMemRefDeallocOp final
     : StatefulOpConversionPattern<memref::DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -465,20 +455,18 @@ struct ConvertMemRefDeallocOp final
   }
 };
 
-/**
- * @brief Converts qc.alloc to QIR qubit allocation
- *
- * @par Example:
- * ```mlir
- * %q = qc.alloc : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * %zero = llvm.mlir.zero : !llvm.ptr
- * %q = llvm.call @"@__quantum__rt__qubit_allocate"(%zero) : !llvm.ptr ->
- * !llvm.ptr
- * ```
- */
+/// Converts qc.alloc to QIR qubit allocation
+///
+/// @par Example:
+/// ```mlir
+/// %q = qc.alloc : !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// %zero = llvm.mlir.zero : !llvm.ptr
+/// %q = llvm.call @"@__quantum__rt__qubit_allocate"(%zero) : !llvm.ptr ->
+/// !llvm.ptr
+/// ```
 struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -505,18 +493,16 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   }
 };
 
-/**
- * @brief Converts qc.dealloc to QIR qubit release
- *
- * @par Example:
- * ```mlir
- * qc.dealloc %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @"@__quantum__rt__qubit_release"(%q) : !llvm.ptr -> ()
- * ```
- */
+/// Converts qc.dealloc to QIR qubit release
+///
+/// @par Example:
+/// ```mlir
+/// qc.dealloc %q : !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @"@__quantum__rt__qubit_release"(%q) : !llvm.ptr -> ()
+/// ```
 struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -538,22 +524,19 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   }
 };
 
-/**
- * @brief Converts qc.reset operation to QIR reset
- *
- * @details
- * Converts qubit reset to a call to the QIR __quantum__qis__reset__body
- * function, which resets a qubit to the |0⟩ state.
- *
- * @par Example:
- * ```mlir
- * qc.reset %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__reset__body(%q) : !llvm.ptr -> ()
- * ```
- */
+/// Converts qc.reset operation to QIR reset
+///
+/// Converts qubit reset to a call to the QIR __quantum__qis__reset__body
+/// function, which resets a qubit to the |0⟩ state.
+///
+/// @par Example:
+/// ```mlir
+/// qc.reset %q : !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__reset__body(%q) : !llvm.ptr -> ()
+/// ```
 struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -575,26 +558,23 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<ResetOp> {
   }
 };
 
-/**
- * @brief Converts qc.measure to QIR measurement
- *
- * @details
- * For measurements with register information, a result array is allocated and
- * all result pointers are loaded.
- * For measurements without register information, a dynamic result pointer is
- * used.
- * If the operation has an user, a read result call operation is created to
- * convert the result !llvm.ptr to an i1 value.
- *
- * @par Example (with register):
- * ```mlir
- * %result = qc.measure("c", 2, 0) %q : !qc.qubit -> i1
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
- * ```
- */
+/// Converts qc.measure to QIR measurement
+///
+/// For measurements with register information, a result array is allocated and
+/// all result pointers are loaded.
+/// For measurements without register information, a dynamic result pointer is
+/// used.
+/// If the operation has an user, a read result call operation is created to
+/// convert the result !llvm.ptr to an i1 value.
+///
+/// @par Example (with register):
+/// ```mlir
+/// %result = qc.measure("c", 2, 0) %q : !qc.qubit -> i1
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
+/// ```
 struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -639,9 +619,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 };
 } // namespace
 
-/**
- * @brief Populates conversion patterns for QC-to-QIR-Adaptive lowering.
- */
+/// Populates conversion patterns for QC-to-QIR-Adaptive lowering.
 static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
                                             QCToQIRTypeConverter& typeConverter,
                                             MLIRContext* ctx,
@@ -661,21 +639,18 @@ namespace {
 struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   using QCToQIRAdaptiveBase::QCToQIRAdaptiveBase;
 
-  /**
-   * @brief Ensures proper block structure for QIR Adaptive Profile
-   *
-   * @details
-   * The Adaptive Profile requires an entry block and an output block with an
-   * arbitrary number of blocks between them.
-   * 1. **Entry block**: Contains constant operations and initialization
-   * 2. **Intermediate blocks**: Original function structure containing
-   * quantum operations
-   * 3. **Output block**: Contains output recording and result release calls.
-   * Quantum releases remain at their source locations.
-   *
-   * @param main The main LLVM function to restructure
-   * @param state The LoweringState of the conversion pass
-   */
+  /// Ensures proper block structure for QIR Adaptive Profile
+  ///
+  /// The Adaptive Profile requires an entry block and an output block with an
+  /// arbitrary number of blocks between them.
+  /// 1. **Entry block**: Contains constant operations and initialization
+  /// 2. **Intermediate blocks**: Original function structure containing
+  /// quantum operations
+  /// 3. **Output block**: Contains output recording and result release calls.
+  /// Quantum releases remain at their source locations.
+  ///
+  /// @param main The main LLVM function to restructure
+  /// @param state The LoweringState of the conversion pass
   static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
     OpBuilder builder(main.getBody());
     auto* firstBlock = &main.front();
@@ -713,9 +688,7 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
     }
   }
 
-  /**
-   * @brief Releases all result pointers and arrays in the output block
-   */
+  /// Releases all result pointers and arrays in the output block
   static void releaseResults(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                              LoweringState* state) {
     OpBuilder builder(ctx);

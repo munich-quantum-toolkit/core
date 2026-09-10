@@ -32,13 +32,10 @@
 
 namespace mlir::oq3::frontend::detail {
 
-/**
- * @brief A single-pass recursive-descent parser for OpenQASM 3.
- *
- * @details
- * The parser is target-independent. Its builder materializes a persistent
- * syntax program and stores expressions directly in its ID arena.
- */
+/// A single-pass recursive-descent parser for OpenQASM 3.
+///
+/// The parser is target-independent. Its builder materializes a persistent
+/// syntax program and stores expressions directly in its ID arena.
 class Parser {
 public:
   Parser(Lexer& lexer, SyntaxBuilder& sink) : lexer(lexer), sink(sink) {
@@ -193,12 +190,9 @@ private:
     }
   }
 
-  /**
-   * @brief Parse a `{ ... }` block or a single statement.
-   *
-   * @details
-   * The block is parsed in a new scope.
-   */
+  /// Parse a `{ ... }` block or a single statement.
+  ///
+  /// The block is parsed in a new scope.
   [[nodiscard]] LogicalResult parseBlock() {
     if (blockDepth >= BLOCK_DEPTH_LIMIT) {
       return sink.error(current().loc,
@@ -211,12 +205,9 @@ private:
     return result;
   }
 
-  /**
-   * @brief Parse a `{ ... }` block or a single statement.
-   *
-   * @details
-   * The block is parsed into the current scope.
-   */
+  /// Parse a `{ ... }` block or a single statement.
+  ///
+  /// The block is parsed into the current scope.
   [[nodiscard]] LogicalResult parseBlockInScope() {
     if (current().kind == TokenKind::LBrace) {
       advance();

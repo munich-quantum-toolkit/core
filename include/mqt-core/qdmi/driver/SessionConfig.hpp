@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file SessionConfig.hpp
- * @brief Construction helpers for QDMI device session configuration.
- */
+/// @file SessionConfig.hpp
+/// Construction helpers for QDMI device session configuration.
 
 #pragma once
 
@@ -54,11 +53,9 @@ mergeSessionConfig(DeviceSessionConfig merged,
 }
 } // namespace detail
 
-/**
- * @brief Construct a device session configuration from individual parameters.
- * @throws std::invalid_argument If both an inline device configuration and a
- * device configuration file are set.
- */
+/// Construct a device session configuration from individual parameters.
+/// @throws std::invalid_argument If both an inline device configuration and a
+/// device configuration file are set.
 [[nodiscard]] inline auto makeDeviceSessionConfig(
     std::optional<std::string> baseUrl, std::optional<std::string> token,
     std::optional<std::filesystem::path> authFile,

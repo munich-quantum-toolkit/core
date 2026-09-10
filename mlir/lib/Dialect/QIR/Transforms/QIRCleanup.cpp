@@ -55,12 +55,11 @@ static void dropUnusedExternalDeclarations(ModuleOp module) {
 
 namespace {
 
-/**
- * @brief Remove matching allocation-release pairs of qubit arrays.
- * @details Matches an unused
- * `__quantum__rt__qubit_array_allocate`-`__quantum__rt__qubit_array_release`
- * pair on the same stack slot.
- */
+/// Remove matching allocation-release pairs of qubit arrays.
+///
+/// Matches an unused
+/// `__quantum__rt__qubit_array_allocate`-`__quantum__rt__qubit_array_release`
+/// pair on the same stack slot.
 struct RemoveDeadQubitArrayPair final : OpRewritePattern<LLVM::CallOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -111,11 +110,10 @@ struct RemoveDeadQubitArrayPair final : OpRewritePattern<LLVM::CallOp> {
   }
 };
 
-/**
- * @brief Clean up QIR.
- * @details Removes dead allocation-release pairs of qubit arrays, drops unused
- * external declarations.
- */
+/// Clean up QIR.
+///
+/// Removes dead allocation-release pairs of qubit arrays, drops unused
+/// external declarations.
 struct QIRCleanupPass final : impl::QIRCleanupPassBase<QIRCleanupPass> {
 protected:
   void runOnOperation() override {

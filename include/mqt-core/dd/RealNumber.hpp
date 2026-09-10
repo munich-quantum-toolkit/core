@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file RealNumber.hpp
- * @brief Canonical real-number handles used by decision diagrams.
- */
+/// @file RealNumber.hpp
+/// Canonical real-number handles used by decision diagrams.
 
 #pragma once
 
@@ -23,197 +22,162 @@
 #include <ostream>
 
 namespace dd {
-/**
- * @brief A struct for representing real numbers as part of the DD package.
- * @details Consists of a floating point number (the value) and a next pointer
- * (used for chaining entries). Numbers are marked for garbage collection via
- * the second least significant bit of pointers referencing them.
- * @note Due to the way the sign of the value is encoded, special care has to
- * be taken when accessing the value. The static functions in this struct
- * provide safe access to the value of a RealNumber* pointer.
- */
+/// A struct for representing real numbers as part of the DD package.
+///
+/// Consists of a floating point number (the value) and a next pointer
+/// (used for chaining entries). Numbers are marked for garbage collection via
+/// the second least significant bit of pointers referencing them.
+/// @note Due to the way the sign of the value is encoded, special care has to
+/// be taken when accessing the value. The static functions in this struct
+/// provide safe access to the value of a RealNumber* pointer.
 struct RealNumber final : LLBase {
   /// Getter for the next object.
   [[nodiscard]] RealNumber* next() const noexcept;
 
-  /**
-   * @brief Check whether the number points to the zero number.
-   * @param e The number to check.
-   * @returns Whether the number points to zero.
-   */
+  /// Check whether the number points to the zero number.
+  /// @param e The number to check.
+  /// @returns Whether the number points to zero.
   [[nodiscard]] static constexpr bool exactlyZero(const RealNumber* e) noexcept;
 
-  /**
-   * @brief Check whether the number points to the one number.
-   * @param e The number to check.
-   * @returns Whether the number points to one.
-   */
+  /// Check whether the number points to the one number.
+  /// @param e The number to check.
+  /// @returns Whether the number points to one.
   [[nodiscard]] static constexpr bool exactlyOne(const RealNumber* e) noexcept;
 
-  /**
-   * @brief Check whether the number points to the sqrt(2)/2 = 1/sqrt(2) number.
-   * @param e The number to check.
-   * @returns Whether the number points to negative one.
-   */
+  /// Check whether the number points to the sqrt(2)/2 = 1/sqrt(2) number.
+  /// @param e The number to check.
+  /// @returns Whether the number points to negative one.
   [[nodiscard]] static constexpr bool
   exactlySqrt2over2(const RealNumber* e) noexcept;
 
-  /**
-   * @brief Get the value of the number.
-   * @param e The number to get the value for.
-   * @returns The value of the number.
-   * @note This function accounts for the sign of the number embedded in the
-   * memory address of the number.
-   */
+  /// Get the value of the number.
+  /// @param e The number to get the value for.
+  /// @returns The value of the number.
+  /// @note This function accounts for the sign of the number embedded in the
+  /// memory address of the number.
   [[nodiscard]] static fp val(const RealNumber* e) noexcept;
 
-  /**
-   * @brief Check whether two floating point numbers are approximately equal.
-   * @details This function checks whether two floating point numbers are
-   * approximately equal. The two numbers are considered approximately equal
-   * if the absolute difference between them is smaller than a small value
-   * (TOLERANCE). This function is used to compare floating point numbers
-   * stored in the table.
-   * @param left The first floating point number.
-   * @param right The second floating point number.
-   * @returns Whether the two floating point numbers are approximately equal.
-   */
+  /// Check whether two floating point numbers are approximately equal.
+  ///
+  /// This function checks whether two floating point numbers are
+  /// approximately equal. The two numbers are considered approximately equal
+  /// if the absolute difference between them is smaller than a small value
+  /// (TOLERANCE). This function is used to compare floating point numbers
+  /// stored in the table.
+  /// @param left The first floating point number.
+  /// @param right The second floating point number.
+  /// @returns Whether the two floating point numbers are approximately equal.
   [[nodiscard]] static bool approximatelyEquals(fp left, fp right) noexcept;
 
-  /**
-   * @brief Check whether two numbers are approximately equal.
-   * @details This function checks whether two numbers are approximately
-   * equal. Two numbers are considered approximately equal if they point to
-   * the same number or if the values of the numbers are approximately equal.
-   * @param left The first number.
-   * @param right The second number.
-   * @returns Whether the two numbers are approximately equal.
-   * @see approximatelyEquals(fp, fp)
-   */
+  /// Check whether two numbers are approximately equal.
+  ///
+  /// This function checks whether two numbers are approximately
+  /// equal. Two numbers are considered approximately equal if they point to
+  /// the same number or if the values of the numbers are approximately equal.
+  /// @param left The first number.
+  /// @param right The second number.
+  /// @returns Whether the two numbers are approximately equal.
+  /// @see approximatelyEquals(fp, fp)
   [[nodiscard]] static bool
   approximatelyEquals(const RealNumber* left, const RealNumber* right) noexcept;
 
-  /**
-   * @brief Check whether a floating point number is approximately zero.
-   * @param e The floating point number to check.
-   * @returns Whether the floating point number is approximately zero.
-   */
+  /// Check whether a floating point number is approximately zero.
+  /// @param e The floating point number to check.
+  /// @returns Whether the floating point number is approximately zero.
   [[nodiscard]] static bool approximatelyZero(fp e) noexcept;
 
-  /**
-   * @brief Check whether a number is approximately zero.
-   * @param e The number to check.
-   * @returns Whether the number is approximately zero.
-   * @see approximatelyZero(fp)
-   */
+  /// Check whether a number is approximately zero.
+  /// @param e The number to check.
+  /// @returns Whether the number is approximately zero.
+  /// @see approximatelyZero(fp)
   [[nodiscard]] static bool approximatelyZero(const RealNumber* e) noexcept;
 
-  /**
-   * @brief Write a binary representation of the number to a stream.
-   * @param e The number to write.
-   * @param os The stream to write to.
-   */
+  /// Write a binary representation of the number to a stream.
+  /// @param e The number to write.
+  /// @param os The stream to write to.
   static void writeBinary(const RealNumber* e, std::ostream& os);
 
-  /**
-   * @brief Write a binary representation of a floating point number to a
-   * @param num The number to write.
-   * @param os The stream to write to.
-   */
+  /// Write a binary representation of a floating point number to a
+  /// @param num The number to write.
+  /// @param os The stream to write to.
   static void writeBinary(fp num, std::ostream& os);
 
-  /**
-   * @brief Read a binary representation of a number from a stream.
-   * @param num The number to read into.
-   * @param is The stream to read from.
-   */
+  /// Read a binary representation of a number from a stream.
+  /// @param num The number to read into.
+  /// @param is The stream to read from.
   static void readBinary(fp& num, std::istream& is);
 
-  /**
-   * @brief Get an aligned pointer to the number.
-   * @details Since the least significant bit of the memory address of the
-   * number is used to encode the sign of the value, the pointer to the number
-   * might not be aligned. This function returns an aligned pointer to the
-   * number.
-   * @param e The number to get the aligned pointer for.
-   * @returns An aligned pointer to the number.
-   */
+  /// Get an aligned pointer to the number.
+  ///
+  /// Since the least significant bit of the memory address of the
+  /// number is used to encode the sign of the value, the pointer to the number
+  /// might not be aligned. This function returns an aligned pointer to the
+  /// number.
+  /// @param e The number to get the aligned pointer for.
+  /// @returns An aligned pointer to the number.
   [[nodiscard]] static RealNumber*
   getAlignedPointer(const RealNumber* e) noexcept;
 
-  /**
-   * @brief Get a pointer to the number with a negative sign.
-   * @details Since the least significant bit of the memory address of the
-   * number is used to encode the sign of the value, this function just sets
-   * the least significant bit of the memory address of the number to 1.
-   * @param e The number to get the negative pointer for.
-   * @returns A negative pointer to the number.
-   */
+  /// Get a pointer to the number with a negative sign.
+  ///
+  /// Since the least significant bit of the memory address of the
+  /// number is used to encode the sign of the value, this function just sets
+  /// the least significant bit of the memory address of the number to 1.
+  /// @param e The number to get the negative pointer for.
+  /// @returns A negative pointer to the number.
   [[nodiscard]] static RealNumber*
   getNegativePointer(const RealNumber* e) noexcept;
 
-  /**
-   * @brief Flip the sign of the number pointer.
-   * @param e The number to flip the sign of.
-   * @returns The number with the sign flipped.
-   * @note This function does not change the sign of the value of the number.
-   * It rather changes the sign of the pointer to the number.
-   * @note We do not consider negative zero here, since it is not used in the
-   * DD package. There only exists one zero number, which is positive.
-   */
+  /// Flip the sign of the number pointer.
+  /// @param e The number to flip the sign of.
+  /// @returns The number with the sign flipped.
+  /// @note This function does not change the sign of the value of the number.
+  /// It rather changes the sign of the pointer to the number.
+  /// @note We do not consider negative zero here, since it is not used in the
+  /// DD package. There only exists one zero number, which is positive.
   [[nodiscard]] static RealNumber*
   flipPointerSign(const RealNumber* e) noexcept;
 
-  /**
-   * @brief Mark @p e for garbage collection.
-   * @details Sets the 2nd least significant bit of the next_ pointer.
-   * @param e The number to mark.
-   */
+  /// Mark @p e for garbage collection.
+  ///
+  /// Sets the 2nd least significant bit of the next_ pointer.
+  /// @param e The number to mark.
   static void mark(RealNumber* e) noexcept;
 
-  /**
-   * @brief Unmark @p e after garbage collection.
-   * @details Unsets the 2nd least significant bit of the next_ pointer.
-   * @param e The number to unmark.
-   */
+  /// Unmark @p e after garbage collection.
+  ///
+  /// Unsets the 2nd least significant bit of the next_ pointer.
+  /// @param e The number to unmark.
   static void unmark(RealNumber* e) noexcept;
 
-  /**
-   * @brief Immortalize @p e.
-   * @details Sets the 3rd least significant bit of the next_ pointer.
-   * @param e The number to immortalize.
-   */
+  /// Immortalize @p e.
+  ///
+  /// Sets the 3rd least significant bit of the next_ pointer.
+  /// @param e The number to immortalize.
   static void immortalize(RealNumber* e) noexcept;
 
-  /**
-   * @brief Check whether the number is flagged as negative.
-   * @param e The number to check.
-   * @returns Whether the number is negative.
-   */
+  /// Check whether the number is flagged as negative.
+  /// @param e The number to check.
+  /// @returns Whether the number is negative.
   [[nodiscard]] static bool isNegativePointer(const RealNumber* e) noexcept;
 
-  /**
-   * @brief Check whether the number is flagged as marked.
-   * @param e The number to check.
-   * @returns Whether the number is marked.
-   */
+  /// Check whether the number is flagged as marked.
+  /// @param e The number to check.
+  /// @returns Whether the number is marked.
   [[nodiscard]] static bool isMarked(const RealNumber* e) noexcept;
 
-  /**
-   * @brief Check whether the number is flagged as immortal.
-   * @param e The number to check.
-   * @returns Whether the number is immortal.
-   */
+  /// Check whether the number is flagged as immortal.
+  /// @param e The number to check.
+  /// @returns Whether the number is immortal.
   [[nodiscard]] static bool isImmortal(const RealNumber* e) noexcept;
 
-  /**
-   * @brief The value of the number.
-   * @details The value of the number is a floating point number. The sign of
-   * the value is encoded in the least significant bit of the memory address
-   * of the number. As a consequence, values stored here are always
-   * non-negative. The sign of the value as well as the value itself can be
-   * accessed using the static functions of this struct.
-   */
+  /// The value of the number.
+  ///
+  /// The value of the number is a floating point number. The sign of
+  /// the value is encoded in the least significant bit of the memory address
+  /// of the number. As a consequence, values stored here are always
+  /// non-negative. The sign of the value as well as the value itself can be
+  /// accessed using the static functions of this struct.
   fp value{};
 
   /// numerical tolerance to be used for floating point values
@@ -234,11 +198,9 @@ MQT_CORE_DD_EXPORT extern RealNumber one;
 MQT_CORE_DD_EXPORT extern RealNumber sqrt2over2;
 // NOLINTEND(cppcoreguidelines-avoid-non-const-global-variables)
 
-/**
- * @brief Check whether a number is one of the static numbers.
- * @param e The number to check.
- * @return Whether the number is one of the static numbers.
- */
+/// Check whether a number is one of the static numbers.
+/// @param e The number to check.
+/// @return Whether the number is one of the static numbers.
 [[nodiscard]] constexpr bool isStaticNumber(const RealNumber* e) noexcept {
   return RealNumber::exactlyZero(e) || RealNumber::exactlyOne(e) ||
          RealNumber::exactlySqrt2over2(e);

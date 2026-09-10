@@ -35,10 +35,8 @@ using namespace mlir::qc;
 
 namespace {
 
-/**
- * @brief Move nested control modifiers outside, i.e., `inv(ctrl(x)) =>
- * ctrl(inv(x))`.
- */
+/// Move nested control modifiers outside, i.e., `inv(ctrl(x)) =>
+/// ctrl(inv(x))`.
 struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -82,14 +80,12 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
   }
 };
 
-/**
- * @brief Eliminate inv by negating the pow exponent, i.e.,
- * `inv(pow(p){U}) => pow(-p){U}`.
- *
- * @details This is always valid for unitaries: `(U^p)† = U^{-p}`.
- * Downstream patterns (e.g., `NegPowToInvPow`) can then rewrite
- * `pow(-p){U} => pow(p){inv(U)}` when the exponent is an integer.
- */
+/// Eliminate inv by negating the pow exponent, i.e.,
+/// `inv(pow(p){U}) => pow(-p){U}`.
+///
+/// This is always valid for unitaries: `(U^p)† = U^{-p}`.
+/// Downstream patterns (e.g., `NegPowToInvPow`) can then rewrite
+/// `pow(-p){U} => pow(p){inv(U)}` when the exponent is an integer.
 struct InvPowToNegPow final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp invOp,
@@ -126,11 +122,9 @@ struct InvPowToNegPow final : OpRewritePattern<InvOp> {
   }
 };
 
-/**
- * @brief Remove inverse modifiers around self-adjoint gates.
- *
- * For self-adjoint gates U (i.e., U = U†), inv(U) = U holds.
- */
+/// Remove inverse modifiers around self-adjoint gates.
+///
+/// For self-adjoint gates U (i.e., U = U†), inv(U) = U holds.
 struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -153,12 +147,10 @@ struct InlineSelfAdjoint final : OpRewritePattern<InvOp> {
   }
 };
 
-/**
- * @brief Replace inverse modifiers around gates where the inverse is a known
- * gate by their known inverse.
- *
- * For example, for the T gate, inv(T) = Tdg holds.
- */
+/// Replace inverse modifiers around gates where the inverse is a known
+/// gate by their known inverse.
+///
+/// For example, for the T gate, inv(T) = Tdg holds.
 struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -296,9 +288,7 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
   }
 };
 
-/**
- * @brief Cancel nested inverse modifiers, i.e., `inv(inv(x)) => x`.
- */
+/// Cancel nested inverse modifiers, i.e., `inv(inv(x)) => x`.
 struct CancelNestedInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp op,
@@ -318,9 +308,7 @@ struct CancelNestedInv final : OpRewritePattern<InvOp> {
   }
 };
 
-/**
- * @brief Erase inverse modifiers that do not have any body unitaries.
- */
+/// Erase inverse modifiers that do not have any body unitaries.
 struct EraseEmptyInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(InvOp op,
@@ -334,9 +322,7 @@ struct EraseEmptyInv final : OpRewritePattern<InvOp> {
   }
 };
 
-/**
- * @brief Drop the qubits that the body does not use.
- */
+/// Drop the qubits that the body does not use.
 struct DropUnusedInvQubits final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
