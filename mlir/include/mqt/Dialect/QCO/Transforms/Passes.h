@@ -14,6 +14,8 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassRegistry.h"
 
+#include "llvm/Support/Threading.h"
+
 #include <cstdint>
 #include <memory>
 

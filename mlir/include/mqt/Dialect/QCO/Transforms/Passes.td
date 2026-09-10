@@ -202,7 +202,13 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
     potentially find a more optimal solution. This is behavior is controlled by the `niterations` parameter.
 
-    The pass option `ntrials` determines how many random initial layouts the pass explores. If compiled with multi-threading on, these trials will be executed in parallel.
+    The pass option `ntrials` determines how many random initial layouts the pass explores.
+    It defaults to the number of available logical CPUs reported by LLVM, taking
+    CPU affinity into account, with a minimum of one. Disabling multithreading
+    runs the same trials sequentially; it does not reduce the trial count.
+    If compiled with multi-threading on, these trials will be executed in parallel.
+    Set both `ntrials` and `seed` explicitly for reproducible results across
+    machines with different CPU counts.
   }];
   let options = [Option<"nlookahead", "nlookahead", "std::size_t", "1",
                         "The number of lookahead steps.">,
@@ -213,9 +219,11 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                  Option<"niterations", "niterations", "std::size_t", "1",
                         "The number of forwards and backwards traversal to "
                         "improve the initial layout. Must be > 0.">,
-                 Option<"ntrials", "ntrials", "std::size_t", "4",
+                 Option<"ntrials", "ntrials", "std::size_t",
+                        "llvm::hardware_concurrency().compute_thread_count()",
                         "The number of (possibly parallel) random trials of "
-                        "the forwards and backwards mechanism. Must be > 0.">,
+                        "the forwards and backwards mechanism. Defaults to "
+                        "the available logical CPU count. Must be > 0.">,
                  Option<"seed", "seed", "std::size_t", "42",
                         "A seed used for randomization.">];
   let statistics = [Statistic<"numSwaps", "num-inserted-swaps",
