@@ -177,7 +177,7 @@ const PayloadFormat& PayloadSpecification::format() const noexcept {
 }
 
 llvm::Expected<ProgramFormat> PayloadSpecification::compilerOutput() const {
-  if (format_.id == "openqasm" && format_.version == "3.0.0" &&
+  if (format_.id == "openqasm" && format_.version == "3.1.0" &&
       format_.profile.empty() && format_.encoding == PayloadEncoding::Text) {
     return ProgramFormat::OpenQASM3;
   }

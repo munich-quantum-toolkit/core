@@ -17,6 +17,7 @@ import numpy as np
 import qiskit.circuit
 
 import mqt.core.dd
+import mqt.core.qdmi
 from mqt.core.qdmi import Device
 from mqt.core.typing import QDMISessionParameters
 
@@ -657,8 +658,6 @@ class QCOProgram(Program):
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Export a Qiskit circuit without consuming or modifying this program.
 
-        Uses the QC exporter on a copy.
-
         Args:
             target: The optional compiler target used for mapping. When provided, static
                 site IDs map to dense physical-qubit indices in target site order.
@@ -993,23 +992,113 @@ def compile_program(
     | JeffProgram
     | OpenQASMProgram,
     *,
+    target: str | mqt.core.qdmi.Device,
+    program_format: mqt.core.qdmi.ProgramFormat | None = None,
     inplace: bool = False,
-    target_environment: TargetEnvironment,
     enable_timing: bool = False,
     enable_statistics: bool = False,
-) -> OpenQASMProgram | QIRProgram:
-    """Compile a program for a target and return the selected executable payload.
+) -> CompiledProgram:
+    """Compile for a device ID, open device, or explicit compiler target.
 
-    The payload specification determines the output format. Typed program inputs
-    are copied by default; set ``inplace=True`` to consume them.
+    Device targets select Adaptive QIR (binary, text), OpenQASM 3, then Base QIR
+    (binary, text). Use ``program_format`` to select a format explicitly.
+    Submit the returned :class:`CompiledProgram` with :func:`submit_program`.
 
-    Args:
-        program: Source text, a file path, a Qiskit circuit, or a typed compiler program.
-        inplace: Whether a typed input program may be consumed.
-        target_environment: The compiler target and selected payload specification.
-        enable_timing: Whether to collect pass timing information.
-        enable_statistics: Whether to collect pass statistics.
+    An explicit :class:`CompilerTarget` requires ``output`` to return a typed
+    program, or ``program_format`` to return a :class:`CompiledProgram`.
+    Typed inputs are copied unless ``inplace=True``.
+    """
 
-    Returns:
-        A typed compiler program for the selected payload format.
+@overload
+def compile_program(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    *,
+    target: CompilerTarget,
+    program_format: mqt.core.qdmi.ProgramFormat,
+    inplace: bool = False,
+    enable_timing: bool = False,
+    enable_statistics: bool = False,
+) -> CompiledProgram: ...
+@overload
+def compile_program(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    *,
+    target: CompilerTarget,
+    output: Literal[OutputFormat.OPENQASM3],
+    inplace: bool = False,
+    enable_timing: bool = False,
+    enable_statistics: bool = False,
+) -> OpenQASMProgram: ...
+@overload
+def compile_program(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram,
+    *,
+    target: CompilerTarget,
+    output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
+    inplace: bool = False,
+    enable_timing: bool = False,
+    enable_statistics: bool = False,
+) -> QIRProgram: ...
+
+class CompiledProgram:
+    """A compiled program ready for QDMI submission."""
+
+    @property
+    def program_format(self) -> mqt.core.qdmi.ProgramFormat:
+        """The exact QDMI program format."""
+
+    @property
+    def payload(self) -> str | bytes:
+        """The serialized program."""
+
+    @property
+    def target(self) -> CompilerTarget:
+        """The hardware snapshot used for compilation."""
+
+    @property
+    def payload_specification(self) -> PayloadSpecification:
+        """The payload format and capabilities used for compilation."""
+
+def submit_program(
+    program: str
+    | os.PathLike[str]
+    | qiskit.circuit.QuantumCircuit
+    | QCProgram
+    | QCOProgram
+    | JeffProgram
+    | OpenQASMProgram
+    | CompiledProgram,
+    *,
+    target: str | mqt.core.qdmi.Device,
+    num_shots: int = 1024,
+    program_format: mqt.core.qdmi.ProgramFormat | None = None,
+    enable_timing: bool = False,
+    enable_statistics: bool = False,
+    custom1: str | bool | float | None = None,
+    custom2: str | bool | float | None = None,
+    custom3: str | bool | float | None = None,
+    custom4: str | bool | float | None = None,
+    custom5: str | bool | float | None = None,
+) -> mqt.core.qdmi.Job:
+    """Compile source or submit a compiled program to a device.
+
+    ``target`` accepts a registered device ID or an open device.
     """

@@ -40,9 +40,11 @@ if(NOT TARGET ${TARGET_NAME})
   # Add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon)
   mqt_llvm_target_disable_rtti(${TARGET_NAME})
-  if(UNIX AND NOT APPLE)
-    # Keep symbols from static dependencies local. A plugin-enabled host can otherwise interpose
-    # LLVM's process-wide registries when it loads this device.
+  # Keep symbols from static dependencies local. A plugin-enabled host can otherwise interpose
+  # LLVM's process-wide registries when it loads this device.
+  if(APPLE)
+    target_link_options(${TARGET_NAME} PRIVATE "LINKER:-exported_symbol,_${QDMI_PREFIX}_QDMI_*")
+  elseif(UNIX)
     target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
   endif()
   target_link_libraries(${TARGET_NAME} PRIVATE MLIRQCODDFunctionality MQTCompilerPrograms

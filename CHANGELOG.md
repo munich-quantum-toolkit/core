@@ -41,10 +41,10 @@ releases may include breaking changes.
   [**@burgholzer**])
 - ✨ Add immutable MLIR compiler targets, selected payload specifications,
   payload-aware control-flow legalization, QDMI device integration, ordered
-  operation applicability, directional native synthesis, and target compilation
-  through C++, Python, and `mqt-cc` ([#2285], [#2219], [#2162], [#2049],
-  [#1999], [#1993], [#1687], [#2497]) ([**@MatthiasReumann**],
-  [**@simon1hofmann**], [**@burgholzer**])
+  operation applicability, directional native synthesis, target compilation
+  through C++, Python, and `mqt-cc`, and device submission APIs ([#2497],
+  [#2495], [#2285], [#2219], [#2162], [#2049], [#1999], [#1993], [#1687])
+  ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
 
 #### Import and export
 
@@ -936,6 +936,7 @@ for previous changelogs._
 
 [#2500]: https://github.com/munich-quantum-toolkit/core/pull/2500
 [#2497]: https://github.com/munich-quantum-toolkit/core/pull/2497
+[#2495]: https://github.com/munich-quantum-toolkit/core/pull/2495
 [#2494]: https://github.com/munich-quantum-toolkit/core/pull/2494
 [#2493]: https://github.com/munich-quantum-toolkit/core/pull/2493
 [#2478]: https://github.com/munich-quantum-toolkit/core/pull/2478

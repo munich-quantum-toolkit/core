@@ -34,6 +34,7 @@ target_compile_definitions(
   mqt-core-mlir-unittests-compiler
   PRIVATE
     MQT_CORE_MLIR_SC_DEVICE_LIBRARY="$<TARGET_FILE:MQT::CoreQDMIScDevice>"
+    MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY="$<TARGET_FILE:MQT::CoreQDMI_DDSIM_Device>"
     MQT_CORE_MLIR_HETEROGENEOUS_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/heterogeneous-sc.json"
     MQT_CORE_MLIR_HIGHER_ARITY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/higher-arity-sc.json"
     MQT_CORE_MLIR_DIRECTIONAL_ONE_WAY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-one-way-sc.json"

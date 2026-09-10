@@ -43,6 +43,7 @@
 #include "llvm/Bitcode/BitcodeWriter.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/Verifier.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/raw_ostream.h"
@@ -364,6 +365,10 @@ translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
     return nullptr;
   }
   qir::normalizeQIRModuleFlags(*llvmModule);
+  if (llvm::verifyModule(*llvmModule, &llvm::errs())) {
+    mod.emitError("exported QIR failed LLVM IR verification");
+    return nullptr;
+  }
   return llvmModule;
 }
 

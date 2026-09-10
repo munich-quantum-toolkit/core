@@ -9,6 +9,7 @@
  */
 
 #include "qdmi/Client.hpp"
+#include "qdmi/common/Common.hpp"
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
@@ -40,7 +41,7 @@ using namespace nb::literals;
 
 namespace bindings {
 void registerSlurm(nb::module_& qdmiModule);
-}
+} // namespace bindings
 
 namespace {
 template <typename Query>
