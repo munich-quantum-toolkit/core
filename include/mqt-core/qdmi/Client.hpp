@@ -1017,12 +1017,16 @@ private:
   template <maybe_optional_value_or_string T>
   [[nodiscard]] T queryProperty(const QDMI_Site_Property prop) const {
     const std::string msg = std::string("Querying ") + qdmi::toString(prop);
-    return detail::queryProperty<T>(
-        [&](const size_t size, void* value, size_t* sizeRet) {
-          return QDMI_device_query_site_property(device_.get(), site_, prop,
-                                                 size, value, sizeRet);
-        },
-        msg, std::string("Querying size") + qdmi::toString(prop));
+    const auto query = [&](const size_t size, void* value, size_t* sizeRet) {
+      return QDMI_device_query_site_property(device_.get(), site_, prop, size,
+                                             value, sizeRet);
+    };
+    if constexpr (string_or_optional_string<T>) {
+      return detail::queryProperty<T>(
+          query, msg, std::string("Querying size") + qdmi::toString(prop));
+    } else {
+      return detail::queryProperty<T>(query, msg, msg);
+    }
   }
 
   /// The QDMI device handle that owns the site.

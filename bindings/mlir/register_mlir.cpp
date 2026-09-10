@@ -274,10 +274,14 @@ programFromString(const std::string& input) {
 [[nodiscard]] static mlir::CompilerInput
 programFromInput(const nb::object& program, const bool inplace) {
   if (nb::isinstance<nb::str>(program)) {
-    return programFromString(nb::cast<std::string>(program));
+    const auto input = nb::cast<std::string>(program);
+    const nb::gil_scoped_release release;
+    return programFromString(input);
   }
   if (nb::hasattr(program, "__fspath__")) {
-    return programFromPath(nb::cast<std::filesystem::path>(program));
+    const auto path = nb::cast<std::filesystem::path>(program);
+    const nb::gil_scoped_release release;
+    return programFromPath(path);
   }
   if (nb::isinstance<mlir::QCProgram>(program)) {
     auto& value = nb::cast<mlir::QCProgram&>(program);
@@ -318,9 +322,10 @@ programFromInput(const nb::object& program, const bool inplace) {
 compileProgram(const nb::object& program, const mlir::ProgramFormat output,
                const bool inplace, const std::string& qcoPipeline,
                const bool enableTiming, const bool enableStatistics) {
-  return takeResult(mlir::runDefaultPipeline(programFromInput(program, inplace),
-                                             output, qcoPipeline, enableTiming,
-                                             enableStatistics));
+  auto input = programFromInput(program, inplace);
+  const nb::gil_scoped_release release;
+  return takeResult(mlir::runDefaultPipeline(
+      std::move(input), output, qcoPipeline, enableTiming, enableStatistics));
 }
 
 /// Resolve an open device or registered ID.
@@ -371,11 +376,19 @@ compileProgramForTarget(const nb::object& program, const nb::object& target,
         nb::cast<const mlir::CompilerTarget&>(target), std::move(payload));
     auto input = programFromInput(program, inplace);
     if (output) {
-      return nb::cast(takeResult(mlir::runDefaultPipeline(
-          std::move(input), environment, enableTiming, enableStatistics)));
+      auto compiled = [&] {
+        const nb::gil_scoped_release release;
+        return takeResult(mlir::runDefaultPipeline(
+            std::move(input), environment, enableTiming, enableStatistics));
+      }();
+      return nb::cast(std::move(compiled));
     }
-    return nb::cast(takeResult(mlir::CompiledProgram::compile(
-        std::move(input), environment, enableTiming, enableStatistics)));
+    auto compiled = [&] {
+      const nb::gil_scoped_release release;
+      return takeResult(mlir::CompiledProgram::compile(
+          std::move(input), environment, enableTiming, enableStatistics));
+    }();
+    return nb::cast(std::move(compiled));
   }
   if (output) {
     throw nb::value_error("Device targets select their output automatically; "
@@ -438,8 +451,8 @@ template <class Function>
     return std::forward<Function>(function)(
         nb::cast<const mlir::QCOProgram&>(program));
   }
-  auto compiled = takeResult(mlir::runDefaultPipeline(
-      programFromInput(program, false), mlir::ProgramFormat::QCO));
+  auto compiled = compileProgram(program, mlir::ProgramFormat::QCO, false,
+                                 "mqt-qco-default", false, false);
   return std::forward<Function>(function)(std::get<mlir::QCOProgram>(compiled));
 }
 
