@@ -264,6 +264,9 @@ private:
     if (callee == QIR_MEASURE || callee == QIR_RESET) {
       return index == 0;
     }
+    if (callee == "__quantum__qis__cnot__body") {
+      return index < 2;
+    }
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   if (callee == QIR_##GETTER) {                                                \
     return index >= (PARAMS) && index < (PARAMS) + (TARGETS);                  \
@@ -294,11 +297,20 @@ private:
                  : FailureOr<uint64_t>(capacity);
   }
 
-  /// Return the capacity required by scalar qubit operands of known QIS calls.
+  /// Count scalar QIS operands and qubit stores emitted for packed arguments.
   static FailureOr<uint64_t> getNumQubits(LLVM::LLVMFuncOp& main) {
     FailureOr<uint64_t> capacity = uint64_t{0};
-    main.walk([&](LLVM::CallOp call) {
-      if (!call.getCallee()) {
+    main.walk([&](Operation* operation) {
+      if (failed(capacity)) {
+        return;
+      }
+      if (auto store = dyn_cast<LLVM::StoreOp>(operation);
+          store && store->hasAttr(QIR_QUBIT_STORE_ATTR)) {
+        capacity = includeStaticResource(store.getValue(), *capacity);
+        return;
+      }
+      auto call = dyn_cast<LLVM::CallOp>(operation);
+      if (!call || !call.getCallee()) {
         return;
       }
       for (auto [index, operand] : llvm::enumerate(call.getArgOperands())) {

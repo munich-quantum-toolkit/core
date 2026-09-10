@@ -43,6 +43,9 @@ class LLVMFuncOp;
 
 namespace mlir::qir {
 
+/// Marks stores of qubit pointers into compiler-emitted control arrays/tuples.
+inline constexpr auto QIR_QUBIT_STORE_ATTR = "qir.qubit_store";
+
 /// Normalize QIR profile module flags after MLIR-to-LLVM translation.
 ///
 /// MLIR translates integer-valued `llvm.module_flags` attributes to i32
@@ -130,6 +133,7 @@ inline StringRef selectQISFunctionName(const StringRef body,
 /// Calls with three or more controls use the generic controlled specialization:
 /// the first argument is an array of controls and the second is either the
 /// single target or a tuple containing parameters followed by targets.
+/// Qubit stores carry a role attribute for resource counting after lowering.
 void emitQISCall(OpBuilder& builder, Operation* anchor, Location loc,
                  ValueRange parameters, ValueRange controls, ValueRange targets,
                  StringRef fnName);

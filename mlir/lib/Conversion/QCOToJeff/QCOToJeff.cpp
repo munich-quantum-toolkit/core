@@ -273,57 +273,21 @@ static void handleResult(Operation* op, ConversionPatternRewriter& rewriter,
   }
 }
 
-/// Target operands: `adaptor.getOperands()` at the matched op, or
-/// `state.targetsIn` while lowering inside `qco.ctrl` / `qco.inv`.
-///
-/// @param op The operation being converted.
-/// @param adaptor The operation adaptor of the operation.
-/// @param state The lowering state.
-/// @tparam NumParams Number of parameters to drop from the end of the operand
-/// list.
-/// @tparam OpType The type of the operation.
-/// @tparam OpAdaptorType The type of the operation adaptor.
-/// @return The target operands.
-template <size_t NumParams, typename OpType, typename OpAdaptorType>
-[[nodiscard]] static SmallVector<Value>
-getEffectiveTargetOperands(OpType op, OpAdaptorType adaptor,
-                           LoweringState& state) {
-  if (!state.inModifier()) {
-    return adaptor.getOperands().drop_back(NumParams);
+/// Use the full target list guaranteed by the modifier preflight.
+template <size_t NumParams, typename OpAdaptorType>
+[[nodiscard]] static ValueRange
+getEffectiveTargetOperands(OpAdaptorType adaptor, LoweringState& state) {
+  if (state.inModifier()) {
+    return state.targetsIn;
   }
-
-  SmallVector<Value> targets;
-  for (auto targetArg : op->getOperands().drop_back(NumParams)) {
-    auto target =
-        state.targetsIn[cast<BlockArgument>(targetArg).getArgNumber()];
-    targets.push_back(target);
-  }
-  return targets;
+  return adaptor.getOperands().drop_back(NumParams);
 }
 
-/// Records the qubits the body of @p op operates on.
-///
-/// Outside of an enclosing modifier, the body operates on @p qubitsIn
-/// directly. Inside one, @p qubitsIn are block arguments aliasing the qubits of
-/// the enclosing modifier and are resolved accordingly.
-///
-/// @param op The `qco.inv` or `qco.pow` operation being converted.
-/// @param qubitsIn The type-converted input qubits of @p op.
-/// @param state The lowering state.
-template <typename OpType>
-static void updateTargetsIn(OpType op, ValueRange qubitsIn,
-                            LoweringState& state) {
+/// Nested modifiers retain the enclosing modifier's full target list.
+static void updateTargetsIn(ValueRange qubitsIn, LoweringState& state) {
   if (state.targetsIn.empty()) {
     state.targetsIn = llvm::to_vector(qubitsIn);
-    return;
   }
-
-  auto outerQubits = state.targetsIn;
-  SmallVector<Value> innerQubits;
-  for (auto arg : op.getBody()->getArguments()) {
-    innerQubits.push_back(outerQubits[arg.getArgNumber()]);
-  }
-  state.targetsIn = std::move(innerQubits);
 }
 
 /// Lowers QCO gates to matching jeff ops.
@@ -344,7 +308,7 @@ convertJeffGate(QCOOpType op, typename QCOOpType::Adaptor adaptor,
                 std::index_sequence<TargetIndices...> /*targetIndices*/,
                 std::index_sequence<ParamIndices...> /*paramIndices*/) {
   constexpr std::size_t numParams = sizeof...(ParamIndices);
-  auto targets = getEffectiveTargetOperands<numParams>(op, adaptor, state);
+  auto targets = getEffectiveTargetOperands<numParams>(adaptor, state);
   assert(targets.size() >= sizeof...(TargetIndices) &&
          "Not enough operands available for conversion");
   auto params = op.getParameters();
@@ -1437,7 +1401,7 @@ struct ConvertQCOCustomGateToJeff final
       }
     }
 
-    auto targets = getEffectiveTargetOperands<NumParams>(op, adaptor, state);
+    auto targets = getEffectiveTargetOperands<NumParams>(adaptor, state);
     assert(targets.size() >= NumTargets &&
            "Not enough operands available for conversion");
 
@@ -1471,7 +1435,7 @@ struct ConvertQCOPPRGateToJeff final : StatefulOpConversionPattern<QCOOpType> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
 
-    auto targets = getEffectiveTargetOperands<1>(op, adaptor, state);
+    auto targets = getEffectiveTargetOperands<1>(adaptor, state);
     assert(targets.size() >= 2 &&
            "Not enough operands available for conversion");
     createPPROp(op, rewriter, state, targets, {p0_, p1_});
@@ -1503,7 +1467,7 @@ struct ConvertQCOU2OpToJeff final : StatefulOpConversionPattern<U2Op> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    auto targets = getEffectiveTargetOperands<2>(op, adaptor, state);
+    auto targets = getEffectiveTargetOperands<2>(adaptor, state);
     assert(!targets.empty() && "Not enough operands available for conversion");
     auto target = targets.front();
 
@@ -1544,7 +1508,7 @@ struct ConvertQCOBarrierOpToJeff final
   matchAndRewrite(BarrierOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    auto targets = getEffectiveTargetOperands<0>(op, adaptor, state);
+    auto targets = getEffectiveTargetOperands<0>(adaptor, state);
     createCustomOp(op, rewriter, state, targets, {}, false, "barrier");
     return success();
   }
@@ -1642,7 +1606,7 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
     // Set modifier information
     state.inInvOp = true;
     state.invOp = op;
-    updateTargetsIn(op, adaptor.getQubitsIn(), state);
+    updateTargetsIn(adaptor.getQubitsIn(), state);
 
     // Inline region
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
@@ -1705,7 +1669,7 @@ struct ConvertQCOPowOpToJeff final : StatefulOpConversionPattern<PowOp> {
     state.inPowOp = true;
     state.powOp = op;
     state.power = static_cast<uint8_t>(*exponent);
-    updateTargetsIn(op, adaptor.getQubitsIn(), state);
+    updateTargetsIn(adaptor.getQubitsIn(), state);
 
     // Inline region
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),

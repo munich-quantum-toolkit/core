@@ -554,6 +554,29 @@ module {
       builder.getStrArrayAttr({"required_num_qubits", "8"})));
 }
 
+TEST_F(QIRTest, MetadataCountsCnotAliasQubits) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    llvm.func @__quantum__qis__cnot__body(!llvm.ptr, !llvm.ptr)
+    llvm.func @main() attributes {passthrough = ["entry_point"]} {
+      %id = llvm.mlir.constant(7 : i64) : i64
+      %control = llvm.inttoptr %id : i64 to !llvm.ptr
+      %target = llvm.mlir.zero : !llvm.ptr
+      llvm.call @__quantum__qis__cnot__body(%control, %target)
+          : (!llvm.ptr, !llvm.ptr) -> ()
+      llvm.return
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  OpBuilder builder(context.get());
+  EXPECT_TRUE(llvm::is_contained(
+      getMainFunction(*moduleOp).getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_qubits", "8"})));
+}
+
 TEST_F(QIRTest, MetadataDoesNotCountResultReadsAsQubits) {
   auto module = parseSourceString<ModuleOp>(R"mlir(
 module {
@@ -707,13 +730,14 @@ TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
         auto control0 = builder.staticQubit(0);
         auto control1 = builder.staticQubit(1);
         auto control2 = builder.staticQubit(2);
-        auto target = builder.staticQubit(3);
+        auto target = builder.staticQubit(7);
         builder.mcrx(0.25, {control0, control1, control2}, target);
         return builder.intConstant(0);
       },
       QIRProgramBuilder::Profile::Base);
 
   ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
   EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(QIR_RX_CTL));
   auto main = getMainFunction(module.get());
   ASSERT_TRUE(main);
@@ -724,6 +748,11 @@ TEST_F(QIRTest, BaseBuilderUsesGenericSpecializationForThreeControls) {
       ArrayAttr::get(context.get(),
                      {StringAttr::get(context.get(), "qir_profiles"),
                       StringAttr::get(context.get(), "base_profile")})));
+  EXPECT_TRUE(llvm::is_contained(
+      passthrough,
+      ArrayAttr::get(context.get(),
+                     {StringAttr::get(context.get(), "required_num_qubits"),
+                      StringAttr::get(context.get(), "8")})));
 }
 
 TEST_F(QIRTest, UsesTranslationCompatibleModuleFlagWidths) {

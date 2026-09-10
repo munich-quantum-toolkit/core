@@ -32,6 +32,7 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Types.h"
 #include "mlir/IR/ValueRange.h"
+#include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
@@ -304,7 +305,14 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
       origins[output] = origin(input);
     }
   };
-  auto result = moduleOp.walk<WalkOrder::PostOrder>([&](Operation* op) {
+  auto result = moduleOp.walk([&](Operation* op, const WalkStage& stage) {
+    if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
+      tie(unitary.getInputQubits(), unitary.getOutputQubits());
+      return WalkResult::skip();
+    }
+    if (!stage.isAfterAllRegions()) {
+      return WalkResult::advance();
+    }
     bool positional = true;
     if (auto loop = dyn_cast<scf::ForOp>(op)) {
       positional = corresponds(loop.getRegionIterArgs(),
@@ -329,8 +337,6 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
                         region.front().getTerminator()->getOperands());
       }
       tie(op->getOperands(), op->getResults());
-    } else if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(op)) {
-      tie(unitary.getInputQubits(), unitary.getOutputQubits());
     } else if (auto measure = dyn_cast<qco::MeasureOp>(op)) {
       tie(ValueRange{measure.getQubitIn()}, ValueRange{measure.getQubitOut()});
     } else if (auto reset = dyn_cast<qco::ResetOp>(op)) {

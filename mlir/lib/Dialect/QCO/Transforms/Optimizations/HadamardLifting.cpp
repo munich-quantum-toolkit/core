@@ -151,7 +151,8 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     // The Hadamard gate must be successor of the target of a CNOT
     auto inQubitHadamard = hadamardGate.getInputQubit(0);
     auto cnotGate = inQubitHadamard.getDefiningOp<CtrlOp>();
-    if (!cnotGate) {
+    if (!cnotGate || cnotGate.getNumControls() == 0 ||
+        cnotGate.getNumTargets() != 1) {
       return failure();
     }
     if (auto innerUnitary =

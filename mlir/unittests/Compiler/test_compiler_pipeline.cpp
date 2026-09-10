@@ -1792,6 +1792,41 @@ TEST_F(CompilerPipelineTest, JeffBinaryRoundTripPreservesReusableFunctions) {
   EXPECT_EQ(helper.getNumResults(), 0);
 }
 
+TEST_F(CompilerPipelineTest, QIRCountsPackedStaticQubits) {
+  for (const auto* gate :
+       {"qc.x %t : !qc.qubit", "qc.rx(%angle) %t : !qc.qubit"}) {
+    SCOPED_TRACE(gate);
+    auto qc = QCProgram::fromMLIRString(std::string(R"mlir(module {
+      func.func @main() attributes {mqt.entry_point} {
+        %angle = arith.constant 0.25 : f64
+        %q0 = qc.static 0 : !qc.qubit
+        %q1 = qc.static 1 : !qc.qubit
+        %q2 = qc.static 2 : !qc.qubit
+        %q7 = qc.static 7 : !qc.qubit
+        qc.ctrl(%q1, %q2, %q7) targets(%t = %q0) {
+    )mlir") + gate + R"mlir(
+          qc.yield
+        } : {!qc.qubit, !qc.qubit, !qc.qubit}, {!qc.qubit}
+        return
+      }
+    })mlir");
+    ASSERT_TRUE(qc);
+    ASSERT_TRUE(succeeded(verify(qc->module())));
+    for (const auto format :
+         {ProgramFormat::QIRBase, ProgramFormat::QIRAdaptive}) {
+      auto output = runDefaultPipeline(CompilerInput{qc->copy()}, format);
+      ASSERT_TRUE(output);
+      auto& qir = std::get<QIRProgram>(*output);
+      ASSERT_TRUE(succeeded(verify(qir.module())));
+      OpBuilder builder(qir.module().getContext());
+      EXPECT_TRUE(llvm::is_contained(
+          getMainFunction(qir.module()).getPassthroughAttr(),
+          builder.getStrArrayAttr({"required_num_qubits", "8"})));
+      EXPECT_TRUE(qir.llvmIR());
+    }
+  }
+}
+
 TEST_F(CompilerPipelineTest, QIRPreservesSparseStaticQubitIdsAndCapacity) {
   auto qc = QCProgram::fromMLIRString(R"mlir(module {
     func.func @main() attributes {mqt.entry_point} {

@@ -1,90 +1,90 @@
 🤖 *AI text below* 🤖 <!-- rumdl-disable-line MD041 -->
 
-# MLIR audit resolution — issue #2255
+# MLIR contract audit — issue #2255
 
-Status: accepted findings resolved, except C1, owned by
-[PR #2502](https://github.com/munich-quantum-toolkit/core/pull/2502).
-Date: 2026-09-10. Rebased onto main at `7d9061796`; implementation originally
-started from `4faf68e3a`. Scope:
-[issue #2255](https://github.com/munich-quantum-toolkit/core/issues/2255),
-covering QC/QCO modifiers, conversions, optimization and mapping passes, QTensor
-cleanup, and QIR metadata.
+Status: implemented and locally validated. Baseline: main at `7d03fdd68`. Date:
+2026-09-10. Scope: QC/QCO modifiers and conversions, optimization and mapping
+passes, QTensor cleanup, and QIR metadata.
 
-The original counterexamples were measured on `d994fe683`; the
-[report and raw evidence at `b31e80e66`](https://github.com/munich-quantum-toolkit/core/tree/b31e80e66b01bea9e052962de6d65c951220d3b5/.agent/audits/issue-2255-evidence)
-remain available in history. Durable regression tests now replace the temporary
-probe harness and copied inputs.
+## Priorities after the upstream refresh
 
-## Resolved findings
+Main's merged performance work changes QIR preparation, QCO builder tracking,
+QTensor canonicalization, mapping, and parameter validation. It resolves none of
+the seven findings from the review of PR #2505 at `7f5542862`. The changes below
+retain those upstream implementations and the finite-parameter precondition; no
+exhaustive expression validation is restored.
 
-| ID  | Change and retained evidence                                                                                                                                                                                                                                                        |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| F1  | Mapping diagnoses opaque classical effects before mutation instead of silently reversing calls. `RejectOpaqueClassicalEffectsBeforeMutation` checks valid input, the diagnostic, and unchanged output. Existing CBit ordering tests remain.                                         |
-| F2  | Standalone QCO-to-jeff diagnoses modifiers outside its single-unitary, full-width, argument-order normal form before mutation. `RejectsNonNormalizedModifiersBeforeMutation` covers untouched targets and reordered gate operands. Existing normalized modifier round trips remain. |
-| F3  | XX±YY matrices use an explicit −i factor and negative conjugate instead of subtracting π/2 from large angles. `XXPlusMinusYYRemainUnitaryForLargeBeta` covers ±10¹⁶ and the largest finite double; ordinary-angle matrix oracles remain.                                            |
-| F4  | Measurement/Hadamard lifting uses nullable typed producer queries. Both `MeasuresBlockArguments` regressions verify IR and linearity before/after the pass and retain the actual measured wire.                                                                                     |
-| F5  | Full quantum unrolling uses the existing empty-body workaround so LLVM remaps terminator-only permutations. `PreservesYieldOnlyPermutation` checks the actual wires after 1, 2, 3, and 4 iterations.                                                                                |
-| F6  | Placement discovery follows only a flat extract/insert/deallocate chain. `RejectTensorControlFlowBeforeMutation` checks valid tensor control flow, diagnostics, and unchanged IR in both placement and mapping.                                                                     |
-| F7  | QIR capacity follows known QIS operand roles and all pointer uses. Metadata tests establish shared-ID capacity 8, result-read qubit capacity 1, and safe handling of dynamic pointer arguments; sparse-ID and overflow tests remain.                                                |
-| F8  | Resolved by main in #2495. `ClassifiesUnconditionalBackEdge` covers unconditional loops; this PR retains `MetadataIncludesMeasurementLatch` for measurement-dependent exits. Duplicate production code and the unconditional-loop test were dropped.                                |
-| F9  | `qco.index_switch` prints the bare attribute dictionary its parser accepts. `DefaultOnlyIndexSwitchParser` now round-trips and retains a discardable attribute.                                                                                                                     |
-| F10 | QC modifier body arguments must match targets; QCO control results must match control inputs. Compact owning-verifier tests cover both signature gaps and positional yields for all three modifiers.                                                                                |
-| C2  | Deleted the unused QTensor helper header and tests that only exercised those helpers. Actual alias/reset and index-boundary tests remain.                                                                                                                                           |
-| C3  | Removed ancestor-modifier checks from QTensor extract/insert verifiers. The nested-register-access test now checks the owning modifier; local index checks remain.                                                                                                                  |
-| C4  | Removed the impossible deallocation/map-failure branches and duplicate mapped-index vector from register shrinking. Existing QTensor transform tests remain.                                                                                                                        |
+1. **Correct packed static QIR capacity.** `emitQISCall` marks qubit stores in
+   control arrays and argument tuples. Metadata follows the stored pointers,
+   keeping qubit and result roles separate without aggregate alias analysis.
+   `QIRCountsPackedStaticQubits` checks three-control X/RX through the
+   compiler's base and adaptive profiles; the builder regression checks a sparse
+   tuple target. This closes a preexisting gap.
+2. **Constrain Hadamard lifting to its supported shape.** Require at least one
+   control and exactly one target. The sole-X matcher otherwise rewrites the
+   wrong wire when the first target is unused, or asserts on zero controls.
+   `LeavesUnsupportedControlShapesUnchanged` covers both valid inputs. This
+   closes a preexisting gap.
+3. **Terminate modifier verification.** Each wire producer must precede the
+   previous producer in the same block. Operation verification runs before SSA
+   dominance checking; `RejectsCyclicWireProducers` prevents the new verifier
+   from hanging on malformed cyclic SSA.
+4. **Retain the supported CNOT alias.** Include `__quantum__qis__cnot__body` in
+   scalar operand roles. `MetadataCountsCnotAliasQubits` covers the regression
+   where static IDs 7 and 0 produced capacity 0 instead of 8.
+5. **Remove identity remapping in QCO-to-jeff.** The preflight's full-width,
+   argument-order contract permits a view of the existing target list and
+   eliminates the nested target-copy loop. Existing normalized modifier round
+   trips and rejection tests retain the supported boundary.
+6. **Skip modifier interiors in QCO-to-QC origin collection.** Verified
+   modifiers tie external outputs directly to inputs. Internal entries have no
+   consumer. A staged walk preserves postorder handling of control flow and
+   function-return correspondence.
+7. **Finish register-shrinking cleanup.** Remove three impossible operand
+   identity checks and exit before sorting/remapping unchanged registers. Keep
+   constant-index and bounds checks, including dynamically typed tensors.
 
-Regressions live in `mlir/unittests/Conversion/{JeffRoundTrip,QCOToQC}` and
-`mlir/unittests/Dialect/{QC,QCO,QIR,QTensor}`. The phase-extraction fixture in
-`mlir/unittests/Dialect/MQT/Transforms` retains its original purpose with valid
-positional yields.
+## Retained audit changes
 
-## Contract decisions and duplicate work
+- **F1/F6:** mapping diagnoses opaque classical effects and tensor control flow
+  before mutation. Existing CBit scheduling and flat tensor chains remain.
+- **F2/F10:** QC/QCO modifier signatures and positional yields have one owning
+  verifier. Real SWAP gates and reordered gate operands remain valid. Remove 13
+  repeated canonicalizer guards and redundant conversion checks; replace invalid
+  permutation-only tests with verifier coverage.
+- **F3/F4/F5/F9:** retain the XX±YY large-angle correction, nullable producer
+  matching, yield-only loop-unroll fix, and index-switch attribute round trip.
+- **F7:** preserve sparse-ID, overflow, result-role, and dynamic-pointer tests
+  alongside the packed-pointer and CNOT corrections above.
+- **C2/C3/C4:** delete the unused QTensor helper header, duplicate ancestor
+  checks, and redundant register-shrinking bookkeeping. Keep slot identity,
+  reset, and index-boundary regressions.
 
-- The user accepted positional correspondence between modifier arguments and
-  yielded qubits. The QCO region verifier follows unitary wire ties after nested
-  operations have been verified. Real SWAP gates and reordered gate operands
-  remain valid; a bare yield permutation does not.
-- This removes 13 repeated canonicalizer guards and redundant modifier checks in
-  QCO-to-QC. The old permutation-only canonicalization test file and three
-  invalid conversion cases were replaced by owning-verifier coverage. Tests for
-  valid gate operand reordering, modifiers, and control-flow permutations
-  remain.
-- Modifier input uniqueness is checked once in the shared verifier. SSA result
-  identity and positional yields make the old control-output uniqueness checks
-  redundant. The regression checks duplicate inputs and yields for Ctrl/Inv/Pow.
-- Mapping retains its deterministic scheduler and CBit effect model. A trial
-  that serialized all effects broke routing dominance repair; it was discarded.
-  Other classical side effects and tensor control flow need lowering first.
-- QIR metadata recognizes the compiler's known QIS calls. The result-read
-  counterexample uses a QIS spelling, while this compiler emits
-  `__quantum__rt__read_result`; the loop regression uses the latter. This change
-  does not add a runtime alias or claim support for arbitrary QIS ABIs.
-- C1 duplicates finding 8 in #2502. Rechecked that PR at `da67d7fc1`: it now
-  implements removal of the QC-to-QCO modifier-verification walk and relocates
-  its tests. That patch is deliberately not duplicated here. Its QIR output
-  ordering, comparator, diagnostics, and lifetime fixes are distinct.
-- F8 is now implemented in main by #2495. The rebase keeps main's implementation
-  and unconditional-back-edge test, dropping the duplicate fix and regression
-  from this PR. The distinct measurement-latch regression remains here.
+## Ownership and limits
 
-## Validation and limits
+C1 duplicates finding 8 in
+[PR #2502](https://github.com/munich-quantum-toolkit/core/pull/2502), rechecked
+at `39b5ecd71`; its QC-to-QCO validation cleanup remains there. Main already
+owns F8's loop classification from #2495. This PR retains only the
+measurement-latch regression for that finding.
 
-The affected GoogleTest binaries are built with assertions enabled against
-LLVM/MLIR 23.1.0. Post-rebase validation at `d0bcfa697`: 2,687 tests pass across
-15 binaries (QC/QCO/QTensor/QIR IR, QCO utilities and optimizations, mapping,
-decomposition, target synthesis, phase normalization, QTensor transforms,
-QC↔QCO, jeff round trips, and compiler pipelines). Run each under
-`build/release/mlir/unittests` with `--gtest_brief=1`.
+QIR resource inference covers supported scalar calls and compiler-emitted
+aggregate arguments. It does not infer arbitrary external QIS layouts or pointer
+aliases. QC-to-QIR entry arguments, measurement-bearing helpers, and permissive
+imports of unregistered operations remain separate support questions. Passes
+rely on valid IR; no blanket pre-pass verification is added.
 
-`uvx nox -s lint` and full changed-file `uvx nox -s cpp-lint` pass. The latter
-checked all 32 changed C++ files with zero findings at `d0bcfa697`. Context-only
-test setup now uses constructors without naming suppressions. No sanitizer,
-hardware execution, or measured speedup is claimed.
+The
+[original report and evidence](https://github.com/munich-quantum-toolkit/core/tree/b31e80e66b01bea9e052962de6d65c951220d3b5/.agent/audits/issue-2255-evidence)
+remain in Git history. Normal subsystem tests now own the regressions.
 
-Remaining candidates are not accepted findings: QC-to-QIR entry arguments and
-measurement-bearing helper support; permissive contexts with unregistered
-operations at import; and unsupported multi-target/zero-control Hadamard matcher
-shapes. These need a support decision or corrected semantic reproducers. The old
-controlled-SWAP yield-permutation concern is superseded by the new modifier
-contract. No blanket invalid-IR pass checks or previously closed broad
-resource-management work were revived.
+## Validation
+
+All 3,009 tests across 17 affected binaries pass with assertions enabled on
+LLVM/MLIR 23.1.0. The suites cover QC/QCO/QTensor/QIR IR, modifier consumers,
+optimizations, mapping, decomposition, target synthesis, phase normalization,
+QC↔QCO, jeff round trips, both QC-to-QIR profiles, and compiler pipelines.
+
+`uvx nox -s lint` and `uvx nox -s cpp-lint -- 7d03fdd68` pass. C++ lint checked
+every line of 34 changed C++ files with zero findings. No full-repository test
+matrix, measured speedup, sanitizer run, or hardware execution is claimed.

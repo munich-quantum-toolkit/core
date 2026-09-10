@@ -31,9 +31,9 @@
 
 namespace mlir::qco::detail {
 
-// Follow unitary ties only after nested operations have been verified.
+/// Follow unitary ties only after nested operations have been verified.
 static bool hasPositionalBodyYields(Block& body) {
-  // A valid modifier cannot permute fewer than two wires.
+  /// A valid modifier cannot permute fewer than two wires.
   if (body.getNumArguments() < 2) {
     return true;
   }
@@ -41,11 +41,15 @@ static bool hasPositionalBodyYields(Block& body) {
   for (auto [argument, yielded] : llvm::zip_equal(
            body.getArguments(), body.getTerminator()->getOperands())) {
     Value origin = yielded;
+    Operation* previous = body.getTerminator();
     while (origin != argument) {
       auto unitary = origin.getDefiningOp<UnitaryOpInterface>();
-      if (!unitary) {
+      /// SSA dominance is checked after operation verification.
+      if (!unitary || unitary->getBlock() != &body ||
+          !unitary->isBeforeInBlock(previous)) {
         return false;
       }
+      previous = unitary;
       origin = unitary.getInputForOutput(origin);
     }
   }

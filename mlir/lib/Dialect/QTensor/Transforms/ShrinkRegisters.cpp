@@ -62,17 +62,11 @@ struct TensorAccess {
     auto* user = *tensor.getUsers().begin();
 
     if (auto currentDealloc = dyn_cast<DeallocOp>(user)) {
-      if (currentDealloc.getTensor() != tensor) {
-        return failure();
-      }
       deallocOp = currentDealloc;
       return success();
     }
 
     if (auto extractOp = dyn_cast<ExtractOp>(user)) {
-      if (extractOp.getTensor() != tensor) {
-        return failure();
-      }
       auto index = getConstantIntValue(extractOp.getIndex());
       if (!index || failed(markLiveIndex(*index, tensorSize, live))) {
         return failure();
@@ -83,9 +77,6 @@ struct TensorAccess {
     }
 
     if (auto insertOp = dyn_cast<InsertOp>(user)) {
-      if (insertOp.getDest() != tensor) {
-        return failure();
-      }
       auto index = getConstantIntValue(insertOp.getIndex());
       if (!index || failed(markLiveIndex(*index, tensorSize, live))) {
         return failure();
@@ -118,7 +109,8 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
     SmallVector<TensorAccess> accesses;
     DeallocOp oldDeallocOp{};
     if (failed(collectTensorChain(allocOp, *oldSize, live, accesses,
-                                  oldDeallocOp))) {
+                                  oldDeallocOp)) ||
+        live.empty() || std::cmp_equal(live.size(), *oldSize)) {
       return failure();
     }
 
@@ -128,10 +120,6 @@ struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
     DenseMap<int64_t, int64_t> newIndexByOldIndex;
     for (auto [newIndex, oldIndex] : llvm::enumerate(liveIndices)) {
       newIndexByOldIndex.try_emplace(oldIndex, static_cast<int64_t>(newIndex));
-    }
-
-    if (newSize <= 0 || newSize == *oldSize) {
-      return failure();
     }
 
     rewriter.setInsertionPoint(allocOp);

@@ -103,3 +103,26 @@ TEST(QCOModifierVerificationTest, RequiresMatchingControlResults) {
   )mlir",
                                            &context));
 }
+
+TEST(QCOModifierVerificationTest, RejectsCyclicWireProducers) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, func::FuncDialect>();
+  std::string diagnostic;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& message) {
+    diagnostic = message.str();
+    return success();
+  });
+  EXPECT_FALSE(parseSourceString<ModuleOp>(R"mlir(
+    func.func @test(%q0: !qco.qubit, %q1: !qco.qubit)
+        -> (!qco.qubit, !qco.qubit) {
+      %r0, %r1 = qco.inv(%a = %q0, %b = %q1) {
+        %x = qco.x %y : !qco.qubit -> !qco.qubit
+        %y = qco.x %x : !qco.qubit -> !qco.qubit
+        qco.yield %y, %b : !qco.qubit, !qco.qubit
+      } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
+      return %r0, %r1 : !qco.qubit, !qco.qubit
+    }
+  )mlir",
+                                           &context));
+  EXPECT_NE(diagnostic.find("positionally"), std::string::npos);
+}

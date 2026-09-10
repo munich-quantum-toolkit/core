@@ -114,6 +114,45 @@ TEST_F(QCOHadamardLiftingTest, MeasuresBlockArguments) {
   EXPECT_EQ(h.getQubitIn(), hadamard.getArgument(0));
 }
 
+TEST_F(QCOHadamardLiftingTest, LeavesUnsupportedControlShapesUnchanged) {
+  for (const auto* source : {
+           R"mlir(
+        func.func @test(%control: !qco.qubit, %unused: !qco.qubit, %target: !qco.qubit)
+            -> (!qco.qubit, !qco.qubit, !qco.qubit, i1) {
+          %c, %u, %t = qco.ctrl(%control) targets(%a = %unused, %b = %target) {
+            %x = qco.x %b : !qco.qubit -> !qco.qubit
+            qco.yield %a, %x : !qco.qubit, !qco.qubit
+          } : ({!qco.qubit}, {!qco.qubit, !qco.qubit}) -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+          %h = qco.h %u : !qco.qubit -> !qco.qubit
+          %out, %bit = qco.measure %h : !qco.qubit
+          return %c, %out, %t, %bit : !qco.qubit, !qco.qubit, !qco.qubit, i1
+        }
+      )mlir",
+           R"mlir(
+        func.func @test(%q: !qco.qubit) -> (!qco.qubit, i1) {
+          %t = "qco.ctrl"(%q) <{operandSegmentSizes = array<i32: 0, 1>, resultSegmentSizes = array<i32: 0, 1>}> ({
+          ^bb0(%a: !qco.qubit):
+            %x = qco.x %a : !qco.qubit -> !qco.qubit
+            qco.yield %x : !qco.qubit
+          }) : (!qco.qubit) -> !qco.qubit
+          %h = qco.h %t : !qco.qubit -> !qco.qubit
+          %out, %bit = qco.measure %h : !qco.qubit
+          return %out, %bit : !qco.qubit, i1
+        }
+      )mlir",
+       }) {
+    auto parsed = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(parsed);
+    ASSERT_TRUE(succeeded(verify(*parsed)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*parsed)));
+    OwningOpRef<ModuleOp> before = parsed->clone();
+    ASSERT_TRUE(succeeded(runHadamardLiftingPass(*parsed)));
+    EXPECT_TRUE(succeeded(verify(*parsed)));
+    EXPECT_TRUE(succeeded(verifyLinearity(*parsed)));
+    EXPECT_TRUE(areModulesEquivalentWithPermutations(*parsed, *before));
+  }
+}
+
 // ##################################################
 // # Raise Hadamard over uncontrolled Pauli gate Tests
 // ##################################################
