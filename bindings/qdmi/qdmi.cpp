@@ -408,17 +408,14 @@ when the custom slot is unsupported.)pb");
                                        program, numShots, **options);
       },
       "program"_a, "num_shots"_a = 1024, "options"_a,
-      R"pb(Compile a source program for this device, or validate and submit a compiled program.
+      R"pb(Compile source or submit a compiled program to this device.
 
-The default is 1024 shots. Zero requests simulator state extraction. Compiled
-programs retain their format and are never silently recompiled. Their ordered
-sites, connectivity, operations, timing units, and payload capabilities must
-match this device; calibration-only changes are ignored.
+The default is 1024 shots; use zero for simulator state extraction. Compiled
+programs must match the device's compilation contract.
 
-Keyword options are ``program_format``, ``enable_timing``, ``enable_statistics``,
-and the existing ``custom1`` through ``custom5`` job parameters. Compilation
-options apply only to source inputs. The MLIR compiler is loaded on demand.
-Use ``submit_job`` for externally prepared raw payloads.)pb");
+Source inputs accept ``program_format``, ``enable_timing``, and
+``enable_statistics``. ``custom1`` through ``custom5`` are passed to the job.
+Use ``submit_job`` for raw payloads.)pb");
 
   device.def(
       "submit_job",

@@ -322,8 +322,7 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
                                              enableStatistics));
 }
 
-/// Resolve an execution destination once; authentication overrides belong to
-/// open_device.
+/// Resolve an open device or registered ID.
 [[nodiscard]] static qdmi::Device resolveDevice(const nb::object& target) {
   if (nb::isinstance<qdmi::Device>(target)) {
     return nb::cast<qdmi::Device>(target);
@@ -391,8 +390,7 @@ compileProgramForTarget(const nb::object& program, const nb::object& target,
       std::move(input), environment, enableTiming, enableStatistics)));
 }
 
-/// Shared implementation behind Device.submit, loaded lazily by the QDMI
-/// binding.
+/// Implementation of Device.submit, loaded by the QDMI binding.
 [[nodiscard]] static qdmi::Job
 submitToDevice(const qdmi::Device& device, const nb::object& program,
                int64_t numShots,
@@ -1628,9 +1626,7 @@ Returns:
 )pb");
 
   nb::class_<mlir::CompiledProgram>(
-      m, "CompiledProgram",
-      "Immutable serialized payload and verified compilation contract; owns no "
-      "device session.")
+      m, "CompiledProgram", "A compiled program ready for QDMI submission.")
       .def_prop_ro("program_format", &mlir::CompiledProgram::programFormat,
                    "The exact QDMI program format.")
       .def_prop_ro(
@@ -1643,7 +1639,7 @@ Returns:
             return nb::str(payload.data(), payload.size());
           },
           nb::sig("def payload(self) -> str | bytes"),
-          "The immutable serialized payload, without a text terminator.")
+          "The serialized program.")
       .def_prop_ro(
           "target",
           [](const mlir::CompiledProgram& self) {
@@ -1655,7 +1651,7 @@ Returns:
           [](const mlir::CompiledProgram& self) {
             return self.environment().payloadSpecification();
           },
-          "The selected payload contract, including guaranteed capabilities.");
+          "The payload format and capabilities used for compilation.");
 
   m.def("compile_program", &compileProgramForTarget, "program"_a, nb::kw_only(),
         "target"_a, "program_format"_a = nb::none(), "output"_a = nb::none(),
@@ -1664,16 +1660,12 @@ Returns:
         R"pb(Compile for a device ID, open device, or explicit compiler target.
 
 Device targets select Adaptive QIR (binary, text), OpenQASM 3, then Base QIR
-(binary, text) from supported formats. Selection precedes target compilation;
-capabilities use the private MQT report or maximal language/profile assumptions.
-Use ``program_format`` to override the format.
-Compilation returns an immutable :class:`CompiledProgram` without creating a
-job. Submit it with ``device.submit(compiled)``.
+(binary, text). Use ``program_format`` to select a format explicitly.
+Submit the returned :class:`CompiledProgram` with ``device.submit``.
 
 An explicit :class:`CompilerTarget` requires ``output`` to return a typed
-program, or ``program_format`` to return a verified compiled artifact.
-Typed inputs are copied unless ``inplace=True``. Format selection errors do
-not consume the input.)pb");
+program, or ``program_format`` to return a :class:`CompiledProgram`.
+Typed inputs are copied unless ``inplace=True``.)pb");
 
   m.def("_submit_to_device", &submitToDevice, "device"_a, "program"_a,
         "num_shots"_a = 1024, nb::kw_only(), "program_format"_a = nb::none(),
@@ -1694,12 +1686,10 @@ not consume the input.)pb");
             .attr("submit")(program, "num_shots"_a = numShots, **options);
       },
       "program"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024, "options"_a,
-      R"pb(Resolve a device once, compile if necessary, and submit a QDMI job.
+      R"pb(Open a device and call :meth:`mqt.core.qdmi.Device.submit`.
 
-Equivalent to opening ``target`` and calling ``device.submit``. ``target`` may
-also be an open device. Compilation and custom job options are forwarded to
-:meth:`mqt.core.qdmi.Device.submit`. The returned job retains its device session.
-Use ``num_shots=0`` for simulator state extraction.)pb");
+``target`` accepts a registered device ID or an open device. Additional keyword
+arguments are passed to ``Device.submit``.)pb");
 }
 
 } // namespace mqt

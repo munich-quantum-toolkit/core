@@ -72,8 +72,7 @@ OpenQASM classical registers use reverse declaration order, with each register
 most-significant-bit first. QIR samples follow the program's recorded outputs.
 
 DDSIM advertises maximal compiler-supported language/profile capabilities using
-MQT's versioned private `CUSTOM2` report. See the
-[capability report](../mlir/target_compilation.md#private-qdmi-capability-report).
+the [MQT capability marker](../mlir/target_compilation.md#capability-discovery).
 
 ## Compile and execute
 

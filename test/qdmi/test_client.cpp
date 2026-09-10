@@ -627,10 +627,8 @@ TEST_P(DeviceTest, UnsupportedCustomPropertyReturnsNullopt) {
 TEST_F(DDSimulatorDeviceTest, ReportsCompilerTargetMetadata) {
   EXPECT_EQ(device.queryCustomProperty<std::string>(CustomProperty::Custom1),
             "mqt.compiler-target.v1:all-to-all-homogeneous");
-  EXPECT_EQ(
-      device.queryCustomProperty<std::string>(CustomProperty::Custom2),
-      "mqt.compiler-payload.v1:"
-      R"({"openqasm3":"maximal","qir-base":"maximal","qir-adaptive":"maximal"})");
+  EXPECT_EQ(device.queryCustomProperty<std::string>(CustomProperty::Custom2),
+            "mqt.compiler-payload.v1:maximal");
 }
 #endif
 

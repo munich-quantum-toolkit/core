@@ -60,8 +60,8 @@ def test_submission_forms(form: str) -> None:
         ProgramFormat.QIR_BASE_STRING,
     ],
 )
-def test_exact_formats_and_sessionless_artifacts(program_format: ProgramFormat) -> None:
-    """Artifacts survive their compilation session and carry exact formats."""
+def test_compiled_formats(program_format: ProgramFormat) -> None:
+    """Compiled programs keep their selected format when the device is reopened."""
     device = open_device("mqt.ddsim.default")
     by_device = compile_program(BELL, target=device, program_format=program_format)
     by_id = compile_program(BELL, target="mqt.ddsim.default", program_format=program_format)

@@ -181,9 +181,8 @@ compiler target
   compilation, not a live device connection.
 
 compiled program
-  An immutable serialized execution payload with its exact format and verified
-  compilation contract. It owns no device session; submission checks whether
-  the destination still has a compatible contract.
+  A serialized program with the target and payload specification used to compile
+  it. Submission checks that the destination supports the same contract.
 
 target environment
   A compiler target paired with the selected payload specification for one

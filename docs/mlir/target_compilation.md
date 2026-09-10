@@ -8,19 +8,13 @@ mystnb:
 
 # Compile for a QDMI device
 
-An MLIR {code}`mlir::CompilerTarget` is an immutable snapshot of a circuit-model
-device. It contains the device sites, topology, native operations, and available
-calibration and ordered-applicability data. Compilation inlines reusable
-functions, decomposes supported multi-qubit operations, optimizes and maps the
-program, synthesizes native gates, and verifies that the result conforms to the
-target.
-
-The snapshot is independent of its originating QDMI session. It can therefore be
-stored, copied cheaply, and reused for multiple compilations.
+`compile_program` maps a program to a device's topology and native operations.
+The resulting {py:class}`~mqt.core.mlir.CompiledProgram` can be submitted with
+`device.submit`.
 
 ## Python
 
-Open the bundled local DDSIM device, compile once, and submit the artifact:
+Compile and submit a Bell circuit to the bundled DDSIM device:
 
 ```{code-cell} ipython3
 from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program, submit_program
@@ -44,16 +38,11 @@ assert sum(job.get_counts().values()) == 1024
 print(compiled.program_format)
 ```
 
-`target` accepts an open device or a registered device ID. The immutable
-{py:class}`~mqt.core.mlir.CompiledProgram` owns its serialized payload, exact
-format, and verified compilation contract; it owns no device session and creates
-no job. Payload selection precedes control-flow legalization and mapping:
+`target` accepts an open device or a registered device ID. The compiler chooses
 Adaptive QIR (binary, then text), OpenQASM 3, then Base QIR (binary, then text).
-Use `program_format=ProgramFormat.QASM3`, for example, to select a supported
-format explicitly. An unsupported override fails without fallback.
+Use `program_format=ProgramFormat.QASM3` to select a format explicitly.
 
-Both convenience forms compile against the destination and return the existing
-QDMI job:
+To compile and submit in one call:
 
 ```{code-cell} ipython3
 job = device.submit(bell_qasm)
@@ -64,81 +53,29 @@ job.wait()
 assert len(job.get_shots()) == 16
 ```
 
-Submission defaults to 1,024 shots. Zero requests simulator state extraction;
-negative counts are rejected. A job retains its session. An artifact can be
-submitted through another session with a matching contract. Before creating a
-job, submission compares ordered sites, connectivity, operation support and
-ordered applicability, timing units, and the selected payload's effective
-capabilities. Names and calibration-only data do not affect compatibility.
-Differences require recompilation for the destination; artifacts are never
-silently recompiled. Validation uses reported metadata and does not guarantee
-provider acceptance or an atomic device snapshot. Existing job errors remain
-observable. Raw `device.submit_job(payload, format, ...)` remains available for
-externally prepared payloads without compiler provenance.
+Submission defaults to 1,024 shots; use zero for simulator state extraction.
+Compiled programs can be reused with devices that have matching sites, topology,
+operations, timing units, and payload capabilities. Names and calibration-only
+changes do not affect compatibility. A mismatch requires recompilation. Use
+`device.submit_job` for raw payloads.
 
-The adapter assumes maximal compiler-supported language/profile capabilities
-when QDMI provides no MQT capability report. This is a compatibility assumption;
-provider acceptance and job failures remain observable. DDSIM explicitly
-advertises maximal support through the private report below. A report can
-replace the assumption with a restricted capability set and bounds. Compiled QIR
-currently requires a parameterless entry point with an `i64` status return. An
-entry point with no return value receives success status 0. Keep classical
-temporaries local; select OpenQASM 3 for global scalar outputs that would change
-that entry signature. An explicit `CompilerTarget` requires `output` for a typed
-program, or `program_format` for a submittable artifact with the full verified
-contract. Bundled SC devices such as `mqt.sc.iqm.garnet` are hardware models for
-compilation and do not advertise executable formats.
+An explicit `CompilerTarget` requires `output` for a typed compiler program, or
+`program_format` for a `CompiledProgram`. Bundled SC devices such as
+`mqt.sc.iqm.garnet` are hardware models for compilation rather than execution.
+For staged compilation with explicit capabilities, use `TargetEnvironment` and
+`PayloadSpecification`.
 
-Advanced callers can still construct a `TargetEnvironment` from a hardware
-snapshot and `PayloadSpecification` for staged QCO compilation. Such producers
-must include guaranteed baselines and set `optional_capabilities_known=True`
-only when their optional capability list is complete. The device adapter marks
-an explicit private report as known and the maximal fallback as unknown; equal
-effective capabilities remain compatible regardless of that provenance. Payload
-versions accept one to three numeric components, normalized with trailing zeros:
-`"2.1"` means `"2.1.0"`. They are exact versions, not ranges.
+QIR submission requires a parameterless entry point returning an `i64` status;
+the compiler adds status 0 to programs with no return value. Keep classical
+temporaries local, or select OpenQASM 3 for global scalar outputs.
 
-### Private QDMI capability report
+### Capability discovery
 
-Until QDMI standardizes capability discovery, MQT uses device property
-`QDMI_DEVICE_PROPERTY_CUSTOM2` for a NUL-terminated UTF-8 string. A versioned
-prefix distinguishes the report from unrelated provider properties:
-
-```text
-mqt.compiler-payload.v1:{"openqasm3":"maximal","qir-base":"maximal","qir-adaptive":"maximal"}
-```
-
-Version 1 defines `openqasm3` as OpenQASM 3.0 and the QIR keys as QIR 2.1
-profiles; text and binary forms share capabilities. DDSIM returns the report
-above. `maximal` means all compiler-supported capabilities of that
-language/profile. A missing report, an unrelated custom property, or an omitted
-format uses the maximal assumption for that format. Unknown report versions and
-malformed recognized reports fail contract construction.
-
-Each format can instead provide its complete effective capability list,
-including any guaranteed baseline capabilities. For example, this report bounds
-OpenQASM branch nesting and omits loop support:
-
-```text
-mqt.compiler-payload.v1:{"openqasm3":[{"id":"forward-branching","constraints":[{"id":"max-control-flow-nesting-depth","value":4}]}]}
-```
-
-Entries use the existing `ProgramCapability` fields: required `id`, optional
-unsigned `value` (default 0), and optional `constraints` (default empty).
-Constraints require an `id` and unsigned `value`. Unknown fields, duplicate IDs,
-and invalid types are rejected. The four structural capabilities and their
-constraints are described below. Adaptive QIR additionally reports
-`qir.dynamic-qubit-management`, `qir.dynamic-result-management`, `qir.arrays`,
-`qir.ir-functions`, `qir.multiple-return-points`, `qir.int-computations`, and
-`qir.float-computations`. These optional QIR features use value 0 and no
-constraints; final export checks them against the generated module flags.
-Multi-target QIR branching uses `multiway-branching`. Base QIR has no optional
-capabilities in this report; OpenQASM 3.0 has forward branching and both loop
-forms, and Adaptive QIR has all four structural capabilities.
-
-The report is an MQT extension, not a QDMI standard. It is independent of the
-`CUSTOM1` hardware-target marker and can be replaced when standardized QDMI
-capability discovery becomes available.
+The adapter assumes all compiler-supported capabilities for the selected format
+(OpenQASM 3.0 or QIR 2.1). DDSIM confirms this support with the NUL-terminated
+`QDMI_DEVICE_PROPERTY_CUSTOM2` marker `mqt.compiler-payload.v1:maximal`. An
+absent or unrelated property leaves the assumption in place; other
+`mqt.compiler-payload.*` markers are rejected.
 
 ### Payload control flow
 
@@ -203,7 +140,6 @@ counts; full unrolling additionally requires bounds and scaled steps that fit
 its signed arithmetic. The scaled step must also fit the loop induction-variable
 type. A zero, unknown, or misapplied constraint makes that capability group
 unusable. A capability absent from the selected specification is unsupported.
-The device adapter supplies the maximal set when it must use its fallback.
 
 This stage checks structural control flow only. Later lowering stages remain
 responsible for scalar types and operations, measurement provenance, function

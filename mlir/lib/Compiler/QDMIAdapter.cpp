@@ -23,7 +23,7 @@
 #include <llvm/ADT/Twine.h>
 #include <llvm/Support/CheckedArithmetic.h>
 #include <llvm/Support/Error.h>
-#include <llvm/Support/JSON.h>
+#include <llvm/Support/ErrorHandling.h>
 #include <mlir/Dialect/LLVMIR/LLVMDialect.h>
 #include <mlir/IR/Builders.h>
 #include <mlir/Support/LLVM.h>
@@ -568,11 +568,10 @@ static bool sameOperation(const CompilerTarget::Operation& lhs,
   return lhs.canonicalName() == rhs.canonicalName() &&
          lhs.arity() == rhs.arity() &&
          lhs.numParameters() == rhs.numParameters() &&
-         std::is_permutation(lhs.siteTuples().begin(), lhs.siteTuples().end(),
-                             rhs.siteTuples().begin(), rhs.siteTuples().end(),
-                             [](const auto& a, const auto& b) {
-                               return a.sites() == b.sites();
-                             });
+         std::ranges::is_permutation(lhs.siteTuples(), rhs.siteTuples(),
+                                     [](const auto& a, const auto& b) {
+                                       return a.sites() == b.sites();
+                                     });
 }
 
 static bool sameCapability(const ProgramCapability& lhs,
@@ -583,21 +582,26 @@ static bool sameCapability(const ProgramCapability& lhs,
 
 static llvm::Expected<QDMI_Program_Format>
 qdmiFormatForPayload(const PayloadSpecification& payload) {
-  for (const auto format : PROGRAM_FORMAT_PREFERENCE) {
-    auto baseline = payloadSpecificationForProgramFormat(format);
-    if (!baseline) {
-      return baseline.takeError();
-    }
-    if (baseline->format() == payload.format()) {
-      return format;
-    }
+  auto output = payload.compilerOutput();
+  if (!output) {
+    return output.takeError();
   }
-  return llvm::createStringError(
-      std::make_error_code(std::errc::invalid_argument),
-      "No QDMI program format for this payload");
+  const bool binary = payload.format().encoding == PayloadEncoding::Binary;
+  switch (*output) {
+  case ProgramFormat::OpenQASM3:
+    return QDMI_PROGRAM_FORMAT_QASM3;
+  case ProgramFormat::QIRBase:
+    return binary ? QDMI_PROGRAM_FORMAT_QIRBASEMODULE
+                  : QDMI_PROGRAM_FORMAT_QIRBASESTRING;
+  case ProgramFormat::QIRAdaptive:
+    return binary ? QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
+                  : QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING;
+  default:
+    llvm_unreachable("PayloadSpecification accepted a non-executable format");
+  }
 }
 
-/// Optional QIR flags and their capability IDs in MQT's private report.
+/// Optional QIR module flags and their payload capability IDs.
 constexpr std::array QIR_OPTIONAL_CAPABILITIES{
     std::pair{"dynamic_qubit_management", "qir.dynamic-qubit-management"},
     std::pair{"dynamic_result_management", "qir.dynamic-result-management"},
@@ -703,112 +707,28 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
   }
 }
 
-/// CUSTOM2 is namespaced so unrelated provider properties remain usable.
-/// A recognized report replaces the assumed maximal contract for that format.
 static llvm::Expected<PayloadSpecification>
 devicePayloadSpecification(const qdmi::Device& device,
                            QDMI_Program_Format format) {
-  auto maximal = payloadSpecificationForProgramFormat(format);
-  if (!maximal) {
-    return maximal.takeError();
+  auto payload = payloadSpecificationForProgramFormat(format);
+  if (!payload) {
+    return payload.takeError();
   }
-  const auto bytes = device.queryCustomProperty<std::vector<std::byte>>(
+  const auto metadata = device.queryCustomProperty<std::vector<std::byte>>(
       qdmi::CustomProperty::Custom2);
-  if (!bytes) {
-    return maximal;
-  }
-  auto text =
-      StringRef(reinterpret_cast<const char*>(bytes->data()), bytes->size());
-  if (text.ends_with(StringRef("\0", 1))) {
-    text = text.drop_back();
-  }
-  if (!text.starts_with("mqt.compiler-payload.")) {
-    return maximal;
-  }
-  if (!text.consume_front("mqt.compiler-payload.v1:")) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "Unsupported MQT compiler payload report version");
-  }
-  auto report = llvm::json::parse(text);
-  if (!report) {
-    return report.takeError();
-  }
-  const auto* object = report->getAsObject();
-  if (object == nullptr) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "MQT compiler payload report must be a JSON object");
-  }
-  for (const auto& [name, value] : *object) {
-    if (name != "openqasm3" && name != "qir-base" && name != "qir-adaptive") {
-      return llvm::createStringError(
-          std::make_error_code(std::errc::invalid_argument),
-          "Unknown format in MQT compiler payload report: " + name.str());
-    }
-  }
-  const auto& language = maximal->format();
-  const auto key =
-      language.id == "qir" ? "qir-" + language.profile : "openqasm3";
-  const auto* entry = object->get(key);
-  if (entry == nullptr) {
-    return maximal;
-  }
-  if (entry->getAsString() == "maximal") {
+  if (matchesMetadata(metadata, "mqt.compiler-payload.v1:maximal")) {
     return PayloadSpecification::create(
-        language,
-        std::vector<ProgramCapability>(maximal->capabilities().begin(),
-                                       maximal->capabilities().end()),
-        true);
+        payload->format(),
+        {payload->capabilities().begin(), payload->capabilities().end()}, true);
   }
-  const auto* capabilities = entry->getAsArray();
-  if (capabilities == nullptr) {
+  if (metadata && StringRef(reinterpret_cast<const char*>(metadata->data()),
+                            metadata->size())
+                      .starts_with("mqt.compiler-payload.")) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument),
-        "MQT payload entry must be 'maximal' or a capability array");
+        "Unsupported MQT compiler payload marker");
   }
-  std::vector<ProgramCapability> parsed;
-  parsed.reserve(capabilities->size());
-  for (const auto& capability : *capabilities) {
-    ProgramCapability result;
-    llvm::json::Path::Root root;
-    llvm::json::ObjectMapper mapper(capability, root);
-    const auto* cap = capability.getAsObject();
-    if (cap == nullptr || !mapper.map("id", result.id) ||
-        !mapper.mapOptional("value", result.value)) {
-      return root.getError();
-    }
-    for (const auto& [name, value] : *cap) {
-      if (name != "id" && name != "value" && name != "constraints") {
-        return llvm::createStringError(
-            std::make_error_code(std::errc::invalid_argument),
-            "Unknown field in MQT payload capability: " + name.str());
-      }
-    }
-    if (const auto* value = cap->get("constraints")) {
-      const auto* list = value->getAsArray();
-      if (list == nullptr) {
-        return llvm::createStringError(
-            std::make_error_code(std::errc::invalid_argument),
-            "MQT capability constraints must be an array");
-      }
-      for (const auto& constraint : *list) {
-        ProgramConstraint item;
-        llvm::json::ObjectMapper fields(constraint, root);
-        if (!fields.map("id", item.id) || !fields.map("value", item.value)) {
-          return root.getError();
-        }
-        if (constraint.getAsObject()->size() != 2) {
-          return llvm::createStringError(
-              std::make_error_code(std::errc::invalid_argument),
-              "Unknown field in MQT capability constraint");
-        }
-        result.constraints.push_back(std::move(item));
-      }
-    }
-    parsed.push_back(std::move(result));
-  }
-  return PayloadSpecification::create(language, std::move(parsed), true);
+  return payload;
 }
 
 llvm::Expected<TargetEnvironment>
@@ -870,17 +790,15 @@ llvm::Error validateTargetCompatibility(const TargetEnvironment& compiled,
     return incompatible("duration units differ");
   }
   if (lhs.nativeOperationsKind() != rhs.nativeOperationsKind() ||
-      !std::is_permutation(lhs.operations().begin(), lhs.operations().end(),
-                           rhs.operations().begin(), rhs.operations().end(),
-                           sameOperation)) {
+      !std::ranges::is_permutation(lhs.operations(), rhs.operations(),
+                                   sameOperation)) {
     return incompatible("native operations or ordered applicability differ");
   }
   const auto& a = compiled.payloadSpecification();
   const auto& b = destination.payloadSpecification();
   if (a.format() != b.format() ||
-      !std::is_permutation(a.capabilities().begin(), a.capabilities().end(),
-                           b.capabilities().begin(), b.capabilities().end(),
-                           sameCapability)) {
+      !std::ranges::is_permutation(a.capabilities(), b.capabilities(),
+                                   sameCapability)) {
     return incompatible("payload format or capabilities differ");
   }
   return llvm::Error::success();

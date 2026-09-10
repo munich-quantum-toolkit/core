@@ -61,14 +61,13 @@ compilerTargetFromDeviceId(std::string_view deviceId);
 [[nodiscard]] llvm::Expected<std::vector<std::string>>
 registeredQDMIDeviceIds();
 
-/// Maximal compiler-supported capabilities of an exact language/profile.
-/// This fallback is assumed rather than reported by the device.
+/// Compiler-supported capabilities of a QDMI program format.
 [[nodiscard]] llvm::Expected<PayloadSpecification>
 payloadSpecificationForProgramFormat(QDMI_Program_Format format);
 
 /// Snapshot the device and select its executable payload before compilation.
 /// Preference: Adaptive QIR (binary, text), OpenQASM 3, Base QIR (binary,
-/// text). A private MQT capability report overrides maximal assumptions.
+/// text).
 [[nodiscard]] llvm::Expected<TargetEnvironment> targetEnvironmentFromDevice(
     const qdmi::Device& device,
     std::optional<QDMI_Program_Format> format = std::nullopt);
@@ -79,9 +78,7 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format);
 validateTargetCompatibility(const TargetEnvironment& compiled,
                             const TargetEnvironment& destination);
 
-/// Immutable serialized output bound to a verified compilation contract.
-/// The artifact owns no device session and cannot be constructed from raw
-/// bytes.
+/// Compiled payload and the target used to check submission compatibility.
 class CompiledProgram {
 public:
   /// Compile and serialize for one selected hardware/payload contract.
@@ -92,7 +89,7 @@ public:
   [[nodiscard]] const TargetEnvironment& environment() const noexcept {
     return environment_;
   }
-  /// Exact serialized contents, without a text terminator.
+  /// Serialized program contents.
   [[nodiscard]] std::string_view payload() const noexcept { return payload_; }
   [[nodiscard]] QDMI_Program_Format programFormat() const noexcept {
     return format_;
@@ -106,7 +103,7 @@ private:
   QDMI_Program_Format format_;
 };
 
-/// Compile for an open device without creating a job or retaining the session.
+/// Compile for a QDMI device.
 [[nodiscard]] llvm::Expected<CompiledProgram>
 compileProgram(CompilerInput&& program, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format = std::nullopt,
