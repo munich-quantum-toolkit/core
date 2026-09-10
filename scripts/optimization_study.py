@@ -83,6 +83,20 @@ def main() -> None:
     }
     manifest = {
         "core_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=project, text=True).strip(),
+        "core_source_trees": {
+            path: subprocess.check_output(["git", "rev-parse", "HEAD:" + path], cwd=project, text=True).strip()
+            for path in [
+                "bindings",
+                "include",
+                "src",
+                "python",
+                "mlir",
+                "cmake",
+                "CMakeLists.txt",
+                "pyproject.toml",
+                "uv.lock",
+            ]
+        },
         "llvm_source_id": args.llvm_source_id,
         "compiler": cxx,
         "compiler_version": version,
@@ -145,6 +159,26 @@ def main() -> None:
         if args.pgo != "none":
             parser.error("SDK PGO is trained by the wheel operation")
         build_sdk("plain")
+        consumer = root / "sdk-consumer"
+        execute(
+            "sdk-consumer-configure",
+            [
+                "cmake",
+                "-S",
+                str(args.toolchain_repo.resolve() / "tests/integration"),
+                "-B",
+                str(consumer),
+                "-G",
+                "Ninja",
+                "-DCMAKE_BUILD_TYPE=Release",
+                "-DCMAKE_PREFIX_PATH=" + str(sdk),
+                "-DCMAKE_CXX_SCAN_FOR_MODULES=OFF",
+                "-DEXPECTED_LLVM_ASSERTIONS=OFF",
+                *(["-DLLVM_USE_LINKER=lld"] if system == "Linux" else []),
+            ],
+        )
+        execute("sdk-consumer-build", ["cmake", "--build", str(consumer), "-j", str(args.jobs)])
+        execute("sdk-consumer-run", [str(consumer / "hello_mlir")])
         execute(
             "sdk-pack",
             [
@@ -257,7 +291,8 @@ def main() -> None:
             commands = subprocess.check_output(
                 ["ninja", "-C", str(build), "-t", "commands", "mqt-core-wheel"], text=True
             )
-            names = sorted(set(re.findall(r"lib((?:LLVM|MLIR)[A-Za-z0-9_]+)\.a", commands)))
+            available = {path.stem.removeprefix("lib") for path in (sdk / "lib").glob("lib*.a")}
+            names = sorted(set(re.findall(r"lib((?:LLVM|MLIR)[A-Za-z0-9_]+)\.a", commands)) & available)
             targets.write_text(json.dumps(names, indent=2) + "\n")
             build_sdk("generate", targets=targets)
             generated = core_wheel("generate")

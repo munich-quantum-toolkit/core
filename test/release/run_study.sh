@@ -14,6 +14,7 @@ cd "$project"
 : "${STUDY_ROOT:?}" "${STUDY_OPERATION:?}" "${STUDY_SDK_LTO:?}"
 mkdir -p "$STUDY_ROOT/source" "$STUDY_ROOT/input-sdk"
 if [[ $(uname -s) == Linux ]]; then
+  yum install -y time
   /opt/python/cp314-cp314/bin/python3 -m pip install uv==0.12.5
   export PATH="/opt/python/cp314-cp314/bin:$PATH"
   manylinux-install-clang -v 22.1.8.1 -c 8b399744aeb49c70048b379b9b3ffc651d86fde808551c8cc4138c4fadc5308e
@@ -35,9 +36,13 @@ else
 fi
 
 uv venv --python 3.14.7 "$STUDY_ROOT/venv"
-uv export --frozen --no-default-groups --group build --group test-base --no-emit-project --no-hashes > "$STUDY_ROOT/build-requirements.txt"
-uv pip sync --python "$STUDY_ROOT/venv/bin/python" "$STUDY_ROOT/build-requirements.txt"
-uv pip install --python "$STUDY_ROOT/venv/bin/python" wheel==0.45.1 "delocate==0.13.0; sys_platform == 'darwin'"
+if [[ "$STUDY_OPERATION" == sdk ]]; then
+  uv pip install --python "$STUDY_ROOT/venv/bin/python" cmake==4.4.3 ninja==1.13.0
+else
+  uv export --frozen --no-default-groups --group build --group test-base --no-emit-project --no-hashes > "$STUDY_ROOT/build-requirements.txt"
+  uv pip sync --python "$STUDY_ROOT/venv/bin/python" "$STUDY_ROOT/build-requirements.txt"
+  uv pip install --python "$STUDY_ROOT/venv/bin/python" wheel==0.45.1 ninja==1.13.0 "delocate==0.13.0; sys_platform == 'darwin'"
+fi
 export PATH="$STUDY_ROOT/venv/bin:$PATH"
 
 llvm_commit=ea7d852a70e8bdfaf601d6626a760f9771b2c4b4

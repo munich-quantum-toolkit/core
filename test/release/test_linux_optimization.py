@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import hashlib
 import json
 import math
 import os
@@ -105,6 +106,43 @@ def test_sdk_archive_with_two_gib_window(tmp_path: Path) -> None:
         check=True,
     )
     assert (destination / "payload").read_bytes() == bytes(1024 * 1024)
+
+
+def test_downloaded_wheel_hash_is_checked_before_installation(tmp_path: Path) -> None:
+    """A damaged trial artifact must fail before creating a benchmark environment."""
+    project = Path(__file__).resolve().parents[2]
+    (tmp_path / "requirements.txt").write_text("")
+    (tmp_path / "candidate.whl").write_bytes(b"wrong artifact")
+    manifest = {
+        "benchmark_sha256": hashlib.sha256(
+            (project / "test/release/benchmark_optimization.py").read_bytes()
+        ).hexdigest(),
+        "requirements_sha256": hashlib.sha256(b"").hexdigest(),
+        "sdk_lto": "OFF",
+        "core_lto": "OFF",
+        "pgo": "none",
+        "artifacts": [{"name": "plain", "wheel": "/original/candidate.whl", "wheel_sha256": "wrong"}],
+    }
+    (tmp_path / "artifacts.json").write_text(json.dumps(manifest))
+    root = tmp_path / "evaluation"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(project / "scripts/evaluate_optimization_study.py"),
+            "--downloads",
+            str(tmp_path),
+            "--root",
+            str(root),
+            "--cohort",
+            "1",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 2
+    assert "recorded hash" in result.stderr
+    assert not root.exists()
 
 
 def test_equal_family_weight_and_paired_intervals(tmp_path: Path) -> None:

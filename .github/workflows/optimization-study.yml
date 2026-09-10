@@ -25,9 +25,10 @@ on:
         description: "SDK/Core LTO pairs to measure"
         type: string
         default: '[{"sdk":"OFF","core":"OFF"},{"sdk":"OFF","core":"Thin"},{"sdk":"OFF","core":"Full"},{"sdk":"Thin","core":"Thin"},{"sdk":"Thin","core":"Full"},{"sdk":"Full","core":"Full"}]'
-  push:
-    branches: [codex/linux-optimization-experiments]
-    paths: [.github/workflows/optimization-study.yml]
+      platforms:
+        description: "Selected runner, architecture, SDK triple, and job-count records"
+        type: string
+        default: '[{"name":"linux-arm64","runner":"ubuntu-24.04-arm","arch":"aarch64","triple":"aarch64-unknown-linux-gnu","jobs":4},{"name":"linux-x64","runner":"ubuntu-24.04","arch":"x86_64","triple":"x86_64-unknown-linux-gnu","jobs":4},{"name":"macos-arm64","runner":"macos-26","arch":"arm64","triple":"arm64-apple-darwin","jobs":3}]'
 
 permissions:
   contents: read
@@ -35,36 +36,13 @@ permissions:
 
 jobs:
   libraries:
-    if: >-
-      (github.event_name == 'workflow_dispatch' && inputs.stage == 'sdk') ||
-      github.event_name == 'push'
+    if: inputs.stage == 'sdk'
     strategy:
       fail-fast: false
       max-parallel: 6
       matrix:
         lto: [OFF, Thin, Full]
-        platform:
-          - {
-              name: linux-arm64,
-              runner: ubuntu-24.04-arm,
-              arch: aarch64,
-              triple: aarch64-unknown-linux-gnu,
-              jobs: 4,
-            }
-          - {
-              name: linux-x64,
-              runner: ubuntu-24.04,
-              arch: x86_64,
-              triple: x86_64-unknown-linux-gnu,
-              jobs: 4,
-            }
-          - {
-              name: macos-arm64,
-              runner: macos-26,
-              arch: arm64,
-              triple: arm64-apple-darwin,
-              jobs: 3,
-            }
+        platform: ${{ fromJSON(inputs.platforms) }}
     runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 300
     steps:
@@ -137,15 +115,7 @@ jobs:
       max-parallel: 6
       matrix:
         recipe: ${{ fromJSON(inputs.recipes) }}
-        platform:
-          - {
-              name: linux-arm64,
-              runner: ubuntu-24.04-arm,
-              arch: aarch64,
-              jobs: 4,
-            }
-          - { name: linux-x64, runner: ubuntu-24.04, arch: x86_64, jobs: 4 }
-          - { name: macos-arm64, runner: macos-26, arch: arm64, jobs: 3 }
+        platform: ${{ fromJSON(inputs.platforms) }}
     runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 300
     steps:
