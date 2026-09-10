@@ -45,6 +45,14 @@ else
 fi
 export PATH="$STUDY_ROOT/venv/bin:$PATH"
 
+if [[ $(uname -s) == Linux && ${STUDY_PGO:-none} != none ]]; then
+  python scripts/linux_optimization.py --output "$STUDY_ROOT/output/measurements/provision-profile.json" -- \
+    bash "$project/toolchain/scripts/toolchain/linux/install-profile-tools.sh" "$STUDY_ROOT/profiling"
+  export LLVM_PROFDATA="$STUDY_ROOT/profiling/tools/bin/llvm-profdata"
+  cp "$STUDY_ROOT/profiling/source.sha256" "$STUDY_ROOT/output/measurements/profile-source.sha256"
+  cp "$STUDY_ROOT/profiling/tools.sha256" "$STUDY_ROOT/output/measurements/profile-tools.sha256"
+fi
+
 llvm_commit=ea7d852a70e8bdfaf601d6626a760f9771b2c4b4
 curl --fail --location --retry 3 "https://github.com/llvm/llvm-project/archive/$llvm_commit.tar.gz" -o "$STUDY_ROOT/source.tar.gz"
 tar -xf "$STUDY_ROOT/source.tar.gz" -C "$STUDY_ROOT/source" --strip-components=1

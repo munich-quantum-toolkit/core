@@ -55,10 +55,15 @@ def main() -> None:
             name = f"sdk-{manifest['sdk_lto']}_core-{manifest['core_lto']}_pgo-{manifest['pgo']}_{artifact['name']}"
             if args.variants and name not in args.variants:
                 continue
-            wheels = list(manifest_path.parent.rglob(Path(artifact["wheel"]).name))
-            if name in variants or len(wheels) != 1 or digest(wheels[0]) != artifact["wheel_sha256"]:
+            wheel = manifest_path.parent / "artifacts" / artifact["name"] / Path(artifact["wheel"]).name
+            if (
+                artifact["name"] not in {"plain", "bolt"}
+                or name in variants
+                or not wheel.is_file()
+                or digest(wheel) != artifact["wheel_sha256"]
+            ):
                 parser.error("every selected variant needs one unambiguous wheel with the recorded hash")
-            variants[name] = (manifest, artifact, wheels[0].resolve(), requirements.resolve())
+            variants[name] = (manifest, artifact, wheel.resolve(), requirements.resolve())
     if not variants or (args.variants and set(args.variants) != set(variants)):
         parser.error("one or more requested variants are missing")
     reference = next(iter(variants.values()))[0]

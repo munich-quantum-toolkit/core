@@ -108,20 +108,34 @@ def test_sdk_archive_with_two_gib_window(tmp_path: Path) -> None:
     assert (destination / "payload").read_bytes() == bytes(1024 * 1024)
 
 
-def test_downloaded_wheel_hash_is_checked_before_installation(tmp_path: Path) -> None:
-    """A damaged trial artifact must fail before creating a benchmark environment."""
+@pytest.mark.parametrize("damaged", [False, True])
+def test_downloaded_wheels_keep_separate_identities(tmp_path: Path, *, damaged: bool) -> None:
+    """Plain and BOLT wheels can share a filename; verify each before installation."""
     project = Path(__file__).resolve().parents[2]
     (tmp_path / "requirements.txt").write_text("")
-    (tmp_path / "candidate.whl").write_bytes(b"wrong artifact")
+    artifacts = []
+    for kind in ["plain", "bolt"]:
+        wheel = tmp_path / "artifacts" / kind / "candidate.whl"
+        wheel.parent.mkdir(parents=True)
+        wheel.write_bytes(kind.encode())
+        artifacts.append({
+            "name": kind,
+            "wheel": "/original/candidate.whl",
+            "wheel_sha256": "wrong" if damaged else hashlib.sha256(kind.encode()).hexdigest(),
+        })
     manifest = {
         "benchmark_sha256": hashlib.sha256(
             (project / "test/release/benchmark_optimization.py").read_bytes()
         ).hexdigest(),
         "requirements_sha256": hashlib.sha256(b"").hexdigest(),
-        "sdk_lto": "OFF",
+        "sdk_lto": "Thin",
         "core_lto": "OFF",
         "pgo": "none",
-        "artifacts": [{"name": "plain", "wheel": "/original/candidate.whl", "wheel_sha256": "wrong"}],
+        "artifacts": artifacts,
+        "core_source_trees": {"src": "same"},
+        "llvm_source_id": "same",
+        "compiler_version": "same",
+        "machine": "same",
     }
     (tmp_path / "artifacts.json").write_text(json.dumps(manifest))
     root = tmp_path / "evaluation"
@@ -141,7 +155,7 @@ def test_downloaded_wheel_hash_is_checked_before_installation(tmp_path: Path) ->
         check=False,
     )
     assert result.returncode == 2
-    assert "recorded hash" in result.stderr
+    assert ("recorded hash" if damaged else "include at least one native-SDK reference") in result.stderr
     assert not root.exists()
 
 

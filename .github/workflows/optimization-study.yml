@@ -25,6 +25,10 @@ on:
         description: "SDK/Core LTO pairs to measure"
         type: string
         default: '[{"sdk":"OFF","core":"OFF"},{"sdk":"OFF","core":"Thin"},{"sdk":"OFF","core":"Full"},{"sdk":"Thin","core":"Thin"},{"sdk":"Thin","core":"Full"},{"sdk":"Full","core":"Full"}]'
+      library-lto:
+        description: "SDK LTO modes to build"
+        type: string
+        default: '["OFF","Thin","Full"]'
       platforms:
         description: "Selected runner, architecture, SDK triple, and job-count records"
         type: string
@@ -41,7 +45,7 @@ jobs:
       fail-fast: false
       max-parallel: 6
       matrix:
-        lto: [OFF, Thin, Full]
+        lto: ${{ fromJSON(inputs.library-lto) }}
         platform: ${{ fromJSON(inputs.platforms) }}
     runs-on: ${{ matrix.platform.runner }}
     timeout-minutes: 300
@@ -53,7 +57,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: munich-quantum-software/portable-mlir-toolchain
-          ref: 37aba3026628023e29112748c110804abe3c5f89
+          ref: 654a94a538bd562aeff47738e2f515d2a50de60e
           path: toolchain
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
@@ -126,7 +130,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           repository: munich-quantum-software/portable-mlir-toolchain
-          ref: 37aba3026628023e29112748c110804abe3c5f89
+          ref: 654a94a538bd562aeff47738e2f515d2a50de60e
           path: toolchain
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d

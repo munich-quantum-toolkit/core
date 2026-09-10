@@ -142,6 +142,8 @@ def main() -> None:
             phase,
             "--jobs",
             str(args.jobs),
+            "--lto-workers",
+            str(args.lto_workers),
         ]
         if profile:
             command += ["--profile", str(profile)]
@@ -152,8 +154,6 @@ def main() -> None:
         for variable in ["AR", "RANLIB"]:
             if os.environ.get(variable):
                 command += ["--define", "CMAKE_" + variable + "=" + os.environ[variable]]
-        if system == "Linux":
-            command += ["--define", "LLVM_USE_LINKER=lld"]
         execute("sdk-" + phase, command)
 
     if args.operation == "sdk":
@@ -344,11 +344,17 @@ def main() -> None:
         for path in directory.iterdir():
             if path.is_file() and (path.suffix == ".json" or ".so" in path.name or path.suffix == ".dylib"):
                 shutil.copy2(path, driver / path.name)
+    runtime += sorted({
+        path.parent
+        for path in (build / "src").rglob("*")
+        if path.is_file() and (".so" in path.name or path.suffix == ".dylib")
+    })
     execute(
         "cpp-tests",
         [sys.executable, str(project / "test/release/train_cpp_optimization.py"), str(build)],
         {
             "LD_LIBRARY_PATH": os.pathsep.join(map(str, runtime)),
+            "DYLD_LIBRARY_PATH": os.pathsep.join(map(str, runtime)),
             "LLVM_PROFILE_FILE": str(root / "validation-profiles/%m-%p.profraw"),
         },
     )
