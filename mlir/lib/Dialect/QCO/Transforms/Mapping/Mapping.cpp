@@ -795,8 +795,8 @@ private:
   ///
   /// Nested control flow has no single interaction frequency, so leave those
   /// programs to the identity and random starts.
-  std::optional<Layout> generateGreedyLayout(Wires wires,
-                                             const WireInfos& infos) const {
+  [[nodiscard]] std::optional<Layout>
+  generateGreedyLayout(Wires wires, const WireInfos& infos) const {
     DenseMap<IndexPairType, size_t> weights;
     bool supported = true;
     walkProgramGraph<WireDirection::Forward>(
