@@ -87,7 +87,6 @@ intersphinx_mapping = {
     "ddsim": ("https://mqt.readthedocs.io/projects/ddsim/en/stable", None),
     "qmap": ("https://mqt.readthedocs.io/projects/qmap/en/stable", None),
     "qcec": ("https://mqt.readthedocs.io/projects/qcec/en/stable", None),
-    "qecc": ("https://mqt.readthedocs.io/projects/qecc/en/stable", None),
     "syrec": ("https://mqt.readthedocs.io/projects/syrec/en/stable", None),
 }
 
