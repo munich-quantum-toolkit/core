@@ -242,7 +242,7 @@ reconstruction is available.
 `backend.run(memory=True)` preserves shot order. Results include classical
 register boundaries; failed jobs and invalid results raise on collection, and
 unsupported execution options are rejected. See the
-[backend requirements](https://mqt.readthedocs.io/projects/core/en/latest/qdmi/qdmi_backend.html#backend-requirements).
+[backend requirements](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/qdmi_backend.html#backend-requirements).
 
 ### Private `nlohmann_json` dependency
 
