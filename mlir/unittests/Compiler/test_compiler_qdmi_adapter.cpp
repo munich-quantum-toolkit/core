@@ -11,7 +11,6 @@
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
 #include "qdmi/Client.hpp"
-#include "qdmi/common/Common.hpp"
 #include "qdmi/driver/Driver.hpp"
 
 #include "gtest/gtest.h"
@@ -326,7 +325,6 @@ TEST(CompilerQDMIAdapterTest,
     EXPECT_EQ(environment.payloadSpecification().format(), baseline.format());
     EXPECT_EQ(environment.payloadSpecification().capabilities(),
               baseline.capabilities());
-    EXPECT_TRUE(environment.payloadSpecification().optionalCapabilitiesKnown());
     formats.pop_back();
   }
   EXPECT_TRUE(
@@ -470,50 +468,6 @@ TEST(CompilerQDMIAdapterTest,
           .takeError());
   EXPECT_NE(unsupported.find("qir.dynamic-result-management"),
             std::string::npos);
-}
-
-TEST(CompilerQDMIAdapterTest, RecognizesMaximalCapabilityMarker) {
-  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
-      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM");
-  static thread_local decltype(QDMI_device_session_query_device_property)*
-      query = nullptr;
-  static thread_local std::string marker;
-  query = library->device_session_query_device_property;
-  library->device_session_query_device_property =
-      [](QDMI_Device_Session session, QDMI_Device_Property property,
-         size_t size, void* value, size_t* sizeRet) -> int {
-    if (property == QDMI_DEVICE_PROPERTY_CUSTOM2 && marker.empty()) {
-      return QDMI_ERROR_NOTSUPPORTED;
-    }
-    ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_CUSTOM2, marker.c_str(), property,
-                        size, value, sizeRet)
-    return query(session, property, size, value, sizeRet);
-  };
-  QDMI_Device_impl_d rawDevice(library);
-  const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
-  marker.clear();
-  const auto assumed =
-      llvm::cantFail(mlir::targetEnvironmentFromDevice(device));
-  EXPECT_FALSE(assumed.payloadSpecification().optionalCapabilitiesKnown());
-  marker = "unrelated provider metadata";
-  EXPECT_FALSE(llvm::errorToBool(mlir::validateTargetCompatibility(
-      assumed, llvm::cantFail(mlir::targetEnvironmentFromDevice(device)))));
-  marker = "mqt.compiler-payload.v1:maximal";
-  const auto reported =
-      llvm::cantFail(mlir::targetEnvironmentFromDevice(device));
-  EXPECT_TRUE(reported.payloadSpecification().optionalCapabilitiesKnown());
-  EXPECT_FALSE(
-      llvm::errorToBool(mlir::validateTargetCompatibility(assumed, reported)));
-  for (const auto* invalid : {
-           "mqt.compiler-payload.v1:",
-           "mqt.compiler-payload.v1:unknown",
-           "mqt.compiler-payload.v2:maximal",
-       }) {
-    SCOPED_TRACE(invalid);
-    marker = invalid;
-    EXPECT_TRUE(llvm::errorToBool(
-        mlir::targetEnvironmentFromDevice(device).takeError()));
-  }
 }
 
 TEST(CompilerQDMIAdapterTest, CompilesAdaptiveMeasurementControlledLoop) {

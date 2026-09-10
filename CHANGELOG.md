@@ -42,8 +42,8 @@ releases may include breaking changes.
 - ✨ Add immutable MLIR compiler targets, selected payload specifications,
   payload-aware control-flow legalization, QDMI device integration, ordered
   operation applicability, directional native synthesis, target compilation
-  through C++, Python, and `mqt-cc`, and device submission APIs ([#2497], [#2495],
-  [#2285], [#2219], [#2162], [#2049], [#1999], [#1993], [#1687])
+  through C++, Python, and `mqt-cc`, and device submission APIs ([#2497],
+  [#2495], [#2285], [#2219], [#2162], [#2049], [#1999], [#1993], [#1687])
   ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
 
 #### Import and export

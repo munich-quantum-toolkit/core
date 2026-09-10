@@ -73,12 +73,13 @@ using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
 using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,
                                 nb::c_contig, nb::device::cpu>;
 
-template <class T> [[nodiscard]] static T takeResult(std::optional<T> result) {
+template <class T>
+[[nodiscard]] static T takeResult(std::optional<T>&& result) {
   if (!result) {
     throw std::runtime_error(
         "MLIR operation failed; see diagnostics for details.");
   }
-  return std::move(*result);
+  return *std::move(result);
 }
 
 template <class T> [[nodiscard]] static T takeResult(llvm::Expected<T> result) {
@@ -90,7 +91,7 @@ template <class T> [[nodiscard]] static T takeResult(llvm::Expected<T> result) {
 }
 
 template <class T>
-static void constructFromExpected(T& self, llvm::Expected<T> result) {
+static void constructFromExpected(T& self, llvm::Expected<T>&& result) {
   std::construct_at(&self, takeResult(std::move(result)));
 }
 
@@ -190,7 +191,7 @@ static auto withDiagnostics(mlir::MLIRContext* context, const char* message,
     throw nb::builtin_exception(Exception, full.c_str());
   }
   if constexpr (!std::is_same_v<decltype(result), mlir::LogicalResult>) {
-    return std::move(*result);
+    return *std::move(result);
   }
 }
 
@@ -1383,8 +1384,6 @@ operations.)pb");
               "def to_qiskit(self, *, target: CompilerTarget | None = None) "
               "-> qiskit.circuit.QuantumCircuit"),
           R"pb(Export a Qiskit circuit without consuming or modifying this program.
-
-Uses the QC exporter on a copy.
 
 Args:
     target: The optional compiler target used for mapping. When provided, static

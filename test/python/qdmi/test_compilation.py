@@ -186,7 +186,7 @@ def test_compiled_terminal_sampling_retains_state(program_format: ProgramFormat)
     assert job.get_shots() == shots
 
 
-def test_ddsim_advertises_maximal_language_capabilities() -> None:
+def test_adaptive_payload_supports_optional_computations() -> None:
     """DDSIM accepts optional computations in the preferred Adaptive payload."""
     source = (
         'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; h q; c = measure q; '
@@ -195,7 +195,6 @@ def test_ddsim_advertises_maximal_language_capabilities() -> None:
     device = open_device("mqt.ddsim.default")
     compiled = compile_program(source, target=device)
     assert compiled.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
-    assert compiled.payload_specification.optional_capabilities_known
     assert "qir.int-computations" in {c.capability_id for c in compiled.payload_specification.capabilities}
     job = device.submit(compiled, num_shots=16)
     job.wait()

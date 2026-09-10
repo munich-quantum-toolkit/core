@@ -735,30 +735,6 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
   }
 }
 
-static llvm::Expected<PayloadSpecification>
-devicePayloadSpecification(const qdmi::Device& device,
-                           QDMI_Program_Format format) {
-  auto payload = payloadSpecificationForProgramFormat(format);
-  if (!payload) {
-    return payload.takeError();
-  }
-  const auto metadata = device.queryCustomProperty<std::vector<std::byte>>(
-      qdmi::CustomProperty::Custom2);
-  if (matchesMetadata(metadata, "mqt.compiler-payload.v1:maximal")) {
-    return PayloadSpecification::create(
-        payload->format(),
-        {payload->capabilities().begin(), payload->capabilities().end()}, true);
-  }
-  if (metadata && StringRef(reinterpret_cast<const char*>(metadata->data()),
-                            metadata->size())
-                      .starts_with("mqt.compiler-payload.")) {
-    return llvm::createStringError(
-        std::make_error_code(std::errc::invalid_argument),
-        "Unsupported MQT compiler payload marker");
-  }
-  return payload;
-}
-
 static llvm::Expected<TargetEnvironment>
 snapshotTargetEnvironment(const qdmi::Device& device,
                           std::optional<QDMI_Program_Format> format,
@@ -785,7 +761,7 @@ snapshotTargetEnvironment(const qdmi::Device& device,
           "compiler; hardware-only models require an explicit compiler target "
           "and output");
     }
-    auto payload = devicePayloadSpecification(device, *format);
+    auto payload = payloadSpecificationForProgramFormat(*format);
     if (!payload) {
       return payload.takeError();
     }

@@ -658,8 +658,6 @@ class QCOProgram(Program):
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Export a Qiskit circuit without consuming or modifying this program.
 
-        Uses the QC exporter on a copy.
-
         Args:
             target: The optional compiler target used for mapping. When provided, static
                 site IDs map to dense physical-qubit indices in target site order.

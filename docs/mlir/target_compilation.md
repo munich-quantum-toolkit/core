@@ -169,6 +169,11 @@ dialect in their context.
 
 ### Payload control flow
 
+For explicit restrictions, use the constants on
+{py:class}`~mqt.core.mlir.ProgramCapability` and
+{py:class}`~mqt.core.mlir.ProgramConstraint`. Custom identifiers are also
+accepted.
+
 Target compilation requires structured QCO/SCF input. Producers of raw CFG
 branches must normalize them before target compilation; runtime assertions are
 allowed. The pipeline removes unused symbols, propagates constants, unrolls
@@ -283,14 +288,11 @@ if (!job->wait()) {
 available for hardware snapshots and staged compilation with a
 `TargetEnvironment`.
 
-### Capability discovery
+### Payload support
 
 The adapter assumes all compiler-supported capabilities for the selected format
-(OpenQASM 3.1 or QIR 2.1). DDSIM confirms this support with the NUL-terminated
-`QDMI_DEVICE_PROPERTY_CUSTOM2` marker `mqt.compiler-payload.v1:maximal`. An
-absent or unrelated property leaves the assumption in place; other
-`mqt.compiler-payload.*` markers are rejected. Use `TargetEnvironment` and
-`PayloadSpecification` for staged compilation with explicit capabilities.
+(OpenQASM 3.1 or QIR 2.1). Use `TargetEnvironment` and `PayloadSpecification`
+for staged compilation with explicit restrictions.
 
 QIR submission requires a parameterless entry point returning an `i64` status;
 the compiler adds status 0 to programs with no return value. Keep classical
@@ -324,6 +326,7 @@ pipeline before target compilation.
 
 When exporting a program that has already been mapped to a
 {py:class}`~mqt.core.mlir.CompilerTarget`, pass the same target to
+{py:meth}`~mqt.core.mlir.QCOProgram.to_qiskit` or
 {py:meth}`~mqt.core.mlir.QCProgram.to_qiskit`. The exporter maps each static
 target site ID to its index in {py:attr}`~mqt.core.mlir.CompilerTarget.sites`
 and creates a canonical physical Qiskit circuit. The circuit has one register

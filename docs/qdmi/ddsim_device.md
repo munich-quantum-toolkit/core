@@ -71,9 +71,6 @@ one prepared DD; other QIR programs run once per shot. See the
 OpenQASM classical registers use reverse declaration order, with each register
 most-significant-bit first. QIR samples follow the program's recorded outputs.
 
-DDSIM advertises maximal compiler-supported language/profile capabilities using
-the [MQT capability marker](../mlir/target_compilation.md#capability-discovery).
-
 ## Compile and execute
 
 Compile a Bell circuit, sample its measurements, and inspect its statevector.

@@ -581,7 +581,7 @@ if (c) { x q; }
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
     payload = PayloadSpecification(
-        PayloadFormat("openqasm", "3.0"),
+        PayloadFormat("openqasm", "3.1"),
         [ProgramCapability(capability_id)] if capability_id is not None else [],
     )
     valid = program.copy()
