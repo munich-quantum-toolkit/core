@@ -16,8 +16,8 @@
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Dialect/QTensor/Utils/TensorIterator.h"
 
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Block.h"
 #include "mlir/IR/Builders.h"
@@ -40,6 +40,7 @@
 
 #include <cassert>
 #include <cstddef>
+#include <cstdint>
 #include <iterator>
 
 using namespace mlir;
@@ -376,24 +377,6 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
   return true;
 }
 
-// Only consecutive disposals of the same resource kind can commute. Do not
-// move disposal across a read, gate, allocation, or unknown call.
-static bool areCommutingDisposals(Operation* lhs, Operation* rhs) {
-  if (isa<qc::DeallocOp>(lhs) && isa<qc::DeallocOp>(rhs)) {
-    return true;
-  }
-  auto lhsCall = dyn_cast<LLVM::CallOp>(lhs);
-  auto rhsCall = dyn_cast<LLVM::CallOp>(rhs);
-  if (!lhsCall || !rhsCall || !lhsCall.getCallee() ||
-      lhsCall.getCallee() != rhsCall.getCallee()) {
-    return false;
-  }
-  return *lhsCall.getCallee() == "__quantum__rt__result_release" ||
-         *lhsCall.getCallee() == "__quantum__rt__result_array_release" ||
-         *lhsCall.getCallee() == "__quantum__rt__qubit_release" ||
-         *lhsCall.getCallee() == "__quantum__rt__qubit_array_release";
-}
-
 /// Extract and return "ready" operations.
 /// These are operations that are independent from each other.
 static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
@@ -413,16 +396,17 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
       continue;
     }
 
-    // SSA dependencies do not order writes to QC references or other memory.
-    // Fresh QC/CBit/QCO allocations and independently owned linear quantum
-    // disposal can commute; SSA dependencies preserve their lifetimes.
-    // Module symbols are definitions, not execution-order dependencies.
+    /// SSA dependencies do not order writes to QC references or other memory.
+    /// Fresh QC/CBit/QCO allocations and independently owned linear quantum
+    /// disposal can commute; SSA dependencies preserve their lifetimes.
+    /// Module symbols are definitions, not execution-order dependencies.
     if (!isMemoryEffectFree(op) &&
         !(isa<SymbolOpInterface>(op) && isa<ModuleOp>(op->getParentOp())) &&
         !isa<cbit::AllocOp, qc::AllocOp, qco::AllocOp, qco::SinkOp,
              qtensor::AllocOp, qtensor::DeallocOp>(op)) {
       if (firstEffect != nullptr) {
-        if (blockedEffects || !areCommutingDisposals(firstEffect, op)) {
+        if (blockedEffects ||
+            !(isa<qc::DeallocOp>(firstEffect) && isa<qc::DeallocOp>(op))) {
           blockedEffects = true;
           continue;
         }
@@ -436,46 +420,33 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
       continue;
     }
 
-    if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
-
-      // If any of the inserts on the chain are ready, we consider the entire
-      // chain ready because the ready operations could be moved to the front
-      // of the chain. The analogous logic is applied to extracts.
-
-      SmallVector<Operation*> chain;
-      for (qtensor::TensorIterator it(insert.getResult());
-           it != std::default_sentinel; ++it) {
-        auto chainInsert = dyn_cast<qtensor::InsertOp>(it.operation());
-        if (!chainInsert) {
+    if (isa<qtensor::InsertOp, qtensor::ExtractOp>(op)) {
+      /// Accesses can commute only after their input tensor is available.
+      /// Both operations thread the tensor through result zero and put the
+      /// index last; insert also consumes a scalar before its tensor operand.
+      const bool isInsert = isa<qtensor::InsertOp>(op);
+      if (!isReady(op->getOperand(isInsert ? 1 : 0))) {
+        continue;
+      }
+      llvm::SmallDenseSet<int64_t> indices;
+      for (Operation* access = op;
+           open.contains(access) && access->getName() == op->getName();
+           access = *access->getResult(0).user_begin()) {
+        auto indexValue = access->getOperands().back();
+        auto index = getConstantIntValue(indexValue);
+        /// ponytail: only distinct constant slots commute; use an alias proof
+        /// if a future test needs to reorder dynamic accesses.
+        if ((access != op && !index) ||
+            (index && !indices.insert(*index).second)) {
           break;
         }
-        if (isReady(chainInsert.getScalar()) &&
-            isReady(chainInsert.getIndex()) && !closed.contains(chainInsert)) {
-          chain.emplace_back(chainInsert);
+        if (isReady(indexValue) &&
+            (!isInsert || isReady(access->getOperand(0)))) {
+          ready.insert(access);
         }
-      }
-
-      if (!chain.empty()) {
-        ready.insert_range(chain);
-      }
-
-    } else if (auto extract = dyn_cast<qtensor::ExtractOp>(op)) {
-      SmallVector<Operation*> chain;
-      for (qtensor::TensorIterator it(extract.getOutTensor());
-           it != std::default_sentinel; ++it) {
-        auto chainExtract = dyn_cast<qtensor::ExtractOp>(it.operation());
-        if (!chainExtract) {
+        if (!index) {
           break;
         }
-
-        if (isReady(chainExtract.getIndex()) &&
-            !closed.contains(chainExtract)) {
-          chain.emplace_back(chainExtract);
-        }
-      }
-
-      if (!chain.empty()) {
-        ready.insert_range(chain);
       }
     } else if (auto dealloc = dyn_cast<qtensor::DeallocOp>(op)) {
 

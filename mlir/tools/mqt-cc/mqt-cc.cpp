@@ -182,24 +182,18 @@ parseInputFormat(const StringRef format, const StringRef filename) {
   return std::nullopt;
 }
 
-/// Check whether a module contains an operation from a dialect.
-[[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
-                                            const StringRef dialect) {
-  auto found = false;
-  mod->walk([&](Operation* operation) {
-    found |= operation->getDialect()->getNamespace() == dialect;
-  });
-  return found;
-}
-
 /// Detect the input dialect of a module.
 ///
 /// Defaults to QC if no QCO operation is found.
 [[nodiscard]] static InputDialect detectInputDialect(ModuleOp mod) {
-  if (moduleUsesDialect(mod, "qco")) {
-    return InputDialect::QCO;
-  }
-  return InputDialect::QC;
+  const bool hasQCO =
+      mod->walk([](Operation* operation) {
+           return operation->getDialect()->getNamespace() == "qco"
+                      ? WalkResult::interrupt()
+                      : WalkResult::advance();
+         })
+          .wasInterrupted();
+  return hasQCO ? InputDialect::QCO : InputDialect::QC;
 }
 
 /// Parse an output format.
@@ -394,7 +388,7 @@ static int runCompiler(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
 
   registerMQTCompilerPasses();
-  // Driver-owned conversion stages must also be available for replay.
+  /// Driver-owned conversion stages must also be available for replay.
   registerQCToQCO();
   registerQCOToQC();
   registerJeffToQCO();
@@ -581,16 +575,14 @@ static int runCompiler(int argc, char** argv) {
   }
 
   const auto parseCustomPipeline = [&](OpPassManager& pm) {
-    auto parsed = parsePassPipeline(passPipeline);
-    if (failed(parsed)) {
-      return failure();
-    }
-    if (parsed->getOpAnchorName() != ModuleOp::getOperationName()) {
+    auto [anchor, pipeline] = StringRef(passPipeline).trim().split('(');
+    if (anchor.rtrim() != ModuleOp::getOperationName() ||
+        !pipeline.consume_back(")")) {
       llvm::errs() << "--pass-pipeline must be anchored on builtin.module.\n";
       return failure();
     }
-    pm = std::move(*parsed);
-    return success();
+    /// Append to the existing preparation stages using MLIR's pipeline parser.
+    return parsePassPipeline(pipeline, pm);
   };
 
   const auto runPasses =
@@ -677,25 +669,20 @@ static int runCompiler(int argc, char** argv) {
           return success();
         }
         populateQCOCleanupPipeline(pm);
-        if (passPipeline.getNumOccurrences() == 0) {
+        if (passPipeline.getNumOccurrences() != 0) {
+          if (failed(parseCustomPipeline(pm))) {
+            return failure();
+          }
+        } else {
           if (enableDecomposeMultiControlled) {
             populateDecomposeMultiControlledPipeline(
                 pm, decomposeMultiControlledMinQubits.getValue());
           }
           populateDefaultQCOOptimizationPipeline(pm);
-          populateQCOCleanupPipeline(pm);
         }
+        populateQCOCleanupPipeline(pm);
         return success();
       }))) {
-    return 1;
-  }
-
-  if (requiresPostQcoPasses && passPipeline.getNumOccurrences() != 0 &&
-      (failed(runPasses(parseCustomPipeline)) ||
-       failed(runPasses([](OpPassManager& pm) {
-         populateQCOCleanupPipeline(pm);
-         return success();
-       })))) {
     return 1;
   }
 

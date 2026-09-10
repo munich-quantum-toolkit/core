@@ -12,6 +12,7 @@
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 
 #include "Support/IRVerification.h"
 
@@ -38,9 +39,10 @@ static void expectComparison(llvm::StringRef lhsSource,
                              llvm::StringRef rhsSource, bool equivalent = false,
                              bool structurallyEquivalent = false) {
   DialectRegistry registry;
-  registry.insert<arith::ArithDialect, func::FuncDialect,
-                  cf::ControlFlowDialect, qc::QCDialect, qco::QCODialect,
-                  cbit::CBitDialect, LLVM::LLVMDialect>();
+  registry
+      .insert<arith::ArithDialect, func::FuncDialect, cf::ControlFlowDialect,
+              qc::QCDialect, qco::QCODialect, cbit::CBitDialect,
+              qtensor::QTensorDialect, LLVM::LLVMDialect>();
   MLIRContext context(registry);
   auto lhs = parseSourceString<ModuleOp>(lhsSource, &context);
   auto rhs = parseSourceString<ModuleOp>(rhsSource, &context);
@@ -253,7 +255,7 @@ TEST(IRVerificationTest, UnknownCallOrderMatters) {
       func.call @a() : () -> () return })");
 }
 
-TEST(IRVerificationTest, ConsecutiveQIRReleasesCanCommute) {
+TEST(IRVerificationTest, QIRReleaseCallOrderIsPreserved) {
   expectComparison(R"(llvm.func @__quantum__rt__result_release(!llvm.ptr)
     llvm.func @f(%a: !llvm.ptr, %b: !llvm.ptr) {
       llvm.call @__quantum__rt__result_release(%a) : (!llvm.ptr) -> ()
@@ -263,8 +265,7 @@ TEST(IRVerificationTest, ConsecutiveQIRReleasesCanCommute) {
     llvm.func @f(%a: !llvm.ptr, %b: !llvm.ptr) {
       llvm.call @__quantum__rt__result_release(%b) : (!llvm.ptr) -> ()
       llvm.call @__quantum__rt__result_release(%a) : (!llvm.ptr) -> ()
-      llvm.return })",
-                   true);
+      llvm.return })");
 }
 
 TEST(IRVerificationTest, ForwardSSADefinitionsMustAgreeWithTheirUses) {
@@ -287,7 +288,69 @@ TEST(IRVerificationTest, ForwardSSADefinitionsMustAgreeWithTheirUses) {
   expectComparison(source, otherDefinition);
 }
 
-TEST(IRVerificationTest, QCOYieldOrderMattersAtEveryRegionBoundary) {
+TEST(IRVerificationTest, TensorWritesToTheSameSlotKeepTheirOrder) {
+  const std::string source =
+      R"(func.func @f(%a: !qco.qubit, %b: !qco.qubit, %index: index)
+      -> tensor<1x!qco.qubit> {
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %tensor = qtensor.alloc(%one) : tensor<1x!qco.qubit>
+    %first = qtensor.insert %a into %tensor[%zero] : tensor<1x!qco.qubit>
+    %second = qtensor.insert %b into %first[%zero] : tensor<1x!qco.qubit>
+    return %second : tensor<1x!qco.qubit>
+  })";
+  auto reversed = source;
+  reversed.replace(reversed.find("insert %a"), 9, "insert %b");
+  reversed.replace(reversed.find("insert %b into %first"), 9, "insert %a");
+  expectComparison(source, reversed);
+  auto dynamic = source;
+  while (dynamic.find("[%zero]") != std::string::npos) {
+    dynamic.replace(dynamic.find("[%zero]"), 7, "[%index]");
+  }
+  reversed = dynamic;
+  reversed.replace(reversed.find("insert %a"), 9, "insert %b");
+  reversed.replace(reversed.find("insert %b into %first"), 9, "insert %a");
+  expectComparison(dynamic, reversed);
+}
+
+TEST(IRVerificationTest, TensorWritesToDistinctConstantSlotsCanCommute) {
+  const std::string source = R"(func.func @f(%a: !qco.qubit, %b: !qco.qubit)
+      -> tensor<2x!qco.qubit> {
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %two = arith.constant 2 : index
+    %tensor = qtensor.alloc(%two) : tensor<2x!qco.qubit>
+    %first = qtensor.insert %a into %tensor[%zero] : tensor<2x!qco.qubit>
+    %second = qtensor.insert %b into %first[%one] : tensor<2x!qco.qubit>
+    return %second : tensor<2x!qco.qubit>
+  })";
+  auto reversed = source;
+  reversed.replace(reversed.find("%a into %tensor[%zero]"),
+                   std::string("%a into %tensor[%zero]").size(),
+                   "%b into %tensor[%one]");
+  reversed.replace(reversed.find("%b into %first[%one]"),
+                   std::string("%b into %first[%one]").size(),
+                   "%a into %first[%zero]");
+  expectComparison(source, reversed, true);
+}
+
+TEST(IRVerificationTest, TensorComparisonWaitsForItsAllocation) {
+  const std::string source = R"(func.func @f(%size: index) -> !qco.qubit {
+    %zero = arith.constant 0 : index
+    %one = arith.constant 1 : index
+    %length = arith.addi %size, %one : index
+    %tensor = qtensor.alloc(%length) : tensor<?x!qco.qubit>
+    %rest, %q = qtensor.extract %tensor[%zero] : tensor<?x!qco.qubit>
+    %h = qco.h %q : !qco.qubit -> !qco.qubit
+    qtensor.dealloc %rest : tensor<?x!qco.qubit>
+    return %h : !qco.qubit
+  })";
+  auto different = source;
+  different.replace(different.find("qco.h"), 5, "qco.x");
+  expectComparison(source, different);
+}
+
+TEST(IRVerificationTest, QCOYieldOrderMattersInControlFlowRegions) {
   const std::array bodies = {
       R"(
       %r:2 = qco.if %flag args(%u = %a, %v = %b) -> (!qco.qubit, !qco.qubit) {
@@ -304,25 +367,6 @@ TEST(IRVerificationTest, QCOYieldOrderMattersAtEveryRegionBoundary) {
       default args(%u = %a, %v = %b) {
         qco.yield %u, %v : !qco.qubit, !qco.qubit
       }
-    )",
-      R"(
-      %r:2 = qco.inv (%u = %a, %v = %b) {
-        qco.yield %v, %u : !qco.qubit, !qco.qubit
-      } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
-    )",
-      R"(
-      %p = arith.constant 2.0 : f64
-      %r:2 = qco.pow(%p) (%u = %a, %v = %b) {
-        qco.yield %v, %u : !qco.qubit, !qco.qubit
-      } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
-    )",
-      R"(
-      %c = qco.alloc : !qco.qubit
-      %control, %r:2 = qco.ctrl(%c) targets(%u = %a, %v = %b) {
-        qco.yield %v, %u : !qco.qubit, !qco.qubit
-      } : ({!qco.qubit}, {!qco.qubit, !qco.qubit})
-          -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
-      qco.sink %control : !qco.qubit
     )",
   };
   for (const auto* body : bodies) {

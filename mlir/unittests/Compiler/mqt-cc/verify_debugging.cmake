@@ -54,7 +54,8 @@ if(NOT gate_count EQUAL 2)
 endif()
 
 foreach(option IN ITEMS pass-pipeline passes)
-  run_compiler(0 "${reduced}" --run-pipeline "--${option}=builtin.module(canonicalize,cse)")
+  run_compiler(0 "${reduced}" --run-pipeline
+               "--${option}=builtin.module(func.func(canonicalize,cse))")
   if(output MATCHES "qco.h")
     message(FATAL_ERROR "${option} did not run the registered cleanup passes: ${output}")
   endif()
@@ -66,6 +67,8 @@ foreach(mode IN ITEMS --run-pipeline --emit=qco-optimized)
                   "--pass-pipeline=builtin.module(not-a-pass)")
   reject_compiler("must be anchored on builtin.module" "${reduced}" "${mode}"
                   "--pass-pipeline=func.func(cse)")
+  reject_compiler("must be anchored on builtin.module" "${reduced}" "${mode}"
+                  "--pass-pipeline=builtin.module(cse")
   reject_compiler(
     "without disabling multi-threading" "${reduced}" "${mode}" "--pass-pipeline=builtin.module()"
     --mlir-print-ir-module-scope --mlir-disable-threading=false)
@@ -96,6 +99,21 @@ if(before_cleanup LESS 0
    OR NOT custom_pass LESS after_cleanup)
   message(FATAL_ERROR "Compiler preparation/cleanup was lost: ${error}")
 endif()
+
+# Normal custom pipelines retain preparation and cleanup in one reproducer.
+set(custom_reproducer "${OUTPUT_DIR}/custom-failure.mlir")
+file(REMOVE "${custom_reproducer}")
+reject_compiler(
+  "QIR metadata attachment requires exactly one entry point" "${reduced}" --emit=qco-optimized
+  "--pass-pipeline=builtin.module(set-qir-attributes-and-metadata)" --mlir-disable-threading
+  "--mlir-pass-pipeline-crash-reproducer=${custom_reproducer}")
+file(READ "${custom_reproducer}" custom_source)
+if(NOT custom_source MATCHES
+   "pipeline:.*canonicalize.*set-qir-attributes-and-metadata.*canonicalize")
+  message(FATAL_ERROR "Custom pipeline reproducer lost preparation or cleanup: ${custom_source}")
+endif()
+reject_compiler("QIR metadata attachment requires exactly one entry point" "${custom_reproducer}"
+                --run-reproducer)
 
 run_compiler(1 "${reduced}" --measurement-lifting)
 if(NOT error MATCHES "Unknown command line argument")

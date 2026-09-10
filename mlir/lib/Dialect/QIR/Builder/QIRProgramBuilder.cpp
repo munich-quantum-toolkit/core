@@ -1003,12 +1003,12 @@ void QIRProgramBuilder::ensureResultAllocationMode(
 void QIRProgramBuilder::generateOutputRecording() {
   InsertionGuard guard(*this);
   setInsertionPoint(outputBlock->getTerminator());
-  // Registers receive consecutive cN labels when allocated. Record them in
-  // that order instead of exposing StringMap's hash iteration order.
+  /// Registers receive consecutive cN labels when allocated. Finalization
+  /// consumes their descriptors in that order without copying result vectors.
   SmallVector<ClassicalRegister> registers;
   registers.reserve(cregs.size());
   for (size_t i = 0; i < cregs.size(); ++i) {
-    registers.push_back(cregs.lookup("c" + std::to_string(i)));
+    registers.push_back(std::move(cregs.find("c" + std::to_string(i))->second));
   }
   emitOutputRecording(*this, module, registers, scalarResults);
 }

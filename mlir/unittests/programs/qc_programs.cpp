@@ -2698,7 +2698,7 @@ Value simpleDoWhileReset(QCProgramBuilder& b) {
   return measureToRegister(b, q);
 }
 
-// Load each reference where the converted program consumes it.
+/// Load each reference where the converted program consumes it.
 static Value measureRegisterAtUse(QCProgramBuilder& b, Value reg,
                                   int64_t size) {
   auto result = b.allocClassicalBitRegister(size);

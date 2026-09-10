@@ -161,7 +161,7 @@ Program::Program(Storage storage) : storage_(std::move(storage)) {
 
 Program& Program::operator=(Program&& other) noexcept {
   if (this != &other) {
-    // Destroy the old module while its context is still alive.
+    /// Destroy the old module while its context is still alive.
     storage_.mod = std::move(other.storage_.mod);
     storage_.context = std::move(other.storage_.context);
   }

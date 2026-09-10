@@ -208,8 +208,8 @@ protected:
     ASSERT_TRUE(actual) << stage << " failed to parse";
     EXPECT_TRUE(verify(*actual).succeeded());
     EXPECT_TRUE(verify(expected).succeeded());
-    // Compare the same parser representation: LLVM builders can omit optional
-    // default properties that the textual parser materializes (unnamed_addr).
+    /// Compare the same parser representation: LLVM builders can omit optional
+    /// default properties that the textual parser materializes (unnamed_addr).
     std::string referenceIR;
     llvm::raw_string_ostream referenceStream(referenceIR);
     expected.print(referenceStream);
@@ -601,7 +601,7 @@ TEST_F(CompilerPipelineTest, MoveAssignmentKeepsModuleContextAlive) {
   EXPECT_EQ(first->module(), expected);
   EXPECT_TRUE(succeeded(verify(first->module())));
 
-  // A self move must retain the module and its context.
+  /// A self move must retain the module and its context.
   auto& alias = *first;
   *first = std::move(alias);
   ASSERT_TRUE(first->isValid());

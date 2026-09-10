@@ -1,7 +1,8 @@
 # PR #2502 comparator experiment
 
 Date: 2026-09-10. Baseline: `db95f4817b2498fd5c60e4cf7bf0f23accb81b24`.
-Candidate: the comparator implementation committed with this record.
+Candidate: `39b5ecd71ff7010a829dcb58878a7ae1261ac9c2`. These measurements
+predate the upstream rebase and tensor-permutation follow-up.
 Host: native ARM64 DGX Spark. Build: Clang 23, LLVM/MLIR 23.1.0,
 Release, ThinLTO, mold, `release-clang-ipo` local preset.
 

@@ -14,7 +14,6 @@ target_link_libraries(
   MLIRTestSupport
   PUBLIC MLIRCBitDialect
          MLIRIR
-         MLIRLLVMDialect
          MLIRQCDialect
          MLIRQCODialect
          MLIRQTensorDialect

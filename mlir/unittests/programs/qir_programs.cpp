@@ -1075,7 +1075,7 @@ Value reusedCX(QIRProgramBuilder& b) {
   auto* branchBlock = b.getInsertionBlock();
   b.scfIf(c1, [&] { b.x(q); });
   {
-    // The reuse pipeline reads the result before resetting the reused qubit.
+    /// The reuse pipeline reads the result before resetting the reused qubit.
     QIRProgramBuilder::InsertionGuard guard(b);
     b.setInsertionPoint(branchBlock->getTerminator());
     b.reset(q);

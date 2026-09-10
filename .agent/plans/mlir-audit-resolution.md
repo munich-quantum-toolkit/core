@@ -1,27 +1,15 @@
 # MLIR audit resolution
 
-Status: complete. The remaining comparator, replay, and test-matrix findings in
-PR #2502 are implemented and locally validated.
+Status: complete; locally validated after rebasing onto
+`ba3aea8b1b618d8b000629c3995224ef4f73fa75`, including #2505.
 
-Structural comparisons use upstream `OperationEquivalence` with consistent SSA
-mapping, including forward references across blocks. Parser/print round trips
-use it directly. The permutation helper retains wire, allocation, and
-independent operation reordering; yielded values follow mapped parent results.
-Strict comparison is also its fast path. Neither comparator applies numerical
-tolerance. Greedy permutation fallback retains its documented ordering and
-complexity limits.
+Retain the ownership fixes, exact comparator checks, diagnostic lifetime,
+reproducer support, and verifier-owned malformed-input coverage. Limit tensor
+access permutations to distinct constant slots; retain QC disposal permutations
+and remove obsolete QIR runtime-name exceptions. Keep normal custom passes with
+preparation and cleanup in one pass manager, and consume QIR register
+descriptors at finalization. Do not expand into general alias analysis or
+semantic matching.
 
-Every transform used by driver pipelines is registered, including shrink and QIR
-cleanup/metadata passes, so late base/adaptive QIR failures replay. Malformed
-modifier coverage stays in the QC verifier: all 16 operation kinds, three
-modifiers, and direct/nested bodies remain. The redundant outer
-allocation-origin axis is removed; separate capture cases remain.
-
-Ponytail Review removed redundant identity mappings. All 1,575 affected CTest
-entries, repository lint, and C++ lint against the fixed PR base pass. The
-[matched benchmark][benchmark] records the structural fast path improvement and
-its limits. The [audit record][audit] retains regression locations, supported
-boundaries, and current validation separately from historical results.
-
-[audit]: ../audits/mlir-tests-diagnostics.md
-[benchmark]: ../benchmarks/pr2502-comparator/README.md
+The [audit record](../audits/mlir-tests-diagnostics.md) contains the ranked
+findings, surviving contracts, regression evidence, and validation.

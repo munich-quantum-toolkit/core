@@ -8,7 +8,13 @@
 
 add_executable(mqt-core-mlir-unittests-support test_ir_verification.cpp)
 target_link_libraries(
-  mqt-core-mlir-unittests-support PRIVATE GTest::gtest_main MLIRParser MLIRArithDialect
-                                          MLIRControlFlowDialect MLIRFuncDialect MLIRQCOUtils)
+  mqt-core-mlir-unittests-support
+  PRIVATE GTest::gtest_main
+          MLIRParser
+          MLIRArithDialect
+          MLIRControlFlowDialect
+          MLIRFuncDialect
+          MLIRLLVMDialect
+          MLIRQCOUtils)
 mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-support)
 gtest_discover_tests(mqt-core-mlir-unittests-support PROPERTIES LABELS mqt-mlir-unittests)
