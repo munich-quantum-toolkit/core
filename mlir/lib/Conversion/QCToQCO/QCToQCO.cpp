@@ -680,19 +680,6 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
   return success(!distinctResult.wasInterrupted());
 }
 
-/// Rejects unsupported operations and qubit captures in QC modifiers.
-[[nodiscard]] static LogicalResult validateModifierBodies(Operation* root) {
-  const auto result = root->walk([&](Operation* operation) {
-    return llvm::TypeSwitch<Operation*, WalkResult>(operation)
-        .Case<qc::InvOp, qc::CtrlOp, qc::PowOp>([](auto modifier) {
-          return failed(modifier.verify()) ? WalkResult::interrupt()
-                                           : WalkResult::advance();
-        })
-        .Default(WalkResult::advance());
-  });
-  return success(!result.wasInterrupted());
-}
-
 /// Collects values captured by supported structured control flow.
 static void collectStructuredCaptures(Operation* root, LoweringState& state) {
   root->walk([&](Operation* operation) {
@@ -1991,8 +1978,7 @@ protected:
     auto moduleOp = getOperation();
 
     LoweringState preflightState;
-    if (failed(validateModifierBodies(moduleOp)) ||
-        failed(validateSupportedInput(moduleOp)) ||
+    if (failed(validateSupportedInput(moduleOp)) ||
         failed(collectRegisterAccesses(moduleOp, preflightState))) {
       signalPassFailure();
       return;

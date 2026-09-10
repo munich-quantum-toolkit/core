@@ -1807,7 +1807,7 @@ TEST_F(QCOTest, IndexSwitchParser) {
             %c1 = arith.constant 1 : index
             %c0 = arith.constant 0 : index
             %c3 = arith.constant 3 : index
-            %c = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<3>
+            %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
             %0 = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
             %1 = scf.for %arg0 = %c0 to %c3 step %c1 iter_args(%arg1 = %0) -> (tensor<3x!qco.qubit>) {
             %5 = arith.remui %arg0, %c3 : index

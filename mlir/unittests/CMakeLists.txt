@@ -13,6 +13,7 @@ target_include_directories(MLIRTestSupport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   MLIRTestSupport
   PUBLIC MLIRAnalysis
+         MLIRCBitDialect
          MLIRIR
          MLIRLLVMDialect
          MLIRQCDialect
@@ -20,7 +21,9 @@ target_link_libraries(
          MLIRQTensorDialect
          MLIRQTensorUtils
          MLIRSCFDialect
+         MLIRSideEffectInterfaces
          MLIRSupport
+         MLIRTransformUtils
          LLVMSupport)
 target_sources(MLIRTestSupport PUBLIC FILE_SET HEADERS BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR} FILES
                                       Support/IRVerification.h)
@@ -52,6 +55,7 @@ endfunction()
 
 add_subdirectory(bench)
 add_subdirectory(programs)
+add_subdirectory(Support)
 add_subdirectory(Compiler)
 add_subdirectory(Dialect)
 add_subdirectory(Conversion)

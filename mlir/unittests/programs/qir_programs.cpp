@@ -13,6 +13,7 @@
 #include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
+#include "mlir/IR/Block.h"
 #include "mlir/IR/Value.h"
 
 #include <cstdint>
@@ -28,10 +29,12 @@ namespace mlir::qir {
 /// @param inRegister Whether to store the results in a classical result array
 /// or not.
 /// @param startIndex The starting index for measurement outcomes.
+/// @param qubitRegister When supplied, load references at each measurement.
 /// @return The result value.
 static Value measureAndRecord(QIRProgramBuilder& b, ValueRange qubits,
                               const bool inRegister,
-                              const int64_t startIndex = 0) {
+                              const int64_t startIndex = 0,
+                              Value qubitRegister = {}) {
   if (qubits.empty()) {
     return b.intConstant(0);
   }
@@ -43,8 +46,10 @@ static Value measureAndRecord(QIRProgramBuilder& b, ValueRange qubits,
   }
 
   for (auto i = 0L; i < qubits.size(); ++i) {
-    inRegister ? b.measure(qubits[i], resultArray, i)
-               : b.measure(qubits[i], startIndex + i);
+    auto qubit = qubitRegister ? b.loadQubit(qubitRegister, b.intConstant(i))
+                               : qubits[i];
+    inRegister ? b.measure(qubit, resultArray, i)
+               : b.measure(qubit, startIndex + i);
   }
 
   return b.intConstant(0);
@@ -987,7 +992,7 @@ template <bool IntoRegister> Value simpleForLoop(QIRProgramBuilder& b) {
     auto q = b.loadQubit(reg.value, iv);
     b.h(q);
   });
-  return measureAndRecord(b, reg.qubits, IntoRegister);
+  return measureAndRecord(b, reg.qubits, IntoRegister, 0, reg.value);
 };
 
 template <bool IntoRegister> Value nestedForLoopIfOp(QIRProgramBuilder& b) {
@@ -1019,7 +1024,7 @@ template <bool IntoRegister> Value nestedForLoopWhileOp(QIRProgramBuilder& b) {
         },
         [&] { b.h(q); });
   });
-  return measureAndRecord(b, reg.qubits, IntoRegister, 1);
+  return measureAndRecord(b, reg.qubits, IntoRegister, 1, reg.value);
 }
 
 template <bool IntoRegister>
@@ -1067,8 +1072,14 @@ Value hGatesAndResetsOnOneQubit(QIRProgramBuilder& b) {
 Value reusedCX(QIRProgramBuilder& b) {
   auto q = b.allocQubit();
   auto c1 = b.measure(q, 0);
-  b.reset(q);
+  auto* branchBlock = b.getInsertionBlock();
   b.scfIf(c1, [&] { b.x(q); });
+  {
+    // The reuse pipeline reads the result before resetting the reused qubit.
+    QIRProgramBuilder::InsertionGuard guard(b);
+    b.setInsertionPoint(branchBlock->getTerminator());
+    b.reset(q);
+  }
   b.measure(q, 1);
   return b.intConstant(0);
 }

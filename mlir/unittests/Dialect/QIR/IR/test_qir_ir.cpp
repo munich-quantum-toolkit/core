@@ -165,6 +165,25 @@ TEST_F(QIRTest, BuilderRejectsMixedStaticAndDynamicQubitAllocationModes) {
       "Cannot mix dynamic and static qubit allocation modes");
 }
 
+TEST_F(QIRTest, BuilderRecordsRegistersInAllocationOrder) {
+  QIRProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> arrays;
+  for (size_t i = 0; i < 12; ++i) {
+    arrays.push_back(builder.allocClassicalBitRegister(1).array);
+  }
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  SmallVector<Value> recorded;
+  module->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == QIR_RESULT_ARRAY_RECORD_OUTPUT) {
+      recorded.push_back(call.getOperand(1));
+    }
+  });
+  EXPECT_EQ(recorded, arrays);
+}
+
 TEST_F(QIRTest, AdaptiveBuilderOwnsScalarAndRegisterResults) {
   QIRProgramBuilder builder(context.get());
   builder.initialize();

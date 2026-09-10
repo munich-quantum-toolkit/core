@@ -10,13 +10,13 @@
 
 #include "Support/IRVerification.h"
 
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 #include "mqt/Dialect/QTensor/Utils/TensorIterator.h"
 
-#include "mlir/Analysis/SliceAnalysis.h"
-#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Block.h"
@@ -26,16 +26,18 @@
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Region.h"
+#include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 
 #include <cassert>
-#include <cmath>
 #include <cstddef>
 #include <iterator>
 #include <numeric>
@@ -255,132 +257,6 @@ static bool compareValueLists(const LhsRange& lhs, const RhsRange& rhs,
   return workset.empty();
 }
 
-/// Compare two floating point numbers for approximate equivalence.
-static bool approxCompareFloats(const APFloat& lhs, const APFloat& rhs,
-                                const unsigned width) {
-  if (lhs.isNaN() || rhs.isNaN()) {
-    return lhs.isNaN() && rhs.isNaN();
-  }
-  if (lhs.isInfinity() || rhs.isInfinity()) {
-    return lhs.isInfinity() && rhs.isInfinity() &&
-           lhs.isNegative() == rhs.isNegative();
-  }
-
-  const double lhsVal = lhs.convertToDouble();
-  const double rhsVal = rhs.convertToDouble();
-  const double absDiff = std::fabs(lhsVal - rhsVal);
-  const double absLhs = std::fabs(lhsVal);
-  const double absRhs = std::fabs(rhsVal);
-  const double scale = absLhs > absRhs ? absLhs : absRhs;
-
-  double relTol = 1e-12;
-  double absTol = 1e-15;
-  if (width <= 16) {
-    relTol = 1e-3;
-    absTol = 1e-6;
-  } else if (width <= 32) {
-    relTol = 1e-9;
-    absTol = 1e-12;
-  }
-  return absDiff <= absTol + (relTol * scale);
-}
-
-/// Compare two attributes for equivalence.
-///
-/// Explicitly checks `UnitAttr`, `IntegerAttr`, `FloatAttr`, `StringAttr`,
-/// `FlatSymbolRefAttr`, and `DenseArrayAttr`. For any other type, the function
-/// simply returns true.
-static bool compareAttributes(Attribute lhs, Attribute rhs) {
-  if (dyn_cast<UnitAttr>(lhs)) {
-    if (!dyn_cast<UnitAttr>(rhs)) {
-      return false;
-    }
-  } else if (auto intAttrA = dyn_cast<IntegerAttr>(lhs)) {
-    if (auto intAttrB = dyn_cast<IntegerAttr>(rhs);
-        !intAttrB || intAttrA.getValue() != intAttrB.getValue() ||
-        (intAttrA.getType().isInteger() && !intAttrB.getType().isInteger())) {
-      return false;
-    }
-  } else if (auto floatAttrA = dyn_cast<FloatAttr>(lhs)) {
-    if (auto floatAttrB = dyn_cast<FloatAttr>(rhs);
-        !floatAttrB ||
-        !approxCompareFloats(floatAttrA.getValue(), floatAttrB.getValue(),
-                             floatAttrA.getType().getIntOrFloatBitWidth())) {
-      return false;
-    }
-  } else if (auto strAttrA = dyn_cast<StringAttr>(lhs)) {
-    if (auto strAttrB = dyn_cast<StringAttr>(rhs);
-        !strAttrB || strAttrA.getValue() != strAttrB.getValue()) {
-      return false;
-    }
-  } else if (auto arrayAttrA = llvm::dyn_cast<ArrayAttr>(lhs)) {
-    auto arrayAttrB = llvm::dyn_cast<ArrayAttr>(rhs);
-    if (!arrayAttrB) {
-      return false;
-    }
-    if (arrayAttrA.size() != arrayAttrB.size()) {
-      return false;
-    }
-    for (const auto& [subAttrA, subAttrB] :
-         llvm::zip_equal(arrayAttrA, arrayAttrB)) {
-      if (!compareAttributes(subAttrA, subAttrB)) {
-        return false;
-      }
-    }
-  } else if (auto symbolRefAttrA = dyn_cast<FlatSymbolRefAttr>(lhs)) {
-    auto symbolRefAttrB = dyn_cast<FlatSymbolRefAttr>(rhs);
-    if (!symbolRefAttrB) {
-      return false;
-    }
-    if (symbolRefAttrA.getValue() != symbolRefAttrB.getValue()) {
-      return false;
-    }
-  } else if (auto tailCallAttrA = dyn_cast<LLVM::TailCallKindAttr>(lhs)) {
-    auto tailCallAttrB = dyn_cast<LLVM::TailCallKindAttr>(rhs);
-    if (!tailCallAttrB) {
-      return false;
-    }
-    if (tailCallAttrA.getTailCallKind() != tailCallAttrB.getTailCallKind()) {
-      return false;
-    }
-  } else if (auto fastMathAttrA = dyn_cast<LLVM::FastmathFlagsAttr>(lhs)) {
-    auto fastMathAttrB = dyn_cast<LLVM::FastmathFlagsAttr>(rhs);
-    if (!fastMathAttrB) {
-      return false;
-    }
-    if (fastMathAttrA.getValue() != fastMathAttrB.getValue()) {
-      return false;
-    }
-  } else if (auto cconvAttrA = dyn_cast<LLVM::CConvAttr>(lhs)) {
-    auto cconvAttrB = dyn_cast<LLVM::CConvAttr>(rhs);
-    if (!cconvAttrB) {
-      return false;
-    }
-    if (cconvAttrA.getCallingConv() != cconvAttrB.getCallingConv()) {
-      return false;
-    }
-  } else if (auto modFlagAttrA = dyn_cast<LLVM::ModuleFlagAttr>(lhs)) {
-    auto modFlagAttrB = dyn_cast<LLVM::ModuleFlagAttr>(rhs);
-    if (!modFlagAttrB) {
-      return false;
-    }
-    if (modFlagAttrA.getBehavior() != modFlagAttrB.getBehavior() ||
-        modFlagAttrA.getKey() != modFlagAttrB.getKey() ||
-        modFlagAttrA.getValue() != modFlagAttrB.getValue()) {
-      return false;
-    }
-  } else if (auto denseArrayAttrA = dyn_cast<DenseArrayAttr>(lhs)) {
-    auto denseArrayAttrB = dyn_cast<DenseArrayAttr>(rhs);
-    if (!denseArrayAttrB) {
-      return false;
-    }
-    if (denseArrayAttrA != denseArrayAttrB) {
-      return false;
-    }
-  }
-  return true;
-}
-
 /// Compare two operations for structural equivalence, applying special
 /// rules for `CtrlOp` s and `qtensor` s.
 static bool compareOperations(Operation* lhs, Operation* rhs,
@@ -393,20 +269,15 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
       lhs->getOperandTypes() != rhs->getOperandTypes() ||
       lhs->getNumResults() != rhs->getNumResults() ||
       lhs->getResultTypes() != rhs->getResultTypes() ||
-      lhs->getNumRegions() != rhs->getNumRegions()) {
+      lhs->getNumRegions() != rhs->getNumRegions() ||
+      lhs->getNumSuccessors() != rhs->getNumSuccessors() ||
+      lhs->getAttrDictionary() != rhs->getAttrDictionary()) {
     return false;
   }
 
-  // Compare attributes with specific types.
-  // Silently ignore missing ones.
-
-  for (const auto& namedAttrLhs : lhs->getAttrs()) {
-    const StringRef keyLhs = namedAttrLhs.getName().strref();
-    if (!rhs->hasAttr(keyLhs)) {
-      continue;
-    }
-
-    if (!compareAttributes(namedAttrLhs.getValue(), rhs->getAttr(keyLhs))) {
+  for (auto [lhsSuccessor, rhsSuccessor] :
+       llvm::zip_equal(lhs->getSuccessors(), rhs->getSuccessors())) {
+    if (m.lookupOrNull(lhsSuccessor) != rhsSuccessor) {
       return false;
     }
   }
@@ -436,7 +307,9 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
     }
   } else if (isa<qco::IfOp>(lhs)) {
     assert(isa<qco::IfOp>(rhs));
-    if (!compareValueLists(cast<qco::IfOp>(lhs).getQubits(),
+    if (m.lookupOrNull(cast<qco::IfOp>(lhs).getCondition()) !=
+            cast<qco::IfOp>(rhs).getCondition() ||
+        !compareValueLists(cast<qco::IfOp>(lhs).getQubits(),
                            cast<qco::IfOp>(rhs).getQubits(), m, tm)) {
       return false;
     }
@@ -444,7 +317,8 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
     assert(isa<qco::IndexSwitchOp>(rhs));
     auto lhsSwitch = cast<qco::IndexSwitchOp>(lhs);
     auto rhsSwitch = cast<qco::IndexSwitchOp>(rhs);
-    if (lhsSwitch.getCases() != rhsSwitch.getCases() ||
+    if (m.lookupOrNull(lhsSwitch.getArg()) != rhsSwitch.getArg() ||
+        lhsSwitch.getCases() != rhsSwitch.getCases() ||
         !compareValueLists(lhsSwitch.getTargets(), rhsSwitch.getTargets(), m,
                            tm)) {
       return false;
@@ -497,6 +371,24 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
   return true;
 }
 
+// Only consecutive disposals of the same resource kind can commute. Do not
+// move disposal across a read, gate, allocation, or unknown call.
+static bool areCommutingDisposals(Operation* lhs, Operation* rhs) {
+  if (isa<qc::DeallocOp>(lhs) && isa<qc::DeallocOp>(rhs)) {
+    return true;
+  }
+  auto lhsCall = dyn_cast<LLVM::CallOp>(lhs);
+  auto rhsCall = dyn_cast<LLVM::CallOp>(rhs);
+  if (!lhsCall || !rhsCall || !lhsCall.getCallee() ||
+      lhsCall.getCallee() != rhsCall.getCallee()) {
+    return false;
+  }
+  return *lhsCall.getCallee() == "__quantum__rt__result_release" ||
+         *lhsCall.getCallee() == "__quantum__rt__result_array_release" ||
+         *lhsCall.getCallee() == "__quantum__rt__qubit_release" ||
+         *lhsCall.getCallee() == "__quantum__rt__qubit_array_release";
+}
+
 /// Extract and return "ready" operations.
 /// These are operations that are independent from each other.
 static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
@@ -509,8 +401,33 @@ static SetVector<Operation*> getReadyOps(const SetVector<Operation*>& open,
   };
 
   SetVector<Operation*> ready;
+  Operation* firstEffect = nullptr;
+  bool blockedEffects = false;
   for (Operation* op : open) {
     if (ready.contains(op)) {
+      continue;
+    }
+
+    // SSA dependencies do not order writes to QC references or other memory.
+    // Fresh QC/CBit/QCO allocations and independently owned linear quantum
+    // disposal can commute; SSA dependencies preserve their lifetimes.
+    // Module symbols are definitions, not execution-order dependencies.
+    if (!isMemoryEffectFree(op) &&
+        !(isa<SymbolOpInterface>(op) && isa<ModuleOp>(op->getParentOp())) &&
+        !isa<cbit::AllocOp, qc::AllocOp, qco::AllocOp, qco::SinkOp,
+             qtensor::AllocOp, qtensor::DeallocOp>(op)) {
+      if (firstEffect != nullptr) {
+        if (blockedEffects || !areCommutingDisposals(firstEffect, op)) {
+          blockedEffects = true;
+          continue;
+        }
+      } else {
+        firstEffect = op;
+      }
+    }
+    SetVector<Value> captures;
+    getUsedValuesDefinedAbove(op->getRegions(), captures);
+    if (!llvm::all_of(captures, isReady)) {
       continue;
     }
 
@@ -595,7 +512,7 @@ static bool compareBlocks(Block& lhs, Block& rhs,
                           SetVector<Operation*>& lhsClosed,
                           SetVector<Operation*>& rhsClosed, IRMapping& m,
                           TensorMapping& tm) {
-  if (lhs.getNumArguments() != rhs.getNumArguments()) {
+  if (lhs.getArgumentTypes() != rhs.getArgumentTypes()) {
     return false;
   }
 
@@ -800,7 +717,7 @@ static bool compareBlocks(Block& lhs, Block& rhs,
     }
   }
 
-  return true;
+  return lhsOpen.empty() && rhsOpen.empty();
 }
 
 /// Compare two regions for structural equivalence.
@@ -812,12 +729,14 @@ static bool compareRegions(Region& lhs, Region& rhs,
     return false;
   }
 
-  for (const auto [lhsBlock, rhsBlock] : llvm::zip_equal(lhs, rhs)) {
+  // Map forward and backward successors before comparing terminators.
+  for (auto [lhsBlock, rhsBlock] : llvm::zip_equal(lhs, rhs)) {
+    m.map(&lhsBlock, &rhsBlock);
+  }
+  for (auto [lhsBlock, rhsBlock] : llvm::zip_equal(lhs, rhs)) {
     if (!compareBlocks(lhsBlock, rhsBlock, lhsClosed, rhsClosed, m, tm)) {
       return false;
     }
-
-    m.map(&lhsBlock, &rhsBlock);
   }
 
   return true;
@@ -833,6 +752,7 @@ bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
       .equivGroupMapping = DenseMap<size_t, size_t>{},
   };
 
-  return compareRegions(lhs.getBodyRegion(), rhs.getBodyRegion(), lhsClosed,
+  return compareOperations(lhs, rhs, m, tm) &&
+         compareRegions(lhs.getBodyRegion(), rhs.getBodyRegion(), lhsClosed,
                         rhsClosed, m, tm);
 }

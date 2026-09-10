@@ -439,13 +439,24 @@ TEST(QCOToQCRegressionTest, RejectsMissingPositionalQubitResults) {
 
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
     func.func @bad(%q: !qco.qubit) -> i1 {
+      qco.sink %q : !qco.qubit
       %flag = arith.constant true
       return %flag : i1
     }
   })mlir",
                                               &context);
   ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  std::string diagnosticText;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosticText += diagnostic.str();
+    return success();
+  });
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_NE(diagnosticText.find(
+                "must return one trailing qubit for each qubit argument"),
+            std::string::npos);
 }
 
 TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {

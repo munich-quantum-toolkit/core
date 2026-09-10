@@ -51,6 +51,7 @@ runWithPassManager(ModuleOp mod,
 
 void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
+    registerTransformsPasses();
     registerConvertCBitToMemRef();
     qco::registerDecomposeMultiControlled();
     qco::registerFuseSingleQubitUnitaryRuns();
@@ -114,7 +115,6 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
                               const bool enableTiming,
                               const bool enableStatistics) {
   registerMQTCompilerPasses();
-  registerTransformsPasses();
   PassManager pm(mod.getContext());
   if (enableTiming) {
     pm.enableTiming();

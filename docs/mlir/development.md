@@ -142,13 +142,101 @@ Start from the [MLIR debugging workflow][mlir-debugging]:
    local.
 8. Turn the reduced case into the smallest direct regression test.
 
-`mqt-cc` registers MLIR's standard pass-manager options. Useful options include
-`--mlir-print-op-generic`, `--mlir-print-ir-before-all`,
-`--mlir-print-ir-after-failure`, `--mlir-disable-threading`,
-`--mlir-print-stacktrace-on-diagnostic`, and
-`--mlir-pass-pipeline-crash-reproducer=<path>`. `--debug-only` traces require a
-build of LLVM/MLIR and MQT Core with debug logging enabled; do not assume that a
-release build provides them.
+Build the driver with the configured LLVM/MLIR installation:
+
+```sh
+cmake --preset release
+cmake --build --preset release --target mqt-cc
+mqt_cc=build/release/mlir/tools/mqt-cc/mqt-cc
+```
+
+Save this reduced example as `reduced.mlir`:
+
+```mlir
+module {
+  func.func @f(%q: !qco.qubit) -> !qco.qubit {
+    %h0 = qco.h %q : !qco.qubit -> !qco.qubit
+    %h1 = qco.h %h0 : !qco.qubit -> !qco.qubit
+    return %h1 : !qco.qubit
+  }
+}
+```
+
+Run exactly the selected pipeline with `--run-pipeline`:
+
+```sh
+"$mqt_cc" reduced.mlir --run-pipeline \
+  --pass-pipeline='builtin.module(canonicalize)'
+"$mqt_cc" reduced.mlir --run-pipeline \
+  --pass-pipeline='builtin.module(hadamard-lifting)' \
+  --mlir-print-op-generic --mlir-print-ir-before-all \
+  --mlir-print-ir-after-failure --mlir-disable-threading
+```
+
+The first command removes the two Hadamards. The second prints the input to
+HadamardLifting on stderr and its result on stdout. An empty `builtin.module()`
+pipeline preserves the input. Use `--mlir-print-ir-before=hadamard-lifting` to
+select one pass's dump in a longer pipeline. Non-stdout MLIR output selected
+with `-o` is bytecode; redirect stdout to save textual IR.
+
+Isolated execution requires MLIR input and a `builtin.module(...)` pipeline. It
+skips frontend conversion, compiler preparation, default optimizations, and
+output lowering. Parsing verifies the input, and QCO linearity is checked before
+and after the pipeline. Pass-manager verification remains enabled. Do not
+combine this mode with `--emit`, target compilation, or the decomposition
+convenience flag. Supply already reduced input for the pass's supported subset.
+
+Ordinary compilation with `--pass-pipeline` retains its required preparation and
+cleanup stages around the supplied QCO pipeline. `--passes` is an alias for the
+same textual syntax; individual pass flags are not supported. The CLI and
+library share QCO pass and upstream transform registration. The driver also
+registers its conversion passes so they can be selected for debugging.
+
+### Diagnostics and reproducers
+
+Use `--mlir-print-stacktrace-on-diagnostic` to attach a trace when the LLVM
+build supports stack traces. Source locations, excerpts, and attached operation
+notes remain available throughout compilation, including for stdin. Initial jeff
+conversion also uses the requested pass-manager instrumentation.
+
+For a runnable failure example, save this valid but unsupported QC input as
+`unsupported.mlir`:
+
+```mlir
+module {
+  func.func @f() {
+    cf.br ^next
+  ^next:
+    return
+  }
+}
+```
+
+Generate and replay its failing conversion pipeline:
+
+```sh
+"$mqt_cc" unsupported.mlir --run-pipeline \
+  --pass-pipeline='builtin.module(qc-to-qco)' \
+  --mlir-print-ir-before-all --mlir-print-ir-after-failure \
+  --mlir-disable-threading \
+  --mlir-pass-pipeline-crash-reproducer=failure.mlir
+"$mqt_cc" failure.mlir --run-reproducer --mlir-print-ir-before-all
+```
+
+Both commands fail with the unsupported unstructured-control-flow diagnostic.
+`--run-reproducer` applies the recorded pipeline, threading, and verification
+settings. It requires a non-empty recorded module pipeline and cannot be
+combined with a custom pipeline or ordinary compiler output modes. It follows
+the recorded verification policy, including disabled verification, and does not
+add QCO linearity checks. Ordinary file loading does not activate replay.
+Disable threading when generating a local reproducer with
+`--mlir-pass-pipeline-local-reproducer`.
+
+For conversion tracing, add `--debug-only=dialect-conversion`. This requires
+LLVM/MLIR and MQT Core code built with debug logging enabled; build-type names
+alone do not establish that support. Keep threading disabled when tracing to
+make the output easier to read. Stack addresses and frame counts vary by
+platform and are unsuitable regression assertions.
 
 ## Upstream references
 

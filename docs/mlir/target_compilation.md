@@ -255,8 +255,8 @@ mqt-cc --qdmi-config=/path/to/qdmi.json \
 
 The payload specification selects the emitted format and encoding. For targeted
 QIR, the selected encoding takes precedence over the output filename extension.
-Target compilation rejects `--emit` and custom `--passes` pipelines because the
-target contract owns the output and required pass ordering.
+Target compilation rejects `--emit` and custom `--pass-pipeline` pipelines
+because the target contract owns the output and required pass ordering.
 
 ## C++ source-tree API
 
