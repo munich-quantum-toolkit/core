@@ -32,7 +32,6 @@
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/StringSwitch.h"
@@ -233,10 +232,11 @@ private:
 } // namespace
 
 [[nodiscard]] static bool hasLinearCapture(Operation* operation) {
-  llvm::SetVector<Value> captures;
-  getUsedValuesDefinedAbove(operation->getRegions(), captures);
-  return llvm::any_of(
-      captures, [](Value value) { return isLinearQubitType(value.getType()); });
+  bool hasCapture = false;
+  visitUsedValuesDefinedAbove(operation->getRegions(), [&](OpOperand* operand) {
+    hasCapture |= isLinearQubitType(operand->get().getType());
+  });
+  return hasCapture;
 }
 
 [[nodiscard]] static bool hasLinearBranchState(Operation* operation) {
@@ -536,13 +536,31 @@ protected:
         return;
       }
 
-      for (auto& [loop, tripCount] : loops) {
+      for (size_t index = 0; index < loops.size(); ++index) {
+        auto [loop, tripCount] = loops[index];
         if (tripCount.ule(1)) {
+          SmallVector<scf::ForOp> nestedLoops;
+          if (tripCount == 1) {
+            loop.getRegion().walk<WalkOrder::PreOrder>([&](scf::ForOp nested) {
+              nestedLoops.push_back(nested);
+              return WalkResult::skip();
+            });
+          }
           if (failed(loop.promoteIfSingleIteration(rewriter))) {
             loop.emitError(
                 "failed to simplify a zero- or single-iteration loop");
             signalPassFailure();
             return;
+          }
+          /// Promotion preserves child operations and can make their bounds
+          /// literal. Defer larger loops until static branches have folded.
+          for (auto nested : nestedLoops) {
+            const auto nestedTripCount = getExactConstantTripCount(nested);
+            if (nestedTripCount && *nestedTripCount == 1 &&
+                !support->coversIteration(ControlFeature::CountedIteration,
+                                          nested, nestedTripCount)) {
+              loops.emplace_back(nested, *nestedTripCount);
+            }
           }
           continue;
         }
