@@ -1917,7 +1917,8 @@ private:
   /// @return Updated initial value
   Value prepareInitArg(Value initArg);
 
-  Value prepareInitArg(Value initArg, const DenseSet<Value>* initQubits);
+  /// Reinsert the given extracted qubits in definition order.
+  Value insertExtractedQubits(Value tensor, MutableArrayRef<Qubit> qubits);
 
   /// Update linear-value tracking for one replaced value
   /// @param oldValue The old value to be replaced

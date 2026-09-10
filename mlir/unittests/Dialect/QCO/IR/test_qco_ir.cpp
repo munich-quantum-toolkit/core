@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
@@ -250,6 +251,125 @@ TEST_F(QCOTest, BuilderReturnsTrackedQubit) {
 
   EXPECT_DEATH(builder.x(qubit), "Invalid qubit value used");
   EXPECT_NO_FATAL_FAILURE(builder.x(output));
+}
+
+TEST_F(QCOTest, BuilderDisposesScalarsInDefinitionOrder) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> qubits;
+  for (int i = 0; i < 16; ++i) {
+    qubits.push_back(builder.h(builder.allocQubit()));
+  }
+  /// Results of the same operation are ordered by result position.
+  auto [control, target] = builder.cx(qubits[14], qubits[15]);
+  qubits[14] = control;
+  qubits[15] = target;
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  SmallVector<Value> sunk;
+  moduleOp->walk([&](SinkOp sink) { sunk.push_back(sink.getQubit()); });
+  /// Emission order is part of the reproducible builder output contract.
+  EXPECT_EQ(sunk, qubits);
+}
+
+TEST_F(QCOTest, BuilderReinsertsAndDisposesTensorsInStableOrder) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> tensors;
+  SmallVector<Value> qubits;
+  for (int reg = 0; reg < 16; ++reg) {
+    auto tensor = builder.qtensorAlloc(2);
+    for (int64_t index : {1, 0}) {
+      auto [next, qubit] = builder.qtensorExtract(tensor, index);
+      tensor = next;
+      qubits.push_back(builder.h(qubit));
+    }
+    tensors.push_back(tensor);
+  }
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  SmallVector<Value> inserted;
+  SmallVector<Value> disposed;
+  moduleOp->walk([&](qtensor::InsertOp insert) {
+    inserted.push_back(insert.getScalar());
+  });
+  moduleOp->walk([&](qtensor::DeallocOp dealloc) {
+    auto last = dealloc.getTensor().getDefiningOp<qtensor::InsertOp>();
+    ASSERT_TRUE(last);
+    auto first = last.getDest().getDefiningOp<qtensor::InsertOp>();
+    ASSERT_TRUE(first);
+    disposed.push_back(first.getDest());
+  });
+  EXPECT_EQ(inserted, qubits);
+  EXPECT_EQ(disposed, tensors);
+}
+
+TEST_F(QCOTest, BuilderPreparesTensorArgumentsWithoutConsumingCarriedScalars) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> args;
+  SmallVector<Value> qubits;
+  for (int reg = 0; reg < 16; ++reg) {
+    auto tensor = builder.qtensorAlloc(3);
+    Value carried;
+    for (int64_t index : {2, 1, 0}) {
+      auto [next, qubit] = builder.qtensorExtract(tensor, index);
+      tensor = next;
+      auto transformed = builder.h(qubit);
+      if (index == 1) {
+        carried = transformed;
+      } else {
+        qubits.push_back(transformed);
+      }
+    }
+    args.push_back(tensor);
+    args.push_back(carried);
+  }
+  auto results = builder.qcoIf(
+      true, args, [](ValueRange values) { return SmallVector<Value>(values); });
+  auto ifOp = results.front().getDefiningOp<IfOp>();
+  ASSERT_TRUE(ifOp);
+  SmallVector<Value> inserted;
+  for (auto insert : ifOp->getBlock()->getOps<qtensor::InsertOp>()) {
+    inserted.push_back(insert.getScalar());
+  }
+  EXPECT_EQ(inserted, qubits);
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+TEST_F(QCOTest, BuilderReinsertsBlockArgumentsInArgumentOrder) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto tensor = builder.qtensorAlloc(2);
+  auto zero = arith::ConstantIndexOp::create(builder, 0).getResult();
+  auto one = arith::ConstantIndexOp::create(builder, 1).getResult();
+  auto [firstTensor, firstQubit] = builder.qtensorExtract(tensor, 0);
+  auto [secondTensor, secondQubit] = builder.qtensorExtract(firstTensor, 1);
+  builder.qcoIf(
+      true, ValueRange{secondTensor, secondQubit, firstQubit},
+      [&](ValueRange args) {
+        auto innerResults =
+            builder.qcoIf(true, ValueRange{args[0]}, [](ValueRange values) {
+              return SmallVector<Value>(values);
+            });
+        SmallVector<Value> inserted;
+        for (auto insert :
+             builder.getInsertionBlock()->getOps<qtensor::InsertOp>()) {
+          inserted.push_back(insert.getScalar());
+        }
+        EXPECT_EQ(inserted, SmallVector<Value>({args[1], args[2]}));
+        auto [nextTensor, nextSecond] =
+            builder.qtensorExtract(innerResults[0], one);
+        auto [lastTensor, nextFirst] = builder.qtensorExtract(nextTensor, zero);
+        return SmallVector<Value>{lastTensor, nextSecond, nextFirst};
+      });
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
 }
 
 TEST_F(QCOTest, CleanupPreservesReturnedStaticQubit) {

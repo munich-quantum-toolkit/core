@@ -31,6 +31,7 @@
 #include "mlir/IR/Location.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Region.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
@@ -424,54 +425,87 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
   validTensors.insert(Tensor{outputTensor, trackedTensor.regId});
 }
 
-Value QCOProgramBuilder::prepareInitArg(Value initArg,
-                                        const DenseSet<Value>* initQubits) {
-  if (isa<QubitType>(initArg.getType())) {
-    return initArg;
+/// Live values dominate the insertion point, so their blocks are nested.
+/// Order definitions within a block, including argument and result positions.
+static bool isDefinedBefore(Value lhs, Value rhs) {
+  if (lhs.getParentBlock() != rhs.getParentBlock()) {
+    return lhs.getParentRegion()->isProperAncestor(rhs.getParentRegion());
   }
-
-  validateTensorValue(initArg);
-  const auto regId = validTensors.find(initArg)->regId;
-
-  SmallVector<Qubit> qubitsToInsert;
-  for (const auto& qubit : validQubits) {
-    if (qubit.regId == regId &&
-        (initQubits == nullptr || !initQubits->contains(qubit))) {
-      qubitsToInsert.push_back(qubit);
-    }
+  if (auto argument = dyn_cast<BlockArgument>(lhs)) {
+    auto otherArgument = dyn_cast<BlockArgument>(rhs);
+    return !otherArgument ||
+           argument.getArgNumber() < otherArgument.getArgNumber();
   }
+  if (isa<BlockArgument>(rhs)) {
+    return false;
+  }
+  auto result = cast<OpResult>(lhs);
+  auto otherResult = cast<OpResult>(rhs);
+  return result.getOwner() == otherResult.getOwner()
+             ? result.getResultNumber() < otherResult.getResultNumber()
+             : result.getOwner()->isBeforeInBlock(otherResult.getOwner());
+}
 
-  auto currentTensor = initArg;
-  for (const auto& qubit : qubitsToInsert) {
+Value QCOProgramBuilder::insertExtractedQubits(Value tensor,
+                                               MutableArrayRef<Qubit> qubits) {
+  llvm::sort(qubits, [](const Qubit& lhs, const Qubit& rhs) {
+    return isDefinedBefore(lhs, rhs);
+  });
+  for (const auto& qubit : qubits) {
     auto newTensor =
-        qtensor::InsertOp::create(*this, qubit, currentTensor, qubit.regIndex)
+        qtensor::InsertOp::create(*this, qubit, tensor, qubit.regIndex)
             .getResult();
-    updateTensorTracking(currentTensor, newTensor);
-    currentTensor = newTensor;
+    updateTensorTracking(tensor, newTensor);
+    tensor = newTensor;
     validQubits.erase(qubit);
   }
-  return currentTensor;
+  return tensor;
 }
 
 Value QCOProgramBuilder::prepareInitArg(Value initArg) {
-  checkQubitType(ValueRange{initArg});
-  return prepareInitArg(initArg, nullptr);
+  return prepareInitArgs(ValueRange{initArg}).front();
 }
 
 SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
   checkQubitType(initArgs);
+  if (validQubits.empty()) {
+    for (auto initArg : initArgs) {
+      if (!isa<QubitType>(initArg.getType())) {
+        validateTensorValue(initArg);
+      }
+    }
+    return SmallVector<Value>(initArgs);
+  }
 
   DenseSet<Value> initQubits;
+  DenseMap<int64_t, SmallVector<Qubit>> qubitsByRegister;
   for (auto initArg : initArgs) {
     if (isa<QubitType>(initArg.getType())) {
       initQubits.insert(initArg);
+    } else {
+      validateTensorValue(initArg);
+      qubitsByRegister.try_emplace(validTensors.find(initArg)->regId);
+    }
+  }
+  if (!qubitsByRegister.empty()) {
+    for (const auto& qubit : validQubits) {
+      auto it = qubitsByRegister.find(qubit.regId);
+      if (it != qubitsByRegister.end() && !initQubits.contains(qubit)) {
+        it->second.push_back(qubit);
+      }
     }
   }
 
   SmallVector<Value> updatedArgs;
   updatedArgs.reserve(initArgs.size());
   for (auto initArg : initArgs) {
-    updatedArgs.emplace_back(prepareInitArg(initArg, &initQubits));
+    if (isa<QubitType>(initArg.getType())) {
+      updatedArgs.push_back(initArg);
+      continue;
+    }
+    validateTensorValue(initArg);
+    updatedArgs.push_back(insertExtractedQubits(
+        initArg, qubitsByRegister[validTensors.find(initArg)->regId]));
   }
   return updatedArgs;
 }
@@ -1618,26 +1652,33 @@ void QCOProgramBuilder::ensureAllocationMode(
 }
 
 void QCOProgramBuilder::disposeLinearValues() {
-  DenseSet<int64_t> validTensorIds;
-  for (const auto& tensor : validTensors) {
-    validTensorIds.insert(tensor.regId);
+  auto tensors = llvm::to_vector(validTensors);
+  llvm::sort(tensors, [](const Tensor& lhs, const Tensor& rhs) {
+    return lhs.regId < rhs.regId;
+  });
+  DenseMap<int64_t, SmallVector<Qubit>> qubitsByRegister;
+  for (const auto& tensor : tensors) {
+    qubitsByRegister.try_emplace(tensor.regId);
   }
 
-  DenseMap<int64_t, SmallVector<Qubit>> qubitsByRegister;
+  SmallVector<Qubit> qubitsToSink;
   for (const auto& qubit : validQubits) {
-    if (qubit.regId == -1 || !validTensorIds.contains(qubit.regId)) {
-      SinkOp::create(*this, qubit);
+    auto it = qubitsByRegister.find(qubit.regId);
+    if (it == qubitsByRegister.end()) {
+      qubitsToSink.push_back(qubit);
     } else {
-      qubitsByRegister[qubit.regId].emplace_back(qubit);
+      it->second.push_back(qubit);
     }
   }
-  for (const auto& tensor : validTensors) {
-    Value currentTensor = tensor;
-    for (const auto& qubit : qubitsByRegister[tensor.regId]) {
-      currentTensor =
-          qtensor::InsertOp::create(*this, qubit, currentTensor, qubit.regIndex)
-              .getResult();
-    }
+  llvm::sort(qubitsToSink, [](const Qubit& lhs, const Qubit& rhs) {
+    return isDefinedBefore(lhs, rhs);
+  });
+  for (const auto& qubit : qubitsToSink) {
+    SinkOp::create(*this, qubit);
+  }
+  for (const auto& tensor : tensors) {
+    auto currentTensor =
+        insertExtractedQubits(tensor, qubitsByRegister[tensor.regId]);
     qtensor::DeallocOp::create(*this, currentTensor);
   }
   validQubits.clear();

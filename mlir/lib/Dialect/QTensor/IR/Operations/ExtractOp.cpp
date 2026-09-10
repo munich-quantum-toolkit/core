@@ -17,107 +17,10 @@
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/Support/LLVM.h"
 
-#include "llvm/ADT/DenseSet.h"
-
-#include <cstdint>
-
 using namespace mlir;
 using namespace mlir::qtensor;
 
-/// Find the allocation proving that an extracted constant slot is fresh.
-static AllocOp findFreshAllocation(ExtractOp extract) {
-  auto current = extract.getTensor();
-  const auto extractIndex = getConstantIntValue(extract.getIndex());
-  if (!extractIndex) {
-    return {};
-  }
-
-  while (auto* definingOp = current.getDefiningOp()) {
-    if (auto alloc = dyn_cast<AllocOp>(definingOp)) {
-      return alloc;
-    }
-
-    if (auto nestedExtract = dyn_cast<ExtractOp>(definingOp)) {
-      const auto index = getConstantIntValue(nestedExtract.getIndex());
-      if (!index || *index == *extractIndex) {
-        return {};
-      }
-      current = nestedExtract.getTensor();
-      continue;
-    }
-
-    if (auto insert = dyn_cast<InsertOp>(definingOp)) {
-      const auto index = getConstantIntValue(insert.getIndex());
-      if (!index || *index == *extractIndex) {
-        return {};
-      }
-      current = insert.getDest();
-      continue;
-    }
-
-    return {};
-  }
-
-  return {};
-}
-
 namespace {
-/// Remove a reset after extracting a freshly allocated qubit.
-struct RemoveResetAfterExtract final : OpRewritePattern<qco::ResetOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(qco::ResetOp reset,
-                                PatternRewriter& rewriter) const override {
-    auto extract = reset.getQubitIn().getDefiningOp<ExtractOp>();
-    if (!extract) {
-      return failure();
-    }
-    auto alloc = findFreshAllocation(extract);
-    if (!alloc) {
-      return failure();
-    }
-    if (extract.getTensor() == alloc.getResult()) {
-      rewriter.replaceOp(reset, reset.getQubitIn());
-      return success();
-    }
-
-    /// Reuse the allocation proof for every fresh slot in this linear chain.
-    /// Folding them together avoids one backward traversal per reset.
-    auto* resetBlock = reset->getBlock();
-    llvm::SmallDenseSet<int64_t> accessed;
-    auto tensor = alloc.getResult();
-    while (true) {
-      auto* user = *tensor.user_begin();
-      if (auto nextExtract = dyn_cast<ExtractOp>(user)) {
-        const auto index = getConstantIntValue(nextExtract.getIndex());
-        if (!index) {
-          break;
-        }
-        if (accessed.insert(*index).second) {
-          if (auto nextReset =
-                  dyn_cast<qco::ResetOp>(*nextExtract.getResult().user_begin());
-              nextReset && nextReset->getBlock() == resetBlock) {
-            rewriter.replaceOp(nextReset, nextReset.getQubitIn());
-          }
-        }
-        tensor = nextExtract.getOutTensor();
-        continue;
-      }
-      if (auto insert = dyn_cast<InsertOp>(user)) {
-        const auto index = getConstantIntValue(insert.getIndex());
-        if (!index) {
-          break;
-        }
-        accessed.insert(*index);
-        tensor = insert.getResult();
-        continue;
-      }
-      break;
-    }
-    return success();
-  }
-};
-
 /// Fold an insert followed immediately by an extract at the same index.
 struct FoldExtractAfterInsertPattern final : OpRewritePattern<ExtractOp> {
   using OpRewritePattern::OpRewritePattern;
@@ -161,5 +64,5 @@ LogicalResult ExtractOp::verify() {
 
 void ExtractOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                             MLIRContext* context) {
-  results.add<FoldExtractAfterInsertPattern, RemoveResetAfterExtract>(context);
+  results.add<FoldExtractAfterInsertPattern>(context);
 }
