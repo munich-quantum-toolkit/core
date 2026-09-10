@@ -118,7 +118,9 @@ parsing. Separate QCO-linearity checks remain required.
 
 ## Validation
 
-Current native validation uses Clang 23, LLVM/MLIR 23.1.0, ThinLTO, and mold:
+Native validation at `3d3e5c795274884c5bf08722ea59155bdcb95f84` used Clang 23,
+LLVM/MLIR 23.1.0, ThinLTO, and mold. The subsequent cleanup removes only the
+temporary benchmark files and updates documentation; repository lint was rerun.
 
 - `cmake --preset release-clang-ipo`: passed.
 - `cmake --build --preset release-clang-ipo -j8`: passed after the final edits.
@@ -138,10 +140,15 @@ binding implementation. Current hosted CI has not validated the local branch.
 Historical results are tied to their measured revisions:
 
 - At `39b5ecd71`: all 1,575 affected CTest entries, repository lint, and
-  full-file C++ lint passed. The [comparator benchmark][benchmark] measured a
-  4,000-gate comparison at median 538.385 ms before and 0.141313 ms with strict
-  comparison. This is a comparator microbenchmark, not a compiler or whole-suite
-  speedup.
+  full-file C++ lint passed. The comparator experiment compared two separately
+  parsed, verified 4,000-Hadamard QCO modules in one context, excluding parsing
+  and verification from timing. Against baseline
+  `db95f4817b2498fd5c60e4cf7bf0f23accb81b24`, seven samples on native ARM64 DGX
+  Spark with the Release toolchain above measured median 538.385 ms
+  (535.649–539.976 ms) before and 0.141313 ms (0.135649–0.159890 ms) with strict
+  comparison. This predates the rebase and tensor-permutation follow-up; it is a
+  comparator microbenchmark, not a compiler or whole-suite speedup. Temporary
+  harnesses, data, and plots have been removed from the PR.
 - At `a1cff7ca2`: 888 Python MLIR/QDMI tests passed against rebuilt
   shared-library bindings, and stub generation passed. This refresh changes no
   binding API.
@@ -151,4 +158,3 @@ Historical results are tied to their measured revisions:
 [pr]: https://github.com/munich-quantum-toolkit/core/pull/2502
 [issue]: https://github.com/munich-quantum-toolkit/core/issues/2254
 [historical]: https://github.com/munich-quantum-toolkit/core/tree/a72eaa1198853a005ee16270dfbe331e78feeff5/.agent/audits
-[benchmark]: ../benchmarks/pr2502-comparator/README.md
