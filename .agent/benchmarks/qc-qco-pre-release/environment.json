@@ -1,0 +1,12 @@
+{
+  "revision": "ad74680f1ef380456a1b89a810ef33ee8d218f69",
+  "compiler": "Ubuntu clang version 23.1.1 (++20260903063729+47bafb752202-1~exp1~20260903063749.63)",
+  "machine": "aarch64",
+  "cpu": 19,
+  "preset": "release-clang-ipo",
+  "mlir": "23.1.0",
+  "prototype": "Only remove RemoveResetAfterExtract from pattern registration",
+  "warmups_per_process": 2,
+  "pairs": 5,
+  "samples_per_process": 3
+}

@@ -1,0 +1,2042 @@
+[
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 15.59468,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 15.59099,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 15.53967,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 2.850516,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 2.844612,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 2.836435,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 2.871476,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 2.889716,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 2.851555,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 15.50398,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 15.63068,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 15.54207,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 15.63035,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 15.7095,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 15.56388,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 2.876916,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 2.90754,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 2.919732,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 2.825731,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 2.873604,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 2.913156,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 15.55865,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 15.58419,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 15.55279,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 15.5514,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 15.62342,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 15.59553,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 2.851891,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 2.964324,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 128,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 2.836836,
+    "ops": 1030,
+    "sha256": "8434a5325e82d7dcd8bcb57142cf984c2fd14ef0be91788d7aeca7d82b2fac3a"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 57.86425,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 57.87705,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 58.14777,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 5.775528,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 5.823991,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 5.770519,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 5.816488,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 5.811432,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 5.859656,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 58.03761,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 57.70891,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 57.88963,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 58.20645,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 57.9979,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 57.962,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 5.740407,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 5.779671,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 5.763127,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 5.804376,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 5.74628,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 5.743864,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 57.86859,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 58.39096,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 58.02908,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 57.36338,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 57.35351,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 57.44785,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 5.787687,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 5.823272,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 256,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 5.817544,
+    "ops": 2054,
+    "sha256": "02e95f8df6ef4e596b26a8b23f266bd9c8bedf3fb88898353926cbce20c895d9"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 219.9033,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 220.1002,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 220.0667,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 11.85606,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 11.81918,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 11.75738,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 11.73541,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 11.65032,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 11.56736,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 221.031,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 220.7042,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 219.6942,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 220.4755,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 220.1633,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 219.6066,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 11.6356,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 11.72189,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 11.65755,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 11.61877,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 11.6192,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 11.73075,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 220.6612,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 220.9272,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 220.5392,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 221.381,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 220.024,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 220.4479,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 11.63715,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 11.67114,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 512,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 11.65794,
+    "ops": 4102,
+    "sha256": "38d3c9b25f918546cab6304f41057b8751371aaf2a0fb9c9a1df1c93cf06d63e"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 873.4557,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 866.4887,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 0,
+    "ms": 852.5791,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 24.0066,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 23.53837,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 0,
+    "ms": 23.34373,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 23.54654,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 23.47096,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 1,
+    "ms": 23.47077,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 850.2803,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 847.3505,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 1,
+    "ms": 848.9371,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 865.9788,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 863.501,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 2,
+    "ms": 866.3653,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 23.92623,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 24.11912,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 2,
+    "ms": 24.0933,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 23.92984,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 24.2733,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 3,
+    "ms": 23.79179,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 878.9932,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 870.1089,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 3,
+    "ms": 865.4059,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 874.6248,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 867.89,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "baseline",
+    "pair": 4,
+    "ms": 869.8468,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 24.15056,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 24.44138,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "used-slot-reset",
+    "size": 1024,
+    "variant": "noreset",
+    "pair": 4,
+    "ms": 23.83224,
+    "ops": 8198,
+    "sha256": "6ed103ea93d99a257451b1401c58cd14b4fd5118beb984d4098d57c7e677f959"
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.009104,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.008784,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.008096,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.008385,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.008224,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.008288,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.008272,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.008016,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.008336,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.008272,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.007648,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.007856,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.00824,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.007936,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.007968,
+    "ops": 200
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 0.027648,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 0.02824,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 0.028848,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 0.028976,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 0.028065,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 0.028448,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 0.02824,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 0.028624,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 0.028929,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 0.028448,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 0.028144,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 0.028096,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 0.02792,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 0.02816,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 64,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 0.028273,
+    "ops": 456
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.028992,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.029137,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.029969,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.029472,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.029984,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.028416,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.029104,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.02992,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.028736,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.028896,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.02944,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.028928,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.028481,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.028929,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.028576,
+    "ops": 776
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 0.257554,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 0.262193,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 0.26133,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 0.261953,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 0.26317,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 0.261458,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 0.259938,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 0.263281,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 0.336867,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 0.260626,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 0.259425,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 0.262082,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 0.259682,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 0.260866,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 256,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 0.260242,
+    "ops": 1800
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.110785,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.110593,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.11592,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.110896,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.110673,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.114273,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.110081,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.111873,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.111392,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.109633,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.111265,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.112465,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.113361,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.117233,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.113537,
+    "ops": 3080
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 3.403224,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 3.401319,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 3.413975,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 3.399479,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 3.402119,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 3.398263,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 3.475383,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 3.408023,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 3.400407,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 3.463623,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 3.397991,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 3.399719,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 3.470168,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 3.40068,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 1024,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 3.399927,
+    "ops": 7176
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.446611,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.449699,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 0,
+    "ms": 0.443747,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.441395,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.450243,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 1,
+    "ms": 0.439235,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.449267,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.443027,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 2,
+    "ms": 0.445683,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.445955,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.496963,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 3,
+    "ms": 0.442019,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.443091,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.442051,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "empty",
+    "pair": 4,
+    "ms": 0.444323,
+    "ops": 12296
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 51.60098,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 51.61414,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 0,
+    "ms": 51.59307,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 51.76519,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 51.67845,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 1,
+    "ms": 51.57394,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 51.5699,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 51.56361,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 2,
+    "ms": 51.66843,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 51.49024,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 51.66877,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 3,
+    "ms": 51.72066,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 51.64725,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 51.66906,
+    "ops": 28680
+  },
+  {
+    "workload": "builder-preparation",
+    "size": 4096,
+    "variant": "extracted",
+    "pair": 4,
+    "ms": 51.61629,
+    "ops": 28680
+  }
+]
