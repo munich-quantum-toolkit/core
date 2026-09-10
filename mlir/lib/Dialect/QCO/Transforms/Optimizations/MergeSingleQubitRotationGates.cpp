@@ -419,8 +419,8 @@ static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
 /// - U(theta, phi, lambda): ZYZ via quaternionFromZYZ.
 ///
 /// @note Global phase is discarded; see quaternionFromZYZ for details.
-/// @return nullopt if a required parameter cannot be represented as `T`
-///         (static path: unfoldable SSA value).
+/// @return nullopt if a required parameter cannot be represented as `T` (static
+/// path: unfoldable SSA value).
 template <typename T>
 static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
                                                  const ScalarConsts<T>& c,
@@ -545,8 +545,8 @@ template <typename T> static Val<T> principalPhase(Val<T> angle) {
 /// - Id                    -> 0
 ///
 /// @return Success with the phase contribution, including an explicit zero for
-///         SU(2) gates. Failure if a required parameter does not fold on the
-///         static (`double`) path, or if @p op is not a mergeable rotation.
+/// SU(2) gates. Failure if a required parameter does not fold on the static
+/// (`double`) path, or if @p op is not a mergeable rotation.
 template <typename T>
 static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
                                        const ScalarConsts<T>& c,

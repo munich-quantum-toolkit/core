@@ -2184,8 +2184,7 @@ struct PPRPaulis {
 /// @param context MLIR context.
 /// @param state Shared lowering state pointer target (patterns store `&state`).
 /// @param customName Custom gate name when `Kind` is `JeffKind::Custom`
-/// (ignored
-///        otherwise).
+/// (ignored otherwise).
 /// @param ppr Pauli indices when `Kind` is `JeffKind::PPR` (ignored otherwise).
 ///
 /// Dispatches at compile time to the appropriate conversion pattern.

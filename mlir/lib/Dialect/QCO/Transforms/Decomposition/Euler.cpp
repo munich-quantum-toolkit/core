@@ -249,7 +249,7 @@ struct Unitary1QEulerPlan {
   ///
   /// @param angle The rotation angle in radians.
   /// @param axis The rotation axis in the XY-plane (`0` for `Rx`, `pi/2` for
-  ///             `Ry`).
+  /// `Ry`).
   void appendRStep(const double angle, const double axis) {
     if (!isNearZeroRotationAngle(angle)) {
       steps.emplace_back(SynthesisStep::Kind::R, angle, axis);

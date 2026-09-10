@@ -1134,7 +1134,7 @@ private:
   /// @param var The number of levels contained in each vector DD.
   /// @return A complex number representing the scalar product of the DDs.
   /// @note This function is called recursively such that the number of levels
-  ///       decreases each time to traverse the DDs.
+  /// decreases each time to traverse the DDs.
   ComplexValue innerProduct(const vEdge& x, const vEdge& y, Qubit var);
 
   /// Recursively calculates the fidelity of measurement outcomes.
@@ -1427,10 +1427,9 @@ public:
   /// ones are not. If garbage[i] = true, then qubit q_i is considered garbage.
   /// @param normalizeWeights By default set to `false`. If set to `true`, the
   /// function changes all weights in the DD to their magnitude, also for
-  ///                         non-garbage qubits. This is used for checking
-  /// partial equivalence of circuits. For partial equivalence, only the
-  ///                         measurement probabilities are considered, so we
-  /// need to consider only the magnitudes of each entry.
+  /// non-garbage qubits. This is used for checking partial equivalence of
+  /// circuits. For partial equivalence, only the measurement probabilities are
+  /// considered, so we need to consider only the magnitudes of each entry.
   /// @return DD representing the reduced matrix/vector.
   vEdge reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
                       bool normalizeWeights = false);

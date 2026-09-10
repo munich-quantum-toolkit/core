@@ -32,8 +32,8 @@ namespace mlir::qco::decomposition {
 /// Tolerance for complex symmetric `M2` diagonalization.
 inline constexpr double WEYL_DIAGONALIZATION_TOLERANCE = 1e-13;
 
-/// Tolerance for Weyl round-trip reconstruction and orthogonality after
-///        the full decomposition pipeline.
+/// Tolerance for Weyl round-trip reconstruction and orthogonality after the
+/// full decomposition pipeline.
 ///
 /// Looser than @ref MATRIX_TOLERANCE because
 /// of accumulated 4x4 multiplications in the Weyl chamber algorithm.
@@ -203,16 +203,15 @@ public:
   create(const Matrix4x4& basisMatrix, double basisFidelity);
 
   /// Decomposes a target Weyl decomposition into single-qubit factors and
-  ///        basis-gate uses.
+  /// basis-gate uses.
   ///
   /// @param targetDecomposition Weyl decomposition of the target unitary.
   /// @param numBasisGateUses Requested number of basis-gate applications in
-  ///        `{0, 1, 2, 3}`. Pass `std::nullopt` to pick the count that
-  ///        maximizes `traceToFidelity(trace[i]) * basisFidelity^i` over
-  ///        `i ∈ {0, 1, 2, 3}`.
+  /// `{0, 1, 2, 3}`. Pass `std::nullopt` to pick the count that maximizes
+  /// `traceToFidelity(trace[i]) * basisFidelity^i` over `i ∈ {0, 1, 2, 3}`.
   /// @return A native decomposition on success, or `std::nullopt` when the
-  ///         requested count is unsupported (e.g. more than one basis gate for
-  ///         a non-super-controlled basis, or a value outside `{0, 1, 2, 3}`).
+  /// requested count is unsupported (e.g. more than one basis gate for a
+  /// non-super-controlled basis, or a value outside `{0, 1, 2, 3}`).
   [[nodiscard]] std::optional<TwoQubitNativeDecomposition>
   twoQubitDecompose(const TwoQubitWeylDecomposition& targetDecomposition,
                     std::optional<std::uint8_t> numBasisGateUses) const;

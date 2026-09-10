@@ -46,8 +46,7 @@ VectorDD makeZeroState(std::size_t n, Package& dd, std::size_t start = 0);
 VectorDD makeBasisState(std::size_t n, const std::vector<bool>& state,
                         Package& dd, std::size_t start = 0);
 
-/// Construct a product state out of
-///        \f$\{0, 1, +, -, R, L\}^{\otimes n}\f$.
+/// Construct a product state out of \f$\{0, 1, +, -, R, L\}^{\otimes n}\f$.
 /// @param n The number of qubits
 /// @param state The state to construct.
 /// @param dd The DD package to use for making the vector DD.

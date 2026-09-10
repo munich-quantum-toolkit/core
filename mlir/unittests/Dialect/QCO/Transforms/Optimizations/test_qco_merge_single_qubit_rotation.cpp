@@ -59,8 +59,8 @@ protected:
   OwningOpRef<ModuleOp> module;
 
   enum class GateType : std::uint8_t { RX, RY, RZ, P, R, U2, U };
-  /// Struct to easily construct a rotation gate inline.
-  ///        opName uses the getOperationName() mnemonic.
+  /// Struct to easily construct a rotation gate inline. opName uses the
+  /// getOperationName() mnemonic.
   struct RotationGate {
     GateType type;
     SmallVector<double, 4> angles;
