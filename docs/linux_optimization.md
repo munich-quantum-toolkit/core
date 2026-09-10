@@ -1,5 +1,10 @@
 # Local Linux optimization experiments
 
+Cross-platform trial workflows and measurement tools live in the
+[portable-mlir-toolchain experiment directory](https://github.com/munich-quantum-software/portable-mlir-toolchain/tree/codex/optimized-release-toolchain/experiments).
+They run on the `munich-quantum-software` organization's runners. Core supplies
+its pinned source, training workloads, and correctness tests.
+
 This recipe evaluates release builds in a separate directory. It does not
 replace an assertion-enabled development SDK. The measured ARM64 results are
 recorded in the optimization audit. The selected portable Clang wheel also gives
@@ -61,6 +66,7 @@ export PYTHON="$(uv python find 3.14.7)"
 export OPT_ROOT="$PWD/build/local-release"
 export LLVM_SOURCE="/absolute/path/to/llvm-project-23.1.0.src"
 export CORE_SOURCE="/absolute/path/to/core"
+export TOOLCHAIN_SOURCE="/absolute/path/to/portable-mlir-toolchain"
 export NATIVE_SDK="/absolute/path/to/assertion-free-native-sdk"
 export RELEASE_SDK="$OPT_ROOT/sdk"
 export CPU_FLAGS=""
@@ -387,7 +393,7 @@ Record a command with the local runner; the output JSON includes its command,
 explicit environment overrides, elapsed time, resource samples, and log paths:
 
 ```sh
-python3 scripts/linux_optimization.py --output "$OPT_ROOT/build.json" \
+python3 "$TOOLCHAIN_SOURCE/experiments/linux_optimization.py" --output "$OPT_ROOT/build.json" \
   --env CMAKE_BUILD_PARALLEL_LEVEL=4 -- cmake --build "$OPT_ROOT/core-build" -j 4
 ```
 
@@ -407,10 +413,11 @@ a separate linker cache. Record empty-cache and populated-cache runs without
 implying that the OS page cache was flushed. Full LTO has no persistent ThinLTO
 cache. Measure package compression separately from code size and linking.
 
-Run `test/release/evaluate_optimization.py` against installed variants for
-twelve rotating fresh-process rounds with fixed CPU affinity and thread counts,
-and stop concurrent builds first. This local evaluator pins CPU 19; use an
-available CPU consistently if adapting it to another machine. Keep the raw JSON,
+Run `experiments/evaluate_optimization.py` from the toolchain checkout with
+`--core "$CORE_SOURCE"` against installed variants for twelve rotating
+fresh-process rounds with fixed CPU affinity and thread counts, and stop
+concurrent builds first. Pass `--cpu 19` to repeat the original ARM64
+experiment; otherwise Linux uses the first available CPU. Keep the raw JSON,
 per-workload CSV, bootstrap intervals, and artifact hashes. Throughput counts
 completed workload invocations per second. Inspect individual regressions above
 3%, even when the balanced score improves. Run regular C++ and Python tests, QIR
