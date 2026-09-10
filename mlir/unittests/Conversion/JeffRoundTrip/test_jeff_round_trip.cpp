@@ -374,12 +374,13 @@ static LogicalResult convertJeffToQCO(ModuleOp moduleOp) {
 }
 
 TEST_F(JeffRoundTripTest, RejectsNonNormalizedModifiersBeforeMutation) {
-  for (const auto* body :
-       {"%s = qco.s %a : !qco.qubit -> !qco.qubit\n"
-        "qco.yield %s, %b : !qco.qubit, !qco.qubit",
-        "%x, %y = qco.swap %b, %a : !qco.qubit, !qco.qubit -> "
-        "!qco.qubit, !qco.qubit\n"
-        "qco.yield %y, %x : !qco.qubit, !qco.qubit"}) {
+  for (const auto* body : {
+           "%s = qco.s %a : !qco.qubit -> !qco.qubit\n"
+           "qco.yield %s, %b : !qco.qubit, !qco.qubit",
+           "%x, %y = qco.swap %b, %a : !qco.qubit, !qco.qubit -> "
+           "!qco.qubit, !qco.qubit\n"
+           "qco.yield %y, %x : !qco.qubit, !qco.qubit",
+       }) {
     const std::string source = std::string(R"mlir(
       func.func @main(%q0: !qco.qubit, %q1: !qco.qubit)
           -> (!qco.qubit, !qco.qubit) {

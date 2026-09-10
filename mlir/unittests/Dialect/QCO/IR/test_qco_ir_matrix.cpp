@@ -1629,8 +1629,10 @@ TEST_F(QCOMatrixTest, XXPlusMinusYYRemainUnitaryForLargeBeta) {
   for (const double beta :
        {0.456, 1e16, -1e16, std::numeric_limits<double>::max()}) {
     SCOPED_TRACE(beta);
-    for (const auto& matrix : {XXPlusYYOp::unitaryMatrix(1.0, beta),
-                               XXMinusYYOp::unitaryMatrix(1.0, beta)}) {
+    for (const auto& matrix : {
+             XXPlusYYOp::unitaryMatrix(1.0, beta),
+             XXMinusYYOp::unitaryMatrix(1.0, beta),
+         }) {
       EXPECT_TRUE((matrix * matrix.adjoint()).isApprox(Matrix4x4::identity()));
     }
   }
