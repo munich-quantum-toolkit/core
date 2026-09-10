@@ -725,19 +725,7 @@ void PowOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubit,
 }
 
 LogicalResult PowOp::verifyRegions() {
-  auto& block = *getBody();
-  if (failed(detail::verifyModifierBody(getOperation(), block))) {
-    return failure();
-  }
-
-  SmallPtrSet<Value, 4> uniqueQubitsIn;
-  for (auto target : getQubitsIn()) {
-    if (!uniqueQubitsIn.insert(target).second) {
-      return emitOpError("duplicate qubit found");
-    }
-  }
-
-  return success();
+  return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
 void PowOp::getCanonicalizationPatterns(RewritePatternSet& results,

@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 
@@ -26,7 +27,7 @@
 
 using namespace mlir;
 
-TEST(QCOModifierVerificationTest, RequiresPositionalYields) {
+TEST(QCOModifierVerificationTest, RequiresUniqueInputsAndPositionalYields) {
   MLIRContext context;
   context
       .loadDialect<qco::QCODialect, arith::ArithDialect, func::FuncDialect>();
@@ -53,19 +54,34 @@ TEST(QCOModifierVerificationTest, RequiresPositionalYields) {
   ASSERT_TRUE(succeeded(verify(*module)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*module)));
   module->walk([&](qco::YieldOp yield) {
+    auto* modifier = yield->getParentOp();
+    SCOPED_TRACE(modifier->getName().getStringRef().str());
     auto first = yield.getOperand(0);
     auto second = yield.getOperand(1);
-    yield->setOperands({second, first});
-    bool diagnosed = false;
-    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
-      diagnosed |= diagnostic.str().find("positionally") != std::string::npos;
+    std::string diagnostic;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& message) {
+      diagnostic = message.str();
       return success();
     });
-    EXPECT_TRUE(failed(verify(yield->getParentOp())));
-    EXPECT_TRUE(diagnosed);
+    for (auto firstYield : {second, first}) {
+      yield->setOperands({firstYield, first});
+      diagnostic.clear();
+      EXPECT_TRUE(failed(verify(modifier)));
+      EXPECT_NE(diagnostic.find("positionally"), std::string::npos);
+    }
     yield->setOperands({first, second});
+
+    auto inputs = cast<qco::UnitaryOpInterface>(modifier).getInputQubits();
+    auto& input = modifier->getOpOperand(inputs.getBeginOperandIndex() + 1);
+    auto saved = input.get();
+    input.set(inputs.front());
+    diagnostic.clear();
+    EXPECT_TRUE(failed(verify(modifier)));
+    EXPECT_NE(diagnostic.find("duplicate qubit found"), std::string::npos);
+    input.set(saved);
   });
   EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*module)));
 }
 
 TEST(QCOModifierVerificationTest, RequiresMatchingControlResults) {

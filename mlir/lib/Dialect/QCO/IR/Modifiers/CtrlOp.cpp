@@ -276,38 +276,10 @@ void CtrlOp::build(OpBuilder& odsBuilder, OperationState& odsState,
 }
 
 LogicalResult CtrlOp::verifyRegions() {
-  auto& block = *getBody();
-  if (failed(detail::verifyModifierBody(getOperation(), block))) {
-    return failure();
-  }
-
   if (getControlsIn().size() != getControlsOut().size()) {
     return emitOpError("number of output controls must match input controls");
   }
-  const auto numTargets = getNumTargets();
-  auto* blockTerminator = block.getTerminator();
-
-  SmallPtrSet<Value, 4> uniqueQubitsIn;
-  for (auto control : getInputQubits()) {
-    if (!uniqueQubitsIn.insert(control).second) {
-      return emitOpError("duplicate qubit found");
-    }
-  }
-
-  SmallPtrSet<Value, 4> uniqueQubitsOut;
-  for (auto control : getControlsOut()) {
-    if (!uniqueQubitsOut.insert(control).second) {
-      return emitOpError("duplicate control qubit found");
-    }
-  }
-
-  for (size_t i = 0; i < numTargets; i++) {
-    if (!uniqueQubitsOut.insert(blockTerminator->getOperand(i)).second) {
-      return emitOpError("duplicate qubit found");
-    }
-  }
-
-  return success();
+  return detail::verifyModifierBody(getOperation(), *getBody());
 }
 
 void CtrlOp::getCanonicalizationPatterns(RewritePatternSet& results,

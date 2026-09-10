@@ -24,6 +24,7 @@
 #include "mlir/Transforms/RegionUtils.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVectorExtras.h"
 
 #include <cstddef>
@@ -92,6 +93,13 @@ LogicalResult verifyModifierBody(Operation* modifierOp, Block& body) {
   if (!hasPositionalBodyYields(body)) {
     return modifierOp->emitOpError(
         "yielded qubits must continue body arguments positionally");
+  }
+
+  SmallPtrSet<Value, 4> uniqueQubits;
+  for (auto qubit : unitary.getInputQubits()) {
+    if (!uniqueQubits.insert(qubit).second) {
+      return modifierOp->emitOpError("duplicate qubit found");
+    }
   }
   return success();
 }

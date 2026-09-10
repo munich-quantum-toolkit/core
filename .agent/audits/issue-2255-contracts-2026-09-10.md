@@ -48,6 +48,9 @@ positional yields.
   invalid conversion cases were replaced by owning-verifier coverage. Tests for
   valid gate operand reordering, modifiers, and control-flow permutations
   remain.
+- Modifier input uniqueness is checked once in the shared verifier. SSA result
+  identity and positional yields make the old control-output uniqueness checks
+  redundant. The regression checks duplicate inputs and yields for Ctrl/Inv/Pow.
 - Mapping retains its deterministic scheduler and CBit effect model. A trial
   that serialized all effects broke routing dominance repair; it was discarded.
   Other classical side effects and tensor control flow need lowering first.
@@ -63,16 +66,20 @@ positional yields.
 ## Validation and limits
 
 The affected GoogleTest binaries are built with assertions enabled against
-LLVM/MLIR 23.1.0. Current results: 2,680 tests pass across 15 binaries
-(QC/QCO/QTensor/QIR IR, QCO utilities and optimizations, mapping, decomposition,
-target synthesis, phase normalization, QTensor transforms, QC↔QCO, jeff round
-trips, and compiler pipelines). Run each under `build/release/mlir/unittests`
-with `--gtest_brief=1`.
+LLVM/MLIR 23.1.0. Audit validation at `b2b7af3fd`: 2,680 tests pass across 15
+binaries (QC/QCO/QTensor/QIR IR, QCO utilities and optimizations, mapping,
+decomposition, target synthesis, phase normalization, QTensor transforms,
+QC↔QCO, jeff round trips, and compiler pipelines). Run each under
+`build/release/mlir/unittests` with `--gtest_brief=1`.
 
 `uvx nox -s lint` and full changed-file `uvx nox -s cpp-lint` pass. The latter
 checked all 32 changed C++ files with zero findings at `b2b7af3fd`. Context-only
 test setup now uses constructors without naming suppressions. No sanitizer,
 hardware execution, or measured speedup is claimed.
+
+After the modifier-verifier cleanup, all 892 tests in the QCO IR, QCO-to-QC,
+jeff round-trip, and MQT transform binaries pass. Both lint sessions were rerun
+successfully, including all 32 changed C++ files.
 
 Remaining candidates are not accepted findings: QC-to-QIR entry arguments and
 measurement-bearing helper support; permissive contexts with unregistered
