@@ -214,10 +214,11 @@ private:
   /// Measurement outcomes in sampling order.
   std::vector<std::string> shots_;
 
-  /// The DD package used for the state vector simulation
+  /// Owns an extracted state or an uncollapsed terminal-sampling state.
+  /// A null package means that no state result is available.
   std::unique_ptr<dd::Package> dd_;
 
-  /// The final DD at the end of the state vector simulation
+  /// The retained state, valid while dd_ owns its nodes.
   dd::VectorDD stateVecDD_{};
 
   /// The state vector for the job (only available if no mid-circuit

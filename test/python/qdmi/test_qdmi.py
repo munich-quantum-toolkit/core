@@ -771,20 +771,22 @@ def test_empty_program_has_empty_shot_strings(ddsim_device: Device) -> None:
     assert job.get_shots() == [""] * 4
 
 
-def test_empty_qasm_program_has_empty_results(ddsim_device: Device) -> None:
-    """Return empty results for an empty QASM program."""
+def test_empty_qasm_program_retains_zero_qubit_state(ddsim_device: Device) -> None:
+    """Keep the zero-qubit amplitude distinct from an unavailable state."""
     program = "OPENQASM 3.0;"
 
     sample_job = ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=4)
     sample_job.wait()
     assert sample_job.get_counts() == {}
+    assert sample_job.get_dense_statevector() == [1 + 0j]
+    assert sample_job.get_sparse_statevector() == {"": 1 + 0j}
 
     state_job = ddsim_device.submit_job(program, ProgramFormat.QASM3, num_shots=0)
     state_job.wait()
-    assert state_job.get_dense_statevector() == []
-    assert state_job.get_dense_probabilities() == []
-    assert state_job.get_sparse_statevector() == {}
-    assert state_job.get_sparse_probabilities() == {}
+    assert state_job.get_dense_statevector() == [1 + 0j]
+    assert state_job.get_dense_probabilities() == [1.0]
+    assert state_job.get_sparse_statevector() == {"": 1 + 0j}
+    assert state_job.get_sparse_probabilities() == {"": 1.0}
 
 
 def test_simulator_job_result_bindings(ddsim_device: Device) -> None:

@@ -29,6 +29,7 @@
 #include <complex>
 #include <cstddef>
 #include <limits>
+#include <map>
 #include <numbers>
 #include <string>
 #include <string_view>
@@ -55,8 +56,133 @@ void expectBellState(const QDMI_Program_Format format,
 
 } // namespace
 
+TEST(ResultsStatevector, SamplingRetainsStateWithoutChangingSamples) {
+  const auto base = qdmi_test::getQIRProgram("BellPairStatic.ll");
+  auto adaptive = base;
+  adaptive.replace(adaptive.find("base_profile"),
+                   std::string_view("base_profile").size(), "adaptive_profile");
+  for (const auto format : {
+           QDMI_PROGRAM_FORMAT_QASM2,
+           QDMI_PROGRAM_FORMAT_QASM3,
+           QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+           QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+           QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+           QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+       }) {
+    SCOPED_TRACE(format);
+    std::string program;
+    if (format == QDMI_PROGRAM_FORMAT_QASM2) {
+      program = qdmi_test::QASM2_BELL_SAMPLING;
+    } else if (format == QDMI_PROGRAM_FORMAT_QASM3) {
+      program = qdmi_test::QASM3_BELL_SAMPLING;
+    } else {
+      program = format == QDMI_PROGRAM_FORMAT_QIRBASESTRING ||
+                        format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE
+                    ? base
+                    : adaptive;
+      if (format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE ||
+          format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE) {
+        llvm::LLVMContext context;
+        llvm::SMDiagnostic error;
+        const auto llvmModule =
+            llvm::parseAssemblyString(program, error, context);
+        ASSERT_NE(llvmModule, nullptr);
+        program.clear();
+        llvm::raw_string_ostream stream(program);
+        llvm::WriteBitcodeToFile(*llvmModule, stream);
+      }
+    }
+    const qdmi_test::SessionGuard session{};
+    const qdmi_test::JobGuard job{session.session};
+    ASSERT_EQ(qdmi_test::setProgram(job.job, format, program), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::setShots(job.job, 64), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::setSeed(job.job, 7), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+    const auto counts = qdmi_test::getHistogram(job.job);
+    const auto state = qdmi_test::getDenseState(job.job);
+    ASSERT_EQ(state.size(), 4);
+    EXPECT_NEAR(std::abs(state[0] - std::numbers::sqrt2 / 2), 0., 1e-12);
+    EXPECT_NEAR(std::abs(state[3] - std::numbers::sqrt2 / 2), 0., 1e-12);
+    EXPECT_NEAR(std::abs(state[1]) + std::abs(state[2]), 0., 1e-12);
+    const auto sparse = qdmi_test::getSparseState(job.job);
+    ASSERT_EQ(sparse.first.size(), 2);
+    ASSERT_EQ(sparse.second.size(), 2);
+    std::map<std::string, std::complex<double>> sparseMap;
+    for (size_t i = 0; i < sparse.first.size(); ++i) {
+      sparseMap.emplace(sparse.first[i], sparse.second[i]);
+    }
+    EXPECT_EQ(sparseMap, (std::map<std::string, std::complex<double>>{
+                             {"00", state[0]}, {"11", state[3]}}));
+    const auto probabilities = qdmi_test::getDenseProbabilities(job.job);
+    ASSERT_EQ(probabilities.size(), 4);
+    for (size_t i = 0; i < state.size(); ++i) {
+      EXPECT_NEAR(probabilities[i], std::norm(state[i]), 1e-12);
+    }
+    const auto sparseProbabilities = qdmi_test::getSparseProbabilities(job.job);
+    EXPECT_EQ(sparseProbabilities.first, sparse.first);
+    EXPECT_EQ(sparseProbabilities.second,
+              (std::vector<double>{probabilities[0], probabilities[3]}));
+    EXPECT_EQ(qdmi_test::getDenseState(job.job), state);
+    EXPECT_EQ(qdmi_test::getHistogram(job.job), counts);
+    const qdmi_test::JobGuard repeated{session.session};
+    ASSERT_EQ(qdmi_test::setProgram(repeated.job, format, program),
+              QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::setShots(repeated.job, 64), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::setSeed(repeated.job, 7), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::submitAndWait(repeated.job, 0), QDMI_SUCCESS);
+    EXPECT_EQ(qdmi_test::getHistogram(repeated.job), counts);
+  }
+}
+
 TEST(ResultsStatevector, QASM2YieldsBellState) {
   expectBellState(QDMI_PROGRAM_FORMAT_QASM2, qdmi_test::QASM2_BELL_STATE);
+}
+
+TEST(ResultsStatevector, QASMSamplingPreservesPhaseAndWireOrder) {
+  constexpr std::string_view program = R"(
+OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] c;
+x q[0];
+gphase(0.3);
+swap q[0], q[1];
+c = measure q;
+)";
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  ASSERT_EQ(qdmi_test::setProgram(job.job, QDMI_PROGRAM_FORMAT_QASM3, program),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 16), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+  const auto state = qdmi_test::getDenseState(job.job);
+  ASSERT_EQ(state.size(), 4);
+  EXPECT_NEAR(std::abs(state[2] - std::polar(1., 0.3)), 0., 1e-12);
+  const auto histogram = qdmi_test::getHistogram(job.job);
+  EXPECT_EQ(histogram.first, (std::vector<std::string>{"10"}));
+  EXPECT_EQ(histogram.second, (std::vector<size_t>{16}));
+}
+
+TEST(ResultsStatevector, QIRSamplingDoesNotExposeCollapsedTrajectories) {
+  auto program = qdmi_test::getQIRProgram("BellPairStatic.ll");
+  program.replace(program.find("base_profile"),
+                  std::string_view("base_profile").size(), "adaptive_profile");
+  const auto position = program.find("ret i64 0");
+  ASSERT_NE(position, std::string::npos);
+  program.insert(position, "call void @__quantum__qis__x__body(ptr null)\n");
+  program += "\ndeclare void @__quantum__qis__x__body(ptr)\n";
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  ASSERT_EQ(qdmi_test::setProgram(
+                job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 16), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+  size_t size = 0;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                job.job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0, nullptr, &size),
+            QDMI_ERROR_NOTSUPPORTED);
+  EXPECT_FALSE(qdmi_test::getHistogram(job.job).first.empty());
 }
 
 TEST(ResultsStatevector, QASM2IgnoresFinalMeasurements) {
@@ -71,33 +197,36 @@ TEST(ResultsStatevector, QASM3IgnoresFinalMeasurements) {
   expectBellState(QDMI_PROGRAM_FORMAT_QASM3, qdmi_test::QASM3_BELL_SAMPLING);
 }
 
-TEST(ResultsStatevector, EmptyQASM3YieldsEmptyResults) {
-  const qdmi_test::SessionGuard s{};
-  const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(
-      qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3, "OPENQASM 3.0;"),
-      QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 0), QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
-
-  constexpr std::array results{
-      QDMI_JOB_RESULT_STATEVECTOR_DENSE,
-      QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
-      QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
-      QDMI_JOB_RESULT_PROBABILITIES_DENSE,
-      QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
-      QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
-  };
-  char dummy{};
-  for (const auto result : results) {
-    size_t size = 1;
-    EXPECT_EQ(
-        MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, nullptr, &size),
-        QDMI_SUCCESS);
-    EXPECT_EQ(size, 0U);
-    EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(j.job, result, 0, &dummy,
-                                                    nullptr),
-              QDMI_SUCCESS);
+TEST(ResultsStatevector, EmptyProgramsRetainTheZeroQubitState) {
+  for (const auto shots : {0U, 32U}) {
+    for (const auto format :
+         {QDMI_PROGRAM_FORMAT_QASM3, QDMI_PROGRAM_FORMAT_QIRBASESTRING}) {
+      const qdmi_test::SessionGuard session{};
+      const qdmi_test::JobGuard job{session.session};
+      const auto* const program = format == QDMI_PROGRAM_FORMAT_QASM3
+                                      ? "OPENQASM 3.0;"
+                                      : R"(define i64 @main() #0 { ret i64 0 }
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubits"="0" "required_num_results"="0" })";
+      ASSERT_EQ(qdmi_test::setProgram(job.job, format, program), QDMI_SUCCESS);
+      ASSERT_EQ(qdmi_test::setShots(job.job, shots), QDMI_SUCCESS);
+      ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+      EXPECT_EQ(qdmi_test::getDenseState(job.job),
+                (std::vector<std::complex<double>>{{1., 0.}}));
+      EXPECT_EQ(qdmi_test::getDenseProbabilities(job.job),
+                (std::vector<double>{1.}));
+      size_t size = 0;
+      ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                    job.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 0,
+                    nullptr, &size),
+                QDMI_SUCCESS);
+      EXPECT_EQ(size, 1);
+      char key = 'x';
+      ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                    job.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 1, &key,
+                    nullptr),
+                QDMI_SUCCESS);
+      EXPECT_EQ(key, '\0');
+    }
   }
 }
 

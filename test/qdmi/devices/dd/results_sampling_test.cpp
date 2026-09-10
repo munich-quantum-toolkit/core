@@ -338,38 +338,39 @@ TEST(ResultsSampling, BufferTooSmallErrors) {
   }
 }
 
-TEST(ResultsSampling, StateAndProbRequestsAreInvalidWhenShotsPositive) {
+TEST(ResultsSampling, RepeatedShotProgramsDoNotExposeATrajectory) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_BELL_SAMPLING),
+  ASSERT_EQ(qdmi_test::setProgram(
+                j.job, QDMI_PROGRAM_FORMAT_QASM3,
+                "OPENQASM 3; qubit q; bit c; reset q; c = measure q;"),
             QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::setShots(j.job, 32), QDMI_SUCCESS);
   ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
 
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_STATEVECTOR_DENSE, 0, nullptr, nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
+            QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(
       MQT_DDSIM_QDMI_device_job_get_results(
           j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS, 0, nullptr, nullptr),
-      QDMI_ERROR_INVALIDARGUMENT);
+      QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES, 0, nullptr,
                 nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
+            QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(
       MQT_DDSIM_QDMI_device_job_get_results(
           j.job, QDMI_JOB_RESULT_PROBABILITIES_DENSE, 0, nullptr, nullptr),
-      QDMI_ERROR_INVALIDARGUMENT);
+      QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS, 0, nullptr,
                 nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
+            QDMI_ERROR_NOTSUPPORTED);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES, 0, nullptr,
                 nullptr),
-            QDMI_ERROR_INVALIDARGUMENT);
+            QDMI_ERROR_NOTSUPPORTED);
 }
 
 TEST_F(QIRHistogramTestString, StaticSamplingPreservesRepeatedOutputOrder) {

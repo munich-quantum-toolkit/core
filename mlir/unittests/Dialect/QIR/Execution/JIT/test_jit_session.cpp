@@ -434,6 +434,45 @@ TEST(QIRBatchSampling, SeedReproducesBellSamples) {
   EXPECT_THAT(a, testing::Contains("11"));
 }
 
+TEST(QIRBatchSampling, RetainedStatePreservesPhaseOrderAndSessionLifetime) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+  call void @__quantum__qis__x__body(ptr null)
+  call void @__quantum__qis__rz__body(double 0.6, ptr null)
+  call void @__quantum__qis__swap__body(ptr null, ptr inttoptr (i64 1 to ptr))
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  call void @__quantum__qis__mz__body(ptr inttoptr (i64 1 to ptr), ptr inttoptr (i64 1 to ptr))
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
+  ret i64 0
+}
+declare void @__quantum__qis__x__body(ptr)
+declare void @__quantum__qis__rz__body(double, ptr)
+declare void @__quantum__qis__swap__body(ptr, ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_qubits"="2" "required_num_results"="2" }
+)";
+  qir::Runtime::QState state;
+  {
+    qir::JitSession session(ir, "retained-state");
+    session.runtime().disableOutput();
+    std::vector<std::string> shots;
+    bool available = false;
+    ASSERT_EQ(session.sample(16, shots, &available), 0);
+    ASSERT_TRUE(available);
+    state = session.runtime().takeState();
+    ASSERT_EQ(session.sample(0, shots, &available), 0);
+    EXPECT_FALSE(available);
+  }
+  EXPECT_EQ(state.numQubits, 2);
+  const auto vector = state.edge.getVector();
+  ASSERT_EQ(vector.size(), 4);
+  EXPECT_NEAR(std::abs(vector[2] - std::polar(1., 0.3)), 0., 1e-12);
+  EXPECT_NEAR(std::abs(vector[0]) + std::abs(vector[1]) + std::abs(vector[3]),
+              0., 1e-12);
+}
+
 TEST(QIRBatchSampling, TextOutputKeepsPerShotRecords) {
   const auto ir = getProgram("BellPairStatic.ll");
   qir::JitSession session(ir, "text", qir::Execution::Sampling, 42);
