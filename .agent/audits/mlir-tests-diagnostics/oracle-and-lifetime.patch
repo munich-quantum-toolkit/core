@@ -1,0 +1,120 @@
+diff --git a/mlir/unittests/Compiler/test_compiler_pipeline.cpp b/mlir/unittests/Compiler/test_compiler_pipeline.cpp
+index 18d68b954..cb68a6166 100644
+--- a/mlir/unittests/Compiler/test_compiler_pipeline.cpp
++++ b/mlir/unittests/Compiler/test_compiler_pipeline.cpp
+@@ -4124,3 +4124,115 @@ switch (selector) {
+ }
+
+ } // namespace mqt::test::compiler
++
++namespace audit2254 {
++using namespace mlir;
++
++static void expectDifferent(llvm::StringRef lhsSource, llvm::StringRef rhsSource) {
++  DialectRegistry registry;
++  registry.insert<arith::ArithDialect, func::FuncDialect, cf::ControlFlowDialect,
++                  qc::QCDialect, qco::QCODialect>();
++  MLIRContext context(registry);
++  auto lhs = parseSourceString<ModuleOp>(lhsSource, &context);
++  auto rhs = parseSourceString<ModuleOp>(rhsSource, &context);
++  ASSERT_TRUE(lhs);
++  ASSERT_TRUE(rhs);
++  ASSERT_TRUE(succeeded(verify(*lhs)));
++  ASSERT_TRUE(succeeded(verify(*rhs)));
++  ASSERT_TRUE(succeeded(qco::verifyLinearity(*lhs)));
++  ASSERT_TRUE(succeeded(qco::verifyLinearity(*rhs)));
++  EXPECT_FALSE(areModulesEquivalentWithPermutations(*lhs, *rhs));
++}
++
++TEST(Audit2254Oracle, DenseConstantValueMatters) {
++  expectDifferent(R"(func.func @f() -> tensor<1xi64> {
++    %x = arith.constant dense<1> : tensor<1xi64>
++    return %x : tensor<1xi64>
++  })", R"(func.func @f() -> tensor<1xi64> {
++    %x = arith.constant dense<2> : tensor<1xi64>
++    return %x : tensor<1xi64>
++  })");
++}
++
++TEST(Audit2254Oracle, FunctionArgumentTypeMatters) {
++  expectDifferent("func.func @f(%x: i32) { return }",
++                  "func.func @f(%x: i64) { return }");
++}
++
++TEST(Audit2254Oracle, MissingInterfaceAttributeMatters) {
++  expectDifferent("func.func @f() attributes {llvm.emit_c_interface} { return }",
++                  "func.func @f() { return }");
++}
++
++TEST(Audit2254Oracle, QCNoncommutingGateOrderMatters) {
++  expectDifferent(R"(func.func @f(%q: !qc.qubit) {
++    qc.h %q : !qc.qubit
++    qc.x %q : !qc.qubit
++    return
++  })", R"(func.func @f(%q: !qc.qubit) {
++    qc.x %q : !qc.qubit
++    qc.h %q : !qc.qubit
++    return
++  })");
++}
++
++TEST(Audit2254Oracle, QCOConditionMatters) {
++  const std::string lhs = R"(func.func @f(%a: i1, %b: i1, %q: !qco.qubit) -> !qco.qubit {
++    %r = qco.if %a args(%t = %q) -> !qco.qubit {
++      %h = qco.h %t : !qco.qubit -> !qco.qubit
++      qco.yield %h : !qco.qubit
++    } else args(%t = %q) {
++      %x = qco.x %t : !qco.qubit -> !qco.qubit
++      qco.yield %x : !qco.qubit
++    }
++    return %r : !qco.qubit
++  })";
++  auto rhs = lhs;
++  rhs.replace(rhs.find("qco.if %a"), std::string("qco.if %a").size(), "qco.if %b");
++  expectDifferent(lhs, rhs);
++}
++
++TEST(Audit2254Oracle, QCOSwitchSelectorMatters) {
++  const std::string lhs = R"(func.func @f(%a: index, %b: index, %q: !qco.qubit) -> !qco.qubit {
++    %r = qco.index_switch %a -> !qco.qubit
++    case 0 args(%t = %q) {
++      %h = qco.h %t : !qco.qubit -> !qco.qubit
++      qco.yield %h : !qco.qubit
++    }
++    default args(%t = %q) {
++      %x = qco.x %t : !qco.qubit -> !qco.qubit
++      qco.yield %x : !qco.qubit
++    }
++    return %r : !qco.qubit
++  })";
++  auto rhs = lhs;
++  rhs.replace(rhs.find("qco.index_switch %a"), std::string("qco.index_switch %a").size(), "qco.index_switch %b");
++  expectDifferent(lhs, rhs);
++}
++
++TEST(Audit2254Oracle, BranchDestinationMatters) {
++  const std::string lhs = R"(func.func @f(%c: i1) -> i64 {
++    cf.cond_br %c, ^yes, ^no
++  ^yes:
++    %one = arith.constant 1 : i64
++    return %one : i64
++  ^no:
++    %zero = arith.constant 0 : i64
++    return %zero : i64
++  })";
++  auto rhs = lhs;
++  rhs.replace(rhs.find("^yes, ^no"), std::string("^yes, ^no").size(), "^no, ^yes");
++  expectDifferent(lhs, rhs);
++}
++
++TEST(Audit2254Ownership, IndependentContextMoveAssignment) {
++  auto first = mlir::QCProgram::fromQASMString("OPENQASM 3.0; qubit q; h q;");
++  auto second = mlir::QCProgram::fromQASMString("OPENQASM 3.0; qubit q; x q;");
++  ASSERT_TRUE(first);
++  ASSERT_TRUE(second);
++  *first = std::move(*second);
++  EXPECT_TRUE(first->isValid());
++  EXPECT_FALSE(second->isValid());
++  EXPECT_TRUE(succeeded(verify(first->module())));
++}
++} // namespace audit2254

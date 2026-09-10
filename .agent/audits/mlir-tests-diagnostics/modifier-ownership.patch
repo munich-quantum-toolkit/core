@@ -1,0 +1,86 @@
+diff --git a/mlir/lib/Conversion/QCToQCO/QCToQCO.cpp b/mlir/lib/Conversion/QCToQCO/QCToQCO.cpp
+index c6b6fab26..09334709d 100644
+--- a/mlir/lib/Conversion/QCToQCO/QCToQCO.cpp
++++ b/mlir/lib/Conversion/QCToQCO/QCToQCO.cpp
+@@ -680,19 +680,6 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
+   return success(!distinctResult.wasInterrupted());
+ }
+
+-/// Rejects unsupported operations and qubit captures in QC modifiers.
+-[[nodiscard]] static LogicalResult validateModifierBodies(Operation* root) {
+-  const auto result = root->walk([&](Operation* operation) {
+-    return llvm::TypeSwitch<Operation*, WalkResult>(operation)
+-        .Case<qc::InvOp, qc::CtrlOp, qc::PowOp>([](auto modifier) {
+-          return failed(modifier.verify()) ? WalkResult::interrupt()
+-                                           : WalkResult::advance();
+-        })
+-        .Default(WalkResult::advance());
+-  });
+-  return success(!result.wasInterrupted());
+-}
+-
+ /// Collects values captured by supported structured control flow.
+ static void collectStructuredCaptures(Operation* root, LoweringState& state) {
+   root->walk([&](Operation* operation) {
+@@ -1991,8 +1978,7 @@ protected:
+     auto moduleOp = getOperation();
+
+     LoweringState preflightState;
+-    if (failed(validateModifierBodies(moduleOp)) ||
+-        failed(validateSupportedInput(moduleOp)) ||
++    if (failed(validateSupportedInput(moduleOp)) ||
+         failed(collectRegisterAccesses(moduleOp, preflightState))) {
+       signalPassFailure();
+       return;
+diff --git a/mlir/unittests/Conversion/QCToQCO/test_qc_to_qco.cpp b/mlir/unittests/Conversion/QCToQCO/test_qc_to_qco.cpp
+index 21ce8b0b4..e25ff8dad 100644
+--- a/mlir/unittests/Conversion/QCToQCO/test_qc_to_qco.cpp
++++ b/mlir/unittests/Conversion/QCToQCO/test_qc_to_qco.cpp
+@@ -1351,10 +1351,7 @@ TEST_P(NestedModifierConversionTest, RejectsStructuredOperation) {
+       return success();
+     });
+
+-    PassManager pm(&context);
+-    pm.enableVerifier(false);
+-    pm.addPass(createQCToQCO());
+-    EXPECT_TRUE(failed(pm.run(*moduleOp)));
++    EXPECT_TRUE(failed(verify(*moduleOp)));
+     EXPECT_TRUE(sawExpectedDiagnostic);
+   }
+ }
+@@ -1421,10 +1418,7 @@ TEST_F(QCToQCORegressionTest, PreflightRejectsRegisterLoadsInEveryModifier) {
+       return success();
+     });
+
+-    PassManager pm(&context);
+-    pm.enableVerifier(false);
+-    pm.addPass(createQCToQCO());
+-    EXPECT_TRUE(failed(pm.run(*moduleOp)));
++    EXPECT_TRUE(failed(verify(*moduleOp)));
+     EXPECT_TRUE(sawExpectedDiagnostic);
+   }
+ }
+@@ -1530,10 +1524,7 @@ TEST_F(QCToQCORegressionTest,
+         return success();
+       });
+
+-      PassManager pm(&context);
+-      pm.enableVerifier(false);
+-      pm.addPass(createQCToQCO());
+-      EXPECT_TRUE(failed(pm.run(*moduleOp)));
++      EXPECT_TRUE(failed(verify(*moduleOp)));
+       EXPECT_TRUE(sawExpectedDiagnostic);
+     }
+   }
+@@ -1607,10 +1598,7 @@ TEST_F(QCToQCORegressionTest,
+           return success();
+         });
+
+-        PassManager pm(&context);
+-        pm.enableVerifier(false);
+-        pm.addPass(createQCToQCO());
+-        EXPECT_TRUE(failed(pm.run(*moduleOp)));
++        EXPECT_TRUE(failed(verify(*moduleOp)));
+         EXPECT_TRUE(sawExpectedDiagnostic);
+       }
+     }

@@ -1,0 +1,19 @@
+diff --git a/mlir/include/mqt/Compiler/Programs.h b/mlir/include/mqt/Compiler/Programs.h
+index 17d9b11ee..e4034333a 100644
+--- a/mlir/include/mqt/Compiler/Programs.h
++++ b/mlir/include/mqt/Compiler/Programs.h
+@@ -73,7 +73,13 @@ public:
+   Program(const Program&) = delete;
+   Program& operator=(const Program&) = delete;
+   Program(Program&&) noexcept = default;
+-  Program& operator=(Program&&) noexcept = default;
++  Program& operator=(Program&& other) noexcept {
++    if (this != &other) {
++      storage_.mod = std::move(other.storage_.mod);
++      storage_.context = std::move(other.storage_.context);
++    }
++    return *this;
++  }
+   virtual ~Program() = default;
+
+   /// Check whether this program still owns a module.

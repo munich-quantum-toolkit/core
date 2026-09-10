@@ -1,0 +1,388 @@
+Baseline CTest
+==============
+3452/3454 Test #3454: OpenQASMFrontendTest.AcceptsExactWidthBitStringsAndFloatCasts ......................................................................................................................................................................................................................................................   Passed    0.01 sec
+3453/3454 Test #3453: OpenQASMFrontendTest.DeduplicatesLargeStaticControlledGateOperands .................................................................................................................................................................................................................................................   Passed    0.01 sec
+3454/3454 Test #3348: OpenQASMTargetTest.StopsEmissionAtEveryOperationBudgetBoundary .....................................................................................................................................................................................................................................................   Passed    0.28 sec
+
+100% tests passed out of 3454
+
+Label Time Summary:
+mqt-mlir-unittests    =  86.58 sec*proc (2584 tests)
+
+Total Test time (real) =  16.67 sec
+
+The following tests did not run:
+	601 - ScQDMIJobSpecificationTest.QueryJobId (Skipped)
+
+Seven oracle probes: expected failures
+======================================
+Running main() from <dependency-sources>/googletest-src/googletest/src/gtest_main.cc
+Note: Google Test filter = Audit2254Oracle.*
+[==========] Running 7 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 7 tests from Audit2254Oracle
+[ RUN      ] Audit2254Oracle.DenseConstantValueMatters
+<repo>/mlir/unittests/Compiler/test_compiler_pipeline.cpp:4144: Failure
+Value of: areModulesEquivalentWithPermutations(*lhs, *rhs)
+  Actual: true
+Expected: false
+
+[  FAILED  ] Audit2254Oracle.DenseConstantValueMatters (24 ms)
+[ RUN      ] Audit2254Oracle.FunctionArgumentTypeMatters
+<repo>/mlir/unittests/Compiler/test_compiler_pipeline.cpp:4144: Failure
+Value of: areModulesEquivalentWithPermutations(*lhs, *rhs)
+  Actual: true
+Expected: false
+
+[  FAILED  ] Audit2254Oracle.FunctionArgumentTypeMatters (0 ms)
+[ RUN      ] Audit2254Oracle.MissingInterfaceAttributeMatters
+<repo>/mlir/unittests/Compiler/test_compiler_pipeline.cpp:4144: Failure
+Value of: areModulesEquivalentWithPermutations(*lhs, *rhs)
+  Actual: true
+Expected: false
+
+[  FAILED  ] Audit2254Oracle.MissingInterfaceAttributeMatters (0 ms)
+[ RUN      ] Audit2254Oracle.QCNoncommutingGateOrderMatters
+<repo>/mlir/unittests/Compiler/test_compiler_pipeline.cpp:4144: Failure
+Value of: areModulesEquivalentWithPermutations(*lhs, *rhs)
+  Actual: true
+Expected: false
+
+[  FAILED  ] Audit2254Oracle.QCNoncommutingGateOrderMatters (2 ms)
+[ RUN      ] Audit2254Oracle.QCOConditionMatters
+<repo>/mlir/unittests/Compiler/test_compiler_pipeline.cpp:4144: Failure
+Value of: areModulesEquivalentWithPermutations(*lhs, *rhs)
+  Actual: true
+Expected: false
+
+[  FAILED  ] Audit2254Oracle.QCOConditionMatters (7 ms)
+[ RUN      ] Audit2254Oracle.QCOSwitchSelectorMatters
+<repo>/mlir/unittests/Compiler/test_compiler_pipeline.cpp:4144: Failure
+Value of: areModulesEquivalentWithPermutations(*lhs, *rhs)
+  Actual: true
+Expected: false
+
+[  FAILED  ] Audit2254Oracle.QCOSwitchSelectorMatters (0 ms)
+[ RUN      ] Audit2254Oracle.BranchDestinationMatters
+<repo>/mlir/unittests/Compiler/test_compiler_pipeline.cpp:4144: Failure
+Value of: areModulesEquivalentWithPermutations(*lhs, *rhs)
+  Actual: true
+Expected: false
+
+[  FAILED  ] Audit2254Oracle.BranchDestinationMatters (2 ms)
+[----------] 7 tests from Audit2254Oracle (37 ms total)
+
+[----------] Global test environment tear-down
+[==========] 7 tests from 1 test suite ran. (37 ms total)
+[  PASSED  ] 0 tests.
+[  FAILED  ] 7 tests, listed below:
+[  FAILED  ] Audit2254Oracle.DenseConstantValueMatters
+[  FAILED  ] Audit2254Oracle.FunctionArgumentTypeMatters
+[  FAILED  ] Audit2254Oracle.MissingInterfaceAttributeMatters
+[  FAILED  ] Audit2254Oracle.QCNoncommutingGateOrderMatters
+[  FAILED  ] Audit2254Oracle.QCOConditionMatters
+[  FAILED  ] Audit2254Oracle.QCOSwitchSelectorMatters
+[  FAILED  ] Audit2254Oracle.BranchDestinationMatters
+
+ 7 FAILED TESTS
+
+Move assignment: process terminated with SIGSEGV (shell exit 139)
+=================================================================
+Running main() from <dependency-sources>/googletest-src/googletest/src/gtest_main.cc
+Note: Google Test filter = Audit2254Ownership.*
+[==========] Running 1 test from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 1 test from Audit2254Ownership
+[ RUN      ] Audit2254Ownership.IndependentContextMoveAssignment
+
+Lifetime order experiment: passed
+=================================
+[ RUN      ] OpenQASMPrograms/OpenQASMBasePipelineTest.ReachesBaseAndAdaptiveQIR/runtime_scalar_rounding
+[       OK ] OpenQASMPrograms/OpenQASMBasePipelineTest.ReachesBaseAndAdaptiveQIR/runtime_scalar_rounding (9 ms)
+[ RUN      ] OpenQASMPrograms/OpenQASMBasePipelineTest.ReachesBaseAndAdaptiveQIR/barrier
+[       OK ] OpenQASMPrograms/OpenQASMBasePipelineTest.ReachesBaseAndAdaptiveQIR/barrier (10 ms)
+[ RUN      ] OpenQASMPrograms/OpenQASMBasePipelineTest.ReachesBaseAndAdaptiveQIR/pow_two_x
+[       OK ] OpenQASMPrograms/OpenQASMBasePipelineTest.ReachesBaseAndAdaptiveQIR/pow_two_x (9 ms)
+[ RUN      ] OpenQASMPrograms/OpenQASMBasePipelineTest.ReachesBaseAndAdaptiveQIR/floating_pow_x
+[       OK ] OpenQASMPrograms/OpenQASMBasePipelineTest.ReachesBaseAndAdaptiveQIR/floating_pow_x (9 ms)
+[----------] 7 tests from OpenQASMPrograms/OpenQASMBasePipelineTest (70 ms total)
+
+[----------] Global test environment tear-down
+[==========] 205 tests from 13 test suites ran. (2887 ms total)
+[  PASSED  ] 205 tests.
+
+QC verifier tests: passed
+=========================
+[----------] Global test environment tear-down
+[==========] 367 tests from 40 test suites ran. (255 ms total)
+[  PASSED  ] 367 tests.
+loc("-":2:9): error: attribute 'mqt.unitary' must be a unit attribute
+loc("-":2:9): error: attribute 'mqt.unitary' requires a private, defined, single-block non-entry function
+loc("-":2:9): error: unitary function requires at least one QC or QCO qubit argument
+loc("-":2:9): error: unitary function arguments must be f64 parameters followed by scalar qubits
+loc("-":2:9): error: unitary QC function must not return values
+loc("-":2:9): error: unitary function must not be recursive
+loc("-":3:11): error: 'qc.call' op 'missing' does not reference a valid function
+loc("-":4:11): error: 'qc.call' op callee 'plain' is not marked with mqt.unitary
+loc("-":8:11): error: 'qc.call' op operand types 'f64', '!qc.qubit' do not match callee argument types '!qc.qubit'
+loc("-":4:7): error: 'qc.call' op unitary QC callee must not return values
+
+QC-to-QCO without repeated modifier verification: passed
+========================================================
+[ RUN      ] SCFForOpTest/QCToQCOTest.ProgramConversion/2
+[       OK ] SCFForOpTest/QCToQCOTest.ProgramConversion/2 (1 ms)
+[ RUN      ] SCFForOpTest/QCToQCOTest.ProgramConversion/3
+[       OK ] SCFForOpTest/QCToQCOTest.ProgramConversion/3 (1 ms)
+[ RUN      ] SCFForOpTest/QCToQCOTest.ProgramConversion/4
+[       OK ] SCFForOpTest/QCToQCOTest.ProgramConversion/4 (1 ms)
+[ RUN      ] SCFForOpTest/QCToQCOTest.ProgramConversion/5
+[       OK ] SCFForOpTest/QCToQCOTest.ProgramConversion/5 (1 ms)
+[----------] 6 tests from SCFForOpTest/QCToQCOTest (7 ms total)
+
+[----------] Global test environment tear-down
+[==========] 178 tests from 44 test suites ran. (155 ms total)
+[  PASSED  ] 178 tests.
+
+Valid QCO input rejection: passed
+=================================
+[ RUN      ] SCFForOpTest/QCOToQCTest.ProgramEquivalence/2
+[       OK ] SCFForOpTest/QCOToQCTest.ProgramEquivalence/2 (1 ms)
+[ RUN      ] SCFForOpTest/QCOToQCTest.ProgramEquivalence/3
+[       OK ] SCFForOpTest/QCOToQCTest.ProgramEquivalence/3 (1 ms)
+[ RUN      ] SCFForOpTest/QCOToQCTest.ProgramEquivalence/4
+[       OK ] SCFForOpTest/QCOToQCTest.ProgramEquivalence/4 (0 ms)
+[ RUN      ] SCFForOpTest/QCOToQCTest.ProgramEquivalence/5
+[       OK ] SCFForOpTest/QCOToQCTest.ProgramEquivalence/5 (1 ms)
+[----------] 6 tests from SCFForOpTest/QCOToQCTest (6 ms total)
+
+[----------] Global test environment tear-down
+[==========] 153 tests from 41 test suites ran. (153 ms total)
+[  PASSED  ] 153 tests.
+
+Python tests with staged runtime: passed
+========================================
+created: 4/4 workers
+4 workers [606 items]
+
+........................................................................ [ 11%]
+........................................................................ [ 23%]
+........................................................................ [ 35%]
+........................................................................ [ 47%]
+........................................................................ [ 59%]
+........................................................................ [ 71%]
+........................................................................ [ 83%]
+........................................................................ [ 95%]
+..............................                                           [100%]
+============================= 606 passed in 5.16s ==============================
+
+Restored handler emits a second diagnostic: passed
+==================================================
+MLIR Textual PassPipeline Parser:1:1: error: 'not-a-pass' does not refer to a registered pass or pass pipeline
+not-a-pass
+^
+loc("<qc-program-builder>":1:1): error: failed to parse pass pipeline 'not-a-pass'
+
+Consumed Python program: copy
+Assertion failed: (storage_.mod && "cannot use a consumed compiler program"), function mod, file Programs.cpp, line 167.
+
+Consumed Python program: cleanup
+Assertion failed: (storage_.mod && "cannot use a consumed compiler program"), function mod, file Programs.cpp, line 167.
+
+Consumed Python program: compile
+Assertion failed: (storage_.mod && "cannot use a consumed compiler program"), function mod, file Programs.cpp, line 167.
+
+Consumed Python program: ir
+Traceback (most recent call last):
+  File "<string>", line 5, in <module>
+    p.ir
+RuntimeError: This compiler program has already been consumed.
+
+CLI upstream-passes stderr
+MLIR Textual PassPipeline Parser:1:1: error: 'canonicalize' does not refer to a registered pass or pass pipeline
+canonicalize,cse
+^
+
+
+CLI stacktrace stderr
+loc("<inputs>/unsupported.mlir":3:2): error: 'cf.br' op QC-to-QCO does not support unstructured control flow; use SCF operations
+
+CLI before-after-failure stderr
+// -----// IR Dump Before QCToQCO: qc-to-qco //----- //
+module {
+  func.func @f() {
+    cf.br ^bb1
+  ^bb1:  // pred: ^bb0
+    return
+  }
+}
+
+
+loc("<inputs>/unsupported.mlir":3:2): error: 'cf.br' op QC-to-QCO does not support unstructured control flow; use SCF operations
+// -----// IR Dump After QCToQCO Failed: qc-to-qco //----- //
+module {
+  func.func @f() {
+    cf.br ^bb1
+  ^bb1:  // pred: ^bb0
+    return
+  }
+}
+
+
+loc("<inputs>/unsupported.mlir":1:1): error: Failures have been detected while processing an MLIR pass pipeline
+
+CLI jeff-dump stderr
+<empty>
+
+CLI cleanup-around-pass stderr
+// -----// IR Dump Before HadamardLifting: hadamard-lifting //----- //
+module {
+  func.func @f(%arg0: !qco.qubit) -> !qco.qubit {
+    %0 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+    %1 = qco.h %0 : !qco.qubit -> !qco.qubit
+    return %1 : !qco.qubit
+  }
+}
+
+
+// -----// IR Dump Before CanonicalizerPass: canonicalize{cse-between-iterations=false    max-iterations=-1 max-num-rewrites=-1 region-simplify=aggressive test-convergence=false top-down=false} //----- //
+module {
+  func.func @f(%arg0: !qco.qubit) -> !qco.qubit {
+    %0 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+    %1 = qco.h %0 : !qco.qubit -> !qco.qubit
+    return %1 : !qco.qubit
+  }
+}
+
+
+// -----// IR Dump Before NormalizeGlobalPhases: normalize-global-phases //----- //
+module {
+  func.func @f(%arg0: !qco.qubit) -> !qco.qubit {
+    return %arg0 : !qco.qubit
+  }
+}
+
+
+// -----// IR Dump Before CSEPass: cse //----- //
+module {
+  func.func @f(%arg0: !qco.qubit) -> !qco.qubit {
+    return %arg0 : !qco.qubit
+  }
+}
+
+
+// -----// IR Dump Before ShrinkQTensorToFitPass: qtensor-shrink-to-fit //----- //
+module {
+  func.func @f(%arg0: !qco.qubit) -> !qco.qubit {
+    return %arg0 : !qco.qubit
+  }
+}
+
+
+// -----// IR Dump Before SymbolDCEPass: symbol-dce //----- //
+module {
+  func.func @f(%arg0: !qco.qubit) -> !qco.qubit {
+    return %arg0 : !qco.qubit
+  }
+}
+
+
+// -----// IR Dump Before RemoveDeadValuesPass: remove-dead-values{canonicalize=true} //----- //
+module {
+  func.func @f(%arg0: !qco.qubit) -> !qco.qubit {
+    return %arg0 : !qco.qubit
+  }
+}
+
+
+
+=== Attribute-only full suite: sole fixture mismatch (exit 8) ===
+[ RUN      ] QCOTest.CanonicalizesRedundantClassicalIfResults
+[       OK ] QCOTest.CanonicalizesRedundantClassicalIfResults (0 ms)
+[ RUN      ] QCOTest.IndexSwitchParser
+<repo>/mlir/unittests/Dialect/QCO/IR/test_qco_ir.cpp:1585: Failure
+Value of: areModulesEquivalentWithPermutations(parsed.get(), ref.get())
+  Actual: false
+Expected: true
+
+[  FAILED  ] QCOTest.IndexSwitchParser (1 ms)
+
+=== Attribute-only full-suite summary (exit 8) ===
+
+99% tests passed, 1 tests failed out of 3454
+
+Label Time Summary:
+mqt-mlir-unittests    =  72.82 sec*proc (2584 tests)
+
+Total Test time (real) =  30.35 sec
+
+The following tests did not run:
+	601 - ScQDMIJobSpecificationTest.QueryJobId (Skipped)
+
+The following tests FAILED:
+	1304 - mqt-core-mlir-unittest-qco-ir (Failed)            mqt-mlir-unittests
+Errors while running CTest
+
+=== Stricter attributes plus aligned fixture: QCO passes (exit 0) ===
+
+[----------] Global test environment tear-down
+[==========] 579 tests from 46 test suites ran. (331 ms total)
+[  PASSED  ] 579 tests.
+loc("-":2:9): error: unitary function requires at least one QC or QCO qubit argument
+loc("-":2:9): error: unitary function arguments must be f64 parameters followed by scalar qubits
+loc("-":2:9): error: unitary QCO function must return one qubit per qubit argument
+loc("-":2:9): error: unitary QCO function body contains a non-unitary operation
+loc("-":2:9): error: unitary QCO results must continue qubit arguments positionally
+loc("-":2:9): error: unitary function must not be recursive
+loc("-":4:18): error: 'qco.call' op 'missing' does not reference a valid function
+loc("-":7:18): error: 'qco.call' op callee 'plain' is not marked with mqt.unitary
+loc("-":9:20): error: 'qco.call' op operand types '!qco.qubit', '!qco.qubit' do not match callee argument types '!qco.qubit'
+loc("-":6:14): error: 'qco.call' op result types '!qco.qubit' do not match callee result types '!qco.qubit', '!qco.qubit'
+
+=== Stricter attributes: new negative cases pass (exit 0) ===
+Running main() from <dependency-sources>/googletest-src/googletest/src/gtest_main.cc
+Note: Google Test filter = Audit2254Oracle.DenseConstantValueMatters:Audit2254Oracle.FunctionArgumentTypeMatters
+[==========] Running 2 tests from 1 test suite.
+[----------] Global test environment set-up.
+[----------] 2 tests from Audit2254Oracle
+[ RUN      ] Audit2254Oracle.DenseConstantValueMatters
+[       OK ] Audit2254Oracle.DenseConstantValueMatters (20 ms)
+[ RUN      ] Audit2254Oracle.FunctionArgumentTypeMatters
+[       OK ] Audit2254Oracle.FunctionArgumentTypeMatters (0 ms)
+[----------] 2 tests from Audit2254Oracle (20 ms total)
+
+[----------] Global test environment tear-down
+[==========] 2 tests from 1 test suite ran. (20 ms total)
+[  PASSED  ] 2 tests.
+
+=== Saved reproducer parsed without applying its pipeline (exit 0) ===
+module {
+  func.func @f() {
+    cf.br ^bb1
+  ^bb1:  // pred: ^bb0
+    return
+  }
+}
+
+=== Conversion pass cannot be selected for textual replay (exit 1) ===
+MLIR Textual PassPipeline Parser:1:1: error: 'qc-to-qco' does not refer to a registered pass or pass pipeline
+qc-to-qco
+^
+
+
+=== Final restored baseline CTest (exit 0) ===
+
+100% tests passed out of 3454
+
+Label Time Summary:
+mqt-mlir-unittests    =  47.74 sec*proc (2584 tests)
+
+Total Test time (real) =  10.49 sec
+
+The following tests did not run:
+	601 - ScQDMIJobSpecificationTest.QueryJobId (Skipped)
+
+=== Audit artifact validation ===
+uvx nox -s lint: exit 0, all repository hooks passed.
+uvx prek run --files <audit report and evidence files>: exit 0 after formatting.
+git apply --check: all five retained experimental patches passed.
+git diff: no tracked production or test changes remain.
