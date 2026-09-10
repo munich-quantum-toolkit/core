@@ -289,7 +289,7 @@ snapshotOperationSites(const qdmi::Operation& operation, size_t arity,
                        const std::vector<qdmi::Site>& flattenedSites,
                        std::optional<uint64_t> defaultDuration,
                        std::optional<double> defaultFidelity, bool variadic,
-                       SiteIndices& indices) {
+                       SiteIndices& indices, bool includeCalibration) {
   std::vector<CompilerTarget::SiteTuple> result;
   result.reserve(flattenedSites.size() / arity);
   std::vector<qdmi::Site> sites;
@@ -308,8 +308,10 @@ snapshotOperationSites(const qdmi::Operation& operation, size_t arity,
       siteIds.emplace_back(*siteId);
     }
 
-    const auto duration = operation.getDuration(sites);
-    const auto fidelity = operation.getFidelity(sites);
+    const auto duration =
+        includeCalibration ? operation.getDuration(sites) : std::nullopt;
+    const auto fidelity =
+        includeCalibration ? operation.getFidelity(sites) : std::nullopt;
     const bool hasSiteCalibration =
         duration != defaultDuration || fidelity != defaultFidelity;
     if (!variadic || hasSiteCalibration) {
@@ -332,7 +334,7 @@ snapshotOperations(
     const std::vector<CompilerTarget::Site>& deviceSites,
     const std::optional<std::vector<CompilerTarget::Coupling>>& couplings,
     StringRef deviceName, bool homogeneousOperationSupport,
-    SiteIndices& indices) {
+    SiteIndices& indices, bool includeCalibration) {
   DenseSet<CompilerTarget::SiteId> knownSites;
   std::optional<std::set<CompilerTarget::Coupling>> expectedCouplings;
   if (couplings) {
@@ -374,8 +376,12 @@ snapshotOperations(
             "the supported sites are not reported")) {
       return error;
     }
-    const auto duration = operation.getDuration();
-    const auto fidelity = operation.getFidelity();
+    const bool queryCalibration =
+        includeCalibration || hasArbitraryPositiveControls;
+    const auto duration =
+        queryCalibration ? operation.getDuration() : std::nullopt;
+    const auto fidelity =
+        queryCalibration ? operation.getFidelity() : std::nullopt;
     std::vector<CompilerTarget::SiteTuple> siteTuples;
     if (*arity == 0) {
       if (auto error = requireRepresentableOperation(
@@ -398,7 +404,7 @@ snapshotOperations(
       }
       auto tuples = snapshotOperationSites(
           operation, *arity, *flattenedSites, duration, fidelity,
-          hasArbitraryPositiveControls, indices);
+          hasArbitraryPositiveControls, indices, queryCalibration);
       if (!tuples) {
         return tuples.takeError();
       }
@@ -416,7 +422,8 @@ snapshotOperations(
             : CompilerTarget::Operation::Arity::fixed(*arity);
     auto targetOperation = CompilerTarget::Operation::create(
         std::move(operationName), targetArity, operation.getParametersNum(),
-        std::move(siteTuples), duration, fidelity);
+        std::move(siteTuples), includeCalibration ? duration : std::nullopt,
+        includeCalibration ? fidelity : std::nullopt);
     if (!targetOperation) {
       return targetOperation.takeError();
     }
@@ -426,7 +433,8 @@ snapshotOperations(
 }
 
 [[nodiscard]] static llvm::Expected<CompilerTarget>
-snapshotCompilerTarget(const qdmi::Device& device) {
+snapshotCompilerTarget(const qdmi::Device& device,
+                       bool includeCalibration = true) {
   auto deviceName = device.getName();
   const auto hasHomogeneousAllToAllMetadata =
       hasAllToAllHomogeneousMetadata(device);
@@ -452,8 +460,10 @@ snapshotCompilerTarget(const qdmi::Device& device) {
     if (!siteId) {
       return siteId.takeError();
     }
-    auto targetSite = CompilerTarget::Site::create(*siteId, site.getName(),
-                                                   site.getT1(), site.getT2());
+    auto targetSite = CompilerTarget::Site::create(
+        *siteId, includeCalibration ? site.getName() : std::nullopt,
+        includeCalibration ? site.getT1() : std::nullopt,
+        includeCalibration ? site.getT2() : std::nullopt);
     if (!targetSite) {
       return targetSite.takeError();
     }
@@ -484,9 +494,9 @@ snapshotCompilerTarget(const qdmi::Device& device) {
     return error;
   }
 
-  auto operations =
-      snapshotOperations(device.getOperations(), sites, couplings, deviceName,
-                         hasHomogeneousAllToAllMetadata, indices);
+  auto operations = snapshotOperations(
+      device.getOperations(), sites, couplings, deviceName,
+      hasHomogeneousAllToAllMetadata, indices, includeCalibration);
   if (!operations) {
     return operations.takeError();
   }
@@ -565,13 +575,30 @@ static llvm::Error incompatible(const llvm::Twine& detail) {
 
 static bool sameOperation(const CompilerTarget::Operation& lhs,
                           const CompilerTarget::Operation& rhs) {
-  return lhs.canonicalName() == rhs.canonicalName() &&
-         lhs.arity() == rhs.arity() &&
-         lhs.numParameters() == rhs.numParameters() &&
-         std::ranges::is_permutation(lhs.siteTuples(), rhs.siteTuples(),
-                                     [](const auto& a, const auto& b) {
-                                       return a.sites() == b.sites();
-                                     });
+  if (lhs.canonicalName() != rhs.canonicalName() ||
+      lhs.arity() != rhs.arity() ||
+      lhs.numParameters() != rhs.numParameters() ||
+      lhs.siteTuples().size() != rhs.siteTuples().size()) {
+    return false;
+  }
+  if (std::ranges::equal(lhs.siteTuples(), rhs.siteTuples(),
+                         [](const auto& a, const auto& b) {
+                           return a.sites() == b.sites();
+                         })) {
+    return true;
+  }
+  const auto sortedSites = [](const auto& operation) {
+    std::vector<llvm::ArrayRef<CompilerTarget::SiteId>> sites;
+    sites.reserve(operation.siteTuples().size());
+    for (const auto& tuple : operation.siteTuples()) {
+      sites.push_back(tuple.sites());
+    }
+    std::ranges::sort(sites, [](auto a, auto b) {
+      return std::ranges::lexicographical_compare(a, b);
+    });
+    return sites;
+  };
+  return sortedSites(lhs) == sortedSites(rhs);
 }
 
 static bool sameCapability(const ProgramCapability& lhs,
@@ -656,11 +683,10 @@ llvm::Expected<PayloadSpecification>
 payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
   switch (format) {
   case QDMI_PROGRAM_FORMAT_QASM3:
-    /// OpenQASM 3.0 has if/for/while; switch was added in 3.1.
     return PayloadSpecification::create(
         {
             .id = "openqasm",
-            .version = "3.0.0",
+            .version = "3.1.0",
             .profile = "",
             .encoding = PayloadEncoding::Text,
         },
@@ -668,6 +694,7 @@ payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
             {.id = ProgramCapability::FORWARD_BRANCHING.str()},
             {.id = ProgramCapability::COUNTED_ITERATION.str()},
             {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
+            {.id = ProgramCapability::MULTIWAY_BRANCHING.str()},
         });
   case QDMI_PROGRAM_FORMAT_QIRBASEMODULE:
   case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
@@ -731,9 +758,10 @@ devicePayloadSpecification(const qdmi::Device& device,
   return payload;
 }
 
-llvm::Expected<TargetEnvironment>
-targetEnvironmentFromDevice(const qdmi::Device& device,
-                            std::optional<QDMI_Program_Format> format) {
+static llvm::Expected<TargetEnvironment>
+snapshotTargetEnvironment(const qdmi::Device& device,
+                          std::optional<QDMI_Program_Format> format,
+                          bool includeCalibration) {
   try {
     const auto supported = device.getSupportedProgramFormats();
     if (format && !llvm::is_contained(supported, *format)) {
@@ -760,7 +788,7 @@ targetEnvironmentFromDevice(const qdmi::Device& device,
     if (!payload) {
       return payload.takeError();
     }
-    auto target = compilerTargetFromDevice(device);
+    auto target = snapshotCompilerTarget(device, includeCalibration);
     if (!target) {
       return target.takeError();
     }
@@ -769,6 +797,12 @@ targetEnvironmentFromDevice(const qdmi::Device& device,
     return qdmiError("Failed to query device compilation contract",
                      std::current_exception());
   }
+}
+
+llvm::Expected<TargetEnvironment>
+targetEnvironmentFromDevice(const qdmi::Device& device,
+                            std::optional<QDMI_Program_Format> format) {
+  return snapshotTargetEnvironment(device, format, true);
 }
 
 llvm::Error validateTargetCompatibility(const TargetEnvironment& compiled,
@@ -888,6 +922,30 @@ compileProgram(CompilerInput&& program, const qdmi::Device& device,
                                   enableTiming, enableStatistics);
 }
 
+static llvm::Expected<qdmi::Job>
+submitPayload(const qdmi::Device& device, const CompiledProgram& program,
+              int64_t numShots,
+              const std::optional<qdmi::CustomJobParameter>& custom1,
+              const std::optional<qdmi::CustomJobParameter>& custom2,
+              const std::optional<qdmi::CustomJobParameter>& custom3,
+              const std::optional<qdmi::CustomJobParameter>& custom4,
+              const std::optional<qdmi::CustomJobParameter>& custom5) {
+  try {
+    if (qdmi::isBinaryProgramFormat(program.programFormat())) {
+      return device.submitJob(std::as_bytes(std::span(program.payload())),
+                              program.programFormat(),
+                              static_cast<size_t>(numShots), custom1, custom2,
+                              custom3, custom4, custom5);
+    }
+    return device.submitJob(program.payload(), program.programFormat(),
+                            static_cast<size_t>(numShots), custom1, custom2,
+                            custom3, custom4, custom5);
+  } catch (...) {
+    return qdmiError("Failed to submit compiled program",
+                     std::current_exception());
+  }
+}
+
 llvm::Expected<qdmi::Job>
 submitProgram(const qdmi::Device& device, const CompiledProgram& program,
               int64_t numShots,
@@ -902,7 +960,7 @@ submitProgram(const qdmi::Device& device, const CompiledProgram& program,
         "num_shots must be nonnegative");
   }
   auto destination =
-      targetEnvironmentFromDevice(device, program.programFormat());
+      snapshotTargetEnvironment(device, program.programFormat(), false);
   if (!destination) {
     return destination.takeError();
   }
@@ -910,21 +968,31 @@ submitProgram(const qdmi::Device& device, const CompiledProgram& program,
           validateTargetCompatibility(program.environment(), *destination)) {
     return error;
   }
-  try {
-    if (qdmi::isBinaryProgramFormat(program.programFormat())) {
-      return device.submitJob(std::as_bytes(std::span(program.payload())),
-                              program.programFormat(),
-                              static_cast<size_t>(numShots), custom1, custom2,
-                              custom3, custom4, custom5);
-    }
-    return device.submitJob(std::string(program.payload()),
-                            program.programFormat(),
-                            static_cast<size_t>(numShots), custom1, custom2,
-                            custom3, custom4, custom5);
-  } catch (...) {
-    return qdmiError("Failed to submit compiled program",
-                     std::current_exception());
+  return submitPayload(device, program, numShots, custom1, custom2, custom3,
+                       custom4, custom5);
+}
+
+llvm::Expected<qdmi::Job>
+submitProgram(const qdmi::Device& device, CompilerInput&& input,
+              int64_t numShots, std::optional<QDMI_Program_Format> format,
+              bool enableTiming, bool enableStatistics,
+              const std::optional<qdmi::CustomJobParameter>& custom1,
+              const std::optional<qdmi::CustomJobParameter>& custom2,
+              const std::optional<qdmi::CustomJobParameter>& custom3,
+              const std::optional<qdmi::CustomJobParameter>& custom4,
+              const std::optional<qdmi::CustomJobParameter>& custom5) {
+  if (numShots < 0) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "num_shots must be nonnegative");
   }
+  auto compiled = compileProgram(std::move(input), device, format, enableTiming,
+                                 enableStatistics);
+  if (!compiled) {
+    return compiled.takeError();
+  }
+  return submitPayload(device, *compiled, numShots, custom1, custom2, custom3,
+                       custom4, custom5);
 }
 
 } // namespace mlir

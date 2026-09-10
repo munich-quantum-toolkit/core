@@ -17,11 +17,10 @@ The resulting {py:class}`~mqt.core.mlir.CompiledProgram` can be submitted with
 Compile and submit a Bell circuit to the bundled DDSIM device:
 
 ```{code-cell} ipython3
-from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program, submit_program
-from mqt.core.qdmi import ProgramFormat
+from mqt.core.mlir import compile_program
 from mqt.core.qdmi.driver import open_device
 
-bell_qasm = """OPENQASM 3.0;
+bell_qasm = """OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
 bit[2] result;
@@ -32,123 +31,62 @@ result = measure q;
 
 device = open_device("mqt.ddsim.default")
 compiled = compile_program(bell_qasm, target=device)
-job = device.submit(compiled, num_shots=1024)
+job = device.submit(compiled)
 job.wait()
-assert sum(job.get_counts().values()) == 1024
-print(compiled.program_format)
+print(job.get_counts())
 ```
 
-`target` accepts an open device or a registered device ID. The compiler chooses
-Adaptive QIR (binary, then text), OpenQASM 3, then Base QIR (binary, then text).
-Use `program_format=ProgramFormat.QASM3` to select a format explicitly.
-
-To compile and submit in one call:
+`target` accepts an open device or a registered device ID. To compile and submit
+in one call:
 
 ```{code-cell} ipython3
 job = device.submit(bell_qasm)
 job.wait()
-assert len(job.get_shots()) == 1024
-job = submit_program(bell_qasm, target="mqt.ddsim.default", num_shots=16)
+print(job.get_counts())
+```
+
+Or use a device ID directly:
+
+```{code-cell} ipython3
+from mqt.core.mlir import submit_program
+
+job = submit_program(bell_qasm, target="mqt.ddsim.default")
 job.wait()
-assert len(job.get_shots()) == 16
+print(job.get_counts())
 ```
 
-Submission defaults to 1,024 shots; use zero for simulator state extraction.
-Compiled programs can be reused with devices that have matching sites, topology,
-operations, timing units, and payload capabilities. Names and calibration-only
-changes do not affect compatibility. A mismatch requires recompilation. Use
-`device.submit_job` for raw payloads.
+Pass `num_shots` to either submission method to choose the number of samples.
+For simulator statevectors and probabilities, see {doc}`../qdmi/ddsim_device`. A
+compiled program can be submitted again without recompilation. Submission checks
+that the device still has matching sites, topology, operations, timing units,
+and program capabilities. Names and calibration-only changes do not require
+recompilation. Use `device.submit_job` to submit raw payloads.
 
-An explicit `CompilerTarget` requires `output` for a typed compiler program, or
-`program_format` for a `CompiledProgram`. Bundled SC devices such as
-`mqt.sc.iqm.garnet` are hardware models for compilation rather than execution.
-For staged compilation with explicit capabilities, use `TargetEnvironment` and
-`PayloadSpecification`.
+### Choose a format
 
-QIR submission requires a parameterless entry point returning an `i64` status;
-the compiler adds status 0 to programs with no return value. Keep classical
-temporaries local, or select OpenQASM 3 for global scalar outputs.
-
-### Capability discovery
-
-The adapter assumes all compiler-supported capabilities for the selected format
-(OpenQASM 3.0 or QIR 2.1). DDSIM confirms this support with the NUL-terminated
-`QDMI_DEVICE_PROPERTY_CUSTOM2` marker `mqt.compiler-payload.v1:maximal`. An
-absent or unrelated property leaves the assumption in place; other
-`mqt.compiler-payload.*` markers are rejected.
-
-### Payload control flow
-
-Use the constants on {py:class}`~mqt.core.mlir.ProgramCapability` and
-{py:class}`~mqt.core.mlir.ProgramConstraint` when declaring supported control
-flow:
+The compiler selects the first supported format in this order: Adaptive QIR
+(binary, then text), OpenQASM 3.1, then Base QIR (binary, then text). To select
+a format explicitly:
 
 ```{code-cell} ipython3
-from mqt.core.mlir import ProgramCapability, ProgramConstraint
+from mqt.core.qdmi import ProgramFormat
 
-forward_branching = ProgramCapability(
-    ProgramCapability.FORWARD_BRANCHING,
-    constraints=[ProgramConstraint(ProgramConstraint.MAX_NESTING_DEPTH, 8)],
-)
+compiled = compile_program(bell_qasm, target=device, program_format=ProgramFormat.QASM3)
 ```
 
-Add this capability to a payload specification only if the device supports it.
-Custom capability and constraint identifiers remain accepted as strings.
+### Define a target
 
-Target compilation requires structured QCO/SCF input. Producers of raw CFG
-branches must normalize them before target compilation; runtime assertions are
-allowed. The pipeline removes unused symbols, propagates constants, unrolls
-unsupported static loops, and then runs the standard QCO cleanup pipeline. It
-uses `unroll-loops-for-payload` before cleanup and `legalize-control-flow` after
-cleanup, so unrolling can expose constant branches before legality checks. The
-latter pass applies these structural capabilities to the remaining control flow:
+Use `CompilerTarget` to describe a device for compilation without opening a
+connection. Bundled SC devices such as `mqt.sc.iqm.garnet` provide ready-made
+hardware models; they do not execute programs.
 
-| Capability           | Residual operations                                 |
-| -------------------- | --------------------------------------------------- |
-| `forward-branching`  | `qco.if` and classical `scf.if`                     |
-| `counted-iteration`  | `scf.for`                                           |
-| `conditional-loop`   | `scf.while`                                         |
-| `multiway-branching` | `qco.index_switch` and classical `scf.index_switch` |
-
-A finite `scf.for` that exceeds the selected counted-iteration contract is fully
-unrolled when this clones at most 65,536 body operations. Cleanup runs again
-because unrolling can make nested bounds and conditions constant. An unsupported
-index switch is lowered to a linear chain of nested forward branches when that
-form fits the selected contract. Before expansion, the compiler checks the
-selected forward-branching nesting limit and a compiler safety limit of 256
-total control-flow levels, including enclosing control flow. This compiler limit
-is not a QDMI requirement and does not apply to switches retained under multiway
-branching.
-
-Generic SCF branches cannot capture or return QCO qubits or quantum tensors; use
-the corresponding QCO branch operation for linear quantum state. SCF loops must
-carry linear quantum state through their iteration arguments instead of
-capturing it. Both control-flow passes validate this loop input restriction
-before transforming loops or lowering switches. It is separate from QCO's
-exactly-one-SSA-use check.
-
-The supported constraints are `max-control-flow-nesting-depth` on all four
-capabilities, `max-iteration-count` on both iteration capabilities, and
-`max-case-count` on multiway branching, counting explicit cases without the
-default region. One explicit case plus a default is a supported index switch and
-does not require forward branching. Limits are inclusive. The compiler must
-prove a constrained loop's trip count. It currently proves constant `scf.for`
-bounds and rejects a constrained `scf.while` because no general termination
-bound is available. The proof requires literal loop bounds and a literal step;
-it does not infer a trip count from symbolic bounds. MLIR computes static trip
-counts; full unrolling additionally requires bounds and scaled steps that fit
-its signed arithmetic. The scaled step must also fit the loop induction-variable
-type. A zero, unknown, or misapplied constraint makes that capability group
-unusable. A capability absent from the selected specification is unsupported.
-
-This stage checks structural control flow only. Later lowering stages remain
-responsible for scalar types and operations, measurement provenance, function
-features, allocation, and final payload-profile conformance.
-
-The target can also be constructed directly. Connectivity and native-operation
-support are required:
+An explicit target requires `output` for a typed compiler program, or
+`program_format` for a `CompiledProgram` ready for submission. To define a
+target with three sites and nearest-neighbor connectivity:
 
 ```{code-cell} ipython3
+from mqt.core.mlir import CompilerTarget, OutputFormat
+
 target = CompilerTarget(
     3,
     connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
@@ -172,7 +110,6 @@ target = CompilerTarget(
 mapped = compile_program(
     bell_qasm, target=target, output=OutputFormat.QIR_BASE
 )
-assert mapped.is_valid
 print(mapped.ir)
 ```
 
@@ -230,6 +167,58 @@ registers the required inliner extensions; callers that populate the low-level
 target pipeline directly must register inliner extensions for every callable
 dialect in their context.
 
+### Payload control flow
+
+Target compilation requires structured QCO/SCF input. Producers of raw CFG
+branches must normalize them before target compilation; runtime assertions are
+allowed. The pipeline removes unused symbols, propagates constants, unrolls
+unsupported static loops, and then runs the standard QCO cleanup pipeline. It
+uses `unroll-loops-for-payload` before cleanup and `legalize-control-flow` after
+cleanup, so unrolling can expose constant branches before legality checks. The
+latter pass applies these structural capabilities to the remaining control flow:
+
+| Capability           | Residual operations                                 |
+| -------------------- | --------------------------------------------------- |
+| `forward-branching`  | `qco.if` and classical `scf.if`                     |
+| `counted-iteration`  | `scf.for`                                           |
+| `conditional-loop`   | `scf.while`                                         |
+| `multiway-branching` | `qco.index_switch` and classical `scf.index_switch` |
+
+A finite `scf.for` that exceeds the selected counted-iteration contract is fully
+unrolled when this clones at most 65,536 body operations. Cleanup runs again
+because unrolling can make nested bounds and conditions constant. An unsupported
+index switch is lowered to a linear chain of nested forward branches when that
+form fits the selected contract. Before expansion, the compiler checks the
+selected forward-branching nesting limit and a compiler safety limit of 256
+total control-flow levels, including enclosing control flow. This compiler limit
+is not a QDMI requirement and does not apply to switches retained under multiway
+branching.
+
+Generic SCF branches cannot capture or return QCO qubits or quantum tensors; use
+the corresponding QCO branch operation for linear quantum state. SCF loops must
+carry linear quantum state through their iteration arguments instead of
+capturing it. Both control-flow passes validate this loop input restriction
+before transforming loops or lowering switches. It is separate from QCO's
+exactly-one-SSA-use check.
+
+The supported constraints are `max-control-flow-nesting-depth` on all four
+capabilities, `max-iteration-count` on both iteration capabilities, and
+`max-case-count` on multiway branching, counting explicit cases without the
+default region. One explicit case plus a default is a supported index switch and
+does not require forward branching. Limits are inclusive. The compiler must
+prove a constrained loop's trip count. It currently proves constant `scf.for`
+bounds and rejects a constrained `scf.while` because no general termination
+bound is available. The proof requires literal loop bounds and a literal step;
+it does not infer a trip count from symbolic bounds. MLIR computes static trip
+counts; full unrolling additionally requires bounds and scaled steps that fit
+its signed arithmetic. The scaled step must also fit the loop induction-variable
+type. A zero, unknown, or misapplied constraint makes that capability group
+unusable. A capability absent from the selected specification is unsupported.
+
+This stage checks structural control flow only. Later lowering stages remain
+responsible for scalar types and operations, measurement provenance, function
+features, allocation, and final payload-profile conformance.
+
 ## Command line from a source build
 
 List the stable IDs of configured QDMI devices:
@@ -262,8 +251,7 @@ target contract owns the output and required pass ordering.
 
 ## C++ source-tree API
 
-The shared adapter selects and verifies the payload, then checks the destination
-contract before submission. The low-level QDMI client does not depend on MLIR:
+Compile a file and submit it to DDSIM:
 
 ```cpp
 #include "mlir/Compiler/QDMIAdapter.h"
@@ -281,7 +269,7 @@ if (!compiled) {
   llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
   return 1;
 }
-auto job = mlir::submitProgram(device, *compiled, 1024);
+auto job = mlir::submitProgram(device, *compiled);
 if (!job) {
   llvm::errs() << llvm::toString(job.takeError()) << '\n';
   return 1;
@@ -294,6 +282,19 @@ if (!job->wait()) {
 `compilerTargetFromDevice` and `compilerTargetFromDeviceId` also remain
 available for hardware snapshots and staged compilation with a
 `TargetEnvironment`.
+
+### Capability discovery
+
+The adapter assumes all compiler-supported capabilities for the selected format
+(OpenQASM 3.1 or QIR 2.1). DDSIM confirms this support with the NUL-terminated
+`QDMI_DEVICE_PROPERTY_CUSTOM2` marker `mqt.compiler-payload.v1:maximal`. An
+absent or unrelated property leaves the assumption in place; other
+`mqt.compiler-payload.*` markers are rejected. Use `TargetEnvironment` and
+`PayloadSpecification` for staged compilation with explicit capabilities.
+
+QIR submission requires a parameterless entry point returning an `i64` status;
+the compiler adds status 0 to programs with no return value. Keep classical
+temporaries local, or select OpenQASM 3 for global scalar outputs.
 
 The adapter accepts circuit-model devices whose two-qubit operations cover every
 topology edge in at least one operand orientation and preserves the exact

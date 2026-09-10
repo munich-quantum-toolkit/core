@@ -386,8 +386,12 @@ compileProgramForTarget(const nb::object& program, const nb::object& target,
     return takeResult(mlir::targetEnvironmentFromDevice(device, programFormat));
   }();
   auto input = programFromInput(program, inplace);
-  return nb::cast(takeResult(mlir::CompiledProgram::compile(
-      std::move(input), environment, enableTiming, enableStatistics)));
+  auto compiled = [&] {
+    const nb::gil_scoped_release release;
+    return takeResult(mlir::CompiledProgram::compile(
+        std::move(input), environment, enableTiming, enableStatistics));
+  }();
+  return nb::cast(std::move(compiled));
 }
 
 /// Implementation of Device.submit, loaded by the QDMI binding.
@@ -421,14 +425,11 @@ submitToDevice(const qdmi::Device& device, const nb::object& program,
     }
     return submit(compiled);
   }
-  auto environment = [&] {
-    const nb::gil_scoped_release release;
-    return takeResult(mlir::targetEnvironmentFromDevice(device, programFormat));
-  }();
   auto input = programFromInput(program, false);
-  const auto compiled = takeResult(mlir::CompiledProgram::compile(
-      std::move(input), environment, enableTiming, enableStatistics));
-  return submit(compiled);
+  const nb::gil_scoped_release release;
+  return takeResult(mlir::submitProgram(
+      device, std::move(input), numShots, programFormat, enableTiming,
+      enableStatistics, custom1, custom2, custom3, custom4, custom5));
 }
 
 template <class Function>
@@ -1632,7 +1633,7 @@ Returns:
       .def_prop_ro(
           "payload",
           [](const mlir::CompiledProgram& self) -> nb::object {
-            const auto payload = self.payload();
+            const auto& payload = self.payload();
             if (qdmi::isBinaryProgramFormat(self.programFormat())) {
               return nb::bytes(payload.data(), payload.size());
             }

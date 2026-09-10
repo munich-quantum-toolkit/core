@@ -38,6 +38,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <future>
 #include <limits>
 #include <optional>
 #include <string>
@@ -186,7 +187,7 @@ TEST(PayloadSpecificationTest, NormalizesExactVersionComponents) {
       {.id = "qir", .version = "2.1", .profile = "base"}));
   EXPECT_EQ(valid(qir.compilerOutput()), mlir::ProgramFormat::QIRBase);
   const auto qasm = valid(
-      mlir::PayloadSpecification::create({.id = "openqasm", .version = "3"}));
+      mlir::PayloadSpecification::create({.id = "openqasm", .version = "3.1"}));
   EXPECT_EQ(valid(qasm.compilerOutput()), mlir::ProgramFormat::OpenQASM3);
   const auto exactMajor = valid(mlir::PayloadSpecification::create(
       {.id = "qir", .version = "2", .profile = "base"}));
@@ -1065,6 +1066,34 @@ TEST(CompilerTargetTest, SupportsArbitrarilyControlledBaseOperations) {
   for (auto* controlled : rejectedControls) {
     EXPECT_FALSE(target.supports(controlled));
   }
+}
+
+TEST(CompilerTargetTest, SharesLazyDistancesAcrossConcurrentCopies) {
+  std::vector<Site> sites;
+  std::vector<Coupling> couplings;
+  for (SiteId id = 0; id < 64; ++id) {
+    sites.push_back(valid(Site::create(id)));
+    if (id > 0) {
+      couplings.emplace_back(id - 1, id);
+    }
+  }
+  const auto target = valid(
+      Target::create(std::move(sites), Connectivity::fromCouplings(couplings),
+                     NativeOperations::unrestricted()));
+  const auto check = [target] {
+    for (size_t source = 0; source < target.numSites(); ++source) {
+      for (size_t destination = 0; destination < target.numSites();
+           ++destination) {
+        EXPECT_EQ(target.distanceBetween(source, destination),
+                  source > destination ? source - destination
+                                       : destination - source);
+      }
+    }
+  };
+  auto first = std::async(std::launch::async, check);
+  auto second = std::async(std::launch::async, check);
+  first.get();
+  second.get();
 }
 
 } // namespace

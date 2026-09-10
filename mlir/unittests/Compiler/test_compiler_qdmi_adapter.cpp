@@ -347,9 +347,11 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_EQ(adaptive.capabilities().front().id, "forward-branching");
   const auto qasm = llvm::cantFail(
       mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
-  ASSERT_EQ(qasm.capabilities().size(), 3);
+  EXPECT_EQ(qasm.format().version, "3.1.0");
+  ASSERT_EQ(qasm.capabilities().size(), 4);
   EXPECT_EQ(qasm.capabilities()[1].id, "counted-iteration");
   EXPECT_EQ(qasm.capabilities()[2].id, "conditional-loop");
+  EXPECT_EQ(qasm.capabilities()[3].id, "multiway-branching");
 }
 
 TEST(CompilerQDMIAdapterTest,
@@ -524,4 +526,79 @@ TEST(CompilerQDMIAdapterTest, CompilesAdaptiveMeasurementControlledLoop) {
   auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 8));
   ASSERT_TRUE(job.wait());
   EXPECT_EQ(job.getCounts().at("0"), 8);
+}
+
+TEST(CompilerQDMIAdapterTest,
+     CompatibilityPreservesOperandsWithinReorderedTuples) {
+  const auto makeEnvironment =
+      [](std::vector<std::vector<CompilerTarget::SiteId>> tuples) {
+        std::vector<CompilerTarget::SiteTuple> siteTuples;
+        for (auto& tuple : tuples) {
+          siteTuples.push_back(llvm::cantFail(
+              CompilerTarget::SiteTuple::create(std::move(tuple))));
+        }
+        const auto operation = llvm::cantFail(CompilerTarget::Operation::create(
+            "cx", 2, 0, std::move(siteTuples)));
+        const auto target = llvm::cantFail(CompilerTarget::create(
+            {llvm::cantFail(CompilerTarget::Site::create(0)),
+             llvm::cantFail(CompilerTarget::Site::create(1)),
+             llvm::cantFail(CompilerTarget::Site::create(2))},
+            CompilerTarget::Connectivity::allToAll(),
+            CompilerTarget::NativeOperations::fromOperations({operation})));
+        return mlir::TargetEnvironment(
+            target, llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+                        QDMI_PROGRAM_FORMAT_QASM3)));
+      };
+  const auto original = makeEnvironment({{0, 1}, {1, 2}, {0, 2}});
+  EXPECT_FALSE(llvm::errorToBool(mlir::validateTargetCompatibility(
+      original, makeEnvironment({{0, 2}, {1, 2}, {0, 1}}))));
+  EXPECT_TRUE(llvm::errorToBool(mlir::validateTargetCompatibility(
+      original, makeEnvironment({{0, 2}, {2, 1}, {0, 1}}))));
+}
+
+TEST(CompilerQDMIAdapterTest, SubmissionQueriesOnlyTheRequiredMetadata) {
+  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
+      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM");
+  static thread_local decltype(QDMI_device_session_query_device_property)*
+      queryDevice = nullptr;
+  static thread_local decltype(QDMI_device_session_query_site_property)*
+      querySite = nullptr;
+  static thread_local size_t siteLists = 0;
+  static thread_local size_t calibrationQueries = 0;
+  queryDevice = library->device_session_query_device_property;
+  querySite = library->device_session_query_site_property;
+  library->device_session_query_device_property =
+      [](QDMI_Device_Session session, QDMI_Device_Property property,
+         size_t size, void* value, size_t* sizeRet) {
+        siteLists += property == QDMI_DEVICE_PROPERTY_SITES && value != nullptr;
+        return queryDevice(session, property, size, value, sizeRet);
+      };
+  library->device_session_query_site_property =
+      [](QDMI_Device_Session session, QDMI_Site site,
+         QDMI_Site_Property property, size_t size, void* value,
+         size_t* sizeRet) {
+        calibrationQueries += property == QDMI_SITE_PROPERTY_NAME ||
+                              property == QDMI_SITE_PROPERTY_T1 ||
+                              property == QDMI_SITE_PROPERTY_T2;
+        return querySite(session, site, property, size, value, sizeRet);
+      };
+  QDMI_Device_impl_d rawDevice(library);
+  const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
+  constexpr auto source = "OPENQASM 3.1; qubit q; bit c = measure q;";
+  const auto compiled = llvm::cantFail(
+      mlir::compileProgram(mlir::OpenQASMProgram(source), device));
+  siteLists = calibrationQueries = 0;
+  auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 4));
+  EXPECT_EQ(siteLists, 1);
+  EXPECT_EQ(calibrationQueries, 0);
+  ASSERT_TRUE(job.wait());
+  EXPECT_EQ(job.getCounts().at("0"), 4);
+
+  siteLists = calibrationQueries = 0;
+  auto sourceJob = llvm::cantFail(
+      mlir::submitProgram(device, mlir::OpenQASMProgram(source), 4));
+  EXPECT_EQ(siteLists, 1);
+  EXPECT_GT(calibrationQueries, 0);
+  ASSERT_TRUE(sourceJob.wait());
+  EXPECT_EQ(sourceJob.getCounts().at("0"), 4);
 }

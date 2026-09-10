@@ -410,8 +410,7 @@ when the custom slot is unsupported.)pb");
       "program"_a, "num_shots"_a = 1024, "options"_a,
       R"pb(Compile source or submit a compiled program to this device.
 
-The default is 1024 shots; use zero for simulator state extraction. Compiled
-programs must match the device's compilation contract.
+Compiled programs must be compatible with this device.
 
 Source inputs accept ``program_format``, ``enable_timing``, and
 ``enable_statistics``. ``custom1`` through ``custom5`` are passed to the job.

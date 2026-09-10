@@ -38,6 +38,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <numbers>
 #include <optional>
 #include <string>
@@ -496,6 +497,7 @@ struct CompilerTarget::Storage {
           std::optional<DurationUnit> targetDurationUnit);
 
   [[nodiscard]] llvm::Error initialize();
+  void computeDistances(size_t source, MutableArrayRef<size_t> row) const;
 
   [[nodiscard]] bool
   supportsOperation(StringRef name, size_t arity,
@@ -515,7 +517,8 @@ struct CompilerTarget::Storage {
   Connectivity::Kind connectivityKind;
   SmallVector<Coupling> couplings;
   SmallVector<SmallVector<size_t, 4>> adjacency;
-  SmallVector<size_t> distances;
+  mutable SmallVector<size_t> distances;
+  mutable std::once_flag distancesOnce;
   size_t maximumDegree = 0;
   NativeOperations::Kind nativeOperationsKind;
   SmallVector<Operation> operations;
@@ -538,6 +541,22 @@ CompilerTarget::Storage::Storage(
       couplings(std::move(targetCouplings)),
       nativeOperationsKind(targetNativeOperationsKind),
       operations(std::move(targetOperations)) {}
+
+void CompilerTarget::Storage::computeDistances(
+    size_t source, MutableArrayRef<size_t> row) const {
+  row[source] = 0;
+  SmallVector<size_t> worklist{source};
+  for (size_t cursor = 0; cursor < worklist.size(); ++cursor) {
+    const auto vertex = worklist[cursor];
+    for (const auto neighbour : adjacency[vertex]) {
+      if (row[neighbour] != std::numeric_limits<size_t>::max()) {
+        continue;
+      }
+      row[neighbour] = row[vertex] + 1;
+      worklist.emplace_back(neighbour);
+    }
+  }
+}
 
 llvm::Error CompilerTarget::Storage::initialize() {
   if (name && name->empty()) {
@@ -590,27 +609,10 @@ llvm::Error CompilerTarget::Storage::initialize() {
           "Compiler target topology distance matrix is too large");
     }
     constexpr auto unreachable = std::numeric_limits<size_t>::max();
-    distances.assign(sites.size() * sites.size(), unreachable);
-    for (size_t source = 0; source < sites.size(); ++source) {
-      const auto rowOffset = source * sites.size();
-      distances[rowOffset + source] = 0;
-      SmallVector<size_t> worklist{source};
-      for (size_t cursor = 0; cursor < worklist.size(); ++cursor) {
-        const auto vertex = worklist[cursor];
-        for (const auto neighbour : adjacency[vertex]) {
-          auto& distance = distances[rowOffset + neighbour];
-          if (distance != unreachable) {
-            continue;
-          }
-          distance = distances[rowOffset + vertex] + 1;
-          worklist.emplace_back(neighbour);
-        }
-      }
-      if (llvm::is_contained(
-              ArrayRef<size_t>(distances).slice(rowOffset, sites.size()),
-              unreachable)) {
-        return invalidTarget("Compiler target topology must be connected");
-      }
+    SmallVector<size_t> row(sites.size(), unreachable);
+    computeDistances(0, row);
+    if (llvm::is_contained(row, unreachable)) {
+      return invalidTarget("Compiler target topology must be connected");
     }
   } else {
     maximumDegree = sites.size() - 1;
@@ -1074,6 +1076,15 @@ size_t CompilerTarget::distanceBetween(size_t source, size_t target) const {
   if (connectivityKind() == Connectivity::Kind::AllToAll) {
     return source == target ? 0 : 1;
   }
+  std::call_once(storage_->distancesOnce, [&] {
+    storage_->distances.assign(numSites() * numSites(),
+                               std::numeric_limits<size_t>::max());
+    for (size_t vertex = 0; vertex < numSites(); ++vertex) {
+      storage_->computeDistances(vertex,
+                                 MutableArrayRef<size_t>(storage_->distances)
+                                     .slice(vertex * numSites(), numSites()));
+    }
+  });
   return storage_->distances[(source * numSites()) + target];
 }
 

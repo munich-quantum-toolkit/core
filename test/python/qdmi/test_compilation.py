@@ -67,6 +67,10 @@ def test_compiled_formats(program_format: ProgramFormat) -> None:
     by_id = compile_program(BELL, target="mqt.ddsim.default", program_format=program_format)
     assert by_id.payload == by_device.payload
     assert by_id.program_format == program_format
+    if program_format == ProgramFormat.QASM3:
+        assert by_id.payload_specification.format.version == "3.1.0"
+        assert isinstance(by_id.payload, str)
+        assert by_id.payload.startswith("OPENQASM 3.1;")
     with pytest.raises(AttributeError):
         by_id.payload = b"changed"  # ty: ignore[invalid-assignment]
     del device
@@ -230,3 +234,19 @@ def test_empty_source_has_a_successful_entry_point(num_shots: int) -> None:
     job.wait()
     assert job.check() == Job.Status.DONE
     assert job.get_dense_statevector() == [1 + 0j]
+
+
+def test_openqasm31_switch() -> None:
+    """The OpenQASM payload supports measurement-controlled switch statements."""
+    source = """OPENQASM 3.1;
+include "stdgates.inc";
+qubit q;
+bit c;
+h q;
+c = measure q;
+switch (int(c)) { case 1 { x q; } default {} }
+c = measure q;
+"""
+    job = submit_program(source, target="mqt.ddsim.default", program_format=ProgramFormat.QASM3, num_shots=16)
+    job.wait()
+    assert job.get_counts() == {"0": 16}

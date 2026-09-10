@@ -28,8 +28,8 @@ The device can perform weak simulation for every supported format, i.e., sample
 from the distribution produced by the program. It can also perform strong
 simulation for OpenQASM and eligible QIR Base or Adaptive Profile programs,
 i.e., compute a representation of the full state vector. Set the
-`QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` parameter to the desired number of shots
-for weak simulation or to `0` for strong simulation.
+`QDMI_DEVICE_JOB_PARAMETER_SHOTSNUM` parameter to the desired number of shots,
+or to `0` to request only the state. In Python, use `num_shots`.
 
 Sampling jobs also retain an uncollapsed state when the existing terminal
 sampling path prepares one state for all shots. Such jobs provide statevector
@@ -76,16 +76,17 @@ the [MQT capability marker](../mlir/target_compilation.md#capability-discovery).
 
 ## Compile and execute
 
-The compiler selects a supported payload and checks the device contract before
-submission. This example selects OpenQASM 3 and retains the Bell state after
-terminal sampling:
+Compile a Bell circuit, sample its measurements, and inspect its statevector.
+DDSIM retains the state before terminal measurements, so state extraction does
+not require a separate job or zero shots. Circuits with mid-circuit measurements
+or resets do not support state extraction.
 
 ```{code-cell} ipython3
 from mqt.core.mlir import compile_program
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
-bell_qasm = """OPENQASM 3.0;
+bell_qasm = """OPENQASM 3.1;
 include "stdgates.inc";
 qubit[2] q;
 bit[2] result;
@@ -96,12 +97,8 @@ result = measure q;
 
 device = open_device("mqt.ddsim.default")
 program = compile_program(bell_qasm, target=device, program_format=ProgramFormat.QASM3)
-job = device.submit(program, num_shots=1024, custom1=7)
+job = device.submit(program)
 job.wait()
-counts = job.get_counts()
-assert sum(counts.values()) == 1024
-assert set(counts) <= {"00", "11"}
-assert len(job.get_dense_statevector()) == 4
-print(counts)
-print("First eight shots:", job.get_shots()[:8])
+print(job.get_counts())
+print(job.get_dense_statevector())
 ```

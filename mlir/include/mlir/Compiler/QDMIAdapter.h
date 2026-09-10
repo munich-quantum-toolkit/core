@@ -90,7 +90,7 @@ public:
     return environment_;
   }
   /// Serialized program contents.
-  [[nodiscard]] std::string_view payload() const noexcept { return payload_; }
+  [[nodiscard]] const std::string& payload() const noexcept { return payload_; }
   [[nodiscard]] QDMI_Program_Format programFormat() const noexcept {
     return format_;
   }
@@ -113,6 +113,18 @@ compileProgram(CompilerInput&& program, const qdmi::Device& device,
 [[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
     const qdmi::Device& device, const CompiledProgram& program,
     int64_t numShots = 1024,
+    const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom2 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom3 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom4 = std::nullopt,
+    const std::optional<qdmi::CustomJobParameter>& custom5 = std::nullopt);
+
+/// Compile and submit source using one snapshot of the destination.
+[[nodiscard]] llvm::Expected<qdmi::Job> submitProgram(
+    const qdmi::Device& device, CompilerInput&& program,
+    int64_t numShots = 1024,
+    std::optional<QDMI_Program_Format> format = std::nullopt,
+    bool enableTiming = false, bool enableStatistics = false,
     const std::optional<qdmi::CustomJobParameter>& custom1 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom2 = std::nullopt,
     const std::optional<qdmi::CustomJobParameter>& custom3 = std::nullopt,
