@@ -1657,8 +1657,8 @@ private:
   }
 
   void setScalarValue(StateSlot slot, Value value) {
-    scalarUpdates_.emplace_back(slot, scalarValues.at(slot));
-    scalarValues.at(slot) = value;
+    scalarUpdates_.emplace_back(slot,
+                                std::exchange(scalarValues.at(slot), value));
   }
 
   void restoreScalars(size_t checkpoint) {
@@ -2479,7 +2479,6 @@ private:
       cf::SwitchOp::create(builder, control, defaultBlock, ValueRange{},
                            builder.getI64TensorAttr(labels), destinations,
                            SmallVector<ValueRange>(labels.size()));
-      bool anyReachable = false;
       const auto emitBranch = [&](Block* block,
                                   ArrayRef<frontend::StatementId> statements) {
         restoreScalars(scalarCheckpoint);
@@ -2493,7 +2492,6 @@ private:
         }
         if (flowReachable) {
           cf::BranchOp::create(builder, join, stateValues(slots));
-          anyReachable = true;
         }
       };
       size_t index = 0;
@@ -2510,7 +2508,7 @@ private:
         return;
       }
       restoreScalars(scalarCheckpoint);
-      flowReachable = anyReachable;
+      flowReachable = !join->hasNoPredecessors();
       assignState(slots, join->getArguments());
       builder.setInsertionPointToEnd(join);
       if (!flowReachable) {
