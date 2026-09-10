@@ -227,7 +227,6 @@ public:
       std::optional<std::uint8_t> numBasisGateUses = std::nullopt) const;
 
 private:
-  // clang-format off
   /// Precomputed single-qubit templates for super-controlled basis
   /// synthesis.
   ///
@@ -237,8 +236,8 @@ private:
   /// @ref decomp3Supercontrolled.
   ///
   /// Naming: suffix `l` / `r` is the q0 / q1 factor in `kron(q0_factor,
-  /// q1_factor)`. Pairs `*la` / `*ra` and `*lb` / `*rb` sandwich an `RZ` on that
-  /// wire
+  /// q1_factor)`. Pairs `*la` / `*ra` and `*lb` / `*rb` sandwich an `RZ` on
+  /// that wire
   /// (`u1ra*RZ(-2c)*u1rb`, `u2la*RZ(-2a)*u2lb`, `u2ra*RZ(2b)*u2rb`, etc.).
   /// `u3*` / `u2*` / `u1*` / `u0*` index layers from outside (post-`K2`) to
   /// inside (pre-`K1`) in the three-basis layout; `q*` members are the
@@ -247,9 +246,10 @@ private:
   /// (formerly duplicated as `q2*` / `q1l*b`).
   ///
   /// Emission order matches @ref TwoQubitNativeDecomposition: layer `i` applies
-  /// `kron(factors[2*i+1], factors[2*i])`, then the basis gate `E` (except after
-  /// the last layer). `E` is the fixed basis entangler (e.g. CX).
+  /// `kron(factors[2*i+1], factors[2*i])`, then the basis gate `E` (except
+  /// after the last layer). `E` is the fixed basis entangler (e.g. CX).
   ///
+  // clang-format off
   /// @verbatim
   /// Two basis gates (numBasisUses = 2); left = outer, right = inner:
   ///
