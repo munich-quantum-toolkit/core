@@ -14,7 +14,7 @@ add_mlir_dialect_library(
   QTensorOps.cpp
   ${OPERATIONS}
   ADDITIONAL_HEADER_DIRS
-  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QTensor
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QTensor
   DEPENDS
   MLIRQTensorOpsIncGen
   LINK_LIBS
@@ -30,8 +30,8 @@ add_mlir_dialect_library(
 mqt_mlir_target_use_project_options(MLIRQTensorDialect)
 
 # collect header files
-file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QTensor/IR/*.h")
-file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QTensor/IR/*.inc")
+file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QTensor/IR/*.h")
+file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mqt/Dialect/QTensor/IR/*.inc")
 
 # add public headers using file sets
 target_sources(

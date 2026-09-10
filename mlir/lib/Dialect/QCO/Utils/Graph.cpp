@@ -8,12 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/Graph.h"
+#include "mqt/Dialect/QCO/Utils/Graph.h"
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <algorithm>
 #include <cassert>

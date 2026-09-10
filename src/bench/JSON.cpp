@@ -10,7 +10,6 @@
 
 #include "bench/JSON.hpp"
 
-#include "SHA256.hpp"
 #include "bench/BV.hpp"
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
@@ -23,7 +22,10 @@
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
 
-#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
+#include "SHA256.hpp"
+
+#include "nlohmann/json.hpp"
+#include "nlohmann/json_fwd.hpp"
 
 #include <algorithm>
 #include <array>
@@ -44,7 +46,7 @@
 namespace mqt::bench {
 namespace {
 
-using Json = nlohmann::json; // NOLINT(misc-include-cleaner)
+using Json = nlohmann::json;
 
 constexpr uint64_t SCHEMA_VERSION = 1;
 constexpr std::string_view CASE_DOMAIN = "mqt-core:benchmark-case:v1";

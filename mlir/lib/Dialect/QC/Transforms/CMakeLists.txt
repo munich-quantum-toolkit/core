@@ -19,9 +19,9 @@ add_mlir_library(
 
 # collect header files
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Transforms/*.h)
+     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Transforms/*.h)
 file(GLOB_RECURSE PASSES_HEADERS_BUILD
-     ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QC/Transforms/*.inc)
+     ${MQT_MLIR_BUILD_INCLUDE_DIR}/mqt/Dialect/QC/Transforms/*.inc)
 
 # add public headers using file sets
 target_sources(

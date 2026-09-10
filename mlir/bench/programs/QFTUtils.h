@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include <mlir/Support/LLVM.h>
+#include "mlir/Support/LLVM.h"
 
 #include <cstdint>
 #include <string_view>

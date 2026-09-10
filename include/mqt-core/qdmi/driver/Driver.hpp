@@ -15,8 +15,8 @@
 
 #include "qdmi/common/Common.hpp"
 
-#include <qdmi/client.h>
-#include <qdmi/device.h>
+#include "qdmi/client.h"
+#include "qdmi/device.h"
 
 #include <condition_variable>
 #include <cstddef>

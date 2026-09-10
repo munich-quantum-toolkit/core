@@ -12,7 +12,7 @@ add_mlir_library(
   Passes.cpp
   PrettyPrinting.cpp
   ADDITIONAL_HEADER_DIRS
-  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Support
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Support
   LINK_LIBS
   PUBLIC
   MLIRSupport
@@ -37,6 +37,6 @@ mqt_mlir_target_use_project_options(MLIRSupportMQT)
 add_library(MQT::MLIRSupport ALIAS MLIRSupportMQT)
 
 # collect header files
-file(GLOB_RECURSE SUPPORT_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Support/*.h")
+file(GLOB_RECURSE SUPPORT_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Support/*.h")
 target_sources(MLIRSupportMQT PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
                                      FILES ${SUPPORT_HEADERS_SOURCE})

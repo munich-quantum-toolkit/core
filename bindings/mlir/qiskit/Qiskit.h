@@ -10,10 +10,10 @@
 
 #pragma once
 
-#include "mlir/Compiler/Programs.h"
-#include "mlir/Compiler/Target.h"
+#include "mqt/Compiler/Programs.h"
+#include "mqt/Compiler/Target.h"
 
-#include <nanobind/nanobind.h>
+#include "nanobind/nanobind.h"
 
 namespace mqt::bindings::qiskit {
 

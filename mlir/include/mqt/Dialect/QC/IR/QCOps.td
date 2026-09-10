@@ -1,0 +1,1237 @@
+// Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+// Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+//
+// Licensed under the MIT License
+
+#ifndef MLIR_DIALECT_QC_IR_QCOPS_TD
+#define MLIR_DIALECT_QC_IR_QCOPS_TD
+
+include "mqt/Dialect/QC/IR/QCDialect.td"
+include "mqt/Dialect/QC/IR/QCInterfaces.td"
+include "mqt/Dialect/QC/IR/QCTypes.td"
+
+include "mlir/IR/EnumAttr.td"
+include "mlir/IR/OpBase.td"
+include "mlir/IR/RegionKindInterface.td"
+include "mlir/IR/SymbolInterfaces.td"
+include "mlir/Interfaces/CallInterfaces.td"
+include "mlir/Interfaces/InferTypeOpInterface.td"
+include "mlir/Interfaces/SideEffectInterfaces.td"
+
+//===----------------------------------------------------------------------===//
+// Base Operation Classes
+//===----------------------------------------------------------------------===//
+
+class QCOp<string mnemonic, list<Trait> traits = []>
+    : Op<QCDialect, mnemonic, traits>;
+
+//===----------------------------------------------------------------------===//
+// Resource Operations
+//===----------------------------------------------------------------------===//
+
+def AllocOp : QCOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
+  let summary = "Allocate a qubit dynamically";
+  let description = [{
+    Allocates a new qubit dynamically and returns a reference to it.
+    The qubit is initialized to the |0⟩ state.
+
+    Example:
+    ```mlir
+    %q = qc.alloc : !qc.qubit
+    ```
+  }];
+
+  let results = (outs QubitType:$result);
+  let assemblyFormat = [{
+    attr-dict `:` type($result)
+  }];
+
+  let builders = [OpBuilder<(ins), [{
+            build($_builder, $_state, QubitType::get($_builder.getContext()));
+        }]>];
+}
+
+def DeallocOp : QCOp<"dealloc", [MemoryEffects<[MemFree]>]> {
+  let summary = "Deallocate a qubit";
+  let description = [{
+        Deallocates a qubit, releasing its resources.
+
+        Example:
+        ```mlir
+        qc.dealloc %q : !qc.qubit
+        ```
+    }];
+
+  let arguments = (ins QubitType:$qubit);
+  let assemblyFormat = "$qubit attr-dict `:` type($qubit)";
+
+  let hasCanonicalizer = 1;
+}
+
+def StaticOp : QCOp<"static", [Pure]> {
+  let summary = "Retrieve a static qubit by index";
+  let description = [{
+        The `qc.static` operation produces an SSA value representing a qubit
+        identified by a static index. This is useful for referring to fixed
+        qubits in a quantum program or to hardware-mapped qubits.
+
+        Example:
+        ```mlir
+        %q = qc.static 0 : !qc.qubit
+        ```
+    }];
+
+  let arguments = (ins ConfinedAttr<I64Attr, [IntNonNegative]>:$index);
+  let results = (outs QubitType:$qubit);
+  let assemblyFormat = "$index attr-dict `:` type($qubit)";
+
+  let builders = [OpBuilder<(ins "uint64_t":$index), [{
+          build($_builder, $_state, QubitType::get($_builder.getContext()), index);
+      }]>];
+
+  let hasCanonicalizer = 1;
+}
+
+//===----------------------------------------------------------------------===//
+// Measurement and Reset Operations
+//===----------------------------------------------------------------------===//
+
+def MeasureOp : QCOp<"measure"> {
+  let summary = "Measure a qubit in the computational basis";
+  let description = [{
+        Measures a qubit in the computational (Z) basis, collapsing the state
+        and returning a classical bit result.
+
+        Example:
+        ```mlir
+        %result = qc.measure %q : !qc.qubit -> i1
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the qubit to measure", [MemRead, MemWrite]>:$qubit);
+  let results = (outs I1:$result);
+  let assemblyFormat = [{
+        $qubit `:` type($qubit) `->` type($result) attr-dict
+    }];
+}
+
+def ResetOp : QCOp<"reset"> {
+  let summary = "Reset a qubit to |0⟩ state";
+  let description = [{
+        Resets a qubit to the |0⟩ state, regardless of its current state.
+
+        Example:
+        ```mlir
+        qc.reset %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the qubit to reset", [MemRead, MemWrite]>:$qubit);
+  let assemblyFormat = "$qubit attr-dict `:` type($qubit)";
+}
+
+//===----------------------------------------------------------------------===//
+// Traits
+//===----------------------------------------------------------------------===//
+
+class TargetAndParameterArityTrait<int T, int P>
+    : ParamNativeOpTrait<"TargetAndParameterArityTrait",
+                         !strconcat(!cast<string>(T), ",", !cast<string>(P))> {
+  let cppNamespace = "::mlir::qc";
+}
+
+def ZeroTargetOneParameter : TargetAndParameterArityTrait<0, 1>;
+def OneTargetZeroParameter : TargetAndParameterArityTrait<1, 0>;
+def OneTargetOneParameter : TargetAndParameterArityTrait<1, 1>;
+def OneTargetTwoParameter : TargetAndParameterArityTrait<1, 2>;
+def OneTargetThreeParameter : TargetAndParameterArityTrait<1, 3>;
+def TwoTargetZeroParameter : TargetAndParameterArityTrait<2, 0>;
+def TwoTargetOneParameter : TargetAndParameterArityTrait<2, 1>;
+def TwoTargetTwoParameter : TargetAndParameterArityTrait<2, 2>;
+def ThreeTargetZeroParameter : TargetAndParameterArityTrait<3, 0>;
+
+//===----------------------------------------------------------------------===//
+// Unitary Operations
+//===----------------------------------------------------------------------===//
+
+def GPhaseOp
+    : QCOp<"gphase", traits = [UnitaryOpInterface, ZeroTargetOneParameter,
+                               MemoryEffects<[MemWrite]>]> {
+  let summary = "Apply a global phase to the state";
+  let description = [{
+        Applies a global phase to the state.
+
+        Constant angles must be finite and have magnitude at most 10000
+        radians. Dynamic angles have the same runtime precondition.
+
+        Example:
+        ```mlir
+        qc.gphase(%theta)
+        ```
+    }];
+
+  let arguments = (ins Arg<F64, "the rotation angle theta in radians">:$theta);
+  let assemblyFormat = "`(` $theta `)` attr-dict";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "gphase"; }
+    }];
+
+  let builders = [OpBuilder<(ins "const std::variant<double, Value>&":$theta)>];
+
+  let hasVerifier = 1;
+}
+
+def IdOp : QCOp<"id", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  let summary = "Apply an Id gate to a qubit";
+  let description = [{
+        Applies an Id gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.id %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "id"; }
+    }];
+}
+
+def XOp : QCOp<"x", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  let summary = "Apply an X gate to a qubit";
+  let description = [{
+        Applies an X gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.x %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "x"; }
+    }];
+}
+
+def YOp : QCOp<"y", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  let summary = "Apply a Y gate to a qubit";
+  let description = [{
+        Applies a Y gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.y %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "y"; }
+    }];
+}
+
+def ZOp : QCOp<"z", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  let summary = "Apply a Z gate to a qubit";
+  let description = [{
+        Applies a Z gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.z %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "z"; }
+    }];
+}
+
+def HOp : QCOp<"h", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  let summary = "Apply an H gate to a qubit";
+  let description = [{
+        Applies an H gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.h %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "h"; }
+    }];
+}
+
+def SOp : QCOp<"s", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  let summary = "Apply an S gate to a qubit";
+  let description = [{
+        Applies an S gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.s %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "s"; }
+    }];
+}
+
+def SdgOp : QCOp<"sdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  let summary = "Apply an Sdg gate to a qubit";
+  let description = [{
+        Applies an Sdg gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.sdg %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "sdg"; }
+    }];
+}
+
+def TOp : QCOp<"t", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  let summary = "Apply a T gate to a qubit";
+  let description = [{
+        Applies a T gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.t %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "t"; }
+    }];
+}
+
+def TdgOp : QCOp<"tdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  let summary = "Apply a Tdg gate to a qubit";
+  let description = [{
+        Applies a Tdg gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.tdg %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "tdg"; }
+    }];
+}
+
+def SXOp : QCOp<"sx", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  let summary = "Apply an SX gate to a qubit";
+  let description = [{
+        Applies an SX gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.sx %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "sx"; }
+    }];
+}
+
+def SXdgOp
+    : QCOp<"sxdg", traits = [UnitaryOpInterface, OneTargetZeroParameter]> {
+  let summary = "Apply an SXdg gate to a qubit";
+  let description = [{
+        Applies an SXdg gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.sxdg %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in);
+  let assemblyFormat = "$qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "sxdg"; }
+    }];
+}
+
+def RXOp : QCOp<"rx", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+  let summary = "Apply an RX gate to a qubit";
+  let description = [{
+        Applies an RX gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.rx(%theta) %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "rx"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit_in,
+      "const std::variant<double, Value>&":$theta)>];
+}
+
+def RYOp : QCOp<"ry", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+  let summary = "Apply an RY gate to a qubit";
+  let description = [{
+        Applies an RY gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.ry(%theta) %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "ry"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit_in,
+      "const std::variant<double, Value>&":$theta)>];
+}
+
+def RZOp : QCOp<"rz", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+  let summary = "Apply an RZ gate to a qubit";
+  let description = [{
+        Applies an RZ gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.rz(%theta) %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "rz"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit_in,
+      "const std::variant<double, Value>&":$theta)>];
+}
+
+def POp : QCOp<"p", traits = [UnitaryOpInterface, OneTargetOneParameter]> {
+  let summary = "Apply a P gate to a qubit";
+  let description = [{
+        Applies a P gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.p(%theta) %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let assemblyFormat = "`(` $theta `)` $qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "p"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit_in,
+      "const std::variant<double, Value>&":$theta)>];
+}
+
+def ROp : QCOp<"r", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
+  let summary = "Apply an R gate to a qubit";
+  let description = [{
+        Applies an R gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.r(%theta, %phi) %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta,
+          Arg<F64, "the rotation angle phi in radians">:$phi);
+  let assemblyFormat =
+      "`(` $theta `,` $phi `)` $qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "r"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit_in,
+      "const std::variant<double, Value>&":$theta,
+      "const std::variant<double, Value>&":$phi)>];
+}
+
+def U2Op : QCOp<"u2", traits = [UnitaryOpInterface, OneTargetTwoParameter]> {
+  let summary = "Apply a U2 gate to a qubit";
+  let description = [{
+        Applies a U2 gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.u2(%phi, %lambda) %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+          Arg<F64, "the rotation angle phi in radians">:$phi,
+          Arg<F64, "the rotation angle lambda in radians">:$lambda);
+  let assemblyFormat =
+      "`(` $phi `,` $lambda `)` $qubit_in attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "u2"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit_in,
+      "const std::variant<double, Value>&":$phi,
+      "const std::variant<double, Value>&":$lambda)>];
+}
+
+def UOp : QCOp<"u", traits = [UnitaryOpInterface, OneTargetThreeParameter]> {
+  let summary = "Apply a U gate to a qubit";
+  let description = [{
+        Applies a U gate to a qubit, modifying it in place.
+
+        Example:
+        ```mlir
+        qc.u(%theta, %phi, %lambda) %q : !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType, "the target qubit", [MemRead, MemWrite]>:$qubit_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta,
+          Arg<F64, "the rotation angle phi in radians">:$phi,
+          Arg<F64, "the rotation angle lambda in radians">:$lambda);
+  let assemblyFormat = "`(` $theta `,` $phi `,` $lambda `)` $qubit_in "
+                       "attr-dict `:` type($qubit_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "u"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit_in,
+      "const std::variant<double, Value>&":$theta,
+      "const std::variant<double, Value>&":$phi,
+      "const std::variant<double, Value>&":$lambda)>];
+}
+
+def SWAPOp
+    : QCOp<"swap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+  let summary = "Apply a SWAP gate to two qubits";
+  let description = [{
+        Applies a SWAP gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType,
+               "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType,
+              "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
+  let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "swap"; }
+    }];
+}
+
+def iSWAPOp
+    : QCOp<"iswap", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+  let summary = "Apply a iSWAP gate to two qubits";
+  let description = [{
+        Applies a iSWAP gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        qc.iswap %q0, %q1 : !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType,
+               "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType,
+              "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
+  let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "iswap"; }
+    }];
+}
+
+def DCXOp : QCOp<"dcx", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+  let summary = "Apply a DCX gate to two qubits";
+  let description = [{
+        Applies a DCX gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        qc.dcx %q0, %q1 : !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType,
+               "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType,
+              "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
+  let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "dcx"; }
+    }];
+}
+
+def ECROp : QCOp<"ecr", traits = [UnitaryOpInterface, TwoTargetZeroParameter]> {
+  let summary = "Apply an ECR gate to two qubits";
+  let description = [{
+        Applies an ECR gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        qc.ecr %q0, %q1 : !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType,
+               "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType,
+              "the second target qubit", [MemRead, MemWrite]>:$qubit1_in);
+  let assemblyFormat = "$qubit0_in `,` $qubit1_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "ecr"; }
+    }];
+}
+
+def RXXOp : QCOp<"rxx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+  let summary = "Apply an RXX gate to two qubits";
+  let description = [{
+        Applies an RXX gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        qc.rxx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType,
+               "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType,
+              "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "rxx"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
+      "const std::variant<double, Value>&":$theta)>];
+}
+
+def RYYOp : QCOp<"ryy", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+  let summary = "Apply an RYY gate to two qubits";
+  let description = [{
+        Applies an RYY gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        qc.ryy(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType,
+               "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType,
+              "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "ryy"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
+      "const std::variant<double, Value>&":$theta)>];
+}
+
+def RZXOp : QCOp<"rzx", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+  let summary = "Apply an RZX gate to two qubits";
+  let description = [{
+        Applies an RZX gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        qc.rzx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType,
+               "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType,
+              "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "rzx"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
+      "const std::variant<double, Value>&":$theta)>];
+}
+
+def RZZOp : QCOp<"rzz", traits = [UnitaryOpInterface, TwoTargetOneParameter]> {
+  let summary = "Apply an RZZ gate to two qubits";
+  let description = [{
+        Applies an RZZ gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        qc.rzz(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType,
+               "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType,
+              "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta);
+  let assemblyFormat = "`(` $theta `)` $qubit0_in `,` $qubit1_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "rzz"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
+      "const std::variant<double, Value>&":$theta)>];
+}
+
+def XXPlusYYOp
+    : QCOp<"xx_plus_yy", traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
+  let summary = "Apply an XX+YY gate to two qubits";
+  let description = [{
+        Applies an XX+YY gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        qc.xx_plus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType,
+               "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType,
+              "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta,
+          Arg<F64, "the rotation angle beta in radians">:$beta);
+  let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in "
+                       "attr-dict `:` type($qubit0_in) `,` type($qubit1_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "xx_plus_yy"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
+      "const std::variant<double, Value>&":$theta,
+      "const std::variant<double, Value>&":$beta)>];
+}
+
+def XXMinusYYOp : QCOp<"xx_minus_yy",
+                       traits = [UnitaryOpInterface, TwoTargetTwoParameter]> {
+  let summary = "Apply an XX-YY gate to two qubits";
+  let description = [{
+        Applies an XX-YY gate to two qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        qc.xx_minus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments =
+      (ins Arg<QubitType,
+               "the first target qubit", [MemRead, MemWrite]>:$qubit0_in,
+          Arg<QubitType,
+              "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+          Arg<F64, "the rotation angle theta in radians">:$theta,
+          Arg<F64, "the rotation angle beta in radians">:$beta);
+  let assemblyFormat = "`(` $theta `,` $beta `)` $qubit0_in `,` $qubit1_in "
+                       "attr-dict `:` type($qubit0_in) `,` type($qubit1_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "xx_minus_yy"; }
+    }];
+
+  let builders = [OpBuilder<(ins "Value":$qubit0_in, "Value":$qubit1_in,
+      "const std::variant<double, Value>&":$theta,
+      "const std::variant<double, Value>&":$beta)>];
+}
+
+def RCCXOp
+    : QCOp<"rccx", traits = [UnitaryOpInterface, ThreeTargetZeroParameter]> {
+  let summary = "Apply a relative-phase CCX gate to three qubits";
+  let description = [{
+        Applies a relative-phase CCX (`RCCX`) gate to three qubits, modifying
+        them in place.
+
+        Example:
+        ```mlir
+        qc.rccx %q0, %q1, %q2 : !qc.qubit, !qc.qubit, !qc.qubit
+        ```
+    }];
+
+  let arguments = (ins Arg<QubitType, "the first target qubit",
+                           [MemRead, MemWrite]>:$qubit0_in,
+      Arg<QubitType, "the second target qubit", [MemRead, MemWrite]>:$qubit1_in,
+      Arg<QubitType, "the third target qubit", [MemRead, MemWrite]>:$qubit2_in);
+  let assemblyFormat = "$qubit0_in `,` $qubit1_in `,` $qubit2_in attr-dict `:` "
+                       "type($qubit0_in) `,` type($qubit1_in) `,` "
+                       "type($qubit2_in)";
+
+  let extraClassDeclaration = [{
+        static StringRef getBaseSymbol() { return "rccx"; }
+    }];
+}
+
+def UnitaryOp : QCOp<"unitary", traits = [UnitaryOpInterface]> {
+  let summary = "Apply an explicitly represented unitary matrix";
+  let description = [{
+        Applies a dense unitary matrix to a variadic list of target qubits.
+        The matrix is stored in row-major order as a square rank-two tensor of
+        `complex<f64>` values. Its side length must be `2^n`, where `n` is the
+        number of target qubits. Operand 0 labels the most-significant basis
+        bit; the last operand labels the least-significant bit. The
+        deterministic matrix verifier supports one to eight qubits and checks
+        `U^dagger U` entry-wise with absolute tolerance `1e-10`.
+
+        Example:
+        ```mlir
+        qc.unitary dense<[[(0.0,0.0), (1.0,0.0)],
+                          [(1.0,0.0), (0.0,0.0)]]>
+            : tensor<2x2xcomplex<f64>> %q : !qc.qubit
+        ```
+    }];
+
+  let arguments = (ins ElementsAttr:$matrix,
+      Arg<Variadic<QubitType>,
+          "the target qubits", [MemRead, MemWrite]>:$qubits);
+  let assemblyFormat = "$matrix $qubits attr-dict `:` type($qubits)";
+
+  let extraClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubits().size(); }
+        static size_t getNumControls() { return 0; }
+        static OperandRange getControls() { return {nullptr, 0}; }
+        Value getQubit(size_t i) { return getTarget(i); }
+        Value getTarget(size_t i) { return getQubits()[i]; }
+        OperandRange getTargets() { return getQubits(); }
+        static Value getControl(size_t i) { llvm::reportFatalUsageError("UnitaryOp cannot be controlled directly"); }
+        static size_t getNumParams() { return 0; }
+        static Value getParameter(size_t i) { llvm::reportFatalUsageError("UnitaryOp does not have parameters"); }
+        static OperandRange getParameters() { return {nullptr, 0}; }
+        static StringRef getBaseSymbol() { return "unitary"; }
+    }];
+
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
+def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
+  let summary = "Apply a barrier gate to a set of qubits";
+  let description = [{
+        Applies a barrier gate to a set of qubits, modifying them in place.
+
+        Example:
+        ```mlir
+        qc.barrier %q : !qc.qubit
+        ```
+    }];
+
+  let arguments = (ins Arg<Variadic<QubitType>,
+                           "the target qubits", [MemRead, MemWrite]>:$qubits);
+  let assemblyFormat = "$qubits attr-dict `:` type($qubits)";
+
+  let extraClassDeclaration = [{
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubits().size(); }
+        static size_t getNumControls() { return 0; }
+        static OperandRange getControls() { return {nullptr, 0}; }
+        Value getQubit(size_t i) { return getTarget(i); }
+        Value getTarget(size_t i);
+        OperandRange getTargets() { return getQubits(); }
+        static Value getControl(size_t i) { llvm::reportFatalUsageError("BarrierOp cannot be controlled"); }
+        static size_t getNumParams() { return 0; }
+        static Value getParameter(size_t i) { llvm::reportFatalUsageError("BarrierOp does not have parameters"); }
+        static OperandRange getParameters() { return {nullptr, 0}; }
+        static StringRef getBaseSymbol() { return "barrier"; }
+    }];
+}
+
+def CallOp
+    : QCOp<"call", traits = [CallOpInterface, UnitaryOpInterface,
+                             DeclareOpInterfaceMethods<SymbolUserOpInterface>,
+                             MemoryEffects<[MemRead, MemWrite]>]> {
+  let summary = "Call a unitary QC function";
+  let description = [{
+    Calls a private `func.func` marked with `mqt.unitary`. The operands match
+    the callee arguments: zero or more `f64` parameters followed by scalar
+    qubits. QC reference semantics make the call resultless.
+
+    Example:
+    ```mlir
+    qc.call @bell(%q0, %q1) : !qc.qubit, !qc.qubit
+    ```
+  }];
+
+  let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands,
+      OptionalAttr<DictArrayAttr>:$arg_attrs,
+      OptionalAttr<DictArrayAttr>:$res_attrs);
+
+  let assemblyFormat = [{
+    $callee `(` $operands `)` attr-dict `:` type($operands)
+  }];
+
+  let builders = [OpBuilder<
+      (ins "FlatSymbolRefAttr":$callee, "ValueRange":$operands), [{
+    $_state.addAttribute("callee", callee);
+    $_state.addOperands(operands);
+  }]>];
+
+  let extraClassDeclaration = [{
+    size_t getNumQubits();
+    size_t getNumTargets() { return getNumQubits(); }
+    static size_t getNumControls() { return 0; }
+    Value getQubit(size_t i) { return getTarget(i); }
+    Value getTarget(size_t i) { return getQubits()[i]; }
+    static Value getControl(size_t i) {
+      llvm::reportFatalUsageError("CallOp does not have controls");
+    }
+    OperandRange getQubits();
+    OperandRange getTargets() { return getQubits(); }
+    static OperandRange getControls() { return {nullptr, 0}; }
+    size_t getNumParams();
+    Value getParameter(size_t i) { return getParameters()[i]; }
+    OperandRange getParameters();
+    StringRef getBaseSymbol() { return getCallee(); }
+
+    ::mlir::Operation::operand_range getArgOperands() { return getOperands(); }
+    MutableOperandRange getArgOperandsMutable() { return getOperandsMutable(); }
+    ::mlir::CallInterfaceCallable getCallableForCallee() {
+      return getCalleeAttr();
+    }
+    void setCalleeFromCallable(::mlir::CallInterfaceCallable callee) {
+      setCalleeAttr(cast<FlatSymbolRefAttr>(cast<SymbolRefAttr>(callee)));
+    }
+  }];
+}
+
+//===----------------------------------------------------------------------===//
+// Modifiers
+//===----------------------------------------------------------------------===//
+
+def YieldOp : QCOp<"yield", traits = [Pure, Terminator]> {
+  let summary = "Yield from a modifier region";
+  let description = [{
+        Terminates a modifier region, yielding control back to the enclosing operation.
+    }];
+
+  let assemblyFormat = "attr-dict";
+}
+
+def CtrlOp
+    : QCOp<"ctrl",
+           traits = [UnitaryOpInterface, AttrSizedOperandSegments,
+                     SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                     RecursiveMemoryEffects]> {
+  let summary = "Apply a control modifier to a collection of gates";
+  let description = [{
+        A modifier operation that adds control qubits to the gates defined in its body region.
+        The controlled operation applies the controlled gates only when all control qubits are in the $|1\rangle$ state.
+
+        Note that control qubits are logically unmodified by this operation in that their quantum state remains unchanged.
+        However, the `controls` argument is marked with `MemWrite` to ensure correct dependency tracking in MLIR.
+
+        The body region may contain unitary operations and memory-effect-free classical operations without regions.
+        Parameter computation is eager, as specified by the `mqt.unitary` contract; it need not be speculatable.
+        Classical SSA values may be captured from above, but every qubit used
+        in the body must be passed through a modifier operand and accessed via
+        its aliased block argument.
+        Classical memory access and non-unitary region operations are not allowed.
+        Unitary operations retain their required effects, including global phase.
+
+        Example:
+        ```mlir
+        qc.ctrl(%q0) targets(%a0 = %q1) {
+          qc.x %a0 : !qc.qubit
+        } : !qc.qubit
+        ```
+    }];
+
+  let arguments = (ins Arg<Variadic<QubitType>,
+                           "the control qubits", [MemRead, MemWrite]>:$controls,
+      Arg<Variadic<QubitType>,
+          "the target qubits", [MemRead, MemWrite]>:$targets);
+  let regions = (region SizedRegion<1>:$region);
+  let assemblyFormat = [{
+        `(` $controls `)`
+        `targets`
+        custom<TargetAliasing>($region, $targets)
+        attr-dict `:`
+        `{` type($controls) `}` ( `,` `{` type($targets)^ `}` )?
+    }];
+
+  let extraClassDeclaration = [{
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
+        size_t getNumQubits() { return getNumTargets() + getNumControls(); }
+        size_t getNumTargets() { return getTargets().size(); }
+        size_t getNumControls() { return getControls().size(); }
+        OperandRange getQubits() { return getOperands(); }
+        Value getQubit(size_t i) { return getQubits()[i]; }
+        Value getTarget(size_t i) { return getTargets()[i]; }
+        Value getControl(size_t i) { return getControls()[i]; }
+        size_t getNumParams() { return 0; }
+        Value getParameter(size_t i) { llvm::reportFatalUsageError("CtrlOp does not have parameters"); }
+        OperandRange getParameters() { return {nullptr, 0}; }
+        static StringRef getBaseSymbol() { return "ctrl"; }
+    }];
+
+  let builders = [OpBuilder<(ins "ValueRange":$controls, "ValueRange":$targets,
+                      "const function_ref<void(ValueRange)>&":$body)>,
+                  OpBuilder<(ins "ValueRange":$controls, "Value":$target,
+                      "const function_ref<void(Value)>&":$bodyBuilder)>,
+                  OpBuilder<(ins "Value":$control, "Value":$target,
+                      "const function_ref<void(Value)>&":$bodyBuilder)>];
+
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
+def InvOp : QCOp<"inv",
+                 traits = [UnitaryOpInterface,
+                           SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                           RecursiveMemoryEffects]> {
+  let summary =
+      "Apply an inverse (i.e., adjoint) modifier to a collection of gates";
+  let description = [{
+        A modifier operation that inverts the gates defined in its body region.
+
+        The body region may contain unitary operations and memory-effect-free classical operations without regions.
+        Parameter computation is eager, as specified by the `mqt.unitary` contract; it need not be speculatable.
+        Classical SSA values may be captured from above, but every qubit used
+        in the body must be passed through a modifier operand and accessed via
+        its aliased block argument.
+        Classical memory access and non-unitary region operations are not allowed.
+        Unitary operations retain their required effects, including global phase.
+
+        Example:
+        ```mlir
+        qc.inv (%a0 = %q0) {
+          qc.s %a0 : !qc.qubit
+        }
+        ```
+    }];
+
+  let arguments = (ins Arg<
+      Variadic<QubitType>,
+      "the qubits involved in the operation", [MemRead, MemWrite]>:$qubits);
+  let regions = (region SizedRegion<1>:$region);
+  let assemblyFormat = [{
+        custom<TargetAliasing>($region, $qubits)
+        attr-dict ( `:` type($qubits)^ )?
+    }];
+
+  let extraClassDeclaration = [{
+        size_t getNumBodyUnitaries();
+        [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
+        size_t getNumQubits() { return getNumTargets(); }
+        size_t getNumTargets() { return getQubits().size(); }
+        size_t getNumControls() { return 0; }
+        Value getQubit(size_t i) { return getTarget(i); }
+        Value getTarget(size_t i) { return getQubits()[i]; }
+        OperandRange getTargets() { return getQubits(); }
+        Value getControl(size_t i) { llvm::reportFatalUsageError("InvOp does not have controls"); }
+        OperandRange getControls() { return {nullptr, 0}; }
+        size_t getNumParams() { return 0; }
+        Value getParameter(size_t i) { llvm::reportFatalUsageError("InvOp does not have parameters"); }
+        OperandRange getParameters() { return {nullptr, 0}; }
+        static StringRef getBaseSymbol() { return "inv"; }
+    }];
+
+  let builders = [OpBuilder<(ins "ValueRange":$qubits,
+                      "const function_ref<void(ValueRange)>&":$body)>,
+                  OpBuilder<(ins "Value":$qubit,
+                      "const function_ref<void(Value)>&":$bodyBuilder)>];
+
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
+def PowOp : QCOp<"pow",
+                 traits = [UnitaryOpInterface,
+                           SingleBlockImplicitTerminator<"::mlir::qc::YieldOp">,
+                           RecursiveMemoryEffects]> {
+  let summary = "Apply a power modifier to a collection of gates";
+  let description = [{
+          A modifier operation that raises the gates defined in its body region to a given power.
+
+          The exponent can be an integer or a floating-point number.
+
+          - r > 0: apply the gate raised to the r-th power.
+          - r = 0: identity (no-op).
+          - r < 0: equivalent to inv @ pow(-r) @ g.
+
+        The body region may contain unitary operations and memory-effect-free classical operations without regions.
+        Parameter computation is eager, as specified by the `mqt.unitary` contract; it need not be speculatable.
+          Classical SSA values may be captured from above, but every qubit used
+          in the body must be passed through a modifier operand and accessed via
+          its aliased block argument.
+          Classical memory access and non-unitary region operations are not allowed.
+          Unitary operations retain their required effects, including global phase.
+
+          Example:
+          ```mlir
+          qc.pow(%exponent) (%a0 = %q0) {
+            qc.s %a0 : !qc.qubit
+          } : !qc.qubit
+          ```
+      }];
+
+  let arguments = (ins F64:$exponent,
+      Arg<Variadic<QubitType>,
+          "the qubits involved in the operation", [MemRead, MemWrite]>:$qubits);
+  let regions = (region SizedRegion<1>:$region);
+  let assemblyFormat = [{
+        `(` $exponent `)`
+        custom<TargetAliasing>($region, $qubits)
+        attr-dict ( `:` type($qubits)^ )?
+    }];
+
+  let extraClassDeclaration = [{
+          size_t getNumBodyUnitaries();
+          [[nodiscard]] UnitaryOpInterface getBodyUnitary(size_t i);
+          size_t getNumQubits() { return getNumTargets(); }
+          size_t getNumTargets() { return getQubits().size(); }
+          size_t getNumControls() { return 0; }
+          Value getQubit(size_t i) { return getQubits()[i]; }
+          Value getTarget(size_t i) { return getQubits()[i]; }
+          OperandRange getTargets() { return getQubits(); }
+          Value getControl(size_t i) { llvm::reportFatalUsageError("PowOp does not have controls"); }
+          OperandRange getControls() { return {nullptr, 0}; }
+          static size_t getNumParams() { return 1; }
+          Value getParameter(size_t i) {
+            if (i != 0) {
+              llvm::reportFatalUsageError("Parameter index out of bounds");
+            }
+            return getExponent();
+          }
+          OperandRange getParameters() { return getOperation()->getOperands().slice(0, 1); }
+          std::optional<double> getExponentValue();
+          static StringRef getBaseSymbol() { return "pow"; }
+      }];
+
+  let builders =
+      [OpBuilder<(ins "const std::variant<double, Value>&":$exponent,
+           "ValueRange":$qubits,
+           "const llvm::function_ref<void(mlir::ValueRange)>&":$bodyBuilder)>,
+       OpBuilder<(ins "const std::variant<double, Value>&":$exponent,
+           "Value":$qubit,
+           "const llvm::function_ref<void(mlir::Value)>&":$bodyBuilder)>];
+
+  let hasCanonicalizer = 1;
+  let hasVerifier = 1;
+}
+
+#endif // MLIR_DIALECT_QC_IR_QCOPS_TD

@@ -12,33 +12,36 @@
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
 #include "dd/Package.hpp"
-#include "mlir/Compiler/Programs.h"
-#include "mlir/Compiler/QDMIAdapter.h"
-#include "mlir/Compiler/Target.h"
-#include "mlir/Compiler/TargetEnvironment.h"
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
-#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
-#include "mlir/bench/Generate.h"
+#include "mqt/Compiler/Programs.h"
+#include "mqt/Compiler/QDMIAdapter.h"
+#include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/bench/Generate.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
+
 #include "qiskit/Qiskit.h"
 
-#include <llvm/Support/Error.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/Support/LogicalResult.h>
-#include <nanobind/nanobind.h>
-#include <nanobind/ndarray.h>
-#include <nanobind/stl/filesystem.h>
-#include <nanobind/stl/map.h>
-#include <nanobind/stl/optional.h>
-#include <nanobind/stl/pair.h>
-#include <nanobind/stl/string.h>
-#include <nanobind/stl/string_view.h>
-#include <nanobind/stl/variant.h>
-#include <nanobind/stl/vector.h>
+#include "nanobind/nanobind.h"
+#include "nanobind/ndarray.h"
+#include "nanobind/stl/filesystem.h"
+#include "nanobind/stl/map.h"
+#include "nanobind/stl/optional.h"
+#include "nanobind/stl/pair.h"
+#include "nanobind/stl/string.h"
+#include "nanobind/stl/string_view.h"
+#include "nanobind/stl/variant.h"
+#include "nanobind/stl/vector.h"
+
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cctype>
 #include <complex>

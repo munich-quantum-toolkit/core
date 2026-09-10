@@ -8,25 +8,25 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QIR/Execution/JIT/IRRewriter.h"
+#include "mqt/Dialect/QIR/Execution/JIT/IRRewriter.h"
 
-#include "mlir/Dialect/QIR/QIRDefinitions.h"
+#include "mqt/Dialect/QIR/QIRDefinitions.h"
 
-#include <llvm/ADT/SmallPtrSet.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/StringSwitch.h>
-#include <llvm/IR/Attributes.h>
-#include <llvm/IR/BasicBlock.h>
-#include <llvm/IR/CFG.h>
-#include <llvm/IR/Constant.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/Dominators.h>
-#include <llvm/IR/Function.h>
-#include <llvm/IR/IRBuilder.h>
-#include <llvm/IR/Instructions.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Transforms/Utils/Local.h>
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
+#include "llvm/IR/Attributes.h"
+#include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"
+#include "llvm/IR/Constant.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/Dominators.h"
+#include "llvm/IR/Function.h"
+#include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Transforms/Utils/Local.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -238,7 +238,7 @@ static bool isStaticGate(const llvm::CallInst& call, llvm::StringRef name) {
   .Case("__quantum__qis__" #NAME "__" #SUFFIX, true)                           \
       .Case("__quantum__qis__c" #NAME "__" #SUFFIX, true)                      \
       .Case("__quantum__qis__cc" #NAME "__" #SUFFIX, true)
-#include "mlir/Conversion/GateTable.def"
+#include "mqt/Conversion/GateTable.def"
                          .Case("__quantum__qis__gphase__body", true)
                          .Case("__quantum__qis__cnot__body", true)
                          .Default(false);

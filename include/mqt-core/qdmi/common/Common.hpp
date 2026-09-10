@@ -14,7 +14,7 @@
 
 #pragma once
 
-#include <qdmi/client.h>
+#include "qdmi/client.h"
 
 #include <string>
 

@@ -12,7 +12,7 @@
 
 #include "qdmi/Client.hpp"
 
-#include <qdmi/constants.h>
+#include "qdmi/constants.h"
 
 #include <algorithm>
 #include <cctype>

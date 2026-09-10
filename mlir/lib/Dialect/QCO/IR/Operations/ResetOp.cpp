@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
 
-#include <mlir/IR/OperationSupport.h>
+#include "mlir/IR/OperationSupport.h"
 
 using namespace mlir;
 using namespace mlir::qco;

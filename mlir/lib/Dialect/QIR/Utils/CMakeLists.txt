@@ -20,8 +20,7 @@ add_mlir_library(
 
 mqt_mlir_target_use_project_options(MLIRQIRUtils)
 
-file(GLOB_RECURSE QIR_UTILS_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QIR/Utils/*.h)
+file(GLOB_RECURSE QIR_UTILS_HEADERS_SOURCE ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QIR/Utils/*.h)
 
 target_sources(MLIRQIRUtils PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
                                    ${QIR_UTILS_HEADERS_SOURCE})

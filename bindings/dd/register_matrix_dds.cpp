@@ -11,13 +11,14 @@
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
 #include "dd/Node.hpp"
+
 #include "register_dd_export.hpp"
 
-#include <nanobind/nanobind.h>
-#include <nanobind/ndarray.h>
-#include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
+#include "nanobind/nanobind.h"
+#include "nanobind/ndarray.h"
+#include "nanobind/stl/complex.h" // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string.h"  // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/vector.h"  // NOLINT(misc-include-cleaner)
 
 #include <cmath>
 #include <complex>

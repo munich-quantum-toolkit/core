@@ -8,19 +8,19 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
+#include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
 #include "dd/Operations.hpp"
 #include "dd/Package.hpp"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/DDAdapter.h"
-#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
-#include "mlir/Dialect/QIR/QIRDefinitions.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/DDAdapter.h"
+#include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
+#include "mqt/Dialect/QIR/QIRDefinitions.h"
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/SmallVector.h>
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <algorithm>
 #include <array>

@@ -8,15 +8,16 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Target/OpenQASM/Detail/OpenQASMLexer.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMLexer.h"
 
-#include "mlir/Target/OpenQASM/Detail/OpenQASMUnicode.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMUnicode.h"
 
-#include <llvm/ADT/SmallString.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/StringSwitch.h>
-#include <llvm/Support/ConvertUTF.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
+#include "llvm/Support/ConvertUTF.h"
 
 #include <cctype>
 #include <cmath>

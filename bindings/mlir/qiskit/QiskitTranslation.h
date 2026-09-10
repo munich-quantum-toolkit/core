@@ -10,11 +10,12 @@
 
 #pragma once
 
-#include "mlir/Dialect/QC/Translation/StandardGate.h"
+#include "mqt/Dialect/QC/Translation/StandardGate.h"
 
-#include <llvm/ADT/APInt.h>
-#include <llvm/ADT/StringMap.h>
-#include <nanobind/nanobind.h>
+#include "nanobind/nanobind.h"
+
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/StringMap.h"
 
 #include <complex>
 #include <cstddef>

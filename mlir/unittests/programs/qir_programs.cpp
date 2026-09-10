@@ -10,10 +10,10 @@
 
 #include "qir_programs.h"
 
-#include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
-#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <mlir/IR/Value.h>
+#include "mlir/IR/Value.h"
 
 #include <cstdint>
 #include <numbers>

@@ -11,17 +11,17 @@
 // Generates configured benchmarks and evaluates their results.
 
 #include "bench/JSON.hpp"
-#include "mlir/Compiler/Programs.h"
-#include "mlir/bench/Generate.h"
+#include "mqt/Compiler/Programs.h"
+#include "mqt/bench/Generate.h"
 
-#include <llvm/ADT/ScopeExit.h>
-#include <llvm/ADT/StringExtras.h>
-#include <llvm/Support/CommandLine.h>
-#include <llvm/Support/FileSystem.h>
-#include <llvm/Support/JSON.h>
-#include <llvm/Support/MemoryBuffer.h>
-#include <llvm/Support/Process.h>
-#include <llvm/Support/raw_ostream.h>
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/Support/CommandLine.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/JSON.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Process.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
 #include <cstdint>

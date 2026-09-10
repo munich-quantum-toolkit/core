@@ -247,11 +247,12 @@ The source build provides a narrow, non-throwing QDMI bridge between a stable
 device ID and the compiler-owned target:
 
 ```cpp
-#include "mlir/Compiler/QDMIAdapter.h"
-#include "mlir/Compiler/Programs.h"
-#include "mlir/Compiler/TargetEnvironment.h"
-#include <llvm/Support/Error.h>
-#include <llvm/Support/raw_ostream.h>
+#include "mqt/Compiler/QDMIAdapter.h"
+#include "mqt/Compiler/Programs.h"
+#include "mqt/Compiler/TargetEnvironment.h"
+
+#include "llvm/Support/Error.h"
+#include "llvm/Support/raw_ostream.h"
 
 auto target = mlir::compilerTargetFromDeviceId("mqt.ddsim.default");
 if (!target) {

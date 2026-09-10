@@ -8,11 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "TestUtils.h"
 #include "bench/GHZ.hpp"
-#include "mlir/bench/Generate.h"
+#include "mqt/bench/Generate.h"
 
-#include <gtest/gtest.h>
+#include "TestUtils.h"
+
+#include "gtest/gtest.h"
 
 namespace mqt::bench {
 

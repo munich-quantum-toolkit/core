@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include <qdmi/device.h>
+#include "qdmi/device.h"
 
 #include <filesystem>
 #include <optional>

@@ -8,11 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/Parameters.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/OperationSupport.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/OperationSupport.h"
 
 #include <variant>
 

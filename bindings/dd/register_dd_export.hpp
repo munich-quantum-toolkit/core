@@ -14,8 +14,8 @@
 #include "dd/Export.hpp"
 #include "dd/Package.hpp"
 
-#include <nanobind/nanobind.h>
-#include <nanobind/stl/string.h> /// NOLINT(misc-include-cleaner)
+#include "nanobind/nanobind.h"
+#include "nanobind/stl/string.h" /// NOLINT(misc-include-cleaner)
 
 #include <ios>
 #include <sstream>

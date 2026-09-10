@@ -8,16 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Compiler/QDMIAdapter.h"
-#include "mlir/Compiler/Target.h"
+#include "mqt/Compiler/QDMIAdapter.h"
+#include "mqt/Compiler/Target.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/Error.h>
+#include "gtest/gtest.h"
+
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/Error.h"
 
 #include <cassert>
 #include <initializer_list>

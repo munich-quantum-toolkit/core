@@ -8,19 +8,21 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+
+#include "mqt/Target/OpenQASM/Frontend.h"
 
 #include "OpenQASMToQCEmitter.h"
-#include "mlir/Target/OpenQASM/Frontend.h"
 
-#include <llvm/Support/MemoryBuffer.h>
-#include <llvm/Support/SourceMgr.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
 
 namespace mlir::qc {
 

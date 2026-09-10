@@ -14,7 +14,7 @@
 
 #include "qdmi/common/Common.hpp"
 
-#include <qdmi/constants.h>
+#include "qdmi/constants.h"
 
 #include <iostream>
 #include <sstream>

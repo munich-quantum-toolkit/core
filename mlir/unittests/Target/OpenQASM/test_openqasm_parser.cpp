@@ -8,14 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Target/OpenQASM/Frontend.h"
+#include "mqt/Target/OpenQASM/Frontend.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/IntrusiveRefCntPtr.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/MemoryBuffer.h>
-#include <llvm/Support/SourceMgr.h>
-#include <llvm/Support/VirtualFileSystem.h>
+#include "gtest/gtest.h"
+
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/VirtualFileSystem.h"
 
 #include <array>
 #include <cstddef>

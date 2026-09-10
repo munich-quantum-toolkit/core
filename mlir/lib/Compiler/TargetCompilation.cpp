@@ -8,19 +8,19 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Compiler/TargetCompilation.h"
+#include "mqt/Compiler/TargetCompilation.h"
 
-#include "mlir/Compiler/Target.h"
-#include "mlir/Compiler/TargetEnvironment.h"
-#include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Support/Passes.h"
+#include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Support/Passes.h"
 
-#include <mlir/IR/Visitors.h>
-#include <mlir/Pass/Pass.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/WalkResult.h>
-#include <mlir/Transforms/Passes.h>
+#include "mlir/IR/Visitors.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/WalkResult.h"
+#include "mlir/Transforms/Passes.h"
 
 #include <memory>
 #include <utility>

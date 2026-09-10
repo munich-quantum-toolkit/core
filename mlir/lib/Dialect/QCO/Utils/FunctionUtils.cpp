@@ -8,14 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/FunctionUtils.h"
+#include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/Utils/WireIterator.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/Utils/WireIterator.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/SymbolTable.h>
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/SymbolTable.h"
+
+#include "llvm/ADT/STLExtras.h"
 
 using namespace mlir;
 using namespace mlir::qco;

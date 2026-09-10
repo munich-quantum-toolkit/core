@@ -21,7 +21,7 @@
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include <cmath>
 #include <functional>

@@ -15,7 +15,7 @@
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include <cmath>
 #include <complex>

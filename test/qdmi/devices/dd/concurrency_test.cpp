@@ -11,12 +11,13 @@
 /*
  * DDSIM QDMI Device - Concurrency tests
  */
-#include "helpers/circuits.hpp"
-#include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <gtest/gtest.h>
+#include "helpers/circuits.hpp"
+#include "helpers/test_utils.hpp"
+
+#include "gtest/gtest.h"
 
 #include <algorithm>
 #include <atomic>
