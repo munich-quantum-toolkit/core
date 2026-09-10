@@ -13,7 +13,7 @@
 
 #include "gmock/gmock-matchers.h"
 #include "gtest/gtest.h"
-#include "nlohmann/json.hpp" // NOLINT(misc-include-cleaner)
+#include "nlohmann/json.hpp"
 #include "nlohmann/json_fwd.hpp"
 
 #include <array>

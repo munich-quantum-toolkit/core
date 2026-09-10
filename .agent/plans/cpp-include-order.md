@@ -28,14 +28,20 @@ on case-insensitive file systems. Keep `<qiskit/funcs_py.h>` in the same form so
 the formatter preserves its required position after the umbrella header. Both
 headers belong to the third-party include group.
 
+Remove eight redundant include-cleaner suppressions. Four JSON header includes
+need no suppression; two JSON aliases need a direct `json_fwd.hpp` include. The
+two Qiskit caster suppressions are redundant because the MLIR binding policy
+disables include-cleaner. Keep the nanobind caster suppressions outside MLIR:
+removing them still produces unused-header warnings with clang-tidy 23.1.1.
+
 ## Validation
 
 The release build uses LLVM/MLIR 23.1.0. Source and TableGen include paths
 resolve under `mqt/`, including all 98 generated-header references. The C/C++
-include sets and code bodies are preserved. Formatter assertions cover the
-matching header, include groups, QDMI header ownership, and macro-dependent
-includes. Clang-format 23.1.0 reports no changes across all 513 C/C++ and
-TableGen files.
+code bodies are preserved; the suppression cleanup adds two direct JSON
+declaration includes. Formatter assertions cover the matching header, include
+groups, QDMI header ownership, and macro-dependent includes. Clang-format 23.1.0
+reports no changes across all 513 C/C++ and TableGen files.
 
 `ctest --preset release-no-mlir --parallel 4` passed 570 tests and skipped one.
 `ctest --preset release --parallel 4` passed 3,452 tests and skipped one after
@@ -54,3 +60,8 @@ Direct whole-file clang-tidy rechecks of the three dialect sources whose include
 comments changed also completed. They reported generated-header warnings and
 existing missing namespace comments in public headers, which the repository lint
 session excludes.
+
+For the suppression cleanup, `uvx nox -s cpp-lint -- fee059e85` checked every
+line of all five changed C++ files and passed with zero findings.
+Include-cleaner trials covered 21 sources to distinguish redundant suppressions
+from required nanobind caster suppressions.

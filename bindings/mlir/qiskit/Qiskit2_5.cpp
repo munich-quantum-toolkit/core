@@ -13,8 +13,8 @@
 #include "QiskitTranslation.h"
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
-#include "nanobind/stl/complex.h" // NOLINT(misc-include-cleaner): enables the std::complex caster.
-#include "nanobind/stl/string.h" // NOLINT(misc-include-cleaner): enables the std::string caster.
+#include "nanobind/stl/complex.h" // Enables the std::complex caster.
+#include "nanobind/stl/string.h"  // Enables the std::string caster.
 #include "qiskit/complex.h"
 #include "qiskit/version.h"
 #include <qiskit.h> // Must precede the extension function table.
