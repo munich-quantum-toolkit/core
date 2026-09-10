@@ -187,22 +187,17 @@ bool prepareForStateExtraction(llvm::Function& entryPoint) {
   }
 
   const llvm::DominatorTree dominators(entryPoint);
-  llvm::CallInst* boundary = nullptr;
-  for (auto* candidate : irreversibleCalls) {
-    bool dominatesAll = true;
-    for (auto* call : irreversibleCalls) {
-      if (candidate != call && !dominators.dominates(candidate, call)) {
-        dominatesAll = false;
-        break;
-      }
-    }
-    if (dominatesAll) {
-      boundary = candidate;
-      break;
+  auto* boundary = irreversibleCalls.front();
+  /// An all-dominating call replaces any candidate that cannot dominate it.
+  for (auto* call : irreversibleCalls) {
+    if (boundary != call && !dominators.dominates(boundary, call)) {
+      boundary = call;
     }
   }
-  if (boundary == nullptr) {
-    throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+  for (auto* call : irreversibleCalls) {
+    if (boundary != call && !dominators.dominates(boundary, call)) {
+      throw std::invalid_argument(TERMINAL_REGION_ERROR.str());
+    }
   }
 
   requireTerminalIrreversibleRegion(*boundary);

@@ -727,9 +727,11 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getHistogram(
     return reportEmptyResult(sizeRet);
   }
   if (result == QDMI_JOB_RESULT_HIST_KEYS) {
-    const size_t bitstringSize =
-        counts_.empty() ? 0 : counts_.begin()->first.length();
-    const size_t reqSize = counts_.size() * (bitstringSize + 1);
+    const size_t reqSize =
+        std::accumulate(counts_.begin(), counts_.end(), size_t{0},
+                        [](const size_t total, const auto& entry) {
+                          return total + entry.first.size() + 1;
+                        });
     if (sizeRet != nullptr) {
       *sizeRet = reqSize;
     }
@@ -801,11 +803,18 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getStateVector(const size_t size,
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::getSparseResults(
     const QDMI_Job_Result result, const size_t size, void* data,
     size_t* sizeRet) -> QDMI_STATUS {
-  std::call_once(stateVecSparseOnce_,
-                 [this] { stateVecSparse_ = stateVecDD_.getSparseVector(); });
   const auto numQubits = stateVecDD_.isTerminal()
                              ? 0U
                              : static_cast<size_t>(stateVecDD_.p->v) + 1U;
+  if (numQubits > std::numeric_limits<size_t>::digits) {
+    return QDMI_ERROR_NOTSUPPORTED;
+  }
+  std::call_once(stateVecSparseOnce_, [this] {
+    const auto sparse = stateVecDD_.getSparseVector();
+    stateVecSparse_.assign(sparse.begin(), sparse.end());
+    std::ranges::sort(stateVecSparse_, {},
+                      &decltype(stateVecSparse_)::value_type::first);
+  });
   switch (result) {
   case QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS:
   case QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS: {
