@@ -35,13 +35,11 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_REPLACECLASSICALCONTROLS
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
-/**
- * @brief Retrieves the measurement outcome that directly precedes the given
- * qubit, if it exists.
- * @param qubit The qubit for which to find the predecessor measurement outcome
- * @return The measurement outcome if a predecessor measurement exists, nullptr
- * otherwise
- */
+/// Retrieves the measurement outcome that directly precedes the given
+/// qubit, if it exists.
+/// @param qubit The qubit for which to find the predecessor measurement outcome
+/// @return The measurement outcome if a predecessor measurement exists, nullptr
+/// otherwise
 static Value getPredecessorMeasurementOutcome(Value qubit) {
   auto* definingOp = qubit.getDefiningOp();
   if (auto measureOp = dyn_cast_or_null<MeasureOp>(definingOp)) {
@@ -50,19 +48,15 @@ static Value getPredecessorMeasurementOutcome(Value qubit) {
   return nullptr;
 }
 
-/**
- * @brief Checks if the given operation applies a phase only to the target's
- * one state.
- * @param op The operation to check
- * @return true if the operation is a phase gate, false otherwise
- */
+/// Checks if the given operation applies a phase only to the target's
+/// one state.
+/// @param op The operation to check
+/// @return true if the operation is a phase gate, false otherwise
 static bool isPhaseGate(Operation* op) {
   return isa<ZOp, SOp, TOp, POp, SdgOp, TdgOp, IdOp>(op);
 }
 
-/**
- * @brief Select a scalar based on @p condition and multiply @p theta by it.
- */
+/// Select a scalar based on @p condition and multiply @p theta by it.
 static Value selectScaledAngle(PatternRewriter& rewriter, Location loc,
                                Value theta, Value condition,
                                const double trueScale,
@@ -74,11 +68,9 @@ static Value selectScaledAngle(PatternRewriter& rewriter, Location loc,
   return arith::MulFOp::create(rewriter, loc, theta, scale);
 }
 
-/**
- * @brief Apply a phase gate to @p target, controlled by @p controls.
- * @return A pair containing the updated controls in their input order and the
- * updated target.
- */
+/// Apply a phase gate to @p target, controlled by @p controls.
+/// @return A pair containing the updated controls in their input order and the
+/// updated target.
 static std::pair<SmallVector<Value>, Value>
 applyControlledPhase(PatternRewriter& rewriter, Location loc,
                      ValueRange controls, Value target, Value theta) {
@@ -93,11 +85,9 @@ applyControlledPhase(PatternRewriter& rewriter, Location loc,
           phase.getOutputTarget(0)};
 }
 
-/**
- * @brief Apply an RZ gate to @p target, controlled by @p controls.
- * @return A pair containing the updated controls in their input order and the
- * updated target.
- */
+/// Apply an RZ gate to @p target, controlled by @p controls.
+/// @return A pair containing the updated controls in their input order and the
+/// updated target.
 static std::pair<SmallVector<Value>, Value>
 applyControlledRZ(PatternRewriter& rewriter, Location loc, ValueRange controls,
                   Value target, Value theta) {
@@ -112,11 +102,9 @@ applyControlledRZ(PatternRewriter& rewriter, Location loc, ValueRange controls,
   return {SmallVector<Value>(rz.getOutputControls()), rz.getOutputTarget(0)};
 }
 
-/**
- * @brief Apply a phase to the conjunction of @p controls, using the last
- * control as the phase target.
- * @return The updated controls in their input order.
- */
+/// Apply a phase to the conjunction of @p controls, using the last
+/// control as the phase target.
+/// @return The updated controls in their input order.
 static SmallVector<Value> applyConjunctionPhase(PatternRewriter& rewriter,
                                                 Location loc,
                                                 ValueRange controls,
@@ -128,20 +116,16 @@ static SmallVector<Value> applyConjunctionPhase(PatternRewriter& rewriter,
   return prefix;
 }
 
-/**
- * @brief Check whether all qubits are direct measurement results.
- */
+/// Check whether all qubits are direct measurement results.
 static bool areAllMeasured(ValueRange qubits) {
   return llvm::all_of(qubits, [](Value qubit) {
     return static_cast<bool>(getPredecessorMeasurementOutcome(qubit));
   });
 }
 
-/**
- * @brief Map each control target result to the corresponding input target.
- * @return The input-target index for every target result, or @c std::nullopt
- * if the body does not directly yield all results of @p rzzOp.
- */
+/// Map each control target result to the corresponding input target.
+/// @return The input-target index for every target result, or @c std::nullopt
+/// if the body does not directly yield all results of @p rzzOp.
 static std::optional<SmallVector<size_t>> getRZZTargetResultOrder(CtrlOp ctrlOp,
                                                                   RZZOp rzzOp) {
   SmallVector<size_t> resultOrder;
@@ -163,9 +147,7 @@ static std::optional<SmallVector<size_t>> getRZZTargetResultOrder(CtrlOp ctrlOp,
   return resultOrder;
 }
 
-/**
- * @brief Replace @p ctrlOp while preserving its body-yield target order.
- */
+/// Replace @p ctrlOp while preserving its body-yield target order.
 static void replaceRZZCtrlOp(CtrlOp ctrlOp, ArrayRef<size_t> targetResultOrder,
                              ValueRange controlsByInput,
                              ValueRange targetsByInput,
@@ -178,13 +160,11 @@ static void replaceRZZCtrlOp(CtrlOp ctrlOp, ArrayRef<size_t> targetResultOrder,
   rewriter.replaceOp(ctrlOp, replacements);
 }
 
-/**
- * @brief Replace a controlled RZ whose target has already been measured.
- *
- * On a measured target, RZ contributes only an outcome-dependent phase to the
- * conjunction of the controls. If every participating qubit has been measured,
- * that phase is unobservable and the operation is removed.
- */
+/// Replace a controlled RZ whose target has already been measured.
+///
+/// On a measured target, RZ contributes only an outcome-dependent phase to the
+/// conjunction of the controls. If every participating qubit has been measured,
+/// that phase is unobservable and the operation is removed.
 static LogicalResult tryReplaceMeasuredRZTarget(CtrlOp op, RZOp rzOp,
                                                 PatternRewriter& rewriter) {
   if (op.getNumTargets() != 1) {
@@ -210,14 +190,12 @@ static LogicalResult tryReplaceMeasuredRZTarget(CtrlOp op, RZOp rzOp,
   return success();
 }
 
-/**
- * @brief Replace a controlled RZZ with one or two measured targets.
- *
- * Fixing one measured target reduces RZZ to an outcome-dependent RZ on the
- * other target. Fixing both targets leaves only an outcome-dependent phase on
- * the conjunction of the controls. The operation is removed when all of those
- * controls have also been measured.
- */
+/// Replace a controlled RZZ with one or two measured targets.
+///
+/// Fixing one measured target reduces RZZ to an outcome-dependent RZ on the
+/// other target. Fixing both targets leaves only an outcome-dependent phase on
+/// the conjunction of the controls. The operation is removed when all of those
+/// controls have also been measured.
 static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
                                                  PatternRewriter& rewriter) {
   if (op.getNumTargets() != 2) {
@@ -267,12 +245,10 @@ static LogicalResult tryReplaceMeasuredRZZTarget(CtrlOp op, RZZOp rzzOp,
   return success();
 }
 
-/**
- * @brief For a phase gate whose target has a predecessor measurement, swaps the
- * target with an eligible control.
- * @param op The control operation containing the phase gate
- * @param rewriter The pattern rewriter used to perform the transformation
- */
+/// For a phase gate whose target has a predecessor measurement, swaps the
+/// target with an eligible control.
+/// @param op The control operation containing the phase gate
+/// @param rewriter The pattern rewriter used to perform the transformation
 static void trySwapControlAndTargetOfPhaseGate(CtrlOp op,
                                                PatternRewriter& rewriter) {
   assert(op.getNumTargets() == 1 &&
@@ -311,10 +287,8 @@ static void trySwapControlAndTargetOfPhaseGate(CtrlOp op,
 }
 
 namespace {
-/**
- * @brief This pattern is responsible for replacing controls after measurements
- * with `if` constructs.
- */
+/// This pattern is responsible for replacing controls after measurements
+/// with `if` constructs.
 struct ReplaceBasisStateControlsWithIfPattern final
     : OpRewritePattern<MeasureOp> {
 
@@ -398,10 +372,8 @@ struct ReplaceBasisStateControlsWithIfPattern final
   }
 };
 
-/**
- * @brief Pass replaces controls with `IfOp` operations if the qubits'
- * control values are available classically.
- */
+/// Pass replaces controls with `IfOp` operations if the qubits'
+/// control values are available classically.
 struct ReplaceClassicalControls final
     : impl::ReplaceClassicalControlsBase<ReplaceClassicalControls> {
   using ReplaceClassicalControlsBase::ReplaceClassicalControlsBase;

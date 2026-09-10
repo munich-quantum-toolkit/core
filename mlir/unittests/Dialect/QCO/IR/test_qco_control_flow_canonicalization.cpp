@@ -9,7 +9,7 @@
  */
 
 /// @file
-/// @brief Tests for canonicalization of classical QCO conditional results.
+/// Tests for canonicalization of classical QCO conditional results.
 
 #include "mlir/Dialect/QCO/IR/QCODialect.h"
 #include "mlir/Dialect/QCO/IR/QCOOps.h"

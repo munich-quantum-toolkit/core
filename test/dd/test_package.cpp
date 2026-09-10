@@ -2378,13 +2378,12 @@ TEST(DDPackageTest, InnerProductTopNodeConjugation) {
   EXPECT_NEAR(dd->expectationValue(op, evolvedState), -0.416, 0.001);
 }
 
-/**
- * @brief This is a regression test for a long lasting memory leak in the DD
- * package.
- * @details The memory leak was caused by a bug in the normalization routine
- * which was not properly returning a node to the memory manager. This occurred
- * whenever the multiplication of two DDs resulted in a zero terminal.
- */
+/// This is a regression test for a long lasting memory leak in the DD
+/// package.
+///
+/// The memory leak was caused by a bug in the normalization routine
+/// which was not properly returning a node to the memory manager. This occurred
+/// whenever the multiplication of two DDs resulted in a zero terminal.
 TEST(DDPackageTest, DDNodeLeakRegressionTest) {
   constexpr auto nqubits = 1U;
   auto dd = std::make_unique<Package>(nqubits);
@@ -2396,12 +2395,11 @@ TEST(DDPackageTest, DDNodeLeakRegressionTest) {
   EXPECT_EQ(dd->mMemoryManager.getStats().numUsed, 0U);
 }
 
-/**
- * @brief This is a regression test for a compute table bug with terminals.
- * @details The bug was caused by the assumption that `result.p == nullptr`
- * indicates that the lookup was unsuccessful. However, this is not the case
- * anymore since terminal DD nodes were replaced by a `nullptr` pointer.
- */
+/// This is a regression test for a compute table bug with terminals.
+///
+/// The bug was caused by the assumption that `result.p == nullptr`
+/// indicates that the lookup was unsuccessful. However, this is not the case
+/// anymore since terminal DD nodes were replaced by a `nullptr` pointer.
 TEST(DDPackageTest, CTPerformanceRegressionTest) {
   constexpr auto nqubits = 1U;
   auto dd = std::make_unique<Package>(nqubits);

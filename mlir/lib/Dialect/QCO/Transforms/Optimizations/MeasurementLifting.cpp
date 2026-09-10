@@ -28,18 +28,14 @@ namespace mlir::qco {
 #define GEN_PASS_DEF_MEASUREMENTLIFTING
 #include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
 
-/**
- * @brief Checks if the given operation is an inverting gate.
- * @param op The operation to check.
- * @return True if the operation is an inverting gate, false otherwise.
- */
+/// Checks if the given operation is an inverting gate.
+/// @param op The operation to check.
+/// @return True if the operation is an inverting gate, false otherwise.
 static bool isInverting(Operation* op) { return isa<XOp, YOp>(op); }
 
-/**
- * @brief Checks if the given operation is a diagonal gate.
- * @param op The operation to check.
- * @return True if the operation is a diagonal gate, false otherwise.
- */
+/// Checks if the given operation is a diagonal gate.
+/// @param op The operation to check.
+/// @return True if the operation is a diagonal gate, false otherwise.
 static bool isDiagonal(Operation* op) {
   if (op == nullptr) {
     return false;
@@ -51,12 +47,10 @@ static bool isDiagonal(Operation* op) {
   return isa<ZOp, SOp, TOp, POp, RZOp, SdgOp, TdgOp, IdOp>(op);
 }
 
-/**
- * @brief This method swaps a gate with a measurement.
- * @param gate The gate to swap.
- * @param measurement The measurement to swap.
- * @param rewriter The used rewriter.
- */
+/// This method swaps a gate with a measurement.
+/// @param gate The gate to swap.
+/// @param measurement The measurement to swap.
+/// @param rewriter The used rewriter.
 static void swapGateWithMeasurement(UnitaryOpInterface gate,
                                     MeasureOp measurement,
                                     mlir::PatternRewriter& rewriter) {
@@ -84,10 +78,8 @@ static void swapGateWithMeasurement(UnitaryOpInterface gate,
 }
 
 namespace {
-/**
- * @brief This pattern is responsible for lifting measurements above any phase
- * gates.
- */
+/// This pattern is responsible for lifting measurements above any phase
+/// gates.
 struct LiftMeasurementsAbovePhaseGatesPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
@@ -120,10 +112,8 @@ struct LiftMeasurementsAbovePhaseGatesPattern final
   }
 };
 
-/**
- * @brief This pattern is responsible for lifting measurements above any
- * anti-diagonal gates.
- */
+/// This pattern is responsible for lifting measurements above any
+/// anti-diagonal gates.
 struct LiftMeasurementsAboveInvertingGatesPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
@@ -163,10 +153,8 @@ struct LiftMeasurementsAboveInvertingGatesPattern final
   }
 };
 
-/**
- * @brief This pattern is responsible for applying the "deferred measurement
- * principle", lifting measurements above controls.
- */
+/// This pattern is responsible for applying the "deferred measurement
+/// principle", lifting measurements above controls.
 struct LiftMeasurementsAboveControlsPattern final
     : mlir::OpRewritePattern<MeasureOp> {
 
@@ -196,9 +184,7 @@ struct LiftMeasurementsAboveControlsPattern final
   }
 };
 
-/**
- * @brief Pass raises Measurements above controlled and uncontrolled gates.
- */
+/// Pass raises Measurements above controlled and uncontrolled gates.
 struct MeasurementLifting final
     : impl::MeasurementLiftingBase<MeasurementLifting> {
   using MeasurementLiftingBase::MeasurementLiftingBase;

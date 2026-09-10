@@ -31,10 +31,8 @@ namespace mlir::qc {
 #define GEN_PASS_DEF_SHRINKQUBITREGISTERSPASS
 #include "mlir/Dialect/QC/Transforms/Passes.h.inc"
 
-/**
- * @brief Return the constant index of a one-dimensional `memref.load`
- * operation.
- */
+/// Return the constant index of a one-dimensional `memref.load`
+/// operation.
 [[nodiscard]] static std::optional<int64_t>
 getLoadIndex(memref::LoadOp loadOp) {
   if (loadOp.getIndices().size() != 1) {
@@ -44,9 +42,7 @@ getLoadIndex(memref::LoadOp loadOp) {
 }
 
 namespace {
-/**
- * @brief Shrink static qubit registers to actually read indices.
- */
+/// Shrink static qubit registers to actually read indices.
 struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
   using OpRewritePattern::OpRewritePattern;
 

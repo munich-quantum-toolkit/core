@@ -146,7 +146,7 @@ IndexSwitchOp::getEntrySuccessorOperands(RegionSuccessor /*successor*/) {
 }
 
 namespace {
-/** Inline the selected region when the switch argument is constant. */
+/// Inline the selected region when the switch argument is constant.
 struct RemoveStaticSelector final : OpRewritePattern<IndexSwitchOp> {
   using OpRewritePattern::OpRewritePattern;
 

@@ -35,9 +35,7 @@ class OpenQASMProgram;
 class QIRProgram;
 class TargetEnvironment;
 
-/**
- * @brief The QIR profile represented by a QIR program.
- */
+/// The QIR profile represented by a QIR program.
 enum class QIRProfile : uint8_t {
   /// The QIR Base Profile.
   Base,
@@ -45,9 +43,7 @@ enum class QIRProfile : uint8_t {
   Adaptive,
 };
 
-/**
- * @brief Formats accepted and produced by the default compiler pipeline.
- */
+/// Formats accepted and produced by the default compiler pipeline.
 enum class ProgramFormat : uint8_t {
   /// QC directly after frontend import, without any compiler pass.
   QCImport,
@@ -67,13 +63,11 @@ enum class ProgramFormat : uint8_t {
   QIRAdaptive,
 };
 
-/**
- * @brief A move-aware MLIR program with a shared dialect context.
- *
- * @details Programs own their module and keep the context alive for its full
- * lifetime. Dialect-changing operations consume an rvalue program, making
- * ownership transfer explicit and avoiding expensive implicit cloning.
- */
+/// A move-aware MLIR program with a shared dialect context.
+///
+/// Programs own their module and keep the context alive for its full
+/// lifetime. Dialect-changing operations consume an rvalue program, making
+/// ownership transfer explicit and avoiding expensive implicit cloning.
 class Program {
 public:
   Program(const Program&) = delete;
@@ -88,12 +82,10 @@ public:
   /// Return the program as textual MLIR.
   [[nodiscard]] std::string str() const;
 
-  /**
-   * @brief Borrow the owned MLIR module.
-   *
-   * @details The returned operation remains valid while this program owns its
-   * module. Consuming or destroying the program invalidates the operation.
-   */
+  /// Borrow the owned MLIR module.
+  ///
+  /// The returned operation remains valid while this program owns its
+  /// module. Consuming or destroying the program invalidates the operation.
   [[nodiscard]] ModuleOp module() const;
 
 protected:
@@ -117,9 +109,7 @@ private:
   Storage storage_;
 };
 
-/**
- * @brief An owned OpenQASM source program.
- */
+/// An owned OpenQASM source program.
 class OpenQASMProgram final {
 public:
   explicit OpenQASMProgram(std::string source) : source_(std::move(source)) {}
@@ -137,9 +127,7 @@ private:
   std::string source_;
 };
 
-/**
- * @brief A QC program with reference semantics.
- */
+/// A QC program with reference semantics.
 class QCProgram final : public Program {
 public:
   explicit QCProgram(Storage storage) : Program(std::move(storage)) {}
@@ -188,42 +176,34 @@ public:
   /// Consume this program and lower it to QIR.
   [[nodiscard]] std::optional<QIRProgram> intoQIR(QIRProfile profile) &&;
 
-  /**
-   * @brief Count the gates in the program.
-   *
-   * @details Any operation that implements the `UnitaryOpInterface` is counted.
-   * The count includes operations in every structured control-flow region once,
-   * regardless of how often the region executes. Operations within modifiers
-   * are not counted recursively, and barriers are skipped.
-   */
+  /// Count the gates in the program.
+  ///
+  /// Any operation that implements the `UnitaryOpInterface` is counted.
+  /// The count includes operations in every structured control-flow region
+  /// once, regardless of how often the region executes. Operations within
+  /// modifiers are not counted recursively, and barriers are skipped.
   [[nodiscard]] size_t numGates() const;
 
-  /**
-   * @brief Count the single-qubit gates in the program.
-   *
-   * @details Any operation that implements the `UnitaryOpInterface` and acts on
-   * one qubit is counted. The count includes operations in every structured
-   * control-flow region once, regardless of how often the region executes.
-   * Operations within modifiers are not counted recursively, and barriers are
-   * skipped.
-   */
+  /// Count the single-qubit gates in the program.
+  ///
+  /// Any operation that implements the `UnitaryOpInterface` and acts on
+  /// one qubit is counted. The count includes operations in every structured
+  /// control-flow region once, regardless of how often the region executes.
+  /// Operations within modifiers are not counted recursively, and barriers are
+  /// skipped.
   [[nodiscard]] size_t numSingleQubitGates() const;
 
-  /**
-   * @brief Count the two-qubit gates in the program.
-   *
-   * @details Any operation that implements the `UnitaryOpInterface` and acts on
-   * two qubits is counted. The count includes operations in every structured
-   * control-flow region once, regardless of how often the region executes.
-   * Operations within modifiers are not counted recursively, and barriers are
-   * skipped.
-   */
+  /// Count the two-qubit gates in the program.
+  ///
+  /// Any operation that implements the `UnitaryOpInterface` and acts on
+  /// two qubits is counted. The count includes operations in every structured
+  /// control-flow region once, regardless of how often the region executes.
+  /// Operations within modifiers are not counted recursively, and barriers are
+  /// skipped.
   [[nodiscard]] size_t numTwoQubitGates() const;
 };
 
-/**
- * @brief A QCO program with value semantics.
- */
+/// A QCO program with value semantics.
 class QCOProgram final : public Program {
 public:
   /// Parse QCO MLIR assembly.
@@ -303,9 +283,7 @@ private:
   [[nodiscard]] bool hasValidLinearity() const;
 };
 
-/**
- * @brief A serializable `jeff` program.
- */
+/// A serializable `jeff` program.
 class JeffProgram final : public Program {
 public:
   explicit JeffProgram(Storage storage) : Program(std::move(storage)) {}
@@ -334,9 +312,7 @@ public:
   [[nodiscard]] std::optional<QCOProgram> intoQCO() &&;
 };
 
-/**
- * @brief A QIR program.
- */
+/// A QIR program.
 class QIRProgram final : public Program {
 public:
   QIRProgram(Storage storage, QIRProfile profile);
@@ -377,12 +353,10 @@ using CompilerInput =
 using CompilerProgram = std::variant<QCProgram, QCOProgram, JeffProgram,
                                      OpenQASMProgram, QIRProgram>;
 
-/**
- * @brief Run the coordinated default compiler pipeline.
- *
- * @details The supplied program is consumed. Call `copy()` before this function
- * when the source program must remain available for another pipeline branch.
- */
+/// Run the coordinated default compiler pipeline.
+///
+/// The supplied program is consumed. Call `copy()` before this function
+/// when the source program must remain available for another pipeline branch.
 [[nodiscard]] std::optional<CompilerProgram>
 runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
                    std::string_view qcoPipeline = "mqt-qco-default",

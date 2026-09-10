@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file test_qtensor_transforms.cpp
- * @brief Unit tests for QTensor dialect transformations.
- */
+/// @file test_qtensor_transforms.cpp
+/// Unit tests for QTensor dialect transformations.
 
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QCO/IR/QCODialect.h"

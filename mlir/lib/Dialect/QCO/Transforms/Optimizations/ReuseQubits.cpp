@@ -191,9 +191,7 @@ private:
   Operation* firstEffectfulUser = nullptr;
 };
 
-/**
- * @brief This is the main qubit reuse pattern.
- */
+/// This is the main qubit reuse pattern.
 struct ReuseQubitsPattern final : OpRewritePattern<AllocOp> {
   ReuseQubitsPattern(MLIRContext* context,
                      const DenseSet<Operation*>& effectFreeFunctions,
@@ -201,15 +199,13 @@ struct ReuseQubitsPattern final : OpRewritePattern<AllocOp> {
       : OpRewritePattern(context), effectFreeFunctions_(effectFreeFunctions),
         symbols_(symbols) {}
 
-  /**
-   * @brief Rewrites the given `AllocOp` and `SinkOp` to reuse the
-   * qubit instead.
-   *
-   * @param alloc The allocation that will be replaced by qubit reuse.
-   * @param sink The sink that will be replaced by a new reset
-   * operation.
-   * @param rewriter The pattern rewriter to use for the rewrite.
-   */
+  /// Rewrites the given `AllocOp` and `SinkOp` to reuse the
+  /// qubit instead.
+  ///
+  /// @param alloc The allocation that will be replaced by qubit reuse.
+  /// @param sink The sink that will be replaced by a new reset
+  /// operation.
+  /// @param rewriter The pattern rewriter to use for the rewrite.
   static void rewriteForReuse(AllocOp alloc, SinkOp sink,
                               const ReuseAnalysis& analysis,
                               PatternRewriter& rewriter) {
@@ -253,11 +249,9 @@ private:
   SymbolTableCollection& symbols_;
 };
 
-/**
- * @brief This pass searches for qubits that do not interact with each other
- * directly or indirectly and attempts to reset and reuse one of them for the
- * other.
- */
+/// This pass searches for qubits that do not interact with each other
+/// directly or indirectly and attempts to reset and reuse one of them for the
+/// other.
 struct ReuseQubits final : impl::ReuseQubitsBase<ReuseQubits> {
   using ReuseQubitsBase::ReuseQubitsBase;
 

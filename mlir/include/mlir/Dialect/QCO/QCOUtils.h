@@ -27,13 +27,11 @@
 
 namespace mlir::qco {
 
-/**
- * @brief Check if given quantum operation is unused (i.e., only used by sinks
- * or resets and has no memory effects).
- *
- * @param op The operation to check.
- * @return bool True if the operation is unused, false otherwise.
- */
+/// Check if given quantum operation is unused (i.e., only used by sinks
+/// or resets and has no memory effects).
+///
+/// @param op The operation to check.
+/// @return bool True if the operation is unused, false otherwise.
 inline bool checkDeadGate(Operation* op) {
   if (!isMemoryEffectFree(op)) {
     // This ignores operations and regions that have children with memory
@@ -64,31 +62,27 @@ inline bool checkDeadGate(Operation* op) {
 /// in this bound; @ref composeBodyMatrix applies it to the target body.
 inline constexpr size_t kMaxModifierTargetQubits = 10;
 
-/**
- * @brief Composes compile-time unitaries in a modifier body on @p numTargets
- * wires.
- *
- * @details Block arguments map to wire indices `0..numTargets-1` (MSB-first,
- * matching @ref Matrix2x2::embedInNqubit). Returns the composed unitary in
- * program order, including idle targets. Supports one- and two-qubit embeddings
- * and full-width operations whose input order matches the modifier's wires.
- * Returns `std::nullopt` for reordered yields, unsupported embeddings, unknown
- * parameters, or widths above @ref kMaxModifierTargetQubits.
- */
+/// Composes compile-time unitaries in a modifier body on @p numTargets
+/// wires.
+///
+/// Block arguments map to wire indices `0..numTargets-1` (MSB-first,
+/// matching @ref Matrix2x2::embedInNqubit). Returns the composed unitary in
+/// program order, including idle targets. Supports one- and two-qubit
+/// embeddings and full-width operations whose input order matches the
+/// modifier's wires. Returns `std::nullopt` for reordered yields, unsupported
+/// embeddings, unknown parameters, or widths above @ref
+/// kMaxModifierTargetQubits.
 [[nodiscard]] std::optional<DynamicMatrix> composeBodyMatrix(Block& block,
                                                              size_t numTargets);
 
-/**
- * @brief Check whether two parameter values match.
- *
- * @details
- * Identical SSA values always match. Otherwise, if both are constants, they
- * are compared with @ref mqt::PARAMETER_COMPARISON_TOLERANCE.
- *
- * @param lhs The first parameter value.
- * @param rhs The second parameter value.
- * @return true if the values match.
- */
+/// Check whether two parameter values match.
+///
+/// Identical SSA values always match. Otherwise, if both are constants, they
+/// are compared with @ref mqt::PARAMETER_COMPARISON_TOLERANCE.
+///
+/// @param lhs The first parameter value.
+/// @param rhs The second parameter value.
+/// @return true if the values match.
 static bool valuesMatchWithinTolerance(Value lhs, Value rhs) {
   if (lhs == rhs) {
     return true;
@@ -99,15 +93,13 @@ static bool valuesMatchWithinTolerance(Value lhs, Value rhs) {
          std::abs(*lhsVal - *rhsVal) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
 }
 
-/**
- * @brief Remove a pair of inverse one-target, zero-parameter operations
- *
- * @tparam InverseOpType The type of the inverse operation.
- * @tparam OpType The type of the operation to be checked.
- * @param op The operation instance.
- * @param rewriter The pattern rewriter.
- * @return LogicalResult Success or failure of the removal.
- */
+/// Remove a pair of inverse one-target, zero-parameter operations
+///
+/// @tparam InverseOpType The type of the inverse operation.
+/// @tparam OpType The type of the operation to be checked.
+/// @param op The operation instance.
+/// @param rewriter The pattern rewriter.
+/// @return LogicalResult Success or failure of the removal.
 template <typename InverseOpType, typename OpType>
 LogicalResult
 removeInversePairOneTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
@@ -123,18 +115,16 @@ removeInversePairOneTargetZeroParameter(OpType op, PatternRewriter& rewriter) {
   return success();
 }
 
-/**
- * @brief Remove a pair of inverse two-target, zero-parameter operations.
- *
- * @tparam InverseOpType The type of the inverse operation.
- * @tparam OpType The type of the operation to be checked.
- * @param op The operation instance.
- * @param rewriter The pattern rewriter.
- * @param symmetric Whether the two-target gate is symmetric (order of the
- * qubits does not matter)
- * @param swappedTargets Whether the successor consumes swapped target wires.
- * @return LogicalResult Success or failure of the removal.
- */
+/// Remove a pair of inverse two-target, zero-parameter operations.
+///
+/// @tparam InverseOpType The type of the inverse operation.
+/// @tparam OpType The type of the operation to be checked.
+/// @param op The operation instance.
+/// @param rewriter The pattern rewriter.
+/// @param symmetric Whether the two-target gate is symmetric (order of the
+/// qubits does not matter)
+/// @param swappedTargets Whether the successor consumes swapped target wires.
+/// @return LogicalResult Success or failure of the removal.
 template <typename InverseOpType, typename OpType>
 LogicalResult
 removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter,
@@ -163,15 +153,13 @@ removeInversePairTwoTargetZeroParameter(OpType op, PatternRewriter& rewriter,
   return failure();
 }
 
-/**
- * @brief Remove a pair of inverse three-target, zero-parameter operations.
- *
- * @tparam InverseOpType The type of the inverse operation.
- * @tparam OpType The type of the operation to be checked.
- * @param op The operation instance.
- * @param rewriter The pattern rewriter.
- * @return LogicalResult Success or failure of the removal.
- */
+/// Remove a pair of inverse three-target, zero-parameter operations.
+///
+/// @tparam InverseOpType The type of the inverse operation.
+/// @tparam OpType The type of the operation to be checked.
+/// @param op The operation instance.
+/// @param rewriter The pattern rewriter.
+/// @return LogicalResult Success or failure of the removal.
 template <typename InverseOpType, typename OpType>
 LogicalResult
 removeInversePairThreeTargetZeroParameter(OpType op,
@@ -186,19 +174,16 @@ removeInversePairThreeTargetZeroParameter(OpType op,
   return success();
 }
 
-/**
- * @brief Merge two compatible one-target, zero-parameter operations
- *
- * @details
- * The two operations are replaced by a single operation corresponding to their
- * square.
- *
- * @tparam SquareOpType The type of the square operation to be created.
- * @tparam OpType The type of the operation to be merged.
- * @param op The operation instance.
- * @param rewriter The pattern rewriter.
- * @return LogicalResult Success or failure of the merge.
- */
+/// Merge two compatible one-target, zero-parameter operations
+///
+/// The two operations are replaced by a single operation corresponding to their
+/// square.
+///
+/// @tparam SquareOpType The type of the square operation to be created.
+/// @tparam OpType The type of the operation to be merged.
+/// @param op The operation instance.
+/// @param rewriter The pattern rewriter.
+/// @return LogicalResult Success or failure of the merge.
 template <typename SquareOpType, typename OpType>
 LogicalResult mergeOneTargetZeroParameter(OpType op,
                                           PatternRewriter& rewriter) {
@@ -253,18 +238,16 @@ LogicalResult mergeOneTargetOneParameter(OpType op, PatternRewriter& rewriter) {
   return success();
 }
 
-/**
- * @brief Shared implementation for merging two-target, one-parameter
- * operations.
- *
- * @tparam OpType The type of the operation to be merged.
- * @param op The first operation instance.
- * @param nextOp The successor operation instance.
- * @param rewriter The pattern rewriter.
- * @param symmetric Whether the two-target gate is symmetric (order of the
- * qubits does not matter)
- * @return LogicalResult Success or failure of the merge.
- */
+/// Shared implementation for merging two-target, one-parameter
+/// operations.
+///
+/// @tparam OpType The type of the operation to be merged.
+/// @param op The first operation instance.
+/// @param nextOp The successor operation instance.
+/// @param rewriter The pattern rewriter.
+/// @param symmetric Whether the two-target gate is symmetric (order of the
+/// qubits does not matter)
+/// @return LogicalResult Success or failure of the merge.
 template <typename OpType>
 static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
                                                     PatternRewriter& rewriter,
@@ -298,16 +281,14 @@ static LogicalResult mergeTwoTargetOneParameterImpl(OpType op, OpType nextOp,
   return failure();
 }
 
-/**
- * @brief Merge two compatible two-target, one-parameter operations.
- *
- * @tparam OpType The type of the operation to be merged.
- * @param op The operation instance.
- * @param rewriter The pattern rewriter.
- * @param symmetric Whether the two-target gate is symmetric (order of the
- * qubits does not matter)
- * @return LogicalResult Success or failure of the merge.
- */
+/// Merge two compatible two-target, one-parameter operations.
+///
+/// @tparam OpType The type of the operation to be merged.
+/// @param op The operation instance.
+/// @param rewriter The pattern rewriter.
+/// @param symmetric Whether the two-target gate is symmetric (order of the
+/// qubits does not matter)
+/// @return LogicalResult Success or failure of the merge.
 template <typename OpType>
 LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter,
                                          bool symmetric = false) {
@@ -319,17 +300,14 @@ LogicalResult mergeTwoTargetOneParameter(OpType op, PatternRewriter& rewriter,
   return mergeTwoTargetOneParameterImpl(op, nextOp, rewriter, symmetric);
 }
 
-/**
- * @brief Merge consecutive XXPlusYY or XXMinusYY operations.
- *
- * @details
- * Sums `theta` when `beta` matches within tolerance.
- *
- * @tparam OpType The type of the operation to be merged.
- * @param op The operation instance.
- * @param rewriter The pattern rewriter.
- * @return LogicalResult Success or failure of the merge.
- */
+/// Merge consecutive XXPlusYY or XXMinusYY operations.
+///
+/// Sums `theta` when `beta` matches within tolerance.
+///
+/// @tparam OpType The type of the operation to be merged.
+/// @param op The operation instance.
+/// @param rewriter The pattern rewriter.
+/// @return LogicalResult Success or failure of the merge.
 template <typename OpType>
 LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter) {
   // Check if the successor is the same operation
@@ -347,15 +325,13 @@ LogicalResult mergeXXPlusMinusYY(OpType op, PatternRewriter& rewriter) {
                                         isa<XXMinusYYOp>(op));
 }
 
-/**
- * @brief Search for and remove gates when their outputs are no longer used
- * before the next `ResetOp` or `SinkOp`.
- *
- * @param qubit The value that was an input to a `ResetOp` or `SinkOp` from
- * which the search is started.
- * @param rewriter The pattern rewriter.
- * @return LogicalResult Success or failure of the elimination.
- */
+/// Search for and remove gates when their outputs are no longer used
+/// before the next `ResetOp` or `SinkOp`.
+///
+/// @param qubit The value that was an input to a `ResetOp` or `SinkOp` from
+/// which the search is started.
+/// @param rewriter The pattern rewriter.
+/// @return LogicalResult Success or failure of the elimination.
 inline LogicalResult tryEliminateDeadGateValue(Value qubit,
                                                PatternRewriter& rewriter) {
   auto* currentOp = qubit.getDefiningOp();

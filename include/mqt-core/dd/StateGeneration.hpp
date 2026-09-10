@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file StateGeneration.hpp
- * @brief Construct common quantum states as decision diagrams.
- */
+/// @file StateGeneration.hpp
+/// Construct common quantum states as decision diagrams.
 
 #pragma once
 
@@ -27,76 +26,64 @@
 #include <vector>
 
 namespace dd {
-/**
- * @brief Construct the all-zero state \f$|0...0\rangle\f$
- * @param n The number of qubits.
- * @param dd The DD package to use for making the vector DD.
- * @param start The starting qubit index. Default is 0.
- * @throws `std::invalid_argument`, if the qubit interval exceeds package
- * capacity.
- * @return A vector DD for the all-zero state.
- */
+/// Construct the all-zero state \f$|0...0\rangle\f$
+/// @param n The number of qubits.
+/// @param dd The DD package to use for making the vector DD.
+/// @param start The starting qubit index. Default is 0.
+/// @throws `std::invalid_argument`, if the qubit interval exceeds package
+/// capacity.
+/// @return A vector DD for the all-zero state.
 VectorDD makeZeroState(std::size_t n, Package& dd, std::size_t start = 0);
 
-/**
- * @brief Construct a computational basis state \f$|b_{n-1}...b_0\rangle\f$
- * @param n The number of qubits.
- * @param state The state to construct.
- * @param dd The DD package to use for making the vector DD.
- * @param start The starting qubit index. Default is 0.
- * @throws std::invalid_argument If the qubit interval exceeds package capacity
- * or `size(state) < n`.
- * @return A vector DD for the computational basis state.
- */
+/// Construct a computational basis state \f$|b_{n-1}...b_0\rangle\f$
+/// @param n The number of qubits.
+/// @param state The state to construct.
+/// @param dd The DD package to use for making the vector DD.
+/// @param start The starting qubit index. Default is 0.
+/// @throws std::invalid_argument If the qubit interval exceeds package capacity
+/// or `size(state) < n`.
+/// @return A vector DD for the computational basis state.
 VectorDD makeBasisState(std::size_t n, const std::vector<bool>& state,
                         Package& dd, std::size_t start = 0);
 
-/**
- * @brief Construct a product state out of
- *        \f$\{0, 1, +, -, R, L\}^{\otimes n}\f$.
- * @param n The number of qubits
- * @param state The state to construct.
- * @param dd The DD package to use for making the vector DD.
- * @param start The starting qubit index. Default is 0.
- * @throws std::invalid_argument If the qubit interval exceeds package capacity
- * or `size(state) < n`.
- * @return A vector DD for the product state.
- */
+/// Construct a product state out of \f$\{0, 1, +, -, R, L\}^{\otimes n}\f$.
+/// @param n The number of qubits
+/// @param state The state to construct.
+/// @param dd The DD package to use for making the vector DD.
+/// @param start The starting qubit index. Default is 0.
+/// @throws std::invalid_argument If the qubit interval exceeds package capacity
+/// or `size(state) < n`.
+/// @return A vector DD for the product state.
 VectorDD makeBasisState(std::size_t n, const std::vector<BasisStates>& state,
                         Package& dd, std::size_t start = 0);
 
-/**
- * @brief Construct a GHZ state \f$|0...0\rangle + |1...1\rangle\f$.
- * @param n The number of qubits.
- * @param dd The DD package to use for making the vector DD.
- * @throws `std::invalid_argument`, if `dd.qubits() < n`.
- * @return A vector DD for the GHZ state.
- */
+/// Construct a GHZ state \f$|0...0\rangle + |1...1\rangle\f$.
+/// @param n The number of qubits.
+/// @param dd The DD package to use for making the vector DD.
+/// @throws `std::invalid_argument`, if `dd.qubits() < n`.
+/// @return A vector DD for the GHZ state.
 VectorDD makeGHZState(std::size_t n, Package& dd);
 
-/**
- * @brief Construct a W state.
- * @details The W state is defined as
- * \f[
- * |0...01\rangle + |0...10\rangle + |10...0\rangle
- * \f]
- * @param n The number of qubits.
- * @param dd The DD package to use for making the vector DD.
- * @throws `std::invalid_argument`, if `dd.qubits() < n` or the number of qubits
- * and currently set tolerance would lead to an underflow.
- * @return A vector DD for the W state.
- */
+/// Construct a W state.
+///
+/// The W state is defined as
+/// \f[
+/// |0...01\rangle + |0...10\rangle + |10...0\rangle
+/// \f]
+/// @param n The number of qubits.
+/// @param dd The DD package to use for making the vector DD.
+/// @throws `std::invalid_argument`, if `dd.qubits() < n` or the number of
+/// qubits and currently set tolerance would lead to an underflow.
+/// @return A vector DD for the W state.
 VectorDD makeWState(std::size_t n, Package& dd);
 
-/**
- * @brief Construct a decision diagram from an arbitrary state vector.
- * @param vec The state vector to convert to a DD.
- * @param dd The DD package to use for making the vector DD.
- * @throws `std::invalid_argument`, if `vec.size()` is not a power of two or
- * `dd.qubits() < log2(vec.size())`.
- * @return A vector DD representing the state with its reference count
- * increased.
- */
+/// Construct a decision diagram from an arbitrary state vector.
+/// @param vec The state vector to convert to a DD.
+/// @param dd The DD package to use for making the vector DD.
+/// @throws `std::invalid_argument`, if `vec.size()` is not a power of two or
+/// `dd.qubits() < log2(vec.size())`.
+/// @return A vector DD representing the state with its reference count
+/// increased.
 VectorDD makeStateFromVector(const CVec& vec, Package& dd);
 
 namespace detail {

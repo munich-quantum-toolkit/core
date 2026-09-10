@@ -32,9 +32,7 @@ namespace mlir::qtensor {
 #define GEN_PASS_DEF_SHRINKQTENSORTOFITPASS
 #include "mlir/Dialect/QTensor/Transforms/Passes.h.inc"
 
-/**
- * @brief Mark a single live index.
- */
+/// Mark a single live index.
 [[nodiscard]] static LogicalResult
 markLiveIndex(int64_t index, int64_t tensorSize,
               llvm::SmallDenseSet<int64_t>& liveIndices) {
@@ -54,9 +52,7 @@ struct TensorAccess {
 
 } // namespace
 
-/**
- * @brief Walk alloc->dealloc and plan all accesses without changing the IR.
- */
+/// Walk alloc->dealloc and plan all accesses without changing the IR.
 [[nodiscard]] static LogicalResult collectTensorChain(
     AllocOp allocOp, int64_t tensorSize, llvm::SmallDenseSet<int64_t>& live,
     SmallVectorImpl<TensorAccess>& accesses, DeallocOp& deallocOp) {
@@ -104,10 +100,9 @@ struct TensorAccess {
 
 namespace {
 
-/**
- * @brief Shrink static qtensors by removing never-accessed indices.
- * @details QTensor is linear, so this rewrite follows a single use-def chain.
- */
+/// Shrink static qtensors by removing never-accessed indices.
+///
+/// QTensor is linear, so this rewrite follows a single use-def chain.
 struct ShrinkStaticQTensor final : OpRewritePattern<AllocOp> {
   using OpRewritePattern::OpRewritePattern;
 

@@ -613,9 +613,7 @@ struct FoldPowIntoGate final : OpRewritePattern<PowOp> {
   }
 };
 
-/**
- * @brief Erase power modifiers that do not have any body unitaries.
- */
+/// Erase power modifiers that do not have any body unitaries.
 struct EraseEmptyPow final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(PowOp op,
@@ -633,9 +631,7 @@ struct EraseEmptyPow final : OpRewritePattern<PowOp> {
   }
 };
 
-/**
- * @brief Drop the qubits that the body does not use.
- */
+/// Drop the qubits that the body does not use.
 struct DropUnusedPowQubits final : OpRewritePattern<PowOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -795,20 +791,18 @@ bool PowOp::hasCompileTimeKnownUnitaryMatrix() {
                 });
 }
 
-/**
- * @brief Computes the unitary matrix of `pow(p) { U }`, i.e. `U^p`.
- *
- * @details Short-circuits `U^1` and `U^0`; otherwise uses the
- * eigendecomposition `U = V D V^{-1}` so that `U^p = V D^p V^{-1}`, with each
- * eigenvalue raised to `p` on the principal branch. Since the body is unitary,
- * `V` is unitary and `V^{-1} = V^\dagger`; this is verified before use because
- * the eigensolver does not orthogonalize degenerate eigenspaces.
- *
- * The body matrix `U` comes from @ref composeBodyMatrix over all targets.
- *
- * @return `U^p`, or `std::nullopt` if the exponent is non-constant, the body is
- * not fully compile-time known, or `V` is not unitary.
- */
+/// Computes the unitary matrix of `pow(p) { U }`, i.e. `U^p`.
+///
+/// Short-circuits `U^1` and `U^0`; otherwise uses the
+/// eigendecomposition `U = V D V^{-1}` so that `U^p = V D^p V^{-1}`, with each
+/// eigenvalue raised to `p` on the principal branch. Since the body is unitary,
+/// `V` is unitary and `V^{-1} = V^\dagger`; this is verified before use because
+/// the eigensolver does not orthogonalize degenerate eigenspaces.
+///
+/// The body matrix `U` comes from @ref composeBodyMatrix over all targets.
+///
+/// @return `U^p`, or `std::nullopt` if the exponent is non-constant, the body
+/// is not fully compile-time known, or `V` is not unitary.
 std::optional<DynamicMatrix> PowOp::getUnitaryMatrix() {
   const auto exponent = getExponentValue();
   if (!exponent) {

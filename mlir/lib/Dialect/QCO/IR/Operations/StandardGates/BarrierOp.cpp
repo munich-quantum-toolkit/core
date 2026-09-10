@@ -29,9 +29,7 @@ using namespace mlir::qco;
 
 namespace {
 
-/**
- * @brief Merge subsequent barriers on the same qubits into a single barrier.
- */
+/// Merge subsequent barriers on the same qubits into a single barrier.
 struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
   using OpRewritePattern::OpRewritePattern;
 

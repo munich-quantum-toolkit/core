@@ -147,9 +147,7 @@ struct ParsedProgram {
 };
 } // namespace
 
-/**
- * @brief Parse an input format or infer it from a filename.
- */
+/// Parse an input format or infer it from a filename.
 [[nodiscard]] static std::optional<InputFormat>
 parseInputFormat(const StringRef format, const StringRef filename) {
   if (format == "mlir" || (format == "auto" && filename.ends_with(".mlir"))) {
@@ -167,9 +165,7 @@ parseInputFormat(const StringRef format, const StringRef filename) {
   return std::nullopt;
 }
 
-/**
- * @brief Check whether a module contains an operation from a dialect.
- */
+/// Check whether a module contains an operation from a dialect.
 [[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
                                             const StringRef dialect) {
   auto found = false;
@@ -179,11 +175,9 @@ parseInputFormat(const StringRef format, const StringRef filename) {
   return found;
 }
 
-/**
- * @brief Detect the input dialect of a module.
- *
- * @details Defaults to QC if no QCO operation is found.
- */
+/// Detect the input dialect of a module.
+///
+/// Defaults to QC if no QCO operation is found.
 [[nodiscard]] static InputDialect detectInputDialect(ModuleOp mod) {
   if (moduleUsesDialect(mod, "qco")) {
     return InputDialect::QCO;
@@ -191,9 +185,7 @@ parseInputFormat(const StringRef format, const StringRef filename) {
   return InputDialect::QC;
 }
 
-/**
- * @brief Parse an output format.
- */
+/// Parse an output format.
 [[nodiscard]] static std::optional<OutputFormat>
 parseOutputFormat(const StringRef format) {
   if (format == "qc-import") {
@@ -241,9 +233,7 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
         "narrower gates undecomposed."),
     llvm::cl::init(3));
 
-/**
- * @brief Report a violated QDMI command-line constraint.
- */
+/// Report a violated QDMI command-line constraint.
 [[nodiscard]] static LogicalResult reportQDMIErrorIf(const bool condition,
                                                      const Twine& message) {
   if (!condition) {
@@ -253,9 +243,7 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
   return failure();
 }
 
-/**
- * @brief Configure the QDMI registry before initializing its singleton.
- */
+/// Configure the QDMI registry before initializing its singleton.
 [[nodiscard]] static LogicalResult configureQDMIRegistry(const StringRef path) {
 #ifdef _WIN32
   const auto status =
@@ -269,9 +257,7 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
       Twine("Failed to configure the QDMI registry from '") + path + "'.");
 }
 
-/**
- * @brief Load and parse a `.qasm` file
- */
+/// Load and parse a `.qasm` file
 static OwningOpRef<ModuleOp> loadQASMFile(const StringRef filename,
                                           MLIRContext* const context) {
   std::string errorMessage;
@@ -287,9 +273,7 @@ static OwningOpRef<ModuleOp> loadQASMFile(const StringRef filename,
   return qc::translateQASM3ToQC(sourceMgr, context);
 }
 
-/**
- * @brief Load and parse an `.mlir` file
- */
+/// Load and parse an `.mlir` file
 static OwningOpRef<ModuleOp> loadMLIRFile(const StringRef filename,
                                           MLIRContext* const context) {
   std::string errorMessage;
@@ -305,9 +289,7 @@ static OwningOpRef<ModuleOp> loadMLIRFile(const StringRef filename,
   return parseSourceFile<ModuleOp>(sourceMgr, context);
 }
 
-/**
- * @brief Load a `.jeff` file and convert the program to QCO.
- */
+/// Load a `.jeff` file and convert the program to QCO.
 static ParsedProgram loadJeffFile(const StringRef filename,
                                   MLIRContext* const context) {
   if (filename == "-") {
@@ -337,9 +319,7 @@ static ParsedProgram loadJeffFile(const StringRef filename,
   return {.mod = std::move(mod), .dialect = InputDialect::QCO};
 }
 
-/**
- * @brief Write serialized `jeff` bytes to an output file.
- */
+/// Write serialized `jeff` bytes to an output file.
 static LogicalResult writeJeffOutput(ModuleOp mod, const StringRef filename) {
   if (failed(serializeToFile(mod, filename))) {
     llvm::errs() << "Failed to write jeff file '" << filename << "'.\n";
@@ -348,9 +328,7 @@ static LogicalResult writeJeffOutput(ModuleOp mod, const StringRef filename) {
   return success();
 }
 
-/**
- * @brief Write a module to an output file.
- */
+/// Write a module to an output file.
 template <typename ModuleType>
 static LogicalResult
 writeOutput(ModuleType mod, StringRef filename,

@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file Operations.hpp
- * @brief Arithmetic operations on decision diagrams.
- */
+/// @file Operations.hpp
+/// Arithmetic operations on decision diagrams.
 
 #pragma once
 
@@ -19,14 +18,12 @@
 
 namespace dd {
 
-/**
- * @brief Apply global phase to a given DD.
- *
- * @param in The input DD, with an owned reference that is replaced in place
- * @param phase The phase to apply
- * @param dd The DD package to use
- * @return The output DD
- */
+/// Apply global phase to a given DD.
+///
+/// @param in The input DD, with an owned reference that is replaced in place
+/// @param phase The phase to apply
+/// @param dd The DD package to use
+/// @return The output DD
 VectorDD applyGlobalPhase(VectorDD& in, const fp& phase, Package& dd);
 
 } // namespace dd

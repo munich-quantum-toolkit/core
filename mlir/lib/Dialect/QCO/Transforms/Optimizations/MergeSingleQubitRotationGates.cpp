@@ -272,12 +272,11 @@ struct RuntimeEulerAngles {
 
 } // namespace
 
-/**
- * @brief Creates shared f64 constants for the merge algorithm.
- *
- * `eps` (1e-12) is the gimbal-lock tolerance from the reference implementation:
- * https://github.com/evbernardes/quaternion_to_euler/blob/main/euler_from_quat.py
- */
+/// Creates shared f64 constants for the merge algorithm.
+///
+/// `eps` (1e-12) is the gimbal-lock tolerance from the reference
+/// implementation:
+/// https://github.com/evbernardes/quaternion_to_euler/blob/main/euler_from_quat.py
 template <typename T>
 static ScalarConsts<T> makeConsts(RewriterBase& rewriter, Location loc) {
   auto c = [&](double x) { return Val<T>::constant(rewriter, loc, x); };
@@ -290,12 +289,10 @@ static ScalarConsts<T> makeConsts(RewriterBase& rewriter, Location loc) {
   };
 }
 
-/**
- * @brief Normalizes an angle to the range [-PI, PI].
- *
- * Uses floor-based modular arithmetic:
- *   normalize(a) = a - floor((a + π) / 2π) * 2π
- */
+/// Normalizes an angle to the range [-PI, PI].
+///
+/// Uses floor-based modular arithmetic:
+///   normalize(a) = a - floor((a + π) / 2π) * 2π
 template <typename T>
 static Val<T> wrapToPi(Val<T> angle, const ScalarConsts<T>& c) {
   const auto twoPi = c.two * c.pi;
@@ -305,18 +302,16 @@ static Val<T> wrapToPi(Val<T> angle, const ScalarConsts<T>& c) {
   return angle - floored * twoPi;
 }
 
-/**
- * @brief Computes the Hamilton product of two quaternions (q1 * q2).
- *
- * For q1 = w1 + x1*i + y1*j + z1*k and q2 = w2 + x2*i + y2*j + z2*k:
- *
- * q1 * q2 = (w1w2 - x1x2 - y1y2 - z1z2)
- *         + (w1x2 + x1w2 + y1z2 - z1y2) * i
- *         + (w1y2 - x1z2 + y1w2 + z1x2) * j
- *         + (w1z2 + x1y2 - y1x2 + z1w2) * k
- *
- * @see https://en.wikipedia.org/wiki/Quaternion#Hamilton_product
- */
+/// Computes the Hamilton product of two quaternions (q1 * q2).
+///
+/// For q1 = w1 + x1*i + y1*j + z1*k and q2 = w2 + x2*i + y2*j + z2*k:
+///
+/// q1 * q2 = (w1w2 - x1x2 - y1y2 - z1z2)
+///         + (w1x2 + x1w2 + y1z2 - z1y2) * i
+///         + (w1y2 - x1z2 + y1w2 + z1x2) * j
+///         + (w1z2 + x1y2 - y1x2 + z1w2) * k
+///
+/// @see https://en.wikipedia.org/wiki/Quaternion#Hamilton_product
 template <typename T>
 static Quat<T> hamiltonProduct(const Quat<T>& q1, const Quat<T>& q2) {
   return {
@@ -327,17 +322,15 @@ static Quat<T> hamiltonProduct(const Quat<T>& q1, const Quat<T>& q2) {
   };
 }
 
-/**
- * @brief Converts a single-axis rotation to quaternion representation.
- *
- * Uses half-angle formulas:
- *   RX(a) = Q(cos(a/2), sin(a/2), 0, 0)
- *   RY(a) = Q(cos(a/2), 0, sin(a/2), 0)
- *   RZ(a) = Q(cos(a/2), 0, 0, sin(a/2))
- *
- * @see
- * https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
- */
+/// Converts a single-axis rotation to quaternion representation.
+///
+/// Uses half-angle formulas:
+///   RX(a) = Q(cos(a/2), sin(a/2), 0, 0)
+///   RY(a) = Q(cos(a/2), 0, sin(a/2), 0)
+///   RZ(a) = Q(cos(a/2), 0, 0, sin(a/2))
+///
+/// @see
+/// https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
 template <typename T>
 static Quat<T> axisQuaternion(Val<T> angle, RotationAxis axis,
                               const ScalarConsts<T>& c) {
@@ -355,24 +348,22 @@ static Quat<T> axisQuaternion(Val<T> angle, RotationAxis axis,
   llvm_unreachable("invalid rotation axis");
 }
 
-/**
- * @brief Converts a ZYZ Euler angle decomposition to quaternion.
- *
- * U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
- * RZ(phi).
- *
- * When composing rotations, quaternion multiplication follows matrix
- * multiplication order (right-to-left), which is the reverse of the
- * application sequence:
- *   Sequential application: RZ(lambda), then RY(theta), then RZ(phi)
- *   Quaternion product:     qPhi * qTheta * qLambda
- *
- * @note U is defined as P(phi)*RY(theta)*P(lambda), which equals
- * e^{i*(phi+lambda)/2} * RZ(phi)*RY(theta)*RZ(lambda).
- * Since quaternions represent SU(2), this pass works with the SU(2) part
- * RZ(phi)*RY(theta)*RZ(lambda) and tracks the factored-out global phase
- * (phi+lambda)/2 separately via globalPhaseOf.
- */
+/// Converts a ZYZ Euler angle decomposition to quaternion.
+///
+/// U(theta, phi, lambda) uses ZYZ decomposition: RZ(lambda) -> RY(theta) ->
+/// RZ(phi).
+///
+/// When composing rotations, quaternion multiplication follows matrix
+/// multiplication order (right-to-left), which is the reverse of the
+/// application sequence:
+///   Sequential application: RZ(lambda), then RY(theta), then RZ(phi)
+///   Quaternion product:     qPhi * qTheta * qLambda
+///
+/// @note U is defined as P(phi)*RY(theta)*P(lambda), which equals
+/// e^{i*(phi+lambda)/2} * RZ(phi)*RY(theta)*RZ(lambda).
+/// Since quaternions represent SU(2), this pass works with the SU(2) part
+/// RZ(phi)*RY(theta)*RZ(lambda) and tracks the factored-out global phase
+/// (phi+lambda)/2 separately via globalPhaseOf.
 template <typename T>
 static Quat<T> quaternionFromZYZ(Val<T> theta, Val<T> phi, Val<T> lambda,
                                  const ScalarConsts<T>& c) {
@@ -393,9 +384,7 @@ static Quat<T> quaternionFromZYZ(Val<T> theta, Val<T> phi, Val<T> lambda,
   };
 }
 
-/**
- * @brief Returns the rotation axis for an RXOp, RYOp, RZOp, or POp.
- */
+/// Returns the rotation axis for an RXOp, RYOp, RZOp, or POp.
 static std::optional<RotationAxis> getRotationAxis(Operation* op) {
   return TypeSwitch<Operation*, std::optional<RotationAxis>>(op)
       .Case([](RXOp) { return RotationAxis::X; })
@@ -419,21 +408,19 @@ static std::optional<Val<T>> gateParam(UnitaryOpInterface op, unsigned i,
   }
 }
 
-/**
- * @brief Converts a supported single-qubit gate to quaternion representation.
- *
- * - RX, RY, RZ, P: single-axis half-angle formulas.
- * - X, Y, Z, S, Sdg, T, Tdg, SX, SXdg: fixed-axis rotations.
- * - H: a pi rotation around the (X + Z) / sqrt(2) axis.
- * - Id: the identity quaternion.
- * - R(theta, phi): Q(cos(θ/2), sin(θ/2)cos(φ), sin(θ/2)sin(φ), 0).
- * - U2(phi, lambda) = U(π/2, phi, lambda).
- * - U(theta, phi, lambda): ZYZ via quaternionFromZYZ.
- *
- * @note Global phase is discarded; see quaternionFromZYZ for details.
- * @return nullopt if a required parameter cannot be represented as `T`
- *         (static path: unfoldable SSA value).
- */
+/// Converts a supported single-qubit gate to quaternion representation.
+///
+/// - RX, RY, RZ, P: single-axis half-angle formulas.
+/// - X, Y, Z, S, Sdg, T, Tdg, SX, SXdg: fixed-axis rotations.
+/// - H: a pi rotation around the (X + Z) / sqrt(2) axis.
+/// - Id: the identity quaternion.
+/// - R(theta, phi): Q(cos(θ/2), sin(θ/2)cos(φ), sin(θ/2)sin(φ), 0).
+/// - U2(phi, lambda) = U(π/2, phi, lambda).
+/// - U(theta, phi, lambda): ZYZ via quaternionFromZYZ.
+///
+/// @note Global phase is discarded; see quaternionFromZYZ for details.
+/// @return nullopt if a required parameter cannot be represented as `T` (static
+/// path: unfoldable SSA value).
 template <typename T>
 static std::optional<Quat<T>> quaternionFromGate(UnitaryOpInterface op,
                                                  const ScalarConsts<T>& c,
@@ -542,26 +529,24 @@ template <typename T> static Val<T> principalPhase(Val<T> angle) {
   return angle.sin().atan2(angle.cos());
 }
 
-/**
- * @brief Returns the global phase contribution of a supported gate.
- *
- * Rotation gates can be factored as U = e^{i * phase} * SU(2), where SU(2)
- * is the quaternion-representable part and phase is the global phase:
- *
- * - RX, RY, RZ, R         -> 0 (already SU(2))
- * - P(theta)              -> theta / 2 (P = e^{i * theta / 2} * RZ(theta))
- * - U(theta, phi, lambda) -> (phi + lambda) / 2
- * - U2(phi, lambda)       -> (phi + lambda) / 2
- * - X, Y, Z, H            -> pi / 2
- * - S, SX                 -> pi / 4
- * - Sdg, SXdg             -> -pi / 4
- * - T / Tdg               -> +/- pi / 8
- * - Id                    -> 0
- *
- * @return Success with the phase contribution, including an explicit zero for
- *         SU(2) gates. Failure if a required parameter does not fold on the
- *         static (`double`) path, or if @p op is not a mergeable rotation.
- */
+/// Returns the global phase contribution of a supported gate.
+///
+/// Rotation gates can be factored as U = e^{i * phase} * SU(2), where SU(2)
+/// is the quaternion-representable part and phase is the global phase:
+///
+/// - RX, RY, RZ, R         -> 0 (already SU(2))
+/// - P(theta)              -> theta / 2 (P = e^{i * theta / 2} * RZ(theta))
+/// - U(theta, phi, lambda) -> (phi + lambda) / 2
+/// - U2(phi, lambda)       -> (phi + lambda) / 2
+/// - X, Y, Z, H            -> pi / 2
+/// - S, SX                 -> pi / 4
+/// - Sdg, SXdg             -> -pi / 4
+/// - T / Tdg               -> +/- pi / 8
+/// - Id                    -> 0
+///
+/// @return Success with the phase contribution, including an explicit zero for
+/// SU(2) gates. Failure if a required parameter does not fold on the static
+/// (`double`) path, or if @p op is not a mergeable rotation.
 template <typename T>
 static FailureOr<Val<T>> globalPhaseOf(UnitaryOpInterface op,
                                        const ScalarConsts<T>& c,
@@ -953,10 +938,8 @@ static bool areQuaternionMergeable(Operation* a, Operation* b) {
 
 namespace {
 
-/**
- * @brief Pattern that merges consecutive rotation gates using quaternion
- * multiplication.
- */
+/// Pattern that merges consecutive rotation gates using quaternion
+/// multiplication.
 struct MergeSingleQubitRotationGatesPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   explicit MergeSingleQubitRotationGatesPattern(
@@ -966,14 +949,12 @@ struct MergeSingleQubitRotationGatesPattern final
 
   std::optional<decomposition::SingleQubitBasis> fusionBasis;
 
-  /**
-   * @brief Checks if this op is the start of a mergeable chain.
-   *
-   * A chain start is a mergeable op whose qubit input does NOT come from
-   * a chain-compatible predecessor. This ensures the greedy rewriter only
-   * triggers the rewrite at chain heads, building the maximal chain in one
-   * shot regardless of worklist order.
-   */
+  /// Checks if this op is the start of a mergeable chain.
+  ///
+  /// A chain start is a mergeable op whose qubit input does NOT come from
+  /// a chain-compatible predecessor. This ensures the greedy rewriter only
+  /// triggers the rewrite at chain heads, building the maximal chain in one
+  /// shot regardless of worklist order.
   static bool isChainStart(UnitaryOpInterface op) {
     if (!isMergeable(op.getOperation())) {
       return false;
@@ -982,15 +963,13 @@ struct MergeSingleQubitRotationGatesPattern final
     return defOp == nullptr || !areQuaternionMergeable(defOp, op);
   }
 
-  /**
-   * @brief Collects a chain of consecutive mergeable gates.
-   *
-   * Walks forward via single-use SSA edges. Breaks when the next operation is
-   * not considered as mergeable.
-   *
-   * @param start The chain head (must satisfy isChainStart)
-   * @return The chain of operations in circuit order (first applied to last)
-   */
+  /// Collects a chain of consecutive mergeable gates.
+  ///
+  /// Walks forward via single-use SSA edges. Breaks when the next operation is
+  /// not considered as mergeable.
+  ///
+  /// @param start The chain head (must satisfy isChainStart)
+  /// @return The chain of operations in circuit order (first applied to last)
   static SmallVector<UnitaryOpInterface>
   collectChain(UnitaryOpInterface start) {
     SmallVector chain{start};
@@ -1043,12 +1022,10 @@ struct MergeSingleQubitRotationGatesPattern final
            chain.size() > parameterizedSynthesisGateCount(basis);
   }
 
-  /**
-   * @brief Merge a chain whose angles are all compile-time constants.
-   *
-   * Runs the shared algorithm on `Val<double>` (STL math) and emits constant
-   * `U` / `gphase` values. Returns failure if any parameter is dynamic.
-   */
+  /// Merge a chain whose angles are all compile-time constants.
+  ///
+  /// Runs the shared algorithm on `Val<double>` (STL math) and emits constant
+  /// `U` / `gphase` values. Returns failure if any parameter is dynamic.
   static LogicalResult
   tryMergeStaticChain(MutableArrayRef<UnitaryOpInterface> chain,
                       RewriterBase& rewriter) {
@@ -1184,10 +1161,8 @@ struct MergeSingleQubitRotationGatesPattern final
   }
 };
 
-/**
- * @brief Pass that merges consecutive rotation gates using quaternion
- * multiplication.
- */
+/// Pass that merges consecutive rotation gates using quaternion
+/// multiplication.
 struct MergeSingleQubitRotationGates final
     : impl::MergeSingleQubitRotationGatesBase<MergeSingleQubitRotationGates> {
   using impl::MergeSingleQubitRotationGatesBase<
