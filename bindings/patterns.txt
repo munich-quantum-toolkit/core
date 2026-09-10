@@ -312,24 +312,3 @@ mqt\.core\.mlir\.submit_program$:
         custom5: str | bool | int | float | None = None,
     ) -> mqt.core.qdmi.Job:
         \doc
-
-mqt\.core\.qdmi\.Device\.submit$:
-    \import os
-    \import qiskit.circuit
-    \import mqt.core.mlir
-    \import mqt.core.qdmi
-    def submit(
-        self,
-        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | mqt.core.mlir.QCProgram | mqt.core.mlir.QCOProgram | mqt.core.mlir.JeffProgram | mqt.core.mlir.OpenQASMProgram | mqt.core.mlir.CompiledProgram,
-        num_shots: int = 1024,
-        *,
-        program_format: mqt.core.qdmi.ProgramFormat | None = None,
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
-        custom1: str | bool | int | float | None = None,
-        custom2: str | bool | int | float | None = None,
-        custom3: str | bool | int | float | None = None,
-        custom4: str | bool | int | float | None = None,
-        custom5: str | bool | int | float | None = None,
-    ) -> Job:
-        \doc

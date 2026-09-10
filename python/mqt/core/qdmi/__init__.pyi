@@ -9,14 +9,9 @@
 """QDMI entities and access to MQT Core's QDMI driver."""
 
 import enum
-import os
 from collections.abc import Sequence
 from typing import overload
 
-import qiskit.circuit
-
-import mqt.core.mlir
-import mqt.core.qdmi
 from mqt.core.qdmi import driver as driver
 from mqt.core.qdmi import slurm as slurm
 
@@ -305,36 +300,6 @@ class Device:
         The caller must provide the type documented by the device implementation.
         Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
         when the custom slot is unsupported.
-        """
-
-    def submit(
-        self,
-        program: str
-        | os.PathLike[str]
-        | qiskit.circuit.QuantumCircuit
-        | mqt.core.mlir.QCProgram
-        | mqt.core.mlir.QCOProgram
-        | mqt.core.mlir.JeffProgram
-        | mqt.core.mlir.OpenQASMProgram
-        | mqt.core.mlir.CompiledProgram,
-        num_shots: int = 1024,
-        *,
-        program_format: mqt.core.qdmi.ProgramFormat | None = None,
-        enable_timing: bool = False,
-        enable_statistics: bool = False,
-        custom1: str | bool | float | None = None,
-        custom2: str | bool | float | None = None,
-        custom3: str | bool | float | None = None,
-        custom4: str | bool | float | None = None,
-        custom5: str | bool | float | None = None,
-    ) -> Job:
-        """Compile source or submit a compiled program to this device.
-
-        Compiled programs must be compatible with this device.
-
-        Source inputs accept ``program_format``, ``enable_timing``, and
-        ``enable_statistics``. ``custom1`` through ``custom5`` are passed to the job.
-        Use ``submit_job`` for raw payloads.
         """
 
     @overload

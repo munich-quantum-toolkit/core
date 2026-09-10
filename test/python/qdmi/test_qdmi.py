@@ -25,6 +25,7 @@ from mqt.core.mlir import (
     CompiledProgram,
     OutputFormat,
     compile_program,
+    submit_program,
 )
 from mqt.core.qdmi import (
     CustomProperty,
@@ -564,7 +565,7 @@ c = measure q;
     assert program.program_format == ProgramFormat.QIR_BASE_STRING
     assert ProgramFormat.QIR_BASE_STRING in ddsim_device.supported_program_formats()
 
-    job = ddsim_device.submit(program)
+    job = submit_program(program, target=ddsim_device)
     job.wait()
 
     assert job.check() == Job.Status.DONE
@@ -599,7 +600,7 @@ def test_device_executes_controlled_qir_with_exact_phase(ddsim_device: Device) -
 
     program = compile_program(circuit, target=ddsim_device, program_format=ProgramFormat.QIR_BASE_STRING)
     assert isinstance(program, CompiledProgram)
-    job = ddsim_device.submit(program, num_shots=0)
+    job = submit_program(program, target=ddsim_device, num_shots=0)
     job.wait()
 
     assert job.get_dense_statevector() == pytest.approx(expected)

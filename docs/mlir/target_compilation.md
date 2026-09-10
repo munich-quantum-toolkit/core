@@ -10,14 +10,14 @@ mystnb:
 
 `compile_program` maps a program to a device's topology and native operations.
 The resulting {py:class}`~mqt.core.mlir.CompiledProgram` can be submitted with
-`device.submit`.
+`submit_program` in the MLIR submodule.
 
 ## Python
 
 Compile and submit a Bell circuit to the bundled DDSIM device:
 
 ```{code-cell} ipython3
-from mqt.core.mlir import compile_program
+from mqt.core.mlir import compile_program, submit_program
 from mqt.core.qdmi.driver import open_device
 
 bell_qasm = """OPENQASM 3.1;
@@ -31,7 +31,7 @@ result = measure q;
 
 device = open_device("mqt.ddsim.default")
 compiled = compile_program(bell_qasm, target=device)
-job = device.submit(compiled)
+job = submit_program(compiled, target=device)
 job.wait()
 print(job.get_counts())
 ```
@@ -40,7 +40,7 @@ print(job.get_counts())
 in one call:
 
 ```{code-cell} ipython3
-job = device.submit(bell_qasm)
+job = submit_program(bell_qasm, target=device)
 job.wait()
 print(job.get_counts())
 ```
@@ -48,15 +48,13 @@ print(job.get_counts())
 Or use a device ID directly:
 
 ```{code-cell} ipython3
-from mqt.core.mlir import submit_program
-
 job = submit_program(bell_qasm, target="mqt.ddsim.default")
 job.wait()
 print(job.get_counts())
 ```
 
-Pass `num_shots` to either submission method to choose the number of samples.
-For simulator statevectors and probabilities, see {doc}`../qdmi/ddsim_device`. A
+Pass `num_shots` to `submit_program` to choose the number of samples. For
+simulator statevectors and probabilities, see {doc}`../qdmi/ddsim_device`. A
 compiled program can be submitted again without recompilation. Submission checks
 that the device still has matching sites, topology, operations, timing units,
 and program capabilities. Names and calibration-only changes do not require

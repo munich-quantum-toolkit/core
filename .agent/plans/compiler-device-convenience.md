@@ -4,8 +4,9 @@ Status: complete.
 
 `compile_program` selects a device-supported payload before mapping and returns
 `CompiledProgram`. `submit_program` checks compatibility and submits source or
-compiled programs; `Device.submit` delegates to it through a lazy binding. The
-C++ QDMI adapter owns format selection and compatibility checks.
+compiled programs. It accepts an open device or a registered device ID. The QDMI
+bindings contain no compiler integration. The C++ QDMI adapter owns format
+selection and compatibility checks.
 
 Selection prefers Adaptive QIR, OpenQASM 3.1, then Base QIR, with binary before
 text. Capabilities default to maximal compiler support. Explicit payload

@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 BELL = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c = measure q;'
 
 
-@pytest.mark.parametrize("form", ["artifact", "source", "helper"])
+@pytest.mark.parametrize("form", ["artifact", "source", "device_id"])
 def test_submission_forms(form: str) -> None:
     """All forms default to 1024 shots and preserve seeded samples."""
     device = open_device("mqt.ddsim.default")
@@ -35,9 +35,9 @@ def test_submission_forms(form: str) -> None:
         program = compile_program(BELL, target=device)
         assert isinstance(program, CompiledProgram)
         assert program.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
-        job = device.submit(program, custom1=7)
+        job = submit_program(program, target=device, custom1=7)
     elif form == "source":
-        job = device.submit(BELL, custom1=7)
+        job = submit_program(BELL, target=device, custom1=7)
     else:
         job = submit_program(BELL, target="mqt.ddsim.default", custom1=7)
     assert isinstance(job, Job)
@@ -77,7 +77,7 @@ def test_compiled_formats(program_format: ProgramFormat) -> None:
         by_id.payload = b"changed"  # ty: ignore[invalid-assignment]
     del device
     gc.collect()
-    job = open_device("mqt.ddsim.default").submit(by_id, num_shots=0)
+    job = submit_program(by_id, target=open_device("mqt.ddsim.default"), num_shots=0)
     job.wait()
     assert job.get_dense_statevector() == pytest.approx([2**-0.5, 0, 0, 2**-0.5])
 
@@ -86,16 +86,15 @@ def test_rejects_invalid_submission_options() -> None:
     """Reject invalid counts and formats before consuming a typed program."""
     device = open_device("mqt.ddsim.default")
     source = compile_program(BELL, output=OutputFormat.QCO)
-    for submit in (device.submit, lambda p, **kw: submit_program(p, target=device, **kw)):
-        with pytest.raises(ValueError, match="nonnegative"):
-            submit(source, num_shots=-1)
+    with pytest.raises(ValueError, match="nonnegative"):
+        submit_program(source, target=device, num_shots=-1)
     with pytest.raises(ValueError, match="cannot emit"):
         compile_program(source, target=device, program_format=ProgramFormat.QASM2, inplace=True)
     assert source.is_valid
     compiled = compile_program(source, target=device)
     assert source.is_valid
     with pytest.raises(ValueError, match="conflicts"):
-        device.submit(compiled, program_format=ProgramFormat.QASM3)
+        submit_program(compiled, target=device, program_format=ProgramFormat.QASM3)
 
 
 def test_explicit_target_requires_output_and_matching_contract() -> None:
@@ -105,7 +104,7 @@ def test_explicit_target_requires_output_and_matching_contract() -> None:
     with pytest.raises(ValueError, match="requires output"):
         compile_program(BELL, target=target)  # ty: ignore[invalid-argument-type]
     matching = compile_program(BELL, target=target, program_format=ProgramFormat.QASM3)
-    job = device.submit(matching, num_shots=8)
+    job = submit_program(matching, target=device, num_shots=8)
     job.wait()
     assert len(job.get_shots()) == 8
     other = CompilerTarget(
@@ -115,11 +114,11 @@ def test_explicit_target_requires_output_and_matching_contract() -> None:
     )
     mismatch = compile_program(BELL, target=other, program_format=ProgramFormat.QASM3)
     with pytest.raises(ValueError, match="recompile"):
-        device.submit(mismatch)
+        submit_program(mismatch, target=device)
 
 
-def test_device_submit_loads_compiler_lazily() -> None:
-    """QDMI works without importing MLIR until source compilation is requested."""
+def test_qdmi_does_not_import_compiler() -> None:
+    """Raw QDMI submission does not load the compiler module."""
     script = """
 import sys
 from mqt.core.qdmi import ProgramFormat
@@ -131,7 +130,8 @@ source = "OPENQASM 3.0; qubit q; bit c = measure q;"
 raw = device.submit_job(source, ProgramFormat.QASM3, num_shots=1)
 assert raw.wait()
 assert "mqt.core.mlir" not in sys.modules
-job = device.submit(source, num_shots=2)
+from mqt.core.mlir import submit_program
+job = submit_program(source, target=device, num_shots=2)
 assert job.wait()
 assert job.get_counts() == {"0": 2}
 """
@@ -153,12 +153,12 @@ def test_source_path_is_read_once(tmp_path: Path) -> None:
 
     source = Source()
     device = open_device("mqt.ddsim.default")
-    job = device.submit(source, num_shots=2)
+    job = submit_program(source, target=device, num_shots=2)
     job.wait()
     assert source.calls == 1
     compiled = compile_program(path, target=device)
     path.unlink()
-    job = device.submit(compiled, num_shots=2)
+    job = submit_program(compiled, target=device, num_shots=2)
     job.wait()
     assert len(job.get_shots()) == 2
 
@@ -169,7 +169,7 @@ def test_payload_forward_branching(program_format: ProgramFormat) -> None:
     source = BELL.replace("c = measure q;", "c[0] = measure q[0]; if (c[0]) { x q[1]; } c[1] = measure q[1];")
     device = open_device("mqt.ddsim.default")
     compiled = compile_program(source, target=device, program_format=program_format)
-    job = device.submit(compiled, num_shots=32)
+    job = submit_program(compiled, target=device, num_shots=32)
     job.wait()
     assert set(job.get_counts()) <= ({"00", "01"} if program_format == ProgramFormat.QASM3 else {"00", "10"})
     with pytest.raises(RuntimeError, match="Not supported"):
@@ -203,7 +203,7 @@ def test_adaptive_payload_supports_optional_computations() -> None:
     compiled = compile_program(source, target=device)
     assert compiled.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
     assert "qir.int-computations" in {c.capability_id for c in compiled.payload_specification.capabilities}
-    job = device.submit(compiled, num_shots=16)
+    job = submit_program(compiled, target=device, num_shots=16)
     job.wait()
     assert job.get_counts() == {"0": 16}
 

@@ -1002,7 +1002,7 @@ def compile_program(
 
     Device targets select Adaptive QIR (binary, text), OpenQASM 3, then Base QIR
     (binary, text). Use ``program_format`` to select a format explicitly.
-    Submit the returned :class:`CompiledProgram` with ``device.submit``.
+    Submit the returned :class:`CompiledProgram` with :func:`submit_program`.
 
     An explicit :class:`CompilerTarget` requires ``output`` to return a typed
     program, or ``program_format`` to return a :class:`CompiledProgram`.
@@ -1101,5 +1101,4 @@ def submit_program(
     """Compile source or submit a compiled program to a device.
 
     ``target`` accepts a registered device ID or an open device.
-    ``Device.submit`` calls this function with its device as the target.
     """

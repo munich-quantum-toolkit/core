@@ -41,7 +41,6 @@ using namespace nb::literals;
 
 namespace bindings {
 void registerSlurm(nb::module_& qdmiModule);
-void registerCompiler(nb::class_<qdmi::Device>& device);
 } // namespace bindings
 
 namespace {
@@ -395,8 +394,6 @@ slot is unsupported. A supported empty list is returned as an empty list.)pb");
 The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
-
-  bindings::registerCompiler(device);
 
   device.def(
       "submit_job",
