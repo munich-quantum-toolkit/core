@@ -80,6 +80,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
+          version: 0.12.5
           enable-cache: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -100,13 +101,14 @@ jobs:
           DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
         run: |
           if [[ "$RUNNER_OS" == Linux ]]; then
-            docker run --rm --cpus=4 --memory=16g --memory-swap=16g \
+            python3 scripts/linux_optimization.py --output "$STUDY_ROOT/pipeline.json" \
+              --container mqt-study -- docker run --rm --name mqt-study --cpus=4 --memory=16g --memory-swap=16g \
               -v "$GITHUB_WORKSPACE:/project" -v "$STUDY_ROOT:/study" \
               -e STUDY_ROOT=/study -e STUDY_OPERATION -e STUDY_SDK_LTO -e STUDY_JOBS \
               "quay.io/pypa/manylinux_2_28_${STUDY_ARCH}:2026.08.04-1" \
               bash /project/test/release/run_study.sh
           else
-            bash test/release/run_study.sh
+            python3 scripts/linux_optimization.py --output "$STUDY_ROOT/pipeline.json" -- bash test/release/run_study.sh
           fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -125,6 +127,7 @@ jobs:
             ${{ runner.temp }}/study/output/sdk-build/variant-*.json
             ${{ runner.temp }}/study/source.sha256
             ${{ runner.temp }}/study/xcode.txt
+            ${{ runner.temp }}/study/pipeline.*
           if-no-files-found: error
 
   wheels:
@@ -158,6 +161,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
+          version: 0.12.5
           enable-cache: false
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
@@ -178,14 +182,15 @@ jobs:
           DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
         run: |
           if [[ "$RUNNER_OS" == Linux ]]; then
-            docker run --rm --cpus=4 --memory=16g --memory-swap=16g \
+            python3 scripts/linux_optimization.py --output "$STUDY_ROOT/pipeline.json" \
+              --container mqt-study -- docker run --rm --name mqt-study --cpus=4 --memory=16g --memory-swap=16g \
               -v "$GITHUB_WORKSPACE:/project" -v "$STUDY_ROOT:/study" \
               -e STUDY_ROOT=/study -e STUDY_OPERATION -e STUDY_SDK_LTO -e STUDY_CORE_LTO \
               -e STUDY_PGO -e STUDY_JOBS \
               "quay.io/pypa/manylinux_2_28_${STUDY_ARCH}:2026.08.04-1" \
               bash /project/test/release/run_study.sh
           else
-            bash test/release/run_study.sh
+            python3 scripts/linux_optimization.py --output "$STUDY_ROOT/pipeline.json" -- bash test/release/run_study.sh
           fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
@@ -206,4 +211,5 @@ jobs:
             ${{ runner.temp }}/study/output/sdk-build/variant-*.json
             ${{ runner.temp }}/study/source.sha256
             ${{ runner.temp }}/study/xcode.txt
+            ${{ runner.temp }}/study/pipeline.*
           if-no-files-found: error
