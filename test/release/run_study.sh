@@ -44,6 +44,11 @@ else
   uv pip install --python "$STUDY_ROOT/venv/bin/python" wheel==0.45.1 ninja==1.13.0 "delocate==0.13.0; sys_platform == 'darwin'"
 fi
 export PATH="$STUDY_ROOT/venv/bin:$PATH"
+warm_args=()
+if [[ ${STUDY_WARM_CACHE:-false} == true ]]; then
+  uv pip install --python "$STUDY_ROOT/venv/bin/python" sccache==0.16.0
+  warm_args+=(--warm-cache)
+fi
 
 if [[ $(uname -s) == Linux && ${STUDY_PGO:-none} != none ]]; then
   python scripts/linux_optimization.py --output "$STUDY_ROOT/output/measurements/provision-profile.json" -- \
@@ -67,4 +72,4 @@ python scripts/optimization_study.py "$STUDY_OPERATION" \
   --llvm-source "$STUDY_ROOT/source" --llvm-source-id "$llvm_commit" \
   --toolchain-repo "$project/toolchain" --sdk-lto "$STUDY_SDK_LTO" \
   --core-lto "${STUDY_CORE_LTO:-OFF}" --pgo "${STUDY_PGO:-none}" \
-  --jobs "${STUDY_JOBS:-4}" --lto-workers "${STUDY_LTO_WORKERS:-1}"
+  --jobs "${STUDY_JOBS:-4}" --lto-workers "${STUDY_LTO_WORKERS:-1}" "${warm_args[@]}"

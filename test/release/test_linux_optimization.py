@@ -22,9 +22,29 @@ import runpy
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+
+
+def test_training_finds_selected_package_commands(tmp_path: Path) -> None:
+    """Training subprocesses find the virtual environment and staged wheel CLIs."""
+    runner = Path(__file__).with_name("train_optimization.py")
+    package = tmp_path / "mqt/core"
+    core = SimpleNamespace(__file__=str(package / "__init__.py"))
+    with (
+        patch.dict(sys.modules, {"mqt": SimpleNamespace(core=core)}),
+        patch.object(sys, "argv", [str(runner), "--tests", "--expected-root", str(tmp_path)]),
+        patch("subprocess.run") as execute,
+    ):
+        runpy.run_path(str(runner), run_name="__main__")
+    assert execute.call_count == 3
+    for call in execute.call_args_list:
+        assert call.kwargs["env"]["PATH"].split(os.pathsep)[:2] == [
+            str(Path(sys.executable).parent),
+            str(package / "bin"),
+        ]
 
 
 def test_failed_command_and_replay(tmp_path: Path) -> None:
@@ -135,6 +155,10 @@ def test_downloaded_wheels_keep_separate_identities(tmp_path: Path, *, damaged: 
         "core_source_trees": {"src": "same"},
         "llvm_source_id": "same",
         "compiler_version": "same",
+        "compiler_sha256": "same",
+        "compiler_configs_sha256": {},
+        "xcode": "same",
+        "macos_sdk": "same",
         "machine": "same",
     }
     (tmp_path / "artifacts.json").write_text(json.dumps(manifest))

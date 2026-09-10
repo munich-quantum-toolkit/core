@@ -19,6 +19,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from mqt import core
+
 
 def main() -> None:
     """Run every selected workload and propagate failures to the optimizer."""
@@ -28,7 +30,15 @@ def main() -> None:
     parser.add_argument("--expected-root", type=Path, required=True)
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
-    environment = os.environ | {"OPENBLAS_NUM_THREADS": "1", "OMP_NUM_THREADS": "1"}
+    environment = os.environ | {
+        "OPENBLAS_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "PATH": os.pathsep.join([
+            str(Path(sys.executable).parent),
+            str(Path(core.__file__).parent / "bin"),
+            os.environ.get("PATH", ""),
+        ]),
+    }
     subprocess.run([sys.executable, str(root / "test/release/train_bolt.py")], cwd=root, env=environment, check=True)
     subprocess.run(
         [

@@ -8,6 +8,7 @@
 
 cmake_minimum_required(VERSION 3.28)
 project(WheelConsumer LANGUAGES CXX)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 find_package(mqt-core CONFIG REQUIRED)
 set(THREADS_PREFER_PTHREAD_FLAG ON)
 find_package(Threads REQUIRED)

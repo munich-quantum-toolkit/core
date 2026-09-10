@@ -52,6 +52,7 @@ def main() -> None:
     parser.add_argument("--pgo", choices=["none", "core", "both"], default="none")
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--lto-workers", type=int, default=1)
+    parser.add_argument("--warm-cache", action="store_true", help="Also measure clean rebuilds with the seeded cache")
     parser.add_argument("--define", action="append", default=[])
     args = parser.parse_args()
     if args.jobs < 1 or args.lto_workers < 1:
@@ -81,6 +82,8 @@ def main() -> None:
         "PATH": str(base / "bin") + os.pathsep + os.environ["PATH"],
         "PYTHONPATH": "",
     }
+    if system == "Darwin":
+        env["MACOSX_DEPLOYMENT_TARGET"] = "11.0" if args.operation == "sdk" else "13.3"
     manifest = {
         "core_revision": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=project, text=True).strip(),
         "core_source_trees": {
@@ -102,6 +105,7 @@ def main() -> None:
         "compiler": cxx,
         "compiler_version": version,
         "compiler_sha256": digest(Path(cxx)),
+        "compiler_configs_sha256": {str(path): digest(path) for path in sorted(Path(cxx).parent.glob("*.cfg"))},
         "sdk_lto": args.sdk_lto,
         "core_lto": args.core_lto,
         "pgo": args.pgo,
@@ -110,8 +114,20 @@ def main() -> None:
         "python": sys.version,
         "jobs": args.jobs,
         "lto_workers": args.lto_workers,
+        "warm_cache": args.warm_cache,
+        "defines": args.define,
         "benchmark_sha256": digest(project / "test/release/benchmark_optimization.py"),
     }
+    if system == "Darwin":
+        manifest["xcode"] = subprocess.check_output(["xcodebuild", "-version"], text=True)
+        manifest["macos_sdk"] = subprocess.check_output(["xcrun", "--show-sdk-build-version"], text=True).strip()
+    cache = None
+    if args.warm_cache:
+        cache = shutil.which("sccache")
+        if not cache:
+            parser.error("--warm-cache requires sccache")
+        cache_identity = hashlib.sha256(json.dumps(manifest, sort_keys=True).encode()).hexdigest()
+        env |= {"SCCACHE_DIR": str(root / "cache" / cache_identity), "SCCACHE_C_CUSTOM_CACHE_BUSTER": cache_identity}
     (root / "inputs.json").write_text(json.dumps(manifest, indent=2) + "\n")
 
     def execute(label: str, command: list[str], extra: dict[str, str] | None = None) -> None:
@@ -122,7 +138,7 @@ def main() -> None:
 
     sdk = root / "sdk"
 
-    def build_sdk(phase: str, profile: Path | None = None, targets: Path | None = None) -> None:
+    def build_sdk(phase: str, profile: Path | None = None, targets: Path | None = None, suffix: str = "") -> None:
         command = [
             sys.executable,
             str(helper),
@@ -154,7 +170,10 @@ def main() -> None:
         for variable in ["AR", "RANLIB"]:
             if os.environ.get(variable):
                 command += ["--define", "CMAKE_" + variable + "=" + os.environ[variable]]
-        execute("sdk-" + phase, command)
+        if cache:
+            for language in ["C", "CXX"]:
+                command += ["--define", f"CMAKE_{language}_COMPILER_LAUNCHER={cache}"]
+        execute("sdk-" + phase + suffix, command)
 
     if args.operation == "sdk":
         if args.pgo != "none":
@@ -175,7 +194,20 @@ def main() -> None:
                 "-DCMAKE_PREFIX_PATH=" + str(sdk),
                 "-DCMAKE_CXX_SCAN_FOR_MODULES=OFF",
                 "-DEXPECTED_LLVM_ASSERTIONS=OFF",
-                *(["-DLLVM_USE_LINKER=lld"] if system == "Linux" else []),
+                *(
+                    [
+                        "-DLLVM_USE_LINKER=lld",
+                        (
+                            f"-DCMAKE_EXE_LINKER_FLAGS=-fuse-ld=lld -Wl,--thinlto-jobs={args.lto_workers},"
+                            f"--lto-partitions={args.lto_workers}"
+                        ),
+                    ]
+                    if system == "Linux"
+                    else [
+                        "-DCMAKE_OSX_DEPLOYMENT_TARGET=11.0",
+                        f"-DCMAKE_EXE_LINKER_FLAGS=-Wl,-mllvm,-threads={args.lto_workers}",
+                    ]
+                ),
             ],
         )
         execute("sdk-consumer-build", ["cmake", "--build", str(consumer), "-j", str(args.jobs)])
@@ -192,10 +224,27 @@ def main() -> None:
         )
         manifest["archive_sha256"] = digest(root / "sdk.tar.zst")
         (root / "sdk-artifact.json").write_text(json.dumps(manifest, indent=2) + "\n")
+        if cache:
+            execute("cache-cold-statistics", [cache, "--show-stats", "--stats-format", "json"])
+            execute("cache-reset-statistics", [cache, "--zero-stats"])
+            execute("sdk-warm-clean", ["cmake", "--build", str(root / "sdk-build"), "--target", "clean"])
+            build_sdk("plain", suffix="-warm")
+            execute("sdk-consumer-build-warm", ["cmake", "--build", str(consumer), "-j", str(args.jobs)])
+            execute("sdk-consumer-run-warm", [str(consumer / "hello_mlir")])
+            execute("cache-warm-statistics", [cache, "--show-stats", "--stats-format", "json"])
         return
     sdk_manifest = json.loads((base / "library-variant.json").read_text())
-    if sdk_manifest["lto"] != args.sdk_lto or sdk_manifest["compiler_version"] != version:
-        parser.error("the SDK library variant must match the requested LTO mode and compiler")
+    if sdk_manifest["lto"] != args.sdk_lto or sdk_manifest["source_id"] != args.llvm_source_id:
+        parser.error("the SDK library variant must match the requested LTO mode and LLVM source")
+    for key in [
+        "compiler_version",
+        "compiler_sha256",
+        "compiler_configs_sha256",
+        "machine",
+        *(["xcode", "macos_sdk"] if system == "Darwin" else []),
+    ]:
+        if sdk_manifest[key] != manifest[key]:
+            parser.error(f"SDK and Core toolchains differ: {key}")
     if sdk.exists():
         parser.error("wheel experiments require a fresh root to prevent stale profiles or archives")
     shutil.copytree(base, sdk, symlinks=True)
@@ -226,7 +275,7 @@ def main() -> None:
         else f"-Wl,-mllvm,-threads={args.lto_workers}"
     )
 
-    def core_wheel(phase: str, profile: Path | None = None) -> Path:
+    def core_wheel(phase: str, profile: Path | None = None, suffix: str = "") -> Path:
         flags = lto
         if phase == "generate":
             flags += " -fprofile-generate -fprofile-update=atomic"
@@ -251,6 +300,7 @@ def main() -> None:
             "CMAKE_C_COMPILER": compiler,
             "CMAKE_CXX_COMPILER": cxx,
             "ENABLE_IPO": "OFF",
+            "ENABLE_CACHE": "OFF",
             "LLVM_ENABLE_LTO": "OFF",
             "ENABLE_BOLT": "ON" if system == "Linux" else "OFF",
             "BUILD_MQT_CORE_TESTS": "ON",
@@ -265,12 +315,14 @@ def main() -> None:
         }
         if system == "Linux":
             definitions["CMAKE_LINKER_TYPE"] = "LLD"
+        if cache:
+            definitions |= {f"CMAKE_{language}_COMPILER_LAUNCHER": cache for language in ["C", "CXX"]}
         for key in ["AR", "RANLIB"]:
             if os.environ.get(key):
                 definitions["CMAKE_" + key] = os.environ[key]
         definitions.update(item.split("=", 1) for item in args.define)
         command += [f"-Ccmake.define.{key}={value}" for key, value in definitions.items()]
-        execute("core-" + phase, command, {"LLVM_PROFILE_FILE": str(root / "build-profiles/%m-%p.profraw")})
+        execute("core-" + phase + suffix, command, {"LLVM_PROFILE_FILE": str(root / "build-profiles/%m-%p.profraw")})
         wheels = list((root / "raw" / phase).glob("*.whl"))
         if len(wheels) != 1:
             msg = "expected exactly one built wheel"
@@ -320,6 +372,9 @@ def main() -> None:
         profile = root / "merged.profdata"
         execute("merge", [profdata, "merge", "-o", str(profile), *map(str, files)])
         profile = profile.rename(root / (digest(profile) + ".profdata"))
+        manifest["profile_sha256"] = digest(profile)
+        if cache:
+            env["SCCACHE_C_CUSTOM_CACHE_BUSTER"] += "-" + manifest["profile_sha256"]
         for component, function in [
             ("core", "_ZN4mlir3qco"),
             *([("sdk", "_ZN4mlir11MLIRContextC")] if args.pgo == "both" else []),
@@ -405,7 +460,15 @@ def main() -> None:
         destination.mkdir(parents=True)
         raw_wheel = next(packed.glob("*.whl"))
         repair = (
-            ["auditwheel", "repair", "-w", str(destination), str(raw_wheel)]
+            [
+                "auditwheel",
+                "repair",
+                "--plat",
+                "manylinux_2_28_" + platform.machine(),
+                "-w",
+                str(destination),
+                str(raw_wheel),
+            ]
             if system == "Linux"
             else ["delocate-wheel", "--require-archs", "arm64", "-w", str(destination), str(raw_wheel)]
         )
@@ -421,25 +484,33 @@ def main() -> None:
             [str(python), str(project / "test/release/train_optimization.py"), "--tests", "--expected-root", str(venv)],
         )
         package = next((venv / "lib").glob("python*/site-packages/mqt/core"))
-        consumer = root / ("consumer-" + name)
-        execute(
-            "consumer-configure-" + name,
-            [
-                "cmake",
-                "-S",
-                str(project / "test/release/consumer"),
-                "-B",
-                str(consumer),
-                "-G",
-                "Ninja",
-                "-DCMAKE_BUILD_TYPE=Release",
-                "-DENABLE_IPO=OFF",
-                "-DCMAKE_PREFIX_PATH=" + str(package),
-                "-DCMAKE_CXX_COMPILER=" + cxx,
-            ],
-        )
-        execute("consumer-build-" + name, ["cmake", "--build", str(consumer), "-j", "2"])
-        execute("consumer-run-" + name, [str(consumer / "consumer")])
+        compilers = [("producer", cxx)]
+        if system == "Linux":
+            gcc = shutil.which("g++")
+            if not gcc:
+                msg = "the manylinux GCC consumer compiler is required"
+                raise RuntimeError(msg)
+            compilers.append(("gcc", gcc))
+        for label, consumer_compiler in compilers:
+            consumer = root / ("consumer-" + label + "-" + name)
+            execute(
+                "consumer-configure-" + label + "-" + name,
+                [
+                    "cmake",
+                    "-S",
+                    str(project / "test/release/consumer"),
+                    "-B",
+                    str(consumer),
+                    "-G",
+                    "Ninja",
+                    "-DCMAKE_BUILD_TYPE=Release",
+                    "-DENABLE_IPO=OFF",
+                    "-DCMAKE_PREFIX_PATH=" + str(package),
+                    "-DCMAKE_CXX_COMPILER=" + consumer_compiler,
+                ],
+            )
+            execute("consumer-build-" + label + "-" + name, ["cmake", "--build", str(consumer), "-j", "2"])
+            execute("consumer-run-" + label + "-" + name, [str(consumer / "consumer")])
         with zipfile.ZipFile(repaired) as archive:
             uncompressed = sum(item.file_size for item in archive.infolist())
         artifacts.append({
@@ -450,6 +521,27 @@ def main() -> None:
             "uncompressed_bytes": uncompressed,
         })
     (root / "artifacts.json").write_text(json.dumps(manifest | {"artifacts": artifacts}, indent=2) + "\n")
+    if cache:
+        execute("cache-cold-statistics", [cache, "--show-stats", "--stats-format", "json"])
+        execute("cache-reset-statistics", [cache, "--zero-stats"])
+        if args.pgo == "both":
+            execute("sdk-warm-clean", ["cmake", "--build", str(root / "sdk-build"), "--target", "clean"])
+            build_sdk("use", profile=profile, targets=root / "pgo-targets.json", suffix="-warm")
+        execute("core-warm-clean", ["cmake", "--build", str(build), "--target", "clean"])
+        warm_wheel = core_wheel(phase, profile, suffix="-warm")
+        warm_stage = unpack(warm_wheel, root / "stage-warm")
+        execute(
+            "validate-warm",
+            [
+                sys.executable,
+                str(project / "test/release/train_optimization.py"),
+                "--tests",
+                "--expected-root",
+                str(warm_stage),
+            ],
+            {"PYTHONPATH": str(warm_stage)},
+        )
+        execute("cache-warm-statistics", [cache, "--show-stats", "--stats-format", "json"])
 
 
 if __name__ == "__main__":

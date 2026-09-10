@@ -68,8 +68,17 @@ def main() -> None:
         parser.error("one or more requested variants are missing")
     reference = next(iter(variants.values()))[0]
     for manifest, _, _, _ in variants.values():
-        for key in ["core_source_trees", "llvm_source_id", "compiler_version", "requirements_sha256", "machine"]:
-            if not manifest.get(key) or manifest[key] != reference.get(key):
+        for key in [
+            "core_source_trees",
+            "llvm_source_id",
+            "compiler_version",
+            "compiler_sha256",
+            "compiler_configs_sha256",
+            "requirements_sha256",
+            "machine",
+            *(["xcode", "macos_sdk"] if platform.system() == "Darwin" else []),
+        ]:
+            if key not in manifest or manifest[key] != reference.get(key):
                 parser.error(f"variant inputs differ: {key}")
     native = [name for name, (manifest, _, _, _) in variants.items() if manifest["sdk_lto"] == "OFF"]
     if not native:

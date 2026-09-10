@@ -74,5 +74,6 @@ jobs:
             ${{ runner.temp }}/study/output/compatibility.json
             ${{ runner.temp }}/study/output/measurements
             ${{ runner.temp }}/study/output/artifacts
+            ${{ runner.temp }}/study/output/test-requirements.txt
             ${{ runner.temp }}/study/build-requirements.txt
           if-no-files-found: error

@@ -111,25 +111,34 @@ def main() -> None:
     execute("venv", ["uv", "venv", "--python", sys.executable, str(venv)])
     python = venv / "Scripts/python.exe"
     execute("install", ["uv", "pip", "install", "--python", str(python), str(repaired)])
-    if args.full_python_tests:
-        requirements = root / "test-requirements.txt"
-        with requirements.open("w") as stream:
-            subprocess.run(
-                [
-                    "uv",
-                    "export",
-                    "--frozen",
-                    "--no-default-groups",
-                    "--group",
-                    "test-base",
-                    "--no-emit-project",
-                    "--no-hashes",
-                ],
-                check=True,
-                stdout=stream,
-                cwd=project,
-            )
-        execute("test-dependencies", ["uv", "pip", "install", "--python", str(python), "-r", str(requirements)])
+    requirements = root / "test-requirements.txt"
+    with requirements.open("w") as stream:
+        subprocess.run(
+            [
+                "uv",
+                "export",
+                "--frozen",
+                "--no-default-groups",
+                "--group",
+                "test-base",
+                "--no-emit-project",
+                "--no-hashes",
+            ],
+            check=True,
+            stdout=stream,
+            cwd=project,
+        )
+    execute(
+        "test-dependencies",
+        [
+            "uv",
+            "pip",
+            "install",
+            "--python",
+            str(python),
+            *(["-r", str(requirements)] if args.full_python_tests else ["--constraint", str(requirements), "numpy"]),
+        ],
+    )
     execute(
         "installed-checks",
         [

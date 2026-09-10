@@ -124,15 +124,26 @@ def run(
             free_min = min(free_min, shutil.disk_usage(cwd).free)
             if container and cgroup is None:
                 inspect = subprocess.run(
-                    ["docker", "inspect", "--format", "{{.State.Pid}}", container],
+                    [
+                        "docker",
+                        "inspect",
+                        "--format",
+                        (
+                            '{"pid":{{.State.Pid}},"image":"{{.Image}}","nano_cpus":{{.HostConfig.NanoCpus}},'
+                            '"memory":{{.HostConfig.Memory}},"memory_swap":{{.HostConfig.MemorySwap}}}'
+                        ),
+                        container,
+                    ],
                     capture_output=True,
                     text=True,
                     check=False,
                 )
-                if inspect.returncode == 0 and inspect.stdout.strip() != "0":
+                parameters = json.loads(inspect.stdout) if inspect.returncode == 0 else {}
+                if parameters.get("pid"):
+                    record["container_parameters"] = parameters
                     try:
                         relative = (
-                            Path("/proc", inspect.stdout.strip(), "cgroup")
+                            Path("/proc", str(parameters["pid"]), "cgroup")
                             .read_text(encoding="utf-8")
                             .strip()
                             .split("::", 1)[1]
