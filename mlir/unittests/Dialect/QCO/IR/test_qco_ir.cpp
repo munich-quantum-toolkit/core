@@ -140,6 +140,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  /// Cleanup may permute independent gates and tensor operations.
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
@@ -1644,8 +1645,8 @@ TEST_F(QCOTest, IfOpWithClassicalResultRoundTripsAndPreservesTies) {
   auto reparsedModule = parseSourceString<ModuleOp>(printed, context.get());
   ASSERT_TRUE(reparsedModule);
   EXPECT_TRUE(succeeded(verify(*reparsedModule)));
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(moduleOp.get(),
-                                                   reparsedModule.get()));
+  EXPECT_TRUE(
+      areModulesStructurallyEquivalent(moduleOp.get(), reparsedModule.get()));
 }
 
 TEST_F(QCOTest, IfOpRejectsMismatchedClassicalYield) {
@@ -1807,7 +1808,7 @@ TEST_F(QCOTest, IndexSwitchParser) {
             %c1 = arith.constant 1 : index
             %c0 = arith.constant 0 : index
             %c3 = arith.constant 3 : index
-            %c = cbit.alloc(#cbit.init<undefined>) : !cbit.reg<3>
+            %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<3>
             %0 = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
             %1 = scf.for %arg0 = %c0 to %c3 step %c1 iter_args(%arg1 = %0) -> (tensor<3x!qco.qubit>) {
             %5 = arith.remui %arg0, %c3 : index
@@ -1977,8 +1978,8 @@ TEST_F(QCOTest, IndexSwitchWithClassicalResultRoundTripsAndPreservesTies) {
   auto reparsedModule = parseSourceString<ModuleOp>(printed, context.get());
   ASSERT_TRUE(reparsedModule);
   EXPECT_TRUE(succeeded(verify(*reparsedModule)));
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(moduleOp.get(),
-                                                   reparsedModule.get()));
+  EXPECT_TRUE(
+      areModulesStructurallyEquivalent(moduleOp.get(), reparsedModule.get()));
 }
 
 TEST_F(QCOTest, ClassicalYieldOrderAffectsConditionalEquivalence) {

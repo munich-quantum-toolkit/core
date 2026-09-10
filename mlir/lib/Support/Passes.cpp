@@ -51,6 +51,7 @@ runWithPassManager(ModuleOp mod,
 
 void registerMQTCompilerPasses() {
   static const auto REGISTERED = [] {
+    registerTransformsPasses();
     registerConvertCBitToMemRef();
     qco::registerDecomposeMultiControlled();
     qco::registerFuseSingleQubitUnitaryRuns();
@@ -69,6 +70,9 @@ void registerMQTCompilerPasses() {
     qco::registerVerifyTargetConformance();
     mqt::registerNormalizeGlobalPhases();
     mqt::registerUnrollModifiers();
+    qc::registerShrinkQubitRegistersPass();
+    qtensor::registerShrinkQTensorToFitPass();
+    qir::registerQIRPasses();
     PassPipelineRegistration<>("mqt-qco-default",
                                "Run the default MQT QCO optimization pipeline.",
                                populateDefaultQCOOptimizationPipeline);
@@ -114,7 +118,6 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
                               const bool enableTiming,
                               const bool enableStatistics) {
   registerMQTCompilerPasses();
-  registerTransformsPasses();
   PassManager pm(mod.getContext());
   if (enableTiming) {
     pm.enableTiming();

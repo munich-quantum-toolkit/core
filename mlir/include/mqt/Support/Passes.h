@@ -26,7 +26,7 @@ mlir::LogicalResult runWithPassManager(
     mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
     mlir::StringRef errorMessage);
 
-/// Register the QCO passes and named compiler pipelines.
+/// Register the QCO passes, upstream transforms, and named compiler pipelines.
 void registerMQTCompilerPasses();
 
 /// Populate the default QCO optimization pipeline.

@@ -102,6 +102,19 @@ static void requireSuccess(const bool succeeded) {
   }
 }
 
+static void requireValid(const mlir::Program& program) {
+  if (!program.isValid()) {
+    throw std::runtime_error(
+        "This compiler program has already been consumed.");
+  }
+}
+
+template <class ProgramType>
+[[nodiscard]] static ProgramType copyProgram(const ProgramType& program) {
+  requireValid(program);
+  return program.copy();
+}
+
 namespace {
 template <auto Function> struct OptionalFunctionAdapter;
 
@@ -112,21 +125,14 @@ struct OptionalFunctionAdapter<Function> {
   }
 };
 
-template <auto Method> struct OptionalMemberAdapter;
-
-template <class Class, class T, class... Args,
-          std::optional<T> (Class::*Method)(Args...) const>
-struct OptionalMemberAdapter<Method> {
-  static T call(const Class& self, Args... args) {
-    return takeResult((self.*Method)(std::forward<Args>(args)...));
-  }
-};
-
 template <auto Method> struct BooleanMemberAdapter;
 
 template <class Class, class... Args, bool (Class::*Method)(Args...)>
 struct BooleanMemberAdapter<Method> {
   static void call(Class& self, Args... args) {
+    if constexpr (std::is_base_of_v<mlir::Program, Class>) {
+      requireValid(self);
+    }
     requireSuccess((self.*Method)(std::forward<Args>(args)...));
   }
 };
@@ -134,17 +140,13 @@ struct BooleanMemberAdapter<Method> {
 template <class Class, class... Args, bool (Class::*Method)(Args...) const>
 struct BooleanMemberAdapter<Method> {
   static void call(const Class& self, Args... args) {
+    if constexpr (std::is_base_of_v<mlir::Program, Class>) {
+      requireValid(self);
+    }
     requireSuccess((self.*Method)(std::forward<Args>(args)...));
   }
 };
 } // namespace
-
-static void requireValid(const mlir::Program& program) {
-  if (!program.isValid()) {
-    throw std::runtime_error(
-        "This compiler program has already been consumed.");
-  }
-}
 
 [[nodiscard]] static mlir::func::FuncOp
 entryFunc(const mlir::QCOProgram& program) {
@@ -285,18 +287,15 @@ programFromInput(const nb::object& program, const bool inplace) {
   }
   if (nb::isinstance<mlir::QCProgram>(program)) {
     auto& value = nb::cast<mlir::QCProgram&>(program);
-    return inplace ? mlir::CompilerInput(std::move(value))
-                   : mlir::CompilerInput(value.copy());
+    return {copiedOrConsumed(value, !inplace)};
   }
   if (nb::isinstance<mlir::QCOProgram>(program)) {
     auto& value = nb::cast<mlir::QCOProgram&>(program);
-    return inplace ? mlir::CompilerInput(std::move(value))
-                   : mlir::CompilerInput(value.copy());
+    return {copiedOrConsumed(value, !inplace)};
   }
   if (nb::isinstance<mlir::JeffProgram>(program)) {
     auto& value = nb::cast<mlir::JeffProgram&>(program);
-    return inplace ? mlir::CompilerInput(std::move(value))
-                   : mlir::CompilerInput(value.copy());
+    return {copiedOrConsumed(value, !inplace)};
   }
   if (nb::isinstance<mlir::OpenQASMProgram>(program)) {
     return {nb::cast<const mlir::OpenQASMProgram&>(program)};
@@ -1207,7 +1206,7 @@ before conversion to QCO.)pb");
           nb::sig("def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) "
                   "-> QCProgram"),
           R"pb(Translate a Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` to QC MLIR.)pb")
-      .def("copy", &mlir::QCProgram::copy,
+      .def("copy", &copyProgram<mlir::QCProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QCProgram::cleanup>::call,
            "Run the standard QC cleanup pipeline in place.")
@@ -1319,7 +1318,7 @@ operations.)pb");
           "from_mlir_file",
           &OptionalFunctionAdapter<&mlir::QCOProgram::fromMLIRFile>::call,
           "path"_a, "Parse QCO MLIR from a file.")
-      .def("copy", &mlir::QCOProgram::copy,
+      .def("copy", &copyProgram<mlir::QCOProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QCOProgram::cleanup>::call,
            "Run the standard QCO cleanup pipeline in place.")
@@ -1439,7 +1438,7 @@ further compilation.)pb");
             return takeResult(mlir::JeffProgram::fromBytes(view));
           },
           "data"_a, "Deserialize a ``jeff`` program from bytes.")
-      .def("copy", &mlir::JeffProgram::copy,
+      .def("copy", &copyProgram<mlir::JeffProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::JeffProgram::cleanup>::call,
            "Run the standard ``jeff`` cleanup pipeline in place.")
@@ -1480,15 +1479,19 @@ Set ``copy=True`` to preserve it.)pb");
 QIR programs retain their target profile and can be emitted as LLVM IR or
 LLVM bitcode.)pb");
   qirProgram
-      .def("copy", &mlir::QIRProgram::copy,
+      .def("copy", &copyProgram<mlir::QIRProgram>,
            "Return an independent copy of this program.")
       .def("cleanup", &BooleanMemberAdapter<&mlir::QIRProgram::cleanup>::call,
            "Run the standard QIR cleanup pipeline in place.")
       .def_prop_ro("profile", &mlir::QIRProgram::profile,
                    "The QIR target profile used to produce this program.")
-      .def_prop_ro("llvm_ir",
-                   &OptionalMemberAdapter<&mlir::QIRProgram::llvmIR>::call,
-                   "The program as textual LLVM IR.")
+      .def_prop_ro(
+          "llvm_ir",
+          [](const mlir::QIRProgram& value) {
+            requireValid(value);
+            return takeResult(value.llvmIR());
+          },
+          "The program as textual LLVM IR.")
       .def(
           "to_bitcode",
           [](const mlir::QIRProgram& value) {

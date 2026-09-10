@@ -567,8 +567,41 @@ def test_qco_qiskit_export_preserves_program() -> None:
         program.to_qiskit()
 
 
+@pytest.mark.parametrize("kind", ["qc", "qco", "jeff"])
+@pytest.mark.parametrize("action", ["copy", "cleanup", "compile", "compile_inplace"])
+def test_consumed_program_operations_raise(kind: str, action: str) -> None:
+    """Report consumed program use as a Python exception across binding paths."""
+    program: QCProgram | QCOProgram | JeffProgram = QCProgram.from_qasm_str(QASM_STRING)
+    if kind != "qc":
+        program = program.to_qco()
+        if kind == "jeff":
+            program = program.to_jeff()
+    if isinstance(program, QCOProgram):
+        program.to_qc()
+    else:
+        program.to_qco()
+    assert not program.is_valid
+
+    operation = {
+        "copy": program.copy,
+        "cleanup": program.cleanup,
+        "compile": lambda: compile_program(program),
+        "compile_inplace": lambda: compile_program(program, inplace=True),
+    }[action]
+    with pytest.raises(RuntimeError, match="already been consumed"):
+        operation()
+
+
+def test_consumed_jeff_write_raises(tmp_path: Path) -> None:
+    """Guard const member adapters before entering the native writer."""
+    program = QCProgram.from_qasm_str(QASM_STRING).to_qco().to_jeff()
+    program.to_qco()
+    with pytest.raises(RuntimeError, match="already been consumed"):
+        program.write(tmp_path / "consumed.jeff")
+
+
 @pytest.mark.parametrize("capability_id", [None, "forward-branching-typo"])
-def test_target_compilation_preserves_diagnostics(capability_id: str | None) -> None:
+def test_target_compilation_preserves_diagnostics(capability_id: str | None, capfd: pytest.CaptureFixture[str]) -> None:
     """Keep native control-flow legality errors in the Python exception."""
     program = QCProgram.from_qasm_str("""OPENQASM 3.0;
 include "stdgates.inc";
@@ -592,6 +625,10 @@ if (c) { x q; }
         program.compile_for_target(TargetEnvironment(target, payload))
 
     # A copy shares the context, whose diagnostic handler must be restored.
+    capfd.readouterr()
+    with pytest.raises(RuntimeError):
+        valid.run_pass_pipeline("not-a-pass")
+    assert "failed to parse pass pipeline" in capfd.readouterr().err
     valid.compile_for_target(_test_target_environment(target))
     valid.to_qc()
     with pytest.raises(RuntimeError, match="already been consumed"):

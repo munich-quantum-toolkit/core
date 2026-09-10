@@ -73,7 +73,7 @@ public:
   Program(const Program&) = delete;
   Program& operator=(const Program&) = delete;
   Program(Program&&) noexcept = default;
-  Program& operator=(Program&&) noexcept = default;
+  Program& operator=(Program&& other) noexcept;
   virtual ~Program() = default;
 
   /// Check whether this program still owns a module.

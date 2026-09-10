@@ -49,6 +49,7 @@
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/AsmState.h"
+#include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
 #include "mlir/Parser/Parser.h"
@@ -109,6 +110,20 @@ static llvm::cl::opt<std::string> outputFormat(
         "qir-adaptive, openqasm3, or jeff"),
     llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
 
+static llvm::cl::opt<std::string> passPipeline(
+    "pass-pipeline",
+    llvm::cl::desc("Module pipeline replacing the default QCO optimizations "
+                   "(e.g. builtin.module(canonicalize,cse))"));
+static llvm::cl::alias passesAlias("passes", llvm::cl::aliasopt(passPipeline),
+                                   llvm::cl::desc("Alias for --pass-pipeline"));
+static llvm::cl::opt<bool> runIsolatedPipeline(
+    "run-pipeline",
+    llvm::cl::desc("Run only --pass-pipeline on MLIR input and write MLIR"));
+static llvm::cl::opt<bool> runReproducer(
+    "run-reproducer",
+    llvm::cl::desc("Replay an MLIR file's recorded pipeline and verification "
+                   "settings, then write MLIR"));
+
 static llvm::cl::opt<bool>
     qdmiListDevices("qdmi-list-devices",
                     llvm::cl::desc("List configured QDMI device IDs and exit"),
@@ -167,24 +182,18 @@ parseInputFormat(const StringRef format, const StringRef filename) {
   return std::nullopt;
 }
 
-/// Check whether a module contains an operation from a dialect.
-[[nodiscard]] static bool moduleUsesDialect(ModuleOp mod,
-                                            const StringRef dialect) {
-  auto found = false;
-  mod->walk([&](Operation* operation) {
-    found |= operation->getDialect()->getNamespace() == dialect;
-  });
-  return found;
-}
-
 /// Detect the input dialect of a module.
 ///
 /// Defaults to QC if no QCO operation is found.
 [[nodiscard]] static InputDialect detectInputDialect(ModuleOp mod) {
-  if (moduleUsesDialect(mod, "qco")) {
-    return InputDialect::QCO;
-  }
-  return InputDialect::QC;
+  const bool hasQCO =
+      mod->walk([](Operation* operation) {
+           return operation->getDialect()->getNamespace() == "qco"
+                      ? WalkResult::interrupt()
+                      : WalkResult::advance();
+         })
+          .wasInterrupted();
+  return hasQCO ? InputDialect::QCO : InputDialect::QC;
 }
 
 /// Parse an output format.
@@ -261,7 +270,8 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
 
 /// Load and parse a `.qasm` file
 static OwningOpRef<ModuleOp> loadQASMFile(const StringRef filename,
-                                          MLIRContext* const context) {
+                                          MLIRContext* const context,
+                                          llvm::SourceMgr& sourceMgr) {
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
   if (!file) {
@@ -270,14 +280,14 @@ static OwningOpRef<ModuleOp> loadQASMFile(const StringRef filename,
     return nullptr;
   }
 
-  llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
   return qc::translateQASM3ToQC(sourceMgr, context);
 }
 
 /// Load and parse an `.mlir` file
 static OwningOpRef<ModuleOp> loadMLIRFile(const StringRef filename,
-                                          MLIRContext* const context) {
+                                          llvm::SourceMgr& sourceMgr,
+                                          const ParserConfig& parserConfig) {
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
   if (!file) {
@@ -286,9 +296,8 @@ static OwningOpRef<ModuleOp> loadMLIRFile(const StringRef filename,
     return nullptr;
   }
 
-  llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
-  return parseSourceFile<ModuleOp>(sourceMgr, context);
+  return parseSourceFile<ModuleOp>(sourceMgr, parserConfig);
 }
 
 /// Load a `.jeff` file and convert the program to QCO.
@@ -313,6 +322,9 @@ static ParsedProgram loadJeffFile(const StringRef filename,
   }
 
   PassManager pm(context);
+  if (failed(applyPassManagerCLOptions(pm))) {
+    return {};
+  }
   pm.addPass(createJeffToQCO());
   if (pm.run(*mod).failed()) {
     llvm::errs() << "Failed to convert jeff input to QCO.\n";
@@ -376,15 +388,33 @@ static int runCompiler(int argc, char** argv) {
   const llvm::InitLLVM y(argc, argv);
 
   registerMQTCompilerPasses();
+  /// Driver-owned conversion stages must also be available for replay.
+  registerQCToQCO();
+  registerQCOToQC();
+  registerJeffToQCO();
+  registerQCOToJeff();
+  registerQCToQIRBase();
+  registerQCToQIRAdaptive();
   registerAsmPrinterCLOptions();
   registerMLIRContextCLOptions();
   registerPassManagerCLOptions();
-  PassPipelineCLParser passPipeline(
-      "passes", "QCO optimization passes to run instead of the default");
 
   // Parse command-line options; exit on error and print to stderr
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
+
+  const bool isolated = runIsolatedPipeline || runReproducer;
+  if (isolated &&
+      ((runIsolatedPipeline && runReproducer) ||
+       (runIsolatedPipeline && passPipeline.getNumOccurrences() == 0) ||
+       (runReproducer && passPipeline.getNumOccurrences() != 0) ||
+       outputFormat.getNumOccurrences() != 0 || !qdmiDevice.empty() ||
+       qdmiListDevices || enableDecomposeMultiControlled)) {
+    llvm::errs() << "Use either --run-pipeline with --pass-pipeline or "
+                    "--run-reproducer, without --emit, target compilation, "
+                    "or --decompose-multi-controlled.\n";
+    return 1;
+  }
 
   if ((!qdmiConfig.empty() && configureQDMIRegistry(qdmiConfig).failed()) ||
       reportQDMIErrorIf(
@@ -425,6 +455,10 @@ static int runCompiler(int argc, char** argv) {
                  << inputFilename << "'. Use --input-format.\n";
     return 1;
   }
+  if (isolated && *parsedInputFormat != InputFormat::MLIR) {
+    llvm::errs() << "Isolated pipeline execution requires MLIR input.\n";
+    return 1;
+  }
   auto parsedOutputFormat = parseOutputFormat(outputFormat);
   if (!parsedOutputFormat) {
     llvm::errs() << "Unknown output format '" << outputFormat << "'.\n";
@@ -433,8 +467,9 @@ static int runCompiler(int argc, char** argv) {
 
   std::optional<CompilerTarget> compilerTarget;
   if (!qdmiDevice.empty()) {
-    if (reportQDMIErrorIf(passPipeline.hasAnyOccurrences(),
-                          "--qdmi-device cannot be combined with --passes.")
+    if (reportQDMIErrorIf(
+            passPipeline.getNumOccurrences() != 0,
+            "--qdmi-device cannot be combined with --pass-pipeline.")
             .failed() ||
         reportQDMIErrorIf(
             enableDecomposeMultiControlled,
@@ -467,8 +502,15 @@ static int runCompiler(int argc, char** argv) {
   func::registerInlinerExtension(registry);
   LLVM::registerInlinerInterface(registry);
 
+  llvm::SourceMgr sourceMgr;
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
+  SourceMgrDiagnosticHandler diagnosticHandler(sourceMgr, &context);
+  PassReproducerOptions reproducerOptions;
+  ParserConfig parserConfig(&context, /*verifyAfterParse=*/!runReproducer);
+  if (runReproducer) {
+    reproducerOptions.attachResourceParser(parserConfig);
+  }
 
   std::optional<PayloadSpecification> selectedPayload;
   if (!payloadSpecification.empty()) {
@@ -516,13 +558,13 @@ static int runCompiler(int argc, char** argv) {
   ParsedProgram program;
   switch (*parsedInputFormat) {
   case InputFormat::MLIR:
-    program.mod = loadMLIRFile(inputFilename, &context);
+    program.mod = loadMLIRFile(inputFilename, sourceMgr, parserConfig);
     if (program.mod) {
       program.dialect = detectInputDialect(*program.mod);
     }
     break;
   case InputFormat::QASM:
-    program.mod = loadQASMFile(inputFilename, &context);
+    program.mod = loadQASMFile(inputFilename, &context, sourceMgr);
     break;
   case InputFormat::Jeff:
     program = loadJeffFile(inputFilename, &context);
@@ -532,12 +574,59 @@ static int runCompiler(int argc, char** argv) {
     return 1;
   }
 
+  const auto parseCustomPipeline = [&](OpPassManager& pm) {
+    auto [anchor, pipeline] = StringRef(passPipeline).trim().split('(');
+    if (anchor.rtrim() != ModuleOp::getOperationName() ||
+        !pipeline.consume_back(")")) {
+      llvm::errs() << "--pass-pipeline must be anchored on builtin.module.\n";
+      return failure();
+    }
+    /// Append to the existing preparation stages using MLIR's pipeline parser.
+    return parsePassPipeline(pipeline, pm);
+  };
+
+  const auto runPasses =
+      [&](const function_ref<LogicalResult(OpPassManager&)> populate) {
+        PassManager pm(&context);
+        if (failed(applyPassManagerCLOptions(pm))) {
+          return failure();
+        }
+        if (failed(populate(pm))) {
+          return failure();
+        }
+        return pm.run(*program.mod);
+      };
+
+  if (isolated) {
+    PassManager pm(&context);
+    if (runReproducer) {
+      if (failed(reproducerOptions.apply(pm))) {
+        return 1;
+      }
+      if (pm.empty() || pm.getOpAnchorName() != ModuleOp::getOperationName()) {
+        llvm::errs() << "--run-reproducer requires a recorded, non-empty "
+                        "builtin.module pipeline.\n";
+        return 1;
+      }
+    } else if (failed(parseCustomPipeline(pm)) ||
+               failed(qco::verifyLinearity(*program.mod))) {
+      return 1;
+    }
+    if (failed(applyPassManagerCLOptions(pm)) || failed(pm.run(*program.mod))) {
+      return 1;
+    }
+    if (!runReproducer && failed(qco::verifyLinearity(*program.mod))) {
+      return 1;
+    }
+    return failed(writeOutput<ModuleOp>(*program.mod, outputFilename)) ? 1 : 0;
+  }
+
   if (*parsedOutputFormat == OutputFormat::QCImport &&
       program.dialect != InputDialect::QC) {
     llvm::errs() << "--emit=qc-import requires QC frontend input.\n";
     return 1;
   }
-  if (passPipeline.hasAnyOccurrences() &&
+  if (passPipeline.getNumOccurrences() != 0 &&
       (*parsedOutputFormat == OutputFormat::QCImport ||
        *parsedOutputFormat == OutputFormat::QCO)) {
     llvm::errs() << "--pass-pipeline requires an output that passes through "
@@ -552,18 +641,6 @@ static int runCompiler(int argc, char** argv) {
            "--decompose-multi-controlled is enabled.\n";
     return 1;
   }
-
-  const auto runPasses =
-      [&](const function_ref<LogicalResult(OpPassManager&)> populate) {
-        PassManager pm(&context);
-        if (failed(applyPassManagerCLOptions(pm))) {
-          return failure();
-        }
-        if (failed(populate(pm))) {
-          return failure();
-        }
-        return pm.run(*program.mod);
-      };
 
   if (*parsedOutputFormat != OutputFormat::QCImport &&
       program.dialect == InputDialect::QC &&
@@ -592,11 +669,8 @@ static int runCompiler(int argc, char** argv) {
           return success();
         }
         populateQCOCleanupPipeline(pm);
-        if (passPipeline.hasAnyOccurrences()) {
-          if (failed(passPipeline.addToPipeline(pm, [](const Twine& message) {
-                llvm::errs() << message << "\n";
-                return failure();
-              }))) {
+        if (passPipeline.getNumOccurrences() != 0) {
+          if (failed(parseCustomPipeline(pm))) {
             return failure();
           }
         } else {

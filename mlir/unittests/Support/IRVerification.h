@@ -14,8 +14,24 @@ namespace mlir {
 class ModuleOp;
 } // namespace mlir
 
-/// Compare two (quantum) module operations for structural equivalence, allowing
-/// some permutations. This function is especially tailored to compare quantum
-/// computations.
+/// Compare verified modules in the same context with exact operation, block,
+/// operand, attribute, and result order. Ignore locations. Forward SSA
+/// references across blocks are supported; numerical tolerances belong in
+/// semantic tests.
+[[nodiscard]] bool areModulesStructurallyEquivalent(mlir::ModuleOp,
+                                                    mlir::ModuleOp);
+
+/// Compare verified modules, including QCO linearity, with exact types,
+/// attributes and control flow. Ignore locations and module symbol order;
+/// permit independent SSA operations and supported QCO/qtensor permutations.
+/// Consecutive tensor accesses of the same kind can reorder only at distinct
+/// constant indices; dynamic or repeated slots retain their order.
+/// Preserve effect order except fresh QC/CBit/QCO allocations, linear quantum
+/// disposal, and consecutive QC deallocations. In particular, QC gates and
+/// unknown calls are not freely reordered. Region yields follow the mapped
+/// parent result positions. Blocks correspond in region order. Permutation
+/// matching requires cross-block definitions before their uses in region order;
+/// strict structural comparison does not. Matching is greedy, so failure does
+/// not prove semantic inequivalence.
 [[nodiscard]] bool areModulesEquivalentWithPermutations(mlir::ModuleOp,
                                                         mlir::ModuleOp);

@@ -131,6 +131,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  /// Cleanup may reorder independent classical constants.
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
@@ -968,7 +969,10 @@ enum class ForbiddenModifierBodyOp : std::uint8_t {
   CBitStore,
   MemoryLoad,
   MemoryStore,
-  StructuredControlFlow,
+  For,
+  While,
+  If,
+  IndexSwitch,
 };
 
 } // namespace
@@ -1011,8 +1015,14 @@ static StringRef forbiddenOperationName(ForbiddenModifierBodyOp kind) {
     return "memref.load";
   case ForbiddenModifierBodyOp::MemoryStore:
     return "memref.store";
-  case ForbiddenModifierBodyOp::StructuredControlFlow:
+  case ForbiddenModifierBodyOp::For:
+    return "scf.for";
+  case ForbiddenModifierBodyOp::While:
+    return "scf.while";
+  case ForbiddenModifierBodyOp::If:
     return "scf.if";
+  case ForbiddenModifierBodyOp::IndexSwitch:
+    return "scf.index_switch";
   }
   llvm_unreachable("unknown forbidden modifier operation");
 }
@@ -1062,22 +1072,42 @@ static void emitForbiddenModifierBodyOperation(QCProgramBuilder& builder,
   case ForbiddenModifierBodyOp::MemoryStore:
     memref::StoreOp::create(builder, value, buffer, index);
     return;
-  case ForbiddenModifierBodyOp::StructuredControlFlow:
-    builder.scfIf(true, [] {});
+  case ForbiddenModifierBodyOp::For:
+    builder.scfFor(0, 1, 1, [&](Value) { builder.x(argument); });
     return;
+  case ForbiddenModifierBodyOp::While:
+    builder.scfWhile(
+        [&] {
+          builder.x(argument);
+          builder.scfCondition(
+              arith::ConstantOp::create(builder, builder.getBoolAttr(false)));
+        },
+        [&] { builder.y(argument); });
+    return;
+  case ForbiddenModifierBodyOp::If:
+    builder.scfIf(
+        true, [&] { builder.x(argument); }, [&] { builder.y(argument); });
+    return;
+  case ForbiddenModifierBodyOp::IndexSwitch: {
+    const auto caseBody = [&] { builder.x(argument); };
+    const auto defaultBody = [&] { builder.y(argument); };
+    const SmallVector<int64_t> cases{0};
+    const SmallVector<llvm::function_ref<void()>> caseBodies{caseBody};
+    builder.scfIndexSwitch(0, cases, caseBodies, defaultBody);
+    return;
+  }
   }
   llvm_unreachable("unknown forbidden modifier operation");
 }
 
-static OwningOpRef<ModuleOp>
-buildInvalidNestedModifierProgram(MLIRContext* context,
-                                  const VerifierModifierKind modifier,
-                                  ForbiddenModifierBodyOp forbiddenOperation) {
+static OwningOpRef<ModuleOp> buildInvalidNestedModifierProgram(
+    MLIRContext* context, const VerifierModifierKind modifier,
+    ForbiddenModifierBodyOp forbiddenOperation, bool nested) {
   QCProgramBuilder builder(context);
   builder.initialize();
-  auto target = builder.allocQubit();
   auto control = builder.allocQubit();
   auto qubitReg = builder.allocQubitRegisterStorage(1);
+  auto target = builder.allocQubit();
   auto cbitReg = builder.allocClassicalBitRegister(1);
   auto bit = builder.boolConstant(false);
   auto index = arith::ConstantIndexOp::create(builder, 0);
@@ -1085,11 +1115,16 @@ buildInvalidNestedModifierProgram(MLIRContext* context,
   auto buffer = memref::AllocOp::create(
       builder, MemRefType::get({1}, builder.getI32Type()));
   const auto modifierBody = [&](Value argument) {
-    builder.inv(argument, [&](Value nestedArgument) {
+    const auto emit = [&](Value targetArgument) {
       emitForbiddenModifierBodyOperation(builder, forbiddenOperation,
-                                         nestedArgument, qubitReg, cbitReg,
+                                         targetArgument, qubitReg, cbitReg,
                                          buffer, index.getResult(), bit, value);
-    });
+    };
+    if (nested) {
+      builder.inv(argument, emit);
+    } else {
+      emit(argument);
+    }
   };
 
   switch (modifier) {
@@ -1125,45 +1160,61 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
       ForbiddenModifierBodyOp::CBitStore,
       ForbiddenModifierBodyOp::MemoryLoad,
       ForbiddenModifierBodyOp::MemoryStore,
-      ForbiddenModifierBodyOp::StructuredControlFlow,
+      ForbiddenModifierBodyOp::For,
+      ForbiddenModifierBodyOp::While,
+      ForbiddenModifierBodyOp::If,
+      ForbiddenModifierBodyOp::IndexSwitch,
   };
 
   for (auto modifier : modifiers) {
     for (const auto forbiddenOperation : forbiddenOperations) {
-      SCOPED_TRACE(testing::Message()
-                   << "modifier=" << modifierName(modifier).str()
-                   << ", operation="
-                   << forbiddenOperationName(forbiddenOperation).str());
-      auto moduleOp = buildInvalidNestedModifierProgram(context.get(), modifier,
-                                                        forbiddenOperation);
-      ASSERT_TRUE(moduleOp);
-      // Check the modifier contract independently of program allocation scope.
-      mlir::mqt::removeEntryPoint(mlir::mqt::getEntryPoint(*moduleOp));
+      for (bool nested : {false, true}) {
+        SCOPED_TRACE(testing::Message() << "nested=" << nested);
+        SCOPED_TRACE(testing::Message()
+                     << "modifier=" << modifierName(modifier).str()
+                     << ", operation="
+                     << forbiddenOperationName(forbiddenOperation).str());
+        auto moduleOp = buildInvalidNestedModifierProgram(
+            context.get(), modifier, forbiddenOperation, nested);
+        ASSERT_TRUE(moduleOp);
+        /// Check the modifier contract independently of program allocation
+        /// scope.
+        mlir::mqt::removeEntryPoint(mlir::mqt::getEntryPoint(*moduleOp));
 
-      bool sawExpectedDiagnostic = false;
-      ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic&
-                                                             diagnostic) {
-        sawExpectedDiagnostic |=
-            StringRef(diagnostic.str())
-                .contains(
-                    "body must contain only unitary operations and "
-                    "memory-effect-free classical operations without regions");
-        return success();
-      });
-      EXPECT_TRUE(failed(verify(*moduleOp)));
-      EXPECT_TRUE(sawExpectedDiagnostic);
+        bool sawExpectedDiagnostic = false;
+        ScopedDiagnosticHandler handler(
+            context.get(), [&](Diagnostic& diagnostic) {
+              sawExpectedDiagnostic |=
+                  StringRef(diagnostic.str())
+                      .contains(
+                          "body must contain only unitary operations and "
+                          "memory-effect-free classical operations without "
+                          "regions");
+              return success();
+            });
+        EXPECT_TRUE(failed(verify(*moduleOp)));
+        EXPECT_TRUE(sawExpectedDiagnostic);
+      }
     }
   }
 }
 
-static OwningOpRef<ModuleOp>
-buildInvalidModifierCaptureProgram(MLIRContext* context,
-                                   const VerifierModifierKind modifier,
-                                   const bool nested) {
+static OwningOpRef<ModuleOp> buildInvalidModifierCaptureProgram(
+    MLIRContext* context, const VerifierModifierKind modifier,
+    const bool registerBacked, const bool nested) {
   QCProgramBuilder builder(context);
   builder.initialize();
-  auto target = builder.allocQubit();
-  auto captured = builder.allocQubit();
+  Value target;
+  Value captured;
+  if (registerBacked) {
+    auto reg = builder.allocQubitRegisterStorage(2);
+    target = builder.loadQubit(reg, arith::ConstantIndexOp::create(builder, 0));
+    captured =
+        builder.loadQubit(reg, arith::ConstantIndexOp::create(builder, 1));
+  } else {
+    target = builder.allocQubit();
+    captured = builder.allocQubit();
+  }
   auto control = builder.allocQubit();
   const auto modifierBody = [&](Value) {
     if (nested) {
@@ -1211,25 +1262,28 @@ TEST_F(QCTest, ModifiersRejectDirectAndNestedQubitCaptures) {
   };
 
   for (const auto modifier : modifiers) {
-    for (const bool nested : {false, true}) {
-      SCOPED_TRACE(testing::Message()
-                   << "modifier=" << modifierName(modifier).str()
-                   << ", nested=" << nested);
-      auto moduleOp =
-          buildInvalidModifierCaptureProgram(context.get(), modifier, nested);
-      ASSERT_TRUE(moduleOp);
+    for (const bool registerBacked : {false, true}) {
+      for (const bool nested : {false, true}) {
+        SCOPED_TRACE(testing::Message()
+                     << "modifier=" << modifierName(modifier).str()
+                     << ", register_backed=" << registerBacked
+                     << ", nested=" << nested);
+        auto moduleOp = buildInvalidModifierCaptureProgram(
+            context.get(), modifier, registerBacked, nested);
+        ASSERT_TRUE(moduleOp);
 
-      bool sawExpectedDiagnostic = false;
-      ScopedDiagnosticHandler handler(
-          context.get(), [&](Diagnostic& diagnostic) {
-            sawExpectedDiagnostic |=
-                StringRef(diagnostic.str())
-                    .contains("body must not capture qubits from above; use "
-                              "only its aliased block arguments");
-            return success();
-          });
-      EXPECT_TRUE(failed(verify(*moduleOp)));
-      EXPECT_TRUE(sawExpectedDiagnostic);
+        bool sawExpectedDiagnostic = false;
+        ScopedDiagnosticHandler handler(
+            context.get(), [&](Diagnostic& diagnostic) {
+              sawExpectedDiagnostic |=
+                  StringRef(diagnostic.str())
+                      .contains("body must not capture qubits from above; use "
+                                "only its aliased block arguments");
+              return success();
+            });
+        EXPECT_TRUE(failed(verify(*moduleOp)));
+        EXPECT_TRUE(sawExpectedDiagnostic);
+      }
     }
   }
 }

@@ -1003,9 +1003,14 @@ void QIRProgramBuilder::ensureResultAllocationMode(
 void QIRProgramBuilder::generateOutputRecording() {
   InsertionGuard guard(*this);
   setInsertionPoint(outputBlock->getTerminator());
-  emitOutputRecording(*this, module,
-                      llvm::to_vector(llvm::make_second_range(cregs)),
-                      scalarResults);
+  /// Registers receive consecutive cN labels when allocated. Finalization
+  /// consumes their descriptors in that order without copying result vectors.
+  SmallVector<ClassicalRegister> registers;
+  registers.reserve(cregs.size());
+  for (size_t i = 0; i < cregs.size(); ++i) {
+    registers.push_back(std::move(cregs.find("c" + std::to_string(i))->second));
+  }
+  emitOutputRecording(*this, module, registers, scalarResults);
 }
 
 OwningOpRef<ModuleOp> QIRProgramBuilder::finalize() {

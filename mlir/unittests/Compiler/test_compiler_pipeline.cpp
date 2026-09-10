@@ -208,6 +208,14 @@ protected:
     ASSERT_TRUE(actual) << stage << " failed to parse";
     EXPECT_TRUE(verify(*actual).succeeded());
     EXPECT_TRUE(verify(expected).succeeded());
+    /// Compare the same parser representation: LLVM builders can omit optional
+    /// default properties that the textual parser materializes (unnamed_addr).
+    std::string referenceIR;
+    llvm::raw_string_ostream referenceStream(referenceIR);
+    expected.print(referenceStream);
+    auto parsedExpected = parseRecordedModule(referenceIR);
+    ASSERT_TRUE(parsedExpected);
+    expected = parsedExpected.get();
     // Dedicated translation and QIR-lowering tests cover exact source labels.
     // The shared program fixtures use synthesized cN labels, so exclude labels
     // from their structural program comparison.
@@ -576,6 +584,29 @@ h q;
                          ProgramFormat::QCOOptimized, "hadamard-lifting");
   ASSERT_TRUE(result);
   EXPECT_FALSE(std::get<QCOProgram>(*result).str().empty());
+}
+
+TEST_F(CompilerPipelineTest, MoveAssignmentKeepsModuleContextAlive) {
+  auto first = QCProgram::fromQASMString("OPENQASM 3.0; qubit q; h q;");
+  auto second = QCProgram::fromQASMString("OPENQASM 3.0; qubit q; x q;");
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(second);
+  ASSERT_NE(first->module().getContext(), second->module().getContext());
+  auto expected = second->module();
+
+  *first = std::move(*second);
+
+  EXPECT_FALSE(second->isValid());
+  ASSERT_TRUE(first->isValid());
+  EXPECT_EQ(first->module(), expected);
+  EXPECT_TRUE(succeeded(verify(first->module())));
+
+  /// A self move must retain the module and its context.
+  auto& alias = *first;
+  *first = std::move(alias);
+  ASSERT_TRUE(first->isValid());
+  EXPECT_EQ(first->module(), expected);
+  EXPECT_TRUE(succeeded(verify(first->module())));
 }
 
 // Test: typed programs transfer ownership between compiler dialects
