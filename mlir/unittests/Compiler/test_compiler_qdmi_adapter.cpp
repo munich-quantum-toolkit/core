@@ -533,6 +533,7 @@ TEST(CompilerQDMIAdapterTest,
   const auto makeEnvironment =
       [](std::vector<std::vector<CompilerTarget::SiteId>> tuples) {
         std::vector<CompilerTarget::SiteTuple> siteTuples;
+        siteTuples.reserve(tuples.size());
         for (auto& tuple : tuples) {
           siteTuples.push_back(llvm::cantFail(
               CompilerTarget::SiteTuple::create(std::move(tuple))));
@@ -540,9 +541,11 @@ TEST(CompilerQDMIAdapterTest,
         const auto operation = llvm::cantFail(CompilerTarget::Operation::create(
             "cx", 2, 0, std::move(siteTuples)));
         const auto target = llvm::cantFail(CompilerTarget::create(
-            {llvm::cantFail(CompilerTarget::Site::create(0)),
-             llvm::cantFail(CompilerTarget::Site::create(1)),
-             llvm::cantFail(CompilerTarget::Site::create(2))},
+            {
+                llvm::cantFail(CompilerTarget::Site::create(0)),
+                llvm::cantFail(CompilerTarget::Site::create(1)),
+                llvm::cantFail(CompilerTarget::Site::create(2)),
+            },
             CompilerTarget::Connectivity::allToAll(),
             CompilerTarget::NativeOperations::fromOperations({operation})));
         return mlir::TargetEnvironment(
