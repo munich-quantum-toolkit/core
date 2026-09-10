@@ -23,6 +23,7 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Support/Passes.h"
+#include "mqt/Support/Verification.h"
 
 #include "capnp/common.h"
 #include "jeff/Translation/Deserialize.hpp"
@@ -77,7 +78,8 @@ runPasses(ModuleOp mod, llvm::function_ref<void(OpPassManager&)> populatePasses,
     pm.enableStatistics();
   }
   populatePasses(pm);
-  if (failed(pm.run(mod))) {
+  if (failed(mqt::verifyProgramParameters(mod)) || failed(pm.run(mod)) ||
+      failed(mqt::verifyProgramParameters(mod))) {
     return mod.emitError(failureMessage);
   }
   return success();
@@ -108,7 +110,9 @@ bool QCProgram::cleanup() {
 }
 
 bool QCProgram::normalizeGlobalPhases() {
-  return succeeded(mqt::normalizeGlobalPhases(mod()));
+  return succeeded(mqt::verifyProgramParameters(mod())) &&
+         succeeded(mqt::normalizeGlobalPhases(mod())) &&
+         succeeded(mqt::verifyProgramParameters(mod()));
 }
 
 std::optional<OpenQASMProgram> QCProgram::toOpenQASM3() const {
@@ -159,7 +163,9 @@ bool QCOProgram::normalizeGlobalPhases() {
   if (!hasValidLinearity()) {
     return false;
   }
-  return succeeded(mqt::normalizeGlobalPhases(mod())) && hasValidLinearity();
+  return succeeded(mqt::verifyProgramParameters(mod())) &&
+         succeeded(mqt::normalizeGlobalPhases(mod())) &&
+         succeeded(mqt::verifyProgramParameters(mod())) && hasValidLinearity();
 }
 
 bool QCOProgram::runPassPipeline(std::string_view pipeline, bool enableTiming,

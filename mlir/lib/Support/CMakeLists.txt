@@ -11,6 +11,7 @@ add_mlir_library(
   IntegerExpressions.cpp
   Passes.cpp
   PrettyPrinting.cpp
+  Verification.cpp
   ADDITIONAL_HEADER_DIRS
   ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Support
   LINK_LIBS
@@ -20,6 +21,9 @@ add_mlir_library(
   MLIRArithDialect
   MLIRLLVMDialect
   MLIRMathDialect
+  MLIRMQTUtils
+  MLIRQCDialect
+  MLIRQCODialect
   MLIRPass
   MLIRTransforms
   MLIRControlFlowInterfaces

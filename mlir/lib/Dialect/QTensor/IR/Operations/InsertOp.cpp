@@ -19,6 +19,12 @@
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallVector.h"
+
+#include <cstddef>
+#include <cstdint>
+
 using namespace mlir;
 using namespace mlir::qtensor;
 
@@ -40,15 +46,15 @@ struct FoldInsertAfterExtract final : OpRewritePattern<InsertOp> {
   }
 };
 
-/// Commutes a directly chained insert and extract at provably distinct
-/// constant indices.
-struct CommuteAdjacentInsertExtractPattern final : OpRewritePattern<InsertOp> {
+/// Group commuting extracts before inserts in one traversal of the SSA chain.
+struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(InsertOp insert,
                                 PatternRewriter& rewriter) const override {
     auto extract = dyn_cast<ExtractOp>(*insert.getResult().getUsers().begin());
-    if (!extract || insert->getBlock() != extract->getBlock()) {
+    if (!extract || insert->getBlock() != extract->getBlock() ||
+        !insert->isBeforeInBlock(extract)) {
       return failure();
     }
 
@@ -58,18 +64,93 @@ struct CommuteAdjacentInsertExtractPattern final : OpRewritePattern<InsertOp> {
       return failure();
     }
 
-    Value tensorBeforeInsert = insert.getDest();
-    Value tensorAfterExtract = extract.getOutTensor();
-    Value tensorAfterInsert = insert.getResult();
+    /// A bottom-up greedy walk may reach the last pair first. Include the
+    /// commuting prefix too, rather than normalizing every suffix separately.
+    auto firstInsert = insert;
+    llvm::SmallDenseSet<int64_t> extractedIndices{*extractIndex};
+    auto tensor = insert.getDest();
+    while (auto* definingOp = tensor.getDefiningOp()) {
+      if (definingOp->getBlock() != insert->getBlock() ||
+          !definingOp->isBeforeInBlock(firstInsert)) {
+        break;
+      }
+      if (auto previousExtract = dyn_cast<ExtractOp>(definingOp)) {
+        const auto index = getConstantIntValue(previousExtract.getIndex());
+        if (!index) {
+          break;
+        }
+        extractedIndices.insert(*index);
+        tensor = previousExtract.getTensor();
+      } else if (auto previousInsert = dyn_cast<InsertOp>(definingOp)) {
+        const auto index = getConstantIntValue(previousInsert.getIndex());
+        if (!index || extractedIndices.contains(*index)) {
+          break;
+        }
+        firstInsert = previousInsert;
+        tensor = previousInsert.getDest();
+      } else {
+        break;
+      }
+    }
 
-    rewriter.moveOpAfter(insert, extract);
-    rewriter.modifyOpInPlace(extract, [&] {
-      extract.getTensorMutable().assign(tensorBeforeInsert);
-    });
-    rewriter.modifyOpInPlace(
-        insert, [&] { insert.getDestMutable().assign(tensorAfterExtract); });
-    rewriter.replaceAllUsesExcept(tensorAfterExtract, tensorAfterInsert,
-                                  insert);
+    SmallVector<InsertOp> inserts{firstInsert};
+    SmallVector<ExtractOp> extracts;
+    llvm::SmallDenseSet<int64_t> insertedIndices{
+        *getConstantIntValue(firstInsert.getIndex()),
+    };
+    size_t numInsertsToMove = 0;
+    tensor = firstInsert.getResult();
+    Operation* previous = firstInsert;
+    while (true) {
+      auto* user = *tensor.user_begin();
+      if (user->getBlock() != insert->getBlock() ||
+          !previous->isBeforeInBlock(user)) {
+        break;
+      }
+      if (auto nextInsert = dyn_cast<InsertOp>(user)) {
+        const auto index = getConstantIntValue(nextInsert.getIndex());
+        if (!index) {
+          break;
+        }
+        insertedIndices.insert(*index);
+        inserts.push_back(nextInsert);
+        tensor = nextInsert.getResult();
+      } else if (auto nextExtract = dyn_cast<ExtractOp>(user)) {
+        const auto index = getConstantIntValue(nextExtract.getIndex());
+        if (!index || insertedIndices.contains(*index)) {
+          break;
+        }
+        extracts.push_back(nextExtract);
+        numInsertsToMove = inserts.size();
+        tensor = nextExtract.getOutTensor();
+      } else {
+        break;
+      }
+      previous = user;
+    }
+    if (extracts.empty()) {
+      return failure();
+    }
+
+    /// Leave trailing inserts in place: their operands may follow the last
+    /// extract. Earlier inserts' operands dominate their new positions.
+    inserts.resize(numInsertsToMove);
+    auto tail = extracts.back().getOutTensor();
+    tensor = firstInsert.getDest();
+    for (auto nextExtract : extracts) {
+      rewriter.modifyOpInPlace(
+          nextExtract, [&] { nextExtract.getTensorMutable().assign(tensor); });
+      tensor = nextExtract.getOutTensor();
+    }
+    previous = extracts.back();
+    for (auto nextInsert : inserts) {
+      rewriter.moveOpAfter(nextInsert, previous);
+      rewriter.modifyOpInPlace(
+          nextInsert, [&] { nextInsert.getDestMutable().assign(tensor); });
+      tensor = nextInsert.getResult();
+      previous = nextInsert;
+    }
+    rewriter.replaceAllUsesExcept(tail, tensor, inserts.front());
     return success();
   }
 };
@@ -99,6 +180,5 @@ LogicalResult InsertOp::verify() {
 
 void InsertOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                            MLIRContext* context) {
-  results.add<FoldInsertAfterExtract, CommuteAdjacentInsertExtractPattern>(
-      context);
+  results.add<FoldInsertAfterExtract, CommuteInsertExtractChains>(context);
 }

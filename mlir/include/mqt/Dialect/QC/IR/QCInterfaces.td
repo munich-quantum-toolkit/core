@@ -26,7 +26,9 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
 
         Every statically known floating-point value in a parameter expression
         must be finite. Dynamic parameter values have the same runtime
-        precondition.
+        precondition. Operation verification checks direct constant parameters.
+        `mqt::verifyProgramParameters` checks expression graphs once per program
+        at compiler boundaries.
     }];
 
   let cppNamespace = "::mlir::qc";

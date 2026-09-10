@@ -16,6 +16,7 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 #include "mqt/Dialect/QIR/Transforms/Passes.h"
 #include "mqt/Dialect/QTensor/Transforms/Passes.h"
+#include "mqt/Support/Verification.h"
 
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Pass/PassManager.h"
@@ -42,7 +43,8 @@ runWithPassManager(ModuleOp mod,
                    const StringRef errorMessage) {
   PassManager pm(mod.getContext());
   populatePasses(pm);
-  if (pm.run(mod).failed()) {
+  if (failed(mqt::verifyProgramParameters(mod)) || failed(pm.run(mod)) ||
+      failed(mqt::verifyProgramParameters(mod))) {
     llvm::errs() << errorMessage << "\n";
     return failure();
   }
@@ -126,7 +128,10 @@ LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
     return mod.emitError() << "failed to parse pass pipeline '" << pipeline
                            << "'";
   }
-  return pm.run(mod);
+  if (failed(mqt::verifyProgramParameters(mod)) || failed(pm.run(mod))) {
+    return failure();
+  }
+  return mqt::verifyProgramParameters(mod);
 }
 
 void populateQCExportPipeline(OpPassManager& pm) {

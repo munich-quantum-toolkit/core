@@ -23,3 +23,20 @@ file(WRITE "${input_file}" "module {\n")
 require_failure("invalid MLIR" "expected operation name" "${MQT_CC}" "${input_file}")
 require_failure("nonlinear QCO" "expected linear QCO value to have exactly one use" "${MQT_CC}"
                 "${NONLINEAR_QCO_INPUT}" "--emit=qco")
+
+file(
+  WRITE "${input_file}"
+  [=[
+module {
+  func.func @main(%input: f64) {
+    %q = qc.alloc : !qc.qubit
+    %infinity = arith.constant 0x7FF0000000000000 : f64
+    %theta = arith.addf %input, %infinity : f64
+    qc.rx(%theta) %q : !qc.qubit
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+]=])
+require_failure("non-finite QC import" "constant parameter expression at index 0 must be finite"
+                "${MQT_CC}" "${input_file}" "--emit=qc-import")

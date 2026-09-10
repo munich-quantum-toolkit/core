@@ -110,4 +110,47 @@ TEST_F(CBitCanonicalizationTest, DoesNotForwardAcrossWholeRegisterWrite) {
   EXPECT_TRUE(returned.getOperand(1).getDefiningOp<cbit::ReadOp>());
 }
 
+TEST_F(CBitCanonicalizationTest,
+       RepeatedLoadsPreserveRegistersIndicesAndInterveningStores) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @test(%reg: !cbit.reg<2>, %other: !cbit.reg<2>,
+                      %index: index, %other_index: index, %value: i1)
+          -> (i1, i1, i1, i1, i1) {
+        %first = cbit.load %reg[%index] : !cbit.reg<2>
+        %repeated = cbit.load %reg[%index] : !cbit.reg<2>
+        %other_reg = cbit.load %other[%index] : !cbit.reg<2>
+        %other_bit = cbit.load %reg[%other_index] : !cbit.reg<2>
+        cbit.store %value, %reg[%index] : !cbit.reg<2>
+        %written = cbit.load %reg[%index] : !cbit.reg<2>
+        return %first, %repeated, %other_reg, %other_bit, %written
+            : i1, i1, i1, i1, i1
+      }
+    }
+  )mlir",
+                                              &context_);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(canonicalize(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("test");
+  auto returned =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  EXPECT_EQ(returned.getOperand(0), returned.getOperand(1));
+  auto first = returned.getOperand(0).getDefiningOp<cbit::LoadOp>();
+  auto otherReg = returned.getOperand(2).getDefiningOp<cbit::LoadOp>();
+  auto otherBit = returned.getOperand(3).getDefiningOp<cbit::LoadOp>();
+  ASSERT_TRUE(first);
+  ASSERT_TRUE(otherReg);
+  ASSERT_TRUE(otherBit);
+  EXPECT_EQ(first.getReg(), function.getArgument(0));
+  EXPECT_EQ(first.getIndex(), function.getArgument(2));
+  EXPECT_EQ(otherReg.getReg(), function.getArgument(1));
+  EXPECT_EQ(otherReg.getIndex(), function.getArgument(2));
+  EXPECT_EQ(otherBit.getReg(), function.getArgument(0));
+  EXPECT_EQ(otherBit.getIndex(), function.getArgument(3));
+  EXPECT_EQ(returned.getOperand(4), function.getArgument(4));
+}
+
 } // namespace

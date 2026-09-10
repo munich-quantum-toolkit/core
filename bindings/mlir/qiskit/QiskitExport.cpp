@@ -22,6 +22,7 @@
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 #include "mqt/Support/IntegerExpressions.h"
+#include "mqt/Support/Verification.h"
 
 #include "Qiskit.h" // IWYU pragma: keep
 #include "QiskitTranslation.h"
@@ -3004,6 +3005,9 @@ nb::object exportCircuit(const mlir::QCProgram& program,
                          const mlir::CompilerTarget* const target) {
   mlir::OwningOpRef<mlir::ModuleOp> expanded = program.module().clone();
   auto moduleOp = *expanded;
+  if (mlir::failed(mlir::mqt::verifyProgramParameters(moduleOp))) {
+    throw std::runtime_error("QC to Qiskit export requires finite parameters");
+  }
   mlir::RewritePatternSet patterns(moduleOp.getContext());
   mlir::mqt::populateIntegerExpansionPatterns(patterns);
   /// Fold scalar expressions without applying resource or snapshot rewrites.

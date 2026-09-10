@@ -10,6 +10,7 @@
 
 #include "mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h"
 
+#include "mqt/Support/Verification.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 
 #include "OpenQASMToQCEmitter.h"
@@ -18,7 +19,6 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
-#include "mlir/IR/Verifier.h"
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/Support/MemoryBuffer.h"
@@ -48,7 +48,7 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
   if (!moduleOp) {
     return nullptr;
   }
-  if (failed(verify(*moduleOp))) {
+  if (failed(mqt::verifyProgramParameters(*moduleOp))) {
     return nullptr;
   }
   return moduleOp;

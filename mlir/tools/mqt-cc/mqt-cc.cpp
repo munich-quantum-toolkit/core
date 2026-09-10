@@ -31,6 +31,7 @@
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Support/Passes.h"
+#include "mqt/Support/Verification.h"
 
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/Translation/Deserialize.hpp"
@@ -528,7 +529,7 @@ static int runCompiler(int argc, char** argv) {
     program = loadJeffFile(inputFilename, &context);
     break;
   }
-  if (!program.mod) {
+  if (!program.mod || failed(mqt::verifyProgramParameters(*program.mod))) {
     return 1;
   }
 
@@ -562,7 +563,11 @@ static int runCompiler(int argc, char** argv) {
         if (failed(populate(pm))) {
           return failure();
         }
-        return pm.run(*program.mod);
+        if (failed(mqt::verifyProgramParameters(*program.mod)) ||
+            failed(pm.run(*program.mod))) {
+          return failure();
+        }
+        return mqt::verifyProgramParameters(*program.mod);
       };
 
   if (*parsedOutputFormat != OutputFormat::QCImport &&

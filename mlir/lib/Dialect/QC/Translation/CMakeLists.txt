@@ -37,7 +37,8 @@ add_mlir_library(
   MLIRUBDialect
   MLIRQCDialect
   MLIRQCProgramBuilder
-  MLIRQCTranslationSupport)
+  MLIRQCTranslationSupport
+  MLIRSupportMQT)
 
 mqt_mlir_target_use_project_options(MLIRQCOpenQASMTranslation)
 

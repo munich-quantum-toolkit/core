@@ -10,25 +10,21 @@
 
 #include "mqt/Dialect/MQT/Utils/Parameters.h"
 
-#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
-
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/Builders.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/Location.h"
+#include "mlir/IR/Matchers.h"
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
-#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/STLExtras.h"
 
-#include <cstddef>
 #include <cstdint>
-#include <optional>
 
 namespace mlir::mqt {
 
@@ -48,42 +44,15 @@ Value constantFromScalar(OpBuilder& builder, Location loc, const bool value) {
 
 LogicalResult verifyFiniteConstantParameters(Operation* operation,
                                              ValueRange parameters) {
-  const auto verifyFinite = [&](Attribute constant,
-                                size_t index) -> LogicalResult {
-    if (auto floating = dyn_cast<FloatAttr>(constant);
-        floating && !floating.getValue().isFinite()) {
-      return operation->emitOpError()
-             << "constant parameter expression at index " << index
-             << " must be finite";
-    }
-    return success();
-  };
-  DenseMap<Value, std::optional<Attribute>> constantCache;
-  DenseSet<Value> visited;
-  for (const auto [index, parameter] : llvm::enumerate(parameters)) {
-    if (auto constant = parameter.getDefiningOp<arith::ConstantOp>()) {
-      if (failed(verifyFinite(constant.getValue(), index))) {
-        return failure();
+  for (auto [index, parameter] : llvm::enumerate(parameters)) {
+    Attribute constant;
+    if (matchPattern(parameter, m_Constant(&constant))) {
+      if (auto floating = dyn_cast<FloatAttr>(constant);
+          floating && !floating.getValue().isFinite()) {
+        return operation->emitOpError()
+               << "constant parameter expression at index " << index
+               << " must be finite";
       }
-      continue;
-    }
-    SmallVector<Value> worklist{parameter};
-    while (!worklist.empty()) {
-      auto value = worklist.pop_back_val();
-      if (!visited.insert(value).second) {
-        continue;
-      }
-      if (const auto constant = valueToConstantAttr(value, constantCache)) {
-        if (failed(verifyFinite(*constant, index))) {
-          return failure();
-        }
-      }
-      Operation* definingOp = value.getDefiningOp();
-      if (definingOp == nullptr || definingOp->getNumRegions() != 0 ||
-          !isPure(definingOp)) {
-        continue;
-      }
-      llvm::append_range(worklist, definingOp->getOperands());
     }
   }
   return success();
