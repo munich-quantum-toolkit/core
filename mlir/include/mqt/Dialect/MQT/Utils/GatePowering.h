@@ -28,9 +28,9 @@ namespace mlir::mqt {
 /// exponent does not lose a fractional part.
 [[nodiscard]] unsigned getFixedGatePowerPeriod(StringRef baseSymbol);
 
-/// Evaluate U(theta, phi, lambda) in row-major order for finite input angles.
-/// Compose phase factors without adding angles, so large finite parameters
-/// cannot overflow or absorb a fixed phase offset. Callers validate finiteness.
+/// Evaluate U(θ, φ, λ) in row-major order for finite input angles. Compose
+/// phase factors without adding angles, so large finite parameters cannot
+/// overflow or absorb a fixed phase offset. Callers validate finiteness.
 [[nodiscard]] std::array<std::complex<double>, 4>
 computeUMatrix(double theta, double phi, double lambda);
 
@@ -46,7 +46,7 @@ inline constexpr double U_POWER_EQUIVALENCE_TOLERANCE = 5e-13;
 /// Parameters representing a powered U gate.
 ///
 /// All values are in radians. The phase satisfies
-/// `U(input)^exponent = exp(i * phase) * U(theta, phi, lambda)`.
+/// `U(input)^exponent = exp(i * phase) * U(θ, φ, λ)`.
 struct UPowerParameters {
   double theta;  ///< Resulting U rotation angle.
   double phi;    ///< Resulting U phi angle.
@@ -63,7 +63,7 @@ struct UPowerParameters {
 /// Compute a positive integral power of a constant U gate.
 ///
 /// @return Parameters satisfying
-/// `U(theta, phi, lambda)^exponent = exp(i*phase) * U(result)`, or
+/// `U(θ, φ, λ)^exponent = exp(i*phase) * U(result)`, or
 /// `std::nullopt` if @p exponent is not a positive integer no greater than
 /// `MAX_SAFE_U_POWER_EXPONENT`, an input is not finite, or the binary64 result
 /// cannot be reconstructed within `U_POWER_EQUIVALENCE_TOLERANCE`.

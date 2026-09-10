@@ -35,12 +35,12 @@ inline constexpr double MAX_GLOBAL_PHASE_ANGLE = 1.0e4;
 /// Named gates represented by a constant P-gate angle.
 enum class PhaseGate { Identity, Z, S, Sdg, T, Tdg };
 
-/// Classify a finite phase angle modulo 2*pi using the parameter tolerance.
+/// Classify a finite phase angle modulo 2*π using the parameter tolerance.
 ///
 /// Return no value when the angle needs a general P gate.
 [[nodiscard]] std::optional<PhaseGate> classifyPhaseGate(double angle);
 
-/// Normalize an angle to (-pi, pi].
+/// Normalize an angle to (-π, π].
 [[nodiscard]] double normalizeAngle(double theta);
 
 /// Check the compiler-wide global-phase angle contract.

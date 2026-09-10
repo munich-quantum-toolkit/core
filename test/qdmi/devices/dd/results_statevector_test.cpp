@@ -330,7 +330,7 @@ TEST(ResultsStatevector, QIRBaseStringYieldsBellState) {
   const auto vec = qdmi_test::getDenseState(j.job);
   ASSERT_EQ(vec.size(), 4U);
 
-  // Bell pair: amplitudes at |00> and |11> are 1/sqrt(2), |01> and |10> are 0.
+  // Bell pair: amplitudes at |00⟩ and |11⟩ are 1/sqrt(2), |01⟩ and |10⟩ are 0.
   constexpr double invSqrt2 = 1.0 / std::numbers::sqrt2;
   EXPECT_NEAR(std::abs(vec[0]), invSqrt2, 1e-6);
   EXPECT_NEAR(std::abs(vec[1]), 0.0, 1e-6);

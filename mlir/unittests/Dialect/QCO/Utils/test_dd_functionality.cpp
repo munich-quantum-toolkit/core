@@ -935,7 +935,7 @@ TEST_F(QCODDFunctionalityTest, SimulateIndexSwitchBranches) {
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIf) {
-  // |1> measure is deterministic; then-branch identity keeps |1>.
+  // |1⟩ measure is deterministic; then-branch identity keeps |1⟩.
   auto mod = buildModule([](QCOProgramBuilder& b) {
     const auto inputQ = b.x(b.staticQubit(0));
     auto [q, bit] = b.measure(inputQ);
@@ -1103,7 +1103,7 @@ TEST_F(QCODDFunctionalityTest, SimulateWholeCBitRegisterReadAndWrite) {
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateMeasureFeedsIndexSwitch) {
-  // |1> → measure → index_castui → index_switch case 1 applies X → |0>.
+  // |1⟩ → measure → index_castui → index_switch case 1 applies X → |0⟩.
   auto mod = buildModule([](QCOProgramBuilder& b) {
     const auto inputQ = b.x(b.staticQubit(0));
     auto [q, bit] = b.measure(inputQ);
@@ -1152,8 +1152,8 @@ TEST_F(QCODDFunctionalityTest, SimulateExtUI) {
 }
 
 TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
-  // Pack two measure bits (from |1>,|0>) as index = bit0 | (bit1 << 1) = 1,
-  // then switch case 1 applies X on an idle |0> target → |1>.
+  // Pack two measure bits (from |1⟩,|0⟩) as index = bit0 | (bit1 << 1) = 1,
+  // then switch case 1 applies X on an idle |0⟩ target → |1⟩.
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q0 = b.x(b.staticQubit(0));
     auto q1 = b.staticQubit(1);
@@ -1194,7 +1194,7 @@ TEST_F(QCODDFunctionalityTest, SimulateAndiOriShliClassical) {
 
   auto dd = std::make_unique<dd::Package>(3);
   std::mt19937_64 rng(11);
-  // Final computational basis: |1>|0>|1> after measures and case-1 X on q2.
+  // Final computational basis: |1⟩|0⟩|1⟩ after measures and case-1 X on q2.
   auto expected = dd::makeZeroState(3, *dd);
   expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {0}), expected);
   expected = dd->applyOperation(referenceGateDD<XOp>(*dd, {2}), expected);
@@ -1335,7 +1335,7 @@ TEST_F(QCODDFunctionalityTest, SampleResetUsesDynamicSampling) {
 }
 
 TEST_F(QCODDFunctionalityTest, SampleDynamicMeasureIf) {
-  // |1> measure then identity branch; final measureAll is always "1".
+  // |1⟩ measure then identity branch; final measureAll is always "1".
   auto mod = buildModule([](QCOProgramBuilder& b) {
     const auto inputQ = b.x(b.staticQubit(0));
     auto [q, bit] = b.measure(inputQ);

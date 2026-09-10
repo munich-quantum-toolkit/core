@@ -44,8 +44,7 @@ using namespace mlir::qco;
 
 namespace {
 
-/// Move nested control modifiers outside, i.e., `inv(ctrl(x)) =>
-/// ctrl(inv(x))`.
+/// Move nested control modifiers outside, i.e., `inv(ctrl(x)) → ctrl(inv(x))`.
 struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -110,11 +109,11 @@ struct MoveCtrlOutsideInv final : OpRewritePattern<InvOp> {
 };
 
 /// Eliminate inv by negating the pow exponent, i.e.,
-/// `inv(pow(p){U}) => pow(-p){U}`.
+/// `inv(pow(p){U}) → pow(-p){U}`.
 ///
 /// This is always valid for unitaries: `(U^p)† = U^{-p}`.
 /// Downstream patterns (e.g., `NegPowToInvPow`) can then rewrite
-/// `pow(-p){U} => pow(p){inv(U)}` when the exponent is an integer.
+/// `pow(-p){U} → pow(p){inv(U)}` when the exponent is an integer.
 struct InvPowToNegPow final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -346,7 +345,7 @@ struct ReplaceWithKnownGates final : OpRewritePattern<InvOp> {
   }
 };
 
-/// Cancel nested inverse modifiers, i.e., `inv(inv(x)) => x`.
+/// Cancel nested inverse modifiers, i.e., `inv(inv(x)) → x`.
 struct CancelNestedInv final : OpRewritePattern<InvOp> {
   using OpRewritePattern::OpRewritePattern;
 

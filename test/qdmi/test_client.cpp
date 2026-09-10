@@ -1164,28 +1164,28 @@ TEST_F(SimulatorJobTest, getDenseStateVectorReturnsValidState) {
   EXPECT_TRUE(job.wait());
 
   const auto stateVector = job.getDenseStateVector();
-  EXPECT_EQ(stateVector.size(), 4); // 2 qubits -> 4 amplitudes
+  EXPECT_EQ(stateVector.size(), 4); // 2 qubits → 4 amplitudes
 
-  // The expected state is (|00> + |11>)/sqrt(2)
+  // The expected state is (|00⟩ + |11⟩)/sqrt(2)
   constexpr double invSqrt2 = 1.0 / std::numbers::sqrt2;
-  EXPECT_NEAR(std::abs(stateVector[0]), invSqrt2, 1e-10); // |00>
-  EXPECT_NEAR(std::abs(stateVector[1]), 0.0, 1e-10);      // |01>
+  EXPECT_NEAR(std::abs(stateVector[0]), invSqrt2, 1e-10); // |00⟩
+  EXPECT_NEAR(std::abs(stateVector[1]), 0.0, 1e-10);      // |01⟩
   EXPECT_NEAR(std::abs(stateVector[2]), 0.0, 1e-10);
-  EXPECT_NEAR(std::abs(stateVector[3]), invSqrt2, 1e-10); // |11>
+  EXPECT_NEAR(std::abs(stateVector[3]), invSqrt2, 1e-10); // |11⟩
 }
 
 TEST_F(SimulatorJobTest, getDenseProbabilitiesReturnsValidProbabilities) {
   EXPECT_TRUE(job.wait());
 
   const auto probabilities = job.getDenseProbabilities();
-  EXPECT_EQ(probabilities.size(), 4); // 2 qubits -> 4 probabilities
+  EXPECT_EQ(probabilities.size(), 4); // 2 qubits → 4 probabilities
 
-  // The expected probabilities are 0.5 for |00> and |11>, and 0 for |01> and
-  // |10>
-  EXPECT_NEAR(probabilities[0], 0.5, 1e-10); // |00>
-  EXPECT_NEAR(probabilities[1], 0.0, 1e-10); // |01>
-  EXPECT_NEAR(probabilities[2], 0.0, 1e-10); // |10>
-  EXPECT_NEAR(probabilities[3], 0.5, 1e-10); // |11>
+  // The expected probabilities are 0.5 for |00⟩ and |11⟩, and 0 for |01⟩ and
+  // |10⟩
+  EXPECT_NEAR(probabilities[0], 0.5, 1e-10); // |00⟩
+  EXPECT_NEAR(probabilities[1], 0.0, 1e-10); // |01⟩
+  EXPECT_NEAR(probabilities[2], 0.0, 1e-10); // |10⟩
+  EXPECT_NEAR(probabilities[3], 0.5, 1e-10); // |11⟩
 }
 
 TEST_F(SimulatorJobTest, getSparseStateVectorReturnsValidState) {
@@ -1193,7 +1193,7 @@ TEST_F(SimulatorJobTest, getSparseStateVectorReturnsValidState) {
 
   const auto sparseStateVector = job.getSparseStateVector();
   EXPECT_EQ(sparseStateVector.size(),
-            2); // Only |00> and |11> should be present
+            2); // Only |00⟩ and |11⟩ should be present
 
   constexpr double invSqrt2 = 1.0 / std::numbers::sqrt2;
   const auto it00 = sparseStateVector.find("00");
@@ -1210,7 +1210,7 @@ TEST_F(SimulatorJobTest, getSparseProbabilitiesReturnsValidProbabilities) {
 
   const auto sparseProbabilities = job.getSparseProbabilities();
   EXPECT_EQ(sparseProbabilities.size(),
-            2); // Only |00> and |11> should be present
+            2); // Only |00⟩ and |11⟩ should be present
 
   const auto it00 = sparseProbabilities.find("00");
   ASSERT_NE(it00, sparseProbabilities.end());

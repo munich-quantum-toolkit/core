@@ -115,7 +115,7 @@ public:
     cx(control, target);
   }
 
-  // Controlled-RX via RX(theta) = H RZ(theta) H, reusing crz.
+  // Controlled-RX via RX(θ) = H RZ(θ) H, reusing crz.
   void crx(size_t control, size_t target, double theta) {
     h(target);
     crz(control, target, theta);
@@ -390,7 +390,7 @@ static void appendRemapped(CircuitPlan& dest, CircuitPlan src,
 // HP24 §4.3 relative-phase Toffoli gadget (and its reverse-order adjoint).
 static void appendGadget(CircuitPlan& plan, size_t q0, size_t q1, size_t q2,
                          bool invert) {
-  const double quarterPi = K_PI / 4.0; // T = p(pi/4), Tdg = p(-pi/4)
+  const double quarterPi = K_PI / 4.0; // T = p(π/4), Tdg = p(-π/4)
   if (!invert) {
     plan.append({.kind = PlanOpKind::H, .wires = {q2}});
     plan.append({.kind = PlanOpKind::P, .wires = {q2}, .angle = quarterPi});
@@ -740,7 +740,7 @@ static void appendMcpBarencoRelative(CircuitPlan& plan, double theta,
 // Maslov relative-phase C^3(X) (arXiv:1508.03273 Fig. 4); `invert` = adjoint.
 static void appendRelativePhaseC3X(CircuitPlan& plan, size_t c0, size_t c1,
                                    size_t c2, size_t t, bool invert) {
-  const double q = K_PI / 4.0; // T = p(pi/4)
+  const double q = K_PI / 4.0; // T = p(π/4)
   const std::array<PlanOp, 18> ops = {
       {
           {.kind = PlanOpKind::H, .wires = {t}},
@@ -897,8 +897,8 @@ synthesizeMultiControlledRotation(OpBuilder& builder, Location loc,
     }
   };
 
-  // RX(theta) = H RZ(theta) H. In either remaining axis, the four rotations
-  // sum to theta exactly when both control halves are all ones, else to zero.
+  // RX(θ) = H RZ(θ) H. In either remaining axis, the four rotations
+  // sum to θ exactly when both control halves are all ones, else to zero.
   if (isX) {
     emitter.h(numControls);
   }
@@ -1260,7 +1260,7 @@ struct DecomposeControlledGatePattern final : OpRewritePattern<CtrlOp> {
     }
 
     ControlledTarget gate = spec->gate;
-    // A compile-time phase of +/- pi is exactly Z; route it through the
+    // A compile-time phase of ±π is exactly Z; route it through the
     // multi-controlled-Z path (elementary at 3–4 qubits, relative-phase at
     // 5 qubits, SP22 at 6–33 qubits, else HP24).
     if (gate == ControlledTarget::Phase && spec->theta &&

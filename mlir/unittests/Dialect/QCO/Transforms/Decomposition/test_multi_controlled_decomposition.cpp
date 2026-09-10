@@ -278,7 +278,7 @@ buildMcrModule(MLIRContext* context, size_t numControls, RotationAxis axis,
   return moduleOp;
 }
 
-// R_a(theta) = cos(theta/2) I - i sin(theta/2) sigma_a.
+// R_a(θ) = cos(θ/2) I - i sin(θ/2) sigma_a.
 [[nodiscard]] static dd::GateMatrix rotationMatrix(RotationAxis axis,
                                                    double theta) {
   const double cosine = std::cos(theta / 2);

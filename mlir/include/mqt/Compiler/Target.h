@@ -289,13 +289,13 @@ public:
 
   /// Recognized globally usable single-qubit synthesis basis.
   enum class SingleQubitBasis : uint8_t {
-    U,    ///< `U(theta, phi, lambda)`.
+    U,    ///< `U(θ, φ, λ)`.
     ZSXX, ///< `RZ` / `SX` / `X` synthesis via a ZYZ decomposition.
-    R,    ///< XYX synthesis expressed with `R(theta, phi)`.
-    XZX,  ///< `RX(phi) * RZ(theta) * RX(lambda)`.
-    XYX,  ///< `RX(phi) * RY(theta) * RX(lambda)`.
-    ZYZ,  ///< `RZ(phi) * RY(theta) * RZ(lambda)`.
-    ZXZ,  ///< `RZ(phi) * RX(theta) * RZ(lambda)`.
+    R,    ///< XYX synthesis expressed with `R(θ, φ)`.
+    XZX,  ///< `RX(φ) * RZ(θ) * RX(λ)`.
+    XYX,  ///< `RX(φ) * RY(θ) * RX(λ)`.
+    ZYZ,  ///< `RZ(φ) * RY(θ) * RZ(λ)`.
+    ZXZ,  ///< `RZ(φ) * RX(θ) * RZ(λ)`.
   };
 
   /// One single-qubit basis and optional entangler usable across the target.

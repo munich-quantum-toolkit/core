@@ -78,6 +78,13 @@ or `\details`. Document parameters and return values only when the explanation
 adds information that the name and signature do not already provide. Preserve
 existing documentation when changing comment style.
 
+Prefer Unicode for simple mathematical notation in comments, such as `π`,
+`R(θ, φ)`, `U†`, and `|0⟩`. Put spaces around arrows in prose and rewrite
+diagrams, as in `QCO → jeff` and `QC ↔ QCO`. Preserve the spelling of code
+identifiers, language syntax, and literal output in examples. Use Doxygen math
+(`\f$...\f$` or `\f[...\f]`) for formulas that need typeset fractions,
+subscripts, or other mathematical layout.
+
 Keep `//!<` or `///<` for trailing member documentation. Keep `/** ... */`
 documentation inside backslash-continued macros: line comments there can consume
 the following declarations after line splicing. Preserve explicit `@brief`

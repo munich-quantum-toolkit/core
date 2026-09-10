@@ -182,7 +182,7 @@ quantizeAngle(const double radians, const uint32_t bitWidth) {
 
   const auto significand =
       exponent == 0 ? fraction : fraction | (uint64_t{1} << 52U);
-  /// The binary64 value of 2*pi is TWO_PI_ODD_SIGNIFICAND * 2^-47.
+  /// The binary64 value of 2*π is TWO_PI_ODD_SIGNIFICAND * 2^-47.
   const auto binaryExponent =
       exponent == 0 ? -1027 : static_cast<int32_t>(exponent) - 1028;
   auto result = quantizeAngleMagnitude(significand, binaryExponent, bitWidth);

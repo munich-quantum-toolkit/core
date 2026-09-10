@@ -688,7 +688,7 @@ template <typename QCOOpType, typename QCOpType, std::size_t NumTargets,
 struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
-  /// Generic QCO gate conversion helper (value semantics -> reference).
+  /// Generic QCO gate conversion helper (value semantics → reference).
   ///
   /// This helper relies on a strict operand ordering contract provided by the
   /// dialect conversion framework:

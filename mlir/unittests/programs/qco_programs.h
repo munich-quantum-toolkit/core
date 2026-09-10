@@ -324,8 +324,8 @@ Value twoZ(QCOProgramBuilder& b);
 /// Creates a circuit with pow(0.5) wrapping a Z gate (folds to P(π/2) = S).
 Value powHalfZ(QCOProgramBuilder& b);
 
-/// Creates a circuit with pow(1.5) wrapping a Z gate.
-/// Exercises normalizeAngle theta -= twoPi (1.5π normalises to -π/2 → sdg).
+/// Creates a circuit with pow(1.5) wrapping a Z gate. Exercises normalizeAngle
+/// `theta -= twoPi` (1.5π normalises to -π/2 → sdg).
 Value powThreeHalvesZ(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(1/3) wrapping a Z gate (falls through to P gate).
@@ -643,7 +643,7 @@ Value inverseMultipleControlledRx(QCOProgramBuilder& b);
 /// Creates a circuit with two RX gates in a row with opposite phases.
 Value twoRxOppositePhase(QCOProgramBuilder& b);
 
-/// Creates a circuit with an RX gate with an angle of pi/2.
+/// Creates a circuit with an RX gate with an angle of π/2.
 Value rxPiOver2(QCOProgramBuilder& b);
 
 /// Creates a circuit with pow(2) wrapping rx(0.123) (folds to rx(0.246)).
@@ -678,7 +678,7 @@ Value inverseMultipleControlledRy(QCOProgramBuilder& b);
 /// Creates a circuit with two RY gates in a row with opposite phases.
 Value twoRyOppositePhase(QCOProgramBuilder& b);
 
-/// Creates a circuit with an RY gate with an angle of pi/2.
+/// Creates a circuit with an RY gate with an angle of π/2.
 Value ryPiOver2(QCOProgramBuilder& b);
 
 // --- RZOp ----------------------------------------------------------------- //

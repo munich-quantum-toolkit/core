@@ -2151,14 +2151,14 @@ public:
 /// can use a dependent `false` value inside `static_assert`.
 template <auto...> struct AlwaysFalse : std::false_type {};
 
-/// QCO→jeff gate lowering category.
+/// QCO → jeff gate lowering category.
 enum class JeffKind : std::uint8_t {
   /// Lower to a jeff gate from the standard `WellKnownGate` set (jeff spec:
   /// `QubitGate.gate.wellKnown`).
   WellKnown,
   Custom,       //!< Lower to jeff.custom with a name string.
   PPR,          //!< Lower to jeff.ppr with Pauli-gate encoding.
-  SpecialU2ToU, //!< Lower qco.u2 via jeff.u with injected theta=pi/2.
+  SpecialU2ToU, //!< Lower qco.u2 via jeff.u with injected θ=π/2.
 };
 
 /// Pauli encoding for PPR lowering (1=X, 2=Y, 3=Z).
@@ -2182,7 +2182,7 @@ struct PPRPaulis {
 /// @tparam JeffBaseAdjoint For well-known ops: whether the jeff op represents
 /// the adjoint of the QCO base gate (e.g. S† as `jeff.s` with adjoint set).
 /// @param patterns Pattern set to add to.
-/// @param typeConverter QCO→jeff type converter passed to patterns.
+/// @param typeConverter QCO → jeff type converter passed to patterns.
 /// @param context MLIR context.
 /// @param state Shared lowering state pointer target (patterns store `&state`).
 /// @param customName Custom gate name when `Kind` is `JeffKind::Custom`

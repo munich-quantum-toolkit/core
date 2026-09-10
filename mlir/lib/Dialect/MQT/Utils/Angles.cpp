@@ -57,7 +57,7 @@ std::optional<PhaseGate> classifyPhaseGate(double angle) {
   const double pi = std::numbers::pi;
   const auto validatedGate = [&](PhaseGate gate, double real,
                                  double imaginary) -> std::optional<PhaseGate> {
-    // Reduction by binary64 pi can lose phase information for large angles.
+    // Reduction by binary64 π can lose phase information for large angles.
     if (std::abs(std::cos(angle) - real) <= PARAMETER_COMPARISON_TOLERANCE &&
         std::abs(std::sin(angle) - imaginary) <=
             PARAMETER_COMPARISON_TOLERANCE) {

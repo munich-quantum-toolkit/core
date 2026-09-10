@@ -53,7 +53,7 @@ struct TensorAccess {
 
 } // namespace
 
-/// Walk alloc->dealloc and plan all accesses without changing the IR.
+/// Walk alloc → dealloc and plan all accesses without changing the IR.
 [[nodiscard]] static LogicalResult collectTensorChain(
     AllocOp allocOp, int64_t tensorSize, llvm::SmallDenseSet<int64_t>& live,
     SmallVectorImpl<TensorAccess>& accesses, DeallocOp& deallocOp) {
