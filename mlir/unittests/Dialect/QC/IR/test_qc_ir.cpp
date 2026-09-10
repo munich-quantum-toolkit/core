@@ -84,12 +84,12 @@ class QCTest : public testing::TestWithParam<QCTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override;
+  QCTest();
 };
 
 } // namespace
 
-void QCTest::SetUp() {
+QCTest::QCTest() {
   // Register all necessary dialects
   DialectRegistry registry;
   registry.insert<mlir::mqt::MQTDialect, QCDialect, arith::ArithDialect,

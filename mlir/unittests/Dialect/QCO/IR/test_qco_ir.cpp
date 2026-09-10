@@ -93,11 +93,11 @@ class QCOTest : public testing::TestWithParam<QCOTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override;
+  QCOTest();
 };
 } // namespace
 
-void QCOTest::SetUp() {
+QCOTest::QCOTest() {
   // Register all necessary dialects
   DialectRegistry registry;
   registry.insert<cbit::CBitDialect, mlir::mqt::MQTDialect, QCODialect,

@@ -164,7 +164,7 @@ class QCOMatrixTest : public testing::TestWithParam<QCOMatrixTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
+  QCOMatrixTest() {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
                     memref::MemRefDialect>();

@@ -61,7 +61,7 @@ class QTensorTest : public ::testing::Test {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
+  QTensorTest() {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
                     memref::MemRefDialect, QTensorDialect>();
@@ -732,7 +732,7 @@ class QTensorIntegrationTest
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
+  QTensorIntegrationTest() {
     DialectRegistry registry;
     registry.insert<QCODialect, arith::ArithDialect, func::FuncDialect,
                     memref::MemRefDialect, QTensorDialect>();

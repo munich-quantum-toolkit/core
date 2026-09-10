@@ -266,16 +266,16 @@ private:
     }
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   if (callee == QIR_##GETTER) {                                                \
-    return index >= PARAMS && index < PARAMS + TARGETS;                        \
+    return index >= (PARAMS) && index < (PARAMS) + (TARGETS);                  \
   }                                                                            \
   if (callee == QIR_C##GETTER) {                                               \
-    return index >= PARAMS && index < PARAMS + TARGETS + 1;                    \
+    return index >= (PARAMS) && index < (PARAMS) + (TARGETS) + 1;              \
   }                                                                            \
   if (callee == QIR_CC##GETTER) {                                              \
-    return index >= PARAMS && index < PARAMS + TARGETS + 2;                    \
+    return index >= (PARAMS) && index < (PARAMS) + (TARGETS) + 2;              \
   }                                                                            \
   if (callee == QIR_##GETTER##_CTL) {                                          \
-    return PARAMS == 0 && TARGETS == 1 && index == 1;                          \
+    return (PARAMS) == 0 && (TARGETS) == 1 && index == 1;                      \
   }
 #include "mqt/Conversion/GateTable.def"
     return false;

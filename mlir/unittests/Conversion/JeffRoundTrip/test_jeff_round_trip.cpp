@@ -87,7 +87,7 @@ class JeffRoundTripTest : public testing::TestWithParam<JeffRoundTripTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
+  JeffRoundTripTest() {
     // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<mlir::mqt::MQTDialect, arith::ArithDialect,

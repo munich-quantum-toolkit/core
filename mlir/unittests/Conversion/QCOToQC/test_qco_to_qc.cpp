@@ -76,7 +76,7 @@ class QCOToQCTest : public testing::TestWithParam<QCOToQCTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
-  void SetUp() override {
+  QCOToQCTest() {
     // Register all necessary dialects
     DialectRegistry registry;
     registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
