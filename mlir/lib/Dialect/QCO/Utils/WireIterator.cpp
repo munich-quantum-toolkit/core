@@ -78,7 +78,7 @@ void WireIterator::forward() {
   }
 
   // Find the user-operation of the qubit SSA value.
-  assert(qubit_.hasOneUse() && "expected linear typing");
+  assert(qubit_.hasOneUse() && "expected linear semantics");
   op_ = *qubit_.user_begin();
 
   if (isTail(op_)) {

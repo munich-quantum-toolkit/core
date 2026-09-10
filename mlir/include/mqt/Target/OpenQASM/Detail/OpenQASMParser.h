@@ -31,9 +31,9 @@
 #include <optional>
 #include <utility>
 
-namespace mlir::oq3::frontend::detail {
+namespace mlir::openqasm::frontend::detail {
 
-/// A single-pass recursive-descent parser for OpenQASM 3.
+/// A single-pass recursive-descent parser for OpenQASM.
 ///
 /// The parser is target-independent. Its builder materializes a persistent
 /// syntax program and stores expressions directly in its ID arena.
@@ -1538,4 +1538,4 @@ private:
   size_t recursiveExpressionDepth = 0;
 };
 
-} // namespace mlir::oq3::frontend::detail
+} // namespace mlir::openqasm::frontend::detail

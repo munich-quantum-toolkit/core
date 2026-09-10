@@ -156,7 +156,7 @@ limitation does not invalidate the focused results or establish full coverage.
 performs QC/QCO/QIR conversions, and coordinates the default pipeline. The new
 textual artifact and pipeline branch belong there.
 
-`mlir/include/mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h` and
+`mlir/include/mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h` and
 `mlir/lib/Dialect/QC/Translation/` contain the modern OpenQASM frontend and its
 QC emitter. The reverse translator will live beside them under the separate
 public header `TranslateQCToOpenQASM3.h` and will be compiled into
@@ -182,7 +182,7 @@ maps SSA values to deterministic generated OpenQASM variables.
 ## Acceptance
 
 The public translator succeeds for a representative QC module and returns
-strictly parseable OpenQASM 3.1. Passing its text to `translateQASM3ToQC`
+strictly parseable OpenQASM 3.1. Passing its text to `translateOpenQASMToQC`
 produces a verified QC module. Gate tests cover each standard or generated gate
 and modifier nesting; helper definitions are compared against the QC unitary,
 including global phase.

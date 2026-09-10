@@ -37,7 +37,7 @@
 #include <utility>
 #include <vector>
 
-namespace mlir::oq3::frontend {
+namespace mlir::openqasm::frontend {
 
 std::optional<double> getBuiltinConstant(llvm::StringRef name) {
   if (name == "pi" || name == "π") {
@@ -391,4 +391,4 @@ AnalysisResult analyzeOpenQASM(const llvm::StringRef source,
   return analyzeOpenQASM(*parsed.program, gatePolicy);
 }
 
-} // namespace mlir::oq3::frontend
+} // namespace mlir::openqasm::frontend

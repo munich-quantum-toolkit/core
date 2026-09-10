@@ -929,9 +929,9 @@ def UnitaryOp : QCOp<"unitary", traits = [UnitaryOpInterface]> {
 }
 
 def BarrierOp : QCOp<"barrier", traits = [UnitaryOpInterface]> {
-  let summary = "Apply a barrier gate to a set of qubits";
+  let summary = "Apply a barrier operation to a set of qubits";
   let description = [{
-        Applies a barrier gate to a set of qubits, modifying them in place.
+        Marks a barrier on the given qubit references without changing their quantum state.
 
         Example:
         ```mlir

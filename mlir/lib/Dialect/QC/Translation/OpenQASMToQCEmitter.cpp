@@ -65,9 +65,8 @@
 namespace mlir::qc::detail {
 namespace {
 
-namespace frontend = oq3::frontend;
-using oq3::frontend::GateCatalogEntry;
-using oq3::frontend::GateLowering;
+namespace frontend = openqasm::frontend;
+using openqasm::frontend::GateCatalogEntry;
 
 class OpenQASMToQCEmitter {
   class EmissionBudget final : public OpBuilder::Listener {
@@ -111,12 +110,12 @@ class OpenQASMToQCEmitter {
       exhausted = true;
       emitError(location)
           << "OpenQASM QC emission error: emitted operation count exceeds the "
-             "safe lowering limit";
+             "safe emission limit";
     }
   };
 
 public:
-  OpenQASMToQCEmitter(const oq3::frontend::TypedProgram& typedProgram,
+  OpenQASMToQCEmitter(const openqasm::frontend::TypedProgram& typedProgram,
                       MLIRContext& mlirContext, size_t operationLimit)
       : program(typedProgram), context(mlirContext),
         emissionBudget(context, operationLimit), builder(&context),
@@ -198,7 +197,7 @@ public:
 
 private:
   // The engine cannot exist without the program and context that outlive it.
-  const oq3::frontend::TypedProgram& program;
+  const openqasm::frontend::TypedProgram& program;
   MLIRContext& context;
   EmissionBudget emissionBudget;
   qc::QCProgramBuilder builder;
@@ -206,10 +205,10 @@ private:
   std::vector<Value> classicalRegisters;
   std::vector<Value> scalarValues;
   llvm::DenseMap<frontend::ScalarId, Value> provenInductionValues;
-  DenseMap<const oq3::frontend::GateDefinition*, bool>
+  DenseMap<const openqasm::frontend::GateDefinition*, bool>
       structuredGateCapabilities;
-  llvm::StringMap<const oq3::frontend::GateDefinition*> customGateIndex;
-  DenseMap<const oq3::frontend::GateDefinition*, func::FuncOp>
+  llvm::StringMap<const openqasm::frontend::GateDefinition*> customGateIndex;
+  DenseMap<const openqasm::frontend::GateDefinition*, func::FuncOp>
       customGateFunctions_;
   bool emissionFailed = false;
   QCProgramBuilder::LoopBuilder* activeLoop = nullptr;
@@ -256,21 +255,21 @@ private:
     return isExactlyRepresentableAsDouble(magnitude);
   }
 
-  [[nodiscard]] const oq3::frontend::GateDefinition*
+  [[nodiscard]] const openqasm::frontend::GateDefinition*
   findCustomGate(const StringRef name) const {
     return customGateIndex.lookup(name);
   }
 
   [[nodiscard]] bool statementsRequireStructuredControlFlow(
-      const ArrayRef<oq3::frontend::StatementId> statements) const {
+      const ArrayRef<openqasm::frontend::StatementId> statements) const {
     return llvm::any_of(statements, [&](const auto id) {
       const auto& data = program.statements.at(id).data;
-      if (std::holds_alternative<oq3::frontend::ForStatement>(data) ||
-          std::holds_alternative<oq3::frontend::WhileStatement>(data)) {
+      if (std::holds_alternative<openqasm::frontend::ForStatement>(data) ||
+          std::holds_alternative<openqasm::frontend::WhileStatement>(data)) {
         return true;
       }
       const auto* application =
-          std::get_if<oq3::frontend::GateApplication>(&data);
+          std::get_if<openqasm::frontend::GateApplication>(&data);
       const auto* callee = application == nullptr
                                ? nullptr
                                : findCustomGate(application->callee);
@@ -279,7 +278,7 @@ private:
   }
 
   [[nodiscard]] bool gateRequiresStructuredControlFlow(
-      const oq3::frontend::GateDefinition& gate) const {
+      const openqasm::frontend::GateDefinition& gate) const {
     return structuredGateCapabilities.lookup(&gate);
   }
 
@@ -356,7 +355,7 @@ private:
                 frontend::QubitReferenceKind::Hardware) {
           emitError(getLocation(condition.location))
               << "OpenQASM QC emission error: mixing physical and declared "
-                 "qubits is not supported by the QC target";
+                 "qubits is not supported by the QC translation";
           return false;
         }
       }
@@ -378,7 +377,7 @@ private:
         if (containsHardwareQubit) {
           emitError(getLocation(statement.location))
               << "OpenQASM QC emission error: mixing physical and declared "
-                 "qubits is not supported by the QC target";
+                 "qubits is not supported by the QC translation";
           return false;
         }
       }
@@ -977,12 +976,6 @@ private:
         resolveQubit(reference, gateQubits, indices.front()));
   }
 
-  static LogicalResult emitPrimitive(OpBuilder& opBuilder, const Location loc,
-                                     const GateLowering lowering,
-                                     ValueRange parameters, ValueRange qubits) {
-    return qc::emitStandardGate(opBuilder, loc, lowering, parameters, qubits);
-  }
-
   static Value
   emitOpenQASM3Phase(OpBuilder& opBuilder, const Location loc,
                      ValueRange uParameters,
@@ -1064,7 +1057,7 @@ private:
     }
 
     const GateCatalogEntry* catalog =
-        oq3::frontend::lookupGate(application.callee);
+        openqasm::frontend::lookupGate(application.callee);
     if (catalog == nullptr || qubits.size() < catalog->targetCount) {
       return failure();
     }
@@ -1076,7 +1069,7 @@ private:
     }
     auto controlValues = qubits.take_front(controls);
     auto targets = qubits.drop_front(controls);
-    if (catalog->lowering == GateLowering::CU) {
+    if (catalog->gate == qc::StandardGate::CU) {
       if (controls != 1 || parameters.size() != 4 || targets.size() != 1) {
         return failure();
       }
@@ -1086,33 +1079,33 @@ private:
       LogicalResult result = success();
       qc::CtrlOp::create(
           opBuilder, loc, controlValues, targets, [&](ValueRange aliases) {
-            result = emitPrimitive(opBuilder, loc, GateLowering::U3,
-                                   parameters.take_front(3), aliases);
+            result = qc::emitStandardGate(opBuilder, loc, qc::StandardGate::U3,
+                                          parameters.take_front(3), aliases);
           });
       return result;
     }
 
     const auto emitCatalogLowering = [&](ValueRange primitiveQubits) {
       const auto emitBody = [&](ValueRange bodyQubits) {
-        if (catalog->lowering == GateLowering::BuiltinU ||
-            catalog->lowering == GateLowering::U2 ||
-            catalog->lowering == GateLowering::U3) {
+        if (catalog->gate == qc::StandardGate::BuiltinU ||
+            catalog->gate == qc::StandardGate::U2 ||
+            catalog->gate == qc::StandardGate::U3) {
           Value phase;
-          if (catalog->lowering == GateLowering::BuiltinU &&
+          if (catalog->gate == qc::StandardGate::BuiltinU &&
               !program.openQASM2) {
             phase = emitOpenQASM3Phase(opBuilder, loc, parameters);
           } else {
             phase = emitOpenQASM2UPhase(opBuilder, loc, parameters);
           }
           qc::GPhaseOp::create(opBuilder, loc, phase);
-          const auto primitive = catalog->lowering == GateLowering::U2
-                                     ? GateLowering::U2
-                                     : GateLowering::U3;
-          return emitPrimitive(opBuilder, loc, primitive, parameters,
-                               bodyQubits);
+          const auto primitive = catalog->gate == qc::StandardGate::U2
+                                     ? qc::StandardGate::U2
+                                     : qc::StandardGate::U3;
+          return qc::emitStandardGate(opBuilder, loc, primitive, parameters,
+                                      bodyQubits);
         }
-        return emitPrimitive(opBuilder, loc, catalog->lowering, parameters,
-                             bodyQubits);
+        return qc::emitStandardGate(opBuilder, loc, catalog->gate, parameters,
+                                    bodyQubits);
       };
       if (!catalog->inverse) {
         return emitBody(primitiveQubits);
@@ -1331,7 +1324,7 @@ private:
       emissionFailed = true;
       emitError(loc) << "OpenQASM QC emission error: gate '"
                      << application.callee
-                     << "' has no lowering to the QC dialect";
+                     << "' cannot be translated to the QC dialect";
     }
   }
 

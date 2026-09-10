@@ -155,6 +155,19 @@ def test_compile_program_mlir_string_with_leading_whitespace() -> None:
     assert result.ir.startswith("module")
 
 
+@pytest.mark.parametrize("version_header", ["", "OPENQASM 2.0;", "OPENQASM 3.0;", "OPENQASM 3.1;"])
+def test_openqasm_import_versions(version_header: str, tmp_path: Path) -> None:
+    """Both OpenQASM factories accept every supported version."""
+    source = f'{version_header}\ninclude "qelib1.inc"; qreg q[1]; h q[0];'
+    path = tmp_path / "program.qasm"
+    path.write_text(source, encoding="utf-8")
+
+    for program in (QCProgram.from_openqasm_str(source), QCProgram.from_openqasm_file(path)):
+        assert program.is_valid
+        assert program.num_gates() == 1
+        assert compile_program(program, output=OutputFormat.QCO).is_valid
+
+
 def test_compile_program_mlir_file(tmp_path: Path) -> None:
     """Compile a ``.mlir`` file."""
     path = tmp_path / "program.mlir"
@@ -255,7 +268,7 @@ def test_jeff_program_round_trip(tmp_path: Path) -> None:
 
 
 def test_compile_program_jeff_input_runs_from_qco(tmp_path: Path) -> None:
-    """Compile a serialized Jeff program through the QCO pipeline entry point."""
+    """Compile a serialized jeff program through the QCO pipeline entry point."""
     path = tmp_path / "program.jeff"
     compile_program(QASM_STRING, output=OutputFormat.JEFF).write(path)
 
@@ -267,7 +280,7 @@ def test_compile_program_jeff_input_runs_from_qco(tmp_path: Path) -> None:
 
 def test_program_conversions_are_composable() -> None:
     """Compose frontend, cleanup, conversion, and optimization stages."""
-    source = QCProgram.from_qasm_str(QASM_STRING)
+    source = QCProgram.from_openqasm_str(QASM_STRING)
     qco = source.to_qco(copy=True)
     assert source.is_valid
     assert isinstance(qco, QCOProgram)
@@ -282,7 +295,7 @@ def test_program_conversions_are_composable() -> None:
 
 def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     """Emit OpenQASM directly from QC and through the optimized pipeline."""
-    source = QCProgram.from_qasm_str(QASM_STRING)
+    source = QCProgram.from_openqasm_str(QASM_STRING)
     direct = source.to_openqasm3()
 
     assert isinstance(direct, OpenQASMProgram)
@@ -293,12 +306,12 @@ def test_openqasm_program_direct_and_pipeline_output(tmp_path: Path) -> None:
     path = tmp_path / "program.qasm"
     direct.write(path)
     assert path.read_text(encoding="utf-8") == direct.source
-    _assert_bell_program(QCProgram.from_qasm_file(path), measured=True)
+    _assert_bell_program(QCProgram.from_openqasm_file(path), measured=True)
 
     optimized = compile_program(QASM_STRING, output=OutputFormat.OPENQASM3)
     assert isinstance(optimized, OpenQASMProgram)
     assert "output bit[2] c;" in optimized.source
-    _assert_bell_program(QCProgram.from_qasm_str(optimized.source), measured=True)
+    _assert_bell_program(QCProgram.from_openqasm_str(optimized.source), measured=True)
 
     imported = compile_program(direct, output=OutputFormat.QC_IMPORT)
     assert isinstance(imported, QCProgram)
@@ -334,7 +347,7 @@ def test_openqasm_helper_gate_matrix(gate: Gate) -> None:
     circuit.append(gate, range(gate.num_qubits))
 
     source = QCProgram.from_qiskit(circuit).to_openqasm3().source
-    round_tripped = QCProgram.from_qasm_str(source).to_qiskit()
+    round_tripped = QCProgram.from_openqasm_str(source).to_qiskit()
 
     assert np.allclose(Operator(round_tripped).data, Operator(circuit).data)
 
@@ -362,7 +375,7 @@ def test_qir_program_writes_bitcode(tmp_path: Path) -> None:
 
 def test_compile_program_output_format_convert_to_qir() -> None:
     """Lower a QC program directly to the QIR Adaptive Profile."""
-    result = QCProgram.from_qasm_str(QASM_STRING).to_qir(QIRProfile.ADAPTIVE)
+    result = QCProgram.from_openqasm_str(QASM_STRING).to_qir(QIRProfile.ADAPTIVE)
 
     assert isinstance(result, QIRProgram)
     assert result.profile == QIRProfile.ADAPTIVE
@@ -463,9 +476,9 @@ def test_qco_program_compiles_for_direct_sparse_target() -> None:
         [CompilerTarget.Site(10), CompilerTarget.Site(20)],
         connectivity=CompilerTarget.Connectivity([(10, 20)]),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.Operation("u", 1, 3),
-            CompilerTarget.Operation("cz", 2, 0),
-            CompilerTarget.Operation("measure", 1, 0),
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("measure", 1, 0),
         ]),
     )
     assert target.name == "sparse target"
@@ -495,10 +508,10 @@ def test_target_compiles_single_qubit_gates_without_entangler(num_sites: int) ->
         num_sites,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.Operation("sx", 1, 0),
-            CompilerTarget.Operation("x", 1, 0),
-            CompilerTarget.Operation("rz", 1, 1),
-            CompilerTarget.Operation("gphase", 0, 1),
+            CompilerTarget.OperationCapability("sx", 1, 0),
+            CompilerTarget.OperationCapability("x", 1, 0),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
         ]),
     )
     assert target.synthesis_basis is not None
@@ -571,7 +584,7 @@ def test_qco_qiskit_export_preserves_program() -> None:
 @pytest.mark.parametrize("action", ["copy", "cleanup", "compile", "compile_inplace"])
 def test_consumed_program_operations_raise(kind: str, action: str) -> None:
     """Report consumed program use as a Python exception across binding paths."""
-    program: QCProgram | QCOProgram | JeffProgram = QCProgram.from_qasm_str(QASM_STRING)
+    program: QCProgram | QCOProgram | JeffProgram = QCProgram.from_openqasm_str(QASM_STRING)
     if kind != "qc":
         program = program.to_qco()
         if kind == "jeff":
@@ -594,7 +607,7 @@ def test_consumed_program_operations_raise(kind: str, action: str) -> None:
 
 def test_consumed_jeff_write_raises(tmp_path: Path) -> None:
     """Guard const member adapters before entering the native writer."""
-    program = QCProgram.from_qasm_str(QASM_STRING).to_qco().to_jeff()
+    program = QCProgram.from_openqasm_str(QASM_STRING).to_qco().to_jeff()
     program.to_qco()
     with pytest.raises(RuntimeError, match="already been consumed"):
         program.write(tmp_path / "consumed.jeff")
@@ -603,7 +616,7 @@ def test_consumed_jeff_write_raises(tmp_path: Path) -> None:
 @pytest.mark.parametrize("capability_id", [None, "forward-branching-typo"])
 def test_target_compilation_preserves_diagnostics(capability_id: str | None, capfd: pytest.CaptureFixture[str]) -> None:
     """Keep native control-flow legality errors in the Python exception."""
-    program = QCProgram.from_qasm_str("""OPENQASM 3.0;
+    program = QCProgram.from_openqasm_str("""OPENQASM 3.0;
 include "stdgates.inc";
 qubit q;
 bit c;
@@ -643,7 +656,7 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
         CompilerTarget.Site(20, "q1"),
     ]
     site_tuple = CompilerTarget.SiteTuple([10, 20], duration=10, fidelity=0.99)
-    operation = CompilerTarget.Operation(
+    operation = CompilerTarget.OperationCapability(
         "cx",
         2,
         0,
@@ -653,8 +666,8 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     )
     fixed_zero = CompilerTarget.OperationArity.fixed(0)
     variadic = CompilerTarget.OperationArity.variadic(2)
-    global_phase = CompilerTarget.Operation("gphase", fixed_zero, 1)
-    multi_controlled_x = CompilerTarget.Operation("x", variadic, 0)
+    global_phase = CompilerTarget.OperationCapability("gphase", fixed_zero, 1)
+    multi_controlled_x = CompilerTarget.OperationCapability("x", variadic, 0)
     connectivity = CompilerTarget.Connectivity.all_to_all()
     unrestricted = CompilerTarget.NativeOperations.unrestricted()
 
@@ -687,7 +700,7 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
     assert site_tuple.sites == [10, 20]
     assert len(operation.site_tuples) == 1
     assert operation.site_tuples[0].sites == [10, 20]
-    assert not CompilerTarget.Operation("x", 1, 0).site_tuples
+    assert not CompilerTarget.OperationCapability("x", 1, 0).site_tuples
     assert targets[0].supports_operation("ecr", 2, sites=[0, 1])
     assert not targets[2].supports_operation("ecr", 2, sites=[10, 20])
     assert targets[2].supports_operation("cx", 2, sites=[10, 20])
@@ -709,7 +722,7 @@ def test_compiler_target_constructors_preserve_python_api() -> None:
 @pytest.mark.parametrize("arity", [2, CompilerTarget.OperationArity.fixed(2)])
 def test_compiler_target_accepts_plain_site_tuples(arity: int | CompilerTarget.OperationArity) -> None:
     """Mix plain placements and calibrated tuples without widening support."""
-    operation = CompilerTarget.Operation(
+    operation = CompilerTarget.OperationCapability(
         "cx", arity, 0, site_tuples=[(1, 0), [1, 2], CompilerTarget.SiteTuple([2, 0], fidelity=0.99)]
     )
     target = CompilerTarget(
@@ -722,7 +735,7 @@ def test_compiler_target_accepts_plain_site_tuples(arity: int | CompilerTarget.O
     assert target.supports_operation("cx", 2, sites=[1, 0])
     assert not target.supports_operation("cx", 2, sites=[0, 1])
     with pytest.raises(ValueError, match="site tuple does not match its arity"):
-        CompilerTarget.Operation("cx", arity, 0, site_tuples=[(0,)])
+        CompilerTarget.OperationCapability("cx", arity, 0, site_tuples=[(0,)])
 
 
 def test_payload_specification_preserves_python_api() -> None:
@@ -802,23 +815,23 @@ def test_compiler_target_construction_preserves_validation_errors() -> None:
     with pytest.raises(ValueError, match="duration unit must not be empty"):
         CompilerTarget.DurationUnit("", 1.0)
     with pytest.raises(ValueError, match="zero-arity operation cannot contain site tuples"):
-        CompilerTarget.Operation(
+        CompilerTarget.OperationCapability(
             "gphase",
             CompilerTarget.OperationArity.fixed(0),
             1,
             site_tuples=[CompilerTarget.SiteTuple([])],
         )
     with pytest.raises(ValueError, match="variadic minimum must be positive"):
-        CompilerTarget.Operation("x", CompilerTarget.OperationArity.variadic(0), 0)
+        CompilerTarget.OperationCapability("x", CompilerTarget.OperationArity.variadic(0), 0)
     with pytest.raises(ValueError, match="variadic operation cannot contain site tuples"):
-        CompilerTarget.Operation(
+        CompilerTarget.OperationCapability(
             "x",
             CompilerTarget.OperationArity.variadic(2),
             0,
             site_tuples=[CompilerTarget.SiteTuple([0, 1])],
         )
     with pytest.raises(ValueError, match="site tuple does not match its arity"):
-        CompilerTarget.Operation("cx", 2, 0, site_tuples=[CompilerTarget.SiteTuple([0])])
+        CompilerTarget.OperationCapability("cx", 2, 0, site_tuples=[CompilerTarget.SiteTuple([0])])
 
 
 def test_compiler_target_snapshots_qdmi_device(garnet_target: CompilerTarget) -> None:
@@ -910,7 +923,7 @@ def test_qco_program_runs_textual_pipeline() -> None:
     qco.run_pass_pipeline("mqt-qco-default")
     qco.lift_hadamards()
 
-    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+    with pytest.raises(RuntimeError, match="Compiler action failed"):
         qco.run_pass_pipeline("not-a-pass")
 
 
@@ -1021,7 +1034,7 @@ def test_qco_program_decomposes_multi_controlled(gate: str) -> None:
     assert qco.ir != before
     assert "controls_out:2" not in qco.ir
 
-    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+    with pytest.raises(RuntimeError, match="Compiler action failed"):
         qco.decompose_multi_controlled(min_qubits=2)
 
 
@@ -1033,7 +1046,7 @@ def test_compile_program_fails_for_missing_file() -> None:
 
 def test_qc_program_num_gates() -> None:
     """Expose gate counts to Python."""
-    program = QCProgram.from_qasm_str(QASM_STRING)
+    program = QCProgram.from_openqasm_str(QASM_STRING)
     assert program.num_gates() == 2
     assert program.num_single_qubit_gates() == 1
     assert program.num_two_qubit_gates() == 1
@@ -1078,7 +1091,7 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
                 compile_program(program, target=target, program_format=ProgramFormat.QASM3)
             else:
                 # Parsing fails before the compilation release scope can be reached.
-                with pytest.raises(RuntimeError, match="MLIR operation failed"):
+                with pytest.raises(RuntimeError, match="Compiler action failed"):
                     compile_program(path if mode == "path" else invalid_source, output=OutputFormat.QCO)
             if progress.is_set():
                 break

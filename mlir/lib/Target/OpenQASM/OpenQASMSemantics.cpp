@@ -53,7 +53,7 @@
 #include <variant>
 #include <vector>
 
-namespace mlir::oq3::frontend::detail {
+namespace mlir::openqasm::frontend::detail {
 
 static SourceLocation sourcePosition(const llvm::SourceMgr& sources,
                                      llvm::SMLoc location);
@@ -4773,7 +4773,7 @@ private:
               .value = static_cast<int64_t>(intrinsicControls),
           }),
       });
-      callee = canonicalGateName(standard->lowering).str();
+      callee = canonicalGateName(standard->gate).str();
       emittedOperandCount = addedControls + activeBaseOperands;
     }
 
@@ -5097,4 +5097,4 @@ AnalysisResult analyzeSyntaxProgram(const SyntaxProgram& syntax,
   return SemanticAnalyzer(syntax, sources, gatePolicy).run();
 }
 
-} // namespace mlir::oq3::frontend::detail
+} // namespace mlir::openqasm::frontend::detail

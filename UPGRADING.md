@@ -25,11 +25,11 @@ Use the compiler-backed Python interface in new code:
 ```python
 from mqt.core.mlir import OutputFormat, QCProgram, compile_program
 
-qc_program = QCProgram.from_qasm_file("circuit.qasm")
+qc_program = QCProgram.from_openqasm_file("circuit.qasm")
 qco_program = compile_program(qc_program, output=OutputFormat.QCO_OPTIMIZED)
 ```
 
-Use `QCProgram.from_qasm_str` for source text, `QCProgram.from_qiskit` for a
+Use `QCProgram.from_openqasm_str` for source text, `QCProgram.from_qiskit` for a
 Qiskit `QuantumCircuit`, and `QCProgram.to_qiskit` for conversion back to
 Qiskit. For decision-diagram simulation, pass any compiler input to the
 `sample`, `simulate`, or `build_functionality` function in `mqt.core.mlir`. The

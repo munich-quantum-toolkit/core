@@ -116,7 +116,7 @@ into `MQTCompilerPipeline` and attaches `Programs.h` and `TargetCompilation.h`
 to that target.
 
 `src/qdmi/devices/dd/Device.cpp` translates QASM in `parseQASMToQCO` by calling
-`QCProgram::fromQASMString` and then `QCProgram::intoQCO`. The device only
+`QCProgram::fromOpenQASMString` and then `QCProgram::intoQCO`. The device only
 borrows the resulting QCO module for DD sampling or statevector simulation.
 Nevertheless, `src/qdmi/devices/dd/CMakeLists.txt` links `MQTCompilerPipeline`,
 which exposes the device to every higher-level compiler dependency.
@@ -219,7 +219,7 @@ has no comments. No open PR already implements this split.
 
 `MQTCompilerPrograms` must provide the existing symbols used by the DDSIM path:
 
-    mlir::QCProgram::fromQASMString(std::string_view)
+    mlir::QCProgram::fromOpenQASMString(std::string_view)
     mlir::QCProgram::intoQCO() &&
     mlir::Program::module() const
 

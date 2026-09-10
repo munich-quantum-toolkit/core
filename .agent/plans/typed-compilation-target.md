@@ -25,8 +25,8 @@ module attachment. Those contracts require separate design work.
 - The final #2218 model treats missing connectivity and operation support as
   target-inference errors and gives operations a fixed or variadic arity.
   Evidence: `CompilerTarget::Connectivity` and `NativeOperations` have no
-  unknown state, and `CompilerTarget::Operation::Arity` distinguishes fixed
-  widths from inclusive variadic minima.
+  unknown state, and `CompilerTarget::OperationCapability::Arity` distinguishes
+  fixed widths from inclusive variadic minima.
 
 ## Decisions
 

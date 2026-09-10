@@ -732,11 +732,11 @@ namespace {
 
 /// Converts func.return and sinks remaining live qubits.
 ///
-/// QC uses reference semantics and does not enforce linear typing for qubits.
-/// After conversion, QCO requires that every qubit SSA value is consumed
-/// exactly once. For allocations (including static qubits), the sink is
-/// `qco.sink`. This pattern inserts `qco.sink` operations for all
-/// still-live qubits tracked in the lowering state right before the return.
+/// QC uses reference semantics and does not enforce linear semantics for
+/// qubits. After conversion, QCO requires that every qubit SSA value is
+/// consumed exactly once. For allocations (including static qubits), the sink
+/// is `qco.sink`. This pattern inserts `qco.sink` operations for all still-live
+/// qubits tracked in the lowering state right before the return.
 struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 

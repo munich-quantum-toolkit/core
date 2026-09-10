@@ -242,5 +242,5 @@ The sole default-pipeline entry point declares:
         bool enableTiming = false, bool enableStatistics = false);
 
 `MQTCompilerPipeline` owns `TargetCompilation.cpp` and links only the existing
-MLIR compiler target, QCO transform, and support libraries. CoreFoMaC, QDMI,
+MQT compiler target, QCO transform, and support libraries. CoreFoMaC, QDMI,
 CoreIR, and a dynamic provider boundary are not added by this slice.

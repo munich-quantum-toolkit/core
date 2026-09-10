@@ -193,7 +193,7 @@ Value threeQubitsOneIdentity(QCProgramBuilder& b);
 /// Creates a multi-controlled identity gate with multiple control qubits.
 Value multipleControlledIdentity(QCProgramBuilder& b);
 
-/// Creates an barrier gate on a single qubit in a two-qubit register.
+/// Creates a barrier operation on a single qubit in a two-qubit register.
 Value twoQubitsOneBarrier(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled identity gate.

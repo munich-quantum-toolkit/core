@@ -31,7 +31,7 @@ namespace mlir {
 class MLIRContext;
 class Operation;
 
-/// Immutable description of an MLIR compiler target.
+/// Immutable description of an MQT compiler target.
 ///
 /// Hardware sites retain their target-defined nonnegative i64
 /// identifiers. Routing algorithms use dense zero-based vertices in site order.
@@ -159,7 +159,7 @@ public:
   /// with no site tuples are generally applicable. A nonempty list gives all
   /// supported ordered placements. Missing tuple calibration values inherit
   /// the operation defaults.
-  class Operation {
+  class OperationCapability {
   public:
     /// The accepted number of qubits for an operation capability.
     class Arity {
@@ -170,7 +170,7 @@ public:
       [[nodiscard]] static Arity fixed(size_t value) noexcept;
 
       /// Create an operation arity with the given inclusive minimum.
-      /// Operation construction requires a positive minimum.
+      /// Capability construction requires a positive minimum.
       [[nodiscard]] static Arity variadic(size_t minimum) noexcept;
 
       /// Return the arity kind.
@@ -192,14 +192,14 @@ public:
     };
 
     /// Create a validated operation capability.
-    [[nodiscard]] static llvm::Expected<Operation>
+    [[nodiscard]] static llvm::Expected<OperationCapability>
     create(std::string name, size_t arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
            std::optional<double> fidelity = std::nullopt);
 
     /// Create a validated operation capability.
-    [[nodiscard]] static llvm::Expected<Operation>
+    [[nodiscard]] static llvm::Expected<OperationCapability>
     create(std::string name, Arity arity, size_t numParameters,
            std::vector<SiteTuple> siteTuples = {},
            std::optional<uint64_t> duration = std::nullopt,
@@ -227,9 +227,11 @@ public:
     [[nodiscard]] std::optional<double> fidelity() const noexcept;
 
   private:
-    Operation(std::string name, std::string canonicalName, Arity arity,
-              size_t numParameters, std::vector<SiteTuple> siteTuples,
-              std::optional<uint64_t> duration, std::optional<double> fidelity);
+    OperationCapability(std::string name, std::string canonicalName,
+                        Arity arity, size_t numParameters,
+                        std::vector<SiteTuple> siteTuples,
+                        std::optional<uint64_t> duration,
+                        std::optional<double> fidelity);
 
     std::string name_;
     std::string canonicalName_;
@@ -250,21 +252,22 @@ public:
 
     /// Create explicitly enumerated native-operation support.
     [[nodiscard]] static NativeOperations
-    fromOperations(llvm::ArrayRef<Operation> operations);
+    fromOperations(llvm::ArrayRef<OperationCapability> operations);
 
     /// Return the native-operation support kind.
     [[nodiscard]] Kind kind() const noexcept;
 
     /// Return explicitly enumerated operations, if any.
-    [[nodiscard]] llvm::ArrayRef<Operation> operations() const noexcept;
+    [[nodiscard]] llvm::ArrayRef<OperationCapability>
+    operations() const noexcept;
 
   private:
     friend class CompilerTarget;
 
-    NativeOperations(Kind kind, llvm::ArrayRef<Operation> operations);
+    NativeOperations(Kind kind, llvm::ArrayRef<OperationCapability> operations);
 
     Kind kind_;
-    llvm::SmallVector<Operation> operations_;
+    llvm::SmallVector<OperationCapability> operations_;
   };
 
   /// Recognized native gate capability independent of synthesis code.
@@ -385,7 +388,7 @@ public:
   [[nodiscard]] NativeOperations::Kind nativeOperationsKind() const noexcept;
 
   /// Return operation capabilities in reported order.
-  [[nodiscard]] llvm::ArrayRef<Operation> operations() const noexcept;
+  [[nodiscard]] llvm::ArrayRef<OperationCapability> operations() const noexcept;
 
   /// Return whether an operation capability is supported by the target.
   [[nodiscard]] bool

@@ -66,7 +66,7 @@ namespace mqt::test::qco {
 using Target = mlir::CompilerTarget;
 using Connectivity = Target::Connectivity;
 using NativeOperations = Target::NativeOperations;
-using Operation = Target::Operation;
+using OperationCapability = Target::OperationCapability;
 using Site = Target::Site;
 using SiteTuple = Target::SiteTuple;
 using mlir::ModuleOp;
@@ -159,9 +159,9 @@ makeUCxTarget(std::optional<std::vector<Site>> sites = std::nullopt) {
     sites = std::vector{valid(Site::create(0)), valid(Site::create(1))};
   }
   std::vector operations{
-      valid(Operation::create("u", 1, 3)),
-      valid(Operation::create("cx", 2, 0)),
-      valid(Operation::create("gphase", 0, 1)),
+      valid(OperationCapability::create("u", 1, 3)),
+      valid(OperationCapability::create("cx", 2, 0)),
+      valid(OperationCapability::create("gphase", 0, 1)),
   };
   return valid(Target::create(std::move(*sites), Connectivity::allToAll(),
                               NativeOperations::fromOperations(operations)));
@@ -170,9 +170,10 @@ makeUCxTarget(std::optional<std::vector<Site>> sites = std::nullopt) {
 [[nodiscard]] static Target
 makeOneWayUCxTarget(Connectivity connectivity = Connectivity::allToAll()) {
   std::vector operations{
-      valid(Operation::create("u", 1, 3)),
-      valid(Operation::create("cx", 2, 0, {valid(SiteTuple::create({1, 0}))})),
-      valid(Operation::create("gphase", 0, 1)),
+      valid(OperationCapability::create("u", 1, 3)),
+      valid(OperationCapability::create("cx", 2, 0,
+                                        {valid(SiteTuple::create({1, 0}))})),
+      valid(OperationCapability::create("gphase", 0, 1)),
   };
   return valid(Target::create(2, std::move(connectivity),
                               NativeOperations::fromOperations(operations)));
@@ -180,7 +181,8 @@ makeOneWayUCxTarget(Connectivity connectivity = Connectivity::allToAll()) {
 
 [[nodiscard]] static Target makeOneWayRxxTarget() {
   std::vector operations{
-      valid(Operation::create("rxx", 2, 1, {valid(SiteTuple::create({1, 0}))})),
+      valid(OperationCapability::create("rxx", 2, 1,
+                                        {valid(SiteTuple::create({1, 0}))})),
   };
   return valid(Target::create(2, Connectivity::allToAll(),
                               NativeOperations::fromOperations(operations)));
@@ -517,13 +519,13 @@ TEST_F(TargetSynthesisTest,
 }
 
 TEST_F(TargetSynthesisTest, SqrtISwapSynthesisIsMinimalAndConforms) {
-  const auto target =
-      valid(Target::create(2, Connectivity::allToAll(),
-                           NativeOperations::fromOperations({
-                               valid(Operation::create("u", 1, 3)),
-                               valid(Operation::create("gphase", 0, 1)),
-                               valid(Operation::create("sqrt_iswap", 2, 0)),
-                           })));
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("u", 1, 3)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                         valid(OperationCapability::create("sqrt_iswap", 2, 0)),
+                     })));
   for (int gate = 0; gate < 4; ++gate) {
     const auto circuit = [gate](QCOProgramBuilder& builder) {
       auto q0 = builder.staticQubit(0);
@@ -602,19 +604,20 @@ TEST_F(TargetSynthesisTest,
 
   for (const bool useRxx : {false, true}) {
     SCOPED_TRACE(useRxx ? "R/RXX" : "U/sqrtISWAP");
-    const auto target = valid(Target::create(
-        3, Connectivity::allToAll(),
-        NativeOperations::fromOperations({
-            valid(Operation::create(useRxx ? "r" : "u", 1, useRxx ? 2 : 3)),
-            valid(Operation::create(useRxx ? "rxx" : "sqrt_iswap", 2,
-                                    useRxx ? 1 : 0,
-                                    {
-                                        valid(SiteTuple::create({0, 1})),
-                                        valid(SiteTuple::create({0, 2})),
-                                        valid(SiteTuple::create({1, 2})),
-                                    })),
-            valid(Operation::create("gphase", 0, 1)),
-        })));
+    const auto target = valid(
+        Target::create(3, Connectivity::allToAll(),
+                       NativeOperations::fromOperations({
+                           valid(OperationCapability::create(
+                               useRxx ? "r" : "u", 1, useRxx ? 2 : 3)),
+                           valid(OperationCapability::create(
+                               useRxx ? "rxx" : "sqrt_iswap", 2, useRxx ? 1 : 0,
+                               {
+                                   valid(SiteTuple::create({0, 1})),
+                                   valid(SiteTuple::create({0, 2})),
+                                   valid(SiteTuple::create({1, 2})),
+                               })),
+                           valid(OperationCapability::create("gphase", 0, 1)),
+                       })));
     auto expected = build(circuit);
     auto synthesized = build(circuit);
     ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
@@ -666,10 +669,10 @@ TEST_F(TargetSynthesisTest, NativeSynthesisSharesRepeatedParameterConstants) {
 }
 
 TEST_F(TargetSynthesisTest, SqrtISwapCapabilityRequiresFixedParameters) {
-  const auto target = valid(
-      Target::create(2, Connectivity::allToAll(),
-                     NativeOperations::fromOperations(
-                         {valid(Operation::create("sqrt_iswap", 2, 0))})));
+  const auto target = valid(Target::create(
+      2, Connectivity::allToAll(),
+      NativeOperations::fromOperations(
+          {valid(OperationCapability::create("sqrt_iswap", 2, 0))})));
   auto program = build([](QCOProgramBuilder& builder) {
     auto [q0, q1] = builder.xx_plus_yy(.2, 0., builder.staticQubit(0),
                                        builder.staticQubit(1));
@@ -685,8 +688,8 @@ TEST_F(TargetSynthesisTest, SqrtISwapCapabilityHonorsPlacement) {
   const auto target = valid(Target::create(
       2, Connectivity::allToAll(),
       NativeOperations::fromOperations({
-          valid(Operation::create("sqrt_iswap", 2, 0,
-                                  {valid(Target::SiteTuple::create({0, 1}))})),
+          valid(OperationCapability::create(
+              "sqrt_iswap", 2, 0, {valid(Target::SiteTuple::create({0, 1}))})),
       })));
   auto program = build([](QCOProgramBuilder& builder) {
     [[maybe_unused]] auto [q0, q1] =
@@ -705,8 +708,8 @@ TEST_F(TargetSynthesisTest, SqrtISwapReversesPlacementWithoutSynthesisBasis) {
   const auto target = valid(Target::create(
       2, Connectivity::allToAll(),
       NativeOperations::fromOperations({
-          valid(Operation::create("sqrt_iswap", 2, 0,
-                                  {valid(SiteTuple::create({0, 1}))})),
+          valid(OperationCapability::create(
+              "sqrt_iswap", 2, 0, {valid(SiteTuple::create({0, 1}))})),
       })));
   ASSERT_FALSE(target.synthesisBasis());
   const auto circuit = [](QCOProgramBuilder& builder) {
@@ -1105,12 +1108,13 @@ TEST_F(TargetSynthesisTest,
     qubit = builder.h(qubit);
     return builder.intConstant(0);
   });
-  const auto target = valid(Target::create(
-      2, Connectivity::allToAll(),
-      NativeOperations::fromOperations({
-          valid(Operation::create("u", 1, 3, {valid(SiteTuple::create({0}))})),
-          valid(Operation::create("cx", 2, 0)),
-      })));
+  const auto target =
+      valid(Target::create(2, Connectivity::allToAll(),
+                           NativeOperations::fromOperations({
+                               valid(OperationCapability::create(
+                                   "u", 1, 3, {valid(SiteTuple::create({0}))})),
+                               valid(OperationCapability::create("cx", 2, 0)),
+                           })));
 
   const auto diagnostics = expectTargetFailure(
       *module, target, mlir::qco::createTargetNativeSynthesis());
@@ -1126,17 +1130,18 @@ TEST_F(TargetSynthesisTest,
     [[maybe_unused]] const auto [q1, q2] = builder.swap(q1Input, q2Input);
     return builder.intConstant(0);
   });
-  const auto target = valid(Target::create(
-      3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
-      NativeOperations::fromOperations({
-          valid(Operation::create("u", 1, 3)),
-          valid(Operation::create("cx", 2, 0,
-                                  {
-                                      valid(SiteTuple::create({0, 1})),
-                                      valid(SiteTuple::create({1, 2})),
-                                  })),
-          valid(Operation::create("gphase", 0, 1)),
-      })));
+  const auto target = valid(
+      Target::create(3, Connectivity::fromCouplings({{0, 1}, {1, 2}}),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("u", 1, 3)),
+                         valid(OperationCapability::create(
+                             "cx", 2, 0,
+                             {
+                                 valid(SiteTuple::create({0, 1})),
+                                 valid(SiteTuple::create({1, 2})),
+                             })),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
 
   const auto diagnostics = expectTargetFailure(
       *module, target, mlir::qco::createTargetNativeSynthesis());
@@ -1206,14 +1211,14 @@ TEST_F(TargetSynthesisTest, SingleQubitSynthesisNeedsNoEntangler) {
   };
   auto expected = build(rotation);
   auto synthesized = build(rotation);
-  const auto target =
-      valid(Target::create(1, Connectivity::allToAll(),
-                           NativeOperations::fromOperations({
-                               valid(Operation::create("sx", 1, 0)),
-                               valid(Operation::create("x", 1, 0)),
-                               valid(Operation::create("rz", 1, 1)),
-                               valid(Operation::create("gphase", 0, 1)),
-                           })));
+  const auto target = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("sx", 1, 0)),
+                         valid(OperationCapability::create("x", 1, 0)),
+                         valid(OperationCapability::create("rz", 1, 1)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
 
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*synthesized)));
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
@@ -1236,9 +1241,10 @@ TEST_F(TargetSynthesisTest, RuntimeSingleQubitSynthesisNeedsNoEntangler) {
   )mlir",
                                                     context.get());
   ASSERT_TRUE(moduleOp);
-  const auto target = valid(Target::create(
-      1, Connectivity::allToAll(),
-      NativeOperations::fromOperations({valid(Operation::create("u", 1, 3))})));
+  const auto target = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations(
+                         {valid(OperationCapability::create("u", 1, 3))})));
 
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *moduleOp, target, mlir::qco::createTargetNativeSynthesis())));
@@ -1255,9 +1261,10 @@ TEST_F(TargetSynthesisTest, TwoQubitSynthesisRequiresEntangler) {
     [[maybe_unused]] auto [q0, q1] = builder.cx(input0, input1);
     return builder.intConstant(0);
   });
-  const auto target = valid(Target::create(
-      2, Connectivity::allToAll(),
-      NativeOperations::fromOperations({valid(Operation::create("u", 1, 3))})));
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations(
+                         {valid(OperationCapability::create("u", 1, 3))})));
   attachTestEnvironment(*moduleOp, target);
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
   const auto before = printModule(*moduleOp);
@@ -1290,13 +1297,13 @@ TEST(TargetSynthesisPassContract, LoadsMathDialectForRuntimeSynthesis) {
                                                     &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(mlir::succeeded(mlir::verify(*moduleOp)));
-  const auto target =
-      valid(Target::create(2, Connectivity::allToAll(),
-                           NativeOperations::fromOperations({
-                               valid(Operation::create("r", 1, 2)),
-                               valid(Operation::create("cx", 2, 0)),
-                               valid(Operation::create("gphase", 0, 1)),
-                           })));
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("r", 1, 2)),
+                         valid(OperationCapability::create("cx", 2, 0)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
 
   EXPECT_EQ(context.getLoadedDialect<mlir::math::MathDialect>(), nullptr);
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
@@ -1381,10 +1388,10 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisPreservesNativeSwap) {
     [[maybe_unused]] auto [q0, q1] = builder.swap(q0Input, q1Input);
     return builder.intConstant(0);
   });
-  const auto swapTarget =
-      valid(Target::create(2, Connectivity::allToAll(),
-                           NativeOperations::fromOperations(
-                               {valid(Operation::create("swap", 2, 0))})));
+  const auto swapTarget = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations(
+                         {valid(OperationCapability::create("swap", 2, 0))})));
   ASSERT_FALSE(swapTarget.synthesisBasis());
   attachTestEnvironment(*module, swapTarget);
   const auto before = printModule(*module);
@@ -1406,12 +1413,12 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisPreservesNativeGlobalPhase) {
   };
   auto expected = build(phasedX);
   auto synthesized = build(phasedX);
-  const auto target =
-      valid(Target::create(1, Connectivity::allToAll(),
-                           NativeOperations::fromOperations({
-                               valid(Operation::create("x", 1, 0)),
-                               valid(Operation::create("gphase", 0, 1)),
-                           })));
+  const auto target = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("x", 1, 0)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
 
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
@@ -1484,9 +1491,10 @@ TEST_F(TargetSynthesisTest,
   };
   auto expected = build(controlledPhase);
   auto synthesized = build(controlledPhase);
-  const auto target = valid(Target::create(
-      1, Connectivity::allToAll(),
-      NativeOperations::fromOperations({valid(Operation::create("p", 1, 1))})));
+  const auto target = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations(
+                         {valid(OperationCapability::create("p", 1, 1))})));
 
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
       *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
@@ -1507,13 +1515,13 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisUsesHomogeneousCapability) {
   };
   auto expected = build(swap);
   auto synthesized = build(swap);
-  const auto target =
-      valid(Target::create(2, Connectivity::allToAll(),
-                           NativeOperations::fromOperations({
-                               valid(Operation::create("u", 1, 3)),
-                               valid(Operation::create("cz", 2, 0)),
-                               valid(Operation::create("gphase", 0, 1)),
-                           })));
+  const auto target = valid(
+      Target::create(2, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("u", 1, 3)),
+                         valid(OperationCapability::create("cz", 2, 0)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
   ASSERT_TRUE(target.synthesisBasis());
   ASSERT_EQ(target.synthesisBasis()->entangler, Target::GateKind::CZ);
 
@@ -1554,10 +1562,10 @@ TEST_F(TargetSynthesisTest, NativePowShellHidesItsImplementationBody) {
                         [&](Value argument) { return builder.h(argument); });
     return builder.intConstant(0);
   });
-  const auto powOnly =
-      valid(Target::create(1, Connectivity::allToAll(),
-                           NativeOperations::fromOperations(
-                               {valid(Operation::create("pow", 1, 1))})));
+  const auto powOnly = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations(
+                         {valid(OperationCapability::create("pow", 1, 1))})));
   ASSERT_FALSE(powOnly.synthesisBasis());
   attachTestEnvironment(*module, powOnly);
   const auto before = printModule(*module);
@@ -1604,9 +1612,10 @@ TEST_F(TargetSynthesisTest, RejectsUnsupportedMultiTargetControlShell) {
 }
 
 TEST_F(TargetSynthesisTest, MissingBasisIsDiagnosedOnlyWhenLoweringIsNeeded) {
-  const auto hOnly = valid(Target::create(
-      1, Connectivity::allToAll(),
-      NativeOperations::fromOperations({valid(Operation::create("h", 1, 0))})));
+  const auto hOnly = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations(
+                         {valid(OperationCapability::create("h", 1, 0))})));
   ASSERT_FALSE(hOnly.synthesisBasis());
 
   auto supported = build([](QCOProgramBuilder& builder) {
@@ -1653,8 +1662,8 @@ TEST_F(TargetSynthesisTest, SupportedRuntimeParameterizedGateStaysUntouched) {
   const auto target =
       valid(Target::create(2, Connectivity::allToAll(),
                            NativeOperations::fromOperations({
-                               valid(Operation::create("u", 1, 3)),
-                               valid(Operation::create("rxx", 2, 1)),
+                               valid(OperationCapability::create("u", 1, 3)),
+                               valid(OperationCapability::create("rxx", 2, 1)),
                            })));
   attachTestEnvironment(*module, target);
   const auto before = printModule(*module);
@@ -1762,7 +1771,7 @@ TEST_F(TargetSynthesisTest,
       std::vector{valid(Site::create(10)), valid(Site::create(20))},
       Connectivity::allToAll(),
       NativeOperations::fromOperations(
-          {valid(Operation::create("cx", 2, 0))})));
+          {valid(OperationCapability::create("cx", 2, 0))})));
   ASSERT_FALSE(target.synthesisBasis());
 
   auto reversed = build([](QCOProgramBuilder& builder) {
@@ -1790,9 +1799,10 @@ TEST_F(TargetSynthesisTest,
 }
 
 TEST_F(TargetSynthesisTest, ConformanceRejectsDynamicAllocations) {
-  const auto target = valid(Target::create(
-      1, Connectivity::allToAll(),
-      NativeOperations::fromOperations({valid(Operation::create("x", 1, 0))})));
+  const auto target = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations(
+                         {valid(OperationCapability::create("x", 1, 0))})));
   const auto expectDynamicAllocationFailure =
       [&](OwningOpRef<ModuleOp> module) {
         const auto diagnostics = expectTargetFailure(
@@ -1826,9 +1836,10 @@ TEST_F(TargetSynthesisTest, ConformanceRejectsQuantumFunctionInputs) {
   )mlir",
                                                   context.get());
   ASSERT_TRUE(module);
-  const auto target = valid(Target::create(
-      1, Connectivity::allToAll(),
-      NativeOperations::fromOperations({valid(Operation::create("x", 1, 0))})));
+  const auto target = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations(
+                         {valid(OperationCapability::create("x", 1, 0))})));
 
   const auto diagnostics = expectTargetFailure(
       *module, target, mlir::qco::createVerifyTargetConformance());
@@ -1850,10 +1861,10 @@ TEST_F(TargetSynthesisTest, ConformanceChecksTypeArityAndParameters) {
   };
 
   expectUnsupported(
-      valid(Target::create(std::vector{valid(Site::create(10))},
-                           Connectivity::allToAll(),
-                           NativeOperations::fromOperations(
-                               {valid(Operation::create("x", 1, 0))}))),
+      valid(Target::create(
+          std::vector{valid(Site::create(10))}, Connectivity::allToAll(),
+          NativeOperations::fromOperations(
+              {valid(OperationCapability::create("x", 1, 0))}))),
       build([](QCOProgramBuilder& builder) {
         auto qubit = builder.staticQubit(10);
         qubit = builder.h(qubit);
@@ -1866,7 +1877,7 @@ TEST_F(TargetSynthesisTest, ConformanceChecksTypeArityAndParameters) {
           std::vector{valid(Site::create(10)), valid(Site::create(20))},
           Connectivity::allToAll(),
           NativeOperations::fromOperations(
-              {valid(Operation::create("x", 2, 0))}))),
+              {valid(OperationCapability::create("x", 2, 0))}))),
       build([](QCOProgramBuilder& builder) {
         auto qubit = builder.staticQubit(10);
         qubit = builder.x(qubit);
@@ -1875,10 +1886,10 @@ TEST_F(TargetSynthesisTest, ConformanceChecksTypeArityAndParameters) {
       "'qco.x'", "arity 1 and 0 parameter(s)");
 
   expectUnsupported(
-      valid(Target::create(std::vector{valid(Site::create(10))},
-                           Connectivity::allToAll(),
-                           NativeOperations::fromOperations(
-                               {valid(Operation::create("rz", 1, 0))}))),
+      valid(Target::create(
+          std::vector{valid(Site::create(10))}, Connectivity::allToAll(),
+          NativeOperations::fromOperations(
+              {valid(OperationCapability::create("rz", 1, 0))}))),
       build([](QCOProgramBuilder& builder) {
         auto qubit = builder.staticQubit(10);
         qubit = builder.rz(0.25, qubit);
@@ -1895,9 +1906,10 @@ TEST_F(TargetSynthesisTest, ConformanceChecksNonUnitaryCapabilities) {
     measured = builder.reset(measured);
     return builder.intConstant(0);
   });
-  const auto xOnly = valid(Target::create(
-      1, Connectivity::allToAll(),
-      NativeOperations::fromOperations({valid(Operation::create("x", 1, 0))})));
+  const auto xOnly = valid(
+      Target::create(1, Connectivity::allToAll(),
+                     NativeOperations::fromOperations(
+                         {valid(OperationCapability::create("x", 1, 0))})));
   const auto diagnostics = expectTargetFailure(
       *module, xOnly, mlir::qco::createVerifyTargetConformance());
   EXPECT_NE(diagnostics.find("'qco.measure' with arity 1 and 0 parameter(s)"),

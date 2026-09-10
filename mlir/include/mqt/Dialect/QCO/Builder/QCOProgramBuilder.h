@@ -44,8 +44,8 @@ namespace qco {
 /// SSA values and produce new output values, following the functional
 /// programming paradigm.
 ///
-/// @par Linear Type Enforcement:
-/// The builder enforces linear type semantics by tracking valid qubit SSA
+/// @par Linear Ownership:
+/// The builder enforces linear semantics by tracking valid qubit SSA
 /// values. Once a qubit is consumed by an operation producing a new version
 /// (e.g., reset, measure), the old SSA value is invalidated. This prevents
 /// use-after-consume errors and mirrors quantum computing's no-cloning theorem.
@@ -1522,7 +1522,7 @@ public:
   //===--------------------------------------------------------------------===//
 
   /// Construct an if operation for qubits or tensors of qubits with
-  /// linear typing
+  /// linear semantics
   ///
   /// Constructs an if operation that takes a bool Value and a range of qubit
   /// and qtensor values that are used in the then/else region of this
@@ -1619,7 +1619,7 @@ public:
               function_ref<Value(Value)> elseBody = nullptr);
 
   /// Construct an index switch operation for qubits or tensors of qubits
-  /// with linear typing.
+  /// with linear semantics.
   ///
   /// Constructs an index switch operation that takes an index Value and a range
   /// of qubit and qtensor values that are used in the case regions of this
@@ -1863,7 +1863,7 @@ private:
   void checkFinalized() const;
 
   //===--------------------------------------------------------------------===//
-  // Linear Type Tracking Helpers
+  /// Linear Ownership Tracking Helpers
   //===--------------------------------------------------------------------===//
 
   /// Validate that a qubit value is valid and unconsumed
@@ -1888,7 +1888,7 @@ private:
     }
   };
 
-  /// Track valid (unconsumed) qubit SSA values for linear type enforcement.
+  /// Track valid (unconsumed) qubit SSA values for linear ownership.
   /// Only values present in this set are valid for use in operations.
   /// When an operation consumes a qubit and produces a new one, the old value
   /// is removed and the new output is added.
@@ -1960,7 +1960,7 @@ private:
     }
   };
 
-  /// Track valid (unconsumed) tensor SSA values for linear type enforcement.
+  /// Track valid (unconsumed) tensor SSA values for linear ownership.
   /// Only values present in this set are valid for use in operations.
   /// When an operation consumes a tensor and produces a new one, the old value
   /// is removed and the new output is added.

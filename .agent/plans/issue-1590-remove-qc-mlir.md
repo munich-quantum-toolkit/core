@@ -105,7 +105,7 @@ translator and that the useful MLIR-to-DD integration remains available.
 ## Interfaces
 
 At completion, `QCProgram` retains `fromMLIRString`, `fromMLIRFile`,
-`fromQASMString`, and `fromQASMFile`; it no longer declares
+`fromOpenQASMString`, and `fromOpenQASMFile`; it no longer declares
 `fromQuantumComputation`; it also retains the direct `from_qiskit` and
 `to_qiskit` binding methods. `compile_program` accepts strings, paths, Qiskit
 circuits, `QCProgram`, `QCOProgram`, `JeffProgram`, and `OpenQASMProgram` in

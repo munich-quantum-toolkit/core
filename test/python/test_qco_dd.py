@@ -62,13 +62,13 @@ def _compiler_input(kind: str, tmp_path: Path) -> CompilerInput:
         path.write_text(UNITARY_QASM, encoding="utf-8")
         return path
     if kind == "qc":
-        return QCProgram.from_qasm_str(UNITARY_QASM)
+        return QCProgram.from_openqasm_str(UNITARY_QASM)
     if kind == "qco":
-        return QCProgram.from_qasm_str(UNITARY_QASM).to_qco()
+        return QCProgram.from_openqasm_str(UNITARY_QASM).to_qco()
     if kind == "jeff":
         return compile_program(UNITARY_QASM, output=OutputFormat.JEFF)
     if kind == "openqasm":
-        return QCProgram.from_qasm_str(UNITARY_QASM).to_openqasm3()
+        return QCProgram.from_openqasm_str(UNITARY_QASM).to_openqasm3()
     circuit = QuantumCircuit(1)
     circuit.x(0)
     return circuit

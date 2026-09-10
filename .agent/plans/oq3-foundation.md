@@ -29,11 +29,11 @@ The legacy `QuantumComputation` parser was outside this change.
   `TypedProgram`, and diagnostic-bearing parse/analysis results.
   `MLIROpenQASMFrontend` remains independent of QC and MLIR contexts.
 - `mlir/lib/Dialect/QC/Translation/OpenQASMToQCEmitter.cpp` owns private QC
-  construction. `TranslateQASM3ToQC.cpp` is the small public adapter used by
-  `QCProgram::fromQASMString`.
+  construction. `TranslateOpenQASMToQC.cpp` is the small public adapter used by
+  `QCProgram::fromOpenQASMString`.
 - `GateCatalog.h` and `GateCatalog.cpp` share gate identity and lowering recipes
-  between semantic analysis and emission. The `oq3::frontend` namespace names
-  the language frontend, not a retained MLIR dialect.
+  between semantic analysis and emission. The `openqasm::frontend` namespace
+  names the language frontend, not a retained MLIR dialect.
 
 ## Decisions and constraints
 

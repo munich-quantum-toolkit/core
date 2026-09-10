@@ -14,7 +14,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
-#include "mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 
 #include "OpenQASMTestUtils.h"
@@ -59,7 +59,7 @@
 #include <vector>
 
 using namespace mlir;
-using namespace mlir::oq3::test;
+using namespace mlir::openqasm::test;
 
 namespace {
 
@@ -67,7 +67,7 @@ TEST(OpenQASMTargetTest, ImportsNonNullTerminatedSourceView) {
   std::string storage = "OPENQASM 3.1; qubit q; U(0, 0, 0) q;invalid suffix";
   const auto source = StringRef(storage).take_front(storage.find("invalid"));
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   storage.assign(storage.size(), 'x');
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
@@ -83,7 +83,7 @@ for int i in [0:1] {
 }
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   size_t localRegisters = 0;
@@ -108,7 +108,7 @@ for int i in [0:0] {
 result = value;
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   moduleOp->walk([&](Operation* operation) {
@@ -134,7 +134,7 @@ while (again) {
 }
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   size_t unreachableGates = 0;
@@ -144,7 +144,7 @@ while (again) {
 
 TEST(OpenQASMTargetTest, EmitsVerifiedQCDirectly) {
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(BROADCAST_PROGRAM, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(BROADCAST_PROGRAM, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -155,7 +155,7 @@ TEST(OpenQASMTargetTest, EmitsVerifiedQCDirectly) {
 
 TEST(OpenQASMTargetTest, ProductionTranslationUsesTheStagedPipeline) {
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(BROADCAST_PROGRAM, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(BROADCAST_PROGRAM, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -178,7 +178,7 @@ shifted(0.5) q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -200,7 +200,7 @@ rx(sin(value) + cos(value) + tan(value) + exp(value) + log(value) +
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -224,7 +224,7 @@ rx(arccos(unsigned_value) + arcsin(signed_value) + arctan(float_value)) q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -263,7 +263,7 @@ float float_from_int = source_int;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -316,7 +316,7 @@ bool unsigned_greater_equal = unsigned_left >= unsigned_right;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -402,20 +402,21 @@ rx(ceiling(runtime_value) + floor(runtime_value)) q;
 rounded(0.5) q;
 )qasm";
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  const auto& constantApplication = std::get<oq3::frontend::GateApplication>(
-      analyzed.program->statements[analyzed.program->body[2]].data);
+  const auto& constantApplication =
+      std::get<openqasm::frontend::GateApplication>(
+          analyzed.program->statements[analyzed.program->body[2]].data);
   const auto& parameter =
       analyzed.program->expressions.at(constantApplication.parameters.front());
-  ASSERT_EQ(parameter.kind, oq3::frontend::ExpressionKind::Cast);
-  EXPECT_EQ(parameter.type, oq3::frontend::ScalarType::Angle);
+  ASSERT_EQ(parameter.kind, openqasm::frontend::ExpressionKind::Cast);
+  EXPECT_EQ(parameter.type, openqasm::frontend::ScalarType::Angle);
   const auto& constant = analyzed.program->expressions.at(parameter.lhs);
-  ASSERT_EQ(constant.kind, oq3::frontend::ExpressionKind::Constant);
+  ASSERT_EQ(constant.kind, openqasm::frontend::ExpressionKind::Constant);
   EXPECT_DOUBLE_EQ(std::get<double>(constant.constant), 0.0);
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -438,7 +439,7 @@ ctrl(2) @ negctrl @ inv @ ctrl @ x q[0], q[1], q[2], q[3], q[4];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
@@ -468,7 +469,7 @@ qubit[4] q;
 negctrl(3) @ x q[0], q[1], q[2], q[3];
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t controlRegions = 0;
@@ -494,7 +495,7 @@ pow(exponent) @ x q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -537,7 +538,7 @@ pow(exponent) @ x q;
   for (const auto source : sources) {
     SCOPED_TRACE(source.str());
     MLIRContext context;
-    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    auto moduleOp = qc::translateOpenQASMToQC(source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -582,7 +583,7 @@ out = measure q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -636,7 +637,7 @@ TEST(OpenQASMTargetTest, ResolvesManyCustomGateDefinitionsThroughTheIndex) {
   }
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -657,7 +658,7 @@ measure q -> c;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -675,7 +676,7 @@ x $3;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -697,7 +698,7 @@ x q;
 x $0;
 )qasm";
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
 
   MLIRContext context;
@@ -706,12 +707,12 @@ x $0;
     diagnostic = value.str();
     return success();
   });
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   EXPECT_FALSE(moduleOp);
   EXPECT_NE(diagnostic.find("mixing physical and declared qubits"),
             std::string::npos)
       << diagnostic;
-  EXPECT_NE(diagnostic.find("QC target"), std::string::npos) << diagnostic;
+  EXPECT_NE(diagnostic.find("QC translation"), std::string::npos) << diagnostic;
 }
 
 TEST(OpenQASMTargetTest, AllocatesCBitStorageForAllBitRegisters) {
@@ -728,7 +729,7 @@ result = measure q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -755,25 +756,25 @@ bits[0] = true;
 bits[1] = false;
 float ratio = 2.0;
 )qasm";
-  auto analyzed = oq3::frontend::analyzeOpenQASM(implicitSource);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(implicitSource);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   ASSERT_EQ(analyzed.program->outputs.size(), 3);
   EXPECT_EQ(analyzed.program->outputs[0].kind,
-            oq3::frontend::OutputKind::Scalar);
+            openqasm::frontend::OutputKind::Scalar);
   EXPECT_EQ(analyzed.program->scalars[analyzed.program->outputs[0].symbol].name,
             "count");
   EXPECT_EQ(analyzed.program->outputs[1].kind,
-            oq3::frontend::OutputKind::BitRegister);
+            openqasm::frontend::OutputKind::BitRegister);
   EXPECT_EQ(
       analyzed.program->registers[analyzed.program->outputs[1].symbol].name,
       "bits");
   EXPECT_EQ(analyzed.program->outputs[2].kind,
-            oq3::frontend::OutputKind::Scalar);
+            openqasm::frontend::OutputKind::Scalar);
   EXPECT_EQ(analyzed.program->scalars[analyzed.program->outputs[2].symbol].name,
             "ratio");
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(implicitSource, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(implicitSource, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   func::ReturnOp result;
@@ -793,11 +794,11 @@ int internal = 1;
 output int result;
 result = internal + 1;
 )qasm";
-  auto explicitAnalysis = oq3::frontend::analyzeOpenQASM(explicitSource);
+  auto explicitAnalysis = openqasm::frontend::analyzeOpenQASM(explicitSource);
   ASSERT_TRUE(explicitAnalysis) << explicitAnalysis.diagnostics.front().message;
   ASSERT_EQ(explicitAnalysis.program->outputs.size(), 1);
   EXPECT_EQ(explicitAnalysis.program->outputs.front().kind,
-            oq3::frontend::OutputKind::Scalar);
+            openqasm::frontend::OutputKind::Scalar);
   EXPECT_EQ(explicitAnalysis.program
                 ->scalars[explicitAnalysis.program->outputs.front().symbol]
                 .name,
@@ -816,7 +817,7 @@ cx q[i], aux[j];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t loads = 0;
@@ -844,7 +845,7 @@ TEST(OpenQASMTargetTest, PreservesCompactCustomGateGraph) {
   source += "qubit q;\ng24 q;\n";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_EQ(std::distance(moduleOp->getOps<func::FuncOp>().begin(),
@@ -870,7 +871,7 @@ main q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   auto gate = moduleOp->lookupSymbol<func::FuncOp>("main");
@@ -894,7 +895,7 @@ TEST(OpenQASMTargetTest, DoesNotMultiplyCustomGatesByRegisterWidth) {
             "expanded q[i], aux[j];\n";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t loads = 0;
@@ -921,7 +922,7 @@ bit result = measure q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t forLoops = 0;
@@ -959,7 +960,7 @@ g q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   qc::RXOp rotation;
@@ -981,12 +982,12 @@ target = source;
 if (target[0] || target[1]) { x q[0]; }
 )qasm";
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  const oq3::frontend::BitVectorAssignmentStatement* assignment = nullptr;
+  const openqasm::frontend::BitVectorAssignmentStatement* assignment = nullptr;
   for (const auto& statement : analyzed.program->statements) {
     if (const auto* current =
-            std::get_if<oq3::frontend::BitVectorAssignmentStatement>(
+            std::get_if<openqasm::frontend::BitVectorAssignmentStatement>(
                 &statement.data)) {
       ASSERT_EQ(assignment, nullptr);
       assignment = current;
@@ -997,12 +998,12 @@ if (target[0] || target[1]) { x q[0]; }
   EXPECT_EQ(analyzed.program->registers[assignment->target].name, "target");
   const auto& value =
       analyzed.program->bitVectorExpressions.at(assignment->value);
-  EXPECT_EQ(value.kind, oq3::frontend::BitVectorExpressionKind::Register);
+  EXPECT_EQ(value.kind, openqasm::frontend::BitVectorExpressionKind::Register);
   EXPECT_EQ(analyzed.program->registers[value.reg].name, "source");
   EXPECT_EQ(value.width, 2);
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   PassManager canonicalizer(&context);
@@ -1033,17 +1034,18 @@ qubit q;
 if (count == 3) { x q; }
 )qasm";
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   ASSERT_FALSE(analyzed.program->bitVectorExpressions.empty());
   EXPECT_TRUE(
       llvm::any_of(analyzed.program->expressions, [](const auto& expression) {
-        return expression.kind == oq3::frontend::ExpressionKind::PopCount &&
-               expression.type == oq3::frontend::ScalarType::Uint;
+        return expression.kind ==
+                   openqasm::frontend::ExpressionKind::PopCount &&
+               expression.type == openqasm::frontend::ScalarType::Uint;
       }));
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t populationCounts = 0;
@@ -1067,14 +1069,14 @@ result = (~value & 6) | (value ^ 1);
 if ((result >> 1) < (result << 2)) { x q[0]; }
 )qasm";
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   EXPECT_TRUE(llvm::any_of(analyzed.program->conditions, [](const auto& value) {
-    return value.kind == oq3::frontend::ConditionKind::BitVectorComparison;
+    return value.kind == openqasm::frontend::ConditionKind::BitVectorComparison;
   }));
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 }
@@ -1089,7 +1091,7 @@ result = value << 3;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   bool hasLeftShift = false;
@@ -1110,7 +1112,7 @@ if ((value << (value & 1)) == 0) {}
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   bool hasShift = false;
@@ -1144,7 +1146,7 @@ pow(unsignedExponent) @ x q;
   for (const auto source : sources) {
     SCOPED_TRACE(source.str());
     MLIRContext context;
-    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    auto moduleOp = qc::translateOpenQASMToQC(source, &context);
     ASSERT_TRUE(moduleOp);
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
   }
@@ -1165,7 +1167,7 @@ rx(count) q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t populationCounts = 0;
@@ -1192,7 +1194,7 @@ uint count = popcount(value);
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -1227,7 +1229,7 @@ if (c == 1) x q[0];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t conditionals = 0;
@@ -1256,7 +1258,7 @@ if (c >= 5) { x q; }
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -1286,7 +1288,7 @@ if (c == 18446744073709551616) x q[0];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   arith::CmpIOp comparison;
   moduleOp->walk([&](arith::CmpIOp op) { comparison = op; });
@@ -1317,7 +1319,7 @@ if (uint[2](syndrome) < 3) {
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -1356,7 +1358,7 @@ if (-1 <= int[2](syndrome)) { x q[0]; }
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -1389,7 +1391,7 @@ signed_value = int[3](signed_bits);
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -1415,7 +1417,7 @@ if (c == 0) x q[0];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   PassManager canonicalizer(&context);
@@ -1446,7 +1448,7 @@ if (c == 1) x q[0];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   PassManager canonicalizer(&context);
@@ -1472,7 +1474,7 @@ if (result == 0.0625) { x q; }
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   bool foundResult = false;
@@ -1491,12 +1493,12 @@ output int result;
 result = pow(base, exponent);
 )qasm";
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
-  const oq3::frontend::ScalarAssignmentStatement* assignment = nullptr;
+  const openqasm::frontend::ScalarAssignmentStatement* assignment = nullptr;
   for (const auto& statement : analyzed.program->statements) {
     if (const auto* current =
-            std::get_if<oq3::frontend::ScalarAssignmentStatement>(
+            std::get_if<openqasm::frontend::ScalarAssignmentStatement>(
                 &statement.data);
         current != nullptr &&
         analyzed.program->scalars[current->scalar].name == "result") {
@@ -1506,15 +1508,15 @@ result = pow(base, exponent);
   ASSERT_NE(assignment, nullptr);
   ASSERT_TRUE(assignment->value);
   const auto& power = analyzed.program->expressions[*assignment->value];
-  EXPECT_EQ(power.kind, oq3::frontend::ExpressionKind::Power);
-  EXPECT_EQ(power.type, oq3::frontend::ScalarType::Int);
+  EXPECT_EQ(power.kind, openqasm::frontend::ExpressionKind::Power);
+  EXPECT_EQ(power.type, openqasm::frontend::ScalarType::Int);
   EXPECT_EQ(analyzed.program->expressions[power.lhs].type,
-            oq3::frontend::ScalarType::Int);
+            openqasm::frontend::ScalarType::Int);
   EXPECT_EQ(analyzed.program->expressions[power.rhs].type,
-            oq3::frontend::ScalarType::Uint);
+            openqasm::frontend::ScalarType::Uint);
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t integerPowers = 0;
@@ -1538,7 +1540,7 @@ measured = measure q;
 if (!measured) { h q; }
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t measurements = 0;
@@ -1569,7 +1571,7 @@ TEST(OpenQASMTargetTest, EmitsStructuredDiagnosticsWithIncludeStacks) {
     location = diagnostic.getLocation();
     return success();
   });
-  auto moduleOp = qc::translateQASM3ToQC(sourceMgr, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(sourceMgr, &context);
   EXPECT_FALSE(moduleOp);
   EXPECT_NE(message.find("cannot be represented exactly"), std::string::npos);
   const auto mainCall = dyn_cast<CallSiteLoc>(location);
@@ -1606,7 +1608,7 @@ output bit[3] result;
 result = measure q;
 )qasm";
   MLIRContext indexContext;
-  auto indexed = qc::translateQASM3ToQC(indexSource, &indexContext);
+  auto indexed = qc::translateOpenQASMToQC(indexSource, &indexContext);
   ASSERT_TRUE(indexed);
   EXPECT_TRUE(succeeded(verify(*indexed)));
 
@@ -1618,7 +1620,7 @@ cx q[i], q[i];
 bit[2] result = measure q;
 )qasm";
   MLIRContext aliasContext;
-  auto aliased = qc::translateQASM3ToQC(aliasSource, &aliasContext);
+  auto aliased = qc::translateOpenQASMToQC(aliasSource, &aliasContext);
   EXPECT_FALSE(aliased);
 }
 
@@ -1632,7 +1634,7 @@ x q[i];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t switches = 0;
@@ -1672,7 +1674,7 @@ switch (selector) {
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t switches = 0;
@@ -1711,7 +1713,7 @@ switch (int(choose)) {
 }
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t switches = 0;
@@ -1745,7 +1747,7 @@ while (true) {
 }
 )qasm";
     MLIRContext context;
-    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    auto moduleOp = qc::translateOpenQASMToQC(source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     PassManager canonicalizer(&context);
@@ -1772,7 +1774,7 @@ switch (selector) {
 }
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   PassManager canonicalizer(&context);
@@ -1798,7 +1800,7 @@ c = measure q[i];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t switches = 0;
@@ -1824,7 +1826,7 @@ x q[i];
 )qasm";
   MLIRContext widthOneContext;
   auto widthOneModule =
-      qc::translateQASM3ToQC(widthOneSource, &widthOneContext);
+      qc::translateOpenQASMToQC(widthOneSource, &widthOneContext);
   ASSERT_TRUE(widthOneModule);
   size_t widthOneSwitches = 0;
   size_t widthOneLoads = 0;
@@ -1845,7 +1847,7 @@ int j = 1;
 cx left[i], right[j];
 )qasm";
   MLIRContext nestedContext;
-  auto nestedModule = qc::translateQASM3ToQC(nestedSource, &nestedContext);
+  auto nestedModule = qc::translateOpenQASMToQC(nestedSource, &nestedContext);
   ASSERT_TRUE(nestedModule);
   ASSERT_TRUE(succeeded(verify(*nestedModule)));
   size_t switches = 0;
@@ -1875,7 +1877,7 @@ barrier q[i], q[j];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -1909,7 +1911,7 @@ TEST(OpenQASMTargetTest, QuantumEmissionDoesNotScaleWithRegisterWidth) {
     const auto source = "OPENQASM 3.1;\ninclude \"stdgates.inc\";\nqubit[" +
                         std::to_string(width) + "] q;\nint i = 0;\nh q[i];\n";
     MLIRContext context;
-    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    auto moduleOp = qc::translateOpenQASMToQC(source, &context);
     EXPECT_TRUE(moduleOp);
     if (!moduleOp) {
       return size_t{0};
@@ -1928,7 +1930,7 @@ TEST(OpenQASMTargetTest, LargeStaticBarrierAvoidsAliasChecks) {
   const auto source =
       "OPENQASM 3.1;\nqubit[" + std::to_string(width) + "] q;\nbarrier q;\n";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -1961,7 +1963,7 @@ if (flags[0] && !flags[1]) { x q; }
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t xGates = 0;
@@ -1977,7 +1979,7 @@ measure q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t measurements = 0;
@@ -1996,7 +1998,7 @@ for uint i in [start:-1:stop] { x q; }
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   PassManager canonicalizer(&context);
@@ -2022,7 +2024,7 @@ for int i in [-1:stop] { x q; }
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   PassManager canonicalizer(&context);
@@ -2050,7 +2052,7 @@ conditional(0.0) q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t loops = 0;
@@ -2075,7 +2077,7 @@ inv @ looped(pi / 2) q;
     diagnostic = value.str();
     return success();
   });
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   EXPECT_FALSE(moduleOp);
   EXPECT_NE(diagnostic.find("structured control flow"), std::string::npos);
 }
@@ -2099,7 +2101,7 @@ inv @ wrapper q;
     location = value.getLocation();
     return success();
   });
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   EXPECT_FALSE(moduleOp);
   const auto fileLocation = dyn_cast<FileLineColLoc>(location);
   ASSERT_TRUE(fileLocation);
@@ -2120,7 +2122,7 @@ x q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   auto looped = moduleOp->lookupSymbol<func::FuncOp>("looped");
@@ -2146,7 +2148,7 @@ x q[i];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   EXPECT_FALSE(moduleOp);
 }
 
@@ -2171,7 +2173,7 @@ if (c[i]) { x q[0]; })qasm",
   for (const auto source : sources) {
     SCOPED_TRACE(source.str());
     MLIRContext context;
-    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    auto moduleOp = qc::translateOpenQASMToQC(source, &context);
     ASSERT_TRUE(moduleOp);
     EXPECT_TRUE(succeeded(verify(*moduleOp)));
   }
@@ -2185,7 +2187,7 @@ if (c[i]) { x q[0]; })qasm",
   for (const auto source : rejectedQuantumSources) {
     SCOPED_TRACE(source.str());
     MLIRContext context;
-    EXPECT_FALSE(qc::translateQASM3ToQC(source, &context));
+    EXPECT_FALSE(qc::translateOpenQASMToQC(source, &context));
   }
 }
 
@@ -2200,7 +2202,7 @@ while (repeat) { x q[i]; i = 1; repeat = measure q[0]; }
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   EXPECT_FALSE(moduleOp);
 }
 
@@ -2213,7 +2215,7 @@ for uint i in [0:2] { int x = i + 1; h q[x]; }
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
@@ -2241,7 +2243,7 @@ for int i in [0:stride:6] { x q[i]; }
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t forLoops = 0;
@@ -2284,7 +2286,7 @@ if (value + 1 > 0) { x q; })qasm",
   for (const auto source : sources) {
     SCOPED_TRACE(source.str());
     MLIRContext context;
-    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    auto moduleOp = qc::translateOpenQASMToQC(source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     moduleOp->walk([&](arith::AddIOp add) {
@@ -2317,7 +2319,7 @@ unsignedValue = unsignedValue ** unsignedOperand;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t powerLoops = 0;
@@ -2338,7 +2340,7 @@ qubit[2] reg;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
@@ -2356,7 +2358,7 @@ for int i in [9223372036854775806:1:9223372036854775807] { x q; })qasm",
   for (const auto source : sources) {
     SCOPED_TRACE(source.str());
     MLIRContext context;
-    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    auto moduleOp = qc::translateOpenQASMToQC(source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     size_t forLoops = 0;
@@ -2384,7 +2386,7 @@ for int i in [start:step:stop] { x q; }
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t whileLoops = 0;
@@ -2409,7 +2411,7 @@ x q[i];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t conditionals = 0;
@@ -2443,7 +2445,7 @@ x q[i];
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
@@ -2461,7 +2463,7 @@ result = measure q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -2518,7 +2520,7 @@ bit result = measure q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -2584,7 +2586,7 @@ result = measure q;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   bool branchStoresBit = false;
@@ -2633,7 +2635,7 @@ if (state[0]) { x q; }
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -2668,7 +2670,7 @@ qubit q;
 for uint i in [maximum:maximum] { if (i == maximum) { x q; } }
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   scf::ForOp loop;
@@ -2702,7 +2704,7 @@ barrier;
 bit[3] result = measure q;
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t barriers = 0;
@@ -2723,7 +2725,7 @@ mcx_vchain q[0], q[1], q[2], q[3], q[4], q[8], q[9];
 mcx_recursive q[0], q[1], q[2], q[3], q[4], q[9];
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t controls = 0;
@@ -2751,7 +2753,7 @@ bit right = measure target;
 )qasm";
 
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   size_t controls = 0;
   moduleOp->walk([&](qc::CtrlOp) { ++controls; });
@@ -2810,7 +2812,7 @@ TEST(OpenQASMTargetTest, PreservesImportedWhileBehavior) {
   for (const auto& fixture : fixtures) {
     SCOPED_TRACE(fixture.name.str());
     MLIRContext context;
-    auto moduleOp = qc::translateQASM3ToQC(fixture.source, &context);
+    auto moduleOp = qc::translateOpenQASMToQC(fixture.source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
@@ -2966,7 +2968,7 @@ TEST(OpenQASMTargetTest, StopsEmissionAtEveryOperationBudgetBoundary) {
         return success();
       });
       auto moduleOp =
-          qc::translateQASM3ToQC(source, &context, {.maxOperations = limit});
+          qc::translateOpenQASMToQC(source, &context, {.maxOperations = limit});
       if (moduleOp) {
         EXPECT_TRUE(succeeded(verify(*moduleOp)));
         EXPECT_EQ(diagnostics, 0);
@@ -2990,7 +2992,7 @@ TEST(OpenQASMTargetTest, DynamicStoresDoNotChargeForEveryRegisterBit) {
     source += "c[i] = false;";
   }
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   size_t stores = 0;

@@ -30,7 +30,7 @@ class Job;
 
 namespace mlir {
 
-/// Snapshot a circuit-model QDMI device as an MLIR compiler target.
+/// Snapshot a circuit-model QDMI device as an MQT compiler target.
 ///
 /// The returned target owns all queried metadata and remains valid
 /// after the originating device and session have been destroyed. Neutral-atom

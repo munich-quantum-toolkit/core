@@ -17,7 +17,7 @@
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
-#include "mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Support/Passes.h"
@@ -57,29 +57,29 @@
 #include <string>
 #include <utility>
 
-namespace mqt::test::qasm3_translation {
+namespace mqt::test::openqasm_translation {
 using namespace mlir;
 
 namespace {
 
-struct QASM3TranslationTestCase {
+struct OpenQASMTranslationTestCase {
   std::string name;
   std::string source;
   ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
-                                  const QASM3TranslationTestCase& test);
+                                  const OpenQASMTranslationTestCase& test);
 };
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os,
-                         const QASM3TranslationTestCase& test) {
-  return os << "QASM3Translation{" << test.name << ", reference="
+                         const OpenQASMTranslationTestCase& test) {
+  return os << "OpenQASMTranslation{" << test.name << ", reference="
             << ::mqt::test::displayName(test.referenceBuilder.name) << "}";
 }
 
-class QASM3TranslationTest
-    : public testing::TestWithParam<QASM3TranslationTestCase> {
+class OpenQASMTranslationTest
+    : public testing::TestWithParam<OpenQASMTranslationTestCase> {
 protected:
   std::unique_ptr<MLIRContext> context;
 
@@ -435,7 +435,7 @@ evaluateOneQubitRegion(Region& region) {
 [[nodiscard]] static Matrix2
 translatedOneQubitUnitary(const llvm::StringRef source) {
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   EXPECT_TRUE(moduleOp);
   if (!moduleOp) {
     return Matrix2::identity();
@@ -449,7 +449,7 @@ translatedOneQubitUnitary(const llvm::StringRef source) {
 [[nodiscard]] static Matrix4
 translatedTwoQubitUnitary(const llvm::StringRef source) {
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   EXPECT_TRUE(moduleOp);
   if (!moduleOp) {
     return Matrix4::identity();
@@ -495,7 +495,7 @@ translatedTwoQubitUnitary(const llvm::StringRef source) {
   return result;
 }
 
-TEST(QASM3TranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
+TEST(OpenQASMTranslationMatrixTest, PreservesOpenQASMGatePhaseConventions) {
   constexpr double theta = 0.37;
   constexpr double phi = -0.29;
   constexpr double lambda = 0.83;
@@ -975,13 +975,13 @@ static LogicalResult convertQCToQCO(ModuleOp moduleOp) {
   return manager.run(moduleOp);
 }
 
-TEST_P(QASM3TranslationTest, ProgramEquivalence) {
+TEST_P(OpenQASMTranslationTest, ProgramEquivalence) {
   const auto name = " (" + GetParam().name + ")";
   const auto& source = GetParam().source;
   const auto referenceBuilder = GetParam().referenceBuilder;
   ::mqt::test::DeferredPrinter printer;
 
-  auto translated = qc::translateQASM3ToQC(source, context.get());
+  auto translated = qc::translateOpenQASMToQC(source, context.get());
   ASSERT_TRUE(translated);
   printer.record(translated.get(), "Translated QC IR" + name);
   EXPECT_TRUE(verify(*translated).succeeded());
@@ -1025,14 +1025,14 @@ TEST_P(QASM3TranslationTest, ProgramEquivalence) {
       areModulesEquivalentWithPermutations(translated.get(), reference.get()));
 }
 
-TEST(QASM3TranslationErrors, AcceptsFloatingAndRejectsBooleanPowerExponent) {
+TEST(OpenQASMTranslationErrors, AcceptsFloatingAndRejectsBooleanPowerExponent) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                   memref::MemRefDialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
-  auto translated = qc::translateQASM3ToQC(qasm::floatingPowX, &context);
+  auto translated = qc::translateOpenQASMToQC(qasm::floatingPowX, &context);
   ASSERT_TRUE(translated);
   SmallVector<qc::PowOp> powers;
   translated->walk([&](qc::PowOp op) { powers.push_back(op); });
@@ -1040,17 +1040,17 @@ TEST(QASM3TranslationErrors, AcceptsFloatingAndRejectsBooleanPowerExponent) {
   ASSERT_TRUE(powers.front().getExponentValue().has_value());
   EXPECT_DOUBLE_EQ(*powers.front().getExponentValue(), 0.5);
 
-  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::booleanPowX, &context));
+  EXPECT_FALSE(qc::translateOpenQASMToQC(qasm::booleanPowX, &context));
 }
 
-TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndNesting) {
+TEST(OpenQASMTranslationErrors, ChecksPowerExponentPrecisionAndNesting) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                   memref::MemRefDialect, scf::SCFDialect>();
   MLIRContext context(registry);
   context.loadAllAvailableDialects();
 
-  auto translated = qc::translateQASM3ToQC(qasm::exactLargePowX, &context);
+  auto translated = qc::translateOpenQASMToQC(qasm::exactLargePowX, &context);
   ASSERT_TRUE(translated);
   SmallVector<qc::PowOp> powers;
   translated->walk([&](qc::PowOp op) { powers.push_back(op); });
@@ -1059,9 +1059,9 @@ TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndNesting) {
   ASSERT_TRUE(exponent.has_value());
   EXPECT_DOUBLE_EQ(*exponent, 9007199254740992.0);
 
-  EXPECT_FALSE(qc::translateQASM3ToQC(qasm::inexactLargePowX, &context));
+  EXPECT_FALSE(qc::translateOpenQASMToQC(qasm::inexactLargePowX, &context));
 
-  translated = qc::translateQASM3ToQC(qasm::overflowingNestedPowX, &context);
+  translated = qc::translateOpenQASMToQC(qasm::overflowingNestedPowX, &context);
   ASSERT_TRUE(translated);
   powers.clear();
   translated->walk([&](qc::PowOp op) { powers.push_back(op); });
@@ -1072,13 +1072,13 @@ TEST(QASM3TranslationErrors, ChecksPowerExponentPrecisionAndNesting) {
   }
 }
 
-TEST_F(QASM3TranslationTest, RetainsClassicalRegisterName) {
+TEST_F(OpenQASMTranslationTest, RetainsClassicalRegisterName) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
 qubit q;
 output bit named_result;
 named_result = measure q;
 )qasm";
-  auto translated = qc::translateQASM3ToQC(source, context.get());
+  auto translated = qc::translateOpenQASMToQC(source, context.get());
   ASSERT_TRUE(translated);
 
   cbit::AllocOp classicalRegister;
@@ -1090,7 +1090,7 @@ named_result = measure q;
   EXPECT_EQ(name.getValue(), "named_result");
 }
 
-TEST_F(QASM3TranslationTest, UsesVersionSpecificBitInitialization) {
+TEST_F(OpenQASMTranslationTest, UsesVersionSpecificBitInitialization) {
   constexpr std::array sources{
       std::pair{R"qasm(OPENQASM 2.0;
 include "qelib1.inc";
@@ -1108,7 +1108,7 @@ c[0] = measure q;
   };
 
   for (const auto& [source, expected] : sources) {
-    auto translated = qc::translateQASM3ToQC(source, context.get());
+    auto translated = qc::translateOpenQASMToQC(source, context.get());
     ASSERT_TRUE(translated);
     SmallVector<cbit::AllocOp> registers;
     bool containsPoison = false;
@@ -1124,11 +1124,11 @@ c[0] = measure q;
   }
 }
 
-TEST_F(QASM3TranslationTest, RetainsQubitRegisterName) {
+TEST_F(OpenQASMTranslationTest, RetainsQubitRegisterName) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
 qubit[2] named_qubits;
 )qasm";
-  auto translated = qc::translateQASM3ToQC(source, context.get());
+  auto translated = qc::translateOpenQASMToQC(source, context.get());
   ASSERT_TRUE(translated);
 
   memref::AllocOp qubitRegister;
@@ -1144,7 +1144,8 @@ qubit[2] named_qubits;
   EXPECT_EQ(name.getValue(), "named_qubits");
 }
 
-TEST_F(QASM3TranslationTest, DistinguishesScalarAndWidthOneQubitAllocations) {
+TEST_F(OpenQASMTranslationTest,
+       DistinguishesScalarAndWidthOneQubitAllocations) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 qubit scalar;
 qubit[1] vector;
@@ -1152,7 +1153,7 @@ output bit[2] result;
 result[0] = measure scalar;
 result[1] = measure vector[0];
 )qasm";
-  auto translated = qc::translateQASM3ToQC(source, context.get());
+  auto translated = qc::translateOpenQASMToQC(source, context.get());
   ASSERT_TRUE(translated);
 
   size_t scalarAllocations = 0;
@@ -1170,7 +1171,7 @@ result[1] = measure vector[0];
   EXPECT_EQ(registerAllocations, 1);
 }
 
-TEST_F(QASM3TranslationTest, JoinsMeasurementsFromBothBranches) {
+TEST_F(OpenQASMTranslationTest, JoinsMeasurementsFromBothBranches) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.0;
 qubit[2] q;
 bit condition;
@@ -1185,12 +1186,12 @@ if (measured_on_all_paths) {
   x q[1];
 }
 )qasm";
-  auto translated = qc::translateQASM3ToQC(source, context.get());
+  auto translated = qc::translateOpenQASMToQC(source, context.get());
   ASSERT_TRUE(translated);
   EXPECT_TRUE(succeeded(verify(*translated)));
 }
 
-TEST(QASM3TranslationRegression, ReloadsConditionAfterBranchMeasurement) {
+TEST(OpenQASMTranslationRegression, ReloadsConditionAfterBranchMeasurement) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
                   memref::MemRefDialect, scf::SCFDialect>();
@@ -1208,361 +1209,390 @@ if (c) {
   x q;
 }
 )qasm";
-  auto translated = qc::translateQASM3ToQC(source, &context);
+  auto translated = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(translated);
   EXPECT_TRUE(succeeded(verify(*translated)));
 }
 
 INSTANTIATE_TEST_SUITE_P(
-    QASM3TranslationProgramsTest, QASM3TranslationTest,
+    OpenQASMTranslationProgramsTest, OpenQASMTranslationTest,
     testing::Values(
 
-        QASM3TranslationTestCase{"AllocQubit", qasm::allocQubit,
-                                 MQT_NAMED_BUILDER(qc::allocQubit)},
-        QASM3TranslationTestCase{"AllocQubitRegister", qasm::allocQubitRegister,
-                                 MQT_NAMED_BUILDER(qc::allocQubitRegister)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{"AllocQubit", qasm::allocQubit,
+                                    MQT_NAMED_BUILDER(qc::allocQubit)},
+        OpenQASMTranslationTestCase{"AllocQubitRegister",
+                                    qasm::allocQubitRegister,
+                                    MQT_NAMED_BUILDER(qc::allocQubitRegister)},
+        OpenQASMTranslationTestCase{
             "AllocMultipleQubitRegisters", qasm::allocMultipleQubitRegisters,
             MQT_NAMED_BUILDER(allocMultipleQubitRegisters)},
-        QASM3TranslationTestCase{"AllocLargeRegister", qasm::allocLargeRegister,
-                                 MQT_NAMED_BUILDER(qc::allocLargeRegister)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{"AllocLargeRegister",
+                                    qasm::allocLargeRegister,
+                                    MQT_NAMED_BUILDER(qc::allocLargeRegister)},
+        OpenQASMTranslationTestCase{
             "SingleMeasurementToSingleBit", qasm::singleMeasurementToSingleBit,
             MQT_NAMED_BUILDER(qc::singleMeasurementToSingleBit)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{
             "RepeatedMeasurementToSameBit", qasm::repeatedMeasurementToSameBit,
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToSameBit)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{
             "RepeatedMeasurementToDifferentBits",
             qasm::repeatedMeasurementToDifferentBits,
             MQT_NAMED_BUILDER(qc::repeatedMeasurementToDifferentBits)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{
             "MultipleClassicalRegistersAndMeasurements",
             qasm::multipleClassicalRegistersAndMeasurements,
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{
             "ResetQubitAfterSingleOp", qasm::resetQubitAfterSingleOp,
             MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{
             "ResetMultipleQubitsAfterSingleOp",
             qasm::resetMultipleQubitsAfterSingleOp,
             MQT_NAMED_BUILDER(qc::resetMultipleQubitsAfterSingleOp)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{
             "RepeatedResetAfterSingleOp", qasm::repeatedResetAfterSingleOp,
             MQT_NAMED_BUILDER(qc::repeatedResetAfterSingleOp)},
-        QASM3TranslationTestCase{"GlobalPhase", qasm::globalPhase,
-                                 MQT_NAMED_BUILDER(qc::globalPhase)},
-        QASM3TranslationTestCase{"InverseGlobalPhase", qasm::inverseGlobalPhase,
-                                 MQT_NAMED_BUILDER(qc::inverseGlobalPhase)},
-        QASM3TranslationTestCase{"Identity", qasm::identity,
-                                 MQT_NAMED_BUILDER(qc::identity)},
-        QASM3TranslationTestCase{"SingleControlledIdentity",
-                                 qasm::singleControlledIdentity,
-                                 MQT_NAMED_BUILDER(qc::twoQubitsOneIdentity)},
-        QASM3TranslationTestCase{"MultipleControlledIdentity",
-                                 qasm::multipleControlledIdentity,
-                                 MQT_NAMED_BUILDER(qc::threeQubitsOneIdentity)},
-        QASM3TranslationTestCase{"X", qasm::x, MQT_NAMED_BUILDER(qc::x)},
-        QASM3TranslationTestCase{"TwoX", qasm::twoX, MQT_NAMED_BUILDER(twoX)},
-        QASM3TranslationTestCase{"SingleControlledX", qasm::singleControlledX,
-                                 MQT_NAMED_BUILDER(qc::singleControlledX)},
-        QASM3TranslationTestCase{"SingleNegControlledX",
-                                 qasm::singleNegControlledX,
-                                 MQT_NAMED_BUILDER(singleNegControlledX)},
-        QASM3TranslationTestCase{"MultipleControlledX",
-                                 qasm::multipleControlledX,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledX)},
-        QASM3TranslationTestCase{"TripleControlledXOpenQASM2",
-                                 qasm::tripleControlledXOpenQASM2,
-                                 MQT_NAMED_BUILDER(tripleControlledX)},
-        QASM3TranslationTestCase{"MixedControlledX", qasm::mixedControlledX,
-                                 MQT_NAMED_BUILDER(mixedControlledX)},
-        QASM3TranslationTestCase{"TwoMixedControlledX",
-                                 qasm::twoMixedControlledX,
-                                 MQT_NAMED_BUILDER(twoMixedControlledX)},
-        QASM3TranslationTestCase{"InverseX", qasm::inverseX,
-                                 MQT_NAMED_BUILDER(qc::inverseX)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{"GlobalPhase", qasm::globalPhase,
+                                    MQT_NAMED_BUILDER(qc::globalPhase)},
+        OpenQASMTranslationTestCase{"InverseGlobalPhase",
+                                    qasm::inverseGlobalPhase,
+                                    MQT_NAMED_BUILDER(qc::inverseGlobalPhase)},
+        OpenQASMTranslationTestCase{"Identity", qasm::identity,
+                                    MQT_NAMED_BUILDER(qc::identity)},
+        OpenQASMTranslationTestCase{
+            "SingleControlledIdentity", qasm::singleControlledIdentity,
+            MQT_NAMED_BUILDER(qc::twoQubitsOneIdentity)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledIdentity", qasm::multipleControlledIdentity,
+            MQT_NAMED_BUILDER(qc::threeQubitsOneIdentity)},
+        OpenQASMTranslationTestCase{"X", qasm::x, MQT_NAMED_BUILDER(qc::x)},
+        OpenQASMTranslationTestCase{"TwoX", qasm::twoX,
+                                    MQT_NAMED_BUILDER(twoX)},
+        OpenQASMTranslationTestCase{"SingleControlledX",
+                                    qasm::singleControlledX,
+                                    MQT_NAMED_BUILDER(qc::singleControlledX)},
+        OpenQASMTranslationTestCase{"SingleNegControlledX",
+                                    qasm::singleNegControlledX,
+                                    MQT_NAMED_BUILDER(singleNegControlledX)},
+        OpenQASMTranslationTestCase{"MultipleControlledX",
+                                    qasm::multipleControlledX,
+                                    MQT_NAMED_BUILDER(qc::multipleControlledX)},
+        OpenQASMTranslationTestCase{"TripleControlledXOpenQASM2",
+                                    qasm::tripleControlledXOpenQASM2,
+                                    MQT_NAMED_BUILDER(tripleControlledX)},
+        OpenQASMTranslationTestCase{"MixedControlledX", qasm::mixedControlledX,
+                                    MQT_NAMED_BUILDER(mixedControlledX)},
+        OpenQASMTranslationTestCase{"TwoMixedControlledX",
+                                    qasm::twoMixedControlledX,
+                                    MQT_NAMED_BUILDER(twoMixedControlledX)},
+        OpenQASMTranslationTestCase{"InverseX", qasm::inverseX,
+                                    MQT_NAMED_BUILDER(qc::inverseX)},
+        OpenQASMTranslationTestCase{
             "InverseMultipleControlledX", qasm::inverseMultipleControlledX,
             MQT_NAMED_BUILDER(qc::inverseMultipleControlledX)},
-        QASM3TranslationTestCase{"Y", qasm::y, MQT_NAMED_BUILDER(qc::y)},
-        QASM3TranslationTestCase{"SingleControlledY", qasm::singleControlledY,
-                                 MQT_NAMED_BUILDER(qc::singleControlledY)},
-        QASM3TranslationTestCase{"MultipleControlledY",
-                                 qasm::multipleControlledY,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledY)},
-        QASM3TranslationTestCase{"Z", qasm::z, MQT_NAMED_BUILDER(qc::z)},
-        QASM3TranslationTestCase{"SingleControlledZ", qasm::singleControlledZ,
-                                 MQT_NAMED_BUILDER(qc::singleControlledZ)},
-        QASM3TranslationTestCase{"MultipleControlledZ",
-                                 qasm::multipleControlledZ,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledZ)},
-        QASM3TranslationTestCase{"H", qasm::h, MQT_NAMED_BUILDER(qc::h)},
-        QASM3TranslationTestCase{"SingleControlledH", qasm::singleControlledH,
-                                 MQT_NAMED_BUILDER(qc::singleControlledH)},
-        QASM3TranslationTestCase{"MultipleControlledH",
-                                 qasm::multipleControlledH,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledH)},
-        QASM3TranslationTestCase{"S", qasm::s, MQT_NAMED_BUILDER(qc::s)},
-        QASM3TranslationTestCase{"SingleControlledS", qasm::singleControlledS,
-                                 MQT_NAMED_BUILDER(qc::singleControlledS)},
-        QASM3TranslationTestCase{"MultipleControlledS",
-                                 qasm::multipleControlledS,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledS)},
-        QASM3TranslationTestCase{"Sdg", qasm::sdg, MQT_NAMED_BUILDER(qc::sdg)},
-        QASM3TranslationTestCase{"SingleControlledSdg",
-                                 qasm::singleControlledSdg,
-                                 MQT_NAMED_BUILDER(qc::singleControlledSdg)},
-        QASM3TranslationTestCase{"MultipleControlledSdg",
-                                 qasm::multipleControlledSdg,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledSdg)},
-        QASM3TranslationTestCase{"T", qasm::t_, MQT_NAMED_BUILDER(qc::t_)},
-        QASM3TranslationTestCase{"SingleControlledT", qasm::singleControlledT,
-                                 MQT_NAMED_BUILDER(qc::singleControlledT)},
-        QASM3TranslationTestCase{"MultipleControlledT",
-                                 qasm::multipleControlledT,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledT)},
-        QASM3TranslationTestCase{"Tdg", qasm::tdg, MQT_NAMED_BUILDER(qc::tdg)},
-        QASM3TranslationTestCase{"SingleControlledTdg",
-                                 qasm::singleControlledTdg,
-                                 MQT_NAMED_BUILDER(qc::singleControlledTdg)},
-        QASM3TranslationTestCase{"MultipleControlledTdg",
-                                 qasm::multipleControlledTdg,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledTdg)},
-        QASM3TranslationTestCase{"SX", qasm::sx, MQT_NAMED_BUILDER(qc::sx)},
-        QASM3TranslationTestCase{"SingleControlledSX", qasm::singleControlledSx,
-                                 MQT_NAMED_BUILDER(qc::singleControlledSx)},
-        QASM3TranslationTestCase{"MultipleControlledSX",
-                                 qasm::multipleControlledSx,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledSx)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{"Y", qasm::y, MQT_NAMED_BUILDER(qc::y)},
+        OpenQASMTranslationTestCase{"SingleControlledY",
+                                    qasm::singleControlledY,
+                                    MQT_NAMED_BUILDER(qc::singleControlledY)},
+        OpenQASMTranslationTestCase{"MultipleControlledY",
+                                    qasm::multipleControlledY,
+                                    MQT_NAMED_BUILDER(qc::multipleControlledY)},
+        OpenQASMTranslationTestCase{"Z", qasm::z, MQT_NAMED_BUILDER(qc::z)},
+        OpenQASMTranslationTestCase{"SingleControlledZ",
+                                    qasm::singleControlledZ,
+                                    MQT_NAMED_BUILDER(qc::singleControlledZ)},
+        OpenQASMTranslationTestCase{"MultipleControlledZ",
+                                    qasm::multipleControlledZ,
+                                    MQT_NAMED_BUILDER(qc::multipleControlledZ)},
+        OpenQASMTranslationTestCase{"H", qasm::h, MQT_NAMED_BUILDER(qc::h)},
+        OpenQASMTranslationTestCase{"SingleControlledH",
+                                    qasm::singleControlledH,
+                                    MQT_NAMED_BUILDER(qc::singleControlledH)},
+        OpenQASMTranslationTestCase{"MultipleControlledH",
+                                    qasm::multipleControlledH,
+                                    MQT_NAMED_BUILDER(qc::multipleControlledH)},
+        OpenQASMTranslationTestCase{"S", qasm::s, MQT_NAMED_BUILDER(qc::s)},
+        OpenQASMTranslationTestCase{"SingleControlledS",
+                                    qasm::singleControlledS,
+                                    MQT_NAMED_BUILDER(qc::singleControlledS)},
+        OpenQASMTranslationTestCase{"MultipleControlledS",
+                                    qasm::multipleControlledS,
+                                    MQT_NAMED_BUILDER(qc::multipleControlledS)},
+        OpenQASMTranslationTestCase{"Sdg", qasm::sdg,
+                                    MQT_NAMED_BUILDER(qc::sdg)},
+        OpenQASMTranslationTestCase{"SingleControlledSdg",
+                                    qasm::singleControlledSdg,
+                                    MQT_NAMED_BUILDER(qc::singleControlledSdg)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledSdg", qasm::multipleControlledSdg,
+            MQT_NAMED_BUILDER(qc::multipleControlledSdg)},
+        OpenQASMTranslationTestCase{"T", qasm::t_, MQT_NAMED_BUILDER(qc::t_)},
+        OpenQASMTranslationTestCase{"SingleControlledT",
+                                    qasm::singleControlledT,
+                                    MQT_NAMED_BUILDER(qc::singleControlledT)},
+        OpenQASMTranslationTestCase{"MultipleControlledT",
+                                    qasm::multipleControlledT,
+                                    MQT_NAMED_BUILDER(qc::multipleControlledT)},
+        OpenQASMTranslationTestCase{"Tdg", qasm::tdg,
+                                    MQT_NAMED_BUILDER(qc::tdg)},
+        OpenQASMTranslationTestCase{"SingleControlledTdg",
+                                    qasm::singleControlledTdg,
+                                    MQT_NAMED_BUILDER(qc::singleControlledTdg)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledTdg", qasm::multipleControlledTdg,
+            MQT_NAMED_BUILDER(qc::multipleControlledTdg)},
+        OpenQASMTranslationTestCase{"SX", qasm::sx, MQT_NAMED_BUILDER(qc::sx)},
+        OpenQASMTranslationTestCase{"SingleControlledSX",
+                                    qasm::singleControlledSx,
+                                    MQT_NAMED_BUILDER(qc::singleControlledSx)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledSX", qasm::multipleControlledSx,
+            MQT_NAMED_BUILDER(qc::multipleControlledSx)},
+        OpenQASMTranslationTestCase{
             "LegacyTripleControlledSqrtX",
             "OPENQASM 2.0; include \"qelib1.inc\"; qreg q[4]; creg c[4]; "
             "c3sqrtx q[0], q[1], q[2], q[3]; measure q -> c;",
             MQT_NAMED_BUILDER(legacyTripleControlledSx)},
-        QASM3TranslationTestCase{"SXdg", qasm::sxdg,
-                                 MQT_NAMED_BUILDER(qc::sxdg)},
-        QASM3TranslationTestCase{"SingleControlledSXdg",
-                                 qasm::singleControlledSxdg,
-                                 MQT_NAMED_BUILDER(qc::singleControlledSxdg)},
-        QASM3TranslationTestCase{"MultipleControlledSXdg",
-                                 qasm::multipleControlledSxdg,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledSxdg)},
-        QASM3TranslationTestCase{"RX", qasm::rx, MQT_NAMED_BUILDER(qc::rx)},
-        QASM3TranslationTestCase{"SingleControlledRX", qasm::singleControlledRx,
-                                 MQT_NAMED_BUILDER(qc::singleControlledRx)},
-        QASM3TranslationTestCase{"MultipleControlledRX",
-                                 qasm::multipleControlledRx,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledRx)},
-        QASM3TranslationTestCase{"RY", qasm::ry, MQT_NAMED_BUILDER(qc::ry)},
-        QASM3TranslationTestCase{"SingleControlledRY", qasm::singleControlledRy,
-                                 MQT_NAMED_BUILDER(qc::singleControlledRy)},
-        QASM3TranslationTestCase{"MultipleControlledRY",
-                                 qasm::multipleControlledRy,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledRy)},
-        QASM3TranslationTestCase{"RZ", qasm::rz, MQT_NAMED_BUILDER(qc::rz)},
-        QASM3TranslationTestCase{"SingleControlledRZ", qasm::singleControlledRz,
-                                 MQT_NAMED_BUILDER(qc::singleControlledRz)},
-        QASM3TranslationTestCase{"MultipleControlledRZ",
-                                 qasm::multipleControlledRz,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledRz)},
-        QASM3TranslationTestCase{"P", qasm::p, MQT_NAMED_BUILDER(qc::p)},
-        QASM3TranslationTestCase{"SingleControlledP", qasm::singleControlledP,
-                                 MQT_NAMED_BUILDER(qc::singleControlledP)},
-        QASM3TranslationTestCase{"MultipleControlledP",
-                                 qasm::multipleControlledP,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledP)},
-        QASM3TranslationTestCase{"R", qasm::r, MQT_NAMED_BUILDER(qc::r)},
-        QASM3TranslationTestCase{"SingleControlledR", qasm::singleControlledR,
-                                 MQT_NAMED_BUILDER(qc::singleControlledR)},
-        QASM3TranslationTestCase{"MultipleControlledR",
-                                 qasm::multipleControlledR,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledR)},
-        QASM3TranslationTestCase{"U2", qasm::u2, MQT_NAMED_BUILDER(legacyU2)},
-        QASM3TranslationTestCase{"SingleControlledU2", qasm::singleControlledU2,
-                                 MQT_NAMED_BUILDER(legacySingleControlledU2)},
-        QASM3TranslationTestCase{"MultipleControlledU2",
-                                 qasm::multipleControlledU2,
-                                 MQT_NAMED_BUILDER(legacyMultipleControlledU2)},
-        QASM3TranslationTestCase{"U", qasm::u, MQT_NAMED_BUILDER(legacyU)},
-        QASM3TranslationTestCase{"SingleControlledU", qasm::singleControlledU,
-                                 MQT_NAMED_BUILDER(legacySingleControlledU)},
-        QASM3TranslationTestCase{"MultipleControlledU",
-                                 qasm::multipleControlledU,
-                                 MQT_NAMED_BUILDER(legacyMultipleControlledU)},
-        QASM3TranslationTestCase{"SWAP", qasm::swap,
-                                 MQT_NAMED_BUILDER(qc::swap)},
-        QASM3TranslationTestCase{"SingleControlledSWAP",
-                                 qasm::singleControlledSwap,
-                                 MQT_NAMED_BUILDER(qc::singleControlledSwap)},
-        QASM3TranslationTestCase{"MultipleControlledSWAP",
-                                 qasm::multipleControlledSwap,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledSwap)},
-        QASM3TranslationTestCase{"iSWAP", qasm::iswap,
-                                 MQT_NAMED_BUILDER(qc::iswap)},
-        QASM3TranslationTestCase{"SingleControllediSWAP",
-                                 qasm::singleControlledIswap,
-                                 MQT_NAMED_BUILDER(qc::singleControlledIswap)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{"SXdg", qasm::sxdg,
+                                    MQT_NAMED_BUILDER(qc::sxdg)},
+        OpenQASMTranslationTestCase{
+            "SingleControlledSXdg", qasm::singleControlledSxdg,
+            MQT_NAMED_BUILDER(qc::singleControlledSxdg)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledSXdg", qasm::multipleControlledSxdg,
+            MQT_NAMED_BUILDER(qc::multipleControlledSxdg)},
+        OpenQASMTranslationTestCase{"RX", qasm::rx, MQT_NAMED_BUILDER(qc::rx)},
+        OpenQASMTranslationTestCase{"SingleControlledRX",
+                                    qasm::singleControlledRx,
+                                    MQT_NAMED_BUILDER(qc::singleControlledRx)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledRX", qasm::multipleControlledRx,
+            MQT_NAMED_BUILDER(qc::multipleControlledRx)},
+        OpenQASMTranslationTestCase{"RY", qasm::ry, MQT_NAMED_BUILDER(qc::ry)},
+        OpenQASMTranslationTestCase{"SingleControlledRY",
+                                    qasm::singleControlledRy,
+                                    MQT_NAMED_BUILDER(qc::singleControlledRy)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledRY", qasm::multipleControlledRy,
+            MQT_NAMED_BUILDER(qc::multipleControlledRy)},
+        OpenQASMTranslationTestCase{"RZ", qasm::rz, MQT_NAMED_BUILDER(qc::rz)},
+        OpenQASMTranslationTestCase{"SingleControlledRZ",
+                                    qasm::singleControlledRz,
+                                    MQT_NAMED_BUILDER(qc::singleControlledRz)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledRZ", qasm::multipleControlledRz,
+            MQT_NAMED_BUILDER(qc::multipleControlledRz)},
+        OpenQASMTranslationTestCase{"P", qasm::p, MQT_NAMED_BUILDER(qc::p)},
+        OpenQASMTranslationTestCase{"SingleControlledP",
+                                    qasm::singleControlledP,
+                                    MQT_NAMED_BUILDER(qc::singleControlledP)},
+        OpenQASMTranslationTestCase{"MultipleControlledP",
+                                    qasm::multipleControlledP,
+                                    MQT_NAMED_BUILDER(qc::multipleControlledP)},
+        OpenQASMTranslationTestCase{"R", qasm::r, MQT_NAMED_BUILDER(qc::r)},
+        OpenQASMTranslationTestCase{"SingleControlledR",
+                                    qasm::singleControlledR,
+                                    MQT_NAMED_BUILDER(qc::singleControlledR)},
+        OpenQASMTranslationTestCase{"MultipleControlledR",
+                                    qasm::multipleControlledR,
+                                    MQT_NAMED_BUILDER(qc::multipleControlledR)},
+        OpenQASMTranslationTestCase{"U2", qasm::u2,
+                                    MQT_NAMED_BUILDER(legacyU2)},
+        OpenQASMTranslationTestCase{
+            "SingleControlledU2", qasm::singleControlledU2,
+            MQT_NAMED_BUILDER(legacySingleControlledU2)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledU2", qasm::multipleControlledU2,
+            MQT_NAMED_BUILDER(legacyMultipleControlledU2)},
+        OpenQASMTranslationTestCase{"U", qasm::u, MQT_NAMED_BUILDER(legacyU)},
+        OpenQASMTranslationTestCase{"SingleControlledU",
+                                    qasm::singleControlledU,
+                                    MQT_NAMED_BUILDER(legacySingleControlledU)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledU", qasm::multipleControlledU,
+            MQT_NAMED_BUILDER(legacyMultipleControlledU)},
+        OpenQASMTranslationTestCase{"SWAP", qasm::swap,
+                                    MQT_NAMED_BUILDER(qc::swap)},
+        OpenQASMTranslationTestCase{
+            "SingleControlledSWAP", qasm::singleControlledSwap,
+            MQT_NAMED_BUILDER(qc::singleControlledSwap)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledSWAP", qasm::multipleControlledSwap,
+            MQT_NAMED_BUILDER(qc::multipleControlledSwap)},
+        OpenQASMTranslationTestCase{"iSWAP", qasm::iswap,
+                                    MQT_NAMED_BUILDER(qc::iswap)},
+        OpenQASMTranslationTestCase{
+            "SingleControllediSWAP", qasm::singleControlledIswap,
+            MQT_NAMED_BUILDER(qc::singleControlledIswap)},
+        OpenQASMTranslationTestCase{
             "MultipleControllediSWAP", qasm::multipleControlledIswap,
             MQT_NAMED_BUILDER(qc::multipleControlledIswap)},
-        QASM3TranslationTestCase{"InverseISWAP", qasm::inverseIswap,
-                                 MQT_NAMED_BUILDER(qc::inverseIswap)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{"InverseISWAP", qasm::inverseIswap,
+                                    MQT_NAMED_BUILDER(qc::inverseIswap)},
+        OpenQASMTranslationTestCase{
             "InverseMultiControlledISWAP", qasm::inverseMultipleControlledIswap,
             MQT_NAMED_BUILDER(qc::inverseMultipleControlledIswap)},
-        QASM3TranslationTestCase{"DCX", qasm::dcx, MQT_NAMED_BUILDER(qc::dcx)},
-        QASM3TranslationTestCase{"SingleControlledDCX",
-                                 qasm::singleControlledDcx,
-                                 MQT_NAMED_BUILDER(qc::singleControlledDcx)},
-        QASM3TranslationTestCase{"MultipleControlledDCX",
-                                 qasm::multipleControlledDcx,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledDcx)},
-        QASM3TranslationTestCase{"ECR", qasm::ecr, MQT_NAMED_BUILDER(qc::ecr)},
-        QASM3TranslationTestCase{"SingleControlledECR",
-                                 qasm::singleControlledEcr,
-                                 MQT_NAMED_BUILDER(qc::singleControlledEcr)},
-        QASM3TranslationTestCase{"MultipleControlledECR",
-                                 qasm::multipleControlledEcr,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledEcr)},
-        QASM3TranslationTestCase{"RXX", qasm::rxx, MQT_NAMED_BUILDER(qc::rxx)},
-        QASM3TranslationTestCase{"SingleControlledRXX",
-                                 qasm::singleControlledRxx,
-                                 MQT_NAMED_BUILDER(qc::singleControlledRxx)},
-        QASM3TranslationTestCase{"MultipleControlledRXX",
-                                 qasm::multipleControlledRxx,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledRxx)},
-        QASM3TranslationTestCase{"TripleControlledRXX",
-                                 qasm::tripleControlledRxx,
-                                 MQT_NAMED_BUILDER(qc::tripleControlledRxx)},
-        QASM3TranslationTestCase{"RYY", qasm::ryy, MQT_NAMED_BUILDER(qc::ryy)},
-        QASM3TranslationTestCase{"SingleControlledRYY",
-                                 qasm::singleControlledRyy,
-                                 MQT_NAMED_BUILDER(qc::singleControlledRyy)},
-        QASM3TranslationTestCase{"MultipleControlledRYY",
-                                 qasm::multipleControlledRyy,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledRyy)},
-        QASM3TranslationTestCase{"RZX", qasm::rzx, MQT_NAMED_BUILDER(qc::rzx)},
-        QASM3TranslationTestCase{"SingleControlledRZX",
-                                 qasm::singleControlledRzx,
-                                 MQT_NAMED_BUILDER(qc::singleControlledRzx)},
-        QASM3TranslationTestCase{"MultipleControlledRZX",
-                                 qasm::multipleControlledRzx,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledRzx)},
-        QASM3TranslationTestCase{"RZZ", qasm::rzz, MQT_NAMED_BUILDER(qc::rzz)},
-        QASM3TranslationTestCase{"SingleControlledRZZ",
-                                 qasm::singleControlledRzz,
-                                 MQT_NAMED_BUILDER(qc::singleControlledRzz)},
-        QASM3TranslationTestCase{"MultipleControlledRZZ",
-                                 qasm::multipleControlledRzz,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledRzz)},
-        QASM3TranslationTestCase{"XXPlusYY", qasm::xxPlusYY,
-                                 MQT_NAMED_BUILDER(qc::xxPlusYY)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{"DCX", qasm::dcx,
+                                    MQT_NAMED_BUILDER(qc::dcx)},
+        OpenQASMTranslationTestCase{"SingleControlledDCX",
+                                    qasm::singleControlledDcx,
+                                    MQT_NAMED_BUILDER(qc::singleControlledDcx)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledDCX", qasm::multipleControlledDcx,
+            MQT_NAMED_BUILDER(qc::multipleControlledDcx)},
+        OpenQASMTranslationTestCase{"ECR", qasm::ecr,
+                                    MQT_NAMED_BUILDER(qc::ecr)},
+        OpenQASMTranslationTestCase{"SingleControlledECR",
+                                    qasm::singleControlledEcr,
+                                    MQT_NAMED_BUILDER(qc::singleControlledEcr)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledECR", qasm::multipleControlledEcr,
+            MQT_NAMED_BUILDER(qc::multipleControlledEcr)},
+        OpenQASMTranslationTestCase{"RXX", qasm::rxx,
+                                    MQT_NAMED_BUILDER(qc::rxx)},
+        OpenQASMTranslationTestCase{"SingleControlledRXX",
+                                    qasm::singleControlledRxx,
+                                    MQT_NAMED_BUILDER(qc::singleControlledRxx)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledRXX", qasm::multipleControlledRxx,
+            MQT_NAMED_BUILDER(qc::multipleControlledRxx)},
+        OpenQASMTranslationTestCase{"TripleControlledRXX",
+                                    qasm::tripleControlledRxx,
+                                    MQT_NAMED_BUILDER(qc::tripleControlledRxx)},
+        OpenQASMTranslationTestCase{"RYY", qasm::ryy,
+                                    MQT_NAMED_BUILDER(qc::ryy)},
+        OpenQASMTranslationTestCase{"SingleControlledRYY",
+                                    qasm::singleControlledRyy,
+                                    MQT_NAMED_BUILDER(qc::singleControlledRyy)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledRYY", qasm::multipleControlledRyy,
+            MQT_NAMED_BUILDER(qc::multipleControlledRyy)},
+        OpenQASMTranslationTestCase{"RZX", qasm::rzx,
+                                    MQT_NAMED_BUILDER(qc::rzx)},
+        OpenQASMTranslationTestCase{"SingleControlledRZX",
+                                    qasm::singleControlledRzx,
+                                    MQT_NAMED_BUILDER(qc::singleControlledRzx)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledRZX", qasm::multipleControlledRzx,
+            MQT_NAMED_BUILDER(qc::multipleControlledRzx)},
+        OpenQASMTranslationTestCase{"RZZ", qasm::rzz,
+                                    MQT_NAMED_BUILDER(qc::rzz)},
+        OpenQASMTranslationTestCase{"SingleControlledRZZ",
+                                    qasm::singleControlledRzz,
+                                    MQT_NAMED_BUILDER(qc::singleControlledRzz)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledRZZ", qasm::multipleControlledRzz,
+            MQT_NAMED_BUILDER(qc::multipleControlledRzz)},
+        OpenQASMTranslationTestCase{"XXPlusYY", qasm::xxPlusYY,
+                                    MQT_NAMED_BUILDER(qc::xxPlusYY)},
+        OpenQASMTranslationTestCase{
             "SingleControlledXXPlusYY", qasm::singleControlledXxPlusYY,
             MQT_NAMED_BUILDER(qc::singleControlledXxPlusYY)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{
             "MultipleControlledXXPlusYY", qasm::multipleControlledXxPlusYY,
             MQT_NAMED_BUILDER(qc::multipleControlledXxPlusYY)},
-        QASM3TranslationTestCase{"XXMinusYY", qasm::xxMinusYY,
-                                 MQT_NAMED_BUILDER(qc::xxMinusYY)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{"XXMinusYY", qasm::xxMinusYY,
+                                    MQT_NAMED_BUILDER(qc::xxMinusYY)},
+        OpenQASMTranslationTestCase{
             "SingleControlledXXMinusYY", qasm::singleControlledXxMinusYY,
             MQT_NAMED_BUILDER(qc::singleControlledXxMinusYY)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{
             "MultipleControlledXXMinusYY", qasm::multipleControlledXxMinusYY,
             MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY)},
-        QASM3TranslationTestCase{"RCCX", qasm::rccx,
-                                 MQT_NAMED_BUILDER(qc::rccx)},
-        QASM3TranslationTestCase{"SingleControlledRCCX",
-                                 qasm::singleControlledRccx,
-                                 MQT_NAMED_BUILDER(qc::singleControlledRccx)},
-        QASM3TranslationTestCase{"MultipleControlledRCCX",
-                                 qasm::multipleControlledRccx,
-                                 MQT_NAMED_BUILDER(qc::multipleControlledRccx)},
-        QASM3TranslationTestCase{"Barrier", qasm::barrier,
-                                 MQT_NAMED_BUILDER(qc::barrier)},
-        QASM3TranslationTestCase{"PowTwoX", qasm::powTwoX,
-                                 MQT_NAMED_BUILDER(powTwoX)},
-        QASM3TranslationTestCase{"PowZeroX", qasm::powZeroX,
-                                 MQT_NAMED_BUILDER(powZeroX)},
-        QASM3TranslationTestCase{"NegativePowS", qasm::negativePowS,
-                                 MQT_NAMED_BUILDER(negativePowS)},
-        QASM3TranslationTestCase{"ControlledInversePowS",
-                                 qasm::controlledInversePowS,
-                                 MQT_NAMED_BUILDER(controlledInversePowS)},
-        QASM3TranslationTestCase{"NestedPowX", qasm::nestedPowX,
-                                 MQT_NAMED_BUILDER(nestedPowX)},
-        QASM3TranslationTestCase{"CustomPowHS", qasm::customPowHS,
-                                 MQT_NAMED_BUILDER(customPowHS)},
-        QASM3TranslationTestCase{"BroadcastPowX", qasm::broadcastPowX,
-                                 MQT_NAMED_BUILDER(broadcastPowX)},
-        QASM3TranslationTestCase{"BarrierTwoQubits", qasm::barrierTwoQubits,
-                                 MQT_NAMED_BUILDER(qc::barrierTwoQubits)},
-        QASM3TranslationTestCase{"BarrierMultipleQubits",
-                                 qasm::barrierMultipleQubits,
-                                 MQT_NAMED_BUILDER(qc::barrierMultipleQubits)},
-        QASM3TranslationTestCase{"CtrlTwo", qasm::ctrlTwo,
-                                 MQT_NAMED_BUILDER(ctrlTwoCalls)},
-        QASM3TranslationTestCase{"CtrlTwoMixed", qasm::ctrlTwoMixed,
-                                 MQT_NAMED_BUILDER(ctrlTwoMixedCalls)},
-        QASM3TranslationTestCase{"SimpleIf", qasm::simpleIf,
-                                 MQT_NAMED_BUILDER(qc::simpleIf)},
-        QASM3TranslationTestCase{"IfElse", qasm::ifElse,
-                                 MQT_NAMED_BUILDER(qc::ifElse)},
-        QASM3TranslationTestCase{"IfTwoQubits", qasm::ifTwoQubits,
-                                 MQT_NAMED_BUILDER(qc::ifTwoQubits)},
-        QASM3TranslationTestCase{"IfWithMeasurement", qasm::ifWithMeasurement,
-                                 MQT_NAMED_BUILDER(ifWithMeasurement)},
-        QASM3TranslationTestCase{"IfNot", qasm::ifNot,
-                                 MQT_NAMED_BUILDER(ifNot)},
-        QASM3TranslationTestCase{"BroadcastRegisterAndQubit",
-                                 qasm::broadcastRegisterAndQubit,
-                                 MQT_NAMED_BUILDER(broadcastRegisterAndQubit)},
-        QASM3TranslationTestCase{"BroadcastCompoundGate",
-                                 qasm::broadcastCompoundGate,
-                                 MQT_NAMED_BUILDER(broadcastCompoundGate)},
-        QASM3TranslationTestCase{"ExpressionArithmetic",
-                                 qasm::expressionArithmetic,
-                                 MQT_NAMED_BUILDER(expressionArithmetic)},
-        QASM3TranslationTestCase{"ExpressionUnaryMinus",
-                                 qasm::expressionUnaryMinus,
-                                 MQT_NAMED_BUILDER(expressionUnaryMinus)},
-        QASM3TranslationTestCase{"ExpressionBuiltinConstants",
-                                 qasm::expressionBuiltinConstants,
-                                 MQT_NAMED_BUILDER(expressionBuiltinConstants)},
-        QASM3TranslationTestCase{"ExpressionMathFunctions",
-                                 qasm::expressionMathFunctions,
-                                 MQT_NAMED_BUILDER(expressionMathFunctions)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{"RCCX", qasm::rccx,
+                                    MQT_NAMED_BUILDER(qc::rccx)},
+        OpenQASMTranslationTestCase{
+            "SingleControlledRCCX", qasm::singleControlledRccx,
+            MQT_NAMED_BUILDER(qc::singleControlledRccx)},
+        OpenQASMTranslationTestCase{
+            "MultipleControlledRCCX", qasm::multipleControlledRccx,
+            MQT_NAMED_BUILDER(qc::multipleControlledRccx)},
+        OpenQASMTranslationTestCase{"Barrier", qasm::barrier,
+                                    MQT_NAMED_BUILDER(qc::barrier)},
+        OpenQASMTranslationTestCase{"PowTwoX", qasm::powTwoX,
+                                    MQT_NAMED_BUILDER(powTwoX)},
+        OpenQASMTranslationTestCase{"PowZeroX", qasm::powZeroX,
+                                    MQT_NAMED_BUILDER(powZeroX)},
+        OpenQASMTranslationTestCase{"NegativePowS", qasm::negativePowS,
+                                    MQT_NAMED_BUILDER(negativePowS)},
+        OpenQASMTranslationTestCase{"ControlledInversePowS",
+                                    qasm::controlledInversePowS,
+                                    MQT_NAMED_BUILDER(controlledInversePowS)},
+        OpenQASMTranslationTestCase{"NestedPowX", qasm::nestedPowX,
+                                    MQT_NAMED_BUILDER(nestedPowX)},
+        OpenQASMTranslationTestCase{"CustomPowHS", qasm::customPowHS,
+                                    MQT_NAMED_BUILDER(customPowHS)},
+        OpenQASMTranslationTestCase{"BroadcastPowX", qasm::broadcastPowX,
+                                    MQT_NAMED_BUILDER(broadcastPowX)},
+        OpenQASMTranslationTestCase{"BarrierTwoQubits", qasm::barrierTwoQubits,
+                                    MQT_NAMED_BUILDER(qc::barrierTwoQubits)},
+        OpenQASMTranslationTestCase{
+            "BarrierMultipleQubits", qasm::barrierMultipleQubits,
+            MQT_NAMED_BUILDER(qc::barrierMultipleQubits)},
+        OpenQASMTranslationTestCase{"CtrlTwo", qasm::ctrlTwo,
+                                    MQT_NAMED_BUILDER(ctrlTwoCalls)},
+        OpenQASMTranslationTestCase{"CtrlTwoMixed", qasm::ctrlTwoMixed,
+                                    MQT_NAMED_BUILDER(ctrlTwoMixedCalls)},
+        OpenQASMTranslationTestCase{"SimpleIf", qasm::simpleIf,
+                                    MQT_NAMED_BUILDER(qc::simpleIf)},
+        OpenQASMTranslationTestCase{"IfElse", qasm::ifElse,
+                                    MQT_NAMED_BUILDER(qc::ifElse)},
+        OpenQASMTranslationTestCase{"IfTwoQubits", qasm::ifTwoQubits,
+                                    MQT_NAMED_BUILDER(qc::ifTwoQubits)},
+        OpenQASMTranslationTestCase{"IfWithMeasurement",
+                                    qasm::ifWithMeasurement,
+                                    MQT_NAMED_BUILDER(ifWithMeasurement)},
+        OpenQASMTranslationTestCase{"IfNot", qasm::ifNot,
+                                    MQT_NAMED_BUILDER(ifNot)},
+        OpenQASMTranslationTestCase{
+            "BroadcastRegisterAndQubit", qasm::broadcastRegisterAndQubit,
+            MQT_NAMED_BUILDER(broadcastRegisterAndQubit)},
+        OpenQASMTranslationTestCase{"BroadcastCompoundGate",
+                                    qasm::broadcastCompoundGate,
+                                    MQT_NAMED_BUILDER(broadcastCompoundGate)},
+        OpenQASMTranslationTestCase{"ExpressionArithmetic",
+                                    qasm::expressionArithmetic,
+                                    MQT_NAMED_BUILDER(expressionArithmetic)},
+        OpenQASMTranslationTestCase{"ExpressionUnaryMinus",
+                                    qasm::expressionUnaryMinus,
+                                    MQT_NAMED_BUILDER(expressionUnaryMinus)},
+        OpenQASMTranslationTestCase{
+            "ExpressionBuiltinConstants", qasm::expressionBuiltinConstants,
+            MQT_NAMED_BUILDER(expressionBuiltinConstants)},
+        OpenQASMTranslationTestCase{"ExpressionMathFunctions",
+                                    qasm::expressionMathFunctions,
+                                    MQT_NAMED_BUILDER(expressionMathFunctions)},
+        OpenQASMTranslationTestCase{
             "ExpressionNestedMathFunctions",
             qasm::expressionNestedMathFunctions,
             MQT_NAMED_BUILDER(expressionNestedMathFunctions)},
-        QASM3TranslationTestCase{"ExpressionConstFloat",
-                                 qasm::expressionConstFloat,
-                                 MQT_NAMED_BUILDER(expressionConstFloat)},
-        QASM3TranslationTestCase{"ExpressionMutableFloat",
-                                 qasm::expressionMutableFloat,
-                                 MQT_NAMED_BUILDER(expressionMutableFloat)},
-        QASM3TranslationTestCase{
+        OpenQASMTranslationTestCase{"ExpressionConstFloat",
+                                    qasm::expressionConstFloat,
+                                    MQT_NAMED_BUILDER(expressionConstFloat)},
+        OpenQASMTranslationTestCase{"ExpressionMutableFloat",
+                                    qasm::expressionMutableFloat,
+                                    MQT_NAMED_BUILDER(expressionMutableFloat)},
+        OpenQASMTranslationTestCase{
             "ExpressionConstIntArithmetic", qasm::expressionConstIntArithmetic,
             MQT_NAMED_BUILDER(expressionConstIntArithmetic)},
-        QASM3TranslationTestCase{"ConditionLiteral", qasm::conditionLiteral,
-                                 MQT_NAMED_BUILDER(conditionLiteral)},
-        QASM3TranslationTestCase{"ConditionMeasurement",
-                                 qasm::conditionMeasurement,
-                                 MQT_NAMED_BUILDER(conditionMeasurement)},
-        QASM3TranslationTestCase{"ConditionAnd", qasm::conditionAnd,
-                                 MQT_NAMED_BUILDER(conditionAnd)},
-        QASM3TranslationTestCase{"ConditionOr", qasm::conditionOr,
-                                 MQT_NAMED_BUILDER(conditionOr)},
-        QASM3TranslationTestCase{"ConditionNotAndOr", qasm::conditionNotAndOr,
-                                 MQT_NAMED_BUILDER(conditionNotAndOr)},
-        QASM3TranslationTestCase{"ConditionBoolVariable",
-                                 qasm::conditionBoolVariable,
-                                 MQT_NAMED_BUILDER(conditionBoolVariable)},
-        QASM3TranslationTestCase{"ConditionIndexedBit",
-                                 qasm::conditionIndexedBit,
-                                 MQT_NAMED_BUILDER(conditionIndexedBit)}));
+        OpenQASMTranslationTestCase{"ConditionLiteral", qasm::conditionLiteral,
+                                    MQT_NAMED_BUILDER(conditionLiteral)},
+        OpenQASMTranslationTestCase{"ConditionMeasurement",
+                                    qasm::conditionMeasurement,
+                                    MQT_NAMED_BUILDER(conditionMeasurement)},
+        OpenQASMTranslationTestCase{"ConditionAnd", qasm::conditionAnd,
+                                    MQT_NAMED_BUILDER(conditionAnd)},
+        OpenQASMTranslationTestCase{"ConditionOr", qasm::conditionOr,
+                                    MQT_NAMED_BUILDER(conditionOr)},
+        OpenQASMTranslationTestCase{"ConditionNotAndOr",
+                                    qasm::conditionNotAndOr,
+                                    MQT_NAMED_BUILDER(conditionNotAndOr)},
+        OpenQASMTranslationTestCase{"ConditionBoolVariable",
+                                    qasm::conditionBoolVariable,
+                                    MQT_NAMED_BUILDER(conditionBoolVariable)},
+        OpenQASMTranslationTestCase{"ConditionIndexedBit",
+                                    qasm::conditionIndexedBit,
+                                    MQT_NAMED_BUILDER(conditionIndexedBit)}));
 
-} // namespace mqt::test::qasm3_translation
+} // namespace mqt::test::openqasm_translation

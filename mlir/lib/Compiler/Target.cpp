@@ -348,44 +348,50 @@ std::optional<double> CompilerTarget::SiteTuple::fidelity() const noexcept {
   return fidelity_;
 }
 
-CompilerTarget::Operation::Arity
-CompilerTarget::Operation::Arity::fixed(size_t value) noexcept {
+CompilerTarget::OperationCapability::Arity
+CompilerTarget::OperationCapability::Arity::fixed(size_t value) noexcept {
   return {Kind::Fixed, value};
 }
 
-CompilerTarget::Operation::Arity
-CompilerTarget::Operation::Arity::variadic(size_t minimum) noexcept {
+CompilerTarget::OperationCapability::Arity
+CompilerTarget::OperationCapability::Arity::variadic(size_t minimum) noexcept {
   return {Kind::Variadic, minimum};
 }
 
-CompilerTarget::Operation::Arity::Kind
-CompilerTarget::Operation::Arity::kind() const noexcept {
+CompilerTarget::OperationCapability::Arity::Kind
+CompilerTarget::OperationCapability::Arity::kind() const noexcept {
   return kind_;
 }
 
-size_t CompilerTarget::Operation::Arity::value() const noexcept {
+size_t CompilerTarget::OperationCapability::Arity::value() const noexcept {
   return value_;
 }
 
-bool CompilerTarget::Operation::Arity::accepts(size_t width) const noexcept {
+bool CompilerTarget::OperationCapability::Arity::accepts(
+    size_t width) const noexcept {
   return kind_ == Kind::Variadic ? width >= value_ : width == value_;
 }
 
-CompilerTarget::Operation::Arity::Arity(Kind kind, size_t value) noexcept
+CompilerTarget::OperationCapability::Arity::Arity(Kind kind,
+                                                  size_t value) noexcept
     : kind_(kind), value_(value) {}
 
-llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
-    std::string name, size_t arity, size_t numParameters,
-    std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
-    std::optional<double> fidelity) {
+llvm::Expected<CompilerTarget::OperationCapability>
+CompilerTarget::OperationCapability::create(std::string name, size_t arity,
+                                            size_t numParameters,
+                                            std::vector<SiteTuple> siteTuples,
+                                            std::optional<uint64_t> duration,
+                                            std::optional<double> fidelity) {
   return create(std::move(name), Arity::fixed(arity), numParameters,
                 std::move(siteTuples), duration, fidelity);
 }
 
-llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
-    std::string name, Arity arity, size_t numParameters,
-    std::vector<SiteTuple> siteTuples, std::optional<uint64_t> duration,
-    std::optional<double> fidelity) {
+llvm::Expected<CompilerTarget::OperationCapability>
+CompilerTarget::OperationCapability::create(std::string name, Arity arity,
+                                            size_t numParameters,
+                                            std::vector<SiteTuple> siteTuples,
+                                            std::optional<uint64_t> duration,
+                                            std::optional<double> fidelity) {
   auto canonicalName = canonicalOperationName(name);
   if (canonicalName.empty()) {
     return invalidTarget("Compiler target operation name must not be empty");
@@ -420,46 +426,49 @@ llvm::Expected<CompilerTarget::Operation> CompilerTarget::Operation::create(
     }
   }
 
-  return Operation(std::move(name), std::move(canonicalName), arity,
-                   numParameters, std::move(siteTuples), duration, fidelity);
+  return OperationCapability(std::move(name), std::move(canonicalName), arity,
+                             numParameters, std::move(siteTuples), duration,
+                             fidelity);
 }
 
-CompilerTarget::Operation::Operation(std::string name,
-                                     std::string canonicalName, Arity arity,
-                                     size_t numParameters,
-                                     std::vector<SiteTuple> siteTuples,
-                                     std::optional<uint64_t> duration,
-                                     std::optional<double> fidelity)
+CompilerTarget::OperationCapability::OperationCapability(
+    std::string name, std::string canonicalName, Arity arity,
+    size_t numParameters, std::vector<SiteTuple> siteTuples,
+    std::optional<uint64_t> duration, std::optional<double> fidelity)
     : name_(std::move(name)), canonicalName_(std::move(canonicalName)),
       arity_(arity), numParameters_(numParameters),
       siteTuples_(std::move(siteTuples)), duration_(duration),
       fidelity_(fidelity) {}
 
-StringRef CompilerTarget::Operation::name() const noexcept { return name_; }
+StringRef CompilerTarget::OperationCapability::name() const noexcept {
+  return name_;
+}
 
-StringRef CompilerTarget::Operation::canonicalName() const noexcept {
+StringRef CompilerTarget::OperationCapability::canonicalName() const noexcept {
   return canonicalName_;
 }
 
-CompilerTarget::Operation::Arity
-CompilerTarget::Operation::arity() const noexcept {
+CompilerTarget::OperationCapability::Arity
+CompilerTarget::OperationCapability::arity() const noexcept {
   return arity_;
 }
 
-size_t CompilerTarget::Operation::numParameters() const noexcept {
+size_t CompilerTarget::OperationCapability::numParameters() const noexcept {
   return numParameters_;
 }
 
 ArrayRef<CompilerTarget::SiteTuple>
-CompilerTarget::Operation::siteTuples() const noexcept {
+CompilerTarget::OperationCapability::siteTuples() const noexcept {
   return siteTuples_;
 }
 
-std::optional<uint64_t> CompilerTarget::Operation::duration() const noexcept {
+std::optional<uint64_t>
+CompilerTarget::OperationCapability::duration() const noexcept {
   return duration_;
 }
 
-std::optional<double> CompilerTarget::Operation::fidelity() const noexcept {
+std::optional<double>
+CompilerTarget::OperationCapability::fidelity() const noexcept {
   return fidelity_;
 }
 
@@ -470,7 +479,7 @@ CompilerTarget::NativeOperations::unrestricted() {
 
 CompilerTarget::NativeOperations
 CompilerTarget::NativeOperations::fromOperations(
-    ArrayRef<Operation> operations) {
+    ArrayRef<OperationCapability> operations) {
   return {Kind::Explicit, operations};
 }
 
@@ -479,13 +488,13 @@ CompilerTarget::NativeOperations::kind() const noexcept {
   return kind_;
 }
 
-ArrayRef<CompilerTarget::Operation>
+ArrayRef<CompilerTarget::OperationCapability>
 CompilerTarget::NativeOperations::operations() const noexcept {
   return operations_;
 }
 
 CompilerTarget::NativeOperations::NativeOperations(
-    Kind kind, ArrayRef<Operation> operations)
+    Kind kind, ArrayRef<OperationCapability> operations)
     : kind_(kind), operations_(operations) {}
 
 struct CompilerTarget::Storage {
@@ -493,7 +502,7 @@ struct CompilerTarget::Storage {
           Connectivity::Kind targetConnectivityKind,
           SmallVector<Coupling> targetCouplings,
           NativeOperations::Kind targetNativeOperationsKind,
-          SmallVector<Operation> targetOperations,
+          SmallVector<OperationCapability> targetOperations,
           std::optional<DurationUnit> targetDurationUnit);
 
   [[nodiscard]] llvm::Error initialize();
@@ -521,7 +530,7 @@ struct CompilerTarget::Storage {
   mutable std::once_flag distancesOnce;
   size_t maximumDegree = 0;
   NativeOperations::Kind nativeOperationsKind;
-  SmallVector<Operation> operations;
+  SmallVector<OperationCapability> operations;
   llvm::StringMap<SmallVector<size_t, 1>> capabilities;
   /// Keys borrow the immutable site tuples owned by operations.
   std::vector<llvm::DenseSet<ArrayRef<SiteId>>> operationSites;
@@ -534,7 +543,7 @@ CompilerTarget::Storage::Storage(
     Connectivity::Kind targetConnectivityKind,
     SmallVector<Coupling> targetCouplings,
     NativeOperations::Kind targetNativeOperationsKind,
-    SmallVector<Operation> targetOperations,
+    SmallVector<OperationCapability> targetOperations,
     std::optional<DurationUnit> targetDurationUnit)
     : name(std::move(targetName)), durationUnit(std::move(targetDurationUnit)),
       sites(std::move(targetSites)), connectivityKind(targetConnectivityKind),
@@ -622,7 +631,8 @@ llvm::Error CompilerTarget::Storage::initialize() {
     operationSites.resize(operations.size());
     for (const auto [index, operation] : llvm::enumerate(operations)) {
       if (operation.arity().value() > sites.size()) {
-        if (operation.arity().kind() == Operation::Arity::Kind::Variadic) {
+        if (operation.arity().kind() ==
+            OperationCapability::Arity::Kind::Variadic) {
           return invalidTarget("Compiler target operation variadic minimum "
                                "exceeds its site count");
         }
@@ -694,8 +704,8 @@ bool CompilerTarget::Storage::supportsOperation(
   }
   return llvm::any_of(found->second, [&](const auto index) {
     const auto& operation = operations[index];
-    return (!variadicOnly ||
-            operation.arity().kind() == Operation::Arity::Kind::Variadic) &&
+    return (!variadicOnly || operation.arity().kind() ==
+                                 OperationCapability::Arity::Kind::Variadic) &&
            operation.arity().accepts(arity) &&
            (!numParameters || operation.numParameters() == *numParameters) &&
            (!orderedSites || operation.siteTuples().empty() ||
@@ -735,7 +745,8 @@ CompilerTarget::Storage::resolveSynthesisBasis() const {
     return llvm::any_of(found->second, [&](const auto index) {
       const auto& operation = operations[index];
       return (!variadicOnly ||
-              operation.arity().kind() == Operation::Arity::Kind::Variadic) &&
+              operation.arity().kind() ==
+                  OperationCapability::Arity::Kind::Variadic) &&
              operation.arity().accepts(arity) &&
              operation.numParameters() == numParameters &&
              operation.siteTuples().empty();
@@ -927,7 +938,7 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
 
   auto nativeOperations = NativeOperations::unrestricted();
   if (attribute.getNativeOperations() == mqt::NativeOperationsKind::Explicit) {
-    std::vector<Operation> operations;
+    std::vector<OperationCapability> operations;
     operations.reserve(attribute.getOperations().size());
     for (const auto operationAttr : attribute.getOperations()) {
       if (operationAttr.getArity().getValue() >
@@ -960,11 +971,11 @@ CompilerTarget::create(const mqt::CompilationTargetAttr attribute) {
       }
       const auto arity =
           operationAttr.getArity().getKind() == mqt::OperationArityKind::Fixed
-              ? Operation::Arity::fixed(
+              ? OperationCapability::Arity::fixed(
                     static_cast<size_t>(operationAttr.getArity().getValue()))
-              : Operation::Arity::variadic(
+              : OperationCapability::Arity::variadic(
                     static_cast<size_t>(operationAttr.getArity().getValue()));
-      auto operation = Operation::create(
+      auto operation = OperationCapability::create(
           operationAttr.getName().getValue().str(), arity,
           static_cast<size_t>(operationAttr.getNumParameters()),
           std::move(siteTuples), operationAttr.getDuration(), fidelity);
@@ -1097,7 +1108,7 @@ CompilerTarget::nativeOperationsKind() const noexcept {
   return storage_->nativeOperationsKind;
 }
 
-ArrayRef<CompilerTarget::Operation>
+ArrayRef<CompilerTarget::OperationCapability>
 CompilerTarget::operations() const noexcept {
   return storage_->operations;
 }
@@ -1254,7 +1265,7 @@ CompilerTarget::materialize(MLIRContext& context) const {
       fidelityAttr = builder.getF64FloatAttr(*fidelity);
     }
     const auto arityKind =
-        operation.arity().kind() == Operation::Arity::Kind::Fixed
+        operation.arity().kind() == OperationCapability::Arity::Kind::Fixed
             ? mqt::OperationArityKind::Fixed
             : mqt::OperationArityKind::Variadic;
     const auto arityAttr = mqt::OperationArityAttr::get(

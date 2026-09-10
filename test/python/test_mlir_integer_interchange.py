@@ -51,7 +51,7 @@ def _observe(program: QCProgram, width: int) -> int:
 
 def _check_paths(program: QCProgram, width: int, expected: int) -> None:
     assert _observe(program, width) == expected
-    restored_qasm = QCProgram.from_qasm_str(program.to_openqasm3().source)
+    restored_qasm = QCProgram.from_openqasm_str(program.to_openqasm3().source)
     assert _observe(restored_qasm, width) == expected
     jeff = program.to_qco(copy=True).to_jeff()
     restored_jeff = JeffProgram.from_bytes(jeff.to_bytes()).to_qco().to_qc()
@@ -146,7 +146,7 @@ def test_source_zero_filling_shifts(width: int, *, runtime: bool, direction: str
     distances = [0, width - 1, width, 256]
     for distance in distances:
         amount = "uint[16](distance)" if runtime else str(distance)
-        program = QCProgram.from_qasm_str(f"""
+        program = QCProgram.from_openqasm_str(f"""
 OPENQASM 3.0;
 include "stdgates.inc";
 qubit q;
@@ -242,7 +242,7 @@ def test_integer_intrinsics(width: int, operation: str) -> None:
 def test_narrow_unsigned_comparison_promotes(*, runtime: bool) -> None:
     """Constant analysis and runtime analysis use the same integer promotion."""
     operand = "uint[3](input_bits)" if runtime else "uint[3](7)"
-    program = QCProgram.from_qasm_str(f"""
+    program = QCProgram.from_openqasm_str(f"""
 OPENQASM 3.0;
 include "stdgates.inc";
 qubit q;
@@ -257,7 +257,7 @@ result = bit[1](uint[1]({operand} > -1));
 @pytest.mark.parametrize("literal", ["255", "-1"])
 def test_constant_integer_casts_truncate(literal: str) -> None:
     """Explicit narrowing also applies before any runtime IR is produced."""
-    program = QCProgram.from_qasm_str(f"""
+    program = QCProgram.from_openqasm_str(f"""
 OPENQASM 3.0;
 include "stdgates.inc";
 qubit q;
@@ -287,5 +287,5 @@ def test_jeff_rejects_wider_general_integer_expressions() -> None:
         65,
         1,
     )
-    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+    with pytest.raises(RuntimeError, match="Compiler action failed"):
         program.to_qco().to_jeff()

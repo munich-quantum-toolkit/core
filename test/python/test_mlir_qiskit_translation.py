@@ -250,8 +250,8 @@ def test_two_qubit_dense_unitary_compiles_to_target_basis() -> None:
         2,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations([
-            CompilerTarget.Operation("u", 1, 3),
-            CompilerTarget.Operation("cx", 2, 0),
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cx", 2, 0),
         ]),
     )
     program = QCProgram.from_qiskit(circuit).to_qco(copy=True)
@@ -517,7 +517,7 @@ def test_flat_circuit_round_trip_preserves_supported_metadata() -> None:
 
 def test_openqasm2_measurements_export_with_zero_initialized_register() -> None:
     """Export an OpenQASM 2 zero-initialized result register."""
-    program = QCProgram.from_qasm_str(
+    program = QCProgram.from_openqasm_str(
         """OPENQASM 2.0;
 include "qelib1.inc";
 qreg q[2];
@@ -577,7 +577,7 @@ def test_target_compiled_openqasm2_measurements_export() -> None:
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    program = QCProgram.from_qasm_str(
+    program = QCProgram.from_openqasm_str(
         """OPENQASM 2.0;
 include "qelib1.inc";
 qreg q[2];
@@ -601,7 +601,7 @@ measure q[0] -> c[1];
 
 def test_cleanup_forwards_measurement_results_to_qiskit_condition() -> None:
     """Export a condition after cleanup forwards its measurement loads."""
-    program = QCProgram.from_qasm_str(
+    program = QCProgram.from_openqasm_str(
         """OPENQASM 2.0;
 include "qelib1.inc";
 qreg q[3];
@@ -625,7 +625,7 @@ if (c == 3) x q[2];
 
 def test_openqasm_register_ordering_exports_to_qiskit_expression() -> None:
     """Export first-class register ordering as a Qiskit Uint expression."""
-    program = QCProgram.from_qasm_str(
+    program = QCProgram.from_openqasm_str(
         """OPENQASM 3.1;
 include "stdgates.inc";
 qubit[3] q;
@@ -832,7 +832,7 @@ def test_wide_signed_cbit_comparison_is_rejected() -> None:
 
 def test_openqasm_signed_register_ordering_exports_to_qiskit_uint_expression() -> None:
     """Encode signed register ordering with Qiskit's unsigned expressions."""
-    program = QCProgram.from_qasm_str(
+    program = QCProgram.from_openqasm_str(
         """OPENQASM 3.1;
 include "stdgates.inc";
 qubit[4] q;
@@ -850,7 +850,7 @@ if (int[3](c) < -1) { x q[3]; }
     assert reimported_program.is_valid
     assert reimported_program.to_qiskit() is not None
 
-    qasm_reimported = QCProgram.from_qasm_str(qiskit.qasm3.dumps(restored))
+    qasm_reimported = QCProgram.from_openqasm_str(qiskit.qasm3.dumps(restored))
     assert qasm_reimported.is_valid
 
 
@@ -1083,7 +1083,7 @@ def test_qiskit_custom_gate_named_store_remains_a_gate() -> None:
 
 def test_openqasm_short_circuit_expression_exports_to_qiskit() -> None:
     """Export nested OpenQASM short-circuit logic through canonical scf.if."""
-    program = QCProgram.from_qasm_str(
+    program = QCProgram.from_openqasm_str(
         """OPENQASM 3.0;
 include "stdgates.inc";
 qubit[3] q;
@@ -1114,7 +1114,7 @@ if (c[0] && (c[1] || !c[0])) x q[2];
 
 def test_openqasm3_measurement_export_uses_undefined_cbit_register() -> None:
     """Represent OpenQASM 3 output initialization without poison values."""
-    program = QCProgram.from_qasm_str(
+    program = QCProgram.from_openqasm_str(
         """OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
@@ -3386,7 +3386,7 @@ def test_classical_expression_register_captures_round_trip_on_import() -> None:
 
     program = QCProgram.from_qiskit(circuit)
     assert QCProgram.from_mlir_str(program.ir).ir == program.ir
-    assert QCProgram.from_qasm_str(qiskit.qasm3.dumps(circuit)).is_valid
+    assert QCProgram.from_openqasm_str(qiskit.qasm3.dumps(circuit)).is_valid
     ir = program.ir
 
     assert "cbit.read" in ir
@@ -4048,7 +4048,7 @@ def test_bound_parameter_names_are_unique_across_scopes() -> None:
 
 def test_duplicate_named_symbolic_inputs_are_invalid_qc_ir() -> None:
     """Reject duplicate program input names when parsing QC IR."""
-    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+    with pytest.raises(RuntimeError, match="Compiler action failed"):
         QCProgram.from_mlir_str(
             """module {
   func.func @main(
@@ -4079,7 +4079,7 @@ def test_parameter_and_register_names_must_be_unique() -> None:
 
     assert list(circuit.data) == source_data
 
-    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+    with pytest.raises(RuntimeError, match="Compiler action failed"):
         QCProgram.from_mlir_str(
             """module {
   func.func @main(%theta: f64 {mqt.input_name = "theta"}) attributes {mqt.entry_point} {
@@ -4104,7 +4104,7 @@ def test_parameter_names_with_null_characters_fail_closed() -> None:
 
     assert list(circuit.data) == source_data
 
-    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+    with pytest.raises(RuntimeError, match="Compiler action failed"):
         QCProgram.from_mlir_str(
             r"""module {
   func.func @main(%theta: f64 {mqt.input_name = "before\00after"}) attributes {mqt.entry_point} {

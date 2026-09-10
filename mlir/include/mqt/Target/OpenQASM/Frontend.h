@@ -25,7 +25,7 @@ namespace llvm {
 class SourceMgr;
 } // namespace llvm
 
-namespace mlir::oq3::frontend {
+namespace mlir::openqasm::frontend {
 
 /// Builtin floating constants reserved by the source language.
 [[nodiscard]] std::optional<double> getBuiltinConstant(llvm::StringRef name);
@@ -416,4 +416,4 @@ analyzeOpenQASM(llvm::SourceMgr& sourceMgr,
 analyzeOpenQASM(llvm::StringRef source,
                 GatePolicy gatePolicy = GatePolicy::MQTCompatibility);
 
-} // namespace mlir::oq3::frontend
+} // namespace mlir::openqasm::frontend

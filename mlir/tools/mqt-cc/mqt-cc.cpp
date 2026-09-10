@@ -24,7 +24,7 @@
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
-#include "mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 #include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
@@ -93,7 +93,8 @@ static llvm::cl::opt<std::string>
 
 static llvm::cl::opt<std::string> inputFormat(
     "input-format",
-    llvm::cl::desc("Input format: auto, jeff, mlir, or qasm (default: auto)"),
+    llvm::cl::desc(
+        "Input format: auto, jeff, mlir, or openqasm (default: auto)"),
     llvm::cl::value_desc("format"), llvm::cl::init("auto"));
 
 static llvm::cl::opt<std::string> outputFilename(
@@ -103,12 +104,12 @@ static llvm::cl::opt<std::string> outputFilename(
                    "bitcode)"),
     llvm::cl::value_desc("filename"), llvm::cl::init("-"));
 
-static llvm::cl::opt<std::string> outputFormat(
-    "emit",
-    llvm::cl::desc(
-        "Output format: qc-import, mlir, qco, qco-optimized, qir-base, "
-        "qir-adaptive, openqasm3, or jeff"),
-    llvm::cl::value_desc("format"), llvm::cl::init("mlir"));
+static llvm::cl::opt<std::string>
+    outputFormat("emit",
+                 llvm::cl::desc("Output checkpoint: qc-import, qc (default), "
+                                "qco, qco-optimized, qir-base, "
+                                "qir-adaptive, openqasm3, or jeff"),
+                 llvm::cl::value_desc("format"), llvm::cl::init("qc"));
 
 static llvm::cl::opt<std::string> passPipeline(
     "pass-pipeline",
@@ -145,7 +146,7 @@ static llvm::cl::opt<std::string> qdmiConfig(
     llvm::cl::value_desc("registry.json"), llvm::cl::init(""));
 
 namespace {
-enum class InputFormat : std::uint8_t { MLIR, QASM, Jeff };
+enum class InputFormat : std::uint8_t { MLIR, OpenQASM, Jeff };
 enum class InputDialect : std::uint8_t { QC, QCO };
 enum class OutputFormat : std::uint8_t {
   QCImport,
@@ -170,8 +171,9 @@ parseInputFormat(const StringRef format, const StringRef filename) {
   if (format == "mlir" || (format == "auto" && filename.ends_with(".mlir"))) {
     return InputFormat::MLIR;
   }
-  if (format == "qasm" || (format == "auto" && filename.ends_with(".qasm"))) {
-    return InputFormat::QASM;
+  if (format == "openqasm" ||
+      (format == "auto" && filename.ends_with(".qasm"))) {
+    return InputFormat::OpenQASM;
   }
   if (format == "jeff" || (format == "auto" && filename.ends_with(".jeff"))) {
     return InputFormat::Jeff;
@@ -202,7 +204,7 @@ parseOutputFormat(const StringRef format) {
   if (format == "qc-import") {
     return OutputFormat::QCImport;
   }
-  if (format == "mlir" || format == "qc") {
+  if (format == "qc") {
     return OutputFormat::QC;
   }
   if (format == "qco") {
@@ -269,9 +271,9 @@ static llvm::cl::opt<unsigned> decomposeMultiControlledMinQubits(
 }
 
 /// Load and parse a `.qasm` file
-static OwningOpRef<ModuleOp> loadQASMFile(const StringRef filename,
-                                          MLIRContext* const context,
-                                          llvm::SourceMgr& sourceMgr) {
+static OwningOpRef<ModuleOp> loadOpenQASMFile(const StringRef filename,
+                                              MLIRContext* const context,
+                                              llvm::SourceMgr& sourceMgr) {
   std::string errorMessage;
   auto file = openInputFile(filename, &errorMessage);
   if (!file) {
@@ -281,7 +283,7 @@ static OwningOpRef<ModuleOp> loadQASMFile(const StringRef filename,
   }
 
   sourceMgr.AddNewSourceBuffer(std::move(file), SMLoc());
-  return qc::translateQASM3ToQC(sourceMgr, context);
+  return qc::translateOpenQASMToQC(sourceMgr, context);
 }
 
 /// Load and parse an `.mlir` file
@@ -563,8 +565,8 @@ static int runCompiler(int argc, char** argv) {
       program.dialect = detectInputDialect(*program.mod);
     }
     break;
-  case InputFormat::QASM:
-    program.mod = loadQASMFile(inputFilename, &context, sourceMgr);
+  case InputFormat::OpenQASM:
+    program.mod = loadOpenQASMFile(inputFilename, &context, sourceMgr);
     break;
   case InputFormat::Jeff:
     program = loadJeffFile(inputFilename, &context);

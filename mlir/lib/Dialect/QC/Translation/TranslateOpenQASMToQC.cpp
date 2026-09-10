@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 
 #include "mqt/Target/OpenQASM/Frontend.h"
 
@@ -27,7 +27,7 @@
 namespace mlir::qc {
 
 static void
-emitDiagnostics(const ArrayRef<oq3::frontend::Diagnostic> diagnostics,
+emitDiagnostics(const ArrayRef<openqasm::frontend::Diagnostic> diagnostics,
                 MLIRContext& context) {
   for (const auto& diagnostic : diagnostics) {
     emitError(detail::getOpenQASMLocation(diagnostic.location, context))
@@ -35,10 +35,11 @@ emitDiagnostics(const ArrayRef<oq3::frontend::Diagnostic> diagnostics,
   }
 }
 
-OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
-                                         MLIRContext* context,
-                                         const QASM3ImportOptions& options) {
-  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr, options.gatePolicy);
+OwningOpRef<ModuleOp>
+translateOpenQASMToQC(llvm::SourceMgr& sourceMgr, MLIRContext* context,
+                      const OpenQASMImportOptions& options) {
+  auto analyzed =
+      openqasm::frontend::analyzeOpenQASM(sourceMgr, options.gatePolicy);
   if (!analyzed) {
     emitDiagnostics(analyzed.diagnostics, *context);
     return nullptr;
@@ -54,14 +55,14 @@ OwningOpRef<ModuleOp> translateQASM3ToQC(llvm::SourceMgr& sourceMgr,
   return moduleOp;
 }
 
-OwningOpRef<ModuleOp> translateQASM3ToQC(const StringRef source,
-                                         MLIRContext* context,
-                                         const QASM3ImportOptions& options) {
+OwningOpRef<ModuleOp>
+translateOpenQASMToQC(const StringRef source, MLIRContext* context,
+                      const OpenQASMImportOptions& options) {
   llvm::SourceMgr sourceMgr;
   sourceMgr.AddNewSourceBuffer(
       llvm::MemoryBuffer::getMemBuffer(source, "<input>", false),
       llvm::SMLoc());
-  return translateQASM3ToQC(sourceMgr, context, options);
+  return translateOpenQASMToQC(sourceMgr, context, options);
 }
 
 } // namespace mlir::qc

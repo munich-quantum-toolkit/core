@@ -229,15 +229,16 @@ protected:
 
 [[nodiscard]] static CompilerTarget
 makeSparseUCZTarget(const bool includeMeasure) {
-  using Operation = CompilerTarget::Operation;
+  using OperationCapability = CompilerTarget::OperationCapability;
   using Site = CompilerTarget::Site;
 
   std::vector operations{
-      llvm::cantFail(Operation::create("u", 1, 3)),
-      llvm::cantFail(Operation::create("cz", 2, 0)),
+      llvm::cantFail(OperationCapability::create("u", 1, 3)),
+      llvm::cantFail(OperationCapability::create("cz", 2, 0)),
   };
   if (includeMeasure) {
-    operations.emplace_back(llvm::cantFail(Operation::create("measure", 1, 0)));
+    operations.emplace_back(
+        llvm::cantFail(OperationCapability::create("measure", 1, 0)));
   }
   std::vector sites{
       llvm::cantFail(Site::create(5)),
@@ -254,14 +255,15 @@ using NameAndCount = std::pair<llvm::StringRef, size_t>;
 
 [[nodiscard]] static CompilerTarget
 makeCZTarget(std::initializer_list<NameAndCount> singleQubitGates) {
-  using Operation = CompilerTarget::Operation;
-  std::vector<Operation> operations;
+  using OperationCapability = CompilerTarget::OperationCapability;
+  std::vector<OperationCapability> operations;
   operations.reserve(singleQubitGates.size() + 1);
   for (const auto& [name, numParameters] : singleQubitGates) {
-    operations.emplace_back(
-        llvm::cantFail(Operation::create(name.str(), 1, numParameters)));
+    operations.emplace_back(llvm::cantFail(
+        OperationCapability::create(name.str(), 1, numParameters)));
   }
-  operations.emplace_back(llvm::cantFail(Operation::create("cz", 2, 0)));
+  operations.emplace_back(
+      llvm::cantFail(OperationCapability::create("cz", 2, 0)));
   return llvm::cantFail(CompilerTarget::create(
       2, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations(operations)));
@@ -555,8 +557,8 @@ qubit q;
 rz(1.0) q;
 rx(1.0) q;
 )";
-  auto rawInput = QCProgram::fromQASMString(qasm);
-  auto optimizedInput = QCProgram::fromQASMString(qasm);
+  auto rawInput = QCProgram::fromOpenQASMString(qasm);
+  auto optimizedInput = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(rawInput);
   ASSERT_TRUE(optimizedInput);
 
@@ -577,7 +579,7 @@ qubit q;
 x q;
 h q;
 )";
-  auto input = QCProgram::fromQASMString(qasm);
+  auto input = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(input);
   auto result =
       runDefaultPipeline(CompilerInput{std::move(*input)},
@@ -587,8 +589,8 @@ h q;
 }
 
 TEST_F(CompilerPipelineTest, MoveAssignmentKeepsModuleContextAlive) {
-  auto first = QCProgram::fromQASMString("OPENQASM 3.0; qubit q; h q;");
-  auto second = QCProgram::fromQASMString("OPENQASM 3.0; qubit q; x q;");
+  auto first = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit q; h q;");
+  auto second = QCProgram::fromOpenQASMString("OPENQASM 3.0; qubit q; x q;");
   ASSERT_TRUE(first);
   ASSERT_TRUE(second);
   ASSERT_NE(first->module().getContext(), second->module().getContext());
@@ -617,7 +619,7 @@ qubit q;
 h q;
 )";
 
-  auto qcResult = QCProgram::fromQASMString(qasm);
+  auto qcResult = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(qcResult);
   auto qc = std::move(*qcResult);
   EXPECT_TRUE(qc.isValid());
@@ -645,7 +647,7 @@ h $0;
 x $0;
 )";
 
-  auto qcProgram = QCProgram::fromQASMString(qasm.str());
+  auto qcProgram = QCProgram::fromOpenQASMString(qasm.str());
   ASSERT_TRUE(qcProgram);
 
   size_t qcStaticOps = 0;
@@ -737,7 +739,7 @@ inspectEntry(const llvm::StringRef ir) {
 [[nodiscard]] static testing::AssertionResult throughOptimizedQCO(
     const qasm::OpenQASMProgram& source, std::optional<QCProgram>& restored,
     std::vector<std::string>& resultTypes, bool prepareForQIR = false) {
-  auto qc = QCProgram::fromQASMString(source.source.str());
+  auto qc = QCProgram::fromOpenQASMString(source.source.str());
   if (!qc) {
     return testing::AssertionFailure()
            << source.name.str() << ": OpenQASM to QC";
@@ -772,7 +774,7 @@ inspectEntry(const llvm::StringRef ir) {
 roundTripThroughOptimizedJeff(const qasm::OpenQASMProgram& source,
                               std::optional<QCProgram>& restored,
                               std::vector<std::string>& resultTypes) {
-  auto qc = QCProgram::fromQASMString(source.source.str());
+  auto qc = QCProgram::fromOpenQASMString(source.source.str());
   if (!qc) {
     return testing::AssertionFailure()
            << source.name.str() << ": OpenQASM to QC";
@@ -882,7 +884,7 @@ for int i in [0:2] {
 c = measure q;
 )qasm";
 
-  auto qc = QCProgram::fromQASMString(source.str());
+  auto qc = QCProgram::fromOpenQASMString(source.str());
   ASSERT_TRUE(qc);
   const auto imported = qc->str();
   EXPECT_EQ(imported.find("i128"), std::string::npos);
@@ -929,7 +931,7 @@ ratio = 2.0;
   EXPECT_NE(emitted->source().find("output bit[2] bits;"), std::string::npos);
   EXPECT_NE(emitted->source().find("output float _mqt_out1;"),
             std::string::npos);
-  EXPECT_TRUE(QCProgram::fromQASMString(emitted->source()));
+  EXPECT_TRUE(QCProgram::fromOpenQASMString(emitted->source()));
 }
 
 TEST(OpenQASMCompilerOutputTest, GlobalPhasesTraverseQCQCOJeffAndQIRScopes) {
@@ -952,7 +954,7 @@ if (flag) {
 }
 )qasm";
 
-  auto qc = QCProgram::fromQASMString(source.str());
+  auto qc = QCProgram::fromOpenQASMString(source.str());
   ASSERT_TRUE(qc);
   ASSERT_TRUE(qc->cleanup());
   auto qco = std::move(*qc).intoQCO();
@@ -1006,7 +1008,7 @@ h q;
 result = measure q;
 )qasm";
 
-  auto input = QCProgram::fromQASMString(source.str());
+  auto input = QCProgram::fromOpenQASMString(source.str());
   ASSERT_TRUE(input);
   for (const auto profile : {QIRProfile::Base, QIRProfile::Adaptive}) {
     auto qir = std::move(input->copy()).intoQIR(profile);
@@ -1092,7 +1094,7 @@ TEST_P(OpenQASMCompilerPipelineTest, TraversesTheExplicitStandardPipeline) {
 
 TEST_P(OpenQASMCompilerPipelineTest, TraversesTheDefaultAdaptivePipeline) {
   const auto& source = GetParam();
-  auto input = QCProgram::fromQASMString(source.source.str());
+  auto input = QCProgram::fromOpenQASMString(source.source.str());
   ASSERT_TRUE(input) << source.name.str() << ": OpenQASM to QC";
   const auto inputEntry = inspectEntry(input->str());
   ASSERT_TRUE(inputEntry) << source.name.str() << ": inspect QC entry";
@@ -1127,7 +1129,7 @@ class OpenQASMJeffBoundaryTest
 
 TEST_P(OpenQASMJeffBoundaryTest, FailsAtQCOToJeff) {
   const auto& source = GetParam();
-  auto qc = QCProgram::fromQASMString(source.source.str());
+  auto qc = QCProgram::fromOpenQASMString(source.source.str());
   ASSERT_TRUE(qc) << source.name.str() << ": OpenQASM to QC";
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco) << source.name.str() << ": QC to QCO";
@@ -1195,8 +1197,8 @@ h q;
 
   auto qcFromMLIR = QCProgram::fromMLIRString(mlir);
   auto qcFromMLIRFile = QCProgram::fromMLIRFile(mlirPath);
-  auto qcFromQASM = QCProgram::fromQASMString(qasm);
-  auto qcFromQASMFile = QCProgram::fromQASMFile(qasmPath);
+  auto qcFromQASM = QCProgram::fromOpenQASMString(qasm);
+  auto qcFromQASMFile = QCProgram::fromOpenQASMFile(qasmPath);
 
   ASSERT_TRUE(qcFromMLIR);
   ASSERT_TRUE(qcFromMLIRFile);
@@ -1207,8 +1209,9 @@ h q;
   EXPECT_EQ(qcFromMLIR->str(), qcFromMLIR->copy().str());
   EXPECT_FALSE(QCProgram::fromMLIRString("not valid MLIR"));
   EXPECT_FALSE(QCProgram::fromMLIRFile(temporaryDirectory / "missing.mlir"));
-  EXPECT_FALSE(QCProgram::fromQASMString("not valid OpenQASM"));
-  EXPECT_FALSE(QCProgram::fromQASMFile(temporaryDirectory / "missing.qasm"));
+  EXPECT_FALSE(QCProgram::fromOpenQASMString("not valid OpenQASM"));
+  EXPECT_FALSE(
+      QCProgram::fromOpenQASMFile(temporaryDirectory / "missing.qasm"));
   EXPECT_FALSE(QCOProgram::fromMLIRString("not valid MLIR"));
   EXPECT_FALSE(
       QCOProgram::fromMLIRFile(temporaryDirectory / "missing.qco.mlir"));
@@ -1436,7 +1439,7 @@ h q[0];
 ctrl @ x q[0], q[1];
 bit[2] c = measure q;
 )";
-  auto directQC = QCProgram::fromQASMString(qasm);
+  auto directQC = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(directQC);
   const auto importedIR = directQC->str();
   auto direct = directQC->toOpenQASM3();
@@ -1456,7 +1459,7 @@ bit[2] c = measure q;
   const std::string written((std::istreambuf_iterator<char>(input)),
                             std::istreambuf_iterator<char>());
   EXPECT_EQ(written, direct->source());
-  EXPECT_TRUE(QCProgram::fromQASMFile(path));
+  EXPECT_TRUE(QCProgram::fromOpenQASMFile(path));
 
   auto imported =
       runDefaultPipeline(CompilerInput(*direct), ProgramFormat::QCImport);
@@ -1469,7 +1472,7 @@ bit[2] c = measure q;
   ASSERT_TRUE(compiled);
   EXPECT_TRUE(std::holds_alternative<QIRProgram>(*compiled));
 
-  auto pipelineQC = QCProgram::fromQASMString(qasm);
+  auto pipelineQC = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(pipelineQC);
   auto result = runDefaultPipeline(CompilerInput(std::move(*pipelineQC)),
                                    ProgramFormat::OpenQASM3);
@@ -1477,7 +1480,7 @@ bit[2] c = measure q;
   ASSERT_TRUE(std::holds_alternative<OpenQASMProgram>(*result));
   const auto& optimized = std::get<OpenQASMProgram>(*result);
   EXPECT_TRUE(optimized.source().starts_with("OPENQASM 3.1;\n"));
-  auto reparsed = QCProgram::fromQASMString(optimized.source());
+  auto reparsed = QCProgram::fromOpenQASMString(optimized.source());
   ASSERT_TRUE(reparsed);
   auto adaptiveQIR = std::move(*reparsed).intoQIR(QIRProfile::Adaptive);
   EXPECT_TRUE(adaptiveQIR);
@@ -1512,7 +1515,7 @@ bit[2] c;
 c[0] = measure q[1];
 c[1] = measure q[3];
 )";
-  auto program = QCProgram::fromQASMString(source);
+  auto program = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(program);
   auto prepared =
       runDefaultPipeline(CompilerInput(program->copy()), ProgramFormat::QC);
@@ -1525,7 +1528,7 @@ c[1] = measure q[3];
   const auto& exported = std::get<OpenQASMProgram>(*output);
   EXPECT_EQ(exported.source(), reference->source());
   EXPECT_EQ(exported.source().find("gate unused"), std::string::npos);
-  EXPECT_TRUE(QCProgram::fromQASMString(exported.source()));
+  EXPECT_TRUE(QCProgram::fromOpenQASMString(exported.source()));
 }
 
 TEST_F(CompilerPipelineTest, TypedOpenQASMExportReportsUnsupportedQC) {
@@ -1930,7 +1933,7 @@ x q;
   const auto path = std::filesystem::path(testing::TempDir()) /
                     "typed_program_round_trip.jeff";
 
-  auto qc = QCProgram::fromQASMString(qasm);
+  auto qc = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
@@ -1973,7 +1976,7 @@ h q;
   const auto qcoPath = std::filesystem::path(testing::TempDir()) /
                        "typed_program_input.qco.mlir";
 
-  auto qc = QCProgram::fromQASMString(qasm);
+  auto qc = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
@@ -1992,8 +1995,8 @@ h q;
   EXPECT_FALSE(qcoFromString->runPassPipeline("not-a-pass"));
   EXPECT_FALSE(qcoFromString->str().empty());
 
-  auto baseInput = QCProgram::fromQASMString(qasm);
-  auto adaptiveInput = QCProgram::fromQASMString(qasm);
+  auto baseInput = QCProgram::fromOpenQASMString(qasm);
+  auto adaptiveInput = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(baseInput);
   ASSERT_TRUE(adaptiveInput);
   auto base = std::move(*baseInput).intoQIR(QIRProfile::Base);
@@ -2026,7 +2029,7 @@ h q[0];
 x q[0];
 cx q[0], q[2];
 )";
-  auto qc = QCProgram::fromQASMString(qasm);
+  auto qc = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(qc);
   auto qcoResult = std::move(*qc).intoQCO();
   ASSERT_TRUE(qcoResult);
@@ -2052,7 +2055,7 @@ cx q[0], q[2];
 
 // Test: target compilation decomposes, maps, synthesizes, and verifies.
 TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
-  auto qc = QCProgram::fromQASMString(qasm::multipleControlledX);
+  auto qc = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
   ASSERT_TRUE(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
@@ -2098,7 +2101,7 @@ TEST_F(CompilerPipelineTest, QCOProgramCompilesForTarget) {
   EXPECT_EQ(numSwaps, 0);
   EXPECT_EQ(numHigherArity, 0);
 
-  auto unsupportedQC = QCProgram::fromQASMString(qasm::multipleControlledX);
+  auto unsupportedQC = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
   ASSERT_TRUE(unsupportedQC);
   auto unsupportedQCO = std::move(*unsupportedQC).intoQCO();
   ASSERT_TRUE(unsupportedQCO);
@@ -2207,7 +2210,7 @@ include "stdgates.inc";
 qubit q;
 for int i in [0:2] { x q; }
 )qasm";
-  auto qc = QCProgram::fromQASMString(source);
+  auto qc = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(qc);
   auto input = std::move(*qc).intoQCO();
   ASSERT_TRUE(input);
@@ -2246,7 +2249,7 @@ for int outer in [0:2] {
 }
 )qasm";
 
-  auto qc = QCProgram::fromQASMString(source);
+  auto qc = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(qc);
   auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(program);
@@ -2275,7 +2278,7 @@ rx(a) q;
 bit c;
 c = measure q;
 )qasm";
-  auto qc = QCProgram::fromQASMString(source);
+  auto qc = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(qc);
   auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(program);
@@ -2639,7 +2642,7 @@ switch (selector) {
   default { result = 2; }
 }
 )qasm";
-  auto qc = QCProgram::fromQASMString(source);
+  auto qc = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(qc);
   auto input = std::move(*qc).intoQCO();
   ASSERT_TRUE(input);
@@ -3274,7 +3277,7 @@ include "stdgates.inc";
 qubit q;
 x q;
 )";
-  auto qc = QCProgram::fromQASMString(source);
+  auto qc = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
@@ -3292,11 +3295,12 @@ x q;
 
 TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
   using NativeOperations = CompilerTarget::NativeOperations;
-  using TargetOperation = CompilerTarget::Operation;
-  const auto cx = llvm::cantFail(TargetOperation::create("cx", 2, 0));
-  const auto dcx = llvm::cantFail(TargetOperation::create("dcx", 2, 0));
-  const auto u = llvm::cantFail(TargetOperation::create("u", 1, 3));
-  const auto gphase = llvm::cantFail(TargetOperation::create("gphase", 0, 1));
+  using OperationCapability = CompilerTarget::OperationCapability;
+  const auto cx = llvm::cantFail(OperationCapability::create("cx", 2, 0));
+  const auto dcx = llvm::cantFail(OperationCapability::create("dcx", 2, 0));
+  const auto u = llvm::cantFail(OperationCapability::create("u", 1, 3));
+  const auto gphase =
+      llvm::cantFail(OperationCapability::create("gphase", 0, 1));
   const auto makeTarget = [](NativeOperations operations) {
     return llvm::cantFail(CompilerTarget::create(
         2, CompilerTarget::Connectivity::allToAll(), std::move(operations)));
@@ -3456,10 +3460,10 @@ TEST_F(CompilerPipelineTest,
 
   auto program = QCOProgram::fromMLIRString(source.str());
   ASSERT_TRUE(program);
-  using TargetOperation = CompilerTarget::Operation;
+  using OperationCapability = CompilerTarget::OperationCapability;
   std::vector operations{
-      llvm::cantFail(TargetOperation::create("u", 1, 3)),
-      llvm::cantFail(TargetOperation::create("cz", 2, 0)),
+      llvm::cantFail(OperationCapability::create("u", 1, 3)),
+      llvm::cantFail(OperationCapability::create("cz", 2, 0)),
   };
   auto target = llvm::cantFail(CompilerTarget::create(
       2, CompilerTarget::Connectivity::fromCouplings({{0, 1}}),
@@ -3498,7 +3502,7 @@ ctrl(2) @ p(0.4) q[0], q[1], q[4];
 rccx q[0], q[1], q[2];
 gphase(0.5);
 )qasm";
-  auto qc = QCProgram::fromQASMString(source);
+  auto qc = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
@@ -3539,16 +3543,16 @@ qubit[2] q;
 cx q[0], q[1];
 cx q[1], q[0];
 )qasm";
-  auto qc = QCProgram::fromQASMString(source.str());
+  auto qc = QCProgram::fromOpenQASMString(source.str());
   ASSERT_TRUE(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
 
-  using TargetOperation = CompilerTarget::Operation;
+  using OperationCapability = CompilerTarget::OperationCapability;
   using SiteId = CompilerTarget::SiteId;
   std::vector operations{
-      llvm::cantFail(TargetOperation::create("u", 1, 3)),
-      llvm::cantFail(TargetOperation::create(
+      llvm::cantFail(OperationCapability::create("u", 1, 3)),
+      llvm::cantFail(OperationCapability::create(
           "cx", 2, 0,
           {llvm::cantFail(CompilerTarget::SiteTuple::create({0, 1}))})),
   };
@@ -3693,13 +3697,14 @@ TEST_F(CompilerPipelineTest, QCOProgramMergesDynamicRunInNativeCtrlBody) {
       return
     }
   })mlir";
-  using Operation = CompilerTarget::Operation;
+  using OperationCapability = CompilerTarget::OperationCapability;
   std::vector operations{
-      llvm::cantFail(Operation::create("x", 1, 0)),
-      llvm::cantFail(Operation::create("sx", 1, 0)),
-      llvm::cantFail(Operation::create("rz", 1, 1)),
-      llvm::cantFail(Operation::create("cz", 2, 0)),
-      llvm::cantFail(Operation::create("u", Operation::Arity::variadic(1), 3)),
+      llvm::cantFail(OperationCapability::create("x", 1, 0)),
+      llvm::cantFail(OperationCapability::create("sx", 1, 0)),
+      llvm::cantFail(OperationCapability::create("rz", 1, 1)),
+      llvm::cantFail(OperationCapability::create("cz", 2, 0)),
+      llvm::cantFail(OperationCapability::create(
+          "u", OperationCapability::Arity::variadic(1), 3)),
   };
   const auto target = llvm::cantFail(CompilerTarget::create(
       2, CompilerTarget::Connectivity::allToAll(),
@@ -3751,13 +3756,13 @@ TEST_F(CompilerPipelineTest,
   moduleOp->print(stream);
   auto program = QCOProgram::fromMLIRString(source);
   ASSERT_TRUE(program);
-  using TargetOperation = CompilerTarget::Operation;
+  using OperationCapability = CompilerTarget::OperationCapability;
   const auto target = llvm::cantFail(CompilerTarget::create(
       2, CompilerTarget::Connectivity::allToAll(),
       CompilerTarget::NativeOperations::fromOperations({
-          llvm::cantFail(TargetOperation::create("u", 1, 3)),
-          llvm::cantFail(TargetOperation::create("gphase", 0, 1)),
-          llvm::cantFail(TargetOperation::create("sqrt_iswap", 2, 0)),
+          llvm::cantFail(OperationCapability::create("u", 1, 3)),
+          llvm::cantFail(OperationCapability::create("gphase", 0, 1)),
+          llvm::cantFail(OperationCapability::create("sqrt_iswap", 2, 0)),
       })));
   ASSERT_TRUE(program->compileForTarget(
       TargetEnvironment(target, makePayloadSpecification())));
@@ -3778,7 +3783,7 @@ h q[0];
 cx q[0], q[1];
 c = measure q;
 )";
-  auto qc = QCProgram::fromQASMString(qasm);
+  auto qc = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(qc);
   auto qco = std::move(*qc).intoQCO();
   ASSERT_TRUE(qco);
@@ -3826,7 +3831,7 @@ h q[1];
       CompilerTarget::create(3, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
 
-  auto qc = QCProgram::fromQASMString(source);
+  auto qc = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(qc);
   auto program = std::move(*qc).intoQCO();
   ASSERT_TRUE(program);
@@ -3851,7 +3856,7 @@ h q[1];
 
 /// Test: the payload specification selects the targeted output.
 TEST_F(CompilerPipelineTest, DefaultPipelineDerivesTargetOutput) {
-  auto input = QCProgram::fromQASMString(qasm::multipleControlledX);
+  auto input = QCProgram::fromOpenQASMString(qasm::multipleControlledX);
   ASSERT_TRUE(input);
   const auto target = makeSparseUCZTarget(true);
   const TargetEnvironment environment(target, makePayloadSpecification());
@@ -3922,7 +3927,7 @@ qubit q;
 h q;
 )";
   const auto compile = [&qasm](const ProgramFormat output) {
-    auto input = QCProgram::fromQASMString(qasm);
+    auto input = QCProgram::fromOpenQASMString(qasm);
     EXPECT_TRUE(input);
     return runDefaultPipeline(CompilerInput{std::move(*input)}, output);
   };
@@ -3940,7 +3945,7 @@ h q;
   EXPECT_TRUE(std::holds_alternative<QCOProgram>(*optimizedQCOOutput));
   EXPECT_TRUE(std::holds_alternative<JeffProgram>(*jeffOutput));
 
-  auto profiledInput = QCProgram::fromQASMString(qasm);
+  auto profiledInput = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(profiledInput);
   auto profiled = runDefaultPipeline(CompilerInput{std::move(*profiledInput)},
                                      ProgramFormat::QCOOptimized,
@@ -3948,7 +3953,7 @@ h q;
   ASSERT_TRUE(profiled);
   EXPECT_TRUE(std::holds_alternative<QCOProgram>(*profiled));
 
-  auto customPipelineInput = QCProgram::fromQASMString(qasm);
+  auto customPipelineInput = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(customPipelineInput);
   EXPECT_FALSE(runDefaultPipeline(
       CompilerInput{std::move(*customPipelineInput)}, ProgramFormat::QCO,
@@ -3965,14 +3970,14 @@ h q;
   ASSERT_TRUE(std::holds_alternative<QIRProgram>(*adaptive));
   EXPECT_EQ(std::get<QIRProgram>(*adaptive).profile(), QIRProfile::Adaptive);
 
-  auto imported = QCProgram::fromQASMString(qasm);
+  auto imported = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(imported);
   auto importedResult = runDefaultPipeline(CompilerInput{std::move(*imported)},
                                            ProgramFormat::QCImport);
   ASSERT_TRUE(importedResult);
   EXPECT_TRUE(std::holds_alternative<QCProgram>(*importedResult));
 
-  auto qcoInput = QCProgram::fromQASMString(qasm);
+  auto qcoInput = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(qcoInput);
   auto qco = std::move(*qcoInput).intoQCO();
   ASSERT_TRUE(qco);
@@ -3986,7 +3991,7 @@ h q;
   ASSERT_TRUE(fromQCO);
   EXPECT_TRUE(std::holds_alternative<QCProgram>(*fromQCO));
 
-  auto jeffInput = QCProgram::fromQASMString(qasm);
+  auto jeffInput = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(jeffInput);
   auto jeffQCO = std::move(*jeffInput).intoQCO();
   ASSERT_TRUE(jeffQCO);
@@ -4004,7 +4009,7 @@ include "stdgates.inc";
 qubit q;
 h q;
 )";
-  auto input = QCProgram::fromQASMString(source);
+  auto input = QCProgram::fromOpenQASMString(source);
   ASSERT_TRUE(input);
   CompilerInput program{std::move(*input)};
   const auto original = std::get<QCProgram>(program).str();
@@ -4203,7 +4208,7 @@ ctrl @ swap q[0], q[1], q[2];
 inv @ cx q[0], q[1];
 barrier q[0], q[1];
 )";
-  auto qc = QCProgram::fromQASMString(qasm);
+  auto qc = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(qc);
   EXPECT_EQ(qc->numGates(), 6);
   EXPECT_EQ(qc->numSingleQubitGates(), 1);
@@ -4251,7 +4256,7 @@ switch (selector) {
   }
 }
 )";
-  auto qc = QCProgram::fromQASMString(qasm);
+  auto qc = QCProgram::fromOpenQASMString(qasm);
   ASSERT_TRUE(qc);
   EXPECT_EQ(qc->numGates(), 5);
   EXPECT_EQ(qc->numSingleQubitGates(), 2);

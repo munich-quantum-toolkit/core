@@ -47,7 +47,7 @@ whileResultForInit(scf::WhileOp op, OpOperand& init) {
       op.getBeforeBody()->getArgument(init.getOperandNumber()));
   TensorIterator iterator(current);
   while (true) {
-    assert(current.hasOneUse() && "expected linear typing");
+    assert(current.hasOneUse() && "expected linear semantics");
     auto* user = *current.user_begin();
     if (auto condition = dyn_cast<scf::ConditionOp>(user)) {
       const auto result = llvm::find(condition.getArgs(), current);
@@ -99,7 +99,7 @@ void TensorIterator::forward() {
   }
 
   // Find the user-operation of the tensor SSA value.
-  assert(tensor_.hasOneUse() && "expected linear typing");
+  assert(tensor_.hasOneUse() && "expected linear semantics");
   op_ = *tensor_.user_begin();
 
   // The following operations define the end of the tensor's life-chain. A
