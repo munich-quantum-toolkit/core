@@ -9,9 +9,14 @@
 """QDMI entities and access to MQT Core's QDMI driver."""
 
 import enum
+import os
 from collections.abc import Sequence
 from typing import overload
 
+import qiskit.circuit
+
+import mqt.core.mlir
+import mqt.core.qdmi
 from mqt.core.qdmi import driver as driver
 from mqt.core.qdmi import slurm as slurm
 
@@ -300,6 +305,40 @@ class Device:
         The caller must provide the type documented by the device implementation.
         Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
         when the custom slot is unsupported.
+        """
+
+    def submit(
+        self,
+        program: str
+        | os.PathLike[str]
+        | qiskit.circuit.QuantumCircuit
+        | mqt.core.mlir.QCProgram
+        | mqt.core.mlir.QCOProgram
+        | mqt.core.mlir.JeffProgram
+        | mqt.core.mlir.OpenQASMProgram
+        | mqt.core.mlir.CompiledProgram,
+        num_shots: int = 1024,
+        *,
+        program_format: mqt.core.qdmi.ProgramFormat | None = None,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+        custom1: str | bool | float | None = None,
+        custom2: str | bool | float | None = None,
+        custom3: str | bool | float | None = None,
+        custom4: str | bool | float | None = None,
+        custom5: str | bool | float | None = None,
+    ) -> Job:
+        """Compile a source program for this device, or validate and submit a compiled program.
+
+        The default is 1024 shots. Zero requests simulator state extraction. Compiled
+        programs retain their format and are never silently recompiled. Their ordered
+        sites, connectivity, operations, timing units, and payload capabilities must
+        match this device; calibration-only changes are ignored.
+
+        Keyword options are ``program_format``, ``enable_timing``, ``enable_statistics``,
+        and the existing ``custom1`` through ``custom5`` job parameters. Compilation
+        options apply only to source inputs. The MLIR compiler is loaded on demand.
+        Use ``submit_job`` for externally prepared raw payloads.
         """
 
     @overload

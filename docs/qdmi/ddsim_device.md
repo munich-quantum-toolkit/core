@@ -71,20 +71,18 @@ one prepared DD; other QIR programs run once per shot. See the
 OpenQASM classical registers use reverse declaration order, with each register
 most-significant-bit first. QIR samples follow the program's recorded outputs.
 
-## Compile and execute QIR
+DDSIM advertises maximal compiler-supported language/profile capabilities using
+MQT's versioned private `CUSTOM2` report. See the
+[capability report](../mlir/target_compilation.md#private-qdmi-capability-report).
 
-The compiler can snapshot the DDSIM device as an all-to-all target, compile a
-program to QIR, and submit the resulting bitcode to the same device:
+## Compile and execute
+
+The compiler selects a supported payload and checks the device contract before
+submission. This example selects OpenQASM 3 and retains the Bell state after
+terminal sampling:
 
 ```{code-cell} ipython3
-from mqt.core.mlir import (
-    CompilerTarget,
-    PayloadFormat,
-    PayloadEncoding,
-    PayloadSpecification,
-    TargetEnvironment,
-    compile_program,
-)
+from mqt.core.mlir import compile_program
 from mqt.core.qdmi import ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
@@ -98,23 +96,13 @@ result = measure q;
 """
 
 device = open_device("mqt.ddsim.default")
-target = CompilerTarget.from_device(device)
-payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.BINARY))
-program = compile_program(
-    bell_qasm,
-    target_environment=TargetEnvironment(target, payload),
-)
-
-job = device.submit_job(
-    program.to_bitcode(),
-    ProgramFormat.QIR_BASE_MODULE,
-    num_shots=1024,
-    custom1=7,
-)
+program = compile_program(bell_qasm, target=device, program_format=ProgramFormat.QASM3)
+job = device.submit(program, num_shots=1024, custom1=7)
 job.wait()
 counts = job.get_counts()
 assert sum(counts.values()) == 1024
 assert set(counts) <= {"00", "11"}
+assert len(job.get_dense_statevector()) == 4
 print(counts)
 print("First eight shots:", job.get_shots()[:8])
 ```

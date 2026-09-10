@@ -274,6 +274,13 @@ auto Device::queryProperty(const QDMI_Device_Property prop, const size_t size,
   ADD_STRING_PROPERTY(QDMI_DEVICE_PROPERTY_CUSTOM1,
                       "mqt.compiler-target.v1:all-to-all-homogeneous", prop,
                       size, value, sizeRet)
+  /// Versioned private execution-capability report pending standardized QDMI
+  /// metadata.
+  ADD_STRING_PROPERTY(
+      QDMI_DEVICE_PROPERTY_CUSTOM2,
+      "mqt.compiler-payload.v1:"
+      R"({"openqasm3":"maximal","qir-base":"maximal","qir-adaptive":"maximal"})",
+      prop, size, value, sizeRet)
   ADD_LIST_PROPERTY(QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS,
                     QDMI_Program_Format, SUPPORTED_PROGRAM_FORMATS, prop, size,
                     value, sizeRet)

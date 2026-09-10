@@ -255,17 +255,81 @@ mqt.core.mlir.compile_program:
         \doc
     @overload
     def compile_program(
-        program: str
-        | os.PathLike[str]
-        | qiskit.circuit.QuantumCircuit
-        | QCProgram
-        | QCOProgram
-        | JeffProgram
-        | OpenQASMProgram,
+        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
         *,
+        target: str | mqt.core.qdmi.Device,
+        program_format: mqt.core.qdmi.ProgramFormat | None = None,
         inplace: bool = False,
-        target_environment: TargetEnvironment,
         enable_timing: bool = False,
         enable_statistics: bool = False,
-    ) -> OpenQASMProgram | QIRProgram:
+    ) -> CompiledProgram:
+        \doc
+    @overload
+    def compile_program(
+        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
+        *,
+        target: CompilerTarget,
+        program_format: mqt.core.qdmi.ProgramFormat,
+        inplace: bool = False,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+    ) -> CompiledProgram: ...
+    @overload
+    def compile_program(
+        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
+        *,
+        target: CompilerTarget,
+        output: Literal[OutputFormat.OPENQASM3],
+        inplace: bool = False,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+    ) -> OpenQASMProgram: ...
+    @overload
+    def compile_program(
+        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram,
+        *,
+        target: CompilerTarget,
+        output: Literal[OutputFormat.QIR_BASE, OutputFormat.QIR_ADAPTIVE],
+        inplace: bool = False,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+    ) -> QIRProgram: ...
+
+
+mqt\.core\.mlir\.submit_program$:
+    def submit_program(
+        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | JeffProgram | OpenQASMProgram | CompiledProgram,
+        *,
+        target: str | mqt.core.qdmi.Device,
+        num_shots: int = 1024,
+        program_format: mqt.core.qdmi.ProgramFormat | None = None,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+        custom1: str | bool | int | float | None = None,
+        custom2: str | bool | int | float | None = None,
+        custom3: str | bool | int | float | None = None,
+        custom4: str | bool | int | float | None = None,
+        custom5: str | bool | int | float | None = None,
+    ) -> mqt.core.qdmi.Job:
+        \doc
+
+mqt\.core\.qdmi\.Device\.submit$:
+    \import os
+    \import qiskit.circuit
+    \import mqt.core.mlir
+    \import mqt.core.qdmi
+    def submit(
+        self,
+        program: str | os.PathLike[str] | qiskit.circuit.QuantumCircuit | mqt.core.mlir.QCProgram | mqt.core.mlir.QCOProgram | mqt.core.mlir.JeffProgram | mqt.core.mlir.OpenQASMProgram | mqt.core.mlir.CompiledProgram,
+        num_shots: int = 1024,
+        *,
+        program_format: mqt.core.qdmi.ProgramFormat | None = None,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+        custom1: str | bool | int | float | None = None,
+        custom2: str | bool | int | float | None = None,
+        custom3: str | bool | int | float | None = None,
+        custom4: str | bool | int | float | None = None,
+        custom5: str | bool | int | float | None = None,
+    ) -> Job:
         \doc

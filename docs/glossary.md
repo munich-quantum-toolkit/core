@@ -180,6 +180,11 @@ compiler target
   a compiler pipeline may use for one destination. It is a snapshot used for
   compilation, not a live device connection.
 
+compiled program
+  An immutable serialized execution payload with its exact format and verified
+  compilation contract. It owns no device session; submission checks whether
+  the destination still has a compatible contract.
+
 target environment
   A compiler target paired with the selected payload specification for one
   compilation. It combines hardware facts with the selected output contract.

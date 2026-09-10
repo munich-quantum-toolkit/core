@@ -73,26 +73,24 @@ using DenseVector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>,
 using DenseMatrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>,
                                 nb::c_contig, nb::device::cpu>;
 
-template <class T>
-[[nodiscard]] static T takeResult(std::optional<T>&& result) {
+template <class T> [[nodiscard]] static T takeResult(std::optional<T> result) {
   if (!result) {
     throw std::runtime_error(
         "MLIR operation failed; see diagnostics for details.");
   }
-  return *std::move(result);
+  return std::move(*result);
 }
 
-template <class T>
-[[nodiscard]] static T takeResult(llvm::Expected<T>&& result) {
+template <class T> [[nodiscard]] static T takeResult(llvm::Expected<T> result) {
   if (!result) {
     const auto message = llvm::toString(result.takeError());
     throw nb::value_error(message.c_str());
   }
-  return *std::move(result);
+  return std::move(*result);
 }
 
 template <class T>
-static void constructFromExpected(T& self, llvm::Expected<T>&& result) {
+static void constructFromExpected(T& self, llvm::Expected<T> result) {
   std::construct_at(&self, takeResult(std::move(result)));
 }
 
@@ -192,7 +190,7 @@ static auto withDiagnostics(mlir::MLIRContext* context, const char* message,
     throw nb::builtin_exception(Exception, full.c_str());
   }
   if constexpr (!std::is_same_v<decltype(result), mlir::LogicalResult>) {
-    return *std::move(result);
+    return std::move(*result);
   }
 }
 
@@ -324,19 +322,115 @@ compileProgram(const nb::object& program, const mlir::ProgramFormat output,
                                              enableStatistics));
 }
 
-/// Compile for one target environment and return its selected payload.
-[[nodiscard]] static mlir::CompilerProgram
-compileProgramForTarget(const nb::object& program, const bool inplace,
-                        const mlir::TargetEnvironment& environment,
-                        const bool enableTiming, const bool enableStatistics) {
-  auto output = environment.payloadSpecification().compilerOutput();
-  if (!output) {
-    const auto message = llvm::toString(output.takeError());
-    throw nb::value_error(message.c_str());
+/// Resolve an execution destination once; authentication overrides belong to
+/// open_device.
+[[nodiscard]] static qdmi::Device resolveDevice(const nb::object& target) {
+  if (nb::isinstance<qdmi::Device>(target)) {
+    return nb::cast<qdmi::Device>(target);
   }
-  return takeResult(mlir::runDefaultPipeline(programFromInput(program, inplace),
-                                             environment, enableTiming,
-                                             enableStatistics));
+  if (nb::isinstance<nb::str>(target)) {
+    const auto id = nb::cast<std::string>(target);
+    const nb::gil_scoped_release release;
+    return qdmi::Session::openDevice(id);
+  }
+  throw nb::type_error("target must be a QDMI Device or registered device ID");
+}
+
+[[nodiscard]] static QDMI_Program_Format
+qdmiFormat(mlir::ProgramFormat output) {
+  switch (output) {
+  case mlir::ProgramFormat::OpenQASM3:
+    return QDMI_PROGRAM_FORMAT_QASM3;
+  case mlir::ProgramFormat::QIRBase:
+    return QDMI_PROGRAM_FORMAT_QIRBASEMODULE;
+  case mlir::ProgramFormat::QIRAdaptive:
+    return QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE;
+  default:
+    throw nb::value_error("Explicit targets require an executable output: "
+                          "OPENQASM3, QIR_BASE, or QIR_ADAPTIVE");
+  }
+}
+
+/// Select the payload before consuming a typed input or running target passes.
+[[nodiscard]] static nb::object
+compileProgramForTarget(const nb::object& program, const nb::object& target,
+                        std::optional<QDMI_Program_Format> programFormat,
+                        std::optional<mlir::ProgramFormat> output, bool inplace,
+                        bool enableTiming, bool enableStatistics) {
+  if (output && programFormat) {
+    throw nb::value_error("Specify either output or program_format, not both");
+  }
+  if (nb::isinstance<mlir::CompilerTarget>(target)) {
+    if (!output && !programFormat) {
+      throw nb::value_error(
+          "An explicit CompilerTarget requires output or program_format");
+    }
+    auto payload = takeResult(mlir::payloadSpecificationForProgramFormat(
+        programFormat ? *programFormat : qdmiFormat(*output)));
+    const mlir::TargetEnvironment environment(
+        nb::cast<const mlir::CompilerTarget&>(target), std::move(payload));
+    auto input = programFromInput(program, inplace);
+    if (output) {
+      return nb::cast(takeResult(mlir::runDefaultPipeline(
+          std::move(input), environment, enableTiming, enableStatistics)));
+    }
+    return nb::cast(takeResult(mlir::CompiledProgram::compile(
+        std::move(input), environment, enableTiming, enableStatistics)));
+  }
+  if (output) {
+    throw nb::value_error("Device targets select their output automatically; "
+                          "use program_format to override it");
+  }
+  const auto device = resolveDevice(target);
+  auto environment = [&] {
+    const nb::gil_scoped_release release;
+    return takeResult(mlir::targetEnvironmentFromDevice(device, programFormat));
+  }();
+  auto input = programFromInput(program, inplace);
+  return nb::cast(takeResult(mlir::CompiledProgram::compile(
+      std::move(input), environment, enableTiming, enableStatistics)));
+}
+
+/// Shared implementation behind Device.submit, loaded lazily by the QDMI
+/// binding.
+[[nodiscard]] static qdmi::Job
+submitToDevice(const qdmi::Device& device, const nb::object& program,
+               int64_t numShots,
+               std::optional<QDMI_Program_Format> programFormat,
+               bool enableTiming, bool enableStatistics,
+               const std::optional<qdmi::CustomJobParameter>& custom1,
+               const std::optional<qdmi::CustomJobParameter>& custom2,
+               const std::optional<qdmi::CustomJobParameter>& custom3,
+               const std::optional<qdmi::CustomJobParameter>& custom4,
+               const std::optional<qdmi::CustomJobParameter>& custom5) {
+  if (numShots < 0) {
+    throw nb::value_error("num_shots must be nonnegative");
+  }
+  const auto submit = [&](const mlir::CompiledProgram& compiled) {
+    const nb::gil_scoped_release release;
+    return takeResult(mlir::submitProgram(device, compiled, numShots, custom1,
+                                          custom2, custom3, custom4, custom5));
+  };
+  if (nb::isinstance<mlir::CompiledProgram>(program)) {
+    if (enableTiming || enableStatistics) {
+      throw nb::value_error(
+          "Compilation options do not apply to an already compiled program");
+    }
+    const auto& compiled = nb::cast<const mlir::CompiledProgram&>(program);
+    if (programFormat && *programFormat != compiled.programFormat()) {
+      throw nb::value_error(
+          "program_format conflicts with the compiled payload");
+    }
+    return submit(compiled);
+  }
+  auto environment = [&] {
+    const nb::gil_scoped_release release;
+    return takeResult(mlir::targetEnvironmentFromDevice(device, programFormat));
+  }();
+  auto input = programFromInput(program, false);
+  const auto compiled = takeResult(mlir::CompiledProgram::compile(
+      std::move(input), environment, enableTiming, enableStatistics));
+  return submit(compiled);
 }
 
 template <class Function>
@@ -1533,25 +1627,79 @@ Returns:
     A typed compiler program for the requested output format.
 )pb");
 
+  nb::class_<mlir::CompiledProgram>(
+      m, "CompiledProgram",
+      "Immutable serialized payload and verified compilation contract; owns no "
+      "device session.")
+      .def_prop_ro("program_format", &mlir::CompiledProgram::programFormat,
+                   "The exact QDMI program format.")
+      .def_prop_ro(
+          "payload",
+          [](const mlir::CompiledProgram& self) -> nb::object {
+            const auto payload = self.payload();
+            if (qdmi::isBinaryProgramFormat(self.programFormat())) {
+              return nb::bytes(payload.data(), payload.size());
+            }
+            return nb::str(payload.data(), payload.size());
+          },
+          nb::sig("def payload(self) -> str | bytes"),
+          "The immutable serialized payload, without a text terminator.")
+      .def_prop_ro(
+          "target",
+          [](const mlir::CompiledProgram& self) {
+            return self.environment().target();
+          },
+          "The hardware snapshot used for compilation.")
+      .def_prop_ro(
+          "payload_specification",
+          [](const mlir::CompiledProgram& self) {
+            return self.environment().payloadSpecification();
+          },
+          "The selected payload contract, including guaranteed capabilities.");
+
   m.def("compile_program", &compileProgramForTarget, "program"_a, nb::kw_only(),
-        "inplace"_a = false, "target_environment"_a, "enable_timing"_a = false,
+        "target"_a, "program_format"_a = nb::none(), "output"_a = nb::none(),
+        "inplace"_a = false, "enable_timing"_a = false,
         "enable_statistics"_a = false,
-        R"pb(
-Compile a program for a target and return the selected executable payload.
+        R"pb(Compile for a device ID, open device, or explicit compiler target.
 
-The payload specification determines the output format. Typed program inputs
-are copied by default; set ``inplace=True`` to consume them.
+Device targets select Adaptive QIR (binary, text), OpenQASM 3, then Base QIR
+(binary, text) from supported formats. Selection precedes target compilation;
+capabilities use the private MQT report or maximal language/profile assumptions.
+Use ``program_format`` to override the format.
+Compilation returns an immutable :class:`CompiledProgram` without creating a
+job. Submit it with ``device.submit(compiled)``.
 
-Args:
-    program: Source text, a file path, a Qiskit circuit, or a typed compiler program.
-    inplace: Whether a typed input program may be consumed.
-    target_environment: The compiler target and selected payload specification.
-    enable_timing: Whether to collect pass timing information.
-    enable_statistics: Whether to collect pass statistics.
+An explicit :class:`CompilerTarget` requires ``output`` to return a typed
+program, or ``program_format`` to return a verified compiled artifact.
+Typed inputs are copied unless ``inplace=True``. Format selection errors do
+not consume the input.)pb");
 
-Returns:
-    A typed compiler program for the selected payload format.
-)pb");
+  m.def("_submit_to_device", &submitToDevice, "device"_a, "program"_a,
+        "num_shots"_a = 1024, nb::kw_only(), "program_format"_a = nb::none(),
+        "enable_timing"_a = false, "enable_statistics"_a = false,
+        "custom1"_a = nb::none(), "custom2"_a = nb::none(),
+        "custom3"_a = nb::none(), "custom4"_a = nb::none(),
+        "custom5"_a = nb::none());
+
+  m.def(
+      "submit_program",
+      [](const nb::object& program, const nb::object& target, int64_t numShots,
+         const nb::kwargs& options) {
+        if (numShots < 0) {
+          throw nb::value_error("num_shots must be nonnegative");
+        }
+        auto device = resolveDevice(target);
+        return nb::cast(std::move(device))
+            .attr("submit")(program, "num_shots"_a = numShots, **options);
+      },
+      "program"_a, nb::kw_only(), "target"_a, "num_shots"_a = 1024, "options"_a,
+      R"pb(Resolve a device once, compile if necessary, and submit a QDMI job.
+
+Equivalent to opening ``target`` and calling ``device.submit``. ``target`` may
+also be an open device. Compilation and custom job options are forwarded to
+:meth:`mqt.core.qdmi.Device.submit`. The returned job retains its device session.
+Use ``num_shots=0`` for simulator state extraction.)pb");
 }
 
 } // namespace mqt

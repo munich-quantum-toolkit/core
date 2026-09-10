@@ -10,20 +10,26 @@
 
 #include "mqt/Compiler/QDMIAdapter.h"
 
-#include "mqt/Compiler/Target.h"
+#include "mlir/Compiler/Target.h"
+#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
 
-#include "mlir/Support/LLVM.h"
-
-#include "llvm/ADT/DenseMap.h"
-#include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/ADT/Twine.h"
-#include "llvm/Support/CheckedArithmetic.h"
-#include "llvm/Support/Error.h"
+#include <llvm/ADT/ArrayRef.h>
+#include <llvm/ADT/DenseMap.h>
+#include <llvm/ADT/DenseSet.h>
+#include <llvm/ADT/STLExtras.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/ADT/Twine.h>
+#include <llvm/Support/CheckedArithmetic.h>
+#include <llvm/Support/Error.h>
+#include <llvm/Support/JSON.h>
+#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
+#include <mlir/IR/Builders.h>
+#include <mlir/Support/LLVM.h>
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <exception>
@@ -538,6 +544,467 @@ llvm::Expected<std::vector<std::string>> registeredQDMIDeviceIds() {
     return qdmi::Driver::get().registeredDeviceIds();
   } catch (...) {
     return qdmiError("Failed to discover registered QDMI devices",
+                     std::current_exception());
+  }
+}
+
+constexpr std::array PROGRAM_FORMAT_PREFERENCE{
+    QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+    QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+    QDMI_PROGRAM_FORMAT_QASM3,
+    QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+    QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+};
+
+static llvm::Error incompatible(const llvm::Twine& detail) {
+  return llvm::createStringError(
+      std::make_error_code(std::errc::invalid_argument),
+      "Compiled program is incompatible with the destination: " + detail +
+          "; recompile for this device");
+}
+
+static bool sameOperation(const CompilerTarget::Operation& lhs,
+                          const CompilerTarget::Operation& rhs) {
+  return lhs.canonicalName() == rhs.canonicalName() &&
+         lhs.arity() == rhs.arity() &&
+         lhs.numParameters() == rhs.numParameters() &&
+         std::is_permutation(lhs.siteTuples().begin(), lhs.siteTuples().end(),
+                             rhs.siteTuples().begin(), rhs.siteTuples().end(),
+                             [](const auto& a, const auto& b) {
+                               return a.sites() == b.sites();
+                             });
+}
+
+static bool sameCapability(const ProgramCapability& lhs,
+                           const ProgramCapability& rhs) {
+  return lhs.id == rhs.id && lhs.value == rhs.value &&
+         std::ranges::is_permutation(lhs.constraints, rhs.constraints);
+}
+
+static llvm::Expected<QDMI_Program_Format>
+qdmiFormatForPayload(const PayloadSpecification& payload) {
+  for (const auto format : PROGRAM_FORMAT_PREFERENCE) {
+    auto baseline = payloadSpecificationForProgramFormat(format);
+    if (!baseline) {
+      return baseline.takeError();
+    }
+    if (baseline->format() == payload.format()) {
+      return format;
+    }
+  }
+  return llvm::createStringError(
+      std::make_error_code(std::errc::invalid_argument),
+      "No QDMI program format for this payload");
+}
+
+/// Optional QIR flags and their capability IDs in MQT's private report.
+constexpr std::array QIR_OPTIONAL_CAPABILITIES{
+    std::pair{"dynamic_qubit_management", "qir.dynamic-qubit-management"},
+    std::pair{"dynamic_result_management", "qir.dynamic-result-management"},
+    std::pair{"arrays", "qir.arrays"},
+    std::pair{"ir_functions", "qir.ir-functions"},
+    std::pair{"multiple_return_points", "qir.multiple-return-points"},
+    std::pair{"int_computations", "qir.int-computations"},
+    std::pair{"float_computations", "qir.float-computations"},
+    std::pair{"multiple_target_branching", "multiway-branching"},
+};
+
+static llvm::Error
+validateQIRCapabilities(ModuleOp moduleOp,
+                        const PayloadSpecification& payload) {
+  auto optionalFeatures = llvm::ArrayRef(QIR_OPTIONAL_CAPABILITIES);
+  for (auto flags : moduleOp.getOps<LLVM::ModuleFlagsOp>()) {
+    for (auto attribute : flags.getFlags()) {
+      const auto flag = cast<LLVM::ModuleFlagAttr>(attribute);
+      const auto key = flag.getKey().getValue();
+      const auto* const feature =
+          llvm::find_if(optionalFeatures,
+                        [&](const auto& entry) { return key == entry.first; });
+      if (feature == optionalFeatures.end()) {
+        continue;
+      }
+      if (const auto value = dyn_cast<IntegerAttr>(flag.getValue());
+          value && value.getValue().isZero()) {
+        continue;
+      }
+      const auto* const capability =
+          llvm::find_if(payload.capabilities(), [&](const auto& entry) {
+            return entry.id == feature->second;
+          });
+      if (capability != payload.capabilities().end() &&
+          capability->value == 0 &&
+          (capability->id == ProgramCapability::MULTIWAY_BRANCHING ||
+           capability->constraints.empty())) {
+        continue;
+      }
+      return llvm::createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          llvm::Twine("Selected QIR payload requires capability '") +
+              feature->second +
+              "' that the device contract does not permit; select another "
+              "supported program_format");
+    }
+  }
+  return llvm::Error::success();
+}
+
+llvm::Expected<PayloadSpecification>
+payloadSpecificationForProgramFormat(QDMI_Program_Format format) {
+  switch (format) {
+  case QDMI_PROGRAM_FORMAT_QASM3:
+    /// OpenQASM 3.0 has if/for/while; switch was added in 3.1.
+    return PayloadSpecification::create(
+        {
+            .id = "openqasm",
+            .version = "3.0.0",
+            .profile = "",
+            .encoding = PayloadEncoding::Text,
+        },
+        {
+            {.id = ProgramCapability::FORWARD_BRANCHING.str()},
+            {.id = ProgramCapability::COUNTED_ITERATION.str()},
+            {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
+        });
+  case QDMI_PROGRAM_FORMAT_QIRBASEMODULE:
+  case QDMI_PROGRAM_FORMAT_QIRBASESTRING:
+    return PayloadSpecification::create({
+        .id = "qir",
+        .version = "2.1.0",
+        .profile = "base",
+        .encoding = format == QDMI_PROGRAM_FORMAT_QIRBASEMODULE
+                        ? PayloadEncoding::Binary
+                        : PayloadEncoding::Text,
+    });
+  case QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE:
+  case QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING: {
+    std::vector<ProgramCapability> capabilities{
+        {.id = ProgramCapability::FORWARD_BRANCHING.str()},
+        {.id = ProgramCapability::COUNTED_ITERATION.str()},
+        {.id = ProgramCapability::CONDITIONAL_LOOP.str()},
+    };
+    for (const auto& [flag, id] : QIR_OPTIONAL_CAPABILITIES) {
+      capabilities.push_back({.id = id});
+    }
+    return PayloadSpecification::create(
+        {
+            .id = "qir",
+            .version = "2.1.0",
+            .profile = "adaptive",
+            .encoding = format == QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE
+                            ? PayloadEncoding::Binary
+                            : PayloadEncoding::Text,
+        },
+        std::move(capabilities));
+  }
+  default:
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "MQT compiler cannot emit the requested QDMI program format");
+  }
+}
+
+/// CUSTOM2 is namespaced so unrelated provider properties remain usable.
+/// A recognized report replaces the assumed maximal contract for that format.
+static llvm::Expected<PayloadSpecification>
+devicePayloadSpecification(const qdmi::Device& device,
+                           QDMI_Program_Format format) {
+  auto maximal = payloadSpecificationForProgramFormat(format);
+  if (!maximal) {
+    return maximal.takeError();
+  }
+  const auto bytes = device.queryCustomProperty<std::vector<std::byte>>(
+      qdmi::CustomProperty::Custom2);
+  if (!bytes) {
+    return maximal;
+  }
+  auto text =
+      StringRef(reinterpret_cast<const char*>(bytes->data()), bytes->size());
+  if (text.ends_with(StringRef("\0", 1))) {
+    text = text.drop_back();
+  }
+  if (!text.starts_with("mqt.compiler-payload.")) {
+    return maximal;
+  }
+  if (!text.consume_front("mqt.compiler-payload.v1:")) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "Unsupported MQT compiler payload report version");
+  }
+  auto report = llvm::json::parse(text);
+  if (!report) {
+    return report.takeError();
+  }
+  const auto* object = report->getAsObject();
+  if (object == nullptr) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "MQT compiler payload report must be a JSON object");
+  }
+  for (const auto& [name, value] : *object) {
+    if (name != "openqasm3" && name != "qir-base" && name != "qir-adaptive") {
+      return llvm::createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "Unknown format in MQT compiler payload report: " + name.str());
+    }
+  }
+  const auto& language = maximal->format();
+  const auto key =
+      language.id == "qir" ? "qir-" + language.profile : "openqasm3";
+  const auto* entry = object->get(key);
+  if (entry == nullptr) {
+    return maximal;
+  }
+  if (entry->getAsString() == "maximal") {
+    return PayloadSpecification::create(
+        language,
+        std::vector<ProgramCapability>(maximal->capabilities().begin(),
+                                       maximal->capabilities().end()),
+        true);
+  }
+  const auto* capabilities = entry->getAsArray();
+  if (capabilities == nullptr) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "MQT payload entry must be 'maximal' or a capability array");
+  }
+  std::vector<ProgramCapability> parsed;
+  parsed.reserve(capabilities->size());
+  for (const auto& capability : *capabilities) {
+    ProgramCapability result;
+    llvm::json::Path::Root root;
+    llvm::json::ObjectMapper mapper(capability, root);
+    const auto* cap = capability.getAsObject();
+    if (cap == nullptr || !mapper.map("id", result.id) ||
+        !mapper.mapOptional("value", result.value)) {
+      return root.getError();
+    }
+    for (const auto& [name, value] : *cap) {
+      if (name != "id" && name != "value" && name != "constraints") {
+        return llvm::createStringError(
+            std::make_error_code(std::errc::invalid_argument),
+            "Unknown field in MQT payload capability: " + name.str());
+      }
+    }
+    if (const auto* value = cap->get("constraints")) {
+      const auto* list = value->getAsArray();
+      if (list == nullptr) {
+        return llvm::createStringError(
+            std::make_error_code(std::errc::invalid_argument),
+            "MQT capability constraints must be an array");
+      }
+      for (const auto& constraint : *list) {
+        ProgramConstraint item;
+        llvm::json::ObjectMapper fields(constraint, root);
+        if (!fields.map("id", item.id) || !fields.map("value", item.value)) {
+          return root.getError();
+        }
+        if (constraint.getAsObject()->size() != 2) {
+          return llvm::createStringError(
+              std::make_error_code(std::errc::invalid_argument),
+              "Unknown field in MQT capability constraint");
+        }
+        result.constraints.push_back(std::move(item));
+      }
+    }
+    parsed.push_back(std::move(result));
+  }
+  return PayloadSpecification::create(language, std::move(parsed), true);
+}
+
+llvm::Expected<TargetEnvironment>
+targetEnvironmentFromDevice(const qdmi::Device& device,
+                            std::optional<QDMI_Program_Format> format) {
+  try {
+    const auto supported = device.getSupportedProgramFormats();
+    if (format && !llvm::is_contained(supported, *format)) {
+      return llvm::createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "Device does not support the requested program_format");
+    }
+    if (!format) {
+      for (const auto candidate : PROGRAM_FORMAT_PREFERENCE) {
+        if (llvm::is_contained(supported, candidate)) {
+          format = candidate;
+          break;
+        }
+      }
+    }
+    if (!format) {
+      return llvm::createStringError(
+          std::make_error_code(std::errc::invalid_argument),
+          "Device has no executable program format supported by the MQT "
+          "compiler; hardware-only models require an explicit compiler target "
+          "and output");
+    }
+    auto payload = devicePayloadSpecification(device, *format);
+    if (!payload) {
+      return payload.takeError();
+    }
+    auto target = compilerTargetFromDevice(device);
+    if (!target) {
+      return target.takeError();
+    }
+    return TargetEnvironment(*target, std::move(*payload));
+  } catch (...) {
+    return qdmiError("Failed to query device compilation contract",
+                     std::current_exception());
+  }
+}
+
+llvm::Error validateTargetCompatibility(const TargetEnvironment& compiled,
+                                        const TargetEnvironment& destination) {
+  const auto& lhs = compiled.target();
+  const auto& rhs = destination.target();
+  if (lhs.siteIds() != rhs.siteIds()) {
+    return incompatible("ordered site mapping differs");
+  }
+  if (lhs.connectivityKind() != rhs.connectivityKind() ||
+      lhs.couplings() != rhs.couplings()) {
+    return incompatible("connectivity differs");
+  }
+  const auto& lhsUnit = lhs.durationUnit();
+  const auto& rhsUnit = rhs.durationUnit();
+  if (lhsUnit.has_value() != rhsUnit.has_value() ||
+      (lhsUnit && (lhsUnit->unit() != rhsUnit->unit() ||
+                   lhsUnit->scaleFactor() != rhsUnit->scaleFactor()))) {
+    return incompatible("duration units differ");
+  }
+  if (lhs.nativeOperationsKind() != rhs.nativeOperationsKind() ||
+      !std::is_permutation(lhs.operations().begin(), lhs.operations().end(),
+                           rhs.operations().begin(), rhs.operations().end(),
+                           sameOperation)) {
+    return incompatible("native operations or ordered applicability differ");
+  }
+  const auto& a = compiled.payloadSpecification();
+  const auto& b = destination.payloadSpecification();
+  if (a.format() != b.format() ||
+      !std::is_permutation(a.capabilities().begin(), a.capabilities().end(),
+                           b.capabilities().begin(), b.capabilities().end(),
+                           sameCapability)) {
+    return incompatible("payload format or capabilities differ");
+  }
+  return llvm::Error::success();
+}
+
+CompiledProgram::CompiledProgram(TargetEnvironment environment,
+                                 std::string payload,
+                                 QDMI_Program_Format format)
+    : environment_(std::move(environment)), payload_(std::move(payload)),
+      format_(format) {}
+
+llvm::Expected<CompiledProgram>
+CompiledProgram::compile(CompilerInput&& program,
+                         const TargetEnvironment& environment,
+                         bool enableTiming, bool enableStatistics) {
+  auto format = qdmiFormatForPayload(environment.payloadSpecification());
+  if (!format) {
+    return format.takeError();
+  }
+  auto result = runDefaultPipeline(std::move(program), environment,
+                                   enableTiming, enableStatistics);
+  if (!result) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "Compilation failed for selected payload " +
+            environment.payloadSpecification().format().id + " " +
+            environment.payloadSpecification().format().profile +
+            "; see compiler diagnostics for the unsupported construct or "
+            "capability");
+  }
+  if (const auto* qasm = std::get_if<OpenQASMProgram>(&*result)) {
+    return CompiledProgram(environment, std::string(qasm->source()), *format);
+  }
+  const auto& qir = std::get<QIRProgram>(*result);
+  auto entryPoint = qir::getMainFunction(qir.module());
+  if (entryPoint && !entryPoint.isVarArg() &&
+      entryPoint.getNumArguments() == 0 &&
+      isa<LLVM::LLVMVoidType>(entryPoint.getFunctionType().getReturnType())) {
+    /// A program without a return value completes with success status.
+    OpBuilder builder(qir.module().getContext());
+    entryPoint.setFunctionType(
+        LLVM::LLVMFunctionType::get(builder.getI64Type(), {}));
+    entryPoint.walk([&](LLVM::ReturnOp returnOp) {
+      builder.setInsertionPoint(returnOp);
+      auto zero = LLVM::ConstantOp::create(builder, returnOp.getLoc(),
+                                           builder.getI64IntegerAttr(0));
+      returnOp->setOperands(zero.getResult());
+    });
+  }
+  if (!entryPoint || entryPoint.isVarArg() ||
+      entryPoint.getNumArguments() != 0 ||
+      !entryPoint.getFunctionType().getReturnType().isInteger(64)) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "Compiled QDMI QIR requires an i64 () entry point; keep classical "
+        "temporaries local or select OpenQASM 3");
+  }
+  if (auto error = validateQIRCapabilities(
+          qir.module(), environment.payloadSpecification())) {
+    return error;
+  }
+  if (qdmi::isBinaryProgramFormat(*format)) {
+    if (auto bytes = qir.toBitcode()) {
+      return CompiledProgram(
+          environment,
+          std::string(reinterpret_cast<const char*>(bytes->data()),
+                      bytes->size()),
+          *format);
+    }
+  } else if (auto text = qir.llvmIR()) {
+    return CompiledProgram(environment, std::move(*text), *format);
+  }
+  return llvm::createStringError(
+      std::make_error_code(std::errc::invalid_argument),
+      "Failed to serialize compiled QIR payload");
+}
+
+llvm::Expected<CompiledProgram>
+compileProgram(CompilerInput&& program, const qdmi::Device& device,
+               std::optional<QDMI_Program_Format> format, bool enableTiming,
+               bool enableStatistics) {
+  auto environment = targetEnvironmentFromDevice(device, format);
+  if (!environment) {
+    return environment.takeError();
+  }
+  return CompiledProgram::compile(std::move(program), *environment,
+                                  enableTiming, enableStatistics);
+}
+
+llvm::Expected<qdmi::Job>
+submitProgram(const qdmi::Device& device, const CompiledProgram& program,
+              int64_t numShots,
+              const std::optional<qdmi::CustomJobParameter>& custom1,
+              const std::optional<qdmi::CustomJobParameter>& custom2,
+              const std::optional<qdmi::CustomJobParameter>& custom3,
+              const std::optional<qdmi::CustomJobParameter>& custom4,
+              const std::optional<qdmi::CustomJobParameter>& custom5) {
+  if (numShots < 0) {
+    return llvm::createStringError(
+        std::make_error_code(std::errc::invalid_argument),
+        "num_shots must be nonnegative");
+  }
+  auto destination =
+      targetEnvironmentFromDevice(device, program.programFormat());
+  if (!destination) {
+    return destination.takeError();
+  }
+  if (auto error =
+          validateTargetCompatibility(program.environment(), *destination)) {
+    return error;
+  }
+  try {
+    if (qdmi::isBinaryProgramFormat(program.programFormat())) {
+      return device.submitJob(std::as_bytes(std::span(program.payload())),
+                              program.programFormat(),
+                              static_cast<size_t>(numShots), custom1, custom2,
+                              custom3, custom4, custom5);
+    }
+    return device.submitJob(std::string(program.payload()),
+                            program.programFormat(),
+                            static_cast<size_t>(numShots), custom1, custom2,
+                            custom3, custom4, custom5);
+  } catch (...) {
+    return qdmiError("Failed to submit compiled program",
                      std::current_exception());
   }
 }

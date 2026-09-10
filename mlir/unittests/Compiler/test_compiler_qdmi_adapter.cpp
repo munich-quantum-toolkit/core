@@ -21,6 +21,7 @@
 #include "llvm/Support/Error.h"
 
 #include <cassert>
+#include <cstring>
 #include <initializer_list>
 #include <memory>
 #include <numeric>
@@ -279,4 +280,292 @@ TEST(CompilerQDMIAdapterTest,
   EXPECT_EQ(cx.siteTuples()[1].sites(),
             (llvm::ArrayRef<CompilerTarget::SiteId>{1, 0}));
   EXPECT_DOUBLE_EQ(*cx.siteTuples()[1].fidelity(), 0.92);
+}
+
+TEST(CompilerQDMIAdapterTest,
+     SelectsPayloadByPreferenceAndIncludesMaximalCapabilities) {
+  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
+      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM");
+  static thread_local decltype(QDMI_device_session_query_device_property)*
+      query = nullptr;
+  static thread_local std::vector<QDMI_Program_Format> formats;
+  query = library->device_session_query_device_property;
+  library->device_session_query_device_property =
+      [](QDMI_Device_Session session, QDMI_Device_Property property,
+         size_t size, void* value, size_t* sizeRet) -> int {
+    if (property != QDMI_DEVICE_PROPERTY_SUPPORTEDPROGRAMFORMATS) {
+      return query(session, property, size, value, sizeRet);
+    }
+    const size_t required = formats.size() * sizeof(QDMI_Program_Format);
+    if (sizeRet != nullptr) {
+      *sizeRet = required;
+    }
+    if (value != nullptr) {
+      if (size < required) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::memcpy(value, formats.data(), required);
+    }
+    return QDMI_SUCCESS;
+  };
+  QDMI_Device_impl_d rawDevice(library);
+  const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
+  formats = {
+      QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+      QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
+      QDMI_PROGRAM_FORMAT_QASM3,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
+  };
+  while (!formats.empty()) {
+    const auto environment =
+        llvm::cantFail(mlir::targetEnvironmentFromDevice(device));
+    const auto baseline = llvm::cantFail(
+        mlir::payloadSpecificationForProgramFormat(formats.back()));
+    EXPECT_EQ(environment.payloadSpecification().format(), baseline.format());
+    EXPECT_EQ(environment.payloadSpecification().capabilities(),
+              baseline.capabilities());
+    EXPECT_TRUE(environment.payloadSpecification().optionalCapabilitiesKnown());
+    formats.pop_back();
+  }
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::targetEnvironmentFromDevice(device).takeError()));
+  formats = {QDMI_PROGRAM_FORMAT_QASM3};
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::targetEnvironmentFromDevice(
+                            device, QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE)
+                            .takeError()));
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM2)
+          .takeError()));
+
+  const auto adaptive =
+      llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+          QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
+  ASSERT_EQ(adaptive.capabilities().size(), 11);
+  EXPECT_EQ(adaptive.capabilities().front().id, "forward-branching");
+  const auto qasm = llvm::cantFail(
+      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
+  ASSERT_EQ(qasm.capabilities().size(), 3);
+  EXPECT_EQ(qasm.capabilities()[1].id, "counted-iteration");
+  EXPECT_EQ(qasm.capabilities()[2].id, "conditional-loop");
+}
+
+TEST(CompilerQDMIAdapterTest,
+     CompatibilityIgnoresCalibrationButPreservesLegality) {
+  const auto makeTarget = [](bool calibrated,
+                             const std::vector<CompilerTarget::SiteId>& ids,
+                             std::vector<CompilerTarget::SiteId> operands,
+                             double timeScale = 1.) {
+    std::vector<CompilerTarget::Site> sites;
+    sites.reserve(ids.size());
+    for (const auto id : ids) {
+      sites.push_back(llvm::cantFail(CompilerTarget::Site::create(
+          id, calibrated ? "new name" : "old name", calibrated ? 200 : 100)));
+    }
+    const auto tuple = llvm::cantFail(CompilerTarget::SiteTuple::create(
+        std::move(operands), calibrated ? 50 : 10, calibrated ? 0.99 : 0.9));
+    const auto operation = llvm::cantFail(CompilerTarget::Operation::create(
+        "cx", 2, 0, {tuple}, calibrated ? 50 : 10, calibrated ? 0.99 : 0.9));
+    return llvm::cantFail(CompilerTarget::create(
+        calibrated ? "updated device" : "original device", std::move(sites),
+        CompilerTarget::Connectivity::allToAll(),
+        CompilerTarget::NativeOperations::fromOperations({operation}),
+        llvm::cantFail(CompilerTarget::DurationUnit::create("ns", timeScale))));
+  };
+  const auto payload = llvm::cantFail(
+      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
+  const mlir::TargetEnvironment original(makeTarget(false, {2, 5}, {2, 5}),
+                                         payload);
+  const mlir::TargetEnvironment calibrated(makeTarget(true, {2, 5}, {2, 5}),
+                                           payload);
+  EXPECT_FALSE(llvm::errorToBool(
+      mlir::validateTargetCompatibility(original, calibrated)));
+  for (const auto& target : {
+           makeTarget(false, {5, 2}, {2, 5}),
+           makeTarget(false, {2, 5}, {5, 2}),
+           makeTarget(false, {2, 5}, {2, 5}, 2.),
+       }) {
+    const mlir::TargetEnvironment changed(target, payload);
+    const auto error =
+        llvm::toString(mlir::validateTargetCompatibility(original, changed));
+    EXPECT_NE(error.find("recompile for this device"), std::string::npos);
+  }
+  const auto constrained = llvm::cantFail(mlir::PayloadSpecification::create(
+      payload.format(),
+      {
+          {
+              .id = "forward-branching",
+              .value = 0,
+              .constraints =
+                  {
+                      {.id = "max-control-flow-nesting-depth", .value = 1},
+                  },
+          },
+      }));
+  EXPECT_TRUE(llvm::errorToBool(mlir::validateTargetCompatibility(
+      original, mlir::TargetEnvironment(original.target(), constrained))));
+}
+
+TEST(CompilerQDMIAdapterTest,
+     CompilationCreatesNoJobAndSubmissionChecksContract) {
+  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
+      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM");
+  static thread_local decltype(QDMI_device_session_create_device_job)*
+      createJob = nullptr;
+  static thread_local size_t creations = 0;
+  createJob = library->device_session_create_device_job;
+  creations = 0;
+  library->device_session_create_device_job = [](QDMI_Device_Session session,
+                                                 QDMI_Device_Job* job) {
+    ++creations;
+    return createJob(session, job);
+  };
+  QDMI_Device_impl_d rawDevice(library);
+  const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
+  constexpr auto source =
+      "OPENQASM 3.0; include \"stdgates.inc\"; "
+      "qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c = measure q;";
+  const auto compiled = llvm::cantFail(
+      mlir::compileProgram(mlir::OpenQASMProgram(source), device));
+  EXPECT_EQ(creations, 0);
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::submitProgram(device, compiled, -1).takeError()));
+  EXPECT_EQ(creations, 0);
+  EXPECT_EQ(compiled.programFormat(), QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE);
+  ASSERT_GE(compiled.payload().size(), 4);
+  EXPECT_EQ(compiled.payload().substr(0, 2), "BC");
+  auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 32));
+  EXPECT_EQ(creations, 1);
+  EXPECT_TRUE(job.wait());
+  EXPECT_EQ(job.getShots().size(), 32);
+  const auto otherSession = qdmi::Session::openDevice("mqt.ddsim.default");
+  auto otherJob =
+      llvm::cantFail(mlir::submitProgram(otherSession, compiled, 16));
+  EXPECT_TRUE(otherJob.wait());
+  EXPECT_EQ(otherJob.getShots().size(), 16);
+
+  const auto explicitTarget = llvm::cantFail(
+      CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
+                             CompilerTarget::NativeOperations::unrestricted()));
+  const auto payload =
+      llvm::cantFail(mlir::payloadSpecificationForProgramFormat(
+          QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
+  const auto otherArtifact = llvm::cantFail(mlir::CompiledProgram::compile(
+      mlir::OpenQASMProgram(source),
+      mlir::TargetEnvironment(explicitTarget, payload)));
+  EXPECT_TRUE(llvm::errorToBool(
+      mlir::submitProgram(device, otherArtifact).takeError()));
+  EXPECT_EQ(creations, 1);
+}
+
+TEST(CompilerQDMIAdapterTest, PrivateCapabilitiesOverrideMaximalAssumptions) {
+  auto library = std::make_shared<qdmi::DynamicDeviceLibrary>(
+      MQT_CORE_MLIR_DDSIM_DEVICE_LIBRARY, "MQT_DDSIM");
+  static thread_local decltype(QDMI_device_session_query_device_property)*
+      query = nullptr;
+  static thread_local decltype(QDMI_device_session_create_device_job)*
+      createJob = nullptr;
+  static thread_local std::string report;
+  static thread_local size_t creations = 0;
+  query = library->device_session_query_device_property;
+  createJob = library->device_session_create_device_job;
+  creations = 0;
+  library->device_session_create_device_job = [](QDMI_Device_Session session,
+                                                 QDMI_Device_Job* job) {
+    ++creations;
+    return createJob(session, job);
+  };
+  library->device_session_query_device_property =
+      [](QDMI_Device_Session session, QDMI_Device_Property property,
+         size_t size, void* value, size_t* sizeRet) -> int {
+    if (property != QDMI_DEVICE_PROPERTY_CUSTOM2) {
+      return query(session, property, size, value, sizeRet);
+    }
+    if (report.empty()) {
+      return QDMI_ERROR_NOTSUPPORTED;
+    }
+    const auto required = report.size() + 1;
+    if (sizeRet != nullptr) {
+      *sizeRet = required;
+    }
+    if (value != nullptr) {
+      if (size < required) {
+        return QDMI_ERROR_INVALIDARGUMENT;
+      }
+      std::memcpy(value, report.c_str(), required);
+    }
+    return QDMI_SUCCESS;
+  };
+  QDMI_Device_impl_d rawDevice(library);
+  const auto device = qdmi::Session::createSessionlessDevice(&rawDevice);
+  report.clear();
+  const auto assumed =
+      llvm::cantFail(mlir::targetEnvironmentFromDevice(device));
+  EXPECT_FALSE(assumed.payloadSpecification().optionalCapabilitiesKnown());
+  EXPECT_EQ(assumed.payloadSpecification().capabilities().size(), 11);
+  report = "unrelated provider metadata";
+  EXPECT_FALSE(llvm::errorToBool(mlir::validateTargetCompatibility(
+      assumed, llvm::cantFail(mlir::targetEnvironmentFromDevice(device)))));
+
+  report = R"(mqt.compiler-payload.v1:{"qir-adaptive":"maximal"})";
+  const auto explicitMaximal =
+      llvm::cantFail(mlir::targetEnvironmentFromDevice(device));
+  EXPECT_TRUE(
+      explicitMaximal.payloadSpecification().optionalCapabilitiesKnown());
+  EXPECT_FALSE(llvm::errorToBool(
+      mlir::validateTargetCompatibility(assumed, explicitMaximal)));
+  constexpr auto source = "OPENQASM 3.0; qubit q; bit c = measure q;";
+  auto compiled = llvm::cantFail(
+      mlir::compileProgram(mlir::OpenQASMProgram(source), device));
+  EXPECT_EQ(creations, 0);
+
+  report =
+      R"(mqt.compiler-payload.v1:{"qir-adaptive":[{"id":"forward-branching","constraints":[{"id":"max-control-flow-nesting-depth","value":2}]}]})";
+  const auto restricted =
+      llvm::cantFail(mlir::targetEnvironmentFromDevice(device));
+  ASSERT_EQ(restricted.payloadSpecification().capabilities().size(), 1);
+  EXPECT_EQ(
+      restricted.payloadSpecification().capabilities()[0].constraints[0].value,
+      2);
+  const auto incompatible =
+      llvm::toString(mlir::submitProgram(device, compiled).takeError());
+  EXPECT_NE(incompatible.find("recompile"), std::string::npos);
+  EXPECT_EQ(creations, 0);
+  const auto unsupported = llvm::toString(
+      mlir::compileProgram(mlir::OpenQASMProgram(source), device).takeError());
+  EXPECT_NE(unsupported.find("qir.dynamic-result-management"),
+            std::string::npos);
+
+  for (
+      const auto* suffix : {
+          "not json",
+          R"({"qir_adaptive":[]})",
+          R"({"qir-adaptive":false})",
+          R"({"qir-adaptive":[{"id":"forward-branching","value":-1}]})",
+          R"({"qir-adaptive":[{"id":"forward-branching","constraint":[]}]})",
+          R"({"qir-adaptive":[{"id":"forward-branching","constraints":false}]})",
+          R"({"qir-adaptive":[{"id":"forward-branching","constraints":[{"id":"max-control-flow-nesting-depth","value":-1}]}]})",
+          R"({"qir-adaptive":[{"id":"forward-branching"},{"id":"forward-branching"}]})",
+      }) {
+    SCOPED_TRACE(suffix);
+    report = "mqt.compiler-payload.v1:" + std::string(suffix);
+    EXPECT_TRUE(llvm::errorToBool(
+        mlir::targetEnvironmentFromDevice(device).takeError()));
+  }
+  report = "mqt.compiler-payload.v2:{}";
+  EXPECT_TRUE(
+      llvm::errorToBool(mlir::targetEnvironmentFromDevice(device).takeError()));
+}
+
+TEST(CompilerQDMIAdapterTest, CompilesAdaptiveMeasurementControlledLoop) {
+  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+  constexpr auto source =
+      "OPENQASM 3.0; include \"stdgates.inc\"; qubit q; bit c; x q; "
+      "c = measure q; while (c) { x q; c = measure q; }";
+  auto compiled = llvm::cantFail(
+      mlir::compileProgram(mlir::OpenQASMProgram(source), device));
+  auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 8));
+  ASSERT_TRUE(job.wait());
+  EXPECT_EQ(job.getCounts().at("0"), 8);
 }

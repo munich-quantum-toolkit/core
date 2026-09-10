@@ -25,6 +25,7 @@
 #include "qdmi/client.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <span>
@@ -393,6 +394,30 @@ slot is unsupported. A supported empty list is returned as an empty list.)pb");
 The caller must provide the type documented by the device implementation.
 Use ``bytes`` to retrieve the value without interpretation. Returns ``None``
 when the custom slot is unsupported.)pb");
+
+  device.def(
+      "submit",
+      [](const qdmi::Device& self, const nb::object& program, int64_t numShots,
+         const nb::kwargs& options) {
+        if (numShots < 0) {
+          throw nb::value_error("num_shots must be nonnegative");
+        }
+        return nb::module_::import_("mqt.core.mlir")
+            .attr("_submit_to_device")(nb::cast(self, nb::rv_policy::reference),
+                                       program, numShots, **options);
+      },
+      "program"_a, "num_shots"_a = 1024, "options"_a,
+      R"pb(Compile a source program for this device, or validate and submit a compiled program.
+
+The default is 1024 shots. Zero requests simulator state extraction. Compiled
+programs retain their format and are never silently recompiled. Their ordered
+sites, connectivity, operations, timing units, and payload capabilities must
+match this device; calibration-only changes are ignored.
+
+Keyword options are ``program_format``, ``enable_timing``, ``enable_statistics``,
+and the existing ``custom1`` through ``custom5`` job parameters. Compilation
+options apply only to source inputs. The MLIR compiler is loaded on demand.
+Use ``submit_job`` for externally prepared raw payloads.)pb");
 
   device.def(
       "submit_job",

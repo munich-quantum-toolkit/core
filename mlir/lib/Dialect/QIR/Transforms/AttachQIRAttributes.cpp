@@ -367,39 +367,17 @@ private:
   /// or a conditionally terminated loop (false).
   static bool classifyLoop(const SmallPtrSet<Block*, 8>& loop) {
     for (Block* block : loop) {
-      Operation* terminator = block->getTerminator();
-      assert(terminator != nullptr);
-
-      if (auto condBrOp = dyn_cast<LLVM::CondBrOp>(terminator)) {
-        auto condition = condBrOp.getCondition();
-
-        if (isa<BlockArgument>(condition)) { // Ensure that there is a def-op.
-          return true;
-        }
-
-        auto callOp = dyn_cast<LLVM::CallOp>(condition.getDefiningOp());
-
-        // If the condition is not produced by a measurement call, we
-        // consider it a basic loop.
-        if (!callOp || !callOp.getCallee()) {
-          return true;
-        }
-
-        // If the condition has been produced by a measurement call
-        // (e.g. a until-zero-measurement loop), and breaks outside the loop,
-        // we found a "conditionally terminating loop".
-        if (*callOp.getCallee() == QIR_READ_RESULT &&
-            (!loop.contains(condBrOp.getTrueDest()) ||
-             !loop.contains(condBrOp.getFalseDest()))) {
-          return false;
-        }
-
-        // Unseen edge case (so far): The condition of the terminator
-        // operation is produced by a function call, which isn't a
-        // measurement.
-        return true;
+      auto branch = dyn_cast<LLVM::CondBrOp>(block->getTerminator());
+      if (!branch || (loop.contains(branch.getTrueDest()) &&
+                      loop.contains(branch.getFalseDest()))) {
+        continue;
+      }
+      auto call = branch.getCondition().getDefiningOp<LLVM::CallOp>();
+      if (call && call.getCallee() == QIR_READ_RESULT) {
+        return false;
       }
     }
+    return true;
   }
 
   /// Return pair of booleans, indicating whether the entry point uses
@@ -419,6 +397,7 @@ private:
 
           SmallPtrSet<Block*, 8> loop{header};
           if (header != tail) {
+            loop.insert(tail);
             worklist.push_back(tail);
           }
 

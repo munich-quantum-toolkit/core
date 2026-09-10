@@ -37,12 +37,9 @@
 #include <string_view>
 #include <type_traits>
 #include <utility>
-#include <variant>
 #include <vector>
 
 namespace qdmi {
-using CustomJobParameter = std::variant<std::string, bool, int, double>;
-
 /// Identifies one of QDMI's implementation-defined custom slots.
 ///
 /// The same selector is used for custom device, site, operation, and

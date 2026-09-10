@@ -1,0 +1,232 @@
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+"""Device-directed compilation and submission contracts."""
+
+from __future__ import annotations
+
+import gc
+from typing import TYPE_CHECKING
+
+import pytest
+
+from mqt.core.mlir import CompiledProgram, CompilerTarget, OutputFormat, compile_program, submit_program
+from mqt.core.qdmi import Device, Job, ProgramFormat
+from mqt.core.qdmi.driver import open_device
+
+if TYPE_CHECKING:
+    from pathlib import Path
+
+BELL = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c = measure q;'
+
+
+@pytest.mark.parametrize("form", ["artifact", "source", "helper"])
+def test_submission_forms(form: str) -> None:
+    """All forms default to 1024 shots and preserve seeded samples."""
+    device = open_device("mqt.ddsim.default")
+    if form == "artifact":
+        program = compile_program(BELL, target=device)
+        assert isinstance(program, CompiledProgram)
+        assert program.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
+        job = device.submit(program, custom1=7)
+    elif form == "source":
+        job = device.submit(BELL, custom1=7)
+    else:
+        job = submit_program(BELL, target="mqt.ddsim.default", custom1=7)
+    assert isinstance(job, Job)
+    del device
+    gc.collect()
+    job.wait()
+    shots = job.get_shots()
+    assert len(shots) == 1024
+    assert set(shots) <= {"00", "11"}
+    again = submit_program(BELL, target="mqt.ddsim.default", custom1=7)
+    again.wait()
+    assert again.get_shots() == shots
+
+
+@pytest.mark.parametrize(
+    "program_format",
+    [
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
+        ProgramFormat.QIR_ADAPTIVE_STRING,
+        ProgramFormat.QASM3,
+        ProgramFormat.QIR_BASE_MODULE,
+        ProgramFormat.QIR_BASE_STRING,
+    ],
+)
+def test_exact_formats_and_sessionless_artifacts(program_format: ProgramFormat) -> None:
+    """Artifacts survive their compilation session and carry exact formats."""
+    device = open_device("mqt.ddsim.default")
+    by_device = compile_program(BELL, target=device, program_format=program_format)
+    by_id = compile_program(BELL, target="mqt.ddsim.default", program_format=program_format)
+    assert by_id.payload == by_device.payload
+    assert by_id.program_format == program_format
+    with pytest.raises(AttributeError):
+        by_id.payload = b"changed"  # ty: ignore[invalid-assignment]
+    del device
+    gc.collect()
+    job = open_device("mqt.ddsim.default").submit(by_id, num_shots=0)
+    job.wait()
+    assert job.get_dense_statevector() == pytest.approx([2**-0.5, 0, 0, 2**-0.5])
+
+
+def test_rejects_invalid_submission_options() -> None:
+    """Reject invalid counts and formats before consuming a typed program."""
+    device = open_device("mqt.ddsim.default")
+    source = compile_program(BELL, output=OutputFormat.QCO)
+    for submit in (device.submit, lambda p, **kw: submit_program(p, target=device, **kw)):
+        with pytest.raises(ValueError, match="nonnegative"):
+            submit(source, num_shots=-1)
+    with pytest.raises(ValueError, match="cannot emit"):
+        compile_program(source, target=device, program_format=ProgramFormat.QASM2, inplace=True)
+    assert source.is_valid
+    compiled = compile_program(source, target=device)
+    assert source.is_valid
+    with pytest.raises(ValueError, match="conflicts"):
+        device.submit(compiled, program_format=ProgramFormat.QASM3)
+
+
+def test_explicit_target_requires_output_and_matching_contract() -> None:
+    """Hardware snapshots need a chosen output and must match before submission."""
+    device = open_device("mqt.ddsim.default")
+    target = CompilerTarget.from_device(device)
+    with pytest.raises(ValueError, match="requires output"):
+        compile_program(BELL, target=target)  # ty: ignore[invalid-argument-type]
+    matching = compile_program(BELL, target=target, program_format=ProgramFormat.QASM3)
+    job = device.submit(matching, num_shots=8)
+    job.wait()
+    assert len(job.get_shots()) == 8
+    other = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    mismatch = compile_program(BELL, target=other, program_format=ProgramFormat.QASM3)
+    with pytest.raises(ValueError, match="recompile"):
+        device.submit(mismatch)
+
+
+def test_submit_program_delegates_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The helper resolves one destination and delegates once to Device.submit."""
+    original = Device.submit
+    calls = []
+
+    def submit(self: Device, program: str, *, num_shots: int) -> Job:
+        calls.append(program)
+        return original(self, program, num_shots=num_shots)
+
+    monkeypatch.setattr(Device, "submit", submit)
+    job = submit_program(BELL, target="mqt.ddsim.default", num_shots=1)
+    job.wait()
+    assert calls == [BELL]
+
+
+def test_source_path_is_read_once(tmp_path: Path) -> None:
+    """Source submission imports once; artifact resubmission needs no source."""
+    path = tmp_path / "bell.qasm"
+    path.write_text(BELL)
+
+    class Source:
+        calls = 0
+
+        def __fspath__(self) -> str:
+            self.calls += 1
+            assert self.calls == 1
+            return str(path)
+
+    source = Source()
+    device = open_device("mqt.ddsim.default")
+    job = device.submit(source, num_shots=2)
+    job.wait()
+    assert source.calls == 1
+    compiled = compile_program(path, target=device)
+    path.unlink()
+    job = device.submit(compiled, num_shots=2)
+    job.wait()
+    assert len(job.get_shots()) == 2
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
+def test_payload_forward_branching(program_format: ProgramFormat) -> None:
+    """Guaranteed forward branching permits feedback and Base rejects it."""
+    source = BELL.replace("c = measure q;", "c[0] = measure q[0]; if (c[0]) { x q[1]; } c[1] = measure q[1];")
+    device = open_device("mqt.ddsim.default")
+    compiled = compile_program(source, target=device, program_format=program_format)
+    job = device.submit(compiled, num_shots=32)
+    job.wait()
+    assert set(job.get_counts()) <= ({"00", "01"} if program_format == ProgramFormat.QASM3 else {"00", "10"})
+    with pytest.raises(RuntimeError, match="Not supported"):
+        job.get_dense_statevector()
+    assert len(job.get_shots()) == 32
+    with pytest.raises(ValueError, match="Compilation failed"):
+        compile_program(source, target=device, program_format=ProgramFormat.QIR_BASE_MODULE)
+
+
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_BASE_MODULE])
+def test_compiled_terminal_sampling_retains_state(program_format: ProgramFormat) -> None:
+    """Eligible compiled payloads expose all lazy results without changing shots."""
+    job = submit_program(BELL, target="mqt.ddsim.default", num_shots=64, program_format=program_format, custom1=7)
+    job.wait()
+    shots = job.get_shots()
+    for _ in range(2):
+        assert job.get_dense_statevector() == pytest.approx([2**-0.5, 0, 0, 2**-0.5])
+        assert job.get_sparse_statevector() == pytest.approx({"00": 2**-0.5, "11": 2**-0.5})
+        assert job.get_dense_probabilities() == pytest.approx([0.5, 0, 0, 0.5])
+        assert job.get_sparse_probabilities() == pytest.approx({"00": 0.5, "11": 0.5})
+    assert job.get_shots() == shots
+
+
+def test_ddsim_advertises_maximal_language_capabilities() -> None:
+    """DDSIM accepts optional computations in the preferred Adaptive payload."""
+    source = (
+        'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; h q; c = measure q; '
+        "if (true) { int[32] k = int[32](c); if (k + 1 == 2) { x q; } } c = measure q;"
+    )
+    device = open_device("mqt.ddsim.default")
+    compiled = compile_program(source, target=device)
+    assert compiled.program_format == ProgramFormat.QIR_ADAPTIVE_MODULE
+    assert compiled.payload_specification.optional_capabilities_known
+    assert "qir.int-computations" in {c.capability_id for c in compiled.payload_specification.capabilities}
+    job = device.submit(compiled, num_shots=16)
+    job.wait()
+    assert job.get_counts() == {"0": 16}
+
+
+def test_loop_is_supported_by_default_payload() -> None:
+    """The preferred Adaptive payload permits the compiler to retain loops."""
+    source = 'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; for int i in [0:2] { x q; } c = measure q;'
+    job = submit_program(source, target="mqt.ddsim.default", num_shots=8)
+    job.wait()
+    assert job.get_counts() == {"1": 8}
+
+
+def test_default_payload_supports_measurement_controlled_loop() -> None:
+    """Conditional loops use the explicitly advertised Adaptive capability."""
+    source = (
+        'OPENQASM 3.0; include "stdgates.inc"; qubit q; bit c; x q; c = measure q; while (c) { x q; c = measure q; }'
+    )
+    job = submit_program(source, target="mqt.ddsim.default", num_shots=8)
+    job.wait()
+    assert job.get_counts() == {"0": 8}
+
+
+def test_qir_artifact_rejects_unsupported_entry_result() -> None:
+    """Keep scalar program outputs distinct from the QDMI QIR status return."""
+    source = "OPENQASM 3.0; qubit q; bit c = measure q; int[32] k = int[32](c);"
+    with pytest.raises(ValueError, match=r"i64 \(\) entry point"):
+        compile_program(source, target="mqt.ddsim.default")
+
+
+@pytest.mark.parametrize("num_shots", [0, 8])
+def test_empty_source_has_a_successful_entry_point(num_shots: int) -> None:
+    """An output-free source receives a success status without inventing outputs."""
+    job = submit_program("OPENQASM 3.0;", target="mqt.ddsim.default", num_shots=num_shots)
+    job.wait()
+    assert job.check() == Job.Status.DONE
+    assert job.get_dense_statevector() == [1 + 0j]

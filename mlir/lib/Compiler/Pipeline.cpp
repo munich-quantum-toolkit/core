@@ -24,28 +24,27 @@
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "mqt/Support/Passes.h"
 
-#include "capnp/common.h"
-#include "jeff/Translation/Deserialize.hpp"
-#include "jeff/Translation/Serialize.hpp"
-#include "kj/array.h"
-
-#include "mlir/Dialect/Func/IR/FuncOps.h"
-#include "mlir/IR/Diagnostics.h"
-#include "mlir/IR/Location.h"
-#include "mlir/Pass/PassManager.h"
-#include "mlir/Support/LogicalResult.h"
-#include "mlir/Target/LLVMIR/ModuleTranslation.h"
-#include "mlir/Transforms/Passes.h"
-
-#include "llvm/ADT/STLFunctionalExtras.h"
-#include "llvm/ADT/SmallVector.h"
-#include "llvm/ADT/StringRef.h"
-#include "llvm/Bitcode/BitcodeWriter.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
-#include "llvm/Support/Error.h"
-#include "llvm/Support/FileSystem.h"
-#include "llvm/Support/raw_ostream.h"
+#include <capnp/common.h>
+#include <jeff/Translation/Deserialize.hpp>
+#include <jeff/Translation/Serialize.hpp>
+#include <kj/array.h>
+#include <llvm/ADT/STLFunctionalExtras.h>
+#include <llvm/ADT/SmallVector.h>
+#include <llvm/ADT/StringRef.h>
+#include <llvm/Bitcode/BitcodeWriter.h>
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/Support/Error.h>
+#include <llvm/Support/FileSystem.h>
+#include <llvm/Support/raw_ostream.h>
+#include <mlir/Dialect/Func/IR/FuncOps.h>
+#include <mlir/IR/Diagnostics.h>
+#include <mlir/IR/Location.h>
+#include <mlir/Pass/PassManager.h>
+#include <mlir/Support/LogicalResult.h>
+#include <mlir/Target/LLVMIR/ModuleTranslation.h>
+#include <mlir/Transforms/Passes.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -364,6 +363,10 @@ translateToLLVM(ModuleOp mod, llvm::LLVMContext& context) {
     return nullptr;
   }
   qir::normalizeQIRModuleFlags(*llvmModule);
+  if (llvm::verifyModule(*llvmModule, &llvm::errs())) {
+    mod.emitError("exported QIR failed LLVM IR verification");
+    return nullptr;
+  }
   return llvmModule;
 }
 

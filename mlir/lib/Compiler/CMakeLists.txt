@@ -45,6 +45,7 @@ add_mlir_library(
   LINK_LIBS
   PUBLIC
   MQTCompilerTarget
+  MQTCompilerPipeline
   MQT::CoreQDMI)
 
 mqt_mlir_target_use_project_options(MQTCompilerQDMIAdapter)

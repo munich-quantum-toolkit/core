@@ -419,7 +419,7 @@ def garnet_target() -> CompilerTarget:
 
 def test_compile_program_for_qdmi_target(garnet_target: CompilerTarget) -> None:
     """Compile through the canonical target pipeline for a QDMI device."""
-    result = compile_program(QASM_STRING, target_environment=_test_target_environment(garnet_target))
+    result = compile_program(QASM_STRING, target=garnet_target, output=OutputFormat.QIR_BASE)
 
     assert isinstance(result, QIRProgram)
     assert result.profile == QIRProfile.BASE
@@ -442,17 +442,13 @@ def test_compile_program_rejects_unsupported_target_payload_without_consuming_in
     """Reject an unsupported selected payload before consuming typed input."""
     program = compile_program(QASM_STRING, output=OutputFormat.QCO)
     assert isinstance(program, QCOProgram)
-    environment = TargetEnvironment(
-        CompilerTarget(
-            1,
-            connectivity=CompilerTarget.Connectivity.all_to_all(),
-            native_operations=CompilerTarget.NativeOperations.unrestricted(),
-        ),
-        PayloadSpecification(PayloadFormat("example.payload", "1.0.0")),
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-
-    with pytest.raises(ValueError, match="cannot emit the selected payload format"):
-        compile_program(program, inplace=True, target_environment=environment)
+    with pytest.raises(ValueError, match="executable output"):
+        compile_program(program, target=target, output=OutputFormat.QCO, inplace=True)  # ty: ignore[no-matching-overload]
 
     assert program.is_valid
 
@@ -741,7 +737,10 @@ def test_target_compilation_accepts_exact_version_shorthand(
         connectivity=CompilerTarget.Connectivity.all_to_all(),
         native_operations=CompilerTarget.NativeOperations.unrestricted(),
     )
-    result = compile_program(QASM_STRING, target_environment=TargetEnvironment(target, payload))
+    program = compile_program(QASM_STRING, output=OutputFormat.QCO)
+    program.compile_for_target(TargetEnvironment(target, payload))
+    qc = program.to_qc()
+    result = qc.to_qir(QIRProfile.BASE) if format_id == "qir" else qc.to_openqasm3()
     assert isinstance(result, expected_type)
 
 

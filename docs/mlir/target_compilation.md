@@ -20,22 +20,13 @@ stored, copied cheaply, and reused for multiple compilations.
 
 ## Python
 
-Open the bundled local DDSIM device and snapshot it as a compiler target. This
-example needs no external provider or credentials:
+Open the bundled local DDSIM device, compile once, and submit the artifact:
 
 ```{code-cell} ipython3
-from mqt.core.mlir import (
-    CompilerTarget,
-    PayloadFormat,
-    PayloadEncoding,
-    PayloadSpecification,
-    TargetEnvironment,
-    compile_program,
-)
+from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program, submit_program
+from mqt.core.qdmi import ProgramFormat
+from mqt.core.qdmi.driver import open_device
 
-target = CompilerTarget.from_device_id("mqt.ddsim.default")
-payload = PayloadSpecification(PayloadFormat("qir", "2.1", "base", PayloadEncoding.BINARY))
-environment = TargetEnvironment(target, payload)
 bell_qasm = """OPENQASM 3.0;
 include "stdgates.inc";
 qubit[2] q;
@@ -45,36 +36,109 @@ cx q[0], q[1];
 result = measure q;
 """
 
-compiled = compile_program(
-    bell_qasm,
-    target_environment=environment,
-)
-assert compiled.is_valid
-print(compiled.ir)
+device = open_device("mqt.ddsim.default")
+compiled = compile_program(bell_qasm, target=device)
+job = device.submit(compiled, num_shots=1024)
+job.wait()
+assert sum(job.get_counts().values()) == 1024
+print(compiled.program_format)
 ```
 
-The payload specification identifies the exact representation selected for the
-device. MQT Core derives the compiler output from that specification and uses
-the canonical QCO pipeline. The targeted overload therefore accepts one
-`TargetEnvironment` and no independent output or custom pipeline. MQT Core's
-QDMI adapter does not yet translate QDMI program-format and feature metadata, so
-callers must construct the payload specification from the device documentation.
+`target` accepts an open device or a registered device ID. The immutable
+{py:class}`~mqt.core.mlir.CompiledProgram` owns its serialized payload, exact
+format, and verified compilation contract; it owns no device session and creates
+no job. Payload selection precedes control-flow legalization and mapping:
+Adaptive QIR (binary, then text), OpenQASM 3, then Base QIR (binary, then text).
+Use `program_format=ProgramFormat.QASM3`, for example, to select a supported
+format explicitly. An unsupported override fails without fallback.
 
-DDSIM accepts the QIR payload used here. The bundled SC devices, such as
-`mqt.sc.iqm.garnet`, provide hardware models for compilation only; a model's
-gate set does not imply that it accepts an executable payload.
+Both convenience forms compile against the destination and return the existing
+QDMI job:
 
-The example has no reported execution capabilities. A producer must add every
-effective capability, including the selected format's baseline. Set
-`optional_capabilities_known=True` only when the producer also knows that the
-list contains every optional device capability.
+```{code-cell} ipython3
+job = device.submit(bell_qasm)
+job.wait()
+assert len(job.get_shots()) == 1024
+job = submit_program(bell_qasm, target="mqt.ddsim.default", num_shots=16)
+job.wait()
+assert len(job.get_shots()) == 16
+```
 
-Payload versions accept one to three numeric components. A
-`PayloadSpecification` fills omitted components with zero: `"2.1"` becomes
-`"2.1.0"`, and `"3"` becomes `"3.0.0"`. These are exact versions, not ranges;
-`"2"` means `"2.0.0"` and does not select QIR 2.1. Leading zeros, prerelease
-suffixes, and version ranges are rejected. The same rules apply when reading the
-typed `#mqt.payload_spec` attribute.
+Submission defaults to 1,024 shots. Zero requests simulator state extraction;
+negative counts are rejected. A job retains its session. An artifact can be
+submitted through another session with a matching contract. Before creating a
+job, submission compares ordered sites, connectivity, operation support and
+ordered applicability, timing units, and the selected payload's effective
+capabilities. Names and calibration-only data do not affect compatibility.
+Differences require recompilation for the destination; artifacts are never
+silently recompiled. Validation uses reported metadata and does not guarantee
+provider acceptance or an atomic device snapshot. Existing job errors remain
+observable. Raw `device.submit_job(payload, format, ...)` remains available for
+externally prepared payloads without compiler provenance.
+
+The adapter assumes maximal compiler-supported language/profile capabilities
+when QDMI provides no MQT capability report. This is a compatibility assumption;
+provider acceptance and job failures remain observable. DDSIM explicitly
+advertises maximal support through the private report below. A report can
+replace the assumption with a restricted capability set and bounds. Compiled QIR
+currently requires a parameterless entry point with an `i64` status return. An
+entry point with no return value receives success status 0. Keep classical
+temporaries local; select OpenQASM 3 for global scalar outputs that would change
+that entry signature. An explicit `CompilerTarget` requires `output` for a typed
+program, or `program_format` for a submittable artifact with the full verified
+contract. Bundled SC devices such as `mqt.sc.iqm.garnet` are hardware models for
+compilation and do not advertise executable formats.
+
+Advanced callers can still construct a `TargetEnvironment` from a hardware
+snapshot and `PayloadSpecification` for staged QCO compilation. Such producers
+must include guaranteed baselines and set `optional_capabilities_known=True`
+only when their optional capability list is complete. The device adapter marks
+an explicit private report as known and the maximal fallback as unknown; equal
+effective capabilities remain compatible regardless of that provenance. Payload
+versions accept one to three numeric components, normalized with trailing zeros:
+`"2.1"` means `"2.1.0"`. They are exact versions, not ranges.
+
+### Private QDMI capability report
+
+Until QDMI standardizes capability discovery, MQT uses device property
+`QDMI_DEVICE_PROPERTY_CUSTOM2` for a NUL-terminated UTF-8 string. A versioned
+prefix distinguishes the report from unrelated provider properties:
+
+```text
+mqt.compiler-payload.v1:{"openqasm3":"maximal","qir-base":"maximal","qir-adaptive":"maximal"}
+```
+
+Version 1 defines `openqasm3` as OpenQASM 3.0 and the QIR keys as QIR 2.1
+profiles; text and binary forms share capabilities. DDSIM returns the report
+above. `maximal` means all compiler-supported capabilities of that
+language/profile. A missing report, an unrelated custom property, or an omitted
+format uses the maximal assumption for that format. Unknown report versions and
+malformed recognized reports fail contract construction.
+
+Each format can instead provide its complete effective capability list,
+including any guaranteed baseline capabilities. For example, this report bounds
+OpenQASM branch nesting and omits loop support:
+
+```text
+mqt.compiler-payload.v1:{"openqasm3":[{"id":"forward-branching","constraints":[{"id":"max-control-flow-nesting-depth","value":4}]}]}
+```
+
+Entries use the existing `ProgramCapability` fields: required `id`, optional
+unsigned `value` (default 0), and optional `constraints` (default empty).
+Constraints require an `id` and unsigned `value`. Unknown fields, duplicate IDs,
+and invalid types are rejected. The four structural capabilities and their
+constraints are described below. Adaptive QIR additionally reports
+`qir.dynamic-qubit-management`, `qir.dynamic-result-management`, `qir.arrays`,
+`qir.ir-functions`, `qir.multiple-return-points`, `qir.int-computations`, and
+`qir.float-computations`. These optional QIR features use value 0 and no
+constraints; final export checks them against the generated module flags.
+Multi-target QIR branching uses `multiway-branching`. Base QIR has no optional
+capabilities in this report; OpenQASM 3.0 has forward branching and both loop
+forms, and Adaptive QIR has all four structural capabilities.
+
+The report is an MQT extension, not a QDMI standard. It is independent of the
+`CUSTOM1` hardware-target marker and can be replaced when standardized QDMI
+capability discovery becomes available.
 
 ### Payload control flow
 
@@ -138,7 +202,8 @@ it does not infer a trip count from symbolic bounds. MLIR computes static trip
 counts; full unrolling additionally requires bounds and scaled steps that fit
 its signed arithmetic. The scaled step must also fit the loop induction-variable
 type. A zero, unknown, or misapplied constraint makes that capability group
-unusable. Missing or incomplete optional metadata never implies support.
+unusable. A capability absent from the selected specification is unsupported.
+The device adapter supplies the maximal set when it must use its fallback.
 
 This stage checks structural control flow only. Later lowering stages remain
 responsible for scalar types and operations, measurement provenance, function
@@ -169,7 +234,7 @@ target = CompilerTarget(
     ]),
 )
 mapped = compile_program(
-    bell_qasm, target_environment=TargetEnvironment(target, payload)
+    bell_qasm, target=target, output=OutputFormat.QIR_BASE
 )
 assert mapped.is_valid
 print(mapped.ir)
@@ -261,45 +326,38 @@ target contract owns the output and required pass ordering.
 
 ## C++ source-tree API
 
-The source build provides a narrow, non-throwing QDMI bridge between a stable
-device ID and the compiler-owned target:
+The shared adapter selects and verifies the payload, then checks the destination
+contract before submission. The low-level QDMI client does not depend on MLIR:
 
 ```cpp
-#include "mqt/Compiler/QDMIAdapter.h"
-#include "mqt/Compiler/Programs.h"
-#include "mqt/Compiler/TargetEnvironment.h"
+#include "mlir/Compiler/QDMIAdapter.h"
+#include "qdmi/Client.hpp"
+#include <llvm/Support/Error.h>
+#include <llvm/Support/raw_ostream.h>
 
-#include "llvm/Support/Error.h"
-#include "llvm/Support/raw_ostream.h"
-
-auto target = mlir::compilerTargetFromDeviceId("mqt.ddsim.default");
-if (!target) {
-  llvm::errs() << "Failed to create compiler target: "
-               << llvm::toString(target.takeError()) << '\n';
+auto device = qdmi::Session::openDevice("mqt.ddsim.default");
+auto input = mlir::QCProgram::fromQASMFile("input.qasm");
+if (!input) {
   return 1;
 }
-
-auto payload = mlir::PayloadSpecification::create({
-    .id = "qir",
-    .version = "2.1",
-    .profile = "base",
-    .encoding = mlir::PayloadEncoding::Binary,
-});
-if (!payload) {
-  llvm::errs() << llvm::toString(payload.takeError()) << '\n';
+auto compiled = mlir::compileProgram(std::move(*input), device);
+if (!compiled) {
+  llvm::errs() << llvm::toString(compiled.takeError()) << '\n';
   return 1;
 }
-mlir::TargetEnvironment environment(*target, *payload);
-
-auto qc = mlir::QCProgram::fromQASMFile("input.qasm");
-if (!qc) {
+auto job = mlir::submitProgram(device, *compiled, 1024);
+if (!job) {
+  llvm::errs() << llvm::toString(job.takeError()) << '\n';
   return 1;
 }
-auto qco = std::move(*qc).intoQCO();
-if (!qco || !qco->compileForTarget(environment)) {
+if (!job->wait()) {
   return 1;
 }
 ```
+
+`compilerTargetFromDevice` and `compilerTargetFromDeviceId` also remain
+available for hardware snapshots and staged compilation with a
+`TargetEnvironment`.
 
 The adapter accepts circuit-model devices whose two-qubit operations cover every
 topology edge in at least one operand orientation and preserves the exact

@@ -1215,3 +1215,24 @@ TEST_F(QIRTest, MetadataIncludesUnrecordedMeasuredAndReadResults) {
         builder.getStrArrayAttr({"required_num_results", "8"})));
   }
 }
+
+TEST_F(QIRTest, ClassifiesUnconditionalBackEdge) {
+  OpBuilder builder(context.get());
+  const auto location = builder.getUnknownLoc();
+  auto moduleOp = ModuleOp::create(location);
+  builder.setInsertionPointToStart(moduleOp.getBody());
+  auto main = LLVM::LLVMFuncOp::create(
+      builder, location, "main",
+      LLVM::LLVMFunctionType::get(builder.getI64Type(), {}));
+  main->setAttr("passthrough", builder.getStrArrayAttr({"entry_point"}));
+  auto* entry = main.addEntryBlock(builder);
+  auto* loop = main.addBlock();
+  builder.setInsertionPointToEnd(entry);
+  LLVM::BrOp::create(builder, location, ValueRange{}, loop);
+  builder.setInsertionPointToEnd(loop);
+  LLVM::BrOp::create(builder, location, ValueRange{}, loop);
+  ASSERT_TRUE(attachQIRMetadata(moduleOp, true).succeeded());
+  const auto flag = findModuleFlag(moduleOp, "backwards_branching");
+  ASSERT_TRUE(flag);
+  EXPECT_EQ(cast<IntegerAttr>(flag.getValue()).getInt(), 1);
+}

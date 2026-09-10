@@ -22,14 +22,8 @@ import pytest
 from packaging import version
 
 from mqt.core.mlir import (
-    CompilerTarget,
+    CompiledProgram,
     OutputFormat,
-    PayloadEncoding,
-    PayloadFormat,
-    PayloadSpecification,
-    QIRProfile,
-    QIRProgram,
-    TargetEnvironment,
     compile_program,
 )
 from mqt.core.qdmi import (
@@ -233,16 +227,16 @@ def test_device_min_atom_distance(device: Device) -> None:
 @pytest.mark.parametrize("value_type", [str, bool, int, float, bytes])
 def test_device_custom_property_unsupported(device: Device, value_type: CustomValueType) -> None:
     """Test typed custom device queries for unsupported slots."""
-    assert device.query_custom_property(CustomProperty.CUSTOM2, value_type) is None
+    assert device.query_custom_property(CustomProperty.CUSTOM3, value_type) is None
 
 
 def test_device_custom_property_type_overloads(device: Device) -> None:
     """Test that each explicit value type produces a correspondingly typed result."""
-    string_value: str | None = device.query_custom_property(CustomProperty.CUSTOM2, str)
-    bool_value: bool | None = device.query_custom_property(CustomProperty.CUSTOM2, bool)
-    int_value: int | None = device.query_custom_property(CustomProperty.CUSTOM2, int)
-    float_value: float | None = device.query_custom_property(CustomProperty.CUSTOM2, float)
-    bytes_value: bytes | None = device.query_custom_property(CustomProperty.CUSTOM2, bytes)
+    string_value: str | None = device.query_custom_property(CustomProperty.CUSTOM3, str)
+    bool_value: bool | None = device.query_custom_property(CustomProperty.CUSTOM3, bool)
+    int_value: int | None = device.query_custom_property(CustomProperty.CUSTOM3, int)
+    float_value: float | None = device.query_custom_property(CustomProperty.CUSTOM3, float)
+    bytes_value: bytes | None = device.query_custom_property(CustomProperty.CUSTOM3, bytes)
     assert all(value is None for value in (string_value, bool_value, int_value, float_value, bytes_value))
 
 
@@ -565,14 +559,12 @@ h q[0];
 cx q[0], q[1];
 c = measure q;
 """
-    target = CompilerTarget.from_device(ddsim_device)
-    payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.TEXT))
-    program = compile_program(qasm3_program, target_environment=TargetEnvironment(target, payload))
-    assert isinstance(program, QIRProgram)
-    assert program.profile == QIRProfile.BASE
+    program = compile_program(qasm3_program, target=ddsim_device, program_format=ProgramFormat.QIR_BASE_STRING)
+    assert isinstance(program, CompiledProgram)
+    assert program.program_format == ProgramFormat.QIR_BASE_STRING
     assert ProgramFormat.QIR_BASE_STRING in ddsim_device.supported_program_formats()
 
-    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=1024)
+    job = ddsim_device.submit(program)
     job.wait()
 
     assert job.check() == Job.Status.DONE
@@ -605,11 +597,9 @@ def test_device_executes_controlled_qir_with_exact_phase(ddsim_device: Device) -
     circuit.mcp(0.41, [0, 1], 4)
     expected = quantum_info.Statevector.from_instruction(circuit).data
 
-    target = CompilerTarget.from_device(ddsim_device)
-    payload = PayloadSpecification(PayloadFormat("qir", "2.1.0", "base", PayloadEncoding.TEXT))
-    program = compile_program(circuit, target_environment=TargetEnvironment(target, payload))
-    assert isinstance(program, QIRProgram)
-    job = ddsim_device.submit_job(program.llvm_ir, ProgramFormat.QIR_BASE_STRING, num_shots=0)
+    program = compile_program(circuit, target=ddsim_device, program_format=ProgramFormat.QIR_BASE_STRING)
+    assert isinstance(program, CompiledProgram)
+    job = ddsim_device.submit(program, num_shots=0)
     job.wait()
 
     assert job.get_dense_statevector() == pytest.approx(expected)

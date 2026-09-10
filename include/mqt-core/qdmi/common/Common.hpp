@@ -17,8 +17,11 @@
 #include "qdmi/client.h"
 
 #include <string>
+#include <variant>
 
 namespace qdmi {
+using CustomJobParameter = std::variant<std::string, bool, int, double>;
+
 template <class Concrete> class Singleton {
 protected:
   /// Protected constructor to enforce the singleton pattern.
