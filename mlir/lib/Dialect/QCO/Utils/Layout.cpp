@@ -8,14 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/Layout.h"
+#include "mqt/Dialect/QCO/Utils/Layout.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/Sequence.h>
-#include <llvm/ADT/SmallBitVector.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/SmallBitVector.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
 #include <cstddef>

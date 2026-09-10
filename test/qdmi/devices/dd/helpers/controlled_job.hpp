@@ -10,9 +10,10 @@
 
 #pragma once
 
-#include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
+
+#include "helpers/test_utils.hpp"
 
 #include <chrono>
 #include <cstdint>

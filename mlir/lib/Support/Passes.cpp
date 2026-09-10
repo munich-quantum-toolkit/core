@@ -8,23 +8,24 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Support/Passes.h"
+#include "mqt/Support/Passes.h"
 
-#include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h"
-#include "mlir/Dialect/MQT/Transforms/Passes.h"
-#include "mlir/Dialect/QC/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QIR/Transforms/Passes.h"
-#include "mlir/Dialect/QTensor/Transforms/Passes.h"
+#include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QIR/Transforms/Passes.h"
+#include "mqt/Dialect/QTensor/Transforms/Passes.h"
 
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Pass/PassRegistry.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
-#include <mlir/Transforms/Passes.h>
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Pass/PassRegistry.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Transforms/Passes.h"
+
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstdint>
 

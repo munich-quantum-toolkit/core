@@ -17,7 +17,7 @@ add_mlir_dialect_library(
   ${OPERATIONS}
   ${QUBIT_MANAGEMENT}
   ADDITIONAL_HEADER_DIRS
-  ${PROJECT_SOURCE_DIR}/mlir/include/mlir/Dialect/QC
+  ${PROJECT_SOURCE_DIR}/mlir/include/mqt/Dialect/QC
   DEPENDS
   MLIRQCOpsIncGen
   MLIRQCInterfacesIncGen
@@ -34,8 +34,8 @@ add_mlir_dialect_library(
 mqt_mlir_target_use_project_options(MLIRQCDialect)
 
 # collect header files
-file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/IR/*.h")
-file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QC/IR/*.inc")
+file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/IR/*.h")
+file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mqt/Dialect/QC/IR/*.inc")
 
 # add public headers using file sets
 target_sources(

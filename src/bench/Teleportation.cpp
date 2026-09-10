@@ -10,8 +10,9 @@
 
 #include "bench/Teleportation.hpp"
 
-#include "EvaluationUtils.hpp"
 #include "bench/Evaluation.hpp"
+
+#include "EvaluationUtils.hpp"
 
 #include <string_view>
 

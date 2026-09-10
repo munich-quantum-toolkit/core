@@ -8,12 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Support/IntegerExpressions.h"
+#include "mqt/Support/IntegerExpressions.h"
 
-#include <llvm/ADT/APInt.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/IR/PatternMatch.h>
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/IR/PatternMatch.h"
+
+#include "llvm/ADT/APInt.h"
 
 #include <cstdint>
 

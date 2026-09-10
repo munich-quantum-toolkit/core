@@ -9,12 +9,12 @@
  */
 
 #include "dd/DDDefinitions.hpp"
-#include "mlir/Dialect/QIR/Execution/JIT/Session.h"
-#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
-#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
+#include "mqt/Dialect/QIR/Execution/JIT/Session.h"
+#include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
+#include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
+#include "gmock/gmock-matchers.h"
+#include "gtest/gtest.h"
 
 #include <array>
 #include <complex>

@@ -10,12 +10,13 @@
 
 #include "bench/GHZ.hpp"
 
-#include "Programs.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "Programs.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
 
 #include <cstdint>
 

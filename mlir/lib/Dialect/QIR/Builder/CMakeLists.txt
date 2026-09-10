@@ -21,7 +21,7 @@ mqt_mlir_target_use_project_options(MLIRQIRProgramBuilder)
 
 # collect header files
 file(GLOB_RECURSE QIR_BUILDER_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QIR/Builder/*.h)
+     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QIR/Builder/*.h)
 
 # add public headers using file sets
 target_sources(

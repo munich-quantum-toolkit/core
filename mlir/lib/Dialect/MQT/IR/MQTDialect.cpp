@@ -8,42 +8,43 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
 
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
-#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCInterfaces.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCInterfaces.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/VersionTuple.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Attributes.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/DialectImplementation.h> // IWYU pragma: keep
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/SymbolTable.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/IR/Visitors.h>
-#include <mlir/Interfaces/FunctionInterfaces.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Attributes.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/IR/Visitors.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/VersionTuple.h"
 
 #include <cmath>
 #include <cstdint>
@@ -54,18 +55,18 @@
 using namespace mlir;
 using namespace mlir::mqt;
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.cpp.inc"
-#include "mlir/Dialect/MQT/IR/MQTEnums.cpp.inc"
+#include "mqt/Dialect/MQT/IR/MQTDialect.cpp.inc"
+#include "mqt/Dialect/MQT/IR/MQTEnums.cpp.inc"
 
 void MQTDialect::initialize() {
   addAttributes<
 #define GET_ATTRDEF_LIST
-#include "mlir/Dialect/MQT/IR/MQTAttributes.cpp.inc"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.cpp.inc"
       >();
 }
 
 #define GET_ATTRDEF_CLASSES
-#include "mlir/Dialect/MQT/IR/MQTAttributes.cpp.inc"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.cpp.inc"
 
 [[nodiscard]] static bool isCanonicalPayloadVersion(const StringRef version) {
   llvm::VersionTuple parsed;

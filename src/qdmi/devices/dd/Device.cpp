@@ -15,17 +15,18 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
-#include "mlir/Compiler/Programs.h"
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
-#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
-#include "mlir/Dialect/QIR/Execution/JIT/Session.h"
-#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
+#include "mqt/Compiler/Programs.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QIR/Execution/JIT/Session.h"
+#include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 #include "mqt_ddsim_qdmi/device.h"
 #include "qdmi/common/Common.hpp"
 
-#include <llvm/ADT/StringRef.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/StringRef.h"
 
 #include <algorithm>
 #include <array>

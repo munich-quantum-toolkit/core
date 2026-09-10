@@ -11,9 +11,9 @@
 #include "qdmi/Client.hpp"
 #include "qdmi/common/Common.hpp"
 
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
-#include <qdmi/client.h>
+#include "gmock/gmock-matchers.h"
+#include "gtest/gtest.h"
+#include "qdmi/client.h"
 
 #include <algorithm>
 #include <array>

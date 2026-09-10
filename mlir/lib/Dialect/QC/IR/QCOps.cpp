@@ -8,27 +8,24 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/MQT/Utils/Parameters.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h" // IWYU pragma: associated
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h" // IWYU pragma: associated
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/OpImplementation.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/Region.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/InliningUtils.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep (template instantiations)
+#include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/InliningUtils.h"
 
-// The following headers are needed for some template instantiations.
-// IWYU pragma: begin_keep
-#include <llvm/ADT/TypeSwitch.h>
-#include <mlir/IR/DialectImplementation.h>
-// IWYU pragma: end_keep
+#include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep (template instantiations)
 
 using namespace mlir;
 using namespace mlir::qc;
@@ -74,7 +71,7 @@ static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
 // Dialect
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/QC/IR/QCOpsDialect.cpp.inc"
+#include "mqt/Dialect/QC/IR/QCOpsDialect.cpp.inc"
 
 void QCDialect::initialize() {
   addInterfaces<QCInlinerInterface>();
@@ -82,13 +79,13 @@ void QCDialect::initialize() {
   // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   addTypes<
 #define GET_TYPEDEF_LIST
-#include "mlir/Dialect/QC/IR/QCOpsTypes.cpp.inc"
+#include "mqt/Dialect/QC/IR/QCOpsTypes.cpp.inc"
 
       >();
 
   addOperations<
 #define GET_OP_LIST
-#include "mlir/Dialect/QC/IR/QCOps.cpp.inc"
+#include "mqt/Dialect/QC/IR/QCOps.cpp.inc"
 
       >();
 }
@@ -98,7 +95,7 @@ void QCDialect::initialize() {
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/QC/IR/QCOpsTypes.cpp.inc"
+#include "mqt/Dialect/QC/IR/QCOpsTypes.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // Interfaces
@@ -109,11 +106,11 @@ LogicalResult mlir::qc::verifyUnitaryOpInterface(Operation* op) {
       op, cast<UnitaryOpInterface>(op).getParameters());
 }
 
-#include "mlir/Dialect/QC/IR/QCInterfaces.cpp.inc"
+#include "mqt/Dialect/QC/IR/QCInterfaces.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/QC/IR/QCOps.cpp.inc"
+#include "mqt/Dialect/QC/IR/QCOps.cpp.inc"

@@ -8,13 +8,14 @@
  * Licensed under the MIT License
  */
 
-#include "TestUtils.h"
 #include "bench/ModularMultiplier.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
-#include "mlir/bench/Generate.h"
+#include "mqt/bench/Generate.h"
 
-#include <gtest/gtest.h>
+#include "TestUtils.h"
+
+#include "gtest/gtest.h"
 
 #include <algorithm>
 #include <cmath>

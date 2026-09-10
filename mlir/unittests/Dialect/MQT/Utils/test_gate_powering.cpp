@@ -8,10 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/GatePowering.h"
+#include "mqt/Dialect/MQT/Utils/GatePowering.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/StringRef.h>
+#include "gtest/gtest.h"
+
+#include "llvm/ADT/StringRef.h"
 
 #include <array>
 #include <cmath>

@@ -8,11 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/IR/OperationSupport.h>
+#include "mlir/IR/OperationSupport.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <cstddef>
 

@@ -10,9 +10,9 @@
 
 #pragma once
 
-#include "mlir/Target/OpenQASM/Frontend.h"
+#include "mqt/Target/OpenQASM/Frontend.h"
 
-#include <mlir/IR/OwningOpRef.h>
+#include "mlir/IR/OwningOpRef.h"
 
 #include <cstddef>
 

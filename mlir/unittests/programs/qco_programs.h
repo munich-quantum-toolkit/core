@@ -10,8 +10,8 @@
 
 #pragma once
 
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
 
 namespace mlir::qco {
 class QCOProgramBuilder;

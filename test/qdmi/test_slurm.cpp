@@ -8,14 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "TestUtils.hpp"
 #include "qdmi/Slurm.hpp"
 #include "qdmi/driver/Driver.hpp"
 
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
-#include <qdmi/client.h>
-#include <qdmi/constants.h>
+#include "TestUtils.hpp"
+
+#include "gmock/gmock-matchers.h"
+#include "gtest/gtest.h"
+#include "qdmi/client.h"
+#include "qdmi/constants.h"
 
 #include <array>
 #include <optional>

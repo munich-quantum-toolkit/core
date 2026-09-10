@@ -10,10 +10,10 @@
 
 #include "qdmi/devices/sc/Configuration.hpp"
 
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
-#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
-#include <nlohmann/json_fwd.hpp>
+#include "gmock/gmock-matchers.h"
+#include "gtest/gtest.h"
+#include "nlohmann/json.hpp"
+#include "nlohmann/json_fwd.hpp"
 
 #include <algorithm>
 #include <cstddef>

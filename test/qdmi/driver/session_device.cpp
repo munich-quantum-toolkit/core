@@ -8,7 +8,7 @@
  * Licensed under the MIT License
  */
 
-#include <qdmi/device.h>
+#include "qdmi/device.h"
 
 #include <array>
 #include <atomic>

@@ -11,7 +11,7 @@
 #include "bench/BV.hpp"
 #include "bench/Evaluation.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include <stdexcept>
 #include <string>

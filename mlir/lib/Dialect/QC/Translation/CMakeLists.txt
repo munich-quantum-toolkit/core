@@ -14,7 +14,7 @@ mqt_mlir_target_use_project_options(MLIRQCTranslationSupport)
 target_sources(
   MLIRQCTranslationSupport
   PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/StandardGate.h)
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/StandardGate.h)
 
 add_mlir_library(
   MLIRQCOpenQASMTranslation
@@ -48,5 +48,5 @@ target_sources(
          BASE_DIRS
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}
          FILES
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h)
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h)

@@ -8,16 +8,18 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/bench/Generate.h"
+#include "mqt/bench/Generate.h"
 
 #include "bench/JSON.hpp"
-#include "mlir/Compiler/Programs.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Compiler/Programs.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+
 #include "programs/Programs.h"
 
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <optional>

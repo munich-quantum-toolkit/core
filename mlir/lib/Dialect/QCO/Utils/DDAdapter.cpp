@@ -8,13 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/DDAdapter.h"
+#include "mqt/Dialect/QCO/Utils/DDAdapter.h"
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/ArrayRef.h>
+#include "llvm/ADT/ArrayRef.h"
 
 #include <cstddef>
 #include <span>

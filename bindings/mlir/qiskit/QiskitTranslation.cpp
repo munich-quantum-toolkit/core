@@ -10,7 +10,7 @@
 
 #include "QiskitTranslation.h"
 
-#include <llvm/ADT/StringSet.h>
+#include "llvm/ADT/StringSet.h"
 
 #include <cstdint>
 #include <stdexcept>

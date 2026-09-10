@@ -13,7 +13,7 @@ add_mlir_library(
   Target.cpp
   TargetEnvironment.cpp
   ADDITIONAL_HEADER_DIRS
-  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler
   LINK_LIBS
   PUBLIC
   MLIRIR
@@ -30,8 +30,8 @@ target_sources(
          BASE_DIRS
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}
          FILES
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/Target.h
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/TargetEnvironment.h)
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/Target.h
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/TargetEnvironment.h)
 
 # Build the optional QDMI-to-compiler-target adapter
 set(LLVM_REQUIRES_EH ON)
@@ -41,7 +41,7 @@ add_mlir_library(
   PARTIAL_SOURCES_INTENDED
   QDMIAdapter.cpp
   ADDITIONAL_HEADER_DIRS
-  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler
   LINK_LIBS
   PUBLIC
   MQTCompilerTarget
@@ -53,7 +53,7 @@ unset(LLVM_REQUIRES_RTTI)
 
 target_sources(
   MQTCompilerQDMIAdapter PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-                                ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/QDMIAdapter.h)
+                                ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/QDMIAdapter.h)
 
 # Build the compiler program model and OpenQASM-to-QCO path
 add_mlir_library(
@@ -61,7 +61,7 @@ add_mlir_library(
   PARTIAL_SOURCES_INTENDED
   Programs.cpp
   ADDITIONAL_HEADER_DIRS
-  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler
   LINK_LIBS
   PUBLIC
   LLVMSupport
@@ -94,7 +94,7 @@ mqt_mlir_target_use_project_options(MQTCompilerPrograms)
 
 target_sources(
   MQTCompilerPrograms PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-                             ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/Programs.h)
+                             ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/Programs.h)
 
 # Build the compiler pipeline library
 add_mlir_library(
@@ -103,7 +103,7 @@ add_mlir_library(
   Pipeline.cpp
   TargetCompilation.cpp
   ADDITIONAL_HEADER_DIRS
-  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler
   LINK_LIBS
   PUBLIC
   LLVMBitWriter
@@ -129,4 +129,4 @@ mqt_mlir_target_use_project_options(MQTCompilerPipeline)
 
 target_sources(
   MQTCompilerPipeline PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
-                             ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Compiler/TargetCompilation.h)
+                             ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Compiler/TargetCompilation.h)

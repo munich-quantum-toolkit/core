@@ -8,16 +8,18 @@
  * Licensed under the MIT License
  */
 
-#include "OpenQASMTestUtils.h"
-#include "mlir/Dialect/QC/Translation/StandardGate.h"
-#include "mlir/Target/OpenQASM/Frontend.h"
-#include "mlir/Target/OpenQASM/GateCatalog.h"
+#include "mqt/Dialect/QC/Translation/StandardGate.h"
+#include "mqt/Target/OpenQASM/Frontend.h"
+#include "mqt/Target/OpenQASM/GateCatalog.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/MemoryBuffer.h>
-#include <llvm/Support/SourceMgr.h>
+#include "OpenQASMTestUtils.h"
+
+#include "gtest/gtest.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
 
 #include <array>
 #include <cmath>

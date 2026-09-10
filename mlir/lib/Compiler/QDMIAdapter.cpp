@@ -8,19 +8,20 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Compiler/QDMIAdapter.h"
+#include "mqt/Compiler/QDMIAdapter.h"
 
-#include "mlir/Compiler/Target.h"
+#include "mqt/Compiler/Target.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/Twine.h>
-#include <llvm/Support/CheckedArithmetic.h>
-#include <llvm/Support/Error.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/Support/CheckedArithmetic.h"
+#include "llvm/Support/Error.h"
 
 #include <algorithm>
 #include <cstddef>

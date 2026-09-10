@@ -8,30 +8,30 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h"
+#include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
 
-#include "mlir/Dialect/CBit/IR/CBitAttributes.h"
-#include "mlir/Dialect/CBit/IR/CBitDialect.h"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/CBit/IR/CBitAttributes.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Func/Transforms/FuncConversions.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/SCF/Transforms/Patterns.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/DialectConversion.h>
-#include <mlir/Transforms/WalkPatternRewriteDriver.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Func/Transforms/FuncConversions.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/SCF/Transforms/Patterns.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/WalkPatternRewriteDriver.h"
 
 #include <utility>
 
 namespace mlir {
 
 #define GEN_PASS_DEF_CONVERTCBITTOMEMREF
-#include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h.inc"
+#include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h.inc"
 
 namespace {
 class CBitTypeConverter final : public TypeConverter {

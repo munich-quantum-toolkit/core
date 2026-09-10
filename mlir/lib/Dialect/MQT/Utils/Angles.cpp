@@ -8,14 +8,14 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/Angles.h"
+#include "mqt/Dialect/MQT/Utils/Angles.h"
 
-#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mlir/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
 
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <cmath>
 #include <numbers>

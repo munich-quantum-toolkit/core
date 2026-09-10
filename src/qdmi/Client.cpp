@@ -14,7 +14,7 @@
 #include "qdmi/common/Diagnostics.hpp"
 #include "qdmi/driver/Driver.hpp"
 
-#include <qdmi/client.h>
+#include "qdmi/client.h"
 
 #include <algorithm>
 #include <complex>

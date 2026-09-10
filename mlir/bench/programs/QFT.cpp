@@ -10,13 +10,14 @@
 
 #include "bench/QFT.hpp"
 
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+
 #include "Programs.h"
 #include "QFTUtils.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
 
 #include <cstdint>
 #include <numbers>

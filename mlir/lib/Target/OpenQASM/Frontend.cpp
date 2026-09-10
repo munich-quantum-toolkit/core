@@ -8,23 +8,24 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Target/OpenQASM/Frontend.h"
+#include "mqt/Target/OpenQASM/Frontend.h"
 
-#include "mlir/Target/OpenQASM/Detail/OpenQASMLexer.h"
-#include "mlir/Target/OpenQASM/Detail/OpenQASMParser.h"
-#include "mlir/Target/OpenQASM/Detail/OpenQASMSemantics.h"
-#include "mlir/Target/OpenQASM/Detail/OpenQASMSyntax.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMLexer.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMParser.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMSemantics.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMSyntax.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallSet.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringMap.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/MemoryBuffer.h>
-#include <llvm/Support/SourceMgr.h>
-#include <llvm/Support/VirtualFileSystem.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/VirtualFileSystem.h"
 
 #include <cstddef>
 #include <iterator>

@@ -8,12 +8,12 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Target/OpenQASM/Detail/OpenQASMSyntax.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMSyntax.h"
 
-#include "mlir/Target/OpenQASM/Detail/OpenQASMParser.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMParser.h"
 
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <optional>
 #include <tuple>

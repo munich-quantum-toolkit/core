@@ -11,7 +11,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/RepeatUntilSuccess.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include <numbers>
 #include <stdexcept>

@@ -10,7 +10,7 @@ add_mlir_dialect_library(
   MLIRMQTDialect
   MQTDialect.cpp
   ADDITIONAL_HEADER_DIRS
-  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQT
+  ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/MQT
   DEPENDS
   MLIRMQTDialectIncGen
   LINK_LIBS
@@ -27,8 +27,8 @@ add_mlir_dialect_library(
 
 mqt_mlir_target_use_project_options(MLIRMQTDialect)
 
-file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/MQT/IR/*.h")
-file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/MQT/IR/*.inc")
+file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/MQT/IR/*.h")
+file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mqt/Dialect/MQT/IR/*.inc")
 
 target_sources(
   MLIRMQTDialect

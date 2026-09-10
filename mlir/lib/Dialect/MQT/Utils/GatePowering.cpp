@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/Utils/GatePowering.h"
+#include "mqt/Dialect/MQT/Utils/GatePowering.h"
 
-#include <llvm/ADT/StringSwitch.h>
+#include "llvm/ADT/StringSwitch.h"
 
 #include <array>
 #include <cmath>

@@ -8,30 +8,31 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Target/OpenQASM/Detail/OpenQASMSemantics.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMSemantics.h"
 
-#include "mlir/Target/OpenQASM/Detail/OpenQASMParser.h"
-#include "mlir/Target/OpenQASM/Detail/OpenQASMSyntax.h"
-#include "mlir/Target/OpenQASM/Frontend.h"
-#include "mlir/Target/OpenQASM/GateCatalog.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMParser.h"
+#include "mqt/Target/OpenQASM/Detail/OpenQASMSyntax.h"
+#include "mqt/Target/OpenQASM/Frontend.h"
+#include "mqt/Target/OpenQASM/GateCatalog.h"
 
-#include <llvm/ADT/APInt.h>
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/DynamicAPInt.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallString.h>
-#include <llvm/ADT/StringMap.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/MathExtras.h>
-#include <llvm/Support/MemoryBuffer.h>
-#include <llvm/Support/SourceMgr.h>
-#include <mlir/Analysis/Presburger/IntegerRelation.h>
-#include <mlir/Analysis/Presburger/PresburgerSpace.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/Analysis/Presburger/IntegerRelation.h"
+#include "mlir/Analysis/Presburger/PresburgerSpace.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/APInt.h"
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/DynamicAPInt.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MathExtras.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
 
 #include <algorithm>
 #include <bit>

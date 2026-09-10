@@ -10,9 +10,9 @@
 
 #include "qdmi/driver/Driver.hpp"
 
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
-#include <qdmi/client.h>
+#include "gmock/gmock-matchers.h"
+#include "gtest/gtest.h"
+#include "qdmi/client.h"
 
 #include <cstdlib>
 
