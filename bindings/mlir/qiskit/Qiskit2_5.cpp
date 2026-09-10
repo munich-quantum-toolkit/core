@@ -14,8 +14,8 @@
 
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
-#include "nanobind/stl/complex.h" // Enables the std::complex caster.
-#include "nanobind/stl/string.h"  // Enables the std::string caster.
+#include "nanobind/stl/complex.h"
+#include "nanobind/stl/string.h"
 #include "qiskit/complex.h"
 #include "qiskit/version.h"
 #include <qiskit.h> // Must precede the extension function table.
