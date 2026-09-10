@@ -112,6 +112,10 @@ the intended program. `RejectsMissingPositionalQubitResults` verifies its linear
 input and asserts the intended unsupported-shape diagnostic. These assertions
 must not be weakened to make the comparator accept changed programs.
 
+The final simplicity review replaces region-match counting and sentinel checks
+with direct iteration, and removes duplicate verification after successful
+parsing. Separate QCO-linearity checks remain required.
+
 ## Validation
 
 Current native validation uses Clang 23, LLVM/MLIR 23.1.0, ThinLTO, and mold:

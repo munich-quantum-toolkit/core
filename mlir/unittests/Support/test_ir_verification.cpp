@@ -25,7 +25,6 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
 
 #include "llvm/ADT/StringRef.h"
@@ -48,8 +47,6 @@ static void expectComparison(llvm::StringRef lhsSource,
   auto rhs = parseSourceString<ModuleOp>(rhsSource, &context);
   ASSERT_TRUE(lhs);
   ASSERT_TRUE(rhs);
-  ASSERT_TRUE(succeeded(verify(*lhs)));
-  ASSERT_TRUE(succeeded(verify(*rhs)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*lhs)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*rhs)));
   EXPECT_TRUE(areModulesStructurallyEquivalent(*lhs, *lhs));

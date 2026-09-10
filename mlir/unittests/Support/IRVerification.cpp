@@ -658,28 +658,15 @@ static bool compareBlocks(Block& lhs, Block& rhs,
     rhsOpen.set_subtract(rhsReady);
     rhsClosed.set_union(rhsReady);
 
-    SetVector<Operation*>::iterator it = lhsReady.begin();
-    for (; it != lhsReady.end(); it = std::next(it)) {
-      Operation* opLhs = *it;
-
-      if (opLhs->getNumRegions() > 0) {
-        Operation* opRhs = m.lookup(opLhs);
-        assert(opLhs->getNumRegions() == opRhs->getNumRegions());
-        const auto nequiv = range_size(make_filter_range(
-            llvm::zip_equal(opLhs->getRegions(), opRhs->getRegions()),
-            [&](const auto& zip) {
-              const auto& [lhsRegion, rhsRegion] = zip;
-              return compareRegions(lhsRegion, rhsRegion, lhsClosed, rhsClosed,
-                                    m, tm);
-            }));
-        if (nequiv != opLhs->getNumRegions()) {
-          break;
+    for (Operation* lhsOp : lhsReady) {
+      Operation* rhsOp = m.lookup(lhsOp);
+      for (auto [lhsRegion, rhsRegion] :
+           llvm::zip_equal(lhsOp->getRegions(), rhsOp->getRegions())) {
+        if (!compareRegions(lhsRegion, rhsRegion, lhsClosed, rhsClosed, m,
+                            tm)) {
+          return false;
         }
       }
-    }
-
-    if (it != lhsReady.end()) {
-      return false;
     }
   }
 

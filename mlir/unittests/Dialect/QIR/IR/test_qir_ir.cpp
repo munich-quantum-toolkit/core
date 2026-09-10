@@ -143,7 +143,7 @@ TEST_P(QIRTest, ProgramEquivalence) {
   printer.record(reference.get(), "Canonicalized Reference QIR IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
-  /// Builder references may order module symbols and releases differently.
+  /// Builder references may order module symbols differently.
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
