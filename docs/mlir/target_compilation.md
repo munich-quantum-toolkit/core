@@ -181,10 +181,13 @@ accepted.
 Target compilation requires structured QCO/SCF input. Producers of raw CFG
 branches must normalize them before target compilation; runtime assertions are
 allowed. The pipeline removes unused symbols, propagates constants, unrolls
-unsupported static loops, and then runs the standard QCO cleanup pipeline. It
-uses `unroll-loops-for-payload` before cleanup and `legalize-control-flow` after
-cleanup, so unrolling can expose constant branches before legality checks. The
-latter pass applies these structural capabilities to the remaining control flow:
+unsupported static loops and static loops carrying qubit tensors, and then runs
+the standard QCO cleanup pipeline. Tensor loops are unrolled to expose fixed
+qubit indices for placement. Loops carrying scalar qubits remain when supported
+by the payload. It uses `unroll-loops-for-payload` before cleanup and
+`legalize-control-flow` after cleanup, so unrolling can expose constant branches
+before legality checks. The latter pass applies these structural capabilities to
+the remaining control flow:
 
 | Capability           | Residual operations                                 |
 | -------------------- | --------------------------------------------------- |
@@ -194,13 +197,14 @@ latter pass applies these structural capabilities to the remaining control flow:
 | `multiway-branching` | `qco.index_switch` and classical `scf.index_switch` |
 
 A finite `scf.for` that exceeds the selected counted-iteration contract is fully
-unrolled when this clones at most 65,536 body operations. Cleanup runs again
-because unrolling can make nested bounds and conditions constant. An unsupported
-index switch is lowered to a linear chain of nested forward branches when that
-form fits the selected contract. Before expansion, the compiler checks the
-selected forward-branching nesting limit and a compiler safety limit of 256
-total control-flow levels, including enclosing control flow. This compiler limit
-is not a QDMI requirement and does not apply to switches retained under multiway
+unrolled when this clones at most 65,536 body operations. The same bound applies
+to loops unrolled for qubit placement. Cleanup runs again because unrolling can
+make nested bounds and conditions constant. An unsupported index switch is
+lowered to a linear chain of nested forward branches when that form fits the
+selected contract. Before expansion, the compiler checks the selected
+forward-branching nesting limit and a compiler safety limit of 256 total
+control-flow levels, including enclosing control flow. This compiler limit is
+not a QDMI requirement and does not apply to switches retained under multiway
 branching.
 
 Generic SCF branches cannot capture or return QCO qubits or quantum tensors; use
@@ -209,6 +213,14 @@ carry linear quantum state through their iteration arguments instead of
 capturing it. Both control-flow passes validate this loop input restriction
 before transforming loops or lowering switches. It is separate from QCO's
 exactly-one-SSA-use check.
+
+Cleanup can extract constant-index qubits before a `scf.while` and carry them as
+scalar iteration arguments. Each loop region must extract distinct constant
+indices, reinsert every extracted qubit, and pass the tensor to its terminator.
+The after region must return each tensor to its original iteration argument.
+Tensor accesses with runtime indices, incomplete updates, or nested tensor
+control flow are not scalarized by this rewrite. Placement diagnoses remaining
+tensor control flow before changing allocations.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and

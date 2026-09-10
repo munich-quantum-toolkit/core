@@ -522,7 +522,13 @@ protected:
       SmallVector<std::pair<scf::ForOp, llvm::APInt>> loops;
       getOperation().walk<WalkOrder::PreOrder>([&](scf::ForOp loop) {
         const auto tripCount = getExactConstantTripCount(loop);
-        if (support->coversIteration(ControlFeature::CountedIteration, loop,
+        const bool carriesQTensor =
+            llvm::any_of(loop.getInitArgs(), [](Value value) {
+              auto type = dyn_cast<RankedTensorType>(value.getType());
+              return type && isa<QubitType>(type.getElementType());
+            });
+        if (!carriesQTensor &&
+            support->coversIteration(ControlFeature::CountedIteration, loop,
                                      tripCount)) {
           return WalkResult::advance();
         }

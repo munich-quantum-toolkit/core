@@ -639,6 +639,11 @@ namespace {
 struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   using QCToQIRAdaptiveBase::QCToQIRAdaptiveBase;
 
+  void getDependentDialects(DialectRegistry& registry) const override {
+    QCToQIRAdaptiveBase::getDependentDialects(registry);
+    registerQIRClassicalTensorDialects(registry);
+  }
+
   /// Ensures proper block structure for QIR Adaptive Profile
   ///
   /// The Adaptive Profile requires an entry block and an output block with an

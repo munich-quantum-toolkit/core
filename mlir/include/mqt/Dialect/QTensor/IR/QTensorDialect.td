@@ -26,7 +26,8 @@ def QTensorDialect : Dialect {
   }];
 
   let dependentDialects = ["::mlir::qco::QCODialect",
-                           "::mlir::arith::ArithDialect"];
+                           "::mlir::arith::ArithDialect",
+                           "::mlir::scf::SCFDialect"];
 
   let hasCanonicalizer = 1;
 

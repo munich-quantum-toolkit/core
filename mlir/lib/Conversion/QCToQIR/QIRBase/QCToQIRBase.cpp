@@ -393,6 +393,11 @@ namespace {
 struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
   using QCToQIRBaseBase::QCToQIRBaseBase;
 
+  void getDependentDialects(DialectRegistry& registry) const override {
+    QCToQIRBaseBase::getDependentDialects(registry);
+    registerQIRClassicalTensorDialects(registry);
+  }
+
   /// Ensures proper block structure for QIR base profile
   ///
   /// The QIR base profile requires a specific 4-block structure:

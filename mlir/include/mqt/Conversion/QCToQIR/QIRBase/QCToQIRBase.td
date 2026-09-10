@@ -37,6 +37,9 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
 
     Behavior:
 
+    - Constant classical tensors and element reads are lowered to constant LLVM arrays and loads.
+      Other classical tensor operations must be lowered before this pass.
+
     - Each QC quantum operation is replaced in place by its QIR call. After
       validating qubit usage in instruction order, the pass moves terminal
       measurements to the irreversible operations block.

@@ -13,6 +13,7 @@
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: associated
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep (template instantiations)
 
 #include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep (template instantiations)

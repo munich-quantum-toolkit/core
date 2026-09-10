@@ -2384,6 +2384,49 @@ TEST_F(CompilerPipelineTest, PayloadControlPromotesNestedSingleIterationState) {
   EXPECT_EQ(gate->getOperand(0), entry.getArgument(0));
 }
 
+TEST_F(CompilerPipelineTest, PlacementUnrollsTensorLoopsButRetainsScalarLoops) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %c2 = arith.constant 2 : index
+      %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+      %result = scf.for %i = %c0 to %c2 step %c1
+          iter_args(%t = %tensor) -> tensor<2x!qco.qubit> {
+        %rest, %q = qtensor.extract %t[%i] : tensor<2x!qco.qubit>
+        %out = qco.x %q : !qco.qubit -> !qco.qubit
+        %updated = qtensor.insert %out into %rest[%i] : tensor<2x!qco.qubit>
+        scf.yield %updated : tensor<2x!qco.qubit>
+      }
+      qtensor.dealloc %result : tensor<2x!qco.qubit>
+      %q = qco.alloc : !qco.qubit
+      %out = scf.for %i = %c0 to %c2 step %c1
+          iter_args(%arg = %q) -> !qco.qubit {
+        %next = qco.x %arg : !qco.qubit -> !qco.qubit
+        scf.yield %next : !qco.qubit
+      }
+      qco.sink %out : !qco.qubit
+      return
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  attachTargetEnvironment(
+      program->module(),
+      TargetEnvironment(
+          makeUnrestrictedTarget(),
+          makeControlPayloadSpecification(
+              {{.id = ProgramCapability::COUNTED_ITERATION.str()}})));
+  ASSERT_TRUE(program->runPassPipeline("unroll-loops-for-payload"));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  size_t loops = 0;
+  program->module().walk([&](scf::ForOp loop) {
+    ++loops;
+    EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(0).getType()));
+  });
+  EXPECT_EQ(loops, 1);
+}
+
 TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {
   constexpr llvm::StringLiteral source = R"mlir(
     module {

@@ -2629,6 +2629,47 @@ INSTANTIATE_TEST_SUITE_P(FourByFourSquareGrid, MappingPassTest,
 INSTANTIATE_TEST_SUITE_P(TenByTenSquareGrid, MappingPassTest,
                          testing::Values(getSquareGridTarget(10)));
 
+TEST_F(MappingPassFixture, RejectTensorWhileBeforeMutation) {
+  const auto target = getSquareGridTarget(2);
+  for (const bool placement : {false, true}) {
+    SCOPED_TRACE(placement);
+    auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+      module {
+        func.func @main() attributes {mqt.entry_point} {
+          %size = arith.constant 1 : index
+          %stop = arith.constant false
+          %tensor = qtensor.alloc(%size) : tensor<1x!qco.qubit>
+          %result = scf.while (%arg = %tensor) : (tensor<1x!qco.qubit>) -> tensor<1x!qco.qubit> {
+            scf.condition(%stop) %arg : tensor<1x!qco.qubit>
+          } do {
+          ^bb0(%arg: tensor<1x!qco.qubit>):
+            scf.yield %arg : tensor<1x!qco.qubit>
+          }
+          qtensor.dealloc %result : tensor<1x!qco.qubit>
+          return
+        }
+      })mlir",
+                                                context.get());
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    attachTestEnvironment(*moduleOp, target);
+    const auto before = printModule(*moduleOp);
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(context.get(), [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(placement
+                           ? runPlacement(*moduleOp, target)
+                           : runPass(*moduleOp, target, MappingPassOptions{})));
+    EXPECT_NE(
+        diagnostics.find("flat qtensor"),
+        std::string::npos)
+        << diagnostics;
+    EXPECT_EQ(printModule(*moduleOp), before);
+  }
+}
+
 TEST_F(MappingPassFixture, RejectQuantumCallsBeforeMutation) {
   auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
     module {

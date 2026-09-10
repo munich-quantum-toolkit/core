@@ -21,18 +21,26 @@
 #include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
 #include "mlir/Conversion/LLVMCommon/TypeConverter.h"
 #include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
+#include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
 #include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arith/Transforms/BufferizableOpInterfaceImpl.h"
+#include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
+#include "mlir/Dialect/Bufferization/Transforms/Bufferize.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tensor/Transforms/BufferizableOpInterfaceImpl.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypeInterfaces.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Dominance.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OpDefinition.h"
@@ -74,12 +82,33 @@ LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
       "cannot mix static and dynamic qubit allocation modes in conversion");
 }
 
+void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
+  registry.insert<bufferization::BufferizationDialect, memref::MemRefDialect,
+                  tensor::TensorDialect>();
+  arith::registerBufferizableOpInterfaceExternalModels(registry);
+  tensor::registerBufferizableOpInterfaceExternalModels(registry);
+}
+
 LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
                                     LLVMTypeConverter& typeConverter) {
   auto* ctx = moduleOp.getContext();
+  /// Constant tensors and element reads require no allocation or alias
+  /// analysis.
+  bufferization::BufferizationOptions options;
+  options.allowUnknownOps = true;
+  options.opFilter.allowOperation<arith::ConstantOp, tensor::ExtractOp>();
+  bufferization::BufferizationState state;
+  if (failed(bufferization::bufferizeOp(moduleOp, options, state))) {
+    return failure();
+  }
+
   RewritePatternSet patterns(ctx);
   target.addIllegalDialect<arith::ArithDialect, cf::ControlFlowDialect,
-                           math::MathDialect>();
+                           math::MathDialect, memref::MemRefDialect,
+                           tensor::TensorDialect,
+                           bufferization::BufferizationDialect>();
+  LLVMTypeConverter memoryTypeConverter(ctx);
+  populateFinalizeMemRefToLLVMConversionPatterns(memoryTypeConverter, patterns);
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
   cf::populateAssertToLLVMConversionPattern(typeConverter, patterns);
   arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);

@@ -13,10 +13,12 @@ from __future__ import annotations
 import gc
 import subprocess
 import sys
+from fractions import Fraction
 from typing import TYPE_CHECKING
 
 import pytest
 
+from mqt.core.bench import qpe, repeat_until_success
 from mqt.core.mlir import CompiledProgram, CompilerTarget, OutputFormat, compile_program, submit_program
 from mqt.core.qdmi import Job, ProgramFormat
 from mqt.core.qdmi.driver import open_device
@@ -25,6 +27,31 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 BELL = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c = measure q;'
+
+
+@pytest.mark.parametrize("method", [qpe.Method.STANDARD, qpe.Method.ITERATIVE])
+def test_qpe_device_execution(method: qpe.Method) -> None:
+    """Compile structured QPE and recover its exact phase through QIR execution."""
+    benchmark = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=method))
+    device = open_device("mqt.ddsim.default")
+    compiled = compile_program(benchmark.generate(), target=device)
+    job = submit_program(compiled, target=device, num_shots=32, custom1=17)
+    job.wait()
+    # QIR records register bits in increasing index order; benchmarks use big endian.
+    counts = {bits[::-1]: count for bits, count in job.get_counts().items()}
+    assert counts == {"01100000": 32}
+    assert benchmark.evaluate(counts).total_variation_distance == pytest.approx(0)
+
+
+@pytest.mark.parametrize("data_qubits", [1, 4])
+def test_repeat_until_success_device_execution(data_qubits: int) -> None:
+    """Preserve phase-sensitive RUS results through target placement and QIR."""
+    benchmark = repeat_until_success.RepeatUntilSuccess(repeat_until_success.Options(data_qubits=data_qubits))
+    device = open_device("mqt.ddsim.default")
+    compiled = compile_program(benchmark.generate(), target=device)
+    job = submit_program(compiled, target=device, num_shots=4096, custom1=17)
+    job.wait()
+    assert benchmark.evaluate(job.get_counts()).total_variation_distance < 0.02
 
 
 @pytest.mark.parametrize("form", ["artifact", "source", "device_id"])
