@@ -9,6 +9,7 @@
  */
 
 #include "qdmi/Client.hpp"
+#include "qdmi/common/Common.hpp"
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
