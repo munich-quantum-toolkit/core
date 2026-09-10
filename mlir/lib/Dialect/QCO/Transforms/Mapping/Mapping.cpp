@@ -791,37 +791,145 @@ private:
     return iterator.qubit();
   }
 
-  /// Execute `ntrials` many (parallel) initial layout refinement trials and
-  /// return the heuristically best one.
+  /// Place frequently interacting program qubits near each other.
   ///
-  /// The function uses the SABRE Approach to improve the initial layout:
-  /// Traverse the layers of the program from left-to-right-to-left and
-  /// cold-route along the way. Repeat this procedure "niterations" times and
-  /// finally find the trial with the fewest SWAPs on the final backwards pass
-  /// and return the respective layout.
+  /// Nested control flow has no single interaction frequency, so leave those
+  /// programs to the identity and random starts.
+  [[nodiscard]] std::optional<Layout>
+  generateGreedyLayout(Wires wires, const WireInfos& infos) const {
+    DenseMap<IndexPairType, size_t> weights;
+    bool supported = true;
+    walkProgramGraph<WireDirection::Forward>(
+        MutableArrayRef(wires.data(), wires.size()),
+        [&](const Frontier& frontier, ReleasedOps& released) {
+          for (const auto& [op, indices] : frontier) {
+            if (op->getNumRegions() != 0 && !isa<UnitaryOpInterface>(op)) {
+              supported = false;
+              return WalkResult::interrupt();
+            }
+            if (indices.size() == 2 && !isa<BarrierOp>(op) &&
+                isa<UnitaryOpInterface>(op)) {
+              ++weights[std::minmax(infos.lookupProgram(indices[0]),
+                                    infos.lookupProgram(indices[1]))];
+            }
+            released.emplace_back(op);
+          }
+          return WalkResult::advance();
+        });
+    if (!supported || weights.empty()) {
+      return std::nullopt;
+    }
+
+    const size_t nprogram = infos.size();
+    const size_t nhardware = target->numSites();
+    SmallVector<SmallVector<IndexPairType>> neighbours(nprogram);
+    SmallVector<size_t> degree(nprogram, 0);
+    SmallVector<size_t> attached(nprogram, 0);
+    for (const auto& [pair, weight] : weights) {
+      const auto [a, b] = pair;
+      neighbours[a].emplace_back(b, weight);
+      neighbours[b].emplace_back(a, weight);
+      degree[a] += weight;
+      degree[b] += weight;
+    }
+
+    SmallVector<size_t> centrality(nhardware, 0);
+    SmallVector<size_t> hardwareDegree(nhardware, 0);
+    for (size_t hw = 0; hw < nhardware; ++hw) {
+      for (size_t other = 0; other < nhardware; ++other) {
+        centrality[hw] += target->distanceBetween(hw, other);
+      }
+      target->forEachNeighbour(hw, [&](size_t) { ++hardwareDegree[hw]; });
+    }
+
+    // The out-of-range hardware index marks an unplaced program qubit.
+    SmallVector<size_t> mapping(nhardware, nhardware);
+    SmallVector<bool> used(nhardware, false);
+    for (size_t placed = 0; placed < nprogram; ++placed) {
+      size_t prog = nprogram;
+      for (size_t candidate = 0; candidate < nprogram; ++candidate) {
+        if (mapping[candidate] == nhardware &&
+            (prog == nprogram ||
+             std::tie(attached[candidate], degree[candidate]) >
+                 std::tie(attached[prog], degree[prog]))) {
+          prog = candidate;
+        }
+      }
+
+      size_t best = nhardware;
+      size_t bestCost = 0;
+      for (size_t hw = 0; hw < nhardware; ++hw) {
+        if (used[hw]) {
+          continue;
+        }
+        size_t cost = 0;
+        for (const auto& [partner, weight] : neighbours[prog]) {
+          if (mapping[partner] != nhardware) {
+            cost += weight * target->distanceBetween(hw, mapping[partner]);
+          }
+        }
+        if (best == nhardware ||
+            std::tuple(cost, centrality[hw], nhardware - hardwareDegree[hw]) <
+                std::tuple(bestCost, centrality[best],
+                           nhardware - hardwareDegree[best])) {
+          best = hw;
+          bestCost = cost;
+        }
+      }
+      mapping[prog] = best;
+      used[best] = true;
+      for (const auto& [partner, weight] : neighbours[prog]) {
+        attached[partner] += weight;
+      }
+    }
+
+    // Complete the permutation with unused sites for routing workspace.
+    size_t prog = nprogram;
+    for (size_t hw = 0; hw < nhardware; ++hw) {
+      if (!used[hw]) {
+        mapping[prog++] = hw;
+      }
+    }
+    return Layout::fromMapping(mapping);
+  }
+
+  /// Refine identity, random, and greedy starts with forward/backward routing.
+  /// Keep the raw greedy start too: refinement can worsen forward routing.
+  /// Score each candidate with a forward traversal, preserving its start
+  /// layout.
   FailureOr<Layout> generateLayout(const Wires& wires, const WireInfos& infos) {
     std::mt19937_64 rng{seed};
 
     struct Trial {
       RoutingBundle bundle;
+      size_t iterations;
       Statistics stats{};
       bool success{false};
     };
 
     SmallVector<Trial, 0> trials;
-    trials.reserve(ntrials);
+    trials.reserve(ntrials + 2);
     for (size_t i = 0; i < ntrials; ++i) {
-      trials.emplace_back(RoutingBundle{
-          .wires = wires,
-          .infos = infos,
-          .layout = i == 0 ? Layout::identity(target->numSites())
-                           : Layout::random(target->numSites(),
-                                            target->numSites(), rng()),
-      });
+      trials.emplace_back(
+          RoutingBundle{
+              .wires = wires,
+              .infos = infos,
+              .layout = i == 0 ? Layout::identity(target->numSites())
+                               : Layout::random(target->numSites(),
+                                                target->numSites(), rng()),
+          },
+          niterations);
+    }
+    if (const auto greedy = generateGreedyLayout(wires, infos)) {
+      trials.emplace_back(
+          RoutingBundle{.wires = wires, .infos = infos, .layout = *greedy},
+          niterations);
+      trials.emplace_back(
+          RoutingBundle{.wires = wires, .infos = infos, .layout = *greedy}, 0);
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
-      for (size_t i = 0; i < niterations; ++i) {
+      for (size_t i = 0; i < t.iterations; ++i) {
         const auto fwRouteRes = route<WireDirection::Forward>(t.bundle);
         if (failed(fwRouteRes)) {
           return;
@@ -831,10 +939,13 @@ private:
         if (failed(bwRouteRes)) {
           return;
         }
-
-        t.stats = *bwRouteRes;
       }
-
+      auto scoringBundle = t.bundle;
+      const auto score = route<WireDirection::Forward>(scoringBundle);
+      if (failed(score)) {
+        return;
+      }
+      t.stats = *score;
       t.success = true;
     });
 
