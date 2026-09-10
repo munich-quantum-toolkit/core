@@ -34,6 +34,10 @@ Layout::Layout(const size_t nProgramQubits, const size_t nHardwareQubits)
     : programToHardware_(nProgramQubits, UNMAPPED),
       hardwareToProgram_(nHardwareQubits, UNMAPPED) {}
 
+Layout Layout::identity(const size_t nqubits) {
+  return fromMapping(to_vector(llvm::seq(nqubits)));
+}
+
 Layout Layout::random(const size_t nProgramQubits, const size_t nHardwareQubits,
                       const size_t seed) {
   assert(nProgramQubits <= nHardwareQubits &&
