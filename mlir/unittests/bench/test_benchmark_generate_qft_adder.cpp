@@ -8,25 +8,27 @@
  * Licensed under the MIT License
  */
 
-#include "TestUtils.h"
 #include "bench/Evaluation.hpp"
 #include "bench/JSON.hpp"
 #include "bench/QFTAdder.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Package.hpp"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/bench/Generate.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/bench/Generate.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "TestUtils.h"
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/STLExtras.h"
 
 #include <cmath>
 #include <complex>

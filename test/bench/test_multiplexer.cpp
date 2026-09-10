@@ -11,7 +11,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/Multiplexer.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include <numbers>
 #include <stdexcept>

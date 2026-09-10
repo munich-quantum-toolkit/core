@@ -8,27 +8,28 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MQT/IR/MQTDialect.h>
-#include <mlir/Dialect/QCO/IR/QCODialect.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/Visitors.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Visitors.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/WalkResult.h"
+
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include <cstddef>
 #include <cstdint>

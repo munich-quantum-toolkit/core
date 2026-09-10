@@ -10,8 +10,9 @@
 
 #include "bench/BV.hpp"
 
-#include "EvaluationUtils.hpp"
 #include "bench/Evaluation.hpp"
+
+#include "EvaluationUtils.hpp"
 
 #include <stdexcept>
 #include <string_view>

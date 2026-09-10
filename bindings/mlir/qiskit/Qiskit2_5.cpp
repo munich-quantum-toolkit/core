@@ -8,24 +8,23 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/QC/Translation/StandardGate.h"
+
 #include "QiskitTranslation.h"
-#include "mlir/Dialect/QC/Translation/StandardGate.h"
-
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/StringExtras.h>
-#include <llvm/ADT/StringMap.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/StringSwitch.h>
-
-// Qiskit requires its umbrella header before the extension function table.
-#include <nanobind/nanobind.h>
-#include <nanobind/ndarray.h>
-#include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner): enables the std::complex caster.
-#include <nanobind/stl/string.h> // NOLINT(misc-include-cleaner): enables the std::string caster.
-#include <qiskit.h>
-#include <qiskit/complex.h>
+#include "nanobind/nanobind.h"
+#include "nanobind/ndarray.h"
+#include "nanobind/stl/complex.h" // NOLINT(misc-include-cleaner): enables the std::complex caster.
+#include "nanobind/stl/string.h" // NOLINT(misc-include-cleaner): enables the std::string caster.
+#include "qiskit/complex.h"
+#include "qiskit/version.h"
+#include <qiskit.h> // Must precede the extension function table.
 #include <qiskit/funcs_py.h>
-#include <qiskit/version.h>
+
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/StringSwitch.h"
 
 #include <algorithm>
 #include <array>

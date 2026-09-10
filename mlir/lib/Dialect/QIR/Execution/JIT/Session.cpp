@@ -8,42 +8,42 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QIR/Execution/JIT/Session.h"
+#include "mqt/Dialect/QIR/Execution/JIT/Session.h"
 
-#include "mlir/Dialect/QIR/Execution/JIT/IRRewriter.h"
-#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
-#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
-#include "mlir/Dialect/QIR/QIRDefinitions.h"
+#include "mqt/Dialect/QIR/Execution/JIT/IRRewriter.h"
+#include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
+#include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
+#include "mqt/Dialect/QIR/QIRDefinitions.h"
 
-#include <llvm/ADT/ScopeExit.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/CodeGen/CommandFlags.h>
-#include <llvm/ExecutionEngine/JITEventListener.h>
-#include <llvm/ExecutionEngine/JITSymbol.h>
-#include <llvm/ExecutionEngine/Orc/AbsoluteSymbols.h>
-#include <llvm/ExecutionEngine/Orc/Core.h>
-#include <llvm/ExecutionEngine/Orc/CoreContainers.h>
-#include <llvm/ExecutionEngine/Orc/Debugging/DebuggerSupport.h>
-#include <llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h>
-#include <llvm/ExecutionEngine/Orc/LLJIT.h>
-#include <llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h>
-#include <llvm/ExecutionEngine/Orc/ThreadSafeModule.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/DataLayout.h>
-#include <llvm/IR/Instructions.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Metadata.h>
-#include <llvm/IR/Module.h>
-#include <llvm/IRReader/IRReader.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/Debug.h>
-#include <llvm/Support/Error.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/MemoryBuffer.h>
-#include <llvm/Support/SourceMgr.h>
-#include <llvm/Support/TargetSelect.h>
-#include <llvm/Support/raw_ostream.h>
-#include <llvm/TargetParser/Triple.h>
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/CodeGen/CommandFlags.h"
+#include "llvm/ExecutionEngine/JITEventListener.h"
+#include "llvm/ExecutionEngine/JITSymbol.h"
+#include "llvm/ExecutionEngine/Orc/AbsoluteSymbols.h"
+#include "llvm/ExecutionEngine/Orc/Core.h"
+#include "llvm/ExecutionEngine/Orc/CoreContainers.h"
+#include "llvm/ExecutionEngine/Orc/Debugging/DebuggerSupport.h"
+#include "llvm/ExecutionEngine/Orc/JITTargetMachineBuilder.h"
+#include "llvm/ExecutionEngine/Orc/LLJIT.h"
+#include "llvm/ExecutionEngine/Orc/RTDyldObjectLinkingLayer.h"
+#include "llvm/ExecutionEngine/Orc/ThreadSafeModule.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
+#include "llvm/IR/Instructions.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Metadata.h"
+#include "llvm/IR/Module.h"
+#include "llvm/IRReader/IRReader.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/TargetSelect.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/TargetParser/Triple.h"
 
 #include <algorithm>
 #include <cstddef>
@@ -245,7 +245,7 @@ static auto createRuntimeRegistry() -> RuntimeRegistry {
             &__quantum__qis__##NAME##__##CTL_SUFFIX);
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   MQT_QIR_ADD_GATE(NAME, SUFFIX, CTL_SUFFIX, TARGETS, PARAMS)
-#include "mlir/Conversion/GateTable.def"
+#include "mqt/Conversion/GateTable.def"
 #undef MQT_QIR_ADD_GATE
 
   addSymbol(registry, "__quantum__qis__gphase__body", AbiType::Void,

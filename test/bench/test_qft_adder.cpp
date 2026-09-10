@@ -10,7 +10,7 @@
 
 #include "bench/QFTAdder.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include <stdexcept>
 #include <string>

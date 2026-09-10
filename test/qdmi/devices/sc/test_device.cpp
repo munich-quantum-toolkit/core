@@ -11,10 +11,10 @@
 #include "mqt_sc_qdmi/device.h"
 #include "qdmi/TestUtils.hpp"
 
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
-#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
-#include <nlohmann/json_fwd.hpp>
+#include "gmock/gmock-matchers.h"
+#include "gtest/gtest.h"
+#include "nlohmann/json.hpp" // NOLINT(misc-include-cleaner)
+#include "nlohmann/json_fwd.hpp"
 
 #include <array>
 #include <cstddef>

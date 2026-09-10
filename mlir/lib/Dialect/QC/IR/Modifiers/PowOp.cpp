@@ -8,27 +8,29 @@
  * Licensed under the MIT License
  */
 
-#include "ModifierUtils.h"
-#include "mlir/Dialect/MQT/Utils/Angles.h"
-#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mlir/Dialect/MQT/Utils/GatePowering.h"
-#include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/MQT/Utils/Parameters.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCInterfaces.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/MQT/Utils/Angles.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/GatePowering.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCInterfaces.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/SmallVectorExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "ModifierUtils.h"
+
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/SmallVectorExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <cmath>
 #include <cstddef>

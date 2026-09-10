@@ -11,36 +11,37 @@
 /// @file test_qtensor_ir.cpp
 /// Dedicated unit-test suite for the QTensor MLIR dialect.
 
+#include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QTensor/IR/QTensorUtils.h"
+#include "mqt/Support/Passes.h"
+
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorUtils.h"
-#include "mlir/Support/Passes.h"
+#include "gtest/gtest.h"
 #include "qco_programs.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinTypeInterfaces.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Types.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Parser/Parser.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/Passes.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Types.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/Passes.h"
 
 #include <cstddef>
 #include <cstdint>

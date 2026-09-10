@@ -14,7 +14,7 @@
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
-#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
+#include "nlohmann/json.hpp" // NOLINT(misc-include-cleaner)
 
 #include <algorithm>
 #include <cstdlib>

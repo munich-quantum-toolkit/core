@@ -8,10 +8,10 @@
  * Licensed under the MIT License
  */
 
-#include "TestUtils.h"
 #include "bench/Grover.hpp"
 
-#include <gtest/gtest.h>
+#include "TestUtils.h"
+#include "gtest/gtest.h"
 
 namespace mqt::bench {
 

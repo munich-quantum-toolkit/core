@@ -11,7 +11,7 @@
 #include "bench/Evaluation.hpp"
 #include "bench/QPE.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include <cmath>
 #include <cstddef>

@@ -10,8 +10,8 @@
 
 #pragma once
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/StringRef.h>
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <string>
 

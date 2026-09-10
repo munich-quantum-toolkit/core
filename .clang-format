@@ -1,11 +1,21 @@
 BasedOnStyle: LLVM
 IncludeBlocks: Regroup
 IncludeCategories:
-  - Regex: '^".*"'
+  # clang-format assigns the matching header priority 0.
+  - Regex: '^"(bench|dd|mqt|mqt_(ddsim|sc)_qdmi)/'
     Priority: 1
-  - Regex: '^<.*\.(h|hpp)>'
-    Priority: 2
-  - Regex: "^<.*>"
+  - Regex: '^"qdmi/.*\.hpp"'
+    Priority: 1
+  - Regex: '^"mlir/'
     Priority: 3
+  - Regex: '^"llvm(-c)?/'
+    Priority: 4
+  - Regex: '^"'
+    Priority: 2
+  # Avoid the local Qiskit.h and keep the umbrella before its extension table.
+  - Regex: "^<qiskit[./]"
+    Priority: 2
+  - Regex: "^<"
+    Priority: 5
 PointerAlignment: Left
 Standard: c++20

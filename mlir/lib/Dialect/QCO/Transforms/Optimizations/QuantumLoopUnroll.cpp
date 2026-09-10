@@ -8,23 +8,24 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/SCF/Utils/Utils.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Visitors.h>
-#include <mlir/Interfaces/FunctionInterfaces.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/SCF/Utils/Utils.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Visitors.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+
+#include "llvm/ADT/STLExtras.h"
 
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_QUANTUMLOOPUNROLL
-#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 /// Predicate for quantum loops.
 ///

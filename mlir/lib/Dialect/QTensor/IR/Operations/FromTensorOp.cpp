@@ -8,11 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/OperationSupport.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/OperationSupport.h"
 
 #include <cassert>
 #include <cstdint>

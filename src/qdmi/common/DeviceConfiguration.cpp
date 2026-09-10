@@ -12,7 +12,7 @@
 
 #include "qdmi/common/Diagnostics.hpp"
 
-#include <qdmi/device.h>
+#include "qdmi/device.h"
 
 #include <cerrno>
 #include <cstdlib>
@@ -30,9 +30,8 @@
 #include <utility>
 
 #ifdef _WIN32
-#include <windows.h>
-
 #include <memory>
+#include <windows.h>
 #else
 #include <dlfcn.h>
 #endif

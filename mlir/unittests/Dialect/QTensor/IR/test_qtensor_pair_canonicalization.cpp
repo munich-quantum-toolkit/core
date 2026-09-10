@@ -8,22 +8,23 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Parser/Parser.h>
-#include <mlir/Rewrite/FrozenRewritePatternSet.h>
-#include <mlir/Rewrite/PatternApplicator.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Rewrite/FrozenRewritePatternSet.h"
+#include "mlir/Rewrite/PatternApplicator.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <utility>
 

@@ -10,8 +10,9 @@
 
 #include "bench/Multiplexer.hpp"
 
-#include "EvaluationUtils.hpp"
 #include "bench/Evaluation.hpp"
+
+#include "EvaluationUtils.hpp"
 
 #include <cmath>
 #include <numbers>

@@ -8,18 +8,19 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/Translation/StandardGate.h"
+#include "mqt/Dialect/QC/Translation/StandardGate.h"
 
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <array>
 #include <cstddef>

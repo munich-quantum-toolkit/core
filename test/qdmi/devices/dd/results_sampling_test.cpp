@@ -11,17 +11,18 @@
 /*
  * DDSIM QDMI Device - Results: sampling (histogram keys/values)
  */
-#include "helpers/circuits.hpp"
-#include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <gtest/gtest.h>
-#include <llvm/AsmParser/Parser.h>
-#include <llvm/Bitcode/BitcodeWriter.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/Support/SourceMgr.h>
-#include <llvm/Support/raw_ostream.h>
+#include "gtest/gtest.h"
+#include "helpers/circuits.hpp"
+#include "helpers/test_utils.hpp"
+
+#include "llvm/AsmParser/Parser.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/Support/SourceMgr.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <algorithm>
 #include <array>

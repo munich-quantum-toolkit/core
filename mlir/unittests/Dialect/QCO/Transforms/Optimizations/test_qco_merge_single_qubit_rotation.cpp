@@ -8,32 +8,34 @@
  * Licensed under the MIT License
  */
 
-#include "ExactUnitaryTest.h"
-#include "mlir/Dialect/MQT/Utils/Angles.h"
-#include "mlir/Dialect/MQT/Utils/ConstantFolding.h"
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/MQT/Utils/Angles.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
-#include <mlir/Transforms/Passes.h>
+#include "ExactUnitaryTest.h"
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/WalkResult.h"
+#include "mlir/Transforms/Passes.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <array>
 #include <cassert>

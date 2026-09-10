@@ -9,13 +9,13 @@
  */
 
 #include "dd/DDDefinitions.hpp"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/DDAdapter.h"
-#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
-#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/DDAdapter.h"
+#include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
+#include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
+#include "gmock/gmock-matchers.h"
+#include "gtest/gtest.h"
 
 #include <algorithm>
 #include <array>

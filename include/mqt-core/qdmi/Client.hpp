@@ -15,9 +15,9 @@
 
 #include "qdmi/common/Common.hpp"
 #include "qdmi/driver/Driver.hpp"
-#include "qdmi/types.h"
 
-#include <qdmi/client.h>
+#include "qdmi/client.h"
+#include "qdmi/types.h"
 
 #include <algorithm>
 #include <complex>

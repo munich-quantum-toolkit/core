@@ -12,10 +12,10 @@
 #include "qdmi/driver/Driver.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
-#include <gmock/gmock-matchers.h>
-#include <gtest/gtest.h>
-#include <qdmi/client.h>
-#include <qdmi/device.h>
+#include "gmock/gmock-matchers.h"
+#include "gtest/gtest.h"
+#include "qdmi/client.h"
+#include "qdmi/device.h"
 
 #include <algorithm>
 #include <array>

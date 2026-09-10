@@ -10,20 +10,21 @@
 
 #include "ModifierUtils.h"
 
-#include "mlir/Dialect/MQT/Utils/Modifiers.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVectorExtras.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/RegionUtils.h>
+#include "mlir/IR/Block.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/RegionUtils.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVectorExtras.h"
 
 #include <cstddef>
 

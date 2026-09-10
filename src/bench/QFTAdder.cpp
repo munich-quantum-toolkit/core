@@ -10,8 +10,9 @@
 
 #include "bench/QFTAdder.hpp"
 
-#include "EvaluationUtils.hpp"
 #include "bench/Evaluation.hpp"
+
+#include "EvaluationUtils.hpp"
 
 #include <algorithm>
 #include <cmath>

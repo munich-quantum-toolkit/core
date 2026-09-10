@@ -10,8 +10,9 @@
 
 #include "bench/RepeatUntilSuccess.hpp"
 
-#include "EvaluationUtils.hpp"
 #include "bench/Evaluation.hpp"
+
+#include "EvaluationUtils.hpp"
 
 #include <numbers>
 #include <stdexcept>

@@ -13,8 +13,8 @@
 
 #include "qdmi/devices/sc/Configuration.hpp"
 
-#include <nlohmann/json.hpp>
-#include <nlohmann/json_fwd.hpp>
+#include "nlohmann/json.hpp"
+#include "nlohmann/json_fwd.hpp"
 
 #include <algorithm>
 #include <array>

@@ -10,7 +10,7 @@
 
 #include "qasm_programs.h"
 
-#include <llvm/ADT/ArrayRef.h>
+#include "llvm/ADT/ArrayRef.h"
 
 #include <array>
 #include <string>

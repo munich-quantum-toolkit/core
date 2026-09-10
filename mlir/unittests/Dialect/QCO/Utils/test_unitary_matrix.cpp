@@ -8,9 +8,9 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include <algorithm>
 #include <array>

@@ -8,17 +8,18 @@
  * Licensed under the MIT License
  */
 
-#include "TestUtils.h"
 #include "bench/Evaluation.hpp"
 #include "bench/Teleportation.hpp"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/bench/Generate.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/bench/Generate.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Support/LLVM.h>
+#include "TestUtils.h"
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Support/LLVM.h"
 
 #include <cstddef>
 

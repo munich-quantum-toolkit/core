@@ -8,14 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Support/PrettyPrinting.h"
+#include "mqt/Support/PrettyPrinting.h"
 
-#include <llvm/ADT/SmallString.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/SmallString.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
 #include <string>

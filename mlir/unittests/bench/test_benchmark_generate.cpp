@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "TestUtils.h"
 #include "bench/BV.hpp"
 #include "bench/GHZ.hpp"
 #include "bench/Grover.hpp"
@@ -19,9 +18,10 @@
 #include "bench/QPE.hpp"
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
-#include "mlir/bench/Generate.h"
+#include "mqt/bench/Generate.h"
 
-#include <gtest/gtest.h>
+#include "TestUtils.h"
+#include "gtest/gtest.h"
 
 #include <utility>
 

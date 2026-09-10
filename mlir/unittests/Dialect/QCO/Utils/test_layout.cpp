@@ -8,12 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/Layout.h"
+#include "mqt/Dialect/QCO/Utils/Layout.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/Sequence.h>
+#include "gtest/gtest.h"
+
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Sequence.h"
 
 #include <array>
 #include <cstddef>

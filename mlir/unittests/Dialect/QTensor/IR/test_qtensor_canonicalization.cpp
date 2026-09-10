@@ -8,29 +8,31 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Support/Passes.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/Passes.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Parser/Parser.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/Passes.h>
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/Passes.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <array>
 #include <cstddef>

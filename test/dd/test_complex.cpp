@@ -15,8 +15,8 @@
 #include "dd/RealNumber.hpp"
 #include "dd/RealNumberUniqueTable.hpp"
 
-#include <gmock/gmock.h>
-#include <gtest/gtest.h>
+#include "gmock/gmock.h"
+#include "gtest/gtest.h"
 
 #include <array>
 #include <cstddef>

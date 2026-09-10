@@ -8,16 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "TestUtils.h"
 #include "bench/QFT.hpp"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/bench/Generate.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/bench/Generate.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/Support/LLVM.h>
+#include "TestUtils.h"
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Support/LLVM.h"
 
 #include <cmath>
 

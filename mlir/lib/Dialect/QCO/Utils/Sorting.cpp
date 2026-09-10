@@ -8,16 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Utils/Sorting.h"
+#include "mqt/Dialect/QCO/Utils/Sorting.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/IR/Block.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <cassert>
 #include <cstddef>

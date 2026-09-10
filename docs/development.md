@@ -44,6 +44,29 @@ differences between these guides; neither upstream document is imported in full.
 The {doc}`MLIR development policy <mlir/development>` explains the deliberate
 differences that apply to code built on LLVM and MLIR.
 
+### C++ includes
+
+Order include groups as follows, sorting each group alphabetically:
+
+1. The matching header for the source file.
+2. MQT Core headers, including MQT's MLIR headers.
+3. Other private headers and third-party library headers.
+4. Upstream MLIR headers.
+5. LLVM headers.
+6. System and standard-library headers.
+
+Use quotes for project and third-party headers. Use angle brackets for system
+and standard-library headers, or when a library requires them. Keep includes
+that depend on macros or declarations at the point where they are needed. For
+example, `<qiskit.h>` needs angle brackets to avoid the local `Qiskit.h` on
+case-insensitive file systems. Keep its extension function table,
+`<qiskit/funcs_py.h>`, in angle brackets so that it sorts after the umbrella
+header.
+
+The root `.clang-format` enforces this order. MQT's MLIR headers use the `mqt/`
+prefix, for example `"mqt/Dialect/QCO/IR/QCOOps.h"`. Upstream MLIR headers use
+`mlir/`, for example `"mlir/IR/MLIRContext.h"`.
+
 ### C++ documentation comments
 
 Use `///` for Doxygen documentation comments. The first sentence is the summary;

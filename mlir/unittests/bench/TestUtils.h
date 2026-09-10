@@ -10,17 +10,18 @@
 
 #pragma once
 
-#include "mlir/Compiler/Programs.h"
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
-#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
-#include "mlir/bench/Generate.h"
+#include "mqt/Compiler/Programs.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/bench/Generate.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/Support/LLVM.h>
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/Support/LLVM.h"
 
 #include <cstddef>
 #include <optional>

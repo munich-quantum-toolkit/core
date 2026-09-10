@@ -8,40 +8,42 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/Passes.h"
+
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
-#include "mlir/Dialect/CBit/IR/CBitDialect.h"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
-#include "mlir/Dialect/MQT/Transforms/Passes.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
-#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
-#include "mlir/Support/Passes.h"
+#include "gtest/gtest.h"
 #include "qc_programs.h"
 #include "qir_programs.h"
 
-#include <gtest/gtest.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
-#include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
 #include <iosfwd>

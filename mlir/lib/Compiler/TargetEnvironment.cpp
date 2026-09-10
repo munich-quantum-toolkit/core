@@ -8,24 +8,25 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Compiler/TargetEnvironment.h"
+#include "mqt/Compiler/TargetEnvironment.h"
 
-#include "mlir/Compiler/Programs.h"
-#include "mlir/Compiler/Target.h"
-#include "mlir/Dialect/MQT/IR/MQTAttributes.h"
+#include "mqt/Compiler/Programs.h"
+#include "mqt/Compiler/Target.h"
+#include "mqt/Dialect/MQT/IR/MQTAttributes.h"
 
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/ADT/Twine.h>
-#include <llvm/Support/Casting.h>
-#include <llvm/Support/Errc.h>
-#include <llvm/Support/Error.h>
-#include <llvm/Support/VersionTuple.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/Pass/AnalysisManager.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/Pass/AnalysisManager.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/ADT/Twine.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/Errc.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/VersionTuple.h"
 
 #include <cassert>
 #include <cstdint>

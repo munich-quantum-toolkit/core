@@ -8,16 +8,16 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <mlir/Dialect/QCO/IR/QCOOps.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/BuiltinTypeInterfaces.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OpDefinition.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
 
 using namespace mlir;
 using namespace mlir::qtensor;

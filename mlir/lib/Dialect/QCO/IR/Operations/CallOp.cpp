@@ -8,14 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/SymbolTable.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/STLExtras.h"
 
 #include <cstddef>
 #include <iterator>

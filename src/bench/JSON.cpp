@@ -10,7 +10,6 @@
 
 #include "bench/JSON.hpp"
 
-#include "SHA256.hpp"
 #include "bench/BV.hpp"
 #include "bench/Evaluation.hpp"
 #include "bench/GHZ.hpp"
@@ -23,7 +22,8 @@
 #include "bench/RepeatUntilSuccess.hpp"
 #include "bench/Teleportation.hpp"
 
-#include <nlohmann/json.hpp> // NOLINT(misc-include-cleaner)
+#include "SHA256.hpp"
+#include "nlohmann/json.hpp" // NOLINT(misc-include-cleaner)
 
 #include <algorithm>
 #include <array>

@@ -8,24 +8,25 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
 
-#include "mlir/Dialect/CBit/IR/CBitAttributes.h" // IWYU pragma: associated
-#include "mlir/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitAttributes.h" // IWYU pragma: associated
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallPtrSet.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/TypeSwitch.h> // IWYU pragma: keep
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/DialectImplementation.h> // IWYU pragma: keep
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep
+#include "llvm/Support/ErrorHandling.h"
 
 #include <cstdint>
 #include <optional>
@@ -35,36 +36,36 @@
 using namespace mlir;
 using namespace mlir::cbit;
 
-#include "mlir/Dialect/CBit/IR/CBitOpsDialect.cpp.inc"
-#include "mlir/Dialect/CBit/IR/CBitOpsEnums.cpp.inc"
+#include "mqt/Dialect/CBit/IR/CBitOpsDialect.cpp.inc"
+#include "mqt/Dialect/CBit/IR/CBitOpsEnums.cpp.inc"
 
 void CBitDialect::initialize() {
   // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   addAttributes<
 #define GET_ATTRDEF_LIST
-#include "mlir/Dialect/CBit/IR/CBitOpsAttributes.cpp.inc"
+#include "mqt/Dialect/CBit/IR/CBitOpsAttributes.cpp.inc"
 
       >();
 
   // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   addTypes<
 #define GET_TYPEDEF_LIST
-#include "mlir/Dialect/CBit/IR/CBitOpsTypes.cpp.inc"
+#include "mqt/Dialect/CBit/IR/CBitOpsTypes.cpp.inc"
 
       >();
 
   addOperations<
 #define GET_OP_LIST
-#include "mlir/Dialect/CBit/IR/CBitOps.cpp.inc"
+#include "mqt/Dialect/CBit/IR/CBitOps.cpp.inc"
 
       >();
 }
 
 #define GET_ATTRDEF_CLASSES
-#include "mlir/Dialect/CBit/IR/CBitOpsAttributes.cpp.inc"
+#include "mqt/Dialect/CBit/IR/CBitOpsAttributes.cpp.inc"
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/CBit/IR/CBitOpsTypes.cpp.inc"
+#include "mqt/Dialect/CBit/IR/CBitOpsTypes.cpp.inc"
 
 LogicalResult
 RegisterType::verify(const function_ref<InFlightDiagnostic()> emitError,
@@ -259,4 +260,4 @@ LogicalResult StoreOp::verify() {
 }
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/CBit/IR/CBitOps.cpp.inc"
+#include "mqt/Dialect/CBit/IR/CBitOps.cpp.inc"

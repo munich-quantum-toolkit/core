@@ -12,9 +12,8 @@
 
 // Keep the translation interface visible where the factory is instantiated.
 #include "QiskitTranslation.h" // IWYU pragma: keep
-
-#include <nanobind/nanobind.h>
-#include <nanobind/stl/string.h>
+#include "nanobind/nanobind.h"
+#include "nanobind/stl/string.h"
 
 #include <charconv>
 #include <cstddef>

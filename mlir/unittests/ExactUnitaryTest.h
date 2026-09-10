@@ -11,12 +11,13 @@
 #pragma once
 
 #include "dd/Package.hpp"
-#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/Support/LogicalResult.h>
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <cmath>
 #include <cstddef>

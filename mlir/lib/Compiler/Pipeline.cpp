@@ -8,42 +8,44 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Compiler/Programs.h"
-#include "mlir/Compiler/TargetCompilation.h"
-#include "mlir/Compiler/TargetEnvironment.h"
-#include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
-#include "mlir/Conversion/QCOToJeff/QCOToJeff.h"
-#include "mlir/Conversion/QCOToQC/QCOToQC.h"
-#include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
-#include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
-#include "mlir/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
-#include "mlir/Dialect/MQT/Transforms/Passes.h"
-#include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
-#include "mlir/Support/Passes.h"
+#include "mqt/Compiler/Programs.h"
+#include "mqt/Compiler/TargetCompilation.h"
+#include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Conversion/JeffToQCO/JeffToQCO.h"
+#include "mqt/Conversion/QCOToJeff/QCOToJeff.h"
+#include "mqt/Conversion/QCOToQC/QCOToQC.h"
+#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mqt/Conversion/QCToQIR/QIRBase/QCToQIRBase.h"
+#include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/Passes.h"
 
-#include <capnp/common.h>
-#include <jeff/Translation/Deserialize.hpp>
-#include <jeff/Translation/Serialize.hpp>
-#include <kj/array.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Bitcode/BitcodeWriter.h>
-#include <llvm/IR/LLVMContext.h>
-#include <llvm/IR/Module.h>
-#include <llvm/Support/Error.h>
-#include <llvm/Support/FileSystem.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/Location.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Target/LLVMIR/ModuleTranslation.h>
-#include <mlir/Transforms/Passes.h>
+#include "capnp/common.h"
+#include "jeff/Translation/Deserialize.hpp"
+#include "jeff/Translation/Serialize.hpp"
+#include "kj/array.h"
+
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Location.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Target/LLVMIR/ModuleTranslation.h"
+#include "mlir/Transforms/Passes.h"
+
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Bitcode/BitcodeWriter.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
 #include <cstdint>

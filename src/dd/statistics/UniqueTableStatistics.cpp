@@ -10,10 +10,10 @@
 
 #include "dd/statistics/UniqueTableStatistics.hpp"
 
-#include "StatisticsJson.hpp"
 #include "dd/statistics/TableStatistics.hpp"
 
-#include <nlohmann/json.hpp>
+#include "StatisticsJson.hpp"
+#include "nlohmann/json.hpp"
 
 #include <string>
 

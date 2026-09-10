@@ -9,40 +9,42 @@
  */
 
 #include "dd/Package.hpp"
-#include "mlir/Conversion/QCToQCO/QCToQCO.h"
-#include "mlir/Dialect/CBit/IR/CBitDialect.h"
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QC/Translation/TranslateQASM3ToQC.h"
-#include "mlir/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
-#include "mlir/Dialect/QCO/Utils/DDFunctionality.h"
-#include "mlir/Support/Passes.h"
-#include "mlir/Target/OpenQASM/Frontend.h"
+#include "mqt/Conversion/QCToQCO/QCToQCO.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
+#include "mqt/Support/Passes.h"
+#include "mqt/Target/OpenQASM/Frontend.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlowOps.h>
-#include <mlir/Dialect/Func/Extensions/InlinerExtension.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h>
-#include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Matchers.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Parser/Parser.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/Passes.h>
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Matchers.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/Passes.h"
+
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
 
 #include <array>
 #include <complex>

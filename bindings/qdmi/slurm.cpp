@@ -10,7 +10,7 @@
 
 #include "qdmi/Slurm.hpp"
 
-#include <nanobind/nanobind.h>
+#include "nanobind/nanobind.h"
 
 namespace nb = nanobind;
 

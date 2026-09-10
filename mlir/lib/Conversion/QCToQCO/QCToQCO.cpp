@@ -8,49 +8,50 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/QCToQCO/QCToQCO.h"
+#include "mqt/Conversion/QCToQCO/QCToQCO.h"
 
-#include "mlir/Conversion/ConversionUtils.h"
-#include "mlir/Dialect/CBit/IR/CBitDialect.h"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCInterfaces.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Conversion/ConversionUtils.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCInterfaces.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/MapVector.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/ScopeExit.h>
-#include <llvm/ADT/TypeSwitch.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinTypeInterfaces.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Dominance.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Region.h>
-#include <mlir/IR/SymbolTable.h>
-#include <mlir/IR/Types.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Support/WalkResult.h>
-#include <mlir/Transforms/CSE.h>
-#include <mlir/Transforms/DialectConversion.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
-#include <mlir/Transforms/RegionUtils.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Dominance.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Types.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Support/WalkResult.h"
+#include "mlir/Transforms/CSE.h"
+#include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Transforms/RegionUtils.h"
+
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/MapVector.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include <cassert>
 #include <cstddef>
@@ -64,7 +65,7 @@ using namespace qco;
 using namespace qc;
 
 #define GEN_PASS_DEF_QCTOQCO
-#include "mlir/Conversion/QCToQCO/QCToQCO.h.inc"
+#include "mqt/Conversion/QCToQCO/QCToQCO.h.inc"
 
 namespace {
 
@@ -2073,7 +2074,7 @@ protected:
   patterns.add<                                                                \
       ConvertQCGateToQCO<qc::KEY##Op, qco::KEY##Op, (TARGETS), (PARAMS)>>(     \
       typeConverter, context, &state);
-#include "mlir/Conversion/GateTable.def"
+#include "mqt/Conversion/GateTable.def"
 
     // QC qubit arguments become QCO arguments plus trailing pass-through
     // results.

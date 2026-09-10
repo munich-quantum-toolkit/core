@@ -8,13 +8,13 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
 
 using namespace mlir;
 using namespace mlir::qc;

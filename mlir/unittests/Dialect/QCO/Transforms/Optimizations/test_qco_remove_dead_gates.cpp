@@ -8,28 +8,29 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Support/Passes.h"
+
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Support/Passes.h"
+#include "gtest/gtest.h"
 #include "programs/qco_programs.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <cstddef>
 #include <memory>

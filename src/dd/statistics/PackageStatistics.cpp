@@ -10,7 +10,6 @@
 
 #include "dd/statistics/PackageStatistics.hpp"
 
-#include "StatisticsJson.hpp"
 #include "dd/Complex.hpp"
 #include "dd/ComplexNumbers.hpp"
 #include "dd/ComplexValue.hpp"
@@ -19,7 +18,8 @@
 #include "dd/Package.hpp"
 #include "dd/RealNumber.hpp"
 
-#include <nlohmann/json.hpp>
+#include "StatisticsJson.hpp"
+#include "nlohmann/json.hpp"
 
 #include <ostream>
 #include <string>

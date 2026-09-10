@@ -8,26 +8,27 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/DenseSet.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Analysis/SliceAnalysis.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Region.h>
-#include <mlir/IR/SymbolTable.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include "mlir/Analysis/SliceAnalysis.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <cassert>
 #include <cstddef>
@@ -37,7 +38,7 @@
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_REUSEQUBITS
-#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 /// Check an operation's own effects; recursive containers also need their
 /// bodies.

@@ -11,12 +11,12 @@
 /*
  * DDSIM QDMI Device - Job parameters and properties
  */
-#include "helpers/circuits.hpp"
-#include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
+#include "helpers/circuits.hpp"
+#include "helpers/test_utils.hpp"
 
 #include <array>
 #include <cstddef>

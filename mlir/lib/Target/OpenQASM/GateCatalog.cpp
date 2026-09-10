@@ -8,11 +8,11 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Target/OpenQASM/GateCatalog.h"
+#include "mqt/Target/OpenQASM/GateCatalog.h"
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/StringMap.h>
-#include <llvm/ADT/StringRef.h>
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringMap.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <array>
 

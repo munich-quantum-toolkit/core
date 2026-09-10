@@ -8,20 +8,20 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
 #include <utility>
 
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_REMOVEDEADGATES
-#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
 

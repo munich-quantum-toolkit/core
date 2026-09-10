@@ -8,54 +8,55 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Transforms/Mapping/Mapping.h"
+#include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 
-#include "mlir/Compiler/Target.h"
-#include "mlir/Compiler/TargetEnvironment.h"
-#include "mlir/Dialect/CBit/IR/CBitDialect.h"
-#include "mlir/Dialect/CBit/IR/CBitOps.h"
-#include "mlir/Dialect/MQT/IR/MQTDialect.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QCO/Utils/Drivers.h"
-#include "mlir/Dialect/QCO/Utils/Graph.h"
-#include "mlir/Dialect/QCO/Utils/Layout.h"
-#include "mlir/Dialect/QCO/Utils/Sorting.h"
-#include "mlir/Dialect/QCO/Utils/WireIterator.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
+#include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetEnvironment.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Utils/Drivers.h"
+#include "mqt/Dialect/QCO/Utils/Graph.h"
+#include "mqt/Dialect/QCO/Utils/Layout.h"
+#include "mqt/Dialect/QCO/Utils/Sorting.h"
+#include "mqt/Dialect/QCO/Utils/WireIterator.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QTensor/Utils/TensorIterator.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/PriorityQueue.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/Sequence.h>
-#include <llvm/ADT/SetVector.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/Allocator.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/Analysis/SliceAnalysis.h>
-#include <mlir/Analysis/TopologicalSortUtils.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Block.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Diagnostics.h>
-#include <mlir/IR/Dominance.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Region.h>
-#include <mlir/IR/Threading.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Interfaces/CallInterfaces.h>
-#include <mlir/Interfaces/SideEffectInterfaces.h>
-#include <mlir/Pass/Pass.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
+#include "mlir/Analysis/SliceAnalysis.h"
+#include "mlir/Analysis/TopologicalSortUtils.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/Dominance.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/Threading.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Interfaces/CallInterfaces.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/WalkResult.h"
+
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/PriorityQueue.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/Sequence.h"
+#include "llvm/ADT/SetVector.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/Allocator.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <algorithm>
 #include <array>
@@ -78,7 +79,7 @@ namespace mlir::qco {
 using namespace mlir::qtensor;
 
 #define GEN_PASS_DEF_MAPPINGPASS
-#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
 

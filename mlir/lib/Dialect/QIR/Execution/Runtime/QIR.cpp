@@ -8,14 +8,14 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QIR/Execution/Runtime/QIR.h"
+#include "mqt/Dialect/QIR/Execution/Runtime/QIR.h"
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/DDAdapter.h"
-#include "mlir/Dialect/QIR/Execution/Runtime/Runtime.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/DDAdapter.h"
+#include "mqt/Dialect/QIR/Execution/Runtime/Runtime.h"
 
-#include <llvm/ADT/ArrayRef.h>
-#include <llvm/ADT/SmallVector.h>
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <algorithm>
 #include <array>
@@ -436,7 +436,7 @@ void __quantum__rt__qubit_release(Qubit* qubit) {
 #define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
   MQT_QIR_DEFINE_##TARGETS##_##PARAMS(KEY, NAME, SUFFIX)                       \
       MQT_QIR_DEFINE_CTL_##TARGETS##_##PARAMS(KEY, NAME, CTL_SUFFIX)
-#include "mlir/Conversion/GateTable.def"
+#include "mqt/Conversion/GateTable.def"
 
 #undef MQT_QIR_DEFINE_1_0
 #undef MQT_QIR_DEFINE_1_1
