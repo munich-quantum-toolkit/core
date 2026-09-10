@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file test_qc_transforms.cpp
- * @brief Unit tests for QC dialect transformations.
- */
+/// @file test_qc_transforms.cpp
+/// Unit tests for QC dialect transformations.
 
 #include "mlir/Dialect/MQT/IR/MQTDialect.h"
 #include "mlir/Dialect/QC/IR/QCDialect.h"

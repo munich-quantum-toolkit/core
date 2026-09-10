@@ -24,14 +24,12 @@
 
 namespace mqt::test {
 
-/**
- * @brief Compare complete QCO function matrices, including global phase.
- *
- * This deliberately performs entry-by-entry matrix equality within @p
- * tolerance. It never quotients out a global phase, so an incorrect rewrite
- * becomes observable here and when the rewritten function is put under an
- * additional control.
- */
+/// Compare complete QCO function matrices, including global phase.
+///
+/// This deliberately performs entry-by-entry matrix equality within @p
+/// tolerance. It never quotients out a global phase, so an incorrect rewrite
+/// becomes observable here and when the rewritten function is put under an
+/// additional control.
 inline void expectFullUnitaryEqual(mlir::ModuleOp expectedModule,
                                    mlir::ModuleOp actualModule,
                                    const std::size_t numQubits,

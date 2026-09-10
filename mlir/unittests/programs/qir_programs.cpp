@@ -20,17 +20,15 @@
 
 namespace mlir::qir {
 
-/**
- * @brief Measures the given qubits, records the outcomes and returns
- * a single `i64` exit code with the value 0.
- * @param b The QIRProgramBuilder used to perform the measurements and create
- * the struct.
- * @param qubits The qubits to be measured.
- * @param inRegister Whether to store the results in a classical result array or
- * not.
- * @param startIndex The starting index for measurement outcomes.
- * @return The result value.
- */
+/// Measures the given qubits, records the outcomes and returns
+/// a single `i64` exit code with the value 0.
+/// @param b The QIRProgramBuilder used to perform the measurements and create
+/// the struct.
+/// @param qubits The qubits to be measured.
+/// @param inRegister Whether to store the results in a classical result array
+/// or not.
+/// @param startIndex The starting index for measurement outcomes.
+/// @return The result value.
 static Value measureAndRecord(QIRProgramBuilder& b, ValueRange qubits,
                               const bool inRegister,
                               const int64_t startIndex = 0) {

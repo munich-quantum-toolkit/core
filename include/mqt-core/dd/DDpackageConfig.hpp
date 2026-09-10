@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file DDpackageConfig.hpp
- * @brief Configuration of decision-diagram packages.
- */
+/// @file DDpackageConfig.hpp
+/// Configuration of decision-diagram packages.
 
 #pragma once
 

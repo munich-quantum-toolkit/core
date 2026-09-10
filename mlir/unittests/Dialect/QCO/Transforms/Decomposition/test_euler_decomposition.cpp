@@ -107,12 +107,10 @@ class EulerSynthesisExactTest
 
 } // namespace
 
-/**
- * @brief Measures the given qubits and returns the measurement outcomes.
- * @param b The `ProgramBuilder` used to perform the measurements.
- * @param qubits The qubits to be measured.
- * @return The result values.
- */
+/// Measures the given qubits and returns the measurement outcomes.
+/// @param b The `ProgramBuilder` used to perform the measurements.
+/// @param qubits The qubits to be measured.
+/// @return The result values.
 static SmallVector<Value> measureAndReturn(QCOProgramBuilder& b,
                                            ValueRange qubits) {
   return llvm::map_to_vector(qubits,

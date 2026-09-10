@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file UniqueTable.hpp
- * @brief Data structure for uniquely storing DD nodes
- */
+/// @file UniqueTable.hpp
+/// Data structure for uniquely storing DD nodes
 
 #pragma once
 
@@ -30,18 +28,15 @@
 
 namespace dd {
 
-/**
- * @brief Data structure for uniquely storing DD nodes
- */
+/// Data structure for uniquely storing DD nodes
 class UniqueTable {
 public:
-  /**
-   * @brief The initial garbage collection limit.
-   * @details The initial garbage collection limit is the number of entries that
-   * must be present in the table before garbage collection is triggered.
-   * Increasing this number reduces the number of garbage collections, but
-   * increases the memory usage.
-   */
+  /// The initial garbage collection limit.
+  ///
+  /// The initial garbage collection limit is the number of entries that
+  /// must be present in the table before garbage collection is triggered.
+  /// Increasing this number reduces the number of garbage collections, but
+  /// increases the memory usage.
   static constexpr std::size_t INITIAL_GC_LIMIT = 131072U;
 
   struct UniqueTableConfig {
@@ -55,25 +50,23 @@ public:
     std::size_t initialGCLimit = INITIAL_GC_LIMIT;
   };
 
-  /**
-   * @brief The default constructor
-   * @param manager The memory manager to use
-   * @param config The configuration for the unique table
-   * @details The MemoryManager shall be constructed from the same type that the
-   * unique table is then used for in the lookup method.
-   */
+  /// The default constructor
+  /// @param manager The memory manager to use
+  /// @param config The configuration for the unique table
+  ///
+  /// The MemoryManager shall be constructed from the same type that the
+  /// unique table is then used for in the lookup method.
   UniqueTable(MemoryManager& manager, const UniqueTableConfig& config);
 
   void resize(std::size_t nVars);
 
-  /**
-   * @brief The hash function for the hash table.
-   * @details The hash function just combines the hashes of the edges of the
-   * node. The hash value is masked to ensure that it is in the range
-   * [0, nBuckets - 1].
-   * @param p The node to hash.
-   * @returns The hash value of the node.
-   */
+  /// The hash function for the hash table.
+  ///
+  /// The hash function just combines the hashes of the edges of the
+  /// node. The hash value is masked to ensure that it is in the range
+  /// [0, nBuckets - 1].
+  /// @param p The node to hash.
+  /// @returns The hash value of the node.
   template <class Node> [[nodiscard]] std::size_t hash(const Node& p) const {
     static_assert(std::is_base_of_v<NodeBase, Node>,
                   "Node must be derived from NodeBase");
@@ -137,9 +130,7 @@ public:
   /// Count the number of marked entries
   [[nodiscard]] std::size_t countMarkedEntries() const noexcept;
 
-  /**
-   * @brief Determine whether the table possibly requires garbage collection.
-   */
+  /// Determine whether the table possibly requires garbage collection.
   [[nodiscard]] bool possiblyNeedsCollection() const;
 
   std::size_t garbageCollect(bool force = false);
@@ -188,12 +179,11 @@ private:
   /// A pointer to the memory manager for the nodes stored in the table.
   MemoryManager* memoryManager;
 
-  /**
-   * @brief The actual tables (one for each variable)
-   * @details Each hash table is an array of buckets. Each bucket is a linked
-   * list of entries. The linked list is implemented by using the next pointer
-   * of the entries.
-   */
+  /// The actual tables (one for each variable)
+  ///
+  /// Each hash table is an array of buckets. Each bucket is a linked
+  /// list of entries. The linked list is implemented by using the next pointer
+  /// of the entries.
   std::vector<Table> tables;
 
   /// A collection of statistics
@@ -202,12 +192,10 @@ private:
   /// Total entries across all levels, used by per-operation collection checks.
   std::size_t entryCount_ = 0U;
 
-  /**
-   * @brief Search for a node in the hash table with the given key.
-   * @param p The node to search for.
-   * @param key The hashed value used to search the table.
-   * @returns A pointer to the node if found or Node::getTerminal() otherwise.
-   */
+  /// Search for a node in the hash table with the given key.
+  /// @param p The node to search for.
+  /// @param key The hashed value used to search the table.
+  /// @returns A pointer to the node if found or Node::getTerminal() otherwise.
   template <class Node>
   [[nodiscard]] Node* searchTable(Node& p, const std::size_t& key) {
     static_assert(std::is_base_of_v<NodeBase, Node>,

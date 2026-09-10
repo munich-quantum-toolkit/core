@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file CachedEdge.hpp
- * @brief Cached decision-diagram edge representation.
- */
+/// @file CachedEdge.hpp
+/// Cached decision-diagram edge representation.
 
 #pragma once
 
@@ -28,13 +27,12 @@ namespace dd {
 class ComplexNumbers;
 class MemoryManager;
 
-/**
- * @brief A DD node with a cached edge weight
- * @details Some DD operations create intermediate results that are not part of
- * the final result. To avoid storing these intermediate results in the unique
- * table, they are represented via cached numbers.
- * @tparam Node Type of the DD node
- */
+/// A DD node with a cached edge weight
+///
+/// Some DD operations create intermediate results that are not part of
+/// the final result. To avoid storing these intermediate results in the unique
+/// table, they are represented via cached numbers.
+/// @tparam Node Type of the DD node
 template <typename Node> struct CachedEdge {
   Node* p{};
   ComplexValue w;
@@ -53,89 +51,71 @@ template <typename Node> struct CachedEdge {
   }
   bool operator!=(const CachedEdge& other) const { return !operator==(other); }
 
-  /**
-   * @brief Create a terminal edge with the given weight.
-   * @param w The weight of the terminal edge.
-   * @return A terminal edge with the given weight.
-   */
+  /// Create a terminal edge with the given weight.
+  /// @param w The weight of the terminal edge.
+  /// @return A terminal edge with the given weight.
   [[nodiscard]] static constexpr CachedEdge terminal(const ComplexValue& w) {
     return CachedEdge{Node::getTerminal(), w};
   }
 
-  /**
-   * @brief Create a terminal edge with the given weight.
-   * @param w The weight of the terminal edge.
-   * @return A terminal edge with the given weight.
-   */
+  /// Create a terminal edge with the given weight.
+  /// @param w The weight of the terminal edge.
+  /// @return A terminal edge with the given weight.
   [[nodiscard]] static constexpr CachedEdge
   terminal(const std::complex<fp>& w) {
     return CachedEdge{Node::getTerminal(), static_cast<ComplexValue>(w)};
   }
 
-  /**
-   * @brief Create a terminal edge with the given weight.
-   * @param w The weight of the terminal edge.
-   * @return A terminal edge with the given weight.
-   */
+  /// Create a terminal edge with the given weight.
+  /// @param w The weight of the terminal edge.
+  /// @return A terminal edge with the given weight.
   [[nodiscard]] static constexpr CachedEdge terminal(const Complex& w) {
     return terminal(static_cast<ComplexValue>(w));
   }
 
-  /**
-   * @brief Create a zero terminal edge.
-   * @return A zero terminal edge.
-   */
+  /// Create a zero terminal edge.
+  /// @return A zero terminal edge.
   [[nodiscard]] static constexpr CachedEdge zero() {
     return terminal(ComplexValue(0.));
   }
 
-  /**
-   * @brief Create a one terminal edge.
-   * @return A one terminal edge.
-   */
+  /// Create a one terminal edge.
+  /// @return A one terminal edge.
   [[nodiscard]] static constexpr CachedEdge one() {
     return terminal(ComplexValue(1.));
   }
 
-  /**
-   * @brief Check whether this is a terminal.
-   * @return whether this is a terminal
-   */
+  /// Check whether this is a terminal.
+  /// @return whether this is a terminal
   [[nodiscard]] constexpr bool isTerminal() const {
     return Node::isTerminal(p);
   }
 
-  /**
-   * @brief Get a normalized vector DD from a fresh node and a list of edges.
-   * @param p the fresh node
-   * @param e the list of edges that form the successor nodes
-   * @param mm a reference to the memory manager (for returning unused nodes)
-   * @param cn a reference to the complex number manager (for adding new
-   * complex numbers)
-   * @return the normalized vector DD
-   */
+  /// Get a normalized vector DD from a fresh node and a list of edges.
+  /// @param p the fresh node
+  /// @param e the list of edges that form the successor nodes
+  /// @param mm a reference to the memory manager (for returning unused nodes)
+  /// @param cn a reference to the complex number manager (for adding new
+  /// complex numbers)
+  /// @return the normalized vector DD
   static auto normalize(Node* p, const std::array<CachedEdge, RADIX>& e,
                         MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge
     requires IsVector<Node>;
 
-  /**
-   * @brief Get a normalized matrix DD from a fresh node and a list
-   * of edges.
-   * @param p the fresh node
-   * @param e the list of edges that form the successor nodes
-   * @param mm a reference to the memory manager (for returning unused nodes)
-   * @param cn a reference to the complex number manager (for adding new
-   * complex numbers)
-   * @return the normalized matrix DD
-   */
+  /// Get a normalized matrix DD from a fresh node and a list
+  /// of edges.
+  /// @param p the fresh node
+  /// @param e the list of edges that form the successor nodes
+  /// @param mm a reference to the memory manager (for returning unused nodes)
+  /// @param cn a reference to the complex number manager (for adding new
+  /// complex numbers)
+  /// @return the normalized matrix DD
   static auto normalize(Node* p, const std::array<CachedEdge, NEDGE>& e,
                         MemoryManager& mm, ComplexNumbers& cn) -> CachedEdge
     requires IsMatrix<Node>;
 
-  /**
-   * @brief Check whether the matrix represented by the DD is the identity.
-   * @return whether the matrix is the identity
-   */
+  /// Check whether the matrix represented by the DD is the identity.
+  /// @return whether the matrix is the identity
   [[nodiscard]] bool isIdentity(const bool upToGlobalPhase = true) const
     requires IsMatrix<Node>
   {

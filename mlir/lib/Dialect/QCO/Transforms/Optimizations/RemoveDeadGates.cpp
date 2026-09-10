@@ -25,9 +25,7 @@ namespace mlir::qco {
 
 namespace {
 
-/**
- * @brief Remove dead quantum operations that feed a sink.
- */
+/// Remove dead quantum operations that feed a sink.
 struct RemoveDeadGatesBeforeSink final : OpRewritePattern<SinkOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -37,9 +35,7 @@ struct RemoveDeadGatesBeforeSink final : OpRewritePattern<SinkOp> {
   }
 };
 
-/**
- * @brief Remove dead quantum operations that precede a reset.
- */
+/// Remove dead quantum operations that precede a reset.
 struct RemoveDeadGatesBeforeReset final : OpRewritePattern<ResetOp> {
   using OpRewritePattern::OpRewritePattern;
 

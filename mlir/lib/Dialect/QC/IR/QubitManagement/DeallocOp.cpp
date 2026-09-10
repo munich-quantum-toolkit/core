@@ -21,9 +21,7 @@ using namespace mlir::qc;
 
 namespace {
 
-/**
- * @brief Remove matching allocation-deallocation pairs.
- */
+/// Remove matching allocation-deallocation pairs.
 struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
   using OpRewritePattern::OpRewritePattern;
 

@@ -37,12 +37,10 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-/**
- * @brief Build a program that constructs a GHZ state using a loop.
- * @param context The MLIR context to build the module.
- * @param n The number of qubits of the GHZ state.
- * @return A module with an entry point function containing the GHZ logic.
- */
+/// Build a program that constructs a GHZ state using a loop.
+/// @param context The MLIR context to build the module.
+/// @param n The number of qubits of the GHZ state.
+/// @return A module with an entry point function containing the GHZ logic.
 static OwningOpRef<ModuleOp> getGHZ(MLIRContext* context, int64_t n) {
   QCOProgramBuilder builder(context);
   builder.initialize();

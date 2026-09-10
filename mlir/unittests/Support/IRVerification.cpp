@@ -284,14 +284,11 @@ static bool approxCompareFloats(const APFloat& lhs, const APFloat& rhs,
   return absDiff <= absTol + (relTol * scale);
 }
 
-/**
- * @brief Compare two attributes for equivalence.
- *
- * @details
- * Explicitly checks `UnitAttr`, `IntegerAttr`, `FloatAttr`, `StringAttr`,
- * `FlatSymbolRefAttr`, and `DenseArrayAttr`. For any other type, the function
- * simply returns true.
- */
+/// Compare two attributes for equivalence.
+///
+/// Explicitly checks `UnitAttr`, `IntegerAttr`, `FloatAttr`, `StringAttr`,
+/// `FlatSymbolRefAttr`, and `DenseArrayAttr`. For any other type, the function
+/// simply returns true.
 static bool compareAttributes(Attribute lhs, Attribute rhs) {
   if (dyn_cast<UnitAttr>(lhs)) {
     if (!dyn_cast<UnitAttr>(rhs)) {

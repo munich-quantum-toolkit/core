@@ -37,7 +37,7 @@ namespace mlir::qco {
 
 namespace {
 
-/** Composed unitary and metadata for a fusable run. */
+/// Composed unitary and metadata for a fusable run.
 struct FusableRunScan {
   Matrix2x2 composed = Matrix2x2::identity();
   std::size_t gateCount = 0;
@@ -47,17 +47,13 @@ struct FusableRunScan {
 
 } // namespace
 
-/**
- * @brief Whether `gate` has the structural shape of a fusable run member.
- */
+/// Whether `gate` has the structural shape of a fusable run member.
 static bool isRunMemberCandidate(UnitaryOpInterface gate) {
   return gate && gate.isSingleQubit() && !isa<BarrierOp>(gate.getOperation());
 }
 
-/**
- * @brief Returns the matrix when `gate` can take part in a fusable
- * single-qubit run.
- */
+/// Returns the matrix when `gate` can take part in a fusable
+/// single-qubit run.
 static std::optional<Matrix2x2> getRunMemberMatrix(UnitaryOpInterface gate) {
   if (!isRunMemberCandidate(gate)) {
     return std::nullopt;
@@ -65,14 +61,12 @@ static std::optional<Matrix2x2> getRunMemberMatrix(UnitaryOpInterface gate) {
   return gate.getUnitaryMatrix<Matrix2x2>();
 }
 
-/**
- * @brief Walks the wire from @p head, composing the run's matrix and metadata.
- *
- * @param head First gate of the run.
- * @param headMatrix Matrix already obtained while identifying the run head.
- * @param basis Single-qubit synthesis basis.
- * @return Composed matrix, gate count, and run tail.
- */
+/// Walks the wire from @p head, composing the run's matrix and metadata.
+///
+/// @param head First gate of the run.
+/// @param headMatrix Matrix already obtained while identifying the run head.
+/// @param basis Single-qubit synthesis basis.
+/// @return Composed matrix, gate count, and run tail.
 static FusableRunScan
 scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
                const decomposition::SingleQubitBasis basis) {
@@ -96,13 +90,11 @@ scanFusableRun(UnitaryOpInterface head, const Matrix2x2& headMatrix,
   return scan;
 }
 
-/**
- * @brief Erases a contiguous run from @p tail back to @p head.
- *
- * @param rewriter The pattern rewriter.
- * @param head First gate of the run.
- * @param tail Last gate of the run.
- */
+/// Erases a contiguous run from @p tail back to @p head.
+///
+/// @param rewriter The pattern rewriter.
+/// @param head First gate of the run.
+/// @param tail Last gate of the run.
 static void eraseFusableRun(PatternRewriter& rewriter, UnitaryOpInterface head,
                             UnitaryOpInterface tail) {
   // Tail-first: each erased op is dead once its successor is gone.
@@ -118,9 +110,7 @@ static void eraseFusableRun(PatternRewriter& rewriter, UnitaryOpInterface head,
 
 namespace {
 
-/**
- * @brief Fuses maximal single-qubit unitary runs via Euler resynthesis.
- */
+/// Fuses maximal single-qubit unitary runs via Euler resynthesis.
 struct FuseSingleQubitUnitaryRunsPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   FuseSingleQubitUnitaryRunsPattern(MLIRContext* context,
@@ -132,16 +122,14 @@ struct FuseSingleQubitUnitaryRunsPattern final
   decomposition::SingleQubitBasis basis;
   bool skipControlledBodies;
 
-  /**
-   * @brief Fuses the run anchored at `op` when beneficial.
-   *
-   * Fuses if the run contains a non-basis gate or Euler resynthesis would
-   * shorten it (@ref synthesizeUnitary1QEuler).
-   *
-   * @param op The matched unitary operation.
-   * @param rewriter The pattern rewriter.
-   * @return `success()` if a run was fused, `failure()` otherwise.
-   */
+  /// Fuses the run anchored at `op` when beneficial.
+  ///
+  /// Fuses if the run contains a non-basis gate or Euler resynthesis would
+  /// shorten it (@ref synthesizeUnitary1QEuler).
+  ///
+  /// @param op The matched unitary operation.
+  /// @param rewriter The pattern rewriter.
+  /// @return `success()` if a run was fused, `failure()` otherwise.
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
     if (skipControlledBodies &&
@@ -177,9 +165,7 @@ struct FuseSingleQubitUnitaryRunsPattern final
   }
 };
 
-/**
- * @brief Pass that fuses single-qubit unitary runs via Euler resynthesis.
- */
+/// Pass that fuses single-qubit unitary runs via Euler resynthesis.
 struct FuseSingleQubitUnitaryRunsPass final
     : impl::FuseSingleQubitUnitaryRunsBase<FuseSingleQubitUnitaryRunsPass> {
   using Base::Base;

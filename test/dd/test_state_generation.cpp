@@ -28,9 +28,7 @@
 using namespace dd;
 
 namespace {
-/**
- * @brief Compare the elements of @p a and @p b with precision @p delta.
- */
+/// Compare the elements of @p a and @p b with precision @p delta.
 void expectStateVectorNear(CVec a, CVec b, double delta = 1e-6) {
   for (std::size_t i = 0; i < b.size(); ++i) {
     EXPECT_NEAR(a[i].real(), b[i].real(), delta);

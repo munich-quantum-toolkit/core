@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file Session.hpp
- * @brief QIR JIT session interface.
- */
+/// @file Session.hpp
+/// QIR JIT session interface.
 
 #pragma once
 
@@ -30,46 +29,43 @@ namespace qir {
 
 class Runtime;
 
-/**
- * @brief Whether the JIT'd program runs to produce measurement samples or
- * to leave the final quantum state in @ref qir::Runtime for external
- * extraction.
- * @details In @c StateExtraction mode the session stops a Base Profile entry
- * point at its first irreversible operation before JIT-compiling, so the
- * runtime's quantum state remains intact without executing measurements or
- * output recording. Adaptive Profile execution starts fresh, defers
- * measurements, preserves released wires, and rejects measurement-dependent
- * computation, resets and operations on measured wires. Classical control flow
- * and direct helpers are supported; recorded outputs are suppressed.
- */
+/// Whether the JIT'd program runs to produce measurement samples or
+/// to leave the final quantum state in @ref qir::Runtime for external
+/// extraction.
+///
+/// In @c StateExtraction mode the session stops a Base Profile entry
+/// point at its first irreversible operation before JIT-compiling, so the
+/// runtime's quantum state remains intact without executing measurements or
+/// output recording. Adaptive Profile execution starts fresh, defers
+/// measurements, preserves released wires, and rejects measurement-dependent
+/// computation, resets and operations on measured wires. Classical control flow
+/// and direct helpers are supported; recorded outputs are suppressed.
 enum class Execution { Sampling, StateExtraction };
 
-/**
- * @brief In-process JIT executor for QIR programs.
- * @details The session does the following, in order:
- * - Loads an LLVM module from an in-memory buffer,
- * - JIT-compiles it via LLVM's OrcJIT,
- * - wires up the QIR runtime symbols, and
- * - runs the module function marked as its QIR entry point.
- * A session owns a single LLJIT instance and is not meant to be reused across
- * modules; create a new @ref JitSession for each program.
- */
+/// In-process JIT executor for QIR programs.
+///
+/// The session does the following, in order:
+/// - Loads an LLVM module from an in-memory buffer,
+/// - JIT-compiles it via LLVM's OrcJIT,
+/// - wires up the QIR runtime symbols, and
+/// - runs the module function marked as its QIR entry point.
+/// A session owns a single LLJIT instance and is not meant to be reused across
+/// modules; create a new @ref JitSession for each program.
 class JitSession {
 public:
   /// QIR 2.1 Base and Adaptive Profile entry-point signature.
   using EntryPointFn = int64_t();
 
-  /**
-   * @brief Build a session by loading IR from a memory buffer.
-   * @details Accepts either textual IR or bitcode. The buffer does not have
-   * to be null-terminated.
-   * @param irBytes Byte view of the IR.
-   * @param bufferName Identifier used in diagnostics.
-   * @param execution Execution mode.
-   * @param randomSeed Optional deterministic runtime seed.
-   * @throws std::runtime_error if the IR cannot be parsed or the JIT fails
-   * to initialize.
-   */
+  /// Build a session by loading IR from a memory buffer.
+  ///
+  /// Accepts either textual IR or bitcode. The buffer does not have
+  /// to be null-terminated.
+  /// @param irBytes Byte view of the IR.
+  /// @param bufferName Identifier used in diagnostics.
+  /// @param execution Execution mode.
+  /// @param randomSeed Optional deterministic runtime seed.
+  /// @throws std::runtime_error if the IR cannot be parsed or the JIT fails
+  /// to initialize.
   JitSession(llvm::StringRef irBytes, llvm::StringRef bufferName,
              Execution execution = Execution::Sampling,
              std::optional<uint64_t> randomSeed = std::nullopt);
@@ -77,10 +73,8 @@ public:
   /// Tears down the LLJIT and any JIT'd resources owned by the session.
   ~JitSession();
 
-  /**
-   * @brief Execute the selected QIR entry point.
-   * @return The 64-bit QIR exit code.
-   */
+  /// Execute the selected QIR entry point.
+  /// @return The 64-bit QIR exit code.
   int64_t run();
 
   /// Execute a batch, preserving recorded-result order and returning the first

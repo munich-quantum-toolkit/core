@@ -38,16 +38,15 @@
 
 namespace mlir::qco {
 
-/**
- * @brief Trait for operations with a fixed number of target qubits and
- * parameters
- * @details This trait indicates that an operation has a fixed number of target
- * qubits and parameters, specified by the template parameters T and P. This is
- * helpful for defining operations with known arities, allowing for static
- * verification and code generation optimizations.
- * @tparam T The target arity.
- * @tparam P The parameter arity.
- */
+/// Trait for operations with a fixed number of target qubits and
+/// parameters
+///
+/// This trait indicates that an operation has a fixed number of target
+/// qubits and parameters, specified by the template parameters T and P. This is
+/// helpful for defining operations with known arities, allowing for static
+/// verification and code generation optimizations.
+/// @tparam T The target arity.
+/// @tparam P The parameter arity.
 template <size_t T, size_t P> class TargetAndParameterArityTrait {
 public:
   template <typename ConcreteType>

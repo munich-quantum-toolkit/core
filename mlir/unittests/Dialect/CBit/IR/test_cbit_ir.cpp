@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file test_cbit_ir.cpp
- * @brief Unit tests for the CBit MLIR dialect.
- */
+/// @file test_cbit_ir.cpp
+/// Unit tests for the CBit MLIR dialect.
 
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"

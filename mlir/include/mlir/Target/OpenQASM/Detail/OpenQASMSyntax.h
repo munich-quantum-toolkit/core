@@ -36,22 +36,16 @@ struct Version {
 
 enum class ScalarKind : uint8_t { Bool, Int, Uint, Float, Angle };
 
-/**
- * @defgroup ParseVocabulary Parser vocabulary
- * @brief The vocabulary the parser hands to a sink.
- *
- * @details
- * Expressions use IDs in the persistent syntax arena. Gate-call arrays borrow
- * parser-local storage until the builder records the statement.
- */
+/// @defgroup ParseVocabulary Parser vocabulary
+/// The vocabulary the parser hands to a sink.
+///
+/// Expressions use IDs in the persistent syntax arena. Gate-call arrays borrow
+/// parser-local storage until the builder records the statement.
 
-/**
- * @ingroup ParseVocabulary
- * @brief A (sub-)expression.
- *
- * @details
- * Expression kinds shared by parsing and semantic analysis.
- */
+/// @ingroup ParseVocabulary
+/// A (sub-)expression.
+///
+/// Expression kinds shared by parsing and semantic analysis.
 struct Expr {
   enum class Kind : uint8_t {
     Int,
@@ -131,20 +125,16 @@ getMathFunctionKind(StringRef name) {
       .Default(std::nullopt);
 }
 
-/**
- * @ingroup ParseVocabulary
- * @brief A gate modifier: `inv @`, `pow(e) @`, `ctrl(e) @`, or `negctrl(e) @`.
- */
+/// @ingroup ParseVocabulary
+/// A gate modifier: `inv @`, `pow(e) @`, `ctrl(e) @`, or `negctrl(e) @`.
 struct Modifier {
   enum class Kind : uint8_t { Inv, Pow, Ctrl, NegCtrl };
   Kind kind = Kind::Inv;
   std::optional<SyntaxExpressionId> argument = std::nullopt;
 };
 
-/**
- * @ingroup ParseVocabulary
- * @brief A gate operand: a (possibly indexed) identifier, or a hardware qubit.
- */
+/// @ingroup ParseVocabulary
+/// A gate operand: a (possibly indexed) identifier, or a hardware qubit.
 struct Operand {
   SMLoc location;
   StringRef identifier;
@@ -159,13 +149,10 @@ struct BitReference {
   std::optional<SyntaxExpressionId> index = std::nullopt;
 };
 
-/**
- * @ingroup ParseVocabulary
- * @brief A parsed gate call.
- *
- * @details
- * Array members are borrowed for the duration of the sink call.
- */
+/// @ingroup ParseVocabulary
+/// A parsed gate call.
+///
+/// Array members are borrowed for the duration of the sink call.
 struct GateCall {
   SMLoc loc;
   StringRef identifier;
