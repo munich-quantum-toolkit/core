@@ -46,9 +46,11 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Transforms/DialectConversion.h"
 
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -446,6 +448,70 @@ Value getResultPtr(LoweringState& state, Operation* op,
   return result;
 }
 
+/// Summarize the interference before each store in one block traversal.
+/// Only disjoint constant-index stores to the same register can be crossed.
+static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
+  DenseSet<Operation*> candidates;
+  DenseMap<Operation*, size_t> measurements;
+  DenseMap<std::pair<Value, int64_t>, size_t> lastStoreAtIndex;
+  Value lastRegister;
+  size_t lastStore = 0;
+  size_t lastOtherRegisterStore = 0;
+  size_t lastBarrier = 0;
+  size_t position = 0;
+  for (auto& operation : *block) {
+    ++position;
+    if (isa<MeasureOp>(operation)) {
+      measurements[&operation] = position;
+    }
+    if (auto store = dyn_cast<cbit::StoreOp>(operation)) {
+      const auto index = getConstantIntValue(store.getIndex());
+      auto conflict = std::max(lastBarrier, lastStore);
+      if (index) {
+        conflict = std::max({
+            lastBarrier,
+            lastRegister == store.getReg() ? lastOtherRegisterStore : lastStore,
+            lastStoreAtIndex.lookup({store.getReg(), *index}),
+        });
+      }
+      auto measure = store.getValue().getDefiningOp<MeasureOp>();
+      if (measure && measurements.lookup(measure.getOperation()) > conflict) {
+        candidates.insert(store.getOperation());
+      }
+      if (index) {
+        if (lastRegister != store.getReg()) {
+          lastOtherRegisterStore = lastStore;
+          lastRegister = store.getReg();
+        }
+        lastStore = position;
+        lastStoreAtIndex[{store.getReg(), *index}] = position;
+      } else {
+        lastBarrier = position;
+      }
+      continue;
+    }
+    /// These unscoped quantum effects cannot access CBit storage.
+    if (isa<qc::AllocOp, qc::DeallocOp, qc::GPhaseOp>(operation)) {
+      continue;
+    }
+    const auto effects = getEffectsRecursively(&operation);
+    if (!effects || !llvm::all_of(*effects, [](const auto& effect) {
+          auto value = effect.getValue();
+          if (!value) {
+            return false;
+          }
+          if (isa<QubitType>(value.getType())) {
+            return true;
+          }
+          auto memref = dyn_cast<MemRefType>(value.getType());
+          return memref && isa<QubitType>(memref.getElementType());
+        })) {
+      lastBarrier = position;
+    }
+  }
+  return candidates;
+}
+
 LogicalResult prepareClassicalResults(Operation* moduleOp,
                                       LoweringState& state) {
   bool hasInvalidMemory = false;
@@ -531,6 +597,7 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
     }
   }
 
+  DenseMap<Block*, DenseSet<Operation*>> fusionCandidates;
   funcOp.walk([&](cbit::StoreOp storeOp) {
     auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
     if (!allocOp || !state.cregIndices.contains(allocOp.getOperation())) {
@@ -556,33 +623,13 @@ LogicalResult prepareClassicalResults(Operation* moduleOp,
         measureOp->getBlock() == storeOp->getBlock() &&
         (dominance.dominates(storeOp.getIndex(), measureOp) ||
          (indexProducer && indexProducer->hasTrait<OpTrait::ConstantLike>()));
-    for (auto* next = measureOp->getNextNode();
-         canFuse && next != storeOp.getOperation();
-         next = next->getNextNode()) {
-      /// These unscoped quantum effects cannot access CBit storage.
-      if (isa<qc::AllocOp, qc::DeallocOp, qc::GPhaseOp>(next)) {
-        continue;
+    if (canFuse && measureOp->getNextNode() != storeOp.getOperation()) {
+      const auto [candidates, newBlock] =
+          fusionCandidates.try_emplace(storeOp->getBlock());
+      if (newBlock) {
+        candidates->second = findStoreFusionCandidates(storeOp->getBlock());
       }
-      if (auto otherStore = dyn_cast<cbit::StoreOp>(next);
-          otherStore && otherStore.getReg() == storeOp.getReg()) {
-        const auto index = getConstantIntValue(storeOp.getIndex());
-        const auto otherIndex = getConstantIntValue(otherStore.getIndex());
-        if (index && otherIndex && *index != *otherIndex) {
-          continue;
-        }
-      }
-      const auto effects = getEffectsRecursively(next);
-      canFuse = effects && llvm::all_of(*effects, [](const auto& effect) {
-                  auto value = effect.getValue();
-                  if (!value) {
-                    return false;
-                  }
-                  if (isa<QubitType>(value.getType())) {
-                    return true;
-                  }
-                  auto memref = dyn_cast<MemRefType>(value.getType());
-                  return memref && isa<QubitType>(memref.getElementType());
-                });
+      canFuse = candidates->second.contains(storeOp.getOperation());
     }
     if (!canFuse) {
       storeOp.emitError("QIR output cannot fuse this measurement/store pair: "

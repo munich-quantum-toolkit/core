@@ -18,6 +18,7 @@
 #include "mlir/IR/Types.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Support/Allocator.h"
 #include "llvm/Support/StringSaver.h"
@@ -1161,16 +1162,16 @@ private:
   Value exitCode;
 
   /// Qubit pointers to be deallocated at the end of the program
-  DenseSet<Value> qubitPtrs;
+  SmallVector<Value> qubitPtrs;
 
   /// Qubit-array pointers to be deallocated at the end of the program
-  DenseSet<Value> qubitArrays;
+  SmallVector<Value> qubitArrays;
 
   /// Result pointers to be deallocated at the end of the program
-  DenseSet<Value> resultPtrs;
+  SmallVector<Value> resultPtrs;
 
   /// Result-array pointers to be deallocated at the end of the program
-  DenseSet<Value> resultArrays;
+  SmallVector<Value> resultArrays;
 
   /// Cache static qubit pointers for reuse
   DenseMap<int64_t, Value> staticQubits;

@@ -20,6 +20,7 @@
 #include "mlir/Transforms/DialectConversion.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/StringMap.h"
 
 #include <cstddef>
@@ -38,7 +39,7 @@ enum class AllocationMode : std::uint8_t {
 /// State object for tracking lowering information during QIR conversion
 struct LoweringState {
   /// Result-array pointers to be deallocated at the end of the program
-  DenseSet<Value> resultArrays;
+  llvm::SmallSetVector<Value, 4> resultArrays;
 
   /// CBit read operations whose register is backed by a result array.
   DenseSet<Operation*> returnedCBitReads;
