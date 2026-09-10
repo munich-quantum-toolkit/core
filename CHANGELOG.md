@@ -37,8 +37,8 @@ releases may include breaking changes.
 - ✨ Add DD construction, simulation, statevector extraction, and sampling for
   QCO programs with structured control and dynamic quantum data, including
   direct lowering and dense-array helpers for supported compiler inputs
-  ([#1915], [#1973], [#2077], [#2078], [#2079], [#2334]) ([**@simon1hofmann**],
-  [**@burgholzer**])
+  ([#1915], [#1973], [#2077], [#2078], [#2079], [#2334], [#2518])
+  ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add immutable MQT compiler targets, selected payload specifications,
   payload-aware control-flow legalization, QDMI device integration, ordered
   operation applicability, directional native synthesis, target compilation
@@ -118,6 +118,12 @@ releases may include breaking changes.
   default, with one build option for source builds that omit both parts
   ([#1356], [#1549], [#1953], [#2284], [#2298]) ([**@burgholzer**],
   [**@denialhaag**], [**@simon1hofmann**])
+
+### Fixed
+
+- 🐛 Use deterministic, collision-free DOT node IDs, define signed
+  complex-weight hashing, and preserve real-number collection flags during
+  relinking ([#2518]) ([**@burgholzer**])
 
 ### Removed
 
@@ -935,6 +941,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2518]: https://github.com/munich-quantum-toolkit/core/pull/2518
 [#2500]: https://github.com/munich-quantum-toolkit/core/pull/2500
 [#2497]: https://github.com/munich-quantum-toolkit/core/pull/2497
 [#2495]: https://github.com/munich-quantum-toolkit/core/pull/2495

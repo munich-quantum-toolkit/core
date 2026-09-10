@@ -9,6 +9,7 @@
  */
 
 #include "dd/ComplexNumbers.hpp"
+#include "dd/ComplexValue.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Export.hpp"
 #include "dd/MemoryManager.hpp"
@@ -20,10 +21,12 @@
 
 #include <array>
 #include <cstddef>
+#include <functional>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <sstream>
+#include <unordered_set>
 #include <vector>
 
 using namespace dd;
@@ -572,4 +575,55 @@ TEST_F(CNTest, ExportConditionalFormat6) {
 
 TEST_F(CNTest, ExportConditionalFormat7) {
   EXPECT_STREQ(conditionalFormat(cn.lookup(-SQRT2_2, 0)).c_str(), "-1/√2");
+}
+
+TEST(DDComplexTest, HashesSignedQuantizedWeights) {
+  const std::hash<ComplexValue> hash;
+  for (const bool imaginary : {false, true}) {
+    std::unordered_set<size_t> hashes;
+    for (const fp value : {-0.125, -0.25, -0.5, -0.75}) {
+      const ComplexValue weight =
+          imaginary ? ComplexValue{0., value} : ComplexValue{value, 0.};
+      hashes.insert(hash(weight));
+      auto nearby = weight;
+      (imaginary ? nearby.i : nearby.r) += RealNumber::eps / 4.;
+      EXPECT_EQ(hash(weight), hash(nearby));
+    }
+    EXPECT_GT(hashes.size(), 1U);
+  }
+  EXPECT_EQ(hash({0., 0.}), hash({-0., -0.}));
+}
+
+TEST_F(CNTest, PreservesFlagsWhenRelinkingNumbers) {
+  auto* half = ut.lookup(0.5);
+  ASSERT_TRUE(RealNumber::isImmortal(half));
+  RealNumber::mark(half);
+  auto* neighbor = ut.lookup(0.500000001);
+  EXPECT_EQ(half->next(), neighbor);
+  EXPECT_TRUE(RealNumber::isImmortal(half));
+  EXPECT_TRUE(RealNumber::isMarked(half));
+  EXPECT_EQ(ut.garbageCollect(true), 1U);
+  EXPECT_EQ(half->next(), nullptr);
+  EXPECT_TRUE(RealNumber::isImmortal(half));
+  EXPECT_TRUE(RealNumber::isMarked(half));
+  RealNumber::unmark(half);
+  EXPECT_FALSE(RealNumber::isMarked(half));
+  EXPECT_TRUE(RealNumber::isImmortal(half));
+}
+
+TEST_F(CNTest, ClearsFlagsWhenReusingNumbers) {
+  auto* entry = mm.get<RealNumber>();
+  RealNumber::mark(entry);
+  RealNumber::immortalize(entry);
+  mm.returnEntry(*entry);
+  auto* reused = ut.lookup(0.123);
+  ASSERT_EQ(reused, entry);
+  EXPECT_FALSE(RealNumber::isMarked(reused));
+  EXPECT_FALSE(RealNumber::isImmortal(reused));
+
+  ut.clear();
+  mm.reset();
+  reused = ut.lookup(0.321);
+  EXPECT_FALSE(RealNumber::isMarked(reused));
+  EXPECT_FALSE(RealNumber::isImmortal(reused));
 }

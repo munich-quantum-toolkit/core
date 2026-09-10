@@ -144,15 +144,11 @@ std::ostream& operator<<(std::ostream& os, const ComplexValue& c);
 template <> struct std::hash<dd::ComplexValue> {
   /// Compute the hash value for the given complex value.
   ///
-  /// The hash value is computed by scaling the real and imaginary part
-  /// by the tolerance of the complex table, rounding the result to the nearest
-  /// integer and computing the hash value of the resulting pair of integers.
+  /// Scale each component by the table tolerance and round to an integer
+  /// value. Hash the rounded floating-point values without integer conversion.
+  /// Nearby values can lie on opposite sides of a rounding boundary and thus
+  /// have different hashes. Compute-table lookups still compare full keys.
   /// @param c The complex value to compute the hash value for.
   /// @returns The hash value for the given complex value.
-  /// @note It is rather hard to define good hash functions for floating point
-  /// numbers. This hash function is not perfect, but it is fast and should
-  /// provide a good distribution of hash values. Furthermore, two floating
-  /// point numbers that are within the tolerance of the complex table will
-  /// always produce the same hash value.
   std::size_t operator()(dd::ComplexValue const& c) const noexcept;
 };

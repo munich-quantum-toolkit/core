@@ -46,6 +46,17 @@ stay on that release series. C++ consumers should likewise use a v3 release
 branch or a matching v3 version constraint. MQT Core v3 and v4 cannot provide
 their Python or CMake packages in the same environment.
 
+### DD graph-rendering helpers
+
+`dd::toDot` and `dd::export2Dot` keep their signatures. Their node IDs now
+follow traversal order instead of memory addresses.
+
+Direct users of `modernNode`, `classicNode`, and `memoryNode` must pass a node
+ID between the edge and output stream arguments. Direct users of `bwEdge`,
+`coloredEdge`, and `memoryEdge` must replace the source/destination edge pair
+with the destination edge and explicit source/destination IDs. Use `toDot` to
+assign consistent IDs for a complete graph.
+
 ### Typed benchmark library
 
 MQT Core 4 provides the separate `MQT::CoreBench` library and `mqt-core-bench`

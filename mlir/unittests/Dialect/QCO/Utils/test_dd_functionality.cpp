@@ -44,6 +44,7 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
@@ -3423,6 +3424,68 @@ TEST_F(QCODDFunctionalityTest, StatevectorSkipsUnreachedAllocations) {
   ASSERT_EQ(vector.size(), 1U);
   EXPECT_NEAR(std::norm(vector[0]), 1.0, 1e-12);
   dd->decRef(*state);
+}
+
+TEST_F(QCODDFunctionalityTest, IntegerAdditionPreservesWidthFlagsAndInputIR) {
+  for (const auto& [type, lhs, rhs, expected, flags] : {
+           std::array{"i8", "127", "1", "-128", ""},
+           std::array{
+               "i64",
+               "9223372036854775807",
+               "1",
+               "-9223372036854775808",
+               "",
+           },
+           std::array{
+               "i129",
+               "170141183460469231731687303715884105728",
+               "170141183460469231731687303715884105728",
+               "340282366920938463463374607431768211456",
+               "",
+           },
+           std::array{"index", "-1", "1", "0", ""},
+           std::array{"i8", "-3", "1", "-2", ""},
+           std::array{"i64", "-3", "1", "-2", "overflow<nsw>"},
+           std::array{"i129", "1", "2", "3", "overflow<nuw, nsw>"},
+       }) {
+    SCOPED_TRACE(::testing::Message()
+                 << type << ": " << lhs << " + " << rhs << " " << flags);
+    auto mod = parseSourceString<ModuleOp>(llvm::formatv(R"mlir(
+      module {{
+        func.func @main() {{
+          %lhs = arith.constant {1} : {0}
+          %rhs = arith.constant {2} : {0}
+          %expected = arith.constant {3} : {0}
+          %sum = arith.addi %lhs, %rhs {4} : {0}
+          %ok = arith.cmpi eq, %sum, %expected : {0}
+          %q = qco.static 0 : !qco.qubit
+          %out = qco.if %ok args(%arg = %q) -> (!qco.qubit) {{
+            %x = qco.x %arg : !qco.qubit -> !qco.qubit
+            qco.yield %x : !qco.qubit
+          } else args(%arg = %q) {{
+            qco.yield %arg : !qco.qubit
+          }
+          qco.sink %out : !qco.qubit
+          return
+        }
+      }
+    )mlir",
+                                                         type, lhs, rhs,
+                                                         expected, flags)
+                                               .str(),
+                                           context.get());
+    ASSERT_TRUE(mod);
+    ASSERT_TRUE(succeeded(verify(*mod)));
+    std::string before;
+    llvm::raw_string_ostream beforeStream(before);
+    mod->print(beforeStream);
+    expectSimulatesFromZero(mainFunc(*mod), true);
+    ASSERT_TRUE(succeeded(verify(*mod)));
+    std::string after;
+    llvm::raw_string_ostream afterStream(after);
+    mod->print(afterStream);
+    EXPECT_EQ(before, after);
+  }
 }
 
 } // namespace

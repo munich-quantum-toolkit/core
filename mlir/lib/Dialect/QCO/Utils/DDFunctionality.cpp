@@ -827,12 +827,23 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
            << "QCO DD simulation only supports f64 classical values";
   }
   return TypeSwitch<Operation*, LogicalResult>(&op)
-      .Case<arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::AddIOp,
-            arith::SubIOp, arith::MulIOp, arith::ShLIOp, arith::ShRUIOp,
-            arith::ShRSIOp, arith::CmpIOp, arith::AddFOp, arith::SubFOp,
-            arith::MulFOp, arith::DivFOp, arith::RemFOp, arith::NegFOp,
-            arith::CmpFOp, arith::SIToFPOp, arith::UIToFPOp, arith::MaxSIOp,
-            arith::MinSIOp, arith::MaxUIOp, arith::MinUIOp, arith::MaximumFOp,
+      .Case([&](arith::AddIOp add) -> LogicalResult {
+        if (add.getOverflowFlags() != arith::IntegerOverflowFlags::none) {
+          return foldClassicalOp(op, classical);
+        }
+        auto lhs = lookupInteger(add.getLhs(), classical, add);
+        auto rhs = lookupInteger(add.getRhs(), classical, add);
+        if (failed(lhs) || failed(rhs)) {
+          return failure();
+        }
+        return bindInteger(add.getResult(), *lhs + *rhs, classical);
+      })
+      .Case<arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::SubIOp,
+            arith::MulIOp, arith::ShLIOp, arith::ShRUIOp, arith::ShRSIOp,
+            arith::CmpIOp, arith::AddFOp, arith::SubFOp, arith::MulFOp,
+            arith::DivFOp, arith::RemFOp, arith::NegFOp, arith::CmpFOp,
+            arith::SIToFPOp, arith::UIToFPOp, arith::MaxSIOp, arith::MinSIOp,
+            arith::MaxUIOp, arith::MinUIOp, arith::MaximumFOp,
             arith::MinimumFOp, arith::MaxNumFOp, arith::MinNumFOp, math::AbsFOp,
             math::CeilOp, math::CosOp, math::ExpOp, math::FloorOp, math::LogOp,
             math::SinOp, math::SqrtOp, math::TanOp, math::PowFOp,

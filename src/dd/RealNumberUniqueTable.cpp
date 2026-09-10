@@ -249,7 +249,7 @@ RealNumber* RealNumberUniqueTable::findOrInsert(const std::int64_t key,
   if (curr == nullptr) {
     auto* entry = memoryManager->get<RealNumber>();
     entry->value = val;
-    entry->setNext(curr);
+    entry->LLBase::setNext(curr);
     table[k] = entry;
     tailTable[k] = entry;
     stats.trackInsert();
@@ -265,7 +265,7 @@ RealNumber* RealNumberUniqueTable::findOrInsert(const std::int64_t key,
     ++stats.collisions;
     auto* entry = memoryManager->get<RealNumber>();
     entry->value = val;
-    entry->setNext(nullptr);
+    entry->LLBase::setNext(nullptr);
     back->setNext(entry);
     tailTable[k] = entry;
     stats.trackInsert();
@@ -308,7 +308,7 @@ RealNumber* RealNumberUniqueTable::findOrInsert(const std::int64_t key,
   } else {
     prev->setNext(entry);
   }
-  entry->setNext(curr);
+  entry->LLBase::setNext(curr);
   if (curr == nullptr) {
     tailTable[k] = entry;
   }
@@ -323,7 +323,7 @@ RealNumber* RealNumberUniqueTable::insertFront(const std::int64_t key,
 
   auto* curr = table[static_cast<std::size_t>(key)];
   table[static_cast<std::size_t>(key)] = entry;
-  entry->setNext(curr);
+  entry->LLBase::setNext(curr);
   if (curr == nullptr) {
     tailTable[static_cast<std::size_t>(key)] = entry;
   }
@@ -335,7 +335,7 @@ RealNumber* RealNumberUniqueTable::insertBack(const std::int64_t key,
                                               const fp val) {
   auto* entry = memoryManager->get<RealNumber>();
   entry->value = val;
-  entry->setNext(nullptr);
+  entry->LLBase::setNext(nullptr);
 
   auto* back = tailTable[static_cast<std::size_t>(key)];
   tailTable[static_cast<std::size_t>(key)] = entry;

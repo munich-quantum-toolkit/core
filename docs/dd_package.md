@@ -102,7 +102,10 @@ with np.printoptions(precision=3, suppress=True):
 
 If [Graphviz](https://www.graphviz.org/) is installed, use
 {py:meth}`~mqt.core.dd.VectorDD.to_svg` to export a decision diagram as SVG.
-IPython can display the resulting file in a notebook.
+IPython can display the resulting file in a notebook. DOT exports use unique
+node IDs assigned in traversal order, so ordinary exports do not depend on
+memory addresses. The `memory=True` option includes addresses as debugging
+information.
 
 ```{code-cell} ipython3
 ---

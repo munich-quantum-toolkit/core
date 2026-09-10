@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <iomanip>
@@ -157,12 +158,9 @@ std::string conditionalFormat(const Complex& a, const bool formatAsPolar) {
 
   return ss.str();
 }
-std::ostream& modernNode(const mEdge& e, std::ostream& os,
+std::ostream& modernNode(const mEdge& e, const size_t nodeId, std::ostream& os,
                          const bool formatAsPolar) {
-  const auto nodelabel =
-      (reinterpret_cast<std::uintptr_t>(e.p) & 0x001fffffU) >>
-      1U; // this allows for 2^20 (roughly 1e6) unique nodes
-  os << nodelabel << "[label=<";
+  os << nodeId << "[label=<";
   os << R"(<font point-size="10"><table border="1" cellspacing="0" cellpadding="2" style="rounded">)";
   os << R"(<tr><td colspan="2" rowspan="2" port="0" href="javascript:;" border="0" tooltip=")"
      << conditionalFormat(e.p->e[0].w, formatAsPolar) << "\">"
@@ -198,12 +196,9 @@ std::ostream& modernNode(const mEdge& e, std::ostream& os,
      << "\"]\n";
   return os;
 }
-std::ostream& modernNode(const vEdge& e, std::ostream& os,
+std::ostream& modernNode(const vEdge& e, const size_t nodeId, std::ostream& os,
                          const bool formatAsPolar) {
-  const auto nodelabel =
-      (reinterpret_cast<std::uintptr_t>(e.p) & 0x001fffffU) >>
-      1U; // this allows for 2^20 (roughly 1e6) unique nodes
-  os << nodelabel << "[label=<";
+  os << nodeId << "[label=<";
   os << R"(<font point-size="8"><table border="1" cellspacing="0" cellpadding="0" style="rounded">)";
   os << R"(<tr><td colspan="2" border="0" cellpadding="1"><font point-size="20">q<sub><font point-size="12">)"
      << static_cast<std::size_t>(e.p->v)
@@ -226,12 +221,9 @@ std::ostream& modernNode(const vEdge& e, std::ostream& os,
      << "\"]\n";
   return os;
 }
-std::ostream& classicNode(const mEdge& e, std::ostream& os,
+std::ostream& classicNode(const mEdge& e, const size_t nodeId, std::ostream& os,
                           const bool formatAsPolar) {
-  const auto nodelabel =
-      (reinterpret_cast<std::uintptr_t>(e.p) & 0x001fffffU) >>
-      1U; // this allows for 2^20 (roughly 1e6) unique nodes
-  os << nodelabel << "[shape=circle, width=0.53, fixedsize=true, label=<";
+  os << nodeId << "[shape=circle, width=0.53, fixedsize=true, label=<";
   os << R"(<font point-size="6"><table border="0" cellspacing="0" cellpadding="0">)";
   os << R"(<tr><td colspan="4"><font point-size="18">q<sub><font point-size="10">)"
      << static_cast<std::size_t>(e.p->v)
@@ -278,12 +270,9 @@ std::ostream& classicNode(const mEdge& e, std::ostream& os,
      << static_cast<std::size_t>(e.p->v) << "\"]\n";
   return os;
 }
-std::ostream& classicNode(const vEdge& e, std::ostream& os,
+std::ostream& classicNode(const vEdge& e, const size_t nodeId, std::ostream& os,
                           const bool formatAsPolar) {
-  const auto nodelabel =
-      (reinterpret_cast<std::uintptr_t>(e.p) & 0x001fffffU) >>
-      1U; // this allows for 2^20 (roughly 1e6) unique nodes
-  os << nodelabel << "[shape=circle, width=0.46, fixedsize=true, label=<";
+  os << nodeId << "[shape=circle, width=0.46, fixedsize=true, label=<";
   os << R"(<font point-size="6"><table border="0" cellspacing="0" cellpadding="0">)";
   os << R"(<tr><td colspan="2"><font point-size="18">q<sub><font point-size="10">)"
      << static_cast<std::size_t>(e.p->v)
@@ -312,16 +301,12 @@ std::ostream& classicNode(const vEdge& e, std::ostream& os,
 }
 namespace {
 template <class Node>
-std::ostream& renderEdge(const Edge<Node>& from, const Edge<Node>& to,
-                         const std::uint16_t idx, std::ostream& os,
-                         const bool colored, const bool edgeLabels,
-                         const bool classic, const bool formatAsPolar) {
-  const auto fromlabel =
-      (reinterpret_cast<std::uintptr_t>(from.p) & 0x001fffffU) >> 1U;
-  const auto tolabel =
-      (reinterpret_cast<std::uintptr_t>(to.p) & 0x001fffffU) >> 1U;
-
-  os << fromlabel << ":" << idx << ":";
+std::ostream& renderEdge(const Edge<Node>& to, const size_t fromId,
+                         const size_t toId, const std::uint16_t idx,
+                         std::ostream& os, const bool colored,
+                         const bool edgeLabels, const bool classic,
+                         const bool formatAsPolar) {
+  os << fromId << ":" << idx << ":";
   if constexpr (IsVector<Node>) {
     os << (idx == 0 ? "sw" : "se");
   } else if (classic) {
@@ -345,7 +330,7 @@ std::ostream& renderEdge(const Edge<Node>& from, const Edge<Node>& to,
   if (to.isTerminal()) {
     os << "t";
   } else {
-    os << tolabel;
+    os << toId;
   }
 
   const auto mag = thicknessFromMagnitude(to.w);
@@ -366,32 +351,32 @@ std::ostream& renderEdge(const Edge<Node>& from, const Edge<Node>& to,
 }
 } // namespace
 
-std::ostream& bwEdge(const mEdge& from, const mEdge& to,
+std::ostream& bwEdge(const mEdge& to, const size_t fromId, const size_t toId,
                      const std::uint16_t idx, std::ostream& os,
                      const bool edgeLabels, const bool classic,
                      const bool formatAsPolar) {
-  return renderEdge(from, to, idx, os, false, edgeLabels, classic,
+  return renderEdge(to, fromId, toId, idx, os, false, edgeLabels, classic,
                     formatAsPolar);
 }
-std::ostream& bwEdge(const vEdge& from, const vEdge& to,
+std::ostream& bwEdge(const vEdge& to, const size_t fromId, const size_t toId,
                      const std::uint16_t idx, std::ostream& os,
                      const bool edgeLabels, const bool classic,
                      const bool formatAsPolar) {
-  return renderEdge(from, to, idx, os, false, edgeLabels, classic,
+  return renderEdge(to, fromId, toId, idx, os, false, edgeLabels, classic,
                     formatAsPolar);
 }
-std::ostream& coloredEdge(const mEdge& from, const mEdge& to,
-                          const std::uint16_t idx, std::ostream& os,
-                          const bool edgeLabels, const bool classic,
-                          const bool formatAsPolar) {
-  return renderEdge(from, to, idx, os, true, edgeLabels, classic,
+std::ostream& coloredEdge(const mEdge& to, const size_t fromId,
+                          const size_t toId, const std::uint16_t idx,
+                          std::ostream& os, const bool edgeLabels,
+                          const bool classic, const bool formatAsPolar) {
+  return renderEdge(to, fromId, toId, idx, os, true, edgeLabels, classic,
                     formatAsPolar);
 }
-std::ostream& coloredEdge(const vEdge& from, const vEdge& to,
-                          const std::uint16_t idx, std::ostream& os,
-                          const bool edgeLabels, const bool classic,
-                          const bool formatAsPolar) {
-  return renderEdge(from, to, idx, os, true, edgeLabels, classic,
+std::ostream& coloredEdge(const vEdge& to, const size_t fromId,
+                          const size_t toId, const std::uint16_t idx,
+                          std::ostream& os, const bool edgeLabels,
+                          const bool classic, const bool formatAsPolar) {
+  return renderEdge(to, fromId, toId, idx, os, true, edgeLabels, classic,
                     formatAsPolar);
 }
 void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
