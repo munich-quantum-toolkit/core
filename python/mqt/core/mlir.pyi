@@ -102,6 +102,12 @@ class ProgramConstraint:
     @value.setter
     def value(self, arg: int, /) -> None: ...
 
+    MAX_NESTING_DEPTH: str = "max-control-flow-nesting-depth"
+
+    MAX_ITERATION_COUNT: str = "max-iteration-count"
+
+    MAX_CASE_COUNT: str = "max-case-count"
+
 class ProgramCapability:
     """One payload execution capability."""
 
@@ -118,6 +124,14 @@ class ProgramCapability:
     def constraints(self) -> list[ProgramConstraint]: ...
     @constraints.setter
     def constraints(self, arg: Sequence[ProgramConstraint], /) -> None: ...
+
+    FORWARD_BRANCHING: str = "forward-branching"
+
+    COUNTED_ITERATION: str = "counted-iteration"
+
+    CONDITIONAL_LOOP: str = "conditional-loop"
+
+    MULTIWAY_BRANCHING: str = "multiway-branching"
 
 class PayloadSpecification:
     """Selected payload execution contract."""
@@ -638,7 +652,18 @@ class QCOProgram(Program):
     def compile_for_target(
         self, target_environment: TargetEnvironment, *, enable_timing: bool = False, enable_statistics: bool = False
     ) -> None:
-        """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails."""
+        """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
+
+    def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
+        """Export a Qiskit circuit without consuming or modifying this program.
+
+        Uses the QC exporter on a copy.
+
+        Args:
+            target: The optional compiler target used for mapping. When provided, static
+                site IDs map to dense physical-qubit indices in target site order.
+                Dynamic qubits and static IDs absent from the target are rejected.
+        """
 
     def to_qc(self, *, copy: bool = False) -> QCProgram:
         """Convert this program to QC.

@@ -43,14 +43,15 @@ releases may include breaking changes.
   payload-aware control-flow legalization, QDMI device integration, ordered
   operation applicability, directional native synthesis, and target compilation
   through C++, Python, and `mqt-cc` ([#2285], [#2219], [#2162], [#2049],
-  [#1999], [#1993], [#1687]) ([**@MatthiasReumann**], [**@simon1hofmann**],
-  [**@burgholzer**])
+  [#1999], [#1993], [#1687], [#2497]) ([**@MatthiasReumann**],
+  [**@simon1hofmann**], [**@burgholzer**])
 
 #### Import and export
 
 - ✨ Add Qiskit circuit import, target-aware export, and reusable custom Gate
   round trips to the compiler collection ([#2031], [#2133], [#2140], [#2150],
-  [#2175], [#2176], [#2178], [#2342]) ([**@burgholzer**], [**@simon1hofmann**])
+  [#2175], [#2176], [#2178], [#2342], [#2497]) ([**@burgholzer**],
+  [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105],
   [#2339], [#2457]) ([**@denialhaag**], [**@burgholzer**])
@@ -933,6 +934,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2497]: https://github.com/munich-quantum-toolkit/core/pull/2497
 [#2494]: https://github.com/munich-quantum-toolkit/core/pull/2494
 [#2493]: https://github.com/munich-quantum-toolkit/core/pull/2493
 [#2478]: https://github.com/munich-quantum-toolkit/core/pull/2478

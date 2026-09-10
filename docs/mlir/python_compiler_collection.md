@@ -154,6 +154,17 @@ assert restored.count_ops() == qiskit_bell.count_ops()
 assert compiled_qiskit.is_valid
 ```
 
+QCO programs also provide {py:meth}`~mqt.core.mlir.QCOProgram.to_qiskit`. It
+converts a copy through QC and leaves the original program unchanged, even if
+export fails. Both exporters accept `target=target` to map static target site
+IDs to dense physical-qubit indices in target site order.
+
+```{code-cell} ipython3
+qco = direct.to_qco(copy=True)
+restored = qco.to_qiskit()
+assert qco.is_valid
+```
+
 This compiler route is the Qiskit circuit interface in MQT Core v4.
 
 See {doc}`qiskit` for supported circuit features and translation limitations.

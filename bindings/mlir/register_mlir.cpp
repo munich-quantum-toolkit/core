@@ -58,6 +58,7 @@
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -167,8 +168,8 @@ entryFunc(const mlir::QCOProgram& program) {
 /// appending any emitted MLIR diagnostics to @p message.
 template <nb::exception_type Exception = nb::exception_type::value_error,
           typename Fn>
-[[nodiscard]] static auto takeFailureOr(mlir::MLIRContext* context,
-                                        const char* message, Fn&& fn) {
+static auto withDiagnostics(mlir::MLIRContext* context, const char* message,
+                            Fn&& fn) {
   std::string diagnostics;
   const mlir::ScopedDiagnosticHandler handler(
       context, [&](mlir::Diagnostic& diag) {
@@ -190,7 +191,9 @@ template <nb::exception_type Exception = nb::exception_type::value_error,
     }
     throw nb::builtin_exception(Exception, full.c_str());
   }
-  return *std::move(result);
+  if constexpr (!std::is_same_v<decltype(result), mlir::LogicalResult>) {
+    return *std::move(result);
+  }
 }
 
 template <class ProgramType>
@@ -351,7 +354,7 @@ template <class Function>
 [[nodiscard]] static dd::MatrixDD
 buildQCOFunctionality(const mlir::QCOProgram& program, dd::Package& ddPackage) {
   auto func = entryFunc(program);
-  return takeFailureOr(
+  return withDiagnostics(
       func.getContext(), "cannot build DD functionality for this QCO program",
       [&] { return mlir::qco::buildFunctionality(func, ddPackage); });
 }
@@ -367,7 +370,7 @@ buildQCOFunctionality(const mlir::QCOProgram& program, dd::Package& ddPackage) {
   }
   auto func = entryFunc(program);
   auto rng = makeRng(seed);
-  return takeFailureOr(
+  return withDiagnostics(
       func.getContext(), "cannot simulate this QCO program",
       [&] { return mlir::qco::simulate(func, initialState, ddPackage, rng); });
 }
@@ -375,8 +378,8 @@ buildQCOFunctionality(const mlir::QCOProgram& program, dd::Package& ddPackage) {
 [[nodiscard]] static std::map<std::string, size_t>
 sampleQCO(const mlir::QCOProgram& program, size_t shots, uint64_t seed) {
   auto func = entryFunc(program);
-  return takeFailureOr(func.getContext(), "cannot sample this QCO program",
-                       [&] { return mlir::qco::sample(func, shots, seed); });
+  return withDiagnostics(func.getContext(), "cannot sample this QCO program",
+                         [&] { return mlir::qco::sample(func, shots, seed); });
 }
 
 [[nodiscard]] static DenseVector toDenseVector(const dd::VectorDD& state) {
@@ -438,7 +441,7 @@ buildDenseFunctionality(const nb::object& program) {
   return withQCOProgram(program, [](const mlir::QCOProgram& qco) {
     dd::Package ddPackage(0);
     auto func = entryFunc(qco);
-    const auto state = takeFailureOr(
+    const auto state = withDiagnostics(
         func.getContext(), "cannot simulate this QCO program",
         [&] { return mlir::qco::simulateStatevector(func, ddPackage); });
     return toDenseVector(state);
@@ -508,21 +511,37 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
       .def_rw("profile", &mlir::PayloadFormat::profile)
       .def_rw("encoding", &mlir::PayloadFormat::encoding);
 
-  nb::class_<mlir::ProgramConstraint>(m, "ProgramConstraint",
-                                      "One payload capability constraint.")
-      .def(nb::init<std::string, uint64_t>(), "constraint_id"_a, "value"_a)
-      .def_rw("constraint_id", &mlir::ProgramConstraint::id)
-      .def_rw("value", &mlir::ProgramConstraint::value);
+  auto programConstraint =
+      nb::class_<mlir::ProgramConstraint>(m, "ProgramConstraint",
+                                          "One payload capability constraint.")
+          .def(nb::init<std::string, uint64_t>(), "constraint_id"_a, "value"_a)
+          .def_rw("constraint_id", &mlir::ProgramConstraint::id)
+          .def_rw("value", &mlir::ProgramConstraint::value);
+  programConstraint.attr("MAX_NESTING_DEPTH") =
+      mlir::ProgramConstraint::MAX_NESTING_DEPTH.str();
+  programConstraint.attr("MAX_ITERATION_COUNT") =
+      mlir::ProgramConstraint::MAX_ITERATION_COUNT.str();
+  programConstraint.attr("MAX_CASE_COUNT") =
+      mlir::ProgramConstraint::MAX_CASE_COUNT.str();
 
-  nb::class_<mlir::ProgramCapability>(m, "ProgramCapability",
-                                      "One payload execution capability.")
-      .def(nb::init<std::string, uint64_t,
-                    std::vector<mlir::ProgramConstraint>>(),
-           "capability_id"_a, "value"_a = 0,
-           "constraints"_a = std::vector<mlir::ProgramConstraint>{})
-      .def_rw("capability_id", &mlir::ProgramCapability::id)
-      .def_rw("value", &mlir::ProgramCapability::value)
-      .def_rw("constraints", &mlir::ProgramCapability::constraints);
+  auto programCapability =
+      nb::class_<mlir::ProgramCapability>(m, "ProgramCapability",
+                                          "One payload execution capability.")
+          .def(nb::init<std::string, uint64_t,
+                        std::vector<mlir::ProgramConstraint>>(),
+               "capability_id"_a, "value"_a = 0,
+               "constraints"_a = std::vector<mlir::ProgramConstraint>{})
+          .def_rw("capability_id", &mlir::ProgramCapability::id)
+          .def_rw("value", &mlir::ProgramCapability::value)
+          .def_rw("constraints", &mlir::ProgramCapability::constraints);
+  programCapability.attr("FORWARD_BRANCHING") =
+      mlir::ProgramCapability::FORWARD_BRANCHING.str();
+  programCapability.attr("COUNTED_ITERATION") =
+      mlir::ProgramCapability::COUNTED_ITERATION.str();
+  programCapability.attr("CONDITIONAL_LOOP") =
+      mlir::ProgramCapability::CONDITIONAL_LOOP.str();
+  programCapability.attr("MULTIWAY_BRANCHING") =
+      mlir::ProgramCapability::MULTIWAY_BRANCHING.str();
 
   nb::class_<mlir::PayloadSpecification>(m, "PayloadSpecification",
                                          "Selected payload execution contract.")
@@ -1094,7 +1113,7 @@ before conversion to QCO.)pb");
           "to_openqasm3",
           [](const mlir::QCProgram& program) {
             requireValid(program);
-            return takeFailureOr<nb::exception_type::runtime_error>(
+            return withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(),
                 "cannot export QC program to OpenQASM 3",
                 [&]() -> mlir::FailureOr<mlir::OpenQASMProgram> {
@@ -1240,12 +1259,44 @@ operations.)pb");
            "constant-angle phase gates that act on at least min_qubits qubits "
            "(min_qubits must be at least 3; default 3 means wider than "
            "two-qubit).")
-      .def("compile_for_target",
-           &BooleanMemberAdapter<&mlir::QCOProgram::compileForTarget>::call,
-           "target_environment"_a, nb::kw_only(), "enable_timing"_a = false,
-           "enable_statistics"_a = false,
-           "Compile this QCO program for the target in place. Do not rely on "
-           "its contents if compilation fails.")
+      .def(
+          "compile_for_target",
+          [](mlir::QCOProgram& program,
+             const mlir::TargetEnvironment& environment, bool enableTiming,
+             bool enableStatistics) {
+            requireValid(program);
+            withDiagnostics<nb::exception_type::runtime_error>(
+                program.module().getContext(), "Target compilation failed",
+                [&] {
+                  return mlir::success(program.compileForTarget(
+                      environment, enableTiming, enableStatistics));
+                });
+          },
+          "target_environment"_a, nb::kw_only(), "enable_timing"_a = false,
+          "enable_statistics"_a = false,
+          "Compile this QCO program for the target in place. Do not rely on "
+          "its contents if compilation fails. Failures raise RuntimeError "
+          "with the emitted MLIR diagnostics.")
+      .def(
+          "to_qiskit",
+          [](const mlir::QCOProgram& program,
+             const mlir::CompilerTarget* target) {
+            requireValid(program);
+            auto qc = takeResult(program.copy().intoQC());
+            return bindings::qiskit::exportCircuit(qc, target);
+          },
+          nb::kw_only(), "target"_a = nb::none(),
+          nb::sig(
+              "def to_qiskit(self, *, target: CompilerTarget | None = None) "
+              "-> qiskit.circuit.QuantumCircuit"),
+          R"pb(Export a Qiskit circuit without consuming or modifying this program.
+
+Uses the QC exporter on a copy.
+
+Args:
+    target: The optional compiler target used for mapping. When provided, static
+        site IDs map to dense physical-qubit indices in target site order.
+        Dynamic qubits and static IDs absent from the target are rejected.)pb")
       .def(
           "to_qc",
           [](mlir::QCOProgram& value, const bool copy) {
