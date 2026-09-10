@@ -809,17 +809,13 @@ private:
 
     SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
-    trials.emplace_back(RoutingBundle{
-        .wires = wires,
-        .infos = infos,
-        .layout = Layout::identity(target->numSites()),
-    });
-    for (size_t i = 0; i < ntrials - 1; ++i) {
+    for (size_t i = 0; i < ntrials; ++i) {
       trials.emplace_back(RoutingBundle{
           .wires = wires,
           .infos = infos,
-          .layout =
-              Layout::random(target->numSites(), target->numSites(), rng()),
+          .layout = i == 0 ? Layout::identity(target->numSites())
+                           : Layout::random(target->numSites(),
+                                            target->numSites(), rng()),
       });
     }
 
