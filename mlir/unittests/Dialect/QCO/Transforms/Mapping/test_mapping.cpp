@@ -2438,16 +2438,11 @@ TEST_F(MappingPassFixture, RetainRawGreedyLayoutWhenRefinementWorsensIt) {
   for (size_t i = 0; i < 4; ++i) {
     qubits.push_back(builder.h(builder.allocQubit()));
   }
-  for (const auto& [a, b] : SmallVector<std::pair<size_t, size_t>>{{3, 0},
-                                                                   {0, 3},
-                                                                   {1, 3},
-                                                                   {3, 2},
-                                                                   {0, 3},
-                                                                   {1, 2},
-                                                                   {3, 1},
-                                                                   {2, 1},
-                                                                   {3, 0},
-                                                                   {3, 2}}) {
+  const SmallVector<std::pair<size_t, size_t>> interactions{
+      {3, 0}, {0, 3}, {1, 3}, {3, 2}, {0, 3},
+      {1, 2}, {3, 1}, {2, 1}, {3, 0}, {3, 2},
+  };
+  for (const auto& [a, b] : interactions) {
     std::tie(qubits[a], qubits[b]) = builder.cx(qubits[a], qubits[b]);
   }
   for (Value qubit : qubits) {
