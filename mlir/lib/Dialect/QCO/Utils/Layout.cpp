@@ -34,7 +34,7 @@ Layout::Layout(const size_t nProgramQubits, const size_t nHardwareQubits)
     : programToHardware_(nProgramQubits, UNMAPPED),
       hardwareToProgram_(nHardwareQubits, UNMAPPED) {}
 
-Layout Layout::identity(const size_t nqubits) {
+Layout Layout::identity(size_t nqubits) {
   return fromMapping(to_vector(llvm::seq(nqubits)));
 }
 
