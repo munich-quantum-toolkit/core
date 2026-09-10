@@ -259,6 +259,40 @@ TEST(OpenQASMFrontendTest, PreservesDistinctProvenanceForRepeatedIncludes) {
   EXPECT_EQ(location.includeStack[1].line, 3);
 }
 
+TEST(OpenQASMFrontendTest, CachesSearchPathIncludesAndKeepsEveryOccurrence) {
+  auto files = llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+  ASSERT_TRUE(files->addFile(
+      "/includes/body.inc", 0,
+      llvm::MemoryBuffer::getMemBuffer("result += 1;", "/includes/body.inc")));
+  auto traced = llvm::makeIntrusiveRefCnt<llvm::vfs::TracingFileSystem>(files);
+  llvm::SourceMgr sourceMgr;
+  sourceMgr.setVirtualFileSystem(traced);
+  sourceMgr.setIncludeDirs({"/includes"});
+  sourceMgr.AddNewSourceBuffer(
+      llvm::MemoryBuffer::getMemBufferCopy(
+          "OPENQASM 3.1;\nint result = 0;\ninclude \"body.inc\";\n"
+          "include \"body.inc\";\ninclude \"body.inc\";\n",
+          "main.qasm"),
+      llvm::SMLoc());
+
+  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+  /// One failed direct lookup and one successful search-path lookup.
+  EXPECT_EQ(traced->NumOpenFileForReadCalls, 2);
+  size_t assignments = 0;
+  for (const auto& statement : analyzed.program->statements) {
+    if (std::holds_alternative<oq3::frontend::ScalarAssignmentStatement>(
+            statement.data)) {
+      EXPECT_EQ(statement.location.filename, "/includes/body.inc");
+      ASSERT_EQ(statement.location.includeStack.size(), 1);
+      EXPECT_EQ(statement.location.includeStack.front().filename, "main.qasm");
+      EXPECT_EQ(statement.location.includeStack.front().line, assignments + 3);
+      ++assignments;
+    }
+  }
+  EXPECT_EQ(assignments, 3);
+}
+
 TEST(OpenQASMFrontendTest, RejectsRecursiveIncludesResolvedThroughSearchPaths) {
   auto fileSystem = llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
   ASSERT_TRUE(fileSystem->addFile(

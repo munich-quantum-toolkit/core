@@ -1684,6 +1684,44 @@ switch (selector) {
   EXPECT_EQ(switches, 1);
 }
 
+TEST(OpenQASMTargetTest, RestoresLocalScalarsWhenEmittingRepeatedSwitchBodies) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit q;
+bit choose = measure q;
+output int result;
+result = 0;
+switch (int(choose)) {
+  case 0, 1 {
+    if (choose) { int local = 1; result = local; }
+    else { int local = 2; result = local; }
+    for int i in [0:1] {
+      int local = i;
+      if (choose) { result = local; continue; }
+      result += local;
+    }
+    while (choose) {
+      int local = 3;
+      if (choose) { result = local; break; }
+      choose = false;
+    }
+  }
+  default { result = 4; }
+}
+)qasm";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t switches = 0;
+  moduleOp->walk([&](scf::IndexSwitchOp switchOp) {
+    ++switches;
+    /// Only the enclosing result is carried; branch locals must not escape.
+    EXPECT_EQ(switchOp.getNumResults(), 1);
+  });
+  EXPECT_EQ(switches, 1);
+}
+
 TEST(OpenQASMTargetTest, PreservesNarrowUnsignedSwitchValues) {
   constexpr llvm::StringLiteral source = R"qasm(OPENQASM 3.1;
 uint[3] selector = 7;

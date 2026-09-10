@@ -1606,6 +1606,9 @@ private:
             }
           } else if constexpr (std::is_same_v<T, frontend::ForStatement> ||
                                std::is_same_v<T, frontend::WhileStatement>) {
+            if constexpr (std::is_same_v<T, frontend::ForStatement>) {
+              recordMutation(data.inductionVariable, mutationKeys, mutations);
+            }
             for (const auto nested : data.body) {
               collectMutations(nested, mutationKeys, mutations);
             }
@@ -1631,6 +1634,11 @@ private:
       collectMutations(statement, mutationKeys, mutations);
     }
     llvm::sort(mutations);
+    return mutations;
+  }
+
+  [[nodiscard]] SmallVector<StateSlot>
+  initializedState(ArrayRef<StateSlot> mutations) const {
     SmallVector<StateSlot> slots;
     slots.reserve(mutations.size());
     for (const auto slot : mutations) {
@@ -1893,9 +1901,10 @@ private:
     });
   }
 
-  void emitCFGIf(Value condition, ArrayRef<StateSlot> slots,
+  void emitCFGIf(Value condition, ArrayRef<StateSlot> mutatedSlots,
                  function_ref<void()> thenBody, function_ref<void()> elseBody) {
-    const auto savedScalars = scalarValues;
+    const auto slots = initializedState(mutatedSlots);
+    const auto savedScalars = stateValues(mutatedSlots);
     auto values = stateValues(slots);
     auto* entry = builder.getInsertionBlock();
     auto* region = entry->getParent();
@@ -1907,7 +1916,7 @@ private:
     builder.setInsertionPointToEnd(entry);
     cf::CondBranchOp::create(builder, condition, thenBlock, elseBlock);
     const auto emitBranch = [&](Block* block, function_ref<void()> body) {
-      scalarValues = savedScalars;
+      assignState(mutatedSlots, savedScalars);
       flowReachable = true;
       builder.setInsertionPointToEnd(block);
       body();
@@ -1919,7 +1928,7 @@ private:
     const bool thenReachable = emitBranch(thenBlock, thenBody);
     const bool elseReachable = emitBranch(elseBlock, elseBody);
     flowReachable = thenReachable || elseReachable;
-    scalarValues = savedScalars;
+    assignState(mutatedSlots, savedScalars);
     assignState(slots, join->getArguments());
     builder.setInsertionPointToEnd(join);
     if (!flowReachable) {
@@ -1954,10 +1963,10 @@ private:
         conditional.thenStatements.begin(), conditional.thenStatements.end());
     nestedStatements.append(conditional.elseStatements.begin(),
                             conditional.elseStatements.end());
-    const auto slots = mutatedState(nestedStatements);
+    const auto mutatedSlots = mutatedState(nestedStatements);
     if (activeLoop != nullptr && hasLoopJump(nestedStatements)) {
       emitCFGIf(
-          condition, slots,
+          condition, mutatedSlots,
           [&] {
             for (auto statement : conditional.thenStatements) {
               emitStatement(statement, gateParameters, gateQubits);
@@ -1976,8 +1985,9 @@ private:
           });
       return;
     }
+    const auto slots = initializedState(mutatedSlots);
     const auto initialValues = stateValues(slots);
-    const auto savedScalars = scalarValues;
+    const auto savedScalars = stateValues(mutatedSlots);
     const auto* thenStatements = &conditional.thenStatements;
     const auto* elseStatements = &conditional.elseStatements;
     if (slots.empty() && thenStatements->empty() && !elseStatements->empty()) {
@@ -1991,7 +2001,7 @@ private:
     OpBuilder::InsertionGuard guard(builder);
     const auto emitBranch = [&](Block& block,
                                 ArrayRef<frontend::StatementId> statements) {
-      scalarValues = savedScalars;
+      assignState(mutatedSlots, savedScalars);
       if (!block.empty()) {
         block.back().erase();
       }
@@ -2008,7 +2018,7 @@ private:
     if (withElseRegion) {
       emitBranch(ifOp.getElseRegion().front(), *elseStatements);
     }
-    scalarValues = savedScalars;
+    assignState(mutatedSlots, savedScalars);
     assignState(slots, ifOp.getResults());
   }
 
@@ -2110,9 +2120,11 @@ private:
       emitLoopWithJumps(loop, gateParameters, gateQubits);
       return;
     }
-    const auto slots = mutatedState(loop.body);
+    auto mutatedSlots = mutatedState(loop.body);
+    const auto slots = initializedState(mutatedSlots);
     const auto initialValues = stateValues(slots);
-    const auto savedScalars = scalarValues;
+    mutatedSlots.push_back(loop.inductionVariable);
+    const auto savedScalars = stateValues(mutatedSlots);
 
     if (loop.provenPositiveRange) {
       auto start = emitProvenIndexExpression(builder, loop.start);
@@ -2138,7 +2150,7 @@ private:
           body->back().erase();
         }
         builder.setInsertionPointToEnd(body);
-        scalarValues = savedScalars;
+        assignState(mutatedSlots, savedScalars);
         assignState(slots, forOp.getRegionIterArgs());
         provenInductionValues[loop.inductionVariable] = forOp.getInductionVar();
         scalarValues.at(loop.inductionVariable) = arith::IndexCastOp::create(
@@ -2151,7 +2163,7 @@ private:
         }
         scf::YieldOp::create(builder, stateValues(slots));
       }
-      scalarValues = savedScalars;
+      assignState(mutatedSlots, savedScalars);
       provenInductionValues.erase(loop.inductionVariable);
       assignState(slots, forOp.getResults());
       return;
@@ -2190,7 +2202,7 @@ private:
           body->back().erase();
         }
         builder.setInsertionPointToEnd(body);
-        scalarValues = savedScalars;
+        assignState(mutatedSlots, savedScalars);
         assignState(slots, forOp.getRegionIterArgs());
         auto counter = arith::IndexCastOp::create(builder, builder.getI64Type(),
                                                   forOp.getInductionVar());
@@ -2207,7 +2219,7 @@ private:
         }
         scf::YieldOp::create(builder, stateValues(slots));
       }
-      scalarValues = savedScalars;
+      assignState(mutatedSlots, savedScalars);
       assignState(slots, forOp.getResults());
       return;
     }
@@ -2243,7 +2255,7 @@ private:
           OpBuilder::InsertionGuard guard(builder);
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
-          scalarValues = savedScalars;
+          assignState(mutatedSlots, savedScalars);
           assignState(slots, arguments.drop_front(stateOffset));
           scalarValues.at(loop.inductionVariable) =
               narrowDynamicRange
@@ -2270,15 +2282,19 @@ private:
           llvm::append_range(yielded, stateValues(slots));
           scf::YieldOp::create(builder, yielded);
         });
-    scalarValues = savedScalars;
+    assignState(mutatedSlots, savedScalars);
     assignState(slots, whileOp.getResults().drop_front(stateOffset));
   }
 
   template <typename Loop>
   void emitLoopWithJumps(const Loop& loop, ValueRange gateParameters,
                          ValueRange gateQubits) {
-    const auto slots = mutatedState(loop.body);
-    const auto savedScalars = scalarValues;
+    auto mutatedSlots = mutatedState(loop.body);
+    const auto slots = initializedState(mutatedSlots);
+    if constexpr (std::is_same_v<Loop, frontend::ForStatement>) {
+      mutatedSlots.push_back(loop.inductionVariable);
+    }
+    const auto savedScalars = stateValues(mutatedSlots);
     SmallVector<Value> initial;
     Value step, stop;
     bool indexRange = false;
@@ -2368,7 +2384,7 @@ private:
     }
     auto results = cfg.finish();
     flowReachable = true;
-    scalarValues = savedScalars;
+    assignState(mutatedSlots, savedScalars);
     if (failed(results)) {
       emissionFailed = true;
       return;
@@ -2387,16 +2403,17 @@ private:
       emitLoopWithJumps(loop, gateParameters, gateQubits);
       return;
     }
-    const auto slots = mutatedState(loop.body);
+    auto mutatedSlots = mutatedState(loop.body);
+    const auto slots = initializedState(mutatedSlots);
     const auto initialValues = stateValues(slots);
-    const auto savedScalars = scalarValues;
+    const auto savedScalars = stateValues(mutatedSlots);
     auto whileOp = scf::WhileOp::create(
         builder, ValueRange(initialValues).getTypes(), initialValues,
         [&](OpBuilder& nested, Location, ValueRange arguments) {
           OpBuilder::InsertionGuard guard(builder);
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
-          scalarValues = savedScalars;
+          assignState(mutatedSlots, savedScalars);
           assignState(slots, arguments);
           auto condition =
               emitCondition(loop.condition, gateParameters, gateQubits);
@@ -2409,7 +2426,7 @@ private:
           OpBuilder::InsertionGuard guard(builder);
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
-          scalarValues = savedScalars;
+          assignState(mutatedSlots, savedScalars);
           assignState(slots, arguments);
           for (const auto statement : loop.body) {
             emitStatement(statement, gateParameters, gateQubits);
@@ -2419,7 +2436,7 @@ private:
           }
           scf::YieldOp::create(builder, stateValues(slots));
         });
-    scalarValues = savedScalars;
+    assignState(mutatedSlots, savedScalars);
     assignState(slots, whileOp.getResults());
   }
 
@@ -2432,9 +2449,10 @@ private:
       llvm::append_range(labels, switchCase.labels);
     }
     llvm::append_range(nestedStatements, switchStatement.defaultStatements);
-    const auto slots = mutatedState(nestedStatements);
+    const auto mutatedSlots = mutatedState(nestedStatements);
+    const auto slots = initializedState(mutatedSlots);
     const auto initialValues = stateValues(slots);
-    const auto savedScalars = scalarValues;
+    const auto savedScalars = stateValues(mutatedSlots);
 
     auto control = emitExpression(builder, switchStatement.control, {});
     if (!control) {
@@ -2466,7 +2484,7 @@ private:
           match = arith::OrIOp::create(builder, match, equal);
         }
         emitCFGIf(
-            match, slots,
+            match, mutatedSlots,
             [&] {
               for (auto statement : branch.body) {
                 emitStatement(statement, gateParameters, gateQubits);
@@ -2492,7 +2510,7 @@ private:
         [&](Region& region, const ArrayRef<frontend::StatementId> statements) {
           auto& block = region.emplaceBlock();
           builder.setInsertionPointToEnd(&block);
-          scalarValues = savedScalars;
+          assignState(mutatedSlots, savedScalars);
           for (const auto statement : statements) {
             emitStatement(statement, gateParameters, gateQubits);
             if (emissionFailed || emissionBudget.isExhausted()) {
@@ -2511,7 +2529,7 @@ private:
       }
     }
     emitBranch(switchOp.getDefaultRegion(), switchStatement.defaultStatements);
-    scalarValues = savedScalars;
+    assignState(mutatedSlots, savedScalars);
     assignState(slots, switchOp.getResults());
   }
 };

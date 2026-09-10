@@ -207,6 +207,7 @@ parseBuffer(std::unique_ptr<llvm::MemoryBuffer> buffer,
       failedParsing = true;
       continue;
     }
+    includeBuffers.try_emplace(include.filename, bufferId);
     if (parsedBuffers.insert(bufferId).second) {
       parseSource(bufferId);
       includeDepths.resize(builder.getIncludes().size(),
