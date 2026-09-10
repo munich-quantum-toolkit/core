@@ -27,5 +27,6 @@ add_test(
   COMMAND
     ${CMAKE_COMMAND} "-DMQT_CC=$<TARGET_FILE:mqt-cc>"
     "-DQASM_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/bell.qasm"
+    "-DNONLINEAR_QCO_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/nonlinear.qco.mlir"
     "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/debugging-output-$<CONFIG>" -P
     "${CMAKE_CURRENT_SOURCE_DIR}/verify_debugging.cmake")

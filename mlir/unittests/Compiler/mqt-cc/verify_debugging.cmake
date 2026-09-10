@@ -23,6 +23,13 @@ function(run_compiler expected_result)
       PARENT_SCOPE)
 endfunction()
 
+function(reject_compiler expected_diagnostic)
+  run_compiler(1 ${ARGN})
+  if(NOT error MATCHES "${expected_diagnostic}" OR NOT output STREQUAL "")
+    message(FATAL_ERROR "Expected '${expected_diagnostic}' without output:\n${error}\n${output}")
+  endif()
+endfunction()
+
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
 set(reduced "${OUTPUT_DIR}/reduced.mlir")
 file(
@@ -52,6 +59,23 @@ foreach(option IN ITEMS pass-pipeline passes)
     message(FATAL_ERROR "${option} did not run the registered cleanup passes: ${output}")
   endif()
 endforeach()
+
+# Both pipeline routes require registered passes and a module anchor.
+foreach(mode IN ITEMS --run-pipeline --emit=qco-optimized)
+  reject_compiler("does not refer to a registered pass" "${reduced}" "${mode}"
+                  "--pass-pipeline=builtin.module(not-a-pass)")
+  reject_compiler("must be anchored on builtin.module" "${reduced}" "${mode}"
+                  "--pass-pipeline=func.func(cse)")
+  reject_compiler(
+    "without disabling multi-threading" "${reduced}" "${mode}" "--pass-pipeline=builtin.module()"
+    --mlir-print-ir-module-scope --mlir-disable-threading=false)
+  run_compiler(0 "${reduced}" "${mode}" "--pass-pipeline=builtin.module()"
+               --mlir-print-ir-module-scope --mlir-disable-threading)
+endforeach()
+
+# MLIR verification alone does not enforce QCO linearity.
+reject_compiler("expected linear QCO value to have exactly one use" "${NONLINEAR_QCO_INPUT}"
+                --run-pipeline "--pass-pipeline=builtin.module()")
 
 run_compiler(0 "${reduced}" --run-pipeline "--pass-pipeline=builtin.module(hadamard-lifting)"
              --mlir-print-ir-before-all --mlir-disable-threading)
@@ -165,10 +189,27 @@ if(NOT output MATCHES "func.call" OR NOT output MATCHES "@missing")
   message(FATAL_ERROR "Reproducer did not preserve the unchecked input: ${output}")
 endif()
 
+# Invalid recorded pipelines must fail before executing or writing the input.
+file(READ "${unverified}" reproducer_source)
+set(invalid_reproducer "${OUTPUT_DIR}/invalid-reproducer.mlir")
+string(REPLACE "builtin.module(cse)" "builtin.module(not-a-pass)" invalid_source
+               "${reproducer_source}")
+file(WRITE "${invalid_reproducer}" "${invalid_source}")
+reject_compiler("does not refer to a registered pass" "${invalid_reproducer}" --run-reproducer)
+foreach(pipeline IN ITEMS "builtin.module()" "func.func(cse)")
+  string(REPLACE "builtin.module(cse)" "${pipeline}" invalid_source "${reproducer_source}")
+  file(WRITE "${invalid_reproducer}" "${invalid_source}")
+  reject_compiler("requires a recorded, non-empty builtin.module pipeline" "${invalid_reproducer}"
+                  --run-reproducer)
+endforeach()
+
 # The initial jeff conversion is part of the requested instrumentation.
 set(jeff "${OUTPUT_DIR}/input.jeff")
 run_compiler(0 "${QASM_INPUT}" --emit=jeff -o "${jeff}")
-run_compiler(0 "${jeff}" --emit=qco --mlir-print-ir-before-all --mlir-disable-threading)
+reject_compiler("without disabling multi-threading" "${jeff}" --emit=qco
+                --mlir-print-ir-module-scope --mlir-disable-threading=false)
+run_compiler(0 "${jeff}" --emit=qco --mlir-print-ir-before-all --mlir-print-ir-module-scope
+             --mlir-disable-threading)
 if(NOT error MATCHES "Before JeffToQCO" OR NOT output MATCHES "qco[.]")
   message(FATAL_ERROR "Initial jeff conversion was not instrumented: ${error}")
 endif()
