@@ -13,7 +13,6 @@ from __future__ import annotations
 import os
 import re
 import sys
-import time
 from pathlib import Path
 from threading import Event, Thread
 
@@ -1018,16 +1017,12 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
     invalid_source = source + "unknown_gate q[0];"
     path = tmp_path / "invalid.qasm"
     path.write_text(invalid_source, encoding="utf-8")
-    ready = Event()
-    stop = Event()
-    progress = 0
+    start = Event()
+    progress = Event()
 
     def worker() -> None:
-        nonlocal progress
-        ready.set()
-        while not stop.is_set():
-            progress += 1
-            time.sleep(0.001)
+        start.wait()
+        progress.set()
 
     thread = Thread(target=worker)
     interval = sys.getswitchinterval()
@@ -1035,21 +1030,24 @@ def test_native_compilation_releases_gil(tmp_path: Path, mode: str) -> None:
         # Prevent interpreter time slices around the native call from passing the check.
         sys.setswitchinterval(60)
         thread.start()
-        assert ready.wait(timeout=5)
-        before = progress
-        if mode == "targetless":
-            compile_program(program, output=OutputFormat.OPENQASM3)
-        elif mode == "target_output":
-            compile_program(program, target=target, output=OutputFormat.OPENQASM3)
-        elif mode == "target_payload":
-            compile_program(program, target=target, program_format=ProgramFormat.QASM3)
-        else:
-            # Parsing fails before the compilation release scope can be reached.
-            with pytest.raises(RuntimeError, match="MLIR operation failed"):
-                compile_program(path if mode == "path" else invalid_source, output=OutputFormat.QCO)
-        assert progress > before, "native parsing or compilation held the GIL"
+        start.set()
+        # ponytail: ten calls allow scheduling; add a native barrier if this remains flaky.
+        for _ in range(10):
+            if mode == "targetless":
+                compile_program(program, output=OutputFormat.OPENQASM3)
+            elif mode == "target_output":
+                compile_program(program, target=target, output=OutputFormat.OPENQASM3)
+            elif mode == "target_payload":
+                compile_program(program, target=target, program_format=ProgramFormat.QASM3)
+            else:
+                # Parsing fails before the compilation release scope can be reached.
+                with pytest.raises(RuntimeError, match="MLIR operation failed"):
+                    compile_program(path if mode == "path" else invalid_source, output=OutputFormat.QCO)
+            if progress.is_set():
+                break
+        assert progress.is_set(), "native parsing or compilation held the GIL"
     finally:
-        stop.set()
+        start.set()
         thread.join(timeout=5)
         sys.setswitchinterval(interval)
     assert not thread.is_alive()

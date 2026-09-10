@@ -1,9 +1,0 @@
-ddsim_index_100k median_ms=0.643542 allocations=0 allocated_bytes=0 site_queries=100000 min_ms=0.641254 max_ms=0.657094 samples_ms=0.641254,0.641287,0.643542,0.651318,0.657094, operation_queries=0
-ddsim_snapshot median_ms=12.4166 allocations=131543 allocated_bytes=11431179 site_queries=327675 min_ms=12.2787 max_ms=19.1204 samples_ms=12.2787,12.2925,12.4166,14.0474,19.1204, operation_queries=487
-checksum=327675
-sc_index_100k median_ms=0.60383 allocations=0 allocated_bytes=0 site_queries=100000 min_ms=0.600197 max_ms=0.605174 samples_ms=0.600197,0.601846,0.60383,0.604614,0.605174, operation_queries=0
-sc_snapshot median_ms=0.150114 allocations=3071 allocated_bytes=161908 site_queries=500 min_ms=0.137041 max_ms=0.186002 samples_ms=0.137041,0.141441,0.150114,0.162337,0.186002, operation_queries=790
-checksum=500
-operation_factory_1000 median_ms=0.015952 allocations=1001 allocated_bytes=64000 site_queries=0 min_ms=0.015824 max_ms=0.022064 samples_ms=0.015824,0.015904,0.015952,0.015953,0.022064, operation_queries=0
-operation_factory_10000 median_ms=0.149186 allocations=10001 allocated_bytes=640000 site_queries=0 min_ms=0.147265 max_ms=0.21485 samples_ms=0.147265,0.147681,0.149186,0.151873,0.21485, operation_queries=0
-operation_factory_100000 median_ms=1.53317 allocations=100001 allocated_bytes=6400000 site_queries=0 min_ms=1.48453 max_ms=1.64866 samples_ms=1.48453,1.49582,1.53317,1.53435,1.64866, operation_queries=0

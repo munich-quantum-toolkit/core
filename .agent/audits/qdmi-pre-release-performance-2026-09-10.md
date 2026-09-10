@@ -4,10 +4,9 @@ Date: 2026-09-10. Status: both confirmed findings applied; final re-audit
 complete.
 
 Audit and measurement baseline: `ad74680f1ef380456a1b89a810ef33ee8d218f69`.
-Publication base: `9d6526f48`, after a clean rebase over three upstream commits.
-Those commits do not change the three production/test files in this diff. Exact
-measured source hashes and reproduction commands are retained in the
-[benchmark record](../benchmarks/qdmi-pre-release-performance/README.md).
+Publication base: `06a1a4a3f0d18f349bc6c6c07d0b597bbf8e48ed`. The timing samples
+below are historical. Benchmark artifacts were removed from this change and
+retained locally in `/tmp/qdmi-release-evidence/removed-benchmarks`.
 
 ## Result
 
@@ -16,8 +15,7 @@ re-audit. Both measured P2 findings are applied: native parsing and compilation
 release the Python GIL, and scalar site-property queries no longer construct an
 unused size-error string.
 
-The complexity review retained the production changes and regression cases. Git
-replaces the duplicate patch file; unused benchmark setup was removed.
+The complexity review retained the production changes and regression cases.
 
 Scope follows
 [#2253](https://github.com/munich-quantum-toolkit/core/issues/2253): concrete
@@ -61,11 +59,12 @@ general compiler throughput claim.
 
 `test_native_compilation_releases_gil` retains five regression cases: targetless
 compilation, both explicit-target result forms, source parsing, and path
-parsing. A background thread must make progress during the native call, with
-ordinary Python interpreter switching disabled for the check. The parsing cases
-fail before the compilation scope so a compiler-only fix cannot satisfy them.
-All five cases failed at their intended assertion on the baseline and pass with
-the fix. Existing simulation and Qiskit-import tests also pass.
+parsing. A signaled background thread must run during at most ten native calls,
+with ordinary Python interpreter switching disabled. This avoids a polling sleep
+and allows a short parse to finish before the worker is scheduled. The parsing
+cases fail before the compilation scope so a compiler-only fix cannot satisfy
+them. All five cases failed at their intended assertion on the baseline and pass
+with the fix. Existing simulation and Qiskit-import tests also pass.
 
 ### 2. Skip unused size diagnostics for scalar site properties
 
@@ -140,26 +139,31 @@ Environment: ARM64 DGX Spark, GCC 13.3/libstdc++, Release with IPO, LLVM/MLIR
 23.1.0, GIL-enabled CPython 3.14.7. Publication checks below were rerun after
 the rebase. Timing samples above remain tied to the measurement baseline.
 
-- Release build: 212 compiler, 241 client, and 72 DDSIM tests pass (525 native).
+- Release build: 212 compiler, 241 client, and 75 DDSIM tests pass (528 native).
 - Final Nox `tests-3.14`: 833 tests pass across `test_mlir.py`,
   `test_qco_dd.py`, `test_mlir_qiskit_translation.py`, QDMI compilation/client
   tests, and the three focused Qiskit/PennyLane frontend files, including the
   five new GIL cases.
+- All five revised GIL cases fail at the intended assertion without the release
+  scopes. Forty source/path repetitions pass with both threads on one CPU.
 - `uvx nox -s stubs` passes after the final binding change; generated stubs have
   no diff.
-- Full `uvx nox -s lint` and `uvx nox -s cpp-lint -- 9d6526f48` pass. The latter
+- Full `uvx nox -s lint` and `uvx nox -s cpp-lint -- 06a1a4a3f` pass. The latter
   checks the whole changed binding file against the publication base.
 - The repository's C++ linter excludes ordinary public headers. A supplemental
   whole-header clang-tidy check for `Client.hpp` reports five existing naming
   and implicit-conversion warnings. The baseline header, supplied through a VFS
   overlay, produces the same diagnostics; no new warning was introduced.
-- Native probes, Python probes, five-process output comparison, and explicit
-  experiment syntax/format checks pass. The generated plot was inspected.
+- `uvx check-sdist --inject-junk` passes with tracked benchmark sentinels. A
+  built source archive excludes the sentinels, including nested code/data files.
+  Both the archive exclusions and consistency-check exceptions cover
+  `.agent/benchmarks`.
 
-Reproduction commands, exact source revisions, raw samples, spread, neutral
-results, and before/after plots are in the linked benchmark record. Detailed
-test, baseline-failure, and lint logs are in `/tmp/qdmi-release-evidence`.
+Detailed test, baseline-failure, packaging, and lint logs are in
+`/tmp/qdmi-release-evidence`.
 
-No cloud execution, hardware jobs, Windows, ThreadSanitizer, free-threaded
-Python, or hosted CI validation was performed. Concurrent mutation of one
+The prior macOS Python 3.13 CI run exposed the polling-based test's scheduling
+assumption. The revised test needs a fresh hosted run; local validation does not
+establish that result. No cloud execution, hardware jobs, ThreadSanitizer, or
+free-threaded Python validation was performed. Concurrent mutation of one
 Python-owned program is not a new supported contract.
