@@ -20,7 +20,6 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mqt/Support/Verification.h"
 
 #include "jeff/IR/JeffDialect.h"
 
@@ -38,6 +37,7 @@
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/Location.h"
 #include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
@@ -283,7 +283,7 @@ QCProgram::fromModule(std::shared_ptr<MLIRContext> context,
     return std::nullopt;
   }
   storage.context->getOrLoadDialect<mqt::MQTDialect>();
-  if (failed(mqt::verifyProgramParameters(*storage.mod)) ||
+  if (failed(verify(*storage.mod)) ||
       (!mqt::getEntryPoint(*storage.mod) &&
        failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
     return std::nullopt;
@@ -302,8 +302,7 @@ QCProgram QCProgram::copy() const { return QCProgram(cloneStorage()); }
 std::optional<QCOProgram> QCProgram::intoQCO() && {
   PassManager pm(mod().getContext());
   pm.addPass(createQCToQCO());
-  if (failed(mqt::verifyProgramParameters(mod())) || failed(pm.run(mod())) ||
-      failed(mqt::verifyProgramParameters(mod()))) {
+  if (failed(pm.run(mod()))) {
     mod().emitError("failed to convert QC to QCO");
     return std::nullopt;
   }
@@ -382,7 +381,7 @@ QCOProgram::fromModule(std::shared_ptr<MLIRContext> context,
     return std::nullopt;
   }
   storage.context->getOrLoadDialect<mqt::MQTDialect>();
-  if (failed(mqt::verifyProgramParameters(*storage.mod)) ||
+  if (failed(verify(*storage.mod)) ||
       (!mqt::getEntryPoint(*storage.mod) &&
        failed(mqt::verifyQuantumAllocations(*storage.mod)))) {
     return std::nullopt;

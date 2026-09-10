@@ -31,8 +31,8 @@ not introduced.
 ### Direct gate parameters
 
 `mqt::verifyFiniteConstantParameters` uses the standard MLIR constant matcher
-and no longer allocates per-gate lookup tables. Both QC and QCO use it. Direct
-block arguments also skip expression work in program validation. The allocation
+and no longer allocates per-gate lookup tables. Both QC and QCO use it.
+Parameter expressions and block arguments require no traversal. The allocation
 argument follows from the source; allocator calls were not counted.
 
 ### QTensor commuting
@@ -52,26 +52,21 @@ commutations on a flat distinct-slot chain. Tests check one-rewrite
 normalization from the last pair, slot identity, dominance, linearity, and index
 barriers. The rewrite does not guarantee linear behavior for arbitrary graphs.
 
-### Shared expression validation
+### Parameter-expression scans
 
-Deep finite-expression checks belong to program validation. Standalone
-`mlir::verify(gate)` checks direct constants. Raw MLIR clients must call
-`mqt::verifyProgramParameters` before transforming or exporting programs; QC/QCO
-interface documentation and `docs/mlir/development.md` state this boundary.
-Dynamic values retain the finite-value runtime precondition.
+Finite gate parameters are a precondition of valid QC/QCO programs, including
+values produced at runtime. Operation verifiers retain a direct-constant sanity
+check. They do not traverse or fold expression graphs to establish finiteness.
 
-`mlir/lib/Support/Verification.cpp` first verifies ordinary MLIR structure, then
-checks QC/QCO expression graphs with one cache per call. An iterative postorder
-walk fills operand results before folding each value, avoiding proportional
-call-stack growth. All operands of pure, region-free expressions are visited,
-including unselected operands. Non-finite constants and folded results are
-rejected. No cache survives an IR mutation.
+There is no program-wide finite-parameter validator, cache, or extra validation
+around pipelines and exports. Ordinary MLIR structural verification remains in
+place. Existing point-of-use checks reject values that numerical algorithms or
+external formats cannot handle. Guards against overflow or phase loss from valid
+finite inputs remain necessary.
 
-Calls cover program construction, compiler pipeline boundaries, direct
-normalization, QC import, OpenQASM and Qiskit export, and mqt-cc. Tests cover
-hidden infinity and NaN, mutation between checks, a 10000-node expression,
-folded overflow, and CLI import. Opaque operations, regions, and runtime values
-retain the previous analysis limits.
+Tests that require discovering hidden non-finite values, checking unselected
+operands, or rechecking after arbitrary mutations are outside this contract.
+Direct NaN/infinity sanity checks and numerical correctness tests remain.
 
 ## Final review and validation
 
@@ -84,14 +79,11 @@ retain the previous analysis limits.
 - Gate-matrix helpers retain fixed-size storage, phase-sensitive identities,
   numerical limits, and bounded integer powering. No speculative global cache or
   container conversion is added.
-- The complexity review removed one duplicate MLIR verification assertion; the
-  program validator already performs that check. Required tests and guards
-  remain. No other justified complexity cut was found.
-- Native `release-clang-ipo` build and 1470 focused C++ tests pass: 14 CBit, 42
-  MQT utilities, 44 QTensor, 367 QC, 579 QCO, 209 QC translation, 215 compiler.
-- Both mqt-cc CTest cases and all 375 Python Qiskit translation tests pass on
-  the rebuilt extension. Stub generation passes without tracked stub changes.
-- `uvx nox -s lint` and full-file `uvx nox -s cpp-lint` pass. All 17 changed C++
-  files were checked, with zero reported findings.
+- Native `release-clang-ipo` build and 1467 focused C++ tests pass: 14 CBit, 42
+  MQT utilities, 44 QTensor, 367 QC, 579 QCO, 209 QC translation, 212 compiler.
+- Both mqt-cc CTest cases and 445 Python MLIR/Qiskit tests pass on the rebuilt
+  extension. QDMI cases use the native build's device configuration. Stub
+  generation passes without tracked stub changes.
+- `uvx nox -s lint` and full-file `uvx nox -s cpp-lint` pass.
 - Full repository tests, application profiles, and hosted CI were not run as
   part of this audit.

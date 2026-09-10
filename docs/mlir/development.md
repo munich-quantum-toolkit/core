@@ -73,17 +73,6 @@ Use diagnostics for invalid input or unsupported behavior. Reserve assertions
 for internal invariants that valid input cannot violate. Diagnostics must state
 what failed and, when useful, which form is supported.
 
-## Finite gate parameters
-
-QC and QCO operation verifiers check direct constant parameters.
-`mqt::verifyProgramParameters` checks constant values throughout pure,
-region-free parameter expressions, including unselected operands. Compiler
-program construction, pipeline boundaries, and exporters run this check. Clients
-that use raw MLIR operations and passes must call it after MLIR verification and
-before transforming or exporting a program. Dynamic values must be finite at
-runtime. The check shares expression results within one call and discards them
-before any later IR mutation.
-
 ## Linear quantum values
 
 Every `!qco.qubit` and one-dimensional qubit tensor or vector SSA value in valid

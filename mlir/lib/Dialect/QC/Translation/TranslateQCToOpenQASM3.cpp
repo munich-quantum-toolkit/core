@@ -18,7 +18,6 @@
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Support/IntegerExpressions.h"
-#include "mqt/Support/Verification.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 #include "mqt/Target/OpenQASM/GateCatalog.h"
 
@@ -37,6 +36,7 @@
 #include "mlir/IR/Operation.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
 #include "mlir/IR/Visitors.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/IndentedOstream.h"
@@ -116,7 +116,7 @@ public:
   explicit OpenQASMEmitter(ModuleOp moduleOp) : moduleOp(moduleOp) {}
 
   [[nodiscard]] FailureOr<std::string> emit() {
-    if (failed(mqt::verifyProgramParameters(moduleOp)) || failed(preflight()) ||
+    if (failed(verify(moduleOp)) || failed(preflight()) ||
         failed(collectProgramShape())) {
       return failure();
     }
