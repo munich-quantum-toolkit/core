@@ -2698,19 +2698,24 @@ Value simpleDoWhileReset(QCProgramBuilder& b) {
   return measureToRegister(b, q);
 }
 
+// Load each reference where the converted program consumes it.
+static Value measureRegisterAtUse(QCProgramBuilder& b, Value reg,
+                                  int64_t size) {
+  auto result = b.allocClassicalBitRegister(size);
+  for (int64_t i = 0; i < size; ++i) {
+    auto q = b.loadQubit(reg, b.indexConstant(i));
+    b.measure(q, result, i);
+  }
+  return result;
+}
+
 Value simpleForLoop(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegisterStorage(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
     auto q = b.loadQubit(reg, iv);
     b.h(q);
   });
-  // Load each reference where the converted program consumes it.
-  auto result = b.allocClassicalBitRegister(2);
-  for (int64_t i = 0; i < 2; ++i) {
-    auto q = b.loadQubit(reg, b.indexConstant(i));
-    b.measure(q, result, i);
-  }
-  return result;
+  return measureRegisterAtUse(b, reg, 2);
 };
 
 Value nestedForLoopIfOp(QCProgramBuilder& b) {
@@ -2742,13 +2747,7 @@ Value nestedForLoopWhileOp(QCProgramBuilder& b) {
         },
         [&] { b.h(q); });
   });
-  // Load each reference where the converted program consumes it.
-  auto result = b.allocClassicalBitRegister(2);
-  for (int64_t i = 0; i < 2; ++i) {
-    auto q = b.loadQubit(reg, b.indexConstant(i));
-    b.measure(q, result, i);
-  }
-  return result;
+  return measureRegisterAtUse(b, reg, 2);
 }
 
 Value nestedForLoopSwitchOp(QCProgramBuilder& b) {
@@ -2769,13 +2768,7 @@ Value nestedForLoopSwitchOp(QCProgramBuilder& b) {
                      },
                      [&] { /* error */ });
   });
-  // Load each reference where the converted program consumes it.
-  auto result = b.allocClassicalBitRegister(3);
-  for (int64_t i = 0; i < 3; ++i) {
-    auto q = b.loadQubit(reg, b.indexConstant(i));
-    b.measure(q, result, i);
-  }
-  return result;
+  return measureRegisterAtUse(b, reg, n);
 }
 
 Value nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b) {

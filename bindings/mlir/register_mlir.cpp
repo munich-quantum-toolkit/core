@@ -125,17 +125,6 @@ struct OptionalFunctionAdapter<Function> {
   }
 };
 
-template <auto Method> struct OptionalMemberAdapter;
-
-template <class Class, class T, class... Args,
-          std::optional<T> (Class::*Method)(Args...) const>
-struct OptionalMemberAdapter<Method> {
-  static T call(const Class& self, Args... args) {
-    requireValid(self);
-    return takeResult((self.*Method)(std::forward<Args>(args)...));
-  }
-};
-
 template <auto Method> struct BooleanMemberAdapter;
 
 template <class Class, class... Args, bool (Class::*Method)(Args...)>
@@ -1496,9 +1485,13 @@ LLVM bitcode.)pb");
            "Run the standard QIR cleanup pipeline in place.")
       .def_prop_ro("profile", &mlir::QIRProgram::profile,
                    "The QIR target profile used to produce this program.")
-      .def_prop_ro("llvm_ir",
-                   &OptionalMemberAdapter<&mlir::QIRProgram::llvmIR>::call,
-                   "The program as textual LLVM IR.")
+      .def_prop_ro(
+          "llvm_ir",
+          [](const mlir::QIRProgram& value) {
+            requireValid(value);
+            return takeResult(value.llvmIR());
+          },
+          "The program as textual LLVM IR.")
       .def(
           "to_bitcode",
           [](const mlir::QIRProgram& value) {
