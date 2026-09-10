@@ -358,8 +358,7 @@ protected:
       return;
     }
 
-    const auto layout = Layout::fromMapping(
-        llvm::to_vector(llvm::seq(computation->wires.size())));
+    const auto layout = Layout::identity(computation->wires.size());
     IRRewriter rewriter(&getContext());
     applyPlacement(func.getFunctionBody(), target, layout, *computation,
                    rewriter);
@@ -815,8 +814,9 @@ private:
       trials.emplace_back(RoutingBundle{
           .wires = wires,
           .infos = infos,
-          .layout =
-              Layout::random(target->numSites(), target->numSites(), rng()),
+          .layout = i == 0 ? Layout::identity(target->numSites())
+                           : Layout::random(target->numSites(),
+                                            target->numSites(), rng()),
       });
     }
 

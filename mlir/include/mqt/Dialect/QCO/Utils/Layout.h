@@ -37,6 +37,11 @@ public:
   /// Construct an empty layout.
   Layout() = default;
 
+  /// Construct and return an identity layout that maps the i-th program qubit
+  /// index in `[0, nqubits)` to the i-th hardware index in `[0, nqubits)`.
+  /// Sets both `nProgramQubits` and `nHardwareQubits` to `nqubits`.
+  static Layout identity(size_t nqubits);
+
   /// Construct and return a random layout that maps every program qubit
   /// index in `[0, nProgramQubits)` to a distinct hardware index drawn from
   /// `[0, nHardwareQubits)`.
