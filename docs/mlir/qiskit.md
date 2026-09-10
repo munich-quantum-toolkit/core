@@ -2,10 +2,10 @@
 
 MQT Core exposes two distinct Qiskit interfaces:
 
-| Interface                                               | Supported Qiskit versions | Purpose                                                          |
-| ------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------- |
-| {doc}`QDMI backend <../qdmi/qdmi_backend>`              | 2.1 and newer             | Execute circuits through device-specific serializers.            |
-| {doc}`Compiler collection <python_compiler_collection>` | `>=2.5.0,<2.6.0`          | Import and export circuits through the versioned native adapter. |
+| Interface                                                | Supported Qiskit versions | Purpose                                                          |
+| -------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------- |
+| {doc}`QDMI backend <../qdmi/qdmi_backend>`               | 2.1 and newer             | Execute circuits through device-specific serializers.            |
+| {doc}`MQT Compiler Collection <mqt_compiler_collection>` | `>=2.5.0,<2.6.0`          | Import and export circuits through the versioned native adapter. |
 
 Install `mqt-core[qiskit]`. Direct compiler translation requires a version in
 the narrower range above; the adapter checks it before inspecting a circuit.

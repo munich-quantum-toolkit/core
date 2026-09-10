@@ -14,6 +14,11 @@ structured QC program, a resolved manifest, and a stable case ID. The generated
 program returns one classical register named `result`. Outcome strings are
 big-endian: the highest-index result bit is the leftmost character.
 
+For an end-to-end device example, start with {doc}`getting_started`. It compares
+standard and iterative QPE and evaluates exact and non-exact phases. The
+[repeat-until-success example](#repeat-until-success) below demonstrates an
+adaptive retry loop and a phase-sensitive readout.
+
 ## Discover the catalog
 
 The command-line registry is the current list of available families. Each family
@@ -120,8 +125,8 @@ for a distinguished success outcome.
 ## Generate structured IR
 
 Generation returns a {py:class}`~mqt.core.mlir.QCProgram`, the program type used
-by the [MQT Core MLIR compiler collection](mlir/python_compiler_collection.md).
-The program can enter the normal compiler pipeline.
+by the [MQT Compiler Collection](mlir/mqt_compiler_collection.md). The program
+can enter the normal compiler pipeline.
 
 ```{code-cell} ipython3
 program = benchmark.generate()
@@ -340,32 +345,89 @@ every input.
 
 ### Repeat until success
 
-The `repeat-until-success` family generalizes the two-$T$-gate circuit from
-Figure 8 of Paetznick and Svore's
-[repeat-until-success decomposition](https://arxiv.org/abs/1311.1074v2) to
-$P=X^{\otimes n}$. Set `data_qubits` to $n$ (default 1, range 1–1,000,000); the
-circuit uses one additional ancilla. Both registers start in zero.
+A repeat-until-success (RUS) circuit measures an ancilla to decide whether an
+operation succeeded. On failure, it restores the ancilla and retries. RUS
+decompositions can reduce the expected number of costly non-Clifford gates in
+fault-tolerant quantum computing.
 
-Each attempt applies $(I + i\sqrt{2}P)/\sqrt{3}$ with probability $3/4$. Failure
-leaves the data unchanged up to global phase. The circuit restores the ancilla
-to zero and retries through an unbounded `scf.while`. Two controlled Pauli
-strings require $2n$ CNOT gates per attempt. Structured loops keep the generated
-QC program compact; execution still takes linear work per attempt.
+The `repeat-until-success` family generalizes the two-$T$-gate circuit in Figure
+8 of [Paetznick and Svore](https://arxiv.org/abs/1311.1074v2). It applies
 
-After success, the data state is $(|0^n\rangle+i\sqrt{2}|1^n\rangle)/\sqrt{3}$.
-The benchmark measures $Y\otimes X^{\otimes(n-1)}$ by changing basis and
-accumulating parity on the first data qubit. The one-bit `result` has
-probabilities $P(0)=1/2+\sqrt{2}/3$ and $P(1)=1/2-\sqrt{2}/3$ at every width.
-This readout checks the relative phase without an exponentially large output
-distribution.
+```{math}
+U = \frac{I+i\sqrt{2}X^{\otimes n}}{\sqrt{3}}
+```
+
+to $n$ data qubits initially in $|0^n\rangle$. Each attempt succeeds with
+probability $3/4$; failure leaves the data unchanged up to global phase. The
+expected number of attempts is $4/3$, giving $8/3$ $T$ gates on average before
+target synthesis. Two controlled Pauli strings use $2n$ CNOT gates per attempt.
+
+Set `data_qubits` to $n$ (default 1, range 1–1,000,000). The circuit uses one
+additional ancilla, initially zero, and retries through a `while` loop with no
+fixed attempt limit. Canonical instance specifications include `data_qubits`,
+and case IDs distinguish widths:
 
 ```json
 {"schema_version":1,"benchmark":"repeat-until-success","parameters":{"data_qubits":32}}
 ```
 
-The empty parameter object still selects one data qubit. Canonical JSON includes
-`data_qubits`, and semantic case IDs distinguish widths. The width limit bounds
-input size; it does not guarantee that a compiler or execution backend supports
-that many qubits. This family scales width and adaptive execution, while its
-state remains simple for decision diagrams and its expected $T$ count stays
-$8/3$. It does not model magic-state distillation or cultivation.
+#### Compile and execute the retry loop
+
+Four data qubits and one ancilla give five qubits in this example. DDSIM
+executes the generated program through Adaptive QIR. See {doc}`getting_started`
+for the basic compile-and-submit workflow and {doc}`installation` for setup.
+
+```{code-cell} ipython3
+from mqt.core.bench import repeat_until_success
+from mqt.core.mlir import compile_program, submit_program
+from mqt.core.qdmi.driver import open_device
+
+rus = repeat_until_success.RepeatUntilSuccess(
+    repeat_until_success.Options(data_qubits=4)
+)
+device = open_device("mqt.ddsim.default")
+compiled = compile_program(rus.generate(), target=device)
+job = submit_program(compiled, target=device, num_shots=4096, custom1=17)
+job.wait()
+counts = job.get_counts()
+print(f"Counts: {counts}")
+```
+
+#### Check the relative phase
+
+Successful execution prepares
+
+```{math}
+|\psi\rangle = \frac{|0^n\rangle+i\sqrt{2}|1^n\rangle}{\sqrt{3}}.
+```
+
+Measuring only in the computational basis would miss the relative phase. The
+benchmark instead measures $Y\otimes X^{\otimes(n-1)}$ by changing basis and
+accumulating parity on the first data qubit. The one-bit `result` has ideal
+probabilities
+
+```{math}
+P(0)=\frac12+\frac{\sqrt2}{3}, \qquad
+P(1)=\frac12-\frac{\sqrt2}{3}.
+```
+
+The result is a final parity measurement, not the ancilla's success flag or the
+number of retry attempts.
+
+```{code-cell} ipython3
+evaluation = rus.evaluate(counts)
+assert sum(counts.values()) == 4096
+assert evaluation.total_variation_distance < 0.02
+for bit in ("0", "1"):
+    observed = counts.get(bit, 0) / sum(counts.values())
+    print(f"P({bit}): observed {observed:.3f}, ideal {rus.probability(bit):.3f}")
+print(f"Total variation distance: {evaluation.total_variation_distance:.3f}")
+```
+
+The analytic probabilities are independent of width. This readout checks the
+relative phase without an exponentially large output distribution. Structured
+loops keep the program compact; execution still takes linear work per attempt.
+The input width limit does not guarantee that a device or compiler supports that
+many qubits. See {doc}`mlir/target_compilation` for device and control-flow
+limits. The benchmark simulates an ideal adaptive circuit; it does not model
+error correction, magic-state distillation, or cultivation.

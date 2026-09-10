@@ -64,9 +64,9 @@ modular multiplier
   arithmetic circuit that computes a product reduced modulo a specified integer.
 
 MQSC
-Munich Quantum Software Company
-  **Preferred term:** Munich Quantum Software Company. **Accepted abbreviation:**
-  MQSC. The company that develops and supports parts of MQT Core.
+  **Preferred term:** [MQSC](https://mq.sc). **Accepted aliases:** none. The
+  company that develops and supports parts of MQT Core. Use the linked short
+  name in prose; reserve the full legal name for copyright notices.
 
 MQSS
 Munich Quantum Software Stack
@@ -80,6 +80,11 @@ Munich Quantum Toolkit
   **Preferred term:** Munich Quantum Toolkit. **Accepted abbreviation:** MQT.
   The [open-source software toolkit](https://mqt.readthedocs.io/) of which MQT
   Core is the shared foundation.
+
+MQT Compiler Collection
+  **Preferred term:** MQT Compiler Collection. **Accepted aliases:** none.
+  MQT Core's framework for compiling, optimizing, and exchanging quantum
+  programs through Python, C++, and the `mqt-cc` command-line driver.
 
 MQV
 Munich Quantum Valley

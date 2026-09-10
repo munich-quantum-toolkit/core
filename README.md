@@ -18,8 +18,9 @@
 
 # MQT Core - The Backbone of the Munich Quantum Toolkit (MQT)
 
-MQT Core is an open-source C++20 and Python library for quantum computing that
-forms the backbone of the quantum software tools developed as part of the
+MQT Core is a collection of open-source C++20 and Python libraries for quantum
+computing. Generate programs, compile them for a device, execute them, and
+analyze the results. Its libraries form the backbone of the
 [_Munich Quantum Toolkit (MQT)_](https://mqt.readthedocs.io).
 
 <p align="center">
@@ -30,20 +31,104 @@ forms the backbone of the quantum software tools developed as part of the
 
 ## Key Features
 
-- An MLIR-based compiler collection for quantum programs.
-- A state-of-the-art decision diagram (DD) package for quantum computing.
-- A QIR runtime based on the decision diagram package.
+- **[MQT Compiler Collection](https://mqt.readthedocs.io/projects/core/en/stable/mlir/mqt_compiler_collection.html):**
+  Generate and optimize structured quantum/classical programs, map them to
+  devices, synthesize native gates, and exchange programs through OpenQASM,
+  Qiskit, QIR, and jeff.
+- **[Decision diagrams](https://mqt.readthedocs.io/projects/core/en/stable/dd_package.html):**
+  Represent quantum states and operations, simulate programs, and analyze their
+  behavior through C++ and Python.
+- **[QIR execution](https://mqt.readthedocs.io/projects/core/en/stable/qir/index.html):**
+  Execute supported QIR Base and Adaptive Profile programs with the DD runtime.
+- **[QDMI](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/index.html):**
+  Discover devices, query capabilities, compile programs, and submit jobs. Use
+  bundled DDSIM for execution and superconducting hardware models for
+  compilation.
+- **SDK and HPC integration:** connect devices through
+  [Qiskit](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/qdmi_backend.html),
+  [PennyLane](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/pennylane_device.html),
+  and
+  [Slurm](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/slurm.html).
+- **[Structured benchmarks](https://mqt.readthedocs.io/projects/core/en/stable/benchmarks.html):**
+  Generate configurable quantum programs, query analytic references, and
+  evaluate sampled results.
 
-If you have any questions, feel free to create a
+## Getting Started
+
+Install [mqt.core](https://pypi.org/project/mqt.core/) in a Python 3.11 or newer
+virtual environment:
+
+```console
+uv pip install mqt.core
+```
+
+Estimate the phase `3/8` with eight bits of precision using
+**iterative quantum phase estimation (QPE)**. This uses two qubits and
+measurement feedback. Compile for the bundled DDSIM device, then submit the
+compiled program:
+
+```python
+from fractions import Fraction
+
+from mqt.core.bench import qpe
+from mqt.core.mlir import compile_program, submit_program
+from mqt.core.qdmi.driver import open_device
+
+benchmark = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=qpe.Method.ITERATIVE))
+program = benchmark.generate()
+device = open_device("mqt.ddsim.default")
+compiled = compile_program(program, target=device)
+job = submit_program(compiled, target=device, num_shots=1024)
+job.wait()
+
+counts = job.get_counts()
+outcome = max(counts, key=lambda bits: counts[bits])
+phase = Fraction(int(outcome, 2), 2**benchmark.output.width)
+assert phase == benchmark.options.phase
+assert benchmark.evaluate(counts).total_variation_distance < 1e-12
+print(f"Counts: {counts}")
+print(f"Estimated phase: {phase}")
+```
+
+```text
+Counts: {'01100000': 1024}
+Estimated phase: 3/8
+```
+
+The
+[QPE walkthrough](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html)
+compares standard and iterative QPE and evaluates a phase that cannot be
+represented exactly with eight bits. This phase-gate benchmark illustrates the
+phase-estimation step used in algorithms such as Shor's.
+
+## Further Documentation
+
+- [Install and build MQT Core](https://mqt.readthedocs.io/projects/core/en/stable/installation.html).
+- [Compile and execute programs](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html).
+- Browse the
+  [Python API](https://mqt.readthedocs.io/projects/core/en/stable/api/mqt/core/index.html)
+  and
+  [C++ entry point](https://mqt.readthedocs.io/projects/core/en/stable/cpp_api.html).
+
+## Development
+
+Source builds require a C++20 compiler and CMake 3.28 or newer. Building the
+compiler collection also requires
+[LLVM/MLIR 23.1 or newer](https://mqt.readthedocs.io/projects/core/en/stable/installation.html#setting-up-mlir).
+Prebuilt Python wheels include the compiler and simulator. Graphviz is optional
+for exporting DD visualizations.
+
+See the
+[contribution guide](https://mqt.readthedocs.io/projects/core/en/stable/contributing.html)
+for development setup and checks. For questions and suggestions, open a
 [discussion](https://github.com/munich-quantum-toolkit/core/discussions) or an
-[issue](https://github.com/munich-quantum-toolkit/core/issues) on
-[GitHub](https://github.com/munich-quantum-toolkit/core).
+[issue](https://github.com/munich-quantum-toolkit/core/issues).
 
 ## Contributors and Supporters
 
-MQT Core is developed by the
+MQT Core is developed by [MQSC](https://mq.sc) and the
 [Chair for Design Automation](https://www.cda.cit.tum.de/) at the
-[Technical University of Munich](https://www.tum.de/) and [MQSC](https://mq.sc).
+[Technical University of Munich](https://www.tum.de/).
 Among others, it is part of the
 [Munich Quantum Software Stack (MQSS)](https://www.munich-quantum-valley.de/research/research-areas/mqss)
 ecosystem, which is being developed as part of the
@@ -85,75 +170,6 @@ To support this endeavor, please consider:
   <img width=20% src="https://img.shields.io/badge/Sponsor-white?style=for-the-badge&logo=githubsponsors&labelColor=black&color=blue" alt="Sponsor the MQT" />
   </a>
 </p>
-
-## Getting Started
-
-`mqt.core` is available via [PyPI](https://pypi.org/project/mqt.core/).
-
-```console
-uv pip install mqt.core
-```
-
-The following example compiles an OpenQASM program to QIR and executes it on the
-QDMI DDSIM device:
-
-```python3
-from mqt.core.mlir import CompilerTarget, OutputFormat, compile_program
-from mqt.core.qdmi import ProgramFormat
-from mqt.core.qdmi.driver import open_device
-
-source = """OPENQASM 3.0;
-include "stdgates.inc";
-qubit[2] q;
-bit[2] result;
-h q[0];
-cx q[0], q[1];
-result = measure q;
-"""
-
-device = open_device("mqt.ddsim.default")
-program = compile_program(
-    source,
-    target=CompilerTarget.from_device(device),
-    output=OutputFormat.QIR_BASE,
-)
-job = device.submit_job(
-    program.to_bitcode(),
-    ProgramFormat.QIR_BASE_MODULE,
-    num_shots=1024,
-)
-job.wait()
-print(job.get_counts())
-```
-
-**Detailed documentation and examples are available at
-[ReadTheDocs](https://mqt.readthedocs.io/projects/core).**
-
-## System Requirements
-
-Building the project requires a C++ compiler with support for C++20 and CMake
-3.28 or newer. For details on how to build the project, please refer to the
-[documentation](https://mqt.readthedocs.io/projects/core). Building (and
-running) is continuously tested under Linux, macOS, and Windows using the
-[latest available system versions for GitHub Actions](https://github.com/actions/runner-images).
-MQT Core is compatible with all
-[officially supported Python versions](https://devguide.python.org/versions/).
-
-The project relies on some external dependencies:
-
-- [nlohmann/json](https://github.com/nlohmann/json):
-  A JSON library for modern C++.
-- [google/googletest](https://github.com/google/googletest):
-  A testing framework for C++ (only used in tests).
-
-CMake will automatically look for installed versions of these libraries. If it
-does not find them, they will be fetched automatically at configure time via the
-[FetchContent](https://cmake.org/cmake/help/latest/module/FetchContent.html)
-module (check out the documentation for more information on how to customize
-this behavior).
-
-It is recommended (although not required) to have
-[GraphViz](https://www.graphviz.org) installed for visualization purposes.
 
 ## Cite This
 
