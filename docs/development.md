@@ -50,10 +50,11 @@ Order include groups as follows, sorting each group alphabetically:
 
 1. The matching header for the source file.
 2. MQT Core headers, including MQT's MLIR headers.
-3. Other private headers and third-party library headers.
-4. Upstream MLIR headers.
-5. LLVM headers.
-6. System and standard-library headers.
+3. Other private project headers.
+4. Third-party library headers.
+5. Upstream MLIR headers.
+6. LLVM headers.
+7. System and standard-library headers.
 
 Use quotes for project and third-party headers. Use angle brackets for system
 and standard-library headers, or when a library requires them. Keep includes
@@ -65,7 +66,9 @@ header.
 
 The root `.clang-format` enforces this order. MQT's MLIR headers use the `mqt/`
 prefix, for example `"mqt/Dialect/QCO/IR/QCOOps.h"`. Upstream MLIR headers use
-`mlir/`, for example `"mlir/IR/MLIRContext.h"`.
+`mlir/`, for example `"mlir/IR/MLIRContext.h"`. When adding a dependency,
+include its header prefix in the third-party formatter category. Other quoted
+includes belong to the private project header group.
 
 ### C++ documentation comments
 

@@ -11,6 +11,7 @@
 #include "bench/Grover.hpp"
 
 #include "TestUtils.h"
+
 #include "gtest/gtest.h"
 
 namespace mqt::bench {

@@ -14,6 +14,7 @@
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
 
 #include "Support/IRVerification.h"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"

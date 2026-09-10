@@ -9,6 +9,7 @@
  */
 
 #include "../../src/bench/SHA256.hpp"
+
 #include "gtest/gtest.h"
 
 namespace {

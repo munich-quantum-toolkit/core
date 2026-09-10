@@ -15,6 +15,7 @@
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
 #include "ExactUnitaryTest.h"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"

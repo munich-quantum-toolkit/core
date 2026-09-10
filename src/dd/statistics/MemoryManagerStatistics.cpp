@@ -11,6 +11,7 @@
 #include "dd/statistics/MemoryManagerStatistics.hpp"
 
 #include "StatisticsJson.hpp"
+
 #include "nlohmann/json.hpp"
 
 #include <algorithm>

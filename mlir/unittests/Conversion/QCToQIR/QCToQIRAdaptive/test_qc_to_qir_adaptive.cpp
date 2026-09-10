@@ -20,9 +20,10 @@
 
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "gtest/gtest.h"
 #include "qc_programs.h"
 #include "qir_programs.h"
+
+#include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"

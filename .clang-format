@@ -6,16 +6,22 @@ IncludeCategories:
     Priority: 1
   - Regex: '^"qdmi/.*\.hpp"'
     Priority: 1
-  - Regex: '^"mlir/'
+  # This is MQT's private binding header, not an upstream Qiskit header.
+  - Regex: '^"qiskit/Qiskit\.h"'
+    Priority: 2
+  - Regex: '^"((capnp|gmock|gtest|kj|nanobind|nlohmann|qdmi|qiskit)/|jeff[./])'
     Priority: 3
-  - Regex: '^"llvm(-c)?/'
+  - Regex: '^"mlir/'
     Priority: 4
+  - Regex: '^"llvm(-c)?/'
+    Priority: 5
+  # Remaining quoted includes are private project headers.
   - Regex: '^"'
     Priority: 2
   # Avoid the local Qiskit.h and keep the umbrella before its extension table.
   - Regex: "^<qiskit[./]"
-    Priority: 2
+    Priority: 3
   - Regex: "^<"
-    Priority: 5
+    Priority: 6
 PointerAlignment: Left
 Standard: c++20

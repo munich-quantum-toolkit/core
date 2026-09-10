@@ -14,6 +14,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+
 #include "gtest/gtest.h"
 
 #include <algorithm>

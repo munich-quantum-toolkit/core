@@ -13,6 +13,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/MemRef/IR/MemRef.h"

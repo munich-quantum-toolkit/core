@@ -22,6 +22,8 @@
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/SessionConfig.hpp"
 
+#include "qiskit/Qiskit.h"
+
 #include "nanobind/nanobind.h"
 #include "nanobind/ndarray.h"
 #include "nanobind/stl/filesystem.h"
@@ -32,7 +34,6 @@
 #include "nanobind/stl/string_view.h"
 #include "nanobind/stl/variant.h"
 #include "nanobind/stl/vector.h"
-#include "qiskit/Qiskit.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/IR/Diagnostics.h"

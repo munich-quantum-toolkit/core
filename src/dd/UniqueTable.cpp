@@ -13,8 +13,9 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 
-#include "nlohmann/json.hpp"
 #include "statistics/StatisticsJson.hpp"
+
+#include "nlohmann/json.hpp"
 
 #include <algorithm>
 #include <cstddef>

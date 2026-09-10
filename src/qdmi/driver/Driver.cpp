@@ -15,6 +15,7 @@
 #include "qdmi/driver/SessionConfig.hpp"
 
 #include "DeviceRegistry.hpp"
+
 #include "qdmi/client.h"
 #include "qdmi/device.h"
 

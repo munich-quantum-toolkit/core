@@ -18,8 +18,9 @@
 #include "mqt/Target/OpenQASM/Frontend.h"
 
 #include "OpenQASMTestUtils.h"
-#include "gtest/gtest.h"
 #include "qasm_programs.h"
+
+#include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"

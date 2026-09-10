@@ -24,8 +24,9 @@
 
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "gtest/gtest.h"
 #include "qco_programs.h"
+
+#include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"

@@ -15,8 +15,9 @@
 
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "gtest/gtest.h"
 #include "qir_programs.h"
+
+#include "gtest/gtest.h"
 
 #include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"

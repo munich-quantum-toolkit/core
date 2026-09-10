@@ -22,12 +22,13 @@
 
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
+#include "qco_programs.h"
+
 #include "gtest/gtest.h"
 #include "jeff/IR/JeffDialect.h"
 #include "jeff/IR/JeffOps.h"
 #include "jeff/Translation/Deserialize.hpp"
 #include "jeff/Translation/Serialize.hpp"
-#include "qco_programs.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"

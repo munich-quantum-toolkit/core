@@ -13,6 +13,7 @@
 #include "dd/statistics/TableStatistics.hpp"
 
 #include "StatisticsJson.hpp"
+
 #include "nlohmann/json.hpp"
 
 #include <string>

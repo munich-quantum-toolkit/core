@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QCO/QCOUtils.h"
 
 #include "ExactUnitaryTest.h"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"

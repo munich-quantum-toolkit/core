@@ -12,6 +12,7 @@
 #include "qdmi/driver/Driver.hpp"
 
 #include "DeviceRegistry.hpp"
+
 #include "gtest/gtest.h"
 
 #include <algorithm>

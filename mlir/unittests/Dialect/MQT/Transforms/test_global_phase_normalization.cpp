@@ -22,6 +22,7 @@
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
 
 #include "ExactUnitaryTest.h"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"

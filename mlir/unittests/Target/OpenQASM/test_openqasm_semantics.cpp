@@ -13,6 +13,7 @@
 #include "mqt/Target/OpenQASM/GateCatalog.h"
 
 #include "OpenQASMTestUtils.h"
+
 #include "gtest/gtest.h"
 
 #include "llvm/ADT/STLExtras.h"

@@ -15,6 +15,7 @@
 #include "mqt/bench/Generate.h"
 
 #include "TestUtils.h"
+
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
