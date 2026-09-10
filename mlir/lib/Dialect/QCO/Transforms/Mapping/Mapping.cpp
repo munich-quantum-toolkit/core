@@ -357,8 +357,7 @@ protected:
       return;
     }
 
-    const auto layout = Layout::fromMapping(
-        llvm::to_vector(llvm::seq(computation->wires.size())));
+    const auto layout = Layout::identity(computation->wires.size());
     IRRewriter rewriter(&getContext());
     applyPlacement(func.getFunctionBody(), target, layout, *computation,
                    rewriter);
@@ -810,7 +809,12 @@ private:
 
     SmallVector<Trial, 0> trials;
     trials.reserve(ntrials);
-    for (size_t i = 0; i < ntrials; ++i) {
+    trials.emplace_back(RoutingBundle{
+        .wires = wires,
+        .infos = infos,
+        .layout = Layout::identity(target->numSites()),
+    });
+    for (size_t i = 0; i < ntrials - 1; ++i) {
       trials.emplace_back(RoutingBundle{
           .wires = wires,
           .infos = infos,
