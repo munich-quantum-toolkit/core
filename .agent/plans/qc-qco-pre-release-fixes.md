@@ -13,11 +13,13 @@ stop the proof; only first accesses in the allocation block can lose resets.
 The allocation rewrite replaces its root while preserving attributes. This
 follows MLIR's pattern contract without storing analysis over mutable IR.
 
-Structured callbacks preserve each input's type, tensor register, and extracted
-slot by result position. Equal constants reuse the dominating input index;
-dynamic indices must be the same SSA value. Other associations produce a usage
-diagnostic. Carry full tensors when changing slot associations. This fixes the
-additional region-local index escape without hoisting a branch-specific index.
+Structured callbacks preserve input types and tensor register IDs by result
+position. Scalar qubit outputs may permute the input qubits while preserving the
+set of extracted slots. Results use the input slots by position. Equal constants
+reuse the dominating input index; dynamic indices must be the same SSA value.
+Unsupported changes produce a usage diagnostic. Carry full tensors when changing
+the set of extracted slots. This prevents region-local indices from escaping
+without hoisting a branch-specific index.
 
 Scalar if/switch overloads delegate to their range counterparts. The Ponytail
 review removed 46 lines of duplicated region construction and the unused

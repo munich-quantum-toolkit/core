@@ -38,6 +38,7 @@
 #include "mlir/IR/ValueRange.h"
 #include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/STLFunctionalExtras.h"
 #include "llvm/ADT/ScopeExit.h"
@@ -50,6 +51,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -535,26 +537,38 @@ QCOProgramBuilder::getRegisterInfo(ValueRange values) const {
 void QCOProgramBuilder::restoreRegisterInfo(ValueRange values,
                                             ArrayRef<RegisterInfo> inputs) {
   const auto outputs = getRegisterInfo(values);
-  for (auto [value, input, output] : llvm::zip_equal(values, inputs, outputs)) {
+  DenseMap<std::tuple<int64_t, int64_t, Value>, int64_t> slotCounts;
+  const auto slotKey = [](const RegisterInfo& info) {
+    const auto index =
+        info.regIndex ? getConstantIntValue(info.regIndex) : std::nullopt;
+    return std::tuple{info.regId, index.value_or(0),
+                      index ? Value{} : info.regIndex};
+  };
+  for (auto [input, output] : llvm::zip_equal(inputs, outputs)) {
     if (input.type != output.type) {
       llvm::reportFatalUsageError("Result types must match input types");
     }
-    if (input.regId != output.regId) {
+    if (isa<QubitType>(input.type)) {
+      ++slotCounts[slotKey(input)];
+      --slotCounts[slotKey(output)];
+    } else if (input.regId != output.regId) {
       llvm::reportFatalUsageError(
           "Structured body must preserve each input's tensor register");
     }
-    if (input.regIndex == output.regIndex) {
-      continue;
+  }
+  if (llvm::any_of(slotCounts,
+                   [](const auto& entry) { return entry.second != 0; })) {
+    llvm::reportFatalUsageError(
+        "Structured body must preserve the set of extracted tensor slots; "
+        "use equal constant indices or the same dynamic index SSA value");
+  }
+  for (auto [value, input, output] : llvm::zip_equal(values, inputs, outputs)) {
+    if (isa<QubitType>(input.type) &&
+        (input.regId != output.regId || input.regIndex != output.regIndex)) {
+      /// Assign results to input slots, using indices that dominate the region.
+      validQubits.erase(value);
+      validQubits.insert(Qubit{value, input.regId, input.regIndex});
     }
-    if (!input.regIndex || !output.regIndex ||
-        !isEqualConstantIntOrValue(input.regIndex, output.regIndex)) {
-      llvm::reportFatalUsageError(
-          "Structured body must preserve each extracted qubit's tensor slot; "
-          "use equal constant indices or the same dynamic index SSA value");
-    }
-    /// The callback's equivalent index may not dominate the enclosing result.
-    validQubits.erase(value);
-    validQubits.insert(Qubit{value, input.regId, input.regIndex});
   }
 }
 

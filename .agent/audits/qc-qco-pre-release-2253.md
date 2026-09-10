@@ -25,13 +25,14 @@ the index was defined inside that callback's region. Later automatic reinsertion
 then emitted an operand that did not dominate its use.
 
 The builder now saves each input's type, register ID, and extracted slot before
-constructing a structured operation. Each callback must preserve that
-association by result position. Equal constant indices are accepted and replaced
-in tracking with the original dominating index. Dynamic indices must use the
-same SSA value. Changed registers, changed slots, and unprovable dynamic
-equivalence terminate with a usage diagnostic. Carry the full tensor and
-reinsert inside the callback when changing slot associations. Standalone qubits
-retain their existing tracking.
+constructing a structured operation. Each callback preserves input types and
+tensor register IDs by result position. Scalar qubit outputs may permute the
+input qubits but must preserve the set of extracted tensor slots. Results use
+the input slots and dominating indices by position. Equal constant indices are
+accepted; dynamic indices must use the same SSA value. Changed tensor register
+IDs, changed sets of slots, and unprovable dynamic equivalence terminate with a
+usage diagnostic. Carry the full tensor and reinsert inside the callback when
+changing the set of extracted slots.
 
 The check covers both `qcoIf` branches, `scfFor`, both `scfWhile` regions, and
 every `qcoIndexSwitch` case and default. Scalar overloads delegate to the range
@@ -154,16 +155,16 @@ issue or replace the outstanding contract work.
 The review found two duplicated scalar implementations and their now-unused
 single-argument preparation helper. Both findings were applied:
 
-- `QCOProgramBuilder.cpp:L1562: shrink:` duplicated scalar switch construction.
+- `QCOProgramBuilder::qcoIndexSwitch: shrink:` duplicated scalar construction.
   Delegate to the range overload with locally owned callback adapters.
-- `QCOProgramBuilder.cpp:L1582: shrink:` duplicated scalar if construction.
-  Delegate to the range overload and delete the unused `prepareInitArg` helper.
+- `QCOProgramBuilder::qcoIf: shrink:` duplicated scalar construction. Delegate
+  to the range overload and delete the unused `prepareInitArg` helper.
 
 net: -46 lines possible.
 
-## Final source measurements
+## Performance measurements
 
-The final source `f0b995a44` was compared with the same `ad74680f1` baseline
+The measured source `f0b995a44` was compared with the same `ad74680f1` baseline
 using five alternating process pairs and three timed samples after two warmups.
 The table summarizes the medians and complete sample ranges.
 
@@ -189,10 +190,17 @@ are microbenchmarks, not whole-compiler speedup guarantees.
 
 ## Validation
 
-- The final source was rebuilt with Release/Clang 23.1.1 and LLVM/MLIR 23.1.0.
-  All **1,376 native tests** passed: QCO IR 587, QTensor IR 42, QC-to-QCO 178,
-  QCO-to-QC 153, QC/QCO round trip 6, QCO utilities 192, QTensor utilities 4,
-  QTensor transforms 2, and compiler 212.
+- Full native validation of the permutation fix used Release/Clang 23.1.1 and
+  LLVM/MLIR 23.1.0: **3,464 tests passed**, including all 2,595 MLIR tests;
+  `ScQDMIJobSpecificationTest.QueryJobId` skipped. This includes the three
+  branching-GHZ mapping tests that exposed the restrictive slot check in CI. A
+  builder regression covers permutations across two registers for if, for,
+  while, and switch, with scalar-only and mixed tensor/scalar arguments. It
+  checks final reinsertion slots, ordinary verification, and QCO linearity.
+- Initial validation used Release/Clang 23.1.1 and LLVM/MLIR 23.1.0. All
+  **1,376 selected native tests** passed: QCO IR 587, QTensor IR 42, QC-to-QCO
+  178, QCO-to-QC 153, QC/QCO round trip 6, QCO utilities 192, QTensor utilities
+  4, QTensor transforms 2, and compiler 212.
 - Full-file C++ lint from the fixed PR base `9d6526f48` selected all five
   changed source/test files and reported zero findings. Repository lint,
   `git diff --check`, and MLIR documentation generation passed.

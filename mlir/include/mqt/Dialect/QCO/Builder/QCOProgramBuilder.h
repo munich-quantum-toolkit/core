@@ -60,12 +60,13 @@ namespace qco {
 ///
 /// @par Structured control flow:
 /// Callbacks for `qcoIf`, `qcoIndexSwitch`, `scfFor`, and `scfWhile` must
-/// preserve each input's type and tensor register association by result
-/// position. Extracted qubits must also retain their tensor slot. Equal
-/// constant indices are supported; dynamic indices must use the same SSA value
-/// as the input. Unsupported changes terminate with a usage error. Reinsert
-/// qubits inside each callback and carry the full tensor when slot associations
-/// must change.
+/// preserve input types and tensor register IDs by result position. Scalar
+/// qubit outputs may permute the input qubits but must preserve the set of
+/// extracted tensor slots. Results are assigned to input slots by position.
+/// Equal constant indices are supported; dynamic indices must use the same
+/// SSA value as the input. Unsupported changes terminate with a usage error.
+/// Reinsert qubits inside each callback and carry the full tensor when the set
+/// of extracted slots must change.
 ///
 /// @par Example Usage:
 /// ```c++
