@@ -496,7 +496,11 @@ private:
   mutable std::optional<Diagnostic> failureDiagnostic;
 
   void enterScope() {
-    scopes.push_back({{}, initializedBits.size(), initializedScalars.size()});
+    scopes.push_back({
+        .symbols = {},
+        .registers = initializedBits.size(),
+        .scalars = initializedScalars.size(),
+    });
   }
 
   void leaveScope() {

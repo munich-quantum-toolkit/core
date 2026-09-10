@@ -150,12 +150,14 @@ public:
     }
     for (const auto& gate : program.gates) {
       emitGateDefinition(gate);
+      scalarUpdates_.clear();
       if (emissionFailed || emissionBudget.isExhausted()) {
         return nullptr;
       }
     }
     for (const auto statement : program.body) {
       emitStatement(statement, {}, {});
+      scalarUpdates_.clear();
       if (emissionFailed || emissionBudget.isExhausted()) {
         return nullptr;
       }
@@ -216,6 +218,8 @@ private:
   bool flowReachable = true;
 
   using StateSlot = frontend::ScalarId;
+  /// Undo only writes since a branch/loop checkpoint, including new locals.
+  SmallVector<std::pair<StateSlot, Value>> scalarUpdates_;
 
   [[nodiscard]] Location
   getLocation(const frontend::SourceLocation& source) const {
@@ -1606,9 +1610,6 @@ private:
             }
           } else if constexpr (std::is_same_v<T, frontend::ForStatement> ||
                                std::is_same_v<T, frontend::WhileStatement>) {
-            if constexpr (std::is_same_v<T, frontend::ForStatement>) {
-              recordMutation(data.inductionVariable, mutationKeys, mutations);
-            }
             for (const auto nested : data.body) {
               collectMutations(nested, mutationKeys, mutations);
             }
@@ -1634,11 +1635,6 @@ private:
       collectMutations(statement, mutationKeys, mutations);
     }
     llvm::sort(mutations);
-    return mutations;
-  }
-
-  [[nodiscard]] SmallVector<StateSlot>
-  initializedState(ArrayRef<StateSlot> mutations) const {
     SmallVector<StateSlot> slots;
     slots.reserve(mutations.size());
     for (const auto slot : mutations) {
@@ -1660,9 +1656,21 @@ private:
     return values;
   }
 
+  void setScalarValue(StateSlot slot, Value value) {
+    scalarUpdates_.emplace_back(slot, scalarValues.at(slot));
+    scalarValues.at(slot) = value;
+  }
+
+  void restoreScalars(size_t checkpoint) {
+    while (scalarUpdates_.size() > checkpoint) {
+      auto [slot, value] = scalarUpdates_.pop_back_val();
+      scalarValues.at(slot) = value;
+    }
+  }
+
   void assignState(ArrayRef<StateSlot> slots, ValueRange values) {
     for (auto [slot, value] : llvm::zip_equal(slots, values)) {
-      scalarValues.at(slot) = value;
+      setScalarValue(slot, value);
     }
   }
 
@@ -1767,7 +1775,7 @@ private:
           arith::ConstantOp::create(builder, type, builder.getZeroAttr(type));
     }
     if (value) {
-      scalarValues.at(statement.scalar) = value;
+      setScalarValue(statement.scalar, value);
     }
   }
 
@@ -1778,7 +1786,7 @@ private:
                      ? emitExpression(builder, *statement.value, {})
                      : emitCondition(*statement.condition, {}, gateQubits);
     if (value) {
-      scalarValues.at(statement.scalar) = value;
+      setScalarValue(statement.scalar, value);
     }
   }
 
@@ -1901,10 +1909,9 @@ private:
     });
   }
 
-  void emitCFGIf(Value condition, ArrayRef<StateSlot> mutatedSlots,
+  void emitCFGIf(Value condition, ArrayRef<StateSlot> slots,
                  function_ref<void()> thenBody, function_ref<void()> elseBody) {
-    const auto slots = initializedState(mutatedSlots);
-    const auto savedScalars = stateValues(mutatedSlots);
+    const auto scalarCheckpoint = scalarUpdates_.size();
     auto values = stateValues(slots);
     auto* entry = builder.getInsertionBlock();
     auto* region = entry->getParent();
@@ -1916,7 +1923,7 @@ private:
     builder.setInsertionPointToEnd(entry);
     cf::CondBranchOp::create(builder, condition, thenBlock, elseBlock);
     const auto emitBranch = [&](Block* block, function_ref<void()> body) {
-      assignState(mutatedSlots, savedScalars);
+      restoreScalars(scalarCheckpoint);
       flowReachable = true;
       builder.setInsertionPointToEnd(block);
       body();
@@ -1928,7 +1935,7 @@ private:
     const bool thenReachable = emitBranch(thenBlock, thenBody);
     const bool elseReachable = emitBranch(elseBlock, elseBody);
     flowReachable = thenReachable || elseReachable;
-    assignState(mutatedSlots, savedScalars);
+    restoreScalars(scalarCheckpoint);
     assignState(slots, join->getArguments());
     builder.setInsertionPointToEnd(join);
     if (!flowReachable) {
@@ -1963,10 +1970,10 @@ private:
         conditional.thenStatements.begin(), conditional.thenStatements.end());
     nestedStatements.append(conditional.elseStatements.begin(),
                             conditional.elseStatements.end());
-    const auto mutatedSlots = mutatedState(nestedStatements);
+    const auto slots = mutatedState(nestedStatements);
     if (activeLoop != nullptr && hasLoopJump(nestedStatements)) {
       emitCFGIf(
-          condition, mutatedSlots,
+          condition, slots,
           [&] {
             for (auto statement : conditional.thenStatements) {
               emitStatement(statement, gateParameters, gateQubits);
@@ -1985,9 +1992,8 @@ private:
           });
       return;
     }
-    const auto slots = initializedState(mutatedSlots);
     const auto initialValues = stateValues(slots);
-    const auto savedScalars = stateValues(mutatedSlots);
+    const auto scalarCheckpoint = scalarUpdates_.size();
     const auto* thenStatements = &conditional.thenStatements;
     const auto* elseStatements = &conditional.elseStatements;
     if (slots.empty() && thenStatements->empty() && !elseStatements->empty()) {
@@ -2001,7 +2007,7 @@ private:
     OpBuilder::InsertionGuard guard(builder);
     const auto emitBranch = [&](Block& block,
                                 ArrayRef<frontend::StatementId> statements) {
-      assignState(mutatedSlots, savedScalars);
+      restoreScalars(scalarCheckpoint);
       if (!block.empty()) {
         block.back().erase();
       }
@@ -2018,7 +2024,7 @@ private:
     if (withElseRegion) {
       emitBranch(ifOp.getElseRegion().front(), *elseStatements);
     }
-    assignState(mutatedSlots, savedScalars);
+    restoreScalars(scalarCheckpoint);
     assignState(slots, ifOp.getResults());
   }
 
@@ -2120,11 +2126,9 @@ private:
       emitLoopWithJumps(loop, gateParameters, gateQubits);
       return;
     }
-    auto mutatedSlots = mutatedState(loop.body);
-    const auto slots = initializedState(mutatedSlots);
+    const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
-    mutatedSlots.push_back(loop.inductionVariable);
-    const auto savedScalars = stateValues(mutatedSlots);
+    const auto scalarCheckpoint = scalarUpdates_.size();
 
     if (loop.provenPositiveRange) {
       auto start = emitProvenIndexExpression(builder, loop.start);
@@ -2150,11 +2154,12 @@ private:
           body->back().erase();
         }
         builder.setInsertionPointToEnd(body);
-        assignState(mutatedSlots, savedScalars);
+        restoreScalars(scalarCheckpoint);
         assignState(slots, forOp.getRegionIterArgs());
         provenInductionValues[loop.inductionVariable] = forOp.getInductionVar();
-        scalarValues.at(loop.inductionVariable) = arith::IndexCastOp::create(
-            builder, builder.getI64Type(), forOp.getInductionVar());
+        setScalarValue(loop.inductionVariable,
+                       arith::IndexCastOp::create(builder, builder.getI64Type(),
+                                                  forOp.getInductionVar()));
         for (const auto statement : loop.body) {
           emitStatement(statement, gateParameters, gateQubits);
           if (emissionFailed || emissionBudget.isExhausted()) {
@@ -2163,7 +2168,7 @@ private:
         }
         scf::YieldOp::create(builder, stateValues(slots));
       }
-      assignState(mutatedSlots, savedScalars);
+      restoreScalars(scalarCheckpoint);
       provenInductionValues.erase(loop.inductionVariable);
       assignState(slots, forOp.getResults());
       return;
@@ -2202,15 +2207,16 @@ private:
           body->back().erase();
         }
         builder.setInsertionPointToEnd(body);
-        assignState(mutatedSlots, savedScalars);
+        restoreScalars(scalarCheckpoint);
         assignState(slots, forOp.getRegionIterArgs());
         auto counter = arith::IndexCastOp::create(builder, builder.getI64Type(),
                                                   forOp.getInductionVar());
         auto counterWide = arith::ExtUIOp::create(builder, i128, counter);
         auto offset = arith::MulIOp::create(builder, counterWide, stepValue);
         auto inductionWide = arith::AddIOp::create(builder, startValue, offset);
-        scalarValues.at(loop.inductionVariable) = arith::TruncIOp::create(
-            builder, builder.getI64Type(), inductionWide);
+        setScalarValue(loop.inductionVariable,
+                       arith::TruncIOp::create(builder, builder.getI64Type(),
+                                               inductionWide));
         for (const auto statement : loop.body) {
           emitStatement(statement, gateParameters, gateQubits);
           if (emissionFailed || emissionBudget.isExhausted()) {
@@ -2219,7 +2225,7 @@ private:
         }
         scf::YieldOp::create(builder, stateValues(slots));
       }
-      assignState(mutatedSlots, savedScalars);
+      restoreScalars(scalarCheckpoint);
       assignState(slots, forOp.getResults());
       return;
     }
@@ -2255,13 +2261,13 @@ private:
           OpBuilder::InsertionGuard guard(builder);
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
-          assignState(mutatedSlots, savedScalars);
+          restoreScalars(scalarCheckpoint);
           assignState(slots, arguments.drop_front(stateOffset));
-          scalarValues.at(loop.inductionVariable) =
-              narrowDynamicRange
-                  ? arguments.front()
-                  : arith::TruncIOp::create(builder, builder.getI64Type(),
-                                            arguments.front());
+          setScalarValue(loop.inductionVariable,
+                         narrowDynamicRange ? arguments.front()
+                                            : arith::TruncIOp::create(
+                                                  builder, builder.getI64Type(),
+                                                  arguments.front()));
           for (const auto statement : loop.body) {
             emitStatement(statement, gateParameters, gateQubits);
             if (emissionFailed || emissionBudget.isExhausted()) {
@@ -2282,19 +2288,15 @@ private:
           llvm::append_range(yielded, stateValues(slots));
           scf::YieldOp::create(builder, yielded);
         });
-    assignState(mutatedSlots, savedScalars);
+    restoreScalars(scalarCheckpoint);
     assignState(slots, whileOp.getResults().drop_front(stateOffset));
   }
 
   template <typename Loop>
   void emitLoopWithJumps(const Loop& loop, ValueRange gateParameters,
                          ValueRange gateQubits) {
-    auto mutatedSlots = mutatedState(loop.body);
-    const auto slots = initializedState(mutatedSlots);
-    if constexpr (std::is_same_v<Loop, frontend::ForStatement>) {
-      mutatedSlots.push_back(loop.inductionVariable);
-    }
-    const auto savedScalars = stateValues(mutatedSlots);
+    const auto slots = mutatedState(loop.body);
+    const auto scalarCheckpoint = scalarUpdates_.size();
     SmallVector<Value> initial;
     Value step, stop;
     bool indexRange = false;
@@ -2341,12 +2343,13 @@ private:
         provenInductionValues[loop.inductionVariable] =
             arith::IndexCastOp::create(builder, builder.getIndexType(),
                                        induction);
-        scalarValues.at(loop.inductionVariable) = induction;
+        setScalarValue(loop.inductionVariable, induction);
         condition = arith::CmpIOp::create(builder, arith::CmpIPredicate::slt,
                                           induction, stop);
       } else {
-        scalarValues.at(loop.inductionVariable) =
-            arith::TruncIOp::create(builder, builder.getI64Type(), induction);
+        setScalarValue(
+            loop.inductionVariable,
+            arith::TruncIOp::create(builder, builder.getI64Type(), induction));
         auto positive = arith::CmpIOp::create(
             builder, arith::CmpIPredicate::sgt, step,
             arith::ConstantIntOp::create(builder, 0, 128));
@@ -2384,7 +2387,7 @@ private:
     }
     auto results = cfg.finish();
     flowReachable = true;
-    assignState(mutatedSlots, savedScalars);
+    restoreScalars(scalarCheckpoint);
     if (failed(results)) {
       emissionFailed = true;
       return;
@@ -2403,17 +2406,16 @@ private:
       emitLoopWithJumps(loop, gateParameters, gateQubits);
       return;
     }
-    auto mutatedSlots = mutatedState(loop.body);
-    const auto slots = initializedState(mutatedSlots);
+    const auto slots = mutatedState(loop.body);
     const auto initialValues = stateValues(slots);
-    const auto savedScalars = stateValues(mutatedSlots);
+    const auto scalarCheckpoint = scalarUpdates_.size();
     auto whileOp = scf::WhileOp::create(
         builder, ValueRange(initialValues).getTypes(), initialValues,
         [&](OpBuilder& nested, Location, ValueRange arguments) {
           OpBuilder::InsertionGuard guard(builder);
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
-          assignState(mutatedSlots, savedScalars);
+          restoreScalars(scalarCheckpoint);
           assignState(slots, arguments);
           auto condition =
               emitCondition(loop.condition, gateParameters, gateQubits);
@@ -2426,7 +2428,7 @@ private:
           OpBuilder::InsertionGuard guard(builder);
           builder.setInsertionPoint(nested.getInsertionBlock(),
                                     nested.getInsertionPoint());
-          assignState(mutatedSlots, savedScalars);
+          restoreScalars(scalarCheckpoint);
           assignState(slots, arguments);
           for (const auto statement : loop.body) {
             emitStatement(statement, gateParameters, gateQubits);
@@ -2436,7 +2438,7 @@ private:
           }
           scf::YieldOp::create(builder, stateValues(slots));
         });
-    assignState(mutatedSlots, savedScalars);
+    restoreScalars(scalarCheckpoint);
     assignState(slots, whileOp.getResults());
   }
 
@@ -2449,57 +2451,75 @@ private:
       llvm::append_range(labels, switchCase.labels);
     }
     llvm::append_range(nestedStatements, switchStatement.defaultStatements);
-    const auto mutatedSlots = mutatedState(nestedStatements);
-    const auto slots = initializedState(mutatedSlots);
+    const auto slots = mutatedState(nestedStatements);
     const auto initialValues = stateValues(slots);
-    const auto savedScalars = stateValues(mutatedSlots);
+    const auto scalarCheckpoint = scalarUpdates_.size();
 
     auto control = emitExpression(builder, switchStatement.control, {});
     if (!control) {
       return;
     }
-    if (activeLoop != nullptr && hasLoopJump(nestedStatements)) {
-      const auto emitCases = [&](auto&& self, size_t index) -> void {
-        if (emissionFailed || emissionBudget.isExhausted()) {
-          return;
-        }
-        if (index == switchStatement.cases.size()) {
-          for (auto statement : switchStatement.defaultStatements) {
-            emitStatement(statement, gateParameters, gateQubits);
-            if (emissionFailed || emissionBudget.isExhausted()) {
-              return;
-            }
-          }
-          return;
-        }
-        const auto& branch = switchStatement.cases[index];
-        Value match = builder.boolConstant(false);
-        for (const auto label : branch.labels) {
-          if (emissionBudget.isExhausted()) {
-            return;
-          }
-          auto equal = arith::CmpIOp::create(
-              builder, arith::CmpIPredicate::eq, control,
-              arith::ConstantIntOp::create(builder, control.getType(), label));
-          match = arith::OrIOp::create(builder, match, equal);
-        }
-        emitCFGIf(
-            match, mutatedSlots,
-            [&] {
-              for (auto statement : branch.body) {
-                emitStatement(statement, gateParameters, gateQubits);
-                if (emissionFailed || emissionBudget.isExhausted()) {
-                  return;
-                }
-              }
-            },
-            [&] { self(self, index + 1); });
-      };
-      emitCases(emitCases, 0);
-      return;
-    }
     const auto type = program.expressions.at(switchStatement.control).type;
     control = emitScalarCast(builder, builder.getLoc(), control, type, type);
+    if (activeLoop != nullptr && hasLoopJump(nestedStatements)) {
+      /// A flat switch avoids nested joins during CFG-to-SCF conversion.
+      auto* entry = builder.getInsertionBlock();
+      auto* region = entry->getParent();
+      auto* join = builder.createBlock(
+          region, {}, ValueRange(initialValues).getTypes(),
+          SmallVector<Location>(initialValues.size(), builder.getLoc()));
+      auto* defaultBlock = builder.createBlock(region);
+      SmallVector<Block*> destinations;
+      /// Shared case destinations introduce poison-filled dispatch results
+      /// during CFG-to-SCF conversion. Keep one block per label.
+      for ([[maybe_unused]] const auto label : labels) {
+        destinations.push_back(builder.createBlock(region));
+      }
+      builder.setInsertionPointToEnd(entry);
+      cf::SwitchOp::create(builder, control, defaultBlock, ValueRange{},
+                           builder.getI64TensorAttr(labels), destinations,
+                           SmallVector<ValueRange>(labels.size()));
+      bool anyReachable = false;
+      const auto emitBranch = [&](Block* block,
+                                  ArrayRef<frontend::StatementId> statements) {
+        restoreScalars(scalarCheckpoint);
+        flowReachable = true;
+        builder.setInsertionPointToEnd(block);
+        for (auto statement : statements) {
+          emitStatement(statement, gateParameters, gateQubits);
+          if (emissionFailed || emissionBudget.isExhausted()) {
+            return;
+          }
+        }
+        if (flowReachable) {
+          cf::BranchOp::create(builder, join, stateValues(slots));
+          anyReachable = true;
+        }
+      };
+      size_t index = 0;
+      for (const auto& branch : switchStatement.cases) {
+        for ([[maybe_unused]] const auto label : branch.labels) {
+          emitBranch(destinations[index++], branch.body);
+          if (emissionFailed || emissionBudget.isExhausted()) {
+            return;
+          }
+        }
+      }
+      emitBranch(defaultBlock, switchStatement.defaultStatements);
+      if (emissionFailed || emissionBudget.isExhausted()) {
+        return;
+      }
+      restoreScalars(scalarCheckpoint);
+      flowReachable = anyReachable;
+      assignState(slots, join->getArguments());
+      builder.setInsertionPointToEnd(join);
+      if (!flowReachable) {
+        auto state = breakPrefix;
+        llvm::append_range(state, stateValues(breakSlots));
+        activeLoop->branch(false, state);
+      }
+      return;
+    }
     auto selector =
         arith::IndexCastOp::create(builder, builder.getIndexType(), control);
     auto switchOp = scf::IndexSwitchOp::create(
@@ -2510,7 +2530,7 @@ private:
         [&](Region& region, const ArrayRef<frontend::StatementId> statements) {
           auto& block = region.emplaceBlock();
           builder.setInsertionPointToEnd(&block);
-          assignState(mutatedSlots, savedScalars);
+          restoreScalars(scalarCheckpoint);
           for (const auto statement : statements) {
             emitStatement(statement, gateParameters, gateQubits);
             if (emissionFailed || emissionBudget.isExhausted()) {
@@ -2529,7 +2549,7 @@ private:
       }
     }
     emitBranch(switchOp.getDefaultRegion(), switchStatement.defaultStatements);
-    assignState(mutatedSlots, savedScalars);
+    restoreScalars(scalarCheckpoint);
     assignState(slots, switchOp.getResults());
   }
 };

@@ -54,6 +54,7 @@
 #include <limits>
 #include <numbers>
 #include <string>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -1720,6 +1721,69 @@ switch (int(choose)) {
     EXPECT_EQ(switchOp.getNumResults(), 1);
   });
   EXPECT_EQ(switches, 1);
+}
+
+TEST(OpenQASMTargetTest, KeepsLoopExitSwitchDispatchFlat) {
+  constexpr size_t caseCount = 64;
+  std::string source = "OPENQASM 3.1; qubit q; bit choose = measure q; "
+                       "output int result; result = int(choose); "
+                       "for int repeat in [0:0] { switch (result) {";
+  for (size_t label = 0; label < caseCount; ++label) {
+    source += "case " + std::to_string(label) +
+              " { int local = " + std::to_string(label) +
+              "; result = local; break; }";
+  }
+  source += "default { break; } } }";
+  MLIRContext context;
+  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t switches = 0;
+  moduleOp->walk([&](scf::IndexSwitchOp switchOp) {
+    ++switches;
+    EXPECT_EQ(switchOp.getCases().size(), caseCount);
+  });
+  /// One dispatch avoids the CFG structuring cost of a nested conditional
+  /// chain.
+  EXPECT_EQ(switches, 1);
+}
+
+TEST(OpenQASMTargetTest, PreservesLoopExitSwitchLabelsAndDefault) {
+  constexpr auto selectors =
+      std::to_array<std::pair<llvm::StringLiteral, int64_t>>({
+          {"int selector = -1;", 7},
+          {"int selector = 4294967296;", 7},
+          {"uint[3] selector = 7;", 13},
+          {"int selector = 3;", 9},
+      });
+  for (auto [declaration, expected] : selectors) {
+    SCOPED_TRACE(declaration.str());
+    const auto source = "OPENQASM 3.1; " + declaration.str() + R"qasm(
+output int result;
+result = 0;
+while (true) {
+  switch (selector) {
+    case -1, 4294967296 { int local = 7; result = local; break; }
+    case 7 { result = 13; break; }
+    default { result = 9; break; }
+  }
+}
+)qasm";
+    MLIRContext context;
+    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    PassManager canonicalizer(&context);
+    canonicalizer.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(succeeded(canonicalizer.run(*moduleOp)));
+    auto function = *moduleOp->getOps<func::FuncOp>().begin();
+    auto returned =
+        cast<func::ReturnOp>(function.getBody().front().getTerminator());
+    ASSERT_EQ(returned.getNumOperands(), 1);
+    APInt value;
+    ASSERT_TRUE(matchPattern(returned.getOperand(0), m_ConstantInt(&value)));
+    EXPECT_EQ(value.getSExtValue(), expected);
+  }
 }
 
 TEST(OpenQASMTargetTest, PreservesNarrowUnsignedSwitchValues) {
