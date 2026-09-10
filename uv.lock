@@ -904,15 +904,6 @@ wheels = [
 ]
 
 [[package]]
-name = "graphviz"
-version = "0.21"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f8/b3/3ac91e9be6b761a4b30d66ff165e54439dcd48b83f4e20d644867215f6ca/graphviz-0.21.tar.gz", hash = "sha256:20743e7183be82aaaa8ad6c93f8893c923bd6658a04c32ee115edb3c8a835f78", size = 200434, upload-time = "2025-06-15T09:35:05.824Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/91/4c/e0ce1ef95d4000ebc1c11801f9b944fa5910ecc15b5e351865763d8657f8/graphviz-0.21-py3-none-any.whl", hash = "sha256:54f33de9f4f911d7e84e4191749cac8cc5653f815b06738c54db9a15ab8b1e42", size = 47300, upload-time = "2025-06-15T09:35:04.433Z" },
-]
-
-[[package]]
 name = "greenlet"
 version = "3.5.5"
 source = { registry = "https://pypi.org/simple" }
@@ -1569,7 +1560,6 @@ dev = [
 ]
 docs = [
     { name = "furo" },
-    { name = "graphviz" },
     { name = "mlir-pygments" },
     { name = "myst-nb" },
     { name = "openqasm-pygments" },
@@ -1644,10 +1634,9 @@ dev = [
     { name = "vcs-versioning", specifier = ">=2.3" },
 ]
 docs = [
-    { name = "furo", specifier = ">=2025.9.25" },
-    { name = "graphviz", specifier = ">=0.21" },
+    { name = "furo", specifier = ">=2025.12.19" },
     { name = "mlir-pygments", specifier = ">=1" },
-    { name = "myst-nb", specifier = ">=1.3" },
+    { name = "myst-nb", specifier = ">=1.4" },
     { name = "openqasm-pygments", specifier = ">=0.2" },
     { name = "pennylane", specifier = ">=0.45.1,<0.46" },
     { name = "qirrunner", specifier = "~=0.9.6" },
@@ -1655,9 +1644,9 @@ docs = [
     { name = "sphinx", specifier = ">=9" },
     { name = "sphinx-autoapi", specifier = ">=3.6.1" },
     { name = "sphinx-copybutton", specifier = ">=0.5.2" },
-    { name = "sphinx-design", specifier = ">=0.6.1" },
-    { name = "sphinx-llm", specifier = ">=0.4.1" },
-    { name = "sphinxcontrib-bibtex", specifier = ">=2.6.5" },
+    { name = "sphinx-design", specifier = ">=0.7" },
+    { name = "sphinx-llm", specifier = ">=1" },
+    { name = "sphinxcontrib-bibtex", specifier = ">=2.7" },
     { name = "sphinxext-opengraph", specifier = ">=0.13" },
 ]
 test = [
