@@ -14,6 +14,7 @@ import re
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from itertools import permutations
 from typing import TYPE_CHECKING
 
 import numpy as np
@@ -2098,6 +2099,31 @@ def test_root_register_expression_and_nested_condition_preserve_captures(num_clb
     assert {variable.var for variable in expr.iter_vars(inner.condition)} == {body.cregs[0]}
 
 
+def test_control_flow_blocks_keep_registers_and_own_global_phase() -> None:
+    """Keep exact parent resources without copying parent instructions or phase."""
+    registers = [ClassicalRegister(1, f"c{index}") for index in range(8)]
+    circuit = QuantumCircuit(QuantumRegister(1, "q"), *registers, global_phase=0.25)
+    circuit.h(0)
+    body = circuit.copy_empty_like()
+    body.global_phase = 0.5
+    body.x(0)
+    circuit.if_test((registers[-1], 0), body, circuit.qubits, circuit.clbits)
+
+    program = QCProgram.from_qiskit(circuit)
+    original_ir = program.ir
+    restored = program.to_qiskit()
+    restored_body = restored.data[-1].operation.blocks[0]
+
+    assert program.ir == original_ir
+    assert restored.global_phase == pytest.approx(0.25)
+    assert restored_body.global_phase == pytest.approx(0.5)
+    assert [item.operation.name for item in restored_body.data] == ["x"]
+    assert restored_body.qubits == restored.qubits
+    assert restored_body.clbits == restored.clbits
+    assert restored_body.qregs == restored.qregs
+    assert restored_body.cregs == restored.cregs
+
+
 def test_repeated_cbit_uint_expression_falls_back_to_expression_tree() -> None:
     """Do not misidentify repeated source bits as a packed classical register."""
     program = _single_qubit_program(
@@ -2900,6 +2926,46 @@ def test_grouped_measurements_preserve_shared_destination_order(*, via_qco: bool
         assert restored.num_clbits == 1
         assert sample(program, shots=1, seed=1) == {"0": 1}
         assert sample(QCProgram.from_qiskit(restored), shots=1, seed=1) == {"0": 1}
+
+
+@pytest.mark.parametrize("store_order", list(permutations(range(3))))
+def test_grouped_measurements_keep_order_for_each_destination(store_order: tuple[int, ...]) -> None:
+    """Reorder disjoint destinations while preserving repeated-bit writes."""
+    destinations = [0, 1, 0]
+    stores = [f"cbit.store %m{index}, %c[%i{destinations[index]}] : !cbit.reg<2>" for index in store_order]
+    program = QCProgram.from_mlir_str(
+        """module {
+  func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+    qc.x %q : !qc.qubit
+    %m0 = qc.measure %q : !qc.qubit -> i1
+    qc.x %q : !qc.qubit
+    %m1 = qc.measure %q : !qc.qubit -> i1
+    %m2 = qc.measure %q : !qc.qubit -> i1
+    %i0 = arith.constant 0 : index
+    %i1 = arith.constant 1 : index
+    """
+        + "\n    ".join(stores)
+        + """
+    qc.dealloc %q : !qc.qubit
+    return %c : !cbit.reg<2>
+  }
+}
+"""
+    )
+    original_ir = program.ir
+    if store_order.index(2) < store_order.index(0):
+        with pytest.raises(RuntimeError, match="destination must follow the measurement"):
+            program.to_qiskit()
+    else:
+        restored = program.to_qiskit()
+        assert [
+            restored.find_bit(item.clbits[0]).index for item in restored.data if item.operation.name == "measure"
+        ] == destinations
+        assert sample(program, shots=1, seed=1) == {"00": 1}
+        assert sample(QCProgram.from_qiskit(restored), shots=1, seed=1) == {"00": 1}
+    assert program.ir == original_ir
 
 
 @pytest.mark.parametrize(
