@@ -12,6 +12,7 @@
 # ruff: file-ignore[implicit-namespace-package, subprocess-without-shell-equals-true]
 from __future__ import annotations
 
+import base64
 import csv
 import json
 import math
@@ -20,11 +21,9 @@ import runpy
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING
 from unittest.mock import patch
 
-if TYPE_CHECKING:
-    import pytest
+import pytest
 
 
 def test_failed_command_and_replay(tmp_path: Path) -> None:
@@ -70,6 +69,42 @@ def test_memory_in_nested_process_group(tmp_path: Path) -> None:
         [sys.executable, str(runner), "--output", str(record), "--", sys.executable, "-c", command], check=True
     )
     assert json.loads(record.read_text())["sampled_tree_rss_bytes"] >= 32 * 1024 * 1024
+
+
+def test_windows_records_failures_without_linux_resource_claims(tmp_path: Path) -> None:
+    """Compatibility checks retain exit status without inventing Windows RSS data."""
+    runner = runpy.run_path(str(Path(__file__).resolve().parents[2] / "scripts/linux_optimization.py"))
+    record = tmp_path / "windows.json"
+    with patch("platform.system", return_value="Windows"):
+        result = runner["run"](record, [sys.executable, "-c", "raise SystemExit(7)"], tmp_path, {})
+    assert result == 7
+    saved = json.loads(record.read_text())
+    assert saved["returncode"] == 7
+    assert saved["sampled_tree_rss_bytes"] is None
+    assert saved["cgroup_peak_bytes"] is None
+
+
+@pytest.mark.skipif(sys.version_info < (3, 14), reason="SDK extraction uses Python 3.14 zstd support")
+def test_sdk_archive_with_two_gib_window(tmp_path: Path) -> None:
+    """The portable SDK's long-window frames must extract through the shared helper."""
+    archive = tmp_path / "sdk.tar.zst"
+    archive.write_bytes(
+        base64.b64decode(
+            "KLUv/QSoHAIAdAJwYXlsb2FkADAwMDA2NDQAMDAwMDAwMDQwNzMxMwAgMHVzdGFyADAJAJD+kAPxhtQun8AI20C5F4NdOcpu"
+            "oisBcQIAEAACABAAAgAQAAIAEAACABAAAgAQAAIAEAADwAAAFcw1Hg=="
+        )
+    )
+    destination = tmp_path / "sdk"
+    subprocess.run(
+        [
+            sys.executable,
+            str(Path(__file__).resolve().parents[2] / "scripts/extract_study_sdk.py"),
+            str(archive),
+            str(destination),
+        ],
+        check=True,
+    )
+    assert (destination / "payload").read_bytes() == bytes(1024 * 1024)
 
 
 def test_equal_family_weight_and_paired_intervals(tmp_path: Path) -> None:

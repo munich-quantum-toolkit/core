@@ -15,6 +15,7 @@ from __future__ import annotations
 # ruff: file-ignore[subprocess-without-shell-equals-true]
 import json
 import math
+import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -54,7 +55,7 @@ def main() -> None:
         counts = job.get_counts()
         assert set(counts) == {"00", "11"}
         assert sum(counts.values()) == 256
-    executable = Path(mlir.__file__).parent / "bin" / "mqt-core-bench"
+    executable = Path(mlir.__file__).parent / "bin" / ("mqt-core-bench.exe" if os.name == "nt" else "mqt-core-bench")
     with tempfile.TemporaryDirectory() as directory:
         work = Path(directory)
         specification = work / "qft.json"

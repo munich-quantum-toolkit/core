@@ -47,7 +47,7 @@ python -c 'import hashlib,sys; print(hashlib.file_digest(open(sys.argv[1], "rb")
 rm "$STUDY_ROOT/source.tar.gz"
 archive=$(find "$STUDY_ROOT/download" -name '*.tar.zst' -print -quit)
 test -n "$archive"
-python -m tarfile --extract "$archive" "$STUDY_ROOT/input-sdk"
+python3 scripts/extract_study_sdk.py "$archive" "$STUDY_ROOT/input-sdk"
 
 python scripts/optimization_study.py "$STUDY_OPERATION" \
   --root "$STUDY_ROOT/output" --sdk "$STUDY_ROOT/input-sdk" \

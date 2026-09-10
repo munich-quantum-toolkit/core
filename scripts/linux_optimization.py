@@ -7,7 +7,7 @@
 #
 # Licensed under the MIT License
 
-"""Record optimization commands and resource use on Linux and macOS."""
+"""Record commands, with Linux and macOS resource accounting."""
 
 from __future__ import annotations
 
@@ -84,7 +84,8 @@ def run(
         "platform": platform.platform(),
     }
     darwin = platform.system() == "Darwin"
-    if darwin and (container or systemd_scope):
+    windows = platform.system() == "Windows"
+    if (darwin or windows) and (container or systemd_scope):
         msg = "Container and systemd cgroup accounting require Linux"
         raise ValueError(msg)
     output.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
@@ -99,6 +100,8 @@ def run(
     ]
     if darwin:
         measured = ["/usr/bin/time", "-l", *command]
+    elif windows:
+        measured = command
     peak = 0
     cgroup_peak = 0
     swap_peak = 0
@@ -116,7 +119,8 @@ def run(
             start_new_session=True,
         )
         while process.poll() is None:
-            peak = max(peak, tree_rss(process.pid))
+            if not windows:
+                peak = max(peak, tree_rss(process.pid))
             free_min = min(free_min, shutil.disk_usage(cwd).free)
             if container and cgroup is None:
                 inspect = subprocess.run(
@@ -155,7 +159,7 @@ def run(
     record |= {
         "elapsed_seconds": time.monotonic() - started,
         "returncode": process.returncode,
-        "sampled_tree_rss_bytes": peak,
+        "sampled_tree_rss_bytes": None if windows else peak,
         "cgroup_peak_bytes": cgroup_peak or None,
         "sampled_swap_bytes": swap_peak if cgroup else None,
         "filesystem_free_start_bytes": free_start,
