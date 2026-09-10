@@ -29,13 +29,14 @@
 
 #include "llvm/ADT/StringRef.h"
 
+#include <array>
 #include <string>
 
 using namespace mlir;
 
 static void expectComparison(llvm::StringRef lhsSource,
-                             llvm::StringRef rhsSource,
-                             bool equivalent = false) {
+                             llvm::StringRef rhsSource, bool equivalent = false,
+                             bool structurallyEquivalent = false) {
   DialectRegistry registry;
   registry.insert<arith::ArithDialect, func::FuncDialect,
                   cf::ControlFlowDialect, qc::QCDialect, qco::QCODialect,
@@ -49,6 +50,12 @@ static void expectComparison(llvm::StringRef lhsSource,
   ASSERT_TRUE(succeeded(verify(*rhs)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*lhs)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*rhs)));
+  EXPECT_TRUE(areModulesStructurallyEquivalent(*lhs, *lhs));
+  EXPECT_TRUE(areModulesStructurallyEquivalent(*rhs, *rhs));
+  EXPECT_EQ(areModulesStructurallyEquivalent(*lhs, *rhs),
+            structurallyEquivalent);
+  EXPECT_EQ(areModulesStructurallyEquivalent(*rhs, *lhs),
+            structurallyEquivalent);
   EXPECT_TRUE(areModulesEquivalentWithPermutations(*lhs, *lhs));
   EXPECT_TRUE(areModulesEquivalentWithPermutations(*rhs, *rhs));
   EXPECT_EQ(areModulesEquivalentWithPermutations(*lhs, *rhs), equivalent);
@@ -257,5 +264,100 @@ TEST(IRVerificationTest, ConsecutiveQIRReleasesCanCommute) {
       llvm.call @__quantum__rt__result_release(%b) : (!llvm.ptr) -> ()
       llvm.call @__quantum__rt__result_release(%a) : (!llvm.ptr) -> ()
       llvm.return })",
+                   true);
+}
+
+TEST(IRVerificationTest, ForwardSSADefinitionsMustAgreeWithTheirUses) {
+  const std::string source = R"(func.func @f() -> i32 {
+    cf.br ^definition
+  ^use:
+    return %first : i32
+  ^definition:
+    %first = arith.constant 42 : i32
+    %second = arith.constant 7 : i32
+    cf.br ^use
+  })";
+  expectComparison(source, source, true, true);
+  auto otherUse = source;
+  otherUse.replace(otherUse.find("return %first"),
+                   std::string("return %first").size(), "return %second");
+  expectComparison(source, otherUse);
+  auto otherDefinition = source;
+  otherDefinition.replace(otherDefinition.find("42"), 2, "43");
+  expectComparison(source, otherDefinition);
+}
+
+TEST(IRVerificationTest, QCOYieldOrderMattersAtEveryRegionBoundary) {
+  const std::array bodies = {
+      R"(
+      %r:2 = qco.if %flag args(%u = %a, %v = %b) -> (!qco.qubit, !qco.qubit) {
+        qco.yield %v, %u : !qco.qubit, !qco.qubit
+      } else args(%u = %a, %v = %b) {
+        qco.yield %u, %v : !qco.qubit, !qco.qubit
+      }
+    )",
+      R"(
+      %r:2 = qco.index_switch %index -> (!qco.qubit, !qco.qubit)
+      case 0 args(%u = %a, %v = %b) {
+        qco.yield %v, %u : !qco.qubit, !qco.qubit
+      }
+      default args(%u = %a, %v = %b) {
+        qco.yield %u, %v : !qco.qubit, !qco.qubit
+      }
+    )",
+      R"(
+      %r:2 = qco.inv (%u = %a, %v = %b) {
+        qco.yield %v, %u : !qco.qubit, !qco.qubit
+      } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
+    )",
+      R"(
+      %p = arith.constant 2.0 : f64
+      %r:2 = qco.pow(%p) (%u = %a, %v = %b) {
+        qco.yield %v, %u : !qco.qubit, !qco.qubit
+      } : {!qco.qubit, !qco.qubit} -> {!qco.qubit, !qco.qubit}
+    )",
+      R"(
+      %c = qco.alloc : !qco.qubit
+      %control, %r:2 = qco.ctrl(%c) targets(%u = %a, %v = %b) {
+        qco.yield %v, %u : !qco.qubit, !qco.qubit
+      } : ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+          -> ({!qco.qubit}, {!qco.qubit, !qco.qubit})
+      qco.sink %control : !qco.qubit
+    )",
+  };
+  for (const auto* body : bodies) {
+    SCOPED_TRACE(body);
+    const std::string source = std::string(R"(
+      func.func @f(%flag: i1, %index: index, %a: !qco.qubit, %b: !qco.qubit)
+          -> (!qco.qubit, !qco.qubit) {
+    )") + body + R"(
+      return %r#0, %r#1 : !qco.qubit, !qco.qubit
+    })";
+    auto swapped = source;
+    swapped.replace(swapped.find("qco.yield %v, %u"),
+                    std::string("qco.yield %v, %u").size(), "qco.yield %u, %v");
+    expectComparison(source, swapped);
+  }
+}
+
+TEST(IRVerificationTest, QCOYieldFollowsConsistentlyPermutedParentResults) {
+  expectComparison(R"(func.func @f(%c: i1, %a: !qco.qubit, %b: !qco.qubit)
+      -> (!qco.qubit, !qco.qubit) {
+    %r:2 = qco.if %c args(%u = %a, %v = %b) -> (!qco.qubit, !qco.qubit) {
+      qco.yield %v, %u : !qco.qubit, !qco.qubit
+    } else args(%u = %a, %v = %b) {
+      qco.yield %u, %v : !qco.qubit, !qco.qubit
+    }
+    return %r#0, %r#1 : !qco.qubit, !qco.qubit
+  })",
+                   R"(func.func @f(%c: i1, %a: !qco.qubit, %b: !qco.qubit)
+      -> (!qco.qubit, !qco.qubit) {
+    %r:2 = qco.if %c args(%v = %b, %u = %a) -> (!qco.qubit, !qco.qubit) {
+      qco.yield %u, %v : !qco.qubit, !qco.qubit
+    } else args(%v = %b, %u = %a) {
+      qco.yield %v, %u : !qco.qubit, !qco.qubit
+    }
+    return %r#1, %r#0 : !qco.qubit, !qco.qubit
+  })",
                    true);
 }

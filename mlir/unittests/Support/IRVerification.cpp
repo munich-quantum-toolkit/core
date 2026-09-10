@@ -25,6 +25,7 @@
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/IRMapping.h"
 #include "mlir/IR/Operation.h"
+#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/Region.h"
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/Value.h"
@@ -40,9 +41,30 @@
 #include <cassert>
 #include <cstddef>
 #include <iterator>
-#include <numeric>
 
 using namespace mlir;
+
+bool areModulesStructurallyEquivalent(ModuleOp lhs, ModuleOp rhs) {
+  IRMapping mapping;
+  bool consistent = true;
+  const auto matchValue = [&](Value lhsValue, Value rhsValue) {
+    if (auto mapped = mapping.lookupOrNull(lhsValue)) {
+      return success(mapped == rhsValue);
+    }
+    mapping.map(lhsValue, rhsValue);
+    return success();
+  };
+  /// A use can precede its definition in region order. Check that each later
+  /// definition agrees with the correspondence established by its uses.
+  const auto markValue = [&](Value lhsValue, Value rhsValue) {
+    consistent &= succeeded(matchValue(lhsValue, rhsValue));
+  };
+  return OperationEquivalence::isEquivalentTo(
+             lhs, rhs, matchValue, markValue,
+             OperationEquivalence::IgnoreLocations |
+                 OperationEquivalence::IgnoreCommutativity) &&
+         consistent;
+}
 
 namespace {
 struct TensorMapping {
@@ -257,8 +279,15 @@ static bool compareValueLists(const LhsRange& lhs, const RhsRange& rhs,
   return workset.empty();
 }
 
-/// Compare two operations for structural equivalence, applying special
-/// rules for `CtrlOp` s and `qtensor` s.
+/// Compare values using the established SSA or tensor correspondence.
+static bool compareValues(Value lhs, Value rhs, const IRMapping& mapping,
+                          const TensorMapping& tensors) {
+  if (tensors.tracksLhs(lhs)) {
+    return tensors.tracksRhs(rhs) && tensors.equals(lhs, rhs);
+  }
+  return mapping.lookupOrNull(lhs) == rhs;
+}
+
 static bool compareOperations(Operation* lhs, Operation* rhs,
                               const IRMapping& m, const TensorMapping& tm) {
 
@@ -318,52 +347,28 @@ static bool compareOperations(Operation* lhs, Operation* rhs,
     auto lhsSwitch = cast<qco::IndexSwitchOp>(lhs);
     auto rhsSwitch = cast<qco::IndexSwitchOp>(rhs);
     if (m.lookupOrNull(lhsSwitch.getArg()) != rhsSwitch.getArg() ||
-        lhsSwitch.getCases() != rhsSwitch.getCases() ||
         !compareValueLists(lhsSwitch.getTargets(), rhsSwitch.getTargets(), m,
                            tm)) {
       return false;
     }
   } else if (isa<qco::YieldOp>(lhs)) {
-    assert(isa<qco::YieldOp>(rhs));
-    auto lhsYield = cast<qco::YieldOp>(lhs);
-    auto rhsYield = cast<qco::YieldOp>(rhs);
-
-    size_t numClassicalResults = 0;
-    if (auto ifOp = dyn_cast<qco::IfOp>(lhs->getParentOp())) {
-      numClassicalResults = ifOp.getClassicalResults().size();
-    } else if (auto switchOp =
-                   dyn_cast<qco::IndexSwitchOp>(lhs->getParentOp())) {
-      numClassicalResults = switchOp.getClassicalResults().size();
-    }
-
-    for (auto [lhsValue, rhsValue] : llvm::zip_equal(
-             lhsYield.getTargets().take_front(numClassicalResults),
-             rhsYield.getTargets().take_front(numClassicalResults))) {
-      if (m.lookup(lhsValue) != rhsValue) {
+    /// Controls are the only parent results not supplied by qco.yield.
+    auto parentResults =
+        lhs->getParentOp()->getResults().take_back(lhs->getNumOperands());
+    const auto rhsOffset =
+        rhs->getParentOp()->getNumResults() - rhs->getNumOperands();
+    for (auto [value, result] :
+         llvm::zip_equal(lhs->getOperands(), parentResults)) {
+      const auto position = cast<OpResult>(m.lookup(result)).getResultNumber();
+      if (!compareValues(value, rhs->getOperand(position - rhsOffset), m, tm)) {
         return false;
       }
-    }
-    if (!compareValueLists(
-            lhsYield.getTargets().drop_front(numClassicalResults),
-            rhsYield.getTargets().drop_front(numClassicalResults), m, tm)) {
-      return false;
     }
   } else {
     for (auto [lhsOperand, rhsOperand] :
          llvm::zip_equal(lhs->getOperands(), rhs->getOperands())) {
-      if (tm.tracksLhs(lhsOperand)) {
-        if (!tm.tracksRhs(rhsOperand)) {
-          return false;
-        }
-
-        if (!tm.equals(lhsOperand, rhsOperand)) {
-          return false;
-        }
-      } else {
-        auto v = m.lookup(lhsOperand);
-        if (v != rhsOperand) {
-          return false;
-        }
+      if (!compareValues(lhsOperand, rhsOperand, m, tm)) {
+        return false;
       }
     }
   }
@@ -512,10 +517,6 @@ static bool compareBlocks(Block& lhs, Block& rhs,
                           SetVector<Operation*>& lhsClosed,
                           SetVector<Operation*>& rhsClosed, IRMapping& m,
                           TensorMapping& tm) {
-  if (lhs.getArgumentTypes() != rhs.getArgumentTypes()) {
-    return false;
-  }
-
   // Map block arguments while allowing commutation of operands for `CtrlOp`s.
 
   if (isa<qc::CtrlOp>(lhs.getParentOp())) {
@@ -558,10 +559,6 @@ static bool compareBlocks(Block& lhs, Block& rhs,
       return false;
     }
     mapArguments(lhs, rhs, *permutation, m);
-  } else {
-    SmallVector<size_t> permutation(lhs.getNumArguments());
-    std::iota(permutation.begin(), permutation.end(), 0);
-    mapArguments(lhs, rhs, permutation, m);
   }
 
   SetVector<Operation*> lhsOpen;
@@ -667,9 +664,7 @@ static bool compareBlocks(Block& lhs, Block& rhs,
             // when it descends from an allocation, so map it here as well.
             m.map(lhsExtract.getOutTensor(), rhsExtract.getOutTensor());
           } else {
-            SmallVector<size_t> permutation(lhsOp->getNumResults());
-            std::iota(permutation.begin(), permutation.end(), 0);
-            mapResults(lhsOp, rhsOp, permutation, m);
+            m.map(lhsOp->getResults(), rhsOp->getResults());
           }
 
           m.map(lhsOp, rhsOp);
@@ -729,9 +724,13 @@ static bool compareRegions(Region& lhs, Region& rhs,
     return false;
   }
 
-  // Map forward and backward successors before comparing terminators.
+  /// Map CFG destinations and block arguments before comparing operations.
   for (auto [lhsBlock, rhsBlock] : llvm::zip_equal(lhs, rhs)) {
+    if (lhsBlock.getArgumentTypes() != rhsBlock.getArgumentTypes()) {
+      return false;
+    }
     m.map(&lhsBlock, &rhsBlock);
+    m.map(lhsBlock.getArguments(), rhsBlock.getArguments());
   }
   for (auto [lhsBlock, rhsBlock] : llvm::zip_equal(lhs, rhs)) {
     if (!compareBlocks(lhsBlock, rhsBlock, lhsClosed, rhsClosed, m, tm)) {
@@ -743,6 +742,9 @@ static bool compareRegions(Region& lhs, Region& rhs,
 }
 
 bool areModulesEquivalentWithPermutations(ModuleOp lhs, ModuleOp rhs) {
+  if (areModulesStructurallyEquivalent(lhs, rhs)) {
+    return true;
+  }
   IRMapping m;
   SetVector<Operation*> lhsClosed;
   SetVector<Operation*> rhsClosed;

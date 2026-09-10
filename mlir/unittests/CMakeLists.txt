@@ -12,8 +12,7 @@ add_library(MLIRTestSupport STATIC Support/IRVerification.cpp)
 target_include_directories(MLIRTestSupport PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(
   MLIRTestSupport
-  PUBLIC MLIRAnalysis
-         MLIRCBitDialect
+  PUBLIC MLIRCBitDialect
          MLIRIR
          MLIRLLVMDialect
          MLIRQCDialect

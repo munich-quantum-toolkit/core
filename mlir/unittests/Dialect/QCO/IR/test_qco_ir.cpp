@@ -140,6 +140,7 @@ TEST_P(QCOTest, ProgramEquivalence) {
   printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  /// Cleanup may permute independent gates and tensor operations.
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
@@ -1644,8 +1645,8 @@ TEST_F(QCOTest, IfOpWithClassicalResultRoundTripsAndPreservesTies) {
   auto reparsedModule = parseSourceString<ModuleOp>(printed, context.get());
   ASSERT_TRUE(reparsedModule);
   EXPECT_TRUE(succeeded(verify(*reparsedModule)));
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(moduleOp.get(),
-                                                   reparsedModule.get()));
+  EXPECT_TRUE(
+      areModulesStructurallyEquivalent(moduleOp.get(), reparsedModule.get()));
 }
 
 TEST_F(QCOTest, IfOpRejectsMismatchedClassicalYield) {
@@ -1977,8 +1978,8 @@ TEST_F(QCOTest, IndexSwitchWithClassicalResultRoundTripsAndPreservesTies) {
   auto reparsedModule = parseSourceString<ModuleOp>(printed, context.get());
   ASSERT_TRUE(reparsedModule);
   EXPECT_TRUE(succeeded(verify(*reparsedModule)));
-  EXPECT_TRUE(areModulesEquivalentWithPermutations(moduleOp.get(),
-                                                   reparsedModule.get()));
+  EXPECT_TRUE(
+      areModulesStructurallyEquivalent(moduleOp.get(), reparsedModule.get()));
 }
 
 TEST_F(QCOTest, ClassicalYieldOrderAffectsConditionalEquivalence) {

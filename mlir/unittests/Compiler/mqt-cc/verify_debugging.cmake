@@ -162,6 +162,24 @@ if(NOT error MATCHES "Before QCToQCO" OR NOT error MATCHES
 endif()
 run_compiler(1 "${unsupported}" --run-pipeline "--pass-pipeline=builtin.module(qc-to-qco)")
 
+# Later QIR failures must replay even when cleanup passes follow the failing pass.
+foreach(profile IN ITEMS qir-base qir-adaptive)
+  set(qir_reproducer "${OUTPUT_DIR}/${profile}-failure.mlir")
+  file(REMOVE "${qir_reproducer}")
+  reject_compiler(
+    "no main function with mqt.entry_point found" "${reduced}" "--emit=${profile}"
+    --mlir-disable-threading "--mlir-pass-pipeline-crash-reproducer=${qir_reproducer}")
+  reject_compiler("no main function with mqt.entry_point found" "${qir_reproducer}"
+                  --run-reproducer)
+endforeach()
+
+# Register the named shrink and QIR cleanup passes for isolated pipelines too.
+run_compiler(
+  0 "${reduced}" --run-pipeline
+  "--pass-pipeline=builtin.module(qtensor-shrink-to-fit,qc-shrink-qubit-registers,qir-cleanup)")
+reject_compiler("QIR metadata attachment requires exactly one entry point" "${reduced}"
+                --run-pipeline "--pass-pipeline=builtin.module(set-qir-attributes-and-metadata)")
+
 # Reproducer verification settings are intentional, including disabled verification.
 set(unverified "${OUTPUT_DIR}/unverified.mlir")
 file(

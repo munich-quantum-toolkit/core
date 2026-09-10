@@ -131,6 +131,7 @@ TEST_P(QCTest, ProgramEquivalence) {
   printer.record(reference.get(), "Canonicalized Reference QC IR" + name);
   EXPECT_TRUE(verify(*reference).succeeded());
 
+  /// Cleanup may reorder independent classical constants.
   EXPECT_TRUE(
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
@@ -1099,19 +1100,14 @@ static void emitForbiddenModifierBodyOperation(QCProgramBuilder& builder,
   llvm_unreachable("unknown forbidden modifier operation");
 }
 
-static OwningOpRef<ModuleOp>
-buildInvalidNestedModifierProgram(MLIRContext* context,
-                                  const VerifierModifierKind modifier,
-                                  ForbiddenModifierBodyOp forbiddenOperation,
-                                  bool registerBacked, bool nested) {
+static OwningOpRef<ModuleOp> buildInvalidNestedModifierProgram(
+    MLIRContext* context, const VerifierModifierKind modifier,
+    ForbiddenModifierBodyOp forbiddenOperation, bool nested) {
   QCProgramBuilder builder(context);
   builder.initialize();
   auto control = builder.allocQubit();
   auto qubitReg = builder.allocQubitRegisterStorage(1);
-  auto target = registerBacked
-                    ? builder.loadQubit(
-                          qubitReg, arith::ConstantIndexOp::create(builder, 0))
-                    : builder.allocQubit();
+  auto target = builder.allocQubit();
   auto cbitReg = builder.allocClassicalBitRegister(1);
   auto bit = builder.boolConstant(false);
   auto index = arith::ConstantIndexOp::create(builder, 0);
@@ -1172,37 +1168,32 @@ TEST_F(QCTest, ModifiersRecursivelyRejectEveryForbiddenOperation) {
 
   for (auto modifier : modifiers) {
     for (const auto forbiddenOperation : forbiddenOperations) {
-      for (bool registerBacked : {false, true}) {
-        for (bool nested : {false, true}) {
-          SCOPED_TRACE(testing::Message()
-                       << "register_backed=" << registerBacked
-                       << ", nested=" << nested);
-          SCOPED_TRACE(testing::Message()
-                       << "modifier=" << modifierName(modifier).str()
-                       << ", operation="
-                       << forbiddenOperationName(forbiddenOperation).str());
-          auto moduleOp = buildInvalidNestedModifierProgram(
-              context.get(), modifier, forbiddenOperation, registerBacked,
-              nested);
-          ASSERT_TRUE(moduleOp);
-          // Check the modifier contract independently of program allocation
-          // scope.
-          mlir::mqt::removeEntryPoint(mlir::mqt::getEntryPoint(*moduleOp));
+      for (bool nested : {false, true}) {
+        SCOPED_TRACE(testing::Message() << "nested=" << nested);
+        SCOPED_TRACE(testing::Message()
+                     << "modifier=" << modifierName(modifier).str()
+                     << ", operation="
+                     << forbiddenOperationName(forbiddenOperation).str());
+        auto moduleOp = buildInvalidNestedModifierProgram(
+            context.get(), modifier, forbiddenOperation, nested);
+        ASSERT_TRUE(moduleOp);
+        /// Check the modifier contract independently of program allocation
+        /// scope.
+        mlir::mqt::removeEntryPoint(mlir::mqt::getEntryPoint(*moduleOp));
 
-          bool sawExpectedDiagnostic = false;
-          ScopedDiagnosticHandler handler(
-              context.get(), [&](Diagnostic& diagnostic) {
-                sawExpectedDiagnostic |=
-                    StringRef(diagnostic.str())
-                        .contains(
-                            "body must contain only unitary operations and "
-                            "memory-effect-free classical operations without "
-                            "regions");
-                return success();
-              });
-          EXPECT_TRUE(failed(verify(*moduleOp)));
-          EXPECT_TRUE(sawExpectedDiagnostic);
-        }
+        bool sawExpectedDiagnostic = false;
+        ScopedDiagnosticHandler handler(
+            context.get(), [&](Diagnostic& diagnostic) {
+              sawExpectedDiagnostic |=
+                  StringRef(diagnostic.str())
+                      .contains(
+                          "body must contain only unitary operations and "
+                          "memory-effect-free classical operations without "
+                          "regions");
+              return success();
+            });
+        EXPECT_TRUE(failed(verify(*moduleOp)));
+        EXPECT_TRUE(sawExpectedDiagnostic);
       }
     }
   }

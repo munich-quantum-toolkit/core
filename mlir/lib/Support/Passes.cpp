@@ -70,6 +70,9 @@ void registerMQTCompilerPasses() {
     qco::registerVerifyTargetConformance();
     mqt::registerNormalizeGlobalPhases();
     mqt::registerUnrollModifiers();
+    qc::registerShrinkQubitRegistersPass();
+    qtensor::registerShrinkQTensorToFitPass();
+    qir::registerQIRPasses();
     PassPipelineRegistration<>("mqt-qco-default",
                                "Run the default MQT QCO optimization pipeline.",
                                populateDefaultQCOOptimizationPipeline);
