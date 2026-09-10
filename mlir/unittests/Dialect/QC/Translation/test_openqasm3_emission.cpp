@@ -111,6 +111,54 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   EXPECT_TRUE(qc::translateQASM3ToQC(*source, &context));
 }
 
+TEST(OpenQASM3EmissionTest, RoundTripsSwitchBreakContinueAndFallthrough) {
+  constexpr auto fixtures =
+      std::to_array<std::tuple<const char*, const char*, const char*>>({
+          {"", "0", "6"},
+          {"x seed[0];", "0", "7"},
+          {"x seed[1];", "0", "309"},
+          {"", "4294967296", "11"},
+          {"", "-1", "11"},
+      });
+  for (auto [prepare, offset, expected] : fixtures) {
+    SCOPED_TRACE(expected);
+    const auto source = std::string("OPENQASM 3.1; qubit[2] seed; ") + prepare +
+                        " bit[2] code = measure seed; "
+                        "int selector = int(uint[2](code)) + " +
+                        offset +
+                        R"qasm(;
+qubit q;
+output bit result;
+int accumulated = 0;
+for int i in [0:2] {
+  switch (selector) {
+    case 0 { int local = 2; accumulated += local; continue; }
+    case 1 { accumulated += 7; break; }
+    case -1, 4294967296 { accumulated += 11; break; }
+    default { accumulated += 3; }
+  }
+  accumulated += 100;
+}
+if (accumulated == )qasm" +
+                        expected + R"qasm() { x q; }
+result = measure q;
+)qasm";
+    MLIRContext context;
+    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+    ASSERT_TRUE(succeeded(emitted));
+    ASSERT_TRUE(oq3::frontend::analyzeOpenQASM(
+        *emitted, oq3::frontend::GatePolicy::Strict));
+    auto restored = qc::translateQASM3ToQC(*emitted, &context);
+    ASSERT_TRUE(restored) << *emitted;
+    ASSERT_TRUE(succeeded(verify(*restored)));
+    expectOneSample(*moduleOp);
+    expectOneSample(*restored);
+  }
+}
+
 TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
   constexpr llvm::StringLiteral source = R"mlir(module {
     func.func @main() -> !cbit.reg<1>
@@ -1828,7 +1876,6 @@ TEST(OpenQASM3EmissionTest, RejectsUnsupportedSubsetConcerns) {
         }
       })mlir",
       },
-
       Fixture{
           .name = "dynamic-index",
           .source = R"mlir(module {

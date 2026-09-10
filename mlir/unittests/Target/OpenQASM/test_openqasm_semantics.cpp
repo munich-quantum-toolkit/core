@@ -160,6 +160,68 @@ x q[i];
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
 }
 
+TEST(OpenQASMFrontendTest, PreservesStateAcrossSuccessiveLocalScopes) {
+  constexpr llvm::StringLiteral source = R"qasm(
+OPENQASM 3.1;
+qubit[4] q;
+bit choose = measure q[0];
+output bit result;
+int index = 0;
+if (choose) {
+  int local = 1; bit scratch = true;
+  index = local; result = scratch;
+} else {
+  int local = 1; bit scratch = false;
+  index = local; result = scratch;
+}
+int after_if = index;
+x q[after_if];
+for int i in [0:1] {
+  int local = i; bit scratch = true;
+  x q[local]; result = scratch;
+}
+bit after_for = result;
+while (true) {
+  int local = 3; bit scratch = true;
+  x q[local]; result = scratch; break;
+}
+bit after_while = result;
+switch (int(choose)) {
+  case 0 { int local = 2; bit scratch = true;
+           index = local; result = scratch; }
+  default { int local = 2; bit scratch = false;
+            index = local; result = scratch; }
+}
+int after_switch = index;
+x q[after_switch];
+)qasm";
+  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
+}
+
+TEST(OpenQASMFrontendTest, DoesNotInheritFactsFromExpiredLocalDeclarations) {
+  constexpr auto bodies = std::to_array<llvm::StringLiteral>({
+      "if (choose) { int old = 1; } int value; result = value;",
+      "if (choose) { bit old = true; } bit value; if (value) { result = 1; }",
+      "int value; if (choose) { int value = 1; } else { int value = 2; } "
+      "result = value;",
+      "int index; if (choose) { int local = 0; index = local; } "
+      "else { int local = 1; index = local; } x q[index];",
+      "for int i in [0:1] { int value = i; } "
+      "int value = int(choose); x q[value];",
+  });
+  for (auto body : bodies) {
+    SCOPED_TRACE(body.str());
+    const std::string source =
+        "OPENQASM 3.1; qubit[2] q; bit choose = measure q[0]; "
+        "output int result; result = 0; " +
+        body.str();
+    auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+    ASSERT_FALSE(analyzed);
+    ASSERT_FALSE(analyzed.diagnostics.empty());
+  }
+}
+
 TEST(OpenQASMFrontendTest, RejectsUnprovedQuantumIndices) {
   constexpr auto rejections =
       std::to_array<std::pair<llvm::StringRef, llvm::StringRef>>({

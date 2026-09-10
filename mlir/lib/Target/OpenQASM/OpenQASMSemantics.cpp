@@ -22,6 +22,7 @@
 
 #include "llvm/ADT/APInt.h"
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/BitVector.h"
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/DynamicAPInt.h"
@@ -401,7 +402,7 @@ public:
         constantExpressionStatus(syntax.expressions.size(), 0),
         constantValues(syntax.expressions.size()),
         constantTypes(syntax.expressions.size()) {
-    scopes.emplace_back();
+    enterScope();
   }
 
   [[nodiscard]] AnalysisResult run() {
@@ -425,7 +426,7 @@ private:
     llvm::DynamicAPInt constant{0};
   };
 
-  using BitInitialization = std::vector<bool>;
+  using BitInitialization = llvm::BitVector;
   struct InitializationState {
     std::vector<std::shared_ptr<BitInitialization>> bits;
     std::vector<bool> scalars;
@@ -449,9 +450,8 @@ private:
   void intersectInitialization(const InitializationState& state,
                                size_t registers, size_t scalars) {
     for (size_t reg = 0; reg < registers; ++reg) {
-      auto& bits = mutableBitInitialization(static_cast<RegisterId>(reg));
-      for (size_t bit = 0; bit < bits.size(); ++bit) {
-        bits[bit] = bits[bit] && (*state.bits[reg])[bit];
+      if (initializedBits[reg] != state.bits[reg]) {
+        mutableBitInitialization(reg) &= *state.bits[reg];
       }
     }
     for (size_t scalar = 0; scalar < scalars; ++scalar) {
@@ -465,12 +465,21 @@ private:
   const llvm::SourceMgr& sources;
   GatePolicy gatePolicy;
   TypedProgram program;
-  SmallVector<llvm::StringMap<Symbol>> scopes;
+  struct Scope {
+    llvm::StringMap<Symbol> symbols;
+    size_t registers;
+    size_t scalars;
+  };
+  SmallVector<Scope> scopes;
   llvm::StringMap<GateSignature> customGates;
   std::vector<std::shared_ptr<BitInitialization>> initializedBits;
   std::vector<bool> initializedScalars;
   std::vector<uint64_t> scalarGenerations;
   std::vector<std::optional<ExpressionId>> affineScalarValues;
+  /// Typed IDs remain stable; analysis slots are reused after lexical scope
+  /// exit.
+  std::vector<size_t> registerStateSlots_;
+  std::vector<size_t> scalarStateSlots_;
   llvm::DenseMap<ScalarId, unsigned> activeInductions;
   llvm::DenseSet<ScalarId> loopVariantScalars;
   presburger::IntegerPolyhedron affineDomain{
@@ -485,6 +494,43 @@ private:
   uint64_t totalRegisterElements = 0;
   std::optional<SyntaxIncludeContextId> currentIncludeContext;
   mutable std::optional<Diagnostic> failureDiagnostic;
+
+  void enterScope() {
+    scopes.push_back({
+        .symbols = {},
+        .registers = initializedBits.size(),
+        .scalars = initializedScalars.size(),
+    });
+  }
+
+  void leaveScope() {
+    const auto& scope = scopes.back();
+    for (const auto& entry : scope.symbols) {
+      const auto& symbol = entry.getValue();
+      if (symbol.kind == SymbolKind::Register) {
+        registerStateSlots_[symbol.id] = std::numeric_limits<size_t>::max();
+      } else if (symbol.kind == SymbolKind::Scalar ||
+                 symbol.kind == SymbolKind::GateLocalScalar) {
+        scalarStateSlots_[symbol.id] = std::numeric_limits<size_t>::max();
+      }
+    }
+    initializedBits.resize(scope.registers);
+    initializedScalars.resize(scope.scalars);
+    scalarGenerations.resize(scope.scalars);
+    affineScalarValues.resize(scope.scalars);
+    scopes.pop_back();
+  }
+
+  [[nodiscard]] std::optional<ExpressionId>
+  affineScalarValue(ScalarId scalar) const {
+    if (scalar < scalarStateSlots_.size()) {
+      const auto slot = scalarStateSlots_[scalar];
+      if (slot < affineScalarValues.size()) {
+        return affineScalarValues[slot];
+      }
+    }
+    return std::nullopt;
+  }
 
   [[nodiscard]] SourceLocation getSourceLocation(const SMLoc location) const {
     if (!currentIncludeContext) {
@@ -664,10 +710,8 @@ private:
         result->coefficients[induction->second] = llvm::DynamicAPInt(1);
         break;
       }
-      if (value.variable < affineScalarValues.size() &&
-          affineScalarValues[value.variable]) {
-        result = buildAffineForm(*affineScalarValues[value.variable], cache,
-                                 depth + 1);
+      if (const auto known = affineScalarValue(value.variable)) {
+        result = buildAffineForm(*known, cache, depth + 1);
       }
       break;
     }
@@ -726,10 +770,7 @@ private:
       if (activeInductions.contains(value.variable)) {
         return expression;
       }
-      if (value.variable < affineScalarValues.size()) {
-        return affineScalarValues[value.variable];
-      }
-      return std::nullopt;
+      return affineScalarValue(value.variable);
     case ExpressionKind::Cast:
     case ExpressionKind::Negate: {
       auto operand = expandAffineScalarValues(value.lhs);
@@ -904,8 +945,7 @@ private:
     affineScalarValues.resize(size);
   }
 
-  [[nodiscard]] BitInitialization&
-  mutableBitInitialization(const RegisterId reg) {
+  [[nodiscard]] BitInitialization& mutableBitInitialization(size_t reg) {
     if (initializedBits[reg].use_count() != 1) {
       initializedBits[reg] =
           std::make_shared<BitInitialization>(*initializedBits[reg]);
@@ -927,7 +967,8 @@ private:
 
   [[nodiscard]] const Symbol* lookup(StringRef name) const {
     for (const auto& scope : llvm::reverse(scopes)) {
-      if (const auto found = scope.find(name); found != scope.end()) {
+      if (const auto found = scope.symbols.find(name);
+          found != scope.symbols.end()) {
         return &found->second;
       }
     }
@@ -949,7 +990,7 @@ private:
          (customGates.contains(name) || catalogNameReserved))) {
       return fail(location, "identifier '" + name + "' is already declared");
     }
-    if (!scopes.back().insert({name, symbol}).second) {
+    if (!scopes.back().symbols.insert({name, symbol}).second) {
       return fail(location, "identifier '" + name + "' is already declared");
     }
     return success();
@@ -2641,7 +2682,7 @@ private:
                                              expression.identifier +
                                              "' is not a scalar value");
       }
-      if (!initializedScalars.at(symbol->id)) {
+      if (!initializedScalars.at(scalarStateSlots_[symbol->id])) {
         return fail(expression.location,
                     "scalar '" + expression.identifier + "' is uninitialized");
       }
@@ -3270,6 +3311,7 @@ private:
         .name = declaration.identifier.str(),
         .location = getSourceLocation(location),
     });
+    scalarStateSlots_.push_back(initializedScalars.size());
     initializedScalars.push_back(false);
     scalarGenerations.push_back(0);
     affineScalarValues.emplace_back();
@@ -3311,11 +3353,11 @@ private:
                 integerWidth));
         typed.initializer = convertedInitializer;
         if (buildAffineForm(convertedInitializer)) {
-          affineScalarValues[id] =
+          affineScalarValues[scalarStateSlots_[id]] =
               expandAffineScalarValues(convertedInitializer);
         }
       }
-      initializedScalars[id] = true;
+      initializedScalars[scalarStateSlots_[id]] = true;
     }
     MQT_OQ3_TRY_ASSIGN(statement, addStatement(location, typed));
     destination.push_back(statement);
@@ -3324,7 +3366,8 @@ private:
 
   void markBitInitialized(const frontend::BitReference& target) {
     if (!target.dynamicIndex) {
-      mutableBitInitialization(target.reg)[target.index] = true;
+      mutableBitInitialization(registerStateSlots_[target.reg])[target.index] =
+          true;
       return;
     }
   }
@@ -3345,7 +3388,7 @@ private:
       if (symbol->type == ScalarType::Bool) {
         MQT_OQ3_TRY_ASSIGN(condition, analyzeBoolValue(assignment.value));
         typed.condition = condition;
-        affineScalarValues[symbol->id].reset();
+        affineScalarValues[scalarStateSlots_[symbol->id]].reset();
       } else {
         MQT_OQ3_TRY_ASSIGN(value, analyzeExpression(assignment.value));
         MQT_OQ3_TRY_ASSIGN(
@@ -3354,13 +3397,13 @@ private:
                            syntax.expressions[assignment.value].location,
                            symbol->integerWidth));
         typed.value = convertedValue;
-        affineScalarValues[symbol->id] =
+        affineScalarValues[scalarStateSlots_[symbol->id]] =
             buildAffineForm(convertedValue)
                 ? expandAffineScalarValues(convertedValue)
                 : std::nullopt;
       }
-      initializedScalars[symbol->id] = true;
-      ++scalarGenerations[symbol->id];
+      initializedScalars[scalarStateSlots_[symbol->id]] = true;
+      ++scalarGenerations[scalarStateSlots_[symbol->id]];
       MQT_OQ3_TRY_ASSIGN(statement, addStatement(location, typed));
       destination.push_back(statement);
       return success();
@@ -3434,8 +3477,9 @@ private:
     });
     // OpenQASM 2 classical bits are zero-initialized; OpenQASM 3 bits are not.
     const bool initiallyInitialized = !isQubit && program.openQASM2;
-    initializedBits.push_back(
-        std::make_shared<BitInitialization>(width, initiallyInitialized));
+    registerStateSlots_.push_back(initializedBits.size());
+    initializedBits.push_back(std::make_shared<BitInitialization>(
+        isQubit ? 0 : width, initiallyInitialized));
     if (failed(declare(location, identifier,
                        {
                            .kind = SymbolKind::Register,
@@ -3535,7 +3579,7 @@ private:
         .body = {},
         .location = getSourceLocation(location),
     };
-    scopes.emplace_back();
+    enterScope();
     for (const auto [index, parameter] :
          llvm::enumerate(declaration.parameters)) {
       if (failed(declare(location, parameter,
@@ -3545,7 +3589,7 @@ private:
                              .id = static_cast<uint32_t>(index),
                              .constant = std::nullopt,
                          }))) {
-        scopes.pop_back();
+        leaveScope();
         return failure();
       }
     }
@@ -3556,7 +3600,7 @@ private:
                              .id = static_cast<uint32_t>(index),
                              .constant = std::nullopt,
                          }))) {
-        scopes.pop_back();
+        leaveScope();
         return failure();
       }
     }
@@ -3564,7 +3608,7 @@ private:
     const auto bodyResult =
         analyzeBody(declaration.body, definition.body, /*global=*/false);
     activeGate_ = {};
-    scopes.pop_back();
+    leaveScope();
     if (failed(bodyResult)) {
       return failure();
     }
@@ -3741,44 +3785,44 @@ private:
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
     const auto beforeAffineScalarValues = affineScalarValues;
-    scopes.emplace_back();
+    enterScope();
     const auto thenResult =
         analyzeBody(conditional.thenStatements, result.thenStatements,
                     /*global=*/false);
     if (failed(thenResult)) {
-      scopes.pop_back();
+      leaveScope();
       return failure();
     }
     const bool thenReachable =
         reachable && (!knownCondition || *knownCondition);
+    leaveScope();
     const auto afterThenBitsInitialized = initializedBits;
     const auto afterThenInitialized = initializedScalars;
     const auto afterThenGenerations = scalarGenerations;
     const auto afterThenAffineScalarValues = affineScalarValues;
-    scopes.pop_back();
 
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
                        beforeGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
     activePath = entryActive && (!knownCondition || !*knownCondition);
     reachable = entryReachable;
-    scopes.emplace_back();
+    enterScope();
     const auto elseResult =
         analyzeBody(conditional.elseStatements, result.elseStatements,
                     /*global=*/false);
     if (failed(elseResult)) {
-      scopes.pop_back();
+      leaveScope();
       return failure();
     }
     const bool elseReachable =
         reachable && (!knownCondition || !*knownCondition);
     activePath = entryActive;
     reachable = thenReachable || elseReachable;
+    leaveScope();
     const auto afterElseBitsInitialized = initializedBits;
     const auto afterElseInitialized = initializedScalars;
     const auto afterElseGenerations = scalarGenerations;
     const auto afterElseAffineScalarValues = affineScalarValues;
-    scopes.pop_back();
 
     if (!thenReachable && elseReachable) {
       return addStatement(location, std::move(result));
@@ -3809,10 +3853,9 @@ private:
                        beforeGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
     for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
-      auto& merged = mutableBitInitialization(static_cast<RegisterId>(reg));
-      for (size_t bit = 0; bit < beforeBitsInitialized[reg]->size(); ++bit) {
-        merged[bit] = (*afterThenBitsInitialized[reg])[bit] &&
-                      (*afterElseBitsInitialized[reg])[bit];
+      initializedBits[reg] = afterThenBitsInitialized[reg];
+      if (initializedBits[reg] != afterElseBitsInitialized[reg]) {
+        mutableBitInitialization(reg) &= *afterElseBitsInitialized[reg];
       }
     }
     for (size_t scalar = 0; scalar < beforeInitialized.size(); ++scalar) {
@@ -3885,7 +3928,7 @@ private:
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
     const auto beforeAffineScalarValues = affineScalarValues;
-    scopes.emplace_back();
+    enterScope();
     const auto scalar = static_cast<ScalarId>(program.scalars.size());
     const auto type = loop.isUnsigned ? ScalarType::Uint : ScalarType::Int;
     program.scalars.push_back({
@@ -3893,6 +3936,7 @@ private:
         .name = loop.inductionVariable.str(),
         .location = {},
     });
+    scalarStateSlots_.push_back(initializedScalars.size());
     initializedScalars.push_back(true);
     scalarGenerations.push_back(0);
     affineScalarValues.emplace_back();
@@ -3905,7 +3949,7 @@ private:
                            .id = scalar,
                            .constant = std::nullopt,
                        }))) {
-      scopes.pop_back();
+      leaveScope();
       return failure();
     }
     result.inductionVariable = scalar;
@@ -3938,7 +3982,7 @@ private:
       activeInductions.erase(scalar);
       affineDomain = outerDomain;
       loopVariantScalars = outerLoopVariantScalars;
-      scopes.pop_back();
+      leaveScope();
       return failure();
     }
     const auto afterBodyBitsInitialized = initializedBits;
@@ -3948,7 +3992,7 @@ private:
     activeInductions.erase(scalar);
     affineDomain = outerDomain;
     loopVariantScalars = outerLoopVariantScalars;
-    scopes.pop_back();
+    leaveScope();
     restoreStatePrefix(beforeBitsInitialized, beforeInitialized,
                        beforeGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
@@ -4027,7 +4071,7 @@ private:
     const auto beforeInitialized = initializedScalars;
     const auto beforeGenerations = scalarGenerations;
     const auto beforeAffineScalarValues = affineScalarValues;
-    scopes.emplace_back();
+    enterScope();
     const auto outerLoopVariantScalars = loopVariantScalars;
     llvm::DenseSet<StringRef> blockLocalScalars;
     collectLoopMutations(loop.body, loopVariantScalars, blockLocalScalars);
@@ -4039,7 +4083,7 @@ private:
     loopExits.pop_back();
     reachable = entryReachable;
     loopVariantScalars = outerLoopVariantScalars;
-    scopes.pop_back();
+    leaveScope();
     if (failed(bodyResult)) {
       return failure();
     }
@@ -4104,10 +4148,10 @@ private:
                          beforeGenerations);
       restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
       reachable = entryReachable;
-      scopes.emplace_back();
+      enterScope();
       const auto branchResult =
           analyzeBody(syntaxStatements, statements, /*global=*/false);
-      scopes.pop_back();
+      leaveScope();
       if (failed(branchResult)) {
         return failure();
       }
@@ -4168,13 +4212,15 @@ private:
                        mergedScalarGenerations);
     restoreAffineScalarValuesPrefix(beforeAffineScalarValues);
     for (size_t reg = 0; reg < beforeBitsInitialized.size(); ++reg) {
-      auto& initialized =
-          mutableBitInitialization(static_cast<RegisterId>(reg));
-      for (size_t bit = 0; bit < initialized.size(); ++bit) {
-        initialized[bit] =
-            llvm::all_of(branchBitsInitialized, [&](const auto& branch) {
-              return (*branch[reg])[bit];
-            });
+      if (branchBitsInitialized.empty()) {
+        mutableBitInitialization(reg).set();
+        continue;
+      }
+      initializedBits[reg] = branchBitsInitialized.front()[reg];
+      for (const auto& branch : ArrayRef(branchBitsInitialized).drop_front()) {
+        if (initializedBits[reg] != branch[reg]) {
+          mutableBitInitialization(reg) &= *branch[reg];
+        }
       }
     }
     for (size_t scalar = 0; scalar < beforeInitialized.size(); ++scalar) {
@@ -4266,7 +4312,7 @@ private:
       }
       if (symbol->kind == SymbolKind::Scalar &&
           symbol->type == ScalarType::Bool) {
-        if (!initializedScalars.at(symbol->id)) {
+        if (!initializedScalars.at(scalarStateSlots_[symbol->id])) {
           return fail(condition.location,
                       "scalar '" + condition.identifier + "' is uninitialized");
         }
@@ -4957,14 +5003,13 @@ private:
   ensureBitInitialized(const frontend::BitReference& bit,
                        SMLoc location) const {
     if (bit.dynamicIndex) {
-      if (llvm::all_of(*initializedBits[bit.reg],
-                       [](const bool initialized) { return initialized; })) {
+      if (initializedBits[registerStateSlots_[bit.reg]]->all()) {
         return success();
       }
       return fail(location,
                   "dynamic classical index may read an uninitialized bit");
     }
-    if (!(*initializedBits[bit.reg])[bit.index]) {
+    if (!(*initializedBits[registerStateSlots_[bit.reg]])[bit.index]) {
       return fail(location, "classical condition bit has not been initialized");
     }
     return success();
@@ -4975,7 +5020,7 @@ private:
         explicitOutputs.empty() ? implicitOutputs : explicitOutputs;
     for (const auto output : program.outputs) {
       if (output.kind == OutputKind::Scalar) {
-        if (!initializedScalars[output.symbol]) {
+        if (!initializedScalars[scalarStateSlots_[output.symbol]]) {
           return fail(program.scalars[output.symbol].location,
                       "Output scalar '" + program.scalars[output.symbol].name +
                           "' is not initialized.");
@@ -4983,8 +5028,7 @@ private:
         continue;
       }
       const auto reg = static_cast<RegisterId>(output.symbol);
-      if (llvm::any_of(*initializedBits[reg],
-                       [](const bool initialized) { return !initialized; })) {
+      if (!initializedBits[registerStateSlots_[reg]]->all()) {
         return fail(program.registers[reg].location,
                     "Output register '" + program.registers[reg].name +
                         "' is not fully initialized.");
