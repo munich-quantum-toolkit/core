@@ -200,15 +200,24 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     To iteratively refine the mapping, the pass performs multiple forward and backward traversals of the circuit. In
     each traversal, the pass routes the circuit and updates the dynamic-to-static mapping based on the routing decisions
     made during that traversal. By performing multiple traversals, the pass can iteratively refine the mapping and
-    potentially find a more optimal solution. This is behavior is controlled by the `niterations` parameter.
+    potentially find a more optimal solution. This behavior is controlled by the `niterations` parameter.
 
-    The pass option `ntrials` determines how many random initial layouts the pass explores.
+    The pass option `ntrials` determines the number of initial refinement trials:
+    one identity layout and the remaining layouts chosen randomly.
     It defaults to the number of available logical CPUs reported by LLVM, taking
     CPU affinity into account, with a minimum of one. Disabling multithreading
     runs the same trials sequentially; it does not reduce the trial count.
     If compiled with multi-threading on, these trials will be executed in parallel.
     Set both `ntrials` and `seed` explicitly for reproducible results across
     machines with different CPU counts.
+
+    For programs with two-qubit interactions and no nested control flow on their
+    wires, the pass also constructs an interaction-weighted greedy layout.
+    It places frequently interacting qubits nearby, starting at a central
+    target site. Both the raw and refined greedy layouts are additional
+    candidates, independent of `ntrials`. A final forward routing traversal
+    scores each candidate. The pass selects the initial layout with the fewest
+    SWAPs in that traversal, retaining the earlier candidate on a tie.
   }];
   let options = [Option<"nlookahead", "nlookahead", "std::size_t", "1",
                         "The number of lookahead steps.">,
@@ -221,7 +230,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
                         "improve the initial layout. Must be > 0.">,
                  Option<"ntrials", "ntrials", "std::size_t",
                         "llvm::hardware_concurrency().compute_thread_count()",
-                        "The number of (possibly parallel) random trials of "
+                        "The number of identity/random trials of "
                         "the forwards and backwards mechanism. Defaults to "
                         "the available logical CPU count. Must be > 0.">,
                  Option<"seed", "seed", "std::size_t", "42",

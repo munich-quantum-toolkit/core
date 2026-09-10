@@ -2401,6 +2401,81 @@ TEST_P(MappingPassTest, MapPaddedCXCZGrid) {
   EXPECT_TRUE(isExecutable(getEntryPoint(m.get()), target));
 }
 
+TEST_F(MappingPassFixture, EmbedInteractionHubWithIdleQubitAndSpareSite) {
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      6, Connectivity::fromCouplings({{2, 0}, {2, 1}, {2, 3}, {2, 4}, {2, 5}}),
+      NativeOperations::unrestricted()));
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> qubits;
+  for (size_t i = 0; i < 5; ++i) {
+    qubits.push_back(builder.h(builder.allocQubit()));
+  }
+  for (size_t partner = 1; partner < 4; ++partner) {
+    std::tie(qubits[0], qubits[partner]) =
+        builder.cx(qubits[0], qubits[partner]);
+  }
+  for (Value qubit : qubits) {
+    builder.sink(qubit);
+  }
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(
+      succeeded(runPass(*moduleOp, target, MappingPassOptions{.ntrials = 1})));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+  EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+  size_t swaps = 0;
+  moduleOp->walk([&](SWAPOp) { ++swaps; });
+  // This interaction star embeds in the target without routing overhead.
+  EXPECT_EQ(swaps, 0);
+}
+
+TEST_F(MappingPassFixture, RetainRawGreedyLayoutWhenRefinementWorsensIt) {
+  const auto target = getSquareGridTarget(2);
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> qubits;
+  for (size_t i = 0; i < 4; ++i) {
+    qubits.push_back(builder.h(builder.allocQubit()));
+  }
+  for (const auto& [a, b] : SmallVector<std::pair<size_t, size_t>>{{3, 0},
+                                                                   {0, 3},
+                                                                   {1, 3},
+                                                                   {3, 2},
+                                                                   {0, 3},
+                                                                   {1, 2},
+                                                                   {3, 1},
+                                                                   {2, 1},
+                                                                   {3, 0},
+                                                                   {3, 2}}) {
+    std::tie(qubits[a], qubits[b]) = builder.cx(qubits[a], qubits[b]);
+  }
+  for (Value qubit : qubits) {
+    builder.sink(qubit);
+  }
+  auto input = builder.finalize();
+  std::string expected;
+  for (bool multithreading : {false, true}) {
+    context->enableMultithreading(multithreading);
+    OwningOpRef<ModuleOp> moduleOp = input->clone();
+    ASSERT_TRUE(succeeded(runPass(
+        *moduleOp, target, MappingPassOptions{.ntrials = 1, .seed = 42})));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+    size_t swaps = 0;
+    moduleOp->walk([&](SWAPOp) { ++swaps; });
+    // Identity and refined greedy starts need four SWAPs; raw greedy needs
+    // three. Preserve this routing-quality bound across future heuristics.
+    EXPECT_LE(swaps, 3);
+    if (!multithreading) {
+      expected = printModule(*moduleOp);
+    } else {
+      EXPECT_EQ(printModule(*moduleOp), expected);
+    }
+  }
+}
+
 TEST_F(MappingPassFixture, ProduceStableOutputForFixedSeed) {
   constexpr size_t repetitions = 4;
   const auto target = getSquareGridTarget(10);
