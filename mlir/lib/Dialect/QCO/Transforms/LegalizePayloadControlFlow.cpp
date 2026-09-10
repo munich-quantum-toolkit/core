@@ -517,6 +517,9 @@ protected:
     }
 
     uint64_t clonedOperations = 0U;
+    const bool indexed = getAnalysis<TargetEnvironmentAnalysis>()
+                             .environment()
+                             .supportsIndexedQubits();
     IRRewriter rewriter(&getContext());
     while (true) {
       SmallVector<std::pair<scf::ForOp, llvm::APInt>> loops;
@@ -527,7 +530,7 @@ protected:
               auto type = dyn_cast<RankedTensorType>(value.getType());
               return type && isa<QubitType>(type.getElementType());
             });
-        if (!carriesQTensor &&
+        if ((!carriesQTensor || indexed) &&
             support->coversIteration(ControlFeature::CountedIteration, loop,
                                      tripCount)) {
           return WalkResult::advance();

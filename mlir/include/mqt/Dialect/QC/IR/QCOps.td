@@ -71,6 +71,30 @@ def DeallocOp : QCOp<"dealloc", [MemoryEffects<[MemFree]>]> {
   let hasCanonicalizer = 1;
 }
 
+def DeallocRegisterOp
+    : QCOp<"dealloc_register", [AllShapesMatch<["qubits", "owned"]>]> {
+  let summary = "Release the owned slots of a qubit register";
+  let description = [{
+    Releases each qubit whose corresponding ownership flag is true, then ends
+    the register's lifetime. Other slots can contain stale references and must
+    not be read. The ownership mask remains allocated.
+
+    The operands must be one-dimensional registers with the same runtime
+    extent. Qubit storage comes from a quantum-register `memref.alloc` or from
+    `memref.alloca` filled with qubit references. Local storage is reclaimed by
+    its enclosing allocation scope. Only dynamically allocated qubits can have
+    true ownership flags.
+
+    Unlike `memref.dealloc` on a quantum register, this operation does not
+    assume that every slot owns a live qubit.
+  }];
+  let arguments = (ins Arg<MemRefRankOf<[QubitType], [1]>,
+                           "qubit references", [MemRead, MemFree]>:$qubits,
+      Arg<MemRefRankOf<[I1], [1]>, "slot ownership", [MemRead]>:$owned);
+  let assemblyFormat =
+      "$qubits `,` $owned attr-dict `:` type($qubits) `,` type($owned)";
+}
+
 def StaticOp : QCOp<"static", [Pure]> {
   let summary = "Retrieve a static qubit by index";
   let description = [{

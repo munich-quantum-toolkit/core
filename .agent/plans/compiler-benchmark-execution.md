@@ -10,12 +10,11 @@ unchanged. These compiler prerequisites are separate from the README refresh.
 
 QIR lowering uses upstream MLIR bufferization and MemRef-to-LLVM conversion for
 constant classical tensor reads. Other tensor operations remain unsupported. The
-shared target loop-unrolling pass exposes fixed quantum tensor indices under its
-existing expansion bound; supported scalar loops remain structured. QTensor
-canonicalization lifts complete constant-index accesses out of a while loop and
-preserves scalar state and the before-region result order. Tensor feedback must
-return to the same iteration argument. Placement checks its tensor input
-contract before changing allocations, including when called directly.
+target pipeline cleans up structured control flow before specializing loops.
+Indexed register placement and shared if/for/while scalarization are documented
+in [the follow-up plan](compiler-placement.md). Placement still diagnoses
+unsupported tensor input before changing allocations, including when called
+directly. The same follow-up corrects partial tensor release ownership.
 
 QIR output uses recording order. Benchmark evaluation uses big-endian strings;
 the integration tests convert between these documented conventions.

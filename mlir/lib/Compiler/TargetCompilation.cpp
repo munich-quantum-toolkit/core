@@ -69,6 +69,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());
   pm.addPass(createSCCPPass());
+  populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
   populateQCOCleanupPipeline(pm);

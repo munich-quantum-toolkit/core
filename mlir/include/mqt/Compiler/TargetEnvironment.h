@@ -141,6 +141,11 @@ public:
   [[nodiscard]] const PayloadSpecification&
   payloadSpecification() const noexcept;
 
+  /// Whether indexed qubits can retain runtime addresses through placement.
+  /// Requires Adaptive QIR and an all-to-all target whose operations have no
+  /// site-specific restrictions. Payload control-flow limits still apply.
+  [[nodiscard]] bool supportsIndexedQubits() const noexcept;
+
   /// Materialize the pair as a typed MLIR attribute.
   [[nodiscard]] mqt::TargetEnvAttr materialize(MLIRContext& context) const;
 

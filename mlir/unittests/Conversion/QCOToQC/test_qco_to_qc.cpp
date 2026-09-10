@@ -96,6 +96,33 @@ static LogicalResult runQCOToQCConversion(ModuleOp moduleOp) {
   return pm.run(moduleOp);
 }
 
+TEST(QCOToQCRegressionTest, RequiresInliningTensorOwnershipAcrossFunctions) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, qtensor::QTensorDialect,
+                      func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @release(%tensor: tensor<2x!qco.qubit>) {
+      qtensor.dealloc %tensor : tensor<2x!qco.qubit>
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_NE(
+      diagnostics.find("inline functions that accept or return qubit tensors"),
+      std::string::npos);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
 TEST(QCOToQCRegressionTest, RejectsBranchWirePermutation) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
@@ -542,11 +569,23 @@ module {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  EXPECT_TRUE(function.getBody().front().getOps<memref::StoreOp>().empty());
-  auto loops = llvm::to_vector(function.getBody().getOps<scf::ForOp>());
+  const auto quantumStores = [](Block& block) {
+    return llvm::count_if(
+        block.getOps<memref::StoreOp>(), [](memref::StoreOp store) {
+          return isa<qc::QubitType>(store.getValue().getType());
+        });
+  };
+  EXPECT_EQ(quantumStores(function.getBody().front()), 0);
+  SmallVector<scf::ForOp> loops;
+  function.walk([&](scf::ForOp loop) {
+    if (quantumStores(*loop.getBody()) != 0) {
+      loops.push_back(loop);
+    }
+  });
   ASSERT_EQ(loops.size(), 1U);
-  EXPECT_EQ(llvm::range_size(loops[0].getBody()->getOps<memref::StoreOp>()),
-            2U);
+  EXPECT_EQ(quantumStores(*loops[0].getBody()), 2);
+  /// Both final slots have been extracted, so register release needs ownership.
+  EXPECT_EQ(llvm::range_size(function.getOps<qc::DeallocRegisterOp>()), 1);
 
   SmallVector<memref::LoadOp> loadsBeforeLoop;
   SmallVector<memref::LoadOp> loadsAfterLoop;

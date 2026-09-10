@@ -23,8 +23,9 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
     - The entry function must be marked with `mqt.entry_point` and have a single return.
     - Stores to returned CBit registers must share a block with their measurement,
       use an index available at measurement (or a constant), and have no
-      intervening classical memory effects except stores to provably distinct
-      constant indices of the same register.
+      intervening effects that can access CBit storage. Stores to provably
+      distinct constant indices of the same register and effects on separately
+      allocated local memrefs are allowed.
 
     Behavior:
 
@@ -35,6 +36,9 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
       1. Epilogue block: Records measurement results and returns from the entry function.
       Any blocks in-between have no restrictions regarding their operations as long as they are supported.
     - Quantum releases retain their original control-flow positions.
+    - Local qubit-reference buffers support loads, stores, and shape casts without
+      allocating qubits. `qc.dealloc_register` releases only occupied slots using
+      standard control flow and scalar QIR release calls.
     - Scalar and register results are dynamically allocated and released after output recording.
     - Measurement results may be used as classical values to drive conditional branches.
     - Non-quantum dialects are lowered via MLIR's built-in conversions.
@@ -44,5 +48,7 @@ def QCToQIRAdaptive : Pass<"qc-to-qir-adaptive", "mlir::ModuleOp"> {
 
   let dependentDialects = ["mlir::LLVM::LLVMDialect",
                            "mlir::cf::ControlFlowDialect",
+                           "mlir::memref::MemRefDialect",
+                           "mlir::scf::SCFDialect", "mlir::qc::QCDialect",
                            "mlir::arith::ArithDialect"];
 }

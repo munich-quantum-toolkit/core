@@ -20,6 +20,7 @@
 #include "mlir/Support/LLVM.h"
 
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
@@ -257,6 +258,16 @@ const CompilerTarget& TargetEnvironment::target() const noexcept {
 const PayloadSpecification&
 TargetEnvironment::payloadSpecification() const noexcept {
   return payloadSpecification_;
+}
+
+bool TargetEnvironment::supportsIndexedQubits() const noexcept {
+  const auto& format = payloadSpecification_.format();
+  return format.id == "qir" && format.profile == "adaptive" &&
+         target_.connectivityKind() ==
+             CompilerTarget::Connectivity::Kind::AllToAll &&
+         llvm::all_of(target_.operations(), [](const auto& operation) {
+           return operation.siteTuples().empty();
+         });
 }
 
 mqt::TargetEnvAttr TargetEnvironment::materialize(MLIRContext& context) const {

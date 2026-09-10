@@ -1,0 +1,184 @@
+{
+  "label": "a1d7ec8cc",
+  "python": "3.14.7",
+  "platform": "Linux-6.17.0-1032-nvidia-aarch64-with-glibc2.39",
+  "native_modules": {
+    "mqt.core.bench": "b584c152ec0ddfe8f9e80af41566e28ac34d7da7c86b8619c7b9486a3df3348d",
+    "mqt.core.qdmi": "df45dc80f2eb3747a975e1466f9264dffad86c7b5012763b50ff11153946b265",
+    "mqt.core.dd": "af67c6b011386ca84fbe196fbcce72c0a61a86ea203d80353579ddd3a9179159",
+    "mqt.core.mlir": "3a1a1d24c14a9a825b75fe9d3b35b94b01a030936f9e323eaf1bbcff0dfec19d"
+  },
+  "repeats": 3,
+  "rows": [
+    {
+      "family": "iterative",
+      "width": 8,
+      "source_sha256": "9537e8ddb8ff4cea69abd1af6085021eb1a523cc11297a990b9332e4333e7533",
+      "compile_seconds": [
+        0.04980649100616574,
+        0.0827109040110372,
+        0.03666278696618974
+      ],
+      "compile_median": 0.04980649100616574,
+      "bitcode_bytes": 3612,
+      "execution_seconds": [
+        0.04321886203251779,
+        0.03806554200127721,
+        0.037843187048565596
+      ],
+      "execution_median": 0.03806554200127721,
+      "shots": 1024,
+      "seed": 17,
+      "counts": {
+        "01100000": 1024
+      },
+      "tvd": 0.0
+    },
+    {
+      "family": "iterative",
+      "width": 32,
+      "source_sha256": "8aef7b15d99cfa0b558ac95632ed61cae92dee1568bf0c04c941dbb9acc2cbb0",
+      "compile_seconds": [
+        0.09707283397438005,
+        0.037309115985408425,
+        0.03796392399817705
+      ],
+      "compile_median": 0.03796392399817705,
+      "bitcode_bytes": 3632
+    },
+    {
+      "family": "standard",
+      "width": 8,
+      "source_sha256": "141fba026fc9dc9db278ee1d0c200772238c84d1f792c4a180b90a21f438bcd2",
+      "compile_seconds": [
+        0.04327795101562515,
+        0.03852959698997438,
+        0.041632471955381334
+      ],
+      "compile_median": 0.041632471955381334,
+      "bitcode_bytes": 3624,
+      "execution_seconds": [
+        0.05125347001012415,
+        0.026049229025375098,
+        0.025709433015435934
+      ],
+      "execution_median": 0.026049229025375098,
+      "shots": 1024,
+      "seed": 17,
+      "counts": {
+        "01100000": 1024
+      },
+      "tvd": 0.0
+    },
+    {
+      "family": "standard",
+      "width": 16,
+      "source_sha256": "1c4d764ac57d544b18c5cce218fd09309e2915dfc918b502df5d2d4fa01ca941",
+      "compile_seconds": [
+        0.04611619794741273,
+        0.0879694260074757,
+        0.08766882994677871
+      ],
+      "compile_median": 0.08766882994677871,
+      "bitcode_bytes": 3740,
+      "execution_seconds": [
+        0.09513739898102358,
+        0.07221397303510457,
+        0.0690269359620288
+      ],
+      "execution_median": 0.07221397303510457,
+      "shots": 1024,
+      "seed": 17,
+      "counts": {
+        "0110000000000000": 1024
+      },
+      "tvd": 0.0
+    },
+    {
+      "family": "standard",
+      "width": 32,
+      "source_sha256": "0e7d4546e174f6ba4c42a513206d433196f2c44f4ab3315dff46db70bf967ac0",
+      "compile_seconds": [
+        0.09647380100795999,
+        0.044334221980534494,
+        0.092094891006127
+      ],
+      "compile_median": 0.092094891006127,
+      "bitcode_bytes": 3988
+    },
+    {
+      "family": "standard",
+      "width": 64,
+      "source_sha256": "316461733c58a7f8d890a94df775f70dc821fc59aa33dda9a382ec5b574e6ffc",
+      "compile_seconds": [
+        0.1068410020088777,
+        0.06527689896756783,
+        0.09393942804308608
+      ],
+      "compile_median": 0.09393942804308608,
+      "bitcode_bytes": 4480
+    },
+    {
+      "family": "rus",
+      "width": 4,
+      "source_sha256": "a519d5b9171938e535462d9162a5ba6240933a54756a941e12db63d2b5e925b0",
+      "compile_seconds": [
+        0.09537613700376824,
+        0.049281490966677666,
+        0.0888217730098404
+      ],
+      "compile_median": 0.0888217730098404,
+      "bitcode_bytes": 3748,
+      "execution_seconds": [
+        0.03930928703630343,
+        0.03164337098132819,
+        0.015756348962895572
+      ],
+      "execution_median": 0.03164337098132819,
+      "shots": 1024,
+      "seed": 17,
+      "counts": {
+        "0": 984,
+        "1": 40
+      },
+      "tvd": 0.010467020791031761
+    },
+    {
+      "family": "rus",
+      "width": 16,
+      "source_sha256": "287c5556d5b7cc428172df9d5beae28fd365ecbbde09bda76d54edf1070a76cd",
+      "compile_seconds": [
+        0.10200549301225692,
+        0.08997634903062135,
+        0.08825542900012806
+      ],
+      "compile_median": 0.08997634903062135,
+      "bitcode_bytes": 3916,
+      "execution_seconds": [
+        0.09873947995947674,
+        0.07017963996622711,
+        0.09010798303643242
+      ],
+      "execution_median": 0.09010798303643242,
+      "shots": 1024,
+      "seed": 17,
+      "counts": {
+        "0": 984,
+        "1": 40
+      },
+      "tvd": 0.010467020791031761
+    },
+    {
+      "family": "rus",
+      "width": 64,
+      "source_sha256": "1e2a684f337b8012228aa0b59cdcc2d3bd9d507a659bae101dd717f8d9946020",
+      "compile_seconds": [
+        0.10639328300021589,
+        0.0937356490176171,
+        0.09754319000057876
+      ],
+      "compile_median": 0.09754319000057876,
+      "bitcode_bytes": 4624
+    }
+  ]
+}

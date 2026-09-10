@@ -525,15 +525,26 @@ static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
     }
     const auto effects = getEffectsRecursively(&operation);
     if (!effects || !llvm::all_of(*effects, [](const auto& effect) {
-          auto value = effect.getValue();
+          Value value = effect.getValue();
           if (!value) {
             return false;
           }
           if (isa<QubitType>(value.getType())) {
             return true;
           }
-          auto memref = dyn_cast<MemRefType>(value.getType());
-          return memref && isa<QubitType>(memref.getElementType());
+          auto memrefType = dyn_cast<MemRefType>(value.getType());
+          if (!memrefType) {
+            return false;
+          }
+          if (isa<QubitType>(memrefType.getElementType())) {
+            return true;
+          }
+          /// Local buffers, including tensor ownership masks, cannot
+          /// alias a separately allocated CBit register.
+          while (auto cast = value.getDefiningOp<memref::CastOp>()) {
+            value = cast.getSource();
+          }
+          return static_cast<bool>(value.getDefiningOp<memref::AllocaOp>());
         })) {
       lastBarrier = position;
     }

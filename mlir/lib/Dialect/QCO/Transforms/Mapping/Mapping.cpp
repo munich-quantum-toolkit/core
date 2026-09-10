@@ -50,6 +50,7 @@
 #include "mlir/Support/WalkResult.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/PriorityQueue.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/Sequence.h"
@@ -342,6 +343,68 @@ applyPlacement(Region& body, const CompilerTarget& target, const Layout& layout,
   return {wires, infos};
 }
 
+/// Assign allocation slots to sites without traversing or expanding their uses.
+static LogicalResult placeIndexedAllocations(func::FuncOp function,
+                                             const CompilerTarget& target) {
+  SmallVector<Operation*> allocations;
+  llvm::DenseSet<CompilerTarget::SiteId> occupied;
+  function.walk([&](StaticOp op) {
+    occupied.insert(static_cast<CompilerTarget::SiteId>(op.getIndex()));
+  });
+  size_t required = occupied.size();
+  for (Operation& operation : function.getBody().front()) {
+    size_t width = 0;
+    if (isa<AllocOp>(operation)) {
+      width = 1;
+    } else if (auto tensor = dyn_cast<qtensor::AllocOp>(operation)) {
+      auto type = tensor.getResult().getType();
+      if (!type.hasStaticShape()) {
+        return tensor.emitError(
+            "placement requires a statically sized qubit tensor");
+      }
+      width = static_cast<size_t>(type.getNumElements());
+    } else {
+      continue;
+    }
+    if (required > target.numSites() || width > target.numSites() - required) {
+      return function.emitError()
+             << "requires more program qubits than the target site count of "
+             << target.numSites();
+    }
+    required += width;
+    allocations.push_back(&operation);
+  }
+  IRRewriter rewriter(function.getContext());
+  size_t vertex = 0;
+  for (Operation* allocation : allocations) {
+    rewriter.setInsertionPoint(allocation);
+    const auto nextQubit = [&] {
+      while (occupied.contains(target.siteForVertex(vertex))) {
+        ++vertex;
+      }
+      return StaticOp::create(rewriter, allocation->getLoc(),
+                              target.siteForVertex(vertex++));
+    };
+    if (isa<AllocOp>(allocation)) {
+      auto qubit = nextQubit();
+      qubit->setDiscardableAttrs(allocation->getDiscardableAttrDictionary());
+      rewriter.replaceOp(allocation, qubit.getQubit());
+      continue;
+    }
+    auto type = cast<RankedTensorType>(allocation->getResult(0).getType());
+    SmallVector<Value> qubits;
+    qubits.reserve(static_cast<size_t>(type.getNumElements()));
+    for (int64_t index = 0; index < type.getNumElements(); ++index) {
+      qubits.push_back(nextQubit().getQubit());
+    }
+    auto tensor = qtensor::FromElementsOp::create(
+        rewriter, allocation->getLoc(), type, qubits);
+    tensor->setDiscardableAttrs(allocation->getDiscardableAttrDictionary());
+    rewriter.replaceOp(allocation, tensor.getResult());
+  }
+  return success();
+}
+
 namespace {
 
 struct PlacementPass final
@@ -352,7 +415,7 @@ struct PlacementPass final
       : target(compilerTarget) {}
 
   void getDependentDialects(DialectRegistry& registry) const override {
-    registry.insert<QCODialect>();
+    registry.insert<QCODialect, qtensor::QTensorDialect>();
   }
 
 protected:
@@ -369,6 +432,13 @@ protected:
       return;
     }
 
+    const auto& environment = getAnalysis<TargetEnvironmentAnalysis>();
+    if (environment && environment.environment().supportsIndexedQubits()) {
+      if (failed(placeIndexedAllocations(func, target))) {
+        signalPassFailure();
+      }
+      return;
+    }
     auto computation = discoverComputation(func);
     if (failed(computation) ||
         failed(checkCapacity(func, target, *computation))) {

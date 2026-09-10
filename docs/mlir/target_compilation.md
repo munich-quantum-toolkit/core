@@ -180,14 +180,10 @@ accepted.
 
 Target compilation requires structured QCO/SCF input. Producers of raw CFG
 branches must normalize them before target compilation; runtime assertions are
-allowed. The pipeline removes unused symbols, propagates constants, unrolls
-unsupported static loops and static loops carrying qubit tensors, and then runs
-the standard QCO cleanup pipeline. Tensor loops are unrolled to expose fixed
-qubit indices for placement. Loops carrying scalar qubits remain when supported
-by the payload. It uses `unroll-loops-for-payload` before cleanup and
-`legalize-control-flow` after cleanup, so unrolling can expose constant branches
-before legality checks. The latter pass applies these structural capabilities to
-the remaining control flow:
+allowed. The pipeline removes unused symbols, propagates constants, and runs QCO
+cleanup before deciding which loops need expansion. It then specializes loops
+required by the selected payload or by placement, cleans up the resulting IR,
+and checks the remaining control flow with `legalize-control-flow`:
 
 | Capability           | Residual operations                                 |
 | -------------------- | --------------------------------------------------- |
@@ -214,13 +210,27 @@ capturing it. Both control-flow passes validate this loop input restriction
 before transforming loops or lowering switches. It is separate from QCO's
 exactly-one-SSA-use check.
 
-Cleanup can extract constant-index qubits before a `scf.while` and carry them as
-scalar iteration arguments. Each loop region must extract distinct constant
-indices, reinsert every extracted qubit, and pass the tensor to its terminator.
-The after region must return each tensor to its original iteration argument.
-Tensor accesses with runtime indices, incomplete updates, or nested tensor
-control flow are not scalarized by this rewrite. Placement diagnoses remaining
-tensor control flow before changing allocations.
+Cleanup shares constant-slot scalarization across `qco.if`, `scf.for`, and
+`scf.while`. Each region must extract distinct constant indices, reinsert every
+extracted qubit, and pass the tensor to its terminator. The loop body must
+return each tensor to its original iteration argument; a while condition may
+reorder the before-region results. Untouched slots remain outside the control
+flow. Runtime indices and incomplete or nested tensor updates do not match this
+scalarization.
+
+For Adaptive QIR on an all-to-all target whose operations have empty
+`site_tuples`, placement assigns physical sites to the allocation's slots and
+retains indexed registers. Loop bodies do not grow with their iteration counts.
+The site list requires space proportional to the register width. Capacity,
+physical site IDs, qubit origins, native operations, and payload limits are
+still checked. This path uses target metadata and does not depend on a device
+name.
+
+Other payloads, explicit topology, and site-specific operations require exact
+quantum addresses. Bounded specialization exposes those addresses before
+placement or routing. Residual unsupported tensor control flow produces a
+diagnostic before allocation changes. OpenQASM export continues to require
+static quantum indices.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and

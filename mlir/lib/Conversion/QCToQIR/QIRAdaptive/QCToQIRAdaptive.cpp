@@ -370,6 +370,72 @@ struct ConvertMemRefAllocOp final
   }
 };
 
+/// Allocate local storage for qubit references without allocating qubits.
+struct ConvertQubitAllocaOp final : OpConversionPattern<memref::AllocaOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocaOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto type = op.getType();
+    if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
+      return failure();
+    }
+    auto ptrType = LLVM::LLVMPointerType::get(op.getContext());
+    auto size = type.hasStaticShape()
+                    ? LLVM::ConstantOp::create(rewriter, op.getLoc(),
+                                               rewriter.getI64Type(),
+                                               type.getNumElements())
+                          .getResult()
+                    : adaptor.getDynamicSizes().front();
+    rewriter.replaceOpWithNewOp<LLVM::AllocaOp>(op, ptrType, ptrType, size);
+    return success();
+  }
+};
+
+/// Shape casts retain the same reference buffer and quantum allocation size.
+struct ConvertQubitCastOp final : StatefulOpConversionPattern<memref::CastOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::CastOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto type = dyn_cast<MemRefType>(op.getType());
+    if (!type || type.getRank() != 1 ||
+        !isa<QubitType>(type.getElementType())) {
+      return failure();
+    }
+    auto& sizes = getState().qregSizes;
+    if (auto size = sizes.lookup(op.getSource())) {
+      sizes[op.getResult()] = size;
+    }
+    rewriter.replaceOp(op, adaptor.getSource());
+    return success();
+  }
+};
+
+/// Store a qubit reference in a register slot.
+struct ConvertQubitStoreOp final : OpConversionPattern<memref::StoreOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::StoreOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto type = op.getMemref().getType();
+    if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
+      return failure();
+    }
+    auto ptrType = LLVM::LLVMPointerType::get(op.getContext());
+    auto address =
+        LLVM::GEPOp::create(rewriter, op.getLoc(), ptrType, ptrType,
+                            adaptor.getMemref(), adaptor.getIndices()[0]);
+    auto store = rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
+        op, adaptor.getValue(), address);
+    store->setAttr(QIR_QUBIT_STORE_ATTR, rewriter.getUnitAttr());
+    return success();
+  }
+};
+
 /// Converts `memref.load` to `llvm.load`
 ///
 /// @par Example:
@@ -625,11 +691,41 @@ static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
                                             MLIRContext* ctx,
                                             LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
+  patterns.add<ConvertQubitAllocaOp, ConvertQubitStoreOp>(typeConverter, ctx);
   patterns.add<ConvertCBitAllocOp, ConvertCBitLoadOp, ConvertCBitStoreOp,
-               ConvertMemRefAllocOp, ConvertMemRefLoadOp,
+               ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertQubitCastOp,
                ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
                ConvertQCMeasureOp, ConvertQCResetOp>(typeConverter, ctx,
                                                      &state);
+}
+
+/// QIR uses local reference buffers, so releasing their occupied slots also
+/// completes the quantum register lifetime. LLVM reclaims the local storage.
+static void lowerRegisterReleases(ModuleOp moduleOp) {
+  IRRewriter rewriter(moduleOp.getContext());
+  moduleOp.walk([&](qc::DeallocRegisterOp op) {
+    rewriter.setInsertionPoint(op);
+    auto zero = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
+    auto one = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 1);
+    auto size =
+        memref::DimOp::create(rewriter, op.getLoc(), op.getOwned(), zero);
+    scf::ForOp::create(
+        rewriter, op.getLoc(), zero, size, one, ValueRange{},
+        [&](OpBuilder& builder, Location loc, Value index, ValueRange) {
+          auto owned = memref::LoadOp::create(builder, loc, op.getOwned(),
+                                              ValueRange{index});
+          scf::IfOp::create(
+              builder, loc, owned,
+              [&](OpBuilder& thenBuilder, Location thenLoc) {
+                auto qubit = memref::LoadOp::create(
+                    thenBuilder, thenLoc, op.getQubits(), ValueRange{index});
+                qc::DeallocOp::create(thenBuilder, thenLoc, qubit);
+                scf::YieldOp::create(thenBuilder, thenLoc);
+              });
+          scf::YieldOp::create(builder, loc);
+        });
+    rewriter.eraseOp(op);
+  });
 }
 
 namespace {
@@ -753,6 +849,7 @@ protected:
       signalPassFailure();
       return;
     }
+    lowerRegisterReleases(moduleOp);
 
     // Stage 1: Convert scf dialect to cf
     {
@@ -811,8 +908,18 @@ protected:
     // Stage 5: Convert QC dialect to LLVM (QIR calls)
     {
       RewritePatternSet patterns(ctx);
-      target.addIllegalDialect<cbit::CBitDialect, QCDialect,
-                               memref::MemRefDialect>();
+      target.addIllegalDialect<cbit::CBitDialect, QCDialect>();
+      target.addDynamicallyLegalDialect<memref::MemRefDialect>(
+          [](Operation* op) {
+            return llvm::none_of(
+                llvm::concat<const Type>(op->getOperandTypes(),
+                                         op->getResultTypes()),
+                [](Type type) {
+                  auto memref = dyn_cast<MemRefType>(type);
+                  return isa<QubitType>(type) ||
+                         (memref && isa<QubitType>(memref.getElementType()));
+                });
+          });
 
       populateQCToQIRAdaptivePatterns(patterns, typeConverter, ctx, state);
 

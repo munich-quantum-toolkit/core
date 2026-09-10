@@ -288,6 +288,9 @@ private:
   /// IDs.
   static FailureOr<uint64_t> includeStaticResource(Value pointer,
                                                    uint64_t capacity) {
+    if (pointer.getDefiningOp<LLVM::ZeroOp>()) {
+      return std::max(capacity, uint64_t{1});
+    }
     auto toPtr = pointer.getDefiningOp<LLVM::IntToPtrOp>();
     auto constant = toPtr ? toPtr.getArg().getDefiningOp<LLVM::ConstantOp>()
                           : LLVM::ConstantOp{};

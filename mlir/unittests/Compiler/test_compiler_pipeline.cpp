@@ -999,6 +999,30 @@ TEST_F(CompilerPipelineTest, BaseMeasurementMayBeInsertedIntoFreedQTensor) {
             std::string::npos);
 }
 
+TEST_F(CompilerPipelineTest, BaseProfileDiscardsDynamicSlotOwnership) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c2 = arith.constant 2 : index
+      %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+      %rest, %q = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+      %out, %bit = qco.measure %q : !qco.qubit
+      qco.sink %out : !qco.qubit
+      qtensor.dealloc %rest : tensor<2x!qco.qubit>
+      return %bit : i1
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  auto qc = std::move(*program).intoQC();
+  ASSERT_TRUE(qc);
+  auto qir = std::move(*qc).intoQIR(QIRProfile::Base);
+  ASSERT_TRUE(qir);
+  auto llvmIR = qir->llvmIR();
+  ASSERT_TRUE(llvmIR);
+  EXPECT_TRUE(StringRef(*llvmIR).contains("__quantum__qis__mz__body"));
+  EXPECT_FALSE(StringRef(*llvmIR).contains("qubit_release"));
+}
+
 TEST_F(CompilerPipelineTest, EmitsQIR21ProfileModuleFlags) {
   constexpr llvm::StringLiteral source = R"qasm(
 OPENQASM 3.0;
@@ -2384,7 +2408,8 @@ TEST_F(CompilerPipelineTest, PayloadControlPromotesNestedSingleIterationState) {
   EXPECT_EQ(gate->getOperand(0), entry.getArgument(0));
 }
 
-TEST_F(CompilerPipelineTest, PlacementUnrollsTensorLoopsButRetainsScalarLoops) {
+TEST_F(CompilerPipelineTest,
+       PayloadWithoutIndexedQubitsSpecializesTensorLoops) {
   auto program = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main() attributes {mqt.entry_point} {
       %c0 = arith.constant 0 : index
@@ -2425,6 +2450,118 @@ TEST_F(CompilerPipelineTest, PlacementUnrollsTensorLoopsButRetainsScalarLoops) {
     EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(0).getType()));
   });
   EXPECT_EQ(loops, 1);
+}
+
+TEST_F(CompilerPipelineTest, IndexedPlacementPreservesSparseSitesAndLoopBody) {
+  auto program = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %c0 = arith.constant 0 : index
+      %c1 = arith.constant 1 : index
+      %c2 = arith.constant 2 : index
+      %limit = arith.constant 100001 : index
+      %tensor = qtensor.alloc(%c2) {mqt.register_name = "qubits"} : tensor<2x!qco.qubit>
+      %result = scf.for %i = %c0 to %limit step %c1
+          iter_args(%t = %tensor) -> tensor<2x!qco.qubit> {
+        %slot = arith.remui %i, %c2 : index
+        %rest, %q = qtensor.extract %t[%slot] : tensor<2x!qco.qubit>
+        %out = qco.x %q : !qco.qubit -> !qco.qubit
+        %updated = qtensor.insert %out into %rest[%slot] : tensor<2x!qco.qubit>
+        scf.yield %updated : tensor<2x!qco.qubit>
+      }
+      %rest, %q = qtensor.extract %result[%c0] : tensor<2x!qco.qubit>
+      %out, %bit = qco.measure %q : !qco.qubit
+      qco.sink %out : !qco.qubit
+      qtensor.dealloc %rest : tensor<2x!qco.qubit>
+      return %bit : i1
+    }
+  })mlir");
+  ASSERT_TRUE(program);
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      {
+          llvm::cantFail(CompilerTarget::Site::create(7)),
+          llvm::cantFail(CompilerTarget::Site::create(19)),
+          llvm::cantFail(CompilerTarget::Site::create(42)),
+      },
+      CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::unrestricted()));
+  const auto payload = llvm::cantFail(payloadSpecificationForProgramFormat(
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
+  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(target, payload)));
+  EXPECT_TRUE(succeeded(verify(program->module())));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  SmallVector<uint64_t> sites;
+  size_t loops = 0;
+  size_t gates = 0;
+  program->module().walk(
+      [&](qco::StaticOp op) { sites.push_back(op.getIndex()); });
+  program->module().walk([&](scf::ForOp) { ++loops; });
+  program->module().walk([&](qco::XOp) { ++gates; });
+  EXPECT_EQ(sites, (SmallVector<uint64_t>{7, 19}));
+  EXPECT_EQ(loops, 1);
+  EXPECT_EQ(gates, 1);
+  auto qc = std::move(*program).intoQC();
+  ASSERT_TRUE(qc);
+  EXPECT_TRUE(StringRef(qc->str()).contains("mqt.register_name = \"qubits\""));
+  auto qir = std::move(*qc).intoQIR(QIRProfile::Adaptive);
+  ASSERT_TRUE(qir);
+  auto llvmIR = qir->llvmIR();
+  ASSERT_TRUE(llvmIR);
+  EXPECT_TRUE(StringRef(*llvmIR).contains("\"required_num_qubits\"=\"20\""));
+}
+
+TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
+  constexpr auto source = "OPENQASM 3.0; include \"stdgates.inc\"; "
+                          "qubit[2] q; bit[2] c; "
+                          "for int i in [0:1] { x q[i]; } c = measure q;";
+  using Operation = CompilerTarget::Operation;
+  using Native = CompilerTarget::NativeOperations;
+  const auto x = llvm::cantFail(Operation::create("x", 1, 0));
+  const auto measure = llvm::cantFail(Operation::create("measure", 1, 0));
+  const auto localX = llvm::cantFail(Operation::create(
+      "x", 1, 0, {llvm::cantFail(CompilerTarget::SiteTuple::create({0}))}));
+  const auto targetWith = [](size_t capacity,
+                             const std::vector<Operation>& operations) {
+    return llvm::cantFail(CompilerTarget::create(
+        capacity, CompilerTarget::Connectivity::allToAll(),
+        Native::fromOperations(operations)));
+  };
+  const auto payload = llvm::cantFail(payloadSpecificationForProgramFormat(
+      QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
+  for (const auto& [target, expected] : {
+           std::pair{targetWith(1, {x, measure}), "target site count"},
+           std::pair{targetWith(2, {localX, measure}),
+                     "cannot lower operation"},
+           std::pair{targetWith(2, {measure}), "cannot lower operation"},
+       }) {
+    auto qc = QCProgram::fromQASMString(source);
+    ASSERT_TRUE(qc);
+    auto program = std::move(*qc).intoQCO();
+    ASSERT_TRUE(program);
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(program->module().getContext(),
+                                    [&](Diagnostic& diagnostic) {
+                                      diagnostics += diagnostic.str();
+                                      return success();
+                                    });
+    EXPECT_FALSE(program->compileForTarget(TargetEnvironment(target, payload)));
+    EXPECT_TRUE(StringRef(diagnostics).contains(expected)) << diagnostics;
+  }
+  const auto target = targetWith(2, {x, measure});
+  for (const auto format :
+       {QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE, QDMI_PROGRAM_FORMAT_QASM3}) {
+    auto result = runDefaultPipeline(
+        CompilerInput{OpenQASMProgram(source)},
+        TargetEnvironment(
+            target,
+            llvm::cantFail(payloadSpecificationForProgramFormat(format))));
+    ASSERT_TRUE(result);
+    if (format == QDMI_PROGRAM_FORMAT_QASM3) {
+      EXPECT_TRUE(QCProgram::fromQASMString(
+          std::get<OpenQASMProgram>(*result).source()));
+    } else {
+      EXPECT_TRUE(std::get<QIRProgram>(*result).llvmIR());
+    }
+  }
 }
 
 TEST_F(CompilerPipelineTest, PayloadControlBoundsFullUnrolling) {

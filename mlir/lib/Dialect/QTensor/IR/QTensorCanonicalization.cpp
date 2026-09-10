@@ -33,6 +33,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <utility>
 
 using namespace mlir;
 using namespace mlir::qtensor;
@@ -168,6 +169,33 @@ static void moveScalarizedQTensorBranch(Value originalQTensor, Block* oldBlock,
   }
 }
 
+/// Extract the selected tensor slots before structured control flow.
+static std::pair<Value, SmallVector<Value>>
+extractQTensorScalars(Value tensor, ArrayRef<int64_t> indices, Location loc,
+                      PatternRewriter& rewriter) {
+  SmallVector<Value> scalars;
+  scalars.reserve(indices.size());
+  for (int64_t index : indices) {
+    auto indexValue = arith::ConstantIndexOp::create(rewriter, loc, index);
+    auto extract = ExtractOp::create(rewriter, loc, tensor, indexValue);
+    scalars.push_back(extract.getResult());
+    tensor = extract.getOutTensor();
+  }
+  return {tensor, std::move(scalars)};
+}
+
+/// Restore the selected slots after structured control flow.
+static Value insertQTensorScalars(Value tensor, ValueRange scalars,
+                                  ArrayRef<int64_t> indices, Location loc,
+                                  PatternRewriter& rewriter) {
+  for (auto [scalar, index] : llvm::zip_equal(scalars, indices)) {
+    auto indexValue = arith::ConstantIndexOp::create(rewriter, loc, index);
+    tensor =
+        InsertOp::create(rewriter, loc, scalar, tensor, indexValue).getResult();
+  }
+  return tensor;
+}
+
 namespace {
 
 /// Replace constant-index QTensor updates in an if with scalar threading.
@@ -206,21 +234,8 @@ struct ScalarizeQTensorInputs final : OpRewritePattern<qco::IfOp> {
       ArrayRef<int64_t> indices(accessedIndices);
 
       rewriter.setInsertionPoint(op);
-      SmallVector<Value> indexValues;
-      SmallVector<Value> scalarInputs;
-      indexValues.reserve(indices.size());
-      scalarInputs.reserve(indices.size());
-      Value qTensorWithoutScalars = qTensor;
-      for (int64_t index : indices) {
-        auto indexValue =
-            arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
-        auto extract =
-            ExtractOp::create(rewriter, op.getLoc(), qTensorWithoutScalars,
-                              indexValue.getResult());
-        indexValues.push_back(indexValue.getResult());
-        scalarInputs.push_back(extract.getResult());
-        qTensorWithoutScalars = extract.getOutTensor();
-      }
+      auto [qTensorWithoutScalars, scalarInputs] =
+          extractQTensorScalars(qTensor, indices, op.getLoc(), rewriter);
 
       SmallVector<Value> newQubits(oldQubits);
       newQubits.erase(newQubits.begin() + qTensorIndex);
@@ -248,14 +263,10 @@ struct ScalarizeQTensorInputs final : OpRewritePattern<qco::IfOp> {
                                   rewriter);
 
       rewriter.setInsertionPointAfter(newIf);
-      Value updatedQTensor = qTensorWithoutScalars;
-      auto scalarResults = newIf.getLinearResults().take_back(indices.size());
-      for (auto [scalar, indexValue] :
-           llvm::zip_equal(scalarResults, indexValues)) {
-        updatedQTensor = InsertOp::create(rewriter, op.getLoc(), scalar,
-                                          updatedQTensor, indexValue)
-                             .getResult();
-      }
+      Value updatedQTensor = insertQTensorScalars(
+          qTensorWithoutScalars,
+          newIf.getLinearResults().take_back(indices.size()), indices,
+          op.getLoc(), rewriter);
 
       SmallVector<Value> replacements(
           newIf.getLinearResults().drop_back(indices.size()));
@@ -301,18 +312,8 @@ struct ScalarizeWhileQTensorInputs final : OpRewritePattern<scf::WhileOp> {
       indices.erase(llvm::unique(indices), indices.end());
 
       rewriter.setInsertionPoint(op);
-      SmallVector<Value> indexValues;
-      SmallVector<Value> scalarInputs;
-      Value remainingTensor = qTensor;
-      for (int64_t index : indices) {
-        auto indexValue =
-            arith::ConstantIndexOp::create(rewriter, op.getLoc(), index);
-        auto extract = ExtractOp::create(rewriter, op.getLoc(), remainingTensor,
-                                         indexValue.getResult());
-        indexValues.push_back(indexValue.getResult());
-        scalarInputs.push_back(extract.getResult());
-        remainingTensor = extract.getOutTensor();
-      }
+      auto [remainingTensor, scalarInputs] =
+          extractQTensorScalars(qTensor, indices, op.getLoc(), rewriter);
 
       SmallVector<Value> newInputs(op.getInits());
       newInputs.erase(newInputs.begin() + inputIndex);
@@ -337,15 +338,57 @@ struct ScalarizeWhileQTensorInputs final : OpRewritePattern<scf::WhileOp> {
                                   rewriter);
 
       rewriter.setInsertionPointAfter(newWhile);
-      for (auto [scalar, index] : llvm::zip_equal(
-               newWhile.getResults().take_back(indices.size()), indexValues)) {
-        remainingTensor = InsertOp::create(rewriter, op.getLoc(), scalar,
-                                           remainingTensor, index)
-                              .getResult();
-      }
+      remainingTensor = insertQTensorScalars(
+          remainingTensor, newWhile.getResults().take_back(indices.size()),
+          indices, op.getLoc(), rewriter);
       SmallVector<Value> replacements(
           newWhile.getResults().drop_back(indices.size()));
       replacements.insert(replacements.begin() + resultIndex, remainingTensor);
+      rewriter.replaceOp(op, replacements);
+      return success();
+    }
+    return failure();
+  }
+};
+/// Carry constant slots through a for loop without expanding its iterations.
+struct ScalarizeForQTensorInputs final : OpRewritePattern<scf::ForOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(scf::ForOp op,
+                                PatternRewriter& rewriter) const override {
+    for (auto [inputIndex, tensor] : llvm::enumerate(op.getInitArgs())) {
+      auto type = dyn_cast<RankedTensorType>(tensor.getType());
+      if (!type || !type.hasStaticShape() ||
+          !isa<qco::QubitType>(type.getElementType())) {
+        continue;
+      }
+      auto accesses =
+          analyzeQTensorBranch(op.getBody(), inputIndex + 1, inputIndex);
+      if (!accesses) {
+        continue;
+      }
+      SmallVector<int64_t> indices(accesses->accesses.keys());
+      llvm::sort(indices);
+      auto [remainingTensor, scalars] =
+          extractQTensorScalars(tensor, indices, op.getLoc(), rewriter);
+      SmallVector<Value> inputs(op.getInitArgs());
+      inputs.erase(inputs.begin() + inputIndex);
+      llvm::append_range(inputs, scalars);
+      auto loop = scf::ForOp::create(rewriter, op.getLoc(), op.getLowerBound(),
+                                     op.getUpperBound(), op.getStep(), inputs);
+      loop->setDiscardableAttrs(op->getDiscardableAttrDictionary());
+      if (!loop.getBody()->empty()) {
+        rewriter.eraseOp(loop.getBody()->getTerminator());
+      }
+      moveScalarizedQTensorBranch(tensor, op.getBody(), loop.getBody(),
+                                  inputIndex + 1, *accesses, indices, rewriter);
+      rewriter.setInsertionPointAfter(loop);
+      remainingTensor = insertQTensorScalars(
+          remainingTensor, loop.getResults().take_back(indices.size()), indices,
+          op.getLoc(), rewriter);
+      SmallVector<Value> replacements(
+          loop.getResults().drop_back(indices.size()));
+      replacements.insert(replacements.begin() + inputIndex, remainingTensor);
       rewriter.replaceOp(op, replacements);
       return success();
     }
@@ -356,6 +399,6 @@ struct ScalarizeWhileQTensorInputs final : OpRewritePattern<scf::WhileOp> {
 
 void QTensorDialect::getCanonicalizationPatterns(
     RewritePatternSet& results) const {
-  results.add<ScalarizeQTensorInputs, ScalarizeWhileQTensorInputs>(
-      getContext());
+  results.add<ScalarizeQTensorInputs, ScalarizeWhileQTensorInputs,
+              ScalarizeForQTensorInputs>(getContext());
 }

@@ -29,6 +29,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/MemRef/Utils/MemRefUtils.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -38,9 +39,11 @@
 #include "mlir/IR/Region.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
+#include "mlir/Pass/PassManager.h"
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 #include "mlir/Transforms/DialectConversion.h"
+#include "mlir/Transforms/Passes.h"
 
 #include "llvm/ADT/DenseSet.h"
 
@@ -481,6 +484,23 @@ protected:
     if (failed(mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
       return;
+    }
+    /// Base Profile uses static resources, so slot ownership has no runtime
+    /// effect. Remove its now-unread buffers with the standard memref utility.
+    bool removedRelease = false;
+    IRRewriter rewriter(ctx);
+    moduleOp.walk([&](qc::DeallocRegisterOp op) {
+      rewriter.eraseOp(op);
+      removedRelease = true;
+    });
+    if (removedRelease) {
+      memref::eraseDeadAllocAndStores(rewriter, moduleOp);
+      PassManager cleanup(ctx);
+      cleanup.addPass(createCanonicalizerPass());
+      if (failed(cleanup.run(moduleOp))) {
+        signalPassFailure();
+        return;
+      }
     }
     ConversionTarget target(*ctx);
     QCToQIRTypeConverter typeConverter(ctx);

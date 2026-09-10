@@ -30,7 +30,8 @@ def MQTDialect : Dialect {
     identity, name, element index, and size of a function input or a lexically
     bound `scf.for` parameter.
     `mqt.register_name` records the source-level name of a quantum or classical
-    register allocation. Input and register names share one function-wide
+    register declaration, including local reference buffers created during
+    conversion. Input and register names share one function-wide
     namespace.
     `mqt.entry_point` marks the single public, defined `func.func` program entry
     in a module. Dynamic quantum allocations (`qc.alloc`, `qco.alloc`,
