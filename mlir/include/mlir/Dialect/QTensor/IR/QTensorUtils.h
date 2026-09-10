@@ -18,15 +18,13 @@
 
 namespace mlir::qtensor {
 
-/**
- * @brief Checks whether two index values are equivalent.
- *
- * @details This is a conservative check that returns true if both indices are
- * constant integers with the same value. It returns false if either index is
- * non-constant or if they have different constant values. Note that this means
- * that some equivalent indices may be considered non-equivalent by this
- * function, but no non-equivalent indices will be considered equivalent.
- */
+/// Checks whether two index values are equivalent.
+///
+/// This is a conservative check that returns true if both indices are
+/// constant integers with the same value. It returns false if either index is
+/// non-constant or if they have different constant values. Note that this means
+/// that some equivalent indices may be considered non-equivalent by this
+/// function, but no non-equivalent indices will be considered equivalent.
 inline bool areEquivalentIndices(Value lhs, Value rhs) {
   auto lhsValue = getConstantIntValue(lhs);
   auto rhsValue = getConstantIntValue(rhs);
@@ -36,16 +34,12 @@ inline bool areEquivalentIndices(Value lhs, Value rhs) {
   return *lhsValue == *rhsValue;
 }
 
-/**
- * @brief Tensor-transforming ops in a scalar extract/insert chain.
- */
+/// Tensor-transforming ops in a scalar extract/insert chain.
 inline bool isTensorChainOp(Operation* op) {
   return isa<InsertOp, ExtractOp>(op);
 }
 
-/**
- * @brief Returns the tensor input of a tensor-transforming op.
- */
+/// Returns the tensor input of a tensor-transforming op.
 inline Value getTensorChainInput(Operation* op) {
   if (auto insertOp = dyn_cast<InsertOp>(op)) {
     return insertOp.getDest();
@@ -56,9 +50,7 @@ inline Value getTensorChainInput(Operation* op) {
   return nullptr;
 }
 
-/**
- * @brief Returns the tensor output of a tensor-transforming op.
- */
+/// Returns the tensor output of a tensor-transforming op.
 inline Value getTensorChainOutput(Operation* op) {
   if (auto insertOp = dyn_cast<InsertOp>(op)) {
     return insertOp.getResult();
@@ -69,9 +61,7 @@ inline Value getTensorChainOutput(Operation* op) {
   return nullptr;
 }
 
-/**
- * @brief Rewire the tensor input of a tensor-transforming op.
- */
+/// Rewire the tensor input of a tensor-transforming op.
 inline void setTensorChainInput(Operation* op, Value tensor) {
   if (isa<InsertOp>(op)) {
     op->setOperand(1, tensor);

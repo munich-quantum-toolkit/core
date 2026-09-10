@@ -32,9 +32,7 @@ using namespace mlir::qc;
 
 namespace {
 
-/**
- * @brief Merge nested control modifiers into a single one.
- */
+/// Merge nested control modifiers into a single one.
 struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
@@ -82,11 +80,10 @@ struct MergeNestedCtrl final : OpRewritePattern<CtrlOp> {
   }
 };
 
-/**
- * @brief Reduce controls for well-known gates.
- * @details Removes empty control ops and handles controlled IdOp, GPhaseOp and
- * BarrierOp.
- */
+/// Reduce controls for well-known gates.
+///
+/// Removes empty control ops and handles controlled IdOp, GPhaseOp and
+/// BarrierOp.
 struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
@@ -134,9 +131,7 @@ struct ReduceCtrl final : OpRewritePattern<CtrlOp> {
   }
 };
 
-/**
- * @brief Erase control modifiers without unitary operations in the body.
- */
+/// Erase control modifiers without unitary operations in the body.
 struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
   LogicalResult matchAndRewrite(CtrlOp op,
@@ -150,9 +145,7 @@ struct EraseEmptyCtrl final : OpRewritePattern<CtrlOp> {
   }
 };
 
-/**
- * @brief Drop the target qubits that the body does not use.
- */
+/// Drop the target qubits that the body does not use.
 struct DropUnusedTargets final : OpRewritePattern<CtrlOp> {
   using OpRewritePattern::OpRewritePattern;
 

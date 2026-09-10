@@ -9,7 +9,7 @@
  */
 
 /// @file
-/// @brief Tests for classical-bit register canonicalization.
+/// Tests for classical-bit register canonicalization.
 
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"
 #include "mlir/Dialect/CBit/IR/CBitOps.h"

@@ -66,10 +66,8 @@ struct Metadata {
   bool usesMultipleReturnPoints{false};
 };
 
-/**
- * @brief Attaches the required attributes to the function marked as
- * entry_point.
- */
+/// Attaches the required attributes to the function marked as
+/// entry_point.
 struct QIRSetAttributesAndMetadata final
     : impl::QIRSetAttributesAndMetadataBase<QIRSetAttributesAndMetadata> {
   using QIRSetAttributesAndMetadataBase::QIRSetAttributesAndMetadataBase;

@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file test_qtensor_ir.cpp
- * @brief Dedicated unit-test suite for the QTensor MLIR dialect.
- */
+/// @file test_qtensor_ir.cpp
+/// Dedicated unit-test suite for the QTensor MLIR dialect.
 
 #include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
@@ -602,23 +600,20 @@ TEST_F(QTensorTest, ResetAfterExtractThroughSameIndexInsertIsNotEliminated) {
       areModulesEquivalentWithPermutations(program.get(), reference.get()));
 }
 
-/**
- * @brief Qubit tensors that do not descend from an allocation are compared
- * through the regular SSA mapping.
- *
- * @details
- * A tensor arriving as a function argument has no equivalence group, and the
- * threaded tensor an extraction hands back is only covered once it is mapped
- * explicitly. Both used to abort inside the comparison instead of reporting a
- * result.
- *
- * The two equivalent programs are written differently and converge under the
- * cleanup pipeline, so the comparison is reached from distinct sources. Note
- * that it cannot be reached from distinct *results*: the permutation matching
- * is keyed off the equivalence groups seeded by `qtensor.alloc`, which a
- * function argument never joins, so on this path the comparison is structural.
- * The negative cases below pin down how little it takes to break it.
- */
+/// Qubit tensors that do not descend from an allocation are compared
+/// through the regular SSA mapping.
+///
+/// A tensor arriving as a function argument has no equivalence group, and the
+/// threaded tensor an extraction hands back is only covered once it is mapped
+/// explicitly. Both used to abort inside the comparison instead of reporting a
+/// result.
+///
+/// The two equivalent programs are written differently and converge under the
+/// cleanup pipeline, so the comparison is reached from distinct sources. Note
+/// that it cannot be reached from distinct *results*: the permutation matching
+/// is keyed off the equivalence groups seeded by `qtensor.alloc`, which a
+/// function argument never joins, so on this path the comparison is structural.
+/// The negative cases below pin down how little it takes to break it.
 TEST_F(QTensorTest, ComparesQubitTensorsThatDoNotDescendFromAnAllocation) {
   const auto parse = [&](const char* body) {
     const std::string source = std::string(R"mlir(
@@ -678,16 +673,13 @@ func.func @f(%t: tensor<2x!qco.qubit>) -> tensor<2x!qco.qubit> {
       areModulesEquivalentWithPermutations(program.get(), otherElement.get()));
 }
 
-/**
- * @brief A tracked tensor is never matched against an untracked one.
- *
- * @details
- * Only tensors descending from a `qtensor.alloc` join an equivalence group. The
- * `rhs` guard is what stops a tracked left-hand tensor from being compared
- * against a right-hand one that has no group, which would look the group up on
- * a missing key. It is only reachable once the left-hand side is tracked, so it
- * needs a case where the two sides disagree about that.
- */
+/// A tracked tensor is never matched against an untracked one.
+///
+/// Only tensors descending from a `qtensor.alloc` join an equivalence group.
+/// The `rhs` guard is what stops a tracked left-hand tensor from being compared
+/// against a right-hand one that has no group, which would look the group up on
+/// a missing key. It is only reachable once the left-hand side is tracked, so
+/// it needs a case where the two sides disagree about that.
 TEST_F(QTensorTest, DoesNotMatchATrackedTensorAgainstAnUntrackedOne) {
   const auto parse = [&](const char* worked, const char* released) {
     const std::string source = std::string(R"mlir(

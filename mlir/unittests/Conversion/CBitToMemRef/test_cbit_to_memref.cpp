@@ -8,10 +8,8 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file test_cbit_to_memref.cpp
- * @brief Unit tests for the CBit-to-memref conversion.
- */
+/// @file test_cbit_to_memref.cpp
+/// Unit tests for the CBit-to-memref conversion.
 
 #include "mlir/Conversion/CBitToMemRef/CBitToMemRef.h"
 #include "mlir/Dialect/CBit/IR/CBitDialect.h"

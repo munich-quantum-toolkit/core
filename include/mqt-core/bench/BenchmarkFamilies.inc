@@ -8,18 +8,16 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file BenchmarkFamilies.inc
- * @brief Central registry of typed structured benchmark families.
- *
- * Define `MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)` before
- * including this file. `TYPE` is the C++ benchmark class. `STEM` names its
- * JSON and schema functions and its MLIR emitter. `ID` is the stable JSON
- * identifier. `DEFINITION_VERSION` identifies the benchmark semantics. Each
- * inclusion undefines `MQT_BENCHMARK_FAMILY`.
- *
- * Keep rows in benchmark ID order. The order is part of the benchmark list.
- */
+/// @file BenchmarkFamilies.inc
+/// Central registry of typed structured benchmark families.
+///
+/// Define `MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)` before
+/// including this file. `TYPE` is the C++ benchmark class. `STEM` names its
+/// JSON and schema functions and its MLIR emitter. `ID` is the stable JSON
+/// identifier. `DEFINITION_VERSION` identifies the benchmark semantics. Each
+/// inclusion undefines `MQT_BENCHMARK_FAMILY`.
+///
+/// Keep rows in benchmark ID order. The order is part of the benchmark list.
 
 #ifndef MQT_BENCHMARK_FAMILY
 #define MQT_BENCHMARK_FAMILY(TYPE, STEM, ID, DEFINITION_VERSION)

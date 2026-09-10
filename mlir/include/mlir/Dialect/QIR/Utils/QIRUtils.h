@@ -122,82 +122,67 @@ inline StringRef selectQISFunctionName(const StringRef body,
   }
 #include "mlir/Conversion/GateTable.def"
 
-/**
- * @brief Emit a QIS call, materializing generic controlled arguments when
- * required.
- *
- * Body, adjoint, and one- or two-control calls pass their arguments directly.
- * Calls with three or more controls use the generic controlled specialization:
- * the first argument is an array of controls and the second is either the
- * single target or a tuple containing parameters followed by targets.
- *
- */
+/// Emit a QIS call, materializing generic controlled arguments when
+/// required.
+///
+/// Body, adjoint, and one- or two-control calls pass their arguments directly.
+/// Calls with three or more controls use the generic controlled specialization:
+/// the first argument is an array of controls and the second is either the
+/// single target or a tuple containing parameters followed by targets.
 void emitQISCall(OpBuilder& builder, Operation* anchor, Location loc,
                  ValueRange parameters, ValueRange controls, ValueRange targets,
                  StringRef fnName);
 
-/**
- * @brief Find the main LLVM function
- *
- * @details
- * Searches for the QIR `entry_point` passthrough attribute.
- *
- * @param op The module operation to search in
- * @return The main LLVM function, or nullptr unless exactly one exists
- */
+/// Find the main LLVM function
+///
+/// Searches for the QIR `entry_point` passthrough attribute.
+///
+/// @param op The module operation to search in
+/// @return The main LLVM function, or nullptr unless exactly one exists
 LLVM::LLVMFuncOp getMainFunction(Operation* op);
 
-/**
- * @brief Get or create a QIR function declaration
- *
- * @details
- * Searches for an existing function declaration in the symbol table. If not
- * found, creates a new function declaration at the end of the module.
- *
- * For QIR functions that are irreversible (measurement and reset), the
- * "irreversible" attribute is added automatically.
- *
- * @param builder The builder to use for creating operations
- * @param op The operation requesting the function (for context)
- * @param fnName The name of the QIR function
- * @param fnType The LLVM function type signature
- * @return The LLVM function declaration
- */
+/// Get or create a QIR function declaration
+///
+/// Searches for an existing function declaration in the symbol table. If not
+/// found, creates a new function declaration at the end of the module.
+///
+/// For QIR functions that are irreversible (measurement and reset), the
+/// "irreversible" attribute is added automatically.
+///
+/// @param builder The builder to use for creating operations
+/// @param op The operation requesting the function (for context)
+/// @param fnName The name of the QIR function
+/// @param fnType The LLVM function type signature
+/// @return The LLVM function declaration
 LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
                                                 Operation* op, StringRef fnName,
                                                 Type fnType);
 
-/**
- * @brief Create a global string constant for result labeling
- *
- * @details
- * Creates a global string constant at the module level and inserts an
- * AddressOfOp at the start of the main function's entry block.
- *
- * @param builder The builder to use for creating operations
- * @param op The operation requesting the label (for context/location)
- * @param label The label string (e.g., "r0")
- * @param symbolPrefix The prefix for the symbol name (default:
- * "qir.result_label")
- * @return AddressOf operation for the global constant
- */
+/// Create a global string constant for result labeling
+///
+/// Creates a global string constant at the module level and inserts an
+/// AddressOfOp at the start of the main function's entry block.
+///
+/// @param builder The builder to use for creating operations
+/// @param op The operation requesting the label (for context/location)
+/// @param label The label string (e.g., "r0")
+/// @param symbolPrefix The prefix for the symbol name (default:
+/// "qir.result_label")
+/// @return AddressOf operation for the global constant
 LLVM::AddressOfOp
 createResultLabel(OpBuilder& builder, Operation* op, StringRef label,
                   StringRef symbolPrefix = "qir.result_label");
 
-/**
- * @brief Create a pointer value from an integer index
- *
- * @details
- * Creates a constant operation with the given index and converts it to a
- * pointer using inttoptr. This is used for static qubit/result references in
- * QIR.
- *
- * @param builder The builder to use for creating operations
- * @param loc The location for the operations
- * @param index The integer index
- * @return The pointer value
- */
+/// Create a pointer value from an integer index
+///
+/// Creates a constant operation with the given index and converts it to a
+/// pointer using inttoptr. This is used for static qubit/result references in
+/// QIR.
+///
+/// @param builder The builder to use for creating operations
+/// @param loc The location for the operations
+/// @param index The integer index
+/// @return The pointer value
 Value createPointerFromIndex(OpBuilder& builder, Location loc, int64_t index);
 
 /// A classical bit register.
@@ -222,29 +207,24 @@ struct StaticResult {
   bool record = false;
 };
 
-/**
- * @brief Emit the output-recording calls.
- *
- * @param builder The builder to use
- * @param anchor An operation used to locate the enclosing module
- * @param classicalRegisters The classical registers to record. If `record` is
- * not set, the register is skipped.
- * @param staticResults The static results to record. If `record` is not set,
- * the result is skipped.
- */
+/// Emit the output-recording calls.
+///
+/// @param builder The builder to use
+/// @param anchor An operation used to locate the enclosing module
+/// @param classicalRegisters The classical registers to record. If `record` is
+/// not set, the register is skipped.
+/// @param staticResults The static results to record. If `record` is not set,
+/// the result is skipped.
 void emitOutputRecording(OpBuilder& builder, Operation* anchor,
                          ArrayRef<ClassicalRegister> classicalRegisters,
                          const DenseMap<int64_t, StaticResult>& staticResults);
 
-/**
- * @brief Helper to resolve a variant of either `int64_t` type or `Value` type
- * to a `Value`
- *
- * @details
- * Helper function to resolve a given variant to a `Value`. Creates an
- * `LLVM::ConstantOp` from the `int64_t` value. If the variant holds a `Value`,
- * return it directly.
- */
+/// Helper to resolve a variant of either `int64_t` type or `Value` type
+/// to a `Value`
+///
+/// Helper function to resolve a given variant to a `Value`. Creates an
+/// `LLVM::ConstantOp` from the `int64_t` value. If the variant holds a `Value`,
+/// return it directly.
 [[nodiscard]] inline Value
 resolveIntVariant(OpBuilder& builder, Location loc,
                   const std::variant<int64_t, Value>& variant) {

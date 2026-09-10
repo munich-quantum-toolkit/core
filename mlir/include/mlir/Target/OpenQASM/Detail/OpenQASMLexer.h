@@ -117,13 +117,10 @@ enum class TokenKind : uint8_t {
 /// A human-readable name for @p kind, used in diagnostics.
 [[nodiscard]] StringRef describe(TokenKind kind);
 
-/**
- * @brief A single lexical token.
- *
- * @details
- * Spellings are zero-copy views into the source buffer. Literals are
- * pre-parsed.
- */
+/// A single lexical token.
+///
+/// Spellings are zero-copy views into the source buffer. Literals are
+/// pre-parsed.
 struct Token {
   TokenKind kind = TokenKind::Eof;
   SMLoc loc;
@@ -135,14 +132,11 @@ struct Token {
   bool wideInteger = false; ///< True when an integer literal exceeds `uint64_t`
 };
 
-/**
- * @brief A zero-copy lexer over an OpenQASM 3 source buffer.
- *
- * @details
- * The lexer holds pointers into the buffer and produces tokens on demand
- * without allocating. Token locations are `SMLoc`s into the buffer, so they can
- * be resolved to line/column via the owning `llvm::SourceMgr`.
- */
+/// A zero-copy lexer over an OpenQASM 3 source buffer.
+///
+/// The lexer holds pointers into the buffer and produces tokens on demand
+/// without allocating. Token locations are `SMLoc`s into the buffer, so they
+/// can be resolved to line/column via the owning `llvm::SourceMgr`.
 class Lexer {
 public:
   explicit Lexer(StringRef buffer) : cur(buffer.begin()), end(buffer.end()) {}
@@ -162,11 +156,9 @@ private:
     return next != end ? *next : '\0';
   }
 
-  /**
-   * @brief Skip whitespace and comments.
-   * @return The start of an unterminated block comment, or `nullptr` if the
-   * trivia is well-formed.
-   */
+  /// Skip whitespace and comments.
+  /// @return The start of an unterminated block comment, or `nullptr` if the
+  /// trivia is well-formed.
   [[nodiscard]] const char* skipTrivia();
 
   [[nodiscard]] Token lexIdentifierOrKeyword(const char* start);

@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file DDDefinitions.hpp
- * @brief Fundamental decision-diagram types, constants, and helper functions.
- */
+/// @file DDDefinitions.hpp
+/// Fundamental decision-diagram types, constants, and helper functions.
 
 #pragma once
 
@@ -31,12 +30,11 @@
 #include <vector>
 
 namespace dd {
-/**
- * @brief Integer type used for indexing qubits
- * @details `std::uint16_t` can address up to 65536 qubits as [0, ..., 65535].
- * @note If you need even more qubits, this can be increased to `std::uint32_t`.
- * Beware of the increased memory footprint of matrix nodes.
- */
+/// Integer type used for indexing qubits
+///
+/// `std::uint16_t` can address up to 65536 qubits as [0, ..., 65535].
+/// @note If you need even more qubits, this can be increased to
+/// `std::uint32_t`. Beware of the increased memory footprint of matrix nodes.
 using Qubit = std::uint16_t;
 
 /// Qubit indices targeted by an operation.
@@ -100,10 +98,8 @@ using Controls = std::set<Control, CompareControl>;
 /// Map logical qubit indices to physical qubit indices.
 using Permutation = std::map<Qubit, Qubit>;
 
-/**
- * @brief Floating point type to use for computations
- * @note Adjusting the precision might lead to unexpected results.
- */
+/// Floating point type to use for computations
+/// @note Adjusting the precision might lead to unexpected results.
 using fp = double;
 static_assert(std::is_floating_point_v<fp>,
               "fp should be a floating point type (float or double)");
@@ -165,12 +161,10 @@ using ThreeQubitGateMatrix =
     std::array<std::array<std::complex<fp>, THREE_QUBIT_GATE_DIM>,
                THREE_QUBIT_GATE_DIM>;
 
-/**
- * @brief Converts a decimal number to a binary string (big endian)
- * @param value The decimal number to convert
- * @param nbits The number of bits to use for the binary representation
- * @return The binary representation of the decimal number
- */
+/// Converts a decimal number to a binary string (big endian)
+/// @param value The decimal number to convert
+/// @param nbits The number of bits to use for the binary representation
+/// @return The binary representation of the decimal number
 [[nodiscard, maybe_unused]] static std::string
 intToBinaryString(const std::size_t value, const std::size_t nbits) {
   std::string binary(nbits, '0');
@@ -200,13 +194,12 @@ intToBinaryString(const std::size_t value, const std::size_t nbits) {
   return ulps;
 }
 
-/**
- * @brief 64bit mixing hash (from MurmurHash3)
- * @details Hash function for 64bit integers adapted from MurmurHash3
- * @param k the number to hash
- * @returns the hash value
- * @see https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
- */
+/// 64bit mixing hash (from MurmurHash3)
+///
+/// Hash function for 64bit integers adapted from MurmurHash3
+/// @param k the number to hash
+/// @returns the hash value
+/// @see https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
 [[nodiscard]] constexpr std::size_t murmur64(std::size_t k) noexcept {
   k ^= k >> 33U;
   k *= 0xff51afd7ed558ccdULL;

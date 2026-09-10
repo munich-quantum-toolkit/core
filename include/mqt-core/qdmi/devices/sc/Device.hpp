@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file Device.hpp
- * @brief The MQT QDMI device implementation for superconducting devices.
- */
+/// @file Device.hpp
+/// The MQT QDMI device implementation for superconducting devices.
 
 #pragma once
 

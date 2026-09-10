@@ -19,10 +19,10 @@ namespace mqt::bindings::qiskit {
 
 namespace nb = nanobind;
 
-/** Import a Qiskit QuantumCircuit into a newly owned QC program. */
+/// Import a Qiskit QuantumCircuit into a newly owned QC program.
 [[nodiscard]] mlir::QCProgram importCircuit(nb::handle circuit);
 
-/** Return a new Qiskit QuantumCircuit, optionally for a compiler target. */
+/// Return a new Qiskit QuantumCircuit, optionally for a compiler target.
 [[nodiscard]] nb::object
 exportCircuit(const mlir::QCProgram& program,
               const mlir::CompilerTarget* target = nullptr);

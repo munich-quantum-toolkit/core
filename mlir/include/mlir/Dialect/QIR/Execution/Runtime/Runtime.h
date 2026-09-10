@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file Runtime.hpp
- * @brief C++ QIR runtime support.
- */
+/// @file Runtime.hpp
+/// C++ QIR runtime support.
 
 #pragma once
 

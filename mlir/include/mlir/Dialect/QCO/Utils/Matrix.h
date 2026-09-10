@@ -38,39 +38,31 @@ struct EigenDecomposition;
 struct EigenDecomposition2x2;
 struct EigenDecomposition4x4;
 
-/**
- * @brief 1x1 matrix for global-phase gates.
- *
- * Wraps a single complex scalar. Used by operations such as `GPhaseOp` whose
- * unitary is a global phase factor.
- */
+/// 1x1 matrix for global-phase gates.
+///
+/// Wraps a single complex scalar. Used by operations such as `GPhaseOp` whose
+/// unitary is a global phase factor.
 struct Matrix1x1 {
   /// The sole matrix entry.
   Complex value{0.0, 0.0};
 
-  /**
-   * @brief Constructs a matrix from its single entry.
-   * @param m00 Element at row 0, column 0.
-   * @return A new `Matrix1x1` with the given element.
-   */
+  /// Constructs a matrix from its single entry.
+  /// @param m00 Element at row 0, column 0.
+  /// @return A new `Matrix1x1` with the given element.
   [[nodiscard]] static constexpr Matrix1x1 fromElements(Complex m00) {
     return {m00};
   }
 
-  /**
-   * @brief Mutable element access with `(row, col)` indexing.
-   * @param row Row index (must be `0`).
-   * @param col Column index (must be `0`).
-   * @return Reference to the sole matrix entry.
-   */
+  /// Mutable element access with `(row, col)` indexing.
+  /// @param row Row index (must be `0`).
+  /// @param col Column index (must be `0`).
+  /// @return Reference to the sole matrix entry.
   [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
-  /**
-   * @brief Const element access with `(row, col)` indexing.
-   * @param row Row index (must be `0`).
-   * @param col Column index (must be `0`).
-   * @return Copy of the sole matrix entry.
-   */
+  /// Const element access with `(row, col)` indexing.
+  /// @param row Row index (must be `0`).
+  /// @param col Column index (must be `0`).
+  /// @return Copy of the sole matrix entry.
   [[nodiscard]] Complex operator()(size_t row, size_t col) const;
 
   /// Return the matrix entries in row-major order.
@@ -78,57 +70,43 @@ struct Matrix1x1 {
     return std::span<const Complex, 1>{&value, 1};
   }
 
-  /**
-   * @brief Element-wise scaling by a complex scalar.
-   * @param scalar Factor applied to the matrix entry.
-   * @return Scaled copy of this matrix.
-   */
+  /// Element-wise scaling by a complex scalar.
+  /// @param scalar Factor applied to the matrix entry.
+  /// @return Scaled copy of this matrix.
   [[nodiscard]] Matrix1x1 operator*(const Complex& scalar) const;
 
-  /**
-   * @brief Element-wise in-place scaling by a complex scalar.
-   * @param scalar Factor applied to the matrix entry.
-   * @return Reference to this matrix.
-   */
+  /// Element-wise in-place scaling by a complex scalar.
+  /// @param scalar Factor applied to the matrix entry.
+  /// @return Reference to this matrix.
   Matrix1x1& operator*=(const Complex& scalar);
 
-  /**
-   * @brief Returns the conjugate transpose (adjoint) of this matrix.
-   * @return Adjoint matrix `A^\dagger`.
-   */
+  /// Returns the conjugate transpose (adjoint) of this matrix.
+  /// @return Adjoint matrix `A^\dagger`.
   [[nodiscard]] Matrix1x1 adjoint() const;
 
-  /**
-   * @brief Checks approximate equality using an absolute tolerance.
-   * @param other Matrix to compare against.
-   * @param tol Maximum allowed complex modulus of the entry difference.
-   * @return True if the difference is within @p tol.
-   */
+  /// Checks approximate equality using an absolute tolerance.
+  /// @param other Matrix to compare against.
+  /// @param tol Maximum allowed complex modulus of the entry difference.
+  /// @return True if the difference is within @p tol.
   [[nodiscard]] bool isApprox(const Matrix1x1& other,
                               double tol = MATRIX_TOLERANCE) const;
 
-  /**
-   * @brief Replaces this matrix with a copy of a 1x1 dynamic matrix.
-   *
-   * @param src Source matrix.
-   * @return `true` when @p src is 1x1.
-   */
+  /// Replaces this matrix with a copy of a 1x1 dynamic matrix.
+  ///
+  /// @param src Source matrix.
+  /// @return `true` when @p src is 1x1.
   [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
 
-  /**
-   * @brief Computes the eigendecomposition of this matrix.
-   *
-   * @return The single eigenpair.
-   */
+  /// Computes the eigendecomposition of this matrix.
+  ///
+  /// @return The single eigenpair.
   [[nodiscard]] EigenDecomposition eigenDecomposition() const;
 };
 
-/**
- * @brief Fixed-size 2x2 matrix in row-major layout.
- *
- * Used to represent single-qubit unitaries. Elements are stored in a flat array
- * with index `(row * K_COLS) + col`.
- */
+/// Fixed-size 2x2 matrix in row-major layout.
+///
+/// Used to represent single-qubit unitaries. Elements are stored in a flat
+/// array with index `(row * K_COLS) + col`.
 struct Matrix2x2 {
   /// Number of rows.
   static constexpr size_t K_ROWS = 2;
@@ -140,14 +118,12 @@ struct Matrix2x2 {
   /// Flat row-major storage of all matrix entries.
   std::array<Complex, K_SIZE_AT_COMPILE_TIME> data{};
 
-  /**
-   * @brief Constructs a matrix from its four row-major entries.
-   * @param m00 Element at row 0, column 0.
-   * @param m01 Element at row 0, column 1.
-   * @param m10 Element at row 1, column 0.
-   * @param m11 Element at row 1, column 1.
-   * @return A new `Matrix2x2` with the given elements.
-   */
+  /// Constructs a matrix from its four row-major entries.
+  /// @param m00 Element at row 0, column 0.
+  /// @param m01 Element at row 0, column 1.
+  /// @param m10 Element at row 1, column 0.
+  /// @param m11 Element at row 1, column 1.
+  /// @return A new `Matrix2x2` with the given elements.
   [[nodiscard]] static constexpr Matrix2x2 fromElements(const Complex& m00,
                                                         const Complex& m01,
                                                         const Complex& m10,
@@ -155,26 +131,20 @@ struct Matrix2x2 {
     return {{m00, m01, m10, m11}};
   }
 
-  /**
-   * @brief Returns the 2x2 identity matrix.
-   * @return Identity matrix `[[1, 0], [0, 1]]`.
-   */
+  /// Returns the 2x2 identity matrix.
+  /// @return Identity matrix `[[1, 0], [0, 1]]`.
   [[nodiscard]] static constexpr Matrix2x2 identity() { return {{1, 0, 0, 1}}; }
 
-  /**
-   * @brief Mutable element access.
-   * @param row Row index in `[0, K_ROWS)`.
-   * @param col Column index in `[0, K_COLS)`.
-   * @return Reference to the element at `(row, col)`.
-   */
+  /// Mutable element access.
+  /// @param row Row index in `[0, K_ROWS)`.
+  /// @param col Column index in `[0, K_COLS)`.
+  /// @return Reference to the element at `(row, col)`.
   [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
-  /**
-   * @brief Const element access.
-   * @param row Row index in `[0, K_ROWS)`.
-   * @param col Column index in `[0, K_COLS)`.
-   * @return Copy of the element at `(row, col)`.
-   */
+  /// Const element access.
+  /// @param row Row index in `[0, K_ROWS)`.
+  /// @param col Column index in `[0, K_COLS)`.
+  /// @return Copy of the element at `(row, col)`.
   [[nodiscard]] Complex operator()(size_t row, size_t col) const;
 
   /// Return the matrix entries in row-major order.
@@ -183,124 +153,94 @@ struct Matrix2x2 {
     return data;
   }
 
-  /**
-   * @brief Matrix product `*this * rhs`.
-   * @param rhs Right-hand factor.
-   * @return Product of the two matrices.
-   */
+  /// Matrix product `*this * rhs`.
+  /// @param rhs Right-hand factor.
+  /// @return Product of the two matrices.
   [[nodiscard]] Matrix2x2 operator*(const Matrix2x2& rhs) const;
 
-  /**
-   * @brief Premultiplies by a matrix: `*this = lhs * *this`.
-   * @param lhs Left-hand factor.
-   */
+  /// Premultiplies by a matrix: `*this = lhs * *this`.
+  /// @param lhs Left-hand factor.
   void premultiplyBy(const Matrix2x2& lhs);
 
-  /**
-   * @brief Element-wise scaling by a complex scalar.
-   * @param scalar Factor applied to every matrix entry.
-   * @return Scaled copy of this matrix.
-   */
+  /// Element-wise scaling by a complex scalar.
+  /// @param scalar Factor applied to every matrix entry.
+  /// @return Scaled copy of this matrix.
   [[nodiscard]] Matrix2x2 operator*(const Complex& scalar) const;
 
-  /**
-   * @brief Element-wise in-place scaling by a complex scalar.
-   * @param scalar Factor applied to every matrix entry.
-   * @return Reference to this matrix.
-   */
+  /// Element-wise in-place scaling by a complex scalar.
+  /// @param scalar Factor applied to every matrix entry.
+  /// @return Reference to this matrix.
   Matrix2x2& operator*=(const Complex& scalar);
 
-  /**
-   * @brief Returns the conjugate transpose (adjoint) of this matrix.
-   * @return Adjoint matrix `A^\dagger`.
-   */
+  /// Returns the conjugate transpose (adjoint) of this matrix.
+  /// @return Adjoint matrix `A^\dagger`.
   [[nodiscard]] Matrix2x2 adjoint() const;
 
-  /**
-   * @brief Returns the (non-conjugate) transpose of this matrix.
-   * @return Transposed matrix `A^T`.
-   */
+  /// Returns the (non-conjugate) transpose of this matrix.
+  /// @return Transposed matrix `A^T`.
   [[nodiscard]] Matrix2x2 transpose() const;
 
-  /**
-   * @brief Returns the trace of this matrix.
-   * @return Sum of diagonal entries.
-   */
+  /// Returns the trace of this matrix.
+  /// @return Sum of diagonal entries.
   [[nodiscard]] Complex trace() const;
 
-  /**
-   * @brief Returns the determinant of this matrix.
-   * @return Complex determinant `ad - bc`.
-   */
+  /// Returns the determinant of this matrix.
+  /// @return Complex determinant `ad - bc`.
   [[nodiscard]] Complex determinant() const;
 
-  /**
-   * @brief Checks whether this matrix is approximately the identity.
-   * @param tol Maximum allowed complex modulus of each entry difference.
-   * @return True if every entry is within @p tol of the identity.
-   */
+  /// Checks whether this matrix is approximately the identity.
+  /// @param tol Maximum allowed complex modulus of each entry difference.
+  /// @return True if every entry is within @p tol of the identity.
   [[nodiscard]] bool isIdentity(double tol = MATRIX_TOLERANCE) const;
 
-  /**
-   * @brief Checks approximate equality using an absolute entry-wise tolerance.
-   *
-   * For each entry `i`, the comparison uses `|a_i - b_i| <= tol`, where the
-   * absolute value is the complex modulus.
-   *
-   * @param other Matrix to compare against.
-   * @param tol Maximum allowed complex modulus of each entry difference.
-   * @return True if every entry differs by at most @p tol.
-   */
+  /// Checks approximate equality using an absolute entry-wise tolerance.
+  ///
+  /// For each entry `i`, the comparison uses `|a_i - b_i| <= tol`, where the
+  /// absolute value is the complex modulus.
+  ///
+  /// @param other Matrix to compare against.
+  /// @param tol Maximum allowed complex modulus of each entry difference.
+  /// @return True if every entry differs by at most @p tol.
   [[nodiscard]] bool isApprox(const Matrix2x2& other,
                               double tol = MATRIX_TOLERANCE) const;
 
-  /**
-   * @brief Replaces this matrix with a copy of a 2x2 dynamic matrix.
-   *
-   * @param src Source matrix.
-   * @return `true` when @p src is 2x2.
-   */
+  /// Replaces this matrix with a copy of a 2x2 dynamic matrix.
+  ///
+  /// @param src Source matrix.
+  /// @return `true` when @p src is 2x2.
   [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
 
-  /**
-   * @brief Computes the eigendecomposition of this complex matrix.
-   *
-   * @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
-   * non-finite eigenvalues.
-   */
+  /// Computes the eigendecomposition of this complex matrix.
+  ///
+  /// @return Eigenpairs, or `std::nullopt` if the closed-form solver produces
+  /// non-finite eigenvalues.
   [[nodiscard]] std::optional<EigenDecomposition2x2> eigenDecomposition() const;
 
-  /**
-   * @brief Embed this single-qubit matrix into an @p numQubits-qubit Hilbert
-   * space.
-   *
-   * Wire @p qubitIndex uses the same MSB-first convention as @ref
-   * Matrix4x4::kron (high bit first operand, low bit second). For each basis
-   * pair whose untouched wires match, copies this matrix at the target qubit's
-   * row/column bits.
-   *
-   * @param numQubits Number of qubits in the target Hilbert space.
-   * @param qubitIndex Wire index to act on.
-   * @return Embedded unitary as a dynamic matrix.
-   */
+  /// Embed this single-qubit matrix into an @p numQubits-qubit Hilbert
+  /// space.
+  ///
+  /// Wire @p qubitIndex uses the same MSB-first convention as @ref
+  /// Matrix4x4::kron (high bit first operand, low bit second). For each basis
+  /// pair whose untouched wires match, copies this matrix at the target qubit's
+  /// row/column bits.
+  ///
+  /// @param numQubits Number of qubits in the target Hilbert space.
+  /// @param qubitIndex Wire index to act on.
+  /// @return Embedded unitary as a dynamic matrix.
   [[nodiscard]] DynamicMatrix embedInNqubit(size_t numQubits,
                                             size_t qubitIndex) const;
 
-  /**
-   * @brief Embed this single-qubit matrix into a two-qubit Hilbert space.
-   *
-   * @param qubitIndex Wire index (`0` = high bit / MSB, `1` = low bit).
-   * @return The `4x4` embedded unitary.
-   */
+  /// Embed this single-qubit matrix into a two-qubit Hilbert space.
+  ///
+  /// @param qubitIndex Wire index (`0` = high bit / MSB, `1` = low bit).
+  /// @return The `4x4` embedded unitary.
   [[nodiscard]] Matrix4x4 embedInTwoQubit(size_t qubitIndex) const;
 };
 
-/**
- * @brief Fixed-size 4x4 matrix in row-major layout.
- *
- * Used to represent two-qubit gate unitaries. Elements are stored in a flat
- * array with index `(row * K_COLS) + col`.
- */
+/// Fixed-size 4x4 matrix in row-major layout.
+///
+/// Used to represent two-qubit gate unitaries. Elements are stored in a flat
+/// array with index `(row * K_COLS) + col`.
 struct Matrix4x4 {
   /// Number of rows.
   static constexpr size_t K_ROWS = 4;
@@ -312,26 +252,24 @@ struct Matrix4x4 {
   /// Flat row-major storage of all matrix entries.
   std::array<Complex, K_SIZE_AT_COMPILE_TIME> data{};
 
-  /**
-   * @brief Constructs a matrix from its sixteen row-major entries.
-   * @param m00 Element at row 0, column 0.
-   * @param m01 Element at row 0, column 1.
-   * @param m02 Element at row 0, column 2.
-   * @param m03 Element at row 0, column 3.
-   * @param m10 Element at row 1, column 0.
-   * @param m11 Element at row 1, column 1.
-   * @param m12 Element at row 1, column 2.
-   * @param m13 Element at row 1, column 3.
-   * @param m20 Element at row 2, column 0.
-   * @param m21 Element at row 2, column 1.
-   * @param m22 Element at row 2, column 2.
-   * @param m23 Element at row 2, column 3.
-   * @param m30 Element at row 3, column 0.
-   * @param m31 Element at row 3, column 1.
-   * @param m32 Element at row 3, column 2.
-   * @param m33 Element at row 3, column 3.
-   * @return A new `Matrix4x4` with the given elements.
-   */
+  /// Constructs a matrix from its sixteen row-major entries.
+  /// @param m00 Element at row 0, column 0.
+  /// @param m01 Element at row 0, column 1.
+  /// @param m02 Element at row 0, column 2.
+  /// @param m03 Element at row 0, column 3.
+  /// @param m10 Element at row 1, column 0.
+  /// @param m11 Element at row 1, column 1.
+  /// @param m12 Element at row 1, column 2.
+  /// @param m13 Element at row 1, column 3.
+  /// @param m20 Element at row 2, column 0.
+  /// @param m21 Element at row 2, column 1.
+  /// @param m22 Element at row 2, column 2.
+  /// @param m23 Element at row 2, column 3.
+  /// @param m30 Element at row 3, column 0.
+  /// @param m31 Element at row 3, column 1.
+  /// @param m32 Element at row 3, column 2.
+  /// @param m33 Element at row 3, column 3.
+  /// @return A new `Matrix4x4` with the given elements.
   [[nodiscard]] static constexpr Matrix4x4
   fromElements(const Complex& m00, const Complex& m01, const Complex& m02,
                const Complex& m03, const Complex& m10, const Complex& m11,
@@ -347,10 +285,8 @@ struct Matrix4x4 {
     };
   }
 
-  /**
-   * @brief Returns the 4x4 identity matrix.
-   * @return Identity matrix with ones on the diagonal.
-   */
+  /// Returns the 4x4 identity matrix.
+  /// @return Identity matrix with ones on the diagonal.
   [[nodiscard]] static constexpr Matrix4x4 identity() {
     return {
         1, 0, 0, 0, // row 0
@@ -360,20 +296,16 @@ struct Matrix4x4 {
     };
   }
 
-  /**
-   * @brief Mutable element access.
-   * @param row Row index in `[0, K_ROWS)`.
-   * @param col Column index in `[0, K_COLS)`.
-   * @return Reference to the element at `(row, col)`.
-   */
+  /// Mutable element access.
+  /// @param row Row index in `[0, K_ROWS)`.
+  /// @param col Column index in `[0, K_COLS)`.
+  /// @return Reference to the element at `(row, col)`.
   [[nodiscard]] Complex& operator()(size_t row, size_t col);
 
-  /**
-   * @brief Const element access.
-   * @param row Row index in `[0, K_ROWS)`.
-   * @param col Column index in `[0, K_COLS)`.
-   * @return Copy of the element at `(row, col)`.
-   */
+  /// Const element access.
+  /// @param row Row index in `[0, K_ROWS)`.
+  /// @param col Column index in `[0, K_COLS)`.
+  /// @return Copy of the element at `(row, col)`.
   [[nodiscard]] Complex operator()(size_t row, size_t col) const;
 
   /// Return the matrix entries in row-major order.
@@ -382,78 +314,56 @@ struct Matrix4x4 {
     return data;
   }
 
-  /**
-   * @brief Matrix product `*this * rhs`.
-   * @param rhs Right-hand factor.
-   * @return Product of the two matrices.
-   */
+  /// Matrix product `*this * rhs`.
+  /// @param rhs Right-hand factor.
+  /// @return Product of the two matrices.
   [[nodiscard]] Matrix4x4 operator*(const Matrix4x4& rhs) const;
 
-  /**
-   * @brief Premultiplies by a matrix: `*this = lhs * *this`.
-   * @param lhs Left-hand factor.
-   */
+  /// Premultiplies by a matrix: `*this = lhs * *this`.
+  /// @param lhs Left-hand factor.
   void premultiplyBy(const Matrix4x4& lhs);
 
-  /**
-   * @brief Element-wise scaling by a complex scalar.
-   * @param scalar Factor applied to every matrix entry.
-   * @return Scaled copy of this matrix.
-   */
+  /// Element-wise scaling by a complex scalar.
+  /// @param scalar Factor applied to every matrix entry.
+  /// @return Scaled copy of this matrix.
   [[nodiscard]] Matrix4x4 operator*(const Complex& scalar) const;
 
-  /**
-   * @brief Element-wise in-place scaling by a complex scalar.
-   * @param scalar Factor applied to every matrix entry.
-   * @return Reference to this matrix.
-   */
+  /// Element-wise in-place scaling by a complex scalar.
+  /// @param scalar Factor applied to every matrix entry.
+  /// @return Reference to this matrix.
   Matrix4x4& operator*=(const Complex& scalar);
 
-  /**
-   * @brief Returns the conjugate transpose (adjoint) of this matrix.
-   * @return Adjoint matrix `A^\dagger`.
-   */
+  /// Returns the conjugate transpose (adjoint) of this matrix.
+  /// @return Adjoint matrix `A^\dagger`.
   [[nodiscard]] Matrix4x4 adjoint() const;
 
-  /**
-   * @brief Returns the (non-conjugate) transpose of this matrix.
-   * @return Transposed matrix `A^T`.
-   */
+  /// Returns the (non-conjugate) transpose of this matrix.
+  /// @return Transposed matrix `A^T`.
   [[nodiscard]] Matrix4x4 transpose() const;
 
-  /**
-   * @brief Returns the trace of this matrix.
-   * @return Sum of diagonal entries.
-   */
+  /// Returns the trace of this matrix.
+  /// @return Sum of diagonal entries.
   [[nodiscard]] Complex trace() const;
 
-  /**
-   * @brief Returns the determinant of this matrix.
-   * @return Complex determinant computed via Laplace expansion.
-   */
+  /// Returns the determinant of this matrix.
+  /// @return Complex determinant computed via Laplace expansion.
   [[nodiscard]] Complex determinant() const;
 
-  /**
-   * @brief Checks whether this matrix is approximately the identity.
-   * @param tol Maximum allowed complex modulus of each entry difference.
-   * @return True if every entry is within @p tol of the identity.
-   */
+  /// Checks whether this matrix is approximately the identity.
+  /// @param tol Maximum allowed complex modulus of each entry difference.
+  /// @return True if every entry is within @p tol of the identity.
   [[nodiscard]] bool isIdentity(double tol = MATRIX_TOLERANCE) const;
 
-  /**
-   * @brief Returns the four diagonal entries `(m00, m11, m22, m33)`.
-   * @return Array of diagonal entries.
-   */
+  /// Returns the four diagonal entries `(m00, m11, m22, m33)`.
+  /// @return Array of diagonal entries.
   [[nodiscard]] std::array<Complex, K_ROWS> diagonal() const;
 
-  /**
-   * @brief Builds a diagonal matrix from four diagonal entries.
-   * @param m00 Diagonal entry at `(0, 0)`.
-   * @param m11 Diagonal entry at `(1, 1)`.
-   * @param m22 Diagonal entry at `(2, 2)`.
-   * @param m33 Diagonal entry at `(3, 3)`.
-   * @return Diagonal matrix with the given entries.
-   */
+  /// Builds a diagonal matrix from four diagonal entries.
+  /// @param m00 Diagonal entry at `(0, 0)`.
+  /// @param m11 Diagonal entry at `(1, 1)`.
+  /// @param m22 Diagonal entry at `(2, 2)`.
+  /// @param m33 Diagonal entry at `(3, 3)`.
+  /// @return Diagonal matrix with the given entries.
   [[nodiscard]] static constexpr Matrix4x4 fromDiagonal(const Complex& m00,
                                                         const Complex& m11,
                                                         const Complex& m22,
@@ -466,12 +376,10 @@ struct Matrix4x4 {
     };
   }
 
-  /**
-   * @brief Builds a diagonal matrix from an array of four diagonal entries.
-   * @param diagonalEntries Array of diagonal entries in order `(m00, m11, m22,
-   * m33)`.
-   * @return Diagonal matrix with the given entries.
-   */
+  /// Builds a diagonal matrix from an array of four diagonal entries.
+  /// @param diagonalEntries Array of diagonal entries in order `(m00, m11, m22,
+  /// m33)`.
+  /// @return Diagonal matrix with the given entries.
   [[nodiscard]] static Matrix4x4
   fromDiagonal(ArrayRef<Complex> diagonalEntries) {
     assert(diagonalEntries.size() == K_ROWS);
@@ -479,134 +387,109 @@ struct Matrix4x4 {
                         diagonalEntries[2], diagonalEntries[3]);
   }
 
-  /**
-   * @brief Kronecker product `lhs (x) rhs` of two single-qubit matrices.
-   *
-   * Uses the computational-basis bit order where the first operand labels the
-   * high bit, matching `UnitaryOpInterface::getUnitaryMatrix4x4`.
-   *
-   * @param lhs Left factor (acts on the high bit / qubit 0).
-   * @param rhs Right factor (acts on the low bit / qubit 1).
-   * @return The `4x4` Kronecker product.
-   */
+  /// Kronecker product `lhs (x) rhs` of two single-qubit matrices.
+  ///
+  /// Uses the computational-basis bit order where the first operand labels the
+  /// high bit, matching `UnitaryOpInterface::getUnitaryMatrix4x4`.
+  ///
+  /// @param lhs Left factor (acts on the high bit / qubit 0).
+  /// @param rhs Right factor (acts on the low bit / qubit 1).
+  /// @return The `4x4` Kronecker product.
   [[nodiscard]] static Matrix4x4 kron(const Matrix2x2& lhs,
                                       const Matrix2x2& rhs);
 
-  /**
-   * @brief Returns the entries of column @p col, top to bottom.
-   * @param col Column index in `[0, K_COLS)`.
-   * @return Array of the four column entries.
-   */
+  /// Returns the entries of column @p col, top to bottom.
+  /// @param col Column index in `[0, K_COLS)`.
+  /// @return Array of the four column entries.
   [[nodiscard]] std::array<Complex, K_ROWS> column(size_t col) const;
 
-  /**
-   * @brief Overwrites column @p col with @p values.
-   * @param col Column index in `[0, K_COLS)`.
-   * @param values New column entries, top to bottom; must have length `K_ROWS`.
-   */
+  /// Overwrites column @p col with @p values.
+  /// @param col Column index in `[0, K_COLS)`.
+  /// @param values New column entries, top to bottom; must have length
+  /// `K_ROWS`.
   void setColumn(size_t col, ArrayRef<Complex> values);
 
-  /**
-   * @brief Returns the entries of row @p row, left to right.
-   * @param row Row index in `[0, K_ROWS)`.
-   * @return View over the four row entries.
-   */
+  /// Returns the entries of row @p row, left to right.
+  /// @param row Row index in `[0, K_ROWS)`.
+  /// @return View over the four row entries.
   [[nodiscard]] ArrayRef<const Complex> row(size_t row) const;
 
-  /**
-   * @brief Overwrites row @p row with @p values.
-   * @param row Row index in `[0, K_ROWS)`.
-   * @param values New row entries, left to right; must have length `K_COLS`.
-   */
+  /// Overwrites row @p row with @p values.
+  /// @param row Row index in `[0, K_ROWS)`.
+  /// @param values New row entries, left to right; must have length `K_COLS`.
   void setRow(size_t row, ArrayRef<Complex> values);
 
-  /**
-   * @brief Returns the element-wise real parts in row-major order.
-   * @return Real parts of all entries.
-   */
+  /// Returns the element-wise real parts in row-major order.
+  /// @return Real parts of all entries.
   [[nodiscard]] std::array<double, K_SIZE_AT_COMPILE_TIME> realPart() const;
 
-  /**
-   * @brief Returns the element-wise imaginary parts in row-major order.
-   * @return Imaginary parts of all entries.
-   */
+  /// Returns the element-wise imaginary parts in row-major order.
+  /// @return Imaginary parts of all entries.
   [[nodiscard]] std::array<double, K_SIZE_AT_COMPILE_TIME> imagPart() const;
 
-  /**
-   * @brief Checks approximate equality using an absolute entry-wise tolerance.
-   *
-   * For each entry `i`, the comparison uses `|a_i - b_i| <= tol`, where the
-   * absolute value is the complex modulus.
-   *
-   * @param other Matrix to compare against.
-   * @param tol Maximum allowed complex modulus of each entry difference.
-   * @return True if every entry differs by at most @p tol.
-   */
+  /// Checks approximate equality using an absolute entry-wise tolerance.
+  ///
+  /// For each entry `i`, the comparison uses `|a_i - b_i| <= tol`, where the
+  /// absolute value is the complex modulus.
+  ///
+  /// @param other Matrix to compare against.
+  /// @param tol Maximum allowed complex modulus of each entry difference.
+  /// @return True if every entry differs by at most @p tol.
   [[nodiscard]] bool isApprox(const Matrix4x4& other,
                               double tol = MATRIX_TOLERANCE) const;
 
-  /**
-   * @brief Replaces this matrix with a copy of a 4x4 dynamic matrix.
-   *
-   * @param src Source matrix.
-   * @return `true` when @p src is 4x4.
-   */
+  /// Replaces this matrix with a copy of a 4x4 dynamic matrix.
+  ///
+  /// @param src Source matrix.
+  /// @return `true` when @p src is 4x4.
   [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
 
-  /**
-   * @brief Constructs a matrix from row-major real entries (imaginary part
-   * zero).
-   *
-   * @param entries Row-major storage with length `16`.
-   * @return A new `Matrix4x4` with the given real entries.
-   */
+  /// Constructs a matrix from row-major real entries (imaginary part
+  /// zero).
+  ///
+  /// @param entries Row-major storage with length `16`.
+  /// @return A new `Matrix4x4` with the given real entries.
   [[nodiscard]] static Matrix4x4 fromRealRowMajor(ArrayRef<double> entries);
 
-  /**
-   * @brief Computes the eigendecomposition of this complex matrix.
-   *
-   * Uses the same EISPACK `corth`/`comqr2` path as @ref
-   * DynamicMatrix::eigenDecomposition, specialized for `4x4`.
-   *
-   * @return Eigenpairs, or `std::nullopt` if the solver does not converge.
-   */
+  /// Computes the eigendecomposition of this complex matrix.
+  ///
+  /// Uses the same EISPACK `corth`/`comqr2` path as @ref
+  /// DynamicMatrix::eigenDecomposition, specialized for `4x4`.
+  ///
+  /// @return Eigenpairs, or `std::nullopt` if the solver does not converge.
   [[nodiscard]] std::optional<EigenDecomposition4x4> eigenDecomposition() const;
 
-  /**
-   * @brief Computes the eigendecomposition of this real symmetric matrix.
-   *
-   * Uses the real parts of @p *this; imaginary parts must be negligible.
-   * Householder tridiagonalization (EISPACK `tred2`) followed by implicit QL
-   * iteration (`tql2`).
-   *
-   * @pre The real parts form a symmetric matrix.
-   * @return Ascending eigenvalues and matching eigenvectors (as columns).
-   */
+  /// Computes the eigendecomposition of this real symmetric matrix.
+  ///
+  /// Uses the real parts of @p *this; imaginary parts must be negligible.
+  /// Householder tridiagonalization (EISPACK `tred2`) followed by implicit QL
+  /// iteration (`tql2`).
+  ///
+  /// @pre The real parts form a symmetric matrix.
+  /// @return Ascending eigenvalues and matching eigenvectors (as columns).
   [[nodiscard]] SymmetricEigenDecomposition4x4
   symmetricEigenDecomposition() const;
 
-  /**
-   * @brief Embed this two-qubit matrix into an @p numQubits-qubit Hilbert
-   * space.
-   *
-   * Operand 0 labels the high bit of the pair and acts on @p q0Index; operand 1
-   * labels the low bit and acts on @p q1Index. For each basis pair whose other
-   * wires match, copies this matrix at the packed two-qubit row/column indices.
-   *
-   * @param numQubits Number of qubits in the target Hilbert space.
-   * @param q0Index Wire index of operand 0.
-   * @param q1Index Wire index of operand 1.
-   * @return Embedded unitary as a dynamic matrix.
-   */
+  /// Embed this two-qubit matrix into an @p numQubits-qubit Hilbert
+  /// space.
+  ///
+  /// Operand 0 labels the high bit of the pair and acts on @p q0Index; operand
+  /// 1 labels the low bit and acts on @p q1Index. For each basis pair whose
+  /// other wires match, copies this matrix at the packed two-qubit row/column
+  /// indices.
+  ///
+  /// @param numQubits Number of qubits in the target Hilbert space.
+  /// @param q0Index Wire index of operand 0.
+  /// @param q1Index Wire index of operand 1.
+  /// @return Embedded unitary as a dynamic matrix.
   [[nodiscard]] DynamicMatrix embedInNqubit(size_t numQubits, size_t q0Index,
                                             size_t q1Index) const;
 
-  /**
-   * @brief Reorder this matrix to act on qubits `{0, 1}`.
-   *
-   * @param q0Index Wire index of operand 0; @p q1Index wire index of operand 1.
-   * @return Reordered copy of this matrix.
-   */
+  /// Reorder this matrix to act on qubits `{0, 1}`.
+  ///
+  /// @param q0Index Wire index of operand 0; @p q1Index wire index of
+  /// operand 1.
+  /// @return Reordered copy of this matrix.
   [[nodiscard]] Matrix4x4 reorderForQubits(size_t q0Index,
                                            size_t q1Index) const;
 };
@@ -643,34 +526,26 @@ struct Matrix8x8 {
   [[nodiscard]] bool assignFrom(const DynamicMatrix& src);
 };
 
-/**
- * @brief Square matrix with runtime dimension.
- *
- * Used when the Hilbert-space dimension depends on the operation, for example,
- * in controlled gates (`CtrlOp`) and inverses (`InvOp`). Storage is row-major
- * and held behind a private implementation pointer.
- */
+/// Square matrix with runtime dimension.
+///
+/// Used when the Hilbert-space dimension depends on the operation, for example,
+/// in controlled gates (`CtrlOp`) and inverses (`InvOp`). Storage is row-major
+/// and held behind a private implementation pointer.
 class DynamicMatrix {
 public:
   /// Creates an empty 0x0 matrix.
   DynamicMatrix();
 
-  /**
-   * @brief Creates a zero-initialized square matrix.
-   * @param dim Side length of the square matrix.
-   */
+  /// Creates a zero-initialized square matrix.
+  /// @param dim Side length of the square matrix.
   explicit DynamicMatrix(int64_t dim);
 
-  /**
-   * @brief Creates a dynamic matrix from a fixed 2x2 matrix.
-   * @param src Source matrix.
-   */
+  /// Creates a dynamic matrix from a fixed 2x2 matrix.
+  /// @param src Source matrix.
   explicit DynamicMatrix(const Matrix2x2& src);
 
-  /**
-   * @brief Creates a dynamic matrix from a fixed 4x4 matrix.
-   * @param src Source matrix.
-   */
+  /// Creates a dynamic matrix from a fixed 4x4 matrix.
+  /// @param src Source matrix.
   explicit DynamicMatrix(const Matrix4x4& src);
 
   /// Create a dynamic matrix from a fixed 8x8 matrix.
@@ -687,235 +562,184 @@ public:
   /// Destructor.
   ~DynamicMatrix();
 
-  /**
-   * @brief Returns a square identity matrix of the given dimension.
-   * @param dim Side length of the identity matrix.
-   * @return Identity matrix with ones on the diagonal.
-   */
+  /// Returns a square identity matrix of the given dimension.
+  /// @param dim Side length of the identity matrix.
+  /// @return Identity matrix with ones on the diagonal.
   [[nodiscard]] static DynamicMatrix identity(int64_t dim);
 
-  /**
-   * @brief Creates a dynamic matrix holding the adjoint of a 2x2 matrix.
-   * @param src Source matrix.
-   * @return Adjoint matrix `src^\dagger`.
-   */
+  /// Creates a dynamic matrix holding the adjoint of a 2x2 matrix.
+  /// @param src Source matrix.
+  /// @return Adjoint matrix `src^\dagger`.
   [[nodiscard]] static DynamicMatrix fromAdjoint(const Matrix2x2& src);
 
-  /**
-   * @brief Returns the number of rows.
-   * @return Matrix dimension.
-   */
+  /// Returns the number of rows.
+  /// @return Matrix dimension.
   [[nodiscard]] int64_t rows() const;
 
-  /**
-   * @brief Returns the number of columns.
-   * @return Matrix dimension.
-   */
+  /// Returns the number of columns.
+  /// @return Matrix dimension.
   [[nodiscard]] int64_t cols() const;
 
-  /**
-   * @brief Mutable element access.
-   * @param row Row index in `[0, dim)`.
-   * @param col Column index in `[0, dim)`.
-   * @return Reference to the element at `(row, col)`.
-   */
+  /// Mutable element access.
+  /// @param row Row index in `[0, dim)`.
+  /// @param col Column index in `[0, dim)`.
+  /// @return Reference to the element at `(row, col)`.
   [[nodiscard]] Complex& operator()(int64_t row, int64_t col);
 
-  /**
-   * @brief Const element access.
-   * @param row Row index in `[0, dim)`.
-   * @param col Column index in `[0, dim)`.
-   * @return Copy of the element at `(row, col)`.
-   */
+  /// Const element access.
+  /// @param row Row index in `[0, dim)`.
+  /// @param col Column index in `[0, dim)`.
+  /// @return Copy of the element at `(row, col)`.
   [[nodiscard]] Complex operator()(int64_t row, int64_t col) const;
 
   /// Return the matrix entries in row-major order.
   [[nodiscard]] std::span<const Complex> entries() const noexcept;
 
-  /**
-   * @brief Copies a 2x2 block into the bottom-right corner.
-   * @param block Source block placed at indices `(dim-2, dim-2)` through
-   * `(dim-1, dim-1)`.
-   */
+  /// Copies a 2x2 block into the bottom-right corner.
+  /// @param block Source block placed at indices `(dim-2, dim-2)` through
+  /// `(dim-1, dim-1)`.
   void setBottomRightCorner(const Matrix2x2& block);
 
-  /**
-   * @brief Copies a 4x4 block into the bottom-right corner.
-   * @param block Source block placed at indices `(dim-4, dim-4)` through
-   * `(dim-1, dim-1)`.
-   */
+  /// Copies a 4x4 block into the bottom-right corner.
+  /// @param block Source block placed at indices `(dim-4, dim-4)` through
+  /// `(dim-1, dim-1)`.
   void setBottomRightCorner(const Matrix4x4& block);
 
-  /**
-   * @brief Copies a dynamic block into the bottom-right corner.
-   * @param block Source block placed at indices `(dim - block.rows(), ...)`
-   * through
-   * `(dim-1, dim-1)`.
-   */
+  /// Copies a dynamic block into the bottom-right corner.
+  /// @param block Source block placed at indices `(dim - block.rows(), ...)`
+  /// through
+  /// `(dim-1, dim-1)`.
   void setBottomRightCorner(const DynamicMatrix& block);
 
-  /**
-   * @brief Returns the conjugate transpose (adjoint) of this matrix.
-   * @return Adjoint matrix `A^\dagger`.
-   */
+  /// Returns the conjugate transpose (adjoint) of this matrix.
+  /// @return Adjoint matrix `A^\dagger`.
   [[nodiscard]] DynamicMatrix adjoint() const;
 
-  /**
-   * @brief Replaces this matrix with a copy of a 1x1 matrix.
-   * @param src Source matrix.
-   */
+  /// Replaces this matrix with a copy of a 1x1 matrix.
+  /// @param src Source matrix.
   void assignFrom(const Matrix1x1& src);
 
-  /**
-   * @brief Replaces this matrix with a copy of a 2x2 matrix.
-   * @param src Source matrix.
-   */
+  /// Replaces this matrix with a copy of a 2x2 matrix.
+  /// @param src Source matrix.
   void assignFrom(const Matrix2x2& src);
 
-  /**
-   * @brief Replaces this matrix with a copy of a 4x4 matrix.
-   * @param src Source matrix.
-   */
+  /// Replaces this matrix with a copy of a 4x4 matrix.
+  /// @param src Source matrix.
   void assignFrom(const Matrix4x4& src);
 
   /// Replace this matrix with a copy of an 8x8 matrix.
   void assignFrom(const Matrix8x8& src);
 
-  /**
-   * @brief Replaces this matrix with a copy of another dynamic matrix.
-   * @param src Source matrix.
-   */
+  /// Replaces this matrix with a copy of another dynamic matrix.
+  /// @param src Source matrix.
   void assignFrom(const DynamicMatrix& src);
 
-  /**
-   * @brief Checks approximate equality against a fixed 1x1 matrix.
-   *
-   * Returns false if this matrix is not 1x1.
-   *
-   * @param other Fixed-size matrix to compare against.
-   * @param tol Maximum allowed complex modulus of the entry difference.
-   * @return True if dimensions match and the entry differs by at most @p tol.
-   */
+  /// Checks approximate equality against a fixed 1x1 matrix.
+  ///
+  /// Returns false if this matrix is not 1x1.
+  ///
+  /// @param other Fixed-size matrix to compare against.
+  /// @param tol Maximum allowed complex modulus of the entry difference.
+  /// @return True if dimensions match and the entry differs by at most @p tol.
   [[nodiscard]] bool isApprox(const Matrix1x1& other,
                               double tol = MATRIX_TOLERANCE) const;
 
-  /**
-   * @brief Checks approximate equality against a fixed 2x2 matrix.
-   *
-   * Returns false if this matrix is not 2x2.
-   *
-   * @param other Fixed-size matrix to compare against.
-   * @param tol Maximum allowed complex modulus of each entry difference.
-   * @return True if dimensions match and every entry differs by at most @p tol.
-   */
+  /// Checks approximate equality against a fixed 2x2 matrix.
+  ///
+  /// Returns false if this matrix is not 2x2.
+  ///
+  /// @param other Fixed-size matrix to compare against.
+  /// @param tol Maximum allowed complex modulus of each entry difference.
+  /// @return True if dimensions match and every entry differs by at most @p
+  /// tol.
   [[nodiscard]] bool isApprox(const Matrix2x2& other,
                               double tol = MATRIX_TOLERANCE) const;
 
-  /**
-   * @brief Checks approximate equality against a fixed 4x4 matrix.
-   *
-   * Returns false if this matrix is not 4x4.
-   *
-   * @param other Fixed-size matrix to compare against.
-   * @param tol Maximum allowed complex modulus of each entry difference.
-   * @return True if dimensions match and every entry differs by at most @p tol.
-   */
+  /// Checks approximate equality against a fixed 4x4 matrix.
+  ///
+  /// Returns false if this matrix is not 4x4.
+  ///
+  /// @param other Fixed-size matrix to compare against.
+  /// @param tol Maximum allowed complex modulus of each entry difference.
+  /// @return True if dimensions match and every entry differs by at most @p
+  /// tol.
   [[nodiscard]] bool isApprox(const Matrix4x4& other,
                               double tol = MATRIX_TOLERANCE) const;
 
-  /**
-   * @brief Checks approximate equality against another dynamic matrix.
-   *
-   * Returns false if the dimensions differ.
-   *
-   * @param other Matrix to compare against.
-   * @param tol Maximum allowed complex modulus of each entry difference.
-   * @return True if dimensions match and every entry differs by at most @p tol.
-   */
+  /// Checks approximate equality against another dynamic matrix.
+  ///
+  /// Returns false if the dimensions differ.
+  ///
+  /// @param other Matrix to compare against.
+  /// @param tol Maximum allowed complex modulus of each entry difference.
+  /// @return True if dimensions match and every entry differs by at most @p
+  /// tol.
   [[nodiscard]] bool isApprox(const DynamicMatrix& other,
                               double tol = MATRIX_TOLERANCE) const;
 
-  /**
-   * @brief Returns the trace of this matrix.
-   * @return Sum of diagonal entries.
-   */
+  /// Returns the trace of this matrix.
+  /// @return Sum of diagonal entries.
   [[nodiscard]] Complex trace() const;
 
-  /**
-   * @brief Matrix product `*this * rhs`.
-   * @param rhs Right-hand factor.
-   * @return Product of the two matrices.
-   */
+  /// Matrix product `*this * rhs`.
+  /// @param rhs Right-hand factor.
+  /// @return Product of the two matrices.
   [[nodiscard]] DynamicMatrix operator*(const DynamicMatrix& rhs) const;
 
-  /**
-   * @brief Premultiplies by a matrix: `*this = lhs * *this`.
-   * @param lhs Left-hand factor.
-   */
+  /// Premultiplies by a matrix: `*this = lhs * *this`.
+  /// @param lhs Left-hand factor.
   void premultiplyBy(const DynamicMatrix& lhs);
 
-  /**
-   * @brief Premultiplies by a single-qubit gate embedded on @p qubitIndex.
-   *
-   * Uses the same MSB-first wire convention as @ref Matrix2x2::embedInNqubit.
-   *
-   * @param gate Single-qubit unitary.
-   * @param numQubits Number of qubits in this matrix.
-   * @param qubitIndex Target wire index.
-   */
+  /// Premultiplies by a single-qubit gate embedded on @p qubitIndex.
+  ///
+  /// Uses the same MSB-first wire convention as @ref Matrix2x2::embedInNqubit.
+  ///
+  /// @param gate Single-qubit unitary.
+  /// @param numQubits Number of qubits in this matrix.
+  /// @param qubitIndex Target wire index.
   void premultiplyByEmbedded1Q(const Matrix2x2& gate, size_t numQubits,
                                size_t qubitIndex);
 
-  /**
-   * @brief Premultiplies by a two-qubit gate embedded on @p q0Index and @p
-   * q1Index.
-   *
-   * @p gate must already be reordered for wires @p q0Index and @p q1Index when
-   * @p numQubits is 2. Uses the same MSB-first convention as @ref
-   * Matrix4x4::embedInNqubit.
-   *
-   * @param gate Two-qubit unitary.
-   * @param numQubits Number of qubits in this matrix.
-   * @param q0Index First target wire index.
-   * @param q1Index Second target wire index.
-   */
+  /// Premultiplies by a two-qubit gate embedded on @p q0Index and @p
+  /// q1Index.
+  ///
+  /// @p gate must already be reordered for wires @p q0Index and @p q1Index when
+  /// @p numQubits is 2. Uses the same MSB-first convention as @ref
+  /// Matrix4x4::embedInNqubit.
+  ///
+  /// @param gate Two-qubit unitary.
+  /// @param numQubits Number of qubits in this matrix.
+  /// @param q0Index First target wire index.
+  /// @param q1Index Second target wire index.
   void premultiplyByEmbedded2Q(const Matrix4x4& gate, size_t numQubits,
                                size_t q0Index, size_t q1Index);
 
-  /**
-   * @brief Element-wise scaling by a complex scalar.
-   * @param scalar Factor applied to every matrix entry.
-   * @return Scaled copy of this matrix.
-   */
+  /// Element-wise scaling by a complex scalar.
+  /// @param scalar Factor applied to every matrix entry.
+  /// @return Scaled copy of this matrix.
   [[nodiscard]] DynamicMatrix operator*(const Complex& scalar) const;
 
-  /**
-   * @brief Element-wise in-place scaling by a complex scalar.
-   * @param scalar Factor applied to every matrix entry.
-   * @return Reference to this matrix.
-   */
+  /// Element-wise in-place scaling by a complex scalar.
+  /// @param scalar Factor applied to every matrix entry.
+  /// @return Reference to this matrix.
   DynamicMatrix& operator*=(const Complex& scalar);
 
-  /**
-   * @brief Checks whether this matrix is approximately the identity.
-   * @param tol Maximum allowed complex modulus of each off-diagonal entry and
-   * each diagonal deviation from one.
-   * @return True when the matrix is close to the identity.
-   */
+  /// Checks whether this matrix is approximately the identity.
+  /// @param tol Maximum allowed complex modulus of each off-diagonal entry and
+  /// each diagonal deviation from one.
+  /// @return True when the matrix is close to the identity.
   [[nodiscard]] bool isIdentity(double tol = MATRIX_TOLERANCE) const;
 
-  /**
-   * @brief Computes the eigendecomposition of this square matrix.
-   *
-   * Dispatches by dimension: empty matrices return `std::nullopt`; `1x1`,
-   * `2x2`, and `4x4` delegate to the corresponding fixed-size @ref
-   * eigenDecomposition members (lifting to @ref EigenDecomposition where
-   * needed); all other square sizes use an internal EISPACK-based solver
-   * (`corth`/`comqr2`).
-   *
-   * @return Eigenpairs, or `std::nullopt` if this matrix is empty or the
-   * solver does not converge.
-   */
+  /// Computes the eigendecomposition of this square matrix.
+  ///
+  /// Dispatches by dimension: empty matrices return `std::nullopt`; `1x1`,
+  /// `2x2`, and `4x4` delegate to the corresponding fixed-size @ref
+  /// eigenDecomposition members (lifting to @ref EigenDecomposition where
+  /// needed); all other square sizes use an internal EISPACK-based solver
+  /// (`corth`/`comqr2`).
+  ///
+  /// @return Eigenpairs, or `std::nullopt` if this matrix is empty or the
+  /// solver does not converge.
   [[nodiscard]] std::optional<EigenDecomposition> eigenDecomposition() const;
 
 private:
@@ -942,13 +766,11 @@ concept SupportedMatrix =
 [[nodiscard]] DynamicMatrix operator*(const Complex& scalar,
                                       const DynamicMatrix& matrix);
 
-/**
- * @brief Eigenvalues and eigenvectors of a real symmetric `4x4` matrix.
- *
- * `eigenvalues` are sorted ascending and `eigenvectors` holds the
- * corresponding orthonormal eigenvectors as columns (column `j` is the
- * eigenvector for `eigenvalues[j]`).
- */
+/// Eigenvalues and eigenvectors of a real symmetric `4x4` matrix.
+///
+/// `eigenvalues` are sorted ascending and `eigenvectors` holds the
+/// corresponding orthonormal eigenvectors as columns (column `j` is the
+/// eigenvector for `eigenvalues[j]`).
 struct SymmetricEigenDecomposition4x4 {
   /// Eigenvalues in ascending order.
   std::array<double, 4> eigenvalues{};
@@ -956,12 +778,10 @@ struct SymmetricEigenDecomposition4x4 {
   Matrix4x4 eigenvectors{};
 };
 
-/**
- * @brief Eigenvalues and eigenvectors of a complex `4x4` matrix.
- *
- * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
- * eigenvector for `eigenvalues[j]`).
- */
+/// Eigenvalues and eigenvectors of a complex `4x4` matrix.
+///
+/// `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
+/// eigenvector for `eigenvalues[j]`).
 struct EigenDecomposition4x4 {
   /// Eigenvalues in no particular order.
   std::array<Complex, 4> eigenvalues{};
@@ -969,12 +789,10 @@ struct EigenDecomposition4x4 {
   Matrix4x4 eigenvectors{};
 };
 
-/**
- * @brief Eigenvalues and eigenvectors of a complex `2x2` matrix.
- *
- * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
- * eigenvector for `eigenvalues[j]`).
- */
+/// Eigenvalues and eigenvectors of a complex `2x2` matrix.
+///
+/// `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
+/// eigenvector for `eigenvalues[j]`).
 struct EigenDecomposition2x2 {
   /// Eigenvalues in no particular order.
   std::array<Complex, 2> eigenvalues{};
@@ -982,35 +800,29 @@ struct EigenDecomposition2x2 {
   Matrix2x2 eigenvectors{};
 };
 
-/**
- * @brief Eigenvalues and eigenvectors of a square complex matrix.
- *
- * `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
- * eigenvector for `eigenvalues[j]`).
- */
+/// Eigenvalues and eigenvectors of a square complex matrix.
+///
+/// `eigenvalues[i]` matches column `i` of `eigenvectors` (column `j` is the
+/// eigenvector for `eigenvalues[j]`).
 struct EigenDecomposition {
   /// Eigenvalues in no particular order.
   SmallVector<Complex, 8> eigenvalues;
   /// Eigenvectors as columns (column `j` matches `eigenvalues[j]`).
   DynamicMatrix eigenvectors;
 
-  /**
-   * @brief Lifts a fixed `2x2` eigendecomposition to dynamic storage.
-   *
-   * @param eigen2 Fixed-size eigenpairs from @ref
-   * Matrix2x2::eigenDecomposition.
-   * @return Dynamic-matrix eigenvector storage with the same eigenvalues.
-   */
+  /// Lifts a fixed `2x2` eigendecomposition to dynamic storage.
+  ///
+  /// @param eigen2 Fixed-size eigenpairs from @ref
+  /// Matrix2x2::eigenDecomposition.
+  /// @return Dynamic-matrix eigenvector storage with the same eigenvalues.
   [[nodiscard]] static EigenDecomposition
   from(const EigenDecomposition2x2& eigen2);
 
-  /**
-   * @brief Lifts a fixed `4x4` eigendecomposition to dynamic storage.
-   *
-   * @param eigen4 Fixed-size eigenpairs from @ref
-   * Matrix4x4::eigenDecomposition.
-   * @return Dynamic-matrix eigenvector storage with the same eigenvalues.
-   */
+  /// Lifts a fixed `4x4` eigendecomposition to dynamic storage.
+  ///
+  /// @param eigen4 Fixed-size eigenpairs from @ref
+  /// Matrix4x4::eigenDecomposition.
+  /// @return Dynamic-matrix eigenvector storage with the same eigenvalues.
   [[nodiscard]] static EigenDecomposition
   from(const EigenDecomposition4x4& eigen4);
 };

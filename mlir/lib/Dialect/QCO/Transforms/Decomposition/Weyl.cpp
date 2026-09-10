@@ -170,13 +170,13 @@ static double closestPartialSwap(double a, double b, double c) {
   return m + (am * bm * cm * (6. + (ab * ab) + (bc * bc) + (ca * ca)) / 18.);
 }
 
-/** @brief Uniform sample in `(0, 1]` from `std::mt19937`. */
+/// Uniform sample in `(0, 1]` from `std::mt19937`.
 static double uniformOpenUnit(std::mt19937& rng) {
   return (static_cast<double>(rng()) + 0.5) /
          (static_cast<double>(std::mt19937::max()) + 1.0);
 }
 
-/** @brief Standard-normal sample via Box-Muller. */
+/// Standard-normal sample via Box-Muller.
 static double normalSample(std::mt19937& rng) {
   const double u1 = uniformOpenUnit(rng);
   const double u2 = uniformOpenUnit(rng);

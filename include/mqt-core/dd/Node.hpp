@@ -8,9 +8,8 @@
  * Licensed under the MIT License
  */
 
-/** @file Node.hpp
- * @brief Decision-diagram node types and node-edge aliases.
- */
+/// @file Node.hpp
+/// Decision-diagram node types and node-edge aliases.
 
 #pragma once
 
@@ -25,38 +24,36 @@
 
 namespace dd {
 
-/**
- * @brief Base class for all DD nodes.
- * @details This class is used to store common information for all DD nodes.
- * The `flags` makes the implicit padding explicit and can be used for storing
- * node properties.
- * Data Layout (8)|(2|2|4) = 16B.
- */
+/// Base class for all DD nodes.
+///
+/// This class is used to store common information for all DD nodes.
+/// The `flags` makes the implicit padding explicit and can be used for storing
+/// node properties.
+/// Data Layout (8)|(2|2|4) = 16B.
 struct NodeBase : LLBase {
   /// Variable index
   Qubit v{};
 
-  /**
-   * @brief Flags for node properties
-   * @details Not required for all node types, but padding is required either
-   * way.
-   *
-   * 0b1 = mark flag used for mark-and-sweep garbage collection
-   */
+  /// Flags for node properties
+  ///
+  /// Not required for all node types, but padding is required either
+  /// way.
+  ///
+  /// 0b1 = mark flag used for mark-and-sweep garbage collection
   std::uint16_t flags = 0;
 
   /// Mark flag used for mark-and-sweep garbage collection
   static constexpr std::uint16_t MARK_FLAG = 0b1U;
 
-  /// @brief Whether a node is marked as used.
+  /// Whether a node is marked as used.
   [[nodiscard]] bool isMarked() const noexcept {
     return (flags & MARK_FLAG) != 0U;
   }
 
-  /// @brief Mark the node as used.
+  /// Mark the node as used.
   void mark() noexcept { flags |= MARK_FLAG; }
 
-  /// @brief Unmark the node.
+  /// Unmark the node.
   void unmark() noexcept { flags &= static_cast<uint16_t>(~MARK_FLAG); }
 
   /// Getter for the next object.
@@ -65,11 +62,9 @@ struct NodeBase : LLBase {
     return static_cast<NodeBase*>(next_);
   }
 
-  /**
-   * @brief Check if a node is terminal
-   * @param p The node to check
-   * @return true if the node is terminal, false otherwise.
-   */
+  /// Check if a node is terminal
+  /// @param p The node to check
+  /// @return true if the node is terminal, false otherwise.
   [[nodiscard]] static constexpr bool isTerminal(const NodeBase* p) noexcept {
     return p == nullptr;
   }
@@ -79,10 +74,9 @@ struct NodeBase : LLBase {
 static_assert(sizeof(NodeBase) == 16);
 static_assert(alignof(NodeBase) == 8);
 
-/**
- * @brief A vector DD node
- * @details Data Layout (8)|(2|2|4)|(24|24) = 64B
- */
+/// A vector DD node
+///
+/// Data Layout (8)|(2|2|4)|(24|24) = 64B
 struct vNode final : NodeBase {       // NOLINT(readability-identifier-naming)
   std::array<Edge<vNode>, RADIX> e{}; // edges out of this node
 
@@ -98,10 +92,9 @@ using vEdge = Edge<vNode>;
 using vCachedEdge = CachedEdge<vNode>;
 using VectorDD = vEdge;
 
-/**
- * @brief A matrix DD node
- * @details Data Layout (8)|(2|2|4)|(24|24|24|24) = 112B
- */
+/// A matrix DD node
+///
+/// Data Layout (8)|(2|2|4)|(24|24|24|24) = 112B
 struct mNode final : NodeBase {       // NOLINT(readability-identifier-naming)
   std::array<Edge<mNode>, NEDGE> e{}; // edges out of this node
 

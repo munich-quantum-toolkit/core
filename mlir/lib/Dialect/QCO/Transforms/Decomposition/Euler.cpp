@@ -52,13 +52,11 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
       .Default([](auto) { return false; });
 }
 
-/**
- * @brief Wraps `angle` into `[-pi, pi)`, mapping `+pi` (within tolerance) to
- * `-pi`.
- *
- * @param angle The angle to wrap, in radians.
- * @return The wrapped angle in `[-pi, pi)`.
- */
+/// Wraps `angle` into `[-pi, pi)`, mapping `+pi` (within tolerance) to
+/// `-pi`.
+///
+/// @param angle The angle to wrap, in radians.
+/// @return The wrapped angle in `[-pi, pi)`.
 [[nodiscard]] static double mod2pi(const double angle) {
   if (!std::isfinite(angle)) {
     return angle;
@@ -80,14 +78,12 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
   return wrapped;
 }
 
-/**
- * @brief Conjugates a single-qubit matrix by Hadamard (`H * m * H`).
- *
- * Maps XYX / XZX parameterizations to ZYZ / ZXZ.
- *
- * @param m The single-qubit matrix to conjugate.
- * @return `H * m * H`.
- */
+/// Conjugates a single-qubit matrix by Hadamard (`H * m * H`).
+///
+/// Maps XYX / XZX parameterizations to ZYZ / ZXZ.
+///
+/// @param m The single-qubit matrix to conjugate.
+/// @return `H * m * H`.
 [[nodiscard]] static Matrix2x2 hadamardConjugate(const Matrix2x2& m) {
   const auto a = m(0, 0);
   const auto b = m(0, 1);
@@ -97,12 +93,10 @@ bool isSingleQubitBasisGate(Operation* op, SingleQubitBasis basis) {
                                  0.5 * (a + b - c - d), 0.5 * (a - b - c + d));
 }
 
-/**
- * @brief Whether `angle` is numerically zero for gate-emission purposes.
- *
- * @param angle Rotation angle in radians.
- * @return `true` when no rotation gate should be emitted.
- */
+/// Whether `angle` is numerically zero for gate-emission purposes.
+///
+/// @param angle Rotation angle in radians.
+/// @return `true` when no rotation gate should be emitted.
 [[nodiscard]] static bool isNearZeroRotationAngle(const double angle) {
   return std::abs(angle) <= mqt::PARAMETER_COMPARISON_TOLERANCE;
 }
@@ -118,12 +112,10 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
 // Euler decomposition (angles)
 //===----------------------------------------------------------------------===//
 
-/**
- * @brief Z-Y-Z Euler angles and global phase for a 2x2 unitary.
- *
- * @param matrix Single-qubit unitary to decompose.
- * @return Z-Y-Z angles and global phase.
- */
+/// Z-Y-Z Euler angles and global phase for a 2x2 unitary.
+///
+/// @param matrix Single-qubit unitary to decompose.
+/// @return Z-Y-Z angles and global phase.
 [[nodiscard]] static EulerAngles paramsZYZ(const Matrix2x2& matrix) {
   // det(U) = exp(2i*phase)
   const Complex det = matrix.determinant();
@@ -143,12 +135,10 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
   return {.theta = theta, .phi = phi, .lambda = lambda, .phase = phase};
 }
 
-/**
- * @brief Z-X-Z Euler angles via `RY(theta) = RZ(pi/2)*RX(theta)*RZ(-pi/2)`.
- *
- * @param matrix Single-qubit unitary to decompose.
- * @return Z-X-Z angles and global phase.
- */
+/// Z-X-Z Euler angles via `RY(theta) = RZ(pi/2)*RX(theta)*RZ(-pi/2)`.
+///
+/// @param matrix Single-qubit unitary to decompose.
+/// @return Z-X-Z angles and global phase.
 [[nodiscard]] static EulerAngles paramsZXZ(const Matrix2x2& matrix) {
   const auto [theta, phi, lambda, phase] = paramsZYZ(matrix);
   return {
@@ -159,22 +149,18 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
   };
 }
 
-/**
- * @brief X-Z-X Euler angles (Z-X-Z under H conjugation).
- *
- * @param matrix Single-qubit unitary to decompose.
- * @return X-Z-X angles and global phase.
- */
+/// X-Z-X Euler angles (Z-X-Z under H conjugation).
+///
+/// @param matrix Single-qubit unitary to decompose.
+/// @return X-Z-X angles and global phase.
 [[nodiscard]] static EulerAngles paramsXZX(const Matrix2x2& matrix) {
   return paramsZXZ(hadamardConjugate(matrix));
 }
 
-/**
- * @brief X-Y-X Euler angles via `H*RY(theta)*H = RY(-theta)`.
- *
- * @param matrix Single-qubit unitary to decompose.
- * @return X-Y-X angles and global phase.
- */
+/// X-Y-X Euler angles via `H*RY(theta)*H = RY(-theta)`.
+///
+/// @param matrix Single-qubit unitary to decompose.
+/// @return X-Y-X angles and global phase.
 [[nodiscard]] static EulerAngles paramsXYX(const Matrix2x2& matrix) {
   // Shift outer angles by pi and fix global phase.
   const auto [theta, phi, lambda, phase] = paramsZYZ(hadamardConjugate(matrix));
@@ -186,12 +172,10 @@ void emitGPhaseIfNeeded(OpBuilder& builder, Location loc, const double phase) {
   };
 }
 
-/**
- * @brief `U`-basis angles (Z-Y-Z angles with a `U`-vs-`RZ*RY*RZ` phase fix).
- *
- * @param matrix Single-qubit unitary to decompose.
- * @return `U`-gate angles and global phase.
- */
+/// `U`-basis angles (Z-Y-Z angles with a `U`-vs-`RZ*RY*RZ` phase fix).
+///
+/// @param matrix Single-qubit unitary to decompose.
+/// @return `U`-gate angles and global phase.
 [[nodiscard]] static EulerAngles paramsU(const Matrix2x2& matrix) {
   // `U` differs from RZ(phi)*RY(theta)*RZ(lambda) by a global phase of
   // -(phi + lambda)/2.
@@ -230,11 +214,10 @@ EulerAngles anglesFromUnitary(const Matrix2x2& matrix,
 
 namespace {
 
-/**
- * @brief One gate in a planned single-qubit synthesis sequence.
- *
- * `RZ`/`RY`/`RX` use @p theta as the rotation angle; `U` uses all three angles.
- */
+/// One gate in a planned single-qubit synthesis sequence.
+///
+/// `RZ`/`RY`/`RX` use @p theta as the rotation angle; `U` uses all three
+/// angles.
 struct SynthesisStep {
   enum class Kind : std::uint8_t { RZ, RY, RX, SX, X, U, R };
 
@@ -244,46 +227,39 @@ struct SynthesisStep {
   double lambda = 0.0;
 };
 
-/** @brief Planned single-qubit Euler synthesis (gate list + optional `gphase`).
- */
+/// Planned single-qubit Euler synthesis (gate list + optional `gphase`).
 struct Unitary1QEulerPlan {
   SmallVector<SynthesisStep, 5> steps;
   double phase = 0.0;
 
-  /// @brief Number of native gates in the planned sequence (excludes `gphase`).
+  /// Number of native gates in the planned sequence (excludes `gphase`).
   [[nodiscard]] std::size_t gateCount() const { return steps.size(); }
 
-  /**
-   * @brief Appends a rotation step for non-negligible angles.
-   *
-   * @param kind The rotation axis (RZ/RY/RX)
-   * @param angle The rotation angle in radians.
-   */
+  /// Appends a rotation step for non-negligible angles.
+  ///
+  /// @param kind The rotation axis (RZ/RY/RX)
+  /// @param angle The rotation angle in radians.
   void appendRotation(const SynthesisStep::Kind kind, const double angle) {
     if (!isNearZeroRotationAngle(angle)) {
       steps.emplace_back(kind, angle);
     }
   }
 
-  /**
-   * @brief Appends a native `R(angle, axis)` step for non-negligible angles.
-   *
-   * @param angle The rotation angle in radians.
-   * @param axis The rotation axis in the XY-plane (`0` for `Rx`, `pi/2` for
-   *             `Ry`).
-   */
+  /// Appends a native `R(angle, axis)` step for non-negligible angles.
+  ///
+  /// @param angle The rotation angle in radians.
+  /// @param axis The rotation axis in the XY-plane (`0` for `Rx`, `pi/2` for
+  /// `Ry`).
   void appendRStep(const double angle, const double axis) {
     if (!isNearZeroRotationAngle(angle)) {
       steps.emplace_back(SynthesisStep::Kind::R, angle, axis);
     }
   }
 
-  /**
-   * @brief Appends the decomposition for @p basis based on @p angles.
-   *
-   * @param angles The angles to use for the decomposition.
-   * @param basis The basis to use for the decomposition.
-   */
+  /// Appends the decomposition for @p basis based on @p angles.
+  ///
+  /// @param angles The angles to use for the decomposition.
+  /// @param basis The basis to use for the decomposition.
   void appendDecomposition(const EulerAngles& angles,
                            const SingleQubitBasis basis) {
     if (isNearZeroRotationAngle(angles.theta) &&
@@ -385,14 +361,12 @@ struct Unitary1QEulerPlan {
 };
 } // namespace
 
-/**
- * @brief Builds a gate plan for @p targetMatrix in @p basis without emitting
- * IR.
- *
- * @param targetMatrix Single-qubit unitary to synthesize.
- * @param basis Native gate basis.
- * @return Planned gate sequence and optional global phase.
- */
+/// Builds a gate plan for @p targetMatrix in @p basis without emitting
+/// IR.
+///
+/// @param targetMatrix Single-qubit unitary to synthesize.
+/// @param basis Native gate basis.
+/// @return Planned gate sequence and optional global phase.
 [[nodiscard]] static Unitary1QEulerPlan
 planUnitary1QEuler(const Matrix2x2& targetMatrix,
                    const SingleQubitBasis basis) {
@@ -406,16 +380,14 @@ planUnitary1QEuler(const Matrix2x2& targetMatrix,
   return plan;
 }
 
-/**
- * @brief Emits the gates described by @p plan and returns the output plus
- * phase.
- *
- * @param builder Builder for the emitted operations.
- * @param loc Location for the emitted operations.
- * @param qubit Input qubit value.
- * @param plan Precomputed synthesis plan.
- * @return Qubit value after all planned gates and the unmaterialized phase.
- */
+/// Emits the gates described by @p plan and returns the output plus
+/// phase.
+///
+/// @param builder Builder for the emitted operations.
+/// @param loc Location for the emitted operations.
+/// @param qubit Input qubit value.
+/// @param plan Precomputed synthesis plan.
+/// @return Qubit value after all planned gates and the unmaterialized phase.
 [[nodiscard]] static SynthesizedUnitary1Q
 emitUnitary1QEulerPlan(OpBuilder& builder, Location loc, Value qubit,
                        const Unitary1QEulerPlan& plan) {

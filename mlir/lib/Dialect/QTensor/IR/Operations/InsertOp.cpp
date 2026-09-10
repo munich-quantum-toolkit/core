@@ -40,10 +40,8 @@ struct FoldInsertAfterExtract final : OpRewritePattern<InsertOp> {
   }
 };
 
-/**
- * @brief Commutes a directly chained insert and extract at provably distinct
- * constant indices.
- */
+/// Commutes a directly chained insert and extract at provably distinct
+/// constant indices.
 struct CommuteAdjacentInsertExtractPattern final : OpRewritePattern<InsertOp> {
   using OpRewritePattern::OpRewritePattern;
 

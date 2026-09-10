@@ -58,10 +58,8 @@ using namespace qir;
 #define GEN_PASS_DEF_QCTOQIRBASE
 #include "mlir/Conversion/QCToQIR/QIRBase/QCToQIRBase.h.inc"
 
-/**
- * @brief Returns the result pointer the `qc::MeasureOp` @p op writes to, or
- * a null value if it does not write into a classical register.
- */
+/// Returns the result pointer the `qc::MeasureOp` @p op writes to, or
+/// a null value if it does not write into a classical register.
 static FailureOr<Value> resolveRegisterMeasurement(LoweringState& state,
                                                    Operation* op) {
   const auto it = state.cregMeasurements.find(op);
@@ -118,13 +116,10 @@ static LogicalResult moveTerminalMeasurements(Block& body,
 
 namespace {
 
-/**
- * @brief Converts `cbit.alloc` to static result
- * pointers represented by `llvm.inttoptr` operations
- *
- * @details
- * Allocate static result pointers for each bit in a classical register.
- */
+/// Converts `cbit.alloc` to static result
+/// pointers represented by `llvm.inttoptr` operations
+///
+/// Allocate static result pointers for each bit in a classical register.
 struct ConvertCBitAllocOp final : StatefulOpConversionPattern<cbit::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -211,24 +206,21 @@ struct ConvertMemRefAllocOp final
   }
 };
 
-/**
- * @brief Converts a qubit-register `memref.load` to `llvm.inttoptr`
- *
- * @details
- * Converts a load operation to an LLVM pointer by creating a constant with the
- * next available static qubit index and converting it to a pointer. The pointer
- * is cached in the lowering state for reuse.
- *
- * @par Example:
- * ```mlir
- * %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
- * ```
- * is converted to
- * ```mlir
- * %c0 = llvm.mlir.constant(0 : i64) : i64
- * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
- * ```
- */
+/// Converts a qubit-register `memref.load` to `llvm.inttoptr`
+///
+/// Converts a load operation to an LLVM pointer by creating a constant with the
+/// next available static qubit index and converting it to a pointer. The
+/// pointer is cached in the lowering state for reuse.
+///
+/// @par Example:
+/// ```mlir
+/// %q0 = memref.load %memref[%c0] : memref<3x!qc.qubit>
+/// ```
+/// is converted to
+/// ```mlir
+/// %c0 = llvm.mlir.constant(0 : i64) : i64
+/// %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+/// ```
 struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -264,9 +256,7 @@ struct ConvertMemRefLoadOp final : StatefulOpConversionPattern<memref::LoadOp> {
   }
 };
 
-/**
- * @brief Erases memref.dealloc during the QIR Base Profile conversion
- */
+/// Erases memref.dealloc during the QIR Base Profile conversion
 struct ConvertMemRefDeallocOp final
     : StatefulOpConversionPattern<memref::DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -279,24 +269,21 @@ struct ConvertMemRefDeallocOp final
   }
 };
 
-/**
- * @brief Converts qc.alloc to llvm.inttoptr
- *
- * @details
- * Converts a qubit allocation to an LLVM pointer by creating a constant
- * with the next available static qubit index and converting it to a pointer.
- * The pointer is cached in the lowering state for reuse.
- *
- * @par Example:
- * ```mlir
- * %q = qc.alloc : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * %c0 = llvm.mlir.constant(0 : i64) : i64
- * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
- * ```
- */
+/// Converts qc.alloc to llvm.inttoptr
+///
+/// Converts a qubit allocation to an LLVM pointer by creating a constant
+/// with the next available static qubit index and converting it to a pointer.
+/// The pointer is cached in the lowering state for reuse.
+///
+/// @par Example:
+/// ```mlir
+/// %q = qc.alloc : !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// %c0 = llvm.mlir.constant(0 : i64) : i64
+/// %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+/// ```
 struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -322,9 +309,7 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<AllocOp> {
   }
 };
 
-/**
- * @brief Erases qc.dealloc during the QIR Base Profile conversion
- */
+/// Erases qc.dealloc during the QIR Base Profile conversion
 struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -336,23 +321,20 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   }
 };
 
-/**
- * @brief Converts qc.measure to QIR measurement
- *
- * @details
- * For measurements with register information, a static result is used at
- * the given index + register offset. Otherwise a static result at
- * the next index is used.
- *
- * @par Example (without register):
- * ```mlir
- * %result = qc.measure %q : !qc.qubit -> i1
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
- * ```
- */
+/// Converts qc.measure to QIR measurement
+///
+/// For measurements with register information, a static result is used at
+/// the given index + register offset. Otherwise a static result at
+/// the next index is used.
+///
+/// @par Example (without register):
+/// ```mlir
+/// %result = qc.measure %q : !qc.qubit -> i1
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
+/// ```
 struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -391,9 +373,7 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<MeasureOp> {
 };
 } // namespace
 
-/**
- * @brief Populates conversion patterns for QC-to-QIR-Base lowering.
- */
+/// Populates conversion patterns for QC-to-QIR-Base lowering.
 static void populateQCToQIRBasePatterns(RewritePatternSet& patterns,
                                         QCToQIRTypeConverter& typeConverter,
                                         MLIRContext* ctx,
@@ -412,22 +392,19 @@ namespace {
 struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
   using QCToQIRBaseBase::QCToQIRBaseBase;
 
-  /**
-   * @brief Ensures proper block structure for QIR base profile
-   *
-   * @details
-   * The QIR base profile requires a specific 4-block structure:
-   * 1. **Entry block**: Contains constant operations and initialization
-   * 2. **Body block**: Contains reversible quantum operations (gates)
-   * 3. **Measurements block**: Contains irreversible operations (measure
-   * operations)
-   * 4. **Output block**: Contains output recording calls
-   *
-   * Blocks are connected with unconditional jumps (entry, body, measurements,
-   * output). This structure ensures proper QIR Base Profile semantics.
-   *
-   * @param main The main LLVM function to restructure
-   */
+  /// Ensures proper block structure for QIR base profile
+  ///
+  /// The QIR base profile requires a specific 4-block structure:
+  /// 1. **Entry block**: Contains constant operations and initialization
+  /// 2. **Body block**: Contains reversible quantum operations (gates)
+  /// 3. **Measurements block**: Contains irreversible operations (measure
+  /// operations)
+  /// 4. **Output block**: Contains output recording calls
+  ///
+  /// Blocks are connected with unconditional jumps (entry, body, measurements,
+  /// output). This structure ensures proper QIR Base Profile semantics.
+  ///
+  /// @param main The main LLVM function to restructure
   static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
     // Get the existing block
     auto* bodyBlock = &main.front();

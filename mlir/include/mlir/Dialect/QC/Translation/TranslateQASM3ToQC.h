@@ -34,7 +34,7 @@ struct QASM3ImportOptions {
   size_t maxOperations = 10'000'000;
 };
 
-/// @brief Translate an OpenQASM 3 program to a QC program.
+/// Translate an OpenQASM 3 program to a QC program.
 ///
 /// Frontend and lowering failures are reported through the diagnostic engine of
 /// @p context and result in a null return value.
@@ -46,7 +46,7 @@ struct QASM3ImportOptions {
 translateQASM3ToQC(llvm::SourceMgr& sourceMgr, MLIRContext* context,
                    const QASM3ImportOptions& options = {});
 
-/// @brief Translate an OpenQASM 3 program to a QC program.
+/// Translate an OpenQASM 3 program to a QC program.
 ///
 /// Frontend and lowering failures are reported through the diagnostic engine of
 /// @p context and result in a null return value.
