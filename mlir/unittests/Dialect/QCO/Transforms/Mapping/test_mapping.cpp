@@ -2674,9 +2674,10 @@ TEST_F(MappingPassFixture, DefaultTrialsMatchAvailableCPUs) {
     OwningOpRef<ModuleOp> automatic = input->clone();
     ASSERT_TRUE(succeeded(runPassPipeline(*automatic, "place-and-route")));
     ASSERT_TRUE(succeeded(verify(*automatic)));
-    for (const auto& options :
-         {MappingPassOptions{},
-          MappingPassOptions{.ntrials = expectedTrials}}) {
+    for (const auto& options : {
+             MappingPassOptions{},
+             MappingPassOptions{.ntrials = expectedTrials},
+         }) {
       OwningOpRef<ModuleOp> explicitOptions = input->clone();
       PassManager pm(context.get());
       pm.addPass(createMappingPass(options));
