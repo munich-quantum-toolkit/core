@@ -120,6 +120,40 @@ attributes #1 = { "irreversible" }
   EXPECT_EQ(countCallsTo(*module, "must_not_run"), 0U);
 }
 
+TEST(IRRewriter, FindsBoundaryAcrossReverseOrderedBlocks) {
+  constexpr llvm::StringRef ir = R"(
+define i64 @main() #0 {
+entry:
+  call void @prepare()
+  br label %first
+last:
+  call void @measure()
+  ret i64 0
+middle:
+  call void @measure()
+  br label %last
+first:
+  call void @measure()
+  call void @measure()
+  br label %middle
+}
+declare void @prepare()
+declare void @measure() #1
+attributes #0 = { "entry_point" "qir_profiles"="base_profile" }
+attributes #1 = { "irreversible" }
+)";
+  llvm::LLVMContext context;
+  llvm::SMDiagnostic error;
+  auto llvmModule = llvm::parseAssemblyString(ir, error, context);
+  ASSERT_NE(llvmModule, nullptr);
+  ASSERT_FALSE(llvm::verifyModule(*llvmModule));
+
+  EXPECT_TRUE(qir::prepareForStateExtraction(*llvmModule->getFunction("main")));
+  EXPECT_EQ(countCallsTo(*llvmModule, "prepare"), 1U);
+  EXPECT_EQ(countCallsTo(*llvmModule, "measure"), 0U);
+  EXPECT_FALSE(llvm::verifyModule(*llvmModule));
+}
+
 TEST(IRRewriter, RejectsIndependentIrreversibleRegions) {
   constexpr llvm::StringRef ir = R"(
 define i64 @main() #0 {
@@ -141,11 +175,17 @@ attributes #1 = { "irreversible" }
   llvm::SMDiagnostic error;
   auto module = llvm::parseAssemblyString(ir, error, context);
   ASSERT_NE(module, nullptr);
+  ASSERT_FALSE(llvm::verifyModule(*module));
   auto* entryPoint = module->getFunction("main");
   ASSERT_NE(entryPoint, nullptr);
+  std::string before;
+  llvm::raw_string_ostream(before) << *module;
 
   EXPECT_THROW(qir::prepareForStateExtraction(*entryPoint),
                std::invalid_argument);
+  std::string after;
+  llvm::raw_string_ostream(after) << *module;
+  EXPECT_EQ(after, before);
 }
 
 TEST(IRRewriter, RequiresBaseProfile) {

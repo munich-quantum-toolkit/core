@@ -97,9 +97,10 @@ releases may include breaking changes.
 - ✨ Support DDSIM QDMI statevector extraction for Adaptive Profile QIR with
   classical control flow, dynamic allocation, and terminal measurements. Retain
   the uncollapsed state after eligible OpenQASM and QIR sampling for lazy
-  statevector and probability queries ([#2494]) ([**@burgholzer**]).
-- ✨ Expose ordered shots from DDSIM QDMI QIR jobs, with matching histograms
-  ([#2368]) ([**@burgholzer**])
+  statevector and probability queries, with sparse entries in ascending basis
+  order ([#2494]) ([**@burgholzer**]).
+- ✨ Expose ordered shots from DDSIM QDMI QIR jobs, with matching histograms for
+  variable-length recorded outputs ([#2368]) ([**@burgholzer**])
 - 🐳 Add dev container configuration for a consistent local development
   environment ([#1786]) ([**@denialhaag**])
 

@@ -19,6 +19,7 @@
 #include "qdmi/common/Common.hpp"
 
 #include <atomic>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -31,6 +32,7 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -200,9 +202,9 @@ private:
   /// measurements are used).
   dd::CVec stateVec_;
 
-  /// The sparse state vector for the job (only available if no mid-circuit
-  /// measurements are used).
-  dd::SparseCVec stateVecSparse_;
+  /// Sparse amplitudes in ascending basis-index order (only available if no
+  /// mid-circuit measurements are used).
+  std::vector<std::pair<size_t, std::complex<dd::fp>>> stateVecSparse_;
 
   /// One-time flags to lazily materialize vectors in a thread-safe way
   std::once_flag stateVecOnce_;

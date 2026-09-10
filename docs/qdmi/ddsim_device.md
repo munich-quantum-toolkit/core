@@ -70,6 +70,13 @@ one prepared DD; other QIR programs run once per shot. See the
 [QIR execution contract](../qir/index.md) for eligibility and resource limits.
 OpenQASM classical registers use reverse declaration order, with each register
 most-significant-bit first. QIR samples follow the program's recorded outputs.
+Adaptive QIR shots can record different numbers of bits; their histogram retains
+these variable-length outcomes.
+
+Sparse statevector and probability results use ascending numerical basis-index
+order. Their keys and values share that order. Sparse exports require at most 64
+qubits on a 64-bit platform; wider states return `QDMI_ERROR_NOTSUPPORTED`
+because their basis indices do not fit the sparse representation.
 
 ## Compile and execute
 

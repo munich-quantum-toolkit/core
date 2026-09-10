@@ -303,6 +303,64 @@ TEST(ResultsSampling, EmptyQASM3YieldsEmptyHistogram) {
   }
 }
 
+TEST(ResultsSampling, AdaptiveHistogramUsesActualKeyLengths) {
+  constexpr std::string_view program = R"(
+define i64 @main() #0 {
+entry:
+  call void @__quantum__rt__initialize(ptr null)
+  call void @__quantum__qis__h__body(ptr null)
+  call void @__quantum__qis__mz__body(ptr null, ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  %bit = call i1 @__quantum__rt__read_result(ptr null)
+  br i1 %bit, label %extra, label %done
+extra:
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
+  br label %done
+done:
+  ret i64 0
+}
+declare void @__quantum__rt__initialize(ptr)
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr) #1
+declare void @__quantum__rt__result_record_output(ptr, ptr)
+declare i1 @__quantum__rt__read_result(ptr)
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_qubits"="1" "required_num_results"="1" }
+attributes #1 = { "irreversible" }
+)";
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  ASSERT_EQ(qdmi_test::setProgram(
+                job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, program),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 64), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setSeed(job.job, 42), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+
+  const auto size = qdmi_test::querySize(job.job, QDMI_JOB_RESULT_HIST_KEYS);
+  ASSERT_EQ(size, 5U);
+  std::array<char, 6> buffer{};
+  buffer.fill('?');
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_get_results(job.job, QDMI_JOB_RESULT_HIST_KEYS,
+                                            size - 1, buffer.data(), nullptr),
+      QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(std::string_view(buffer.data(), buffer.size()), "??????");
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job.job,
+                                                  QDMI_JOB_RESULT_HIST_KEYS,
+                                                  size, buffer.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_STREQ(buffer.data(), "0,11");
+  EXPECT_EQ(buffer.back(), '?');
+
+  std::map<std::string, size_t> counts;
+  for (const auto& shot : getShots(job.job)) {
+    ++counts[shot];
+  }
+  const auto [keys, values] = qdmi_test::getHistogram(job.job);
+  EXPECT_EQ(keys, (std::vector<std::string>{"0", "11"}));
+  EXPECT_EQ(values, (std::vector<size_t>{counts["0"], counts["11"]}));
+}
+
 TEST(ResultsSampling, BufferTooSmallErrors) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};

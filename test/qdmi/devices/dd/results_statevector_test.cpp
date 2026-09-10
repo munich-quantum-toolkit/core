@@ -58,6 +58,88 @@ void expectBellState(const QDMI_Program_Format format,
 
 } // namespace
 
+TEST(ResultsStatevector, SparseResultsPreserveBasisOrderAndValuePairing) {
+  constexpr std::string_view program = R"(OPENQASM 3;
+include "stdgates.inc";
+qubit[3] q;
+ry(0.6) q[0];
+x q[1];
+h q[2];
+s q[2];
+)";
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  ASSERT_EQ(qdmi_test::setProgram(job.job, QDMI_PROGRAM_FORMAT_QASM3, program),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 0), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+
+  const auto probabilities = qdmi_test::getSparseProbabilities(job.job);
+  const auto state = qdmi_test::getSparseState(job.job);
+  const std::vector<std::string> keys{"010", "011", "110", "111"};
+  EXPECT_EQ(state.first, keys);
+  EXPECT_EQ(probabilities.first, keys);
+  ASSERT_EQ(state.second.size(), keys.size());
+  ASSERT_EQ(probabilities.second.size(), keys.size());
+  const auto cosine = std::cos(0.3) / std::numbers::sqrt2;
+  const auto sine = std::sin(0.3) / std::numbers::sqrt2;
+  const std::array<std::complex<double>, 4> expected{
+      std::complex{cosine, 0.},
+      std::complex{sine, 0.},
+      std::complex{0., cosine},
+      std::complex{0., sine},
+  };
+  for (size_t i = 0; i < keys.size(); ++i) {
+    EXPECT_NEAR(std::abs(state.second[i] - expected[i]), 0., 1e-12);
+    EXPECT_NEAR(probabilities.second[i], std::norm(expected[i]), 1e-12);
+  }
+  EXPECT_EQ(qdmi_test::getSparseState(job.job), state);
+  EXPECT_EQ(qdmi_test::getSparseProbabilities(job.job), probabilities);
+}
+
+TEST(ResultsStatevector, SparseResultsRespectBasisIndexWidth) {
+  constexpr size_t maxWidth = std::numeric_limits<size_t>::digits;
+  for (const auto width : {maxWidth, maxWidth + 1}) {
+    SCOPED_TRACE(width);
+    const auto program =
+        "define i64 @main() #0 {\n"
+        "call void @__quantum__qis__x__body(ptr inttoptr (i64 " +
+        std::to_string(width - 1) +
+        " to ptr))\nret i64 0\n}\n"
+        "declare void @__quantum__qis__x__body(ptr)\n"
+        "attributes #0 = { \"entry_point\" \"qir_profiles\"=\"base_profile\" "
+        "\"required_num_qubits\"=\"" +
+        std::to_string(width) + "\" }\n";
+    const qdmi_test::SessionGuard session{};
+    const qdmi_test::JobGuard job{session.session};
+    ASSERT_EQ(qdmi_test::setProgram(job.job, QDMI_PROGRAM_FORMAT_QIRBASESTRING,
+                                    program),
+              QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::setShots(job.job, 0), QDMI_SUCCESS);
+    ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+    QDMI_Job_Status status{};
+    ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(job.job, &status), QDMI_SUCCESS);
+    ASSERT_EQ(status, QDMI_JOB_STATUS_DONE);
+    if (width == maxWidth) {
+      const auto [keys, values] = qdmi_test::getSparseState(job.job);
+      EXPECT_EQ(keys,
+                std::vector<std::string>{"1" + std::string(width - 1, '0')});
+      EXPECT_EQ(values, std::vector<std::complex<double>>{1.});
+    } else {
+      for (const auto result : {
+               QDMI_JOB_RESULT_STATEVECTOR_SPARSE_KEYS,
+               QDMI_JOB_RESULT_STATEVECTOR_SPARSE_VALUES,
+               QDMI_JOB_RESULT_PROBABILITIES_SPARSE_KEYS,
+               QDMI_JOB_RESULT_PROBABILITIES_SPARSE_VALUES,
+           }) {
+        EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job.job, result, 0,
+                                                        nullptr, nullptr),
+                  QDMI_ERROR_NOTSUPPORTED);
+      }
+    }
+  }
+}
+
 TEST(ResultsStatevector, SamplingRetainsStateWithoutChangingSamples) {
   const auto base = qdmi_test::getQIRProgram("BellPairStatic.ll");
   auto adaptive = base;
