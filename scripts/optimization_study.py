@@ -92,6 +92,7 @@ def main() -> None:
                 "python",
                 "mlir",
                 "cmake",
+                "vendor",
                 "CMakeLists.txt",
                 "pyproject.toml",
                 "uv.lock",
