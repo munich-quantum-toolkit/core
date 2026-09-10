@@ -47,7 +47,7 @@ template <typename T>
   return constantFromScalar(builder, loc, std::get<T>(parameter));
 }
 
-/// Verify that each statically known floating-point parameter is finite.
+/// Verify that direct floating-point constant parameters are finite.
 [[nodiscard]] LogicalResult
 verifyFiniteConstantParameters(Operation* operation, ValueRange parameters);
 

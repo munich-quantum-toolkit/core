@@ -24,9 +24,8 @@ def UnitaryOpInterface : OpInterface<"UnitaryOpInterface"> {
         The interface enables uniform introspection and composition capabilities
         across all unitary operations in the QC dialect.
 
-        Every statically known floating-point value in a parameter expression
-        must be finite. Dynamic parameter values have the same runtime
-        precondition.
+        Gate parameters must be finite, including values produced at runtime.
+        Operation verification only checks direct constants as a sanity check.
     }];
 
   let cppNamespace = "::mlir::qc";

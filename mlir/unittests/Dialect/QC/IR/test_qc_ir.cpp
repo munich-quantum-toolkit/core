@@ -728,8 +728,7 @@ TEST_F(QCTest, UnitaryVerifierRejectsNonFiniteConstantParameters) {
           func.func @main(%input: f64) {
             %q = qc.alloc : !qc.qubit
             %infinity = arith.constant 0x7FF0000000000000 : f64
-            %theta = arith.addf %input, %infinity : f64
-            qc.rx(%theta) %q : !qc.qubit
+            qc.rx(%infinity) %q : !qc.qubit
             qc.dealloc %q : !qc.qubit
             return
           }

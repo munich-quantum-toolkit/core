@@ -116,6 +116,11 @@ static LogicalResult verifyIndex(Operation* operation, Value registerValue,
 /// Return nullopt for an unknown load, an engaged null Value for zero
 /// initialization, or a non-null Value for a known stored bit.
 static std::optional<Value> findKnownLoadValue(LoadOp load) {
+  auto previousLoad = dyn_cast_if_present<LoadOp>(load->getPrevNode());
+  if (previousLoad && previousLoad.getReg() == load.getReg() &&
+      previousLoad.getIndex() == load.getIndex()) {
+    return previousLoad.getResult();
+  }
   const auto loadIndex = getConstantIntValue(load.getIndex());
   for (auto* candidate = load->getPrevNode(); candidate != nullptr;
        candidate = candidate->getPrevNode()) {
