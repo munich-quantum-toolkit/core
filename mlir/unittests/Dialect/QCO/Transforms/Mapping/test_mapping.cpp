@@ -54,6 +54,7 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/LogicalResult.h"
+#include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <cassert>
@@ -2643,6 +2644,46 @@ TEST_F(MappingPassFixture, RejectInvalidOptionsBeforeMutation) {
               std::string::npos)
         << diagnostics;
     EXPECT_EQ(printModule(*moduleOp), before);
+  }
+}
+
+TEST_F(MappingPassFixture, DefaultTrialsMatchAvailableCPUs) {
+  const auto expectedTrials =
+      llvm::hardware_concurrency().compute_thread_count();
+  ASSERT_GT(expectedTrials, 0U);
+  EXPECT_EQ(MappingPassOptions{}.ntrials, expectedTrials);
+
+  const auto target = getSquareGridTarget(3);
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> qubits;
+  for (size_t i = 0; i < 5; ++i) {
+    qubits.push_back(builder.allocQubit());
+  }
+  cxcz(builder, qubits);
+  for (Value qubit : qubits) {
+    builder.sink(qubit);
+  }
+  auto input = builder.finalize();
+  attachTestEnvironment(*input, target);
+
+  // The omitted textual option and the C++ default must use the same trials,
+  // even when the context executes them sequentially.
+  for (bool multithreading : {false, true}) {
+    context->enableMultithreading(multithreading);
+    OwningOpRef<ModuleOp> automatic = input->clone();
+    ASSERT_TRUE(succeeded(runPassPipeline(*automatic, "place-and-route")));
+    ASSERT_TRUE(succeeded(verify(*automatic)));
+    for (const auto& options : {
+             MappingPassOptions{},
+             MappingPassOptions{.ntrials = expectedTrials},
+         }) {
+      OwningOpRef<ModuleOp> explicitOptions = input->clone();
+      PassManager pm(context.get());
+      pm.addPass(createMappingPass(options));
+      ASSERT_TRUE(succeeded(pm.run(*explicitOptions)));
+      EXPECT_EQ(printModule(*automatic), printModule(*explicitOptions));
+    }
   }
 }
 

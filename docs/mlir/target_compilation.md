@@ -207,6 +207,12 @@ one-qubit synthesis does not need one. Two-qubit synthesis requires an entangler
 on every routing edge in at least one direction. A native operation does not
 need a synthesis basis.
 
+Mapping explores one initial-layout trial per available logical CPU by default,
+using LLVM's affinity-aware CPU count with a minimum of one. An explicit
+`ntrials` value overrides this default. Set both `ntrials` and `seed` on the
+`place-and-route` pass for reproducible results across machines. Disabling
+multithreading runs the same trials sequentially.
+
 Target synthesis preserves a native `gphase`. If the target does not support
 `gphase`, target synthesis preserves relative phase effects and removes only the
 unobservable global phase of the entry point.

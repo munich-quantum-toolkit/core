@@ -78,8 +78,8 @@ releases may include breaking changes.
 - ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
   [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
   [#1748], [#1805], [#1870], [#1904], [#1911], [#1951], [#1956], [#1997],
-  [#2016], [#2060], [#2179], [#2184], [#2185], [#2205], [#2240], [#2436])
-  ([**@MatthiasReumann**], [**@burgholzer**], [**@rturrado**],
+  [#2016], [#2060], [#2179], [#2184], [#2185], [#2205], [#2240], [#2436],
+  [#2500]) ([**@MatthiasReumann**], [**@burgholzer**], [**@rturrado**],
   [**@simon1hofmann**])
 - ✨ Add modifier and global-phase normalization passes ([#1986], [#1995],
   [#2015]) ([**@burgholzer**], [**@denialhaag**])
@@ -934,6 +934,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2500]: https://github.com/munich-quantum-toolkit/core/pull/2500
 [#2497]: https://github.com/munich-quantum-toolkit/core/pull/2497
 [#2494]: https://github.com/munich-quantum-toolkit/core/pull/2494
 [#2493]: https://github.com/munich-quantum-toolkit/core/pull/2493
