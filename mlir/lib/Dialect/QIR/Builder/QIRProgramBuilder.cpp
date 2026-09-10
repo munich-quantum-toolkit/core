@@ -158,7 +158,7 @@ Value QIRProgramBuilder::allocQubit() {
     qubit = staticQubit(static_cast<int64_t>(numQubits));
   }
 
-  qubitPtrs.insert(qubit);
+  qubitPtrs.push_back(qubit);
 
   return qubit;
 }
@@ -227,7 +227,7 @@ Value QIRProgramBuilder::getResult(int64_t index, bool record,
       auto zero = LLVM::ZeroOp::create(*this, ptrType);
       result = LLVM::CallOp::create(*this, declaration, zero.getResult())
                    .getResult();
-      resultPtrs.insert(result);
+      resultPtrs.push_back(result);
     } else {
       result = createPointerFromIndex(*this, getLoc(), index);
     }
@@ -278,7 +278,7 @@ QIRProgramBuilder::allocQubitRegister(const int64_t size) {
     LLVM::CallOp::create(*this, allocFnDecl,
                          ValueRange{intConstant(size), array, zero});
 
-    qubitArrays.insert(array);
+    qubitArrays.push_back(array);
 
     for (int64_t i = 0; i < size; ++i) {
       auto index = intConstant(i);
@@ -330,7 +330,6 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   auto& reg = cregs.try_emplace(label).first->second;
   reg.label = label;
   reg.size = size;
-  reg.results.assign(size, Value{});
   reg.record = record;
 
   // Save current insertion point
@@ -354,10 +353,11 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
     LLVM::CallOp::create(*this, fnDec,
                          ValueRange{intConstant(size), array, zero});
 
-    resultArrays.insert(array);
+    resultArrays.push_back(array);
     reg.array = array;
   } else {
-    // Base Profile: Create static result pointers
+    /// Base Profile: Create static result pointers
+    reg.results.assign(size, Value{});
     for (int64_t i = 0; i < size; ++i) {
       // The results are recorded as part of the register
       reg.results[i] = staticResult(static_cast<int64_t>(numResults), false);
@@ -1048,19 +1048,23 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
   generateOutputRecording();
 
   if (isAdaptive) {
-    for (auto result : resultPtrs) {
+    if (!resultPtrs.empty()) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
       auto dec = getOrCreateFunctionDeclaration(*this, module,
                                                 QIR_RESULT_RELEASE, sig);
-      LLVM::CallOp::create(*this, dec, result);
+      for (auto result : resultPtrs) {
+        LLVM::CallOp::create(*this, dec, result);
+      }
     }
 
-    for (auto array : resultArrays) {
+    if (!resultArrays.empty()) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {getI64Type(), ptrType});
       auto dec = getOrCreateFunctionDeclaration(*this, module,
                                                 QIR_RESULT_ARRAY_RELEASE, sig);
-      auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
-      LLVM::CallOp::create(*this, dec, ValueRange{size, array});
+      for (auto array : resultArrays) {
+        auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
+        LLVM::CallOp::create(*this, dec, ValueRange{size, array});
+      }
     }
   }
 

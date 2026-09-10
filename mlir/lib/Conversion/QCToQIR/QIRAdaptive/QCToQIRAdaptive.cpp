@@ -697,21 +697,25 @@ struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
 
     builder.setInsertionPoint(state->outputBlock->getTerminator());
 
-    for (auto& [_, result] : state->scalarResults) {
+    if (!state->scalarResults.empty()) {
       auto sig = LLVM::LLVMFunctionType::get(voidType, {ptrType});
       auto dec = getOrCreateFunctionDeclaration(builder, main,
                                                 QIR_RESULT_RELEASE, sig);
-      LLVM::CallOp::create(builder, main->getLoc(), dec, result.pointer);
+      for (auto& [_, result] : state->scalarResults) {
+        LLVM::CallOp::create(builder, main->getLoc(), dec, result.pointer);
+      }
     }
 
-    for (auto array : state->resultArrays) {
+    if (!state->resultArrays.empty()) {
       auto sig = LLVM::LLVMFunctionType::get(voidType,
                                              {builder.getI64Type(), ptrType});
       auto dec = getOrCreateFunctionDeclaration(builder, main,
                                                 QIR_RESULT_ARRAY_RELEASE, sig);
-      auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
-      LLVM::CallOp::create(builder, main->getLoc(), dec,
-                           ValueRange{size, array});
+      for (auto array : state->resultArrays) {
+        auto size = array.getDefiningOp<LLVM::AllocaOp>().getArraySize();
+        LLVM::CallOp::create(builder, main->getLoc(), dec,
+                             ValueRange{size, array});
+      }
     }
   }
 

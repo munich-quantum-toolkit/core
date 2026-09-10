@@ -39,6 +39,7 @@
 #include "mlir/Target/LLVMIR/Export.h"
 
 #include "llvm/ADT/APInt.h"
+#include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Constants.h"
@@ -56,6 +57,7 @@
 #include <ostream>
 #include <string>
 #include <tuple>
+#include <variant>
 
 using namespace mlir;
 using namespace qir;
@@ -189,6 +191,98 @@ TEST_F(QIRTest, AdaptiveBuilderOwnsScalarAndRegisterResults) {
   });
   EXPECT_EQ(scalarReleases, 1);
   EXPECT_EQ(arrayReleases, 1);
+}
+
+TEST_F(QIRTest, AdaptiveBuilderReleasesEachResourceKindInAllocationOrder) {
+  QIRProgramBuilder builder(context.get());
+  builder.initialize();
+  std::array<SmallVector<Value>, 4> allocated;
+  for (int64_t i = 0; i < 12; ++i) {
+    auto qubit = builder.allocQubit();
+    allocated[0].push_back(qubit);
+    auto qubits = builder.allocQubitRegister(1);
+    allocated[1].push_back(qubits.value);
+    auto result = builder.measure(qubit, i, false);
+    allocated[2].push_back(result);
+    auto results = builder.allocClassicalBitRegister(1);
+    allocated[3].push_back(results.array);
+  }
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  std::array<SmallVector<Value>, 4> released;
+  moduleOp->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == QIR_QUBIT_RELEASE) {
+      released[0].push_back(call.getOperand(0));
+    } else if (call.getCallee() == QIR_QUBIT_ARRAY_RELEASE) {
+      released[1].push_back(call.getOperand(1));
+    } else if (call.getCallee() == QIR_RESULT_RELEASE) {
+      released[2].push_back(call.getOperand(0));
+    } else if (call.getCallee() == QIR_RESULT_ARRAY_RELEASE) {
+      released[3].push_back(call.getOperand(1));
+    }
+  });
+  EXPECT_EQ(released, allocated);
+}
+
+TEST_F(QIRTest, AdaptiveBuilderUsesAnArrayForWideClassicalRegisters) {
+  QIRProgramBuilder builder(context.get());
+  builder.initialize();
+  auto reg = builder.allocClassicalBitRegister(1000000);
+  EXPECT_TRUE(reg.results.empty());
+  EXPECT_TRUE(reg.array);
+  EXPECT_EQ(std::get<int64_t>(reg.size), 1000000);
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST_F(QIRTest, OutputRecordingReusesLabelsAcrossBatches) {
+  ClassicalRegister reg;
+  auto moduleOp = QIRProgramBuilder::build(
+      context.get(),
+      [&](QIRProgramBuilder& builder) {
+        reg = builder.allocClassicalBitRegister(2);
+        return builder.intConstant(0);
+      },
+      QIRProgramBuilder::Profile::Base);
+  ASSERT_TRUE(moduleOp);
+  auto main = getMainFunction(*moduleOp);
+  ASSERT_TRUE(main);
+  OpBuilder builder(main.getBody().back().getTerminator());
+  auto existing = createResultLabel(builder, main, "c0_0");
+  const DenseMap<int64_t, StaticResult> staticResults;
+  emitOutputRecording(builder, main, {reg}, staticResults);
+  EXPECT_EQ(existing.getGlobalName(), "qir.result_label_c0_0");
+  SmallVector<StringRef> labels;
+  for (auto global : moduleOp->getOps<LLVM::GlobalOp>()) {
+    labels.push_back(global.getSymName());
+  }
+  llvm::sort(labels);
+  EXPECT_EQ(labels, (SmallVector<StringRef>{"qir.result_label_c0",
+                                            "qir.result_label_c0_0",
+                                            "qir.result_label_c0_1"}));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST_F(QIRTest, ResultLabelsAvoidExistingFunctionSymbols) {
+  auto moduleOp =
+      QIRProgramBuilder::build(context.get(), [](QIRProgramBuilder& builder) {
+        return builder.intConstant(0);
+      });
+  ASSERT_TRUE(moduleOp);
+  OpBuilder builder(context.get());
+  builder.setInsertionPointToEnd(moduleOp->getBody());
+  auto function = LLVM::LLVMFuncOp::create(
+      builder, moduleOp->getLoc(), "qir.result_label_collision",
+      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(context.get()), {}));
+  auto address = createResultLabel(builder, *moduleOp, "collision");
+  auto global = moduleOp->lookupSymbol<LLVM::GlobalOp>(address.getGlobalName());
+  ASSERT_TRUE(global);
+  EXPECT_NE(global.getSymName(), function.getSymName());
+  EXPECT_EQ(global.getValueAttr(),
+            builder.getStringAttr(StringRef("collision\0", 10)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
 }
 
 TEST_F(QIRTest, AdaptiveBuilderDoesNotReleaseExplicitStaticResults) {

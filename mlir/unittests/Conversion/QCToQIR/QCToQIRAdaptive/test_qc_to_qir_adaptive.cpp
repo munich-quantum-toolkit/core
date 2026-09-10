@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/MQT/Transforms/Passes.h"
@@ -37,6 +38,7 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/TypeRange.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
 #include "mlir/Pass/PassManager.h"
@@ -51,6 +53,7 @@
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 using namespace mlir;
 
@@ -290,6 +293,110 @@ TEST(QCToQIRAdaptiveNativeTest, FusesStoresAcrossDisjointConstantIndices) {
   ASSERT_TRUE(succeeded(verify(*module)));
   EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
   EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, PreservesClassicalStoreFusionBarriers) {
+  for (const auto& [intervening, accepted] : {
+           std::pair{"", true},
+           {
+               "%extra = qc.alloc : !qc.qubit\n"
+               "qc.dealloc %extra : !qc.qubit\n",
+               true,
+           },
+           {"cbit.store %b, %r[%one] : !cbit.reg<2>\n", true},
+           {"cbit.store %b, %r[%zero] : !cbit.reg<2>\n", false},
+           {"cbit.store %b, %scratch[%one] : !cbit.reg<2>\n", false},
+           {
+               "cbit.store %b, %scratch[%one] : !cbit.reg<2>\n"
+               "cbit.store %b, %r[%one] : !cbit.reg<2>\n",
+               false,
+           },
+           {
+               "cbit.store %b, %r[%one] : !cbit.reg<2>\n"
+               "cbit.store %b, %scratch[%one] : !cbit.reg<2>\n",
+               false,
+           },
+           {"cbit.store %b, %r[%dynamic] : !cbit.reg<2>\n", false},
+           {"scf.if %condition { func.call @observe() : () -> () }\n", false},
+       }) {
+    SCOPED_TRACE(intervening);
+    MLIRContext context;
+    context
+        .loadDialect<qc::QCDialect, cbit::CBitDialect, mlir::mqt::MQTDialect,
+                     arith::ArithDialect, func::FuncDialect, scf::SCFDialect>();
+    auto source = std::string(R"mlir(module {
+      func.func private @observe()
+      func.func private @index() -> index
+      func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %scratch = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %condition = arith.constant false
+        %dynamic = func.call @index() : () -> index
+        %b = qc.measure %q : !qc.qubit -> i1
+        %a = qc.measure %q : !qc.qubit -> i1
+    )mlir") + intervening +
+                  R"mlir(
+        cbit.store %a, %r[%zero] : !cbit.reg<2>
+        qc.dealloc %q : !qc.qubit
+        return %r : !cbit.reg<2>
+      }
+    })mlir";
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    std::string before;
+    llvm::raw_string_ostream beforeStream(before);
+    moduleOp->print(beforeStream);
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnosed |=
+          diagnostic.str().find("cannot fuse this measurement/store pair") !=
+          std::string::npos;
+      return success();
+    });
+    LoweringState state;
+    EXPECT_EQ(succeeded(prepareClassicalResults(*moduleOp, state)), accepted);
+    EXPECT_EQ(diagnosed, !accepted);
+    if (!accepted) {
+      std::string after;
+      llvm::raw_string_ostream afterStream(after);
+      moduleOp->print(afterStream);
+      EXPECT_EQ(after, before);
+    }
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  }
+}
+
+TEST(QCToQIRAdaptiveNativeTest, ReleasesResultArraysInAllocationOrder) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  SmallVector<Value> registers;
+  for (size_t i = 0; i < 12; ++i) {
+    registers.push_back(builder.allocClassicalBitRegister(1));
+  }
+  builder.retype(TypeRange(registers));
+  auto moduleOp = builder.finalize(registers);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  SmallVector<Value> allocated;
+  SmallVector<Value> released;
+  moduleOp->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_RESULT_ARRAY_ALLOC) {
+      allocated.push_back(call.getOperand(1));
+    } else if (call.getCallee() == qir::QIR_RESULT_ARRAY_RELEASE) {
+      released.push_back(call.getOperand(1));
+    }
+  });
+  ASSERT_EQ(allocated.size(), 12);
+  EXPECT_EQ(released, allocated);
 }
 
 TEST(QCToQIRAdaptiveNativeTest, DynamicallyAllocatesScalarAndRegisterResults) {

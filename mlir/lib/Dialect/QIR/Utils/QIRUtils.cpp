@@ -290,24 +290,17 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
   return function;
 }
 
-LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
-                                    const StringRef label,
-                                    const StringRef symbolPrefix) {
-  // Save current insertion point
+static LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
+                                           StringRef label,
+                                           StringRef symbolPrefix,
+                                           SymbolTable& symbols,
+                                           LLVM::LLVMFuncOp main) {
   const OpBuilder::InsertionGuard guard(builder);
+  auto moduleOp = cast<ModuleOp>(symbols.getOp());
 
-  auto moduleOp = dyn_cast<ModuleOp>(op);
-  if (!moduleOp) {
-    moduleOp = op->getParentOfType<ModuleOp>();
-  }
-  if (!moduleOp) {
-    llvm::reportFatalInternalError("Module not found");
-  }
+  auto symbolName = builder.getStringAttr((symbolPrefix + "_" + label).str());
 
-  const auto symbolName =
-      builder.getStringAttr((symbolPrefix + "_" + label).str());
-
-  if (!moduleOp.lookupSymbol<LLVM::GlobalOp>(symbolName)) {
+  if (!symbols.lookup<LLVM::GlobalOp>(symbolName)) {
     const auto llvmArrayType = LLVM::LLVMArrayType::get(
         builder.getIntegerType(8), static_cast<unsigned>(label.size() + 1));
     const auto stringInitializer = builder.getStringAttr(label.str() + '\0');
@@ -320,11 +313,11 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
         LLVM::Linkage::Internal, symbolName, stringInitializer);
     globalOp->setAttr("addr_space", builder.getI32IntegerAttr(0));
     globalOp->setAttr("dso_local", builder.getUnitAttr());
+    symbolName = symbols.insert(globalOp);
   }
 
   // Create AddressOfOp
   // Shall be added to the first block of the `main` function in the module
-  auto main = getMainFunction(op);
   if (!main) {
     llvm::reportFatalInternalError("Main function not found");
   }
@@ -336,6 +329,20 @@ LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
       symbolName);
 
   return addressOfOp;
+}
+
+LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
+                                    StringRef label, StringRef symbolPrefix) {
+  auto moduleOp = dyn_cast<ModuleOp>(op);
+  if (!moduleOp) {
+    moduleOp = op->getParentOfType<ModuleOp>();
+  }
+  if (!moduleOp) {
+    llvm::reportFatalInternalError("Module not found");
+  }
+  SymbolTable symbols(moduleOp);
+  return createResultLabel(builder, op, label, symbolPrefix, symbols,
+                           getMainFunction(op));
 }
 
 Value createPointerFromIndex(OpBuilder& builder, const Location loc,
@@ -365,6 +372,19 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
   auto resultDec = getOrCreateFunctionDeclaration(builder, anchor,
                                                   QIR_RECORD_OUTPUT, resultSig);
 
+  auto main = getMainFunction(anchor);
+  if (!main) {
+    llvm::reportFatalInternalError("Main function not found");
+  }
+  SymbolTable symbols(main->getParentOfType<ModuleOp>());
+  const auto createLabel = [&](StringRef label) {
+    return createResultLabel(builder, anchor, label, "qir.result_label",
+                             symbols, main)
+        .getResult();
+  };
+
+  LLVM::LLVMFuncOp baseArrayDec;
+  LLVM::LLVMFuncOp adaptiveArrayDec;
   // Classical registers
   for (const auto& reg : classicalRegisters) {
     if (!reg.record) {
@@ -372,30 +392,31 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
     }
 
     auto size = resolveIntVariant(builder, loc, reg.size);
-    auto label = createResultLabel(builder, anchor, reg.label).getResult();
+    auto label = createLabel(reg.label);
 
     // Adaptive Profile: emit `__quantum__rt__result_array_record_output`
     if (reg.array) {
-      auto arraySig =
-          LLVM::LLVMFunctionType::get(voidType, {i64Type, ptrType, ptrType});
-      auto arrayDec = getOrCreateFunctionDeclaration(
-          builder, anchor, QIR_RESULT_ARRAY_RECORD_OUTPUT, arraySig);
-      LLVM::CallOp::create(builder, loc, arrayDec,
+      if (!adaptiveArrayDec) {
+        auto arraySig =
+            LLVM::LLVMFunctionType::get(voidType, {i64Type, ptrType, ptrType});
+        adaptiveArrayDec = getOrCreateFunctionDeclaration(
+            builder, anchor, QIR_RESULT_ARRAY_RECORD_OUTPUT, arraySig);
+      }
+      LLVM::CallOp::create(builder, loc, adaptiveArrayDec,
                            ValueRange{size, reg.array, label});
       continue;
     }
 
     // Base Profile: emit `__quantum__rt__array_record_output` followed by
     // `__quantum__rt__result_record_output` for each bit
-    auto arraySig =
-        LLVM::LLVMFunctionType::get(voidType, {builder.getI64Type(), ptrType});
-    auto arrayDec = getOrCreateFunctionDeclaration(
-        builder, anchor, QIR_ARRAY_RECORD_OUTPUT, arraySig);
-    LLVM::CallOp::create(builder, loc, arrayDec, ValueRange{size, label});
+    if (!baseArrayDec) {
+      auto arraySig = LLVM::LLVMFunctionType::get(voidType, {i64Type, ptrType});
+      baseArrayDec = getOrCreateFunctionDeclaration(
+          builder, anchor, QIR_ARRAY_RECORD_OUTPUT, arraySig);
+    }
+    LLVM::CallOp::create(builder, loc, baseArrayDec, ValueRange{size, label});
     for (auto [index, ptr] : llvm::enumerate(reg.results)) {
-      auto bitLabel = createResultLabel(builder, anchor,
-                                        reg.label + "_" + std::to_string(index))
-                          .getResult();
+      auto bitLabel = createLabel(reg.label + "_" + std::to_string(index));
       LLVM::CallOp::create(builder, loc, resultDec, ValueRange{ptr, bitLabel});
     }
   }
@@ -405,9 +426,7 @@ void emitOutputRecording(OpBuilder& builder, Operation* anchor,
     if (!result.record) {
       continue;
     }
-    auto label = createResultLabel(builder, anchor,
-                                   "__unnamed__" + std::to_string(index))
-                     .getResult();
+    auto label = createLabel("__unnamed__" + std::to_string(index));
     LLVM::CallOp::create(builder, loc, resultDec,
                          ValueRange{result.pointer, label});
   }
