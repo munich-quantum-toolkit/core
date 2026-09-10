@@ -83,8 +83,8 @@ monitoring.
 
 For a performance change, identify the workload, baseline, correctness checks,
 and relevant quality measures before implementation. Follow the
-[benchmark experiment rules](../AGENTS.md#benchmark-experiments), and link the
-self-contained `.agent/benchmarks/<scope>/` record from the plan. Keep the
+[benchmark experiment rules](../AGENTS.md#benchmark-experiments), including when
+to retain or discard the setup. Link retained setups from the plan. Keep the
 measured result and its limits in the completed decision record.
 
 ## Validation

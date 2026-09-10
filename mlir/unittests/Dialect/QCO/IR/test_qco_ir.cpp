@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
@@ -32,6 +33,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/AsmState.h"
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributes.h"
@@ -250,6 +252,285 @@ TEST_F(QCOTest, BuilderReturnsTrackedQubit) {
 
   EXPECT_DEATH(builder.x(qubit), "Invalid qubit value used");
   EXPECT_NO_FATAL_FAILURE(builder.x(output));
+}
+
+TEST_F(QCOTest, BuilderDisposesScalarsInDefinitionOrder) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> qubits;
+  for (int i = 0; i < 16; ++i) {
+    qubits.push_back(builder.h(builder.allocQubit()));
+  }
+  /// Results of the same operation are ordered by result position.
+  auto [control, target] = builder.cx(qubits[14], qubits[15]);
+  qubits[14] = control;
+  qubits[15] = target;
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  SmallVector<Value> sunk;
+  moduleOp->walk([&](SinkOp sink) { sunk.push_back(sink.getQubit()); });
+  /// Emission order is part of the reproducible builder output contract.
+  EXPECT_EQ(sunk, qubits);
+}
+
+TEST_F(QCOTest, BuilderReinsertsAndDisposesTensorsInStableOrder) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> tensors;
+  SmallVector<Value> qubits;
+  for (int reg = 0; reg < 16; ++reg) {
+    auto tensor = builder.qtensorAlloc(2);
+    for (int64_t index : {1, 0}) {
+      auto [next, qubit] = builder.qtensorExtract(tensor, index);
+      tensor = next;
+      qubits.push_back(builder.h(qubit));
+    }
+    tensors.push_back(tensor);
+  }
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  SmallVector<Value> inserted;
+  SmallVector<Value> disposed;
+  moduleOp->walk([&](qtensor::InsertOp insert) {
+    inserted.push_back(insert.getScalar());
+  });
+  moduleOp->walk([&](qtensor::DeallocOp dealloc) {
+    auto last = dealloc.getTensor().getDefiningOp<qtensor::InsertOp>();
+    ASSERT_TRUE(last);
+    auto first = last.getDest().getDefiningOp<qtensor::InsertOp>();
+    ASSERT_TRUE(first);
+    disposed.push_back(first.getDest());
+  });
+  EXPECT_EQ(inserted, qubits);
+  EXPECT_EQ(disposed, tensors);
+}
+
+TEST_F(QCOTest, BuilderPreparesTensorArgumentsWithoutConsumingCarriedScalars) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> args;
+  SmallVector<Value> qubits;
+  for (int reg = 0; reg < 16; ++reg) {
+    auto tensor = builder.qtensorAlloc(3);
+    Value carried;
+    for (int64_t index : {2, 1, 0}) {
+      auto [next, qubit] = builder.qtensorExtract(tensor, index);
+      tensor = next;
+      auto transformed = builder.h(qubit);
+      if (index == 1) {
+        carried = transformed;
+      } else {
+        qubits.push_back(transformed);
+      }
+    }
+    args.push_back(tensor);
+    args.push_back(carried);
+  }
+  auto results = builder.qcoIf(
+      true, args, [](ValueRange values) { return SmallVector<Value>(values); });
+  auto ifOp = results.front().getDefiningOp<IfOp>();
+  ASSERT_TRUE(ifOp);
+  SmallVector<Value> inserted;
+  for (auto insert : ifOp->getBlock()->getOps<qtensor::InsertOp>()) {
+    inserted.push_back(insert.getScalar());
+  }
+  EXPECT_EQ(inserted, qubits);
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+TEST_F(QCOTest, BuilderReinsertsBlockArgumentsInArgumentOrder) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto tensor = builder.qtensorAlloc(2);
+  auto [firstTensor, firstQubit] = builder.qtensorExtract(tensor, 0);
+  auto [secondTensor, secondQubit] = builder.qtensorExtract(firstTensor, 1);
+  builder.qcoIf(
+      true, ValueRange{secondTensor, secondQubit, firstQubit},
+      [&](ValueRange args) {
+        auto innerResults =
+            builder.qcoIf(true, ValueRange{args[0]}, [](ValueRange values) {
+              return SmallVector<Value>(values);
+            });
+        SmallVector<Value> inserted;
+        for (auto insert :
+             builder.getInsertionBlock()->getOps<qtensor::InsertOp>()) {
+          inserted.push_back(insert.getScalar());
+        }
+        EXPECT_EQ(inserted, SmallVector<Value>({args[1], args[2]}));
+        auto [nextTensor, nextSecond] =
+            builder.qtensorExtract(innerResults[0], 1);
+        auto [lastTensor, nextFirst] = builder.qtensorExtract(nextTensor, 0);
+        return SmallVector<Value>{lastTensor, nextSecond, nextFirst};
+      });
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+static ValueRange
+buildTensorControlFlow(QCOProgramBuilder& builder, ValueRange args,
+                       unsigned kind,
+                       function_ref<SmallVector<Value>(ValueRange)> first,
+                       function_ref<SmallVector<Value>(ValueRange)> second) {
+  switch (kind) {
+  case 0:
+    return builder.qcoIf(true, args, first, second);
+  case 1:
+    return builder.scfFor(
+        0, 2, 1, args, [&](Value, ValueRange values) { return first(values); });
+  case 2:
+    return builder.scfWhile(
+        args,
+        [&](ValueRange values) {
+          auto result = first(values);
+          builder.scfCondition(builder.boolConstant(false), result);
+          return result;
+        },
+        second);
+  case 3:
+    return builder.qcoIndexSwitch(0, args, {0}, {first}, second);
+  default:
+    llvm_unreachable("Unknown structured builder");
+  }
+}
+
+TEST_F(QCOTest, BuilderReinsertsPermutedControlFlowResultsInInputSlots) {
+  for (unsigned kind = 0; kind < 4; ++kind) {
+    for (bool carryTensors : {false, true}) {
+      SCOPED_TRACE(kind);
+      SCOPED_TRACE(carryTensors);
+      QCOProgramBuilder builder(context.get());
+      builder.initialize();
+      auto [firstTensor, firstQubit] =
+          builder.qtensorExtract(builder.qtensorAlloc(2), 0);
+      auto [secondTensor, secondQubit] =
+          builder.qtensorExtract(builder.qtensorAlloc(2), 1);
+      SmallVector<Value> args;
+      if (carryTensors) {
+        args.append({firstTensor, secondTensor});
+      }
+      const auto firstQubitIndex = args.size();
+      args.append({firstQubit, secondQubit});
+      const auto body = [&](ValueRange values) {
+        SmallVector<Value> result(values);
+        result[firstQubitIndex] = builder.h(values[firstQubitIndex + 1]);
+        result[firstQubitIndex + 1] = builder.x(values[firstQubitIndex]);
+        return result;
+      };
+      auto results = buildTensorControlFlow(builder, args, kind, body, body);
+      auto moduleOp = builder.finalize();
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+      SmallVector<qtensor::InsertOp> inserts;
+      for (auto insert : results.front()
+                             .getDefiningOp()
+                             ->getBlock()
+                             ->getOps<qtensor::InsertOp>()) {
+        inserts.push_back(insert);
+      }
+      ASSERT_EQ(inserts.size(), 2);
+      for (auto [index, insert] : llvm::enumerate(inserts)) {
+        EXPECT_EQ(insert.getScalar(), results[firstQubitIndex + index]);
+        auto tensor = index == 0 ? firstTensor : secondTensor;
+        EXPECT_EQ(insert.getDest(), carryTensors ? results[index] : tensor);
+        EXPECT_EQ(getConstantIntValue(insert.getIndex()), index);
+      }
+    }
+  }
+}
+
+TEST_F(QCOTest, BuilderPreservesTensorIndicesAcrossControlFlow) {
+  for (unsigned kind = 0; kind < 4; ++kind) {
+    for (bool dynamic : {false, true}) {
+      SCOPED_TRACE(kind);
+      SCOPED_TRACE(dynamic);
+      QCOProgramBuilder builder(context.get());
+      builder.initialize();
+      Value index = arith::ConstantIndexOp::create(builder, 0);
+      if (dynamic) {
+        index = arith::IndexCastOp::create(builder, builder.getIndexType(),
+                                           builder.intConstant(0));
+      }
+      auto [tensor, qubit] =
+          builder.qtensorExtract(builder.qtensorAlloc(1), index);
+      const auto body = [&](ValueRange args) {
+        auto full = builder.qtensorInsert(args[1], args[0], index);
+        auto [next, extracted] = dynamic ? builder.qtensorExtract(full, index)
+                                         : builder.qtensorExtract(full, 0);
+        return SmallVector<Value>{next, builder.h(extracted)};
+      };
+      buildTensorControlFlow(builder, {tensor, qubit}, kind, body, body);
+      auto moduleOp = builder.finalize();
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    }
+  }
+}
+
+TEST_F(QCOTest, BuilderRejectsChangedTensorSlotsInEveryControlFlowBody) {
+  for (unsigned kind = 0; kind < 4; ++kind) {
+    for (bool changeFirst : {false, true}) {
+      if (kind == 1 && !changeFirst) {
+        continue;
+      }
+      SCOPED_TRACE(kind);
+      SCOPED_TRACE(changeFirst);
+      EXPECT_DEATH(
+          ([&] {
+            QCOProgramBuilder builder(context.get());
+            builder.initialize();
+            auto [tensor, qubit] =
+                builder.qtensorExtract(builder.qtensorAlloc(2), 0);
+            const auto body = [&](ValueRange args, bool change) {
+              auto full = builder.qtensorInsert(args[1], args[0], 0);
+              auto [next, extracted] =
+                  builder.qtensorExtract(full, change ? 1 : 0);
+              return SmallVector<Value>{next, extracted};
+            };
+            buildTensorControlFlow(
+                builder, {tensor, qubit}, kind,
+                [&](ValueRange args) { return body(args, changeFirst); },
+                [&](ValueRange args) { return body(args, !changeFirst); });
+          }()),
+          "must preserve the set of extracted tensor slots");
+    }
+  }
+}
+
+TEST_F(QCOTest, BuilderRejectsRegionLocalDynamicTensorIndices) {
+  EXPECT_DEATH(
+      ([&] {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        auto [tensor, qubit] =
+            builder.qtensorExtract(builder.qtensorAlloc(1), 0);
+        builder.qcoIf(true, ValueRange{tensor, qubit}, [&](ValueRange args) {
+          auto full = builder.qtensorInsert(args[1], args[0], 0);
+          Value index = arith::IndexCastOp::create(
+              builder, builder.getIndexType(), builder.intConstant(0));
+          auto [next, extracted] = builder.qtensorExtract(full, index);
+          return SmallVector<Value>{next, extracted};
+        });
+      }()),
+      "same dynamic index SSA value");
+}
+
+TEST_F(QCOTest, BuilderRejectsChangedTensorRegisterAssociations) {
+  EXPECT_DEATH(([&] {
+                 QCOProgramBuilder builder(context.get());
+                 builder.initialize();
+                 auto first = builder.qtensorAlloc(1);
+                 auto second = builder.qtensorAlloc(1);
+                 builder.qcoIf(true, ValueRange{first, second},
+                               [](ValueRange args) {
+                                 return SmallVector<Value>{args[1], args[0]};
+                               });
+               }()),
+               "must preserve each input's tensor register");
 }
 
 TEST_F(QCOTest, CleanupPreservesReturnedStaticQubit) {

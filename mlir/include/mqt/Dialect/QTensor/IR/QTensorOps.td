@@ -59,6 +59,7 @@ def AllocOp : QTensorOp<"alloc", [MemoryEffects<[MemAlloc]>]> {
   let builders = [OpBuilder<(ins "Value":$size)>];
 
   let hasVerifier = 1;
+  let hasCanonicalizer = 1;
 }
 
 def DeallocOp : QTensorOp<"dealloc", [MemoryEffects<[MemFree]>]> {

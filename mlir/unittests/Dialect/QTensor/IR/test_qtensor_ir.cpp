@@ -554,6 +554,31 @@ TEST_F(QTensorTest, ResetsOnFreshSlotsAreRemovedAcrossAWideTensor) {
   EXPECT_TRUE(succeeded(qco::verifyLinearity(*program)));
 }
 
+TEST_F(QTensorTest, ResetsOnUsedSlotsSurviveAcrossAWideTensor) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto tensor = builder.qtensorAlloc(128);
+  for (int phase = 0; phase < 2; ++phase) {
+    for (int64_t index = 0; index < 128; ++index) {
+      Value qubit;
+      std::tie(tensor, qubit) = builder.qtensorExtract(tensor, index);
+      if (phase == 1) {
+        qubit = builder.reset(qubit);
+      }
+      qubit = builder.h(qubit);
+      tensor = builder.qtensorInsert(qubit, tensor, index);
+    }
+  }
+  auto program = builder.finalize();
+  ASSERT_TRUE(succeeded(verify(*program)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*program)));
+  ASSERT_TRUE(succeeded(canonicalize(*program)));
+  EXPECT_EQ(countOps<qco::ResetOp>(*program), 128U);
+  EXPECT_EQ(countOps<qco::HOp>(*program), 256U);
+  EXPECT_TRUE(succeeded(verify(*program)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*program)));
+}
+
 TEST_F(QTensorTest, FreshSlotResetFoldingStopsAtUnknownIndices) {
   constexpr auto source = R"mlir(module {
     func.func @test(%index: index) {
