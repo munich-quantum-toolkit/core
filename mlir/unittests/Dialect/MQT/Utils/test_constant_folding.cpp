@@ -136,6 +136,16 @@ TEST_F(ConstantFoldingTest, attributeToDoubleUnsignedI128) {
   EXPECT_DOUBLE_EQ(*asDouble, std::ldexp(1.0, 127));
 }
 
+TEST_F(ConstantFoldingTest, valueToConstantAttrPreservesLiteralAttributes) {
+  auto floatAttr = builder->getF64FloatAttr(-0.0);
+  auto floatOp = arith::ConstantOp::create(*builder, floatAttr);
+  EXPECT_EQ(mlir::mqt::valueToConstantAttr(floatOp.getResult()), floatAttr);
+
+  auto indexOp = index::ConstantOp::create(*builder, 42);
+  EXPECT_EQ(mlir::mqt::valueToConstantAttr(indexOp.getResult()),
+            builder->getIndexAttr(42));
+}
+
 TEST_F(ConstantFoldingTest, valueToConstantDoubleNestedFold) {
   auto lhs = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(5.0));
   auto num = arith::ConstantOp::create(*builder, builder->getF64FloatAttr(1.0));

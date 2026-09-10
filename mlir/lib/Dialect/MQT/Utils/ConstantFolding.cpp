@@ -91,6 +91,10 @@ valueToConstantAttr(Value value,
 }
 
 std::optional<Attribute> valueToConstantAttr(Value value) {
+  Attribute literal;
+  if (matchPattern(value, m_Constant(&literal))) {
+    return literal;
+  }
   DenseMap<Value, std::optional<Attribute>> cache;
   return valueToConstantAttr(value, cache);
 }

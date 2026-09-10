@@ -356,8 +356,9 @@ computeOrderedWeylCoordinates(const Matrix4x4& u) {
     cstemp[i] = std::min(tmp, (WEYL_PI / 2.0) - tmp);
   }
   std::array<std::size_t, 3> order{0, 1, 2};
-  std::ranges::stable_sort(
-      order, [&](auto a, auto b) { return cstemp[a] < cstemp[b]; });
+  std::ranges::sort(order, [&](auto a, auto b) {
+    return std::pair{cstemp[a], a} < std::pair{cstemp[b], b};
+  });
   order = {order[1], order[2], order[0]};
   cs = {cs[order[0]], cs[order[1]], cs[order[2]]};
   {
