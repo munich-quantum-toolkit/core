@@ -1,11 +1,11 @@
 # QC/QCO pre-release performance and determinism audit
 
-Date: 2026-09-10. Audit baseline: `ad74680f1ef380456a1b89a810ef33ee8d218f69`. PR
-base: `9d6526f4827ed96f7a16880325c61fe725f2f737`. The original performance fixes
-are recorded at `37bda5bddf073039f90122d882f6f2eba98a7a38`; the final source is
-`f0b995a4450e7c93d4ef9141861cda6a1b674fd0`, including the index-provenance fix
-and main above. Scope: QC/QCO builders, conversion, QTensor canonicalization,
-and compiler/export boundaries, following
+Date: 2026-09-10. Audit baseline: `ad74680f1ef380456a1b89a810ef33ee8d218f69`.
+Local validation base: `9d6526f4827ed96f7a16880325c61fe725f2f737`. The original
+performance fixes are recorded at `37bda5bddf073039f90122d882f6f2eba98a7a38`;
+the final source is `f0b995a4450e7c93d4ef9141861cda6a1b674fd0`, including the
+index-provenance fix and main above. Scope: QC/QCO builders, conversion, QTensor
+canonicalization, and compiler/export boundaries, following
 [issue #2253](https://github.com/munich-quantum-toolkit/core/issues/2253).
 
 ## Result
@@ -14,8 +14,6 @@ All four confirmed findings are fixed, including the additional index-provenance
 bug found during the final audit. The final review confirmed no further defect
 in these changed paths. This does not clear the whole MLIR issue or extend the
 builder's supported control-flow subset.
-
-[Harness, raw measurements, plots, settings, and reproduction commands](../benchmarks/qc-qco-pre-release/README.md).
 
 ## Applied finding 4: preserve tensor indices across structured results
 
@@ -41,12 +39,11 @@ overloads. The API documents these builder limits; general QCO IR is not
 restricted by this builder check. No index hoisting or persistent analysis cache
 is introduced.
 
-The [minimal reproducer](../benchmarks/qc-qco-pre-release/escaping-index.cpp)
-still fails with the exact upstream builder and now verifies with the final
-builder. The historical intermediate revision reproduces the same original
-failure. Durable tests cover nested reinsertion, equivalent constants, shared
-dynamic indices, changed slots in every callback, changed registers, and
-region-local dynamic indices.
+The local reproducer failed with the exact upstream builder and verified with
+the final builder. The
+[regression tests](../../mlir/unittests/Dialect/QCO/IR/test_qco_ir.cpp) cover
+nested reinsertion, equivalent constants, shared dynamic indices, changed slots
+in every callback, changed registers, and region-local dynamic indices.
 
 ## Applied finding 1: deterministic live-value disposal and reinsertion
 
@@ -168,7 +165,7 @@ net: -46 lines possible.
 
 The final source `f0b995a44` was compared with the same `ad74680f1` baseline
 using five alternating process pairs and three timed samples after two warmups.
-The complete series, output hashes, and plot are retained as `comparison-pr.*`.
+The table summarizes the medians and complete sample ranges.
 
 | Workload                              | Baseline median (range), ms | Final median (range), ms |
 | ------------------------------------- | --------------------------: | -----------------------: |
@@ -195,15 +192,13 @@ are microbenchmarks, not whole-compiler speedup guarantees.
 - The final source was rebuilt with Release/Clang 23.1.1 and LLVM/MLIR 23.1.0.
   All **1,376 native tests** passed: QCO IR 587, QTensor IR 42, QC-to-QCO 178,
   QCO-to-QC 153, QC/QCO round trip 6, QCO utilities 192, QTensor utilities 4,
-  QTensor transforms 2, and compiler 212. Counts and exit statuses are in
-  `tests-pr.json`.
+  QTensor transforms 2, and compiler 212.
 - Full-file C++ lint from the fixed PR base `9d6526f48` selected all five
   changed source/test files and reported zero findings. Repository lint,
   `git diff --check`, and MLIR documentation generation passed.
 - The standalone index reproducer exits 1 with the baseline builder and 0 with
   the final builder. Its final output verifies and passes QCO linearity.
 - Native probe compilation, benchmark assertions, Python syntax checks, and plot
-  generation passed. Source and binary hashes are in `environment-pr.json`.
-  Historical measurements and their exact source commits remain available.
+  generation passed during the investigation.
 - All commits are signed and verified. These are local checks; hosted CI is
   reported separately. No sanitizer or hardware-execution result is claimed.

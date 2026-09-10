@@ -2,7 +2,7 @@
 
 Baseline: `ad74680f1ef380456a1b89a810ef33ee8d218f69`.
 
-Resolve the three findings in [the audit](../audits/qc-qco-pre-release-2253.md).
+Resolve the four findings in [the audit](../audits/qc-qco-pre-release-2253.md).
 The QCO builder retains hash lookup for tracking, emits tensors in register
 creation order, and orders scalar disposal and reinsertion by SSA definitions.
 Argument preparation groups live qubits once, excluding explicitly carried
@@ -25,9 +25,7 @@ single-argument preparation helper. The register snapshot is local to each
 structured operation; ordinary gate tracking remains unchanged.
 
 All four findings are implemented. Direct QCO export and overlapping PR findings
-remain outside this change. Main was integrated with a signed merge to retain
-the exact source commits referenced by the historical measurements.
+remain outside this change.
 
-Final validation and measurements are recorded in the audit and benchmark
-directory. Historical performance results are retained at their original source
-revisions, including the fresh-slot regression and sample spread.
+The audit summarizes validation, measured results, regressions, and sample
+spread at their original source revisions.

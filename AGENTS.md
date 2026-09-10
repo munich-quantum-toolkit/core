@@ -207,9 +207,14 @@ Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
 
 ## Benchmark experiments
 
-Keep one-off benchmarks in `.agent/benchmarks/<scope>/`, outside normal build
-and test targets. Include the harness, reproduction commands, exact revisions,
-environment, raw measurements, and generated before/after plots.
+Use `.agent/benchmarks/<scope>/` for temporary experiments, outside normal build
+and test targets. Small improvements do not require benchmark setups in the PR:
+summarize the workload, baseline, results, and limits in the PR or audit, and
+discard temporary harnesses, data, and plots before pushing if no longer useful.
+
+Retain benchmark setups for large features or major performance changes. Include
+the harness, reproduction commands, exact revisions, environment, raw
+measurements, and before/after plots.
 
 Run matched comparisons; check correctness and output quality alongside speed.
 Report sample spread, regressions, and limits. Keep old results tied to their
