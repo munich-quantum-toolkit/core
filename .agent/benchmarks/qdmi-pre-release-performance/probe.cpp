@@ -6,7 +6,6 @@
 #include "llvm/Support/Error.h"
 
 #include <algorithm>
-#include <array>
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
@@ -94,8 +93,6 @@ int main() {
     });
     std::cout << "checksum=" << sum << '\n';
   }
-  const auto payload = llvm::cantFail(
-      mlir::payloadSpecificationForProgramFormat(QDMI_PROGRAM_FORMAT_QASM3));
   for (size_t n : {1000, 10000, 100000}) {
     std::vector<mlir::CompilerTarget::SiteTuple> tuples;
     for (size_t i = 0; i < n; ++i)

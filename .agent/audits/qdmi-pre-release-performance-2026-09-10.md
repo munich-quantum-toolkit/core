@@ -3,11 +3,11 @@
 Date: 2026-09-10. Status: both confirmed findings applied; final re-audit
 complete.
 
-Baseline: upstream `main` at `ad74680f1ef380456a1b89a810ef33ee8d218f69`,
-refreshed before implementation and confirmed unchanged after the final checks.
-The implementation is on local branch `codex/qdmi-pre-release-performance` in
-`/tmp/core-qdmi-release-audit`. Its exact patch and source hashes are retained
-in the [benchmark record](../benchmarks/qdmi-pre-release-performance/README.md).
+Audit and measurement baseline: `ad74680f1ef380456a1b89a810ef33ee8d218f69`.
+Publication base: `9d6526f48`, after a clean rebase over three upstream commits.
+Those commits do not change the three production/test files in this diff. Exact
+measured source hashes and reproduction commands are retained in the
+[benchmark record](../benchmarks/qdmi-pre-release-performance/README.md).
 
 ## Result
 
@@ -16,12 +16,14 @@ re-audit. Both measured P2 findings are applied: native parsing and compilation
 release the Python GIL, and scalar site-property queries no longer construct an
 unused size-error string.
 
+The complexity review retained the production changes and regression cases. Git
+replaces the duplicate patch file; unused benchmark setup was removed.
+
 Scope follows
 [#2253](https://github.com/munich-quantum-toolkit/core/issues/2253): concrete
 copies, allocations, scaling problems, and observable nondeterminism in the QDMI
 component's MLIR-facing paths. This is not a sign-off for every MLIR pass or the
-unmerged QDMI 1.4 stack. Changes remain local; no PR or remote update was
-submitted for these fixes.
+unmerged QDMI 1.4 stack.
 
 ## Applied findings
 
@@ -135,17 +137,18 @@ topology distances remain lazy.
 ## Validation
 
 Environment: ARM64 DGX Spark, GCC 13.3/libstdc++, Release with IPO, LLVM/MLIR
-23.1.0, GIL-enabled CPython 3.14.7. All results below are local.
+23.1.0, GIL-enabled CPython 3.14.7. Publication checks below were rerun after
+the rebase. Timing samples above remain tied to the measurement baseline.
 
-- Release build: 211 compiler, 241 client, and 72 DDSIM tests pass (524 native).
-- Final Nox `tests-3.14`: 826 tests pass across `test_mlir.py`,
+- Release build: 212 compiler, 241 client, and 72 DDSIM tests pass (525 native).
+- Final Nox `tests-3.14`: 833 tests pass across `test_mlir.py`,
   `test_qco_dd.py`, `test_mlir_qiskit_translation.py`, QDMI compilation/client
-  tests, and the three focused Qiskit/PennyLane frontend files. This supersedes
-  the earlier 441-test selection and includes the five new GIL cases.
+  tests, and the three focused Qiskit/PennyLane frontend files, including the
+  five new GIL cases.
 - `uvx nox -s stubs` passes after the final binding change; generated stubs have
   no diff.
-- Full `uvx nox -s lint` and `uvx nox -s cpp-lint -- ad74680f1` pass. The latter
-  checks the whole changed binding file, with the index included in its diff.
+- Full `uvx nox -s lint` and `uvx nox -s cpp-lint -- 9d6526f48` pass. The latter
+  checks the whole changed binding file against the publication base.
 - The repository's C++ linter excludes ordinary public headers. A supplemental
   whole-header clang-tidy check for `Client.hpp` reports five existing naming
   and implicit-conversion warnings. The baseline header, supplied through a VFS
@@ -153,9 +156,9 @@ Environment: ARM64 DGX Spark, GCC 13.3/libstdc++, Release with IPO, LLVM/MLIR
 - Native probes, Python probes, five-process output comparison, and explicit
   experiment syntax/format checks pass. The generated plot was inspected.
 
-Reproduction commands, exact source patch, raw samples, spread, neutral results,
-and before/after plots are in the linked benchmark record. Detailed test,
-baseline-failure, and lint logs are in `/tmp/qdmi-release-evidence`.
+Reproduction commands, exact source revisions, raw samples, spread, neutral
+results, and before/after plots are in the linked benchmark record. Detailed
+test, baseline-failure, and lint logs are in `/tmp/qdmi-release-evidence`.
 
 No cloud execution, hardware jobs, Windows, ThreadSanitizer, free-threaded
 Python, or hosted CI validation was performed. Concurrent mutation of one

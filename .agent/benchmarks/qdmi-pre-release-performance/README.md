@@ -6,10 +6,9 @@ Date: 2026-09-10. These experiments cover the two applied findings in the
 ## Source and environment
 
 - Before: `ad74680f1ef380456a1b89a810ef33ee8d218f69`.
-- After: that revision plus [implementation.patch](implementation.patch).
-  Patch SHA-256: `043f6b7b1d27bf7e66a9059e6d0c16fe290921c2ac09afd44b1ffeb585db58b5`.
-  The patch contains the production changes and retained regression test.
-- Final source Git blobs: `register_mlir.cpp`
+- After: the same baseline with the three source blobs below. These changes
+  are retained in commit `5e4e63a084e5cf71658fb2ab0d9f635a3aab15eb`.
+- Measured source Git blobs: `register_mlir.cpp`
   `d0a648bac54b6a5872c867c845e857364f647db7`; `Client.hpp`
   `754db9c3de9c1689fd28889b9c7e016adb78df0f`; `test_mlir.py`
   `d76c2243dcc0e4ac05199d20a064bec320f2ed96`.
@@ -79,8 +78,15 @@ and maximum gap; native rows include all five sorted timing samples.
 
 ## Reproduction
 
-Use separate checkouts of the baseline and baseline plus the supplied patch.
-Apply the patch with `git apply --unidiff-zero path/to/implementation.patch`.
+Export the measured source changes from this PR's checkout:
+
+```bash
+git diff 5e4e63a^ 5e4e63a -- bindings/mlir/register_mlir.cpp include/mqt-core/qdmi/Client.hpp test/python/test_mlir.py > /tmp/qdmi-pre-release.patch
+```
+
+Use separate checkouts of the measurement baseline. Apply the exported patch
+to one with `git apply /tmp/qdmi-pre-release.patch`. This retains the measured
+base even though the implementation was rebased onto newer upstream commits.
 Copy this experiment directory into each checkout at the same relative path.
 Run the following from each checkout root. LLVM/MLIR 23 must be discoverable
 through the normal CMake package search; no machine-specific paths are needed
