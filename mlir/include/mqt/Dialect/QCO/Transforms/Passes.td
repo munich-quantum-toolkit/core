@@ -117,12 +117,18 @@ def QuantumLoopUnroll
 def UnrollLoopsForPayload : Pass<"unroll-loops-for-payload", "mlir::ModuleOp"> {
   let dependentDialects = ["mlir::arith::ArithDialect",
                            "mlir::scf::SCFDialect"];
-  let summary = "Unroll static loops unsupported by the selected payload";
+  let summary =
+      "Unroll static loops required by the payload or qubit placement";
   let description = [{
     Reads the selected payload from `mqt.target_env` and fully unrolls static
     `scf.for` operations that its counted-iteration capability does not cover.
+    Tensor-carrying loops remain indexed for Adaptive QIR on all-to-all targets
+    whose native operations have no site tuples. Other targets and payloads
+    require fixed quantum indices and specialize these loops. Scalar loops
+    remain when supported by the payload. Run QCO cleanup first to move
+    complete constant-slot tensor accesses outside structured control flow.
     The pass limits the total number of cloned body operations to 65,536.
-    Run constant propagation and QCO cleanup after this pass, then
+    Run constant propagation and QCO cleanup again after this pass, then
     `legalize-control-flow` to check the remaining branches and loops.
     After folding static branches, the pass checks that all SCF loops carry
     linear QCO state through iteration arguments instead of capturing it.

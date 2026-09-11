@@ -29,6 +29,9 @@
 
 namespace mlir {
 
+/// Register dialects and bufferization interfaces for constant tensor reads.
+void registerQIRClassicalTensorDialects(DialectRegistry& registry);
+
 /// Qubit allocation mode
 enum class AllocationMode : std::uint8_t {
   Unset,   //!< No allocation mode has been established yet.

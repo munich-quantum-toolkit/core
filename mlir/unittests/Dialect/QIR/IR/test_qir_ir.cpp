@@ -700,6 +700,61 @@ TEST_F(QIRTest, MetadataRejectsUnrepresentableStaticResourceCapacity) {
       OperationEquivalence::Flags::None));
 }
 
+TEST_F(QIRTest, MetadataCountsNullStaticResourceIds) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.func @__quantum__qis__mz__body(!llvm.ptr, !llvm.ptr)
+    llvm.func @main() attributes {passthrough = ["entry_point"]} {
+      %zero = llvm.mlir.zero : !llvm.ptr
+      llvm.call @__quantum__qis__mz__body(%zero, %zero)
+          : (!llvm.ptr, !llvm.ptr) -> ()
+      llvm.return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(*moduleOp)));
+  OpBuilder builder(context.get());
+  for (const auto* resource : {"required_num_qubits", "required_num_results"}) {
+    EXPECT_TRUE(
+        llvm::is_contained(getMainFunction(*moduleOp).getPassthroughAttr(),
+                           builder.getStrArrayAttr({resource, "1"})));
+  }
+}
+
+TEST_F(QIRTest, MetadataIncludesStaticQubitsLoadedFromRegisters) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    llvm.func @__quantum__qis__x__body(!llvm.ptr)
+    llvm.func @main(%index: i64) attributes {passthrough = ["entry_point"]} {
+      %two = llvm.mlir.constant(2 : i64) : i64
+      %seven = llvm.mlir.constant(7 : i64) : i64
+      %other_id = llvm.mlir.constant(99 : i64) : i64
+      %zero = llvm.mlir.zero : !llvm.ptr
+      %qubit = llvm.inttoptr %seven : i64 to !llvm.ptr
+      %other = llvm.inttoptr %other_id : i64 to !llvm.ptr
+      %qubits = llvm.alloca %two x !llvm.ptr : (i64) -> !llvm.ptr
+      %unrelated = llvm.alloca %two x !llvm.ptr : (i64) -> !llvm.ptr
+      llvm.store %zero, %qubits {qir.qubit_store} : !llvm.ptr, !llvm.ptr
+      %second = llvm.getelementptr %qubits[1] : (!llvm.ptr) -> !llvm.ptr, !llvm.ptr
+      llvm.store %qubit, %second {qir.qubit_store} : !llvm.ptr, !llvm.ptr
+      llvm.store %other, %unrelated : !llvm.ptr, !llvm.ptr
+      %slot = llvm.getelementptr %qubits[%index] : (!llvm.ptr, i64) -> !llvm.ptr, !llvm.ptr
+      %selected = llvm.load %slot : !llvm.ptr -> !llvm.ptr
+      llvm.call @__quantum__qis__x__body(%selected) : (!llvm.ptr) -> ()
+      llvm.return
+    }
+  })mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(attachQIRMetadata(moduleOp.get())));
+  auto main = getMainFunction(moduleOp.get());
+  OpBuilder builder(context.get());
+  EXPECT_TRUE(llvm::is_contained(
+      main.getPassthroughAttr(),
+      builder.getStrArrayAttr({"required_num_qubits", "8"})));
+}
+
 TEST_F(QIRTest, AdaptiveBuilderSelectsControlledSpecializationsByArity) {
   auto module = QIRProgramBuilder::build(
       context.get(),

@@ -370,6 +370,72 @@ struct ConvertMemRefAllocOp final
   }
 };
 
+/// Allocate local storage for qubit references without allocating qubits.
+struct ConvertQubitAllocaOp final : OpConversionPattern<memref::AllocaOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::AllocaOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto type = op.getType();
+    if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
+      return failure();
+    }
+    auto ptrType = LLVM::LLVMPointerType::get(op.getContext());
+    auto size = type.hasStaticShape()
+                    ? LLVM::ConstantOp::create(rewriter, op.getLoc(),
+                                               rewriter.getI64Type(),
+                                               type.getNumElements())
+                          .getResult()
+                    : adaptor.getDynamicSizes().front();
+    rewriter.replaceOpWithNewOp<LLVM::AllocaOp>(op, ptrType, ptrType, size);
+    return success();
+  }
+};
+
+/// Shape casts retain the same reference buffer and quantum allocation size.
+struct ConvertQubitCastOp final : StatefulOpConversionPattern<memref::CastOp> {
+  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::CastOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto type = dyn_cast<MemRefType>(op.getType());
+    if (!type || type.getRank() != 1 ||
+        !isa<QubitType>(type.getElementType())) {
+      return failure();
+    }
+    auto& sizes = getState().qregSizes;
+    if (auto size = sizes.lookup(op.getSource())) {
+      sizes[op.getResult()] = size;
+    }
+    rewriter.replaceOp(op, adaptor.getSource());
+    return success();
+  }
+};
+
+/// Store a qubit reference in a register slot.
+struct ConvertQubitStoreOp final : OpConversionPattern<memref::StoreOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(memref::StoreOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto type = op.getMemref().getType();
+    if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
+      return failure();
+    }
+    auto ptrType = LLVM::LLVMPointerType::get(op.getContext());
+    auto address =
+        LLVM::GEPOp::create(rewriter, op.getLoc(), ptrType, ptrType,
+                            adaptor.getMemref(), adaptor.getIndices()[0]);
+    auto store = rewriter.replaceOpWithNewOp<LLVM::StoreOp>(
+        op, adaptor.getValue(), address);
+    store->setAttr(QIR_QUBIT_STORE_ATTR, rewriter.getUnitAttr());
+    return success();
+  }
+};
+
 /// Converts `memref.load` to `llvm.load`
 ///
 /// @par Example:
@@ -625,8 +691,9 @@ static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
                                             MLIRContext* ctx,
                                             LoweringState& state) {
   populateQCToQIRPatterns(patterns, typeConverter, ctx, state);
+  patterns.add<ConvertQubitAllocaOp, ConvertQubitStoreOp>(typeConverter, ctx);
   patterns.add<ConvertCBitAllocOp, ConvertCBitLoadOp, ConvertCBitStoreOp,
-               ConvertMemRefAllocOp, ConvertMemRefLoadOp,
+               ConvertMemRefAllocOp, ConvertMemRefLoadOp, ConvertQubitCastOp,
                ConvertMemRefDeallocOp, ConvertQCAllocOp, ConvertQCDeallocOp,
                ConvertQCMeasureOp, ConvertQCResetOp>(typeConverter, ctx,
                                                      &state);
@@ -638,6 +705,11 @@ namespace {
 /// QIR attributes and module flags are attached by the separate metadata pass.
 struct QCToQIRAdaptive final : impl::QCToQIRAdaptiveBase<QCToQIRAdaptive> {
   using QCToQIRAdaptiveBase::QCToQIRAdaptiveBase;
+
+  void getDependentDialects(DialectRegistry& registry) const override {
+    QCToQIRAdaptiveBase::getDependentDialects(registry);
+    registerQIRClassicalTensorDialects(registry);
+  }
 
   /// Ensures proper block structure for QIR Adaptive Profile
   ///

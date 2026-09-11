@@ -25,7 +25,11 @@ add_mlir_library(
   MLIRMathToLLVM
   MLIRReconcileUnrealizedCasts
   MLIRArithToLLVM
+  MLIRArithTransforms
+  MLIRBufferizationTransforms
+  MLIRMemRefToLLVM
   MLIRMemRefDialect
+  MLIRTensorTransforms
   MLIRMQTDialect
   MLIRFuncDialect
   MLIRControlFlowDialect

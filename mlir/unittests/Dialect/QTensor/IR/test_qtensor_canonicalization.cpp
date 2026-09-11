@@ -18,6 +18,7 @@
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -50,6 +51,122 @@ protected:
     context_.loadDialect<qtensor::QTensorDialect, func::FuncDialect>();
   }
 };
+
+TEST_F(QTensorCanonicalizationTest, ScalarizesWhileOnlyWithConstantIndices) {
+  for (const bool dynamicIndex : {false, true}) {
+    SCOPED_TRACE(dynamicIndex);
+    auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+      func.func @main(%index: index) -> i32 {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %zero = arith.constant 0 : i32
+        %one = arith.constant 1 : i32
+        %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %count, %result = scf.while (%t = %tensor, %i = %zero)
+            : (tensor<2x!qco.qubit>, i32) -> (i32, tensor<2x!qco.qubit>) {
+          %rest, %q = qtensor.extract %t[%c0] : tensor<2x!qco.qubit>
+          %h = qco.h %q : !qco.qubit -> !qco.qubit
+          %out, %condition = qco.measure %h : !qco.qubit
+          %updated = qtensor.insert %out into %rest[%c0] : tensor<2x!qco.qubit>
+          scf.condition(%condition) %i, %updated : i32, tensor<2x!qco.qubit>
+        } do {
+        ^bb0(%i: i32, %t: tensor<2x!qco.qubit>):
+          %rest, %q = qtensor.extract %t[%c1] : tensor<2x!qco.qubit>
+          %out = qco.x %q : !qco.qubit -> !qco.qubit
+          %updated = qtensor.insert %out into %rest[%c1] : tensor<2x!qco.qubit>
+          %next = arith.addi %i, %one : i32
+          scf.yield %updated, %next : tensor<2x!qco.qubit>, i32
+        }
+        qtensor.dealloc %result : tensor<2x!qco.qubit>
+        return %count : i32
+      }
+    })mlir",
+                                                &context_);
+    ASSERT_TRUE(moduleOp);
+    auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+    if (dynamicIndex) {
+      moduleOp->walk([&](qtensor::ExtractOp extract) {
+        extract.getIndexMutable().assign(function.getArgument(0));
+      });
+      moduleOp->walk([&](qtensor::InsertOp insert) {
+        insert.getIndexMutable().assign(function.getArgument(0));
+      });
+    }
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    PassManager pm(&context_);
+    pm.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    scf::WhileOp loop;
+    moduleOp->walk([&](scf::WhileOp candidate) { loop = candidate; });
+    ASSERT_TRUE(loop);
+    EXPECT_EQ(loop.getNumOperands(), dynamicIndex ? 2U : 3U);
+    EXPECT_TRUE(loop.getResult(0).getType().isInteger(32));
+    size_t nestedExtracts = 0;
+    loop.walk([&](qtensor::ExtractOp) { ++nestedExtracts; });
+    EXPECT_EQ(nestedExtracts, dynamicIndex ? 2U : 0U);
+  }
+}
+
+TEST_F(QTensorCanonicalizationTest, ScalarizesForWithoutExpandingItsBody) {
+  for (const bool dynamicIndex : {false, true}) {
+    SCOPED_TRACE(dynamicIndex);
+    auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+      func.func @main(%limit: index, %index: index) -> i32 {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c4 = arith.constant 4 : index
+        %zero = arith.constant 0 : i32
+        %one = arith.constant 1 : i32
+        %tensor = qtensor.alloc(%c4) : tensor<4x!qco.qubit>
+        %count, %result = scf.for %iv = %c0 to %limit step %c1
+            iter_args(%n = %zero, %t = %tensor) -> (i32, tensor<4x!qco.qubit>) {
+          %rest, %q = qtensor.extract %t[%c1] : tensor<4x!qco.qubit>
+          %out = qco.x %q : !qco.qubit -> !qco.qubit
+          %updated = qtensor.insert %out into %rest[%c1] : tensor<4x!qco.qubit>
+          %next = arith.addi %n, %one : i32
+          scf.yield %next, %updated : i32, tensor<4x!qco.qubit>
+        } {test.loop = "preserved"}
+        qtensor.dealloc %result : tensor<4x!qco.qubit>
+        return %count : i32
+      }
+    })mlir",
+                                                &context_);
+    ASSERT_TRUE(moduleOp);
+    auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+    if (dynamicIndex) {
+      moduleOp->walk([&](qtensor::ExtractOp op) {
+        op.getIndexMutable().assign(function.getArgument(1));
+      });
+      moduleOp->walk([&](qtensor::InsertOp op) {
+        op.getIndexMutable().assign(function.getArgument(1));
+      });
+    }
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    PassManager pm(&context_);
+    pm.addPass(createCanonicalizerPass());
+    ASSERT_TRUE(succeeded(pm.run(*moduleOp)));
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+    auto loops = llvm::to_vector(function.getOps<scf::ForOp>());
+    ASSERT_EQ(loops.size(), 1);
+    auto loop = loops.front();
+    EXPECT_EQ(loop.getUpperBound(), function.getArgument(0));
+    EXPECT_TRUE(loop->hasAttr("test.loop"));
+    EXPECT_TRUE(loop.getResult(0).getType().isInteger(32));
+    EXPECT_EQ(isa<QubitType>(loop.getResult(1).getType()), !dynamicIndex);
+    size_t nestedExtracts = 0;
+    size_t gates = 0;
+    loop.walk([&](qtensor::ExtractOp) { ++nestedExtracts; });
+    loop.walk([&](XOp) { ++gates; });
+    EXPECT_EQ(nestedExtracts, dynamicIndex ? 1 : 0);
+    EXPECT_EQ(gates, 1);
+  }
+}
 
 TEST_F(QTensorCanonicalizationTest,
        CanonicalizesConstantIndexQTensorIfToScalarQubits) {

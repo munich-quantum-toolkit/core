@@ -13,10 +13,12 @@ from __future__ import annotations
 import gc
 import subprocess
 import sys
+from fractions import Fraction
 from typing import TYPE_CHECKING
 
 import pytest
 
+from mqt.core.bench import qpe, repeat_until_success
 from mqt.core.mlir import CompiledProgram, CompilerTarget, OutputFormat, compile_program, submit_program
 from mqt.core.qdmi import Job, ProgramFormat
 from mqt.core.qdmi.driver import open_device
@@ -25,6 +27,55 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 BELL = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c = measure q;'
+
+
+@pytest.mark.parametrize("method", [qpe.Method.STANDARD, qpe.Method.ITERATIVE])
+def test_qpe_device_execution(method: qpe.Method) -> None:
+    """Compile structured QPE and recover its exact phase through QIR execution."""
+    benchmark = qpe.QPE(qpe.Options(precision=8, phase=Fraction(3, 8), method=method))
+    device = open_device("mqt.ddsim.default")
+    compiled = compile_program(benchmark.generate(), target=device)
+    job = submit_program(compiled, target=device, num_shots=32, custom1=17)
+    job.wait()
+    counts = job.get_counts()
+    assert counts == {"01100000": 32}
+    assert benchmark.evaluate(counts).total_variation_distance == pytest.approx(0)
+
+
+@pytest.mark.parametrize(
+    "program_format",
+    [
+        ProgramFormat.QASM3,
+        ProgramFormat.QIR_BASE_STRING,
+        ProgramFormat.QIR_BASE_MODULE,
+        ProgramFormat.QIR_ADAPTIVE_STRING,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
+    ],
+)
+@pytest.mark.parametrize("swapped", [False, True])
+def test_result_bit_order(program_format: ProgramFormat, *, swapped: bool) -> None:
+    """Shots and counts preserve classical-bit order across payload formats."""
+    source = (
+        'OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; bit[2] a; bit b; '
+        f"x q[0]; a[{int(swapped)}] = measure q[0]; "
+        f"a[{int(not swapped)}] = measure q[1]; b = measure q[2];"
+    )
+    job = submit_program(source, target="mqt.ddsim.default", num_shots=4, program_format=program_format)
+    job.wait()
+    expected = "010" if swapped else "001"
+    assert job.get_shots() == [expected] * 4
+    assert job.get_counts() == {expected: 4}
+
+
+@pytest.mark.parametrize("data_qubits", [1, 4])
+def test_repeat_until_success_device_execution(data_qubits: int) -> None:
+    """Preserve phase-sensitive RUS results through target placement and QIR."""
+    benchmark = repeat_until_success.RepeatUntilSuccess(repeat_until_success.Options(data_qubits=data_qubits))
+    device = open_device("mqt.ddsim.default")
+    compiled = compile_program(benchmark.generate(), target=device)
+    job = submit_program(compiled, target=device, num_shots=4096, custom1=17)
+    job.wait()
+    assert benchmark.evaluate(job.get_counts()).total_variation_distance < 0.02
 
 
 @pytest.mark.parametrize("form", ["artifact", "source", "device_id"])
@@ -171,7 +222,7 @@ def test_payload_forward_branching(program_format: ProgramFormat) -> None:
     compiled = compile_program(source, target=device, program_format=program_format)
     job = submit_program(compiled, target=device, num_shots=32)
     job.wait()
-    assert set(job.get_counts()) <= ({"00", "01"} if program_format == ProgramFormat.QASM3 else {"00", "10"})
+    assert set(job.get_counts()) <= {"00", "01"}
     with pytest.raises(RuntimeError, match="Not supported"):
         job.get_dense_statevector()
     assert len(job.get_shots()) == 32

@@ -16,6 +16,8 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
     Scalar function arguments become in-place references; each function must
     return its qubit arguments as a positional suffix. Other results remain
     explicit, including qubits created by a function.
+    Inline functions with qubit-tensor arguments or results before conversion;
+    tensor references are local to a function.
 
     Before rewriting, prove that quantum values yielded by modifiers, branches,
     and loops correspond positionally to their region arguments. Reject wire
@@ -26,8 +28,13 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
     Determine the module's allocation mode before converting any function.
     Dynamic qubit sinks become deallocations; static qubit sinks are removed.
     Mixing static and dynamic allocation roots is unsupported.
+    Tensors of existing qubits must contain static qubits, assigned by placement,
+    and use local reference buffers. Static tensor release does not release
+    physical qubits. Dynamic tensors must restore every extracted slot before
+    region exit or deallocation. Unsupported lifetimes fail before rewriting.
   }];
 
   let dependentDialects = ["mlir::memref::MemRefDialect",
-                           "mlir::qc::QCDialect"];
+                           "mlir::scf::SCFDialect", "mlir::qc::QCDialect",
+                           "mlir::arith::ArithDialect"];
 }

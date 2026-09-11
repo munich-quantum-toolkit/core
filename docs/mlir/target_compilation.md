@@ -180,11 +180,10 @@ accepted.
 
 Target compilation requires structured QCO/SCF input. Producers of raw CFG
 branches must normalize them before target compilation; runtime assertions are
-allowed. The pipeline removes unused symbols, propagates constants, unrolls
-unsupported static loops, and then runs the standard QCO cleanup pipeline. It
-uses `unroll-loops-for-payload` before cleanup and `legalize-control-flow` after
-cleanup, so unrolling can expose constant branches before legality checks. The
-latter pass applies these structural capabilities to the remaining control flow:
+allowed. The pipeline removes unused symbols, propagates constants, and runs QCO
+cleanup before deciding which loops need expansion. It then specializes loops
+required by the selected payload or by placement, cleans up the resulting IR,
+and checks the remaining control flow with `legalize-control-flow`:
 
 | Capability           | Residual operations                                 |
 | -------------------- | --------------------------------------------------- |
@@ -194,13 +193,14 @@ latter pass applies these structural capabilities to the remaining control flow:
 | `multiway-branching` | `qco.index_switch` and classical `scf.index_switch` |
 
 A finite `scf.for` that exceeds the selected counted-iteration contract is fully
-unrolled when this clones at most 65,536 body operations. Cleanup runs again
-because unrolling can make nested bounds and conditions constant. An unsupported
-index switch is lowered to a linear chain of nested forward branches when that
-form fits the selected contract. Before expansion, the compiler checks the
-selected forward-branching nesting limit and a compiler safety limit of 256
-total control-flow levels, including enclosing control flow. This compiler limit
-is not a QDMI requirement and does not apply to switches retained under multiway
+unrolled when this clones at most 65,536 body operations. The same bound applies
+to loops unrolled for qubit placement. Cleanup runs again because unrolling can
+make nested bounds and conditions constant. An unsupported index switch is
+lowered to a linear chain of nested forward branches when that form fits the
+selected contract. Before expansion, the compiler checks the selected
+forward-branching nesting limit and a compiler safety limit of 256 total
+control-flow levels, including enclosing control flow. This compiler limit is
+not a QDMI requirement and does not apply to switches retained under multiway
 branching.
 
 Generic SCF branches cannot capture or return QCO qubits or quantum tensors; use
@@ -209,6 +209,28 @@ carry linear quantum state through their iteration arguments instead of
 capturing it. Both control-flow passes validate this loop input restriction
 before transforming loops or lowering switches. It is separate from QCO's
 exactly-one-SSA-use check.
+
+Cleanup shares constant-slot scalarization across `qco.if`, `scf.for`, and
+`scf.while`. Each region must extract distinct constant indices, reinsert every
+extracted qubit, and pass the tensor to its terminator. The loop body must
+return each tensor to its original iteration argument; a while condition may
+reorder the before-region results. Untouched slots remain outside the control
+flow. Runtime indices and incomplete or nested tensor updates do not match this
+scalarization.
+
+For Adaptive QIR on an all-to-all target whose operations have empty
+`site_tuples`, placement assigns physical sites to the allocation's slots and
+retains indexed registers. Loop bodies do not grow with their iteration counts.
+The site list requires space proportional to the register width. Capacity,
+physical site IDs, qubit origins, native operations, and payload limits are
+still checked. This path uses target metadata and does not depend on a device
+name.
+
+Other payloads, explicit topology, and site-specific operations require exact
+quantum addresses. Bounded specialization exposes those addresses before
+placement or routing. Residual unsupported tensor control flow produces a
+diagnostic before allocation changes. OpenQASM export continues to require
+static quantum indices.
 
 The supported constraints are `max-control-flow-nesting-depth` on all four
 capabilities, `max-iteration-count` on both iteration capabilities, and

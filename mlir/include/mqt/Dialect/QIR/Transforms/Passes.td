@@ -20,6 +20,9 @@ def QIRSetAttributesAndMetadata
     Static resource counts specify the capacity through the highest qubit ID
     used by a quantum instruction and the highest recorded result ID. Rejects
     IDs whose required capacity cannot fit in an unsigned 64-bit integer.
+    Qubit capacity includes static IDs in compiler-marked qubit stores,
+    including packed arguments and registers accessed with runtime indices.
+    Arbitrary external pointer aliases are not inferred.
   }];
   let options = [Option<"useAdaptive", "use-adaptive", "bool",
                         /*default= */ "true", "Specifies the profile.">];

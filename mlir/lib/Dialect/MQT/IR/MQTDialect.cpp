@@ -694,6 +694,13 @@ verifyInputGroup(FunctionOpInterface function, Operation* operation,
     return type.getRank() == 1 && (isa<qc::QubitType>(type.getElementType()) ||
                                    type.getElementType().isInteger(1));
   }
+  if (auto storage = dyn_cast<memref::AllocaOp>(operation)) {
+    auto type = storage.getType();
+    return type.getRank() == 1 && isa<qc::QubitType>(type.getElementType());
+  }
+  if (isa<qtensor::FromElementsOp>(operation)) {
+    return true;
+  }
   if (auto alloc = dyn_cast<qtensor::AllocOp>(operation)) {
     const auto type = alloc.getType();
     return type.getRank() == 1 && isa<qco::QubitType>(type.getElementType());

@@ -31,9 +31,11 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
@@ -106,6 +108,49 @@ static LogicalResult runQCToQIRAdaptiveConversionSimple(ModuleOp moduleOp) {
   PassManager pm(moduleOp.getContext());
   pm.addPass(createQCToQIRAdaptive());
   return pm.run(moduleOp);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersConstantTensorWithRuntimeIndex) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      scf::SCFDialect, tensor::TensorDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %angles = arith.constant dense<[0.25, 0.5]> : tensor<2xf64>
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %q = qc.alloc : !qc.qubit
+      scf.for %index = %zero to %two step %one {
+        %angle = tensor.extract %angles[%index] : tensor<2xf64>
+        qc.rz(%angle) %q : !qc.qubit
+      }
+      qc.dealloc %q : !qc.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t constantTables = 0;
+  moduleOp->walk([&](LLVM::GlobalOp global) {
+    if (global.getConstant() &&
+        isa<LLVM::LLVMArrayType>(global.getGlobalType())) {
+      ++constantTables;
+    }
+  });
+  EXPECT_EQ(constantTables, 1);
+  bool readsFloat = false;
+  moduleOp->walk(
+      [&](LLVM::LoadOp load) { readsFloat |= load.getType().isF64(); });
+  EXPECT_TRUE(readsFloat);
+  moduleOp->walk([&](Operation* operation) {
+    EXPECT_NE(operation->getName().getDialectNamespace(), "tensor");
+    EXPECT_NE(operation->getName().getDialectNamespace(), "memref");
+    EXPECT_NE(operation->getName().getDialectNamespace(), "bufferization");
+  });
 }
 
 TEST(QCToQIRAdaptiveNativeTest, UsesSharedAllocationVerifierForStandalonePass) {

@@ -96,6 +96,74 @@ static LogicalResult runQCOToQCConversion(ModuleOp moduleOp) {
   return pm.run(moduleOp);
 }
 
+TEST(QCOToQCRegressionTest, RejectsUnsupportedDynamicTensorOwnership) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, qtensor::QTensorDialect,
+                      arith::ArithDialect, func::FuncDialect>();
+  for (const auto* body : {
+           R"mlir(%q = qco.alloc : !qco.qubit
+             %tensor = qtensor.from_elements %q : tensor<1x!qco.qubit>
+             qtensor.dealloc %tensor : tensor<1x!qco.qubit>)mlir",
+           R"mlir(%size = arith.constant 2 : index
+             %index = arith.constant 1 : index
+             %tensor = qtensor.alloc(%size) : tensor<2x!qco.qubit>
+             %rest, %q = qtensor.extract %tensor[%index] : tensor<2x!qco.qubit>
+             qtensor.dealloc %rest : tensor<2x!qco.qubit>
+             qco.sink %q : !qco.qubit)mlir",
+           R"mlir(%size = arith.constant 2 : index
+             %index = arith.constant 1 : index
+             %tensor = qtensor.alloc(%size) : tensor<?x!qco.qubit>
+             %rest, %q = qtensor.extract %tensor[%index] : tensor<?x!qco.qubit>
+             qco.sink %q : !qco.qubit
+             qtensor.dealloc %rest : tensor<?x!qco.qubit>)mlir",
+       }) {
+    auto moduleOp = parseSourceString<ModuleOp>(
+        std::string(
+            "module { func.func @main() attributes {mqt.entry_point} {") +
+            body + " return } }",
+        &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    std::string diagnostics;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnostics += diagnostic.str();
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+    EXPECT_NE(diagnostics.find("QCO-to-QC requires"), std::string::npos);
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  }
+}
+
+TEST(QCOToQCRegressionTest, RequiresInliningTensorOwnershipAcrossFunctions) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, qtensor::QTensorDialect,
+                      func::FuncDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @release(%tensor: tensor<2x!qco.qubit>) {
+      qtensor.dealloc %tensor : tensor<2x!qco.qubit>
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  std::string diagnostics;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnostics += diagnostic.str();
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+  EXPECT_NE(
+      diagnostics.find("inline functions that accept or return qubit tensors"),
+      std::string::npos);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
 TEST(QCOToQCRegressionTest, RejectsBranchWirePermutation) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, arith::ArithDialect,
@@ -499,7 +567,7 @@ TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {
       2U);
 }
 
-TEST(QCOToQCRegressionTest, PreservesDynamicQTensorSlotSwapAcrossLoop) {
+TEST(QCOToQCRegressionTest, PreservesIndexedQTensorSlotSwapAcrossLoop) {
   DialectRegistry registry;
   registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
                   arith::ArithDialect, func::FuncDialect, memref::MemRefDialect,
@@ -512,8 +580,9 @@ module {
   func.func @main() attributes {mqt.entry_point} {
     %c0 = arith.constant 0 : index
     %c1 = arith.constant 1 : index
-    %c2 = arith.constant 2 : index
-    %tensor0 = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+    %q0 = qco.static 0 : !qco.qubit
+    %q1 = qco.static 1 : !qco.qubit
+    %tensor0 = qtensor.from_elements %q0, %q1 : tensor<2x!qco.qubit>
     %tensor1, %before = qtensor.extract %tensor0[%c0] : tensor<2x!qco.qubit>
     %another_c0 = arith.constant 0 : index
     %tensor2 = qtensor.insert %before into %tensor1[%another_c0] : tensor<2x!qco.qubit>
@@ -542,8 +611,8 @@ module {
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
 
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
-  EXPECT_TRUE(function.getBody().front().getOps<memref::StoreOp>().empty());
-  auto loops = llvm::to_vector(function.getBody().getOps<scf::ForOp>());
+  EXPECT_EQ(llvm::range_size(function.getOps<memref::StoreOp>()), 2U);
+  auto loops = llvm::to_vector(function.getOps<scf::ForOp>());
   ASSERT_EQ(loops.size(), 1U);
   EXPECT_EQ(llvm::range_size(loops[0].getBody()->getOps<memref::StoreOp>()),
             2U);

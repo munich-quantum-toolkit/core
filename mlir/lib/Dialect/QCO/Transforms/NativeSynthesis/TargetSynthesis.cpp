@@ -316,20 +316,27 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
 namespace {
 
 using SiteId = CompilerTarget::SiteId;
-using SiteMap = DenseMap<Value, SiteId>;
+/// A missing site denotes a placed operand whose address is selected at
+/// runtime.
+using SiteMap = DenseMap<Value, std::optional<SiteId>>;
 
 } // namespace
 
-static SmallVector<Value> getQubitValues(ValueRange values) {
-  return llvm::filter_to_vector(
-      values, [](Value value) { return isa<QubitType>(value.getType()); });
+static SmallVector<Value> getQubitValues(ValueRange values,
+                                         bool includeTensors = false) {
+  return llvm::filter_to_vector(values, [includeTensors](Value value) {
+    auto type = value.getType();
+    auto tensor = dyn_cast<RankedTensorType>(type);
+    return isa<QubitType>(type) || (includeTensors && tensor &&
+                                    isa<QubitType>(tensor.getElementType()));
+  });
 }
 
 /// Propagate exact sites, rejecting unknown inputs or inconsistent joins.
 static LogicalResult propagateSites(ValueRange inputs, ValueRange outputs,
-                                    SiteMap& sites) {
-  auto inputQubits = getQubitValues(inputs);
-  auto outputQubits = getQubitValues(outputs);
+                                    SiteMap& sites, bool indexed) {
+  auto inputQubits = getQubitValues(inputs, indexed);
+  auto outputQubits = getQubitValues(outputs, indexed);
   if (inputQubits.size() != outputQubits.size()) {
     return failure();
   }
@@ -349,11 +356,11 @@ static LogicalResult propagateSites(ValueRange inputs, ValueRange outputs,
 
 /// Visit each region once. Branches must agree and loop backedges must retain
 /// the entry sites; neither rule is implied by all-to-all placement.
-static FailureOr<SiteMap> collectStaticSites(Operation* root) {
+static FailureOr<SiteMap> collectStaticSites(Operation* root, bool indexed) {
   SiteMap sites;
   auto result = root->walk([&](Operation* operation, const WalkStage& stage) {
     const auto propagate = [&](ValueRange inputs, ValueRange outputs) {
-      if (succeeded(propagateSites(inputs, outputs, sites))) {
+      if (succeeded(propagateSites(inputs, outputs, sites, indexed))) {
         return WalkResult::advance();
       }
       operation->emitError("target compilation requires known, consistent "
@@ -381,7 +388,21 @@ static FailureOr<SiteMap> collectStaticSites(Operation* root) {
       return WalkResult::interrupt();
     }
     if (auto staticOp = dyn_cast<StaticOp>(operation)) {
-      sites.try_emplace(staticOp.getQubit(), staticOp.getIndex());
+      sites.try_emplace(staticOp.getQubit(),
+                        indexed ? std::nullopt
+                                : std::optional<SiteId>(staticOp.getIndex()));
+    } else if (indexed && isa<qtensor::FromElementsOp, qtensor::ExtractOp,
+                              qtensor::InsertOp>(operation)) {
+      for (auto input : getQubitValues(operation->getOperands(), true)) {
+        if (!sites.contains(input)) {
+          operation->emitError("indexed tensor operands must originate from "
+                               "placed qubits");
+          return WalkResult::interrupt();
+        }
+      }
+      for (auto output : operation->getResults()) {
+        sites.try_emplace(output, std::nullopt);
+      }
     } else if (isa<UnitaryOpInterface, ResetOp, MeasureOp>(operation)) {
       if (propagate(operation->getOperands(), operation->getResults())
               .wasInterrupted()) {
@@ -430,7 +451,7 @@ static SmallVector<SiteId, 2> getOperationSites(Operation* operation,
                                                 const SiteMap& sites) {
   SmallVector<SiteId, 2> result;
   for (Value qubit : getQubitValues(operation->getOperands())) {
-    result.push_back(sites.at(qubit));
+    result.push_back(*sites.at(qubit));
   }
   return result;
 }
@@ -488,13 +509,14 @@ static void reorderTwoQubitOperation(IRRewriter& rewriter,
 static LogicalResult synthesizeTargetOperation(
     IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
     const std::optional<CompilerTarget::SynthesisBasis>& basis,
-    ArrayRef<SiteId> sites, LastTwoQubitDecomposition& lastDecomposition) {
+    std::optional<ArrayRef<SiteId>> sites,
+    LastTwoQubitDecomposition& lastDecomposition) {
   Operation* const operation = op.getOperation();
-  if (target.supports(operation, sites)) {
+  if (sites ? target.supports(operation, *sites) : target.supports(operation)) {
     return success();
   }
-  if (op.isTwoQubit() && isOperandSwapInvariant(op) &&
-      target.supports(operation, std::array{sites[1], sites[0]})) {
+  if (sites && op.isTwoQubit() && isOperandSwapInvariant(op) &&
+      target.supports(operation, std::array{(*sites)[1], (*sites)[0]})) {
     reorderTwoQubitOperation(rewriter, op);
     return success();
   }
@@ -538,9 +560,11 @@ static LogicalResult synthesizeTargetOperation(
   if (!assignTwoQubitOpMatrix(op, matrix)) {
     return unsupported("its unitary matrix is not available at compile time");
   }
-  const bool reverseEntangler = !target.supports(*basis->entangler, sites);
+  const bool reverseEntangler =
+      sites && !target.supports(*basis->entangler, *sites);
   if (reverseEntangler &&
-      !target.supports(*basis->entangler, std::array{sites[1], sites[0]})) {
+      !target.supports(*basis->entangler,
+                       std::array{(*sites)[1], (*sites)[0]})) {
     return operation->emitError()
            << "no supported synthesis-basis placement is known for its "
               "static sites";
@@ -670,7 +694,8 @@ protected:
       signalPassFailure();
       return;
     }
-    auto sites = collectStaticSites(moduleOp);
+    const bool indexed = environment.environment().supportsIndexedQubits();
+    auto sites = collectStaticSites(moduleOp, indexed);
     if (failed(sites)) {
       signalPassFailure();
       return;
@@ -688,9 +713,13 @@ protected:
               (!unitary.isSingleQubit() && !unitary.isTwoQubit())) {
             return WalkResult::advance();
           }
+          auto operationSites = indexed ? SmallVector<SiteId, 2>{}
+                                        : getOperationSites(operation, *sites);
           const auto synthesized = synthesizeTargetOperation(
               rewriter, unitary, target, targetBasis,
-              getOperationSites(operation, *sites), lastDecomposition);
+              indexed ? std::nullopt
+                      : std::optional<ArrayRef<SiteId>>(operationSites),
+              lastDecomposition);
           constants.foldPending();
           return failed(synthesized) ? WalkResult::interrupt()
                                      : WalkResult::advance();
@@ -720,7 +749,8 @@ protected:
       return;
     }
     const CompilerTarget& target = environment.environment().target();
-    auto sites = collectStaticSites(moduleOp);
+    const bool indexed = environment.environment().supportsIndexedQubits();
+    auto sites = collectStaticSites(moduleOp, indexed);
     if (failed(sites)) {
       signalPassFailure();
       return;
@@ -748,8 +778,10 @@ protected:
         return WalkResult::advance();
       }
 
-      auto operationSites = getOperationSites(operation, *sites);
-      if (target.supports(operation, operationSites)) {
+      auto operationSites = indexed ? SmallVector<SiteId, 2>{}
+                                    : getOperationSites(operation, *sites);
+      if (indexed ? target.supports(operation)
+                  : target.supports(operation, operationSites)) {
         return WalkResult::advance();
       }
 

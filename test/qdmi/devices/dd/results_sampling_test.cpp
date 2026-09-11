@@ -308,6 +308,8 @@ TEST(ResultsSampling, AdaptiveHistogramUsesActualKeyLengths) {
 define i64 @main() #0 {
 entry:
   call void @__quantum__rt__initialize(ptr null)
+  call void @__quantum__qis__mz__body(ptr inttoptr (i64 1 to ptr), ptr inttoptr (i64 1 to ptr))
+  call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
   call void @__quantum__qis__h__body(ptr null)
   call void @__quantum__qis__mz__body(ptr null, ptr null)
   call void @__quantum__rt__result_record_output(ptr null, ptr null)
@@ -324,7 +326,7 @@ declare void @__quantum__qis__h__body(ptr)
 declare void @__quantum__qis__mz__body(ptr, ptr) #1
 declare void @__quantum__rt__result_record_output(ptr, ptr)
 declare i1 @__quantum__rt__read_result(ptr)
-attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_qubits"="1" "required_num_results"="1" }
+attributes #0 = { "entry_point" "qir_profiles"="adaptive_profile" "required_num_qubits"="2" "required_num_results"="2" }
 attributes #1 = { "irreversible" }
 )";
   const qdmi_test::SessionGuard session{};
@@ -337,19 +339,19 @@ attributes #1 = { "irreversible" }
   ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
 
   const auto size = qdmi_test::querySize(job.job, QDMI_JOB_RESULT_HIST_KEYS);
-  ASSERT_EQ(size, 5U);
-  std::array<char, 6> buffer{};
+  ASSERT_EQ(size, 7U);
+  std::array<char, 8> buffer{};
   buffer.fill('?');
   EXPECT_EQ(
       MQT_DDSIM_QDMI_device_job_get_results(job.job, QDMI_JOB_RESULT_HIST_KEYS,
                                             size - 1, buffer.data(), nullptr),
       QDMI_ERROR_INVALIDARGUMENT);
-  EXPECT_EQ(std::string_view(buffer.data(), buffer.size()), "??????");
+  EXPECT_EQ(std::string_view(buffer.data(), buffer.size()), "????????");
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(job.job,
                                                   QDMI_JOB_RESULT_HIST_KEYS,
                                                   size, buffer.data(), nullptr),
             QDMI_SUCCESS);
-  EXPECT_STREQ(buffer.data(), "0,11");
+  EXPECT_STREQ(buffer.data(), "00,110");
   EXPECT_EQ(buffer.back(), '?');
 
   std::map<std::string, size_t> counts;
@@ -357,8 +359,8 @@ attributes #1 = { "irreversible" }
     ++counts[shot];
   }
   const auto [keys, values] = qdmi_test::getHistogram(job.job);
-  EXPECT_EQ(keys, (std::vector<std::string>{"0", "11"}));
-  EXPECT_EQ(values, (std::vector<size_t>{counts["0"], counts["11"]}));
+  EXPECT_EQ(keys, (std::vector<std::string>{"00", "110"}));
+  EXPECT_EQ(values, (std::vector<size_t>{counts["00"], counts["110"]}));
 }
 
 TEST(ResultsSampling, BufferTooSmallErrors) {
@@ -443,6 +445,7 @@ define i64 @main() #0 {
   call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
   call void @__quantum__rt__result_record_output(ptr null, ptr null)
   call void @__quantum__rt__result_record_output(ptr inttoptr (i64 1 to ptr), ptr null)
+  call void @__quantum__rt__result_record_output(ptr null, ptr null)
   ret i64 0
 }
 declare void @__quantum__qis__x__body(ptr)
@@ -453,6 +456,6 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubi
 )";
   const auto [keys, values] =
       runProgram(QDMI_PROGRAM_FORMAT_QIRBASESTRING, program);
-  EXPECT_EQ(keys, std::vector<std::string>{"101"});
+  EXPECT_EQ(keys, std::vector<std::string>{"0101"});
   EXPECT_EQ(values, std::vector<size_t>{NUM_SHOTS});
 }
