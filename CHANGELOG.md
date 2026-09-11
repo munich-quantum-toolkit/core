@@ -21,19 +21,19 @@ evaluate structured benchmarks. Classic circuit APIs are removed. See the
 
 - ✨ Introduce the MQT Compiler Collection with typed QC, QCO, OpenQASM, jeff,
   and QIR programs; shared C++ and Python compilation APIs; inspection methods;
-  and the `mqt-cc` driver. ([#1264], [#1470], [#1815], [#1914], [#2149],
-  [#2343], [#2519]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**],
-  [**@taminob**])
+  and the `mqt-cc` driver. ([#1264], [#1470], [#1471], [#1815], [#1914],
+  [#2149], [#2343], [#2519]) ([**@burgholzer**], [**@denialhaag**],
+  [**@simon1hofmann**], [**@taminob**])
 
 - ✨ Add QC/QCO program builders with implicit locations, tracked qubits and
   tensors, register names, gate matrices, and checked linear quantum values.
   Preserve caller-owned inputs and reject invalid programs at checked
-  boundaries. ([#1402], [#1443], [#1446], [#1465], [#1472], [#1474], [#1510],
-  [#1542], [#1580], [#1602], [#1620], [#1623], [#1626], [#1627], [#1728],
-  [#1730], [#1781], [#1869], [#1872], [#2014], [#2017], [#2136], [#2213],
-  [#2220], [#2266], [#2295], [#2296], [#2300], [#2514]) ([**@burgholzer**],
-  [**@denialhaag**], [**@li-mingbao**], [**@MatthiasReumann**],
-  [**@simon1hofmann**], [**@taminob**])
+  boundaries. ([#1402], [#1428], [#1430], [#1443], [#1446], [#1465], [#1472],
+  [#1474], [#1510], [#1542], [#1580], [#1602], [#1620], [#1623], [#1626],
+  [#1627], [#1728], [#1730], [#1781], [#1869], [#1872], [#2014], [#2017],
+  [#2136], [#2213], [#2220], [#2266], [#2295], [#2296], [#2300], [#2514])
+  ([**@burgholzer**], [**@denialhaag**], [**@li-mingbao**],
+  [**@MatthiasReumann**], [**@simon1hofmann**], [**@taminob**])
 
 - ✨ Represent classical registers and structured `if`, `for`, `while`, and
   switch control flow across QC and QCO, including `break`, `continue`, wide
@@ -97,8 +97,8 @@ evaluate structured benchmarks. Classic circuit APIs are removed. See the
   [**@simon1hofmann**])
 
 - ✨ Normalize global phases and expand multi-operation quantum modifiers while
-  preserving full-unitary semantics. ([#1986], [#1995], [#2015], [#2189])
-  ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
+  preserving full-unitary semantics. ([#1986], [#1995], [#2006], [#2015],
+  [#2189]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
 
 - ✨ Add measurement lifting, classical-control replacement, explicit dead-gate
   elimination, quantum-loop unrolling, qubit reuse, and Pauli twirling.
@@ -178,10 +178,10 @@ evaluate structured benchmarks. Classic circuit APIs are removed. See the
 
 - 📝 Connect compilation, execution, device access, and program exchange in the
   user guide. Add six executable compiler tutorials and checked Python/C++
-  examples with downloadable notebooks. ([#1555], [#1773], [#1899], [#1959],
-  [#2058], [#2165], [#2462], [#2503], [#2509], [#2526]) ([**@burgholzer**],
-  [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**],
-  [**@ystade**])
+  examples with downloadable notebooks. ([#1555], [#1635], [#1773], [#1899],
+  [#1959], [#2058], [#2165], [#2462], [#2503], [#2509], [#2526])
+  ([**@burgholzer**], [**@denialhaag**], [**@MatthiasReumann**],
+  [**@simon1hofmann**], [**@ystade**])
 
 - 📝 Consolidate development policy and agent guidance, including compiler
   contracts, terminology, validation, and reproducible benchmarks. ([#1905],
@@ -216,7 +216,9 @@ evaluate structured benchmarks. Classic circuit APIs are removed. See the
   [#2145], [#2163]) ([**@burgholzer**], [**@denialhaag**])
 
 - ⬆️ Update clang-tidy to version 23 and adapt the C++ sources to its
-  diagnostics. ([#2328]) ([**@burgholzer**], [**@simon1hofmann**])
+  diagnostics. Format TableGen files and align LLVM include and namespace
+  conventions. ([#1573], [#1673], [#1675], [#1765], [#2028], [#2328])
+  ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
 
 #### Runtime and client behavior
 
@@ -1313,6 +1315,7 @@ for previous changelogs._
 [#2034]: https://github.com/munich-quantum-toolkit/core/pull/2034
 [#2031]: https://github.com/munich-quantum-toolkit/core/pull/2031
 [#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
+[#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
 [#2026]: https://github.com/munich-quantum-toolkit/core/pull/2026
 [#2025]: https://github.com/munich-quantum-toolkit/core/pull/2025
 [#2018]: https://github.com/munich-quantum-toolkit/core/pull/2018
@@ -1324,6 +1327,7 @@ for previous changelogs._
 [#2010]: https://github.com/munich-quantum-toolkit/core/pull/2010
 [#2008]: https://github.com/munich-quantum-toolkit/core/pull/2008
 [#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
+[#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
 [#2004]: https://github.com/munich-quantum-toolkit/core/pull/2004
 [#2003]: https://github.com/munich-quantum-toolkit/core/pull/2003
@@ -1431,6 +1435,7 @@ for previous changelogs._
 [#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
 [#1773]: https://github.com/munich-quantum-toolkit/core/pull/1773
 [#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
+[#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
 [#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
 [#1756]: https://github.com/munich-quantum-toolkit/core/pull/1756
 [#1755]: https://github.com/munich-quantum-toolkit/core/pull/1755
@@ -1454,7 +1459,9 @@ for previous changelogs._
 [#1694]: https://github.com/munich-quantum-toolkit/core/pull/1694
 [#1687]: https://github.com/munich-quantum-toolkit/core/pull/1687
 [#1676]: https://github.com/munich-quantum-toolkit/core/pull/1676
+[#1675]: https://github.com/munich-quantum-toolkit/core/pull/1675
 [#1674]: https://github.com/munich-quantum-toolkit/core/pull/1674
+[#1673]: https://github.com/munich-quantum-toolkit/core/pull/1673
 [#1672]: https://github.com/munich-quantum-toolkit/core/pull/1672
 [#1664]: https://github.com/munich-quantum-toolkit/core/pull/1664
 [#1662]: https://github.com/munich-quantum-toolkit/core/pull/1662
@@ -1463,6 +1470,7 @@ for previous changelogs._
 [#1648]: https://github.com/munich-quantum-toolkit/core/pull/1648
 [#1638]: https://github.com/munich-quantum-toolkit/core/pull/1638
 [#1637]: https://github.com/munich-quantum-toolkit/core/pull/1637
+[#1635]: https://github.com/munich-quantum-toolkit/core/pull/1635
 [#1627]: https://github.com/munich-quantum-toolkit/core/pull/1627
 [#1626]: https://github.com/munich-quantum-toolkit/core/pull/1626
 [#1624]: https://github.com/munich-quantum-toolkit/core/pull/1624
@@ -1479,6 +1487,7 @@ for previous changelogs._
 [#1581]: https://github.com/munich-quantum-toolkit/core/pull/1581
 [#1580]: https://github.com/munich-quantum-toolkit/core/pull/1580
 [#1574]: https://github.com/munich-quantum-toolkit/core/pull/1574
+[#1573]: https://github.com/munich-quantum-toolkit/core/pull/1573
 [#1572]: https://github.com/munich-quantum-toolkit/core/pull/1572
 [#1571]: https://github.com/munich-quantum-toolkit/core/pull/1571
 [#1570]: https://github.com/munich-quantum-toolkit/core/pull/1570
@@ -1507,6 +1516,7 @@ for previous changelogs._
 [#1475]: https://github.com/munich-quantum-toolkit/core/pull/1475
 [#1474]: https://github.com/munich-quantum-toolkit/core/pull/1474
 [#1472]: https://github.com/munich-quantum-toolkit/core/pull/1472
+[#1471]: https://github.com/munich-quantum-toolkit/core/pull/1471
 [#1470]: https://github.com/munich-quantum-toolkit/core/pull/1470
 [#1466]: https://github.com/munich-quantum-toolkit/core/pull/1466
 [#1465]: https://github.com/munich-quantum-toolkit/core/pull/1465
@@ -1519,6 +1529,8 @@ for previous changelogs._
 [#1443]: https://github.com/munich-quantum-toolkit/core/pull/1443
 [#1437]: https://github.com/munich-quantum-toolkit/core/pull/1437
 [#1436]: https://github.com/munich-quantum-toolkit/core/pull/1436
+[#1430]: https://github.com/munich-quantum-toolkit/core/pull/1430
+[#1428]: https://github.com/munich-quantum-toolkit/core/pull/1428
 [#1426]: https://github.com/munich-quantum-toolkit/core/pull/1426
 [#1415]: https://github.com/munich-quantum-toolkit/core/pull/1415
 [#1414]: https://github.com/munich-quantum-toolkit/core/pull/1414
