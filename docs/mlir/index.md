@@ -4,10 +4,10 @@ The MQT Compiler Collection (`mqt-cc`) is a blueprint for a future-proof
 quantum-classical compilation framework built on the Multi-Level Intermediate
 Representation (MLIR). For an overview, see {cite:p}`MQTCompilerCollection2026`.
 
-The {doc}`Python compiler guide <python_compiler_collection>` describes how to
-compile and inspect quantum programs from Python. The
-{doc}`target-compilation guide <target_compilation>` shows how to compile for
-QDMI devices from Python, C++, and `mqt-cc`. The interface guides describe
+The {doc}`compiler guide <mqt_compiler_collection>` introduces the Python,
+command-line, and C++ interfaces for compiling and inspecting quantum programs.
+The {doc}`target-compilation guide <target_compilation>` shows how to compile
+for QDMI devices from Python, C++, and `mqt-cc`. The interface guides describe
 OpenQASM and Qiskit interoperability, followed by the MLIR technical reference
 and compiler development guidance.
 
@@ -38,7 +38,7 @@ directly to QC and emits structured OpenQASM from QC.
 ```{toctree}
 :maxdepth: 2
 
-python_compiler_collection
+mqt_compiler_collection
 target_compilation
 OpenQASM
 qiskit

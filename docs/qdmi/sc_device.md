@@ -1,5 +1,9 @@
 # Superconducting QDMI device
 
+This provider supplies **compilation-only hardware models**. Use their topology,
+native operations, and calibration for target compilation; they do not execute
+submitted quantum programs. Use {doc}`ddsim_device` for local execution.
+
 The MQT Core superconducting (SC) provider builds a session-owned runtime model
 from strict JSON. Separate sessions using the same provider library and prefix
 can expose different names, capacities, topology, operations, and calibration.

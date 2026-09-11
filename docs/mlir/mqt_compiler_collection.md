@@ -6,15 +6,22 @@ mystnb:
   number_source_lines: true
 ---
 
-# Using the MQT Compiler Collection from Python
+# MQT Compiler Collection
 
-The {py:mod}`mqt.core.mlir` module provides Python access to the MQT Compiler
-Collection. It accepts source strings, {code}`.qasm`, {code}`.mlir`, and
-{code}`.jeff` files, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit` objects,
-and typed compiler programs. The requested output format determines where
-compilation stops and which program type is returned.
+The MQT Compiler Collection compiles, optimizes, and exchanges structured
+quantum programs. It provides the circuit and program interface in MQT Core v4
+through three interfaces that share the same MLIR representations and passes:
 
-The compiler collection is the circuit and program interface in MQT Core v4.
+| Interface    | Entry point                                                         |
+| ------------ | ------------------------------------------------------------------- |
+| Command line | `mqt-cc`, with examples below                                       |
+| Python       | {py:mod}`mqt.core.mlir`                                             |
+| C++          | [Source-tree compiler API](target_compilation.md#c-source-tree-api) |
+
+The Python examples below accept source strings, {code}`.qasm`, {code}`.mlir`,
+and {code}`.jeff` files, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit`
+objects, and typed compiler programs. The requested output format determines
+where compilation stops and which program type is returned.
 
 Install {doc}`MQT Core <../installation>` and import the compiler interface:
 
@@ -131,10 +138,10 @@ recompiled = compile_program(openqasm, output=OutputFormat.QC_IMPORT)
 assert isinstance(recompiled, QCProgram)
 ```
 
-The exporter targets practical structured programs with static qubit and bit
-indices. Dynamic indexing, dynamic ranges, surviving runtime assertions,
-checked-index machinery, and live poison values fail with an MLIR diagnostic.
-See {doc}`OpenQASM` for the complete support table.
+The exporter supports structured control flow and runtime classical-bit indices.
+Quantum register indices and ranges must be static. Surviving runtime
+assertions, checked-index machinery, and live poison values fail with an MLIR
+diagnostic. See {doc}`OpenQASM` for the complete support table.
 
 ## Use Qiskit circuits directly
 

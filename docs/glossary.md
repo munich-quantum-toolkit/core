@@ -22,7 +22,7 @@ Chair for Design Automation
   **Preferred term:** Chair for Design Automation. **Accepted abbreviation:**
   CDA. A
   [research chair at the Technical University of Munich](https://www.cda.cit.tum.de/)
-  that develops design methods for fields including quantum computing.
+  that develops MQT Core together with [MQSC](https://mq.sc).
 
 DD
 DDs
@@ -65,8 +65,10 @@ modular multiplier
 
 MQSC
 Munich Quantum Software Company
-  **Preferred term:** Munich Quantum Software Company. **Accepted abbreviation:**
-  MQSC. The company that develops and supports parts of MQT Core.
+  **Preferred term:** [MQSC](https://mq.sc). **Accepted expansion:** Munich
+  Quantum Software Company. The company develops MQT Core together with the
+  {term}`Chair for Design Automation <CDA>` at {term}`TUM`. Use the linked short
+  name in prose; reserve the full legal name for copyright notices.
 
 MQSS
 Munich Quantum Software Stack
@@ -80,6 +82,11 @@ Munich Quantum Toolkit
   **Preferred term:** Munich Quantum Toolkit. **Accepted abbreviation:** MQT.
   The [open-source software toolkit](https://mqt.readthedocs.io/) of which MQT
   Core is the shared foundation.
+
+MQT Compiler Collection
+  **Preferred term:** MQT Compiler Collection. **Accepted aliases:** none.
+  MQT Core's framework for compiling, optimizing, and exchanging quantum
+  programs through Python, C++, and the `mqt-cc` command-line driver.
 
 MQV
 Munich Quantum Valley

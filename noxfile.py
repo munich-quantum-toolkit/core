@@ -289,6 +289,12 @@ def docs(session: nox.Session) -> None:
     parser.add_argument("-b", dest="builder", default="html", help="Build target (default: html)")
     args, posargs = parser.parse_known_args(session.posargs)
 
+    # MyST loads this generated file so the README owns the executable example.
+    _, example = Path("README.md").read_text(encoding="utf-8").split("```python\n")
+    example_file = Path("docs/_build/readme_example.py")
+    example_file.parent.mkdir(parents=True, exist_ok=True)
+    example_file.write_text(example.split("\n```", maxsplit=1)[0] + "\n", encoding="utf-8")
+
     # Retain packaged devices while excluding host file and inline configuration.
     registry = Path(session.create_tmp()) / "qdmi.json"
     registry.write_text('{"schema-version": 1, "qdmi": {"devices": []}}', encoding="utf-8")

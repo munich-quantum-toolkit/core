@@ -1,26 +1,66 @@
-# MQT Core - The Backbone of the Munich Quantum Toolkit (MQT)
+# MQT Core
 
-MQT Core is an open-source C++20 and Python library for quantum computing that
-forms the backbone of the quantum software tools developed as part of the
-_{doc}`Munich Quantum Toolkit (MQT) <mqt:index>`_. To this end, MQT Core
-consists of multiple components that are used throughout the MQT, including a
-compiler collection built on MLIR, a state-of-the-art decision diagram (DD)
-package for quantum computing, and a QIR runtime based on the decision diagram
-package.
+MQT Core provides reusable C++20 and Python libraries for quantum computing:
+compilers, decision diagrams, QIR execution, QDMI device access, SDK and HPC
+integrations, and structured benchmarks. It forms the backbone of the
+{doc}`Munich Quantum Toolkit (MQT) <mqt:index>`.
 
-This documentation provides a comprehensive guide to the MQT Core library,
-including {doc}`installation instructions <installation>`, a
-{doc}`guide to the MQT Compiler Collection <mlir/python_compiler_collection>`,
-its {doc}`decision diagram (DD) package <dd_package>`, as well as detailed
-{doc}`API documentation <api/mqt/core/index>` and the
-<a href="cpp/index.html">C++ API reference</a>. The source code of MQT Core is
-publicly available on GitHub at
-[munich-quantum-toolkit/core](https://github.com/munich-quantum-toolkit/core),
-while pre-built binaries are available via
-[PyPI](https://pypi.org/project/mqt.core/) for all major operating systems and
-all supported Python versions. See the
-{doc}`Qiskit compatibility guide <mlir/qiskit>` for the supported backend and
-compiler interfaces.
+## Start with your task
+
+Install the [Python package](https://pypi.org/project/mqt.core/) or follow the
+{doc}`source-build instructions <installation>`. Then choose a starting point:
+
+::::{grid} 1 1 2 2
+:gutter: 3
+
+:::{grid-item-card} Compile and execute a program
+Estimate a phase with two qubits and measurement feedback.
+
+- **First example:** {doc}`QPE walkthrough <getting_started>`
+- **Guide:** {doc}`MQT Compiler Collection <mlir/mqt_compiler_collection>`
+- **API:** {py:mod}`mqt.core.mlir`
+:::
+
+:::{grid-item-card} Use decision diagrams
+Represent and manipulate quantum states and operations in C++ or Python.
+
+- **First example:** [DD quickstart](dd_package.md#quickstart)
+- **Guide:** {doc}`Decision diagrams <dd_package>`
+- **API:** {py:mod}`mqt.core.dd` and {doc}`C++ <cpp_api>`
+:::
+
+:::{grid-item-card} Connect or implement a device
+Discover QDMI devices, integrate SDKs, and implement device interfaces.
+
+- **First example:** [Discover and use a device](qdmi/driver.md#python-bindings)
+- **Guide:** {doc}`QDMI devices and integrations <qdmi/index>`
+- **API:** {py:mod}`mqt.core.qdmi` and {doc}`C++ <cpp_api>`
+:::
+
+:::{grid-item-card} Generate and evaluate benchmarks
+Configure structured programs and compare results with analytic references.
+
+- **First example:**
+  [Configure a benchmark](benchmarks.md#configure-a-typed-instance)
+- **Guide:** {doc}`Structured benchmarks <benchmarks>`
+- **API:** {py:mod}`mqt.core.bench`
+:::
+
+:::{grid-item-card} Embed or extend MQT Core
+Use the C++ libraries or work on the MLIR compiler infrastructure.
+
+- **First example:** [C++ library quickstart](cpp_api.md#use-the-dd-library)
+- **Guide:** [C++ compilation](mlir/target_compilation.md#c-source-tree-api) and
+  {doc}`compiler development <mlir/development>`
+- **API:** {doc}`C++ reference <cpp_api>` and
+  {doc}`MLIR dialects and passes <mlir/index>`
+:::
+
+::::
+
+Source code is available on
+[GitHub](https://github.com/munich-quantum-toolkit/core). For installation
+options, platform requirements, and development setup, see {doc}`installation`.
 
 ```{toctree}
 :hidden:
@@ -34,6 +74,7 @@ self
 :hidden:
 
 installation
+getting_started
 benchmarks
 dd_package
 mlir/index
@@ -60,7 +101,7 @@ support
 ```
 
 ```{toctree}
-:caption: Python API Reference
+:caption: API Reference
 :maxdepth: 1
 :hidden:
 
@@ -70,9 +111,9 @@ cpp_api
 
 ## Contributors and Supporters
 
-MQT Core is developed by the
+MQT Core is developed by [MQSC](https://mq.sc) and the
 [Chair for Design Automation](https://www.cda.cit.tum.de/) at the
-[Technical University of Munich](https://www.tum.de/) and [MQSC](https://mq.sc).
+[Technical University of Munich](https://www.tum.de/).
 Among others, it is part of the
 [Munich Quantum Software Stack (MQSS)](https://www.munich-quantum-valley.de/research/research-areas/mqss)
 ecosystem, which is being developed as part of the
@@ -91,7 +132,7 @@ Thank you to all the contributors who have helped make MQT Core a reality!
 
 <p align="center">
 <a href="https://github.com/munich-quantum-toolkit/core/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=munich-quantum-toolkit/core" />
+  <img src="https://contrib.rocks/image?repo=munich-quantum-toolkit/core" alt="MQT Core contributors" />
 </a>
 </p>
 
