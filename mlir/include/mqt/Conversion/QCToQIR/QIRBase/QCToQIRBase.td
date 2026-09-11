@@ -22,8 +22,7 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
     - Stores to returned CBit registers must share a block with their measurement,
       use an index available at measurement (or a constant), and have no
       intervening effects that can access CBit storage. Stores to provably
-      distinct constant indices of the same register and effects on separately
-      allocated local memrefs are allowed.
+      distinct constant indices of the same register are allowed.
     - Input is a valid module in the QC dialect.
     - The entry function must be marked with `mqt.entry_point`.
     - The input entry function must consist of a single block.
@@ -40,9 +39,6 @@ def QCToQIRBase : Pass<"qc-to-qir-base", "mlir::ModuleOp"> {
 
     - Constant classical tensors and element reads are lowered to constant LLVM arrays and loads.
       Other classical tensor operations must be lowered before this pass.
-    - Register ownership masks and releases are removed because Base Profile
-      resource lifetimes are static.
-
     - Each QC quantum operation is replaced in place by its QIR call. After
       validating qubit usage in instruction order, the pass moves terminal
       measurements to the irreversible operations block.

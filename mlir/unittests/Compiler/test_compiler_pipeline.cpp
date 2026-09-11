@@ -999,7 +999,7 @@ TEST_F(CompilerPipelineTest, BaseMeasurementMayBeInsertedIntoFreedQTensor) {
             std::string::npos);
 }
 
-TEST_F(CompilerPipelineTest, BaseProfileDiscardsDynamicSlotOwnership) {
+TEST_F(CompilerPipelineTest, BaseProfileLowersCompleteTensorLifetime) {
   auto program = QCOProgram::fromMLIRString(R"mlir(module {
     func.func @main() -> i1 attributes {mqt.entry_point} {
       %c0 = arith.constant 0 : index
@@ -1007,8 +1007,8 @@ TEST_F(CompilerPipelineTest, BaseProfileDiscardsDynamicSlotOwnership) {
       %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
       %rest, %q = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
       %out, %bit = qco.measure %q : !qco.qubit
-      qco.sink %out : !qco.qubit
-      qtensor.dealloc %rest : tensor<2x!qco.qubit>
+      %complete = qtensor.insert %out into %rest[%c0] : tensor<2x!qco.qubit>
+      qtensor.dealloc %complete : tensor<2x!qco.qubit>
       return %bit : i1
     }
   })mlir");

@@ -597,7 +597,9 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
       std::cerr << "Error: QIR program failed with error: " << rc << '\n';
       return false;
     }
-    for (const auto& shot : shots_) {
+    for (auto& shot : shots_) {
+      /// QDMI spells the highest-index output bit first.
+      std::ranges::reverse(shot);
       ++counts_[shot];
     }
     if (stateAvailable) {

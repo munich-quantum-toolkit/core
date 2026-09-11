@@ -8,7 +8,6 @@
  * Licensed under the MIT License
  */
 
-#include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
 #include "qdmi/Client.hpp"
@@ -483,89 +482,6 @@ TEST(CompilerQDMIAdapterTest, CompilesAdaptiveMeasurementControlledLoop) {
   auto job = llvm::cantFail(mlir::submitProgram(device, compiled, 8));
   ASSERT_TRUE(job.wait());
   EXPECT_EQ(job.getCounts().at("0"), 8);
-}
-
-TEST(CompilerQDMIAdapterTest, ReleasesOnlyOwnedTensorSlots) {
-  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-  for (const bool dynamicShape : {false, true}) {
-    for (const bool releaseTensorFirst : {false, true}) {
-      SCOPED_TRACE(dynamicShape);
-      SCOPED_TRACE(releaseTensorFirst);
-      const std::string release = "qtensor.dealloc %rest : !register\n";
-      const auto source = std::string("!register = tensor<") +
-                          (dynamicShape ? "?" : "2") + R"mlir(x!qco.qubit>
-        module {
-          func.func @main() -> i1 attributes {mqt.entry_point} {
-            %c0 = arith.constant 0 : index
-            %c1 = arith.constant 1 : index
-            %c2 = arith.constant 2 : index
-            %c3 = arith.constant 3 : index
-            %tensor = qtensor.alloc(%c2) : !register
-            %index = scf.for %iv = %c0 to %c3 step %c1
-                iter_args(%i = %c0) -> index {
-              %next = arith.subi %c1, %i : index
-              scf.yield %next : index
-            }
-            %rest, %q = qtensor.extract %tensor[%index] : !register
-        )mlir" + (releaseTensorFirst ? release : "") +
-                          R"mlir(
-            %x = qco.x %q : !qco.qubit -> !qco.qubit
-            %out, %bit = qco.measure %x : !qco.qubit
-            qco.sink %out : !qco.qubit
-        )mlir" + (releaseTensorFirst ? "" : release) +
-                          R"mlir(
-            return %bit : i1
-          }
-        })mlir";
-      auto program = mlir::QCOProgram::fromMLIRString(source);
-      ASSERT_TRUE(program);
-      /// Exercise the conversion's ownership contract without QCO cleanup.
-      auto qc = std::move(*program).intoQC();
-      ASSERT_TRUE(qc);
-      auto qir = std::move(*qc).intoQIR(mlir::QIRProfile::Adaptive);
-      ASSERT_TRUE(qir);
-      auto llvmIR = qir->llvmIR();
-      ASSERT_TRUE(llvmIR);
-      auto job =
-          device.submitJob(*llvmIR, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, 8);
-      ASSERT_TRUE(job.wait());
-      EXPECT_EQ(job.getCounts().at("1"), 8);
-    }
-  }
-}
-
-TEST(CompilerQDMIAdapterTest, TransfersQubitOwnershipToAnotherTensor) {
-  auto program = mlir::QCOProgram::fromMLIRString(R"mlir(module {
-    func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
-      %c0 = arith.constant 0 : index
-      %c1 = arith.constant 1 : index
-      %c2 = arith.constant 2 : index
-      %bits = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
-      %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
-      %rest, %q = qtensor.extract %tensor[%c1] : tensor<2x!qco.qubit>
-      %adopted = qtensor.from_elements %q : tensor<1x!qco.qubit>
-      qtensor.dealloc %rest : tensor<2x!qco.qubit>
-      %empty, %taken = qtensor.extract %adopted[%c0] : tensor<1x!qco.qubit>
-      %x = qco.x %taken : !qco.qubit -> !qco.qubit
-      %out, %bit = qco.measure %x : !qco.qubit
-      %complete = qtensor.insert %out into %empty[%c0] : tensor<1x!qco.qubit>
-      qtensor.dealloc %complete : tensor<1x!qco.qubit>
-      cbit.store %bit, %bits[%c0] : !cbit.reg<1>
-      return %bits : !cbit.reg<1>
-    }
-  })mlir");
-  ASSERT_TRUE(program);
-  auto qc = std::move(*program).intoQC();
-  ASSERT_TRUE(qc);
-  auto qir = std::move(*qc).intoQIR(mlir::QIRProfile::Adaptive);
-  ASSERT_TRUE(qir);
-  auto llvmIR = qir->llvmIR();
-  ASSERT_TRUE(llvmIR);
-  const auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-  auto job =
-      device.submitJob(*llvmIR, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING, 8);
-  ASSERT_TRUE(job.wait());
-  EXPECT_EQ(job.getCounts().at("1"), 8);
 }
 
 TEST(CompilerQDMIAdapterTest,

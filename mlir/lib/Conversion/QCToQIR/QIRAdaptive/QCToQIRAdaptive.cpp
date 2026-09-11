@@ -699,35 +699,6 @@ static void populateQCToQIRAdaptivePatterns(RewritePatternSet& patterns,
                                                      &state);
 }
 
-/// QIR uses local reference buffers, so releasing their occupied slots also
-/// completes the quantum register lifetime. LLVM reclaims the local storage.
-static void lowerRegisterReleases(ModuleOp moduleOp) {
-  IRRewriter rewriter(moduleOp.getContext());
-  moduleOp.walk([&](qc::DeallocRegisterOp op) {
-    rewriter.setInsertionPoint(op);
-    auto zero = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 0);
-    auto one = arith::ConstantIndexOp::create(rewriter, op.getLoc(), 1);
-    auto size =
-        memref::DimOp::create(rewriter, op.getLoc(), op.getOwned(), zero);
-    scf::ForOp::create(
-        rewriter, op.getLoc(), zero, size, one, ValueRange{},
-        [&](OpBuilder& builder, Location loc, Value index, ValueRange) {
-          auto owned = memref::LoadOp::create(builder, loc, op.getOwned(),
-                                              ValueRange{index});
-          scf::IfOp::create(
-              builder, loc, owned,
-              [&](OpBuilder& thenBuilder, Location thenLoc) {
-                auto qubit = memref::LoadOp::create(
-                    thenBuilder, thenLoc, op.getQubits(), ValueRange{index});
-                qc::DeallocOp::create(thenBuilder, thenLoc, qubit);
-                scf::YieldOp::create(thenBuilder, thenLoc);
-              });
-          scf::YieldOp::create(builder, loc);
-        });
-    rewriter.eraseOp(op);
-  });
-}
-
 namespace {
 
 /// Lower supported QC operations to QIR Adaptive runtime calls and LLVM IR.
@@ -849,7 +820,6 @@ protected:
       signalPassFailure();
       return;
     }
-    lowerRegisterReleases(moduleOp);
 
     // Stage 1: Convert scf dialect to cf
     {
@@ -908,18 +878,8 @@ protected:
     // Stage 5: Convert QC dialect to LLVM (QIR calls)
     {
       RewritePatternSet patterns(ctx);
-      target.addIllegalDialect<cbit::CBitDialect, QCDialect>();
-      target.addDynamicallyLegalDialect<memref::MemRefDialect>(
-          [](Operation* op) {
-            return llvm::none_of(
-                llvm::concat<const Type>(op->getOperandTypes(),
-                                         op->getResultTypes()),
-                [](Type type) {
-                  auto memref = dyn_cast<MemRefType>(type);
-                  return isa<QubitType>(type) ||
-                         (memref && isa<QubitType>(memref.getElementType()));
-                });
-          });
+      target.addIllegalDialect<cbit::CBitDialect, QCDialect,
+                               memref::MemRefDialect>();
 
       populateQCToQIRAdaptivePatterns(patterns, typeConverter, ctx, state);
 

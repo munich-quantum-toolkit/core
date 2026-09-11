@@ -78,9 +78,6 @@ struct LoweringState {
   /// Original qubit argument positions, retained while signatures are
   /// rewritten.
   DenseMap<Operation*, SmallVector<unsigned>> qubitArguments;
-  /// Buffers whose tensor lifetime can end with extracted slots.
-  DenseSet<Operation*> trackedTensors;
-  DenseMap<Value, Value> ownershipMasks;
   /// Module-wide mode determined before rewriting any function.
   const AllocationMode allocationMode;
 
@@ -108,10 +105,10 @@ private:
 };
 } // namespace
 
-/// Avoid runtime ownership state when all slots are restored before a tensor
-/// leaves a region. Positional region correspondence is checked separately.
+/// Require dynamic tensor slots to be restored before leaving each region.
+/// Positional region correspondence is checked separately.
 static bool hasCompleteTensorLifetime(Value tensor, unsigned depth = 0) {
-  /// ponytail: deeper nesting uses runtime ownership; use a worklist if proving
+  /// ponytail: reject deeper nesting; use a worklist if proving
   /// completeness beyond 64 nested regions becomes necessary.
   if (depth == 64) {
     return false;
@@ -157,46 +154,6 @@ static bool hasCompleteTensorLifetime(Value tensor, unsigned depth = 0) {
                  scf::ConditionOp>(user) &&
              extracted.empty();
     }
-  }
-}
-
-/// Keep occupancy separate from references, which can outlive extracted slots.
-static void createOwnershipMask(Value storage, Value size, Location loc,
-                                LoweringState& state,
-                                ConversionPatternRewriter& rewriter) {
-  auto type = cast<MemRefType>(storage.getType());
-  auto maskType = MemRefType::get(type.getShape(), rewriter.getI1Type());
-  Value mask;
-  {
-    OpBuilder::InsertionGuard guard(rewriter);
-    if (type.hasStaticShape()) {
-      auto function = storage.getDefiningOp()->getParentOfType<func::FuncOp>();
-      rewriter.setInsertionPointToStart(&function.getBody().front());
-    }
-    mask = memref::AllocaOp::create(rewriter, loc, maskType,
-                                    type.hasStaticShape() ? ValueRange{}
-                                                          : ValueRange{size});
-  }
-  state.ownershipMasks[storage] = mask;
-  auto zero = arith::ConstantIndexOp::create(rewriter, loc, 0);
-  auto one = arith::ConstantIndexOp::create(rewriter, loc, 1);
-  auto occupied = arith::ConstantIntOp::create(rewriter, loc, 1, 1);
-  scf::ForOp::create(
-      rewriter, loc, zero, size, one, ValueRange{},
-      [&](OpBuilder& builder, Location bodyLoc, Value index, ValueRange) {
-        memref::StoreOp::create(builder, bodyLoc, occupied, mask,
-                                ValueRange{index});
-        scf::YieldOp::create(builder, bodyLoc);
-      });
-}
-
-static void setSlotOwnership(Value storage, Value index, bool occupied,
-                             Location loc, LoweringState& state,
-                             ConversionPatternRewriter& rewriter) {
-  if (auto mask = state.ownershipMasks.lookup(storage)) {
-    auto value =
-        arith::ConstantIntOp::create(rewriter, loc, occupied ? 1 : 0, 1);
-    memref::StoreOp::create(rewriter, loc, value, mask, ValueRange{index});
   }
 }
 
@@ -477,7 +434,7 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state,
         llvm::any_of(function.getResultTypes(), isQTensor)) {
       return function.emitOpError(
           "inline functions that accept or return qubit tensors before "
-          "QCO-to-QC conversion; tensor ownership is local to a function");
+          "QCO-to-QC conversion; tensor references are local to a function");
     }
     auto& qubitArguments = state.qubitArguments[function];
     for (auto [index, type] : llvm::enumerate(function.getArgumentTypes())) {
@@ -667,9 +624,8 @@ struct ConvertQCOCallOp final : OpConversionPattern<qco::CallOp> {
 /// ```mlir
 /// %memref = memref.alloc(%c3) : memref<3x!qc.qubit>
 /// ```
-struct ConvertQTensorAllocOp final
-    : StatefulOpConversionPattern<qtensor::AllocOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+struct ConvertQTensorAllocOp final : OpConversionPattern<qtensor::AllocOp> {
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::AllocOp op, OpAdaptor /*adaptor*/,
@@ -688,10 +644,6 @@ struct ConvertQTensorAllocOp final
                                       op.getSize());
     }
     alloc->setDiscardableAttrs(op->getDiscardableAttrDictionary());
-    if (getState().trackedTensors.contains(op)) {
-      createOwnershipMask(alloc, op.getSize(), op.getLoc(), getState(),
-                          rewriter);
-    }
     rewriter.replaceOp(op, alloc.getResult());
     return success();
   }
@@ -714,8 +666,6 @@ struct ConvertQTensorExtractOp final
   LogicalResult
   matchAndRewrite(qtensor::ExtractOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    setSlotOwnership(adaptor.getTensor(), adaptor.getIndex(), false,
-                     op.getLoc(), getState(), rewriter);
     auto& qubitValues =
         getState().qubitValues[op->getParentRegion()][adaptor.getTensor()];
     if (auto qubit = qubitValues.lookup(adaptor.getIndex())) {
@@ -734,8 +684,8 @@ struct ConvertQTensorExtractOp final
 
 /// A tensor of placed qubits needs only storage for references.
 struct ConvertQTensorFromElementsOp final
-    : StatefulOpConversionPattern<qtensor::FromElementsOp> {
-  using StatefulOpConversionPattern::StatefulOpConversionPattern;
+    : OpConversionPattern<qtensor::FromElementsOp> {
+  using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(qtensor::FromElementsOp op, OpAdaptor adaptor,
@@ -757,11 +707,6 @@ struct ConvertQTensorFromElementsOp final
       memref::StoreOp::create(rewriter, op.getLoc(), qubit, storage,
                               ValueRange{offset});
     }
-    if (getState().allocationMode == AllocationMode::Dynamic) {
-      auto size = arith::ConstantIndexOp::create(rewriter, op.getLoc(),
-                                                 type.getNumElements());
-      createOwnershipMask(storage, size, op.getLoc(), getState(), rewriter);
-    }
     rewriter.replaceOp(op, storage.getResult());
     return success();
   }
@@ -776,8 +721,6 @@ struct ConvertQTensorInsertOp final
   matchAndRewrite(qtensor::InsertOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    setSlotOwnership(adaptor.getDest(), adaptor.getIndex(), true, op.getLoc(),
-                     state, rewriter);
     auto& qubitValues =
         state.qubitValues[op->getParentRegion()][adaptor.getDest()];
     const auto sameIndex = [&](Value index) {
@@ -835,10 +778,6 @@ struct ConvertQTensorDeallocOp final
                   ConversionPatternRewriter& rewriter) const override {
     if (getState().allocationMode != AllocationMode::Dynamic) {
       rewriter.eraseOp(op);
-    } else if (auto mask =
-                   getState().ownershipMasks.lookup(adaptor.getTensor())) {
-      rewriter.replaceOpWithNewOp<qc::DeallocRegisterOp>(
-          op, adaptor.getTensor(), mask);
     } else {
       rewriter.replaceOpWithNewOp<memref::DeallocOp>(op, adaptor.getTensor());
     }
@@ -1577,11 +1516,25 @@ protected:
         return;
       }
     }
-    moduleOp.walk([&](qtensor::AllocOp op) {
-      if (!hasCompleteTensorLifetime(op.getResult())) {
-        state.trackedTensors.insert(op);
+    const auto tensors = moduleOp.walk([&](Operation* op) {
+      if (isa<qtensor::FromElementsOp>(op) &&
+          *allocationMode != AllocationMode::Static) {
+        op->emitOpError("QCO-to-QC requires static qubits in tensors of "
+                        "existing qubits; run placement before conversion");
+        return WalkResult::interrupt();
       }
+      if (auto alloc = dyn_cast<qtensor::AllocOp>(op);
+          alloc && !hasCompleteTensorLifetime(alloc.getResult())) {
+        alloc.emitOpError("QCO-to-QC requires all dynamic tensor slots to be "
+                          "restored before region exit or deallocation");
+        return WalkResult::interrupt();
+      }
+      return WalkResult::advance();
     });
+    if (tensors.wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
 
     SmallVector<func::FuncOp> unitaryFunctions;
     for (auto function : moduleOp.getOps<func::FuncOp>()) {
@@ -1612,6 +1565,7 @@ protected:
 
     // Register operation conversion patterns that do not need state tracking
     patterns.add<ConvertQCOMeasureOp, ConvertQCOResetOp, ConvertQCOUnitaryOp,
+                 ConvertQTensorAllocOp, ConvertQTensorFromElementsOp,
                  ConvertQCOAllocOp, ConvertQCOStaticOp,
                  ConvertQCOGateToQC<qco::GPhaseOp, qc::GPhaseOp, 0, 1>>(
         typeConverter, context);
@@ -1630,7 +1584,6 @@ protected:
 
     // Register operation conversion patterns that need state tracking
     patterns.add<ConvertQTensorExtractOp, ConvertQTensorInsertOp,
-                 ConvertQTensorAllocOp, ConvertQTensorFromElementsOp,
                  ConvertQTensorDeallocOp, ConvertQCOSinkOp>(typeConverter,
                                                             context, &state);
 

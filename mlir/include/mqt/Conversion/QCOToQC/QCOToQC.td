@@ -17,7 +17,7 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
     return its qubit arguments as a positional suffix. Other results remain
     explicit, including qubits created by a function.
     Inline functions with qubit-tensor arguments or results before conversion;
-    tensor ownership state is local to a function.
+    tensor references are local to a function.
 
     Before rewriting, prove that quantum values yielded by modifiers, branches,
     and loops correspond positionally to their region arguments. Reject wire
@@ -28,10 +28,10 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
     Determine the module's allocation mode before converting any function.
     Dynamic qubit sinks become deallocations; static qubit sinks are removed.
     Mixing static and dynamic allocation roots is unsupported.
-    Tensors of existing qubits use local reference buffers. If a dynamic tensor
-    can end with extracted slots, a separate boolean mask tracks occupancy and
-    `qc.dealloc_register` releases only the occupied slots. Complete lifetimes
-    need no mask. Static tensor release does not release physical qubits.
+    Tensors of existing qubits must contain static qubits, assigned by placement,
+    and use local reference buffers. Static tensor release does not release
+    physical qubits. Dynamic tensors must restore every extracted slot before
+    region exit or deallocation. Unsupported lifetimes fail before rewriting.
   }];
 
   let dependentDialects = ["mlir::memref::MemRefDialect",

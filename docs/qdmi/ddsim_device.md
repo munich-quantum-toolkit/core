@@ -69,7 +69,9 @@ Base or Adaptive programs with a static terminal measurement region can sample
 one prepared DD; other QIR programs run once per shot. See the
 [QIR execution contract](../qir/index.md) for eligibility and resource limits.
 OpenQASM classical registers use reverse declaration order, with each register
-most-significant-bit first. QIR samples follow the program's recorded outputs.
+most-significant-bit first. QIR records define increasing output-bit indices;
+the device reverses each recorded bitstring before returning shots and counts.
+Equivalent OpenQASM and QIR programs therefore use the same bitstring order.
 Adaptive QIR shots can record different numbers of bits; their histogram retains
 these variable-length outcomes.
 

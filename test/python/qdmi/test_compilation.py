@@ -37,10 +37,34 @@ def test_qpe_device_execution(method: qpe.Method) -> None:
     compiled = compile_program(benchmark.generate(), target=device)
     job = submit_program(compiled, target=device, num_shots=32, custom1=17)
     job.wait()
-    # QIR records register bits in increasing index order; benchmarks use big endian.
-    counts = {bits[::-1]: count for bits, count in job.get_counts().items()}
+    counts = job.get_counts()
     assert counts == {"01100000": 32}
     assert benchmark.evaluate(counts).total_variation_distance == pytest.approx(0)
+
+
+@pytest.mark.parametrize(
+    "program_format",
+    [
+        ProgramFormat.QASM3,
+        ProgramFormat.QIR_BASE_STRING,
+        ProgramFormat.QIR_BASE_MODULE,
+        ProgramFormat.QIR_ADAPTIVE_STRING,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
+    ],
+)
+@pytest.mark.parametrize("swapped", [False, True])
+def test_result_bit_order(program_format: ProgramFormat, *, swapped: bool) -> None:
+    """Shots and counts preserve classical-bit order across payload formats."""
+    source = (
+        'OPENQASM 3.0; include "stdgates.inc"; qubit[3] q; bit[2] a; bit b; '
+        f"x q[0]; a[{int(swapped)}] = measure q[0]; "
+        f"a[{int(not swapped)}] = measure q[1]; b = measure q[2];"
+    )
+    job = submit_program(source, target="mqt.ddsim.default", num_shots=4, program_format=program_format)
+    job.wait()
+    expected = "010" if swapped else "001"
+    assert job.get_shots() == [expected] * 4
+    assert job.get_counts() == {expected: 4}
 
 
 @pytest.mark.parametrize("data_qubits", [1, 4])
@@ -198,7 +222,7 @@ def test_payload_forward_branching(program_format: ProgramFormat) -> None:
     compiled = compile_program(source, target=device, program_format=program_format)
     job = submit_program(compiled, target=device, num_shots=32)
     job.wait()
-    assert set(job.get_counts()) <= ({"00", "01"} if program_format == ProgramFormat.QASM3 else {"00", "10"})
+    assert set(job.get_counts()) <= {"00", "01"}
     with pytest.raises(RuntimeError, match="Not supported"):
         job.get_dense_statevector()
     assert len(job.get_shots()) == 32

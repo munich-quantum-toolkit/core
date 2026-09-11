@@ -14,10 +14,12 @@ target pipeline cleans up structured control flow before specializing loops.
 Indexed register placement and shared if/for/while scalarization are documented
 in [the follow-up plan](compiler-placement.md). Placement still diagnoses
 unsupported tensor input before changing allocations, including when called
-directly. The same follow-up corrects partial tensor release ownership.
+directly. The same follow-up diagnoses unsupported partial dynamic tensor
+ownership and normalizes DDSIM QIR result bit order.
 
-QIR output uses recording order. Benchmark evaluation uses big-endian strings;
-the integration tests convert between these documented conventions.
+The QIR runtime preserves recording order. DDSIM normalizes that order when
+returning QDMI shots and counts, so benchmark evaluation consumes job results
+directly.
 
 ## Validation
 
