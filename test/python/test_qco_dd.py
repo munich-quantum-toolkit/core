@@ -226,6 +226,29 @@ def test_build_and_simulate_return_dense_arrays() -> None:
     assert np.allclose(simulate(UNITARY_QASM), state)
 
 
+def test_build_functionality_accepts_static_registers() -> None:
+    """Register syntax preserves the full unitary, wire order, and global phase."""
+    source = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+gphase(pi / 4);
+h q[0];
+cx q[0], q[1];
+"""
+    scalar_source = source.replace("qubit[2] q;", "qubit a; qubit b;").replace("q[0]", "a").replace("q[1]", "b")
+    expected = build_functionality(scalar_source)
+    qc = QCProgram.from_openqasm_str(source)
+    qco = qc.to_qco(copy=True)
+    for program in (source, qc, qco):
+        np.testing.assert_allclose(build_functionality(program), expected, rtol=0, atol=1e-12)
+    package = DDPackage(2)
+    matrix = qco.build_functionality(package)
+    np.testing.assert_allclose(matrix.get_matrix(2), expected, rtol=0, atol=1e-12)
+    package.dec_ref_mat(matrix)
+    assert qc.is_valid
+    assert qco.is_valid
+
+
 def test_dense_results_handle_zero_qubits_and_address_space() -> None:
     """Dense results handle scalars and reject unaddressable arrays."""
     empty = QCOProgram.from_mlir_str("""

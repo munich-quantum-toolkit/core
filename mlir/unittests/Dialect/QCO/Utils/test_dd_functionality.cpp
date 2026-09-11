@@ -3212,6 +3212,34 @@ TEST_F(QCODDFunctionalityTest, RejectsRepresentativeClassicalRuntimeErrors) {
   EXPECT_TRUE(dd->getRootSet<dd::vNode>().empty());
 }
 
+TEST_F(QCODDFunctionalityTest,
+       EntryAllocationsPreserveScalarAndTensorWireOrder) {
+  auto mod = buildModule([](QCOProgramBuilder& builder) {
+    auto first = builder.allocQubit();
+    auto size = arith::ConstantIndexOp::create(builder, 2).getResult();
+    auto tensor = builder.qtensorAlloc(size);
+    auto last = builder.allocQubit();
+    auto [remaining, secondElement] = builder.qtensorExtract(tensor, 1);
+    auto output = builder.qtensorInsert(builder.x(secondElement), remaining, 1);
+    builder.sink(first);
+    builder.sink(builder.x(last));
+    builder.qtensorDealloc(output);
+    return builder.intConstant(0);
+  });
+  ASSERT_TRUE(mod);
+  auto package = std::make_unique<dd::Package>(0);
+  const auto actual = buildFunctionality(mainFunc(*mod), *package);
+  ASSERT_TRUE(succeeded(actual));
+  EXPECT_EQ(package->qubits(), 4);
+  auto expected = package->applyOperation(referenceGateDD<XOp>(*package, {2}),
+                                          dd::MatrixDD::one());
+  expected =
+      package->applyOperation(referenceGateDD<XOp>(*package, {3}), expected);
+  EXPECT_EQ(*actual, expected);
+  package->decRef(*actual);
+  package->decRef(expected);
+}
+
 TEST_F(QCODDFunctionalityTest, BuildFunctionalityRestrictsRuntimeAllocations) {
   auto topLevel = parseSourceString<ModuleOp>(R"mlir(
     module {
@@ -3242,6 +3270,29 @@ TEST_F(QCODDFunctionalityTest, BuildFunctionalityRestrictsRuntimeAllocations) {
         %one = arith.constant 1 : index
         %tensor = qtensor.alloc(%one) : tensor<?x!qco.qubit>
         qtensor.dealloc %tensor : tensor<?x!qco.qubit>
+        return
+      }
+    }
+  )mlir");
+  expectMlirFails(1, R"mlir(
+    module {
+      func.func @main() {
+        %true = arith.constant true
+        %one = arith.constant 1 : index
+        scf.if %true {
+          %tensor = qtensor.alloc(%one) : tensor<1x!qco.qubit>
+          qtensor.dealloc %tensor : tensor<1x!qco.qubit>
+        }
+        return
+      }
+    }
+  )mlir");
+  expectMlirFails(1, R"mlir(
+    module {
+      func.func @main() {
+        %size = arith.constant 65537 : index
+        %tensor = qtensor.alloc(%size) : tensor<65537x!qco.qubit>
+        qtensor.dealloc %tensor : tensor<65537x!qco.qubit>
         return
       }
     }

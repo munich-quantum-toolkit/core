@@ -49,8 +49,9 @@ struct DDSamplingState {
 /// one-dimensional memrefs, dense rank-one f64 tensor constants and element
 /// extraction, and QTensor bookkeeping. `qco.static` values, or
 /// qubit arguments when no static values exist, set the wire map. Entry-block
-/// `qco.alloc` operations add subsequent wires. Measurements, resets, symbolic
-/// control, and other runtime allocation are not supported.
+/// `qco.alloc` and statically sized `qtensor.alloc` operations add subsequent
+/// wires in instruction order. Measurements, resets, symbolic control, and
+/// other runtime allocation are not supported.
 ///
 /// Runtime-bound parameters are supported for standard gates and for a sole
 /// standard gate inside `qco.ctrl`. Custom matrices and composite modifiers
