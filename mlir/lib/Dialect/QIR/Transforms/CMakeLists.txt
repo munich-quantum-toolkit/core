@@ -21,13 +21,11 @@ add_mlir_library(
 
 mqt_mlir_target_use_project_options(MLIRQIRTransforms)
 
-# collect header files
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE
      ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QIR/Transforms/*.h)
 file(GLOB_RECURSE PASSES_HEADERS_BUILD
      ${MQT_MLIR_BUILD_INCLUDE_DIR}/mqt/Dialect/QIR/Transforms/*.inc)
 
-# add public headers using file sets
 target_sources(
   MLIRQIRTransforms
   PUBLIC FILE_SET

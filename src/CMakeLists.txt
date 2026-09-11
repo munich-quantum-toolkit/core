@@ -28,11 +28,9 @@ if(NOT TARGET MQT::ProjectWarnings)
   include(${PROJECT_SOURCE_DIR}/cmake/CompilerWarnings.cmake)
   set_project_warnings(project_warnings)
 
-  # add MQT alias
   add_library(MQT::ProjectWarnings ALIAS project_warnings)
   set_target_properties(project_warnings PROPERTIES EXPORT_NAME ProjectWarnings)
 
-  # add to list of MQT core targets
   list(APPEND MQT_CORE_TARGETS project_warnings)
 endif()
 
@@ -48,21 +46,16 @@ if(NOT TARGET MQT::ProjectOptions)
   include(${PROJECT_SOURCE_DIR}/cmake/Sanitizers.cmake)
   enable_sanitizers(project_options)
 
-  # add MQT alias
   add_library(MQT::ProjectOptions ALIAS project_options)
   set_target_properties(project_options PROPERTIES EXPORT_NAME ProjectOptions)
 
-  # add to list of MQT core targets
   list(APPEND MQT_CORE_TARGETS project_options)
 endif()
 
-# add the benchmark semantic package
 add_subdirectory(bench)
 
-# add DD package library
 add_subdirectory(dd)
 
-# add QDMI libraries
 add_subdirectory(qdmi)
 
 # Installation instructions for the main library

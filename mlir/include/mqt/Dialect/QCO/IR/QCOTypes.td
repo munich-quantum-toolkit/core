@@ -24,8 +24,7 @@ def QubitType : QCOType<"Qubit", "qubit", [VectorElementTypeInterface]> {
   let description = [{
         The `!qco.qubit` type represents an SSA value holding a quantum bit
         in the QCO dialect. Operations using this type consume input qubits
-        and produce new output qubits following value semantics and the SSA
-        paradigm, enabling powerful dataflow analysis and optimization.
+        and produce new output qubits, making data dependencies explicit.
 
         Example:
         ```mlir

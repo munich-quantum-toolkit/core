@@ -155,9 +155,7 @@ def test_estimator_broadcasting(estimator: BackendEstimatorV2) -> None:
     # 2 Observables
     ops = [SparsePauliOp("Z"), SparsePauliOp("X")]
 
-    # 2 Parameter sets (shape (2,) / two values)
-    # Test asserts broadcasting for 2 observables x 2 parameter sets
-    # We align shapes to (2,) so they broadcast element-wise.
+    # Matching (2,) shapes pair each observable with one parameter set.
     vals = {theta: [[0.0], [np.pi]]}
 
     pub = EstimatorPub.coerce((qc, ops, vals))

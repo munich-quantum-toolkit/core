@@ -14,11 +14,11 @@ import os
 import sys
 from pathlib import Path
 
-# under Windows, make sure to add the appropriate DLL directory to the PATH
-if sys.platform == "win32":  # ruff:ignore[non-empty-init-module] This is actually required on Windows
+# Register bundled libraries before importing native extensions on Windows.
+if sys.platform == "win32":  # ruff:ignore[non-empty-init-module] Native imports need the DLL search path.
 
     def _dll_patch() -> None:
-        """Add the DLL directory to the PATH."""
+        """Add bundled libraries to the Windows DLL search path."""
         import sysconfig  # ruff:ignore[import-outside-top-level] only used in Windows
 
         bin_dir = Path(sysconfig.get_paths()["purelib"]) / "mqt" / "core" / "bin"

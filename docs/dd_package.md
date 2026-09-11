@@ -13,17 +13,10 @@ mystnb:
 
 # MQT Core DD
 
-MQT Core provides a fully-fledged, high-performance decision diagram package for
-quantum computing. The resulting library allows for the efficient representation
-and manipulation of quantum states and operations. If you are not yet familiar
-with decision diagrams as a data structure, you might want to start with the
-introduction to quantum decision diagrams below.
-
-Throughout the MQT, this library enables many classical simulation, synthesis,
-or verification techniques. While primarily developed in C++, the corresponding
-functionality is also exposed to Python users in the form of the
-{py:mod}`mqt.core.dd` module. The following section provides an overview on how
-to work with decision diagrams in MQT Core from Python.
+MQT Core represents and manipulates quantum states and operations with decision
+diagrams (DDs). The C++ library and {py:mod}`mqt.core.dd` Python module support
+simulation, synthesis, and verification. Start with the quickstart for Python
+usage or the introduction below for the data structure and its limits.
 
 ## Quickstart
 
@@ -121,9 +114,7 @@ out_state_dd.to_svg("bell_state.svg")
 SVG(filename="bell_state.svg")
 ```
 
-The DD package provides list of additional functionality when it comes to
-working with decision diagrams. Check out the full API documentation of the
-{py:class}`~mqt.core.dd.DDPackage` class for more details.
+See {py:class}`~mqt.core.dd.DDPackage` for the full API.
 
 ## How do Quantum Decision Diagrams Work?
 
@@ -145,9 +136,8 @@ and _verification_
 {cite:p}`burgholzerAdvancedEquivalenceChecking2021,burgholzerRandomStimuliGeneration2021,burgholzerVerifyingResultsIBM2020,wangXQDDbasedVerificationMethod2008,smithQuantumLogicSynthesis2019,hongEquivalenceCheckingDynamic2021`
 of quantum circuits, they recently attracted great attention.
 
-The following sections provide a comprehensive guide for quantum computing with
-decision diagrams, including the representation of quantum states and operations
-and the fundamental operations on decision diagrams.
+The following sections explain how decision diagrams represent quantum states
+and operations, and how computations act on those representations.
 
 ### Representation of Quantum States
 
@@ -167,9 +157,8 @@ which is commonly represented as a statevector
 \ket{\Psi}\equiv \begin{bmatrix} \alpha_0 & \alpha_1	\end{bmatrix}^\top.
 ```
 
-A rather simple observation and consequence of {eq}`ssstate` is that this vector
-can be equally split into a contribution of the $\ket{0}$ state ($\alpha_0$) and
-a contribution of the $\ket{1}$ state ($\alpha_1$), that is,
+The vector in {eq}`ssstate` splits into the contributions of the $\ket{0}$ state
+($\alpha_0$) and the $\ket{1}$ state ($\alpha_1$):
 
 ```{math}
 :label: splitting
@@ -295,10 +284,8 @@ Each level of the decision diagram consists of decision nodes with corresponding
 These successors represent the path that leads to an amplitude where the local quantum system (corresponding to the _level_ of the node, annotated here with the labels) is in the $\ket{0}$ (left successor) or the $\ket{1}$ state (right successor).
 ````
 
-At this point, this has been just a one-to-one translation between the
-statevector and a fancy graphical representation. The unique core feature of
-decision diagrams is that their graph structure allows redundant parts to be
-merged in the representation instead of being represented repeatedly.
+The diagrams above represent each part of the statevector separately. Merging
+redundant subgraphs makes the representation compact.
 
 ````{admonition} Example _(Redundancy in Decision Diagrams)_
 :class: tip
@@ -354,11 +341,8 @@ If $q_1$ is in the $\ket{0}$ state (following the left successor), then $q_0$ ha
 If $q_1$ is in the $\ket{1}$ state (following the right successor), it is guaranteed that the remaining qubit is in the $\ket{0}$ state.
 ````
 
-Overall, statevectors are represented as decision diagrams conceptually
-equivalent to halving the vector in a recursive fashion until it is fully
-decomposed. The key idea is to exploit the redundancies in the resulting
-diagrams to create a more compact representation. Some interesting properties
-that are worth pointing out:
+A statevector DD recursively halves the vector and shares redundant subgraphs.
+This representation has the following properties:
 
 - Decision diagrams can be initialized in their compact form (as, for example,
   shown in the last example above). There is no need to create the maximally
@@ -377,9 +361,8 @@ that are worth pointing out:
   trivial. Even entangled states such as the _GHZ state_ or the _W state_ have
   decision diagrams whose size (that is, the number of nodes) is linear in the
   number of qubits.
-- DDs are not a "silver bullet." The worst-case size of decision diagrams,
-  corresponding to states without redundancy, is still exponential in the number
-  of qubits. More specifically, a maximally large decision diagram has
+- The worst-case size, for states without redundancy, is exponential in the
+  number of qubits. More specifically, a maximally large decision diagram has
   $1+2^1+2^2+\dots+2^{n-1} = 2^n-1$ nodes.
 - To reduce visual clutter in illustrations of decision diagrams, edge weights
   are commonly not explicitly annotated, but their magnitude and phase are
@@ -433,12 +416,11 @@ The generalization to larger matrices works analogously to the vector case. To
 construct the decision diagram representing a matrix, the matrix is recursively
 divided into quarters, and the four elements correspond to the four successors
 of the node to represent that split. As for vector decision diagrams, a
-normalization scheme is applied to ensure that the resulting data structure is
-canonical and redundancy can be exploited. The conventional approach is to
-normalize all edge weights by the weight with the highest magnitude, selecting
-the leftmost one if multiple weights have the same magnitude. It is important to
-note that this ensures that all complex numbers within the decision diagram have
-a magnitude of at most $1$, which is used for optimization purposes.
+normalization scheme makes the representation canonical so equivalent subgraphs
+can be shared. Each node's outgoing edge weights are divided by the weight with
+the highest magnitude, selecting the leftmost one in a tie. The normalized
+outgoing weights have magnitude at most $1$; the extracted factor moves to the
+incoming edge.
 
 ````{admonition} Example _(Matrix Decision Diagrams)_
 :class: tip
@@ -497,19 +479,10 @@ Again, some interesting properties to point out:
 
 ### Fundamental Operations on Decision Diagrams
 
-Merely defining means for compactly representing any kind of state or operation
-does not yet allow one to perform efficient computations. It is crucial to also
-define efficient means of working with or manipulating the resulting
-representations. In the following, it is demonstrated how the most fundamental
-operations can be carried out within the decision-diagram formalism and how they
-scale. The focus is mainly on how operations are realized on vectors, since the
-concepts extend from vectors to matrices in a straightforward fashion.
-
-The main concept throughout all of these schemes is to recursively break the
-respective operations down into subcomputations. This decomposition then
-naturally matches the recursive decomposition of decision diagrams. As such,
-operations generally scale with the number of nodes in the involved decision
-diagrams.
+DD operations recursively split computations along the graph structure and cache
+shared subproblems. Their cost depends on the distinct subproblems visited and
+the size of the result, as described below. The examples use vectors; the same
+recursive approach extends to matrices.
 
 #### Kronecker Product
 
@@ -529,10 +502,9 @@ together local operations. For vectors, it can be expressed as
 \end{bmatrix}.
 ```
 
-In the decision-diagram formalism, this is one of the simplest operations to
-perform and is done by simply replacing the terminal nodes of the first decision
-diagram with the root node of the second decision diagram. In case of the above
-example, this has the following form:
+The DD Kronecker product replaces the nonzero terminal edges of the first
+diagram with the root edge of the second, multiplying their weights. For the
+example above:
 
 ```{image} _static/dd-figure-10.svg
 :alt: Kronecker product replacing terminal edges with the second DD.

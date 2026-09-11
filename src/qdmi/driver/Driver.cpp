@@ -153,11 +153,9 @@ DynamicDeviceLibrary::DynamicDeviceLibrary(void* handle,
 #undef LOAD_DYNAMIC_SYMBOL
 
 DynamicDeviceLibrary::~DynamicDeviceLibrary() {
-  // Check if QDMI_device_finalize is not NULL before calling it.
   if (device_finalize != nullptr) {
     device_finalize();
   }
-  // close the dynamic library
   if (libHandle_ != nullptr) {
     DL_CLOSE(libHandle_);
   }

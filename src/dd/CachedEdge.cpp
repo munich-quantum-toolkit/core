@@ -137,8 +137,8 @@ auto CachedEdge<Node>::normalize(Node* p,
 
   const auto argMaxValue = *argMax;
   for (auto i = 0U; i < NEDGE; ++i) {
-    // The approximation below is really important for numerical stability.
-    // An exactly zero check will lead to numerical instabilities.
+    /// Treat weights within tolerance as zero before normalization amplifies
+    /// them.
     if (zero[i]) {
       p->e[i] = Edge<Node>::zero();
       continue;

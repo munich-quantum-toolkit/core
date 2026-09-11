@@ -28,9 +28,7 @@ constexpr auto TOTAL_WIDTH = 120;
 constexpr auto BORDER_WIDTH = 2; // "║ " on each side
 constexpr int CONTENT_WIDTH = TOTAL_WIDTH - (2 * BORDER_WIDTH);
 
-// Pre-built strings, initialised once on first call. Each UTF-8 "═" is 3
-// bytes. BORDER_SEP is the "═" run between box corners; SPACES is used for
-// padding.
+/// Cache the border between box corners; each UTF-8 "═" occupies three bytes.
 static StringRef getBorderSep() {
   static const std::string BORDER_SEP = [] {
     std::string s;
@@ -82,7 +80,6 @@ void wrapLine(StringRef line, const int maxWidth,
     return;
   }
 
-  // Detect leading whitespace (indentation) in the original line
   size_t leadingSpaces = 0;
   for (const char c : line) {
     if (c == ' ') {
@@ -94,7 +91,6 @@ void wrapLine(StringRef line, const int maxWidth,
     }
   }
 
-  // Extract the content without leading whitespace
   const StringRef content = line.substr(line.find_first_not_of(" \t"));
   if (content.empty()) {
     result.emplace_back(line);
@@ -110,7 +106,6 @@ void wrapLine(StringRef line, const int maxWidth,
       maxWidth - indent - static_cast<int>(leadingSpaces) - 2; // "↳ "
 
   if (firstLineWidth <= 10 || contLineWidth <= 10) {
-    // Not enough space to wrap intelligently, just return original
     result.emplace_back(line);
     return;
   }
@@ -138,7 +133,6 @@ void wrapLine(StringRef line, const int maxWidth,
     const int effectiveWidth = isFirstLine ? firstLineWidth : contLineWidth;
 
     if (currentWidth + spaceWidth + wordWidth <= effectiveWidth) {
-      // Word fits on current line
       if (!currentLine.empty()) {
         currentLine += ' ';
         ++currentWidth;
@@ -150,17 +144,13 @@ void wrapLine(StringRef line, const int maxWidth,
     return false;
   };
 
-  // Process the content word by word
   for (const auto& c : content) {
     if (c == ' ' || c == '\t') {
-      // End of word - try to add it to current line
       if (!currentWord.empty()) {
         if (!addWord(currentWord)) {
-          // Word doesn't fit - finalize current line and start new one
           if (!currentLine.empty()) {
             flushLine(/*addArrow=*/true, /*lastLine=*/false);
           }
-          // Start new continuation line
           currentLine = currentWord;
           currentWidth = calculateDisplayWidth(StringRef(currentWord));
           isFirstLine = false;
@@ -172,31 +162,25 @@ void wrapLine(StringRef line, const int maxWidth,
     }
   }
 
-  // Add remaining word
   if (!currentWord.empty()) {
     if (!addWord(currentWord)) {
-      // Finalize current line
       if (!currentLine.empty()) {
         flushLine(/*addArrow=*/true, /*lastLine=*/false);
       }
-      // Add word on new continuation line (no arrow — this is the last line)
       SmallString<128> contLine("↳ ");
       contLine.append(leadingSpaces, ' ');
       contLine += currentWord;
       result.emplace_back(std::move(contLine));
       isFirstLine = false;
     } else {
-      // Word fit: emit final line (no arrow)
       if (!currentLine.empty()) {
         flushLine(/*addArrow=*/false, /*lastLine=*/true);
       }
     }
   } else if (!currentLine.empty()) {
-    // No remaining word: emit the last line (no arrow)
     flushLine(/*addArrow=*/false, /*lastLine=*/true);
   }
 
-  // Safety net: if we somehow produced nothing, return the original line
   if (result.empty()) {
     result.emplace_back(line);
     return;
@@ -227,7 +211,6 @@ static void emitBoxedLine(StringRef line, const int indent, raw_ostream& os) {
   os << "║ ";
   os.indent(static_cast<unsigned>(indent));
   os << line;
-  // Write padding as a single slice of the pre-built spaces string
   if (padding > 0) {
     os << getSpaces().substr(0, static_cast<size_t>(padding));
   }
@@ -235,17 +218,15 @@ static void emitBoxedLine(StringRef line, const int indent, raw_ostream& os) {
 }
 
 void printBoxLine(StringRef text, const int indent, raw_ostream& os) {
-  // Trim trailing whitespace before processing
   const auto trimmedText = text.rtrim();
 
-  // Fast path: if the line fits without wrapping, skip wrapLine entirely
+  /// Avoid allocating wrapped lines when the text already fits.
   const int displayWidth = calculateDisplayWidth(trimmedText);
   if (displayWidth <= CONTENT_WIDTH - indent) {
     emitBoxedLine(trimmedText, indent, os);
     return;
   }
 
-  // Wrap the line
   SmallVector<SmallString<128>, 4> wrappedLines;
   wrapLine(trimmedText, CONTENT_WIDTH, wrappedLines, indent);
 
@@ -275,7 +256,6 @@ void printProgram(ModuleOp module, const StringRef header, raw_ostream& os) {
   llvm::raw_svector_ostream irStream(irString);
   module.print(irStream);
 
-  // Print the IR with box lines and wrapping
   printBoxText(irString, 0, os);
 
   printBoxBottom(os);

@@ -1191,7 +1191,6 @@ TEST_F(QCOMatrixTest, GPhaseOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), globalPhase);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto gPhaseOp = *funcOp.getBody().getOps<GPhaseOp>().begin();
   const auto matrix = *gPhaseOp.getUnitaryMatrix();
@@ -1247,7 +1246,6 @@ TEST_F(QCOMatrixTest, POpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), p);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto pOp = *funcOp.getBody().getOps<POp>().begin();
   const auto matrix = *pOp.getUnitaryMatrix();
@@ -1302,7 +1300,6 @@ TEST_F(QCOMatrixTest, ROpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), r);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto rOp = *funcOp.getBody().getOps<ROp>().begin();
   const auto matrix = *rOp.getUnitaryMatrix();
@@ -1326,7 +1323,6 @@ TEST_F(QCOMatrixTest, RXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rx);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto rxOp = *funcOp.getBody().getOps<RXOp>().begin();
   const auto matrix = *rxOp.getUnitaryMatrix();
@@ -1347,7 +1343,6 @@ TEST_F(QCOMatrixTest, RXXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rxx);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto rxxOp = *funcOp.getBody().getOps<RXXOp>().begin();
   const auto matrix = *rxxOp.getUnitaryMatrix();
@@ -1371,7 +1366,6 @@ TEST_F(QCOMatrixTest, RYOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), ry);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto ryOp = *funcOp.getBody().getOps<RYOp>().begin();
   const auto matrix = *ryOp.getUnitaryMatrix();
@@ -1392,7 +1386,6 @@ TEST_F(QCOMatrixTest, RYYOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), ryy);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto ryyOp = *funcOp.getBody().getOps<RYYOp>().begin();
   const auto matrix = *ryyOp.getUnitaryMatrix();
@@ -1416,7 +1409,6 @@ TEST_F(QCOMatrixTest, RZOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rz);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto rzOp = *funcOp.getBody().getOps<RZOp>().begin();
   const auto matrix = *rzOp.getUnitaryMatrix();
@@ -1437,7 +1429,6 @@ TEST_F(QCOMatrixTest, RZXOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rzx);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto rzxOp = *funcOp.getBody().getOps<RZXOp>().begin();
   const auto matrix = *rzxOp.getUnitaryMatrix();
@@ -1461,7 +1452,6 @@ TEST_F(QCOMatrixTest, RZZOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), rzz);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto rzzOp = *funcOp.getBody().getOps<RZZOp>().begin();
   const auto matrix = *rzzOp.getUnitaryMatrix();
@@ -1572,7 +1562,6 @@ TEST_F(QCOMatrixTest, U2OpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), u2);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto u2Op = *funcOp.getBody().getOps<U2Op>().begin();
   const auto matrix = *u2Op.getUnitaryMatrix();
@@ -1594,7 +1583,6 @@ TEST_F(QCOMatrixTest, UOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), u);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto uOp = *funcOp.getBody().getOps<UOp>().begin();
   const auto matrix = *uOp.getUnitaryMatrix();
@@ -1642,7 +1630,6 @@ TEST_F(QCOMatrixTest, XXMinusYYOpMatrix) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), xxMinusYY);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto xxMinusYYOp = *funcOp.getBody().getOps<XXMinusYYOp>().begin();
   const auto matrix = *xxMinusYYOp.getUnitaryMatrix();
@@ -1668,7 +1655,6 @@ TEST_F(QCOMatrixTest, XXPlusYYOp) {
   auto moduleOp = QCOProgramBuilder::build(context.get(), xxPlusYY);
   ASSERT_TRUE(moduleOp);
 
-  // Get the operation from the module
   auto funcOp = *moduleOp->getBody()->getOps<func::FuncOp>().begin();
   auto xxPlusYYOp = *funcOp.getBody().getOps<XXPlusYYOp>().begin();
   const auto matrix = *xxPlusYYOp.getUnitaryMatrix();

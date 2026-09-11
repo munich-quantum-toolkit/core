@@ -19,12 +19,8 @@ def QCODialect : Dialect {
   let description = [{
         The QCO dialect uses **value semantics** where quantum operations
         consume input qubits and produce new output values, following the
-        functional programming and SSA paradigm. This model enables:
-
-        - Powerful compiler optimizations through clear dataflow
-        - Safe reordering and parallelization analysis
-        - Advanced transformation passes
-        - Explicit dependency tracking
+        SSA model. Dependencies between quantum operations are explicit in
+        the use-def chains.
 
         The name "QCO" stands for "Quantum Circuit Optimization."
 

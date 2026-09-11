@@ -64,12 +64,9 @@ enum class AllocationMode : std::uint8_t {
   Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
-/// State object for tracking qubit allocation mode.
-///
-/// Used to track whether a function uses static or dynamic qubit allocation.
-/// This is used to determine whether to convert `qco.sink` to `qc.dealloc` (for
-/// dynamic qubits) or simply erase it (for static qubits). This is also used to
-/// catch cases of mixed allocation modes being used, which is not supported.
+/// Track register-backed qubit references, function argument positions, and
+/// the module's allocation mode. Dynamic qubits require deallocation at sinks;
+/// static qubits do not. Mixed allocation modes are rejected before conversion.
 struct LoweringState {
   /// Function symbols remain in place while their signatures are converted.
   SymbolTableCollection symbolTables;
@@ -84,11 +81,7 @@ struct LoweringState {
   explicit LoweringState(AllocationMode mode) : allocationMode(mode) {}
 };
 
-/// Base class for conversion patterns that need access to lowering state
-///
-/// Extends OpConversionPattern to provide access to a shared LoweringState
-/// object, which is used to track the allocation mode of the module.
-/// @tparam OpType The QCO operation type to be converted.
+/// Share register and allocation state across conversion patterns.
 template <typename OpType>
 class StatefulOpConversionPattern : public OpConversionPattern<OpType> {
 
@@ -97,7 +90,6 @@ public:
                               MLIRContext* context, LoweringState* state)
       : OpConversionPattern<OpType>(typeConverter, context), state_(state) {}
 
-  /// Returns the shared lowering state object
   [[nodiscard]] LoweringState& getState() const { return *state_; }
 
 private:
@@ -183,16 +175,8 @@ collectAllocationMode(ModuleOp moduleOp) {
   return mode;
 }
 
-/// Moves the operations from one region into another.
-///
-/// Moves the operations from the source region into the target region.
-/// The target region replaces the uses of the old block arguments with the
-/// @p replacementValues and erases the unused block arguments.
-///
-/// @param sourceRegion Source region where the operations are moved from
-/// @param targetRegion Target region where the operations are moved to
-/// @param replacementValues Values to replace the uses of the arguments
-/// @param rewriter PatternRewriter of the current conversion pass
+/// Move a region, replace its block arguments with @p replacementValues,
+/// and erase the unused arguments.
 static void inlineRegion(Region& sourceRegion, Region& targetRegion,
                          ValueRange replacementValues,
                          ConversionPatternRewriter& rewriter) {
@@ -790,28 +774,8 @@ template <typename QCOOpType, typename QCOpType, std::size_t NumTargets,
 struct ConvertQCOGateToQC final : OpConversionPattern<QCOOpType> {
   using OpConversionPattern<QCOOpType>::OpConversionPattern;
 
-  /// Generic QCO gate conversion helper (value semantics → reference).
-  ///
-  /// This helper relies on a strict operand ordering contract provided by the
-  /// dialect conversion framework:
-  /// - `adaptor.getOperands()` is expected to be ordered as
-  ///   `targets...` followed by `parameters...`.
-  /// - The first @p NumTargets operands are the (type-converted) QC target
-  /// qubits.
-  /// - The remaining @p NumParams operands are the gate parameters.
-  ///
-  /// `matchAndRewrite` passes the full adapted operand list to `createGate`,
-  /// which forwards the first @p NumTargets values (converted targets) and the
-  /// following @p NumParams values (parameters, unchanged type through the
-  /// converter) to `QCOpType::create(...)`. It then replaces the original QCO
-  /// op with the created QC targets via `rewriter.replaceOp(op, qcTargets)`.
-  ///
-  /// The values of @p NumTargets and @p NumParams are compile-time constants
-  /// and define this contract for each instantiation.
-  ///
-  /// @see ConvertQCOGateToQC
-  /// @see createGate
-  /// @see matchAndRewrite
+  /// Forward the adapted operands in QCO's declared order: NumTargets qubits,
+  /// then NumParams parameters. Dialect conversion preserves this order.
   template <std::size_t... TargetIndices, std::size_t... ParamIndices>
   static void createGate(ConversionPatternRewriter& rewriter, Location loc,
                          ValueRange qcOperands,
@@ -1073,7 +1037,6 @@ struct ConvertQCOCtrlOp final : OpConversionPattern<qco::CtrlOp> {
   LogicalResult
   matchAndRewrite(qco::CtrlOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Create qc.ctrl operation
     auto qcOp = qc::CtrlOp::create(
         rewriter, op.getLoc(), adaptor.getControlsIn(), adaptor.getTargetsIn());
 
@@ -1110,7 +1073,6 @@ struct ConvertQCOInvOp final : OpConversionPattern<qco::InvOp> {
   LogicalResult
   matchAndRewrite(qco::InvOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Create qc.inv operation
     auto qcOp = qc::InvOp::create(rewriter, op.getLoc(), adaptor.getQubitsIn());
 
     if (failed(moveRegion(op.getRegion(), qcOp.getRegion(), rewriter,
@@ -1146,7 +1108,6 @@ struct ConvertQCOPowOp final : OpConversionPattern<qco::PowOp> {
   LogicalResult
   matchAndRewrite(qco::PowOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    // Create qc.pow operation with exponent and qubit operands
     auto qcOp = qc::PowOp::create(rewriter, op.getLoc(), adaptor.getExponent(),
                                   adaptor.getQubitsIn());
 
@@ -1335,7 +1296,6 @@ struct ConvertQCOIfOp final : OpConversionPattern<IfOp> {
         !classicalResultTypes.empty() ||
         op.getElseRegion().front().getOperations().size() > 1;
 
-    // Create the new if operation
     auto newIf = scf::IfOp::create(rewriter, op.getLoc(), classicalResultTypes,
                                    adaptor.getCondition(), keepElseRegion);
     auto& newThenRegion = newIf.getThenRegion();
@@ -1468,32 +1428,10 @@ struct ConvertQCOSCFConditionOp final : OpConversionPattern<scf::ConditionOp> {
   }
 };
 
-/// Pass implementation for QCO-to-QC conversion
-///
-/// This pass converts QCO dialect operations (value semantics) to
-/// QC dialect operations (reference semantics). The conversion is useful
-/// for lowering optimized SSA-form code back to a hardware-oriented
-/// representation suitable for backend code generation.
-///
-/// The conversion leverages MLIR's built-in type conversion infrastructure:
-/// The TypeConverter handles !qco.qubit → !qc.qubit transformations,
-/// and the OpAdaptor automatically provides type-converted operands to each
-/// conversion pattern. This eliminates the need for manual state tracking.
-///
-/// Key semantic transformation:
-/// - QCO operations form explicit SSA chains where each operation consumes
-///   inputs and produces new outputs
-/// - QC operations modify qubits in-place using references
-/// - The conversion maps each QCO SSA chain to a single QC reference,
-///   with MLIR's conversion framework automatically handling the plumbing
-///
-/// The pass operates through:
-/// 1. Type conversion: !qco.qubit → !qc.qubit
-/// 2. Operation conversion: Each QCO op converted to its QC equivalent
-/// 3. Automatic operand mapping: OpAdaptors provide converted operands
-/// 4. Function/control-flow adaptation: Signatures updated to use QC types
-/// Quantum region correspondence and allocation mode are checked before
-/// rewriting.
+/// Convert QCO's linear SSA chains to QC qubit references.
+/// Check allocation mode, wire correspondence, and tensor lifetimes before
+/// rewriting. Adapted operands carry the converted references into gate and
+/// control-flow patterns.
 struct QCOToQC final : impl::QCOToQCBase<QCOToQC> {
   using QCOToQCBase::QCOToQCBase;
 

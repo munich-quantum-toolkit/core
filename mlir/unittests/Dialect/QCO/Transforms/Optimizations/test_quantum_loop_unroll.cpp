@@ -207,9 +207,8 @@ TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::InsertOp>()), 1);
 
-  // After the pass, there are is still a loop, however with step size = 2.
-  // Where previously, the loop consists of 2 extracts and 2 inserts (q0, qi),
-  // after the pass it consists of 4 extracts and 4 inserts.
+  /// Partial unrolling retains the loop and duplicates each iteration's
+  /// extract/insert pairs.
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
 

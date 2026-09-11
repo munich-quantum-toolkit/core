@@ -56,7 +56,6 @@ if TYPE_CHECKING:
     from ...typing import QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
     from .provider import QDMIProvider
 
-    # Type alias for parameter values
     ParametersType = Mapping[Parameter, ParameterValueType] | Iterable[ParameterValueType]
 
 __all__ = ["QDMIBackend"]
@@ -83,10 +82,8 @@ def _build_gate_mappings_for_backend(
     Returns:
         Tuple of (qiskit_to_qdmi_map, operation_to_gate_map).
     """
-    # Get Qiskit's standard gate name mapping as our canonical source
     canonical_gates = get_standard_gate_name_mapping()
 
-    # Augment the canonical mapping with any additional gates that may not be in Qiskit's standard library
     canonical_gates.update({
         "mcx": MCXGate,
         "mcphase": MCPhaseGate,
@@ -98,14 +95,11 @@ def _build_gate_mappings_for_backend(
     qiskit_to_qdmi: dict[str, set[str]] = {}
     operation_to_gate: dict[str, Instruction | type[Instruction]] = {}
 
-    # Process each canonical gate from Qiskit's standard library
     for canonical_name, gate in canonical_gates.items():
-        # Get all names for this gate (canonical + aliases)
         all_names = {canonical_name}
         if canonical_name in gate_aliases:
             all_names.update(gate_aliases[canonical_name])
 
-        # For each name, map it to all names (bidirectional aliases)
         for name in all_names:
             qiskit_to_qdmi[name] = all_names.copy()
             operation_to_gate[name] = gate
@@ -138,15 +132,12 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
             )
         circuit = circuit.compose(initialization, front=True, inplace=False)
 
-    # Qiskit's OpenQASM3 exporter is fairly limited in terms of which gates it supports natively.
-    # So it needs some help from us.
     exclusion_list = set()
 
     # Qiskit treats "measure", "reset", and "barrier" as keywords rather than gates
     exclusion_list.update({"measure", "reset", "barrier"})
 
-    # We also need to remove all gates that are defined in the OpenQASM `stdlib.inc`.
-    # Qiskit's exporter will otherwise complain about duplicate definitions.
+    # Exclude standard-library gates to avoid duplicate definitions.
     exclusion_list.update({
         "p",
         "x",
@@ -182,9 +173,7 @@ def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
         "u3",
     })
 
-    # By excluding already defined gates, we allow the exporter to emit otherwise unsupported gates without
-    # needing to provide a definition for them. The exporter will then treat them as opaque gates, which is fine
-    # as long as the target device supports them.
+    # Emit device-supported gates outside the standard library as opaque gates.
     basis_gates = [gate for gate in backend.target.operation_names if gate not in exclusion_list] + ["mcx_gray", "U"]
 
     return qasm3.dumps(circuit, basis_gates=basis_gates)
@@ -250,21 +239,20 @@ class QDMIBackend(BackendV2):
         # Zoned operations cannot easily be represented in Qiskit's Target model
         return not any(op.is_zoned() for op in device.operations())
 
-    # Define known aliases
     _GATE_ALIASES: ClassVar[dict[str, set[str]]] = {
-        "id": {"i"},  # Identity gate can also be called 'i'
-        "p": {"phase"},  # Phase gate can also be called 'phase'
+        "id": {"i"},
+        "p": {"phase"},
         "r": {"prx"},  # R gate can also be called 'prx' (IQM naming)
-        "u": {"u3"},  # U and U3 are the same gate
-        "cu": {"cu3"},  # CU and CU3 are the same gate
-        "cx": {"cnot"},  # CX and CNOT are the same gate
+        "u": {"u3"},
+        "cu": {"cu3"},
+        "cx": {"cnot"},
         "global_phase": {"gphase"},  # Qiskit canonical name
         "gphase": {"global_phase"},  # OpenQASM canonical name
         "mcphase": {"mcp"},  # Qiskit canonical name
         "mcp": {"mcphase"},  # OpenQASM canonical name
-        "mcx_gray": {"mcx"},  # Alias for MCX with specific encoding
-        "mcx_vchain": {"mcx"},  # Alias for MCX with specific encoding
-        "mcx_recursive": {"mcx"},  # Alias for MCX with specific encoding
+        "mcx_gray": {"mcx"},
+        "mcx_vchain": {"mcx"},
+        "mcx_recursive": {"mcx"},
     }
 
     #: Gates outside Qiskit's standard library that the device natively supports.
@@ -284,7 +272,6 @@ class QDMIBackend(BackendV2):
     _QISKIT_TO_QDMI_GATE_MAP: ClassVar[dict[str, set[str]]]
     _OPERATION_TO_GATE_MAP: ClassVar[dict[str, Instruction | type[Instruction]]]
 
-    # Initialize derived mappings at class definition time
     _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES, _EXTRA_GATES)
 
     def __init_subclass__(cls, **kwargs: Any) -> None:  # ruff:ignore[any-type]
@@ -323,7 +310,6 @@ class QDMIBackend(BackendV2):
         self._device = device
         self._device_id = device_id
 
-        # Build Target from device
         self._target = self._build_target()
 
     @classmethod
@@ -429,15 +415,12 @@ class QDMIBackend(BackendV2):
             num_qubits=self._target_num_qubits(),
         )
 
-        # Deduplicate operations by Qiskit gate name (not device operation name)
-        # Multiple device operations may map to the same Qiskit gate
+        # Device aliases can map several operations to the same Qiskit gate.
         seen_gate_names: set[str] = set()
 
-        # Add operations from device
         for op in self._device.operations():
             self._add_operation_to_target(target, op, seen_gate_names)
 
-        # Check if the measurement operation is defined
         if "measure" not in seen_gate_names:
             warnings.warn(
                 f"{self._device.name()} does not define a measurement operation. This may limit practical usage.",
@@ -462,7 +445,6 @@ class QDMIBackend(BackendV2):
             op: The device operation to add.
             seen_gate_names: Qiskit gate names already added to the target (mutated in place).
         """
-        # Map known operations to Qiskit gates
         op_name = op.name().lower()
 
         # Skip control flow operations that don't belong in the Target
@@ -484,13 +466,11 @@ class QDMIBackend(BackendV2):
 
         is_class = inspect.isclass(gate)
 
-        # Skip if we've already added this Qiskit gate to the target
         gate_name = op_name if is_class else gate.name
         if gate_name in seen_gate_names:
             return
         seen_gate_names.add(gate_name)
 
-        # Determine which qubits this operation applies to
         qargs = self._get_operation_qargs(op)
 
         # Globally supported gates (such as MCX) must specify a name and no properties
@@ -500,7 +480,6 @@ class QDMIBackend(BackendV2):
 
         # If qargs is [None], it means the operation is available on all qubits
         if qargs == [None]:
-            # Create instruction properties
             props = None
             duration = self._duration_seconds(op.duration())
             fidelity = op.fidelity()
@@ -513,7 +492,6 @@ class QDMIBackend(BackendV2):
             target.add_instruction(gate, {None: props})
             return
 
-        # Add the operation without properties and populate them iteratively later
         target.add_instruction(gate, dict.fromkeys(qargs))
 
         site_tuples = self._get_operation_site_tuples(op)
@@ -794,15 +772,12 @@ class QDMIBackend(BackendV2):
             >>> qc2.measure_all()
             >>> job = backend.run([qc1, qc2], parameter_values=[{theta: 0.5}, {theta: 1.5}])
         """  # ruff:ignore[docstring-extraneous-exception] The validation helper raises operation errors.
-        # Normalize input to a list of circuits
         circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
 
-        # Validate non-empty circuit list
         if not circuits:
             msg = "No circuits provided to run. At least one circuit is required."
             raise CircuitValidationError(msg)
 
-        # Validate parameter_values length if provided
         if parameter_values is not None and len(parameter_values) != len(circuits):
             msg = (
                 f"Length of parameter_values ({len(parameter_values)}) must match "
@@ -832,14 +807,12 @@ class QDMIBackend(BackendV2):
 
         supported_formats = self._device.supported_program_formats()
 
-        # Process each circuit
         qdmi_jobs: list[QDMIJobHandle] = []
         prepared_circuits: list[QuantumCircuit] = []
-        # First pass: validate and serialize all circuits
+        # Prepare every circuit before submitting any job, so validation cannot leave a partial batch.
         serialized_circuits: list[tuple[str | bytes, ProgramFormat]] = []
 
         for idx, circuit in enumerate(circuits):
-            # Bind parameters if provided
             bound_circuit = circuit
             if parameter_values is not None:
                 try:
@@ -883,10 +856,6 @@ class QDMIBackend(BackendV2):
             raise
 
 
-# MQT Core owns the two OpenQASM formats and registers them through the same
-# registry as everyone else, so the backend walks one ordered list of formats
-# with no format-specific branch. `mqt.core.plugins.qiskit.__init__` imports this
-# module whenever Qiskit is installed, so both formats are available as soon as
-# the adapter is.
+# Register bundled OpenQASM serializers when the Qiskit adapter is imported.
 register_program_serializer(ProgramFormat.QASM3, _serialize_to_qasm3)
 register_program_serializer(ProgramFormat.QASM2, _serialize_to_qasm2)

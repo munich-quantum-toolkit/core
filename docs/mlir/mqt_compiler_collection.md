@@ -353,8 +353,7 @@ mqt-cc input.qasm --emit=qir-adaptive -o output.bc
 ```
 
 Writing QIR to standard output also produces textual LLVM IR. All other output
-filenames, including filenames without an extension, retain the bitcode output
-used by earlier versions.
+filenames, including filenames without an extension, produce bitcode.
 
 The {doc}`QC <QC>`, {doc}`QCO <QCO>`, and {doc}`QTensor <QTensor>` references
 describe the underlying operations. See {doc}`Conversions` for conversions

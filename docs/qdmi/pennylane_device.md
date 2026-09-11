@@ -17,9 +17,9 @@ reconstructed from finite-shot QDMI results.
 Any registered gate-based QDMI device can use this integration if it advertises
 OpenQASM 3 or OpenQASM 2, accepts finite-shot jobs, and returns
 computational-basis samples. Specialized neutral-atom interfaces, pulse-level
-control, and analytic execution are out of scope for now. The examples below use
-the local [DD-based simulator device](ddsim_device.md) included with MQT Core
-and require no credentials or remote resources.
+control, and analytic execution are unsupported. The examples below use the
+local [DD-based simulator device](ddsim_device.md) included with MQT Core and
+require no credentials or remote resources.
 
 Install MQT Core with the optional PennyLane dependency into the active
 environment:

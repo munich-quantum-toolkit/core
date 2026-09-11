@@ -29,7 +29,6 @@ function(add_mqt_python_binding package_name target_name)
     # Source files
     ${SOURCES})
 
-  # Set C++ standard
   target_compile_features(${target_name} PRIVATE cxx_std_20)
 
   if(ARG_MODULE_NAME)

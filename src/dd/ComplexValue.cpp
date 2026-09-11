@@ -290,7 +290,6 @@ ComplexValue operator/(const ComplexValue& c1, const ComplexValue& c2) {
   const auto gr = kahan(c1.r, c1.i, c2.r, c2.i);
   // evaluates c1.i * c2.r - c1.r * c2.i
   const auto gi = kahan(c1.i, -c1.r, c2.r, c2.i);
-  // performs the division
   return {gr / d, gi / d};
 }
 

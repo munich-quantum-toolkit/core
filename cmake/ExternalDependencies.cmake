@@ -81,5 +81,4 @@ FetchContent_Declare(
   FIND_PACKAGE_ARGS ${QDMI_MINIMUM_VERSION})
 list(APPEND FETCH_PACKAGES qdmi)
 
-# Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})

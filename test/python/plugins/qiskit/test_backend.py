@@ -348,7 +348,6 @@ def test_backend_circuit_with_parameters(ddsim_backend: QDMIBackend) -> None:
     qc.ry(theta, 0)
     qc.measure_all()
 
-    # Unbound parameters should raise an error
     with pytest.raises(CircuitValidationError, match=r"Circuit contains unbound parameters"):
         ddsim_backend.run(qc)
 
@@ -360,7 +359,6 @@ def test_backend_circuit_with_bound_parameters(ddsim_backend: QDMIBackend) -> No
     qc.ry(theta, 0)
     qc.measure_all()
 
-    # Bound parameters should work
     qc_bound = qc.assign_parameters({theta: 1.5708})
 
     job = ddsim_backend.run(qc_bound, shots=100)
@@ -654,13 +652,7 @@ def test_backend_supports_multicontrolled_gates(ddsim_backend: QDMIBackend) -> N
 
 
 def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDMIBackend) -> None:
-    """Ensures the backend can run circuits with gates that are not natively supported by OpenQASM 3.
-
-    The DDSIM backend defines support for `mcx` gates, which are not native to OpenQASM3.
-    Qiskit's OpenQASM3 exporter has problems providing proper definitions for such gates,
-    which we work around by declaring the device's basis gates in the export call.
-    This test ensures that this workaround is effective and that the backend can successfully run such circuits.
-    """
+    """Backend executes a six-qubit MCX circuit through its selected serializer."""
     qc = QuantumCircuit(6)
     qc.mcx([0, 1, 2, 3, 4], 5)
     qc.measure_all()

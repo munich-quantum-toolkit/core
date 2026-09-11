@@ -1047,15 +1047,6 @@ struct LowerRegisterComparison final : OpRewritePattern<arith::CmpIOp> {
 };
 
 /// Converts qtensor.alloc to jeff.qureg_alloc
-///
-/// @par Example:
-/// ```mlir
-/// %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// %qureg = jeff.qureg_alloc(%c3) : !jeff.qureg
-/// ```
 struct ConvertQTensorAllocOp final
     : StatefulOpConversionPattern<qtensor::AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -1076,16 +1067,6 @@ struct ConvertQTensorAllocOp final
 };
 
 /// Converts qtensor.extract to jeff.qureg_extract_index
-///
-/// @par Example:
-/// ```mlir
-/// %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// %qureg_out, %q = jeff.qureg_extract_index(%c0) %qureg_in : !jeff.qureg,
-/// !jeff.qubit
-/// ```
 struct ConvertQTensorExtractOp final
     : StatefulOpConversionPattern<qtensor::ExtractOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -1100,15 +1081,6 @@ struct ConvertQTensorExtractOp final
 };
 
 /// Converts qtensor.insert to jeff.qureg_insert_index
-///
-/// @par Example:
-/// ```mlir
-/// %tensor_out = qtensor.insert %q into %tensor_in[%c0] : tensor<3x!qco.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// %qureg_out = jeff.qureg_insert_index(%c0) %qureg_in %q : !jeff.qureg
-/// ```
 struct ConvertQTensorInsertOp final
     : StatefulOpConversionPattern<qtensor::InsertOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -1123,15 +1095,6 @@ struct ConvertQTensorInsertOp final
 };
 
 /// Converts qtensor.dealloc to jeff.qureg_free_zero
-///
-/// @par Example:
-/// ```mlir
-/// qtensor.dealloc %tensor : tensor<3x!qco.qubit>
-/// ```
-/// is converted to
-/// ```mlir
-/// jeff.qureg_free_zero %qureg : !jeff.qureg
-/// ```
 struct ConvertQTensorDeallocOp final
     : StatefulOpConversionPattern<qtensor::DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -1145,15 +1108,6 @@ struct ConvertQTensorDeallocOp final
 };
 
 /// Converts qco.alloc to jeff.qubit_alloc
-///
-/// @par Example:
-/// ```mlir
-/// %q = qco.alloc : !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q = jeff.qubit_alloc : !jeff.qubit
-/// ```
 struct ConvertQCOAllocOpToJeff final : StatefulOpConversionPattern<AllocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1171,20 +1125,8 @@ struct ConvertQCOAllocOpToJeff final : StatefulOpConversionPattern<AllocOp> {
 
 /// Converts qco.static to jeff.qubit_alloc
 ///
-/// The jeff dialect does not model hardware-mapped or fixed-index static
-/// qubits yet. As a temporary workaround (see discussion on #1626), this
-/// lowers `qco.static` to the same `jeff.qubit_alloc` operation used for
-/// `qco.alloc`. The static index is not represented in jeff IR; if jeff gains
-/// static qubit support, this conversion should be revisited.
-///
-/// @par Example:
-/// ```mlir
-/// %q = qco.static 0 : !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q = jeff.qubit_alloc : !jeff.qubit
-/// ```
+/// jeff has no static-qubit representation. This conversion allocates a
+/// dynamic qubit and discards the static index, so hardware placement is lost.
 struct ConvertQCOStaticOpToJeff final : StatefulOpConversionPattern<StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1201,15 +1143,6 @@ struct ConvertQCOStaticOpToJeff final : StatefulOpConversionPattern<StaticOp> {
 };
 
 /// Converts qco.sink to jeff.qubit_free_zero
-///
-/// @par Example:
-/// ```mlir
-/// qco.sink %q : !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// jeff.qubit_free_zero %q : !jeff.qubit
-/// ```
 struct ConvertQCOSinkOpToJeff final : StatefulOpConversionPattern<SinkOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1222,15 +1155,6 @@ struct ConvertQCOSinkOpToJeff final : StatefulOpConversionPattern<SinkOp> {
 };
 
 /// Converts qco.measure to jeff.qubit_measure_nd
-///
-/// @par Example:
-/// ```mlir
-/// %q_out, %result = qco.measure %q_in : !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out, %result = jeff.qubit_measure_nd %q_in : !jeff.qubit, i1
-/// ```
 struct ConvertQCOMeasureOpToJeff final
     : StatefulOpConversionPattern<MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
@@ -1245,15 +1169,6 @@ struct ConvertQCOMeasureOpToJeff final
 };
 
 /// Converts qco.reset to jeff.qubit_reset
-///
-/// @par Example:
-/// ```mlir
-/// %q_out = qco.reset %q_in : !qco.qubit -> !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out = jeff.qubit_reset %q_in : !jeff.qubit
-/// ```
 struct ConvertQCOResetOpToJeff final : StatefulOpConversionPattern<ResetOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1266,15 +1181,6 @@ struct ConvertQCOResetOpToJeff final : StatefulOpConversionPattern<ResetOp> {
 };
 
 /// Converts qco.gphase to jeff.gphase
-///
-/// @par Example:
-/// ```mlir
-/// qco.gphase(%theta)
-/// ```
-/// is converted to
-/// ```mlir
-/// jeff.gphase(%theta) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
-/// ```
 struct ConvertQCOGPhaseOpToJeff final : StatefulOpConversionPattern<GPhaseOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1299,56 +1205,9 @@ struct ConvertQCOGPhaseOpToJeff final : StatefulOpConversionPattern<GPhaseOp> {
   }
 };
 
-/// Converts a QCO gate that lowers to a well-known jeff op.
-///
-/// @tparam QCOOpType QCO operation type.
-/// @tparam JeffOpType jeff op type passed to `convertJeffGate` /
-/// `JeffOpType::create`.
-/// @tparam NumTargets Number of target operands (1 or 2 for supported gates).
-/// @tparam NumParams Number of real parameters on the QCO op.
-/// @tparam JeffBaseAdjoint When true, XOR with inv-modifier (e.g. S† as
-/// `jeff.s` with adjoint set).
-///
-/// @par Example: one target, zero parameters
-/// ```mlir
-/// %q_out = qco.x %q_in : !qco.qubit -> !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
-/// %q_in : !jeff.qubit
-/// ```
-///
-/// @par Example: one target, one parameter
-/// ```mlir
-/// %q_out = qco.rx(%theta) %q_in : !qco.qubit -> !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out = jeff.rx(%theta) {is_adjoint = false, num_ctrls = 0 : i8, power = 1
-/// : i8} %q_in : !jeff.qubit
-/// ```
-///
-/// @par Example: one target, three parameters
-/// ```mlir
-/// %q_out = qco.u(%theta, %phi, %lambda) %q_in : !qco.qubit -> !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out = jeff.u(%theta, %phi, %lambda) {is_adjoint = false, num_ctrls = 0 :
-/// i8, power = 1 : i8} %q_in : !jeff.qubit
-/// ```
-///
-/// @par Example: two targets, zero parameters
-/// ```mlir
-/// %q0_out, %q1_out = qco.swap %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
-/// !qco.qubit, !qco.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q0_out, %q1_out = jeff.swap {is_adjoint = false, num_ctrls = 0 : i8, power
-/// = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
-/// ```
+/// Convert a QCO gate to a standard jeff gate, preserving active modifiers.
+/// @tparam JeffBaseAdjoint XOR with the inverse modifier, e.g. S† maps to an
+/// adjoint jeff.s operation.
 template <typename QCOOpType, typename JeffOpType, std::size_t NumTargets,
           std::size_t NumParams, bool JeffBaseAdjoint>
 struct ConvertQCOWellKnownGateToJeff final
@@ -1555,13 +1414,11 @@ struct ConvertQCOCtrlOpToJeff final : StatefulOpConversionPattern<CtrlOp> {
               "supported. Run the canonicalization pass before the conversion");
     }
 
-    // Set modifier information
     state.inCtrlOp = true;
     state.ctrlOp = op;
     state.controlsIn = llvm::to_vector(adaptor.getControlsIn());
     state.targetsIn = llvm::to_vector(adaptor.getTargetsIn());
 
-    // Inline region
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
                                op->getIterator(), state.targetsIn);
 
@@ -1603,12 +1460,10 @@ struct ConvertQCOInvOpToJeff final : StatefulOpConversionPattern<InvOp> {
               "canonicalization pass before the conversion");
     }
 
-    // Set modifier information
     state.inInvOp = true;
     state.invOp = op;
     updateTargetsIn(adaptor.getQubitsIn(), state);
 
-    // Inline region
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
                                op->getIterator(), state.targetsIn);
 
@@ -1665,13 +1520,11 @@ struct ConvertQCOPowOpToJeff final : StatefulOpConversionPattern<PowOp> {
               "supported");
     }
 
-    // Set modifier information
     state.inPowOp = true;
     state.powOp = op;
     state.power = static_cast<uint8_t>(*exponent);
     updateTargetsIn(adaptor.getQubitsIn(), state);
 
-    // Inline region
     rewriter.inlineBlockBefore(&op.getRegion().front(), op->getBlock(),
                                op->getIterator(), state.targetsIn);
 
@@ -2134,29 +1987,10 @@ struct PPRPaulis {
 
 } // namespace
 
-/// Registers one QCO → `jeff` rewrite pattern for a gate described at
-/// compile time.
-///
-/// @tparam Kind How to lower: well-known jeff op, `jeff.custom`, `jeff.ppr`, or
-/// special-case `qco.u2` → `jeff.u`.
-/// @tparam Targets Number of target qubits for the QCO op.
-/// @tparam Params Number of real parameters on the QCO op.
-/// @tparam QCOOpType MLIR QCO operation type.
-/// @tparam JeffOpType jeff operation type for `JeffKind::WellKnown` (or `void`
-/// for custom/PPR paths that do not use it).
-/// @tparam JeffBaseAdjoint For well-known ops: whether the jeff op represents
-/// the adjoint of the QCO base gate (e.g. S† as `jeff.s` with adjoint set).
-/// @param patterns Pattern set to add to.
-/// @param typeConverter QCO → jeff type converter passed to patterns.
-/// @param context MLIR context.
-/// @param state Shared lowering state pointer target (patterns store `&state`).
-/// @param customName Custom gate name when `Kind` is `JeffKind::Custom`
-/// (ignored otherwise).
-/// @param ppr Pauli indices when `Kind` is `JeffKind::PPR` (ignored otherwise).
-///
-/// Dispatches at compile time to the appropriate conversion pattern.
-/// Ill-formed combinations trigger `static_assert` with a message referencing
-/// this function.
+/// Register a gate pattern selected by its jeff representation and arity.
+/// @param state Lowering state borrowed by every registered pattern.
+/// @param customName Name used only for JeffKind::Custom.
+/// @param ppr Pauli indices used only for JeffKind::PPR.
 template <JeffKind Kind, std::size_t Targets, std::size_t Params,
           typename QCOOpType, typename JeffOpType, bool JeffBaseAdjoint>
 static void addQCOToJeffGatePattern(RewritePatternSet& patterns,

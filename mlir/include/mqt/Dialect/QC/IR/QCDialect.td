@@ -18,13 +18,8 @@ def QCDialect : Dialect {
 
   let description = [{
         The QC dialect uses **reference semantics** where quantum operations
-        modify qubits in place, similar to how hardware physically transforms
-        quantum states. This model provides:
-
-        - Natural mapping to hardware execution models
-        - Intuitive representation for circuit descriptions
-        - Direct compatibility with imperative quantum programming languages
-        - Straightforward backend code generation
+        modify qubits in place. Operation order determines the sequence of
+        transformations on each qubit.
 
         The name "QC" stands for "Quantum Circuit."
 

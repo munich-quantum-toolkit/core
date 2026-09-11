@@ -943,9 +943,9 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobSendsCalibrationRunsElsewhere) {
 }
 
 TEST_F(DDSimulatorDeviceTest, CalibrationJobReachesTheDevice) {
-  // The DD simulator needs no calibration and rejects the format itself. What
-  // matters is that the client no longer refuses before asking: the failure
-  // comes from the device, as a runtime error rather than an argument error.
+  /// DDSIM rejects calibration with a device error. The client must forward
+  /// the request rather than reject its optional payload as an invalid
+  /// argument.
   EXPECT_THROW(std::ignore = device.submitCalibrationJob(), std::runtime_error);
   EXPECT_THROW(std::ignore = device.submitCalibrationJob("configuration"),
                std::runtime_error);

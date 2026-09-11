@@ -157,7 +157,7 @@ including:
 - **Two-qubit parametric gates**: `cp`, `cu1`, `cu3`, `crx`, `cry`, `crz`,
   `rxx`, `ryy`, `rzz`, `rzx`, `xx_plus_yy`, `xx_minus_yy`
 - **Three-qubit gates**: `ccx`, `ccz`, `cswap`, `rccx`
-- **Multi-controlled gates**: `mcx`, `mcz`, `mcp`, `mcrx`, `mcry`, `mcrz`
+- **Multi-controlled gates**: `mcx`, `mcx_gray`, `mcphase`/`mcp`
 - **Non-unitary operations**: `reset`, `measure`
 
 ## Circuit Execution
@@ -477,15 +477,10 @@ QIR_BASE_MODULE, QIR_BASE_STRING,
 QASM2
 ```
 
-A device-native format comes first, because a package that registers a
-serializer for its own device's format wants that format used. The standardized
-formats follow in order of what a circuit may contain: the QIR adaptive profile
-allows classical control, QPY carries a Qiskit circuit without loss, and
-OpenQASM 3 expresses control flow, while the QIR base profile forbids classical
-feedback and OpenQASM 2 has no control flow at all. Encoding only breaks a tie
-within one profile, because it decides how the program travels rather than what
-it may say. `CALIBRATION` and `BATCH_JOB` are absent because a serialized
-circuit is not what they carry.
+Device-native formats take precedence. Among standard formats, those with
+classical control precede restricted profiles; binary encoding wins ties within
+a QIR profile. `CALIBRATION` and `BATCH_JOB` do not carry serialized circuits
+and cannot have a program serializer.
 
 ### Device Introspection
 

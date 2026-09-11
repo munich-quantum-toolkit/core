@@ -92,31 +92,8 @@ enum class AllocationMode : std::uint8_t {
   Dynamic, //!< The module uses dynamic qubit allocation.
 };
 
-/// State object for tracking qubit value flow during conversion
-///
-/// This struct maintains the mapping between QC dialect qubits (which use
-/// reference semantics) and their corresponding QCO dialect qubit values
-/// (which use value semantics). As the conversion progresses, each QC
-/// qubit reference is mapped to its latest QCO SSA value.
-///
-/// The key insight is that QC operations modify qubits in-place:
-/// ```mlir
-/// %q = qc.alloc : !qc.qubit
-/// qc.h %q : !qc.qubit        // modifies %q in-place
-/// qc.x %q : !qc.qubit        // modifies %q in-place
-/// ```
-///
-/// While QCO operations consume inputs and produce new outputs:
-/// ```mlir
-/// %q0 = qco.alloc : !qco.qubit
-/// %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit   // %q0 consumed, %q1 produced
-/// %q2 = qco.x %q1 : !qco.qubit -> !qco.qubit   // %q1 consumed, %q2 produced
-/// ```
-///
-/// The qubitMap tracks that the QC qubit %q corresponds to:
-/// - %q0 after allocation
-/// - %q1 after the H gate
-/// - %q2 after the X gate
+/// Track the latest QCO SSA value for each QC qubit reference and register,
+/// with separate mappings for each region.
 struct LoweringState {
   /// Function symbols remain in place while their signatures are converted.
   SymbolTableCollection symbolTables;
@@ -181,18 +158,7 @@ struct LoweringState {
   }
 };
 
-/// Base class for conversion patterns that need access to lowering state
-///
-/// Extends OpConversionPattern to provide access to a shared LoweringState
-/// object, which tracks the mapping from reference-semantics QC qubits
-/// to value-semantics QCO qubits across multiple pattern applications.
-///
-/// This stateful approach is necessary because the conversion needs to:
-/// 1. Track which QCO value corresponds to each QC qubit reference
-/// 2. Update these mappings as operations transform qubits
-/// 3. Share this information across different conversion patterns
-///
-/// @tparam OpType The QC operation type to convert
+/// Share qubit and register mappings across conversion patterns.
 template <typename OpType>
 class StatefulOpConversionPattern : public OpConversionPattern<OpType> {
 
@@ -201,7 +167,6 @@ public:
                               MLIRContext* context, LoweringState* state)
       : OpConversionPattern<OpType>(typeConverter, context), state_(state) {}
 
-  /// Returns the shared lowering state object
   [[nodiscard]] LoweringState& getState() const { return *state_; }
 
 private:
@@ -1090,7 +1055,6 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
     }
     auto qcQubit = op.getResult();
 
-    // Create the qco.alloc operation
     auto qcoOp = rewriter.replaceOpWithNewOp<qco::AllocOp>(op);
 
     auto qcoQubit = qcoOp.getResult();
@@ -1100,18 +1064,7 @@ struct ConvertQCAllocOp final : StatefulOpConversionPattern<qc::AllocOp> {
   }
 };
 
-/// Converts qc.dealloc to qco.sink
-///
-/// Deallocates a qubit by looking up its latest QCO value and creating
-/// a corresponding qco.sink operation. The mapping is removed from
-/// the state as the qubit is no longer in use.
-///
-/// Example transformation:
-/// ```mlir
-/// qc.dealloc %q : !qc.qubit
-/// // becomes (where %q maps to %q_final):
-/// qco.sink %q_final : !qco.qubit
-/// ```
+/// Sink the latest mapped qubit value and mark its QC reference as consumed.
 struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1125,7 +1078,6 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
     auto qcQubit = op.getQubit();
     auto qcoQubit = lookupMappedQubit(state, operation, qcQubit);
 
-    // Create the sink operation
     rewriter.replaceOpWithNewOp<SinkOp>(op, qcoQubit);
 
     /// Retain the slot so deallocation does not shift the ordered map.
@@ -1135,18 +1087,7 @@ struct ConvertQCDeallocOp final : StatefulOpConversionPattern<DeallocOp> {
   }
 };
 
-/// Converts qc.static to qco.static
-///
-/// Static qubits represent references to hardware-mapped or fixed-position
-/// qubits identified by an index. This conversion creates the corresponding
-/// qco.static operation and establishes the mapping.
-///
-/// Example transformation:
-/// ```mlir
-/// %q = qc.static 0 : !qc.qubit
-/// // becomes:
-/// %q0 = qco.static 0 : !qco.qubit
-/// ```
+/// Preserve the static qubit index and record its initial QCO value.
 struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1167,24 +1108,8 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<qc::StaticOp> {
   }
 };
 
-/// Converts qc.measure to qco.measure
-///
-/// Measurement is a key operation where the semantic difference is visible:
-/// - QC: Measures in-place, returning only the classical bit
-/// - QCO: Consumes input qubit, returns both output qubit and classical bit
-///
-/// The conversion looks up the latest QCO value for the QC qubit,
-/// performs the measurement, updates the mapping with the output qubit,
-/// and returns the classical bit result.
-///
-/// @par Example:
-/// ```mlir
-/// %c = qc.measure %q : !qc.qubit -> i1
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out, %c = qco.measure %q_in : !qco.qubit
-/// ```
+/// Measure the latest mapped qubit, retain its output in the lowering state,
+/// and replace the QC measurement's classical result.
 struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1204,30 +1129,13 @@ struct ConvertQCMeasureOp final : StatefulOpConversionPattern<qc::MeasureOp> {
     const SmallVector<Value, 1> qcoQubits{qcoOp.getQubitOut()};
     commitQubits(state, operation, qcQubits, qcoQubits, materialized, rewriter);
 
-    // Replace the QC operation's bit result with the QCO bit result
     rewriter.replaceOp(op, qcoOp.getResult());
 
     return success();
   }
 };
 
-/// Converts qc.reset to qco.reset
-///
-/// Reset operations force a qubit to the |0⟩ state. The semantic difference:
-/// - QC: Resets in-place (no result value)
-/// - QCO: Consumes input qubit, returns reset output qubit
-///
-/// The conversion looks up the latest QCO value, performs the reset,
-/// and updates the mapping with the output qubit. The QC operation
-/// is erased as it has no results to replace.
-///
-/// Example transformation:
-/// ```mlir
-/// qc.reset %q : !qc.qubit
-/// // becomes (where %q maps to %q_in):
-/// %q_out = qco.reset %q_in : !qco.qubit -> !qco.qubit
-/// // state updated: %q now maps to %q_out
-/// ```
+/// Reset the latest mapped qubit and retain its output in the lowering state.
 struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -1240,14 +1148,12 @@ struct ConvertQCResetOp final : StatefulOpConversionPattern<qc::ResetOp> {
     const SmallVector<Value, 1> qcQubits{qcQubit};
     auto materialized = materializeQubits(state, operation, qcQubits, rewriter);
 
-    // Create qco.reset (consumes input, produces output)
     auto qcoOp =
         qco::ResetOp::create(rewriter, op.getLoc(), materialized.values[0]);
 
     const SmallVector<Value, 1> qcoQubits{qcoOp.getQubitOut()};
     commitQubits(state, operation, qcQubits, qcoQubits, materialized, rewriter);
 
-    // Erase the old (it has no results to replace)
     rewriter.eraseOp(op);
 
     return success();
@@ -1332,7 +1238,6 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<qc::BarrierOp> {
     auto qcQubits = op.getQubits();
     auto materialized = materializeQubits(state, operation, qcQubits, rewriter);
 
-    // Create qco.barrier
     auto qcoOp =
         qco::BarrierOp::create(rewriter, op.getLoc(), materialized.values);
 
@@ -1375,7 +1280,6 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<qc::CtrlOp> {
     auto qcoTargets =
         ValueRange(materialized.values).drop_front(qcControls.size());
 
-    // Create qco.ctrl
     auto qcoOp =
         qco::CtrlOp::create(rewriter, op.getLoc(), qcoControls, qcoTargets);
 
@@ -1427,7 +1331,6 @@ struct ConvertQCInvOp final : StatefulOpConversionPattern<qc::InvOp> {
     auto materialized =
         materializeQubits(state, operation, qcTargets, rewriter);
 
-    // Create qco.inv
     auto qcoOp = qco::InvOp::create(rewriter, op.getLoc(), materialized.values);
 
     commitQubits(state, operation, qcTargets, qcoOp.getOutputTargets(),
@@ -1476,7 +1379,6 @@ struct ConvertQCPowOp final : StatefulOpConversionPattern<qc::PowOp> {
     auto materialized =
         materializeQubits(state, operation, qcTargets, rewriter);
 
-    // Create qco.pow with exponent.
     auto qcoOp = qco::PowOp::create(rewriter, op.getLoc(), materialized.values,
                                     op.getExponent());
 
@@ -1569,7 +1471,6 @@ struct ConvertSCFForOp final : StatefulOpConversionPattern<scf::ForOp> {
     SmallVector<Value> initArgs(op.getInitArgs());
     llvm::append_range(initArgs, qcoTargets);
 
-    // Create the new ForOp
     auto newForOp =
         scf::ForOp::create(rewriter, op.getLoc(), op.getLowerBound(),
                            op.getUpperBound(), op.getStep(), initArgs);
@@ -1659,7 +1560,6 @@ struct ConvertSCFWhileOp final : StatefulOpConversionPattern<scf::WhileOp> {
                          return value.getType();
                        }));
 
-    // Create the new WhileOp
     auto newWhileOp =
         scf::WhileOp::create(rewriter, op.getLoc(), resultTypes, initArgs);
     assignMappedTensors(state, op.getOperation(), registerMap,
@@ -1755,7 +1655,6 @@ struct ConvertSCFIfOp final : StatefulOpConversionPattern<scf::IfOp> {
 
     auto qcoTargets = resolveAllValues(state, operation);
 
-    // Create the new IfOp
     auto newIfOp = IfOp::create(rewriter, op.getLoc(), op.getResultTypes(),
                                 ValueRange(qcoTargets).getTypes(),
                                 op.getCondition(), qcoTargets);
@@ -1953,22 +1852,9 @@ struct ConvertSCFConditionOp final
   }
 };
 
-/// Pass implementation for QC-to-QCO conversion
-///
-/// This pass converts QC dialect operations (reference semantics) to QCO
-/// dialect operations (value semantics). The conversion is essential for
-/// enabling optimization passes that rely on SSA form and explicit dataflow
-/// analysis.
-///
-/// The pass operates in several phases:
-/// 1. Type conversion: !qc.qubit → !qco.qubit
-/// 2. Operation conversion: Each QC op is converted to its QCO equivalent
-/// 3. State tracking: A LoweringState maintains qubit value mappings
-/// 4. Function/control-flow adaptation: Function signatures and control flow
-/// are updated to use QCO types
-///
-/// The conversion maintains semantic equivalence while transforming the
-/// representation from imperative (mutation-based) to functional (SSA-based).
+/// Convert QC references to QCO values, threading quantum state through
+/// functions and structured control flow. Lower terminators after their regions
+/// so they yield the final mapped values independently of rewrite order.
 struct QCToQCO final : impl::QCToQCOBase<QCToQCO> {
   using QCToQCOBase::QCToQCOBase;
 
@@ -1992,7 +1878,6 @@ protected:
       return;
     }
 
-    // Create state object to track qubit value flow
     LoweringState state;
 
     ConversionTarget target(*context);

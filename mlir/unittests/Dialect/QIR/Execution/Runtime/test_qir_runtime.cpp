@@ -120,10 +120,8 @@ TEST_F(QIRRuntimeTest, RejectsDynamicQubitBeyondDDRange) {
 
 } // namespace
 
-// Any test that emits output relies on the runtime producing the spec-mandated
-// HEADER/START/METADATA/END records around the per-shot OUTPUT block.
-// The runtime picks @c Labeled as default output schema, which is why the
-// the framing emits `labeled` in both HEADER and METADATA here.
+/// HEADER/START/METADATA/END frame the per-shot OUTPUT block.
+/// The default Labeled schema emits `labeled` in HEADER and METADATA.
 TEST_F(QIRRuntimeTest, OutputFraming) {
   auto& runtime = Runtime::getInstance();
   runtime.outputProgramHeader();

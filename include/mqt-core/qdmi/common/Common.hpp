@@ -10,7 +10,6 @@
 
 /// @file Common.hpp
 /// Common definitions and utilities for working with QDMI in C++.
-/// @note This header will be upstreamed to the QDMI core library in the future.
 
 #pragma once
 

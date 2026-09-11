@@ -854,7 +854,6 @@ mCachedEdge Package::conjugateTransposeRec(const mEdge& a) {
     return {a.p, ComplexNumbers::conj(a.w)};
   }
 
-  // check if in compute table
   if (const auto* r = conjugateMatrixTranspose.lookup(a.p); r != nullptr) {
     return {r->p, r->w * ComplexNumbers::conj(a.w)};
   }
@@ -866,10 +865,8 @@ mCachedEdge Package::conjugateTransposeRec(const mEdge& a) {
       e[(RADIX * i) + j] = conjugateTransposeRec(a.p->e[(RADIX * j) + i]);
     }
   }
-  // create new top node
   auto const res = makeDDNode(a.p->v, e);
 
-  // put it in the compute table
   conjugateMatrixTranspose.insert(a.p, res);
 
   // adjust top weight including conjugate
@@ -1086,7 +1083,6 @@ bool Package::isCloseToIdentityRecursive(
     return true;
   }
 
-  // immediately return if this node has already been visited
   if (visited.contains(m.p)) {
     return true;
   }
@@ -1156,13 +1152,11 @@ mEdge Package::createInitialMatrix(const std::vector<bool>& ancillary) {
 }
 mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
                               const bool regular) {
-  // return if no more ancillaries left
   if (std::ranges::none_of(ancillary, [](const bool v) { return v; }) ||
       e.isZeroTerminal()) {
     return e;
   }
 
-  // if we have only identities and no other nodes
   if (e.isIdentity()) {
     auto g = e;
     for (auto i = 0U; i < ancillary.size(); ++i) {
@@ -1206,7 +1200,6 @@ mEdge Package::reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
 }
 vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
                              const bool normalizeWeights) {
-  // return if no more garbage left
   if (!normalizeWeights &&
       (std::ranges::none_of(garbage, [](bool v) { return v; }) ||
        e.isTerminal())) {
@@ -1235,14 +1228,12 @@ vEdge Package::reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
 }
 mEdge Package::reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
                              const bool regular, const bool normalizeWeights) {
-  // return if no more garbage left
   if (!normalizeWeights &&
       (std::ranges::none_of(garbage, [](bool v) { return v; }) ||
        e.isZeroTerminal())) {
     return e;
   }
 
-  // if we have only identities and no other nodes
   if (e.isIdentity()) {
     auto g = e;
     for (auto i = 0U; i < garbage.size(); ++i) {

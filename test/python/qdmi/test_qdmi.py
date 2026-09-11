@@ -541,9 +541,8 @@ def test_device_sends_calibration_runs_elsewhere(ddsim_device: Device) -> None:
 def test_calibration_job_reaches_the_device(ddsim_device: Device, program: str | bytes | None) -> None:
     """Let the device decide about a calibration run, with or without a payload.
 
-    The DD simulator needs no calibration and declines the format itself. What
-    matters is that the client no longer refuses before asking, so the failure
-    is a device error rather than a `ValueError` about the argument.
+    DDSIM rejects calibration with a device error. The client must forward the
+    request rather than reject its optional payload as an invalid argument.
     """
     with pytest.raises(RuntimeError, match="Setting program format"):
         ddsim_device.submit_calibration_job(program)
@@ -725,7 +724,6 @@ def test_job_get_counts_returns_valid_histogram(submitted_job: Job) -> None:
     # Wait for job to complete
     submitted_job.wait()
 
-    # Get counts
     counts = submitted_job.get_counts()
     assert isinstance(counts, dict)
     assert len(counts) > 0

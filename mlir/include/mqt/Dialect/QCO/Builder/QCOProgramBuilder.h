@@ -39,16 +39,9 @@ namespace qco {
 
 /// Builder API for constructing quantum programs in the QCO dialect
 ///
-/// The QCOProgramBuilder provides a type-safe interface for constructing
-/// quantum circuits using value semantics. Operations consume input qubit
-/// SSA values and produce new output values, following the functional
-/// programming paradigm.
-///
-/// @par Linear Ownership:
-/// The builder enforces linear semantics by tracking valid qubit SSA
-/// values. Once a qubit is consumed by an operation producing a new version
-/// (e.g., reset, measure), the old SSA value is invalidated. This prevents
-/// use-after-consume errors and mirrors quantum computing's no-cloning theorem.
+/// Operations consume qubit SSA values and return their replacements. The
+/// builder tracks live values and terminates with a usage error when a
+/// consumed or untracked value is reused.
 ///
 /// @par Qubit addressing:
 /// A program must use either static qubits (`staticQubit`) or dynamic
@@ -138,43 +131,13 @@ public:
   // Constants
   //===--------------------------------------------------------------------===//
 
-  /// Create a constant integer value
-  /// @param value The value to store in the constant
-  /// @return The value produced by the constant operation
-  ///
-  /// @par Example:
-  /// ```c++
-  /// auto c = builder.intConstant(1);
-  /// ```
-  /// ```mlir
-  /// %c = arith.constant 1 : i64
-  /// ```
+  /// Create an arithmetic i64 constant.
   Value intConstant(int64_t value);
 
-  /// Create a constant float value
-  /// @param value The value to store in the constant
-  /// @return The value produced by the constant operation
-  ///
-  /// @par Example:
-  /// ```c++
-  /// auto c = builder.floatConstant(0.123);
-  /// ```
-  /// ```mlir
-  /// %c = arith.constant 0.123 : f64
-  /// ```
+  /// Create an arithmetic f64 constant.
   Value floatConstant(double value);
 
-  /// Create a constant boolean value
-  /// @param value The value to store in the constant
-  /// @return The value produced by the constant operation
-  ///
-  /// @par Example:
-  /// ```c++
-  /// auto c = builder.boolConstant(true);
-  /// ```
-  /// ```mlir
-  /// %c = arith.constant 1 : i1
-  /// ```
+  /// Create an arithmetic i1 constant.
   Value boolConstant(bool value);
 
   //===--------------------------------------------------------------------===//
@@ -1868,7 +1831,7 @@ private:
 
   /// Validate that a qubit value is valid and unconsumed
   /// @param qubit Qubit value to validate
-  /// @throws Aborts if qubit is not tracked (consumed or never created)
+  /// Terminates with a usage error if the qubit is consumed or untracked.
   void validateQubitValue(Value qubit) const;
 
   /// Update tracking when an operation consumes and produces a qubit
@@ -1888,17 +1851,14 @@ private:
     }
   };
 
-  /// Track valid (unconsumed) qubit SSA values for linear ownership.
-  /// Only values present in this set are valid for use in operations.
-  /// When an operation consumes a qubit and produces a new one, the old value
-  /// is removed and the new output is added.
+  /// Live qubit SSA values and their register associations.
   DenseSet<Qubit, QubitDenseMapInfo> validQubits;
 
   /// Validate that a tensor value is valid and unconsumed. This also
   /// checks if the tensor is one-dimensional and contains !qco.qubit as its
   /// values
   /// @param tensor Tensor value to validate
-  /// @throws Aborts if tensor is not tracked (consumed or never created)
+  /// Terminates with a usage error if the tensor is consumed or untracked.
   void validateTensorValue(Value tensor) const;
 
   /// Update tracking when an operation consumes and produces a tensor
@@ -1948,7 +1908,7 @@ private:
 
   /// Check if every value is either a qubit or a tensor of qubits
   /// @param values The values that are checked
-  /// @throws Abort if a value is neither a qubit nor a tensor of qubits
+  /// Terminates with a usage error for any other type.
   static void checkQubitType(ValueRange values);
 
   struct TensorDenseMapInfo {
@@ -1960,10 +1920,7 @@ private:
     }
   };
 
-  /// Track valid (unconsumed) tensor SSA values for linear ownership.
-  /// Only values present in this set are valid for use in operations.
-  /// When an operation consumes a tensor and produces a new one, the old value
-  /// is removed and the new output is added.
+  /// Live tensor SSA values and their register associations.
   DenseSet<Tensor, TensorDenseMapInfo> validTensors;
 
   /// Track whether static or dynamic qubit allocation is used.

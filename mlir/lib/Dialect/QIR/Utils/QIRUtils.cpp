@@ -258,7 +258,7 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
       SymbolTable::lookupNearestSymbolFrom(op, builder.getStringAttr(fnName));
 
   if (fnDecl == nullptr) {
-    // Save current insertion point
+
     const OpBuilder::InsertionGuard guard(builder);
 
     // Create the declaration at the end of the module

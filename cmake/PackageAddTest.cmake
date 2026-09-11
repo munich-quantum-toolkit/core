@@ -9,14 +9,11 @@
 # macro to add a test executable for one of the project libraries
 macro(PACKAGE_ADD_TEST testname linklibs)
   if(NOT TARGET ${testname})
-    # create an executable in which the tests will be stored
     add_executable(${testname} ${ARGN})
     # Ensure test executables remain runnable from the build tree during GoogleTest discovery
     set_property(TARGET ${testname} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
-    # link the Google test infrastructure and a default main function to the test executable.
     target_link_libraries(${testname} PRIVATE ${linklibs} GTest::gmock GTest::gtest_main
                                               MQT::ProjectOptions MQT::ProjectWarnings)
-    # discover tests
     gtest_discover_tests(
       ${testname} DISCOVERY_MODE PRE_TEST
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -25,21 +22,17 @@ macro(PACKAGE_ADD_TEST testname linklibs)
                  VS_DEBUGGER_WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}" DISCOVERY_TIMEOUT 60)
     set_target_properties(${testname} PROPERTIES FOLDER tests)
 
-    # Set c++ standard
     target_compile_features(${testname} PRIVATE cxx_std_20)
   endif()
 endmacro()
 
 macro(PACKAGE_ADD_TEST_WITH_WORKING_DIR testname linklibs test_working_directory)
   if(NOT TARGET ${testname})
-    # create an executable in which the tests will be stored
     add_executable(${testname} ${ARGN})
     # Ensure test executables remain runnable from the build tree during GoogleTest discovery
     set_property(TARGET ${testname} PROPERTY BUILD_WITH_INSTALL_RPATH FALSE)
-    # link the Google test infrastructure and a default main function to the test executable.
     target_link_libraries(${testname} PRIVATE ${linklibs} GTest::gmock GTest::gtest_main
                                               MQT::ProjectOptions MQT::ProjectWarnings)
-    # discover tests
     gtest_discover_tests(
       ${testname} DISCOVERY_MODE PRE_TEST
       WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
@@ -48,7 +41,6 @@ macro(PACKAGE_ADD_TEST_WITH_WORKING_DIR testname linklibs test_working_directory
                  "${test_working_directory}" DISCOVERY_TIMEOUT 60)
     set_target_properties(${testname} PROPERTIES FOLDER tests)
 
-    # Set c++ standard
     target_compile_features(${testname} PRIVATE cxx_std_20)
   endif()
 endmacro()

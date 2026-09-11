@@ -38,11 +38,15 @@ MQT Core. The project-wide policy for AI-assisted contributions is
 - State the supported inputs, failure behavior, and ownership boundary before
   expanding an API. Preserve runtime efficiency and correctness when reducing
   code; fewer lines alone do not establish a simpler design.
-- Write code comments, documentation, tests, changelog entries, and public text
-  for the final design. Omit prompts, review chronology, former names, and
-  abandoned approaches unless needed to explain current behavior. Plans and
-  audits follow their own rules for retaining durable decisions and rejected
-  alternatives.
+- Document current behavior, contracts, and reasons that the code or signature
+  does not explain. Remove comments that repeat nearby code, boilerplate
+  parameter descriptions, change narration ("previously", "now fixed"), and
+  unsupported assurances ("should work", "for robustness"). State a concrete
+  constraint or delete the comment. Keep useful API summaries, examples,
+  ownership and numerical limits, and reasons for workarounds or regressions.
+  Use symbol references instead of brittle file/line pointers. Keep prompts,
+  review discussion, former names, and speculative plans out of code and API
+  docs; retain history in changelogs, migration guides, and decision records.
 - Apply
   [Orwell's six rules for writing](https://www.orwellfoundation.com/the-orwell-foundation/orwell/essays-and-other-works/politics-and-the-english-language/)
   to every category of prose, including reasoning, descriptions, commit
