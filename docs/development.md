@@ -225,6 +225,11 @@ entries by user workflow and subsystem. Fold refinements to functionality that
 has never shipped into its feature entry. After release, describe subsequent
 changes relative to that published behavior.
 
+Lead major architectural releases with the new program model, enabled workflows,
+and consequences for existing users before listing individual changes. Keep the
+release overview and migration paths visible from the README and documentation
+home page. Preserve PR and contributor references when regrouping entries.
+
 Document breaking changes to released interfaces in both `CHANGELOG.md` and
 `UPGRADING.md`. Give the replacement, changed semantics, or lack of a
 replacement. Do not add migrations between intermediate unreleased APIs.

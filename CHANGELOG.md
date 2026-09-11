@@ -10,20 +10,56 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
-MQT Core 4 introduces the MQT Compiler Collection: compile and exchange quantum
-programs, execute them through QDMI, simulate with decision diagrams, and
-evaluate structured benchmarks. Classic circuit APIs are removed. See the
-[upgrade guide](UPGRADING.md#unreleased) for migration from v3.10.0.
+### MQT Core 4: a compiler foundation built on MLIR and LLVM
+
+MQT Core 4 is a major architectural release centered on the
+**MQT Compiler Collection**, a quantum-classical compilation framework built on
+**MLIR and LLVM**. It replaces the classic circuit representation with a
+compiler infrastructure that connects program import, optimization, hardware
+mapping, program exchange, and execution through C++, Python, and `mqt-cc`.
+
+The new foundation makes quantum operations and classical computation part of
+the same structured program. Quantum dialects work with MLIR's classical
+arithmetic, functions, and control flow, so the compiler can represent loops,
+reusable functions, and measurement feedback throughout supported pipelines.
+
+The central changes are:
+
+- **A new program model.** QC provides reference-based quantum operations for
+  frontend interoperability; QCO uses linear quantum values for transformations.
+  QTensor and CBit represent quantum and classical registers. Typed programs,
+  builders, and verifiers expose this structure to compiler users and
+  developers.
+- **A shared, extensible compilation pipeline.** Import OpenQASM or Qiskit,
+  inspect intermediate representations, compose optimization passes, synthesize
+  gates, and place and route programs for a device's operations and topology.
+  Python, C++, and the command-line driver use the same compiler infrastructure.
+- **Compilation connected to execution.** Exchange structured programs through
+  jeff or emit OpenQASM and QIR. QIR lowering produces LLVM text or bitcode for
+  Base and Adaptive profiles; DDSIM uses LLVM JIT compilation and the DD runtime
+  to execute supported QIR through QDMI. QCO also supports direct DD simulation,
+  sampling, and unitary construction.
+- **Workflows built around the compiler.** Typed benchmarks, SDK integrations,
+  device-directed compilation, and six executable tutorials connect program
+  construction to results. Python wheels include the compiler and local
+  simulator; source builds enable the LLVM/MLIR compiler by default.
+
+**Upgrading from v3 requires an explicit migration.** Classic circuit APIs,
+including `QuantumComputation`, are removed. The low-level DD and QDMI libraries
+remain available. Start with the
+[v3-to-v4 upgrade guide](UPGRADING.md#unreleased) for the new program model,
+migration paths, API replacements, and build changes relative to v3.10.0. The
+entries below retain the contributing PRs and authors.
 
 ### Added
 
 #### Compiler APIs and representations
 
-- ✨ Introduce the MQT Compiler Collection with typed QC, QCO, OpenQASM, jeff,
-  and QIR programs; shared C++ and Python compilation APIs; inspection methods;
-  and the `mqt-cc` driver. ([#1264], [#1470], [#1471], [#1815], [#1914],
-  [#2149], [#2343], [#2519]) ([**@burgholzer**], [**@denialhaag**],
-  [**@simon1hofmann**], [**@taminob**])
+- ✨ Introduce the MLIR/LLVM-based MQT Compiler Collection with typed QC, QCO,
+  OpenQASM, jeff, and QIR programs; shared C++ and Python compilation APIs;
+  inspection methods; and the `mqt-cc` driver. ([#1264], [#1470], [#1471],
+  [#1815], [#1914], [#2149], [#2343], [#2519]) ([**@burgholzer**],
+  [**@denialhaag**], [**@simon1hofmann**], [**@taminob**])
 
 - ✨ Add QC/QCO program builders with implicit locations, tracked qubits and
   tensors, register names, gate matrices, and checked linear quantum values.

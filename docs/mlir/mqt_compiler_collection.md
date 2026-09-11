@@ -8,9 +8,11 @@ mystnb:
 
 # MQT Compiler Collection
 
-The MQT Compiler Collection compiles, optimizes, and exchanges structured
-quantum programs. Its three interfaces share the same MLIR representations and
-passes:
+The MQT Compiler Collection is MQT Core's quantum-classical compilation
+framework, built on MLIR and LLVM. It represents quantum operations together
+with classical computation and control flow, then optimizes and lowers supported
+programs for exchange or device execution. Its three interfaces share the same
+MLIR representations and passes:
 
 | Interface    | Entry point                                                         |
 | ------------ | ------------------------------------------------------------------- |

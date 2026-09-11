@@ -8,11 +8,21 @@ of changes including minor and patch releases, please refer to the
 
 ### Migrating from MQT Core 3 to 4
 
-MQT Core 4 replaces the classic circuit representation with the MQT Compiler
-Collection. Python circuit users must move from `mqt.core.ir` and
-`mqt.core.load` to `mqt.core.mlir`. C++ circuit users must adopt the compiler's
-source-tree interfaces or stay on the v3 release series. The low-level DD and
-QDMI libraries remain available.
+MQT Core 4 makes the **MQT Compiler Collection**, built on **MLIR and LLVM**,
+the foundation for quantum program representation, transformation, and
+compilation. This is a major architectural and API migration from v3's classic
+circuit representation. The compiler represents quantum operations together with
+classical arithmetic, reusable functions, structured control flow, and
+measurement feedback, then lowers supported programs for exchange or execution.
+
+Python circuit users move from `mqt.core.ir` and `mqt.core.load` to
+`mqt.core.mlir`. C++ circuit users adopt the compiler's source-tree interfaces
+or stay on the v3 release series. The low-level DD and QDMI libraries remain
+available; their migration requirements depend on whether they consume classic
+circuits or operate directly on states, matrices, devices, and jobs.
+
+The [v4 release overview](CHANGELOG.md#unreleased) describes the new compiler
+capabilities. This guide explains how to adopt them in existing applications.
 
 This section describes changes since **v3.10.0**. When upgrading from an older
 version, also consult the intervening release sections for changes that affect
@@ -22,7 +32,53 @@ removals were already part of v3.10.0; they are not new v4 migrations.
 
 If a downstream package still needs classic circuits, constrain its dependency
 to `mqt-core>=3,<4`. Use a v3 tag or version constraint for C++ consumers too.
-The v3 and v4 Python and CMake packages cannot coexist in one environment.
+Use separate virtual environments or installation prefixes for the two versions.
+
+### Choose a migration path
+
+| Your current use                                                           | Start here                                                                                                                                    |
+| -------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| Load, construct, or convert Python circuits                                | [Python circuit loading and conversion](#python-circuit-loading-and-conversion)                                                               |
+| Pass classic circuits to DD simulation or functionality helpers            | [Decision-diagram simulation and functionality](#decision-diagram-simulation-and-functionality)                                               |
+| Link `MQT::CoreIR` or `MQT::CoreQASM`, or embed MQT Core in a native build | [C++ libraries and build requirements](#c-libraries-and-build-requirements)                                                                   |
+| Discover QDMI devices, submit OpenQASM/QIR jobs, or query results          | [QDMI submission and QIR execution](#qdmi-submission-and-qir-execution)                                                                       |
+| Use raw DD states and matrices without classic circuits                    | Keep the low-level DD API; check [native build requirements](#c-libraries-and-build-requirements) and [other API changes](#other-api-changes) |
+
+Port one representative program through import, compilation, and execution
+before migrating the rest of an application. Check its unitary, statevector, or
+sampled outputs as appropriate, then update downstream dependencies that still
+require the classic circuit types. The
+[executable compiler tutorials](https://mqt.readthedocs.io/projects/core/en/latest/tutorials/index.html)
+cover these workflows without requiring prior MLIR knowledge.
+
+### Understand the new compiler model
+
+In v3, circuit-facing APIs shared a `QuantumComputation` object and its mutable
+operations. In v4, typed program objects own compiler representations:
+
+- **QC** uses references to qubits and serves as the interoperability
+  representation for frontends such as OpenQASM and Qiskit.
+- **QCO** uses linear quantum values, with each value consumed exactly once. It
+  is the main representation for quantum transformations. QTensor and CBit
+  provide quantum and classical registers; MLIR supplies classical arithmetic,
+  functions, and structured control flow.
+- **Output programs** carry the requested representation: QC or QCO for further
+  compiler work, OpenQASM source, jeff for structured exchange, or QIR that can
+  be serialized as LLVM text or bitcode.
+
+Use `compile_program` to run the shared pipeline and choose where it stops with
+`OutputFormat`. Supplying a device target adds compilation for its operations,
+topology, and payload contract. Submission is a separate step, so a compiled
+payload can be reused while that contract still matches the destination. The
+[compiler guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/mqt_compiler_collection.html)
+also covers explicit passes and custom pipelines.
+
+Code that rewrites operation lists must be adapted to program builders or
+compiler passes that preserve the representations' type, control-flow, and
+quantum-value invariants. Representation-changing methods can consume their
+input, so ownership is also part of the migration. Each frontend, conversion,
+and execution path has a supported subset; representing a program in MLIR does
+not guarantee that every output format or device can execute it.
 
 ### Python circuit loading and conversion
 
@@ -52,9 +108,7 @@ assert qc.is_valid and qco.is_valid
 print(qco.ir)
 ```
 
-`QCProgram` uses references to qubits; `QCOProgram` uses linear quantum values.
-These are compiler representations, not renamed classic circuits. Supported
-OpenQASM and Qiskit inputs are described in the
+Supported OpenQASM and Qiskit inputs are described in the
 [OpenQASM guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/OpenQASM.html)
 and
 [Qiskit guide](https://mqt.readthedocs.io/projects/core/en/latest/mlir/qiskit.html).
