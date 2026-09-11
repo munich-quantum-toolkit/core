@@ -232,10 +232,10 @@ relative to v3.10.0. The entries below retain the contributing PRs and authors.
 
 #### Builds and supported configurations
 
-- 🔧 Build the LLVM/MLIR 23.1 compiler infrastructure and DDSIM device by
+- 🔧 Build the LLVM/MLIR 23.1.1 compiler infrastructure and DDSIM device by
   default. Support LLVM builds without exceptions or RTTI, and use
   `BUILD_MQT_CORE_MLIR=OFF` for DD/QDMI builds that omit the compiler and DDSIM.
-  ([#1356], [#1549], [#1953], [#2125], [#2127], [#2284], [#2298])
+  ([#1356], [#1549], [#1953], [#2125], [#2127], [#2284], [#2298], [#2538])
   ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
 
 - 💥 Require CMake 3.28 or newer for source builds and embedded projects, with
@@ -1114,6 +1114,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2538]: https://github.com/munich-quantum-toolkit/core/pull/2538
 [#2535]: https://github.com/munich-quantum-toolkit/core/pull/2535
 [#2531]: https://github.com/munich-quantum-toolkit/core/pull/2531
 [#2526]: https://github.com/munich-quantum-toolkit/core/pull/2526
