@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+### Changed
+
+- 🔧 Use Ninja and shared CMake presets on all platforms ([#2522])
+  ([**@denialhaag**])
+
 ### Fixed
 
 - 🐛 Export V and V† gates to Qiskit ([#2433]) ([**@burgholzer**])
@@ -827,6 +832,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2522]: https://github.com/munich-quantum-toolkit/core/pull/2522
 [#2433]: https://github.com/munich-quantum-toolkit/core/pull/2433
 [#2399]: https://github.com/munich-quantum-toolkit/core/pull/2399
 [#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368

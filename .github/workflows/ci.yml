@@ -73,17 +73,15 @@ jobs:
         include:
           - runs-on: windows-2025
             compiler: msvc
-            preset: debug-windows
+            preset: debug
           - runs-on: windows-11-arm
             compiler: msvc
-            preset: release-windows
+            preset: release
     uses: munich-quantum-toolkit/workflows/.github/workflows/reusable-cpp-tests-windows.yml@3cbd664d352731ddf77bbe65569adb9621bb2fa0 # v2.4.0
     with:
       runs-on: ${{ matrix.runs-on }}
       compiler: ${{ matrix.compiler }}
       preset-name: ${{ matrix.preset }}
-      # Visual Studio generators do not support compiler launchers.
-      use-sccache-gha: false
       run-on-draft: true
     permissions:
       contents: read
