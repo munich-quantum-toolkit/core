@@ -234,10 +234,11 @@ cmake --preset release
 ```
 
 Under the hood, this effectively calls
-`cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release` and configures a
-{code}`Release` build. A {code}`Debug` build can be requested by using the
-{code}`debug` preset. If you are on Windows, use the `release-windows` and
-`debug-windows` presets.
+`cmake -S . -B build/release -G Ninja -DCMAKE_BUILD_TYPE=Release` and configures
+a {code}`Release` build. A {code}`Debug` build can be requested by using the
+{code}`debug` preset. Both presets use Ninja on all platforms, including
+Windows. Make sure {code}`ninja` is installed and available on {code}`PATH`. On
+Windows with MSVC, run these commands from a Visual Studio developer shell.
 
 After configuring CMake, the project can be _built_ by calling:
 
@@ -245,9 +246,8 @@ After configuring CMake, the project can be _built_ by calling:
 cmake --build --preset release
 ```
 
-This command is equivalent to `cmake --build build/release --config Release`.
-The flag {code}`--parallel <NUMBER_OF_THREADS>` may be added to trigger a
-parallel build.
+This command is equivalent to `cmake --build build/release`. The flag
+{code}`--parallel <NUMBER_OF_THREADS>` may be added to trigger a parallel build.
 
 Building the project this way generates
 
