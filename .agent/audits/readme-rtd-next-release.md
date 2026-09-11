@@ -17,6 +17,7 @@ The PR #2519 rebase retains its API names and corrected compiler terminology.
 The RUS demonstration is integrated into `benchmarks.md`, with MyST `math`
 directives for displayed equations. README and documentation prose link to MQSC
 by its short name; full legal names remain only in copyright notices. The
+glossary expands MQSC and CDA and identifies both as developers of MQT Core. The
 compiler guide is now `mlir/mqt_compiler_collection.md` and introduces the
 Python, C++, and `mqt-cc` interfaces. All navigation uses the new page, and RUS
 links target its benchmark section. The landing-page device note and the README
@@ -46,7 +47,9 @@ Shor implementation aside are removed.
 - `docs/Doxyfile` generates the installed `include/mqt-core` reference.
   `mlir/include/mqt/Dialect/QIR` belongs to the source-tree interface.
   `docs/cpp_api.md` separates these scopes and compiles its displayed DD/CMake
-  example against the installed wheel, then checks the four amplitudes.
+  example against the installed wheel, then checks the four amplitudes. Its
+  Ninja generator requires Ninja in the docs environment. Configure and build
+  diagnostics are retained in notebook output so hosted failures are visible.
 - `docs/mlir/OpenQASM.md` and the frontend/export implementation permit runtime
   classical-bit indices while requiring statically resolved exported qubit
   indices. The compiler overview now matches that distinction and retains the
@@ -60,7 +63,8 @@ algebra checks, SDK examples, strict notebook execution, and generated HTML
 navigation checks remain in place. Historical changelogs and generated API
 descriptions were not individually re-audited. Template-owned installation and
 contribution pages remain template-owned; installation already documents LLVM
-23.1 setup. No new documentation framework or dependency is needed.
+23.1 setup. The docs dependency group supplies Ninja for the C++ example; no new
+documentation framework is needed.
 
 The adaptive examples depend on
 [PR #2506](https://github.com/munich-quantum-toolkit/core/pull/2506).

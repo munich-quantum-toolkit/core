@@ -22,7 +22,7 @@ Chair for Design Automation
   **Preferred term:** Chair for Design Automation. **Accepted abbreviation:**
   CDA. A
   [research chair at the Technical University of Munich](https://www.cda.cit.tum.de/)
-  that develops design methods for fields including quantum computing.
+  that develops MQT Core together with [MQSC](https://mq.sc).
 
 DD
 DDs
@@ -64,8 +64,10 @@ modular multiplier
   arithmetic circuit that computes a product reduced modulo a specified integer.
 
 MQSC
-  **Preferred term:** [MQSC](https://mq.sc). **Accepted aliases:** none. The
-  company that develops and supports parts of MQT Core. Use the linked short
+Munich Quantum Software Company
+  **Preferred term:** [MQSC](https://mq.sc). **Accepted expansion:** Munich
+  Quantum Software Company. The company develops MQT Core together with the
+  {term}`Chair for Design Automation <CDA>` at {term}`TUM`. Use the linked short
   name in prose; reserve the full legal name for copyright notices.
 
 MQSS

@@ -33,14 +33,16 @@ Preserve PR #2519's OpenQASM import and operation-capability names, static
 gate-count scope, and jeff conversion/serialization distinction. Displayed RUS
 equations use MyST `math` directives within the benchmark catalog. README and
 documentation prose use `[MQSC](https://mq.sc)`; copyright notices retain the
-full legal name. The renamed `mlir/mqt_compiler_collection.md` guide introduces
-Python, C++, and `mqt-cc`. Navigation and incoming links use the new path.
-Remove the redundant RUS README link, the device note below the landing-page
-grid, and the Shor implementation aside.
+full legal name. The glossary expands MQSC and CDA and records their joint
+development of MQT Core. The renamed `mlir/mqt_compiler_collection.md` guide
+introduces Python, C++, and `mqt-cc`. Navigation and incoming links use the new
+path. Remove the redundant RUS README link, the device note below the
+landing-page grid, and the Shor implementation aside.
 
 The adaptive examples required a separate compiler fix, published as PR #2506.
 The documentation PR is stacked on that branch and closes #2419 after merge to
-main. No new dependencies or documentation framework were introduced.
+main. The docs dependency group installs Ninja for the C++ example. The existing
+documentation framework remains in use.
 
 ## Validation
 
@@ -56,6 +58,9 @@ main. No new dependencies or documentation framework were introduced.
   present; rendered landing and compiler pages were inspected.
 - The generated QPE notebook contains the exact README source. The isolated
   wheel smoke test uses the same source.
+- The exact C++ notebook cell passes with only the docs environment and system
+  executables on `PATH`. Without Ninja, configuration fails as in RtD build
+  `34501147`; the notebook now includes CMake diagnostics in its output.
 - External linkcheck, the two generated-link regression tests, general lint, and
   `git diff --check` pass. The final ponytail review found no further
   unnecessary code or dependencies in the documentation changes.

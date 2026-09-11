@@ -81,10 +81,10 @@ with TemporaryDirectory() as directory:
     (root / "CMakeLists.txt").write_text(cmake, encoding="utf-8")
     subprocess.run(
         ["cmake", "-S", directory, "-B", str(root / "build"), "-G", "Ninja",
-         f"-DCMAKE_PREFIX_PATH={prefix}"], check=True, capture_output=True, text=True
+         f"-DCMAKE_PREFIX_PATH={prefix}"], check=True, stderr=subprocess.STDOUT
     )
     subprocess.run(
-        ["cmake", "--build", str(root / "build")], check=True, capture_output=True, text=True
+        ["cmake", "--build", str(root / "build")], check=True, stderr=subprocess.STDOUT
     )
     executable = root / "build" / ("dd-example.exe" if os.name == "nt" else "dd-example")
     result = subprocess.run([str(executable)], check=True, capture_output=True, text=True)
