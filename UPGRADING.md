@@ -6,6 +6,8 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+## [4.0.0]
+
 ### Migrating from MQT Core 3 to 4
 
 MQT Core 4 makes the **MQT Compiler Collection**, built on **MLIR and LLVM**,
@@ -205,6 +207,22 @@ Set `MLIR_DIR` to their `lib/cmake/mlir` directory. A repository-local `.env`
 can supply `MLIR_DIR` when it is not set in CMake. The supplied macOS LLVM/MLIR
 builds require Clang rather than GCC; AppleClang 17+ is required for MQT's MLIR
 code.
+
+#### CMake presets on Windows
+
+All CMake presets now use Ninja. On Windows, remove `-windows` from preset names
+when configuring, building, and testing:
+
+| Previous preset           | Replacement       |
+| ------------------------- | ----------------- |
+| `debug-windows`           | `debug`           |
+| `release-windows`         | `release`         |
+| `debug-windows-no-mlir`   | `debug-no-mlir`   |
+| `release-windows-no-mlir` | `release-no-mlir` |
+
+Install Ninja and run CMake from a Visual Studio developer shell for the target
+architecture. Use a new build directory if an existing directory uses the Visual
+Studio generator.
 
 ### QDMI submission and QIR execution
 
@@ -1229,25 +1247,10 @@ be conveniently installed from PyPI using the
 
 It also requires the `uv` library version 0.5.20 or higher.
 
-## CMake presets on Windows
-
-All CMake presets now use Ninja. On Windows, remove `-windows` from preset names
-when configuring, building, and testing:
-
-| Previous preset           | Replacement       |
-| ------------------------- | ----------------- |
-| `debug-windows`           | `debug`           |
-| `release-windows`         | `release`         |
-| `debug-windows-no-mlir`   | `debug-no-mlir`   |
-| `release-windows-no-mlir` | `release-no-mlir` |
-
-Install Ninja and run CMake from a Visual Studio developer shell for the target
-architecture. Use a new build directory if an existing directory uses the Visual
-Studio generator.
-
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...v4.0.0
 [3.10.0]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.2...v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.1...v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/compare/v3.9.0...v3.9.1

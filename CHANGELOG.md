@@ -1,4 +1,4 @@
-<!-- Unreleased entries follow user workflows; PR references are in ascending number order. Published releases retain their existing order. -->
+<!-- v4 entries follow user workflows; PR references are in ascending number order. Earlier releases retain their existing order. -->
 
 # Changelog
 
@@ -9,6 +9,8 @@ This project adheres to [Semantic Versioning], with the exception that minor
 releases may include breaking changes.
 
 ## [Unreleased]
+
+## [4.0.0] - 2026-09-11
 
 ### MQT Core 4: a compiler foundation built on MLIR and LLVM
 
@@ -46,10 +48,9 @@ The central changes are:
 
 **Upgrading from v3 requires an explicit migration.** Classic circuit APIs,
 including `QuantumComputation`, are removed. The low-level DD and QDMI libraries
-remain available. Start with the
-[v3-to-v4 upgrade guide](UPGRADING.md#unreleased) for the new program model,
-migration paths, API replacements, and build changes relative to v3.10.0. The
-entries below retain the contributing PRs and authors.
+remain available. Start with the [v3-to-v4 upgrade guide](UPGRADING.md#400) for
+the new program model, migration paths, API replacements, and build changes
+relative to v3.10.0. The entries below retain the contributing PRs and authors.
 
 ### Added
 
@@ -113,8 +114,8 @@ entries below retain the contributing PRs and authors.
 - ✨ Evaluate multiple initial layouts, including identity and greedy
   candidates, with CPU-based default trial counts. Reuse routing search storage
   and avoid repeated program-graph and liveness analysis. ([#1568], [#1574],
-  [#1930], [#2180], [#2488], [#2499], [#2500], [#2517]) ([**@burgholzer**],
-  [**@MatthiasReumann**], [**@simon1hofmann**])
+  [#1930], [#2180], [#2488], [#2499], [#2500], [#2517], [#2535])
+  ([**@burgholzer**], [**@MatthiasReumann**], [**@simon1hofmann**])
 
 #### Optimization and synthesis
 
@@ -129,7 +130,7 @@ entries below retain the contributing PRs and authors.
   including RXX, RYY, RZX, RZZ, iSWAP, ECR, and optimal square-root iSWAP
   circuits. ([#1774], [#1802], [#1803], [#1809], [#1810], [#1814], [#1832],
   [#1850], [#1865], [#1961], [#1996], [#1998], [#2001], [#2444], [#2467],
-  [#2468], [#2478], [#2507]) ([**@burgholzer**], [**@denialhaag**],
+  [#2468], [#2478], [#2507], [#2531]) ([**@burgholzer**], [**@denialhaag**],
   [**@simon1hofmann**])
 
 - ✨ Normalize global phases and expand multi-operation quantum modifiers while
@@ -167,8 +168,8 @@ entries below retain the contributing PRs and authors.
   phase, scalar control-flow state, arrays, and reusable functions. Use native
   integer arithmetic and report recoverable deserialization failures. ([#1479],
   [#1548], [#1565], [#1637], [#1676], [#1706], [#1776], [#1836], [#1934],
-  [#1939], [#2000], [#2018], [#2105], [#2212], [#2339], [#2451], [#2457], [#2525])
-  ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
+  [#1939], [#2000], [#2018], [#2105], [#2212], [#2339], [#2451], [#2457],
+  [#2525]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
 
 - ✨ Generate QIR 2.1 Base and Adaptive profiles as LLVM text or bitcode. Derive
   capability and resource metadata, lower reusable functions and classical
@@ -1085,7 +1086,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.0.0
 [3.10.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.1
@@ -1112,6 +1114,8 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2535]: https://github.com/munich-quantum-toolkit/core/pull/2535
+[#2531]: https://github.com/munich-quantum-toolkit/core/pull/2531
 [#2526]: https://github.com/munich-quantum-toolkit/core/pull/2526
 [#2525]: https://github.com/munich-quantum-toolkit/core/pull/2525
 [#2524]: https://github.com/munich-quantum-toolkit/core/pull/2524

@@ -26,8 +26,8 @@ mapping, and execution. Its libraries form the backbone of the
 
 **MQT Core 4 is a major architectural release:** the compiler's program
 representations replace the classic circuit APIs. Start with the
-[v4 release overview](CHANGELOG.md#unreleased) and
-[v3-to-v4 upgrade guide](UPGRADING.md#unreleased) when migrating an existing
+[v4 release overview](CHANGELOG.md#400---2026-09-11) and
+[v3-to-v4 upgrade guide](UPGRADING.md#400) when migrating an existing
 application. The low-level DD and QDMI libraries remain available.
 
 <p align="center">
