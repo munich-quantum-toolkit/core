@@ -153,6 +153,20 @@ using LLVM's affinity-aware CPU count with a minimum of one. An explicit
 `place-and-route` pass for reproducible results across machines. Disabling
 multithreading runs the same trials sequentially.
 
+Native synthesis collects constant runs on the same two qubits, including
+interleaved single-qubit gates, and resynthesizes them in the target's selected
+basis. It replaces a run only when the result uses fewer native two-qubit gates
+than preserving supported operations and lowering the others individually. For
+example, a non-native RZZ followed by RXX can require two CZ gates together,
+compared with four when lowered separately. Already-native operations are
+preserved unless block synthesis reduces their native gate count.
+
+Native support includes physical sites and operand direction. Barriers,
+non-unitary operations, and unavailable matrices stop a run. If block
+decomposition fails numerically, synthesis falls back to individual lowering.
+The selected basis uses one entangler family; it does not optimize arbitrary
+mixtures of all target operations or use calibration costs.
+
 Target synthesis preserves a native `gphase`. If the target does not support
 `gphase`, target synthesis preserves relative phase effects and removes only the
 unobservable global phase of the entry point.
@@ -175,16 +189,16 @@ registers the required inliner extensions; callers that populate the low-level
 target pipeline directly must register inliner extensions for every callable
 dialect in their context.
 
-### Basis-only synthesis
+### Synthesis without routing
 
 Use {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` to translate an
-existing QCO program to an all-to-all target's native gate set without the
-default rotation-merging, two-qubit fusion, or routing stages. This pipeline
-inlines calls, decomposes multi-controlled gates, assigns static sites, performs
-native synthesis, and verifies target conformance. It accepts structured QCO/SCF
-input and uses the same target environment and global-phase policy as target
-compilation. Explicit connectivity is rejected; use `compile_for_target` when
-routing is required.
+existing QCO program to an all-to-all target's native gate set. It uses the same
+native block synthesis as target compilation, without default rotation merging
+or routing. This pipeline inlines calls, decomposes multi-controlled gates,
+assigns static sites, performs native synthesis, and verifies target
+conformance. It accepts structured QCO/SCF input and uses the same target
+environment and global-phase policy as target compilation. Explicit connectivity
+is rejected; use `compile_for_target` when routing is required.
 
 Synthesis runs in place and raises `RuntimeError` with MLIR diagnostics on
 failure. Earlier pass changes may remain on the program, so copy it first when

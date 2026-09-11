@@ -570,7 +570,7 @@ def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
 
 @requires_qiskit_translation
 def test_target_synthesis_decomposes_without_routing() -> None:
-    """Synthesize a controlled rotation through the typed basis-only API."""
+    """Synthesize a controlled rotation through the typed target API."""
     target = CompilerTarget(
         3,
         connectivity=CompilerTarget.Connectivity.all_to_all(),
@@ -600,6 +600,29 @@ def test_target_synthesis_decomposes_without_routing() -> None:
     )
     with pytest.raises(RuntimeError, match="all-to-all connectivity"):
         program.synthesize_for_target(_test_target_environment(sparse))
+
+
+@requires_qiskit_translation
+def test_target_synthesis_resynthesizes_two_qubit_blocks() -> None:
+    """Both target APIs resynthesize an RZZ/RXX block directly into CZ gates."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("u", 1, 3),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    source = QuantumCircuit(2)
+    source.rzz(0.3, 0, 1)
+    source.rxx(0.4, 0, 1)
+    for method in ("synthesize_for_target", "compile_for_target"):
+        program = QCProgram.from_qiskit(source).to_qco()
+        getattr(program, method)(_test_target_environment(target))
+        result = program.to_qiskit(target=target)
+        assert result.count_ops().get("cz", 0) == 2
+        assert np.allclose(Operator(result).data, Operator(source).data)
 
 
 @requires_qiskit_translation

@@ -30,13 +30,13 @@ class OpPassManager;
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment);
 
-/// Populate target-native synthesis without the optimization or routing stages.
+/// Populate target-native block synthesis without rotation merging or routing.
 ///
 /// Requires an all-to-all target. Inlines calls, decomposes supported
-/// multi-controlled gates, assigns static sites, synthesizes native operations,
-/// and verifies target conformance. Input must use structured QCO/SCF control
-/// flow. The supplied environment is authoritative and must remain unchanged
-/// during pipeline execution.
+/// multi-controlled gates, assigns static sites, resynthesizes constant
+/// two-qubit runs in the native basis, and verifies target conformance. Input
+/// must use structured QCO/SCF control flow. The supplied environment is
+/// authoritative and must remain unchanged during pipeline execution.
 void populateTargetSynthesisPipeline(OpPassManager& pm,
                                      const TargetEnvironment& environment);
 

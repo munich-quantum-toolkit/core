@@ -71,8 +71,8 @@ namespace {
 struct FusableTwoQubitRun {
   SmallVector<Operation*, 8> ops; ///< Members in dependency order.
   Matrix4x4 composed = Matrix4x4::identity();
-  unsigned numTwoQ = 0; ///< Number of two-qubit members (entanglers consumed).
-  Value tailA;          ///< Current output wires of the run's tail.
+  size_t numTwoQ = 0; ///< Number of two-qubit members.
+  Value tailA;        ///< Current output wires of the run's tail.
   Value tailB;
 };
 
@@ -82,6 +82,15 @@ struct FusableTwoQubitRun {
 struct LastTwoQubitDecomposition {
   Matrix4x4 matrix;
   std::optional<decomposition::TwoQubitNativeDecomposition> native;
+
+  const std::optional<decomposition::TwoQubitNativeDecomposition>&
+  get(const Matrix4x4& nextMatrix, CompilerTarget::GateKind entangler) {
+    if (!native || matrix.data != nextMatrix.data) {
+      matrix = nextMatrix;
+      native = decomposeUnitary2QWeyl(matrix, entangler);
+    }
+    return native;
+  }
 };
 
 } // namespace
@@ -287,34 +296,6 @@ static void eraseFusableRun(RewriterBase& rewriter,
   }
 }
 
-/// Fuses a maximal constant run only when generic resynthesis strictly reduces
-/// its two-qubit operation count.
-static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
-                                const Matrix4x4& headMatrix,
-                                CompilerTarget::SynthesisBasis basis) {
-  FusableTwoQubitRun run = scanFusableTwoQubitRun(head, headMatrix);
-  if (run.ops.size() < 2) {
-    return false;
-  }
-
-  const auto native = decomposeUnitary2QWeyl(run.composed, *basis.entangler);
-  if (!native || native->numBasisUses >= run.numTwoQ) {
-    return false;
-  }
-
-  auto firstOp = cast<UnitaryOpInterface>(run.ops.front());
-  rewriter.setInsertionPoint(firstOp);
-  const auto synthesized =
-      emitUnitary2QWeyl(rewriter, firstOp.getLoc(), firstOp.getInputQubit(0),
-                        firstOp.getInputQubit(1), *native, basis);
-  decomposition::emitGPhaseIfNeeded(rewriter, firstOp.getLoc(),
-                                    synthesized.globalPhase);
-  rewriter.replaceAllUsesWith(run.tailA, synthesized.qubit0);
-  rewriter.replaceAllUsesWith(run.tailB, synthesized.qubit1);
-  eraseFusableRun(rewriter, run);
-  return true;
-}
-
 namespace {
 
 using SiteId = CompilerTarget::SiteId;
@@ -508,6 +489,14 @@ static void reorderTwoQubitOperation(IRRewriter& rewriter,
       ValueRange{reordered.getOutputQubit(1), reordered.getOutputQubit(0)});
 }
 
+static bool canReverseNativeOperation(UnitaryOpInterface op,
+                                      const CompilerTarget& target,
+                                      std::optional<ArrayRef<SiteId>> sites) {
+  return sites && op.isTwoQubit() && isOperandSwapInvariant(op) &&
+         target.supports(op.getOperation(),
+                         std::array{(*sites)[1], (*sites)[0]});
+}
+
 static LogicalResult synthesizeTargetOperation(
     IRRewriter& rewriter, UnitaryOpInterface op, const CompilerTarget& target,
     const std::optional<CompilerTarget::SynthesisBasis>& basis,
@@ -517,8 +506,7 @@ static LogicalResult synthesizeTargetOperation(
   if (sites ? target.supports(operation, *sites) : target.supports(operation)) {
     return success();
   }
-  if (sites && op.isTwoQubit() && isOperandSwapInvariant(op) &&
-      target.supports(operation, std::array{(*sites)[1], (*sites)[0]})) {
+  if (canReverseNativeOperation(op, target, sites)) {
     reorderTwoQubitOperation(rewriter, op);
     return success();
   }
@@ -578,14 +566,7 @@ static LogicalResult synthesizeTargetOperation(
     matrix = matrix.reorderForQubits(1, 0);
     std::swap(input0, input1);
   }
-  // Compare the full, direction-adjusted matrix exactly, including its phase.
-  if (!lastDecomposition.native ||
-      lastDecomposition.matrix.data != matrix.data) {
-    lastDecomposition.matrix = matrix;
-    lastDecomposition.native =
-        decomposeUnitary2QWeyl(matrix, *basis->entangler);
-  }
-  const auto& native = lastDecomposition.native;
+  const auto& native = lastDecomposition.get(matrix, *basis->entangler);
   if (!native) {
     return unsupported(
         "its unitary matrix could not be numerically decomposed");
@@ -604,27 +585,116 @@ static LogicalResult synthesizeTargetOperation(
   return success();
 }
 
-static LogicalResult fuseTwoQubitGates(ModuleOp moduleOp) {
-  constexpr CompilerTarget::SynthesisBasis basis{
-      .singleQubit = CompilerTarget::SingleQubitBasis::U,
-      .entangler = CompilerTarget::GateKind::CZ,
-  };
+/// Compare with individual native lowering, stopping once fusion wins.
+static bool reducesNativeCost(const FusableTwoQubitRun& run, size_t fusedCost,
+                              const CompilerTarget& target,
+                              CompilerTarget::GateKind entangler,
+                              const SiteMap* sites,
+                              LastTwoQubitDecomposition& lastDecomposition) {
+  size_t cost = 0;
+  for (Operation* operation : run.ops) {
+    auto unitary = cast<UnitaryOpInterface>(operation);
+    if (!unitary.isTwoQubit()) {
+      continue;
+    }
+    auto siteValues = sites != nullptr ? getOperationSites(operation, *sites)
+                                       : SmallVector<SiteId, 2>{};
+    const auto operationSites =
+        sites != nullptr ? std::optional<ArrayRef<SiteId>>(siteValues)
+                         : std::nullopt;
+    if ((sites != nullptr ? target.supports(operation, siteValues)
+                          : target.supports(operation)) ||
+        canReverseNativeOperation(unitary, target, operationSites)) {
+      ++cost;
+    } else {
+      Matrix4x4 matrix;
+      if (!assignTwoQubitOpMatrix(unitary, matrix)) {
+        return false;
+      }
+      if (sites != nullptr && !target.supports(entangler, siteValues)) {
+        matrix = matrix.reorderForQubits(1, 0);
+      }
+      const auto& native = lastDecomposition.get(matrix, entangler);
+      if (!native) {
+        return false;
+      }
+      cost += native->numBasisUses;
+    }
+    if (cost > fusedCost) {
+      return true;
+    }
+  }
+  return false;
+}
 
+/// Fuses a constant run only when resynthesis reduces its two-qubit cost.
+/// Without a target, the original operation count is a conservative bound.
+static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
+                                const Matrix4x4& headMatrix,
+                                CompilerTarget::SynthesisBasis basis,
+                                const CompilerTarget* target,
+                                const SiteMap* sites,
+                                LastTwoQubitDecomposition& lastDecomposition) {
+  auto run = scanFusableTwoQubitRun(head, headMatrix);
+  if (run.ops.size() < 2) {
+    return false;
+  }
+  bool reverseEntangler = false;
+  if (sites != nullptr) {
+    const auto headSites = getOperationSites(head, *sites);
+    reverseEntangler = !target->supports(*basis.entangler, headSites);
+    if (reverseEntangler &&
+        !target->supports(*basis.entangler,
+                          std::array{headSites[1], headSites[0]})) {
+      return false;
+    }
+  }
+  const auto native = decomposeUnitary2QWeyl(
+      reverseEntangler ? run.composed.reorderForQubits(1, 0) : run.composed,
+      *basis.entangler);
+  if (!native ||
+      (target != nullptr
+           ? !reducesNativeCost(run, native->numBasisUses, *target,
+                                *basis.entangler, sites, lastDecomposition)
+           : native->numBasisUses >= run.numTwoQ)) {
+    return false;
+  }
+
+  Value input0 = head.getInputQubit(0);
+  Value input1 = head.getInputQubit(1);
+  if (reverseEntangler) {
+    std::swap(input0, input1);
+  }
+  rewriter.setInsertionPoint(head);
+  const auto synthesized = emitUnitary2QWeyl(rewriter, head.getLoc(), input0,
+                                             input1, *native, basis);
+  decomposition::emitGPhaseIfNeeded(rewriter, head.getLoc(),
+                                    synthesized.globalPhase);
+  rewriter.replaceAllUsesWith(run.tailA, reverseEntangler ? synthesized.qubit1
+                                                          : synthesized.qubit0);
+  rewriter.replaceAllUsesWith(run.tailB, reverseEntangler ? synthesized.qubit0
+                                                          : synthesized.qubit1);
+  eraseFusableRun(rewriter, run);
+  return true;
+}
+
+static bool fuseTwoQubitGates(IRRewriter& rewriter, ModuleOp moduleOp,
+                              CompilerTarget::SynthesisBasis basis,
+                              const CompilerTarget* target = nullptr,
+                              const SiteMap* sites = nullptr) {
   bool changed = false;
-  IRRewriter rewriter(moduleOp.getContext());
+  LastTwoQubitDecomposition lastDecomposition;
   /// A run's successors have already been visited when its head erases them.
   moduleOp->walk<WalkOrder::PostOrder, ReverseIterator>(
       [&](Operation* operation) {
         auto unitary = dyn_cast<UnitaryOpInterface>(operation);
         const auto matrix = twoQubitRunMemberMatrix(unitary);
         if (matrix && !feedsFromSameTwoQubitRun(unitary)) {
-          changed |= fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis);
+          changed |= fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis,
+                                         target, sites, lastDecomposition);
         }
       });
-  if (!changed) {
-    return success();
-  }
-  return mlir::mqt::normalizeGlobalPhases(moduleOp);
+  return changed;
 }
 
 namespace {
@@ -640,20 +710,38 @@ struct FuseTwoQubitGatesPass final
 protected:
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();
-    if (failed(fuseTwoQubitGates(moduleOp))) {
+    constexpr CompilerTarget::SynthesisBasis basis{
+        .singleQubit = CompilerTarget::SingleQubitBasis::U,
+        .entangler = CompilerTarget::GateKind::CZ,
+    };
+    IRRewriter rewriter(&getContext());
+    if (fuseTwoQubitGates(rewriter, moduleOp, basis) &&
+        failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
     }
   }
 };
 
-/// Defer constant folding until gate builders have consumed their new values.
-class SynthesisConstantFolder final : public OpBuilder::Listener {
+/// Track generated wire sites and defer folding until builders finish.
+class SynthesisListener final : public OpBuilder::Listener {
 public:
-  explicit SynthesisConstantFolder(MLIRContext* context) : folder_(context) {}
+  SynthesisListener(MLIRContext* context, SiteMap& sites)
+      : folder_(context), sites_(sites) {}
 
   void notifyOperationInserted(Operation* operation,
                                OpBuilder::InsertPoint previous) override {
     if (!previous.isSet()) {
+      if (isa<UnitaryOpInterface>(operation)) {
+        for (auto [input, output] :
+             llvm::zip_equal(getQubitValues(operation->getOperands()),
+                             getQubitValues(operation->getResults()))) {
+          /// Modifier builders also insert detached bodies with unplaced args.
+          if (auto found = sites_.find(input); found != sites_.end()) {
+            const auto site = found->second;
+            sites_.insert_or_assign(output, site);
+          }
+        }
+      }
       if (auto constant = dyn_cast<arith::ConstantOp>(operation)) {
         pending_.push_back(constant);
       }
@@ -669,6 +757,7 @@ public:
 
 private:
   OperationFolder folder_;
+  SiteMap& sites_;
   SmallVector<arith::ConstantOp> pending_;
 };
 
@@ -687,10 +776,6 @@ protected:
       return;
     }
     const CompilerTarget& target = environment.environment().target();
-    if (target.nativeOperationsKind() ==
-        CompilerTarget::NativeOperations::Kind::Unrestricted) {
-      return;
-    }
     const auto targetBasis = target.synthesisBasis();
     if (failed(prepareGlobalPhases(moduleOp, target))) {
       signalPassFailure();
@@ -703,8 +788,13 @@ protected:
       return;
     }
 
-    SynthesisConstantFolder constants(&getContext());
-    IRRewriter rewriter(&getContext(), &constants);
+    SynthesisListener listener(&getContext(), *sites);
+    IRRewriter rewriter(&getContext(), &listener);
+    if (targetBasis && targetBasis->entangler) {
+      fuseTwoQubitGates(rewriter, moduleOp, *targetBasis, &target,
+                        indexed ? nullptr : &*sites);
+    }
+    listener.foldPending();
     LastTwoQubitDecomposition lastDecomposition;
     /// Rewrite users before producers so each unvisited operation retains its
     /// original operands and their collected sites.
@@ -722,7 +812,7 @@ protected:
               indexed ? std::nullopt
                       : std::optional<ArrayRef<SiteId>>(operationSites),
               lastDecomposition);
-          constants.foldPending();
+          listener.foldPending();
           return failed(synthesized) ? WalkResult::interrupt()
                                      : WalkResult::advance();
         });

@@ -86,16 +86,6 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   populateDefaultQCOOptimizationPipeline(pm);
-  // Generic fusion must not introduce gates that the target cannot synthesize.
-  // ponytail: its CX/CZ cost model can increase square-root iSWAP counts;
-  // enable that basis when fusion uses the target entangler's cost.
-  if (const auto basis = target.synthesisBasis();
-      target.nativeOperationsKind() ==
-          CompilerTarget::NativeOperations::Kind::Unrestricted ||
-      (basis && basis->entangler &&
-       basis->entangler != CompilerTarget::GateKind::SQRTISWAP)) {
-    pm.addPass(qco::createFuseTwoQubitGates());
-  }
   switch (target.connectivityKind()) {
   case CompilerTarget::Connectivity::Kind::Explicit:
     pm.addPass(qco::createMappingPass(qco::MappingPassOptions{}));
