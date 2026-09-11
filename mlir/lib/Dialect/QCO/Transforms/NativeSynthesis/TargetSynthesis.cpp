@@ -69,7 +69,7 @@ namespace {
 
 /// Composed unitary and metadata for a fusable two-qubit run.
 struct FusableTwoQubitRun {
-  SmallVector<Operation*, 8> ops; ///< Members in program order.
+  SmallVector<Operation*, 8> ops; ///< Members in dependency order.
   Matrix4x4 composed = Matrix4x4::identity();
   unsigned numTwoQ = 0; ///< Number of two-qubit members (entanglers consumed).
   Value tailA;          ///< Current output wires of the run's tail.
@@ -220,7 +220,7 @@ static void absorbOneQubitIntoRun(FusableTwoQubitRun& run,
 
 /// Walks forward from `head`, composing the run's matrix and metadata. Absorbs
 /// a following two-qubit gate when it keeps both run wires together, otherwise
-/// the single-qubit gate first in program order; stops at the first boundary
+/// single-qubit gates on either wire; stops at the first boundary
 /// that would split the run's two wires.
 static FusableTwoQubitRun scanFusableTwoQubitRun(UnitaryOpInterface head,
                                                  const Matrix4x4& headMatrix) {
@@ -264,7 +264,9 @@ static FusableTwoQubitRun scanFusableTwoQubitRun(UnitaryOpInterface head,
     if (aSingle && bSingle && nextOnA->getBlock() != nextOnB->getBlock()) {
       break;
     }
-    if (aSingle && (!bSingle || nextOnA->isBeforeInBlock(nextOnB))) {
+    // Gates on distinct wires commute. Comparing their order would rescan the
+    // whole block after each preceding fusion invalidates its order cache.
+    if (aSingle) {
       absorbOneQubitIntoRun(run, nextOnA, *matrixA, /*wireIndex=*/0);
       continue;
     }
