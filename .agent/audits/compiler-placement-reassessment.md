@@ -13,8 +13,8 @@ The integration base is `a66a9b206` on 2026-09-10, using LLVM/MLIR 23.1.0.
    `Mapping.cpp::placeIndexedAllocations` assigns each allocation slot once,
    using `qco.static` and `qtensor.from_elements`. Synthesis tracks placed
    origins and still checks native operations. Sparse physical IDs and capacity
-   remain checked. QIR metadata uses compiler-marked qubit stores so the declared
-   capacity includes every possible static qubit operand.
+   remain checked. QIR metadata uses compiler-marked qubit stores so the
+   declared capacity includes every possible static qubit operand.
 
    The previous mapper required initial extraction and final reinsertion and
    forced tensor loops to expand. The 100,001-iteration regression now retains
@@ -86,7 +86,14 @@ stricter mapper and modifier contracts remain and which QIR analysis was
 replaced. The local-buffer alias rule stays in the shared measurement/store
 analysis.
 
-Final native and Python tests, full-file C++ lint against `a66a9b206`, general
-lint, generated MLIR documentation, benchmark checks, and the requested
-ponytail review are in progress. The stacked README and RtD examples are
-validated with PR #2509. Hosted CI monitoring is outside this task.
+The updated implementation passes 992 focused native tests, all 27 Python
+device-compilation tests, and all executed benchmark reference checks. Full-file
+C++ lint against `a66a9b206` reports zero formatting or tidy findings. Generated
+MLIR documentation and general lint pass. The stacked README and RtD checks
+belong to PR #2509.
+
+The requested final ponytail review found no further justified C++ cuts. It
+removed 16 superseded diagnostic scripts, raw runs, and generated LLVM snapshots
+(1,478 lines), retaining native regressions, minimized inputs, and reproducible
+matched benchmarks. No dependency or abstraction was added. Hosted CI monitoring
+is outside this task.

@@ -7,6 +7,7 @@ from statistics import median
 
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Patch
 
 root = Path(__file__).parent
 parser = argparse.ArgumentParser(__doc__)
@@ -62,11 +63,11 @@ for ax, metric, title in zip(
             if "error" in pair[index]:
                 ax.text(0, i + offset, "unsupported", va="center", fontsize=7, color=colors[variant])
     ax.set_yticks(np.arange(len(pairs)), [f"{pair[0]['family']} {pair[0]['width']}" for pair in pairs])
-    ax.invert_yaxis()
+    ax.set_ylim(len(pairs) - 0.5, -0.5)
     ax.set_title(title)
     ax.grid(axis="x", alpha=0.2)
     ax.set_axisbelow(True)
-axes[0].legend()
+axes[0].legend(handles=[Patch(color=color, label=variant) for variant, color in colors.items()])
 fig.suptitle(
     "Structured quantum loops: complete target pipeline\nMedians and min–max, 9 samples; shared DGX Spark host",
     fontsize=14,

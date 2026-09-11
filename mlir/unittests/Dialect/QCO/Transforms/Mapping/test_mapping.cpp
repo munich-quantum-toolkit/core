@@ -2662,9 +2662,7 @@ TEST_F(MappingPassFixture, RejectTensorWhileBeforeMutation) {
     EXPECT_TRUE(failed(placement
                            ? runPlacement(*moduleOp, target)
                            : runPass(*moduleOp, target, MappingPassOptions{})));
-    EXPECT_NE(
-        diagnostics.find("flat qtensor"),
-        std::string::npos)
+    EXPECT_NE(diagnostics.find("flat qtensor"), std::string::npos)
         << diagnostics;
     EXPECT_EQ(printModule(*moduleOp), before);
   }

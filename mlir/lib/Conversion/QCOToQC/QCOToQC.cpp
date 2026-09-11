@@ -133,7 +133,8 @@ static bool hasCompleteTensorLifetime(Value tensor, unsigned depth = 0) {
         return false;
       }
       tensor = insert.getResult();
-    } else if (isa<scf::ForOp, scf::WhileOp, qco::IfOp, qco::IndexSwitchOp>(user)) {
+    } else if (isa<scf::ForOp, scf::WhileOp, qco::IfOp, qco::IndexSwitchOp>(
+                   user)) {
       const auto index =
           llvm::count_if(user->getOperands().take_front(
                              tensor.use_begin()->getOperandNumber()),

@@ -2513,18 +2513,19 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
   constexpr auto source = "OPENQASM 3.0; include \"stdgates.inc\"; "
                           "qubit[2] q; bit[2] c; "
                           "for int i in [0:1] { x q[i]; } c = measure q;";
-  using Operation = CompilerTarget::Operation;
+  using OperationCapability = CompilerTarget::OperationCapability;
   using Native = CompilerTarget::NativeOperations;
-  const auto x = llvm::cantFail(Operation::create("x", 1, 0));
-  const auto measure = llvm::cantFail(Operation::create("measure", 1, 0));
-  const auto localX = llvm::cantFail(Operation::create(
+  const auto x = llvm::cantFail(OperationCapability::create("x", 1, 0));
+  const auto measure =
+      llvm::cantFail(OperationCapability::create("measure", 1, 0));
+  const auto localX = llvm::cantFail(OperationCapability::create(
       "x", 1, 0, {llvm::cantFail(CompilerTarget::SiteTuple::create({0}))}));
-  const auto targetWith = [](size_t capacity,
-                             const std::vector<Operation>& operations) {
-    return llvm::cantFail(CompilerTarget::create(
-        capacity, CompilerTarget::Connectivity::allToAll(),
-        Native::fromOperations(operations)));
-  };
+  const auto targetWith =
+      [](size_t capacity, const std::vector<OperationCapability>& operations) {
+        return llvm::cantFail(CompilerTarget::create(
+            capacity, CompilerTarget::Connectivity::allToAll(),
+            Native::fromOperations(operations)));
+      };
   const auto payload = llvm::cantFail(payloadSpecificationForProgramFormat(
       QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE));
   for (const auto& [target, expected] : {
@@ -2533,7 +2534,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
                      "cannot lower operation"},
            std::pair{targetWith(2, {measure}), "cannot lower operation"},
        }) {
-    auto qc = QCProgram::fromQASMString(source);
+    auto qc = QCProgram::fromOpenQASMString(source);
     ASSERT_TRUE(qc);
     auto program = std::move(*qc).intoQCO();
     ASSERT_TRUE(program);
@@ -2556,7 +2557,7 @@ TEST_F(CompilerPipelineTest, IndexedPlacementRetainsTargetAndPayloadChecks) {
             llvm::cantFail(payloadSpecificationForProgramFormat(format))));
     ASSERT_TRUE(result);
     if (format == QDMI_PROGRAM_FORMAT_QASM3) {
-      EXPECT_TRUE(QCProgram::fromQASMString(
+      EXPECT_TRUE(QCProgram::fromOpenQASMString(
           std::get<OpenQASMProgram>(*result).source()));
     } else {
       EXPECT_TRUE(std::get<QIRProgram>(*result).llvmIR());

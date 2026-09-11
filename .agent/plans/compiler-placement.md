@@ -1,7 +1,7 @@
 # Preserve structured tensor programs through target compilation
 
-Status: implementation updated; final validation and publication in progress.
-Integration base: `a66a9b206` (PR #2506).
+Status: implementation, validation, and review complete. Integration base:
+`fce58f02d` after PR #2519 (PR #2506).
 
 ## Authorized scope
 
@@ -40,9 +40,15 @@ results. No new runtime API, public option, or repository dependency is needed.
 
 ## Validation and integration
 
-Rebased onto `a66a9b206`, retaining the upstream control-flow and QIR analysis
-improvements. Remaining gates are native and Python regression tests, refreshed
-benchmark results, full-file C++ lint against that fixed base, general lint,
-generated MLIR documentation, and the final complexity review. The separate
-README/RtD plan owns the stacked documentation checks and PR #2509. PR #2506
-contains the compiler implementation and its measured limits.
+Rebased onto `fce58f02d`, retaining PR #2519's clean API renames and terminology
+corrections. The added indexed-placement test uses `fromOpenQASMString` and
+`OperationCapability`. All 1,026 selected native tests, including CLI alias
+rejections, pass. All 305 selected Python compiler, loop, integer-interchange,
+QCO DD, and device-compilation tests pass after rebuilding the extension with
+both packaged providers. Full-file C++ lint against that fixed base, general
+lint, and generated MLIR documentation pass. The benchmark record keeps timings
+tied to their measured revisions. The final complexity review found no further
+C++ cuts.
+
+The separate README/RtD plan owns the stacked documentation checks and PR #2509.
+PR #2506 contains the compiler implementation and its measured limits.

@@ -1,5 +1,74 @@
 # Indexed placement measurements
 
+## Upstream comparison at `a66a9b206`
+
+The complete device pipeline was rebuilt at main
+`a66a9b20698d5a7450541002a8122352d8275957` and implementation
+`ca09dc2cacf86e8f6dc8a84aad4a764ae60ba585`. Both use identical saved QC inputs,
+query the packaged DDSIM target, and select its Adaptive QIR payload.
+CPython 3.14.7, GCC 13, LLVM/MLIR 23.1.0, MinSizeRel with IPO disabled, DGX Spark
+AArch64. Native module and input hashes are recorded in each raw JSON file.
+The later rebase onto PR #2519 updates compiler naming. The values below remain
+measurements of the listed revisions; timings were not rerun for that rebase.
+
+All nine inputs are unsupported at that upstream revision: iterative QPE reaches
+the missing classical-tensor lowering; standard QPE and RUS reach the mapper's
+flat QTensor-chain diagnostic. Every input succeeds with the implementation. Failed
+compilations are recorded separately and are never plotted as successful
+compilation times. This comparison establishes added support, not a speedup
+over that upstream revision.
+
+Three alternating before/after batches contain three samples each: nine per
+input and revision. The after results below are median [minimum, maximum]
+milliseconds. Execution includes submission, JIT/job setup, waiting, and counts
+retrieval, using 1,024 shots and seed 17. Every executed QPE/RUS sample is checked
+against its analytic reference; QPE has phase 3/8 and RUS has TVD below 0.03.
+Widths 32 and 64 are compile-only. The shared host has timing variation.
+
+| Input | Compile after (ms) | Bitcode bytes | Execute after (ms) |
+| --- | --- | --- | --- |
+| iterative 8 | 38.40 [29.76, 41.96] | 3,612 | 17.11 [16.10, 41.59] |
+| iterative 32 | 33.95 [28.78, 36.60] | 3,632 | - |
+| standard 8 | 35.14 [32.16, 38.85] | 3,624 | 26.24 [24.27, 57.15] |
+| standard 16 | 36.84 [30.83, 40.75] | 3,740 | 70.16 [65.01, 90.83] |
+| standard 32 | 38.68 [34.39, 40.84] | 3,988 | - |
+| standard 64 | 38.90 [34.00, 41.42] | 4,480 | - |
+| rus 4 | 34.26 [31.26, 38.95] | 3,748 | 29.94 [14.38, 37.74] |
+| rus 16 | 37.21 [33.76, 38.88] | 3,916 | 58.72 [40.00, 65.79] |
+| rus 64 | 41.05 [35.76, 44.03] | 4,624 | - |
+
+![Upstream baseline and updated compiler](upstream-performance.png)
+
+The historical measurements below compare successful compilations before the
+stricter upstream checks. They remain useful evidence of the code-size and
+execution tradeoff, but their speedups must not be attributed to that baseline.
+
+### Reproduce the saved comparison
+
+Build each revision in a separate environment with the configuration above.
+The Python build uses
+`SKBUILD_CMAKE_ARGS='-DENABLE_IPO=OFF;-DBUILD_MQT_CORE_DOCUMENTATION=ON;-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF'`
+and `SKBUILD_CMAKE_BUILD_TYPE=MinSizeRel`; confirm `ENABLE_IPO=OFF` in both build
+caches. Force package reinstallation after changing C++ sources. Use the retained
+`matched_probe.py` from this branch for both installed versions. Set
+`MQT_CORE_QDMI_CONFIG_JSON` and the file named by `MQT_CORE_QDMI_CONFIG_FILE` to
+`{"schema-version":1,"qdmi":{"devices":[]}}` so only packaged devices are used.
+Run three alternating before/after batches:
+
+```sh
+/path/to/environment/bin/python .agent/benchmarks/compiler-placement/matched_probe.py \
+  --label FULL_REVISION --output .agent/benchmarks/compiler-placement/upstream-before-1.json --repeats 3
+uv run --no-project --with matplotlib python .agent/benchmarks/compiler-placement/summarize.py --prefix upstream
+```
+
+Use `upstream-after-N.json` for the implementation and `N=1,2,3` for each batch.
+The harness retains errors from unsupported inputs; the summary checks input
+hashes, native module hashes, and stable output sizes across successful runs.
+The retained constant-slot and partial-release MLIR inputs provide small
+standalone reproductions. Native tests own their regression coverage.
+
+## Historical successful-compilation comparison
+
 The matched comparison uses the complete device-directed compilation pipeline
 and identical saved QC inputs. Both versions query the packaged DDSIM target,
 perform placement and synthesis, and produce Adaptive QIR.
@@ -40,7 +109,7 @@ has a higher execution median here. RUS at width 4 also grows slightly in byteco
 The site table still grows linearly with register width. The long-loop native
 regression separately verifies that 100,001 iterations retain one loop body.
 
-## Reproduce
+### Reproduce the historical comparison
 
 Build each measured revision in a separate environment using the same
 MinSizeRel configuration. The compressed patches preserve the measured source
@@ -62,8 +131,8 @@ Use `matched-after-N.json` for the after variant and N=1,2,3 for the batches.
 `summarize.py` checks matching input hashes and stable module hashes within each
 variant. Matplotlib is needed only for this one-off plot, not by MQT Core.
 
-`baseline.json`, `execution.json`, `probe.py`, `execute_probe.py`, and the saved
-`*-direct.ll` files belong to the earlier device-versus-direct diagnostic. They
-bypass target passes in one arm and must not be used as optimization evidence.
-`partial_release_probe.py` and its LLVM output reproduce the old ownership
-failure; current native regression tests cover its repaired behavior.
+
+The superseded device-versus-direct diagnostic scripts, raw runs, and generated
+LLVM snapshots remain in Git history at `13f94a920`. They are not part of this
+benchmark: one arm skipped target passes. Current native tests retain the
+ownership and long-loop regressions they exposed.

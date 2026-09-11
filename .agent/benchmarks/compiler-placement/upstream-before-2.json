@@ -1,0 +1,113 @@
+{
+  "label": "a66a9b20698d5a7450541002a8122352d8275957",
+  "python": "3.14.7",
+  "platform": "Linux-6.17.0-1032-nvidia-aarch64-with-glibc2.39",
+  "native_modules": {
+    "mqt.core.bench": "b584c152ec0ddfe8f9e80af41566e28ac34d7da7c86b8619c7b9486a3df3348d",
+    "mqt.core.qdmi": "df45dc80f2eb3747a975e1466f9264dffad86c7b5012763b50ff11153946b265",
+    "mqt.core.dd": "af67c6b011386ca84fbe196fbcce72c0a61a86ea203d80353579ddd3a9179159",
+    "mqt.core.mlir": "270655fc67f7f97882a7ac65f9cfd7c8015423748a5062526865d11ba2469dd9"
+  },
+  "repeats": 3,
+  "rows": [
+    {
+      "family": "iterative",
+      "width": 8,
+      "source_sha256": "9537e8ddb8ff4cea69abd1af6085021eb1a523cc11297a990b9332e4333e7533",
+      "error": "Compilation failed for selected payload qir adaptive; see compiler diagnostics for the unsupported construct or capability",
+      "failure_seconds": [
+        0.037404312985017896,
+        0.02555086900247261,
+        0.02596215094672516
+      ]
+    },
+    {
+      "family": "iterative",
+      "width": 32,
+      "source_sha256": "8aef7b15d99cfa0b558ac95632ed61cae92dee1568bf0c04c941dbb9acc2cbb0",
+      "error": "Compilation failed for selected payload qir adaptive; see compiler diagnostics for the unsupported construct or capability",
+      "failure_seconds": [
+        0.03131426201434806,
+        0.024680480011738837,
+        0.024250540998764336
+      ]
+    },
+    {
+      "family": "standard",
+      "width": 8,
+      "source_sha256": "141fba026fc9dc9db278ee1d0c200772238c84d1f792c4a180b90a21f438bcd2",
+      "error": "Compilation failed for selected payload qir adaptive; see compiler diagnostics for the unsupported construct or capability",
+      "failure_seconds": [
+        0.030638017982710153,
+        0.02442337403772399,
+        0.023907354974653572
+      ]
+    },
+    {
+      "family": "standard",
+      "width": 16,
+      "source_sha256": "1c4d764ac57d544b18c5cce218fd09309e2915dfc918b502df5d2d4fa01ca941",
+      "error": "Compilation failed for selected payload qir adaptive; see compiler diagnostics for the unsupported construct or capability",
+      "failure_seconds": [
+        0.03099683701293543,
+        0.02414916397538036,
+        0.023902890970930457
+      ]
+    },
+    {
+      "family": "standard",
+      "width": 32,
+      "source_sha256": "0e7d4546e174f6ba4c42a513206d433196f2c44f4ab3315dff46db70bf967ac0",
+      "error": "Compilation failed for selected payload qir adaptive; see compiler diagnostics for the unsupported construct or capability",
+      "failure_seconds": [
+        0.030491457029711455,
+        0.02426802896661684,
+        0.02401549997739494
+      ]
+    },
+    {
+      "family": "standard",
+      "width": 64,
+      "source_sha256": "316461733c58a7f8d890a94df775f70dc821fc59aa33dda9a382ec5b574e6ffc",
+      "error": "Compilation failed for selected payload qir adaptive; see compiler diagnostics for the unsupported construct or capability",
+      "failure_seconds": [
+        0.030616498028393835,
+        0.024302380974404514,
+        0.0242976289591752
+      ]
+    },
+    {
+      "family": "rus",
+      "width": 4,
+      "source_sha256": "a519d5b9171938e535462d9162a5ba6240933a54756a941e12db63d2b5e925b0",
+      "error": "Compilation failed for selected payload qir adaptive; see compiler diagnostics for the unsupported construct or capability",
+      "failure_seconds": [
+        0.03028294403338805,
+        0.02415295602986589,
+        0.02386218699393794
+      ]
+    },
+    {
+      "family": "rus",
+      "width": 16,
+      "source_sha256": "287c5556d5b7cc428172df9d5beae28fd365ecbbde09bda76d54edf1070a76cd",
+      "error": "Compilation failed for selected payload qir adaptive; see compiler diagnostics for the unsupported construct or capability",
+      "failure_seconds": [
+        0.03027979301987216,
+        0.02409799600718543,
+        0.023827657976653427
+      ]
+    },
+    {
+      "family": "rus",
+      "width": 64,
+      "source_sha256": "1e2a684f337b8012228aa0b59cdcc2d3bd9d507a659bae101dd717f8d9946020",
+      "error": "Compilation failed for selected payload qir adaptive; see compiler diagnostics for the unsupported construct or capability",
+      "failure_seconds": [
+        0.03078601899323985,
+        0.02431535697542131,
+        0.02457705495180562
+      ]
+    }
+  ]
+}
