@@ -273,6 +273,14 @@ public:
                                       bool enableTiming = false,
                                       bool enableStatistics = false);
 
+  /// Synthesize native operations for an all-to-all target in place.
+  ///
+  /// Assigns static sites without the default optimization or routing stages.
+  /// Do not rely on the program contents if synthesis fails.
+  [[nodiscard]] bool synthesizeForTarget(const TargetEnvironment& environment,
+                                         bool enableTiming = false,
+                                         bool enableStatistics = false);
+
   /// Consume this program and convert it to QC.
   [[nodiscard]] std::optional<QCProgram> intoQC() &&;
 

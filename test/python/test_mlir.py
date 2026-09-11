@@ -555,6 +555,40 @@ def test_target_compilation_exports_canonical_physical_qiskit_circuit() -> None:
 
 
 @requires_qiskit_translation
+def test_target_synthesis_decomposes_without_routing() -> None:
+    """Synthesize a controlled rotation through the typed basis-only API."""
+    target = CompilerTarget(
+        3,
+        connectivity=CompilerTarget.Connectivity.all_to_all(),
+        native_operations=CompilerTarget.NativeOperations([
+            CompilerTarget.OperationCapability("sx", 1, 0),
+            CompilerTarget.OperationCapability("x", 1, 0),
+            CompilerTarget.OperationCapability("rz", 1, 1),
+            CompilerTarget.OperationCapability("cz", 2, 0),
+            CompilerTarget.OperationCapability("gphase", 0, 1),
+        ]),
+    )
+    source = QuantumCircuit(3)
+    source.h(0)
+    source.append(library.RYGate(0.7).control(2, annotated=True), [0, 1, 2])
+    program = QCProgram.from_qiskit(source).to_qco()
+
+    program.synthesize_for_target(_test_target_environment(target))
+
+    result = program.to_qiskit(target=target)
+    assert set(result.count_ops()) <= {"sx", "x", "rz", "cz"}
+    assert np.allclose(Operator(result).data, Operator(source).data)
+
+    sparse = CompilerTarget(
+        3,
+        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    with pytest.raises(RuntimeError, match="all-to-all connectivity"):
+        program.synthesize_for_target(_test_target_environment(sparse))
+
+
+@requires_qiskit_translation
 def test_qco_qiskit_export_preserves_program() -> None:
     """Reuse QC export without consuming QCO, including when export fails."""
     source = QuantumCircuit(2)

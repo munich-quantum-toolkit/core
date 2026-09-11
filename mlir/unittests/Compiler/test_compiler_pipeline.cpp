@@ -3474,6 +3474,48 @@ x q;
   EXPECT_NE(qco->str().find("qco.static"), std::string::npos);
 }
 
+TEST_F(CompilerPipelineTest,
+       TargetSynthesisPreservesUnitaryWithoutTwoQubitFusion) {
+  auto ownedContext = createCompilerContext();
+  auto moduleOp = QCOProgramBuilder::build(
+      ownedContext.get(), [](QCOProgramBuilder& builder) {
+        auto [q0, q1] =
+            builder.cx(builder.staticQubit(0), builder.staticQubit(1));
+        q0 = builder.ry(builder.floatConstant(0.3), q0);
+        std::tie(q0, q1) = builder.cx(q0, q1);
+        q1 = builder.rz(builder.floatConstant(0.7), q1);
+        std::tie(q0, q1) = builder.cx(q0, q1);
+        return builder.intConstant(0);
+      });
+  ASSERT_TRUE(verify(*moduleOp).succeeded());
+  auto reference = OwningOpRef<ModuleOp>(moduleOp->clone());
+  auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
+  ASSERT_TRUE(program);
+  using OperationCapability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      2, CompilerTarget::Connectivity::allToAll(),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(OperationCapability::create("u", 1, 3)),
+          llvm::cantFail(OperationCapability::create("cz", 2, 0)),
+          llvm::cantFail(OperationCapability::create("gphase", 0, 1)),
+      })));
+  const TargetEnvironment environment(target, makePayloadSpecification());
+
+  ASSERT_TRUE(program->synthesizeForTarget(environment));
+
+  EXPECT_TRUE(verify(program->module()).succeeded());
+  EXPECT_TRUE(qco::verifyLinearity(program->module()).succeeded());
+  expectFullUnitaryEqual(*reference, program->module(), 2);
+  size_t numTwoQubitGates = 0;
+  program->module().walk([&](qco::UnitaryOpInterface unitary) {
+    numTwoQubitGates += unitary.isTwoQubit();
+  });
+  // Basis translation must not run the full compiler's two-qubit fusion.
+  EXPECT_EQ(numTwoQubitGates, 3);
+  EXPECT_FALSE(program->synthesizeForTarget(TargetEnvironment(
+      makeSparseUCZTarget(true), makePayloadSpecification())));
+}
+
 TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
   using NativeOperations = CompilerTarget::NativeOperations;
   using OperationCapability = CompilerTarget::OperationCapability;

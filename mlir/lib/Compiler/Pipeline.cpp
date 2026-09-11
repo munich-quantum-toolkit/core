@@ -242,6 +242,17 @@ bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
       enableStatistics));
 }
 
+bool QCOProgram::synthesizeForTarget(const TargetEnvironment& environment,
+                                     bool enableTiming, bool enableStatistics) {
+  return succeeded(runQCOTransformPasses(
+      mod(),
+      [&environment](OpPassManager& pm) {
+        populateTargetSynthesisPipeline(pm, environment);
+      },
+      "failed to synthesize the QCO program for the target", enableTiming,
+      enableStatistics));
+}
+
 std::optional<QCProgram> QCOProgram::intoQC() && {
   if (failed(runQCOTransformPasses(
           mod(), [](OpPassManager& pm) { pm.addPass(createQCOToQC()); },

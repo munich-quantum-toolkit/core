@@ -655,6 +655,11 @@ class QCOProgram(Program):
     ) -> None:
         """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
 
+    def synthesize_for_target(
+        self, target_environment: TargetEnvironment, *, enable_timing: bool = False, enable_statistics: bool = False
+    ) -> None:
+        """Synthesize native operations for an all-to-all target in place. Assigns static sites but does not run optimization or routing stages. Do not rely on the program contents if synthesis fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
+
     def to_qiskit(self, *, target: CompilerTarget | None = None) -> qiskit.circuit.QuantumCircuit:
         """Export a Qiskit circuit without consuming or modifying this program.
 

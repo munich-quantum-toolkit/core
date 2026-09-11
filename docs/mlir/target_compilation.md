@@ -175,6 +175,23 @@ registers the required inliner extensions; callers that populate the low-level
 target pipeline directly must register inliner extensions for every callable
 dialect in their context.
 
+### Basis-only synthesis
+
+Use {py:meth}`~mqt.core.mlir.QCOProgram.synthesize_for_target` to translate an
+existing QCO program to an all-to-all target's native gate set without the
+default rotation-merging, two-qubit fusion, or routing stages. This pipeline
+inlines calls, decomposes multi-controlled gates, assigns static sites, performs
+native synthesis, and verifies target conformance. It accepts structured QCO/SCF
+input and uses the same target environment and global-phase policy as target
+compilation. Explicit connectivity is rejected; use `compile_for_target` when
+routing is required.
+
+Synthesis runs in place and raises `RuntimeError` with MLIR diagnostics on
+failure. Earlier pass changes may remain on the program, so copy it first when
+the input must be preserved. The C++ counterpart is
+`QCOProgram::synthesizeForTarget`; low-level clients can populate a pass manager
+with `populateTargetSynthesisPipeline`.
+
 ### Payload control flow
 
 For explicit restrictions, use the constants on

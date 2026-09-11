@@ -34,11 +34,20 @@ class PrepareTargetCompilationPass
 public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PrepareTargetCompilationPass)
 
-  explicit PrepareTargetCompilationPass(TargetEnvironment environment)
-      : environment_(std::move(environment)) {}
+  explicit PrepareTargetCompilationPass(TargetEnvironment environment,
+                                        bool allToAllOnly = false)
+      : environment_(std::move(environment)), allToAllOnly_(allToAllOnly) {}
 
 protected:
   void runOnOperation() override {
+    if (allToAllOnly_ && environment_.target().connectivityKind() !=
+                             CompilerTarget::Connectivity::Kind::AllToAll) {
+      getOperation().emitError(
+          "target synthesis requires all-to-all connectivity; use target "
+          "compilation for routing");
+      signalPassFailure();
+      return;
+    }
     getAnalysis<TargetEnvironmentAnalysis>().initialize(environment_);
     auto result = getOperation().walk([](Operation* operation) {
       if (operation->getNumSuccessors() == 0) {
@@ -58,6 +67,7 @@ protected:
 
 private:
   TargetEnvironment environment_;
+  bool allToAllOnly_;
 };
 
 } /* namespace */
@@ -94,6 +104,22 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     pm.addPass(qco::createPlacementPass(target));
     break;
   }
+  populateQCOCleanupPipeline(pm);
+  pm.addPass(qco::createTargetNativeSynthesis());
+  pm.addPass(createCSEPass());
+  pm.addPass(qco::createVerifyTargetConformance());
+}
+
+void populateTargetSynthesisPipeline(OpPassManager& pm,
+                                     const TargetEnvironment& environment) {
+  pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, true));
+  const auto& target = environment.target();
+  pm.addPass(createInlinerPass());
+  pm.addPass(createSymbolDCEPass());
+  populateQCOCleanupPipeline(pm);
+  pm.addPass(qco::createLegalizeControlFlow());
+  pm.addPass(qco::createDecomposeMultiControlled(target));
+  pm.addPass(qco::createPlacementPass(target));
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createTargetNativeSynthesis());
   pm.addPass(createCSEPass());

@@ -30,4 +30,14 @@ class OpPassManager;
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment);
 
+/// Populate target-native synthesis without the optimization or routing stages.
+///
+/// Requires an all-to-all target. Inlines calls, decomposes supported
+/// multi-controlled gates, assigns static sites, synthesizes native operations,
+/// and verifies target conformance. Input must use structured QCO/SCF control
+/// flow. The supplied environment is authoritative and must remain unchanged
+/// during pipeline execution.
+void populateTargetSynthesisPipeline(OpPassManager& pm,
+                                     const TargetEnvironment& environment);
+
 } // namespace mlir
