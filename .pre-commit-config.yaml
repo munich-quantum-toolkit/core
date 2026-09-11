@@ -14,6 +14,8 @@ ci:
   autofix_commit_msg: "🎨 pre-commit fixes"
   skip: [ty]
 
+exclude: ^\.agent/benchmarks/
+
 repos:
   ## Standard hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -24,22 +26,35 @@ repos:
         fail_fast: true
         priority: 0
       - id: end-of-file-fixer
+        exclude: ^vendor/
         priority: 1
       - id: trailing-whitespace
+        exclude: ^vendor/
         priority: 2
 
   ## Check JSON schemata
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 0.37.3
+    rev: 0.38.0
     hooks:
+      - id: check-codecov
+        priority: 0
       - id: check-github-workflows
+        priority: 0
+      - id: check-mergify
         priority: 0
       - id: check-readthedocs
         priority: 0
 
+  ## Check for security issues in GitHub Actions workflows
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.30.0
+    hooks:
+      - id: zizmor
+        priority: 0
+
   ## Check best practices for scientific Python code
   - repo: https://github.com/scientific-python/cookie
-    rev: 2026.06.18
+    rev: 2026.08.14
     hooks:
       - id: sp-repo-review
         additional_dependencies: ["repo-review[cli]"]
@@ -47,14 +62,14 @@ repos:
 
   ## Check pyproject.toml file
   - repo: https://github.com/henryiii/validate-pyproject-schema-store
-    rev: 2026.06.26
+    rev: 2026.08.29
     hooks:
       - id: validate-pyproject
         priority: 0
 
   ## Ensure uv.lock is up to date
   - repo: https://github.com/astral-sh/uv-pre-commit
-    rev: 0.11.25
+    rev: 0.12.7
     hooks:
       - id: uv-lock
         priority: 0
@@ -66,14 +81,31 @@ repos:
         name: Disallow improper capitalization
         language: pygrep
         entry: \b(Nanobind|Numpy|Cmake|CCache|Github|PyTest|Mqt|Tum)\b
-        exclude: ^(\.pre-commit-config\.yaml)$
+        exclude: ^(\.pre-commit-config\.yaml|vendor/)
+        priority: 0
+      - id: disallow-const-mlir-handles
+        name: Disallow const on named MLIR handles and views
+        language: pygrep
+        entry: >-
+          (?x) \b(?: const\s+(?:(?:::)?mlir::)?(?:Value|TypedValue|BlockArgument|OpResult|ValueRange|OperandRange|ResultRange|Operation|Block|Region|ModuleOp)\b |
+          (?:(?:::)?mlir::)?(?:Value|TypedValue|BlockArgument|OpResult|ValueRange|OperandRange|ResultRange|Operation|Block|Region|ModuleOp)\s+const\b |
+          (?:(?:::)?mlir::)?TypedValue\s*<[^;\n]+>\s+const\b )
+        files: ^(mlir|bindings/mlir)/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx)$
+        priority: 0
+      - id: cpp-documentation-style
+        name: Use LLVM-style C++ documentation comments
+        language: pygrep
+        # Continued macros require block comments to preserve declarations.
+        entry: '(/\*\*|[\\@](brief|details)\b)(?!.*\\$)'
+        files: ^(include|src|mlir|bindings|test)/.*\.(c|cc|cpp|cxx|h|hh|hpp|hxx|inc|cu|cuh)$
         priority: 0
 
   ## Check for typos
   - repo: https://github.com/adhtruong/mirrors-typos
-    rev: v1.47.2
+    rev: v1.50.0
     hooks:
       - id: typos
+        exclude: ^vendor/
         priority: 3
 
   ## Check license headers
@@ -81,6 +113,7 @@ repos:
     rev: v2.9.0
     hooks:
       - id: license-tools
+        exclude: ^vendor/
         priority: 4
 
   ## Format BibTeX files with bibtex-tidy
@@ -104,21 +137,28 @@ repos:
 
   ## Format configuration files with prettier
   - repo: https://github.com/rbubley/mirrors-prettier
-    rev: v3.9.1
+    rev: v3.9.6
     hooks:
       - id: prettier
         types_or: [yaml, html, css, scss, javascript, json, json5]
         priority: 5
 
-    ## Format Markdown files with rumdl
+  ## Format Markdown files with rumdl
   - repo: https://github.com/rvben/rumdl-pre-commit
-    rev: v0.2.28
+    rev: v0.2.62
     hooks:
       - id: rumdl
         args: [--fix]
         priority: 5
       - id: rumdl-fmt
         priority: 6
+
+  ## Format pyproject.toml with pyproject-fmt
+  - repo: https://github.com/tox-dev/pyproject-fmt
+    rev: v2.29.3
+    hooks:
+      - id: pyproject-fmt
+        priority: 5
 
   ## Format CMake files with cmake-format
   - repo: https://github.com/cheshirekow/cmake-format-precommit
@@ -132,10 +172,11 @@ repos:
 
   ## Format C++ files with clang-format
   - repo: https://github.com/pre-commit/mirrors-clang-format
-    rev: v22.1.5
+    rev: v23.1.0
     hooks:
       - id: clang-format
         types_or: [c++, c, cuda]
+        exclude: ^vendor/
         priority: 5
       - id: clang-format
         name: clang-format (TableGen)
@@ -145,18 +186,18 @@ repos:
 
   ## Format and lint Python files with ruff
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.20
+    rev: v0.16.5
     hooks:
-      - id: ruff-format
-        types_or: [python, pyi, jupyter, markdown]
-        priority: 6
       - id: ruff-check
         require_serial: true
+        priority: 6
+      - id: ruff-format
+        types_or: [python, pyi, jupyter, markdown]
         priority: 7
 
   ## Check Python types with ty
   - repo: https://github.com/astral-sh/ty-pre-commit
-    rev: v0.0.55
+    rev: v0.0.75
     hooks:
       - id: ty
         args: [--only-dev]

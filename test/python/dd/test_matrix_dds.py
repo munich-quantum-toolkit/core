@@ -10,15 +10,46 @@
 
 from __future__ import annotations
 
+import gc
 from typing import TYPE_CHECKING
 
 import numpy as np
 import pytest
 
-from mqt.core.dd import DDPackage
+from mqt.core.dd import Control, DDPackage, MatrixDD
 
 if TYPE_CHECKING:
     import numpy.typing as npt
+
+
+def test_matrix_array_ownership() -> None:
+    """Test matrix array ownership and the zero-qubit export."""
+    package = DDPackage(1)
+    zero_qubit_matrix = package.identity().get_matrix(0)
+    assert zero_qubit_matrix.dtype == np.complex128
+    assert zero_qubit_matrix.shape == (1, 1)
+    assert zero_qubit_matrix.flags.c_contiguous
+    assert zero_qubit_matrix.flags.writeable  # spellchecker:disable-line
+    assert zero_qubit_matrix[0, 0] == 1
+
+    expected = np.array([[0, 1], [1, 0]], dtype=np.complex128)
+    matrix_dd = package.single_qubit_gate(expected, 0)
+    matrix = matrix_dd.get_matrix(1)
+    assert matrix.dtype == np.complex128
+    assert matrix.shape == (2, 2)
+    assert matrix.flags.c_contiguous
+    assert matrix.flags.writeable  # spellchecker:disable-line
+
+    matrix[0, 0] = 2 + 3j
+    assert np.allclose(matrix_dd.get_matrix(1), expected)
+
+    view = matrix[:, :1]
+    del matrix, matrix_dd, package, zero_qubit_matrix
+    gc.collect()
+
+    assert np.allclose(view, [[2 + 3j], [1]])
+    view[0, 0] = -1j
+    assert np.allclose(view[0, 0], -1j)
 
 
 def test_identity() -> None:
@@ -89,6 +120,28 @@ def test_controlled_single_qubit_gate(gate_matrices: dict[str, npt.NDArray[np.co
                     assert np.allclose(arr, target)
 
 
+def test_dd_owned_control_type(gate_matrices: dict[str, npt.NDArray[np.complex128]]) -> None:
+    """Expose controls as DD-owned binding types."""
+    p = DDPackage(2)
+    x_matrix = gate_matrices["X"]
+
+    positive = p.controlled_single_qubit_gate(x_matrix, 1, 0)
+    multi_positive = p.multi_controlled_single_qubit_gate(x_matrix, {1}, 0)
+    assert np.allclose(positive.get_matrix(2), multi_positive.get_matrix(2))
+
+    control = Control(1, Control.Type.Neg)
+    assert control == Control(1, Control.Type.Neg)
+    assert len({control, Control(1, Control.Type.Neg)}) == 1
+    assert repr(control) == 'Control(qubit=1, type_="Neg")'
+
+    negative = p.controlled_single_qubit_gate(x_matrix, control, 0)
+    expected = np.array(
+        [[0, 1, 0, 0], [1, 0, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]],
+        dtype=np.complex128,
+    )
+    assert np.allclose(negative.get_matrix(2), expected)
+
+
 def test_two_qubit_gate() -> None:
     """Test constructing two-qubit gate DDs."""
     p = DDPackage(5)
@@ -118,6 +171,15 @@ def test_controlled_two_qubit_gate() -> None:
                     assert arr.shape == (2**i, 2**i)
 
 
+def test_rejects_conflicting_controls() -> None:
+    """Reject opposite polarities on the same physical control qubit."""
+    package = DDPackage(2)
+    matrix = np.array([[0, 1], [1, 0]], dtype=np.complex128)
+    controls = {Control(0, Control.Type.Pos), Control(0, Control.Type.Neg)}
+    with pytest.raises(RuntimeError, match="duplicate"):
+        package.multi_controlled_single_qubit_gate(matrix, controls, 1)
+
+
 def test_from_matrix() -> None:
     """Test constructing a DD from a random unitary matrix."""
     p = DDPackage(3)
@@ -129,3 +191,54 @@ def test_from_matrix() -> None:
             dd = p.from_matrix(mat)
             mat2 = dd.get_matrix(i)
             assert np.allclose(mat, mat2)
+
+
+def test_from_strided_matrix() -> None:
+    """Read matrix views without losing offsets, negative strides, or broadcasts."""
+    package = DDPackage(3)
+    values = np.arange(256, dtype=np.float64).reshape(16, 16)
+    matrix = values + 1j * (values + 1)
+    for view in (
+        matrix[1::2, ::2],
+        matrix[:8, :8].T,
+        matrix[7::-1, 7::-1],
+        np.broadcast_to(matrix[0, :8], (8, 8)),
+    ):
+        assert np.allclose(package.from_matrix(view).get_matrix(3), view)
+
+
+def test_from_matrix_dimensions() -> None:
+    """Validate shape and capacity before reading matrix entries."""
+    package = DDPackage(1)
+    assert np.array_equal(package.from_matrix(np.empty((0, 0), dtype=np.complex128)).get_matrix(0), [[1]])
+    scalar = np.array([[0.25 + 0.5j]])
+    assert np.allclose(package.from_matrix(scalar).get_matrix(0), scalar)
+    for shape in ((2, 3), (3, 3)):
+        with pytest.raises(ValueError, match=r"square|power of two"):
+            package.from_matrix(np.zeros(shape, dtype=np.complex128))
+    with pytest.raises(RuntimeError, match="capacity"):
+        package.from_matrix(np.zeros((4, 4), dtype=np.complex128))
+
+
+@pytest.mark.parametrize("binary", [False, True])
+def test_serialization(*, binary: bool) -> None:
+    """Test serializing and deserializing matrix DDs."""
+    p = DDPackage(3)
+    hadamard = np.array([[1, 1], [1, -1]], dtype=np.complex128) / np.sqrt(2)
+    matrix_dds = ((p.identity(), 0), (p.single_qubit_gate(hadamard, 2), 3))
+    for dd, num_qubits in matrix_dds:
+        data = dd.to_bytes(binary=binary)
+        assert isinstance(data, bytes)
+
+        restored = MatrixDD.from_bytes(DDPackage(3), data, binary=binary)
+        assert np.allclose(restored.get_matrix(num_qubits), dd.get_matrix(num_qubits))
+
+
+@pytest.mark.parametrize("decisions", ["4", "9", "/", "x"])
+def test_invalid_identity_path(decisions: str) -> None:
+    """Validate matrix digits even when all identity levels are implicit."""
+    package = DDPackage(1)
+    identity = package.identity()
+    with pytest.raises(ValueError, match="invalid digit"):
+        identity.get_entry_by_path(1, decisions)
+    assert identity.get_entry_by_path(1, "3ignored") == 1

@@ -8,33 +8,23 @@
  * Licensed under the MIT License
  */
 
-#include "dd/CachedEdge.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Node.hpp"
-#include "dd/Operations.hpp"
 #include "dd/Package.hpp"
 #include "dd/StateGeneration.hpp"
-#include "ir/Permutation.hpp"
-#include "ir/operations/Control.hpp"
-#include "ir/operations/IfElseOperation.hpp"
-#include "ir/operations/NonUnitaryOperation.hpp"
-#include "ir/operations/Operation.hpp"
 
-#include <nanobind/nanobind.h>
-#include <nanobind/ndarray.h>
-#include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/pair.h>    // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/set.h>     // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
+#include "nanobind/nanobind.h"
+#include "nanobind/ndarray.h"
+#include "nanobind/stl/complex.h" // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/set.h"     // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string.h"  // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/vector.h"  // NOLINT(misc-include-cleaner)
 
 #include <array>
-#include <cmath>
 #include <complex>
 #include <cstddef>
 #include <random>
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
 namespace mqt {
@@ -42,76 +32,23 @@ namespace mqt {
 namespace nb = nanobind;
 using namespace nb::literals;
 
-using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
-using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
+using VectorInput =
+    nb::ndarray<nb::numpy, const std::complex<dd::fp>, nb::ndim<1>>;
+using MatrixInput =
+    nb::ndarray<nb::numpy, const std::complex<dd::fp>, nb::ndim<2>>;
 using SingleQubitMatrix =
     nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::shape<2, 2>>;
 using TwoQubitMatrix =
     nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::shape<4, 4>>;
 
-namespace {
-
-/// Recursive helper function to create a vector DD from a numpy array
-dd::vCachedEdge makeDDFromVector(dd::Package& p, const Vector& v,
-                                 const size_t startIdx, const size_t endIdx,
-                                 const dd::Qubit level) {
-  if (level == 0U) {
-    const auto zeroSuccessor = dd::vCachedEdge::terminal(v(startIdx));
-    const auto oneSuccessor = dd::vCachedEdge::terminal(v(startIdx + 1));
-    return p.makeDDNode<dd::vNode, dd::CachedEdge>(
-        0, {zeroSuccessor, oneSuccessor});
-  }
-
-  const auto half = startIdx + ((endIdx - startIdx) / 2);
-  const auto zeroSuccessor = makeDDFromVector(p, v, startIdx, half, level - 1);
-  const auto oneSuccessor = makeDDFromVector(p, v, half, endIdx, level - 1);
-  return p.makeDDNode<dd::vNode, dd::CachedEdge>(level,
-                                                 {zeroSuccessor, oneSuccessor});
-}
-
-/// Recursive helper function to create a matrix DD from a numpy array
-dd::mCachedEdge makeDDFromMatrix(dd::Package& p, const Matrix& m,
-                                 const size_t rowStart, const size_t rowEnd,
-                                 const size_t colStart, const size_t colEnd,
-                                 const dd::Qubit level) {
-  if (level == 0U) {
-    const auto zeroSuccessor = dd::mCachedEdge::terminal(m(rowStart, colStart));
-    const auto oneSuccessor =
-        dd::mCachedEdge::terminal(m(rowStart, colStart + 1));
-    const auto twoSuccessor =
-        dd::mCachedEdge::terminal(m(rowStart + 1, colStart));
-    const auto threeSuccessor =
-        dd::mCachedEdge::terminal(m(rowStart + 1, colStart + 1));
-    return p.makeDDNode<dd::mNode, dd::CachedEdge>(
-        0, {zeroSuccessor, oneSuccessor, twoSuccessor, threeSuccessor});
-  }
-
-  const auto rowHalf = rowStart + ((rowEnd - rowStart) / 2);
-  const auto colHalf = colStart + ((colEnd - colStart) / 2);
-  return p.makeDDNode<dd::mNode, dd::CachedEdge>(
-      level,
-      {makeDDFromMatrix(p, m, rowStart, rowHalf, colStart, colHalf, level - 1),
-       makeDDFromMatrix(p, m, rowStart, rowHalf, colHalf, colEnd, level - 1),
-       makeDDFromMatrix(p, m, rowHalf, rowEnd, colStart, colHalf, level - 1),
-       makeDDFromMatrix(p, m, rowHalf, rowEnd, colHalf, colEnd, level - 1)});
-}
-} // namespace
-
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerDDPackage(const nb::module_& m) {
-  auto dd = nb::class_<dd::Package>(
-      m, "DDPackage",
-      R"pb(The central manager for performing computations on decision diagrams.
+  auto dd =
+      nb::class_<dd::Package>(m, "DDPackage",
+                              R"pb(Create and manipulate decision diagrams.
 
-It drives all computation on decision diagrams and maintains the necessary data structures for this purpose.
-Specifically, it
-
-- manages the memory for the decision diagram nodes (Memory Manager),
-- ensures the canonical representation of decision diagrams (Unique Table),
-- ensures the efficiency of decision diagram operations (Compute Table),
-- provides methods for creating quantum states and operations from various sources,
-- provides methods for various operations on quantum states and operations, and
-- provides means for reference counting and garbage collection.
+The package owns DD storage, unique tables, and cached computation results.
+It provides reference counting and garbage collection.
 
 Notes:
     It is undefined behavior to pass VectorDD or MatrixDD objects that were created with a different DDPackage to the methods of the DDPackage.
@@ -119,10 +56,7 @@ Notes:
 
 Args:
     num_qubits: The maximum number of qubits that the DDPackage can handle.
-        Mainly influences the size of the unique tables.
-        Can be adjusted dynamically using the `resize` method.
-        Since resizing the DDPackage can be expensive, it is recommended to choose a value that is large enough for the quantum computations that are to be performed, but not unnecessarily large.
-        Default is 32.)pb");
+        Defaults to 32; use `resize` to change the capacity.)pb");
 
   // Constructor
   dd.def(nb::init<size_t>(), "num_qubits"_a = dd::Package::DEFAULT_QUBITS);
@@ -263,32 +197,15 @@ Returns:
 
   dd.def(
       "from_vector",
-      [](dd::Package& p, const Vector& v) {
-        const auto length = v.shape(0);
-        if (length == 0) {
-          return dd::vEdge::one();
-        }
-        if ((length & (length - 1)) != 0) {
-          throw std::invalid_argument(
-              "State vector must have a length of a power of two.");
-        }
-        if (length == 1) {
-          const auto state = dd::vEdge::terminal(p.cn.lookup(v(0)));
-          p.incRef(state);
-          return state;
-        }
-        const auto level = static_cast<dd::Qubit>(std::log2(length) - 1);
-        const auto state = makeDDFromVector(p, v, 0, length, level);
-        const dd::vEdge e{.p = state.p, .w = p.cn.lookup(state.w)};
-        p.incRef(e);
-        return e;
+      [](dd::Package& p, const VectorInput& v) {
+        return dd::makeStateFromVector(v.shape(0), v.view(), p);
       },
       "state"_a,
       // keep the DD package alive while the returned vector DD is alive.
       nb::keep_alive<0, 1>(), R"pb(Create a DD from a state vector.
 
 Args:
-    state: The state vector.
+    state: The state vector. Read-only and strided arrays are supported.
         Must have a length that is a power of 2.
         Must not require more qubits than the DDPackage is configured with.
 
@@ -297,109 +214,9 @@ Returns:
     The resulting state is guaranteed to have its reference count increased.)pb");
 
   dd.def(
-      "apply_unitary_operation",
-      [](dd::Package& p, const dd::vEdge& v, const qc::Operation& op,
-         const qc::Permutation& perm = {}) {
-        return applyUnitaryOperation(op, v, p, perm);
-      },
-      "vec"_a, "operation"_a, "permutation"_a = qc::Permutation{},
-      // keep the DD package alive while the returned vector DD is alive.
-      nb::keep_alive<0, 1>(), R"pb(Apply a unitary operation to the DD.
-
-Notes:
-    Automatically manages the reference count of the input and output DDs.
-    The input DD must have a non-zero reference count.
-
-Args:
-    vec: The input DD.
-    operation: The operation. Must be unitary.
-    permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-Returns:
-    The resulting DD.)pb");
-
-  dd.def(
-      "apply_measurement",
-      [](dd::Package& p, const dd::vEdge& v, const qc::NonUnitaryOperation& op,
-         const std::vector<bool>& measurements,
-         const qc::Permutation& perm = {}) {
-        static std::mt19937_64 rng(std::random_device{}());
-        auto measurementsCopy = measurements;
-        return std::pair{
-            applyMeasurement(op, v, p, rng, measurementsCopy, perm),
-            measurementsCopy};
-      },
-      "vec"_a, "operation"_a, "measurements"_a,
-      "permutation"_a = qc::Permutation{},
-      // keep the DD package alive while the returned vector DD is alive.
-      nb::keep_alive<0, 1>(), R"pb(Apply a measurement to the DD.
-
-Notes:
-    Automatically manages the reference count of the input and output DDs.
-    The input DD must have a non-zero reference count
-
-Args:
-    vec: The input DD.
-    operation: The measurement operation.
-    measurements: A list of bits with existing measurement outcomes.
-    permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-Returns:
-    The resulting DD after the measurement as well as the updated measurement outcomes.)pb");
-
-  dd.def(
-      "apply_reset",
-      [](dd::Package& p, const dd::vEdge& v, const qc::NonUnitaryOperation& op,
-         const qc::Permutation& perm = {}) {
-        static std::mt19937_64 rng(std::random_device{}());
-        return applyReset(op, v, p, rng, perm);
-      },
-      "vec"_a, "operation"_a, "permutation"_a = qc::Permutation{},
-      // keep the DD package alive while the returned vector DD is alive.
-      nb::keep_alive<0, 1>(), R"pb(Apply a reset to the DD.
-
-Notes:
-    Automatically manages the reference count of the input and output DDs.
-    The input DD must have a non-zero reference count.
-
-Args:
-    vec: The input DD.
-    operation: The reset operation.
-    permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-Returns:
-    The resulting DD after the reset.)pb");
-
-  dd.def(
-      "apply_if_else_operation",
-      [](dd::Package& p, const dd::vEdge& v, const qc::IfElseOperation& op,
-         const std::vector<bool>& measurements,
-         const qc::Permutation& perm = {}) {
-        return applyIfElseOperation(op, v, p, measurements, perm);
-      },
-      "vec"_a, "operation"_a, "measurements"_a,
-      "permutation"_a = qc::Permutation{},
-      // keep the DD package alive while the returned vector DD is alive.
-      nb::keep_alive<0, 1>(),
-      R"pb(Apply a classically controlled operation to the DD.
-
-Notes:
-    Automatically manages the reference count of the input and output DDs.
-    The input DD must have a non-zero reference count.
-
-Args:
-    vec: The input DD.
-    operation: The classically controlled operation.
-    measurements: A list of bits with stored measurement outcomes.
-    permutation: The permutation of the qubits. Defaults to the identity permutation.
-
-Returns:
-    The resulting DD after the operation.)pb");
-
-  dd.def(
       "measure_collapsing",
       [](dd::Package& p, dd::vEdge& v, const dd::Qubit q) {
-        static std::mt19937_64 rng(std::random_device{}());
+        static thread_local std::mt19937_64 rng(std::random_device{}());
         return p.measureOneCollapsing(v, q, rng);
       },
       "vec"_a, "qubit"_a, R"pb(Measure a qubit and collapse the DD.
@@ -418,7 +235,7 @@ Returns:
   dd.def(
       "measure_all",
       [](dd::Package& p, dd::vEdge& v, const bool collapse = false) {
-        static std::mt19937_64 rng(std::random_device{}());
+        static thread_local std::mt19937_64 rng(std::random_device{}());
         return p.measureAll(v, collapse, rng);
       },
       "vec"_a, "collapse"_a = false, R"pb(Measure all qubits.
@@ -463,7 +280,7 @@ Returns:
   dd.def(
       "controlled_single_qubit_gate",
       [](dd::Package& p, const SingleQubitMatrix& mat,
-         const qc::Control& control, const dd::Qubit target) {
+         const dd::Control& control, const dd::Qubit target) {
         return p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)},
                             control, target);
       },
@@ -473,7 +290,7 @@ Returns:
       nb::sig(
           "def controlled_single_qubit_gate(self, "
           "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (2, 2)}],"
-          "control: mqt.core.ir.operations.Control | int,"
+          "control: mqt.core.dd.Control | int,"
           "target: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a controlled single-qubit gate.
 
@@ -488,7 +305,7 @@ Returns:
   dd.def(
       "multi_controlled_single_qubit_gate",
       [](dd::Package& p, const SingleQubitMatrix& mat,
-         const qc::Controls& controls, const dd::Qubit target) {
+         const dd::Controls& controls, const dd::Qubit target) {
         return p.makeGateDD({mat(0, 0), mat(0, 1), mat(1, 0), mat(1, 1)},
                             controls, target);
       },
@@ -498,7 +315,7 @@ Returns:
       nb::sig(
           "def multi_controlled_single_qubit_gate(self, "
           "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (2, 2)}],"
-          "controls: collections.abc.Set[mqt.core.ir.operations.Control | int],"
+          "controls: collections.abc.Set[mqt.core.dd.Control | int],"
           "target: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a multi-controlled single-qubit gate.
 
@@ -515,10 +332,12 @@ Returns:
       [](dd::Package& p, const TwoQubitMatrix& mat, const dd::Qubit target0,
          const dd::Qubit target1) {
         return p.makeTwoQubitGateDD(
-            {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
-             {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
-             {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
-             {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)}},
+            {
+                std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
+                {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
+                {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
+                {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)},
+            },
             target0, target1);
       },
       "matrix"_a, "target0"_a, "target1"_a,
@@ -535,13 +354,15 @@ Returns:
 
   dd.def(
       "controlled_two_qubit_gate",
-      [](dd::Package& p, const TwoQubitMatrix& mat, const qc::Control& control,
+      [](dd::Package& p, const TwoQubitMatrix& mat, const dd::Control& control,
          const dd::Qubit target0, const dd::Qubit target1) {
         return p.makeTwoQubitGateDD(
-            {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
-             {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
-             {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
-             {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)}},
+            {
+                std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
+                {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
+                {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
+                {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)},
+            },
             control, target0, target1);
       },
       "matrix"_a, "control"_a, "target0"_a, "target1"_a,
@@ -550,7 +371,7 @@ Returns:
       nb::sig(
           "def controlled_two_qubit_gate(self, "
           "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (4, 4)}],"
-          "control: mqt.core.ir.operations.Control | int,"
+          "control: mqt.core.dd.Control | int,"
           "target0: int, target1: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a controlled two-qubit gate.
 
@@ -566,13 +387,15 @@ Returns:
   dd.def(
       "multi_controlled_two_qubit_gate",
       [](dd::Package& p, const TwoQubitMatrix& mat,
-         const qc::Controls& controls, const dd::Qubit target0,
+         const dd::Controls& controls, const dd::Qubit target0,
          const dd::Qubit target1) {
         return p.makeTwoQubitGateDD(
-            {std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
-             {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
-             {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
-             {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)}},
+            {
+                std::array{mat(0, 0), mat(0, 1), mat(0, 2), mat(0, 3)},
+                {mat(1, 0), mat(1, 1), mat(1, 2), mat(1, 3)},
+                {mat(2, 0), mat(2, 1), mat(2, 2), mat(2, 3)},
+                {mat(3, 0), mat(3, 1), mat(3, 2), mat(3, 3)},
+            },
             controls, target0, target1);
       },
       "matrix"_a, "controls"_a, "target0"_a, "target1"_a,
@@ -581,7 +404,7 @@ Returns:
       nb::sig(
           "def multi_controlled_two_qubit_gate(self, "
           "matrix: Annotated[NDArray[numpy.complex128], {\"shape\": (4, 4)}],"
-          "controls: collections.abc.Set[mqt.core.ir.operations.Control | int],"
+          "controls: collections.abc.Set[mqt.core.dd.Control | int],"
           "target0: int, target1: int) -> mqt.core.dd.MatrixDD"),
       R"pb(Create the DD for a multi-controlled two-qubit gate.
 
@@ -596,25 +419,13 @@ Returns:
 
   dd.def(
       "from_matrix",
-      [](dd::Package& p, const Matrix& mat) {
+      [](dd::Package& p, const MatrixInput& mat) {
         const auto rows = mat.shape(0);
         const auto cols = mat.shape(1);
         if (rows != cols) {
           throw std::invalid_argument("Matrix must be square.");
         }
-        if (rows == 0) {
-          return dd::mEdge::one();
-        }
-        if ((rows & (rows - 1)) != 0) {
-          throw std::invalid_argument(
-              "Matrix must have a size of a power of two.");
-        }
-        if (rows == 1) {
-          return dd::mEdge::terminal(p.cn.lookup(mat(0, 0)));
-        }
-        const auto level = static_cast<dd::Qubit>(std::log2(rows) - 1);
-        const auto matrixDD = makeDDFromMatrix(p, mat, 0, rows, 0, cols, level);
-        return dd::mEdge{.p = matrixDD.p, .w = p.cn.lookup(matrixDD.w)};
+        return p.makeDDFromMatrix(rows, mat.view());
       },
       "matrix"_a,
       // keep the DD package alive while the returned matrix DD is alive.
@@ -622,28 +433,10 @@ Returns:
 
 Args:
     matrix: The matrix. Must be square and have a size that is a power of 2.
+        Read-only and strided arrays are supported.
 
 Returns:
     The DD for the matrix.)pb");
-
-  dd.def(
-      "from_operation",
-      [](dd::Package& p, const qc::Operation& op, const bool invert = false) {
-        if (invert) {
-          return getInverseDD(op, p);
-        }
-        return getDD(op, p);
-      },
-      "operation"_a, "invert"_a = false,
-      // keep the DD package alive while the returned matrix DD is alive.
-      nb::keep_alive<0, 1>(), R"pb(Create a DD from an operation.
-
-Args:
-    operation: The operation. Must be unitary.
-    invert: Whether to get the inverse of the operation.
-
-Returns:
-    The DD for the operation.)pb");
 
   // Reference counting and garbage collection
   dd.def("inc_ref_vec", &dd::Package::incRef<dd::vNode>, "vec"_a,
@@ -805,8 +598,6 @@ Returns:
 
 Notes:
     The state must have at least as many qubits as the observable non-trivially acts on.
-
-    The method computes :math:`\langle \psi | O | \psi \rangle` as :math:`\langle \psi | (O | \psi \rangle)`.
 
 Args:
     observable: The observable.

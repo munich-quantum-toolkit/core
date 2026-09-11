@@ -8,13 +8,15 @@
  * Licensed under the MIT License
  */
 
+/// @file TableStatistics.hpp
+/// Statistics for decision-diagram lookup tables.
+
 #pragma once
 
 #include "dd/statistics/Statistics.hpp"
 
-#include <nlohmann/json_fwd.hpp>
-
 #include <cstddef>
+#include <string>
 
 namespace dd {
 
@@ -44,27 +46,24 @@ struct TableStatistics : Statistics {
   /// Reset all statistics (except for peak values)
   void reset() noexcept override;
 
-  /**
-   * @brief Get the hit ratio of the table.
-   * @details The hit ratio is the ratio of lookups that were successful.
-   * @returns The hit ratio of the table.
-   */
+  /// Get the hit ratio of the table.
+  ///
+  /// The hit ratio is the ratio of lookups that were successful.
+  /// @returns The hit ratio of the table.
   [[nodiscard]] double hitRatio() const noexcept;
 
-  /**
-   * @brief Get the collision ratio of the table.
-   * @details A collision occurs when the hash function maps two different
-   * entries to the same bucket. The collision ratio is the ratio of lookups
-   * that resulted in a collision.
-   * @returns The collision ratio of the table.
-   */
+  /// Get the collision ratio of the table.
+  ///
+  /// A collision occurs when the hash function maps two different
+  /// entries to the same bucket. The collision ratio is the ratio of lookups
+  /// that resulted in a collision.
+  /// @returns The collision ratio of the table.
   [[nodiscard]] double colRatio() const noexcept;
 
-  /**
-   * @brief Get the load factor of the table.
-   * @details The load factor is the ratio of entries to buckets.
-   * @return The load factor of the table.
-   */
+  /// Get the load factor of the table.
+  ///
+  /// The load factor is the ratio of entries to buckets.
+  /// @return The load factor of the table.
   [[nodiscard]] double loadFactor() const noexcept;
 
   /// Convert the entry size to MiB
@@ -73,8 +72,8 @@ struct TableStatistics : Statistics {
   /// Get the amount of memory required for the table in MiB
   [[nodiscard]] double getMemoryMiB() const noexcept;
 
-  /// Get a JSON representation of the statistics
-  [[nodiscard]] nlohmann::json json() const override;
+  /// Get a JSON-formatted string representation of the statistics
+  [[nodiscard]] std::string toString() const override;
 };
 
 } // namespace dd

@@ -8,26 +8,28 @@
 
 """MQT Qiskit Plugin."""
 
+# ruff: file-ignore[non-empty-init-module]
+
 from __future__ import annotations
 
+from importlib import import_module
 from typing import TYPE_CHECKING
 
-from ..._compat.optional import OptionalDependencyTester
-
-# Optional dependency tester for Qiskit
-HAS_QISKIT = OptionalDependencyTester(  # noqa: RUF067 Used for handling optional plugin
-    "qiskit",
-    install_msg="Install with 'pip install mqt-core[qiskit]'",
-)
+try:
+    import_module("qiskit")
+except ModuleNotFoundError as error:
+    if error.name != "qiskit":
+        raise
+    HAS_QISKIT = False
+else:
+    HAS_QISKIT = True
 
 __all__ = [
     "HAS_QISKIT",
 ]
 
-if TYPE_CHECKING or HAS_QISKIT:  # noqa: RUF067 Used for handling optional plugin
+if TYPE_CHECKING or HAS_QISKIT:
     from .backend import QDMIBackend
-    from .converters import qiskit_to_iqm_json
-    from .estimator import QDMIEstimator
     from .exceptions import (
         CircuitValidationError,
         JobSubmissionError,
@@ -36,27 +38,27 @@ if TYPE_CHECKING or HAS_QISKIT:  # noqa: RUF067 Used for handling optional plugi
         UnsupportedFormatError,
         UnsupportedOperationError,
     )
-    from .gates import MoveGate
     from .job import QDMIJob
-    from .mqt_to_qiskit import mqt_to_qiskit
     from .provider import QDMIProvider
-    from .qiskit_to_mqt import qiskit_to_mqt
-    from .sampler import QDMISampler
+    from .serializers import (
+        ProgramSerializer,
+        program_serializer,
+        register_program_serializer,
+        unregister_program_serializer,
+    )
 
     __all__ += [
         "CircuitValidationError",
         "JobSubmissionError",
-        "MoveGate",
+        "ProgramSerializer",
         "QDMIBackend",
-        "QDMIEstimator",
         "QDMIJob",
         "QDMIProvider",
         "QDMIQiskitError",
-        "QDMISampler",
         "TranslationError",
         "UnsupportedFormatError",
         "UnsupportedOperationError",
-        "mqt_to_qiskit",
-        "qiskit_to_iqm_json",
-        "qiskit_to_mqt",
+        "program_serializer",
+        "register_program_serializer",
+        "unregister_program_serializer",
     ]

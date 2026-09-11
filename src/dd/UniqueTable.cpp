@@ -13,11 +13,12 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 
-#include <nlohmann/json.hpp>
+#include "statistics/StatisticsJson.hpp"
+
+#include "nlohmann/json.hpp"
 
 #include <algorithm>
 #include <cstddef>
-#include <numeric>
 #include <string>
 
 namespace dd {
@@ -33,14 +34,18 @@ UniqueTable::UniqueTable(MemoryManager& manager,
 }
 
 void UniqueTable::resize(const std::size_t nVars) {
+  const auto oldSize = tables.size();
+  for (auto i = nVars; i < oldSize; ++i) {
+    entryCount_ -= stats[i].numEntries;
+  }
   cfg.nVars = nVars;
-  tables.resize(nVars, Table(cfg.nBuckets));
-  // TODO: if the new size is smaller than the old one we might have to
-  // release the unique table entries for the superfluous variables
+  tables.resize(nVars);
+  /// TODO: release entries for removed levels when shrinking populated tables.
   stats.resize(nVars);
-  for (auto& stat : stats) {
-    stat.entrySize = sizeof(Bucket);
-    stat.numBuckets = cfg.nBuckets;
+  for (auto i = oldSize; i < nVars; ++i) {
+    tables[i].resize(cfg.nBuckets);
+    stats[i].entrySize = sizeof(Bucket);
+    stats[i].numBuckets = cfg.nBuckets;
   }
 }
 
@@ -72,6 +77,7 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
           memoryManager->returnEntry(*p);
           p = next;
           --stat.numEntries;
+          --entryCount_;
         } else {
           lastp = p;
           p = p->next();
@@ -81,13 +87,8 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
     ++v;
   }
 
-  // The garbage collection limit changes dynamically depending on the number
-  // of remaining (active) nodes. If it were not changed, garbage collection
-  // would run through the complete table on each successive call once the
-  // number of remaining entries reaches the garbage collection limit. It is
-  // increased whenever the number of remaining entries is rather close to the
-  // garbage collection threshold and decreased if the number of remaining
-  // entries is much lower than the current limit.
+  /// Adapt the threshold to live entries so a mostly full table does not
+  /// trigger a complete scan on every subsequent collection request.
   const auto numEntries = getNumEntries();
   if (numEntries > gcLimit / 10 * 9) {
     gcLimit = numEntries + cfg.initialGCLimit;
@@ -96,13 +97,13 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
 }
 
 void UniqueTable::clear() {
-  // clear unique table buckets
   for (auto& table : tables) {
     for (auto& bucket : table) {
       bucket = nullptr;
     }
   }
   gcLimit = cfg.initialGCLimit;
+  entryCount_ = 0U;
   for (auto& stat : stats) {
     stat.reset();
   }
@@ -113,8 +114,9 @@ UniqueTable::getStats(const std::size_t idx) const noexcept {
   return stats.at(idx);
 }
 
-nlohmann::basic_json<>
-UniqueTable::getStatsJson(const bool includeIndividualTables) const {
+nlohmann::basic_json<> toJson(const UniqueTable& table,
+                              const bool includeIndividualTables) {
+  const auto& stats = table.getStats();
   if (std::ranges::all_of(stats, [](const UniqueTableStatistics& stat) {
         return stat.peakNumEntries == 0U;
       })) {
@@ -135,30 +137,24 @@ UniqueTable::getStatsJson(const bool includeIndividualTables) const {
   }
 
   nlohmann::basic_json<> j;
-  j["total"] = totalStats.json();
+  j["total"] = toJson(totalStats);
   if (includeIndividualTables) {
     std::size_t v = 0U;
     for (const auto& stat : stats) {
-      j[std::to_string(v)] = stat.json();
+      j[std::to_string(v)] = toJson(stat);
       ++v;
     }
   }
   return j;
 }
 
-std::size_t UniqueTable::getNumEntries() const noexcept {
-  return std::accumulate(
-      stats.begin(), stats.end(), std::size_t{0},
-      [](const std::size_t& sum, const UniqueTableStatistics& stat) {
-        return sum + stat.numEntries;
-      });
-}
+std::size_t UniqueTable::getNumEntries() const noexcept { return entryCount_; }
 
 std::size_t UniqueTable::countMarkedEntries() const noexcept {
   std::size_t count = 0U;
   for (const auto& table : tables) {
-    for (auto* bucket : table) {
-      auto* p = bucket;
+    for (const auto* bucket : table) {
+      const auto* p = bucket;
       while (p != nullptr) {
         if (p->isMarked()) {
           ++count;

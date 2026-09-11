@@ -7,9 +7,34 @@
 # Licensed under the MIT License
 
 set(qco_ir_target mqt-core-mlir-unittest-qco-ir)
-add_executable(${qco_ir_target} test_qco_ir.cpp test_qco_ir_matrix.cpp)
-target_link_libraries(${qco_ir_target} PRIVATE MLIRParser MLIRSupportMQT GTest::gtest_main
-                                               MLIRQCOProgramBuilder MLIRQCOPrograms MQT::CoreDD)
-mqt_mlir_configure_unittest_target(${qco_ir_target})
+add_executable(
+  ${qco_ir_target}
+  test_qco_canonicalization.cpp
+  test_qco_control_flow_canonicalization.cpp
+  test_qco_ir.cpp
+  test_qco_ir_matrix.cpp
+  test_qco_modifier_canonicalization.cpp
+  test_qco_modifier_verification.cpp
+  test_qco_numeric_canonicalization.cpp
+  test_qco_wire_canonicalization.cpp)
+target_link_libraries(
+  ${qco_ir_target}
+  PRIVATE MLIRParser
+          MLIRCBitDialect
+          MLIRMQTDialect
+          MLIRSupportMQT
+          GTest::gtest_main
+          MLIRQCOProgramBuilder
+          MLIRQCOPrograms
+          MLIRQCODDFunctionality
+          MLIRExactUnitaryTest
+          MLIRQCOUtils
+          MLIRMQTTransforms
+          MQT::CoreDD)
+mqt_mlir_configure_unittest_target(${qco_ir_target} REQUIRES_EH)
 
-gtest_discover_tests(${qco_ir_target} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)
+# These cheap verifier cases share a process; retain per-case GoogleTest results.
+add_test(NAME ${qco_ir_target}
+         COMMAND ${qco_ir_target}
+                 --gtest_output=xml:${CMAKE_CURRENT_BINARY_DIR}/${qco_ir_target}.xml)
+set_tests_properties(${qco_ir_target} PROPERTIES LABELS mqt-mlir-unittests)

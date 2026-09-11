@@ -8,33 +8,54 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
+#include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QIR/Builder/QIRProgramBuilder.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Support/Passes.h"
+
+#include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "mlir/Conversion/QCToQIR/QIRAdaptive/QCToQIRAdaptive.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QIR/Builder/QIRProgramBuilder.h"
-#include "mlir/Support/IRVerification.h"
-#include "mlir/Support/Passes.h"
 #include "qc_programs.h"
 #include "qir_programs.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/ControlFlow/IR/ControlFlow.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
+#include "gtest/gtest.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/TypeRange.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <cstddef>
 #include <iosfwd>
 #include <memory>
 #include <ostream>
 #include <string>
+#include <utility>
 
 using namespace mlir;
 
@@ -42,8 +63,8 @@ namespace {
 
 struct QCToQIRAdaptiveTestCase {
   std::string name;
-  mqt::test::NamedBuilder<qc::QCProgramBuilder> programBuilder;
-  mqt::test::NamedBuilder<qir::QIRProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<qir::QIRProgramBuilder> referenceBuilder;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCToQIRAdaptiveTestCase& info);
@@ -52,10 +73,10 @@ struct QCToQIRAdaptiveTestCase {
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os,
                          const QCToQIRAdaptiveTestCase& info) {
-  return os << "QCToQIRAdaptive{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QCToQIRAdaptive{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCToQIRAdaptiveTest
@@ -76,18 +97,998 @@ protected:
 
 } // namespace
 
-static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp module) {
-  PassManager pm(module.getContext());
+static LogicalResult runQCToQIRAdaptiveConversion(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
+  pm.addPass(mlir::mqt::createUnrollModifiers());
   pm.addPass(createQCToQIRAdaptive());
-  return pm.run(module);
+  return pm.run(moduleOp);
+}
+
+static LogicalResult runQCToQIRAdaptiveConversionSimple(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
+  pm.addPass(createQCToQIRAdaptive());
+  return pm.run(moduleOp);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersConstantTensorWithRuntimeIndex) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      scf::SCFDialect, tensor::TensorDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %angles = arith.constant dense<[0.25, 0.5]> : tensor<2xf64>
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %two = arith.constant 2 : index
+      %q = qc.alloc : !qc.qubit
+      scf.for %index = %zero to %two step %one {
+        %angle = tensor.extract %angles[%index] : tensor<2xf64>
+        qc.rz(%angle) %q : !qc.qubit
+      }
+      qc.dealloc %q : !qc.qubit
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  size_t constantTables = 0;
+  moduleOp->walk([&](LLVM::GlobalOp global) {
+    if (global.getConstant() &&
+        isa<LLVM::LLVMArrayType>(global.getGlobalType())) {
+      ++constantTables;
+    }
+  });
+  EXPECT_EQ(constantTables, 1);
+  bool readsFloat = false;
+  moduleOp->walk(
+      [&](LLVM::LoadOp load) { readsFloat |= load.getType().isF64(); });
+  EXPECT_TRUE(readsFloat);
+  moduleOp->walk([&](Operation* operation) {
+    EXPECT_NE(operation->getName().getDialectNamespace(), "tensor");
+    EXPECT_NE(operation->getName().getDialectNamespace(), "memref");
+    EXPECT_NE(operation->getName().getDialectNamespace(), "bufferization");
+  });
+}
+
+TEST(QCToQIRAdaptiveNativeTest, UsesSharedAllocationVerifierForStandalonePass) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      scf::SCFDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() attributes {mqt.entry_point} {
+      %condition = arith.constant false
+      scf.if %condition {
+        %q = qc.alloc : !qc.qubit
+        qc.dealloc %q : !qc.qubit
+      }
+      return
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_EQ(context.getLoadedDialect<mlir::mqt::MQTDialect>(), nullptr);
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("dynamic quantum allocations must be") !=
+                 std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(diagnosed);
+  EXPECT_TRUE(module->lookupSymbol<func::FuncOp>("main"));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleReturnsBeforeOutputPreparation) {
+  MLIRContext context;
+  context
+      .loadDialect<qc::QCDialect, func::FuncDialect, cf::ControlFlowDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() -> i1 attributes {mqt.entry_point} {
+      %q = qc.alloc : !qc.qubit
+      %bit = qc.measure %q : !qc.qubit -> i1
+      cf.cond_br %bit, ^left, ^right
+    ^left:
+      qc.dealloc %q : !qc.qubit
+      return %bit : i1
+    ^right:
+      qc.dealloc %q : !qc.qubit
+      return %bit : i1
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  bool diagnosed = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    diagnosed |= diagnostic.str().find("single return") != std::string::npos;
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(diagnosed);
+  size_t returns = 0;
+  module->walk([&](func::ReturnOp op) {
+    ++returns;
+    EXPECT_EQ(op.getNumOperands(), 1);
+  });
+  EXPECT_EQ(returns, 2);
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, PreservesConditionalReleases) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, func::FuncDialect, scf::SCFDialect,
+                      memref::MemRefDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @condition() -> i1
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.alloc : !qc.qubit
+      %reg = memref.alloc() : memref<1x!qc.qubit>
+      %condition = func.call @condition() : () -> i1
+      scf.if %condition {
+        qc.dealloc %q : !qc.qubit
+        memref.dealloc %reg : memref<1x!qc.qubit>
+      } else {
+        qc.dealloc %q : !qc.qubit
+        memref.dealloc %reg : memref<1x!qc.qubit>
+      }
+      return
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  SmallVector<LLVM::CallOp> releases;
+  module->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_QUBIT_RELEASE ||
+        call.getCallee() == qir::QIR_QUBIT_ARRAY_RELEASE) {
+      releases.push_back(call);
+    }
+  });
+  ASSERT_EQ(releases.size(), 4);
+  EXPECT_EQ(releases[0]->getBlock(), releases[1]->getBlock());
+  EXPECT_EQ(releases[2]->getBlock(), releases[3]->getBlock());
+  EXPECT_NE(releases[0]->getBlock(), releases[2]->getBlock());
+  for (auto release : releases) {
+    EXPECT_TRUE(isa<LLVM::BrOp>(release->getBlock()->getTerminator()));
+  }
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsUnsafeOutputStoresBeforeMutation) {
+  for (const auto* body : {
+           "%a = qc.measure %q : !qc.qubit -> i1\n"
+           "qc.x %q : !qc.qubit\n"
+           "%b = qc.measure %q : !qc.qubit -> i1\n"
+           "cbit.store %b, %r[%i] : !cbit.reg<1>\n"
+           "cbit.store %a, %r[%i] : !cbit.reg<1>\n",
+           "%a = qc.measure %q : !qc.qubit -> i1\n"
+           "scf.if %condition { cbit.store %a, %r[%i] : !cbit.reg<1> }\n",
+           "%a = qc.measure %q : !qc.qubit -> i1\n"
+           "func.call @observe() : () -> ()\n"
+           "cbit.store %a, %r[%i] : !cbit.reg<1>\n",
+           "%a = qc.measure %q : !qc.qubit -> i1\n"
+           "%old = cbit.load %r[%i] : !cbit.reg<1>\n"
+           "cbit.store %a, %r[%i] : !cbit.reg<1>\n",
+       }) {
+    SCOPED_TRACE(body);
+    MLIRContext context;
+    context.loadDialect<cbit::CBitDialect, qc::QCDialect, arith::ArithDialect,
+                        func::FuncDialect, scf::SCFDialect>();
+    auto source = std::string(R"mlir(module {
+      func.func private @observe()
+      func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %i = arith.constant 0 : index
+        %condition = arith.constant false
+    )mlir") + body +
+                  R"mlir(
+        qc.dealloc %q : !qc.qubit
+        return %r : !cbit.reg<1>
+      }
+    })mlir";
+    auto module = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(module);
+    ASSERT_TRUE(succeeded(verify(*module)));
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnosed |=
+          diagnostic.str().find("cannot fuse this measurement/store pair") !=
+          std::string::npos;
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+    EXPECT_TRUE(diagnosed);
+    auto main = module->lookupSymbol<func::FuncOp>("main");
+    ASSERT_TRUE(main);
+    EXPECT_TRUE(isa<cbit::RegisterType>(main.getResultTypes().front()));
+    size_t stores = 0;
+    main.walk([&](cbit::StoreOp) { ++stores; });
+    EXPECT_GT(stores, 0);
+    EXPECT_TRUE(succeeded(verify(*module)));
+  }
+}
+
+TEST(QCToQIRAdaptiveNativeTest, FusesStoresAcrossDisjointConstantIndices) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, cbit::CBitDialect, arith::ArithDialect,
+                      func::FuncDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+      %q = qc.alloc : !qc.qubit
+      %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %a = qc.measure %q : !qc.qubit -> i1
+      qc.x %q : !qc.qubit
+      %b = qc.measure %q : !qc.qubit -> i1
+      cbit.store %b, %r[%one] : !cbit.reg<2>
+      cbit.store %a, %r[%zero] : !cbit.reg<2>
+      qc.dealloc %q : !qc.qubit
+      return %r : !cbit.reg<2>
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, PreservesClassicalStoreFusionBarriers) {
+  for (const auto& [intervening, accepted] : {
+           std::pair{"", true},
+           {
+               "%extra = qc.alloc : !qc.qubit\n"
+               "qc.dealloc %extra : !qc.qubit\n",
+               true,
+           },
+           {"cbit.store %b, %r[%one] : !cbit.reg<2>\n", true},
+           {"cbit.store %b, %r[%zero] : !cbit.reg<2>\n", false},
+           {"cbit.store %b, %scratch[%one] : !cbit.reg<2>\n", false},
+           {
+               "cbit.store %b, %scratch[%one] : !cbit.reg<2>\n"
+               "cbit.store %b, %r[%one] : !cbit.reg<2>\n",
+               false,
+           },
+           {
+               "cbit.store %b, %r[%one] : !cbit.reg<2>\n"
+               "cbit.store %b, %scratch[%one] : !cbit.reg<2>\n",
+               false,
+           },
+           {"cbit.store %b, %r[%dynamic] : !cbit.reg<2>\n", false},
+           {"scf.if %condition { func.call @observe() : () -> () }\n", false},
+       }) {
+    SCOPED_TRACE(intervening);
+    MLIRContext context;
+    context
+        .loadDialect<qc::QCDialect, cbit::CBitDialect, mlir::mqt::MQTDialect,
+                     arith::ArithDialect, func::FuncDialect, scf::SCFDialect>();
+    auto source = std::string(R"mlir(module {
+      func.func private @observe()
+      func.func private @index() -> index
+      func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+        %q = qc.alloc : !qc.qubit
+        %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %scratch = cbit.alloc(#cbit.init<zero>) : !cbit.reg<2>
+        %zero = arith.constant 0 : index
+        %one = arith.constant 1 : index
+        %condition = arith.constant false
+        %dynamic = func.call @index() : () -> index
+        %b = qc.measure %q : !qc.qubit -> i1
+        %a = qc.measure %q : !qc.qubit -> i1
+    )mlir") + intervening +
+                  R"mlir(
+        cbit.store %a, %r[%zero] : !cbit.reg<2>
+        qc.dealloc %q : !qc.qubit
+        return %r : !cbit.reg<2>
+      }
+    })mlir";
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    std::string before;
+    llvm::raw_string_ostream beforeStream(before);
+    moduleOp->print(beforeStream);
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      diagnosed |=
+          diagnostic.str().find("cannot fuse this measurement/store pair") !=
+          std::string::npos;
+      return success();
+    });
+    LoweringState state;
+    EXPECT_EQ(succeeded(prepareClassicalResults(*moduleOp, state)), accepted);
+    EXPECT_EQ(diagnosed, !accepted);
+    if (!accepted) {
+      std::string after;
+      llvm::raw_string_ostream afterStream(after);
+      moduleOp->print(afterStream);
+      EXPECT_EQ(after, before);
+    }
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  }
+}
+
+TEST(QCToQIRAdaptiveNativeTest, ReleasesResultArraysInAllocationOrder) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  SmallVector<Value> registers;
+  for (size_t i = 0; i < 12; ++i) {
+    registers.push_back(builder.allocClassicalBitRegister(1));
+  }
+  builder.retype(TypeRange(registers));
+  auto moduleOp = builder.finalize(registers);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  SmallVector<Value> allocated;
+  SmallVector<Value> released;
+  moduleOp->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_RESULT_ARRAY_ALLOC) {
+      allocated.push_back(call.getOperand(1));
+    } else if (call.getCallee() == qir::QIR_RESULT_ARRAY_RELEASE) {
+      released.push_back(call.getOperand(1));
+    }
+  });
+  ASSERT_EQ(allocated.size(), 12);
+  EXPECT_EQ(released, allocated);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, DynamicallyAllocatesScalarAndRegisterResults) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto reg = builder.allocClassicalBitRegister(1);
+  auto scalar = builder.measure(q);
+  builder.measure(q, reg, 0);
+  builder.retype(TypeRange{scalar.getType(), reg.getType()});
+  auto module = builder.finalize(ValueRange{scalar, reg});
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+  LLVM::CallOp allocation;
+  LLVM::CallOp release;
+  size_t arrays = 0;
+  module->walk([&](LLVM::CallOp call) {
+    if (call.getCallee() == qir::QIR_RESULT_ALLOC) {
+      allocation = call;
+    }
+    if (call.getCallee() == qir::QIR_RESULT_RELEASE) {
+      release = call;
+    }
+    if (call.getCallee() == qir::QIR_RESULT_ARRAY_ALLOC) {
+      ++arrays;
+    }
+  });
+  ASSERT_TRUE(allocation);
+  ASSERT_TRUE(release);
+  EXPECT_EQ(release.getOperand(0), allocation.getResult());
+  EXPECT_EQ(arrays, 1);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, PreservesEntryBlockQubitAllocations) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      cf::ControlFlowDialect, scf::SCFDialect,
+                      memref::MemRefDialect, LLVM::LLVMDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @condition() -> i1
+    func.func @main() attributes {mqt.entry_point} {
+      %q = qc.alloc : !qc.qubit
+      %c = func.call @condition() : () -> i1
+      scf.if %c {
+        qc.x %q : !qc.qubit
+      }
+      %reg = memref.alloc() : memref<1x!qc.qubit>
+      qc.dealloc %q : !qc.qubit
+      memref.dealloc %reg : memref<1x!qc.qubit>
+      return
+    }
+  })mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest,
+     NormalizesFactorableControlledGlobalPhaseBeforeLowering) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto control = builder.allocQubit();
+  auto target = builder.allocQubit();
+  builder.ctrl(control, target, [&](Value targetArg) {
+    builder.x(targetArg);
+    builder.gphase(0.317);
+  });
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*moduleOp)));
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersControlFlowAssertions) {
+  MLIRContext context;
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto condition = LLVM::UndefOp::create(builder, builder.getI1Type());
+  cf::AssertOp::create(builder, condition, "runtime precondition");
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("abort"));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>("puts"));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::GlobalOp>("assert_msg"));
+  bool retainsAssertion = false;
+  bool hasConditionalBranch = false;
+  bool hasUnreachableFailure = false;
+  module->walk([&](Operation* operation) {
+    retainsAssertion |= isa<cf::AssertOp>(operation);
+    hasConditionalBranch |= isa<LLVM::CondBrOp>(operation);
+    hasUnreachableFailure |= isa<LLVM::UnreachableOp>(operation);
+  });
+  EXPECT_FALSE(retainsAssertion);
+  EXPECT_TRUE(hasConditionalBranch);
+  EXPECT_TRUE(hasUnreachableFailure);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersPopulationCountThroughMathToLLVM) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, func::FuncDialect, LLVM::LLVMDialect,
+                      math::MathDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto value = LLVM::UndefOp::create(builder, builder.getIntegerType(5));
+  (void)math::CtPopOp::create(builder, value);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  bool retainsMathPopulationCount = false;
+  bool hasLLVMPopulationCount = false;
+  module->walk([&](Operation* operation) {
+    retainsMathPopulationCount |= isa<math::CtPopOp>(operation);
+    hasLLVMPopulationCount |= isa<LLVM::CtPopOp>(operation);
+  });
+  EXPECT_FALSE(retainsMathPopulationCount);
+  EXPECT_TRUE(hasLLVMPopulationCount);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersUnreturnedClassicalControlRegister) {
+  MLIRContext context;
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect, memref::MemRefDialect,
+                   scf::SCFDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto c = builder.allocClassicalBitRegister(1);
+  builder.measure(q, c, 0);
+  builder.scfIf(c, 0, [&] { builder.x(q); });
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  EXPECT_FALSE(
+      module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_RESULT_ARRAY_ALLOC));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_READ_RESULT));
+  EXPECT_FALSE(module->lookupSymbol<LLVM::LLVMFuncOp>(
+      qir::QIR_RESULT_ARRAY_RECORD_OUTPUT));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersZeroInitializedClassicalControlRegister) {
+  MLIRContext context;
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect, memref::MemRefDialect,
+                   scf::SCFDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto c = builder.allocClassicalBitRegister(1);
+  builder.scfIf(c, 0, [&] { builder.x(q); });
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+
+  EXPECT_FALSE(
+      module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_RESULT_ARRAY_ALLOC));
+  EXPECT_FALSE(module->lookupSymbol<LLVM::LLVMFuncOp>(qir::QIR_READ_RESULT));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersClassicalRegisterComparison) {
+  MLIRContext context;
+  context
+      .loadDialect<cbit::CBitDialect, qc::QCDialect, arith::ArithDialect,
+                   cf::ControlFlowDialect, func::FuncDialect, LLVM::LLVMDialect,
+                   memref::MemRefDialect, scf::SCFDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto c = builder.allocClassicalBitRegister(3);
+  builder.measure(q, c, 0);
+  auto rhs = builder.getIntegerAttr(builder.getIntegerType(3), 2);
+  auto comparison =
+      arith::CmpIOp::create(builder, arith::CmpIPredicate::ult,
+                            cbit::ReadOp::create(builder, rhs.getType(), c),
+                            arith::ConstantOp::create(builder, rhs));
+  builder.scfIf(comparison, [&] { builder.x(q); });
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  bool retainsComparison = false;
+  module->walk([&](arith::CmpIOp) { retainsComparison = true; });
+  EXPECT_FALSE(retainsComparison);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsRegisterCallsAtTheSharedBoundary) {
+  const auto sources = {
+      R"mlir(module {
+        func.func private @callee(!cbit.reg<1>)
+        func.func @main() attributes {mqt.entry_point} {
+          %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+          func.call @callee(%c) : (!cbit.reg<1>) -> ()
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @callee() -> !cbit.reg<1>
+        func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+          %c = func.call @callee() : () -> !cbit.reg<1>
+          return %c : !cbit.reg<1>
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @callee(!cbit.reg<1>)
+        func.func @main() attributes {mqt.entry_point} {
+          %callee = func.constant @callee : (!cbit.reg<1>) -> ()
+          %c = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+          func.call_indirect %callee(%c) : (!cbit.reg<1>) -> ()
+          return
+        }
+      })mlir",
+      R"mlir(module {
+        func.func private @callee() -> !cbit.reg<1>
+        func.func @main() -> !cbit.reg<1> attributes {mqt.entry_point} {
+          %callee = func.constant @callee : () -> !cbit.reg<1>
+          %c = func.call_indirect %callee() : () -> !cbit.reg<1>
+          return %c : !cbit.reg<1>
+        }
+      })mlir",
+  };
+  for (const auto* source : sources) {
+    SCOPED_TRACE(source);
+    MLIRContext context;
+    context.loadDialect<cbit::CBitDialect, func::FuncDialect>();
+    auto module = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(module);
+    bool diagnosed = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      std::string message;
+      llvm::raw_string_ostream stream(message);
+      diagnostic.print(stream);
+      diagnosed |= StringRef(message).contains(
+          "does not support CBit registers in calls");
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+    EXPECT_TRUE(diagnosed);
+  }
+}
+
+TEST(QCToQIRAdaptiveNativeTest, PreservesScalarCalls) {
+  MLIRContext context;
+  context.loadDialect<arith::ArithDialect, func::FuncDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @callee(i64) -> i64
+    func.func @main() attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : i64
+      %callee = func.constant @callee : (i64) -> i64
+      %direct = func.call @callee(%zero) : (i64) -> i64
+      %indirect = func.call_indirect %callee(%direct) : (i64) -> i64
+      return
+    }
+  })mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsMixedClassicalRegisterRepresentations) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, arith::ArithDialect,
+                      cf::ControlFlowDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> (i1, i1, i1, !cbit.reg<1>)
+          attributes {mqt.entry_point} {
+        %true = arith.constant true
+        %c0 = arith.constant 0 : index
+        %returned = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %local = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %selected = scf.if %true -> (!cbit.reg<1>) {
+          scf.yield %returned : !cbit.reg<1>
+        } else {
+          scf.yield %local : !cbit.reg<1>
+        }
+        %bit = cbit.load %selected[%c0] : !cbit.reg<1>
+        %whole = cbit.read %selected : !cbit.reg<1> -> i1
+        %matches_read = cbit.read %selected : !cbit.reg<1> -> i1
+        %matches_rhs = arith.constant 0 : i1
+        %matches = arith.cmpi eq, %matches_read, %matches_rhs : i1
+        cbit.write %true, %selected : i1, !cbit.reg<1>
+        return %bit, %whole, %matches, %returned
+            : i1, i1, i1, !cbit.reg<1>
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t mixedRepresentationDiagnostics = 0;
+  const ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    mixedRepresentationDiagnostics += StringRef(message).contains(
+        "adaptive QIR conversion cannot merge returned and local CBit "
+        "registers");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_EQ(mixedRepresentationDiagnostics, 4);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersReturnedRegisterMerge) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, arith::ArithDialect,
+                      cf::ControlFlowDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> (i1, i1, i1, !cbit.reg<1>, !cbit.reg<1>)
+          attributes {mqt.entry_point} {
+        %true = arith.constant true
+        %c0 = arith.constant 0 : index
+        %first = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %second = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %selected = scf.if %true -> (!cbit.reg<1>) {
+          scf.yield %first : !cbit.reg<1>
+        } else {
+          scf.yield %second : !cbit.reg<1>
+        }
+        %bit = cbit.load %selected[%c0] : !cbit.reg<1>
+        %whole = cbit.read %selected : !cbit.reg<1> -> i1
+        %matches_read = cbit.read %selected : !cbit.reg<1> -> i1
+        %matches_rhs = arith.constant 0 : i1
+        %matches = arith.cmpi eq, %matches_read, %matches_rhs : i1
+        return %bit, %whole, %matches, %first, %second
+            : i1, i1, i1, !cbit.reg<1>, !cbit.reg<1>
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  size_t resultReads = 0;
+  module->walk([&](LLVM::CallOp call) {
+    resultReads += call.getCallee() == qir::QIR_READ_RESULT;
+  });
+  EXPECT_EQ(resultReads, 3);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsWriteThroughReturnedRegisterMerge) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, arith::ArithDialect,
+                      cf::ControlFlowDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  auto module = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> (!cbit.reg<1>, !cbit.reg<1>)
+          attributes {mqt.entry_point} {
+        %true = arith.constant true
+        %first = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %second = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+        %selected = scf.if %true -> (!cbit.reg<1>) {
+          scf.yield %first : !cbit.reg<1>
+        } else {
+          scf.yield %second : !cbit.reg<1>
+        }
+        cbit.write %true, %selected : i1, !cbit.reg<1>
+        return %first, %second : !cbit.reg<1>, !cbit.reg<1>
+      }
+    }
+  )mlir",
+                                            &context);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  bool sawExpectedDiagnostic = false;
+  const ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "does not support non-measurement writes to returned CBit registers");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsMultipleRegisterDestinations) {
+  MLIRContext context;
+  context
+      .loadDialect<qc::QCDialect, arith::ArithDialect, cf::ControlFlowDialect,
+                   func::FuncDialect, LLVM::LLVMDialect, memref::MemRefDialect,
+                   scf::SCFDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto c = builder.allocClassicalBitRegister(2);
+  auto result = builder.measure(q, c, 0);
+  builder.storeClassicalBit(result, c, 1);
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RecordsReturnedRegisterMeasurement) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto c = builder.allocClassicalBitRegister(1, "named_result");
+  builder.measure(q, c, 0);
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
+  ASSERT_TRUE(module);
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+  EXPECT_TRUE(module->lookupSymbol<LLVM::LLVMFuncOp>(
+      qir::QIR_RESULT_ARRAY_RECORD_OUTPUT));
+  EXPECT_TRUE(
+      module->lookupSymbol<LLVM::GlobalOp>("qir.result_label_named_result"));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementClassicalStore) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto c = builder.allocClassicalBitRegister(1);
+  builder.storeClassicalBit(builder.boolConstant(true), c, 0);
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "does not support non-measurement stores to returned CBit registers");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, AcceptsZeroInitializedClassicalRegister) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto c = builder.allocClassicalBitRegister(1);
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
+  ASSERT_TRUE(module);
+
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, LowersInternalZeroInitializedRegisterStorage) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto c = builder.allocClassicalBitRegister(8192);
+  auto first = builder.loadClassicalBit(c, 0);
+  builder.storeClassicalBit(first, c, 1);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  ASSERT_TRUE(succeeded(verify(*module)));
+
+  size_t allocs = 0;
+  size_t loads = 0;
+  size_t stores = 0;
+  module->walk([&](LLVM::AllocaOp) { ++allocs; });
+  module->walk([&](LLVM::LoadOp) { ++loads; });
+  module->walk([&](LLVM::StoreOp) { ++stores; });
+  EXPECT_EQ(allocs, 1);
+  EXPECT_EQ(loads, 1);
+  EXPECT_EQ(stores, 1);
+  size_t zeroFills = 0;
+  module->walk([&](LLVM::MemsetOp fill) {
+    ++zeroFills;
+    auto value = fill.getVal().getDefiningOp<LLVM::ConstantOp>();
+    ASSERT_TRUE(value);
+    EXPECT_TRUE(cast<IntegerAttr>(value.getValue()).getValue().isZero());
+  });
+  EXPECT_EQ(zeroFills, 1);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, InitializesLocalRegisterInsideLoop) {
+  MLIRContext context;
+  context.loadDialect<cbit::CBitDialect, qc::QCDialect, arith::ArithDialect,
+                      cf::ControlFlowDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main() -> i64 attributes {mqt.entry_point} {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %false = arith.constant false
+        %true = arith.constant true
+        %answer = scf.for %i = %c0 to %c2 step %c1
+            iter_args(%last = %false) -> i1 {
+          %r = cbit.alloc(#cbit.init<zero>) : !cbit.reg<1>
+          %v = cbit.load %r[%c0] : !cbit.reg<1>
+          cbit.store %true, %r[%c0] : !cbit.reg<1>
+          scf.yield %v : i1
+        }
+        %exit = arith.extui %answer : i1 to i64
+        return %exit : i64
+      }
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  LLVM::MemsetOp fill;
+  LLVM::LoadOp load;
+  moduleOp->walk([&](LLVM::MemsetOp op) { fill = op; });
+  moduleOp->walk([&](LLVM::LoadOp op) { load = op; });
+  ASSERT_TRUE(fill);
+  ASSERT_TRUE(load);
+  ASSERT_EQ(fill->getBlock(), load->getBlock());
+  EXPECT_TRUE(fill->isBeforeInBlock(load));
+  auto main = moduleOp->lookupSymbol<LLVM::LLVMFuncOp>("main");
+  ASSERT_TRUE(main);
+  EXPECT_NE(fill->getBlock(), &main.getBody().front());
+}
+
+TEST(QCToQIRAdaptiveNativeTest, SupportsDynamicInternalRegisterIndices) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto c = builder.allocClassicalBitRegister(2);
+  auto unknown = LLVM::UndefOp::create(builder, builder.getI64Type());
+  auto index = arith::IndexCastOp::create(builder, builder.getIndexType(),
+                                          unknown.getResult());
+  builder.storeClassicalBit(builder.boolConstant(true), c, index.getResult());
+  auto value = builder.loadClassicalBit(c, index.getResult());
+  builder.storeClassicalBit(value, c, 0);
+  auto module = builder.finalize();
+  ASSERT_TRUE(module);
+
+  EXPECT_TRUE(succeeded(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(succeeded(verify(*module)));
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsNonMeasurementStoreAfterMeasurement) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto q = builder.allocQubit();
+  auto c = builder.allocClassicalBitRegister(1);
+  builder.measure(q, c, 0);
+  builder.storeClassicalBit(builder.boolConstant(false), c, 0);
+  builder.retype(c.getType());
+  auto module = builder.finalize(c);
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |= StringRef(message).contains(
+        "does not support non-measurement stores to returned CBit registers");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversionSimple(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST(QCToQIRAdaptiveNativeTest, RejectsUnsupportedIntegerMemref) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, memref::MemRefDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  const auto type = MemRefType::get({1}, builder.getI8Type());
+  auto memref = memref::AllocOp::create(builder, type).getResult();
+  builder.retype(type);
+  auto module = builder.finalize(memref);
+  ASSERT_TRUE(module);
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    std::string message;
+    llvm::raw_string_ostream stream(message);
+    diagnostic.print(stream);
+    sawExpectedDiagnostic |=
+        StringRef(message).contains("only supports generic memrefs for");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQIRAdaptiveConversion(*module)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
 }
 
 TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
   const auto& [_, programBuilder, referenceBuilder] = GetParam();
   const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+  ::mqt::test::DeferredPrinter printer;
 
-  auto program = qc::QCProgramBuilder::build(context.get(), programBuilder.fn);
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -105,7 +1106,7 @@ TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
   EXPECT_TRUE(verify(*program).succeeded());
 
   auto reference =
-      qir::QIRProgramBuilder::build(context.get(), referenceBuilder.fn,
+      ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder,
                                     qir::QIRProgramBuilder::Profile::Adaptive);
   ASSERT_TRUE(reference);
   printer.record(reference.get(), "Reference QIR IR" + name);
@@ -124,17 +1125,20 @@ TEST_P(QCToQIRAdaptiveTest, ProgramEquivalence) {
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveBarrierOpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRAdaptiveTestCase{"Barrier", MQT_NAMED_BUILDER(qc::barrier),
-                                MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRAdaptiveTestCase{"BarrierTwoQubits",
-                                MQT_NAMED_BUILDER(qc::barrierTwoQubits),
-                                MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRAdaptiveTestCase{"BarrierMultipleQubits",
-                                MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
-                                MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRAdaptiveTestCase{"SingleControlledBarrier",
-                                MQT_NAMED_BUILDER(qc::singleControlledBarrier),
-                                MQT_NAMED_BUILDER(qir::emptyQIR)}));
+        QCToQIRAdaptiveTestCase{
+            "Barrier", MQT_NAMED_BUILDER(qc::barrier),
+            MQT_NAMED_BUILDER(qir::alloc1QubitRegister<true>)},
+        QCToQIRAdaptiveTestCase{
+            "BarrierTwoQubits", MQT_NAMED_BUILDER(qc::barrierTwoQubits),
+            MQT_NAMED_BUILDER(qir::allocQubitRegister<true>)},
+        QCToQIRAdaptiveTestCase{
+            "BarrierMultipleQubits",
+            MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
+            MQT_NAMED_BUILDER(qir::alloc3QubitRegister<true>)},
+        QCToQIRAdaptiveTestCase{
+            "SingleControlledBarrier",
+            MQT_NAMED_BUILDER(qc::singleControlledBarrier),
+            MQT_NAMED_BUILDER(qir::allocQubitRegister<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/DcxOp.cpp
@@ -142,15 +1146,15 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveDCXOpTest, QCToQIRAdaptiveTest,
     testing::Values(QCToQIRAdaptiveTestCase{"DCX", MQT_NAMED_BUILDER(qc::dcx),
-                                            MQT_NAMED_BUILDER(qir::dcx)},
+                                            MQT_NAMED_BUILDER(qir::dcx<true>)},
                     QCToQIRAdaptiveTestCase{
                         "SingleControlledDCX",
                         MQT_NAMED_BUILDER(qc::singleControlledDcx),
-                        MQT_NAMED_BUILDER(qir::singleControlledDcx)},
+                        MQT_NAMED_BUILDER(qir::singleControlledDcx<true>)},
                     QCToQIRAdaptiveTestCase{
                         "MultipleControlledDCX",
                         MQT_NAMED_BUILDER(qc::multipleControlledDcx),
-                        MQT_NAMED_BUILDER(qir::multipleControlledDcx)}));
+                        MQT_NAMED_BUILDER(qir::multipleControlledDcx<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/EcrOp.cpp
@@ -158,15 +1162,15 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveECROpTest, QCToQIRAdaptiveTest,
     testing::Values(QCToQIRAdaptiveTestCase{"ECR", MQT_NAMED_BUILDER(qc::ecr),
-                                            MQT_NAMED_BUILDER(qir::ecr)},
+                                            MQT_NAMED_BUILDER(qir::ecr<true>)},
                     QCToQIRAdaptiveTestCase{
                         "SingleControlledECR",
                         MQT_NAMED_BUILDER(qc::singleControlledEcr),
-                        MQT_NAMED_BUILDER(qir::singleControlledEcr)},
+                        MQT_NAMED_BUILDER(qir::singleControlledEcr<true>)},
                     QCToQIRAdaptiveTestCase{
                         "MultipleControlledECR",
                         MQT_NAMED_BUILDER(qc::multipleControlledEcr),
-                        MQT_NAMED_BUILDER(qir::multipleControlledEcr)}));
+                        MQT_NAMED_BUILDER(qir::multipleControlledEcr<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/GphaseOp.cpp
@@ -174,7 +1178,7 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(QCToQIRAdaptiveGPhaseOpTest, QCToQIRAdaptiveTest,
                          testing::Values(QCToQIRAdaptiveTestCase{
                              "GlobalPhase", MQT_NAMED_BUILDER(qc::globalPhase),
-                             MQT_NAMED_BUILDER(qir::globalPhase)}));
+                             MQT_NAMED_BUILDER(qir::globalPhase<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/HOp.cpp
@@ -183,13 +1187,13 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveHOpTest, QCToQIRAdaptiveTest,
     testing::Values(
         QCToQIRAdaptiveTestCase{"H", MQT_NAMED_BUILDER(qc::h),
-                                MQT_NAMED_BUILDER(qir::h)},
-        QCToQIRAdaptiveTestCase{"SingleControlledH",
-                                MQT_NAMED_BUILDER(qc::singleControlledH),
-                                MQT_NAMED_BUILDER(qir::singleControlledH)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledH",
-                                MQT_NAMED_BUILDER(qc::multipleControlledH),
-                                MQT_NAMED_BUILDER(qir::multipleControlledH)},
+                                MQT_NAMED_BUILDER(qir::h<true>)},
+        QCToQIRAdaptiveTestCase{
+            "SingleControlledH", MQT_NAMED_BUILDER(qc::singleControlledH),
+            MQT_NAMED_BUILDER(qir::singleControlledH<true>)},
+        QCToQIRAdaptiveTestCase{
+            "MultipleControlledH", MQT_NAMED_BUILDER(qc::multipleControlledH),
+            MQT_NAMED_BUILDER(qir::multipleControlledH<true>)},
         QCToQIRAdaptiveTestCase{"HWithoutRegister",
                                 MQT_NAMED_BUILDER(qc::hWithoutRegister),
                                 MQT_NAMED_BUILDER(qir::hWithoutRegister)}));
@@ -201,14 +1205,15 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveIDOpTest, QCToQIRAdaptiveTest,
     testing::Values(
         QCToQIRAdaptiveTestCase{"Identity", MQT_NAMED_BUILDER(qc::identity),
-                                MQT_NAMED_BUILDER(qir::identity)},
-        QCToQIRAdaptiveTestCase{"SingleControlledIdentity",
-                                MQT_NAMED_BUILDER(qc::singleControlledIdentity),
-                                MQT_NAMED_BUILDER(qir::identity)},
+                                MQT_NAMED_BUILDER(qir::identity<true>)},
+        QCToQIRAdaptiveTestCase{
+            "SingleControlledIdentity",
+            MQT_NAMED_BUILDER(qc::singleControlledIdentity),
+            MQT_NAMED_BUILDER(qir::twoQubitsOneIdentity<true>)},
         QCToQIRAdaptiveTestCase{
             "MultipleControlledIdentity",
             MQT_NAMED_BUILDER(qc::multipleControlledIdentity),
-            MQT_NAMED_BUILDER(qir::identity)}));
+            MQT_NAMED_BUILDER(qir::threeQubitsOneIdentity<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/IswapOp.cpp
@@ -217,59 +1222,79 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveiSWAPOpTest, QCToQIRAdaptiveTest,
     testing::Values(
         QCToQIRAdaptiveTestCase{"iSWAP", MQT_NAMED_BUILDER(qc::iswap),
-                                MQT_NAMED_BUILDER(qir::iswap)},
-        QCToQIRAdaptiveTestCase{"SingleControllediSWAP",
-                                MQT_NAMED_BUILDER(qc::singleControlledIswap),
-                                MQT_NAMED_BUILDER(qir::singleControlledIswap)},
+                                MQT_NAMED_BUILDER(qir::iswap<true>)},
+        QCToQIRAdaptiveTestCase{
+            "SingleControllediSWAP",
+            MQT_NAMED_BUILDER(qc::singleControlledIswap),
+            MQT_NAMED_BUILDER(qir::singleControlledIswap<true>)},
         QCToQIRAdaptiveTestCase{
             "MultipleControllediSWAP",
             MQT_NAMED_BUILDER(qc::multipleControlledIswap),
-            MQT_NAMED_BUILDER(qir::multipleControlledIswap)}));
+            MQT_NAMED_BUILDER(qir::multipleControlledIswap<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/POp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptivePOpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"P", MQT_NAMED_BUILDER(qc::p),
-                                MQT_NAMED_BUILDER(qir::p)},
-        QCToQIRAdaptiveTestCase{"SingleControlledP",
-                                MQT_NAMED_BUILDER(qc::singleControlledP),
-                                MQT_NAMED_BUILDER(qir::singleControlledP)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledP",
-                                MQT_NAMED_BUILDER(qc::multipleControlledP),
-                                MQT_NAMED_BUILDER(qir::multipleControlledP)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"P", MQT_NAMED_BUILDER(qc::p),
+                                            MQT_NAMED_BUILDER(qir::p<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledP",
+                        MQT_NAMED_BUILDER(qc::singleControlledP),
+                        MQT_NAMED_BUILDER(qir::singleControlledP<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledP",
+                        MQT_NAMED_BUILDER(qc::multipleControlledP),
+                        MQT_NAMED_BUILDER(qir::multipleControlledP<true>)}));
+/// @}
+
+/// \name QCToQIRAdaptive/Operations/StandardGates/RCCXOp.cpp
+/// @{
+INSTANTIATE_TEST_SUITE_P(
+    QCToQIRAdaptiveRCCXOpTest, QCToQIRAdaptiveTest,
+    testing::Values(QCToQIRAdaptiveTestCase{"RCCX", MQT_NAMED_BUILDER(qc::rccx),
+                                            MQT_NAMED_BUILDER(qir::rccx<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledRCCX",
+                        MQT_NAMED_BUILDER(qc::singleControlledRccx),
+                        MQT_NAMED_BUILDER(qir::singleControlledRccx<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledRCCX",
+                        MQT_NAMED_BUILDER(qc::multipleControlledRccx),
+                        MQT_NAMED_BUILDER(qir::multipleControlledRccx<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/ROp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveROpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"R", MQT_NAMED_BUILDER(qc::r),
-                                MQT_NAMED_BUILDER(qir::r)},
-        QCToQIRAdaptiveTestCase{"SingleControlledR",
-                                MQT_NAMED_BUILDER(qc::singleControlledR),
-                                MQT_NAMED_BUILDER(qir::singleControlledR)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledR",
-                                MQT_NAMED_BUILDER(qc::multipleControlledR),
-                                MQT_NAMED_BUILDER(qir::multipleControlledR)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"R", MQT_NAMED_BUILDER(qc::r),
+                                            MQT_NAMED_BUILDER(qir::r<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledR",
+                        MQT_NAMED_BUILDER(qc::singleControlledR),
+                        MQT_NAMED_BUILDER(qir::singleControlledR<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledR",
+                        MQT_NAMED_BUILDER(qc::multipleControlledR),
+                        MQT_NAMED_BUILDER(qir::multipleControlledR<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/RxOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveRXOpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"RX", MQT_NAMED_BUILDER(qc::rx),
-                                MQT_NAMED_BUILDER(qir::rx)},
-        QCToQIRAdaptiveTestCase{"SingleControlledRX",
-                                MQT_NAMED_BUILDER(qc::singleControlledRx),
-                                MQT_NAMED_BUILDER(qir::singleControlledRx)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledRX",
-                                MQT_NAMED_BUILDER(qc::multipleControlledRx),
-                                MQT_NAMED_BUILDER(qir::multipleControlledRx)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"RX", MQT_NAMED_BUILDER(qc::rx),
+                                            MQT_NAMED_BUILDER(qir::rx<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledRX",
+                        MQT_NAMED_BUILDER(qc::singleControlledRx),
+                        MQT_NAMED_BUILDER(qir::singleControlledRx<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledRX",
+                        MQT_NAMED_BUILDER(qc::multipleControlledRx),
+                        MQT_NAMED_BUILDER(qir::multipleControlledRx<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/RxxOp.cpp
@@ -277,30 +1302,31 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveRXXOpTest, QCToQIRAdaptiveTest,
     testing::Values(QCToQIRAdaptiveTestCase{"RXX", MQT_NAMED_BUILDER(qc::rxx),
-                                            MQT_NAMED_BUILDER(qir::rxx)},
+                                            MQT_NAMED_BUILDER(qir::rxx<true>)},
                     QCToQIRAdaptiveTestCase{
                         "SingleControlledRXX",
                         MQT_NAMED_BUILDER(qc::singleControlledRxx),
-                        MQT_NAMED_BUILDER(qir::singleControlledRxx)},
+                        MQT_NAMED_BUILDER(qir::singleControlledRxx<true>)},
                     QCToQIRAdaptiveTestCase{
                         "MultipleControlledRXX",
                         MQT_NAMED_BUILDER(qc::multipleControlledRxx),
-                        MQT_NAMED_BUILDER(qir::multipleControlledRxx)}));
+                        MQT_NAMED_BUILDER(qir::multipleControlledRxx<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/RyOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveRYOpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"RY", MQT_NAMED_BUILDER(qc::ry),
-                                MQT_NAMED_BUILDER(qir::ry)},
-        QCToQIRAdaptiveTestCase{"SingleControlledRY",
-                                MQT_NAMED_BUILDER(qc::singleControlledRy),
-                                MQT_NAMED_BUILDER(qir::singleControlledRy)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledRY",
-                                MQT_NAMED_BUILDER(qc::multipleControlledRy),
-                                MQT_NAMED_BUILDER(qir::multipleControlledRy)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"RY", MQT_NAMED_BUILDER(qc::ry),
+                                            MQT_NAMED_BUILDER(qir::ry<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledRY",
+                        MQT_NAMED_BUILDER(qc::singleControlledRy),
+                        MQT_NAMED_BUILDER(qir::singleControlledRy<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledRY",
+                        MQT_NAMED_BUILDER(qc::multipleControlledRy),
+                        MQT_NAMED_BUILDER(qir::multipleControlledRy<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/RyyOp.cpp
@@ -308,30 +1334,31 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveRYYOpTest, QCToQIRAdaptiveTest,
     testing::Values(QCToQIRAdaptiveTestCase{"RYY", MQT_NAMED_BUILDER(qc::ryy),
-                                            MQT_NAMED_BUILDER(qir::ryy)},
+                                            MQT_NAMED_BUILDER(qir::ryy<true>)},
                     QCToQIRAdaptiveTestCase{
                         "SingleControlledRYY",
                         MQT_NAMED_BUILDER(qc::singleControlledRyy),
-                        MQT_NAMED_BUILDER(qir::singleControlledRyy)},
+                        MQT_NAMED_BUILDER(qir::singleControlledRyy<true>)},
                     QCToQIRAdaptiveTestCase{
                         "MultipleControlledRYY",
                         MQT_NAMED_BUILDER(qc::multipleControlledRyy),
-                        MQT_NAMED_BUILDER(qir::multipleControlledRyy)}));
+                        MQT_NAMED_BUILDER(qir::multipleControlledRyy<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/RzOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveRZOpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"RZ", MQT_NAMED_BUILDER(qc::rz),
-                                MQT_NAMED_BUILDER(qir::rz)},
-        QCToQIRAdaptiveTestCase{"SingleControlledRZ",
-                                MQT_NAMED_BUILDER(qc::singleControlledRz),
-                                MQT_NAMED_BUILDER(qir::singleControlledRz)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledRZ",
-                                MQT_NAMED_BUILDER(qc::multipleControlledRz),
-                                MQT_NAMED_BUILDER(qir::multipleControlledRz)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"RZ", MQT_NAMED_BUILDER(qc::rz),
+                                            MQT_NAMED_BUILDER(qir::rz<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledRZ",
+                        MQT_NAMED_BUILDER(qc::singleControlledRz),
+                        MQT_NAMED_BUILDER(qir::singleControlledRz<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledRZ",
+                        MQT_NAMED_BUILDER(qc::multipleControlledRz),
+                        MQT_NAMED_BUILDER(qir::multipleControlledRz<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/RzxOp.cpp
@@ -339,15 +1366,15 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveRZXOpTest, QCToQIRAdaptiveTest,
     testing::Values(QCToQIRAdaptiveTestCase{"RZX", MQT_NAMED_BUILDER(qc::rzx),
-                                            MQT_NAMED_BUILDER(qir::rzx)},
+                                            MQT_NAMED_BUILDER(qir::rzx<true>)},
                     QCToQIRAdaptiveTestCase{
                         "SingleControlledRZX",
                         MQT_NAMED_BUILDER(qc::singleControlledRzx),
-                        MQT_NAMED_BUILDER(qir::singleControlledRzx)},
+                        MQT_NAMED_BUILDER(qir::singleControlledRzx<true>)},
                     QCToQIRAdaptiveTestCase{
                         "MultipleControlledRZX",
                         MQT_NAMED_BUILDER(qc::multipleControlledRzx),
-                        MQT_NAMED_BUILDER(qir::multipleControlledRzx)}));
+                        MQT_NAMED_BUILDER(qir::multipleControlledRzx<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/RzzOp.cpp
@@ -355,30 +1382,31 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveRZZOpTest, QCToQIRAdaptiveTest,
     testing::Values(QCToQIRAdaptiveTestCase{"RZZ", MQT_NAMED_BUILDER(qc::rzz),
-                                            MQT_NAMED_BUILDER(qir::rzz)},
+                                            MQT_NAMED_BUILDER(qir::rzz<true>)},
                     QCToQIRAdaptiveTestCase{
                         "SingleControlledRZZ",
                         MQT_NAMED_BUILDER(qc::singleControlledRzz),
-                        MQT_NAMED_BUILDER(qir::singleControlledRzz)},
+                        MQT_NAMED_BUILDER(qir::singleControlledRzz<true>)},
                     QCToQIRAdaptiveTestCase{
                         "MultipleControlledRZZ",
                         MQT_NAMED_BUILDER(qc::multipleControlledRzz),
-                        MQT_NAMED_BUILDER(qir::multipleControlledRzz)}));
+                        MQT_NAMED_BUILDER(qir::multipleControlledRzz<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/SOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveSOpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"S", MQT_NAMED_BUILDER(qc::s),
-                                MQT_NAMED_BUILDER(qir::s)},
-        QCToQIRAdaptiveTestCase{"SingleControlledS",
-                                MQT_NAMED_BUILDER(qc::singleControlledS),
-                                MQT_NAMED_BUILDER(qir::singleControlledS)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledS",
-                                MQT_NAMED_BUILDER(qc::multipleControlledS),
-                                MQT_NAMED_BUILDER(qir::multipleControlledS)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"S", MQT_NAMED_BUILDER(qc::s),
+                                            MQT_NAMED_BUILDER(qir::s<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledS",
+                        MQT_NAMED_BUILDER(qc::singleControlledS),
+                        MQT_NAMED_BUILDER(qir::singleControlledS<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledS",
+                        MQT_NAMED_BUILDER(qc::multipleControlledS),
+                        MQT_NAMED_BUILDER(qir::multipleControlledS<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/SdgOp.cpp
@@ -386,15 +1414,15 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveSdgOpTest, QCToQIRAdaptiveTest,
     testing::Values(QCToQIRAdaptiveTestCase{"Sdg", MQT_NAMED_BUILDER(qc::sdg),
-                                            MQT_NAMED_BUILDER(qir::sdg)},
+                                            MQT_NAMED_BUILDER(qir::sdg<true>)},
                     QCToQIRAdaptiveTestCase{
                         "SingleControlledSdg",
                         MQT_NAMED_BUILDER(qc::singleControlledSdg),
-                        MQT_NAMED_BUILDER(qir::singleControlledSdg)},
+                        MQT_NAMED_BUILDER(qir::singleControlledSdg<true>)},
                     QCToQIRAdaptiveTestCase{
                         "MultipleControlledSdg",
                         MQT_NAMED_BUILDER(qc::multipleControlledSdg),
-                        MQT_NAMED_BUILDER(qir::multipleControlledSdg)}));
+                        MQT_NAMED_BUILDER(qir::multipleControlledSdg<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/SwapOp.cpp
@@ -402,30 +1430,31 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveSWAPOpTest, QCToQIRAdaptiveTest,
     testing::Values(QCToQIRAdaptiveTestCase{"SWAP", MQT_NAMED_BUILDER(qc::swap),
-                                            MQT_NAMED_BUILDER(qir::swap)},
+                                            MQT_NAMED_BUILDER(qir::swap<true>)},
                     QCToQIRAdaptiveTestCase{
                         "SingleControlledSWAP",
                         MQT_NAMED_BUILDER(qc::singleControlledSwap),
-                        MQT_NAMED_BUILDER(qir::singleControlledSwap)},
+                        MQT_NAMED_BUILDER(qir::singleControlledSwap<true>)},
                     QCToQIRAdaptiveTestCase{
                         "MultipleControlledSWAP",
                         MQT_NAMED_BUILDER(qc::multipleControlledSwap),
-                        MQT_NAMED_BUILDER(qir::multipleControlledSwap)}));
+                        MQT_NAMED_BUILDER(qir::multipleControlledSwap<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/SxOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveSXOpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"SX", MQT_NAMED_BUILDER(qc::sx),
-                                MQT_NAMED_BUILDER(qir::sx)},
-        QCToQIRAdaptiveTestCase{"SingleControlledSX",
-                                MQT_NAMED_BUILDER(qc::singleControlledSx),
-                                MQT_NAMED_BUILDER(qir::singleControlledSx)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledSX",
-                                MQT_NAMED_BUILDER(qc::multipleControlledSx),
-                                MQT_NAMED_BUILDER(qir::multipleControlledSx)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"SX", MQT_NAMED_BUILDER(qc::sx),
+                                            MQT_NAMED_BUILDER(qir::sx<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledSX",
+                        MQT_NAMED_BUILDER(qc::singleControlledSx),
+                        MQT_NAMED_BUILDER(qir::singleControlledSx<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledSX",
+                        MQT_NAMED_BUILDER(qc::multipleControlledSx),
+                        MQT_NAMED_BUILDER(qir::multipleControlledSx<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/SxdgOp.cpp
@@ -433,30 +1462,31 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveSXdgOpTest, QCToQIRAdaptiveTest,
     testing::Values(QCToQIRAdaptiveTestCase{"SXdg", MQT_NAMED_BUILDER(qc::sxdg),
-                                            MQT_NAMED_BUILDER(qir::sxdg)},
+                                            MQT_NAMED_BUILDER(qir::sxdg<true>)},
                     QCToQIRAdaptiveTestCase{
                         "SingleControlledSXdg",
                         MQT_NAMED_BUILDER(qc::singleControlledSxdg),
-                        MQT_NAMED_BUILDER(qir::singleControlledSxdg)},
+                        MQT_NAMED_BUILDER(qir::singleControlledSxdg<true>)},
                     QCToQIRAdaptiveTestCase{
                         "MultipleControlledSXdg",
                         MQT_NAMED_BUILDER(qc::multipleControlledSxdg),
-                        MQT_NAMED_BUILDER(qir::multipleControlledSxdg)}));
+                        MQT_NAMED_BUILDER(qir::multipleControlledSxdg<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/TOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveTOpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"T", MQT_NAMED_BUILDER(qc::t_),
-                                MQT_NAMED_BUILDER(qir::t_)},
-        QCToQIRAdaptiveTestCase{"SingleControlledT",
-                                MQT_NAMED_BUILDER(qc::singleControlledT),
-                                MQT_NAMED_BUILDER(qir::singleControlledT)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledT",
-                                MQT_NAMED_BUILDER(qc::multipleControlledT),
-                                MQT_NAMED_BUILDER(qir::multipleControlledT)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"T", MQT_NAMED_BUILDER(qc::t_),
+                                            MQT_NAMED_BUILDER(qir::t_<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledT",
+                        MQT_NAMED_BUILDER(qc::singleControlledT),
+                        MQT_NAMED_BUILDER(qir::singleControlledT<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledT",
+                        MQT_NAMED_BUILDER(qc::multipleControlledT),
+                        MQT_NAMED_BUILDER(qir::multipleControlledT<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/TdgOp.cpp
@@ -464,124 +1494,129 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveTdgOpTest, QCToQIRAdaptiveTest,
     testing::Values(QCToQIRAdaptiveTestCase{"Tdg", MQT_NAMED_BUILDER(qc::tdg),
-                                            MQT_NAMED_BUILDER(qir::tdg)},
+                                            MQT_NAMED_BUILDER(qir::tdg<true>)},
                     QCToQIRAdaptiveTestCase{
                         "SingleControlledTdg",
                         MQT_NAMED_BUILDER(qc::singleControlledTdg),
-                        MQT_NAMED_BUILDER(qir::singleControlledTdg)},
+                        MQT_NAMED_BUILDER(qir::singleControlledTdg<true>)},
                     QCToQIRAdaptiveTestCase{
                         "MultipleControlledTdg",
                         MQT_NAMED_BUILDER(qc::multipleControlledTdg),
-                        MQT_NAMED_BUILDER(qir::multipleControlledTdg)}));
+                        MQT_NAMED_BUILDER(qir::multipleControlledTdg<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/U2Op.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveU2OpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"U2", MQT_NAMED_BUILDER(qc::u2),
-                                MQT_NAMED_BUILDER(qir::u2)},
-        QCToQIRAdaptiveTestCase{"SingleControlledU2",
-                                MQT_NAMED_BUILDER(qc::singleControlledU2),
-                                MQT_NAMED_BUILDER(qir::singleControlledU2)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledU2",
-                                MQT_NAMED_BUILDER(qc::multipleControlledU2),
-                                MQT_NAMED_BUILDER(qir::multipleControlledU2)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"U2", MQT_NAMED_BUILDER(qc::u2),
+                                            MQT_NAMED_BUILDER(qir::u2<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledU2",
+                        MQT_NAMED_BUILDER(qc::singleControlledU2),
+                        MQT_NAMED_BUILDER(qir::singleControlledU2<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledU2",
+                        MQT_NAMED_BUILDER(qc::multipleControlledU2),
+                        MQT_NAMED_BUILDER(qir::multipleControlledU2<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/UOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveUOpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"U", MQT_NAMED_BUILDER(qc::u),
-                                MQT_NAMED_BUILDER(qir::u)},
-        QCToQIRAdaptiveTestCase{"SingleControlledU",
-                                MQT_NAMED_BUILDER(qc::singleControlledU),
-                                MQT_NAMED_BUILDER(qir::singleControlledU)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledU",
-                                MQT_NAMED_BUILDER(qc::multipleControlledU),
-                                MQT_NAMED_BUILDER(qir::multipleControlledU)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"U", MQT_NAMED_BUILDER(qc::u),
+                                            MQT_NAMED_BUILDER(qir::u<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledU",
+                        MQT_NAMED_BUILDER(qc::singleControlledU),
+                        MQT_NAMED_BUILDER(qir::singleControlledU<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledU",
+                        MQT_NAMED_BUILDER(qc::multipleControlledU),
+                        MQT_NAMED_BUILDER(qir::multipleControlledU<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/XOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveXOpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"X", MQT_NAMED_BUILDER(qc::x),
-                                MQT_NAMED_BUILDER(qir::x)},
-        QCToQIRAdaptiveTestCase{"SingleControlledX",
-                                MQT_NAMED_BUILDER(qc::singleControlledX),
-                                MQT_NAMED_BUILDER(qir::singleControlledX)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledX",
-                                MQT_NAMED_BUILDER(qc::multipleControlledX),
-                                MQT_NAMED_BUILDER(qir::multipleControlledX)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"X", MQT_NAMED_BUILDER(qc::x),
+                                            MQT_NAMED_BUILDER(qir::x<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledX",
+                        MQT_NAMED_BUILDER(qc::singleControlledX),
+                        MQT_NAMED_BUILDER(qir::singleControlledX<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledX",
+                        MQT_NAMED_BUILDER(qc::multipleControlledX),
+                        MQT_NAMED_BUILDER(qir::multipleControlledX<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/XxMinusYyOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveXXMinusYYOpTest, QCToQIRAdaptiveTest,
-    testing::Values(QCToQIRAdaptiveTestCase{"XXMinusYY",
-                                            MQT_NAMED_BUILDER(qc::xxMinusYY),
-                                            MQT_NAMED_BUILDER(qir::xxMinusYY)},
-                    QCToQIRAdaptiveTestCase{
-                        "SingleControlledXXMinusYY",
-                        MQT_NAMED_BUILDER(qc::singleControlledXxMinusYY),
-                        MQT_NAMED_BUILDER(qir::singleControlledXxMinusYY)},
-                    QCToQIRAdaptiveTestCase{
-                        "MultipleControlledXXMinusYY",
-                        MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY),
-                        MQT_NAMED_BUILDER(qir::multipleControlledXxMinusYY)}));
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"XXMinusYY", MQT_NAMED_BUILDER(qc::xxMinusYY),
+                                MQT_NAMED_BUILDER(qir::xxMinusYY<true>)},
+        QCToQIRAdaptiveTestCase{
+            "SingleControlledXXMinusYY",
+            MQT_NAMED_BUILDER(qc::singleControlledXxMinusYY),
+            MQT_NAMED_BUILDER(qir::singleControlledXxMinusYY<true>)},
+        QCToQIRAdaptiveTestCase{
+            "MultipleControlledXXMinusYY",
+            MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY),
+            MQT_NAMED_BUILDER(qir::multipleControlledXxMinusYY<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/XxPlusYyOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveXXPlusYYOpTest, QCToQIRAdaptiveTest,
-    testing::Values(QCToQIRAdaptiveTestCase{"XXPlusYY",
-                                            MQT_NAMED_BUILDER(qc::xxPlusYY),
-                                            MQT_NAMED_BUILDER(qir::xxPlusYY)},
-                    QCToQIRAdaptiveTestCase{
-                        "SingleControlledXXPlusYY",
-                        MQT_NAMED_BUILDER(qc::singleControlledXxPlusYY),
-                        MQT_NAMED_BUILDER(qir::singleControlledXxPlusYY)},
-                    QCToQIRAdaptiveTestCase{
-                        "MultipleControlledXXPlusYY",
-                        MQT_NAMED_BUILDER(qc::multipleControlledXxPlusYY),
-                        MQT_NAMED_BUILDER(qir::multipleControlledXxPlusYY)}));
+    testing::Values(
+        QCToQIRAdaptiveTestCase{"XXPlusYY", MQT_NAMED_BUILDER(qc::xxPlusYY),
+                                MQT_NAMED_BUILDER(qir::xxPlusYY<true>)},
+        QCToQIRAdaptiveTestCase{
+            "SingleControlledXXPlusYY",
+            MQT_NAMED_BUILDER(qc::singleControlledXxPlusYY),
+            MQT_NAMED_BUILDER(qir::singleControlledXxPlusYY<true>)},
+        QCToQIRAdaptiveTestCase{
+            "MultipleControlledXXPlusYY",
+            MQT_NAMED_BUILDER(qc::multipleControlledXxPlusYY),
+            MQT_NAMED_BUILDER(qir::multipleControlledXxPlusYY<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/YOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveYOpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"Y", MQT_NAMED_BUILDER(qc::y),
-                                MQT_NAMED_BUILDER(qir::y)},
-        QCToQIRAdaptiveTestCase{"SingleControlledY",
-                                MQT_NAMED_BUILDER(qc::singleControlledY),
-                                MQT_NAMED_BUILDER(qir::singleControlledY)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledY",
-                                MQT_NAMED_BUILDER(qc::multipleControlledY),
-                                MQT_NAMED_BUILDER(qir::multipleControlledY)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"Y", MQT_NAMED_BUILDER(qc::y),
+                                            MQT_NAMED_BUILDER(qir::y<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledY",
+                        MQT_NAMED_BUILDER(qc::singleControlledY),
+                        MQT_NAMED_BUILDER(qir::singleControlledY<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledY",
+                        MQT_NAMED_BUILDER(qc::multipleControlledY),
+                        MQT_NAMED_BUILDER(qir::multipleControlledY<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/StandardGates/ZOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveZOpTest, QCToQIRAdaptiveTest,
-    testing::Values(
-        QCToQIRAdaptiveTestCase{"Z", MQT_NAMED_BUILDER(qc::z),
-                                MQT_NAMED_BUILDER(qir::z)},
-        QCToQIRAdaptiveTestCase{"SingleControlledZ",
-                                MQT_NAMED_BUILDER(qc::singleControlledZ),
-                                MQT_NAMED_BUILDER(qir::singleControlledZ)},
-        QCToQIRAdaptiveTestCase{"MultipleControlledZ",
-                                MQT_NAMED_BUILDER(qc::multipleControlledZ),
-                                MQT_NAMED_BUILDER(qir::multipleControlledZ)}));
+    testing::Values(QCToQIRAdaptiveTestCase{"Z", MQT_NAMED_BUILDER(qc::z),
+                                            MQT_NAMED_BUILDER(qir::z<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "SingleControlledZ",
+                        MQT_NAMED_BUILDER(qc::singleControlledZ),
+                        MQT_NAMED_BUILDER(qir::singleControlledZ<true>)},
+                    QCToQIRAdaptiveTestCase{
+                        "MultipleControlledZ",
+                        MQT_NAMED_BUILDER(qc::multipleControlledZ),
+                        MQT_NAMED_BUILDER(qir::multipleControlledZ<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/MeasureOp.cpp
@@ -606,6 +1641,14 @@ INSTANTIATE_TEST_SUITE_P(
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(qir::multipleClassicalRegistersAndMeasurements)},
         QCToQIRAdaptiveTestCase{
+            "PartialMeasurementToRegister",
+            MQT_NAMED_BUILDER(qc::partialMeasurementToRegister),
+            MQT_NAMED_BUILDER(qir::partialMeasurementToRegister)},
+        QCToQIRAdaptiveTestCase{
+            "DynamicallyIndexedMeasurement",
+            MQT_NAMED_BUILDER(qc::dynamicallyIndexedMeasurement),
+            MQT_NAMED_BUILDER(qir::dynamicallyIndexedMeasurement)},
+        QCToQIRAdaptiveTestCase{
             "MeasurementWithoutRegisters",
             MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
             MQT_NAMED_BUILDER(qir::measurementWithoutRegisters)}));
@@ -616,28 +1659,29 @@ INSTANTIATE_TEST_SUITE_P(
 INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveResetOpTest, QCToQIRAdaptiveTest,
     testing::Values(
-        QCToQIRAdaptiveTestCase{"ResetQubitWithoutOp",
-                                MQT_NAMED_BUILDER(qc::resetQubitWithoutOp),
-                                MQT_NAMED_BUILDER(qir::resetQubitWithoutOp)},
+        QCToQIRAdaptiveTestCase{
+            "ResetQubitWithoutOp", MQT_NAMED_BUILDER(qc::resetQubitWithoutOp),
+            MQT_NAMED_BUILDER(qir::resetQubitWithoutOp<true>)},
         QCToQIRAdaptiveTestCase{
             "ResetMultipleQubitsWithoutOp",
             MQT_NAMED_BUILDER(qc::resetMultipleQubitsWithoutOp),
-            MQT_NAMED_BUILDER(qir::resetMultipleQubitsWithoutOp)},
-        QCToQIRAdaptiveTestCase{"RepeatedResetWithoutOp",
-                                MQT_NAMED_BUILDER(qc::repeatedResetWithoutOp),
-                                MQT_NAMED_BUILDER(qir::repeatedResetWithoutOp)},
+            MQT_NAMED_BUILDER(qir::resetMultipleQubitsWithoutOp<true>)},
+        QCToQIRAdaptiveTestCase{
+            "RepeatedResetWithoutOp",
+            MQT_NAMED_BUILDER(qc::repeatedResetWithoutOp),
+            MQT_NAMED_BUILDER(qir::repeatedResetWithoutOp<true>)},
         QCToQIRAdaptiveTestCase{
             "ResetQubitAfterSingleOp",
             MQT_NAMED_BUILDER(qc::resetQubitAfterSingleOp),
-            MQT_NAMED_BUILDER(qir::resetQubitAfterSingleOp)},
+            MQT_NAMED_BUILDER(qir::resetQubitAfterSingleOp<true>)},
         QCToQIRAdaptiveTestCase{
             "ResetMultipleQubitsAfterSingleOp",
             MQT_NAMED_BUILDER(qc::resetMultipleQubitsAfterSingleOp),
-            MQT_NAMED_BUILDER(qir::resetMultipleQubitsAfterSingleOp)},
+            MQT_NAMED_BUILDER(qir::resetMultipleQubitsAfterSingleOp<true>)},
         QCToQIRAdaptiveTestCase{
             "RepeatedResetAfterSingleOp",
             MQT_NAMED_BUILDER(qc::repeatedResetAfterSingleOp),
-            MQT_NAMED_BUILDER(qir::repeatedResetAfterSingleOp)}));
+            MQT_NAMED_BUILDER(qir::repeatedResetAfterSingleOp<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/QubitManagement/QubitManagement.cpp
@@ -646,24 +1690,24 @@ INSTANTIATE_TEST_SUITE_P(
     QCToQIRAdaptiveQubitManagementTest, QCToQIRAdaptiveTest,
     testing::Values(
         QCToQIRAdaptiveTestCase{"AllocQubit", MQT_NAMED_BUILDER(qc::allocQubit),
-                                MQT_NAMED_BUILDER(qir::emptyQIR)},
-        QCToQIRAdaptiveTestCase{"AllocQubitRegister",
-                                MQT_NAMED_BUILDER(qc::allocQubitRegister),
-                                MQT_NAMED_BUILDER(qir::emptyQIR)},
+                                MQT_NAMED_BUILDER(qir::allocQubit<true>)},
+        QCToQIRAdaptiveTestCase{
+            "AllocQubitRegister", MQT_NAMED_BUILDER(qc::allocQubitRegister),
+            MQT_NAMED_BUILDER(qir::allocQubitRegister<true>)},
         QCToQIRAdaptiveTestCase{
             "AllocMultipleQubitRegisters",
             MQT_NAMED_BUILDER(qc::allocMultipleQubitRegisters),
-            MQT_NAMED_BUILDER(qir::emptyQIR)},
+            MQT_NAMED_BUILDER(qir::allocMultipleQubitRegisters<true>)},
         QCToQIRAdaptiveTestCase{
             "AllocMultipleQubitRegistersWithOps",
             MQT_NAMED_BUILDER(qc::allocMultipleQubitRegistersWithOps),
-            MQT_NAMED_BUILDER(qir::allocMultipleQubitRegistersWithOps)},
-        QCToQIRAdaptiveTestCase{"AllocLargeRegister",
-                                MQT_NAMED_BUILDER(qc::allocLargeRegister),
-                                MQT_NAMED_BUILDER(qir::emptyQIR)},
+            MQT_NAMED_BUILDER(qir::allocMultipleQubitRegistersWithOps<true>)},
+        QCToQIRAdaptiveTestCase{
+            "AllocLargeRegister", MQT_NAMED_BUILDER(qc::allocLargeRegister),
+            MQT_NAMED_BUILDER(qir::allocQubitRegister<true>)},
         QCToQIRAdaptiveTestCase{"StaticQubits",
                                 MQT_NAMED_BUILDER(qc::staticQubits),
-                                MQT_NAMED_BUILDER(qir::emptyQIR)},
+                                MQT_NAMED_BUILDER(qir::staticQubits)},
         QCToQIRAdaptiveTestCase{"StaticQubitsWithOps",
                                 MQT_NAMED_BUILDER(qc::staticQubitsWithOps),
                                 MQT_NAMED_BUILDER(qir::staticQubitsWithOps)},
@@ -683,7 +1727,7 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(qir::staticQubitsWithInv)},
         QCToQIRAdaptiveTestCase{"AllocDeallocPair",
                                 MQT_NAMED_BUILDER(qc::allocDeallocPair),
-                                MQT_NAMED_BUILDER(qir::emptyQIR)}));
+                                MQT_NAMED_BUILDER(qir::emptyQIR<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/IfOp.cpp
@@ -698,9 +1742,14 @@ INSTANTIATE_TEST_SUITE_P(
                                 MQT_NAMED_BUILDER(qir::ifTwoQubits)},
         QCToQIRAdaptiveTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
                                 MQT_NAMED_BUILDER(qir::ifElse)},
-        QCToQIRAdaptiveTestCase{"NestedIfOpForLoop",
-                                MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
-                                MQT_NAMED_BUILDER(qir::nestedIfOpForLoop)}));
+        QCToQIRAdaptiveTestCase{"IfWithMeasurement",
+                                MQT_NAMED_BUILDER(qc::ifWithMeasurement),
+                                MQT_NAMED_BUILDER(qir::ifWithMeasurement)},
+        QCToQIRAdaptiveTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qc::ifWithCreg),
+                                MQT_NAMED_BUILDER(qir::ifWithCreg)},
+        QCToQIRAdaptiveTestCase{
+            "NestedIfOpForLoop", MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
+            MQT_NAMED_BUILDER(qir::nestedIfOpForLoop<true>)}));
 /// @}
 
 /// \name QCToQIRAdaptive/Operations/WhileOp.cpp
@@ -710,10 +1759,10 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCToQIRAdaptiveTestCase{"SimpleWhile",
                                 MQT_NAMED_BUILDER(qc::simpleWhileReset),
-                                MQT_NAMED_BUILDER(qir::simpleWhileReset)},
-        QCToQIRAdaptiveTestCase{"SimpleDoWhile",
-                                MQT_NAMED_BUILDER(qc::simpleDoWhileReset),
-                                MQT_NAMED_BUILDER(qir::simpleDoWhileReset)}));
+                                MQT_NAMED_BUILDER(qir::simpleWhileReset<true>)},
+        QCToQIRAdaptiveTestCase{
+            "SimpleDoWhile", MQT_NAMED_BUILDER(qc::simpleDoWhileReset),
+            MQT_NAMED_BUILDER(qir::simpleDoWhileReset<true>)}));
 
 /// \name QCToQIRAdaptive/Operations/ForOp.cpp
 /// @{
@@ -722,26 +1771,27 @@ INSTANTIATE_TEST_SUITE_P(
     testing::Values(
         QCToQIRAdaptiveTestCase{"SimpleForLoop",
                                 MQT_NAMED_BUILDER(qc::simpleForLoop),
-                                MQT_NAMED_BUILDER(qir::simpleForLoop)},
-        QCToQIRAdaptiveTestCase{"NestedForLoopIfOp",
-                                MQT_NAMED_BUILDER(qc::nestedForLoopIfOp),
-                                MQT_NAMED_BUILDER(qir::nestedForLoopIfOp)},
-        QCToQIRAdaptiveTestCase{"NestedForLoopWhileOp",
-                                MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
-                                MQT_NAMED_BUILDER(qir::nestedForLoopWhileOp)},
+                                MQT_NAMED_BUILDER(qir::simpleForLoop<true>)},
         QCToQIRAdaptiveTestCase{
-            "nestedForLoopCtrlOpWithSeparateQubit",
+            "NestedForLoopIfOp", MQT_NAMED_BUILDER(qc::nestedForLoopIfOp),
+            MQT_NAMED_BUILDER(qir::nestedForLoopIfOp<true>)},
+        QCToQIRAdaptiveTestCase{
+            "NestedForLoopWhileOp", MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
+            MQT_NAMED_BUILDER(qir::nestedForLoopWhileOp<true>)},
+        QCToQIRAdaptiveTestCase{
+            "NestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit),
-            MQT_NAMED_BUILDER(qir::nestedForLoopCtrlOpWithSeparateQubit)},
+            MQT_NAMED_BUILDER(qir::nestedForLoopCtrlOpWithSeparateQubit<true>)},
         QCToQIRAdaptiveTestCase{
-            "nestedForLoopCtrlOpWithExtractedQubit",
+            "NestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit),
-            MQT_NAMED_BUILDER(qir::nestedForLoopCtrlOpWithExtractedQubit)}));
+            MQT_NAMED_BUILDER(
+                qir::nestedForLoopCtrlOpWithExtractedQubit<true>)}));
 
 /// \name QCToQIRAdaptive/Modifiers/CtrlOp.cpp
 /// @{
 INSTANTIATE_TEST_SUITE_P(QCToQIRCtrlOpTest, QCToQIRAdaptiveTest,
                          testing::Values(QCToQIRAdaptiveTestCase{
-                             "NestedCtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
-                             MQT_NAMED_BUILDER(qir::ctrlTwo)}));
+                             "CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
+                             MQT_NAMED_BUILDER(qir::ctrlTwo<true>)}));
 /// @}

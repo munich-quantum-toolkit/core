@@ -1,90 +1,66 @@
-; ModuleID = 'bell'
-source_filename = "bell"
+; ModuleID = 'ghz4-dynamic'
+source_filename = "GHZ4Dynamic.ll"
 
-%Qubit = type opaque
-%Result = type opaque
-%Array = type opaque
+@results_label = internal constant [8 x i8] c"results\00"
 
-@0 = internal constant [3 x i8] c"r0\00"
-@1 = internal constant [3 x i8] c"r1\00"
-@2 = internal constant [3 x i8] c"r2\00"
-@3 = internal constant [3 x i8] c"r3\00"
-
-define i32 @main() #0 {
+define i64 @main() #0 {
 entry:
+  %qubits = alloca [4 x ptr], align 8
+  %results = alloca [4 x ptr], align 8
   call void @__quantum__rt__initialize(ptr null)
-  %q = call ptr @__quantum__rt__qubit_allocate_array(i64 4)
-  %a0 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %q, i64 0)
-  %q0 = load ptr, ptr %a0, align 8
-  %a1 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %q, i64 1)
-  %q1 = load ptr, ptr %a1, align 8
-  %a2 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %q, i64 2)
-  %q2 = load ptr, ptr %a2, align 8
-  %a3 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %q, i64 3)
-  %q3 = load ptr, ptr %a3, align 8
+  call void @__quantum__rt__qubit_array_allocate(i64 4, ptr %qubits, ptr null)
+  call void @__quantum__rt__result_array_allocate(i64 4, ptr %results, ptr null)
+
+  %q0.slot = getelementptr inbounds [4 x ptr], ptr %qubits, i64 0, i64 0
+  %q1.slot = getelementptr inbounds [4 x ptr], ptr %qubits, i64 0, i64 1
+  %q2.slot = getelementptr inbounds [4 x ptr], ptr %qubits, i64 0, i64 2
+  %q3.slot = getelementptr inbounds [4 x ptr], ptr %qubits, i64 0, i64 3
+  %q0 = load ptr, ptr %q0.slot, align 8
+  %q1 = load ptr, ptr %q1.slot, align 8
+  %q2 = load ptr, ptr %q2.slot, align 8
+  %q3 = load ptr, ptr %q3.slot, align 8
+
   call void @__quantum__qis__h__body(ptr %q0)
   call void @__quantum__qis__cnot__body(ptr %q0, ptr %q1)
   call void @__quantum__qis__cnot__body(ptr %q1, ptr %q2)
   call void @__quantum__qis__cnot__body(ptr %q2, ptr %q3)
-  %r0 = call ptr @__quantum__qis__m__body(ptr %q0)
-  %r1 = call ptr @__quantum__qis__m__body(ptr %q1)
-  %r2 = call ptr @__quantum__qis__m__body(ptr %q2)
-  %r3 = call ptr @__quantum__qis__m__body(ptr %q3)
-  call void @__quantum__rt__qubit_release_array(ptr %q)
-  %r = call ptr @__quantum__rt__array_create_1d(i32 8, i64 4)
-  %b0 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %r, i64 0)
-  store ptr %r0, ptr %b0, align 8
-  %b1 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %r, i64 0)
-  store ptr %r1, ptr %b1, align 8
-  %b2 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %r, i64 0)
-  store ptr %r2, ptr %b2, align 8
-  %b3 = call ptr @__quantum__rt__array_get_element_ptr_1d(ptr %r, i64 0)
-  store ptr %r3, ptr %b3, align 8
-  %o0 = load ptr, ptr %b0, align 8
-  call void @__quantum__rt__result_record_output(ptr %o0, ptr @0)
-  %o1 = load ptr, ptr %b1, align 8
-  call void @__quantum__rt__result_record_output(ptr %o1, ptr @1)
-  %o2 = load ptr, ptr %b2, align 8
-  call void @__quantum__rt__result_record_output(ptr %o2, ptr @2)
-  %o3 = load ptr, ptr %b3, align 8
-  call void @__quantum__rt__result_record_output(ptr %o3, ptr @3)
-  call void @__quantum__rt__array_update_reference_count(ptr %r, i32 -1)
-  call void @__quantum__rt__result_update_reference_count(%Result* %o0, i32 -1)
-  call void @__quantum__rt__result_update_reference_count(%Result* %o1, i32 -1)
-  call void @__quantum__rt__result_update_reference_count(%Result* %o2, i32 -1)
-  call void @__quantum__rt__result_update_reference_count(%Result* %o3, i32 -1)
-  ret i32 0
+
+  %r0.slot = getelementptr inbounds [4 x ptr], ptr %results, i64 0, i64 0
+  %r1.slot = getelementptr inbounds [4 x ptr], ptr %results, i64 0, i64 1
+  %r2.slot = getelementptr inbounds [4 x ptr], ptr %results, i64 0, i64 2
+  %r3.slot = getelementptr inbounds [4 x ptr], ptr %results, i64 0, i64 3
+  %r0 = load ptr, ptr %r0.slot, align 8
+  %r1 = load ptr, ptr %r1.slot, align 8
+  %r2 = load ptr, ptr %r2.slot, align 8
+  %r3 = load ptr, ptr %r3.slot, align 8
+  call void @__quantum__qis__mz__body(ptr %q0, ptr %r0)
+  call void @__quantum__qis__mz__body(ptr %q1, ptr %r1)
+  call void @__quantum__qis__mz__body(ptr %q2, ptr %r2)
+  call void @__quantum__qis__mz__body(ptr %q3, ptr %r3)
+
+  call void @__quantum__rt__result_array_record_output(i64 4, ptr %results, ptr @results_label)
+  call void @__quantum__rt__result_array_release(i64 4, ptr %results)
+  call void @__quantum__rt__qubit_array_release(i64 4, ptr %qubits)
+  ret i64 0
 }
 
-declare void @__quantum__qis__h__body(ptr)
-
-declare void @__quantum__qis__cnot__body(ptr, ptr)
-
-declare ptr @__quantum__qis__m__body(ptr) #1
-
 declare void @__quantum__rt__initialize(ptr)
+declare void @__quantum__rt__qubit_array_allocate(i64, ptr, ptr)
+declare void @__quantum__rt__qubit_array_release(i64, ptr)
+declare void @__quantum__rt__result_array_allocate(i64, ptr, ptr)
+declare void @__quantum__rt__result_array_release(i64, ptr)
+declare void @__quantum__rt__result_array_record_output(i64, ptr, ptr)
+declare void @__quantum__qis__h__body(ptr)
+declare void @__quantum__qis__cnot__body(ptr, ptr)
+declare void @__quantum__qis__mz__body(ptr, ptr writeonly) #1
 
-declare ptr @__quantum__rt__qubit_allocate_array(i64)
-
-declare ptr @__quantum__rt__array_create_1d(i32, i64)
-
-declare ptr @__quantum__rt__array_get_element_ptr_1d(ptr, i64)
-
-declare void @__quantum__rt__qubit_release_array(ptr)
-
-declare void @__quantum__rt__array_update_reference_count(ptr, i32)
-
-declare void @__quantum__rt__result_record_output(ptr, ptr)
-
-declare void @__quantum__rt__result_update_reference_count(%Result*, i32)
-
-
-attributes #0 = { "entry_point" "output_labeling_schema" "qir_profiles"="custom" "required_num_qubits"="4" "required_num_results"="4" }
+attributes #0 = { "entry_point" "output_labeling_schema"="labeled" "qir_profiles"="adaptive_profile" }
 attributes #1 = { "irreversible" }
 
-!llvm.module.flags = !{!0, !1, !2, !3}
+!llvm.module.flags = !{!0, !1, !2, !3, !4}
 
 !0 = !{i32 1, !"qir_major_version", i32 2}
 !1 = !{i32 7, !"qir_minor_version", i32 1}
-!2 = !{i32 1, !"dynamic_qubit_management", i1 false}
-!3 = !{i32 1, !"dynamic_result_management", i1 false}
+!2 = !{i32 1, !"dynamic_qubit_management", i1 true}
+!3 = !{i32 1, !"dynamic_result_management", i1 true}
+!4 = !{i32 1, !"arrays", i1 true}

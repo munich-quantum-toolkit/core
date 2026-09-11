@@ -8,39 +8,23 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <numbers>
 
 using namespace mlir;
 using namespace mlir::qco;
 
-namespace {
-
-/**
- * @brief Remove subsequent H operations on the same qubit.
- */
-struct RemoveSubsequentH final : OpRewritePattern<HOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(HOp op,
-                                PatternRewriter& rewriter) const override {
-    return removeInversePairOneTargetZeroParameter<HOp>(op, rewriter);
-  }
-};
-
-} // namespace
-
 void HOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                      MLIRContext* context) {
-  results.add<RemoveSubsequentH>(context);
+                                      MLIRContext* /*context*/) {
+  results.add(&removeInversePairOneTargetZeroParameter<HOp, HOp>);
 }
 
 Matrix2x2 HOp::getUnitaryMatrix() {

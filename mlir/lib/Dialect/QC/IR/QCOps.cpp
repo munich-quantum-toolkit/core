@@ -8,55 +8,84 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include "mlir/Dialect/QC/IR/QCDialect.h" // IWYU pragma: associated
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h" // IWYU pragma: associated
 
-#include <mlir/IR/OpImplementation.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/Region.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep (template instantiations)
+#include "mlir/IR/OpImplementation.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/InliningUtils.h"
 
-// The following headers are needed for some template instantiations.
-// IWYU pragma: begin_keep
-#include <llvm/ADT/TypeSwitch.h>
-#include <mlir/IR/DialectImplementation.h>
-// IWYU pragma: end_keep
+#include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep (template instantiations)
 
 using namespace mlir;
 using namespace mlir::qc;
 
+namespace {
+
+struct QCInlinerInterface final : DialectInlinerInterface {
+  using DialectInlinerInterface::DialectInlinerInterface;
+
+  bool isLegalToInline(Operation* call, Operation* callable,
+                       bool /*wouldBeCloned*/) const final {
+    auto callee = dyn_cast<func::FuncOp>(callable);
+    return isa<CallOp>(call) && callee && !callee.getNoInline();
+  }
+
+  bool isLegalToInline(Region* destination, Region* source,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return destination->hasOneBlock() && source->hasOneBlock();
+  }
+
+  bool isLegalToInline(Operation* /*operation*/, Region* /*destination*/,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return true;
+  }
+};
+
+} // namespace
+
 static ParseResult
 parseTargetAliasing(OpAsmParser& parser, Region& region,
                     SmallVectorImpl<OpAsmParser::UnresolvedOperand>& operands) {
-  return utils::parseTargetAliasing<QubitType>(parser, region, operands);
+  return mqt::parseTargetAliasing<QubitType>(parser, region, operands);
 }
 
 static void printTargetAliasing(OpAsmPrinter& printer, Operation* /*op*/,
                                 Region& region, OperandRange targetsIn) {
-  utils::printTargetAliasing(printer, region, targetsIn);
+  mqt::printTargetAliasing(printer, region, targetsIn);
 }
 
 //===----------------------------------------------------------------------===//
 // Dialect
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/QC/IR/QCOpsDialect.cpp.inc"
+#include "mqt/Dialect/QC/IR/QCOpsDialect.cpp.inc"
 
 void QCDialect::initialize() {
+  addInterfaces<QCInlinerInterface>();
+
   // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   addTypes<
 #define GET_TYPEDEF_LIST
-#include "mlir/Dialect/QC/IR/QCOpsTypes.cpp.inc"
+#include "mqt/Dialect/QC/IR/QCOpsTypes.cpp.inc"
 
       >();
 
   addOperations<
 #define GET_OP_LIST
-#include "mlir/Dialect/QC/IR/QCOps.cpp.inc"
+#include "mqt/Dialect/QC/IR/QCOps.cpp.inc"
 
       >();
 }
@@ -66,17 +95,22 @@ void QCDialect::initialize() {
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/QC/IR/QCOpsTypes.cpp.inc"
+#include "mqt/Dialect/QC/IR/QCOpsTypes.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // Interfaces
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/QC/IR/QCInterfaces.cpp.inc"
+LogicalResult mlir::qc::verifyUnitaryOpInterface(Operation* op) {
+  return mqt::verifyFiniteConstantParameters(
+      op, cast<UnitaryOpInterface>(op).getParameters());
+}
+
+#include "mqt/Dialect/QC/IR/QCInterfaces.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/QC/IR/QCOps.cpp.inc"
+#include "mqt/Dialect/QC/IR/QCOps.cpp.inc"

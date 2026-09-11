@@ -12,6 +12,8 @@ endif()
 
 function(mqt_mlir_apply_target_options target_name)
   target_link_libraries(${target_name} PRIVATE MQT::ProjectOptions)
+  llvm_update_compile_flags(${target_name})
+  mqt_llvm_target_disable_rtti(${target_name})
 
   include(CheckCXXCompilerFlag)
   check_cxx_compiler_flag("-Wno-cast-qual" COMPILER_SUPPORTS_WNO_CAST_QUAL)
@@ -36,7 +38,29 @@ function(mqt_mlir_target_use_project_options target_name)
 endfunction()
 
 # add main library code
+add_subdirectory(bench)
 add_subdirectory(include)
+
+# Prepare generated headers for clang-tidy without compiling or linking the project.
+add_dependencies(
+  mqt-core-lint-headers
+  mlir-headers
+  mlir-generic-headers
+  MLIRJeffEnumsIncGen
+  JeffToNativeIncGen
+  NativeToJeffIncGen
+  JeffToQCOIncGen
+  CBitToMemRefIncGen
+  QCOToJeffIncGen
+  QCOToQCIncGen
+  QCToQCOIncGen
+  QCToQIRAdaptiveIncGen
+  QCToQIRBaseIncGen
+  MLIRMQTTransformsIncGen
+  MLIRQCTransformsIncGen
+  MLIRQCOTransformsIncGen
+  MLIRQIRTransformsIncGen
+  MLIRQTensorTransformsIncGen)
 add_subdirectory(lib)
 add_subdirectory(tools)
 

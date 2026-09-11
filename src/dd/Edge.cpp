@@ -16,7 +16,6 @@
 #include "dd/MemoryManager.hpp"
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
-#include "ir/Definitions.hpp"
 
 #include <algorithm>
 #include <array>
@@ -27,8 +26,11 @@
 #include <functional>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <optional>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <utility>
 
@@ -42,9 +44,20 @@ template <class Node>
 auto Edge<Node>::getValueByPath(const std::size_t numQubits,
                                 const std::string& decisions) const
     -> std::complex<fp> {
+  if (decisions.size() < numQubits) {
+    throw std::out_of_range(
+        "Decision path is shorter than the number of qubits.");
+  }
+  const auto path = std::string_view(decisions).substr(0, numQubits);
+  if (path.find_first_not_of(IsVector<Node> ? "01" : "0123") !=
+      std::string_view::npos) {
+    throw std::invalid_argument("Decision path contains an invalid digit.");
+  }
   auto c = static_cast<std::complex<fp>>(w);
-  if (isTerminal()) {
-    return c;
+  if constexpr (IsVector<Node>) {
+    if (isTerminal()) {
+      return c;
+    }
   }
 
   auto r = *this;
@@ -71,8 +84,13 @@ auto Edge<Node>::getValueByPath(const std::size_t numQubits,
 }
 
 template <class Node> auto Edge<Node>::size() const -> std::size_t {
+  if (isTerminal()) {
+    return 1U;
+  }
   static constexpr std::size_t NODECOUNT_BUCKETS = 200000U;
-  static std::unordered_set<const Node*> visited{NODECOUNT_BUCKETS};
+  static thread_local std::unordered_set<const Node*> visited{
+      NODECOUNT_BUCKETS,
+  };
   visited.max_load_factor(10);
   visited.clear();
   return size(visited);
@@ -145,8 +163,10 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
     return r;
   }
 
-  const auto weights = std::array{static_cast<ComplexValue>(e[0].w),
-                                  static_cast<ComplexValue>(e[1].w)};
+  const auto weights = std::array{
+      static_cast<ComplexValue>(e[0].w),
+      static_cast<ComplexValue>(e[1].w),
+  };
 
   const auto mag2 = std::array{weights[0].mag2(), weights[1].mag2()};
 
@@ -169,11 +189,7 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
   vEdge r = {p, cn.lookup(topWeight)};
   assert(!r.w.exactlyZero() && "Top edge weight should not be zero.");
 
-  // In theory, the more efficient computation here would be
-  //              weights[argMin] / topWeight
-  // However, the lookup of the top weight can slightly change its value.
-  // Therefore, we use the following computation instead, which accounts for the
-  // potential difference (at the cost of a Complex->ComplexValue conversion).
+  /// Lookup can round the top weight; normalize against the stored value.
   const auto minWeight = weights[argMin] / r.w;
   auto& min = p->e[argMin];
   min.w = cn.lookup(minWeight);
@@ -190,20 +206,21 @@ template <class Node>
 auto Edge<Node>::getValueByIndex(const std::size_t i) const -> std::complex<fp>
   requires IsVector<Node>
 {
-  auto bitwidth = static_cast<Qubit>(std::log2(i + 1U));
-
-  if (!isTerminal()) {
-    bitwidth = std::max(bitwidth, static_cast<Qubit>(p->v + 1U));
+  const auto numQubits = isTerminal() ? 0U : static_cast<size_t>(p->v) + 1U;
+  if (numQubits < std::numeric_limits<size_t>::digits &&
+      (i >> numQubits) != 0U) {
+    throw std::out_of_range("Vector index is out of range.");
   }
-
-  auto decisions = std::string(bitwidth, '0');
-  for (auto j = 0U; j < bitwidth; ++j) {
-    if ((i & (1ULL << j)) != 0U) {
-      decisions[j] = '1';
-    }
+  auto edge = *this;
+  auto amplitude = static_cast<std::complex<fp>>(edge.w);
+  while (!edge.isTerminal()) {
+    const auto q = edge.p->v;
+    const auto bit =
+        q < std::numeric_limits<size_t>::digits ? (i >> q) & 1U : 0U;
+    edge = edge.p->e[bit];
+    amplitude *= static_cast<std::complex<fp>>(edge.w);
   }
-
-  return getValueByPath(bitwidth, decisions);
+  return amplitude;
 }
 
 template <class Node>
@@ -281,14 +298,13 @@ auto Edge<Node>::addToVector(CVec& amplitudes) const -> void
 
 template <class Node>
 void Edge<Node>::traverseVector(const std::complex<fp>& amp,
-                                const std::size_t i, AmplitudeFunc f,
+                                const std::size_t i, const AmplitudeFunc& f,
                                 const fp threshold) const
   requires IsVector<Node>
 {
-  // calculate new accumulated amplitude
   const auto c = amp * static_cast<std::complex<fp>>(w);
 
-  if (std::abs(c) < threshold) {
+  if (threshold > 0. && std::abs(c) < threshold) {
     return;
   }
 
@@ -315,8 +331,12 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
   requires IsMatrix<Node>
 {
   assert(p != nullptr && "Node pointer passed to normalize is null.");
-  const auto zero = std::array{e[0].w.exactlyZero(), e[1].w.exactlyZero(),
-                               e[2].w.exactlyZero(), e[3].w.exactlyZero()};
+  const auto zero = std::array{
+      e[0].w.exactlyZero(),
+      e[1].w.exactlyZero(),
+      e[2].w.exactlyZero(),
+      e[3].w.exactlyZero(),
+  };
 
   if (std::all_of(zero.begin(), zero.end(), [](auto b) { return b; })) {
     mm.returnEntry(*p);
@@ -324,8 +344,11 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, NEDGE>& e,
   }
 
   const auto weights = std::array{
-      static_cast<ComplexValue>(e[0].w), static_cast<ComplexValue>(e[1].w),
-      static_cast<ComplexValue>(e[2].w), static_cast<ComplexValue>(e[3].w)};
+      static_cast<ComplexValue>(e[0].w),
+      static_cast<ComplexValue>(e[1].w),
+      static_cast<ComplexValue>(e[2].w),
+      static_cast<ComplexValue>(e[3].w),
+  };
 
   std::optional<std::size_t> argMax = std::nullopt;
   fp maxMag2 = 0.;
@@ -375,27 +398,32 @@ auto Edge<Node>::getValueByIndex(const std::size_t numQubits,
     -> std::complex<fp>
   requires IsMatrix<Node>
 {
+  if (numQubits < std::numeric_limits<size_t>::digits &&
+      ((i >> numQubits) != 0U || (j >> numQubits) != 0U)) {
+    throw std::out_of_range("Matrix index is out of range.");
+  }
   if (isTerminal()) {
-    return static_cast<std::complex<fp>>(w);
+    return i == j ? static_cast<std::complex<fp>>(w) : 0.;
   }
 
-  auto decisions = std::string(numQubits, '0');
-  for (auto k = 0U; k < numQubits; ++k) {
-    if ((i & (1ULL << k)) != 0U) {
-      decisions[k] = '2';
-    }
-  }
-  for (auto k = 0U; k < numQubits; ++k) {
-    if ((j & (1ULL << k)) != 0U) {
-      if (decisions[k] == '2') {
-        decisions[k] = '3';
-      } else {
-        decisions[k] = '1';
+  auto edge = *this;
+  auto amplitude = static_cast<std::complex<fp>>(edge.w);
+  for (auto level = numQubits; level > 0; --level) {
+    const auto q = level - 1;
+    const auto rowBit =
+        q < std::numeric_limits<size_t>::digits ? (i >> q) & 1U : 0U;
+    const auto colBit =
+        q < std::numeric_limits<size_t>::digits ? (j >> q) & 1U : 0U;
+    if (edge.isTerminal() || edge.p->v != q) {
+      if (edge.isZeroTerminal() || rowBit != colBit) {
+        return 0.;
       }
+    } else {
+      edge = edge.p->e[(2 * rowBit) + colBit];
+      amplitude *= static_cast<std::complex<fp>>(edge.w);
     }
   }
-
-  return getValueByPath(numQubits, decisions);
+  return amplitude;
 }
 
 template <class Node>
@@ -448,7 +476,6 @@ auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void
     std::cout << static_cast<std::complex<fp>>(w) << "\n";
     return;
   }
-  // total number of qubits should not be lower than the highest qubit index
   assert(isTerminal() || numQubits > p->v);
   const std::size_t element = 1ULL << numQubits;
   for (auto i = 0ULL; i < element; ++i) {
@@ -469,10 +496,20 @@ void Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
                                 const fp threshold) const
   requires IsMatrix<Node>
 {
-  // calculate new accumulated amplitude
+  traverseMatrixImpl(amp, i, j, f, level, threshold);
+}
+
+template <class Node>
+void Edge<Node>::traverseMatrixImpl(const std::complex<fp>& amp,
+                                    const std::size_t i, const std::size_t j,
+                                    const MatrixEntryFunc& f,
+                                    const std::size_t level,
+                                    const fp threshold) const
+  requires IsMatrix<Node>
+{
   const auto c = amp * static_cast<std::complex<fp>>(w);
 
-  if (std::abs(c) < threshold) {
+  if (threshold > 0. && std::abs(c) < threshold) {
     return;
   }
 
@@ -486,16 +523,16 @@ void Edge<Node>::traverseMatrix(const std::complex<fp>& amp,
   const std::size_t x = i | (1ULL << nextLevel);
   const std::size_t y = j | (1ULL << nextLevel);
   if (isTerminal() || p->v < nextLevel) {
-    traverseMatrix(amp, i, j, f, nextLevel, threshold);
-    traverseMatrix(amp, x, y, f, nextLevel, threshold);
+    traverseMatrixImpl(amp, i, j, f, nextLevel, threshold);
+    traverseMatrixImpl(amp, x, y, f, nextLevel, threshold);
     return;
   }
 
   const auto coords = {std::pair{i, j}, {i, y}, {x, j}, {x, y}};
   std::size_t k = 0U;
   for (const auto& [a, b] : coords) {
-    if (auto& e = p->e[k++]; !e.w.exactlyZero()) {
-      e.traverseMatrix(c, a, b, f, nextLevel, threshold);
+    if (auto const& e = p->e[k++]; !e.w.exactlyZero()) {
+      e.traverseMatrixImpl(c, a, b, f, nextLevel, threshold);
     }
   }
 }
@@ -518,7 +555,7 @@ auto std::hash<dd::Edge<Node>>::operator()(
     const dd::Edge<Node>& e) const noexcept -> std::size_t {
   const auto h1 = dd::murmur64(reinterpret_cast<std::size_t>(e.p));
   const auto h2 = std::hash<dd::Complex>{}(e.w);
-  return qc::combineHash(h1, h2);
+  return dd::combineHash(h1, h2);
 }
 
 // NOLINTNEXTLINE(bugprone-std-namespace-modification)

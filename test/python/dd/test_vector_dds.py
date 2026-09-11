@@ -10,9 +10,36 @@
 
 from __future__ import annotations
 
-import numpy as np
+import gc
 
-from mqt.core.dd import BasisStates, DDPackage
+import numpy as np
+import pytest
+
+from mqt.core.dd import BasisStates, DDPackage, VectorDD
+
+
+def test_vector_array_ownership() -> None:
+    """Test vector array ownership and write access."""
+    package = DDPackage(2)
+    vector_dd = package.zero_state(2)
+    vector = vector_dd.get_vector()
+
+    assert vector.dtype == np.complex128
+    assert vector.shape == (4,)
+    assert vector.flags.c_contiguous
+    assert vector.flags.writeable  # spellchecker:disable-line
+
+    vector[0] = 2 + 3j
+    assert np.allclose(vector_dd.get_vector(), [1, 0, 0, 0])
+
+    view = vector[::2]
+    package.dec_ref_vec(vector_dd)
+    del vector, vector_dd, package
+    gc.collect()
+
+    assert np.allclose(view, [2 + 3j, 0])
+    view[0] = -1j
+    assert np.allclose(view[0], -1j)
 
 
 def test_zero_state() -> None:
@@ -98,3 +125,94 @@ def test_from_vector() -> None:
             vec2 = dd.get_vector()
             assert np.allclose(vec, vec2)
             p.dec_ref_vec(dd)
+
+
+def test_from_strided_vector() -> None:
+    """Preserve offsets, negative strides, and read-only broadcast amplitudes."""
+    package = DDPackage(3)
+    values = np.arange(16, dtype=np.float64)
+    vector = values + 1j * (values + 1)
+    for view in (vector[1::2], vector[7::-1], np.broadcast_to(vector[3], (8,))):
+        state = package.from_vector(view)
+        package.garbage_collect(force=True)
+        assert np.allclose(state.get_vector(), view)
+        package.dec_ref_vec(state)
+
+
+def test_from_vector_dimensions() -> None:
+    """Reject oversized vectors and retain scalar states across collection."""
+    package = DDPackage(1)
+    for length in (3, 4, 8):
+        with pytest.raises(ValueError, match=r"power of two|capacity"):
+            package.from_vector(np.zeros(length, dtype=np.complex128))
+    empty_package = DDPackage(0)
+    with pytest.raises(ValueError, match="capacity"):
+        empty_package.from_vector(np.zeros(2, dtype=np.complex128))
+    for vector in (np.empty(0, dtype=np.complex128), np.array([0.25 + 0.5j])):
+        state = empty_package.from_vector(vector)
+        empty_package.garbage_collect(force=True)
+        expected = vector if vector.size else np.array([1])
+        assert np.allclose(state.get_vector(), expected)
+        empty_package.dec_ref_vec(state)
+
+
+@pytest.mark.parametrize("binary", [False, True])
+def test_serialization(*, binary: bool) -> None:
+    """Test serializing and deserializing vector DDs."""
+    p = DDPackage(3)
+    for dd in (p.zero_state(0), p.ghz_state(3)):
+        data = dd.to_bytes(binary=binary)
+        assert isinstance(data, bytes)
+
+        restored = VectorDD.from_bytes(DDPackage(3), data, binary=binary)
+        assert np.allclose(restored.get_vector(), dd.get_vector())
+        p.dec_ref_vec(dd)
+
+
+def test_measurement_rejects_missing_qubits() -> None:
+    """Reject qubits outside the state even when they fit in the package."""
+    package = DDPackage(4)
+    for width in (0, 2):
+        state = package.zero_state(width)
+        before = state.get_vector().copy()
+        with pytest.raises(ValueError, match="outside the state"):
+            package.measure_collapsing(state, width)
+        assert np.array_equal(state.get_vector(), before)
+        package.dec_ref_vec(state)
+
+
+@pytest.mark.parametrize("width", [0, 1, 3])
+def test_indexing(width: int) -> None:
+    """Use logical vector length for positive and negative indices."""
+    package = DDPackage(width)
+    state = package.computational_basis_state(width, [True] * width)
+    dense = state.get_vector()
+    for index in range(-len(dense), len(dense)):
+        assert state[index] == dense[index]
+    for index in (-len(dense) - 1, len(dense), -(1 << 63)):
+        with pytest.raises(IndexError):
+            _ = state[index]
+    package.dec_ref_vec(state)
+
+
+@pytest.mark.parametrize("width", [63, 64, 65])
+def test_wide_indexing(width: int) -> None:
+    """Normalize negative indices without overflowing the native width."""
+    package = DDPackage(width)
+    for index in (0, 1, -1, -2, -(1 << 63)):
+        normalized = index % (1 << width)
+        state = package.computational_basis_state(width, [bool(normalized & (1 << bit)) for bit in range(width)])
+        assert state[index] == 1
+        assert state[index + 1] == 0
+        package.dec_ref_vec(state)
+
+
+@pytest.mark.parametrize("decisions", ["2", "9", "/", "x"])
+def test_invalid_path(decisions: str) -> None:
+    """Raise a Python exception for invalid vector path digits."""
+    package = DDPackage(1)
+    state = package.zero_state(1)
+    with pytest.raises(ValueError, match="invalid digit"):
+        state.get_amplitude(1, decisions)
+    assert state.get_amplitude(1, "0ignored") == 1
+    package.dec_ref_vec(state)

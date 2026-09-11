@@ -8,61 +8,268 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mqt/Dialect/CBit/IR/CBitAttributes.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/FormatVariadic.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Region.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Conversion/ControlFlowToSCF/ControlFlowToSCF.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Dominance.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Matchers.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/CFGToSCF.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Transforms/RegionUtils.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
 
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <variant>
 
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 namespace mlir::qc {
+
+QCProgramBuilder::LoopBuilder::LoopBuilder(QCProgramBuilder& builder,
+                                           ValueRange initialState, Value step)
+    : builder_(builder), location_(builder.getLoc()), step_(step) {
+  regionOp_ = scf::ExecuteRegionOp::create(builder_, location_,
+                                           initialState.getTypes());
+  auto& region = regionOp_.getRegion();
+  auto* entry = builder_.createBlock(&region);
+  SmallVector<Location> locations(initialState.size(), location_);
+  header_ =
+      builder_.createBlock(&region, {}, initialState.getTypes(), locations);
+  SmallVector<Type> decisionTypes{builder_.getI1Type()};
+  llvm::append_range(decisionTypes, initialState.getTypes());
+  decision_ = builder_.createBlock(
+      &region, {}, decisionTypes,
+      SmallVector<Location>(decisionTypes.size(), location_));
+  exit_ = builder_.createBlock(&region, {}, initialState.getTypes(), locations);
+  builder_.setInsertionPointToEnd(entry);
+  cf::BranchOp::create(builder_, location_, header_, initialState);
+  builder_.setInsertionPointToEnd(header_);
+}
+
+ValueRange QCProgramBuilder::LoopBuilder::arguments() {
+  return header_->getArguments();
+}
+
+void QCProgramBuilder::LoopBuilder::enterBody(Value condition,
+                                              ValueRange state) {
+  auto* current = builder_.getInsertionBlock();
+  auto* body = builder_.createBlock(&regionOp_.getRegion());
+  builder_.setInsertionPointToEnd(current);
+  if (matchPattern(condition, m_One())) {
+    cf::BranchOp::create(builder_, location_, body);
+  } else {
+    SmallVector<Value> exitValues{
+        arith::ConstantIntOp::create(builder_, location_, 0, 1),
+    };
+    llvm::append_range(exitValues, state);
+    cf::CondBranchOp::create(builder_, location_, condition, body, ValueRange{},
+                             decision_, exitValues);
+  }
+  builder_.setInsertionPointToEnd(body);
+}
+
+void QCProgramBuilder::LoopBuilder::branch(bool continuing, ValueRange state) {
+  SmallVector<Value> values{
+      arith::ConstantIntOp::create(builder_, location_, continuing ? 1 : 0, 1),
+  };
+  llvm::append_range(values, state);
+  cf::BranchOp::create(builder_, location_, decision_, values);
+}
+
+FailureOr<SmallVector<Value>> QCProgramBuilder::LoopBuilder::finish() {
+  builder_.setInsertionPointToEnd(decision_);
+  auto continuing = decision_->getArgument(0);
+  SmallVector<Value> state(decision_->getArguments().drop_front());
+  if (step_) {
+    auto next =
+        arith::AddIOp::create(builder_, location_, state.front(), step_);
+    state.front() = arith::SelectOp::create(builder_, location_, continuing,
+                                            next, state.front());
+  }
+  cf::CondBranchOp::create(builder_, location_, continuing, header_, state,
+                           exit_, state);
+  builder_.setInsertionPointToEnd(exit_);
+  scf::YieldOp::create(builder_, location_, exit_->getArguments());
+  IRRewriter rewriter(builder_.getContext());
+  std::ignore = eraseUnreachableBlocks(rewriter, regionOp_->getRegions());
+  DominanceInfo dominance;
+  ControlFlowToSCFTransformation transformation;
+  if (failed(transformCFGToSCF(regionOp_.getRegion(), transformation,
+                               dominance))) {
+    return regionOp_.emitError("cannot structure loop control flow");
+  }
+  RewritePatternSet patterns(builder_.getContext());
+  scf::WhileOp::getCanonicalizationPatterns(patterns, builder_.getContext());
+  scf::IfOp::getCanonicalizationPatterns(patterns, builder_.getContext());
+  arith::SelectOp::getCanonicalizationPatterns(patterns, builder_.getContext());
+  arith::TruncIOp::getCanonicalizationPatterns(patterns, builder_.getContext());
+  SmallVector<Operation*> operations;
+  regionOp_.getRegion().walk([&](Operation* op) { operations.push_back(op); });
+  if (failed(applyOpPatternsGreedily(operations, std::move(patterns)))) {
+    return regionOp_.emitError("cannot canonicalize loop control flow");
+  }
+  std::ignore = runRegionDCE(rewriter, regionOp_->getRegions());
+  auto& block = regionOp_.getRegion().front();
+  auto terminator = cast<scf::YieldOp>(block.getTerminator());
+  SmallVector<Value> results(terminator.getResults());
+  rewriter.inlineBlockBefore(&block, regionOp_);
+  rewriter.eraseOp(terminator);
+  builder_.setInsertionPointAfter(regionOp_);
+  rewriter.eraseOp(regionOp_);
+  return results;
+}
 
 QCProgramBuilder::QCProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qc-program-builder>", 1, 1), context),
-      ctx(context), module(ModuleOp::create(*this)) {
-  ctx->loadDialect<QCDialect>();
+      ctx(context), moduleOp_(ModuleOp::create(*this)) {
+  ctx->loadDialect<cbit::CBitDialect, mqt::MQTDialect, QCDialect>();
 }
 
-void QCProgramBuilder::initialize() {
+void QCProgramBuilder::initialize() { initialize({getI64Type()}); }
+
+void QCProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
-  setInsertionPointToStart(cast<ModuleOp>(module).getBody());
+  setInsertionPointToStart(cast<ModuleOp>(moduleOp_).getBody());
 
   // Create main function as entry point
-  auto funcType = getFunctionType({}, {getI64Type()});
+  auto funcType = getFunctionType({}, returnTypes);
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
-  // Add entry_point attribute to identify the main function
-  auto entryPointAttr = getStringAttr("entry_point");
-  mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
+  mqt::setEntryPoint(mainFunc);
 
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
-  regionStack.emplace_back(entryBlock.getParent());
+}
+
+void QCProgramBuilder::retype(TypeRange returnTypes) {
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
+  if (!mainFunc) {
+    llvm::reportFatalUsageError("Main function not found for retyping");
+  }
+  auto funcType =
+      getFunctionType(mainFunc.getFunctionType().getInputs(), returnTypes);
+  mainFunc.setType(funcType);
+}
+
+func::FuncOp QCProgramBuilder::createFunction(
+    const StringRef name, const TypeRange argumentTypes,
+    const function_ref<SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+  auto moduleOp = cast<ModuleOp>(moduleOp_);
+  auto mainFunc = mqt::getEntryPoint(moduleOp);
+  if (!mainFunc) {
+    llvm::reportFatalUsageError(
+        "QCProgramBuilder must be initialized before creating a function");
+  }
+  if (SymbolTable::lookupSymbolIn(moduleOp, name) != nullptr) {
+    llvm::reportFatalUsageError("Function name is already defined");
+  }
+
+  const InsertionGuard insertionGuard(*this);
+  auto savedAllocatedQubits = std::move(allocatedQubits);
+  auto savedAllocatedQregs = std::move(allocatedQregs);
+  auto savedStaticQubits = std::move(staticQubits);
+  auto stateGuard = llvm::scope_exit([&] {
+    allocatedQubits = std::move(savedAllocatedQubits);
+    allocatedQregs = std::move(savedAllocatedQregs);
+    staticQubits = std::move(savedStaticQubits);
+  });
+  allocatedQubits.clear();
+  allocatedQregs.clear();
+  staticQubits.clear();
+
+  setInsertionPoint(mainFunc);
+  auto function = func::FuncOp::create(
+      *this, name, getFunctionType(argumentTypes, TypeRange{}));
+  function.setPrivate();
+  auto* block = function.addEntryBlock();
+  setInsertionPointToStart(block);
+
+  SmallVector<Value> results = body(block->getArguments());
+  if (block->mightHaveTerminator()) {
+    llvm::reportFatalUsageError(
+        "Function callback must not create a terminator");
+  }
+
+  for (Value result : results) {
+    allocatedQubits.remove(result);
+    allocatedQregs.remove(result);
+  }
+  for (Value qubit : allocatedQubits) {
+    DeallocOp::create(*this, qubit);
+  }
+  for (Value qreg : allocatedQregs) {
+    memref::DeallocOp::create(*this, qreg);
+  }
+
+  function.setType(
+      getFunctionType(argumentTypes, ValueRange(results).getTypes()));
+  func::ReturnOp::create(*this, results);
+  return function;
+}
+
+func::FuncOp QCProgramBuilder::createUnitaryFunction(
+    const StringRef name, const TypeRange argumentTypes,
+    const function_ref<void(ValueRange)> body) {
+  auto function =
+      createFunction(name, argumentTypes, [&](ValueRange arguments) {
+        body(arguments);
+        return SmallVector<Value>{};
+      });
+  mqt::setUnitaryFunction(function);
+  return function;
+}
+
+SmallVector<Value> QCProgramBuilder::call(func::FuncOp callee,
+                                          ValueRange operands) {
+  checkFinalized();
+  if (callee->getParentOp() != moduleOp_ ||
+      callee.getArgumentTypes() != operands.getTypes()) {
+    llvm::reportFatalUsageError(
+        "Call operands must match a function in the current module");
+  }
+  if (mqt::isUnitaryFunction(callee)) {
+    CallOp::create(*this,
+                   FlatSymbolRefAttr::get(getContext(), callee.getName()),
+                   operands);
+    return {};
+  }
+  auto callOp = func::CallOp::create(*this, callee, operands);
+  return SmallVector<Value>(callOp.getResults());
 }
 
 Value QCProgramBuilder::boolConstant(const bool value) {
@@ -73,6 +280,16 @@ Value QCProgramBuilder::boolConstant(const bool value) {
 Value QCProgramBuilder::intConstant(const int64_t value) {
   checkFinalized();
   return arith::ConstantOp::create(*this, getI64IntegerAttr(value)).getResult();
+}
+
+Value QCProgramBuilder::floatConstant(const double value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
+}
+
+Value QCProgramBuilder::indexConstant(const int64_t value) {
+  checkFinalized();
+  return arith::ConstantIndexOp::create(*this, value).getResult();
 }
 
 Value QCProgramBuilder::QubitRegister::operator[](const size_t index) const {
@@ -88,7 +305,7 @@ Value QCProgramBuilder::allocQubit() {
 
   // Create the AllocOp without register metadata
   auto allocOp = AllocOp::create(*this);
-  const auto qubit = allocOp.getResult();
+  auto qubit = allocOp.getResult();
 
   // Track the allocated qubit for automatic deallocation
   allocatedQubits.insert(qubit);
@@ -100,79 +317,97 @@ Value QCProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Static);
 
-  auto staticOp = StaticOp::create(*this, index);
-  return staticOp.getQubit();
+  if (const auto it = staticQubits.find(index); it != staticQubits.end()) {
+    return it->second;
+  }
+
+  OpBuilder::InsertionGuard guard(*this);
+  Operation* parent = getInsertionBlock()->getParentOp();
+  auto function = dyn_cast<func::FuncOp>(parent);
+  if (!function) {
+    function = parent->getParentOfType<func::FuncOp>();
+  }
+  if (!function) {
+    llvm::reportFatalInternalError("Static qubit has no enclosing function");
+  }
+  setInsertionPointToStart(&function.getBody().front());
+  auto qubit = StaticOp::create(*this, index).getQubit();
+  staticQubits.try_emplace(index, qubit);
+  return qubit;
 }
 
 QCProgramBuilder::QubitRegister
-QCProgramBuilder::allocQubitRegister(const int64_t size) {
+QCProgramBuilder::allocQubitRegister(const int64_t size, const StringRef name) {
+  auto memref = allocQubitRegisterStorage(size, name);
+
+  SmallVector<Value> qubits;
+  qubits.reserve(size);
+  for (int64_t i = 0; i < size; ++i) {
+    auto index = arith::ConstantIndexOp::create(*this, i);
+    qubits.emplace_back(loadQubit(memref, index));
+  }
+
+  return {.value = memref, .qubits = std::move(qubits)};
+}
+
+Value QCProgramBuilder::allocQubitRegisterStorage(const int64_t size,
+                                                  const StringRef name) {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Dynamic);
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
-
   auto memrefType = MemRefType::get({size}, QubitType::get(ctx));
-  auto memref = memref::AllocOp::create(*this, memrefType);
-  allocatedMemrefs.insert(memref);
-
-  SmallVector<Value> qubits;
-  qubits.reserve(size);
-  auto& loadedQubitsForRegion = loadedQubits[memref->getParentRegion()][memref];
-  for (int64_t i = 0; i < size; ++i) {
-    auto index = arith::ConstantIndexOp::create(*this, i);
-    auto load = memref::LoadOp::create(*this, memref, index.getResult());
-    const auto& qubit = qubits.emplace_back(load.getResult());
-    allocatedQubits.insert(qubit);
-    loadedQubitsForRegion.insert(index);
+  auto alloc = memref::AllocOp::create(*this, memrefType);
+  if (!name.empty()) {
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getRegisterNameAttrHelper()
+        .setAttr(alloc, getStringAttr(name));
   }
-
-  return {.value = memref, .qubits = std::move(qubits)};
+  auto memref = alloc.getResult();
+  allocatedQregs.insert(memref);
+  return memref;
 }
 
-QCProgramBuilder::Bit
-QCProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
-  if (index < 0 || index >= size) {
-    const std::string msg = "Bit index " + std::to_string(index) +
-                            " out of bounds for register '" + name +
-                            "' of size " + std::to_string(size);
-    llvm::reportFatalUsageError(msg.c_str());
-  }
-  return {.registerName = name, .registerSize = size, .registerIndex = index};
-}
-
-Value QCProgramBuilder::memrefLoad(Value memref, Value index) {
+Value QCProgramBuilder::loadQubit(Value memref, Value index) {
   checkFinalized();
-
-  auto* region = getInsertionBlock()->getParent();
-
-  if (regionStack.size() == 1) {
-    llvm::reportFatalUsageError(
-        "Qubit cannot be loaded in the main function region");
-  }
-  for (Region* curr : regionStack) {
-    if (loadedQubits[curr][memref].contains(index)) {
-      llvm::reportFatalUsageError("Qubit already loaded in enclosing region");
-    }
-  }
-
-  auto loadOp = memref::LoadOp::create(*this, memref, index);
-  loadedQubits[region][memref].insert(index);
-
-  return loadOp.getResult();
+  return memref::LoadOp::create(*this, memref, index).getResult();
 }
 
-QCProgramBuilder::ClassicalRegister
-QCProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                            std::string name) const {
+Value QCProgramBuilder::allocClassicalBitRegister(
+    const int64_t size, const StringRef name,
+    const cbit::Initialization initialization) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  return {.name = std::move(name), .size = size};
+  const auto type = cbit::RegisterType::get(ctx, size);
+  auto alloc = cbit::AllocOp::create(*this, type, initialization);
+  if (!name.empty()) {
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getRegisterNameAttrHelper()
+        .setAttr(alloc, getStringAttr(name));
+  }
+  return alloc.getResult();
+}
+
+Value QCProgramBuilder::loadClassicalBit(
+    Value reg, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  cbit::validateStaticRegisterIndex(reg, index);
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  return cbit::LoadOp::create(*this, getI1Type(), reg, indexValue).getResult();
+}
+
+void QCProgramBuilder::storeClassicalBit(
+    Value value, Value reg, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  cbit::validateStaticRegisterIndex(reg, index);
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  cbit::StoreOp::create(*this, value, reg, indexValue);
 }
 
 //===----------------------------------------------------------------------===//
@@ -185,14 +420,21 @@ Value QCProgramBuilder::measure(Value qubit) {
   return measureOp.getResult();
 }
 
-Value QCProgramBuilder::measure(Value qubit, const Bit& bit) {
+Value QCProgramBuilder::measure(Value qubit, Value reg,
+                                const std::variant<int64_t, Value>& index) {
   checkFinalized();
-  auto nameAttr = getStringAttr(bit.registerName);
-  auto sizeAttr = getI64IntegerAttr(bit.registerSize);
-  auto indexAttr = getI64IntegerAttr(bit.registerIndex);
-  auto measureOp =
-      MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
-  return measureOp.getResult();
+  auto measureOp = MeasureOp::create(*this, qubit);
+  auto result = measureOp.getResult();
+  storeClassicalBit(result, reg, index);
+  return result;
+}
+
+QCProgramBuilder& QCProgramBuilder::measureQubitRegister(Value qubits,
+                                                         Value bits,
+                                                         const int64_t size) {
+  return scfFor(0, size, 1, [&](Value index) {
+    measure(loadQubit(qubits, index), bits, index);
+  });
 }
 
 QCProgramBuilder& QCProgramBuilder::reset(Value qubit) {
@@ -245,7 +487,7 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(ValueRange controls,         \
                                                   Value target) {              \
     ctrl(controls, target,                                                     \
-         [&](ValueRange targets) { OP_CLASS::create(*this, targets[0]); });    \
+         [&](Value targetArg) { OP_CLASS::create(*this, targetArg); });        \
     return *this;                                                              \
   }
 
@@ -281,9 +523,8 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value target) {                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    ctrl(controls, target, [&](ValueRange targets) {                           \
-      OP_CLASS::create(*this, targets[0], param);                              \
-    });                                                                        \
+    ctrl(controls, target,                                                     \
+         [&](Value targetArg) { OP_CLASS::create(*this, targetArg, param); }); \
     return *this;                                                              \
   }
 
@@ -316,8 +557,8 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, theta)
       Value target) {                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
-    ctrl(controls, target, [&](ValueRange targets) {                           \
-      OP_CLASS::create(*this, targets[0], param1, param2);                     \
+    ctrl(controls, target, [&](Value targetArg) {                              \
+      OP_CLASS::create(*this, targetArg, param1, param2);                      \
     });                                                                        \
     return *this;                                                              \
   }
@@ -354,8 +595,8 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
-    ctrl(controls, target, [&](ValueRange targets) {                           \
-      OP_CLASS::create(*this, targets[0], param1, param2, param3);             \
+    ctrl(controls, target, [&](Value targetArg) {                              \
+      OP_CLASS::create(*this, targetArg, param1, param2, param3);              \
     });                                                                        \
     return *this;                                                              \
   }
@@ -456,11 +697,44 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// ThreeTargetZeroParameter
+
+#define DEFINE_THREE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                  \
+  QCProgramBuilder& QCProgramBuilder::OP_NAME(Value qubit0, Value qubit1,      \
+                                              Value qubit2) {                  \
+    checkFinalized();                                                          \
+    OP_CLASS::create(*this, qubit0, qubit1, qubit2);                           \
+    return *this;                                                              \
+  }                                                                            \
+  QCProgramBuilder& QCProgramBuilder::c##OP_NAME(Value control, Value qubit0,  \
+                                                 Value qubit1, Value qubit2) { \
+    return mc##OP_NAME({control}, qubit0, qubit1, qubit2);                     \
+  }                                                                            \
+  QCProgramBuilder& QCProgramBuilder::mc##OP_NAME(                             \
+      ValueRange controls, Value qubit0, Value qubit1, Value qubit2) {         \
+    ctrl(controls, ValueRange{qubit0, qubit1, qubit2},                         \
+         [&](ValueRange targets) {                                             \
+           OP_CLASS::create(*this, targets[0], targets[1], targets[2]);        \
+         });                                                                   \
+    return *this;                                                              \
+  }
+
+DEFINE_THREE_TARGET_ZERO_PARAMETER(RCCXOp, rccx)
+
+#undef DEFINE_THREE_TARGET_ZERO_PARAMETER
+
 // BarrierOp
 
 QCProgramBuilder& QCProgramBuilder::barrier(ValueRange qubits) {
   checkFinalized();
   BarrierOp::create(*this, qubits);
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::unitary(ValueRange qubits,
+                                            DenseElementsAttr matrix) {
+  checkFinalized();
+  UnitaryOp::create(*this, matrix, qubits);
   return *this;
 }
 
@@ -477,10 +751,50 @@ QCProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
 }
 
 QCProgramBuilder&
+QCProgramBuilder::ctrl(ValueRange controls, Value target,
+                       const function_ref<void(Value)>& body) {
+  checkFinalized();
+  CtrlOp::create(*this, controls, target, body);
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::ctrl(Value control, Value target,
+                       const function_ref<void(Value)>& body) {
+  checkFinalized();
+  CtrlOp::create(*this, control, target, body);
+  return *this;
+}
+
+QCProgramBuilder&
 QCProgramBuilder::inv(ValueRange qubits,
                       const function_ref<void(ValueRange)>& body) {
   checkFinalized();
   InvOp::create(*this, qubits, body);
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                      ValueRange qubits,
+                      const function_ref<void(ValueRange)>& body) {
+  checkFinalized();
+  PowOp::create(*this, exponent, qubits, body);
+  return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::pow(const std::variant<double, Value>& exponent, Value qubit,
+                      const function_ref<void(Value)>& body) {
+  checkFinalized();
+  PowOp::create(*this, exponent, qubit, body);
+  return *this;
+}
+
+QCProgramBuilder& QCProgramBuilder::inv(Value qubit,
+                                        const function_ref<void(Value)>& body) {
+  checkFinalized();
+  InvOp::create(*this, qubit, body);
   return *this;
 }
 
@@ -502,11 +816,8 @@ QCProgramBuilder::scfFor(const std::variant<int64_t, Value>& lowerbound,
 
   scf::ForOp::create(*this, lb, ub, stepSize, ValueRange{},
                      [&](OpBuilder& b, Location l, Value iv, ValueRange) {
-                       regionStack.emplace_back(
-                           b.getInsertionBlock()->getParent());
                        body(iv);
                        scf::YieldOp::create(b, l);
-                       regionStack.pop_back();
                      });
   return *this;
 }
@@ -520,20 +831,16 @@ QCProgramBuilder::scfWhile(const function_ref<void()>& beforeBody,
       *this, TypeRange{}, ValueRange{},
       [&](OpBuilder& b, Location, ValueRange) {
         auto* insertionBlock = b.getInsertionBlock();
-        regionStack.emplace_back(insertionBlock->getParent());
         beforeBody();
         if (!isa_and_nonnull<scf::ConditionOp>(
                 insertionBlock->getTerminator())) {
           llvm::reportFatalUsageError(
               "scf.while beforeBody must terminate with scf.condition");
         }
-        regionStack.pop_back();
       },
       [&](OpBuilder& b, Location loc, ValueRange) {
-        regionStack.emplace_back(b.getInsertionBlock()->getParent());
         afterBody();
         scf::YieldOp::create(b, loc);
-        regionStack.pop_back();
       });
 
   return *this;
@@ -549,10 +856,8 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
 
   auto buildRegion = [&](const function_ref<void()>& body) {
     return [&, body](OpBuilder& b, Location loc) {
-      regionStack.emplace_back(b.getInsertionBlock()->getParent());
       body();
       scf::YieldOp::create(b, loc);
-      regionStack.pop_back();
     };
   };
 
@@ -565,10 +870,61 @@ QCProgramBuilder::scfIf(const std::variant<bool, Value>& cond,
   return *this;
 }
 
+QCProgramBuilder&
+QCProgramBuilder::scfIf(Value reg, const std::variant<int64_t, Value>& index,
+                        const function_ref<void()>& thenBody,
+                        const function_ref<void()>& elseBody) {
+  checkFinalized();
+  auto condition = loadClassicalBit(reg, index);
+  return scfIf(condition, thenBody, elseBody);
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfIndexSwitch(const std::variant<int64_t, Value>& arg,
+                                 ArrayRef<int64_t> cases,
+                                 ArrayRef<function_ref<void()>> caseBodies,
+                                 const function_ref<void()>& defaultBody) {
+  checkFinalized();
+
+  if (cases.size() != caseBodies.size()) {
+    const char* msg = "Each case must have a corresponding case body function";
+    llvm::reportFatalUsageError(msg);
+    llvm_unreachable(msg);
+  }
+
+  auto argValue = variantToValue(*this, getLoc(), arg);
+  auto switchOp =
+      scf::IndexSwitchOp::create(*this, {}, argValue, cases, cases.size());
+
+  const InsertionGuard guard(*this);
+  const auto buildRegion = [&](Region& region, const function_ref<void()>& f) {
+    createBlock(&region); // Implicitly sets the insertion point.
+    f();
+    scf::YieldOp::create(*this, getLoc());
+  };
+
+  for (auto [region, f] :
+       llvm::zip_equal(switchOp.getCaseRegions(), caseBodies)) {
+    buildRegion(region, f);
+  }
+
+  buildRegion(switchOp.getDefaultRegion(), defaultBody);
+
+  return *this;
+}
+
 QCProgramBuilder& QCProgramBuilder::scfCondition(Value condition) {
   checkFinalized();
   scf::ConditionOp::create(*this, condition, ValueRange{});
   return *this;
+}
+
+QCProgramBuilder&
+QCProgramBuilder::scfCondition(Value reg,
+                               const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  auto condition = loadClassicalBit(reg, index);
+  return scfCondition(condition);
 }
 
 //===----------------------------------------------------------------------===//
@@ -584,7 +940,7 @@ QCProgramBuilder& QCProgramBuilder::dealloc(Value qubit) {
   }
 
   // Check if the qubit is in the tracking set
-  if (!allocatedQubits.erase(qubit)) {
+  if (!allocatedQubits.remove(qubit)) {
     llvm::reportFatalUsageError("Invalid qubit deallocation");
   }
 
@@ -606,6 +962,15 @@ void QCProgramBuilder::checkFinalized() const {
 
 void QCProgramBuilder::ensureAllocationMode(
     const AllocationMode requestedMode) {
+  if (requestedMode == AllocationMode::Dynamic) {
+    auto entryPoint = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
+    if (!entryPoint || entryPoint.getBody().empty() ||
+        getInsertionBlock() != &entryPoint.getBody().front()) {
+      llvm::reportFatalUsageError(
+          "Dynamic qubit allocation requires the entry block of the "
+          "mqt.entry_point function");
+    }
+  }
   if (allocationMode == AllocationMode::Unset) {
     allocationMode = requestedMode;
     return;
@@ -630,17 +995,19 @@ void QCProgramBuilder::ensureAllocationMode(
 OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   checkFinalized();
 
-  // Ensure that main function exists and insertion point is valid
+  auto exitCode = intConstant(0);
+  return finalize({exitCode});
+}
+
+OwningOpRef<ModuleOp> QCProgramBuilder::finalize(ValueRange returnValues) {
+  checkFinalized();
+
+  // Ensure that the entry-point function exists and the insertion point is
+  // valid.
   auto* insertionBlock = getInsertionBlock();
-  func::FuncOp mainFunc = nullptr;
-  for (auto op : cast<ModuleOp>(module).getOps<func::FuncOp>()) {
-    if (op.getName() == "main") {
-      mainFunc = op;
-      break;
-    }
-  }
-  if (!mainFunc) {
-    llvm::reportFatalUsageError("Could not find main function");
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
+  if (mainFunc == nullptr) {
+    llvm::reportFatalUsageError("Could not find entry-point function");
   }
   if ((insertionBlock == nullptr) ||
       insertionBlock != &mainFunc.getBody().front()) {
@@ -649,37 +1016,43 @@ OwningOpRef<ModuleOp> QCProgramBuilder::finalize() {
   }
 
   for (auto qubit : allocatedQubits) {
-    if (!isa<memref::LoadOp>(qubit.getDefiningOp())) {
-      DeallocOp::create(*this, qubit);
-    }
+    DeallocOp::create(*this, qubit);
   }
   allocatedQubits.clear();
 
-  for (auto memref : allocatedMemrefs) {
+  for (auto memref : allocatedQregs) {
     memref::DeallocOp::create(*this, memref);
   }
-  allocatedMemrefs.clear();
+  allocatedQregs.clear();
 
-  // Create constant 0 for successful exit code
-  auto exitCode = intConstant(0);
-
-  // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, exitCode);
+  // Add return statement with the given return values to the main function
+  func::ReturnOp::create(*this, returnValues);
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
 
   // Transfer ownership to the caller
-  return cast<ModuleOp>(module);
+  return cast<ModuleOp>(moduleOp_);
 }
 
 OwningOpRef<ModuleOp> QCProgramBuilder::build(
     MLIRContext* context,
-    const function_ref<void(QCProgramBuilder&)>& buildFunc) {
+    const function_ref<SmallVector<Value>(QCProgramBuilder&)>& buildFunc) {
   QCProgramBuilder builder(context);
   builder.initialize();
-  buildFunc(builder);
-  return builder.finalize();
+  auto result = buildFunc(builder);
+  builder.retype(ValueRange(result).getTypes());
+  return builder.finalize(result);
+}
+
+OwningOpRef<ModuleOp> QCProgramBuilder::build(
+    MLIRContext* context,
+    const function_ref<Value(QCProgramBuilder&)>& buildFunc) {
+  QCProgramBuilder builder(context);
+  builder.initialize();
+  auto result = buildFunc(builder);
+  builder.retype(result.getType());
+  return builder.finalize(result);
 }
 
 } // namespace mlir::qc

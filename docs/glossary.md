@@ -1,0 +1,331 @@
+(glossary)=
+
+# Glossary
+
+This glossary records MQT Core's preferred terms and the distinctions that
+matter to its public interfaces and compiler design. It is not a copy of the
+[MLIR glossary][mlir-glossary]. Upstream definitions are useful context, but MQT
+Core owns the meanings documented here.
+
+Update this page in the same pull request when introducing or changing a public
+or potentially ambiguous term. Each new entry must name the preferred term, list
+accepted aliases, and be understandable without detailed knowledge of the
+implementation.
+
+## Abbreviations and names
+
+```{glossary}
+:sorted:
+
+CDA
+Chair for Design Automation
+  **Preferred term:** Chair for Design Automation. **Accepted abbreviation:**
+  CDA. A
+  [research chair at the Technical University of Munich](https://www.cda.cit.tum.de/)
+  that develops MQT Core together with [MQSC](https://mq.sc).
+
+DD
+DDs
+decision diagram
+decision diagrams
+  **Preferred term:** decision diagram. **Accepted abbreviations:** DD and DDs
+  for the plural. A graph representation that shares repeated substructures to
+  store and manipulate quantum states and operations compactly.
+
+Pauli string
+  **Preferred term:** Pauli string. **Accepted alias:** Pauli product. A tensor
+  product of single-qubit identity or Pauli X, Y, and Z operators.
+
+IR
+intermediate representation
+  **Preferred term:** intermediate representation. **Accepted abbreviation:**
+  IR. A program representation used between a source language and final output
+  so compiler analyses and transformations can operate on explicit structure.
+
+jeff
+  **Preferred term:** jeff. **Accepted aliases:** none. A structured, extensible
+  [interchange format for quantum programs](https://github.com/unitaryfoundation/jeff).
+  `jeff` is a name, not an
+  abbreviation, and is always written in lowercase.
+
+LLVM
+  **Preferred term:** LLVM. **Accepted aliases:** none. The compiler
+  [infrastructure project](https://llvm.org/) on which MLIR is built. LLVM is
+  the current project name; do not expand it as an abbreviation in MQT prose.
+
+MLIR
+Multi-Level Intermediate Representation
+  **Preferred term:** MLIR. **Accepted expansion:** Multi-Level Intermediate
+  Representation. [LLVM's reusable infrastructure](https://mlir.llvm.org/) for
+  building compilers with several interoperating abstraction levels.
+
+modular multiplier
+  **Preferred term:** modular multiplier. **Accepted aliases:** none. An
+  arithmetic circuit that computes a product reduced modulo a specified integer.
+
+MQSC
+Munich Quantum Software Company
+  **Preferred term:** [MQSC](https://mq.sc). **Accepted expansion:** Munich
+  Quantum Software Company. The company develops MQT Core together with the
+  {term}`Chair for Design Automation <CDA>` at {term}`TUM`. Use the linked short
+  name in prose; reserve the full legal name for copyright notices.
+
+MQSS
+Munich Quantum Software Stack
+  **Preferred term:** Munich Quantum Software Stack. **Accepted abbreviation:**
+  MQSS. The
+  [Munich Quantum Valley compilation and runtime ecosystem](https://www.munich-quantum-valley.de/research/research-areas/mqss)
+  that connects quantum software to local and remote quantum devices.
+
+MQT
+Munich Quantum Toolkit
+  **Preferred term:** Munich Quantum Toolkit. **Accepted abbreviation:** MQT.
+  The [open-source software toolkit](https://mqt.readthedocs.io/) of which MQT
+  Core is the shared foundation.
+
+MQT Compiler Collection
+  **Preferred term:** MQT Compiler Collection. **Accepted aliases:** none.
+  MQT Core's framework for compiling, optimizing, and exchanging quantum
+  programs through Python, C++, and the `mqt-cc` command-line driver.
+
+MQV
+Munich Quantum Valley
+  **Preferred term:** Munich Quantum Valley. **Accepted abbreviation:** MQV. A
+  [Bavarian initiative](https://www.munich-quantum-valley.de/) that develops
+  quantum computing research, technology, education, and infrastructure.
+
+OpenQASM
+Open Quantum Assembly Language
+  **Preferred term:** OpenQASM. **Accepted expansion:** Open Quantum Assembly
+  Language. A [versioned language](https://openqasm.com/) for describing quantum
+  programs. Include the major version when behavior depends on it.
+
+QASM
+quantum assembly language
+  **Preferred term:** quantum assembly language. **Accepted abbreviation:**
+  QASM. A generic category of assembly-like languages for quantum programs. Do
+  not use QASM as an alias for a specific OpenQASM version.
+
+QDMI
+Quantum Device Management Interface
+  **Preferred term:** Quantum Device Management Interface. **Accepted
+  abbreviation:** QDMI. An
+  [interface](https://munich-quantum-software-stack.github.io/QDMI/) for
+  discovering quantum-device properties and submitting and controlling work
+  without coupling software to one device implementation.
+
+QIR
+Quantum Intermediate Representation
+  **Preferred term:** Quantum Intermediate Representation. **Accepted
+  abbreviation:** QIR. An
+  [LLVM-based representation and runtime interface](https://www.qir-alliance.org/)
+  for exchanging and executing quantum programs.
+
+TUM
+Technical University of Munich
+  **Preferred term:** Technical University of Munich. **Accepted abbreviation:**
+  TUM. The university that hosts the Chair for Design Automation.
+```
+
+## Compiler terms
+
+```{glossary}
+:sorted:
+
+operation
+op
+  **Preferred term:** operation. **Accepted alias:** op in code and compact
+  technical prose. The basic unit of work and structure in MLIR. An operation
+  has a name and can have inputs, results, attributes, and nested regions.
+
+dialect
+  A named family of related MLIR operations, types, attributes, and rules. A
+  dialect lets one IR contain concepts from several abstraction levels without
+  forcing them into one universal instruction set.
+
+pass
+  A procedure that inspects or changes IR while preserving the invariants
+  declared by its input and output contracts. A pass normally runs as one step
+  of a pass pipeline.
+
+rewrite pattern
+  A local rule that recognizes one IR shape and replaces or updates it. A
+  pattern reports failure without changing IR when its input does not match.
+
+canonicalization
+  A semantics-preserving rewrite toward a simpler or preferred representation.
+  Canonicalization is not a general optimization pipeline and must not depend on
+  a particular downstream target.
+
+conversion
+  A change between or within MLIR dialects, from one legal set of operations or
+  types to another. Conversion can be partial or complete and is governed by a
+  conversion target that states what is legal.
+
+translation
+  A change across the boundary between MLIR and a non-MLIR representation, such
+  as OpenQASM text, QIR, or another external program model. Prefer conversion
+  when both the source and destination are MLIR dialects.
+
+import
+  A translation from an external representation into MQT Core or MLIR.
+
+export
+  A translation from MQT Core or MLIR into an external representation.
+
+serialization
+  **Preferred term:** serialization. **Accepted aliases:** none. Encoding a
+  program as bytes or writing that encoding to a file. Deserialization reads
+  the encoding back into a program. Converting QCO to the `jeff` MLIR dialect
+  prepares a serializable program; `JeffProgram.to_bytes` and
+  `JeffProgram.write` serialize it.
+
+lowering
+  A transformation from a higher-level representation to one closer to the
+  operations supported by a target. Lowering can use conversion, rewrites, or
+  several passes; it does not imply one specific MLIR mechanism.
+
+legalization
+  The act of replacing or rejecting IR until every remaining operation and type
+  satisfies a declared conversion target or target capability.
+
+compiler target
+  An immutable MQT description of the operations, topology, and properties that
+  a compiler pipeline may use for one destination. It is a snapshot used for
+  compilation, not a live device connection.
+
+operation capability
+  **Preferred term:** operation capability. **Accepted aliases:** none. A
+  compiler target's description of a supported operation, including its name,
+  arity, parameters, placements, and optional calibration data. Represented by
+  `CompilerTarget::OperationCapability` in C++ and
+  `CompilerTarget.OperationCapability` in Python. An MLIR operation is an IR
+  instance, not this capability description.
+
+conversion target
+  **Preferred term:** conversion target. **Accepted aliases:** none. The MLIR
+  legality rules used by a dialect conversion. It is distinct from an MQT
+  compiler target, which describes a compilation destination.
+
+compiled program
+  A serialized program with the target and payload specification used to compile
+  it. Submission checks that the destination supports the same contract.
+
+target environment
+  A compiler target paired with the selected payload specification for one
+  compilation. It combines hardware facts with the selected output contract.
+
+selected payload specification
+  The exact format, encoding, and effective execution capabilities selected for
+  a compiled program. It does not describe every format accepted by a device.
+
+payload
+  The program IR on which a transform, schedule, or target-specific action
+  operates. Use a more specific term when the exact object, such as a function
+  or circuit, matters.
+
+execution payload
+  The serialized program submitted for execution. This is distinct from the
+  MLIR transform dialect's payload IR. A payload format identifies its
+  representation; execution capabilities state what that representation may
+  contain for the selected target.
+
+static
+  Known while compiling the program. Static does not necessarily mean a C++
+  object with static storage duration. In `qc.static` and `qco.static`, it
+  describes a known qubit identifier, not a known quantum state.
+
+dynamic
+  Known only while executing the compiled program or interacting with a target.
+  A dynamic quantum allocation acquires resources during execution, even when
+  its size is a compile-time constant.
+
+static gate count
+  **Preferred term:** static gate count. **Accepted aliases:** none. The number
+  of gate operations in the entry-point IR. Each structured control-flow region
+  is counted once, including every branch and loop body. Modifier bodies are
+  not counted recursively, and barriers are excluded. This is not the number
+  of gates executed at runtime or a count expanded through function calls.
+
+QC
+  MQT's compatibility-oriented quantum-circuit dialect. QC uses reference
+  semantics: operations act on qubit references rather than producing a new SSA
+  value for each updated qubit state.
+
+QCO
+  MQT's optimization-oriented quantum-circuit dialect. QCO uses value semantics:
+  a quantum operation consumes input qubit values and produces output qubit
+  values.
+
+QTensor
+  MQT's dialect for one-dimensional collections of qubits used with QCO. Its
+  operations preserve the linear ownership of the contained quantum values.
+
+reference semantics
+  A model in which an operation changes an object reached through a stable
+  reference. QC qubit operations use this model.
+
+value semantics
+  A model in which an operation consumes input values and produces new output
+  values. QCO uses this model to make quantum data flow explicit in SSA form.
+
+linear semantics
+linear ownership
+  **Preferred term:** linear semantics. **Accepted alias:** linear ownership
+  when discussing ownership transfers. Each quantum SSA value in valid QCO IR
+  has exactly one use, including block arguments. Control-flow operations
+  transfer ownership through their operands, region arguments, and results.
+  `qco::verifyLinearity` checks this rule; ordinary MLIR type checking alone
+  does not establish it. Linearity does not imply positional wire correspondence.
+```
+
+## Quantum benchmark terms
+
+```{glossary}
+:sorted:
+
+benchmark instance
+  **Preferred term:** benchmark instance. **Accepted alias:** instance when the
+  benchmark context is clear. One validated member of a benchmark family with
+  every default resolved. It owns a logical output and analytic reference and
+  can be used to generate a program or manifest.
+
+benchmark instance specification
+instance specification
+  **Preferred term:** benchmark instance specification. **Accepted alias:**
+  instance specification when the benchmark context is clear. A strict JSON
+  document that names a benchmark family and provides the parameters used to
+  construct an instance. Input can omit documented defaults; the canonical form
+  records every resolved default. It specifies configuration. It does not
+  request program generation or execution.
+
+benchmark manifest
+manifest
+  **Preferred term:** benchmark manifest. **Accepted alias:** manifest when the
+  benchmark context is clear. A canonical sidecar record generated for a
+  benchmark instance. It records the resolved parameters, case ID, logical
+  outputs, reference model, and benchmark-definition version. It accompanies
+  the generated program but does not identify its file, format, or bytes.
+
+iterative quantum phase estimation
+iterative QPE
+iQPE
+  **Preferred term:** iterative quantum phase estimation. **Accepted aliases:**
+  iterative QPE and iQPE. A phase-estimation method that measures, resets, and
+  reuses one query qubit for each output bit. Each round applies corrections
+  controlled by earlier measurement results.
+
+semiclassical quantum Fourier transform
+semiclassical QFT
+  **Preferred term:** semiclassical quantum Fourier transform. **Accepted
+  alias:** semiclassical QFT. A quantum Fourier-transform method that measures,
+  resets, and reuses one qubit for each output bit. Each round applies rotations
+  controlled by earlier measurement results.
+```
+
+## Index
+
+Every glossary entry appears in the
+{ref}`alphabetical documentation index <genindex>`.
+
+[mlir-glossary]: https://mlir.llvm.org/getting_started/Glossary/

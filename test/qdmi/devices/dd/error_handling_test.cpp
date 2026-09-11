@@ -11,12 +11,14 @@
 /*
  * DDSIM QDMI Device - Error handling and invalid arguments
  */
-#include "helpers/circuits.hpp"
-#include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <gtest/gtest.h>
+#include "helpers/circuits.hpp"
+#include "helpers/controlled_job.hpp"
+#include "helpers/test_utils.hpp"
+
+#include "gtest/gtest.h"
 
 namespace {
 
@@ -74,20 +76,14 @@ TEST_F(ErrorHandling, NullptrArguments) {
 TEST_F(ErrorHandling, GetResultsBeforeDone) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_HEAVY_SAMPLING),
-            QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 16384), QDMI_SUCCESS);
-  // Before submit → invalid
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
             QDMI_ERROR_BADSTATE);
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j.job), QDMI_SUCCESS);
-  // After submit but not necessarily done → still invalid or waits; contract
-  // says invalid
+  qdmi_test::ControlledJob running{j.job};
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
                 j.job, QDMI_JOB_RESULT_HIST_KEYS, 0, nullptr, nullptr),
             QDMI_ERROR_BADSTATE);
+  running.release();
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
 }
 
@@ -161,7 +157,7 @@ TEST_F(ErrorHandling, CustomEnums) {
 
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
                 s.session, QDMI_DEVICE_PROPERTY_CUSTOM1, 0, nullptr, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+            QDMI_SUCCESS);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_session_query_device_property(
                 s.session, QDMI_DEVICE_PROPERTY_CUSTOM2, 0, nullptr, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
@@ -223,7 +219,7 @@ TEST_F(ErrorHandling, CustomEnums) {
 
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                 j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM1, 0, nullptr),
-            QDMI_ERROR_NOTSUPPORTED);
+            QDMI_SUCCESS);
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                 j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM2, 0, nullptr),
             QDMI_ERROR_NOTSUPPORTED);
@@ -314,4 +310,21 @@ TEST_F(ErrorHandling, MalformedProgramFailsForBothModes) {
     ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(j.job, &js), QDMI_SUCCESS);
     EXPECT_EQ(js, QDMI_JOB_STATUS_FAILED);
   }
+}
+
+TEST_F(ErrorHandling, QASM3PartiallyInitializedOutputFails) {
+  constexpr std::string_view program = R"qasm(OPENQASM 3.0;
+bit[2] c;
+qubit[2] q;
+c[0] = measure q[0];
+)qasm";
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3, program),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(j.job, 1), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(j.job, 0), QDMI_SUCCESS);
+  QDMI_Job_Status status{};
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_check(j.job, &status), QDMI_SUCCESS);
+  EXPECT_EQ(status, QDMI_JOB_STATUS_FAILED);
 }

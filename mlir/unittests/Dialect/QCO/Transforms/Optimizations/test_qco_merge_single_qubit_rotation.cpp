@@ -8,26 +8,40 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/MQT/Utils/Angles.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/WalkResult.h>
+#include "ExactUnitaryTest.h"
 
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/WalkResult.h"
+#include "mlir/Transforms/Passes.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+
+#include <array>
 #include <cassert>
 #include <cmath>
+#include <complex>
 #include <cstdint>
 #include <numbers>
 #include <optional>
@@ -38,7 +52,7 @@ namespace {
 using namespace mlir;
 using namespace mlir::qco;
 
-/// A constant for the value of \f$\pi\f$.
+/// A constant for the value of π.
 constexpr double PI = std::numbers::pi;
 
 class MergeSingleQubitRotationGatesTest : public ::testing::Test {
@@ -48,10 +62,8 @@ protected:
   OwningOpRef<ModuleOp> module;
 
   enum class GateType : std::uint8_t { RX, RY, RZ, P, R, U2, U };
-  /**
-   * @brief Struct to easily construct a rotation gate inline.
-   *        opName uses the getOperationName() mnemonic.
-   */
+  /// Struct to easily construct a rotation gate inline. opName uses the
+  /// getOperationName() mnemonic.
   struct RotationGate {
     GateType type;
     SmallVector<double, 4> angles;
@@ -68,18 +80,14 @@ protected:
     builder.initialize();
   }
 
-  /**
-   * @brief Counts the amount of operations the current module/circuit contains.
-   */
+  /// Counts the amount of operations the current module/circuit contains.
   template <typename OpTy> int countOps() {
     int count = 0;
     module->walk([&](OpTy) { ++count; });
     return count;
   }
 
-  /**
-   * @brief Extract constant floating point value from a Value
-   */
+  /// Extract constant floating point value from a Value
   static std::optional<double> toDouble(Value v) {
     if (auto constOp = v.getDefiningOp<arith::ConstantOp>()) {
       if (auto floatAttr = dyn_cast<FloatAttr>(constOp.getValue())) {
@@ -89,11 +97,40 @@ protected:
     return std::nullopt;
   }
 
-  /**
-   * @brief Find the first occurrence of a u-gate in the current module and get
-   * the numeric value of its parameters. This assumes that parameters are
-   * constant and can be extracted.
-   */
+  /// True if `v`'s use-def cone reaches `target` (e.g. a function argument).
+  static bool valueDependsOn(Value v, Value target) {
+    DenseSet<Value> visited;
+    SmallVector<Value> worklist{v};
+    while (!worklist.empty()) {
+      Value cur = worklist.pop_back_val();
+      if (cur == target) {
+        return true;
+      }
+      if (!visited.insert(cur).second) {
+        continue;
+      }
+      if (Operation* def = cur.getDefiningOp()) {
+        worklist.append(def->operand_begin(), def->operand_end());
+      }
+    }
+    return false;
+  }
+
+  /// Replace the first `values.size()` function arguments with f64 constants so
+  /// dynamic SSA can be constant-folded for numeric checks.
+  static void bindLeadingArgs(func::FuncOp funcOp, ArrayRef<double> values) {
+    OpBuilder b(funcOp.getContext());
+    b.setInsertionPointToStart(&funcOp.getBody().front());
+    for (auto [idx, value] : llvm::enumerate(values)) {
+      Value c = arith::ConstantOp::create(b, funcOp.getLoc(),
+                                          b.getF64FloatAttr(value));
+      funcOp.getArgument(idx).replaceAllUsesWith(c);
+    }
+  }
+
+  /// Find the first occurrence of a u-gate in the current module and get
+  /// the numeric value of its parameters. This assumes that parameters are
+  /// constant and can be extracted.
   std::optional<std::tuple<double, double, double>> getUGateParams() {
     UOp uOp = nullptr;
     module->walk([&](UOp op) {
@@ -117,10 +154,8 @@ protected:
     return std::make_tuple(*theta, *phi, *lambda);
   }
 
-  /**
-   * @brief Gets the first u-gate of a module and tests whether its angle
-   * parameters are equal to the expected ones.
-   */
+  /// Gets the first u-gate of a module and tests whether its angle
+  /// parameters are equal to the expected ones.
   void expectUGateParams(double expectedTheta, double expectedPhi,
                          double expectedLambda, double tolerance = 1e-8) {
     auto params = getUGateParams();
@@ -132,10 +167,8 @@ protected:
     EXPECT_NEAR(lambda, expectedLambda, tolerance);
   }
 
-  /**
-   * @brief Find the first occurrence of a gphase op in the current module and
-   * get the numeric value of its parameter.
-   */
+  /// Find the first occurrence of a gphase op in the current module and
+  /// get the numeric value of its parameter.
   std::optional<double> getGPhaseParam() {
     GPhaseOp gOp = nullptr;
     module->walk([&](GPhaseOp op) {
@@ -150,17 +183,20 @@ protected:
     return toDouble(gOp.getParameter(0));
   }
 
-  /**
-   * @brief Gets the first gphase op of a module and tests whether its angle
-   * parameter is equal to the expected one.
-   */
+  /// Gets the first gphase op of a module and tests whether its angle
+  /// parameter is equal to the expected one.
   void expectGPhaseParam(double expected, double tolerance = 1e-8) {
+    expected = mlir::mqt::normalizeAngle(expected);
     auto param = getGPhaseParam();
+    if (expected == 0.0) {
+      EXPECT_FALSE(param.has_value());
+      return;
+    }
     ASSERT_TRUE(param.has_value());
     EXPECT_NEAR(*param, expected, tolerance);
   }
 
-  Value buildRotations(ArrayRef<RotationGate> rotations, Value& q) {
+  Value buildRotations(ArrayRef<RotationGate> rotations, Value q) {
     auto qubit = q;
 
     for (const auto& gate : rotations) {
@@ -200,29 +236,49 @@ protected:
     return qubit;
   }
 
-  /**
-   * @brief Takes a list of rotation gates (rx, ry, rz and u) and uses the
-   * builder api to build a small quantum circuit, where a qubit is fed through
-   * all rotations in the list.
-   */
+  /// Takes a list of rotation gates (rx, ry, rz and u) and uses the
+  /// builder api to build a small quantum circuit, where a qubit is fed through
+  /// all rotations in the list.
   LogicalResult testGateMerge(ArrayRef<RotationGate> rotations) {
-    auto q = builder.allocQubitRegister(1);
+    auto q = builder.staticQubit(0);
 
-    buildRotations(rotations, q[0]);
+    q = buildRotations(rotations, q);
+    builder.sink(q);
 
     module = builder.finalize();
-    return runMergePass(module.get());
+    OwningOpRef<ModuleOp> original = module->clone();
+    const auto result = runMergePass(*module);
+    if (succeeded(result)) {
+      ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+    }
+    return result;
   }
 
-  /**
-   * @brief Adds the mergeRotationGates Pass to the current context and runs it.
-   */
+  /// Adds the mergeRotationGates Pass to the current context and runs it.
   static LogicalResult runMergePass(ModuleOp module) {
     PassManager pm(module.getContext());
     pm.addPass(qco::createMergeSingleQubitRotationGates());
     return pm.run(module);
   }
 };
+
+enum class FixedGateType : std::uint8_t {
+  X,
+  Y,
+  Z,
+  H,
+  S,
+  Sdg,
+  T,
+  Tdg,
+  SX,
+  SXdg,
+  Id,
+};
+
+class MergeFixedSingleQubitGateTest
+    : public MergeSingleQubitRotationGatesTest,
+      public testing::WithParamInterface<FixedGateType> {};
 
 } // namespace
 
@@ -235,21 +291,17 @@ protected:
 // # Two Gate Merging Tests
 // ##################################################
 
-/**
- * @brief Test: RX->RX should merge into a single U gate
- */
+/// Test: RX → RX should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRXRXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {1.}},
                              {.type = GateType::RX, .angles = {1.}}})
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RXOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
-/**
- * @brief Test: RX->RY should merge into a single U gate
- */
+/// Test: RX → RY should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRXRYGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {1.}},
                              {.type = GateType::RY, .angles = {1.}}})
@@ -262,9 +314,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRXRYGates) {
   expectGPhaseParam(0.290030874178775);
 }
 
-/**
- * @brief Test: RX->RZ should merge into a single U gate
- */
+/// Test: RX → RZ should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRXRZGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {1.}},
                              {.type = GateType::RZ, .angles = {1.}}})
@@ -277,9 +327,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRXRZGates) {
   expectGPhaseParam(-0.5);
 }
 
-/**
- * @brief Test: RY->RX should merge into a single U gate
- */
+/// Test: RY → RX should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRYRXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1.}},
                              {.type = GateType::RX, .angles = {1.}}})
@@ -292,21 +340,17 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRYRXGates) {
   expectGPhaseParam(-0.290030874178775);
 }
 
-/**
- * @brief Test: RY->RY should merge into a single U gate
- */
+/// Test: RY → RY should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRYRYGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1.}},
                              {.type = GateType::RY, .angles = {1.}}})
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RYOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
-/**
- * @brief Test: RY->RZ should merge into a single U gate
- */
+/// Test: RY → RZ should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRYRZGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1.}},
                              {.type = GateType::RZ, .angles = {1.}}})
@@ -319,9 +363,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRYRZGates) {
   expectGPhaseParam(-0.5);
 }
 
-/**
- * @brief Test: RZ->RX should merge into a single U gate
- */
+/// Test: RZ → RX should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRZRXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {1.}},
                              {.type = GateType::RX, .angles = {1.}}})
@@ -334,9 +376,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRZRXGates) {
   expectGPhaseParam(-0.5);
 }
 
-/**
- * @brief Test: RZ->RY should merge into a single U gate
- */
+/// Test: RZ → RY should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRZRYGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {1.}},
                              {.type = GateType::RY, .angles = {1.}}})
@@ -349,9 +389,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRZRYGates) {
   expectGPhaseParam(-0.5);
 }
 
-/**
- * @brief Test: RZ->RZ should merge into a single U gate
- */
+/// Test: RZ → RZ should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRZRZGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {1.}},
                              {.type = GateType::RZ, .angles = {1.}}})
@@ -361,9 +399,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRZRZGates) {
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
-/**
- * @brief Test: U->U should merge into a single U gate
- */
+/// Test: U → U should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeUUGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U, .angles = {1., 2., 3.}},
                              {.type = GateType::U, .angles = {4., 5., 6.}}})
@@ -371,12 +407,10 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeUUGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
   expectUGateParams(2.03289042623884, 0.663830775701153, 0.849231441867857);
-  expectGPhaseParam(7.243468891215494);
+  expectGPhaseParam(-2.1813090695538833);
 }
 
-/**
- * @brief Test: U->RX should merge into a single U gate
- */
+/// Test: U → RX should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeURXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U, .angles = {1., 2., 3.}},
                              {.type = GateType::RX, .angles = {1.}}})
@@ -386,9 +420,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeURXGates) {
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
-/**
- * @brief Test: U->RY should merge into a single U gate
- */
+/// Test: U → RY should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeURYGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U, .angles = {1., 2., 3.}},
                              {.type = GateType::RY, .angles = {1.}}})
@@ -398,9 +430,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeURYGates) {
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
-/**
- * @brief Test: U->RZ should merge into a single U gate
- */
+/// Test: U → RZ should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeURZGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U, .angles = {1., 2., 3.}},
                              {.type = GateType::RZ, .angles = {1.}}})
@@ -410,9 +440,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeURZGates) {
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
-/**
- * @brief Test: RX->U should merge into a single U gate
- */
+/// Test: RX → U should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRXUGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {1.}},
                              {.type = GateType::U, .angles = {1., 2., 3.}}})
@@ -422,9 +450,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRXUGates) {
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
-/**
- * @brief Test: RY->U should merge into a single U gate
- */
+/// Test: RY → U should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRYUGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1.}},
                              {.type = GateType::U, .angles = {1., 2., 3.}}})
@@ -434,9 +460,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRYUGates) {
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
-/**
- * @brief Test: RZ->U should merge into a single U gate
- */
+/// Test: RZ → U should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRZUGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {1.}},
                              {.type = GateType::U, .angles = {1., 2., 3.}}})
@@ -445,9 +469,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRZUGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
-/**
- * @brief Test: P->RX should merge into a single U gate
- */
+/// Test: P → RX should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergePRXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::P, .angles = {1.}},
                              {.type = GateType::RX, .angles = {1.}}})
@@ -455,14 +477,12 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergePRXGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<POp>(), 0);
   EXPECT_EQ(countOps<RXOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
   expectUGateParams(1., -1.57079632679490, 2.57079632679490);
-  expectGPhaseParam(1.11022302462516e-16);
+  expectGPhaseParam(0.0);
 }
 
-/**
- * @brief Test: P->RY should merge into a single U gate
- */
+/// Test: P → RY should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergePRYGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::P, .angles = {1.}},
                              {.type = GateType::RY, .angles = {1.}}})
@@ -470,24 +490,21 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergePRYGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<POp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
-/**
- * @brief Test: P->U should merge into a single U gate
- */
+/// Test: P → U should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergePUGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::P, .angles = {1.}},
                              {.type = GateType::U, .angles = {1., 2., 3.}}})
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<POp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
+  expectGPhaseParam(0.0);
 }
 
-/**
- * @brief Test: R->RX should merge into a single U gate
- */
+/// Test: R → RX should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRRXGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::R, .angles = {1., 1.}},
                              {.type = GateType::RX, .angles = {1.}}})
@@ -498,22 +515,18 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRRXGates) {
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
-/**
- * @brief Test: P->P should merge into a single U gate
- */
+/// Test: P → P should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergePPGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::P, .angles = {1.}},
                              {.type = GateType::P, .angles = {1.}}})
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<POp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
-/**
- * @brief Test: R->R should merge into a single U gate (same multi-parameter
- * type always uses quaternion merge)
- */
+/// Test: R → R should merge into a single U gate (same multi-parameter type
+/// always uses quaternion merge)
 TEST_F(MergeSingleQubitRotationGatesTest, mergeRRGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::R, .angles = {1., 2.}},
                              {.type = GateType::R, .angles = {3., 4.}}})
@@ -521,12 +534,10 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeRRGates) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<ROp>(), 0);
   expectUGateParams(2.07770669385131, 1.36334275733332, 2.85969871348886);
-  expectGPhaseParam(-2.1115207354110845);
+  expectGPhaseParam(1.0300719181787086);
 }
 
-/**
- * @brief Test: U2->U should merge into a single U gate
- */
+/// Test: U2 → U should merge into a single U gate
 TEST_F(MergeSingleQubitRotationGatesTest, mergeU2UGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U2, .angles = {1., 2.}},
                              {.type = GateType::U, .angles = {1., 2., 3.}}})
@@ -536,10 +547,8 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeU2UGates) {
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
-/**
- * @brief Test: U2->U2 should merge into a single U gate (same multi-parameter
- * type always uses quaternion merge)
- */
+/// Test: U2 → U2 should merge into a single U gate (same multi-parameter type
+/// always uses quaternion merge)
 TEST_F(MergeSingleQubitRotationGatesTest, mergeU2U2Gates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U2, .angles = {1., 2.}},
                              {.type = GateType::U2, .angles = {3., 4.}}})
@@ -548,16 +557,14 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeU2U2Gates) {
   EXPECT_EQ(countOps<U2Op>(), 0);
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
   expectUGateParams(1.85840734641021, 1.42920367320511, 0.429203673205103);
-  expectGPhaseParam(4.070796326794897);
+  expectGPhaseParam(0.92920367320510344);
 }
 
 // ##################################################
 // # Not Merging Tests
 // ##################################################
 
-/**
- * @brief Test: single RX should not convert to U
- */
+/// Test: single RX should not convert to U
 TEST_F(MergeSingleQubitRotationGatesTest, noMergeSingleRXGate) {
   ASSERT_TRUE(
       testGateMerge({{.type = GateType::RX, .angles = {1.}}}).succeeded());
@@ -566,9 +573,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, noMergeSingleRXGate) {
   EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
-/**
- * @brief Test: single RY should not convert to U
- */
+/// Test: single RY should not convert to U
 TEST_F(MergeSingleQubitRotationGatesTest, noMergeSingleRYGate) {
   ASSERT_TRUE(
       testGateMerge({{.type = GateType::RY, .angles = {1.}}}).succeeded());
@@ -577,9 +582,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, noMergeSingleRYGate) {
   EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
-/**
- * @brief Test: single RZ should not convert to U
- */
+/// Test: single RZ should not convert to U
 TEST_F(MergeSingleQubitRotationGatesTest, noMergeSingleRZGate) {
   ASSERT_TRUE(
       testGateMerge({{.type = GateType::RZ, .angles = {1.}}}).succeeded());
@@ -588,9 +591,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, noMergeSingleRZGate) {
   EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
-/**
- * @brief Test: Gates on different qubits should not merge
- */
+/// Test: Gates on different qubits should not merge
 TEST_F(MergeSingleQubitRotationGatesTest, dontMergeGatesFromDifferentQubits) {
   auto q = builder.allocQubitRegister(2);
 
@@ -604,21 +605,83 @@ TEST_F(MergeSingleQubitRotationGatesTest, dontMergeGatesFromDifferentQubits) {
   EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
 
-/**
- * @brief Test: Non-consecutive gates should not merge
- */
-TEST_F(MergeSingleQubitRotationGatesTest, dontMergeNonConsecutiveGates) {
+TEST_P(MergeFixedSingleQubitGateTest, PreservesMatrix) {
+  auto q = builder.staticQubit(0);
+  switch (GetParam()) {
+  case FixedGateType::X:
+    q = builder.x(q);
+    break;
+  case FixedGateType::Y:
+    q = builder.y(q);
+    break;
+  case FixedGateType::Z:
+    q = builder.z(q);
+    break;
+  case FixedGateType::H:
+    q = builder.h(q);
+    break;
+  case FixedGateType::S:
+    q = builder.s(q);
+    break;
+  case FixedGateType::Sdg:
+    q = builder.sdg(q);
+    break;
+  case FixedGateType::T:
+    q = builder.t(q);
+    break;
+  case FixedGateType::Tdg:
+    q = builder.tdg(q);
+    break;
+  case FixedGateType::SX:
+    q = builder.sx(q);
+    break;
+  case FixedGateType::SXdg:
+    q = builder.sxdg(q);
+    break;
+  case FixedGateType::Id:
+    q = builder.id(q);
+    break;
+  }
+  q = builder.rx(0.37, q);
+  builder.sink(q);
+  module = builder.finalize();
+
+  OwningOpRef<ModuleOp> original = module->clone();
+  ASSERT_TRUE(runMergePass(*module).succeeded());
+
+  ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+  EXPECT_EQ(countOps<IdOp>(), 0);
+  if (GetParam() == FixedGateType::Id) {
+    // Folding the identity leaves a single RX, which does not need merging.
+    EXPECT_EQ(countOps<UOp>(), 0);
+    EXPECT_EQ(countOps<RXOp>(), 1);
+  } else {
+    EXPECT_EQ(countOps<UOp>(), 1);
+    EXPECT_EQ(countOps<RXOp>(), 0);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(AllFixedGates, MergeFixedSingleQubitGateTest,
+                         testing::Values(FixedGateType::X, FixedGateType::Y,
+                                         FixedGateType::Z, FixedGateType::H,
+                                         FixedGateType::S, FixedGateType::Sdg,
+                                         FixedGateType::T, FixedGateType::Tdg,
+                                         FixedGateType::SX, FixedGateType::SXdg,
+                                         FixedGateType::Id));
+
+/// Test: Gates separated by a barrier should not merge.
+TEST_F(MergeSingleQubitRotationGatesTest, dontMergeAcrossBarrier) {
   auto q = builder.allocQubitRegister(1);
 
   auto q1 = builder.rx(1.0, q[0]);
-  auto q2 = builder.h(q1);
+  auto q2 = builder.barrier({q1})[0];
   builder.ry(1.0, q2);
 
   module = builder.finalize();
 
   ASSERT_TRUE(runMergePass(module.get()).succeeded());
   EXPECT_EQ(countOps<RXOp>(), 1);
-  EXPECT_EQ(countOps<HOp>(), 1);
+  EXPECT_EQ(countOps<BarrierOp>(), 1);
   EXPECT_EQ(countOps<RYOp>(), 1);
   EXPECT_EQ(countOps<GPhaseOp>(), 0);
 }
@@ -627,9 +690,7 @@ TEST_F(MergeSingleQubitRotationGatesTest, dontMergeNonConsecutiveGates) {
 // # Greedy Merging Tests
 // ##################################################
 
-/**
- * @brief Test: Many gates should greedily merge into one U
- */
+/// Test: Many gates should greedily merge into one U
 TEST_F(MergeSingleQubitRotationGatesTest, mergeManyGates) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::U, .angles = {1., 2., 3.}},
                              {.type = GateType::RX, .angles = {1.}},
@@ -644,43 +705,45 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeManyGates) {
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
-/**
- * @brief Test: Many gates with one unmergeable in between should merge into two
- * U with the unmergeable in between.
- */
+/// Test: Many gates with one unmergeable in between should merge into two
+/// U with the unmergeable in between.
 TEST_F(MergeSingleQubitRotationGatesTest, mergeManyWithUnmergeable) {
   auto reg = builder.allocQubitRegister(1);
   auto q = reg[0];
-  q = buildRotations({{.type = GateType::U, .angles = {1., 2., 3.}},
-                      {.type = GateType::RX, .angles = {1.}},
-                      {.type = GateType::RY, .angles = {2.}},
-                      {.type = GateType::RZ, .angles = {3.}}},
-                     q);
-  q = builder.h(q);
-  q = buildRotations({{.type = GateType::RZ, .angles = {4.}},
-                      {.type = GateType::RY, .angles = {5.}},
-                      {.type = GateType::RX, .angles = {6.}},
-                      {.type = GateType::U, .angles = {4., 5., 6.}}},
-                     q);
+  q = buildRotations(
+      {
+          {.type = GateType::U, .angles = {1., 2., 3.}},
+          {.type = GateType::RX, .angles = {1.}},
+          {.type = GateType::RY, .angles = {2.}},
+          {.type = GateType::RZ, .angles = {3.}},
+      },
+      q);
+  q = builder.barrier({q})[0];
+  q = buildRotations(
+      {
+          {.type = GateType::RZ, .angles = {4.}},
+          {.type = GateType::RY, .angles = {5.}},
+          {.type = GateType::RX, .angles = {6.}},
+          {.type = GateType::U, .angles = {4., 5., 6.}},
+      },
+      q);
 
   module = builder.finalize();
 
   ASSERT_TRUE(runMergePass(module.get()).succeeded());
   EXPECT_EQ(countOps<UOp>(), 2);
-  EXPECT_EQ(countOps<HOp>(), 1);
+  EXPECT_EQ(countOps<BarrierOp>(), 1);
   EXPECT_EQ(countOps<RXOp>(), 0);
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 2);
+  EXPECT_EQ(countOps<GPhaseOp>(), 1);
 }
 
 // ##################################################
 // # Special Cases Tests
 // ##################################################
 
-/**
- * @brief Test: Consecutive gates with another gate in between should merge
- */
+/// Test: Consecutive gates with another gate in between should merge
 TEST_F(MergeSingleQubitRotationGatesTest, mergeConsecutiveWithGateInBetween) {
   auto q = builder.allocQubitRegister(2);
 
@@ -702,9 +765,8 @@ TEST_F(MergeSingleQubitRotationGatesTest, mergeConsecutiveWithGateInBetween) {
 // # Numerical Correctness
 // ##################################################
 
-/**
- * @brief Test: RZ(PI)->RY(PI)->RX(PI) should merge into U(0, 0, 0)
- */
+/// Test: RZ(π) → RY(π) → RX(π) should merge into U(0, 0, 0) with a π global
+/// phase.
 TEST_F(MergeSingleQubitRotationGatesTest, numericalRotationIdentity) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {PI}},
                              {.type = GateType::RY, .angles = {PI}},
@@ -715,12 +777,11 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalRotationIdentity) {
   EXPECT_EQ(countOps<RZOp>(), 0);
   EXPECT_EQ(countOps<GPhaseOp>(), 1);
   expectUGateParams(0., 0., 0.);
-  expectGPhaseParam(0.);
+  // In circuit order, RZ(π);RY(π);RX(π) is -I rather than I.
+  expectGPhaseParam(PI);
 }
 
-/**
- * @brief Test: RY(1)->RZ(1)->RZ(-1)->RY(-1) should merge into U(0, 0, 0)
- */
+/// Test: RY(1) → RZ(1) → RZ(-1) → RY(-1) should merge into U(0, 0, 0)
 TEST_F(MergeSingleQubitRotationGatesTest, numericalRotationIdentity2) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RY, .angles = {1}},
                              {.type = GateType::RZ, .angles = {1}},
@@ -730,15 +791,13 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalRotationIdentity2) {
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<RYOp>(), 0);
   EXPECT_EQ(countOps<RZOp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
   expectUGateParams(0., 0., 0.);
   expectGPhaseParam(0.);
 }
 
-/**
- * @brief Test: RX(0.001)->RY(0.001) should merge into U(0.00141421344452194,
- * -0.785398413397490, 0.785397913397407)
- */
+/// Test: RX(0.001) → RY(0.001) should merge into U(0.00141421344452194,
+/// -0.785398413397490, 0.785397913397407)
 TEST_F(MergeSingleQubitRotationGatesTest, numericalSmallAngles) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {0.001}},
                              {.type = GateType::RY, .angles = {0.001}}})
@@ -751,9 +810,126 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalSmallAngles) {
   expectGPhaseParam(2.50000041668308e-7);
 }
 
-/**
- * @brief Test: RX(PI)->RY(PI) should merge into U(0, -PI, 0.)
- */
+TEST_F(MergeSingleQubitRotationGatesTest,
+       preservesSmallRotationsAndSingularPhasesInBothBackends) {
+  constexpr std::array<std::array<double, 2>, 8> parameterSets{
+      {
+          {1e-10, 1e-10},
+          {1e-8, 1e-8},
+          {1e-7, 1e-7},
+          {PI, PI},
+          {-PI, PI},
+          {PI - 1e-8, 1e-8},
+          {-PI + 1e-8, 1e-8},
+          {PI, 0.3},
+      },
+  };
+  for (bool dynamic : std::array{false, true}) {
+    SCOPED_TRACE(dynamic);
+    for (const auto& angles : parameterSets) {
+      SCOPED_TRACE(testing::Message() << angles[0] << ", " << angles[1]);
+      QCOProgramBuilder circuitBuilder(&context);
+      circuitBuilder.initialize();
+      Value qubit = circuitBuilder.staticQubit(0);
+      qubit = circuitBuilder.rx(angles[0], qubit);
+      qubit = circuitBuilder.ry(angles[1], qubit);
+      circuitBuilder.sink(qubit);
+      module = circuitBuilder.finalize();
+      auto funcOp = module->lookupSymbol<func::FuncOp>("main");
+      ASSERT_TRUE(funcOp);
+      if (dynamic) {
+        funcOp.insertArgument(0, Float64Type::get(&context), {},
+                              funcOp.getLoc());
+        funcOp.insertArgument(1, Float64Type::get(&context), {},
+                              funcOp.getLoc());
+        funcOp.walk([&](RXOp op) {
+          op.getThetaMutable().assign(funcOp.getArgument(0));
+        });
+        funcOp.walk([&](RYOp op) {
+          op.getThetaMutable().assign(funcOp.getArgument(1));
+        });
+      }
+      ASSERT_TRUE(succeeded(verify(*module)));
+      OwningOpRef<ModuleOp> original = module->clone();
+      ASSERT_TRUE(succeeded(runMergePass(*module)));
+      ASSERT_TRUE(succeeded(verify(*module)));
+      EXPECT_EQ(countOps<UOp>(), 1);
+      if (dynamic) {
+        bindLeadingArgs(original->lookupSymbol<func::FuncOp>("main"), angles);
+        bindLeadingArgs(funcOp, angles);
+        PassManager pm(&context);
+        pm.addPass(createCanonicalizerPass());
+        ASSERT_TRUE(succeeded(pm.run(*module)));
+      }
+      ASSERT_TRUE(succeeded(verify(*original)));
+      ASSERT_TRUE(succeeded(verify(*module)));
+      ::mqt::test::expectFullUnitaryEqual(*original, *module, 1);
+    }
+  }
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest, largePhasesPreserveControlledMatrix) {
+  for (const auto gate : {GateType::P, GateType::U2, GateType::U}) {
+    for (const auto angles : {
+             std::array{1e12, 1.0},
+             std::array{-1e16, 1.0},
+             std::array{1e308, 1e308},
+         }) {
+      for (const bool dynamic : {false, true}) {
+        SCOPED_TRACE(testing::Message()
+                     << "gate=" << static_cast<unsigned>(gate)
+                     << " phi=" << angles[0] << " lambda=" << angles[1]
+                     << " dynamic=" << dynamic);
+        module = QCOProgramBuilder::build(&context, [&](auto& b) {
+          auto [control, target] =
+              b.ctrl(b.staticQubit(0), b.staticQubit(1), [&](Value qubit) {
+                if (gate == GateType::P) {
+                  qubit = b.p(angles[0], qubit);
+                } else if (gate == GateType::U2) {
+                  qubit = b.u2(angles[0], angles[1], qubit);
+                } else {
+                  qubit = b.u(0.37, angles[0], angles[1], qubit);
+                }
+                return b.h(qubit);
+              });
+          return SmallVector<Value>{control, target};
+        });
+        ASSERT_TRUE(module);
+        auto funcOp = module->lookupSymbol<func::FuncOp>("main");
+        if (dynamic) {
+          funcOp.insertArgument(0, Float64Type::get(&context), {},
+                                funcOp.getLoc());
+          module->walk([&](UnitaryOpInterface op) {
+            if (isa<POp, U2Op, UOp>(op.getOperation())) {
+              Value parameter = op.getParameter(isa<UOp>(op) ? 1U : 0U);
+              parameter.replaceAllUsesWith(funcOp.getArgument(0));
+            }
+          });
+        }
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        OwningOpRef<ModuleOp> original = module->clone();
+        ASSERT_TRUE(succeeded(runMergePass(*module)));
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        EXPECT_EQ(countOps<HOp>(), 0);
+        if (dynamic) {
+          bindLeadingArgs(original->lookupSymbol<func::FuncOp>("main"),
+                          {angles[0]});
+          bindLeadingArgs(funcOp, {angles[0]});
+          PassManager pm(&context);
+          pm.addPass(createCanonicalizerPass());
+          ASSERT_TRUE(succeeded(pm.run(*module)));
+        }
+        ASSERT_TRUE(succeeded(verify(*module)));
+        ASSERT_TRUE(succeeded(verifyLinearity(*module)));
+        ::mqt::test::expectFullUnitaryEqual(*original, *module, 2);
+      }
+    }
+  }
+}
+
+/// Test: RX(π) → RY(π) should merge into U(0, -π, 0.)
 TEST_F(MergeSingleQubitRotationGatesTest, numericalGimbalLock) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::RX, .angles = {PI}},
                              {.type = GateType::RY, .angles = {PI}}})
@@ -766,33 +942,29 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalGimbalLock) {
   expectGPhaseParam(1.57079632679490);
 }
 
-/**
- * @brief Test: R(1,1)->R(1,1) (same axis) should merge into U(2.00000000000000,
- * -0.570796326794897, 0.570796326794897)
- */
+/// Test: R(1,1) → R(1,1) (same axis) should merge into U(2.00000000000000,
+/// -0.570796326794897, 0.570796326794897)
 TEST_F(MergeSingleQubitRotationGatesTest, numericalAccuracyRRSameAxis) {
   ASSERT_TRUE(testGateMerge({{.type = GateType::R, .angles = {1., 1.}},
                              {.type = GateType::R, .angles = {1., 1.}}})
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
   EXPECT_EQ(countOps<ROp>(), 0);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
   expectUGateParams(2., -0.570796326794897, 0.570796326794897);
   expectGPhaseParam(0.0);
 }
 
-/**
- * @brief Test: U(0, -2.0360075460227076, 0)->U(0, 4.157656961105587, 0) should
- * not produce NaN. These specific numbers would produce NaN if acos parameter
- * would not be clamped to [-1, 1]
- */
-TEST_F(MergeSingleQubitRotationGatesTest, numericalAcosClampingPreventsNaN) {
+/// Pure-Z composition must keep finite Euler angles despite quaternion norm
+/// roundoff.
+TEST_F(MergeSingleQubitRotationGatesTest,
+       numericalNormRoundoffDoesNotProduceNaN) {
   ASSERT_TRUE(testGateMerge(
                   {{.type = GateType::U, .angles = {0, -2.0360075460227076, 0}},
                    {.type = GateType::U, .angles = {0, 4.157656961105587, 0}}})
                   .succeeded());
   EXPECT_EQ(countOps<UOp>(), 1);
-  EXPECT_EQ(countOps<GPhaseOp>(), 1);
+  EXPECT_EQ(countOps<GPhaseOp>(), 0);
 
   auto params = getUGateParams();
   ASSERT_TRUE(params.has_value());
@@ -802,7 +974,233 @@ TEST_F(MergeSingleQubitRotationGatesTest, numericalAcosClampingPreventsNaN) {
   EXPECT_FALSE(std::isnan(phi));
   EXPECT_FALSE(std::isnan(lambda));
 
-  auto gphase = getGPhaseParam();
-  ASSERT_TRUE(gphase.has_value());
-  EXPECT_FALSE(std::isnan(*gphase));
+  EXPECT_FALSE(getGPhaseParam().has_value());
+}
+
+/// Pure-Z merges must preserve RZ(a);RZ(b) ≡ U(0, a+b, 0) (up to
+/// gphase).
+///
+/// Fully static chains use the shared `Val<double>` merge path, so singular
+/// atan2 cases and tiny beta drift cannot poison gphase or split the Z angle
+/// across phi/lambda.
+TEST_F(MergeSingleQubitRotationGatesTest,
+       mergePureZRotationsDoesNotEmitNanGPhase) {
+  // Angles like 0.3 are enough for cos^2+sin^2 drift to push |beta| just
+  // above eps while (x,y)≈0 if Euler extraction ran only in SSA.
+  ASSERT_TRUE(testGateMerge({{.type = GateType::RZ, .angles = {0.3}},
+                             {.type = GateType::RZ, .angles = {0.3}}})
+                  .succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+
+  // RZ(0.3);RZ(0.3) → RZ(0.6) → U(0, 0.6, 0); allow tiny beta from float noise.
+  expectUGateParams(/*expectedTheta=*/0., /*expectedPhi=*/0.6,
+                    /*expectedLambda=*/0., /*tolerance=*/1e-6);
+
+  auto phase = getGPhaseParam();
+  ASSERT_TRUE(phase.has_value());
+  EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*phase));
+  EXPECT_NEAR(*phase, mlir::mqt::normalizeAngle(*phase), 1e-8);
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest,
+       mergeDynamicAngleRotationsUsesSsaPath) {
+  // Pure-Z chain with unfoldable angle SSA forces Val<Value> merge (not the
+  // host Val<double> path exercised by constant-angle tests above).
+  // RZ(a);RZ(b) → U(0, wrap(a+b), 0) with SSA phi tied to the angle args.
+  constexpr double angleA = 0.3;
+  constexpr double angleB = 0.4;
+  auto q = builder.allocQubitRegister(1);
+  q[0] = builder.rz(angleA, q[0]);
+  q[0] = builder.rz(angleB, q[0]);
+  module = builder.finalize();
+
+  auto funcOp = cast<func::FuncOp>(module->getBody()->front());
+  const auto f64 = Float64Type::get(&context);
+  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
+  funcOp.insertArgument(1, f64, {}, funcOp.getLoc());
+
+  SmallVector<RZOp> rzs;
+  module->walk([&](RZOp op) { rzs.push_back(op); });
+  ASSERT_EQ(rzs.size(), 2U);
+  rzs[0].getThetaMutable().assign(funcOp.getArgument(0));
+  rzs[1].getThetaMutable().assign(funcOp.getArgument(1));
+
+  ASSERT_TRUE(runMergePass(module.get()).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+  EXPECT_GE(countOps<GPhaseOp>(), 1);
+
+  UOp uOp = nullptr;
+  module->walk([&](UOp op) {
+    uOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(uOp);
+
+  GPhaseOp gOp = nullptr;
+  module->walk([&](GPhaseOp op) {
+    gOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(gOp);
+
+  // Still SSA in the angles / gphase before binding concrete values.
+  EXPECT_FALSE(mlir::mqt::valueToConstantDouble(uOp.getPhi()).has_value());
+  EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(0)));
+  EXPECT_TRUE(valueDependsOn(uOp.getPhi(), funcOp.getArgument(1)));
+  EXPECT_FALSE(
+      mlir::mqt::valueToConstantDouble(gOp.getParameter(0)).has_value());
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(0)));
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(1)));
+
+  // Guard against atan2(0,0) constant-folder NaNs on the dynamic path.
+  module->walk([](arith::ConstantOp c) {
+    if (auto floatAttr = dyn_cast<FloatAttr>(c.getValue())) {
+      EXPECT_FALSE(std::isnan(floatAttr.getValueAsDouble()));
+    }
+  });
+
+  // Bind controlled values and check the folded RZ(a);RZ(b) formulas:
+  //   U(0, wrap(a+b), 0), gphase = normalize(-(phi+lambda)/2).
+  bindLeadingArgs(funcOp, {angleA, angleB});
+  const auto theta = mlir::mqt::valueToConstantDouble(uOp.getTheta());
+  const auto phi = mlir::mqt::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = mlir::mqt::valueToConstantDouble(uOp.getLambda());
+  const auto phase = mlir::mqt::valueToConstantDouble(gOp.getParameter(0));
+  ASSERT_TRUE(theta.has_value());
+  ASSERT_TRUE(phi.has_value());
+  ASSERT_TRUE(lambda.has_value());
+  ASSERT_TRUE(phase.has_value());
+  EXPECT_NEAR(*theta, 0.0, 1e-6);
+  EXPECT_NEAR(*phi, mlir::mqt::normalizeAngle(angleA + angleB), 1e-6);
+  EXPECT_NEAR(*lambda, 0.0, 1e-6);
+  EXPECT_NEAR(*phase, mlir::mqt::normalizeAngle(-(*phi + *lambda) / 2.0), 1e-6);
+  EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*phase));
+  EXPECT_FALSE(std::isnan(*theta));
+  EXPECT_FALSE(std::isnan(*phi));
+  EXPECT_FALSE(std::isnan(*lambda));
+  EXPECT_FALSE(std::isnan(*phase));
+}
+
+TEST_F(MergeSingleQubitRotationGatesTest,
+       mergeFixedGateWithDynamicRotationPreservesMatrix) {
+  constexpr double angle = 0.37;
+  auto q = builder.staticQubit(0);
+  q = builder.h(q);
+  q = builder.rz(angle, q);
+  builder.sink(q);
+  module = builder.finalize();
+
+  auto funcOp = cast<func::FuncOp>(module->getBody()->front());
+  const auto f64 = Float64Type::get(&context);
+  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
+
+  RZOp rzOp = nullptr;
+  module->walk([&](RZOp op) { rzOp = op; });
+  ASSERT_TRUE(rzOp);
+  rzOp.getThetaMutable().assign(funcOp.getArgument(0));
+
+  ASSERT_TRUE(runMergePass(*module).succeeded());
+  EXPECT_EQ(countOps<HOp>(), 0);
+  EXPECT_EQ(countOps<RZOp>(), 0);
+  EXPECT_EQ(countOps<UOp>(), 1);
+
+  UOp uOp = nullptr;
+  module->walk([&](UOp op) { uOp = op; });
+  ASSERT_TRUE(uOp);
+  EXPECT_TRUE(valueDependsOn(uOp.getTheta(), funcOp.getArgument(0)) ||
+              valueDependsOn(uOp.getPhi(), funcOp.getArgument(0)) ||
+              valueDependsOn(uOp.getLambda(), funcOp.getArgument(0)));
+
+  bindLeadingArgs(funcOp, {angle});
+  const auto theta = mlir::mqt::valueToConstantDouble(uOp.getTheta());
+  const auto phi = mlir::mqt::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = mlir::mqt::valueToConstantDouble(uOp.getLambda());
+  ASSERT_TRUE(theta.has_value());
+  ASSERT_TRUE(phi.has_value());
+  ASSERT_TRUE(lambda.has_value());
+  double globalPhase = 0.0;
+  module->walk([&](GPhaseOp op) {
+    const auto phase = mlir::mqt::valueToConstantDouble(op.getParameter(0));
+    ASSERT_TRUE(phase.has_value());
+    globalPhase += *phase;
+  });
+  const auto actual =
+      UOp::unitaryMatrix(*theta, *phi, *lambda) * std::polar(1.0, globalPhase);
+  const auto halfAngle = angle / 2.0;
+  const std::complex<double> upperPhase = std::polar(1.0, -halfAngle);
+  const std::complex<double> lowerPhase = std::polar(1.0, halfAngle);
+  const double invSqrtTwo = 1.0 / std::numbers::sqrt2;
+  const Matrix2x2 expected{
+      upperPhase * invSqrtTwo,
+      upperPhase * invSqrtTwo,
+      lowerPhase * invSqrtTwo,
+      -lowerPhase * invSqrtTwo,
+  };
+  EXPECT_TRUE(actual.isApprox(expected, 1e-8));
+}
+
+/// Two phase-bearing dynamic gates exercise SSA phase accumulation.
+///
+/// `mergeDynamicChain` sums each gate's global-phase contribution. P(a);P(b)
+/// accumulates both unfoldable angles into the emitted `gphase` SSA.
+TEST_F(MergeSingleQubitRotationGatesTest,
+       mergeDynamicPhaseGatesAccumulatesGlobalPhase) {
+  constexpr double angleA = 0.3;
+  constexpr double angleB = 0.4;
+  auto q = builder.allocQubitRegister(1);
+  q[0] = builder.p(angleA, q[0]);
+  q[0] = builder.p(angleB, q[0]);
+  module = builder.finalize();
+
+  auto funcOp = cast<func::FuncOp>(module->getBody()->front());
+  const auto f64 = Float64Type::get(&context);
+  funcOp.insertArgument(0, f64, {}, funcOp.getLoc());
+  funcOp.insertArgument(1, f64, {}, funcOp.getLoc());
+
+  SmallVector<POp> ps;
+  module->walk([&](POp op) { ps.push_back(op); });
+  ASSERT_EQ(ps.size(), 2U);
+  ps[0].getThetaMutable().assign(funcOp.getArgument(0));
+  ps[1].getThetaMutable().assign(funcOp.getArgument(1));
+
+  ASSERT_TRUE(runMergePass(module.get()).succeeded());
+  EXPECT_EQ(countOps<UOp>(), 1);
+  EXPECT_EQ(countOps<POp>(), 0);
+  EXPECT_GE(countOps<GPhaseOp>(), 1);
+
+  UOp uOp = nullptr;
+  module->walk([&](UOp op) {
+    uOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(uOp);
+
+  GPhaseOp gOp = nullptr;
+  module->walk([&](GPhaseOp op) {
+    gOp = op;
+    return WalkResult::interrupt();
+  });
+  ASSERT_TRUE(gOp);
+  // Accumulated input phases depend on both dynamic P angles.
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(0)));
+  EXPECT_TRUE(valueDependsOn(gOp.getParameter(0), funcOp.getArgument(1)));
+
+  // P(a);P(b) → U(0, wrap(a+b), 0) with inputPhase (a+b)/2 cancelling the U
+  // intrinsic phase, so gphase folds to ~0 under controlled values.
+  bindLeadingArgs(funcOp, {angleA, angleB});
+  const auto theta = mlir::mqt::valueToConstantDouble(uOp.getTheta());
+  const auto phi = mlir::mqt::valueToConstantDouble(uOp.getPhi());
+  const auto lambda = mlir::mqt::valueToConstantDouble(uOp.getLambda());
+  const auto phase = mlir::mqt::valueToConstantDouble(gOp.getParameter(0));
+  ASSERT_TRUE(theta.has_value());
+  ASSERT_TRUE(phi.has_value());
+  ASSERT_TRUE(lambda.has_value());
+  ASSERT_TRUE(phase.has_value());
+  EXPECT_NEAR(*theta, 0.0, 1e-6);
+  EXPECT_NEAR(*phi, mlir::mqt::normalizeAngle(angleA + angleB), 1e-6);
+  EXPECT_NEAR(*lambda, 0.0, 1e-6);
+  EXPECT_NEAR(*phase, 0.0, 1e-6);
+  EXPECT_TRUE(mlir::mqt::isValidGlobalPhaseAngle(*phase));
 }

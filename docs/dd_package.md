@@ -13,186 +13,92 @@ mystnb:
 
 # MQT Core DD
 
-MQT Core provides a fully-fledged, high-performance decision diagram package for
-quantum computing. The resulting library allows for the efficient representation
-and manipulation of quantum states and operations. If you are not yet familiar
-with decision diagrams as a data structure, you might want to start with the
-[introduction to quantum decision diagrams](#how-do-quantum-decision-diagrams-work)
-below.
-
-Throughout the MQT, this library enables many classical simulation, synthesis,
-or verification techniques. While primarily developed in C++, the corresponding
-functionality is also exposed to Python users in the form of the
-{py:mod}`mqt.core.dd` module. The following section provides an overview on how
-to work with decision diagrams in MQT Core from Python.
+MQT Core represents and manipulates quantum states and operations with decision
+diagrams (DDs). The C++ library and {py:mod}`mqt.core.dd` Python module support
+simulation, synthesis, and verification. Start with the quickstart for Python
+usage or the introduction below for the data structure and its limits.
 
 ## Quickstart
 
-In its simplest use case, the MQT Core DD package can be used as a classical
-circuit simulator using the {py:func}`~mqt.core.dd.sample` function. The
-underlying simulation approach supports mid-circuit measurements, reset
-operations, as well as classically-controlled operations. For example, the
-following code snippet demonstrates how to simulate the iterative quantum phase
-estimation algorithm shown in
-[the MQT Core IR Quickstart guide](mqt_core_ir).
+The MQT Compiler Collection uses the DD package to simulate
+{py:class}`~mqt.core.mlir.QCOProgram` objects. The simulator supports
+mid-circuit measurements, resets, and classically controlled operations. This
+example compiles and samples a Bell-state program:
 
 ```{code-cell} ipython3
-from mqt.core.dd import sample
-from mqt.core.ir import QuantumComputation
-from mqt.core.ir.operations import OpType
+from mqt.core.mlir import sample
 
-from math import pi
+bell_qasm = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+bit[2] result;
+h q[0];
+cx q[0], q[1];
+result = measure q;
+"""
 
-theta = 3 * pi / 8
-precision = 3
-
-# Create an empty quantum computation
-qc = QuantumComputation()
-
-# Counting register
-q = qc.add_qubit_register(1, "q")
-
-# Eigenstate register
-psi = qc.add_qubit_register(1, "psi")
-
-# Classical register for the result, the estimated phase is `0.c_2 c_1 c_0 * pi`
-c = qc.add_classical_register(precision, "c")
-
-# Prepare psi in the eigenstate |1>
-qc.x(psi[0])
-
-for i in range(precision):
-  # Hadamard on the working qubit
-  qc.h(q[0])
-
-  # Controlled phase gate
-  qc.cp(2**(precision - i - 1) * theta, q[0], psi[0])
-
-  # Iterative inverse QFT
-  for j in range(i):
-    qc.if_(op_type=OpType.p, target=q[0], control_bit=c[j], params=[-pi / 2**(i - j)])
-  qc.h(q[0])
-
-  # Measure the result
-  qc.measure(q[0], c[i])
-
-  # Reset the qubit if not finished
-  if i < precision - 1:
-    qc.reset(q[0])
-
-# Run the simulation
-counts = sample(qc, 1024)
+counts = sample(bell_qasm, shots=1024, seed=1)
+print(counts)
 ```
+
+The {py:func}`~mqt.core.mlir.sample`, {py:func}`~mqt.core.mlir.simulate`, and
+{py:func}`~mqt.core.mlir.build_functionality` functions accept source text,
+paths, Qiskit circuits, and typed compiler programs. They lower each input
+directly to QCO. The corresponding {py:class}`~mqt.core.mlir.QCOProgram` methods
+provide the DD-native interface for reusable compiled programs, custom initial
+states, and dynamic simulation. The top-level `simulate` function starts a
+closed program in the all-zero state. It and `build_functionality` manage the DD
+package internally and materialize their results directly into NumPy arrays.
+
+The `QCOProgram` methods avoid constructing exponentially large dense arrays
+unless the result is explicitly converted with
+{py:meth}`~mqt.core.dd.VectorDD.get_vector` or
+{py:meth}`~mqt.core.dd.MatrixDD.get_matrix`.
 
 ```{code-cell} ipython3
----
-tags: [remove-cell]
----
-from matplotlib import pyplot as plt
-
-def generate_plot(counts: dict[str, int], name: str, light: bool) -> None:
-    if light:
-        plt.style.use('default')
-    else:
-        plt.style.use('dark_background')
-
-    # Create the bar plot
-    fig, ax = plt.subplots()
-    bars = ax.bar(counts.keys(), counts.values(), color='#0065bd')
-
-    # Annotate counts above the bars
-    for bar in bars:
-        height = bar.get_height()
-        ax.annotate(f'{height}',
-                    xy=(bar.get_x() + bar.get_width() / 2, height),
-                    xytext=(0, 3),  # 3 points vertical offset
-                    textcoords="offset points",
-                    ha='center', va='bottom')
-
-    # Set background to transparent
-    fig.patch.set_alpha(0.0)
-    ax.patch.set_alpha(0.0)
-
-    # Remove top and right borders
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
-
-    plt.xlabel("Measurement Outcome")
-    plt.ylabel("Counts")
-
-    # export to SVG
-    filename = "fig-" + name + ("-light" if light else "-dark") + ".svg"
-    plt.savefig(filename, format="svg")
-
-name = 'qpe'
-generate_plot(counts, name, light=True)
-generate_plot(counts, name, light=False)
-```
-
-```{image} fig-qpe-light.svg
-:align: center
-:width: 75%
-:class: only-light
-```
-
-```{image} fig-qpe-dark.svg
-:align: center
-:width: 75%
-:class: only-dark
-```
-
-The {py:func}`~mqt.core.dd.sample` function is a high-level interface to the
-decision diagram package that does not require any knowledge of the underlying
-data structure. In a similar fashion, the
-{py:func}`~mqt.core.dd.simulate_statevector` and
-{py:func}`~mqt.core.dd.build_unitary` functions can be used to perform
-statevector simulation or to construct the unitary matrix representation of a
-quantum circuit, respectively.
-
-```{code-cell} ipython3
-from mqt.core.dd import simulate_statevector
-
 import numpy as np
+from mqt.core.dd import DDPackage
+from mqt.core.mlir import QCOProgram, build_functionality, simulate
 
-qc = QuantumComputation(2)
-qc.h(0)
-qc.cx(0, 1)
+unitary_program = QCOProgram.from_mlir_str("""
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q0 = qco.static 0 : !qco.qubit
+    %q1 = qco.static 1 : !qco.qubit
+    %q0_h = qco.h %q0 : !qco.qubit -> !qco.qubit
+    %q0_out, %q1_out = qco.ctrl(%q0_h) targets(%target = %q1) {
+      %target_out = qco.x %target : !qco.qubit -> !qco.qubit
+      qco.yield %target_out : !qco.qubit
+    } : ({!qco.qubit}, {!qco.qubit}) -> ({!qco.qubit}, {!qco.qubit})
+    qco.sink %q0_out : !qco.qubit
+    qco.sink %q1_out : !qco.qubit
+    return
+  }
+}
+""")
 
-vec = np.array(simulate_statevector(qc), copy=False)
+vec = simulate(unitary_program)
+unitary = build_functionality(unitary_program)
+
+dd = DDPackage(2)
+zero_state_dd = dd.zero_state(2)
+out_state_dd = unitary_program.simulate(zero_state_dd, dd)
+vec = np.array(out_state_dd.get_vector(), copy=False)
 with np.printoptions(precision=3, suppress=True):
   print(vec)
-```
 
-```{code-cell} ipython3
-from mqt.core.dd import build_unitary
-
-unitary = np.array(build_unitary(qc), copy=False)
+functionality_dd = unitary_program.build_functionality(dd)
+unitary = np.array(functionality_dd.get_matrix(2), copy=False)
 with np.printoptions(precision=3, suppress=True):
   print(unitary)
 ```
 
-Both of these functions are inherently limited in their scalability due to the
-exponential growth of the resulting data structures. MQT Core also allows one to
-work with decision diagrams directly, which is particularly useful for larger
-quantum circuits. To this end, the {py:class}`~mqt.core.dd.DDPackage` class
-provides a low-level interface to the decision diagram package. An instance of
-this class can be used to simulate quantum circuits (see
-{py:func}`~mqt.core.dd.simulate`), construct unitary matrices (see
-{py:func}`~mqt.core.dd.build_functionality`), or perform other operations on
-decision diagrams.
-
-```{code-cell} ipython3
-from mqt.core.dd import DDPackage, simulate
-
-dd = DDPackage(qc.num_qubits)
-zero_state_dd = dd.zero_state(qc.num_qubits)
-out_state_dd = simulate(qc, zero_state_dd, dd)
-```
-
-If the [Graphviz](https://www.graphviz.org/) library is installed, the
-`graphviz` Python package can be used to visualize resulting decision diagram
-via the {py:meth}`~mqt.core.dd.VectorDD.to_dot` method. To directly, generate
-SVG files, the {py:meth}`~mqt.core.dd.VectorDD.to_svg` method can be used.
+If [Graphviz](https://www.graphviz.org/) is installed, use
+{py:meth}`~mqt.core.dd.VectorDD.to_svg` to export a decision diagram as SVG.
+IPython can display the resulting file in a notebook. DOT exports use unique
+node IDs assigned in traversal order, so ordinary exports do not depend on
+memory addresses. The `memory=True` option includes addresses as debugging
+information.
 
 ```{code-cell} ipython3
 ---
@@ -200,15 +106,15 @@ mystnb:
   image:
     width: 20%
     align: center
+    alt: Bell-state DD with shared zero and one branches.
 ---
-import graphviz
+from IPython.display import SVG
 
-graphviz.Source(out_state_dd.to_dot())
+out_state_dd.to_svg("bell_state.svg")
+SVG(filename="bell_state.svg")
 ```
 
-The DD package provides list of additional functionality when it comes to
-working with decision diagrams. Check out the full API documentation of the
-{py:class}`~mqt.core.dd.DDPackage` class for more details.
+See {py:class}`~mqt.core.dd.DDPackage` for the full API.
 
 ## How do Quantum Decision Diagrams Work?
 
@@ -230,9 +136,8 @@ and _verification_
 {cite:p}`burgholzerAdvancedEquivalenceChecking2021,burgholzerRandomStimuliGeneration2021,burgholzerVerifyingResultsIBM2020,wangXQDDbasedVerificationMethod2008,smithQuantumLogicSynthesis2019,hongEquivalenceCheckingDynamic2021`
 of quantum circuits, they recently attracted great attention.
 
-The following sections provide a comprehensive guide for quantum computing with
-decision diagrams, including the representation of quantum states and operations
-and the fundamental operations on decision diagrams.
+The following sections explain how decision diagrams represent quantum states
+and operations, and how computations act on those representations.
 
 ### Representation of Quantum States
 
@@ -252,9 +157,8 @@ which is commonly represented as a statevector
 \ket{\Psi}\equiv \begin{bmatrix} \alpha_0 & \alpha_1	\end{bmatrix}^\top.
 ```
 
-A rather simple observation and consequence of {eq}`ssstate` is that this vector
-can be equally split into a contribution of the $\ket{0}$ state ($\alpha_0$) and
-a contribution of the $\ket{1}$ state ($\alpha_1$), that is,
+The vector in {eq}`ssstate` splits into the contributions of the $\ket{0}$ state
+($\alpha_0$) and the $\ket{1}$ state ($\alpha_1$):
 
 ```{math}
 :label: splitting
@@ -273,6 +177,7 @@ This decomposition is the core of the decision-diagram formalism. The decision
 diagram representing $\ket{\Psi}$ has the structure
 
 ```{image} _static/dd-figure-01.svg
+:alt: One qubit with outgoing edges weighted by its zero and one amplitudes.
 :width: 15%
 :align: center
 ```
@@ -290,6 +195,7 @@ Consider the computational basis states $\ket{0}$ and $\ket{1}$. Then, the
 corresponding decision diagrams have the structures
 
 ```{image} _static/dd-figure-02.svg
+:alt: Zero state: only the zero successor has nonzero weight.
 :align: center
 :width: 8%
 ```
@@ -300,6 +206,7 @@ corresponding decision diagrams have the structures
 and
 
 ```{image} _static/dd-figure-03.svg
+:alt: One state: only the one successor has nonzero weight.
 :align: center
 :width: 8%
 ```
@@ -307,7 +214,7 @@ and
 \ket{1}\equiv\begin{bmatrix}0 & 1\end{bmatrix}^\top
 ```
 
-In each of the cases, one of the successors ends in the terminal node, while the other ends in a \emph{zero stub} (indicated by a black dot)---uncannily resembling the corresponding vector descriptions.
+In each of the cases, one of the successors ends in the terminal node, while the other ends in a _zero stub_ (indicated by a black dot)---uncannily resembling the corresponding vector descriptions.
 ````
 
 Building off the intuition of a single-qubit state, we can move to larger
@@ -366,36 +273,35 @@ where $q_2, q_1, q_0 \in \{0, 1\}$.
 This directly translates to the decision-diagram formalism:
 
 ```{image} _static/dd-figure-04.svg
+:alt: Unreduced three-qubit state with repeated branches.
+:name: dd-three-qubits
 :align: center
 :width: 65%
 ```
-```{math}
-:label: 3qbdd
-```
+
 
 Each level of the decision diagram consists of decision nodes with corresponding left and right successor edges.
 These successors represent the path that leads to an amplitude where the local quantum system (corresponding to the _level_ of the node, annotated here with the labels) is in the $\ket{0}$ (left successor) or the $\ket{1}$ state (right successor).
 ````
 
-At this point, this has been just a one-to-one translation between the
-statevector and a fancy graphical representation. The unique core feature of
-decision diagrams is that their graph structure allows redundant parts to be
-merged in the representation instead of being represented repeatedly.
+The diagrams above represent each part of the statevector separately. Merging
+redundant subgraphs makes the representation compact.
 
 ````{admonition} Example _(Redundancy in Decision Diagrams)_
 :class: tip
 
 Observe how, as in the previous example, the left and right successors of the
 top-level node (labeled $q_2$) lead to exactly the same structure (highlighted
-by dashed rectangles in {eq}`3qbdd`). As a result, the whole sub-diagram does
-not need to be represented twice, i.e.,
+by dashed rectangles in {ref}`the unreduced diagram <dd-three-qubits>`). As a
+result, the whole sub-diagram does not need to be represented twice, i.e.,
 
 ```{image} _static/dd-figure-05.svg
+:alt: Equal branches of the three-qubit state merged into one subdiagram.
 :align: center
 :width: 40%
 ```
 
-From a memory perspective, this reduction alone has compressed the overall memory required to represent the state by 50\%.
+From a memory perspective, this reduction alone has compressed the overall memory required to represent the state by 50%.
 ````
 
 Identifying redundancies in these kinds of representations heavily depends on
@@ -407,13 +313,15 @@ this property is called _canonicity_.
 
 The most widely used and practically relevant normalization scheme is to
 normalize the outgoing edges of a node by dividing both weights by the norm of
-the vector containing both edge weights and adjusting the incoming edges
-accordingly {cite:p}`hillmichJustRealThing2020`. This normalizes the sum of the
-squared magnitudes of the outgoing edge weights to $1$ and is consistent with
-quantum semantics, where basis states $\ket{0}$ and $\ket{1}$ are observed after
-measurement with probabilities that are squared magnitudes of the respective
-weights. Normalization is recursively applied in a bottom-up fashion to ensure
-that every possible redundancy is caught.
+the vector containing both edge weights and extracting a common phase into the
+incoming edge {cite:p}`hillmichJustRealThing2020`. This normalizes the sum of
+the squared magnitudes of the outgoing edge weights to $1$ and is consistent
+with quantum semantics, where basis states $\ket{0}$ and $\ket{1}$ are observed
+after measurement with probabilities that are squared magnitudes of the
+respective weights. MQT Core selects a maximum-magnitude edge (preferring the
+left edge within numerical tolerance) and makes its normalized weight real and
+nonnegative. The incoming edge retains its complex phase. Normalization proceeds
+bottom-up; complex-number comparisons use the package tolerance.
 
 ````{admonition} Example _(Normalization of Decision Diagrams)_
 :class: tip
@@ -422,6 +330,7 @@ Considering the decision diagram from the previous example, this results in the
 following _normalized_ and _reduced_ decision diagram:
 
 ```{image} _static/dd-figure-06.svg
+:alt: Normalized state with shared subdiagrams and conditional amplitudes.
 :align: center
 :width: 35%
 ```
@@ -432,16 +341,13 @@ If $q_1$ is in the $\ket{0}$ state (following the left successor), then $q_0$ ha
 If $q_1$ is in the $\ket{1}$ state (following the right successor), it is guaranteed that the remaining qubit is in the $\ket{0}$ state.
 ````
 
-Overall, statevectors are represented as decision diagrams conceptually
-equivalent to halving the vector in a recursive fashion until it is fully
-decomposed. The key idea is to exploit the redundancies in the resulting
-diagrams to create a more compact representation. Some interesting properties
-that are worth pointing out:
+A statevector DD recursively halves the vector and shares redundant subgraphs.
+This representation has the following properties:
 
 - Decision diagrams can be initialized in their compact form (as, for example,
   shown in the last example above). There is no need to create the maximally
-  large decision diagram (as shown, for example, in {eq}`3qbdd`) at any point in
-  a calculation.
+  large decision diagram (as shown, for example, in
+  {ref}`the unreduced diagram <dd-three-qubits>`) at any point in a calculation.
 - Determining a particular amplitude of the represented state corresponds to
   multiplying the edge weights along a single-path traversal from the top edge
   of the decision diagram (called its _root_) to a terminal node.
@@ -455,9 +361,8 @@ that are worth pointing out:
   trivial. Even entangled states such as the _GHZ state_ or the _W state_ have
   decision diagrams whose size (that is, the number of nodes) is linear in the
   number of qubits.
-- DDs are not a "silver bullet." The worst-case size of decision diagrams,
-  corresponding to states without redundancy, is still exponential in the number
-  of qubits. More specifically, a maximally large decision diagram has
+- The worst-case size, for states without redundancy, is exponential in the
+  number of qubits. More specifically, a maximally large decision diagram has
   $1+2^1+2^2+\dots+2^{n-1} = 2^n-1$ nodes.
 - To reduce visual clutter in illustrations of decision diagrams, edge weights
   are commonly not explicitly annotated, but their magnitude and phase are
@@ -478,12 +383,13 @@ matrix $U$, that is,
 ```{math}
 U &= \begin{bmatrix}
 U_{00} & U_{01} \\ U_{10} & U_{11}
-\end{bmatrix} = U_{00} \ket{0}\!\bra{0} + U_{01} \ket{1}\!\bra{0} + U_{10} \ket{0}\!\bra{1} + U_{11} \ket{1}\!\bra{1} .
+\end{bmatrix} = U_{00} \ket{0}\!\bra{0} + U_{01} \ket{0}\!\bra{1} + U_{10} \ket{1}\!\bra{0} + U_{11} \ket{1}\!\bra{1} .
 ```
 
 Then, the decision diagram representing this matrix has the structure
 
 ```{image} _static/dd-figure-07.svg
+:alt: Matrix DD with four successors in row-major order.
 :align: center
 :width: 35%
 ```
@@ -494,10 +400,11 @@ can be interpreted as the transformation of $\ket{j}$ to $\ket{i}$.
 ````{admonition} Example _(Single-Qubit Operations)_
 :class: tip
 
-The following shows decision diagram representations for selected
-\mbox{single-qubit} operations:
+The following shows decision diagram representations for selected single-qubit
+operations:
 
 ```{image} _static/dd-figure-08.svg
+:alt: DDs for single-qubit gates with common factors on the root edge.
 :align: center
 :width: 65%
 ```
@@ -509,12 +416,11 @@ The generalization to larger matrices works analogously to the vector case. To
 construct the decision diagram representing a matrix, the matrix is recursively
 divided into quarters, and the four elements correspond to the four successors
 of the node to represent that split. As for vector decision diagrams, a
-normalization scheme is applied to ensure that the resulting data structure is
-canonical and redundancy can be exploited. The conventional approach is to
-normalize all edge weights by the weight with the highest magnitude, selecting
-the leftmost one if multiple weights have the same magnitude. It is important to
-note that this ensures that all complex numbers within the decision diagram have
-a magnitude of at most $1$, which is used for optimization purposes.
+normalization scheme makes the representation canonical so equivalent subgraphs
+can be shared. Each node's outgoing edge weights are divided by the weight with
+the highest magnitude, selecting the leftmost one in a tie. The normalized
+outgoing weights have magnitude at most $1$; the extracted factor moves to the
+incoming edge.
 
 ````{admonition} Example _(Matrix Decision Diagrams)_
 :class: tip
@@ -544,12 +450,13 @@ I & -iX \\
 The corresponding (already reduced) decision diagram has the following structure:
 
 ```{image} _static/dd-figure-09.svg
+:alt: Rxx rotation sharing identity and Pauli-X submatrices.
 :align: center
 :width: 40%
 ```
 
 Notice how the decision diagram naturally resembles the structure of the matrix.
-The nodes at the bottom represent the identity and the $X$ matrix while the node at the top encodes the redundancy of the upper left quadrant and the bottom right quadrant, as well as the upper right and lower left quadrant in [](#rxxmat).
+The nodes at the bottom represent the identity and the $X$ matrix while the node at the top encodes the redundancy of the upper left quadrant and the bottom right quadrant, as well as the upper right and lower left quadrant in {eq}`rxxmat`.
 Similarly to the vector example above, exploiting redundancy has halved the overall memory requirement.
 ````
 
@@ -572,19 +479,10 @@ Again, some interesting properties to point out:
 
 ### Fundamental Operations on Decision Diagrams
 
-Merely defining means for compactly representing any kind of state or operation
-does not yet allow one to perform efficient computations. It is crucial to also
-define efficient means of working with or manipulating the resulting
-representations. In the following, it is demonstrated how the most fundamental
-operations can be carried out within the decision-diagram formalism and how they
-scale. The focus is mainly on how operations are realized on vectors, since the
-concepts extend from vectors to matrices in a straightforward fashion.
-
-The main concept throughout all of these schemes is to recursively break the
-respective operations down into subcomputations. This decomposition then
-naturally matches the recursive decomposition of decision diagrams. As such,
-operations generally scale with the number of nodes in the involved decision
-diagrams.
+DD operations recursively split computations along the graph structure and cache
+shared subproblems. Their cost depends on the distinct subproblems visited and
+the size of the result, as described below. The examples use vectors; the same
+recursive approach extends to matrices.
 
 #### Kronecker Product
 
@@ -604,12 +502,12 @@ together local operations. For vectors, it can be expressed as
 \end{bmatrix}.
 ```
 
-In the decision-diagram formalism, this is one of the simplest operations to
-perform and is done by simply replacing the terminal nodes of the first decision
-diagram with the root node of the second decision diagram. In case of the above
-example, this has the following form:
+The DD Kronecker product replaces the nonzero terminal edges of the first
+diagram with the root edge of the second, multiplying their weights. For the
+example above:
 
 ```{image} _static/dd-figure-10.svg
+:alt: Kronecker product replacing terminal edges with the second DD.
 :align: center
 :width: 60%
 ```
@@ -636,13 +534,15 @@ weights along the way until the individual amplitudes are reached) and back
 again (accumulating the results of the recursive computations). More precisely,
 
 ```{image} _static/dd-figure-11.svg
+:alt: Addition recursively combining corresponding weighted successors.
 :align: center
 :width: 70%
 ```
 
-where the dashed nodes represent the respective successor decision diagrams.
-Overall, this results in a complexity that is linear in the size of the larger
-decision diagram.
+where the dashed nodes represent the respective successor decision diagrams. The
+cost depends on the distinct weighted subproblems and the resulting DD. Even two
+compact inputs can produce an exponentially large sum; input node counts alone
+do not give a linear time bound.
 
 #### Matrix-Vector Multiplication
 
@@ -654,21 +554,23 @@ addition. Standard matrix-vector multiplication can be expressed as
 U\ket{\Psi} = \begin{bmatrix} U_{00} & U_{01} \\
 U_{10} & U_{11} \end{bmatrix} \begin{bmatrix} \Psi_0 \\ \Psi_1 \end{bmatrix}
  = w \begin{bmatrix} u_{00} & u_{01} \\
-u_{10} & u_{11} \end{bmatrix} w' \begin{bmatrix} \alpha_0 \\ \alpha_1 \end{bmatrix} = ww' \begin{bmatrix} u_{00} \cdot \alpha_0 + u_{10} \cdot \alpha_1 \\
-u_{01} \cdot \alpha_0 + u_{11} \cdot \alpha_1 \end{bmatrix}.
+u_{10} & u_{11} \end{bmatrix} w' \begin{bmatrix} \alpha_0 \\ \alpha_1 \end{bmatrix} = ww' \begin{bmatrix} u_{00} \cdot \alpha_0 + u_{01} \cdot \alpha_1 \\
+u_{10} \cdot \alpha_0 + u_{11} \cdot \alpha_1 \end{bmatrix}.
 ```
 
 This implies that a multiplication boils down to four smaller multiplications
 and two additions. In the decision-diagram formalism, this has the form
 
 ```{image} _static/dd-figure-12.svg
+:alt: Matrix-vector product combining each matrix row with the vector.
 :align: center
 :width: 90%
 ```
 
 where the dashed nodes again represent the respective successor decision
-diagrams. Overall, this results in a complexity that scales with the product of
-the size of both decision diagrams.
+diagrams. Runtime depends on the distinct weighted subproblems, intermediate
+additions, and output size. Cache reuse can reduce repeated work; compact input
+DDs alone do not guarantee a compact result.
 
 #### Inner Product
 
@@ -679,7 +581,7 @@ according to
 ```{math}
 :label: innerproduct
 \langle\Psi \vert \Phi\rangle = \begin{bmatrix} \Psi^*_0 & \Psi^*_1 \end{bmatrix} \begin{bmatrix} \Phi_0 \\ \Phi_1 \end{bmatrix}
-= w^* \begin{bmatrix} \alpha^*_0 & \alpha^*_1 \end{bmatrix} w' \begin{bmatrix} \alpha'_0 \\ \alpha'_1 \end{bmatrix} = w^*w' (\alpha^*_0 \alpha'_0 + \alpha^*_1 \alpha'_0)
+= w^* \begin{bmatrix} \alpha^*_0 & \alpha^*_1 \end{bmatrix} w' \begin{bmatrix} \alpha'_0 \\ \alpha'_1 \end{bmatrix} = w^*w' (\alpha^*_0 \alpha'_0 + \alpha^*_1 \alpha'_1)
 ```
 
 This implies that the inner product boils down to two smaller inner product
@@ -688,9 +590,57 @@ this is done recursively for each level of the decision diagram. In the
 decision-diagram formalism, this has the following form
 
 ```{image} _static/dd-figure-13.svg
+:alt: Inner product conjugating the first vector and summing paired branches.
 :align: center
 :width: 70%
 ```
 
-Overall, this results in a complexity that, just as in addition, scales linearly
-with the size of the larger decision diagram.
+The recursion visits pairs of subdiagrams and reuses cached results. Its cost
+depends on the pairs visited and cache reuse, rather than only the size of the
+larger input.
+
+### Check the algebra with complex amplitudes
+
+The same operations can be compared directly with NumPy. A nonsymmetric matrix
+makes row/column mistakes visible, while complex amplitudes exercise conjugation
+and phase handling.
+
+```{code-cell} ipython3
+matrix = np.array([[0.6, -0.8], [0.8, 0.6]], dtype=complex)
+state = np.array([1, 1j], dtype=complex) / np.sqrt(2)
+other = np.array([0, 1], dtype=complex)
+package = DDPackage(1)
+state_dd = package.from_vector(state)
+other_dd = package.from_vector(other)
+matrix_dd = package.from_matrix(matrix)
+product = package.matrix_vector_multiply(matrix_dd, state_dd)
+np.testing.assert_allclose(product.get_vector(), matrix @ state)
+np.testing.assert_allclose(package.inner_product(state_dd, other_dd), np.vdot(state, other))
+np.testing.assert_allclose(package.vector_add(state_dd, other_dd).get_vector(), state + other)
+with np.printoptions(precision=3, suppress=True):
+    print("Matrix-vector product:", np.asarray(product.get_vector()))
+    print("Inner product:", package.inner_product(state_dd, other_dd))
+```
+
+### Compact inputs can have a large sum
+
+Both inputs below are product states with one nonterminal node per qubit. Their
+sum needs many more nodes. The public `size()` includes the terminal; subtract
+one when reporting nonterminal nodes.
+
+```{code-cell} ipython3
+print("Qubits | Left nodes | Right nodes | Sum nodes")
+for n in (4, 6, 8):
+    package = DDPackage(n)
+    left = np.ones(1, dtype=complex)
+    right = left.copy()
+    for j in range(n):
+        left = np.kron(left, [1, 1]) / np.sqrt(2)
+        angle = 0.2 + 0.031 * j
+        right = np.kron(right, [np.cos(angle), np.sin(angle)])
+    left_dd = package.from_vector(left)
+    right_dd = package.from_vector(right)
+    result_dd = package.vector_add(left_dd, right_dd)
+    np.testing.assert_allclose(result_dd.get_vector(), left + right, atol=1e-10)
+    print(n, left_dd.size() - 1, right_dd.size() - 1, result_dd.size() - 1, sep=" | ")
+```

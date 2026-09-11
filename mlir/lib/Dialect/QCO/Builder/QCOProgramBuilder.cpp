@@ -8,65 +8,252 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mqt/Dialect/CBit/IR/CBitAttributes.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/ADT/DenseMap.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/STLFunctionalExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <llvm/Support/FormatVariadic.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
 
+#include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/Debug.h"
+#include "llvm/Support/ErrorHandling.h"
+#include "llvm/Support/FormatVariadic.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <variant>
 
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 namespace mlir::qco {
-
 QCOProgramBuilder::QCOProgramBuilder(MLIRContext* context)
     : ImplicitLocOpBuilder(
           FileLineColLoc::get(context, "<qco-program-builder>", 1, 1), context),
-      ctx(context), module(ModuleOp::create(*this)) {
-  ctx->loadDialect<QCODialect, qtensor::QTensorDialect>();
+      ctx(context), moduleOp_(ModuleOp::create(*this)) {
+  ctx->loadDialect<cbit::CBitDialect, mqt::MQTDialect, QCODialect,
+                   qtensor::QTensorDialect>();
 }
 
-void QCOProgramBuilder::initialize() {
+void QCOProgramBuilder::initialize() { initialize({getI64Type()}); }
+
+void QCOProgramBuilder::initialize(TypeRange returnTypes) {
   // Set insertion point to the module body
-  setInsertionPointToStart(mlir::cast<ModuleOp>(module).getBody());
+  setInsertionPointToStart(cast<ModuleOp>(moduleOp_).getBody());
 
   // Create main function as entry point
-  auto funcType = getFunctionType({}, {getI64Type()});
+  auto funcType = getFunctionType({}, returnTypes);
   auto mainFunc = func::FuncOp::create(*this, "main", funcType);
 
-  // Add entry_point attribute to identify the main function
-  auto entryPointAttr = getStringAttr("entry_point");
-  mainFunc->setAttr("passthrough", getArrayAttr({entryPointAttr}));
+  mqt::setEntryPoint(mainFunc);
 
   // Create entry block and set insertion point
   auto& entryBlock = mainFunc.getBody().emplaceBlock();
   setInsertionPointToStart(&entryBlock);
+}
+
+void QCOProgramBuilder::retype(TypeRange returnTypes) {
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
+  if (!mainFunc) {
+    llvm::reportFatalUsageError("Main function not found for retyping");
+  }
+  auto funcType =
+      getFunctionType(mainFunc.getFunctionType().getInputs(), returnTypes);
+  mainFunc.setType(funcType);
+}
+
+static bool isQubitTensor(Type type) {
+  auto tensor = dyn_cast<RankedTensorType>(type);
+  return tensor && isa<QubitType>(tensor.getElementType());
+}
+
+func::FuncOp QCOProgramBuilder::createFunction(
+    const StringRef name, const TypeRange argumentTypes,
+    const function_ref<SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+  auto moduleOp = cast<ModuleOp>(moduleOp_);
+  auto mainFunc = mqt::getEntryPoint(moduleOp);
+  if (!mainFunc) {
+    llvm::reportFatalUsageError(
+        "QCOProgramBuilder must be initialized before creating a function");
+  }
+  if (SymbolTable::lookupSymbolIn(moduleOp, name) != nullptr) {
+    llvm::reportFatalUsageError("Function name is already defined");
+  }
+
+  const InsertionGuard insertionGuard(*this);
+  auto savedQubits = std::move(validQubits);
+  auto savedTensors = std::move(validTensors);
+  const auto savedTensorCounter = tensorCounter;
+  auto stateGuard = llvm::make_scope_exit([&] {
+    validQubits = std::move(savedQubits);
+    validTensors = std::move(savedTensors);
+    tensorCounter = savedTensorCounter;
+  });
+  validQubits.clear();
+  validTensors.clear();
+
+  setInsertionPoint(mainFunc);
+  auto function = func::FuncOp::create(
+      *this, name, getFunctionType(argumentTypes, TypeRange{}));
+  function.setPrivate();
+  auto* block = function.addEntryBlock();
+  setInsertionPointToStart(block);
+  for (auto argument : block->getArguments()) {
+    if (isa<QubitType>(argument.getType())) {
+      validQubits.insert(argument);
+    } else if (isQubitTensor(argument.getType())) {
+      validTensors.insert(Tensor{argument, tensorCounter++});
+    }
+  }
+
+  SmallVector<Value> results = body(block->getArguments());
+  if (block->mightHaveTerminator()) {
+    llvm::reportFatalUsageError(
+        "Function callback must not create a terminator");
+  }
+  function.setType(
+      getFunctionType(argumentTypes, ValueRange(results).getTypes()));
+  SmallVector<unsigned> qubitArguments;
+  for (auto [index, argument] : llvm::enumerate(block->getArguments())) {
+    if (isa<QubitType>(argument.getType())) {
+      qubitArguments.emplace_back(index);
+    }
+  }
+  if (results.size() < qubitArguments.size()) {
+    llvm::reportFatalUsageError(
+        "Function must return every qubit argument as a trailing result");
+  }
+  const auto firstQubitResult = results.size() - qubitArguments.size();
+  if (llvm::any_of(
+          ValueRange(results).drop_front(firstQubitResult),
+          [](Value result) { return !isa<QubitType>(result.getType()); })) {
+    llvm::reportFatalUsageError(
+        "Function must return every qubit argument as a trailing result");
+  }
+  for (auto [offset, argument] : llvm::enumerate(qubitArguments)) {
+    auto origin =
+        traceQubitArgument(function, results[firstQubitResult + offset]);
+    if (failed(origin) || *origin != argument) {
+      llvm::reportFatalUsageError(
+          "Function must return every qubit argument as a trailing result");
+    }
+  }
+  for (Value result : results) {
+    if (isa<QubitType>(result.getType())) {
+      validateQubitValue(result);
+      validQubits.erase(result);
+    } else if (isQubitTensor(result.getType())) {
+      validateTensorValue(result);
+      validTensors.erase(result);
+    }
+  }
+  disposeLinearValues();
+  func::ReturnOp::create(*this, results);
+  return function;
+}
+
+func::FuncOp QCOProgramBuilder::createUnitaryFunction(
+    const StringRef name, const TypeRange argumentTypes,
+    const function_ref<SmallVector<Value>(ValueRange)> body) {
+  auto function = createFunction(name, argumentTypes, body);
+  mqt::setUnitaryFunction(function);
+  return function;
+}
+
+SmallVector<Value> QCOProgramBuilder::call(func::FuncOp callee,
+                                           ValueRange operands) {
+  checkFinalized();
+  if (callee->getParentOp() != moduleOp_ ||
+      callee.getArgumentTypes() != operands.getTypes()) {
+    llvm::reportFatalUsageError(
+        "Call operands must match a function in the current module");
+  }
+  if (llvm::any_of(operands, [](Value operand) {
+        return isQubitTensor(operand.getType());
+      })) {
+    llvm::reportFatalUsageError(
+        "Quantum tensor function calls are not supported");
+  }
+
+  SmallVector<Qubit> qubitArguments;
+  for (auto operand : operands) {
+    if (!isa<QubitType>(operand.getType())) {
+      continue;
+    }
+    validateQubitValue(operand);
+    auto iterator = validQubits.find(operand);
+    qubitArguments.emplace_back(*iterator);
+    validQubits.erase(iterator);
+  }
+
+  SmallVector<Value> results;
+  if (mqt::isUnitaryFunction(callee)) {
+    auto call = CallOp::create(
+        *this, FlatSymbolRefAttr::get(getContext(), callee.getName()),
+        operands);
+    llvm::append_range(results, call.getResults());
+  } else {
+    auto call = func::CallOp::create(*this, callee, operands);
+    llvm::append_range(results, call.getResults());
+  }
+
+  if (results.size() < qubitArguments.size()) {
+    llvm::reportFatalUsageError(
+        "Callee does not return its qubit arguments positionally");
+  }
+  const auto firstQubitResult = results.size() - qubitArguments.size();
+  if (llvm::any_of(
+          ValueRange(results).drop_front(firstQubitResult),
+          [](Value result) { return !isa<QubitType>(result.getType()); })) {
+    llvm::reportFatalUsageError(
+        "Callee does not return its qubit arguments positionally");
+  }
+  for (auto [index, result] : llvm::enumerate(results)) {
+    if (!isa<QubitType>(result.getType())) {
+      continue;
+    }
+    if (index >= firstQubitResult) {
+      const auto& tracked = qubitArguments[index - firstQubitResult];
+      validQubits.insert(Qubit{result, tracked.regId, tracked.regIndex});
+    } else {
+      validQubits.insert(result);
+    }
+  }
+  return results;
 }
 
 Value QCOProgramBuilder::intConstant(const int64_t value) {
@@ -79,6 +266,11 @@ Value QCOProgramBuilder::floatConstant(const double value) {
   return arith::ConstantOp::create(*this, getF64FloatAttr(value)).getResult();
 }
 
+Value QCOProgramBuilder::boolConstant(const bool value) {
+  checkFinalized();
+  return arith::ConstantOp::create(*this, getBoolAttr(value)).getResult();
+}
+
 Value& QCOProgramBuilder::QubitRegister::operator[](const size_t index) {
   if (index >= qubits.size()) {
     llvm::reportFatalUsageError("Qubit index out of bounds");
@@ -86,7 +278,7 @@ Value& QCOProgramBuilder::QubitRegister::operator[](const size_t index) {
   return qubits[index];
 }
 
-Value QCOProgramBuilder::allocQubit() {
+QCOProgramBuilder::Qubit QCOProgramBuilder::allocQubit() {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Dynamic);
 
@@ -94,33 +286,38 @@ Value QCOProgramBuilder::allocQubit() {
   auto qubit = allocOp.getResult();
 
   // Track the allocated qubit as valid
-  validQubits.try_emplace(qubit, QubitInfo{});
+  validQubits.insert(qubit);
 
   return qubit;
 }
 
-Value QCOProgramBuilder::staticQubit(const uint64_t index) {
+QCOProgramBuilder::Qubit QCOProgramBuilder::staticQubit(const uint64_t index) {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Static);
 
   auto staticOp = StaticOp::create(*this, index);
-  const auto qubit = staticOp.getQubit();
+  auto qubit = staticOp.getQubit();
 
   // Track the static qubit as valid
-  validQubits.try_emplace(qubit, QubitInfo{});
+  validQubits.insert(qubit);
 
   return qubit;
 }
 
 QCOProgramBuilder::QubitRegister
-QCOProgramBuilder::allocQubitRegister(const int64_t size) {
+QCOProgramBuilder::allocQubitRegister(const int64_t size,
+                                      const StringRef name) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
-
   auto qtensor = qtensorAlloc(size);
+  if (!name.empty()) {
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getRegisterNameAttrHelper()
+        .setAttr(qtensor.getDefiningOp(), getStringAttr(name));
+  }
 
   SmallVector<Value> qubits;
   qubits.reserve(size);
@@ -133,31 +330,43 @@ QCOProgramBuilder::allocQubitRegister(const int64_t size) {
   return {.value = qtensor, .qubits = std::move(qubits)};
 }
 
-QCOProgramBuilder::Bit
-QCOProgramBuilder::ClassicalRegister::operator[](const int64_t index) const {
-  if (index < 0 || index >= size) {
-    const std::string msg = "Bit index " + std::to_string(index) +
-                            " out of bounds for register '" + name +
-                            "' of size " + std::to_string(size);
-    llvm::reportFatalUsageError(msg.c_str());
-  }
-  return {.registerName = name, .registerSize = size, .registerIndex = index};
-}
-
-QCOProgramBuilder::ClassicalRegister
-QCOProgramBuilder::allocClassicalBitRegister(const int64_t size,
-                                             std::string name) const {
+Value QCOProgramBuilder::allocClassicalBitRegister(
+    const int64_t size, const StringRef name,
+    const cbit::Initialization initialization) {
   checkFinalized();
 
   if (size <= 0) {
     llvm::reportFatalUsageError("Size must be positive");
   }
 
-  return {.name = std::move(name), .size = size};
+  const auto type = cbit::RegisterType::get(ctx, size);
+  auto alloc = cbit::AllocOp::create(*this, type, initialization);
+  if (!name.empty()) {
+    ctx->getLoadedDialect<mqt::MQTDialect>()
+        ->getRegisterNameAttrHelper()
+        .setAttr(alloc, getStringAttr(name));
+  }
+  return alloc.getResult();
+}
+
+Value QCOProgramBuilder::loadClassicalBit(
+    Value reg, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  cbit::validateStaticRegisterIndex(reg, index);
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  return cbit::LoadOp::create(*this, getI1Type(), reg, indexValue).getResult();
+}
+
+void QCOProgramBuilder::storeClassicalBit(
+    Value value, Value reg, const std::variant<int64_t, Value>& index) {
+  checkFinalized();
+  cbit::validateStaticRegisterIndex(reg, index);
+  auto indexValue = variantToValue(*this, getLoc(), index);
+  cbit::StoreOp::create(*this, value, reg, indexValue);
 }
 
 //===----------------------------------------------------------------------===//
-// Linear Type Tracking Helpers
+/// Linear Ownership Tracking Helpers
 //===----------------------------------------------------------------------===//
 
 void QCOProgramBuilder::validateQubitValue(Value qubit) const {
@@ -176,13 +385,14 @@ void QCOProgramBuilder::updateQubitTracking(Value inputQubit,
   validateQubitValue(inputQubit);
 
   auto it = validQubits.find(inputQubit);
-  auto info = it->second;
+  auto trackedQubit = *it;
 
   // Remove the input (consumed) value from tracking
   validQubits.erase(it);
 
   // Add the output (new) value to tracking
-  validQubits.try_emplace(outputQubit, info);
+  validQubits.insert(
+      Qubit{outputQubit, trackedQubit.regId, trackedQubit.regIndex});
 }
 
 void QCOProgramBuilder::validateTensorValue(Value tensor) const {
@@ -209,84 +419,183 @@ void QCOProgramBuilder::updateTensorTracking(Value inputTensor,
   validateTensorValue(inputTensor);
 
   auto it = validTensors.find(inputTensor);
-  auto info = it->second;
+  auto trackedTensor = *it;
 
   // Remove the input (consumed) value from tracking
   validTensors.erase(it);
 
   // Add the output (new) value to tracking
-  validTensors.try_emplace(outputTensor, info);
+  validTensors.insert(Tensor{outputTensor, trackedTensor.regId});
+}
+
+/// Live values dominate the insertion point, so their blocks are nested.
+/// Order definitions within a block, including argument and result positions.
+static bool isDefinedBefore(Value lhs, Value rhs) {
+  if (lhs.getParentBlock() != rhs.getParentBlock()) {
+    return lhs.getParentRegion()->isProperAncestor(rhs.getParentRegion());
+  }
+  if (auto argument = dyn_cast<BlockArgument>(lhs)) {
+    auto otherArgument = dyn_cast<BlockArgument>(rhs);
+    return !otherArgument ||
+           argument.getArgNumber() < otherArgument.getArgNumber();
+  }
+  if (isa<BlockArgument>(rhs)) {
+    return false;
+  }
+  auto result = cast<OpResult>(lhs);
+  auto otherResult = cast<OpResult>(rhs);
+  return result.getOwner() == otherResult.getOwner()
+             ? result.getResultNumber() < otherResult.getResultNumber()
+             : result.getOwner()->isBeforeInBlock(otherResult.getOwner());
+}
+
+Value QCOProgramBuilder::insertExtractedQubits(Value tensor,
+                                               MutableArrayRef<Qubit> qubits) {
+  llvm::sort(qubits, [](const Qubit& lhs, const Qubit& rhs) {
+    return isDefinedBefore(lhs, rhs);
+  });
+  for (const auto& qubit : qubits) {
+    auto newTensor =
+        qtensor::InsertOp::create(*this, qubit, tensor, qubit.regIndex)
+            .getResult();
+    updateTensorTracking(tensor, newTensor);
+    tensor = newTensor;
+    validQubits.erase(qubit);
+  }
+  return tensor;
 }
 
 SmallVector<Value> QCOProgramBuilder::prepareInitArgs(ValueRange initArgs) {
   checkQubitType(initArgs);
+  if (validQubits.empty()) {
+    for (auto initArg : initArgs) {
+      if (!isa<QubitType>(initArg.getType())) {
+        validateTensorValue(initArg);
+      }
+    }
+    return SmallVector<Value>(initArgs);
+  }
 
-  // Gather all initial qubits first
   DenseSet<Value> initQubits;
+  DenseMap<int64_t, SmallVector<Qubit>> qubitsByRegister;
   for (auto initArg : initArgs) {
     if (isa<QubitType>(initArg.getType())) {
       initQubits.insert(initArg);
+    } else {
+      validateTensorValue(initArg);
+      qubitsByRegister.try_emplace(validTensors.find(initArg)->regId);
+    }
+  }
+  if (!qubitsByRegister.empty()) {
+    for (const auto& qubit : validQubits) {
+      auto it = qubitsByRegister.find(qubit.regId);
+      if (it != qubitsByRegister.end() && !initQubits.contains(qubit)) {
+        it->second.push_back(qubit);
+      }
     }
   }
 
   SmallVector<Value> updatedArgs;
   updatedArgs.reserve(initArgs.size());
-
-  // Iterate through the initial values and add the latest value to the updated
-  // arguments
   for (auto initArg : initArgs) {
     if (isa<QubitType>(initArg.getType())) {
-      // Directly insert qubits
-      updatedArgs.emplace_back(initArg);
-    } else {
-      // For tensors check if you have to insert qubits first
-      const auto regId = validTensors[initArg].regId;
-      auto currentTensor = initArg;
-      // Iterate through the validQubits and find the qubits that were extracted
-      // from this tensor
-      for (auto it = validQubits.begin(); it != validQubits.end();) {
-        auto& [qubit, qubitInfo] = *it;
-        // Ignore qubits that are also used as initArgs
-        if (qubitInfo.regId == regId && !initQubits.contains(qubit)) {
-          // Create an InsertOp for the qubit
-          auto newTensor = qtensor::InsertOp::create(
-                               *this, qubit, currentTensor, qubitInfo.regIndex)
-                               .getResult();
-          // Update the tensor tracking
-          updateTensorTracking(currentTensor, newTensor);
-          currentTensor = newTensor;
-          validQubits.erase(it++);
-        } else {
-          ++it;
-        }
-      }
-      // Add the tensor after all qubits are inserted and the tensor tracking is
-      // updated
-      updatedArgs.emplace_back(currentTensor);
+      updatedArgs.push_back(initArg);
+      continue;
     }
+    validateTensorValue(initArg);
+    updatedArgs.push_back(insertExtractedQubits(
+        initArg, qubitsByRegister[validTensors.find(initArg)->regId]));
   }
   return updatedArgs;
+}
+
+SmallVector<QCOProgramBuilder::RegisterInfo>
+QCOProgramBuilder::getRegisterInfo(ValueRange values) const {
+  SmallVector<RegisterInfo> info;
+  info.reserve(values.size());
+  for (auto value : values) {
+    if (isa<QubitType>(value.getType())) {
+      validateQubitValue(value);
+      const auto& qubit = *validQubits.find(value);
+      info.push_back({
+          .type = value.getType(),
+          .regId = qubit.regId,
+          .regIndex = qubit.regIndex,
+      });
+    } else {
+      validateTensorValue(value);
+      info.push_back({
+          .type = value.getType(),
+          .regId = validTensors.find(value)->regId,
+          .regIndex = {},
+      });
+    }
+  }
+  return info;
+}
+
+void QCOProgramBuilder::restoreRegisterInfo(ValueRange values,
+                                            ArrayRef<RegisterInfo> inputs) {
+  const auto outputs = getRegisterInfo(values);
+  DenseMap<std::tuple<int64_t, int64_t, Value>, int64_t> slotCounts;
+  const auto slotKey = [](const RegisterInfo& info) {
+    const auto index =
+        info.regIndex ? getConstantIntValue(info.regIndex) : std::nullopt;
+    return std::tuple{info.regId, index.value_or(0),
+                      index ? Value{} : info.regIndex};
+  };
+  for (auto [input, output] : llvm::zip_equal(inputs, outputs)) {
+    if (input.type != output.type) {
+      llvm::reportFatalUsageError("Result types must match input types");
+    }
+    if (isa<QubitType>(input.type)) {
+      ++slotCounts[slotKey(input)];
+      --slotCounts[slotKey(output)];
+    } else if (input.regId != output.regId) {
+      llvm::reportFatalUsageError(
+          "Structured body must preserve each input's tensor register");
+    }
+  }
+  if (llvm::any_of(slotCounts,
+                   [](const auto& entry) { return entry.second != 0; })) {
+    llvm::reportFatalUsageError(
+        "Structured body must preserve the set of extracted tensor slots; "
+        "use equal constant indices or the same dynamic index SSA value");
+  }
+  for (auto [value, input, output] : llvm::zip_equal(values, inputs, outputs)) {
+    if (isa<QubitType>(input.type) &&
+        (input.regId != output.regId || input.regIndex != output.regIndex)) {
+      /// Assign results to input slots, using indices that dominate the region.
+      validQubits.erase(value);
+      validQubits.insert(Qubit{value, input.regId, input.regIndex});
+    }
+  }
+}
+
+void QCOProgramBuilder::updateQubitValueTracking(Value oldValue,
+                                                 Value newValue) {
+  if (oldValue.getType() != newValue.getType()) {
+    llvm::reportFatalUsageError("Result types must match input types");
+  }
+  if (isa<QubitType>(oldValue.getType())) {
+    updateQubitTracking(oldValue, newValue);
+  } else {
+    updateTensorTracking(oldValue, newValue);
+  }
 }
 
 void QCOProgramBuilder::updateQubitValueTracking(ValueRange oldValues,
                                                  ValueRange newValues) {
   for (auto [oldValue, newValue] : llvm::zip_equal(oldValues, newValues)) {
-    if (oldValue.getType() != newValue.getType()) {
-      llvm::reportFatalUsageError("Result types must match input types");
-    }
-    if (isa<QubitType>(oldValue.getType())) {
-      updateQubitTracking(oldValue, newValue);
-    } else {
-      updateTensorTracking(oldValue, newValue);
-    }
+    updateQubitValueTracking(oldValue, newValue);
   }
 }
 
 void QCOProgramBuilder::checkQubitType(ValueRange values) {
   for (Type type : values.getTypes()) {
     auto isQubitType = TypeSwitch<Type, bool>(type)
-                           .Case<QubitType>([](auto) { return true; })
-                           .Case<RankedTensorType>([](RankedTensorType t) {
+                           .Case([](QubitType) { return true; })
+                           .Case([](RankedTensorType t) {
                              return isa<QubitType>(t.getElementType());
                            })
                            .Default([](Type) { return false; });
@@ -310,7 +619,8 @@ Value QCOProgramBuilder::qtensorAlloc(
   auto allocOp = qtensor::AllocOp::create(*this, sizeValue);
 
   auto result = allocOp.getResult();
-  validTensors.try_emplace(result, TensorInfo{tensorCounter++});
+  const auto regId = tensorCounter++;
+  validTensors.insert(Tensor{result, regId});
 
   return result;
 }
@@ -332,7 +642,8 @@ Value QCOProgramBuilder::qtensorFromElements(ValueRange elements) {
 
   auto fromElementsOp = qtensor::FromElementsOp::create(*this, elements);
   auto result = fromElementsOp.getResult();
-  validTensors.try_emplace(result, TensorInfo{tensorCounter++});
+  const auto regId = tensorCounter++;
+  validTensors.insert(Tensor{result, regId});
   return result;
 }
 
@@ -347,10 +658,9 @@ QCOProgramBuilder::qtensorExtract(Value tensor,
   auto outTensor = extractOp.getOutTensor();
 
   validateTensorValue(tensor);
-  const auto regId = validTensors[tensor].regId;
+  const auto regId = validTensors.find(tensor)->regId;
 
-  validQubits.try_emplace(qubit,
-                          QubitInfo{.regId = regId, .regIndex = indexValue});
+  validQubits.insert(Qubit{qubit, regId, indexValue});
   updateTensorTracking(tensor, outTensor);
 
   return {outTensor, qubit};
@@ -394,26 +704,25 @@ std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit) {
   auto qubitOut = measureOp.getQubitOut();
   auto result = measureOp.getResult();
 
-  // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
   return {qubitOut, result};
 }
 
-Value QCOProgramBuilder::measure(Value qubit, const Bit& bit) {
+std::pair<Value, Value>
+QCOProgramBuilder::measure(Value qubit, Value reg,
+                           const std::variant<int64_t, Value>& index) {
   checkFinalized();
 
-  auto nameAttr = getStringAttr(bit.registerName);
-  auto sizeAttr = getI64IntegerAttr(bit.registerSize);
-  auto indexAttr = getI64IntegerAttr(bit.registerIndex);
-  auto measureOp =
-      MeasureOp::create(*this, qubit, nameAttr, sizeAttr, indexAttr);
+  auto measureOp = MeasureOp::create(*this, qubit);
   auto qubitOut = measureOp.getQubitOut();
+  auto result = measureOp.getResult();
 
-  // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
-  return qubitOut;
+  storeClassicalBit(result, reg, index);
+
+  return {qubitOut, result};
 }
 
 Value QCOProgramBuilder::reset(Value qubit) {
@@ -422,7 +731,6 @@ Value QCOProgramBuilder::reset(Value qubit) {
   auto resetOp = ResetOp::create(*this, qubit);
   auto qubitOut = resetOp.getQubitOut();
 
-  // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
   return qubitOut;
@@ -443,7 +751,7 @@ Value QCOProgramBuilder::reset(Value qubit) {
       const std::variant<double, Value>&(PARAM), Value control) {              \
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    const auto controlsOut =                                                   \
+    auto controlsOut =                                                         \
         ctrl(control, {}, [&](ValueRange /*targets*/) -> SmallVector<Value> {  \
           OP_NAME(param);                                                      \
           return {};                                                           \
@@ -454,7 +762,7 @@ Value QCOProgramBuilder::reset(Value qubit) {
       const std::variant<double, Value>&(PARAM), ValueRange controls) {        \
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    const auto controlsOut =                                                   \
+    auto controlsOut =                                                         \
         ctrl(controls, {}, [&](ValueRange /*targets*/) -> SmallVector<Value> { \
           OP_NAME(param);                                                      \
           return {};                                                           \
@@ -479,20 +787,16 @@ DEFINE_ZERO_TARGET_ONE_PARAMETER(GPhaseOp, gphase, theta)
   std::pair<Value, Value> QCOProgramBuilder::c##OP_NAME(Value control,         \
                                                         Value target) {        \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
-          return {OP_NAME(targets[0])};                                        \
-        });                                                                    \
-    return {controlsOut[0], targetsOut[0]};                                    \
+    auto [controlsOut, targetsOut] =                                           \
+        ctrl(control, target, [&](Value target) { return OP_NAME(target); });  \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       ValueRange controls, Value target) {                                     \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(targets[0])};                                        \
-        });                                                                    \
-    return {controlsOut, targetsOut[0]};                                       \
+    auto [controlsOut, targetsOut] =                                           \
+        ctrl(controls, target, [&](Value target) { return OP_NAME(target); }); \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_ZERO_PARAMETER(IdOp, id)
@@ -525,22 +829,20 @@ DEFINE_ONE_TARGET_ZERO_PARAMETER(SXdgOp, sxdg)
       Value target) {                                                          \
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
-          return {OP_NAME(param, targets[0])};                                 \
-        });                                                                    \
-    return {controlsOut[0], targetsOut[0]};                                    \
+    auto [controlsOut, targetsOut] = ctrl(control, target, [&](Value target) { \
+      return OP_NAME(param, target);                                           \
+    });                                                                        \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       const std::variant<double, Value>&(PARAM), ValueRange controls,          \
       Value target) {                                                          \
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(param, targets[0])};                                 \
-        });                                                                    \
-    return {controlsOut, targetsOut[0]};                                       \
+    auto [controlsOut, targetsOut] =                                           \
+        ctrl(controls, target,                                                 \
+             [&](Value target) { return OP_NAME(param, target); });            \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_ONE_PARAMETER(RXOp, rx, theta)
@@ -569,11 +871,10 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
     checkFinalized();                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
-          return {OP_NAME(param1, param2, targets[0])};                        \
-        });                                                                    \
-    return {controlsOut[0], targetsOut[0]};                                    \
+    auto [controlsOut, targetsOut] = ctrl(control, target, [&](Value target) { \
+      return OP_NAME(param1, param2, target);                                  \
+    });                                                                        \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       const std::variant<double, Value>&(PARAM1),                              \
@@ -582,11 +883,10 @@ DEFINE_ONE_TARGET_ONE_PARAMETER(POp, p, phi)
     checkFinalized();                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(param1, param2, targets[0])};                        \
-        });                                                                    \
-    return {controlsOut, targetsOut[0]};                                       \
+    auto [controlsOut, targetsOut] =                                           \
+        ctrl(controls, target,                                                 \
+             [&](Value target) { return OP_NAME(param1, param2, target); });   \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_TWO_PARAMETER(ROp, r, theta, phi)
@@ -617,11 +917,10 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(control, target, [&](ValueRange targets) -> SmallVector<Value> {  \
-          return {OP_NAME(param1, param2, param3, targets[0])};                \
-        });                                                                    \
-    return {controlsOut[0], targetsOut[0]};                                    \
+    auto [controlsOut, targetsOut] = ctrl(control, target, [&](Value target) { \
+      return OP_NAME(param1, param2, param3, target);                          \
+    });                                                                        \
+    return {controlsOut, targetsOut};                                          \
   }                                                                            \
   std::pair<ValueRange, Value> QCOProgramBuilder::mc##OP_NAME(                 \
       const std::variant<double, Value>&(PARAM1),                              \
@@ -632,11 +931,11 @@ DEFINE_ONE_TARGET_TWO_PARAMETER(U2Op, u2, phi, lambda)
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
     auto param3 = variantToValue(*this, getLoc(), PARAM3);                     \
-    const auto [controlsOut, targetsOut] =                                     \
-        ctrl(controls, target, [&](ValueRange targets) -> SmallVector<Value> { \
-          return {OP_NAME(param1, param2, param3, targets[0])};                \
+    auto [controlsOut, targetsOut] =                                           \
+        ctrl(controls, target, [&](Value target) {                             \
+          return OP_NAME(param1, param2, param3, target);                      \
         });                                                                    \
-    return {controlsOut, targetsOut[0]};                                       \
+    return {controlsOut, targetsOut};                                          \
   }
 
 DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
@@ -659,7 +958,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
   std::pair<Value, std::pair<Value, Value>> QCOProgramBuilder::c##OP_NAME(     \
       Value control, Value qubit0, Value qubit1) {                             \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
+    auto [controlsOut, targetsOut] =                                           \
         ctrl(control, {qubit0, qubit1},                                        \
              [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] = OP_NAME(targets[0], targets[1]);                \
@@ -671,7 +970,7 @@ DEFINE_ONE_TARGET_THREE_PARAMETER(UOp, u, theta, phi, lambda)
       QCOProgramBuilder::mc##OP_NAME(ValueRange controls, Value qubit0,        \
                                      Value qubit1) {                           \
     checkFinalized();                                                          \
-    const auto [controlsOut, targetsOut] =                                     \
+    auto [controlsOut, targetsOut] =                                           \
         ctrl(controls, {qubit0, qubit1},                                       \
              [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] = OP_NAME(targets[0], targets[1]);                \
@@ -705,7 +1004,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
       Value qubit1) {                                                          \
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    const auto [controlsOut, targetsOut] =                                     \
+    auto [controlsOut, targetsOut] =                                           \
         ctrl(control, {qubit0, qubit1},                                        \
              [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] = OP_NAME(param, targets[0], targets[1]);         \
@@ -719,7 +1018,7 @@ DEFINE_TWO_TARGET_ZERO_PARAMETER(ECROp, ecr)
           Value qubit0, Value qubit1) {                                        \
     checkFinalized();                                                          \
     auto param = variantToValue(*this, getLoc(), PARAM);                       \
-    const auto [controlsOut, targetsOut] =                                     \
+    auto [controlsOut, targetsOut] =                                           \
         ctrl(controls, {qubit0, qubit1},                                       \
              [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] = OP_NAME(param, targets[0], targets[1]);         \
@@ -757,7 +1056,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
     checkFinalized();                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
-    const auto [controlsOut, targetsOut] =                                     \
+    auto [controlsOut, targetsOut] =                                           \
         ctrl(control, {qubit0, qubit1},                                        \
              [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] =                                                 \
@@ -774,7 +1073,7 @@ DEFINE_TWO_TARGET_ONE_PARAMETER(RZZOp, rzz, theta)
     checkFinalized();                                                          \
     auto param1 = variantToValue(*this, getLoc(), PARAM1);                     \
     auto param2 = variantToValue(*this, getLoc(), PARAM2);                     \
-    const auto [controlsOut, targetsOut] =                                     \
+    auto [controlsOut, targetsOut] =                                           \
         ctrl(controls, {qubit0, qubit1},                                       \
              [&](ValueRange targets) -> SmallVector<Value> {                   \
                auto [q0, q1] =                                                 \
@@ -789,6 +1088,52 @@ DEFINE_TWO_TARGET_TWO_PARAMETER(XXMinusYYOp, xx_minus_yy, theta, beta)
 
 #undef DEFINE_TWO_TARGET_TWO_PARAMETER
 
+// ThreeTargetZeroParameter
+
+#define DEFINE_THREE_TARGET_ZERO_PARAMETER(OP_CLASS, OP_NAME)                  \
+  std::tuple<Value, Value, Value> QCOProgramBuilder::OP_NAME(                  \
+      Value qubit0, Value qubit1, Value qubit2) {                              \
+    checkFinalized();                                                          \
+    auto op = OP_CLASS::create(*this, qubit0, qubit1, qubit2);                 \
+    auto qubit0Out = op.getQubit0Out();                                        \
+    auto qubit1Out = op.getQubit1Out();                                        \
+    auto qubit2Out = op.getQubit2Out();                                        \
+    updateQubitTracking(qubit0, qubit0Out);                                    \
+    updateQubitTracking(qubit1, qubit1Out);                                    \
+    updateQubitTracking(qubit2, qubit2Out);                                    \
+    return {qubit0Out, qubit1Out, qubit2Out};                                  \
+  }                                                                            \
+  std::pair<Value, std::tuple<Value, Value, Value>>                            \
+      QCOProgramBuilder::c##OP_NAME(Value control, Value qubit0, Value qubit1, \
+                                    Value qubit2) {                            \
+    checkFinalized();                                                          \
+    auto [controlsOut, targetsOut] =                                           \
+        ctrl(control, {qubit0, qubit1, qubit2},                                \
+             [&](ValueRange targets) -> SmallVector<Value> {                   \
+               auto [q0, q1, q2] =                                             \
+                   OP_NAME(targets[0], targets[1], targets[2]);                \
+               return {q0, q1, q2};                                            \
+             });                                                               \
+    return {controlsOut[0], {targetsOut[0], targetsOut[1], targetsOut[2]}};    \
+  }                                                                            \
+  std::pair<ValueRange, std::tuple<Value, Value, Value>>                       \
+      QCOProgramBuilder::mc##OP_NAME(ValueRange controls, Value qubit0,        \
+                                     Value qubit1, Value qubit2) {             \
+    checkFinalized();                                                          \
+    auto [controlsOut, targetsOut] =                                           \
+        ctrl(controls, {qubit0, qubit1, qubit2},                               \
+             [&](ValueRange targets) -> SmallVector<Value> {                   \
+               auto [q0, q1, q2] =                                             \
+                   OP_NAME(targets[0], targets[1], targets[2]);                \
+               return {q0, q1, q2};                                            \
+             });                                                               \
+    return {controlsOut, {targetsOut[0], targetsOut[1], targetsOut[2]}};       \
+  }
+
+DEFINE_THREE_TARGET_ZERO_PARAMETER(RCCXOp, rccx)
+
+#undef DEFINE_THREE_TARGET_ZERO_PARAMETER
+
 // BarrierOp
 
 ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
@@ -796,7 +1141,19 @@ ValueRange QCOProgramBuilder::barrier(ValueRange qubits) {
 
   auto op = BarrierOp::create(*this, qubits);
   auto qubitsOut = op.getQubitsOut();
-  for (const auto& [inputQubit, outputQubit] : llvm::zip(qubits, qubitsOut)) {
+  for (auto [inputQubit, outputQubit] : llvm::zip(qubits, qubitsOut)) {
+    updateQubitTracking(inputQubit, outputQubit);
+  }
+  return qubitsOut;
+}
+
+ValueRange QCOProgramBuilder::unitary(ValueRange qubits,
+                                      DenseElementsAttr matrix) {
+  checkFinalized();
+
+  auto op = UnitaryOp::create(*this, qubits, matrix);
+  auto qubitsOut = op.getQubitsOut();
+  for (auto [inputQubit, outputQubit] : llvm::zip_equal(qubits, qubitsOut)) {
     updateQubitTracking(inputQubit, outputQubit);
   }
   return qubitsOut;
@@ -814,8 +1171,8 @@ QCOProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
   auto ctrlOp = CtrlOp::create(*this, controls, targets);
   auto& block = ctrlOp.getBodyRegion().emplaceBlock();
   auto qubitType = QubitType::get(getContext());
-  for (const auto target : targets) {
-    const auto arg = block.addArgument(qubitType, getLoc());
+  for (auto target : targets) {
+    auto arg = block.addArgument(qubitType, getLoc());
     updateQubitTracking(target, arg);
   }
   const InsertionGuard guard(*this);
@@ -828,14 +1185,12 @@ QCOProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
         "Ctrl body must return exactly one output qubit per target");
   }
 
-  // Update tracking
-  const auto& controlsOut = ctrlOp.getControlsOut();
-  for (const auto& [control, controlOut] :
-       llvm::zip_equal(controls, controlsOut)) {
+  auto controlsOut = ctrlOp.getControlsOut();
+  for (auto [control, controlOut] : llvm::zip_equal(controls, controlsOut)) {
     updateQubitTracking(control, controlOut);
   }
-  const auto& targetsOut = ctrlOp.getTargetsOut();
-  for (const auto& [target, targetOut] :
+  auto targetsOut = ctrlOp.getTargetsOut();
+  for (auto [target, targetOut] :
        llvm::zip_equal(innerTargetsOut, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
@@ -854,7 +1209,7 @@ QCOProgramBuilder::inv(ValueRange qubits,
   auto& block = invOp.getBodyRegion().emplaceBlock();
   auto qubitType = QubitType::get(getContext());
   for (auto qubit : qubits) {
-    const auto arg = block.addArgument(qubitType, getLoc());
+    auto arg = block.addArgument(qubitType, getLoc());
     updateQubitTracking(qubit, arg);
   }
 
@@ -869,14 +1224,117 @@ QCOProgramBuilder::inv(ValueRange qubits,
         "Inv body must return exactly one output qubit per target");
   }
 
-  // Update tracking
-  const auto& targetsOut = invOp.getQubitsOut();
-  for (const auto& [target, targetOut] :
+  auto targetsOut = invOp.getQubitsOut();
+  for (auto [target, targetOut] :
        llvm::zip_equal(innerTargetsOut, targetsOut)) {
     updateQubitTracking(target, targetOut);
   }
 
   return targetsOut;
+}
+
+ValueRange
+QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                       ValueRange qubits,
+                       function_ref<SmallVector<Value>(ValueRange)> body) {
+  checkFinalized();
+
+  auto powOp = PowOp::create(*this, qubits, exponent);
+
+  // Add block arguments for all qubits
+  auto& block = powOp.getBodyRegion().emplaceBlock();
+  auto qubitType = QubitType::get(getContext());
+  for (auto qubit : qubits) {
+    auto arg = block.addArgument(qubitType, getLoc());
+    updateQubitTracking(qubit, arg);
+  }
+
+  // Create the final yield operation
+  const InsertionGuard guard(*this);
+  setInsertionPointToStart(&block);
+  const auto innerTargetsOut = body(block.getArguments());
+  YieldOp::create(*this, innerTargetsOut);
+
+  if (innerTargetsOut.size() != qubits.size()) {
+    llvm::reportFatalUsageError(
+        "Pow body must return exactly one output qubit per target");
+  }
+
+  auto targetsOut = powOp.getQubitsOut();
+  for (auto [target, targetOut] :
+       llvm::zip_equal(innerTargetsOut, targetsOut)) {
+    updateQubitTracking(target, targetOut);
+  }
+
+  return targetsOut;
+}
+
+Value QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
+                             Value qubit, function_ref<Value(Value)> body) {
+  checkFinalized();
+
+  Value innerQubitOut;
+  auto powOp =
+      PowOp::create(*this, qubit, exponent, [&](Value qubitArg) -> Value {
+        updateQubitTracking(qubit, qubitArg);
+        innerQubitOut = body(qubitArg);
+        return innerQubitOut;
+      });
+
+  auto qubitsOut = powOp.getQubitsOut();
+  assert(qubitsOut.size() == 1);
+  updateQubitTracking(innerQubitOut, qubitsOut.front());
+
+  return qubitsOut.front();
+}
+
+std::pair<ValueRange, Value>
+QCOProgramBuilder::ctrl(ValueRange controls, Value target,
+                        function_ref<Value(Value)> body) {
+  checkFinalized();
+
+  Value innerTargetOut;
+  auto ctrlOp =
+      CtrlOp::create(*this, controls, target, [&](Value targetArg) -> Value {
+        updateQubitTracking(target, targetArg);
+        innerTargetOut = body(targetArg);
+        return innerTargetOut;
+      });
+
+  auto controlsOut = ctrlOp.getControlsOut();
+  for (auto [control, controlOut] : llvm::zip_equal(controls, controlsOut)) {
+    updateQubitTracking(control, controlOut);
+  }
+  auto targetsOut = ctrlOp.getTargetsOut();
+  assert(targetsOut.size() == 1);
+  updateQubitTracking(innerTargetOut, targetsOut.front());
+
+  return {controlsOut, targetsOut.front()};
+}
+
+std::pair<Value, Value>
+QCOProgramBuilder::ctrl(Value control, Value target,
+                        function_ref<Value(Value)> body) {
+  auto [controlsOut, targetOut] = ctrl(ValueRange{control}, target, body);
+  assert(controlsOut.size() == 1);
+  return {controlsOut.front(), targetOut};
+}
+
+Value QCOProgramBuilder::inv(Value qubit, function_ref<Value(Value)> body) {
+  checkFinalized();
+
+  Value innerQubitOut;
+  auto invOp = InvOp::create(*this, qubit, [&](Value qubitArg) -> Value {
+    updateQubitTracking(qubit, qubitArg);
+    innerQubitOut = body(qubitArg);
+    return innerQubitOut;
+  });
+
+  auto qubitsOut = invOp.getQubitsOut();
+  assert(qubitsOut.size() == 1);
+  updateQubitTracking(innerQubitOut, qubitsOut.front());
+
+  return qubitsOut.front();
 }
 
 //===----------------------------------------------------------------------===//
@@ -913,6 +1371,7 @@ ValueRange QCOProgramBuilder::scfFor(
   auto updatedArgs = prepareInitArgs(initArgs);
 
   // Create the empty for operation
+  const auto registerInfo = getRegisterInfo(updatedArgs);
   auto forOp = scf::ForOp::create(*this, lb, ub, stepSize, updatedArgs);
   auto* forBody = forOp.getBody();
   auto iv = forBody->getArgument(0);
@@ -931,6 +1390,7 @@ ValueRange QCOProgramBuilder::scfFor(
     llvm::reportFatalUsageError(
         "scf.for body must return exactly one value per iter arg");
   }
+  restoreRegisterInfo(bodyResults, registerInfo);
   // Create the yield operation
   scf::YieldOp::create(*this, bodyResults);
 
@@ -949,6 +1409,7 @@ ValueRange QCOProgramBuilder::scfWhile(
   // Get the updated arguments after inserting the extracted qubits
   auto updatedArgs = prepareInitArgs(initArgs);
   // Create the empty while operation
+  const auto registerInfo = getRegisterInfo(updatedArgs);
   auto whileOp = scf::WhileOp::create(*this, initArgs.getTypes(), updatedArgs);
 
   const SmallVector locs(initArgs.size(), getLoc());
@@ -968,6 +1429,7 @@ ValueRange QCOProgramBuilder::scfWhile(
       llvm::reportFatalUsageError(
           "scf.while body must return exactly one value per iter arg");
     }
+    restoreRegisterInfo(results, registerInfo);
     if (createYield) {
       scf::YieldOp::create(*this, results);
     } else {
@@ -1009,6 +1471,7 @@ ValueRange QCOProgramBuilder::qcoIf(
   auto conditionValue = variantToValue(*this, getLoc(), condition);
   auto updatedArgs = prepareInitArgs(initArgs);
   // Create the empty if operation
+  const auto registerInfo = getRegisterInfo(updatedArgs);
   auto ifOp = IfOp::create(*this, conditionValue, updatedArgs);
 
   const SmallVector locs(initArgs.size(), getLoc());
@@ -1024,6 +1487,7 @@ ValueRange QCOProgramBuilder::qcoIf(
     llvm::reportFatalUsageError(
         "Then body must return exactly one value per input value");
   }
+  restoreRegisterInfo(thenResult, registerInfo);
   YieldOp::create(*this, thenResult);
 
   // Create the else block
@@ -1037,14 +1501,116 @@ ValueRange QCOProgramBuilder::qcoIf(
       llvm::reportFatalUsageError(
           "Else body must return exactly one value per input value");
     }
+    restoreRegisterInfo(elseResult, registerInfo);
     YieldOp::create(*this, elseResult);
-    updateQubitValueTracking(elseResult, ifOp->getResults());
+    updateQubitValueTracking(elseResult, ifOp.getLinearResults());
   } else {
     YieldOp::create(*this, elseArgs);
-    updateQubitValueTracking(thenResult, ifOp->getResults());
+    updateQubitValueTracking(thenResult, ifOp.getLinearResults());
   }
 
-  return ifOp->getResults();
+  return ifOp.getLinearResults();
+}
+
+ValueRange QCOProgramBuilder::qcoIndexSwitch(
+    const std::variant<int64_t, Value>& arg, ValueRange targets,
+    ArrayRef<int64_t> cases,
+    ArrayRef<function_ref<SmallVector<Value>(ValueRange)>> caseBodies,
+    const function_ref<SmallVector<Value>(ValueRange)> defaultBody) {
+  checkFinalized();
+
+  if (cases.size() != caseBodies.size()) {
+    const char* msg = "Each case must have a corresponding case body function";
+    llvm::reportFatalUsageError(msg);
+    llvm_unreachable(msg);
+  }
+
+  const auto ntargets = targets.size();
+  const auto types = targets.getTypes();
+  const auto updatedTargets = prepareInitArgs(targets);
+  const auto registerInfo = getRegisterInfo(updatedTargets);
+  auto argValue = variantToValue(*this, getLoc(), arg);
+
+  auto switchOp = IndexSwitchOp::create(*this, types, argValue, cases,
+                                        updatedTargets, cases.size());
+
+  const InsertionGuard guard(*this);
+  const SmallVector locs(ntargets, getLoc());
+
+  const auto buildRegion = [&](Region& region, SmallVector<Value>& prev,
+                               function_ref<SmallVector<Value>(ValueRange)> f) {
+    Block* const block = createBlock(&region, {}, types, locs);
+    updateQubitValueTracking(prev, block->getArguments());
+
+    const auto result = f(block->getArguments());
+    if (result.size() != ntargets) {
+      const char* msg =
+          "Case body must return exactly one value per input value";
+      llvm::reportFatalUsageError(msg);
+      llvm_unreachable(msg);
+    }
+    restoreRegisterInfo(result, registerInfo);
+
+    YieldOp::create(*this, result);
+    prev = result;
+  };
+
+  SmallVector<Value> prev(updatedTargets);
+  for (const auto [region, f] :
+       llvm::zip_equal(switchOp.getCaseRegions(), caseBodies)) {
+    buildRegion(region, prev, f);
+  }
+
+  buildRegion(switchOp.getDefaultRegion(), prev, defaultBody);
+  updateQubitValueTracking(prev, switchOp.getLinearResults());
+
+  return switchOp.getLinearResults();
+}
+
+Value QCOProgramBuilder::qcoIndexSwitch(
+    const std::variant<int64_t, Value>& arg, Value target,
+    ArrayRef<int64_t> cases, ArrayRef<function_ref<Value(Value)>> caseBodies,
+    function_ref<Value(Value)> defaultBody) {
+  auto bodies =
+      llvm::map_to_vector(caseBodies, [](function_ref<Value(Value)> body) {
+        return [body](ValueRange args) {
+          return SmallVector<Value>{body(args.front())};
+        };
+      });
+  /// Keep the adapted callbacks alive until the range overload returns.
+  SmallVector<function_ref<SmallVector<Value>(ValueRange)>> callbacks(
+      bodies.begin(), bodies.end());
+  return qcoIndexSwitch(arg, ValueRange{target}, cases, callbacks,
+                        [&](ValueRange args) {
+                          return SmallVector<Value>{defaultBody(args.front())};
+                        })
+      .front();
+}
+
+Value QCOProgramBuilder::qcoIf(const std::variant<bool, Value>& condition,
+                               Value initArg,
+                               function_ref<Value(Value)> thenBody,
+                               function_ref<Value(Value)> elseBody) {
+  const auto then = [&](ValueRange args) {
+    return SmallVector<Value>{thenBody(args.front())};
+  };
+  if (!elseBody) {
+    return qcoIf(condition, ValueRange{initArg}, then).front();
+  }
+  return qcoIf(condition, ValueRange{initArg}, then,
+               [&](ValueRange args) {
+                 return SmallVector<Value>{elseBody(args.front())};
+               })
+      .front();
+}
+
+ValueRange QCOProgramBuilder::qcoIf(
+    Value reg, const std::variant<int64_t, Value>& index, ValueRange initArgs,
+    function_ref<SmallVector<Value>(ValueRange)> thenBody,
+    function_ref<SmallVector<Value>(ValueRange)> elseBody) {
+  checkFinalized();
+  auto condition = loadClassicalBit(reg, index);
+  return qcoIf(condition, initArgs, thenBody, elseBody);
 }
 
 QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
@@ -1066,6 +1632,15 @@ QCOProgramBuilder& QCOProgramBuilder::scfCondition(Value condition,
   return *this;
 }
 
+QCOProgramBuilder&
+QCOProgramBuilder::scfCondition(Value reg,
+                                const std::variant<int64_t, Value>& index,
+                                ValueRange yieldedValues) {
+  checkFinalized();
+  auto condition = loadClassicalBit(reg, index);
+  return scfCondition(condition, yieldedValues);
+}
+
 //===----------------------------------------------------------------------===//
 // Finalization
 //===----------------------------------------------------------------------===//
@@ -1079,6 +1654,15 @@ void QCOProgramBuilder::checkFinalized() const {
 
 void QCOProgramBuilder::ensureAllocationMode(
     const AllocationMode requestedMode) {
+  if (requestedMode == AllocationMode::Dynamic) {
+    auto entryPoint = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
+    if (!entryPoint || entryPoint.getBody().empty() ||
+        getInsertionBlock() != &entryPoint.getBody().front()) {
+      llvm::reportFatalUsageError(
+          "Dynamic qubit allocation requires the entry block of the "
+          "mqt.entry_point function");
+    }
+  }
   if (allocationMode == AllocationMode::Unset) {
     allocationMode = requestedMode;
     return;
@@ -1100,20 +1684,56 @@ void QCOProgramBuilder::ensureAllocationMode(
   llvm::reportFatalUsageError(message.c_str());
 }
 
+void QCOProgramBuilder::disposeLinearValues() {
+  auto tensors = llvm::to_vector(validTensors);
+  llvm::sort(tensors, [](const Tensor& lhs, const Tensor& rhs) {
+    return lhs.regId < rhs.regId;
+  });
+  DenseMap<int64_t, SmallVector<Qubit>> qubitsByRegister;
+  for (const auto& tensor : tensors) {
+    qubitsByRegister.try_emplace(tensor.regId);
+  }
+
+  SmallVector<Qubit> qubitsToSink;
+  for (const auto& qubit : validQubits) {
+    auto it = qubitsByRegister.find(qubit.regId);
+    if (it == qubitsByRegister.end()) {
+      qubitsToSink.push_back(qubit);
+    } else {
+      it->second.push_back(qubit);
+    }
+  }
+  llvm::sort(qubitsToSink, [](const Qubit& lhs, const Qubit& rhs) {
+    return isDefinedBefore(lhs, rhs);
+  });
+  for (const auto& qubit : qubitsToSink) {
+    SinkOp::create(*this, qubit);
+  }
+  for (const auto& tensor : tensors) {
+    auto currentTensor =
+        insertExtractedQubits(tensor, qubitsByRegister[tensor.regId]);
+    qtensor::DeallocOp::create(*this, currentTensor);
+  }
+  validQubits.clear();
+  validTensors.clear();
+}
+
 OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
   checkFinalized();
 
-  // Ensure that main function exists and insertion point is valid
+  auto exitCode = intConstant(0);
+  return finalize({exitCode});
+}
+
+OwningOpRef<ModuleOp> QCOProgramBuilder::finalize(ValueRange returnValues) {
+  checkFinalized();
+
+  // Ensure that the entry-point function exists and the insertion point is
+  // valid.
   auto* insertionBlock = getInsertionBlock();
-  func::FuncOp mainFunc = nullptr;
-  for (auto op : cast<ModuleOp>(module).getOps<func::FuncOp>()) {
-    if (op.getName() == "main") {
-      mainFunc = op;
-      break;
-    }
-  }
-  if (!mainFunc) {
-    llvm::reportFatalUsageError("Could not find main function");
+  auto mainFunc = mqt::getEntryPoint(cast<ModuleOp>(moduleOp_));
+  if (mainFunc == nullptr) {
+    llvm::reportFatalUsageError("Could not find entry-point function");
   }
   if ((insertionBlock == nullptr) ||
       insertionBlock != &mainFunc.getBody().front()) {
@@ -1121,55 +1741,48 @@ OwningOpRef<ModuleOp> QCOProgramBuilder::finalize() {
         "Insertion point is not in entry block of main function");
   }
 
-  DenseSet<int64_t> validTensorIds;
-  for (const auto& [tensor, info] : validTensors) {
-    validTensorIds.insert(info.regId);
-  }
-
-  DenseMap<int64_t, SmallVector<std::pair<Value, QubitInfo>>> qubitsByRegister;
-  for (auto [qubit, info] : validQubits) {
-    if (info.regId == -1 || !validTensorIds.contains(info.regId)) {
-      // Automatically deallocate all still-allocated qubits
-      SinkOp::create(*this, qubit);
-    } else {
-      qubitsByRegister[info.regId].emplace_back(qubit, info);
+  // Returning a linear value is its final consumption. Remove such values from
+  // the live sets before automatically disposing of everything left over.
+  for (auto returnValue : returnValues) {
+    const auto type = returnValue.getType();
+    if (isa<QubitType>(type)) {
+      validateQubitValue(returnValue);
+      validQubits.erase(returnValue);
+    } else if (isLinearQubitType(type)) {
+      validateTensorValue(returnValue);
+      validTensors.erase(returnValue);
     }
   }
 
-  // Automatically deallocate all still-allocated tensors
-  for (auto& [tensor, tensorInfo] : validTensors) {
-    auto currentTensor = tensor;
-    // Filter out qubits belonging to this tensor
-    for (auto& [qubit, qubitInfo] : qubitsByRegister[tensorInfo.regId]) {
-      currentTensor = qtensor::InsertOp::create(*this, qubit, currentTensor,
-                                                qubitInfo.regIndex)
-                          .getResult();
-    }
-    // Deallocate tensor
-    qtensor::DeallocOp::create(*this, currentTensor);
-  }
-  validQubits.clear();
-  validTensors.clear();
+  disposeLinearValues();
 
-  // Create constant 0 for successful exit code
-  auto exitCode = intConstant(0);
-
-  // Add return statement with exit code 0 to the main function
-  func::ReturnOp::create(*this, exitCode);
+  // Add return statement with the given return values to the main function
+  func::ReturnOp::create(*this, returnValues);
 
   // Invalidate context to prevent use-after-finalize
   ctx = nullptr;
 
-  return cast<ModuleOp>(module);
+  return cast<ModuleOp>(moduleOp_);
 }
 
 OwningOpRef<ModuleOp> QCOProgramBuilder::build(
     MLIRContext* context,
-    const function_ref<void(QCOProgramBuilder&)>& buildFunc) {
+    const function_ref<SmallVector<Value>(QCOProgramBuilder&)>& buildFunc) {
   QCOProgramBuilder builder(context);
   builder.initialize();
-  buildFunc(builder);
-  return builder.finalize();
+  auto result = buildFunc(builder);
+  builder.retype(ValueRange(result).getTypes());
+  return builder.finalize(result);
+}
+
+OwningOpRef<ModuleOp> QCOProgramBuilder::build(
+    MLIRContext* context,
+    const function_ref<Value(QCOProgramBuilder&)>& buildFunc) {
+  QCOProgramBuilder builder(context);
+  builder.initialize();
+  auto result = buildFunc(builder);
+  builder.retype(result.getType());
+  return builder.finalize(result);
 }
 
 } // namespace mlir::qco

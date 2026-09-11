@@ -8,28 +8,33 @@
 
 """QDMI Qiskit Backend.
 
-Provides a Qiskit BackendV2-compatible interface to QDMI devices via FoMaC.
+Provides a Qiskit BackendV2-compatible interface to QDMI devices.
 """
 
 from __future__ import annotations
 
 import inspect
-import itertools
 import warnings
+from functools import cached_property
+from math import isfinite
+from numbers import Integral
 from typing import TYPE_CHECKING, Any, ClassVar
 
 from qiskit import qasm2, qasm3
-from qiskit.circuit import QuantumCircuit
+from qiskit.circuit import ControlFlowOp, QuantumCircuit
 from qiskit.circuit.library import (
     MCPhaseGate,
     MCXGate,
     get_standard_gate_name_mapping,
 )
+from qiskit.primitives import BackendEstimatorV2, BackendSamplerV2
 from qiskit.providers import BackendV2, Options
 from qiskit.transpiler import InstructionProperties, Target
 
-from ... import fomac
-from .converters import qiskit_to_iqm_json
+from ...qdmi import Device as QDMIDevice
+from ...qdmi import Job as QDMIJobHandle
+from ...qdmi import ProgramFormat, is_binary_program_format
+from ...qdmi.driver import open_device
 from .exceptions import (
     CircuitValidationError,
     JobSubmissionError,
@@ -38,18 +43,19 @@ from .exceptions import (
     UnsupportedFormatError,
     UnsupportedOperationError,
 )
-from .gates import MoveGate
-from .job import QDMIJob
+from .job import QDMIJob, _cancel_jobs
+from .serializers import preferred_program_formats, program_serializer, register_program_serializer
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, MutableSet, Sequence
+    from typing import Unpack
 
     from qiskit.circuit import Instruction, Parameter
     from qiskit.circuit.parameterexpression import ParameterValueType
 
+    from ...typing import QDMISessionParameters, QiskitEstimatorOptions, QiskitSamplerOptions
     from .provider import QDMIProvider
 
-    # Type alias for parameter values
     ParametersType = Mapping[Parameter, ParameterValueType] | Iterable[ParameterValueType]
 
 __all__ = ["QDMIBackend"]
@@ -61,41 +67,39 @@ def __dir__() -> list[str]:
 
 def _build_gate_mappings_for_backend(
     gate_aliases: dict[str, set[str]],
+    extra_gates: dict[str, Instruction | type[Instruction]],
 ) -> tuple[dict[str, set[str]], dict[str, Instruction | type[Instruction]]]:
     """Build both forward (Qiskit→QDMI) and inverse (QDMI→Gate) mappings.
 
     Uses Qiskit's standard gate mapping as the canonical source of truth,
-    combined with a list of device-specific aliases.
+    combined with a list of device-specific aliases and gates.
 
     Args:
         gate_aliases: Maps canonical names to their aliases.
+        extra_gates: Maps names of gates outside Qiskit's standard library to
+            the gate that represents them.
 
     Returns:
         Tuple of (qiskit_to_qdmi_map, operation_to_gate_map).
     """
-    # Get Qiskit's standard gate name mapping as our canonical source
     canonical_gates = get_standard_gate_name_mapping()
 
-    # Augment the canonical mapping with any additional gates that may not be in Qiskit's standard library
     canonical_gates.update({
         "mcx": MCXGate,
         "mcphase": MCPhaseGate,
         "mcp": MCPhaseGate,
         "mcx_gray": MCXGate,
-        "move": MoveGate(),
     })
+    canonical_gates.update(extra_gates)
 
     qiskit_to_qdmi: dict[str, set[str]] = {}
     operation_to_gate: dict[str, Instruction | type[Instruction]] = {}
 
-    # Process each canonical gate from Qiskit's standard library
     for canonical_name, gate in canonical_gates.items():
-        # Get all names for this gate (canonical + aliases)
         all_names = {canonical_name}
         if canonical_name in gate_aliases:
             all_names.update(gate_aliases[canonical_name])
 
-        # For each name, map it to all names (bidirectional aliases)
         for name in all_names:
             qiskit_to_qdmi[name] = all_names.copy()
             operation_to_gate[name] = gate
@@ -103,53 +107,158 @@ def _build_gate_mappings_for_backend(
     return qiskit_to_qdmi, operation_to_gate
 
 
+def _serialize_to_qasm3(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
+    """Serialize a circuit into an OpenQASM 3 program.
+
+    Args:
+        circuit: The circuit to serialize.
+        backend: The backend that runs the circuit. Its Target supplies the
+            basis gates.
+
+    Returns:
+        The OpenQASM 3 program.
+    """
+    backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
+    # Qiskit classical bits start at zero, while OpenQASM 3 bits are
+    # uninitialized. Preserve Qiskit's semantics and make every output valid
+    # even when the circuit measures only part of a register.
+    if circuit.num_clbits:
+        initialization = circuit.copy_empty_like(vars_mode="drop")
+        initialization.global_phase = 0
+        for clbit in initialization.clbits:
+            initialization.store(
+                clbit,
+                False,  # ruff: ignore[boolean-positional-value-in-call] Qiskit store arguments are positional-only.
+            )
+        circuit = circuit.compose(initialization, front=True, inplace=False)
+
+    exclusion_list = set()
+
+    # Qiskit treats "measure", "reset", and "barrier" as keywords rather than gates
+    exclusion_list.update({"measure", "reset", "barrier"})
+
+    # Exclude standard-library gates to avoid duplicate definitions.
+    exclusion_list.update({
+        "p",
+        "x",
+        "y",
+        "z",
+        "h",
+        "s",
+        "sdg",
+        "t",
+        "tdg",
+        "sx",
+        "rx",
+        "ry",
+        "rz",
+        "cx",
+        "cy",
+        "cz",
+        "cp",
+        "crx",
+        "cry",
+        "crz",
+        "ch",
+        "swap",
+        "ccx",
+        "cswap",
+        "cu",
+        "CX",
+        "phase",
+        "cphase",
+        "id",
+        "u1",
+        "u2",
+        "u3",
+    })
+
+    # Emit device-supported gates outside the standard library as opaque gates.
+    basis_gates = [gate for gate in backend.target.operation_names if gate not in exclusion_list] + ["mcx_gray", "U"]
+
+    return qasm3.dumps(circuit, basis_gates=basis_gates)
+
+
+def _serialize_to_qasm2(circuit: QuantumCircuit, backend: QDMIBackend) -> str:
+    """Serialize a circuit into an OpenQASM 2 program.
+
+    Args:
+        circuit: The circuit to serialize.
+        backend: The backend whose native placements constrain the circuit.
+
+    Returns:
+        The OpenQASM 2 program.
+    """
+    backend._validate_circuit(circuit, native=True)  # ruff: ignore[private-member-access] Built-in serializer.
+    return qasm2.dumps(circuit)
+
+
+def _check_payload_type(program: str | bytes, fmt: ProgramFormat) -> None:
+    """Check that a serialized program has the payload type its format requires.
+
+    Args:
+        program: The program a serializer returned.
+        fmt: The program format the serializer produces.
+
+    Raises:
+        TranslationError: If the payload type does not match the format.
+    """
+    expected = bytes if is_binary_program_format(fmt) else str
+    if not isinstance(program, expected):
+        msg = (
+            f"The program serializer for {fmt.name} returned {type(program).__name__}, "
+            f"but {fmt.name} requires {expected.__name__}"
+        )
+        raise TranslationError(msg)
+
+
 class QDMIBackend(BackendV2):
-    """A Qiskit BackendV2 adapter for QDMI devices via FoMaC.
+    """A Qiskit BackendV2 adapter for QDMI devices.
 
     This backend provides program submission to QDMI devices.
     It automatically introspects device capabilities and constructs a
     :class:`~qiskit.transpiler.Target` object with supported operations.
 
-    Backends should be obtained through :class:`~mqt.core.qdmi.qiskit.QDMIProvider`
-    rather than instantiated directly.
+    Use :meth:`from_device_id` to open one registered device. Use
+    :class:`~mqt.core.plugins.qiskit.provider.QDMIProvider` to enumerate
+    registered devices.
 
     Args:
-        device: FoMaC device to wrap.
+        device: QDMI device wrapper.
         provider: The provider instance that created this backend.
 
     Examples:
-        Get a backend through the provider:
+        Open a backend by stable device ID:
 
-        >>> from mqt.core.plugins.qiskit import QDMIProvider
-        >>> provider = QDMIProvider()
-        >>> backend = provider.get_backend("MQT Core DDSIM QDMI Device")
+        >>> backend = QDMIBackend.from_device_id("mqt.ddsim.default")
     """
 
     @staticmethod
-    def is_convertible(device: fomac.Device) -> bool:
+    def is_convertible(device: QDMIDevice) -> bool:
         """Returns whether a device can be represented in Qiskit's Target model."""
         # Zoned operations cannot easily be represented in Qiskit's Target model
         return not any(op.is_zoned() for op in device.operations())
 
-    # Class-level counter for generating unique circuit names
-    _circuit_counter = itertools.count()
-
-    # Define known aliases
     _GATE_ALIASES: ClassVar[dict[str, set[str]]] = {
-        "id": {"i"},  # Identity gate can also be called 'i'
-        "p": {"phase"},  # Phase gate can also be called 'phase'
+        "id": {"i"},
+        "p": {"phase"},
         "r": {"prx"},  # R gate can also be called 'prx' (IQM naming)
-        "u": {"u3"},  # U and U3 are the same gate
-        "cu": {"cu3"},  # CU and CU3 are the same gate
-        "cx": {"cnot"},  # CX and CNOT are the same gate
+        "u": {"u3"},
+        "cu": {"cu3"},
+        "cx": {"cnot"},
         "global_phase": {"gphase"},  # Qiskit canonical name
         "gphase": {"global_phase"},  # OpenQASM canonical name
         "mcphase": {"mcp"},  # Qiskit canonical name
         "mcp": {"mcphase"},  # OpenQASM canonical name
-        "mcx_gray": {"mcx"},  # Alias for MCX with specific encoding
-        "mcx_vchain": {"mcx"},  # Alias for MCX with specific encoding
-        "mcx_recursive": {"mcx"},  # Alias for MCX with specific encoding
+        "mcx_gray": {"mcx"},
+        "mcx_vchain": {"mcx"},
+        "mcx_recursive": {"mcx"},
     }
+
+    #: Gates outside Qiskit's standard library that the device natively supports.
+    #: A subclass for a device with such a gate sets this to map the device
+    #: operation name to the gate that represents it in the Target.
+    _EXTRA_GATES: ClassVar[dict[str, Instruction | type[Instruction]]] = {}
 
     _QDMI_TO_QISKIT_GATE_MAP: ClassVar[dict[str, str]] = {
         "i": "id",
@@ -163,15 +272,32 @@ class QDMIBackend(BackendV2):
     _QISKIT_TO_QDMI_GATE_MAP: ClassVar[dict[str, set[str]]]
     _OPERATION_TO_GATE_MAP: ClassVar[dict[str, Instruction | type[Instruction]]]
 
-    # Initialize derived mappings at class definition time
-    _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES)
+    _QISKIT_TO_QDMI_GATE_MAP, _OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(_GATE_ALIASES, _EXTRA_GATES)
 
-    def __init__(self, device: fomac.Device, provider: QDMIProvider | None = None) -> None:
-        """Initialize the backend with a FoMaC device.
+    def __init_subclass__(cls, **kwargs: Any) -> None:  # ruff:ignore[any-type]
+        """Rebuild the gate mappings so a subclass sees its own aliases and gates.
 
         Args:
-            device: FoMaC device instance.
+            **kwargs: Keyword arguments for the base implementation.
+        """
+        super().__init_subclass__(**kwargs)
+        cls._QISKIT_TO_QDMI_GATE_MAP, cls._OPERATION_TO_GATE_MAP = _build_gate_mappings_for_backend(
+            cls._GATE_ALIASES, cls._EXTRA_GATES
+        )
+
+    def __init__(
+        self,
+        device: QDMIDevice,
+        provider: QDMIProvider | None = None,
+        *,
+        device_id: str | None = None,
+    ) -> None:
+        """Initialize the backend with a QDMI device wrapper.
+
+        Args:
+            device: QDMI device wrapper.
             provider: Provider instance that created this backend.
+            device_id: Stable registry ID for the opened device, if known.
 
         Raises:
             UnsupportedDeviceError: If the device cannot be represented in Qiskit's Target model.
@@ -182,9 +308,59 @@ class QDMIBackend(BackendV2):
 
         super().__init__(name=device.name(), provider=provider, backend_version=device.version())
         self._device = device
+        self._device_id = device_id
 
-        # Build Target from device
         self._target = self._build_target()
+
+    @classmethod
+    def from_device_id(
+        cls,
+        device_id: str,
+        *,
+        provider: QDMIProvider | None = None,
+        **session_parameters: Unpack[QDMISessionParameters],
+    ) -> QDMIBackend:
+        """Open a registered QDMI device and adapt it for Qiskit.
+
+        Args:
+            device_id: Stable ID from the QDMI device registry.
+            provider: Provider to associate with the backend.
+            session_parameters: Optional overrides for this device session.
+
+        Returns:
+            A Qiskit backend for a fresh QDMI device session.
+        """
+        return cls(
+            device=open_device(device_id, **session_parameters),
+            provider=provider,
+            device_id=device_id,
+        )
+
+    @property
+    def device(self) -> QDMIDevice:
+        """The QDMI device the backend runs on."""
+        return self._device
+
+    @property
+    def device_id(self) -> str | None:
+        """Stable QDMI device ID, if known."""
+        return self._device_id
+
+    def sampler(self, **options: Unpack[QiskitSamplerOptions]) -> BackendSamplerV2:
+        """Construct Qiskit's native sampler with typed keyword options.
+
+        Returns:
+            A sampler that executes on this backend.
+        """
+        return BackendSamplerV2(backend=self, options=dict(options))
+
+    def estimator(self, **options: Unpack[QiskitEstimatorOptions]) -> BackendEstimatorV2:
+        """Construct Qiskit's native estimator with typed keyword options.
+
+        Returns:
+            An estimator that executes on this backend.
+        """
+        return BackendEstimatorV2(backend=self, options=dict(options))
 
     @property
     def target(self) -> Target:
@@ -192,14 +368,14 @@ class QDMIBackend(BackendV2):
         return self._target
 
     @property
-    def provider(self) -> Any | None:  # noqa: ANN401
+    def provider(self) -> Any | None:  # ruff:ignore[any-type]
         """The provider that created the backend."""
         return self._provider
 
     @property
     def max_circuits(self) -> int | None:
         """The maximum number of circuits that can be run in a single job."""
-        return None  # No limit, processed sequentially
+        return None
 
     @property
     def options(self) -> Options:
@@ -211,9 +387,9 @@ class QDMIBackend(BackendV2):
         """Return default backend options.
 
         Returns:
-            Default Options with shots=1024.
+            Default Options with shots=1024 and memory=False.
         """
-        return Options(shots=1024)
+        return Options(shots=1024, memory=False)
 
     def _target_num_qubits(self) -> int:
         """Number of addressable qubits to expose in the Target.
@@ -233,20 +409,18 @@ class QDMIBackend(BackendV2):
         Returns:
             Target object with device operations and properties.
         """
+        self._duration_conversion: tuple[float, float] | None = None
         target = Target(
             description=f"QDMI device: {self._device.name()}",
             num_qubits=self._target_num_qubits(),
         )
 
-        # Deduplicate operations by Qiskit gate name (not device operation name)
-        # Multiple device operations may map to the same Qiskit gate
+        # Device aliases can map several operations to the same Qiskit gate.
         seen_gate_names: set[str] = set()
 
-        # Add operations from device
         for op in self._device.operations():
             self._add_operation_to_target(target, op, seen_gate_names)
 
-        # Check if the measurement operation is defined
         if "measure" not in seen_gate_names:
             warnings.warn(
                 f"{self._device.name()} does not define a measurement operation. This may limit practical usage.",
@@ -257,13 +431,13 @@ class QDMIBackend(BackendV2):
         return target
 
     def _add_operation_to_target(
-        self, target: Target, op: fomac.Device.Operation, seen_gate_names: MutableSet[str]
+        self, target: Target, op: QDMIDevice.Operation, seen_gate_names: MutableSet[str]
     ) -> None:
         """Add a single device operation to the Target, if it maps to a Qiskit gate.
 
         Subclasses may override this to customize how an individual device
         operation is represented in the Target, e.g. substituting fictional
-        qubit-qubit loci for an operation that natively acts on non-qubit
+        pairs of qubit sites for an operation that natively acts on non-qubit
         sites (such as a qubit-resonator gate).
 
         Args:
@@ -271,7 +445,6 @@ class QDMIBackend(BackendV2):
             op: The device operation to add.
             seen_gate_names: Qiskit gate names already added to the target (mutated in place).
         """
-        # Map known operations to Qiskit gates
         op_name = op.name().lower()
 
         # Skip control flow operations that don't belong in the Target
@@ -293,13 +466,11 @@ class QDMIBackend(BackendV2):
 
         is_class = inspect.isclass(gate)
 
-        # Skip if we've already added this Qiskit gate to the target
         gate_name = op_name if is_class else gate.name
         if gate_name in seen_gate_names:
             return
         seen_gate_names.add(gate_name)
 
-        # Determine which qubits this operation applies to
         qargs = self._get_operation_qargs(op)
 
         # Globally supported gates (such as MCX) must specify a name and no properties
@@ -309,9 +480,8 @@ class QDMIBackend(BackendV2):
 
         # If qargs is [None], it means the operation is available on all qubits
         if qargs == [None]:
-            # Create instruction properties
             props = None
-            duration = op.duration()
+            duration = self._duration_seconds(op.duration())
             fidelity = op.fidelity()
             if duration is not None or fidelity is not None:
                 error = 1.0 - fidelity if fidelity is not None else None
@@ -322,42 +492,71 @@ class QDMIBackend(BackendV2):
             target.add_instruction(gate, {None: props})
             return
 
-        # Add the operation without properties and populate them iteratively later
         target.add_instruction(gate, dict.fromkeys(qargs))
 
-        num_qubits = op.qubits_num()
-        if num_qubits == 1:
-            op_sites = op.sites()
-            assert op_sites is not None
-            for qarg, site in zip(qargs, op_sites, strict=True):
-                duration = op.duration(sites=[site])
-                fidelity = op.fidelity(sites=[site])
-                if duration is not None or fidelity is not None:
-                    error = 1.0 - fidelity if fidelity is not None else None
-                    props = InstructionProperties(
-                        duration=duration,
-                        error=error,
-                    )
-                    target.update_instruction_properties(gate_name, qarg, props)
-            return
+        site_tuples = self._get_operation_site_tuples(op)
+        assert site_tuples is not None
+        for qarg, sites in zip(qargs, site_tuples, strict=True):
+            duration = self._duration_seconds(op.duration(sites=sites))
+            fidelity = op.fidelity(sites=sites)
+            if duration is not None or fidelity is not None:
+                error = 1.0 - fidelity if fidelity is not None else None
+                target.update_instruction_properties(
+                    gate_name, qarg, InstructionProperties(duration=duration, error=error)
+                )
 
-        if num_qubits == 2:
-            op_site_pairs = op.site_pairs()
-            assert op_site_pairs is not None
-            for qarg, (site1, site2) in zip(qargs, op_site_pairs, strict=True):
-                duration = op.duration(sites=[site1, site2])
-                fidelity = op.fidelity(sites=[site1, site2])
-                if duration is not None or fidelity is not None:
-                    error = 1.0 - fidelity if fidelity is not None else None
-                    props = InstructionProperties(
-                        duration=duration,
-                        error=error,
-                    )
-                    target.update_instruction_properties(gate_name, qarg, props)
-            return
+    def _duration_seconds(self, duration: int | None) -> float | None:
+        """Convert a raw QDMI duration to Qiskit's seconds.
+
+        Returns:
+            The duration in seconds, or None when it is unavailable.
+
+        Raises:
+            UnsupportedOperationError: If the duration unit or scale is invalid.
+        """
+        if duration is None:
+            return None
+        if self._duration_conversion is None:
+            unit = self._device.duration_unit()
+            seconds_per_unit = {"s": 1.0, "ms": 1e-3, "us": 1e-6, "ns": 1e-9, "ps": 1e-12, "fs": 1e-15}
+            if unit not in seconds_per_unit:
+                msg = f"Cannot convert operation duration with device duration unit {unit!r} to seconds"
+                raise UnsupportedOperationError(msg)
+            scale = self._device.duration_scale_factor()
+            if scale is None:
+                scale = 1.0
+            if not isfinite(scale) or scale <= 0:
+                msg = f"Device duration scale factor must be positive and finite, got {scale!r}"
+                raise UnsupportedOperationError(msg)
+            self._duration_conversion = scale, seconds_per_unit[unit]
+        scale, seconds_per_unit_value = self._duration_conversion
+        return duration * scale * seconds_per_unit_value
 
     @staticmethod
-    def _map_operation_to_gate(op_name: str) -> Instruction | type[Instruction] | None:
+    def _get_operation_site_tuples(op: QDMIDevice.Operation) -> Sequence[tuple[QDMIDevice.Site, ...]] | None:
+        """Read explicit operation placements without widening their support.
+
+        Returns:
+            Ordered site tuples, or None when placements are unspecified.
+
+        Raises:
+            UnsupportedOperationError: If a site tuple is incomplete.
+        """
+        arity = op.qubits_num()
+        if arity is None or arity == 0:
+            return None
+        if arity == 2:
+            return op.site_pairs()
+        sites = op.sites()
+        if sites is None:
+            return None
+        if len(sites) % arity:
+            msg = f"Operation '{op.name()}' has an incomplete {arity}-qubit site tuple"
+            raise UnsupportedOperationError(msg)
+        return [tuple(sites[i : i + arity]) for i in range(0, len(sites), arity)]
+
+    @classmethod
+    def _map_operation_to_gate(cls, op_name: str) -> Instruction | type[Instruction] | None:
         """Map a device operation name to a Qiskit gate.
 
         Args:
@@ -366,10 +565,10 @@ class QDMIBackend(BackendV2):
         Returns:
             Qiskit gate instance or None if not mappable.
         """
-        return QDMIBackend._OPERATION_TO_GATE_MAP.get(op_name.lower())
+        return cls._OPERATION_TO_GATE_MAP.get(op_name.lower())
 
-    @staticmethod
-    def _map_qiskit_gate_to_operation_names(qiskit_gate_name: str) -> set[str]:
+    @classmethod
+    def _map_qiskit_gate_to_operation_names(cls, qiskit_gate_name: str) -> set[str]:
         """Map a Qiskit gate name to possible QDMI device operation names.
 
         This is the inverse of _map_operation_to_gate, accounting for the fact that
@@ -381,67 +580,85 @@ class QDMIBackend(BackendV2):
         Returns:
             Set of possible QDMI device operation names that could map to this gate.
         """
-        return QDMIBackend._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
+        return cls._QISKIT_TO_QDMI_GATE_MAP.get(qiskit_gate_name.lower(), {qiskit_gate_name.lower()})
 
-    def _get_operation_qargs(self, op: fomac.Device.Operation) -> list[tuple[int]] | list[tuple[int, int]] | list[None]:
-        """Get the qubit argument tuples for an operation.
-
-        This method determines which qubit indices an operation can act on by:
-        1. Checking explicit site lists from the operation (sites() for 1-qubit, site_pairs() for 2-qubit)
-        2. For operations without site lists (returns None):
-           - Single-qubit: Available on all individual qubits
-           - Two-qubit with coupling map: Misconfigured device (error)
-           - Two-qubit without coupling map: Available on all qubit pairs (all-to-all)
-           - Multi-qubit (3+): Assumed to be globally available
-
-        Args:
-            op: Device operation from FoMaC.
+    def _get_operation_qargs(self, op: QDMIDevice.Operation) -> list[tuple[int, ...]] | list[None]:
+        """Get explicit qubit tuples, or global support when placements are absent.
 
         Returns:
-            Sequence of qubit index tuples this operation can act on.
-            Returns [None] for globally available operations (will be converted to {None: None} in Target).
+            Ordered qubit tuples, or [None] for global support.
 
         Raises:
-            UnsupportedOperationError: If the device is misconfigured.
+            UnsupportedOperationError: If a site tuple is incomplete or a two-qubit
+                operation omits placements on a device with a coupling map.
         """
-        qubits_num = op.qubits_num()
-
-        # For single-qubit operations, first check for explicit sites
-        if qubits_num == 1:
-            site_list = op.sites()
-            if site_list is not None:
-                # Operation explicitly defines where it can be executed
-                return [(s.index(),) for s in site_list]
-
-            # No explicit sites - operation is globally available on all qubits
-            return [None]
-
-        # For two-qubit operations, first check for explicit site_pairs
-        if qubits_num == 2:
-            site_pairs = op.site_pairs()
-            if site_pairs is not None:
-                return [(s1.index(), s2.index()) for s1, s2 in site_pairs]
-
-            # Two-qubit operations without explicit site_pairs
-            # Check device-level coupling map
-            coupling_map = self._device.coupling_map()
-            if coupling_map is not None:
-                # Device has coupling map but operation doesn't expose sites
-                msg = (
-                    f"Device provides a coupling map (stating connectivity constraints), "
-                    f"but operation '{op.name()}' does not expose site pairs. This indicates "
-                    f"a misconfigured device. Devices with connectivity constraints must expose "
-                    f"sites for their operations."
-                )
-                raise UnsupportedOperationError(msg)
-
-            # No coupling map and no site pairs - operation is globally available (all-to-all)
-            return [None]
-
-        # Operation has unspecified qubit count or 3+ qubits -> assume it applies to all qubits
+        site_tuples = self._get_operation_site_tuples(op)
+        if site_tuples is not None:
+            return [tuple(site.index() for site in sites) for sites in site_tuples]
+        if op.qubits_num() == 2 and self._device.coupling_map() is not None:
+            msg = (
+                f"Device provides a coupling map (stating connectivity constraints), "
+                f"but operation '{op.name()}' does not expose site pairs. This indicates "
+                f"a misconfigured device. Devices with connectivity constraints must expose "
+                f"sites for their operations."
+            )
+            raise UnsupportedOperationError(msg)
         return [None]
 
-    def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:  # noqa: PLR6301
+    @cached_property
+    def _native_operation_loci(self) -> dict[str, tuple[int | None, frozenset[tuple[int, ...] | None]]]:
+        """Normalize native placements once for the opened device session.
+
+        Returns:
+            Native arity and placements by QDMI operation name.
+        """
+        return {
+            operation.name().lower(): (operation.qubits_num(), frozenset(self._get_operation_qargs(operation)))
+            for operation in self._device.operations()
+        }
+
+    def _validate_circuit(self, circuit: QuantumCircuit, *, native: bool = False) -> None:
+        """Check supported operations, including operations inside control flow.
+
+        Built-in QASM serializers also check native width and placements after
+        preprocessing. Custom serializers can perform further compilation and
+        therefore retain responsibility for validating their output placements.
+
+        Raises:
+            CircuitValidationError: If the circuit exceeds the native device width.
+            UnsupportedOperationError: If an operation or placement is unsupported.
+        """
+        if native and circuit.num_qubits > self._device.qubits_num():
+            msg = f"Circuit has {circuit.num_qubits} qubits, but the native device has {self._device.qubits_num()}."
+            raise CircuitValidationError(msg)
+        device_ops = {operation.name().lower() for operation in self._device.operations()}
+
+        pending = [(circuit, tuple(range(circuit.num_qubits)))]
+        while pending:
+            block, indices = pending.pop()
+            for instruction in block.data:
+                operation = instruction.operation
+                qargs = tuple(indices[block.find_bit(bit).index] for bit in instruction.qubits)
+                if isinstance(operation, ControlFlowOp):
+                    if operation.name not in self._target.operation_names:
+                        msg = f"Unsupported control flow operation: '{operation.name}'"
+                        raise UnsupportedOperationError(msg)
+                    pending.extend((body, qargs) for body in reversed(operation.blocks))
+                    continue
+                if operation.name == "barrier":
+                    continue
+                names = self._map_qiskit_gate_to_operation_names(operation.name) & device_ops
+                if not names:
+                    msg = f"Unsupported operation: '{operation.name}'"
+                    raise UnsupportedOperationError(msg)
+                if native and not any(
+                    arity in {None, len(qargs)} and (None in loci or qargs in loci)
+                    for arity, loci in (self._native_operation_loci[name] for name in names)
+                ):
+                    msg = f"Operation '{operation.name}' is not advertised on native device qubits {qargs}."
+                    raise UnsupportedOperationError(msg)
+
+    def _preprocess_circuit(self, circuit: QuantumCircuit) -> QuantumCircuit:  # ruff:ignore[no-self-use]
         """Rewrite a bound circuit before validation and conversion.
 
         Called once per circuit in :meth:`run`, after parameter binding and
@@ -459,116 +676,62 @@ class QDMIBackend(BackendV2):
         """
         return circuit
 
-    def _convert_circuit(
-        self, circuit: QuantumCircuit, supported_program_formats: Iterable[fomac.ProgramFormat]
-    ) -> tuple[str, fomac.ProgramFormat]:
-        """Convert a :class:`~qiskit.circuit.QuantumCircuit` to one of the supported program formats.
+    def _serialize_circuit(
+        self, circuit: QuantumCircuit, supported_program_formats: Iterable[ProgramFormat]
+    ) -> tuple[str | bytes, ProgramFormat]:
+        """Serialize a :class:`~qiskit.circuit.QuantumCircuit` into a program the device accepts.
 
-        The conversion priority order is:
-        1. IQM JSON (if supported) - device-specific format
-        2. OpenQASM 3 (if supported) - superset of QASM 2
-        3. OpenQASM 2 (if supported) - legacy format
+        The method walks the formats the device supports in the order of
+        :data:`~mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE`
+        and uses the first one that has a registered serializer. See
+        :mod:`mqt.core.plugins.qiskit.serializers` for how a package registers a
+        serializer.
 
         Args:
-            circuit: The quantum circuit to convert.
-            supported_program_formats: Supported program formats.
+            circuit: The circuit to serialize.
+            supported_program_formats: The program formats the device accepts.
 
         Returns:
-            Tuple of (program string, program format).
+            Tuple of (program, program format). The program is a string for a
+            text format and bytes for a binary format.
 
         Raises:
-            UnsupportedFormatError: If no supported program formats are found.
-            UnsupportedOperationError: If the circuit contains operations not supported by IQM JSON.
-            TranslationError: If conversion fails.
+            CircuitValidationError: If native circuit validation fails.
+            UnsupportedFormatError: If the device reports no program format that
+                has a serializer.
+            UnsupportedOperationError: If the circuit contains an operation the
+                chosen format cannot express.
+            TranslationError: If serialization fails.
         """
-        if not supported_program_formats:
-            msg = "No supported program formats found"
+        formats = list(supported_program_formats)
+        if not formats:
+            msg = "The device reports no supported program formats"
             raise UnsupportedFormatError(msg)
 
-        # Try IQM JSON format first (device-specific)
-        if fomac.ProgramFormat.IQM_JSON in supported_program_formats:
+        for fmt in preferred_program_formats(formats):
+            serializer = program_serializer(fmt)
+            if serializer is None:
+                continue
             try:
-                return qiskit_to_iqm_json(circuit, self._device), fomac.ProgramFormat.IQM_JSON
-            except UnsupportedOperationError:
-                # Let this propagate so caller can handle fallback
+                program = serializer(circuit, self)
+            except (CircuitValidationError, UnsupportedOperationError):
+                # A circuit the chosen format cannot express must fail loudly
+                # rather than arrive at the device in a weaker format.
                 raise
             except Exception as exc:
-                msg = f"Failed to convert circuit to IQM JSON: {exc}"
+                msg = f"Failed to serialize the circuit to {fmt.name}: {exc}"
                 raise TranslationError(msg) from exc
+            _check_payload_type(program, fmt)
+            return program, fmt
 
-        # Try OpenQASM3
-        if fomac.ProgramFormat.QASM3 in supported_program_formats:
-            # Qiskit's OpenQASM3 exporter is fairly limited in terms of which gates it supports natively.
-            # So it needs some help from us.
-            exclusion_list = set()
-
-            # Qiskit treats "measure", "reset", and "barrier" as keywords rather than gates
-            exclusion_list.update({"measure", "reset", "barrier"})
-
-            # We also need to remove all gates that are defined in the OpenQASM `stdlib.inc`.
-            # Qiskit's exporter will otherwise complain about duplicate definitions.
-            exclusion_list.update({
-                "p",
-                "x",
-                "y",
-                "z",
-                "h",
-                "s",
-                "sdg",
-                "t",
-                "tdg",
-                "sx",
-                "rx",
-                "ry",
-                "rz",
-                "cx",
-                "cy",
-                "cz",
-                "cp",
-                "crx",
-                "cry",
-                "crz",
-                "ch",
-                "swap",
-                "ccx",
-                "cswap",
-                "cu",
-                "CX",
-                "phase",
-                "cphase",
-                "id",
-                "u1",
-                "u2",
-                "u3",
-            })
-
-            # By excluding already defined gates, we allow the exporter to emit otherwise unsupported gates without
-            # needing to provide a definition for them. The exporter will then treat them as opaque gates, which is fine
-            # as long as the target device supports them.
-            basis_gates = [gate for gate in self.target.operation_names if gate not in exclusion_list] + ["U"]
-
-            try:
-                return qasm3.dumps(circuit, basis_gates=basis_gates), fomac.ProgramFormat.QASM3
-            except Exception as exc:
-                msg = f"Failed to convert circuit to QASM3: {exc}"
-                raise TranslationError(msg) from exc
-
-        # Try OpenQASM2 (legacy)
-        if fomac.ProgramFormat.QASM2 in supported_program_formats:
-            try:
-                return qasm2.dumps(circuit), fomac.ProgramFormat.QASM2
-            except Exception as exc:
-                msg = f"Failed to convert circuit to QASM2: {exc}"
-                raise TranslationError(msg) from exc
-
-        msg = f"No conversion from Qiskit to any of the supported program formats: {supported_program_formats}"
+        msg = f"No program serializer for any format the device supports: {[fmt.name for fmt in formats]}"
         raise UnsupportedFormatError(msg)
 
     def run(
         self,
         run_input: QuantumCircuit | Sequence[QuantumCircuit],
         parameter_values: Sequence[ParametersType] | None = None,
-        **options: Any,  # noqa: ANN401
+        **options: Any,  # ruff:ignore[any-type]
     ) -> QDMIJob:
         """Execute one or more :class:`~qiskit.circuit.QuantumCircuit` instances on the backend.
 
@@ -577,7 +740,8 @@ class QDMIBackend(BackendV2):
             parameter_values: Optional parameter values to bind to the circuits. If provided, must be a sequence
                 with one entry per circuit. Each entry can be either a dictionary mapping parameters to values,
                 or a sequence of values in the order of circuit.parameters.
-            **options: Execution options (e.g., shots).
+            **options: Execution options: nonnegative integer ``shots`` and boolean ``memory``.
+                Memory requires genuine QDMI SHOTS results. Simulator seeds are unsupported.
 
         Returns:
             Job handle for the execution. For multiple circuits, the job aggregates results from all circuits.
@@ -607,16 +771,13 @@ class QDMIBackend(BackendV2):
             >>> qc2.ry(theta, 0)
             >>> qc2.measure_all()
             >>> job = backend.run([qc1, qc2], parameter_values=[{theta: 0.5}, {theta: 1.5}])
-        """
-        # Normalize input to a list of circuits
+        """  # ruff:ignore[docstring-extraneous-exception] The validation helper raises operation errors.
         circuits = [run_input] if isinstance(run_input, QuantumCircuit) else run_input
 
-        # Validate non-empty circuit list
         if not circuits:
             msg = "No circuits provided to run. At least one circuit is required."
             raise CircuitValidationError(msg)
 
-        # Validate parameter_values length if provided
         if parameter_values is not None and len(parameter_values) != len(circuits):
             msg = (
                 f"Length of parameter_values ({len(parameter_values)}) must match "
@@ -624,28 +785,34 @@ class QDMIBackend(BackendV2):
             )
             raise CircuitValidationError(msg)
 
-        # Get shots option
+        # Native primitives pass an unset simulator seed to every backend.
+        if options.get("seed_simulator") is None:
+            options.pop("seed_simulator", None)
+        if unsupported := options.keys() - self._options.keys():
+            msg = f"Unsupported execution options: {', '.join(sorted(unsupported))}"
+            raise CircuitValidationError(msg)
+
         shots_opt = options.get("shots", self._options.shots)
-        try:
-            shots = int(shots_opt)
-        except Exception as exc:
+        if not isinstance(shots_opt, Integral) or isinstance(shots_opt, bool):
             msg = f"Invalid 'shots' value: {shots_opt!r}"
-            raise CircuitValidationError(msg) from exc
+            raise CircuitValidationError(msg)
+        shots = int(shots_opt)
         if shots < 0:
             msg = f"'shots' must be >= 0, got {shots}"
             raise CircuitValidationError(msg)
+        memory = options.get("memory", self._options.memory)
+        if not isinstance(memory, bool):
+            msg = f"Invalid 'memory' value: {memory!r}"
+            raise CircuitValidationError(msg)
 
-        # Build set of all supported QDMI operation names once
-        device_ops = {op.name().lower() for op in self._device.operations()}
+        supported_formats = self._device.supported_program_formats()
 
-        # Process each circuit
-        qdmi_jobs: list[fomac.Job] = []
-        circuit_names: list[str] = []
-        # First pass: validate and convert all circuits
-        converted_circuits: list[tuple[str, fomac.ProgramFormat, str]] = []
+        qdmi_jobs: list[QDMIJobHandle] = []
+        prepared_circuits: list[QuantumCircuit] = []
+        # Prepare every circuit before submitting any job, so validation cannot leave a partial batch.
+        serialized_circuits: list[tuple[str | bytes, ProgramFormat]] = []
 
         for idx, circuit in enumerate(circuits):
-            # Bind parameters if provided
             bound_circuit = circuit
             if parameter_values is not None:
                 try:
@@ -663,39 +830,32 @@ class QDMIBackend(BackendV2):
                 raise CircuitValidationError(msg)
 
             bound_circuit = self._preprocess_circuit(bound_circuit)
+            if [bit for register in bound_circuit.cregs for bit in register] != bound_circuit.clbits:
+                msg = "Classical registers must partition circuit.clbits in register order."
+                raise CircuitValidationError(msg)
 
-            # Validate operations are supported
-            for instruction in bound_circuit.data:
-                op_name = instruction.operation.name
-                # Map the Qiskit gate name to possible QDMI operation names and check if any match
-                possible_qdmi_names = self._map_qiskit_gate_to_operation_names(op_name)
-                # Check if any of the possible QDMI names are supported by the device
-                # Also always allow 'barrier' as it's a directive, not an operation
-                if op_name != "barrier" and not any(qdmi_name in device_ops for qdmi_name in possible_qdmi_names):
-                    msg = f"Unsupported operation: '{op_name}'"
-                    raise UnsupportedOperationError(msg)
+            self._validate_circuit(bound_circuit)
 
-            # Convert circuit to the specified program format
-            program_str, program_format = self._convert_circuit(bound_circuit, self._device.supported_program_formats())
-            circuit_name = circuit.name or f"circuit-{next(QDMIBackend._circuit_counter)}"
-            converted_circuits.append((program_str, program_format, circuit_name))
+            # Serialize the circuit into a program format the device accepts
+            serialized_circuits.append(self._serialize_circuit(bound_circuit, supported_formats))
+            prepared_circuits.append(bound_circuit)
 
         # Second pass: submit all validated circuits
-        for program_str, program_format, circuit_name in converted_circuits:
-            # Submit job to QDMI device
-            try:
-                qdmi_job = self._device.submit_job(
-                    program=program_str,
-                    program_format=program_format,
-                    num_shots=shots,
-                )
-            except Exception as exc:
-                msg = f"Failed to submit job to device: {exc}"
-                raise JobSubmissionError(msg) from exc
+        try:
+            for program, program_format in serialized_circuits:
+                try:
+                    qdmi_jobs.append(
+                        self._device.submit_job(program=program, program_format=program_format, num_shots=shots)
+                    )
+                except Exception as exc:
+                    msg = f"Failed to submit job to device: {exc}"
+                    raise JobSubmissionError(msg) from exc
+            return QDMIJob(self, qdmi_jobs, prepared_circuits, shots=shots, memory=memory)
+        except BaseException:
+            _cancel_jobs(qdmi_jobs)
+            raise
 
-            # Track the job and circuit name
-            qdmi_jobs.append(qdmi_job)
-            circuit_names.append(circuit_name)
 
-        # Create and return Qiskit job wrapper (handles single or multiple jobs)
-        return QDMIJob(backend=self, jobs=qdmi_jobs, circuit_names=circuit_names)
+# Register bundled OpenQASM serializers when the Qiskit adapter is imported.
+register_program_serializer(ProgramFormat.QASM3, _serialize_to_qasm3)
+register_program_serializer(ProgramFormat.QASM2, _serialize_to_qasm2)

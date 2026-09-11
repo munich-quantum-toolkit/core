@@ -30,8 +30,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS
     CACHE BOOL "Export compile commands" FORCE)
 
 set(CMAKE_VERIFY_INTERFACE_HEADER_SETS
-    ON
-    CACHE BOOL "Verify interface header sets" FORCE)
+    OFF
+    CACHE BOOL "Verify interface header sets")
 
 if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
   add_compile_options(-fcolor-diagnostics)
@@ -60,7 +60,7 @@ endif()
 if(DEPLOY)
   # set the macOS deployment target appropriately
   set(CMAKE_OSX_DEPLOYMENT_TARGET
-      "11.0"
+      "13.3"
       CACHE STRING "" FORCE)
 endif()
 
@@ -70,32 +70,21 @@ if(NOT DEPLOY AND CMAKE_BUILD_TYPE STREQUAL "Release")
 else()
   option(ENABLE_IPO "Enable Interprocedural Optimization, aka Link Time Optimization (LTO)" OFF)
 endif()
+set(ipo_supported FALSE)
 if(ENABLE_IPO)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT ipo_supported OUTPUT ipo_output)
-  # enable inter-procedural optimization if it is supported
-  if(ipo_supported)
-    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION
-        TRUE
-        CACHE BOOL "Enable Interprocedural Optimization" FORCE)
-  else()
+  if(NOT ipo_supported)
     message(DEBUG "IPO is not supported: ${ipo_output}")
   endif()
 endif()
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION
+    ${ipo_supported}
+    CACHE BOOL "Enable Interprocedural Optimization" FORCE)
 
 # export all symbols by default on Windows
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS
     ON
     CACHE BOOL "Export all symbols on Windows")
 
-# on macOS with GCC, disable module scanning
-# https://www.reddit.com/r/cpp_questions/comments/1kwlkom/comment/ni5angh/
-if(CMAKE_SYSTEM_NAME STREQUAL "Darwin" AND CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  if(CMAKE_VERSION VERSION_GREATER_EQUAL "3.28")
-    set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
-  else()
-    message(WARNING "CMake 3.28+ is required to disable C++ module scanning on macOS with GCC. "
-                    "Current version: ${CMAKE_VERSION}. "
-                    "Consider upgrading CMake to avoid potential build issues.")
-  endif()
-endif()
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)

@@ -8,18 +8,20 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOInterfaces.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mqt/Dialect/MQT/Transforms/GlobalPhaseNormalization.h"
+#include "mqt/Dialect/MQT/Utils/Modifiers.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
 
 #include <numbers>
 #include <utility>
@@ -27,59 +29,52 @@
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_HADAMARDLIFTING
-#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
 namespace {
 
-/**
- * @brief This pattern is responsible for lifting Hadamard gates above Pauli
- * gates.
- *
- * This pattern swaps a Pauli gate with a Hadamard gate. This is done using the
- * commutation rules of Pauli and Hadamard gates, which are:
- * - X - H - = - H - Z -
- * - Y - H - = - H - Y -, while adding a gPhase(pi)
- * - Z - H - = - H - X -
- * This is applied to uncontrolled gates.
- * In case of Pauli-Y, a global phase is applied, as HY = -YH.
- */
+/// This pattern is responsible for lifting Hadamard gates above Pauli
+/// gates.
+///
+/// This pattern swaps a Pauli gate with a Hadamard gate. This is done using the
+/// commutation rules of Pauli and Hadamard gates, which are:
+/// - X - H - = - H - Z -
+/// - Y - H - = - H - Y -, while adding a gPhase(π)
+/// - Z - H - = - H - X -
+/// This is applied to uncontrolled gates.
+/// In case of Pauli-Y, a global phase is applied, as HY = -YH.
 struct LiftHadamardsAbovePauliGatesPattern final
     : OpInterfaceRewritePattern<UnitaryOpInterface> {
   explicit LiftHadamardsAbovePauliGatesPattern(MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
 
-  /**
-   * @brief This method swaps a Pauli gate with a Hadamard gate.
-   *
-   * This method swaps a Pauli gate with a Hadamard gate. This is done using the
-   * commutation rules of Pauli and Hadamard gates, which are:
-   * - X - H - = - H - Z -
-   * - Y - H - = - H - Y -, while adding a gPhase(pi)
-   * - Z - H - = - H - X -
-   *
-   * @param gate The Pauli gate.
-   * @param hadamardGate The Hadamard gate.
-   * @param rewriter The used rewriter.
-   * @return success() if circuit was changed, failure() otherwise
-   */
+  /// Commute a Pauli gate through a Hadamard using:
+  /// - X - H - = - H - Z -
+  /// - Y - H - = - H - Y -, while adding a gPhase(π)
+  /// - Z - H - = - H - X -
+  ///
+  /// @param gate The Pauli gate.
+  /// @param hadamardGate The Hadamard gate.
+  /// @param rewriter The used rewriter.
+  /// @return success() if circuit was changed, failure() otherwise
   static LogicalResult swapPauliWithHadamard(UnitaryOpInterface gate,
                                              HOp hadamardGate,
                                              PatternRewriter& rewriter) {
     auto* op = gate.getOperation();
     return TypeSwitch<Operation*, LogicalResult>(op)
-        .Case<XOp>([&](auto) {
+        .Case([&](XOp) {
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
           rewriter.replaceOpWithNewOp<ZOp>(hadamardGate,
                                            hadamardGate.getInputQubit(0));
           return success();
         })
-        .Case<ZOp>([&](auto) {
+        .Case([&](ZOp) {
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
           rewriter.replaceOpWithNewOp<XOp>(hadamardGate,
                                            hadamardGate.getInputQubit(0));
           return success();
         })
-        .Case<YOp>([&](auto) {
+        .Case([&](YOp) {
           rewriter.replaceOpWithNewOp<HOp>(gate, gate.getInputQubit(0));
           auto yGate = rewriter.replaceOpWithNewOp<YOp>(
               hadamardGate, hadamardGate.getInputQubit(0));
@@ -89,13 +84,11 @@ struct LiftHadamardsAbovePauliGatesPattern final
         .Default([&](auto) { return failure(); });
   }
 
-  /**
-   * @brief Lifts Hadamard gates in front of Pauli gates.
-   *
-   * @param op The operation to match (only Pauli gates trigger the rewrite)
-   * @param rewriter Pattern rewriter for applying transformations
-   * @return success() if circuit was changed, failure() otherwise
-   */
+  /// Lifts Hadamard gates in front of Pauli gates.
+  ///
+  /// @param op The operation to match (only Pauli gates trigger the rewrite)
+  /// @param rewriter Pattern rewriter for applying transformations
+  /// @return success() if circuit was changed, failure() otherwise
   LogicalResult matchAndRewrite(UnitaryOpInterface op,
                                 PatternRewriter& rewriter) const override {
     // op needs to be an uncontrolled Pauli gate
@@ -114,57 +107,53 @@ struct LiftHadamardsAbovePauliGatesPattern final
   }
 };
 
-/**
- * @brief This pattern removes an H gate between a CNOT and a measurement, flips
- * the CNOT and adds Hadamard gates before and after the new target and before
- * the new control.
- *
- * If there is a Hadamard gate between the target qubit of a CNOT and a
- * measurement, we flip the CNOT and apply a Hadamard gate to the incoming and
- * outcoming qubits. As H * H = id, the measurement is then the direct successor
- * of a CNOT control, which is beneficial for the qubit reuse routine. In that
- * case, measurement lifting (a routine of qubit reuse) can remove the
- * multi-qubit gate by lifting the measurement in front of the control and
- * changing the qubit-controlled Pauli-X to a classically-controlled Pauli-X.
- *
- * The procedure also works if there are additional controls. Only the target
- * and control involved in the transformation get Hadamard gates assigned.
- * The involved ctrl to be flipped with the target is chosen randomly.
- */
+/// This pattern removes an H gate between a CNOT and a measurement, flips
+/// the CNOT and adds Hadamard gates before and after the new target and before
+/// the new control.
+///
+/// If there is a Hadamard gate between the target qubit of a CNOT and a
+/// measurement, we flip the CNOT and apply a Hadamard gate to the incoming and
+/// outcoming qubits. As H * H = id, the measurement is then the direct
+/// successor of a CNOT control, which is beneficial for the qubit reuse
+/// routine. In that case, measurement lifting (a routine of qubit reuse) can
+/// remove the multi-qubit gate by lifting the measurement in front of the
+/// control and changing the qubit-controlled Pauli-X to a
+/// classically-controlled Pauli-X.
+///
+/// The procedure also works if there are additional controls. Only the target
+/// and control involved in the transformation get Hadamard gates assigned.
+/// The involved ctrl to be flipped with the target is chosen randomly.
 struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
 
   explicit LiftHadamardAboveCNOTPattern(MLIRContext* context)
       : OpRewritePattern(context) {}
 
-  /**
-   * @brief This pattern removes an H gate between a CNOT and a measurement,
-   * flips the CNOT and adds Hadamard gates before and after the new target and
-   * before the new control.
-   *
-   * @param op The operation to match (only measurements with an uncontrolled
-   * Hadamard gate before that trigger the rewrite)
-   * @param rewriter Pattern rewriter for applying transformations
-   * @return success() if circuit was changed, failure() otherwise
-   */
+  /// This pattern removes an H gate between a CNOT and a measurement,
+  /// flips the CNOT and adds Hadamard gates before and after the new target and
+  /// before the new control.
+  ///
+  /// @param op The operation to match (only measurements with an uncontrolled
+  /// Hadamard gate before that trigger the rewrite)
+  /// @param rewriter Pattern rewriter for applying transformations
+  /// @return success() if circuit was changed, failure() otherwise
   LogicalResult matchAndRewrite(MeasureOp op,
                                 PatternRewriter& rewriter) const override {
     // A Hadamard gate needs to be in front of the measurement
-    const auto qubitInMeasurement = op.getQubitIn();
-    auto* predecessor = qubitInMeasurement.getDefiningOp();
-    auto hadamardGate = dyn_cast<HOp>(predecessor);
+    auto qubitInMeasurement = op.getQubitIn();
+    auto hadamardGate = qubitInMeasurement.getDefiningOp<HOp>();
     if (!hadamardGate) {
       return failure();
     }
 
     // The Hadamard gate must be successor of the target of a CNOT
-    const auto inQubitHadamard = hadamardGate.getInputQubit(0);
-    predecessor = inQubitHadamard.getDefiningOp();
-    auto cnotGate = dyn_cast<CtrlOp>(predecessor);
-    if (!cnotGate) {
+    auto inQubitHadamard = hadamardGate.getInputQubit(0);
+    auto cnotGate = inQubitHadamard.getDefiningOp<CtrlOp>();
+    if (!cnotGate || cnotGate.getNumControls() == 0 ||
+        cnotGate.getNumTargets() != 1) {
       return failure();
     }
     if (auto innerUnitary =
-            utils::getSoleBodyUnitary<UnitaryOpInterface>(*cnotGate.getBody());
+            mqt::getSoleBodyUnitary<UnitaryOpInterface>(*cnotGate.getBody());
         !innerUnitary || !isa<XOp>(innerUnitary.getOperation()) ||
         cnotGate.getOutputTarget(0) != inQubitHadamard) {
       return failure();
@@ -185,9 +174,9 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     }
 
     // Save all SSA values that will be needed after in-place modifications.
-    const Value origTgtIn = cnotGate.getInputTarget(0);
-    const Value origCtrlIn = cnotGate.getInputControl(controlIndex);
-    const Value origCtrlOut = cnotGate.getOutputControl(controlIndex);
+    Value origTgtIn = cnotGate.getInputTarget(0);
+    Value origCtrlIn = cnotGate.getInputControl(controlIndex);
+    Value origCtrlOut = cnotGate.getOutputControl(controlIndex);
 
     // Add Hadamard gates before the CNOT.
     rewriter.setInsertionPoint(cnotGate);
@@ -195,7 +184,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     auto h2 = HOp::create(rewriter, cnotGate->getLoc(), origCtrlIn);
 
     // Rewire the CNOT operands in-place so that the roles are swapped
-    rewriter.modifyOpInPlace(cnotGate, [&]() {
+    rewriter.modifyOpInPlace(cnotGate, [&] {
       cnotGate->setOperand(controlIndex, h1.getOutputTarget(0));
       cnotGate->setOperand(cnotGate.getNumControls(), h2.getOutputTarget(0));
     });
@@ -205,7 +194,7 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
     rewriter.moveOpAfter(hadamardGate, cnotGate);
 
     // Feed the MeasureOp directly from origCtrlOut (the new control output).
-    rewriter.modifyOpInPlace(op, [&]() { op->setOperand(0, origCtrlOut); });
+    rewriter.modifyOpInPlace(op, [&] { op->setOperand(0, origCtrlOut); });
 
     // Every other downstream user of origCtrlOut except for the MeasureOp
     // should now see hadamardGate's output.
@@ -216,16 +205,14 @@ struct LiftHadamardAboveCNOTPattern final : OpRewritePattern<MeasureOp> {
   }
 };
 
-/**
- * @brief Pass raises Hadamard gates above controlled and uncontrolled Pauli
- * gates.
- */
+/// Pass raises Hadamard gates above controlled and uncontrolled Pauli
+/// gates.
 struct HadamardLifting final : impl::HadamardLiftingBase<HadamardLifting> {
   using HadamardLiftingBase::HadamardLiftingBase;
 
 protected:
   void runOnOperation() override {
-    const auto op = getOperation();
+    auto op = getOperation();
     auto* ctx = &getContext();
 
     // Define the set of patterns to use.
@@ -234,7 +221,8 @@ protected:
     patterns.add<LiftHadamardAboveCNOTPattern>(patterns.getContext());
 
     // Apply patterns in an iterative and greedy manner.
-    if (failed(applyPatternsGreedily(op, std::move(patterns)))) {
+    if (failed(applyPatternsGreedily(op, std::move(patterns))) ||
+        failed(mlir::mqt::normalizeGlobalPhases(op))) {
       signalPassFailure();
     }
   }

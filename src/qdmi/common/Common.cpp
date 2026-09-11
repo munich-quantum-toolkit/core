@@ -9,12 +9,11 @@
  */
 
 /// @file Common.cpp
-/// @brief Common definitions and utilities for working with QDMI in C++.
-/// @note This file will be upstreamed to the QDMI core library in the future.
+/// Common definitions and utilities for working with QDMI in C++.
 
 #include "qdmi/common/Common.hpp"
 
-#include <qdmi/constants.h>
+#include "qdmi/constants.h"
 
 #include <iostream>
 #include <sstream>

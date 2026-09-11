@@ -8,34 +8,82 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QTensor/Utils/TensorIterator.h"
+#include "mqt/Dialect/QTensor/Utils/TensorIterator.h"
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/TypeSwitch.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/TypeSwitch.h"
+#include "llvm/Support/ErrorHandling.h"
 
 #include <cassert>
+#include <cstddef>
 #include <iterator>
 
 namespace mlir::qtensor {
 TypedValue<RankedTensorType> TensorIterator::tensor() const {
-  if (op_ == nullptr) {
-    return tensor_;
-  }
-
   // The following operations don't have an OpResult.
-  if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
+  // `func::CallOp` is deliberately absent: it does produce results.
+  if (op_ != nullptr && isa<DeallocOp, scf::YieldOp, scf::ConditionOp,
+                            qco::YieldOp, func::ReturnOp>(op_)) {
     return nullptr;
   }
 
   return tensor_;
+}
+
+[[nodiscard]] static TypedValue<RankedTensorType>
+whileResultForInit(scf::WhileOp op, OpOperand& init) {
+  auto current = cast<TypedValue<RankedTensorType>>(
+      op.getBeforeBody()->getArgument(init.getOperandNumber()));
+  TensorIterator iterator(current);
+  while (true) {
+    assert(current.hasOneUse() && "expected linear semantics");
+    auto* user = *current.user_begin();
+    if (auto condition = dyn_cast<scf::ConditionOp>(user)) {
+      const auto result = llvm::find(condition.getArgs(), current);
+      if (result == condition.getArgs().end()) {
+        llvm::reportFatalInternalError(
+            "expected scf.while tensor in condition arguments");
+      }
+      const auto resultNumber = static_cast<std::size_t>(
+          std::distance(condition.getArgs().begin(), result));
+      return cast<TypedValue<RankedTensorType>>(op.getResult(resultNumber));
+    }
+    ++iterator;
+    if (iterator == std::default_sentinel) {
+      llvm::reportFatalInternalError(
+          "expected scf.while tensor to reach its condition");
+    }
+    current = iterator.tensor();
+  }
+}
+
+[[nodiscard]] static TypedValue<RankedTensorType>
+whileInitForResult(scf::WhileOp op, OpResult result) {
+  auto condition = cast<scf::ConditionOp>(op.getBeforeBody()->getTerminator());
+  auto current = cast<TypedValue<RankedTensorType>>(
+      condition.getArgs()[result.getResultNumber()]);
+  TensorIterator iterator(current);
+  while (iterator.operation() != nullptr) {
+    --iterator;
+  }
+  auto argument = dyn_cast<BlockArgument>(iterator.tensor());
+  if (!argument || argument.getOwner() != op.getBeforeBody()) {
+    llvm::reportFatalInternalError(
+        "expected scf.while tensor to originate from a before-region argument");
+  }
+  return cast<TypedValue<RankedTensorType>>(
+      op.getInits()[argument.getArgNumber()]);
 }
 
 void TensorIterator::forward() {
@@ -51,29 +99,37 @@ void TensorIterator::forward() {
   }
 
   // Find the user-operation of the tensor SSA value.
-  assert(tensor_.hasOneUse() && "expected linear typing");
-  op_ = *(tensor_.user_begin());
+  assert(tensor_.hasOneUse() && "expected linear semantics");
+  op_ = *tensor_.user_begin();
 
-  // The following operations define the end of the tensor's life-chain.
-  if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
+  // The following operations define the end of the tensor's life-chain. A
+  // `func.call` ends it because the tensor is handed to the callee; the tensor
+  // the call returns starts a life-chain of its own.
+  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp,
+          func::ReturnOp, func::CallOp>(op_)) {
     isFinal_ = true;
     return;
   }
 
   // Find the output from the input tensor SSA value.
-  if (!(isa<AllocOp, FromElementsOp>(op_))) {
+  if (!isa<AllocOp, FromElementsOp>(op_)) {
     TypeSwitch<Operation*>(op_)
-        .Case<ExtractOp>([&](ExtractOp op) { tensor_ = op.getOutTensor(); })
-        .Case<InsertOp>([&](InsertOp op) { tensor_ = op.getResult(); })
-        .Case<scf::ForOp>([&](scf::ForOp op) {
+        .Case([&](ExtractOp op) { tensor_ = op.getOutTensor(); })
+        .Case([&](InsertOp op) { tensor_ = op.getResult(); })
+        .Case([&](scf::ForOp op) {
           tensor_ = cast<TypedValue<RankedTensorType>>(
-              op.getTiedLoopResult(&*(tensor_.use_begin())));
+              op.getTiedLoopResult(&*tensor_.use_begin()));
         })
-        .Case<qco::IfOp>([&](qco::IfOp op) {
-          auto it = llvm::find(op.getQubits(), tensor_);
-          assert(it != op.getQubits().end());
-          const auto idx = std::distance(op.getQubits().begin(), it);
-          tensor_ = cast<TypedValue<RankedTensorType>>(op.getResults()[idx]);
+        .Case([&](scf::WhileOp op) {
+          tensor_ = whileResultForInit(op, *tensor_.use_begin().getOperand());
+        })
+        .Case([&](qco::IfOp op) {
+          tensor_ = cast<TypedValue<RankedTensorType>>(
+              op.getTiedResult(&(*tensor_.use_begin())));
+        })
+        .Case([&](qco::IndexSwitchOp op) {
+          tensor_ = cast<TypedValue<RankedTensorType>>(
+              op.getTiedResult(&(*tensor_.use_begin())));
         })
         .Default([&](Operation* op) {
           report_fatal_error("unknown op in def-use chain: " +
@@ -96,8 +152,16 @@ void TensorIterator::backward() {
     return;
   }
 
+  // A `func.call` sits on both sides of a life-chain: it consumes the caller's
+  // tensor and produces a fresh one. When the tensor is the call's result, it
+  // is the start of its chain, just like an allocation.
+  if (isa<func::CallOp>(op_) && tensor_.getDefiningOp() == op_) {
+    return;
+  }
+
   // For these operations, tensor_ is an OpOperand. Hence, only get the def-op.
-  if (isa<DeallocOp, scf::YieldOp, qco::YieldOp>(op_)) {
+  if (isa<DeallocOp, scf::YieldOp, scf::ConditionOp, qco::YieldOp,
+          func::ReturnOp, func::CallOp>(op_)) {
     op_ = tensor_.getDefiningOp();
     isFinal_ = false;
     return;
@@ -111,9 +175,9 @@ void TensorIterator::backward() {
 
   // Find the input from the output tensor SSA value.
   TypeSwitch<Operation*>(op_)
-      .Case<ExtractOp>([&](ExtractOp op) { tensor_ = op.getTensor(); })
-      .Case<InsertOp>([&](InsertOp op) { tensor_ = op.getDest(); })
-      .Case<scf::ForOp>([&](scf::ForOp op) {
+      .Case([&](ExtractOp op) { tensor_ = op.getTensor(); })
+      .Case([&](InsertOp op) { tensor_ = op.getDest(); })
+      .Case([&](scf::ForOp op) {
         if (auto res = dyn_cast<OpResult>(tensor_)) {
           OpOperand* operand = op.getTiedLoopInit(res);
           tensor_ = cast<TypedValue<RankedTensorType>>(operand->get());
@@ -123,17 +187,34 @@ void TensorIterator::backward() {
         llvm::reportFatalInternalError(
             "expected scf.for result for tied init lookup");
       })
-      .Case<qco::IfOp>([&](qco::IfOp op) {
+      .Case([&](scf::WhileOp op) {
+        if (auto result = dyn_cast<OpResult>(tensor_)) {
+          tensor_ = whileInitForResult(op, result);
+          return;
+        }
+
+        llvm::reportFatalInternalError(
+            "expected scf.while result for tied init lookup");
+      })
+      .Case([&](qco::IfOp op) {
         if (auto res = dyn_cast<OpResult>(tensor_)) {
-          auto it = llvm::find(op.getResults(), res);
-          assert(it != op->result_end());
-          const auto idx = std::distance(op.result_begin(), it);
-          tensor_ = cast<TypedValue<RankedTensorType>>(op.getQubits()[idx]);
+          tensor_ =
+              cast<TypedValue<RankedTensorType>>(op.getTiedQubit(res)->get());
           return;
         }
 
         llvm::reportFatalInternalError(
             "expected scf.for result for tied init lookup");
+      })
+      .Case([&](qco::IndexSwitchOp op) {
+        if (auto result = dyn_cast<OpResult>(tensor_)) {
+          tensor_ = cast<TypedValue<RankedTensorType>>(
+              op.getTiedTarget(result)->get());
+          return;
+        }
+
+        llvm::reportFatalInternalError(
+            "expected qco.index_switch result for tied target lookup");
       })
       .Default([&](Operation* op) {
         llvm::reportFatalInternalError("unknown op in def-use chain: " +

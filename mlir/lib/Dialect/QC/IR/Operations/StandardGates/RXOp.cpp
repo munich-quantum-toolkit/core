@@ -8,17 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/OperationSupport.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/OperationSupport.h"
 
 #include <variant>
 
 using namespace mlir;
 using namespace mlir::qc;
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 void RXOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {

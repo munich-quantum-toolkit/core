@@ -8,72 +8,184 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Support/Passes.h"
+#include "mqt/Support/Passes.h"
 
-#include "mlir/Dialect/QC/Transforms/Passes.h"
-#include "mlir/Dialect/QIR/Transforms/Passes.h"
-#include "mlir/Dialect/QTensor/Transforms/Passes.h"
+#include "mqt/Conversion/CBitToMemRef/CBitToMemRef.h"
+#include "mqt/Dialect/MQT/Transforms/Passes.h"
+#include "mqt/Dialect/QC/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QIR/Transforms/Passes.h"
+#include "mqt/Dialect/QTensor/Transforms/Passes.h"
 
-#include <llvm/ADT/StringRef.h>
-#include <llvm/Support/raw_ostream.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/Passes.h>
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Pass/PassRegistry.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+#include "mlir/Transforms/Passes.h"
+
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/raw_ostream.h"
+
+#include <cstdint>
 
 using namespace mlir;
 
-static void addSimplificationPasses(PassManager& pm) {
+static void addSimplificationPasses(OpPassManager& pm) {
   pm.addPass(createCanonicalizerPass());
   pm.addPass(createCSEPass());
 }
 
 LogicalResult
-runWithPassManager(ModuleOp module,
-                   const function_ref<void(PassManager&)> populatePasses,
+runWithPassManager(ModuleOp mod,
+                   const function_ref<void(OpPassManager&)> populatePasses,
                    const StringRef errorMessage) {
-  PassManager pm(module.getContext());
+  PassManager pm(mod.getContext());
   populatePasses(pm);
-  if (pm.run(module).failed()) {
+  if (pm.run(mod).failed()) {
     llvm::errs() << errorMessage << "\n";
     return failure();
   }
   return success();
 }
 
-void populateQCCleanupPipeline(PassManager& pm) {
-  addSimplificationPasses(pm);
+void registerMQTCompilerPasses() {
+  static const auto REGISTERED = [] {
+    registerTransformsPasses();
+    registerConvertCBitToMemRef();
+    qco::registerDecomposeMultiControlled();
+    qco::registerFuseSingleQubitUnitaryRuns();
+    qco::registerHadamardLifting();
+    qco::registerLegalizeControlFlow();
+    qco::registerMeasurementLifting();
+    qco::registerMergeSingleQubitRotationGates();
+    qco::registerPauliTwirl2QGates();
+    qco::registerMappingPass();
+    qco::registerQuantumLoopUnroll();
+    qco::registerRemoveDeadGates();
+    qco::registerReplaceClassicalControls();
+    qco::registerReuseQubits();
+    qco::registerTargetNativeSynthesis();
+    qco::registerUnrollLoopsForPayload();
+    qco::registerVerifyTargetConformance();
+    mqt::registerNormalizeGlobalPhases();
+    mqt::registerUnrollModifiers();
+    qc::registerShrinkQubitRegistersPass();
+    qtensor::registerShrinkQTensorToFitPass();
+    qir::registerQIRPasses();
+    PassPipelineRegistration<>("mqt-qco-default",
+                               "Run the default MQT QCO optimization pipeline.",
+                               populateDefaultQCOOptimizationPipeline);
+    PassPipelineRegistration<>(
+        "mqt-qubit-reuse",
+        "Prepare a QCO program for qubit reuse and reuse eligible qubits.",
+        populateQubitReusePipeline);
+    return true;
+  }();
+  static_cast<void>(REGISTERED);
+}
+
+void populateDefaultQCOOptimizationPipeline(OpPassManager& pm) {
+  pm.addPass(qco::createMergeSingleQubitRotationGates());
+}
+
+void populateQIRPreparationPipeline(OpPassManager& pm) {
+  pm.addPass(createInlinerPass());
+  pm.addPass(mqt::createNormalizeGlobalPhases());
+  pm.addPass(mqt::createUnrollModifiers());
+  pm.addPass(createCanonicalizerPass());
+}
+
+void populateQubitReusePipeline(OpPassManager& pm) {
+  pm.addPass(qco::createMeasurementLifting());
+  pm.addPass(qco::createReplaceClassicalControls());
+  pm.addPass(qco::createRemoveDeadGates());
+  pm.addPass(qco::createReuseQubits());
+}
+
+bool isDecomposeMultiControlledConfigValid(const uint64_t minQubits) {
+  return minQubits >= 3;
+}
+
+void populateDecomposeMultiControlledPipeline(OpPassManager& pm,
+                                              const uint64_t minQubits) {
+  qco::DecomposeMultiControlledOptions options;
+  options.minQubits = minQubits;
+  pm.addPass(qco::createDecomposeMultiControlled(options));
+}
+
+LogicalResult runPassPipeline(ModuleOp mod, const StringRef pipeline,
+                              const bool enableTiming,
+                              const bool enableStatistics) {
+  registerMQTCompilerPasses();
+  PassManager pm(mod.getContext());
+  if (enableTiming) {
+    pm.enableTiming();
+  }
+  if (enableStatistics) {
+    pm.enableStatistics();
+  }
+  if (failed(parsePassPipeline(pipeline, pm))) {
+    return mod.emitError() << "failed to parse pass pipeline '" << pipeline
+                           << "'";
+  }
+  return pm.run(mod);
+}
+
+void populateQCExportPipeline(OpPassManager& pm) {
+  pm.addPass(createCanonicalizerPass());
+  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
+  pm.addPass(createCSEPass());
   pm.addPass(qc::createShrinkQubitRegistersPass());
+  pm.addPass(createSymbolDCEPass());
+}
+
+void populateQCCleanupPipeline(OpPassManager& pm) {
+  populateQCExportPipeline(pm);
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQCOCleanupPipeline(PassManager& pm) {
-  addSimplificationPasses(pm);
+void populateQCOCleanupPipeline(OpPassManager& pm) {
+  pm.addPass(createCanonicalizerPass(
+      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+  pm.addPass(mlir::mqt::createNormalizeGlobalPhases());
+  pm.addPass(createCSEPass());
   pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  pm.addPass(createSymbolDCEPass());
   pm.addPass(createRemoveDeadValuesPass());
 }
 
-void populateQIRCleanupPipeline(PassManager& pm, bool useAdaptive) {
+void populateQIRCleanupPipeline(OpPassManager& pm, bool useAdaptive) {
   addSimplificationPasses(pm);
   pm.addPass(qir::createQIRCleanupPass());
   pm.addPass(createRemoveDeadValuesPass());
   pm.addPass(qir::createQIRSetAttributesAndMetadata({useAdaptive}));
 }
 
-[[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp module) {
-  return runWithPassManager(module, populateQCCleanupPipeline,
-                            "Failed to run QC cleanup pipeline.");
+void populateJeffCleanupPipeline(OpPassManager& pm) {
+  addSimplificationPasses(pm);
+  pm.addPass(createRemoveDeadValuesPass());
 }
 
-[[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp module) {
-  return runWithPassManager(module, populateQCOCleanupPipeline,
-                            "Failed to run QCO cleanup pipeline.");
+[[nodiscard]] LogicalResult runQCCleanupPipeline(ModuleOp mod) {
+  return runWithPassManager(mod, populateQCCleanupPipeline,
+                            "Failed to run the QC cleanup pipeline.");
 }
 
-[[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp module,
+[[nodiscard]] LogicalResult runQCOCleanupPipeline(ModuleOp mod) {
+  return runWithPassManager(mod, populateQCOCleanupPipeline,
+                            "Failed to run the QCO cleanup pipeline.");
+}
+
+[[nodiscard]] LogicalResult runQIRCleanupPipeline(ModuleOp mod,
                                                   bool useAdaptive) {
   return runWithPassManager(
-      module,
-      [&](PassManager& pm) { populateQIRCleanupPipeline(pm, useAdaptive); },
-      "Failed to run QIR cleanup pipeline.");
+      mod,
+      [&](OpPassManager& pm) { populateQIRCleanupPipeline(pm, useAdaptive); },
+      "Failed to run the QIR cleanup pipeline.");
+}
+
+[[nodiscard]] LogicalResult runJeffCleanupPipeline(ModuleOp moduleOp) {
+  return runWithPassManager(moduleOp, populateJeffCleanupPipeline,
+                            "Failed to run the jeff cleanup pipeline.");
 }

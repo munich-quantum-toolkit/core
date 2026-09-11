@@ -8,21 +8,20 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
 
 using namespace mlir;
 using namespace mlir::qc;
 
 namespace {
 
-/**
- * @brief Remove matching allocation-deallocation pairs.
- */
+/// Remove matching allocation-deallocation pairs.
 struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -46,9 +45,31 @@ struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
   }
 };
 
+struct HoistStaticQubit final : OpRewritePattern<StaticOp> {
+  using OpRewritePattern::OpRewritePattern;
+
+  LogicalResult matchAndRewrite(StaticOp op,
+                                PatternRewriter& rewriter) const override {
+    auto funcOp = op->getParentOfType<func::FuncOp>();
+    if (!funcOp ||
+        op->getParentWithTrait<OpTrait::IsIsolatedFromAbove>() != funcOp ||
+        op->getBlock() == &funcOp.getBody().front()) {
+      return failure();
+    }
+    rewriter.moveOpBefore(op, &funcOp.getBody().front(),
+                          funcOp.getBody().front().begin());
+    return success();
+  }
+};
+
 } // namespace
 
 void DeallocOp::getCanonicalizationPatterns(RewritePatternSet& results,
                                             MLIRContext* context) {
   results.add<RemoveAllocDeallocPair>(context);
+}
+
+void StaticOp::getCanonicalizationPatterns(RewritePatternSet& results,
+                                           MLIRContext* context) {
+  results.add<HoistStaticQubit>(context);
 }

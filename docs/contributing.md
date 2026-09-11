@@ -94,8 +94,14 @@ quality and licensing compliance.
 Please carefully read and follow our dedicated {doc}`ai_usage` before submitting
 any AI-assisted contribution. In short:
 **You are responsible for every line of code you submit**, and a
-**human must always be in the loop**. We require disclosure of AI tool usage in
-your PR description.
+**human must always be in the loop**. Agents may perform coding and GitHub tasks
+within an explicitly authorized scope, but you must review their work and remain
+accountable for the result. Every agent-authored or agent-edited public text
+body must begin with `🤖 *AI text below* 🤖`; issue and pull request titles are
+exempt. AI assistance must be disclosed in the PR description. Commit-level
+`Assisted-by: [Model Name] via [Tool Name]` trailers are recommended for commits
+prepared with AI assistance. AI assistance must not be used for contributions to
+issues labeled "good first issue".
 
 If you use an agent, it will automatically read the provided {code}`AGENTS.md`,
 which contains context and instructions to help the agent work on MQT Core. For
@@ -109,11 +115,11 @@ picks up the same file.
 - Use a clear title, reference related issues by number, and describe the
   changes. Follow the PR template; only omit the issue reference if not
   applicable.
-- CI runs on all supported platforms and Python versions to build, test, format,
-  and lint. All checks must pass before merging.
-- When ready, convert the draft to a regular PR and request a review from a
-  maintainer. If unsure, ask in PR comments. If you are a first-time
-  contributor, mention a maintainer in a comment to request a review.
+- Draft PRs may use a reduced test matrix, while all other CI checks still run.
+  Converting a draft to a regular PR triggers the full test matrix.
+- After the full test matrix passes, request a review from a maintainer. If
+  unsure, ask in the PR comments. If you are a first-time contributor, mention a
+  maintainer in a comment to request a review.
 - If your PR gets a "Changes requested" review, address the feedback and push
   updates to the same branch. Do not close and reopen a new PR. Respond to
   comments to signal that you have addressed the feedback. Do not resolve review
@@ -188,7 +194,7 @@ instructions on how to set up your development environment.
 
 Building the project requires a C++20-capable
 [C++ compiler](https://en.wikipedia.org/wiki/List_of_compilers#C++_compilers)
-and [CMake](https://cmake.org/) 3.24 or newer. As of August 2025, our CI
+and [CMake](https://cmake.org/) 3.28 or newer. As of August 2025, our CI
 pipeline on GitHub continuously tests the library across the following matrix of
 systems and compilers:
 
@@ -197,7 +203,6 @@ systems and compilers:
 - {code}`ubuntu-24.04-arm`: {code}`Release` build using {code}`gcc`
 - {code}`macos-26`: {code}`Release` and {code}`Debug` builds using
   {code}`AppleClang`
-- {code}`macos-26-intel`: {code}`Release` build using {code}`AppleClang`
 - {code}`windows-2025`: {code}`Release` and {code}`Debug` builds using
   {code}`msvc`
 - {code}`windows-11-arm`: {code}`Release` build using {code}`msvc`
@@ -205,10 +210,8 @@ systems and compilers:
 To access the latest build logs, visit the
 [GitHub Actions page](https://github.com/munich-quantum-toolkit/core/actions/workflows/ci.yml).
 
-Additionally, we regularly run extensive tests with an even wider matrix of
-compilers and operating systems. We are not aware of any issues with other
-compilers or operating systems. If you encounter any problems, please
-[open an issue][issues] and let us know.
+We are not aware of any issues with other compilers or operating systems. If you
+encounter any problems, please [open an issue][issues] and let us know.
 
 ### Configure and Build
 
@@ -390,10 +393,9 @@ refactor.
 For some tips on how to write good Doxygen comments, see the
 [Doxygen Manual](https://www.doxygen.nl/manual/docblocks.html).
 
-The C++ API documentation is integrated into the overall documentation that we
-host on ReadTheDocs using the
-[breathe](https://breathe.readthedocs.io/en/latest/) extension for Sphinx. See
-{ref}`working-on-documentation` for more information on how to build the
+The C++ API reference uses native Doxygen HTML linked from Sphinx.
+
+See {ref}`working-on-documentation` for more information on how to build the
 documentation.
 
 ## Working on the Python Package
@@ -554,45 +556,42 @@ The documentation is written in
 Markdown) and built using [Sphinx](https://www.sphinx-doc.org/en/master/). The
 documentation source files can be found in the {code}`docs/` directory.
 
-On top of the API documentation, we provide a set of tutorials and examples that
-demonstrate how to use the library. These are written in Markdown using
-[myst-nb](https://myst-nb.readthedocs.io/en/latest/), which allows executing
-Python code blocks in the documentation. The code blocks are executed during the
-documentation build process, and the output is included in the documentation.
-This allows us to provide up-to-date examples and tutorials that are guaranteed
-to work with the latest version of the library.
+Tutorials use [MyST-NB](https://myst-nb.readthedocs.io/) Markdown notebooks.
+Only `{code-cell}` blocks in notebook pages execute; ordinary code fences are
+illustrative. Keep required setup visible, show useful output, and assert the
+behavior that each example demonstrates. Use local simulation for executable
+examples; leave credentials and remote-device deployment as configuration
+recipes.
 
-You can build the documentation using the {code}`nox` session {code}`docs`.
-
-```console
-nox -s docs
-```
-
-This will install all dependencies for building the documentation in an isolated
-environment, build the Python package, and then build the documentation. It will
-then host the documentation on a local web server for you to view.
-
-:::{note}
-
-If you do not want to use {code}`nox`, you can also build the documentation
-directly using {code}`sphinx-build`. This requires that you have the project and
-its documentation dependencies installed in your virtual environment (e.g., by
-running {code}`uv sync`).
+Use the documentation session to install Python dependencies, build the package
+and generated references, and render the examples:
 
 ```console
-sphinx-build -b html docs/ docs/_build
+uvx nox --non-interactive -s docs
 ```
 
-The docs can then be found in the {code}`docs/_build` directory.
+Install the project's native build requirements first. C++ API generation needs
+Doxygen; DD visualizations also need the Graphviz `dot` executable. The session
+manages Python packages, not these system tools.
 
-:::
+LLVM/MLIR must also be installed as described in {ref}`setting-up-mlir`.
+
+See {doc}`development` for Core's documentation validation and local-device
+execution contract.
+
+Omit `--non-interactive` to serve the documentation while editing. To check
+external links, run:
+
+```console
+uvx nox --non-interactive -s docs -- -b linkcheck
+```
 
 ## Tips for Development
 
 If something goes wrong, the CI pipeline will notify you. Here are some tips for
 finding the cause of certain failures:
 
-- If any of the {code}`CI / 🇨‌ Test` checks fail, this indicates build errors or
+- If any of the {code}`CI / 🇨 Test` checks fail, this indicates build errors or
   test failures in the C++ part of the code base. Look through the respective
   logs on GitHub for any error or failure messages.
 
@@ -609,7 +608,7 @@ finding the cause of certain failures:
   been raised by {code}`clang-tidy` when checking the C++ part of your changes
   for warnings or style guideline violations. The individual messages frequently
   provide helpful suggestions on how to fix the warnings. If you don't see any
-  messages, but the {code}`🇨‌ Lint / 🚨 Lint` check is red, click on the
+  messages, but the {code}`🇨 Lint / 🚨 Lint` check is red, click on the
   {code}`Details` link to see the full log of the check and a step summary.
 
 - If the {code}`pre-commit.ci` check fails, some of the {code}`prek` checks

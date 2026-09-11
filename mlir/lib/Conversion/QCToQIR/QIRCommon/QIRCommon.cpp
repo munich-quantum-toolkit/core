@@ -8,36 +8,57 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
+#include "mqt/Conversion/QCToQIR/QIRCommon/QIRCommon.h"
 
-#include "mlir/Conversion/GateTable.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/ADT/StringMap.h>
-#include <mlir/Conversion/ArithToLLVM/ArithToLLVM.h>
-#include <mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h>
-#include <mlir/Conversion/FuncToLLVM/ConvertFuncToLLVM.h>
-#include <mlir/Conversion/LLVMCommon/TypeConverter.h>
-#include <mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinTypeInterfaces.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OpDefinition.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Types.h>
-#include <mlir/IR/Value.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/DialectConversion.h>
+#include "mlir/Conversion/ArithToLLVM/ArithToLLVM.h"
+#include "mlir/Conversion/ControlFlowToLLVM/ControlFlowToLLVM.h"
+#include "mlir/Conversion/LLVMCommon/TypeConverter.h"
+#include "mlir/Conversion/MathToLLVM/MathToLLVM.h"
+#include "mlir/Conversion/MemRefToLLVM/MemRefToLLVM.h"
+#include "mlir/Conversion/ReconcileUnrealizedCasts/ReconcileUnrealizedCasts.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Arith/Transforms/BufferizableOpInterfaceImpl.h"
+#include "mlir/Dialect/Bufferization/IR/BufferizableOpInterface.h"
+#include "mlir/Dialect/Bufferization/IR/Bufferization.h"
+#include "mlir/Dialect/Bufferization/Transforms/Bufferize.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Tensor/Transforms/BufferizableOpInterfaceImpl.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/Dominance.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OpDefinition.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Types.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Pass/Pass.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/DialectConversion.h"
 
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -61,9 +82,50 @@ LogicalResult LoweringState::ensureAllocationMode(AllocationMode requested,
       "cannot mix static and dynamic qubit allocation modes in conversion");
 }
 
+void registerQIRClassicalTensorDialects(DialectRegistry& registry) {
+  registry.insert<bufferization::BufferizationDialect, memref::MemRefDialect,
+                  tensor::TensorDialect>();
+  arith::registerBufferizableOpInterfaceExternalModels(registry);
+  tensor::registerBufferizableOpInterfaceExternalModels(registry);
+}
+
+LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
+                                    LLVMTypeConverter& typeConverter) {
+  auto* ctx = moduleOp.getContext();
+  /// Constant tensors and element reads require no allocation or alias
+  /// analysis.
+  bufferization::BufferizationOptions options;
+  options.allowUnknownOps = true;
+  options.opFilter.allowOperation<arith::ConstantOp, tensor::ExtractOp>();
+  bufferization::BufferizationState state;
+  if (failed(bufferization::bufferizeOp(moduleOp, options, state))) {
+    return failure();
+  }
+
+  RewritePatternSet patterns(ctx);
+  target.addIllegalDialect<arith::ArithDialect, cf::ControlFlowDialect,
+                           math::MathDialect, memref::MemRefDialect,
+                           tensor::TensorDialect,
+                           bufferization::BufferizationDialect>();
+  LLVMTypeConverter memoryTypeConverter(ctx);
+  populateFinalizeMemRefToLLVMConversionPatterns(memoryTypeConverter, patterns);
+  cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
+  cf::populateAssertToLLVMConversionPattern(typeConverter, patterns);
+  arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
+  populateMathToLLVMConversionPatterns(typeConverter, patterns);
+  if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {
+    return failure();
+  }
+  PassManager manager(ctx);
+  manager.addPass(createReconcileUnrealizedCastsPass());
+  return manager.run(moduleOp);
+}
+
 QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
     : LLVMTypeConverter(ctx) {
   addConversion([ctx](QubitType) { return LLVM::LLVMPointerType::get(ctx); });
+  addConversion(
+      [ctx](cbit::RegisterType) { return LLVM::LLVMPointerType::get(ctx); });
   addConversion([ctx](MemRefType type) -> Type {
     if (isa<QubitType>(type.getElementType())) {
       return LLVM::LLVMPointerType::get(ctx);
@@ -72,164 +134,44 @@ QCToQIRTypeConverter::QCToQIRTypeConverter(MLIRContext* ctx)
   });
 };
 
-/**
- * @brief Helper to convert a QC operation to a LLVM CallOp
- *
- * @tparam QCOpType The operation type of the QC operation
- * @tparam QCOpAdaptorType The OpAdaptor type of the QC operation
- * @param op The QC operation instance to convert
- * @param adaptor The OpAdaptor of the QC operation
- * @param rewriter The pattern rewriter
- * @param ctx The MLIR context
- * @param state The lowering state
- * @param fnName The name of the QIR function to call
- * @param numTargets The number of targets
- * @param numParams The number of parameters
- * @return LogicalResult Success or failure of the conversion
- */
+/// Helper to convert a QC operation to a LLVM CallOp
+///
+/// @tparam QCOpType The operation type of the QC operation
+/// @tparam QCOpAdaptorType The OpAdaptor type of the QC operation
+/// @param op The QC operation instance to convert
+/// @param adaptor The OpAdaptor of the QC operation
+/// @param rewriter The pattern rewriter
+/// @param controls Converted controls for this gate
+/// @param fnName The name of the QIR function to call
+/// @param numTargets The number of targets
+/// @param numParams The number of parameters
+/// @return LogicalResult Success or failure of the conversion
 template <typename QCOpType, typename QCOpAdaptorType>
 static LogicalResult
 convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
-                       ConversionPatternRewriter& rewriter, MLIRContext* ctx,
-                       LoweringState& state, StringRef fnName,
-                       size_t numTargets, size_t numParams) {
-  // Query state for modifier information
-  const auto inCtrlOp = state.inCtrlOp;
-  const SmallVector<Value> controls =
-      inCtrlOp != 0 ? state.controls : SmallVector<Value>{};
-  const size_t numCtrls = controls.size();
+                       ConversionPatternRewriter& rewriter, ValueRange controls,
+                       StringRef fnName, const size_t numTargets,
+                       const size_t numParams) {
+  auto convertedOperands = adaptor.getOperands();
+  auto targets = convertedOperands.take_front(numTargets);
+  auto parameters = convertedOperands.drop_front(numTargets);
+  assert(parameters.size() == numParams && "unexpected gate parameter count");
 
-  // Define argument types
-  SmallVector<Type> argumentTypes;
-  argumentTypes.reserve(numParams + numCtrls + numTargets);
-  auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  auto floatType = Float64Type::get(ctx);
-  // Add control pointers
-  for (size_t i = 0; i < numCtrls; ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add target pointers
-  for (size_t i = 0; i < numTargets; ++i) {
-    argumentTypes.push_back(ptrType);
-  }
-  // Add parameter types
-  for (size_t i = 0; i < numParams; ++i) {
-    argumentTypes.push_back(floatType);
-  }
-
-  // Define function signature
-  const auto fnSignature =
-      LLVM::LLVMFunctionType::get(LLVM::LLVMVoidType::get(ctx), argumentTypes);
-
-  // Declare QIR function
-  const auto fnDecl =
-      getOrCreateFunctionDeclaration(rewriter, op, fnName, fnSignature);
-
-  SmallVector<Value> operands;
-  operands.reserve(numParams + numCtrls + numTargets);
-  operands.append(controls.begin(), controls.end());
-  operands.append(adaptor.getOperands().begin(), adaptor.getOperands().end());
-
-  // Clean up modifier information
-  if (inCtrlOp != 0) {
-    state.inCtrlOp--;
-    if (state.inCtrlOp == 0) {
-      state.controls.clear();
-    }
-  }
-
-  // Replace operation with CallOp
-  rewriter.replaceOpWithNewOp<LLVM::CallOp>(op, fnDecl, operands);
+  qir::emitQISCall(rewriter, op, op.getLoc(), parameters, controls, targets,
+                   fnName);
+  rewriter.eraseOp(op);
   return success();
 }
 
 namespace {
 
-/**
- * @brief Generic converter for unitary QC ops to QIR calls.
- *
- * @details
- * Many QC gates lower to a QIR runtime call where the callee name depends on
- * the number of active controls. This helper factors out that boilerplate
- * without relying on preprocessor macros.
- *
- * @par Examples
- * The examples below illustrate the lowering shapes for unitary gates that
- * are registered through `MQT_GATE_TABLE` in `populateQCToQIRPatterns`.
- *
- * @par One target, zero parameters
- * ```mlir
- * qc.x %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
- * ```
- *
- * @par One target, one parameter
- * ```mlir
- * qc.rx(%theta) %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__rx__body(%q, %theta) : (!llvm.ptr, f64) -> ()
- * ```
- *
- * @par One target, two parameters
- * ```mlir
- * qc.r(%theta, %phi) %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__r__body(%q, %theta, %phi) : (!llvm.ptr, f64, f64)
- * -> ()
- * ```
- *
- * @par One target, three parameters
- * ```mlir
- * qc.u(%theta, %phi, %lambda) %q : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__u3__body(%q, %theta, %phi, %lambda)
- *     : (!llvm.ptr, f64, f64, f64) -> ()
- * ```
- *
- * @par Two targets, zero parameters
- * ```mlir
- * qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__swap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) ->
- * ()
- * ```
- *
- * @par Two targets, one parameter
- * ```mlir
- * qc.rxx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__rxx__body(%q0, %q1, %theta)
- *     : (!llvm.ptr, !llvm.ptr, f64) -> ()
- * ```
- *
- * @par Two targets, two parameters
- * ```mlir
- * qc.xx_plus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__xx_plus_yy__body(%q0, %q1, %theta, %beta)
- *     : (!llvm.ptr, !llvm.ptr, f64, f64) -> ()
- * ```
- *
- * @tparam OpType The QC operation type to convert
- * @tparam NumTargets Number of target qubits for this operation
- * @tparam NumParams Number of floating-point parameters for this operation
- * @tparam GetFnName Function that maps numCtrls -> QIR function name
- */
+/// Lower a unitary gate to a QIR call selected by its active control count.
+///
+/// For example, qc.rx(θ) becomes
+/// `__quantum__qis__rx__body(θ, qubit)` without controls. The shared
+/// qir::emitQISCall helper owns argument packing for controlled calls.
+///
+/// @tparam GetFnName Map the number of controls to the QIR callee name.
 template <typename OpType, std::size_t NumTargets, std::size_t NumParams,
           auto GetFnName>
 struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
@@ -239,32 +181,35 @@ struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
   matchAndRewrite(OpType op, OpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = this->getState();
-    const auto inCtrlOp = state.inCtrlOp;
-    const size_t numCtrls = inCtrlOp != 0 ? state.controls.size() : 0;
-    const auto fnName = GetFnName(numCtrls);
-    return convertUnitaryToCallOp(op, adaptor, rewriter, this->getContext(),
-                                  state, fnName, NumTargets, NumParams);
+    const auto it = state.controlledGates.find(op);
+    ValueRange controls = it != state.controlledGates.end()
+                              ? ValueRange(it->second)
+                              : ValueRange{};
+    const auto fnName = GetFnName(controls.size());
+    auto result = convertUnitaryToCallOp(op, adaptor, rewriter, controls,
+                                         fnName, NumTargets, NumParams);
+    if (it != state.controlledGates.end()) {
+      state.controlledGates.erase(it);
+    }
+    return result;
   }
 };
 
-/**
- * @brief Converts qc.static to llvm.inttoptr
- *
- * @details
- * Converts a static qubit reference to an LLVM pointer by creating a constant
- * with the qubit index and converting it to a pointer. The pointer is cached
- * in the lowering state for reuse.
- *
- * @par Example:
- * ```mlir
- * %q0 = qc.static 0 : !qc.qubit
- * ```
- * is converted to
- * ```mlir
- * %c0 = llvm.mlir.constant(0 : i64) : i64
- * %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
- * ```
- */
+/// Converts qc.static to llvm.inttoptr
+///
+/// Converts a static qubit reference to an LLVM pointer by creating a constant
+/// with the qubit index and converting it to a pointer. The pointer is cached
+/// in the lowering state for reuse.
+///
+/// @par Example:
+/// ```mlir
+/// %q0 = qc.static 0 : !qc.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// %c0 = llvm.mlir.constant(0 : i64) : i64
+/// %q0 = llvm.inttoptr %c0 : i64 to !llvm.ptr
+/// ```
 struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -278,20 +223,15 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
       return failure();
     }
 
-    // Save current insertion point
     const OpBuilder::InsertionGuard guard(rewriter);
 
-    // Switch to entry block
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
 
-    // Get or create a pointer to the qubit
     Value qubit;
     if (const auto it = state.staticQubits.find(index);
         it != state.staticQubits.end()) {
-      // Reuse existing pointer
       qubit = it->second;
     } else {
-      // Create and cache for reuse
       qubit = createPointerFromIndex(rewriter, op.getLoc(), index);
       state.staticQubits.try_emplace(index, qubit);
     }
@@ -301,20 +241,16 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
   }
 };
 
-// GPhaseOp
-
-/**
- * @brief Converts qc.gphase to QIR gphase
- *
- * @par Example:
- * ```mlir
- * qc.gphase(%theta)
- * ```
- * is converted to
- * ```mlir
- * llvm.call @__quantum__qis__gphase__body(%theta) : (f64) -> ()
- * ```
- */
+/// Converts qc.gphase to QIR gphase
+///
+/// @par Example:
+/// ```mlir
+/// qc.gphase(%theta)
+/// ```
+/// is converted to
+/// ```mlir
+/// llvm.call @__quantum__qis__gphase__body(%theta) : (f64) -> ()
+/// ```
 struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -322,19 +258,17 @@ struct ConvertQCGPhaseOp final : StatefulOpConversionPattern<GPhaseOp> {
   matchAndRewrite(GPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
-    if (state.inCtrlOp != 0) {
+    if (state.controlledGates.contains(op)) {
       return op.emitError("Controlled GPhaseOps cannot be converted to QIR");
     }
-    return convertUnitaryToCallOp(op, adaptor, rewriter, getContext(), state,
+    return convertUnitaryToCallOp(op, adaptor, rewriter, ValueRange{},
                                   QIR_GPHASE, 0, 1);
   }
 };
 
 // BarrierOp
 
-/**
- * @brief Erases qc.barrier operation, as it is a no-op in QIR
- */
+/// Erases qc.barrier operation, as it is a no-op in QIR
 struct ConvertQCBarrierOp final : StatefulOpConversionPattern<BarrierOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -346,9 +280,7 @@ struct ConvertQCBarrierOp final : StatefulOpConversionPattern<BarrierOp> {
   }
 };
 
-/**
- * @brief Inlines qc.ctrl region removes the operation
- */
+/// Inlines qc.ctrl region removes the operation
 struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -357,14 +289,23 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
                   ConversionPatternRewriter& rewriter) const override {
     auto& state = getState();
 
-    if (state.inCtrlOp != 0) {
+    if (state.controlledGates.contains(op)) {
       return rewriter.notifyMatchFailure(op,
                                          "Nested CtrlOps are not supported");
     }
 
-    // Update modifier information
-    state.inCtrlOp = op.getNumBodyUnitaries();
-    state.controls = llvm::to_vector(adaptor.getControls());
+    if (op.getNumBodyUnitaries() > 1) {
+      return rewriter.notifyMatchFailure(
+          op, "CtrlOps with multiple body unitaries are not supported. Run the "
+              "unroll-modifiers pass before the conversion");
+    }
+
+    auto bodyUnitary = op.getNumBodyUnitaries() == 1 ? op.getBodyUnitary(0)
+                                                     : UnitaryOpInterface{};
+    if (bodyUnitary && !isa<BarrierOp, IdOp>(bodyUnitary.getOperation())) {
+      state.controlledGates.try_emplace(bodyUnitary.getOperation(),
+                                        llvm::to_vector(adaptor.getControls()));
+    }
 
     // Inline block and remove operation
     rewriter.inlineBlockBefore(&op.getRegion().front(), op,
@@ -374,9 +315,7 @@ struct ConvertQCCtrlOp final : StatefulOpConversionPattern<CtrlOp> {
   }
 };
 
-/**
- * @brief Erases qc.yield operation
- */
+/// Erases qc.yield operation
 struct ConvertQCYieldOp final : StatefulOpConversionPattern<YieldOp> {
   using StatefulOpConversionPattern::StatefulOpConversionPattern;
 
@@ -407,60 +346,274 @@ void addInitialize(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
 
 void addOutputRecording(LLVM::LLVMFuncOp& main, MLIRContext* ctx,
                         LoweringState& state) {
-  auto& resultArrays = state.resultArrays;
-  auto& resultPtrs = state.resultPtrs;
-
-  if (resultArrays.empty() && resultPtrs.empty()) {
-    return;
-  }
-
   OpBuilder builder(ctx);
-  auto ptrType = LLVM::LLVMPointerType::get(ctx);
-  auto voidType = LLVM::LLVMVoidType::get(ctx);
-
-  auto& outputBlock = main.getBlocks().back();
-  builder.setInsertionPoint(&outputBlock.back());
-
-  if (!resultPtrs.empty()) {
-    auto fnSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
-    auto fnDec =
-        getOrCreateFunctionDeclaration(builder, main, QIR_RECORD_OUTPUT, fnSig);
-    for (const auto& [index, ptr] : resultPtrs) {
-      auto label = createResultLabel(builder, main,
-                                     "__unnamed__" + std::to_string(index))
-                       .getResult();
-      LLVM::CallOp::create(builder, main->getLoc(), fnDec,
-                           ValueRange{ptr, label});
-    }
+  builder.setInsertionPoint(&main.getBlocks().back().back());
+  SmallVector<qir::ClassicalRegister> returnedRegisters;
+  returnedRegisters.reserve(state.returnedCregs.size());
+  for (const auto registerIndex : state.returnedCregs) {
+    returnedRegisters.push_back(std::move(state.cregs[registerIndex]));
   }
-
-  if (!resultArrays.empty()) {
-    auto fnSig = LLVM::LLVMFunctionType::get(
-        voidType, {builder.getI64Type(), ptrType, ptrType});
-    auto fnDec = getOrCreateFunctionDeclaration(builder, main,
-                                                QIR_ARRAY_RECORD_OUTPUT, fnSig);
-    for (const auto& [name, results] : resultArrays) {
-      auto size = results.getDefiningOp<LLVM::AllocaOp>().getArraySize();
-      auto label = createResultLabel(builder, main, name).getResult();
-      LLVM::CallOp::create(builder, main->getLoc(), fnDec,
-                           ValueRange{size, results, label});
-    }
-  }
+  emitOutputRecording(builder, main, returnedRegisters, state.scalarResults);
 }
 
 void populateQCToQIRPatterns(RewritePatternSet& patterns,
                              QCToQIRTypeConverter& typeConverter,
                              MLIRContext* ctx, LoweringState& state) {
-  // Note: `MQT_GATE_TABLE` is defined in `mlir/Conversion/GateTable.h`.
-#define MQT_ADD_QC_TO_QIR_UNITARY(KEY, TARGETS, PARAMS, QCO_OP, QC_OP, QIR_FN) \
-  patterns.add<ConvertQCUnitaryOpQIR<QC_OP, (TARGETS), (PARAMS), &(QIR_FN)>>(  \
-      typeConverter, ctx, &state);
-  MQT_GATE_TABLE(MQT_ADD_QC_TO_QIR_UNITARY)
-#undef MQT_ADD_QC_TO_QIR_UNITARY
+#define MQT_GATE(KEY, NAME, GETTER, TARGETS, PARAMS, SUFFIX, CTL_SUFFIX)       \
+  patterns.add<ConvertQCUnitaryOpQIR<qc::KEY##Op, (TARGETS), (PARAMS),         \
+                                     &getFnName##GETTER>>(typeConverter, ctx,  \
+                                                          &state);
+#include "mqt/Conversion/GateTable.def"
 
   patterns.add<ConvertQCBarrierOp, ConvertQCCtrlOp, ConvertQCYieldOp,
                ConvertQCStaticOp, ConvertQCGPhaseOp>(typeConverter, ctx,
                                                      &state);
+}
+
+Value getResultPtr(LoweringState& state, Operation* op,
+                   ConversionPatternRewriter& rewriter, bool dynamic) {
+  OpBuilder::InsertionGuard guard(rewriter);
+  rewriter.setInsertionPoint(state.entryBlock->getTerminator());
+  const auto index = static_cast<int64_t>(state.scalarResults.size());
+  const auto record = state.returnedScalarResults.contains(op);
+  Value result;
+  if (dynamic) {
+    auto ptrType = LLVM::LLVMPointerType::get(rewriter.getContext());
+    auto signature = LLVM::LLVMFunctionType::get(ptrType, {ptrType});
+    auto declaration = getOrCreateFunctionDeclaration(
+        rewriter, op, QIR_RESULT_ALLOC, signature);
+    auto zero = LLVM::ZeroOp::create(rewriter, op->getLoc(), ptrType);
+    result = LLVM::CallOp::create(rewriter, op->getLoc(), declaration,
+                                  zero.getResult())
+                 .getResult();
+  } else {
+    result = createPointerFromIndex(rewriter, op->getLoc(), index);
+  }
+  state.scalarResults.try_emplace(
+      index, qir::StaticResult{.pointer = result, .record = record});
+  return result;
+}
+
+/// Summarize the interference before each store in one block traversal.
+/// Only disjoint constant-index stores to the same register can be crossed.
+static DenseSet<Operation*> findStoreFusionCandidates(Block* block) {
+  DenseSet<Operation*> candidates;
+  DenseMap<Operation*, size_t> measurements;
+  DenseMap<std::pair<Value, int64_t>, size_t> lastStoreAtIndex;
+  Value lastRegister;
+  size_t lastStore = 0;
+  size_t lastOtherRegisterStore = 0;
+  size_t lastBarrier = 0;
+  size_t position = 0;
+  for (auto& operation : *block) {
+    ++position;
+    if (isa<MeasureOp>(operation)) {
+      measurements[&operation] = position;
+    }
+    if (auto store = dyn_cast<cbit::StoreOp>(operation)) {
+      const auto index = getConstantIntValue(store.getIndex());
+      auto conflict = std::max(lastBarrier, lastStore);
+      if (index) {
+        conflict = std::max({
+            lastBarrier,
+            lastRegister == store.getReg() ? lastOtherRegisterStore : lastStore,
+            lastStoreAtIndex.lookup({store.getReg(), *index}),
+        });
+      }
+      auto measure = store.getValue().getDefiningOp<MeasureOp>();
+      if (measure && measurements.lookup(measure.getOperation()) > conflict) {
+        candidates.insert(store.getOperation());
+      }
+      if (index) {
+        if (lastRegister != store.getReg()) {
+          lastOtherRegisterStore = lastStore;
+          lastRegister = store.getReg();
+        }
+        lastStore = position;
+        lastStoreAtIndex[{store.getReg(), *index}] = position;
+      } else {
+        lastBarrier = position;
+      }
+      continue;
+    }
+    /// These unscoped quantum effects cannot access CBit storage.
+    if (isa<qc::AllocOp, qc::DeallocOp, qc::GPhaseOp>(operation)) {
+      continue;
+    }
+    const auto effects = getEffectsRecursively(&operation);
+    if (!effects || !llvm::all_of(*effects, [](const auto& effect) {
+          auto value = effect.getValue();
+          if (!value) {
+            return false;
+          }
+          if (isa<QubitType>(value.getType())) {
+            return true;
+          }
+          auto memref = dyn_cast<MemRefType>(value.getType());
+          return memref && isa<QubitType>(memref.getElementType());
+        })) {
+      lastBarrier = position;
+    }
+  }
+  return candidates;
+}
+
+LogicalResult prepareClassicalResults(Operation* moduleOp,
+                                      LoweringState& state) {
+  bool hasInvalidMemory = false;
+  moduleOp->walk([&](Operation* operation) {
+    if (!isa<func::CallOp, func::CallIndirectOp>(operation)) {
+      return;
+    }
+    const auto isRegister = [](Type type) {
+      return isa<cbit::RegisterType>(type);
+    };
+    if (llvm::any_of(operation->getOperandTypes(), isRegister) ||
+        llvm::any_of(operation->getResultTypes(), isRegister)) {
+      operation->emitError(
+          "QIR conversion does not support CBit registers in calls; "
+          "read or write scalar values before the call");
+      hasInvalidMemory = true;
+    }
+  });
+  if (hasInvalidMemory) {
+    return failure();
+  }
+  auto funcOp = mqt::getEntryPoint(cast<ModuleOp>(moduleOp));
+  SmallVector<func::ReturnOp> returns;
+  funcOp.walk([&](func::ReturnOp op) { returns.push_back(op); });
+  if (returns.size() != 1) {
+    return funcOp.emitError(
+        "QIR output requires a single return in the entry function");
+  }
+  auto returnOp = returns.front();
+  SmallVector<Value> keptOperands;
+  SmallVector<Type> keptReturnTypes;
+  SmallVector<cbit::StoreOp> consumedStores;
+  DominanceInfo dominance(funcOp);
+
+  funcOp.walk([&](memref::AllocOp allocOp) {
+    const auto type = allocOp.getType();
+    if (type.getRank() != 1 || !isa<QubitType>(type.getElementType())) {
+      allocOp.emitError(
+          "QIR conversion only supports generic memrefs for "
+          "one-dimensional qc.qubit registers; use CBit for classical "
+          "registers");
+      hasInvalidMemory = true;
+    }
+  });
+
+  funcOp.walk([&](cbit::AllocOp allocOp) {
+    const auto [it, inserted] = state.cregIndices.try_emplace(
+        allocOp.getOperation(), state.cregs.size());
+    if (inserted) {
+      state.cregs.emplace_back();
+    }
+    auto& reg = state.cregs[it->second];
+    reg.record = false;
+    if (const auto name = allocOp->getAttrOfType<StringAttr>(
+            mqt::MQTDialect::RegisterNameAttrHelper::getNameStr())) {
+      reg.label = name.str();
+    }
+    const auto size = allocOp.getResult().getType().getWidth();
+    reg.size = size;
+  });
+
+  const auto markRegisterForRecording = [&](const size_t registerIndex) {
+    auto& reg = state.cregs[registerIndex];
+    if (reg.record) {
+      return;
+    }
+    if (reg.label.empty()) {
+      reg.label = "c" + std::to_string(state.returnedCregs.size());
+    }
+    reg.record = true;
+    state.returnedCregs.push_back(registerIndex);
+  };
+
+  for (auto operand : returnOp.getOperands()) {
+    if (auto measureOp = operand.getDefiningOp<MeasureOp>()) {
+      state.returnedScalarResults.insert(measureOp.getOperation());
+    } else if (auto allocOp = operand.getDefiningOp<cbit::AllocOp>();
+               allocOp && state.cregIndices.contains(allocOp.getOperation())) {
+      markRegisterForRecording(state.cregIndices.at(allocOp.getOperation()));
+    } else {
+      keptOperands.push_back(operand);
+      keptReturnTypes.push_back(operand.getType());
+    }
+  }
+
+  DenseMap<Block*, DenseSet<Operation*>> fusionCandidates;
+  funcOp.walk([&](cbit::StoreOp storeOp) {
+    auto allocOp = storeOp.getReg().getDefiningOp<cbit::AllocOp>();
+    if (!allocOp || !state.cregIndices.contains(allocOp.getOperation())) {
+      storeOp.emitError(
+          "QIR conversion requires direct CBit register allocations");
+      hasInvalidMemory = true;
+      return;
+    }
+    const auto registerIndex = state.cregIndices.at(allocOp.getOperation());
+    if (!state.cregs[registerIndex].record) {
+      return;
+    }
+    auto measureOp = storeOp.getValue().getDefiningOp<MeasureOp>();
+    if (!measureOp) {
+      storeOp.emitError(
+          "QIR conversion does not support non-measurement stores to "
+          "returned CBit registers");
+      hasInvalidMemory = true;
+      return;
+    }
+    auto* indexProducer = storeOp.getIndex().getDefiningOp();
+    bool canFuse =
+        measureOp->getBlock() == storeOp->getBlock() &&
+        (dominance.dominates(storeOp.getIndex(), measureOp) ||
+         (indexProducer && indexProducer->hasTrait<OpTrait::ConstantLike>()));
+    if (canFuse && measureOp->getNextNode() != storeOp.getOperation()) {
+      const auto [candidates, newBlock] =
+          fusionCandidates.try_emplace(storeOp->getBlock());
+      if (newBlock) {
+        candidates->second = findStoreFusionCandidates(storeOp->getBlock());
+      }
+      canFuse = candidates->second.contains(storeOp.getOperation());
+    }
+    if (!canFuse) {
+      storeOp.emitError("QIR output cannot fuse this measurement/store pair: "
+                        "require the same "
+                        "block, an index available at measurement, and no "
+                        "intervening classical memory effects");
+      hasInvalidMemory = true;
+      return;
+    }
+    const auto destination =
+        std::pair<size_t, Value>{registerIndex, storeOp.getIndex()};
+    const auto [it, inserted] = state.cregMeasurements.try_emplace(
+        measureOp.getOperation(), destination);
+    if (!inserted && it->second != destination) {
+      storeOp.emitError("a measurement result cannot be stored in multiple "
+                        "classical register locations during QIR conversion");
+      hasInvalidMemory = true;
+    }
+    consumedStores.push_back(storeOp);
+  });
+  if (hasInvalidMemory) {
+    return failure();
+  }
+
+  if (keptOperands.empty() && !returnOp.getOperands().empty()) {
+    OpBuilder builder(returnOp);
+    auto zero = arith::ConstantIntOp::create(builder, returnOp.getLoc(), 0, 64);
+    keptOperands.push_back(zero);
+    keptReturnTypes.push_back(zero.getType());
+  }
+  returnOp.getOperandsMutable().assign(keptOperands);
+  funcOp.setFunctionType(FunctionType::get(funcOp.getContext(),
+                                           funcOp.getFunctionType().getInputs(),
+                                           keptReturnTypes));
+  for (auto storeOp : consumedStores) {
+    storeOp.erase();
+  }
+  return success();
 }
 
 } // namespace mlir

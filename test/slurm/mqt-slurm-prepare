@@ -1,0 +1,17 @@
+#!/bin/sh
+# Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+# Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+# All rights reserved.
+#
+# SPDX-License-Identifier: MIT
+#
+# Licensed under the MIT License
+
+set -eu
+
+test -s /runtime/munge.key
+
+install -d -o munge -g munge -m 0755 /etc/munge /run/munge
+install -o munge -g munge -m 0400 /runtime/munge.key /etc/munge/munge.key
+install -d -o slurm -g slurm -m 0755 /var/spool/slurmctld /var/log/slurm
+install -d -o root -g root -m 0755 /var/spool/slurmd

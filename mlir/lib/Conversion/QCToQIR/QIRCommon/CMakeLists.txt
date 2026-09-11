@@ -20,20 +20,28 @@ add_mlir_library(
   MLIRTransforms
   MLIRLLVMDialect
   MLIRLLVMCommonConversion
-  MLIRFuncToLLVM
   MLIRControlFlowToLLVM
+  MLIRMathDialect
+  MLIRMathToLLVM
+  MLIRReconcileUnrealizedCasts
   MLIRArithToLLVM
+  MLIRArithTransforms
+  MLIRBufferizationTransforms
+  MLIRMemRefToLLVM
   MLIRMemRefDialect
+  MLIRTensorTransforms
+  MLIRMQTDialect
   MLIRFuncDialect
   MLIRControlFlowDialect
   MLIRArithDialect
+  MLIRCBitDialect
   MLIRQCDialect
   MLIRQIRUtils)
 
 mqt_mlir_target_use_project_options(MLIRQCToQIRCommon)
 
 file(GLOB_RECURSE QIR_COMMON_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Conversion/QCToQIR/QIRCommon/*.h)
+     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Conversion/QCToQIR/QIRCommon/*.h)
 
 target_sources(MLIRQCToQIRCommon PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
                                         FILES ${QIR_COMMON_HEADERS_SOURCE})

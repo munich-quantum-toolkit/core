@@ -11,46 +11,72 @@ mystnb:
 ## Objective
 
 A QDMI Driver manages the communication between QDMI devices, such as
-[MQT Core's NA QDMI Device](na_device.md) or
+[MQT Core's SC QDMI Device](sc_device.md) or
 [MQT Core's DDSIM QDMI Device](ddsim_device.md), and QDMI clients, see the
 [QDMI specification](https://munich-quantum-software-stack.github.io/QDMI/).
 It is responsible for loading the device, forwarding requests from the client to
 the device, and sending back the results. MQT Core's QDMI Driver,
-{cpp:class}`qdmi::Driver`, comes with several preloaded devices that can be used
-directly. Other devices can be loaded dynamically at runtime via
-{cpp:func}`qdmi::Driver::addDynamicDeviceLibrary`.
+{cpp-api:class}`qdmi::Driver`, comes with several preloaded devices when the
+bundled devices are enabled. Other devices can be loaded dynamically at runtime
+via {cpp-api:func}`qdmi::Driver::registerDevice` and
+{cpp-api:func}`qdmi::Driver::open`. Built-in and external devices can also be
+registered through
+[versioned QDMI device configuration](configuration.md).
+
+The driver shares a loaded provider across path aliases with the same symbol
+prefix and retains it for the process lifetime. Closing a device session frees
+that session without finalizing the provider while another session may use it.
+Initialization is serialized within each loaded module. A slow provider
+initializer does not hold the driver cache lock while other modules are opened.
+
+## Building the Bundled Devices
+
+Standalone MQT Core builds include the DDSIM and superconducting QDMI device
+libraries by default. When MQT Core is embedded in another CMake project using
+{code}`FetchContent` or {code}`add_subdirectory`, these device libraries are
+disabled by default so the consumer does not build implementations it may not
+use. They can be selected independently before making MQT Core available:
+
+- {code}`BUILD_MQT_CORE_QDMI_DDSIM_DEVICE`
+- {code}`BUILD_MQT_CORE_QDMI_SC_DEVICE`
+
+The DDSIM device uses the MLIR compiler infrastructure for both OpenQASM and QIR
+programs. Its target is skipped when {code}`BUILD_MQT_CORE_MLIR` is {code}`OFF`,
+while the QDMI driver and superconducting device remain available.
+
+For example, an embedded simulator consumer can enable only the DDSIM device,
+while CUDA-Q can enable the DDSIM and superconducting devices used by its
+integration tests.
+
+The QDMI driver and QDMI libraries are available independently. Device-free
+builds can register external device libraries through
+[QDMI device configuration](configuration.md). C++ test builds require every
+bundled device available in the selected build configuration.
 
 ## Python Bindings
 
-The QDMI Driver is implemented in C++ and exposed to Python via
-[{code}`nanobind`](https://nanobind.readthedocs.io/). Direct binding of the QDMI
-Client interface functions is not feasible due to technical limitations.
-Instead, a FoMaC (Figure of Merits and Constraints) library defines wrapper
-classes ({cpp:class}`~fomac::Session`, {cpp:class}`~fomac::Session::Device`,
-{cpp:class}`~fomac::Session::Device::Site`,
-{cpp:class}`~fomac::Session::Device::Operation`,
-{cpp:class}`~fomac::Session::Job`) for the QDMI entities. These classes together
-with their methods are then exposed to Python, see
-{py:class}`~mqt.core.fomac.Session`, {py:class}`~mqt.core.fomac.Device`,
-{py:class}`~mqt.core.fomac.Device.Site`,
-{py:class}`~mqt.core.fomac.Device.Operation`, {py:class}`~mqt.core.fomac.Job`.
+The QDMI interface is the low-level contract implemented by a QDMI device. The
+MQT Core QDMI driver loads device libraries and implements the QDMI client
+interface. The C++ QDMI library adds owning wrappers for QDMI devices, sites,
+operations, and jobs. The Python module exposes these QDMI entities through
+{py:mod}`mqt.core.qdmi`. Its {py:mod}`mqt.core.qdmi.driver` submodule provides
+device discovery, registration, and opening.
+
+Native device opening, property queries, job calls, and compiler-target
+snapshots release Python's GIL. Other Python threads can run while a provider
+waits for a remote response. Python argument and result conversion still holds
+the GIL. Concurrent calls into a shared device or job must satisfy the
+provider's thread safety contract; releasing the GIL does not serialize provider
+access.
 
 ## Usage
 
-The following example shows how to create a session and get devices from the
-QDMI driver.
+The following example opens each registered device by its stable ID.
 
 ```{code-cell} ipython3
-from mqt.core.fomac import Session
+from mqt.core.qdmi.driver import open_device, registered_device_ids
 
-# Create a session to interact with QDMI devices
-session = Session()
-
-# Get a list of all available devices
-available_devices = session.get_devices()
-
-# Print the name of every device
-for device in available_devices:
+for device_id in registered_device_ids():
+    device = open_device(device_id)
     print(device.name())
-
 ```

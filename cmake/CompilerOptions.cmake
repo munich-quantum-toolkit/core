@@ -10,7 +10,6 @@
 function(enable_project_options target_name)
   include(CheckCXXCompilerFlag)
 
-  # Option to enable time tracing with clang
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
     option(ENABLE_BUILD_WITH_TIME_TRACE
            "Enable -ftime-trace to generate time tracing .json files on clang" OFF)
@@ -22,13 +21,6 @@ function(enable_project_options target_name)
   if(MSVC)
     target_compile_options(${target_name} INTERFACE /utf-8 /Zm10 /EHsc)
   else()
-    # always include debug symbols (avoids common problems with LTO)
-    target_compile_options(${target_name} INTERFACE -g)
-
-    # ensure that exceptions are enabled
-    target_compile_options(${target_name} INTERFACE -fexceptions)
-
-    # enable coverage collection options
     option(ENABLE_COVERAGE "Enable coverage reporting for gcc/clang" FALSE)
     if(ENABLE_COVERAGE)
       target_compile_options(${target_name} INTERFACE --coverage -fprofile-arcs -ftest-coverage -O0)
@@ -70,9 +62,7 @@ function(enable_project_options target_name)
     set_target_properties(${target_name} PROPERTIES INTERFACE_POSITION_INDEPENDENT_CODE ON)
   endif()
 
-  # add a compile definition for _LIBCPP_REMOVE_TRANSITIVE_INCLUDES to remove transitive includes
-  # from libc++ headers. This is useful to avoid including system headers that are not needed and
-  # that may conflict with other headers. This is only supported by libc++.
+  # Expose missing direct includes by disabling libc++'s optional transitive includes.
   if(CMAKE_CXX_COMPILER_ID MATCHES ".*Clang")
     target_compile_definitions(${target_name} INTERFACE _LIBCPP_REMOVE_TRANSITIVE_INCLUDES)
   endif()

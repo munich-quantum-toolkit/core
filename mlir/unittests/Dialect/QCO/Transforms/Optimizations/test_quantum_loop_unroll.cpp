@@ -8,25 +8,28 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <gtest/gtest.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/LogicalResult.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/OwningOpRef.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LLVM.h>
+#include "gtest/gtest.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/Support/LogicalResult.h"
 
 #include <cassert>
 #include <cstdint>
@@ -36,19 +39,16 @@
 using namespace mlir;
 using namespace mlir::qco;
 
-/**
- * @brief Build a program that constructs a GHZ state using a loop.
- * @param context The MLIR context to build the module.
- * @param n The number of qubits of the GHZ state.
- * @return A module with an entry point function containing the GHZ logic.
- */
+/// Build a program that constructs a GHZ state using a loop.
+/// @param context The MLIR context to build the module.
+/// @param n The number of qubits of the GHZ state.
+/// @return A module with an entry point function containing the GHZ logic.
 static OwningOpRef<ModuleOp> getGHZ(MLIRContext* context, int64_t n) {
   QCOProgramBuilder builder(context);
   builder.initialize();
 
-  Value tensor = builder.qtensorAlloc(n);
-  Value q0;
-  std::tie(tensor, q0) = builder.qtensorExtract(tensor, 0);
+  const auto inputTensor = builder.qtensorAlloc(n);
+  auto [tensor, q0] = builder.qtensorExtract(inputTensor, 0);
   q0 = builder.h(q0);
   tensor = builder.qtensorInsert(q0, tensor, 0);
 
@@ -121,7 +121,7 @@ TEST_F(QuantumLoopUnrollTest, NoOp) {
 
 TEST_F(QuantumLoopUnrollTest, UnrollFull) {
   auto m = getGHZ(context.get(), 3);
-  auto entry = *(m->getOps<func::FuncOp>().begin());
+  auto entry = *m->getOps<func::FuncOp>().begin();
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
@@ -138,9 +138,62 @@ TEST_F(QuantumLoopUnrollTest, UnrollFull) {
   EXPECT_EQ(range_size(entry.getOps<qtensor::InsertOp>()), 5);
 }
 
+TEST_F(QuantumLoopUnrollTest, UnrollFullWithOuterDependentBounds) {
+  auto m = QCOProgramBuilder::build(context.get(), [](QCOProgramBuilder& b) {
+    auto tensor = b.qtensorAlloc(2);
+    auto upper = arith::ConstantIndexOp::create(b, 2).getResult();
+    auto step = arith::ConstantIndexOp::create(b, 1).getResult();
+    tensor =
+        b.scfFor(0, 2, 1, {tensor}, [&](Value outer, ValueRange outerArgs) {
+          auto lower = arith::AddIOp::create(b, outer, step).getResult();
+          return b.scfFor(
+              lower, upper, step, outerArgs, [&](Value, ValueRange innerArgs) {
+                auto [tensor, qubit] = b.qtensorExtract(innerArgs.front(), 0);
+                tensor = b.qtensorInsert(b.h(qubit), tensor, 0);
+                return SmallVector{tensor};
+              });
+        })[0];
+    b.qtensorDealloc(tensor);
+    return b.intConstant(0);
+  });
+  ASSERT_TRUE(m);
+
+  EXPECT_TRUE(succeeded(runPass(m, QuantumLoopUnrollOptions{})));
+  auto entry = *m->getOps<func::FuncOp>().begin();
+  EXPECT_TRUE(entry.getOps<scf::ForOp>().empty());
+  EXPECT_EQ(range_size(entry.getOps<HOp>()), 1);
+}
+
+TEST_F(QuantumLoopUnrollTest, PreservesYieldOnlyPermutation) {
+  for (const int64_t iterations : {1, 2, 3, 4}) {
+    SCOPED_TRACE(iterations);
+    QCOProgramBuilder builder(context.get());
+    builder.initialize();
+
+    Value q0 = builder.allocQubit();
+    Value q1 = builder.allocQubit();
+    const auto results = builder.scfFor(
+        0, iterations, 1, {q0, q1}, [](Value, ValueRange iterArgs) {
+          return SmallVector{iterArgs[1], iterArgs[0]};
+        });
+    builder.sink(results[0]);
+    builder.sink(results[1]);
+    auto m = builder.finalize();
+
+    ASSERT_TRUE(succeeded(runPass(m, QuantumLoopUnrollOptions{})));
+    auto entry = *m->getOps<func::FuncOp>().begin();
+    EXPECT_TRUE(entry.getOps<scf::ForOp>().empty());
+
+    auto sinks = llvm::to_vector(entry.getOps<SinkOp>());
+    ASSERT_EQ(sinks.size(), 2);
+    EXPECT_EQ(sinks[0].getQubit(), iterations % 2 == 0 ? q0 : q1);
+    EXPECT_EQ(sinks[1].getQubit(), iterations % 2 == 0 ? q1 : q0);
+  }
+}
+
 TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
   auto m = getGHZ(context.get(), 9);
-  auto entry = *(m->getOps<func::FuncOp>().begin());
+  auto entry = *m->getOps<func::FuncOp>().begin();
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
@@ -154,13 +207,12 @@ TEST_F(QuantumLoopUnrollTest, UnrollPartial) {
   EXPECT_EQ(range_size(entry.getOps<qtensor::ExtractOp>()), 1);
   EXPECT_EQ(range_size(entry.getOps<qtensor::InsertOp>()), 1);
 
-  // After the pass, there are is still a loop, however with step size = 2.
-  // Where previously, the loop consists of 2 extracts and 2 inserts (q0, qi),
-  // after the pass it consists of 4 extracts and 4 inserts.
+  /// Partial unrolling retains the loop and duplicates each iteration's
+  /// extract/insert pairs.
 
   EXPECT_EQ(range_size(entry.getOps<scf::ForOp>()), 1);
 
-  Region& body = (*(entry.getOps<scf::ForOp>().begin())).getRegion();
+  Region& body = (*entry.getOps<scf::ForOp>().begin()).getRegion();
   EXPECT_EQ(range_size(body.getOps<qtensor::ExtractOp>()), 4);
   EXPECT_EQ(range_size(body.getOps<qtensor::InsertOp>()), 4);
 }

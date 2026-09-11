@@ -50,6 +50,7 @@ queryOperations(MQT_DDSIM_QDMI_Device_Session session);
 int setProgram(MQT_DDSIM_QDMI_Device_Job job, QDMI_Program_Format fmt,
                std::string_view program);
 int setShots(MQT_DDSIM_QDMI_Device_Job job, size_t shots);
+int setSeed(MQT_DDSIM_QDMI_Device_Job job, int seed);
 int submitAndWait(MQT_DDSIM_QDMI_Device_Job job, size_t timeoutSeconds);
 
 // Result helpers
@@ -64,6 +65,7 @@ std::pair<std::vector<std::string>, std::vector<double>>
 getSparseProbabilities(MQT_DDSIM_QDMI_Device_Job job);
 
 // Small helpers
+std::string getQIRProgram(std::string_view file);
 std::vector<std::string> splitCSV(const std::string& csv);
 
 } // namespace qdmi_test

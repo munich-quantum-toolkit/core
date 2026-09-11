@@ -1,0 +1,331 @@
+// Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+// Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+//
+// Licensed under the MIT License
+
+#ifndef MLIR_DIALECT_MQT_IR_MQTDIALECT_TD
+#define MLIR_DIALECT_MQT_IR_MQTDIALECT_TD
+
+include "mlir/IR/AttrTypeBase.td"
+include "mlir/IR/EnumAttr.td"
+include "mlir/IR/OpBase.td"
+
+def MQTDialect : Dialect {
+  let name = "mqt";
+  let cppNamespace = "::mlir::mqt";
+  let useDefaultAttributePrinterParser = 1;
+
+  let summary = "Shared metadata for MQT quantum programs.";
+  let description = [{
+    The MQT dialect owns frontend-neutral metadata that must remain meaningful
+    across quantum dialect conversions. It defines no operations or types.
+
+    `mqt.input_name` records the source-level name of a function input.
+    `mqt.source_name` records a source-level function name when the IR symbol
+    must be uniquified.
+    `mqt.parameter_group` optionally preserves the source-level vector
+    identity, name, element index, and size of a function input or a lexically
+    bound `scf.for` parameter.
+    `mqt.register_name` records the source-level name of a quantum or classical
+    register declaration, including local reference buffers created during
+    conversion. Input and register names share one function-wide
+    namespace.
+    `mqt.entry_point` marks the single public, defined `func.func` program entry
+    in a module. Dynamic quantum allocations (`qc.alloc`, `qco.alloc`,
+    qubit `memref.alloc`, and `qtensor.alloc`) must appear directly in its
+    entry block. Other functions receive quantum resources as arguments;
+    they cannot allocate them. Classical allocations and static qubit references
+    are not subject to this restriction.
+    `mqt.unitary` marks a private function that defines a unitary operation.
+    Its body admits unitary operations and memory-effect-free, region-free
+    classical computation, matching the quantum modifier-body contract. Parameter
+    computation is evaluated eagerly when the invocation is reached; it need not
+    be speculatable. The quantum action is unitary on the computation's defined
+    input domain. Modifiers transform that action, not the parameter computation:
+    inverse does not reverse it, control does not conditionally evaluate it, and
+    power does not repeat it, including at exponent zero. Undefined inputs do not
+    guarantee traps. Unitary operations may retain effects such as a scoped
+    global-phase contribution.
+    `#mqt.compilation_target` records compiler-target facts as typed IR.
+    `mqt.target_env` records compiler-target facts and the selected payload
+    execution contract.
+  }];
+
+  let discardableAttrs = (ins "::mlir::StringAttr":$input_name,
+      "::mlir::StringAttr":$source_name,
+      "::mlir::DictionaryAttr":$parameter_group,
+      "::mlir::StringAttr":$register_name, "::mlir::UnitAttr":$entry_point,
+      "::mlir::UnitAttr":$unitary);
+
+  let hasOperationAttrVerify = 1;
+  let hasRegionArgAttrVerify = 1;
+  let hasRegionResultAttrVerify = 1;
+}
+
+class MQTAttr<string name, string attrMnemonic, list<Trait> traits = []>
+    : AttrDef<MQTDialect, name, traits> {
+  let mnemonic = attrMnemonic;
+}
+
+class MQTArrayRefParameter<string element, string desc = "">
+    : ArrayRefParameter<element, desc> {
+  let parser = "::mlir::mqt::detail::parseArray<"#element#">($_parser)";
+  let printer = "::mlir::mqt::detail::printArray($_printer, $_self)";
+}
+
+class MQTOptionalUInt64Parameter
+    : OptionalParameter<"std::optional<uint64_t>"> {
+  let parser = "::mlir::FieldParser<uint64_t>::parse($_parser)";
+}
+
+def ConnectivityKind
+    : I32EnumAttr<"ConnectivityKind", "Target connectivity",
+                  [I32EnumAttrCase<"AllToAll", 0, "all_to_all">,
+                   I32EnumAttrCase<"Explicit", 1, "explicit">]> {
+  let cppNamespace = "::mlir::mqt";
+  let genSpecializedAttr = 0;
+}
+
+def NativeOperationsKind
+    : I32EnumAttr<"NativeOperationsKind", "Native-operation support",
+                  [I32EnumAttrCase<"Unrestricted", 0, "unrestricted">,
+                   I32EnumAttrCase<"Explicit", 1, "explicit">]> {
+  let cppNamespace = "::mlir::mqt";
+  let genSpecializedAttr = 0;
+}
+
+def OperationArityKind
+    : I32EnumAttr<"OperationArityKind", "Operation arity kind",
+                  [I32EnumAttrCase<"Fixed", 0, "fixed">,
+                   I32EnumAttrCase<"Variadic", 1, "variadic">]> {
+  let cppNamespace = "::mlir::mqt";
+  let genSpecializedAttr = 0;
+}
+
+def DurationUnitAttr : MQTAttr<"DurationUnit", "duration_unit"> {
+  let summary = "Unit for raw compiler-target durations";
+  let description = [{
+    The scale factor converts each raw duration to the named unit. For example,
+    `#mqt.duration_unit<unit = "ns", scale_factor = 1.000000e+00 : f64>`
+    records durations in nanoseconds.
+  }];
+  let parameters = (ins "StringAttr":$unit, "FloatAttr":$scale_factor);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def SiteAttr : MQTAttr<"Site", "site"> {
+  let summary = "One ordered compiler-target site";
+  let description = [{
+    Site identifiers come from the target. The array order defines dense
+    compiler vertices. For example, `#mqt.site<id = 4, name = "q4">` records
+    one named site.
+  }];
+  let parameters = (ins "int64_t":$id, OptionalParameter<"StringAttr">:$name,
+      MQTOptionalUInt64Parameter<>:$t1, MQTOptionalUInt64Parameter<>:$t2);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def CouplingAttr : MQTAttr<"Coupling", "coupling"> {
+  let summary = "One undirected compiler-target coupling";
+  let description = [{
+    A coupling joins two target site identifiers. For example,
+    `#mqt.coupling<source = 4, target = 7>` permits interactions between sites
+    4 and 7.
+  }];
+  let parameters = (ins "int64_t":$source, "int64_t":$target);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def SiteTupleAttr : MQTAttr<"SiteTuple", "site_tuple"> {
+  let summary = "One supported ordered placement with optional calibration";
+  let description = [{
+    The tuple records one supported ordered placement and optional calibration
+    overrides. Missing calibration values inherit the operation defaults.
+    For example,
+    `#mqt.site_tuple<[4, 7], duration = 40>` records an ordered
+    two-site placement with a raw duration of 40.
+  }];
+  let parameters = (ins MQTArrayRefParameter<"int64_t">:$sites,
+      MQTOptionalUInt64Parameter<>:$duration,
+      OptionalParameter<"FloatAttr">:$fidelity);
+  let assemblyFormat = "`<` $sites (`,` struct($duration, $fidelity)^)? `>`";
+  let genVerifyDecl = 1;
+}
+
+def OperationArityAttr : MQTAttr<"OperationArity", "operation_arity"> {
+  let summary = "Accepted width of a compiler-target operation";
+  let description = [{
+    A fixed arity accepts exactly its value. A variadic arity accepts its value
+    or any larger width. For example,
+    `#mqt.operation_arity<kind = variadic, value = 1>` accepts a gate with one
+    target and any number of controls.
+  }];
+  let parameters = (ins EnumParameter<OperationArityKind>:$kind,
+      "uint64_t":$value);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def NativeOperationAttr : MQTAttr<"NativeOperation", "native_operation"> {
+  let summary = "One native compiler-target operation";
+  let description = [{
+    The operation records its spelling, arity, parameter count, and optional
+    global or site-specific calibration data. An empty site-tuple list means
+    general applicability; a nonempty list gives all supported ordered
+    placements. The following example records a directional controlled-X operation:
+
+    ```mlir
+    #mqt.native_operation<name = "cx",
+        arity = #mqt.operation_arity<kind = fixed, value = 2>,
+        num_parameters = 0, site_tuples = [<[4, 7]>]>
+    ```
+  }];
+  let parameters = (ins "StringAttr":$name, "OperationArityAttr":$arity,
+      "uint64_t":$num_parameters,
+      MQTArrayRefParameter<"SiteTupleAttr">:$site_tuples,
+      MQTOptionalUInt64Parameter<>:$duration,
+      OptionalParameter<"FloatAttr">:$fidelity);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def CompilationTargetAttr : MQTAttr<"CompilationTarget", "compilation_target"> {
+  let summary = "Typed compiler-target facts";
+  let description = [{
+    Records source target facts without derived routing or synthesis caches.
+    Ordered sites define dense compiler vertices. Connectivity and native
+    operation support is unrestricted or explicit.
+
+    The following target has two explicitly connected sites and one native
+    operation:
+
+    ```mlir
+    #mqt.compilation_target<
+        name = "device", sites = [<id = 4>, <id = 7>],
+        connectivity = explicit, couplings = [<source = 4, target = 7>],
+        native_operations = explicit,
+        operations = [<name = "cx",
+            arity = #mqt.operation_arity<kind = fixed, value = 2>,
+            num_parameters = 0, site_tuples = [<[4, 7]>]>]>
+    ```
+  }];
+  let parameters = (ins OptionalParameter<"StringAttr">:$name,
+      MQTArrayRefParameter<"SiteAttr">:$sites,
+      OptionalParameter<"DurationUnitAttr">:$duration_unit,
+      EnumParameter<ConnectivityKind>:$connectivity,
+      MQTArrayRefParameter<"CouplingAttr">:$couplings,
+      EnumParameter<NativeOperationsKind>:$native_operations,
+      MQTArrayRefParameter<"NativeOperationAttr">:$operations);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def PayloadEncoding : I32EnumAttr<"PayloadEncoding", "Payload encoding",
+                                  [I32EnumAttrCase<"Text", 0, "text">,
+                                   I32EnumAttrCase<"Binary", 1, "binary">]> {
+  let cppNamespace = "::mlir::mqt";
+  let genSpecializedAttr = 0;
+}
+
+def PayloadFormatAttr : MQTAttr<"PayloadFormat", "payload_format"> {
+  let summary = "Exact payload identity";
+  let description = [{
+    Identifies a payload by format ID, exact version, optional profile ID, and
+    encoding. Every field takes part in identity. An empty profile denotes a
+    payload without a named profile.
+
+    The following identity selects binary QIR 2.1 with the base profile:
+
+    ```mlir
+    #mqt.payload_format<id = "qir", version = "2.1",
+        profile = "base", encoding = binary>
+    ```
+  }];
+  let parameters = (ins "StringAttr":$id, "StringAttr":$version,
+      "StringAttr":$profile, EnumParameter<PayloadEncoding>:$encoding);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def ProgramConstraintAttr : MQTAttr<"ProgramConstraint", "program_constraint"> {
+  let summary = "One constraint on a payload capability";
+  let description = [{
+    Records one extensible constraint ID and its constraint-specific value.
+  }];
+  let parameters = (ins "StringAttr":$id, "uint64_t":$value);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def ProgramCapabilityAttr : MQTAttr<"ProgramCapability", "program_capability"> {
+  let summary = "One payload execution capability";
+  let description = [{
+    Records one extensible capability ID, its feature-specific value, and all
+    constraints on that capability. Unknown IDs remain valid so newer
+    producers can round-trip through older consumers.
+  }];
+  let parameters = (ins "StringAttr":$id, "uint64_t":$value,
+      MQTArrayRefParameter<"ProgramConstraintAttr">:$constraints);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def PayloadSpecAttr : MQTAttr<"PayloadSpec", "payload_spec"> {
+  let summary = "Selected payload execution contract";
+  let description = [{
+    Records the exact payload and its effective capabilities. Producers expand
+    format baselines before creating this attribute. The capability list
+    remains available when optional capability metadata is unknown;
+    `optional_capabilities_known` records whether that optional metadata is
+    complete.
+
+    The following producer-defined format reports bounded forward branching.
+    Its optional capability metadata is incomplete:
+
+    ```mlir
+    #mqt.payload_spec<
+        format = <id = "vendor-ir", version = "1.0.0", profile = "",
+            encoding = binary>,
+        capabilities = [<id = "forward-branching", value = 0,
+            constraints = [<id = "max-control-flow-nesting-depth", value = 4>]>],
+        optional_capabilities_known = false>
+    ```
+  }];
+  let parameters = (ins "PayloadFormatAttr":$format,
+      MQTArrayRefParameter<"ProgramCapabilityAttr">:$capabilities,
+      "bool":$optional_capabilities_known);
+  let assemblyFormat = "`<` struct(params) `>`";
+  let genVerifyDecl = 1;
+}
+
+def TargetEnvAttr : MQTAttr<"TargetEnv", "target_env"> {
+  let summary = "Selected compilation and payload specification";
+  let description = [{
+    Combines typed compiler-target facts with the selected payload contract.
+
+    The following environment pairs a one-site target with a producer-defined
+    payload:
+
+    ```mlir
+    #mqt.target_env<
+        compilation_target = #mqt.compilation_target<
+            sites = [<id = 0>], connectivity = all_to_all, couplings = [],
+            native_operations = unrestricted, operations = []>,
+        payload_specification = #mqt.payload_spec<
+            format = <id = "vendor-ir", version = "1.0.0", profile = "",
+                encoding = binary>,
+            capabilities = [], optional_capabilities_known = false>>
+    ```
+  }];
+  let parameters = (ins "CompilationTargetAttr":$compilation_target,
+      "PayloadSpecAttr":$payload_specification);
+  let assemblyFormat = "`<` struct(params) `>`";
+}
+
+#endif // MLIR_DIALECT_MQT_IR_MQTDIALECT_TD

@@ -8,34 +8,29 @@
  * Licensed under the MIT License
  */
 
-/** @file
- * @brief Linked list functionality required for UniqueTable and MemoryManager.
- */
+/// @file
+/// Linked list functionality required for UniqueTable and MemoryManager.
 
 #pragma once
 
 namespace dd {
 
-/**
- * @brief A class to provide a base for linked list objects
- */
+/// A class to provide a base for linked list objects
 struct LLBase {
-  /**
-   * @brief The pointer to the next object
-   * @details The next pointer is used to form linked lists of objects.
-   * Classes used in a linked list must solely inherit from this class.
-   * Other code in mqt-core relies on the assumption that all objects in a
-   * linked list are of the same type.
-   */
+  /// The pointer to the next object
+  ///
+  /// The next pointer is used to form linked lists of objects.
+  /// Classes used in a linked list must solely inherit from this class.
+  /// Other code in mqt-core relies on the assumption that all objects in a
+  /// linked list are of the same type.
   LLBase* next_ = nullptr;
 
-  /**
-   * @brief Default getter for the next object
-   * @details Classes that inherit from LLBase should implement their own next()
-   * method to return the next object in the list with a specialized return
-   * type.
-   * @return LLBase*
-   */
+  /// Default getter for the next object
+  ///
+  /// Classes that inherit from LLBase should implement their own next()
+  /// method to return the next object in the list with a specialized return
+  /// type.
+  /// @return LLBase*
   [[nodiscard]] LLBase* next() const noexcept { return next_; }
 
   /// Setter for the next object

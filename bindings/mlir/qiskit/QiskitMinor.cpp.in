@@ -1,0 +1,14 @@
+// Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+// Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+//
+// Licensed under the MIT License
+
+#define MQT_QISKIT_VERSION_FACTORY @QISKIT_FACTORY@
+#define MQT_QISKIT_VERSION_EXPECTED_MAJOR @QISKIT_MAJOR@U
+#define MQT_QISKIT_VERSION_EXPECTED_MINOR @QISKIT_MINOR@U
+#define MQT_QISKIT_VERSION_EXACT_API @QISKIT_EXACT_API@
+#define MQT_QISKIT_VERSION_LABEL "@QISKIT_LABEL@"
+#include "Qiskit2_5.cpp"

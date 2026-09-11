@@ -8,15 +8,15 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: associated
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h" // IWYU pragma: associated
 
-// The following headers are needed for some template instantiations.
-// IWYU pragma: begin_keep
-#include <llvm/ADT/TypeSwitch.h>
-#include <mlir/IR/DialectImplementation.h>
-// IWYU pragma: end_keep
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep (template instantiations)
+
+#include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep (template instantiations)
 
 using namespace mlir;
 using namespace mlir::qtensor;
@@ -25,19 +25,19 @@ using namespace mlir::qtensor;
 // Dialect
 //===----------------------------------------------------------------------===//
 
-#include "mlir/Dialect/QTensor/IR/QTensorOpsDialect.cpp.inc"
+#include "mqt/Dialect/QTensor/IR/QTensorOpsDialect.cpp.inc"
 
 void QTensorDialect::initialize() {
   // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   addTypes<
 #define GET_TYPEDEF_LIST
-#include "mlir/Dialect/QTensor/IR/QTensorOpsTypes.cpp.inc"
+#include "mqt/Dialect/QTensor/IR/QTensorOpsTypes.cpp.inc"
 
       >();
 
   addOperations<
 #define GET_OP_LIST
-#include "mlir/Dialect/QTensor/IR/QTensorOps.cpp.inc"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.cpp.inc"
 
       >();
 }
@@ -47,11 +47,11 @@ void QTensorDialect::initialize() {
 //===----------------------------------------------------------------------===//
 
 #define GET_TYPEDEF_CLASSES
-#include "mlir/Dialect/QTensor/IR/QTensorOpsTypes.cpp.inc"
+#include "mqt/Dialect/QTensor/IR/QTensorOpsTypes.cpp.inc"
 
 //===----------------------------------------------------------------------===//
 // Operations
 //===----------------------------------------------------------------------===//
 
 #define GET_OP_CLASSES
-#include "mlir/Dialect/QTensor/IR/QTensorOps.cpp.inc"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.cpp.inc"

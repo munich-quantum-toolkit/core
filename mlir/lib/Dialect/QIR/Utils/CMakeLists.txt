@@ -8,12 +8,19 @@
 
 file(GLOB QIR_UTILS_SOURCES *.cpp)
 
-add_mlir_library(MLIRQIRUtils ${QIR_UTILS_SOURCES} LINK_LIBS PUBLIC MLIRLLVMDialect MLIRIR)
+add_mlir_library(
+  MLIRQIRUtils
+  ${QIR_UTILS_SOURCES}
+  LINK_LIBS
+  PUBLIC
+  LLVMCore
+  MLIRLLVMDialect
+  MLIRMQTDialect
+  MLIRIR)
 
 mqt_mlir_target_use_project_options(MLIRQIRUtils)
 
-file(GLOB_RECURSE QIR_UTILS_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QIR/Utils/*.h)
+file(GLOB_RECURSE QIR_UTILS_HEADERS_SOURCE ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QIR/Utils/*.h)
 
 target_sources(MLIRQIRUtils PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
                                    ${QIR_UTILS_HEADERS_SOURCE})

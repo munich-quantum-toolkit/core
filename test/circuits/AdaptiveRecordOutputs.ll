@@ -1,9 +1,6 @@
 ; ModuleID = 'Adaptive module implementing a 3-qubit Hamming weight'
 source_filename = "AdaptiveRecordOutputs.ll"
 
-%Qubit = type opaque
-%Result = type opaque
-
 @r0_lbl = internal constant [3 x i8] c"r0\00"
 @r1_lbl = internal constant [3 x i8] c"r1\00"
 @r2_lbl = internal constant [3 x i8] c"r2\00"
@@ -15,21 +12,24 @@ source_filename = "AdaptiveRecordOutputs.ll"
 @weight_lbl = internal constant [17 x i8] c"  hamming_weight\00"
 @mean_lbl = internal constant [7 x i8] c"  mean\00"
 
-define i32 @main() #0 {
+define i64 @main() #0 {
 entry:
-  call void @__quantum__rt__initialize(i8* null)
-  %q0 = call %Qubit* @__quantum__rt__qubit_allocate()
-  %q1 = call %Qubit* @__quantum__rt__qubit_allocate()
-  %q2 = call %Qubit* @__quantum__rt__qubit_allocate()
-  call void @__quantum__qis__h__body(%Qubit* %q0)
-  call void @__quantum__qis__h__body(%Qubit* %q1)
-  call void @__quantum__qis__h__body(%Qubit* %q2)
-  %r0 = call %Result* @__quantum__qis__m__body(%Qubit* %q0)
-  %r1 = call %Result* @__quantum__qis__m__body(%Qubit* %q1)
-  %r2 = call %Result* @__quantum__qis__m__body(%Qubit* %q2)
-  %b0 = call i1 @__quantum__rt__read_result(%Result* %r0)
-  %b1 = call i1 @__quantum__rt__read_result(%Result* %r1)
-  %b2 = call i1 @__quantum__rt__read_result(%Result* %r2)
+  call void @__quantum__rt__initialize(ptr null)
+  %q0 = call ptr @__quantum__rt__qubit_allocate(ptr null)
+  %q1 = call ptr @__quantum__rt__qubit_allocate(ptr null)
+  %q2 = call ptr @__quantum__rt__qubit_allocate(ptr null)
+  call void @__quantum__qis__h__body(ptr %q0)
+  call void @__quantum__qis__h__body(ptr %q1)
+  call void @__quantum__qis__h__body(ptr %q2)
+  %r0 = call ptr @__quantum__rt__result_allocate(ptr null)
+  %r1 = call ptr @__quantum__rt__result_allocate(ptr null)
+  %r2 = call ptr @__quantum__rt__result_allocate(ptr null)
+  call void @__quantum__qis__mz__body(ptr %q0, ptr %r0)
+  call void @__quantum__qis__mz__body(ptr %q1, ptr %r1)
+  call void @__quantum__qis__mz__body(ptr %q2, ptr %r2)
+  %b0 = call i1 @__quantum__rt__read_result(ptr %r0)
+  %b1 = call i1 @__quantum__rt__read_result(ptr %r1)
+  %b2 = call i1 @__quantum__rt__read_result(ptr %r2)
 
   ; Classical compute: Hamming weight and its mean.
   %c0 = zext i1 %b0 to i64
@@ -41,57 +41,59 @@ entry:
   %num_qubits_f = uitofp i64 3 to double
   %mean_f = fdiv double %weight_f, %num_qubits_f
 
-  call void @__quantum__rt__qubit_release(%Qubit* %q0)
-  call void @__quantum__rt__qubit_release(%Qubit* %q1)
-  call void @__quantum__rt__qubit_release(%Qubit* %q2)
+  call void @__quantum__rt__qubit_release(ptr %q0)
+  call void @__quantum__rt__qubit_release(ptr %q1)
+  call void @__quantum__rt__qubit_release(ptr %q2)
 
   ; Record the raw measurement bits (these feed the histogram bucketing key).
-  call void @__quantum__rt__result_record_output(%Result* %r0, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @r0_lbl, i32 0, i32 0))
-  call void @__quantum__rt__result_record_output(%Result* %r1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @r1_lbl, i32 0, i32 0))
-  call void @__quantum__rt__result_record_output(%Result* %r2, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @r2_lbl, i32 0, i32 0))
+  call void @__quantum__rt__result_record_output(ptr %r0, ptr @r0_lbl)
+  call void @__quantum__rt__result_record_output(ptr %r1, ptr @r1_lbl)
+  call void @__quantum__rt__result_record_output(ptr %r2, ptr @r2_lbl)
 
-  ; Output: tuple of 3 elements (array of 3 bools, int count, float mean).
-  call void @__quantum__rt__tuple_record_output(i64 3, i8* getelementptr inbounds ([8 x i8], [8 x i8]* @outputs_lbl, i32 0, i32 0))
-  call void @__quantum__rt__array_record_output(i64 3, i8* getelementptr inbounds ([13 x i8], [13 x i8]* @measurements_lbl, i32 0, i32 0))
-  call void @__quantum__rt__bool_record_output(i1 %b0, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @m0_lbl, i32 0, i32 0))
-  call void @__quantum__rt__bool_record_output(i1 %b1, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @m1_lbl, i32 0, i32 0))
-  call void @__quantum__rt__bool_record_output(i1 %b2, i8* getelementptr inbounds ([3 x i8], [3 x i8]* @m2_lbl, i32 0, i32 0))
-  call void @__quantum__rt__int_record_output(i64 %weight, i8* getelementptr inbounds ([15 x i8], [15 x i8]* @weight_lbl, i32 0, i32 0))
-  call void @__quantum__rt__float_record_output(double %mean_f, i8* getelementptr inbounds ([5 x i8], [5 x i8]* @mean_lbl, i32 0, i32 0))
+  ; Output: tuple of 3 elements (array of 3 bools, int count, double mean).
+  call void @__quantum__rt__tuple_record_output(i64 3, ptr @outputs_lbl)
+  call void @__quantum__rt__array_record_output(i64 3, ptr @measurements_lbl)
+  call void @__quantum__rt__bool_record_output(i1 %b0, ptr @m0_lbl)
+  call void @__quantum__rt__bool_record_output(i1 %b1, ptr @m1_lbl)
+  call void @__quantum__rt__bool_record_output(i1 %b2, ptr @m2_lbl)
+  call void @__quantum__rt__int_record_output(i64 %weight, ptr @weight_lbl)
+  call void @__quantum__rt__double_record_output(double %mean_f, ptr @mean_lbl)
 
-  call void @__quantum__rt__result_update_reference_count(%Result* %r0, i32 -1)
-  call void @__quantum__rt__result_update_reference_count(%Result* %r1, i32 -1)
-  call void @__quantum__rt__result_update_reference_count(%Result* %r2, i32 -1)
-  ret i32 0
+  call void @__quantum__rt__result_release(ptr %r0)
+  call void @__quantum__rt__result_release(ptr %r1)
+  call void @__quantum__rt__result_release(ptr %r2)
+  ret i64 0
 }
 
-declare void @__quantum__qis__h__body(%Qubit*)
+declare void @__quantum__qis__h__body(ptr)
 
-declare %Result* @__quantum__qis__m__body(%Qubit*) #1
+declare void @__quantum__qis__mz__body(ptr, ptr writeonly) #1
 
-declare i1 @__quantum__rt__read_result(%Result*)
+declare i1 @__quantum__rt__read_result(ptr)
 
-declare void @__quantum__rt__initialize(i8*)
+declare void @__quantum__rt__initialize(ptr)
 
-declare %Qubit* @__quantum__rt__qubit_allocate()
+declare ptr @__quantum__rt__qubit_allocate(ptr)
 
-declare void @__quantum__rt__qubit_release(%Qubit*)
+declare ptr @__quantum__rt__result_allocate(ptr)
 
-declare void @__quantum__rt__result_record_output(%Result*, i8*)
+declare void @__quantum__rt__qubit_release(ptr)
 
-declare void @__quantum__rt__tuple_record_output(i64, i8*)
+declare void @__quantum__rt__result_record_output(ptr, ptr)
 
-declare void @__quantum__rt__array_record_output(i64, i8*)
+declare void @__quantum__rt__tuple_record_output(i64, ptr)
 
-declare void @__quantum__rt__bool_record_output(i1, i8*)
+declare void @__quantum__rt__array_record_output(i64, ptr)
 
-declare void @__quantum__rt__int_record_output(i64, i8*)
+declare void @__quantum__rt__bool_record_output(i1, ptr)
 
-declare void @__quantum__rt__float_record_output(double, i8*)
+declare void @__quantum__rt__int_record_output(i64, ptr)
 
-declare void @__quantum__rt__result_update_reference_count(%Result*, i32)
+declare void @__quantum__rt__double_record_output(double, ptr)
 
-attributes #0 = { "entry_point" "output_labeling_schema" "qir_profiles"="custom" "required_num_qubits"="3" "required_num_results"="3" }
+declare void @__quantum__rt__result_release(ptr)
+
+attributes #0 = { "entry_point" "output_labeling_schema"="labeled" "qir_profiles"="adaptive_profile" }
 attributes #1 = { "irreversible" }
 
 !llvm.module.flags = !{!0, !1, !2, !3}

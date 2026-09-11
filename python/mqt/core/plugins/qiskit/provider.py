@@ -14,8 +14,18 @@ devices through Qiskit's BackendV2 interface.
 
 from __future__ import annotations
 
-from ... import fomac
+import warnings
+from typing import TYPE_CHECKING
+
+from ...qdmi.driver import registered_device_ids
 from .backend import QDMIBackend
+from .exceptions import UnsupportedDeviceError
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
+    from typing import Unpack
+
+    from ...typing import QDMISessionParameters
 
 __all__ = ["QDMIProvider"]
 
@@ -25,11 +35,10 @@ def __dir__() -> list[str]:
 
 
 class QDMIProvider:
-    """Provider for QDMI devices accessed via FoMaC.
+    """Provider for registered QDMI devices.
 
-    This provider discovers and manages QDMI devices that are available through
-    the FoMaC layer. It provides a Qiskit-idiomatic interface for device
-    discovery and backend instantiation.
+    This provider discovers registered QDMI devices lazily and adapts
+    Qiskit-compatible devices as backends.
 
     Examples:
         List all available backends:
@@ -43,50 +52,14 @@ class QDMIProvider:
 
         >>> backend = provider.get_backend("MQT Core DDSIM QDMI Device")
 
-        Create a provider with authentication:
-
-        >>> provider = QDMIProvider(token="my_token")
-        >>> # or with username and password
-        >>> provider = QDMIProvider(username="user", password="pass")
+        Configure credentials through the selected device's persistent
+        configuration or provider-specific environment.
     """
 
-    def __init__(
-        self,
-        *,
-        token: str | None = None,
-        auth_file: str | None = None,
-        auth_url: str | None = None,
-        username: str | None = None,
-        password: str | None = None,
-        project_id: str | None = None,
-        **session_kwargs: str,
-    ) -> None:
-        """Initialize the QDMI provider.
-
-        Args:
-            token: Authentication token for the session.
-            auth_file: Path to file containing authentication information.
-            auth_url: URL to authentication server.
-            username: Username for authentication.
-            password: Password for authentication.
-            project_id: Project ID for the session.
-            session_kwargs: Optional additional keyword arguments for Session initialization.
-        """
-        kwargs = {
-            "token": token,
-            "auth_file": auth_file,
-            "auth_url": auth_url,
-            "username": username,
-            "password": password,
-            "project_id": project_id,
-        }
-        if session_kwargs:
-            kwargs.update(session_kwargs)
-
-        self._session = fomac.Session(**kwargs)
-        self._backends = [
-            QDMIBackend(device=d, provider=self) for d in self._session.get_devices() if QDMIBackend.is_convertible(d)
-        ]
+    @staticmethod
+    def device_ids() -> list[str]:
+        """Return the current registered QDMI device IDs without opening them."""
+        return registered_device_ids()
 
     def backends(self, name: str | None = None) -> list[QDMIBackend]:
         """Return all available backends, optionally filtered by name substring.
@@ -95,7 +68,7 @@ class QDMIProvider:
             name: If provided, return only backends whose name contains this substring.
 
         Returns:
-            List of QiskitBackend instances. Empty list if name specified but not found.
+            Compatible QDMI backends. The list is empty when no name matches.
 
         Examples:
             Get all backends:
@@ -105,14 +78,46 @@ class QDMIProvider:
 
             Filter backends by name substring:
 
-            >>> na_backends = provider.backends(name="NA")  # matches "MQT NA Default QDMI Device"
-            >>> qdmi_backends = provider.backends(name="QDMI")  # matches all devices with "QDMI" in name
+            >>> ddsim_backends = provider.backends(name="DDSIM")
+            >>> qdmi_backends = provider.backends(name="QDMI")
         """
-        # Filter by name substring if specified
-        if name is not None:
-            return [b for b in self._backends if b.name is not None and name in b.name]
+        return list(self._iter_backends(name))
 
-        return self._backends
+    def _iter_backends(self, name: str | None = None) -> Iterator[QDMIBackend]:
+        """Open available registered backends one at a time.
+
+        Args:
+            name: If provided, yield only backends whose name contains this substring.
+
+        Yields:
+            Each backend whose registered device can be opened.
+        """
+        for device_id in self.device_ids():
+            try:
+                backend = self.get_backend_by_device_id(device_id)
+            except UnsupportedDeviceError:
+                continue
+            except (IndexError, RuntimeError, ValueError):
+                warnings.warn(
+                    f"Could not open registered QDMI device '{device_id}'.",
+                    RuntimeWarning,
+                    stacklevel=3,
+                )
+                continue
+            if name is None or (backend.name is not None and name in backend.name):
+                yield backend
+
+    def get_backend_by_device_id(
+        self,
+        device_id: str,
+        **session_parameters: Unpack[QDMISessionParameters],
+    ) -> QDMIBackend:
+        """Open one fresh backend for an exact stable QDMI device ID.
+
+        Returns:
+            A backend for a fresh device session.
+        """
+        return QDMIBackend.from_device_id(device_id, provider=self, **session_parameters)
 
     def get_backend(self, name: str) -> QDMIBackend:
         """Get a single backend by name.
@@ -121,7 +126,7 @@ class QDMIProvider:
             name: Name of the backend to retrieve.
 
         Returns:
-            QiskitBackend instance.
+            The matching QDMI backend.
 
         Raises:
             ValueError: If no matching backend found.
@@ -132,7 +137,7 @@ class QDMIProvider:
             >>> provider = QDMIProvider()
             >>> backend = provider.get_backend("MQT Core DDSIM QDMI Device")
         """
-        for backend in self._backends:
+        for backend in self._iter_backends(name):
             if backend.name == name:
                 return backend
 
@@ -141,4 +146,4 @@ class QDMIProvider:
 
     def __repr__(self) -> str:
         """Return string representation of the provider."""
-        return f"<QDMIProvider(backends={len(self._backends)})>"
+        return f"<QDMIProvider(devices={len(self.device_ids())})>"

@@ -14,14 +14,16 @@ add_mlir_conversion_library(
   DEPENDS
   QCToQIRBaseIncGen
   LINK_LIBS
+  MLIRCBitDialect
   MLIRQIRUtils
   MLIRQCToQIRCommon
+  MLIRMQTDialect
+  MLIRMQTTransforms
   MLIRLLVMDialect
   MLIRQCDialect
   MLIRArithDialect
   MLIRTransforms
   MLIRFuncDialect
-  MLIRFuncToLLVM
-  MLIRReconcileUnrealizedCasts)
+  MLIRFuncToLLVM)
 
 mqt_mlir_target_use_project_options(MLIRQCToQIRBase)

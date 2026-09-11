@@ -8,6 +8,9 @@
  * Licensed under the MIT License
  */
 
+/// @file Package.hpp
+/// Main decision-diagram package and its construction operations.
+
 #pragma once
 
 #include "dd/CachedEdge.hpp"
@@ -25,12 +28,11 @@
 #include "dd/RealNumberUniqueTable.hpp"
 #include "dd/UnaryComputeTable.hpp"
 #include "dd/UniqueTable.hpp"
-#include "ir/Definitions.hpp"
-#include "ir/Permutation.hpp"
-#include "ir/operations/Control.hpp"
 
 #include <array>
+#include <bit>
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <fstream>
@@ -39,6 +41,7 @@
 #include <random>
 #include <ranges>
 #include <regex>
+#include <span>
 #include <stack>
 #include <stdexcept>
 #include <string>
@@ -50,22 +53,20 @@
 
 namespace dd {
 
-/**
- * @brief The DD package class
- *
- * @details This is the main class of the decision diagram module in MQT Core.
- * It contains the core functionality for working with quantum decision
- * diagrams. Specifically, it provides the means to
- * - represent quantum states as decision diagrams,
- * - represent quantum operations as decision diagrams,
- * - multiply decision diagrams (MxV, MxM, etc.),
- * - perform collapsing measurements on decision diagrams,
- * - sample from decision diagrams.
- *
- * To this end, it maintains several internal data structures, such as unique
- * tables, compute tables, and memory managers, which are used to manage the
- * nodes of the decision diagrams.
- */
+/// The DD package class
+///
+/// This is the main class of the decision diagram module in MQT Core.
+/// It contains the core functionality for working with quantum decision
+/// diagrams. Specifically, it provides the means to
+/// - represent quantum states as decision diagrams,
+/// - represent quantum operations as decision diagrams,
+/// - multiply decision diagrams (MxV, MxM, etc.),
+/// - perform collapsing measurements on decision diagrams,
+/// - sample from decision diagrams.
+///
+/// To this end, it maintains several internal data structures, such as unique
+/// tables, compute tables, and memory managers, which are used to manage the
+/// nodes of the decision diagrams.
 class Package {
 
   ///
@@ -75,13 +76,11 @@ public:
   static constexpr std::size_t MAX_POSSIBLE_QUBITS =
       static_cast<std::size_t>(std::numeric_limits<Qubit>::max()) + 1U;
   static constexpr std::size_t DEFAULT_QUBITS = 32U;
-  /**
-   * @brief Construct a new DD Package instance
-   *
-   * @param nq The maximum number of qubits to allocate memory for. This can
-   * always be extended later using @ref resize.
-   * @param config The configuration of the package
-   */
+  /// Construct a new DD Package instance
+  ///
+  /// @param nq The maximum number of qubits to allocate memory for. This can
+  /// always be extended later using @ref resize.
+  /// @param config The configuration of the package
   explicit Package(std::size_t nq = DEFAULT_QUBITS,
                    const DDPackageConfig& config = DDPackageConfig{});
   ~Package() = default;
@@ -89,14 +88,12 @@ public:
 
   Package& operator=(const Package& package) = delete;
 
-  /**
-   * @brief Resize the package to a new number of qubits
-   *
-   * @details This method will resize all the unique tables appropriately so
-   * that they can handle the new number of qubits.
-   *
-   * @param nq The new number of qubits
-   */
+  /// Resize the package to a new number of qubits
+  ///
+  /// This method will resize all the unique tables appropriately so
+  /// that they can handle the new number of qubits.
+  ///
+  /// @param nq The new number of qubits
   void resize(std::size_t nq);
 
   /// Reset package state
@@ -112,22 +109,21 @@ private:
 public:
   /// The memory manager for vector nodes
   MemoryManager vMemoryManager{
-      MemoryManager::create<vNode>(config_.utVecInitialAllocationSize)};
+      MemoryManager::create<vNode>(config_.utVecInitialAllocationSize),
+  };
   /// The memory manager for matrix nodes
   MemoryManager mMemoryManager{
-      MemoryManager::create<mNode>(config_.utMatInitialAllocationSize)};
-  /**
-   * @brief The memory manager for complex numbers
-   * @note The real and imaginary part of complex numbers are treated
-   * separately. Hence, it suffices for the manager to only manage real numbers.
-   */
+      MemoryManager::create<mNode>(config_.utMatInitialAllocationSize),
+  };
+  /// The memory manager for complex numbers
+  /// @note The real and imaginary part of complex numbers are treated
+  /// separately. Hence, it suffices for the manager to only manage real
+  /// numbers.
   MemoryManager cMemoryManager{MemoryManager::create<RealNumber>()};
 
-  /**
-   * @brief Get the memory manager for a given type
-   * @tparam T The type to get the manager for
-   * @return A reference to the manager
-   */
+  /// Get the memory manager for a given type
+  /// @tparam T The type to get the manager for
+  /// @return A reference to the manager
   template <class T> [[nodiscard]] auto& getMemoryManager() {
     if constexpr (std::is_same_v<T, vNode>) {
       return vMemoryManager;
@@ -138,12 +134,10 @@ public:
     }
   }
 
-  /**
-   * @brief Reset all memory managers
-   * @arg resizeToTotal If set to true, each manager allocates one chunk of
-   * memory as large as all chunks combined before the reset.
-   * @see MemoryManager::reset
-   */
+  /// Reset all memory managers
+  /// @arg resizeToTotal If set to true, each manager allocates one chunk of
+  /// memory as large as all chunks combined before the reset.
+  /// @see MemoryManager::reset
   void resetMemoryManagers(bool resizeToTotal = false);
 
   /// The unique table used for vector nodes
@@ -152,20 +146,16 @@ public:
   /// The unique table used for matrix nodes
   UniqueTable mUniqueTable{mMemoryManager,
                            {.nVars = 0U, .nBuckets = config_.utMatNumBucket}};
-  /**
-   * @brief The unique table used for complex numbers
-   * @note The table actually only stores real numbers in the interval [0, 1],
-   * but is used to manages all complex numbers throughout the package.
-   * @see RealNumberUniqueTable
-   */
+  /// The unique table used for complex numbers
+  /// @note The table actually only stores real numbers in the interval [0, 1],
+  /// but is used to manages all complex numbers throughout the package.
+  /// @see RealNumberUniqueTable
   RealNumberUniqueTable cUniqueTable{cMemoryManager};
   ComplexNumbers cn{cUniqueTable};
 
-  /**
-   * @brief Get the unique table for a given type
-   * @tparam T The type to get the unique table for
-   * @return A reference to the unique table
-   */
+  /// Get the unique table for a given type
+  /// @tparam T The type to get the unique table for
+  /// @return A reference to the unique table
   template <class T> [[nodiscard]] auto& getUniqueTable() {
     if constexpr (std::is_same_v<T, vNode>) {
       return vUniqueTable;
@@ -176,32 +166,26 @@ public:
     }
   }
 
-  /**
-   * @brief Clear all unique tables
-   * @see UniqueTable::clear
-   * @see RealNumberUniqueTable::clear
-   */
+  /// Clear all unique tables
+  /// @see UniqueTable::clear
+  /// @see RealNumberUniqueTable::clear
   void clearUniqueTables();
 
-  /**
-   * @brief Add the DD to a tracking hashset and update its reference count.
-   * @tparam Node The node type of the edge.
-   * @param e The edge to increase the reference count of.
-   */
+  /// Add the DD to a tracking hashset and update its reference count.
+  /// @tparam Node The node type of the edge.
+  /// @param e The edge to increase the reference count of.
   template <class Node> void incRef(const Edge<Node>& e) noexcept {
     if (Edge<Node>::trackingRequired(e)) {
       roots.addToRoots(e);
     }
   }
 
-  /**
-   * @brief Decrease the DD's reference count and remove it from the tracking
-   * hashset if the count hits zero.
-   * @tparam Node The node type of the edge.
-   * @param e The edge to decrease the reference count of.
-   * @throws std::invalid_argument If the edge is not part of the tracking
-   * hashset.
-   */
+  /// Decrease the DD's reference count and remove it from the tracking
+  /// hashset if the count hits zero.
+  /// @tparam Node The node type of the edge.
+  /// @param e The edge to decrease the reference count of.
+  /// @throws std::invalid_argument If the edge is not part of the tracking
+  /// hashset.
   template <class Node> void decRef(const Edge<Node>& e) {
     if (Edge<Node>::trackingRequired(e)) {
       roots.removeFromRoots(e);
@@ -217,12 +201,12 @@ private:
     template <class Node>
     using RootSet = std::unordered_map<Edge<Node>, std::size_t>;
 
-    /// @brief Add to respective root set.
+    /// Add to respective root set.
     template <class Node> void addToRoots(const Edge<Node>& e) noexcept {
-      ++(getRoots<Node>()[e]);
+      ++getRoots<Node>()[e];
     }
 
-    /// @brief Remove from respective root set.
+    /// Remove from respective root set.
     template <class Node> void removeFromRoots(const Edge<Node>& e) {
       auto& set = getRoots<Node>();
       auto it = set.find(e);
@@ -234,7 +218,7 @@ private:
       }
     }
 
-    /// @brief Execute mark() -> op() -> unmark().
+    /// Execute mark() → op() → unmark().
     template <class Result, typename Fn> Result execute(Fn& op) noexcept {
       mark();
       Result res = op();
@@ -242,40 +226,40 @@ private:
       return res;
     }
 
-    /// @brief Clear all root sets.
+    /// Clear all root sets.
     void reset() {
       vRoots.clear();
       mRoots.clear();
     }
 
   private:
-    /// @brief Mark edges contained in @p roots.
+    /// Mark edges contained in @p roots.
     template <class Node> static void mark(const RootSet<Node>& roots) {
       for (auto& edge : roots | std::views::keys) {
         edge.mark();
       }
     }
 
-    /// @brief Unmark edges contained in @p roots.
+    /// Unmark edges contained in @p roots.
     template <class Node> static void unmark(const RootSet<Node>& roots) {
       for (auto& edge : roots | std::views::keys) {
         edge.unmark();
       }
     }
 
-    /// @brief Mark edges contained in all root sets.
+    /// Mark edges contained in all root sets.
     void mark() noexcept {
       RootSetManager::mark(vRoots);
       RootSetManager::mark(mRoots);
     }
 
-    /// @brief Unmark edges contained in all root sets.
+    /// Unmark edges contained in all root sets.
     void unmark() noexcept {
       RootSetManager::unmark(vRoots);
       RootSetManager::unmark(mRoots);
     }
 
-    /// @brief Return vector roots.
+    /// Return vector roots.
     template <class Node>
     auto& getRoots() noexcept
       requires(IsVector<Node>)
@@ -283,7 +267,7 @@ private:
       return vRoots;
     }
 
-    /// @brief Return matrix roots.
+    /// Return matrix roots.
     template <class Node>
     auto& getRoots() noexcept
       requires(IsMatrix<Node>)
@@ -300,20 +284,19 @@ private:
   RootSetManager roots;
 
 public:
-  /**
-   * @brief Trigger garbage collection on all unique tables.
-   * @details Mark-and-sweep algorithm: First, mark all nodes and complex
-   * numbers tracked in @p roots. Second, remove any unmarked nodes and numbers
-   * from the respective unique tables. Lastly, unmark all nodes and complex
-   * numbers again.
-   * @note By default, garbage collection is only triggered if the unique tables
-   * report that a collection might be necessary.
-   *
-   * @param force Force garbage collect, regardless of whether any
-   * table reports that it may need collecting.
-   * @returns Whether at least one vector, matrix, or any complex number was
-   * reclaimed.
-   */
+  /// Trigger garbage collection on all unique tables.
+  ///
+  /// Mark-and-sweep algorithm: First, mark all nodes and complex
+  /// numbers tracked in @p roots. Second, remove any unmarked nodes and numbers
+  /// from the respective unique tables. Lastly, unmark all nodes and complex
+  /// numbers again.
+  /// @note By default, garbage collection is only triggered if the unique
+  /// tables report that a collection might be necessary.
+  ///
+  /// @param force Force garbage collect, regardless of whether any
+  /// table reports that it may need collecting.
+  /// @returns Whether at least one vector, matrix, or any complex number was
+  /// reclaimed.
   bool garbageCollect(bool force = false);
 
   struct ActiveCounts {
@@ -321,138 +304,206 @@ public:
     std::size_t matrix = 0U;
     std::size_t reals = 0U;
   };
-  /**
-   * @brief Compute the active number of nodes and numbers
-   * @note This traverses every currently tracked DD twice.
-   */
+  /// Compute the active number of nodes and numbers
+  /// @note This traverses every currently tracked DD twice.
   [[nodiscard]] ActiveCounts computeActiveCounts();
 
-  ///
-  /// Matrix nodes, edges and quantum gates
-  ///
+  //
+  // Matrix nodes, edges and quantum gates
+  //
 
-  /**
-   * @brief Construct the DD for a single-qubit gate
-   * @param mat The matrix representation of the gate
-   * @param target The target qubit
-   * @return A decision diagram for the gate
-   */
-  mEdge makeGateDD(const GateMatrix& mat, qc::Qubit target);
+  /// Construct the DD for a single-qubit gate
+  /// @param mat The matrix representation of the gate
+  /// @param target The target qubit
+  /// @return A decision diagram for the gate
+  mEdge makeGateDD(const GateMatrix& mat, Qubit target);
 
-  /**
-   * @brief Construct the DD for a single-qubit controlled gate
-   * @param mat The matrix representation of the gate
-   * @param control The control qubit
-   * @param target The target qubit
-   * @return A decision diagram for the gate
-   */
-  mEdge makeGateDD(const GateMatrix& mat, const qc::Control& control,
-                   qc::Qubit target);
+  /// Construct the DD for a single-qubit controlled gate
+  /// @param mat The matrix representation of the gate
+  /// @param control The control qubit
+  /// @param target The target qubit
+  /// @return A decision diagram for the gate
+  mEdge makeGateDD(const GateMatrix& mat, const Control& control, Qubit target);
 
-  /**
-   * @brief Construct the DD for a multi-controlled single-qubit gate
-   * @param mat The matrix representation of the gate
-   * @param controls The control qubits
-   * @param target The target qubit
-   * @return A decision diagram for the gate
-   */
-  mEdge makeGateDD(const GateMatrix& mat, const qc::Controls& controls,
-                   qc::Qubit target);
+  /// Construct the DD for a multi-controlled single-qubit gate
+  /// @param mat The matrix representation of the gate
+  /// @param controls The control qubits
+  /// @param target The target qubit
+  /// @return A decision diagram for the gate
+  mEdge makeGateDD(const GateMatrix& mat, const Controls& controls,
+                   Qubit target);
 
-  /**
-   * @brief Creates the DD for a two-qubit gate
-   * @param mat Matrix representation of the gate
-   * @param target0 First target qubit
-   * @param target1 Second target qubit
-   * @return DD representing the gate
-   * @throws std::runtime_error if the number of qubits is larger than the
-   * package configuration
-   */
-  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, qc::Qubit target0,
-                           qc::Qubit target1);
+  /// Construct a single-qubit gate DD from a row-major matrix view.
+  mEdge makeGateDD(std::span<const std::complex<fp>, NEDGE> mat,
+                   const Controls& controls, Qubit target);
 
-  /**
-   * @brief Creates the DD for a two-qubit gate
-   * @param mat Matrix representation of the gate
-   * @param control Control qubit of the two-qubit gate
-   * @param target0 First target qubit
-   * @param target1 Second target qubit
-   * @return DD representing the gate
-   * @throws std::runtime_error if the number of qubits is larger than the
-   * package configuration
-   */
+  /// Creates the DD for a two-qubit gate
+  /// @param mat Matrix representation of the gate
+  /// @param target0 First target qubit
+  /// @param target1 Second target qubit
+  /// @return DD representing the gate
+  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// package configuration
+  mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat, Qubit target0,
+                           Qubit target1);
+
+  /// Creates the DD for a two-qubit gate
+  /// @param mat Matrix representation of the gate
+  /// @param control Control qubit of the two-qubit gate
+  /// @param target0 First target qubit
+  /// @param target1 Second target qubit
+  /// @return DD representing the gate
+  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// package configuration
   mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                           const qc::Control& control, qc::Qubit target0,
-                           qc::Qubit target1);
+                           const Control& control, Qubit target0,
+                           Qubit target1);
 
-  /**
-   * @brief Creates the DD for a two-qubit gate
-   * @param mat Matrix representation of the gate
-   * @param controls Control qubits of the two-qubit gate
-   * @param target0 First target qubit
-   * @param target1 Second target qubit
-   * @return DD representing the gate
-   * @throws std::runtime_error if the number of qubits is larger than the
-   * package configuration
-   */
+  /// Creates the DD for a two-qubit gate
+  /// @param mat Matrix representation of the gate
+  /// @param controls Control qubits of the two-qubit gate
+  /// @param target0 First target qubit
+  /// @param target1 Second target qubit
+  /// @return DD representing the gate
+  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// package configuration
   mEdge makeTwoQubitGateDD(const TwoQubitGateMatrix& mat,
-                           const qc::Controls& controls, qc::Qubit target0,
-                           qc::Qubit target1);
+                           const Controls& controls, Qubit target0,
+                           Qubit target1);
 
-  /**
-   * @brief Converts a given matrix to a decision diagram
-   * @param matrix A complex matrix to convert to a DD.
-   * @return A decision diagram representing the matrix.
-   * @throws std::invalid_argument If the given matrix is not square or its
-   * length is not a power of two.
-   */
+  /// Construct a two-qubit gate DD from a row-major matrix view.
+  mEdge makeTwoQubitGateDD(
+      std::span<const std::complex<fp>, static_cast<std::size_t>(NEDGE) * NEDGE>
+          mat,
+      const Controls& controls, Qubit target0, Qubit target1);
+
+  /// Creates the DD for a three-qubit gate
+  /// @param mat Matrix representation of the gate
+  /// @param target0 First target qubit
+  /// @param target1 Second target qubit
+  /// @param target2 Third target qubit
+  /// @return DD representing the gate
+  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// package configuration
+  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat, Qubit target0,
+                             Qubit target1, Qubit target2);
+
+  /// Creates the DD for a three-qubit gate
+  /// @param mat Matrix representation of the gate
+  /// @param control Control qubit of the three-qubit gate
+  /// @param target0 First target qubit
+  /// @param target1 Second target qubit
+  /// @param target2 Third target qubit
+  /// @return DD representing the gate
+  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// package configuration
+  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                             const Control& control, Qubit target0,
+                             Qubit target1, Qubit target2);
+
+  /// Creates the DD for a three-qubit gate
+  /// @param mat Matrix representation of the gate
+  /// @param controls Control qubits of the three-qubit gate
+  /// @param target0 First target qubit
+  /// @param target1 Second target qubit
+  /// @param target2 Third target qubit
+  /// @return DD representing the gate
+  /// @throws std::runtime_error if the number of qubits is larger than the
+  /// package configuration
+  mEdge makeThreeQubitGateDD(const ThreeQubitGateMatrix& mat,
+                             const Controls& controls, Qubit target0,
+                             Qubit target1, Qubit target2);
+
+  /// Construct a three-qubit gate DD from a row-major matrix view.
+  mEdge makeThreeQubitGateDD(
+      std::span<const std::complex<fp>,
+                static_cast<std::size_t>(THREE_QUBIT_GATE_DIM) *
+                    THREE_QUBIT_GATE_DIM>
+          mat,
+      const Controls& controls, Qubit target0, Qubit target1, Qubit target2);
+
+  /// Converts a given matrix to a decision diagram
+  /// @param matrix A complex matrix to convert to a DD.
+  /// @return A decision diagram representing the matrix.
+  /// @throws std::invalid_argument If the given matrix is not square or its
+  /// length is not a power of two.
+  /// @throws std::runtime_error If the matrix exceeds the package capacity.
   mEdge makeDDFromMatrix(const CMat& matrix);
 
+  /// Construct a matrix DD without copying its storage.
+  /// @param dimension Number of rows and columns; zero yields the identity.
+  /// @param entry Callable returning the complex entry at (row, column).
+  /// @pre entry is valid for all indices smaller than dimension.
+  /// @throws std::invalid_argument If dimension is not a power of two.
+  /// @throws std::runtime_error If the matrix exceeds the package capacity.
+  template <class MatrixEntry>
+  mEdge makeDDFromMatrix(const size_t dimension, const MatrixEntry& entry) {
+    if (dimension == 0) {
+      return mEdge::one();
+    }
+    if (!std::has_single_bit(dimension)) {
+      throw std::invalid_argument(
+          "Matrix must have a length of a power of two.");
+    }
+    const auto levels = std::bit_width(dimension) - 1;
+    if (levels > qubits()) {
+      throw std::runtime_error("Matrix exceeds the package qubit capacity.");
+    }
+    if (levels == 0) {
+      return mEdge::terminal(cn.lookup(entry(0, 0)));
+    }
+    const auto operand = [](const size_t level) {
+      return std::pair{static_cast<Qubit>(level), size_t{1} << level};
+    };
+    const auto root = buildMatrixDD(entry, operand, levels - 1, 0, 0);
+    return {.p = root.p, .w = cn.lookup(root.w)};
+  }
+
+  /// Embed a row-major local matrix on targets in most-significant-bit order.
+  /// Missing DD levels represent identity wires. An empty target list takes a
+  /// single scalar entry. Controls are supported for one to three targets.
+  /// @throws std::invalid_argument If the matrix size does not match the target
+  /// count or controls accompany zero or more than three targets.
+  /// @throws std::runtime_error If qubits exceed package capacity, targets are
+  /// duplicated, controls have conflicting polarities, or controls overlap
+  /// targets.
+  mEdge makeGateDD(std::span<const std::complex<fp>> matrix,
+                   std::span<const Qubit> targets,
+                   const Controls& controls = {});
+
 private:
-  /**
-   * @brief Constructs a decision diagram (DD) from a complex matrix using a
-   * recursive algorithm.
-   *
-   * @param matrix The complex matrix from which to create the DD.
-   * @param level The current level of recursion. Starts at the highest level of
-   * the matrix (log base 2 of the matrix size - 1).
-   * @param rowStart The starting row of the quadrant being processed.
-   * @param rowEnd The ending row of the quadrant being processed.
-   * @param colStart The starting column of the quadrant being processed.
-   * @param colEnd The ending column of the quadrant being processed.
-   * @return An mCachedEdge representing the root node of the created DD.
-   *
-   * @details This function recursively breaks down the matrix into quadrants
-   * until each quadrant has only one element. At each level of recursion, four
-   * new edges are created, one for each quadrant of the matrix. The four
-   * resulting decision diagram edges are used to create a new decision diagram
-   * node at the current level, and this node is returned as the result of the
-   * current recursive call. At the base case of recursion, the matrix has only
-   * one element, which is converted into a terminal node of the decision
-   * diagram.
-   *
-   * @note This function assumes that the matrix size is a power of two.
-   */
-  mCachedEdge makeDDFromMatrix(const CMat& matrix, Qubit level,
-                               std::size_t rowStart, std::size_t rowEnd,
-                               std::size_t colStart, std::size_t colEnd);
+  /// Read matrix bits in DD level order, which may differ from operand order.
+  template <class MatrixEntry, class Operand>
+  mCachedEdge buildMatrixDD(const MatrixEntry& entry, const Operand& operand,
+                            const size_t level, const size_t row,
+                            const size_t col) {
+    const auto [wire, mask] = operand(level);
+    if (level == 0) {
+      return makeDDNode<mNode, CachedEdge>(
+          wire, {mCachedEdge::terminal(entry(row, col)),
+                 mCachedEdge::terminal(entry(row, col | mask)),
+                 mCachedEdge::terminal(entry(row | mask, col)),
+                 mCachedEdge::terminal(entry(row | mask, col | mask))});
+    }
+    return makeDDNode<mNode, CachedEdge>(
+        wire,
+        {buildMatrixDD(entry, operand, level - 1, row, col),
+         buildMatrixDD(entry, operand, level - 1, row, col | mask),
+         buildMatrixDD(entry, operand, level - 1, row | mask, col),
+         buildMatrixDD(entry, operand, level - 1, row | mask, col | mask)});
+  }
 
 public:
-  /**
-   * @brief Create a normalized DD node and return an edge pointing to it.
-   *
-   * @details The node is not recreated if it already exists. This function
-   * retrieves a node from the memory manager, sets its variable, and normalizes
-   * the edges. If the node resembles the identity, it is skipped. The function
-   * then looks up the node in the unique table and returns an edge pointing to
-   * it.
-   *
-   * @tparam Node The type of the node.
-   * @tparam EdgeType The type of the edge.
-   * @param var The variable associated with the node.
-   * @param edges The edges of the node.
-   * @return An edge pointing to the normalized DD node.
-   */
+  /// Create a normalized DD node and return an edge pointing to it.
+  ///
+  /// Reuses the unique-table entry for an existing normalized node and omits
+  /// matrix nodes that represent an identity level.
+  ///
+  /// @tparam Node The type of the node.
+  /// @tparam EdgeType The type of the edge.
+  /// @param var The variable associated with the node.
+  /// @param edges The edges of the node.
+  /// @return An edge pointing to the normalized DD node.
   template <class Node, template <class> class EdgeType>
   EdgeType<Node>
   makeDDNode(const Qubit var,
@@ -488,15 +539,13 @@ public:
     return EdgeType<Node>{l, e.w};
   }
 
-  /**
-   * @brief Delete an edge from the decision diagram.
-   *
-   * @tparam Node The type of the node.
-   * @param e The edge to delete.
-   * @param v The variable associated with the edge.
-   * @param edgeIdx The index of the edge to delete.
-   * @return The modified edge after deletion.
-   */
+  /// Delete an edge from the decision diagram.
+  ///
+  /// @tparam Node The type of the node.
+  /// @param e The edge to delete.
+  /// @param v The variable associated with the edge.
+  /// @param edgeIdx The index of the edge to delete.
+  /// @return The modified edge after deletion.
   template <class Node>
   Edge<Node> deleteEdge(const Edge<Node>& e, const Qubit v,
                         const std::size_t edgeIdx) {
@@ -504,16 +553,14 @@ public:
     return deleteEdge(e, v, edgeIdx, nodes);
   }
 
-  /**
-   * @brief Helper function to delete an edge from the decision diagram.
-   *
-   * @tparam Node The type of the node.
-   * @param e The edge to delete.
-   * @param v The variable associated with the edge.
-   * @param edgeIdx The index of the edge to delete.
-   * @param nodes A map to keep track of processed nodes.
-   * @return The modified edge after deletion.
-   */
+  /// Helper function to delete an edge from the decision diagram.
+  ///
+  /// @tparam Node The type of the node.
+  /// @param e The edge to delete.
+  /// @param v The variable associated with the edge.
+  /// @param edgeIdx The index of the edge to delete.
+  /// @param nodes A map to keep track of processed nodes.
+  /// @return The modified edge after deletion.
   template <class Node>
   Edge<Node> deleteEdge(const Edge<Node>& e, const Qubit v,
                         const std::size_t edgeIdx,
@@ -533,7 +580,7 @@ public:
         for (std::size_t i = 0; i < n; i++) {
           edges[i] = i == edgeIdx
                          ? Edge<Node>::zero()
-                         : e.p->e[i]; // optimization -> node cannot occur below
+                         : e.p->e[i]; // optimization → node cannot occur below
                                       // again, since dd is assumed to be free
         }
       } else {
@@ -549,101 +596,81 @@ public:
     return r;
   }
 
-  ///
-  /// Compute table definitions
-  ///
+  //
+  // Compute table definitions
+  //
 
-  /**
-   * @brief Clear all compute tables.
-   *
-   * @details This method clears all entries in the compute tables used for
-   * various operations. It resets the state of the compute tables, making them
-   * ready for new computations.
-   */
+  /// Clear all compute tables.
+  ///
+  /// This method clears all entries in the compute tables used for
+  /// various operations. It resets the state of the compute tables, making them
+  /// ready for new computations.
   void clearComputeTables();
 
-  ///
-  /// Measurements from state decision diagrams
-  ///
+  //
+  // Measurements from state decision diagrams
+  //
 
-  /**
-   * @brief Measure all qubits in the given decision diagram.
-   *
-   * @details This function measures all qubits in the decision diagram
-   * represented by `rootEdge`. It checks for numerical instabilities and
-   * collapses the state if requested.
-   *
-   * @param rootEdge The decision diagram to measure.
-   * @param collapse If true, the state is collapsed after measurement.
-   * @param mt A random number generator.
-   * @param epsilon The tolerance for numerical instabilities.
-   * @return A string representing the measurement result.
-   * @throws std::runtime_error If numerical instabilities are detected or if
-   * probabilities do not sum to 1.
-   */
+  /// Measure all qubits in the given decision diagram.
+  ///
+  /// @param rootEdge The decision diagram to measure.
+  /// @param collapse If true, the state is collapsed after measurement.
+  /// @param mt A random number generator.
+  /// @param epsilon The tolerance for numerical instabilities.
+  /// @return A string representing the measurement result.
+  /// @throws std::runtime_error If numerical instabilities are detected or if
+  /// probabilities do not sum to 1.
   std::string measureAll(vEdge& rootEdge, bool collapse, std::mt19937_64& mt,
                          fp epsilon = 0.001);
 
 private:
-  /**
-   * @brief Assigns probabilities to nodes in a decision diagram.
-   *
-   * @details This function recursively assigns probabilities to nodes in a
-   * decision diagram. It calculates the probability of reaching each node and
-   * stores the result in a map.
-   *
-   * @param edge The edge to start the probability assignment from.
-   * @param probs A map to store the probabilities of each node.
-   * @return The probability of the given edge.
-   */
+  /// Assigns probabilities to nodes in a decision diagram.
+  ///
+  /// @param edge The edge to start the probability assignment from.
+  /// @param probs A map to store the probabilities of each node.
+  /// @return The probability of the given edge.
   static fp assignProbabilities(const vEdge& edge,
                                 std::unordered_map<const vNode*, fp>& probs);
 
+  /// Project a state, caching the result without its incoming weight.
+  vCachedEdge project(const vEdge& state, mNode* projector, bool measureZero);
+
 public:
-  /**
-   * @brief Determine the measurement probabilities for a given qubit index.
-   *
-   * @param rootEdge The root edge of the decision diagram.
-   * @param index The qubit index to determine the measurement probabilities
-   * for.
-   * @return A pair of floating-point values representing the probabilities of
-   * measuring 0 and 1, respectively.
-   *
-   * @details This function calculates the probabilities of measuring 0 and 1
-   * for a given qubit index in the decision diagram. It uses a breadth-first
-   * search to traverse the decision diagram and accumulate the measurement
-   * probabilities. The function maintains a map of measurement probabilities
-   * for each node and a set of visited nodes to avoid redundant calculations.
-   * It also uses a queue to process nodes level by level.
-   */
+  /// Determine the measurement probabilities for a given qubit index.
+  ///
+  /// @param rootEdge The root edge of the decision diagram.
+  /// @param index The qubit index to determine the measurement probabilities
+  /// for.
+  /// @return A pair of floating-point values representing the probabilities of
+  /// measuring 0 and 1, respectively.
+  ///
+  /// @throws std::invalid_argument If the qubit is outside the state.
   static std::pair<fp, fp>
   determineMeasurementProbabilities(const vEdge& rootEdge, Qubit index);
 
-  /**
-   * @brief Measures the qubit with the given index in the given state vector
-   * decision diagram. Collapses the state according to the measurement result.
-   * @param rootEdge the root edge of the state vector decision diagram
-   * @param index the index of the qubit to be measured
-   * @param mt the random number generator
-   * @param epsilon the numerical precision used for checking the normalization
-   * of the state vector decision diagram
-   * @return the measurement result ('0' or '1')
-   * @throws std::runtime_error if a numerical instability is detected during
-   * the measurement.
-   */
+  /// Measures the qubit with the given index in the given state vector
+  /// decision diagram. Collapses the state according to the measurement result.
+  /// @param rootEdge the root edge of the state vector decision diagram
+  /// @param index the index of the qubit to be measured
+  /// @param mt the random number generator
+  /// @param epsilon the numerical precision used for checking the normalization
+  /// of the state vector decision diagram
+  /// @return the measurement result ('0' or '1')
+  /// @throws std::runtime_error if a numerical instability is detected during
+  /// the measurement.
+  /// @throws std::invalid_argument If the qubit is outside the state.
   char measureOneCollapsing(vEdge& rootEdge, Qubit index, std::mt19937_64& mt,
                             fp epsilon = 0.001);
 
-  /**
-   * @brief Performs a specific measurement on the given state vector decision
-   * diagram. Collapses the state according to the measurement result.
-   * @param rootEdge the root edge of the state vector decision diagram
-   * @param index the index of the qubit to be measured
-   * @param probability the probability of the measurement result (required for
-   * normalization)
-   * @param measureZero whether or not to measure '0' (otherwise '1' is
-   * measured)
-   */
+  /// Performs a specific measurement on the given state vector decision
+  /// diagram. Collapses the state according to the measurement result.
+  /// @param rootEdge the root edge of the state vector decision diagram
+  /// @param index the index of the qubit to be measured
+  /// @param probability the probability of the measurement result (required for
+  /// normalization)
+  /// @param measureZero whether or not to measure '0' (otherwise '1' is
+  /// measured)
+  /// @throws std::invalid_argument If the qubit is outside the state.
   void performCollapsingMeasurement(vEdge& rootEdge, Qubit index,
                                     fp probability, bool measureZero);
 
@@ -655,13 +682,11 @@ public:
   ComputeTable<mCachedEdge, mCachedEdge, mCachedEdge> matrixAdd{
       config_.ctMatAddNumBucket};
 
-  /**
-   * @brief Get the compute table for addition operations.
-   *
-   * @tparam Node The type of the node.
-   * @return A reference to the appropriate compute table for the given node
-   * type.
-   */
+  /// Get the compute table for addition operations.
+  ///
+  /// @tparam Node The type of the node.
+  /// @return A reference to the appropriate compute table for the given node
+  /// type.
   template <class Node> [[nodiscard]] auto& getAddComputeTable() {
     if constexpr (IsVector<Node>) {
       return vectorAdd;
@@ -675,13 +700,11 @@ public:
   ComputeTable<mCachedEdge, mCachedEdge, mCachedEdge> matrixAddMagnitudes{
       config_.ctMatAddMagNumBucket};
 
-  /**
-   * @brief Get the compute table for addition operations with magnitudes.
-   *
-   * @tparam Node The type of the node.
-   * @return A reference to the appropriate compute table for the given node
-   * type.
-   */
+  /// Get the compute table for addition operations with magnitudes.
+  ///
+  /// @tparam Node The type of the node.
+  /// @return A reference to the appropriate compute table for the given node
+  /// type.
   template <class Node> [[nodiscard]] auto& getAddMagnitudesComputeTable() {
     if constexpr (IsVector<Node>) {
       return vectorAddMagnitudes;
@@ -690,29 +713,20 @@ public:
     }
   }
 
-  /**
-   * @brief Add two decision diagrams.
-   *
-   * @tparam Node The type of the node.
-   * @param x The first DD.
-   * @param y The second DD.
-   * @return The resulting DD after addition.
-   *
-   * @details This function performs the addition of two decision diagrams
-   * (DDs). It uses a compute table to cache intermediate results and avoid
-   * redundant computations. The addition is conducted recursively, where the
-   * function traverses the nodes of the DDs, adds corresponding edges, and
-   * normalizes the resulting edges. If the nodes are terminal, their weights
-   * are directly added. The function ensures that the resulting DD is properly
-   * normalized and stored in the unique table to maintain the canonical form.
-   */
+  /// Add two decision diagrams.
+  ///
+  /// @tparam Node The type of the node.
+  /// @param x The first DD.
+  /// @param y The second DD.
+  /// @return The resulting DD after addition.
+  ///
   template <class Node>
   Edge<Node> add(const Edge<Node>& x, const Edge<Node>& y) {
     Qubit var{};
     if (!x.isTerminal()) {
       var = x.p->v;
     }
-    if (!y.isTerminal() && (y.p->v) > var) {
+    if (!y.isTerminal() && y.p->v > var) {
       var = y.p->v;
     }
 
@@ -720,18 +734,33 @@ public:
     return cn.lookup(result);
   }
 
-  /**
-   * @brief Internal function to add two decision diagrams.
-   *
-   * This function is used internally to add two decision diagrams (DDs) of type
-   * Node. It is not intended to be called directly.
-   *
-   * @tparam Node The type of the node.
-   * @param x The first DD.
-   * @param y The second DD.
-   * @param var The variable associated with the current level of recursion.
-   * @return The resulting DD after addition.
-   */
+private:
+  /// Select a successor at this level and apply the incoming edge weight.
+  template <class Node>
+  static CachedEdge<Node> weightedSuccessor(const CachedEdge<Node>& edge,
+                                            const Qubit var,
+                                            const std::size_t index) {
+    if constexpr (IsMatrix<Node>) {
+      if (edge.isIdentity() || edge.p->v < var) {
+        return index == 0 || index == 3 ? edge : CachedEdge<Node>{};
+      }
+    }
+    const auto& successor = edge.p->e[index];
+    auto result = CachedEdge<Node>{successor.p, 0};
+    if (!successor.w.exactlyZero()) {
+      result.w = edge.w * successor.w;
+    }
+    return result;
+  }
+
+public:
+  /// Internal function to add two decision diagrams.
+  ///
+  /// @tparam Node The type of the node.
+  /// @param x The first DD.
+  /// @param y The second DD.
+  /// @param var The variable associated with the current level of recursion.
+  /// @return The resulting DD after addition.
   template <class Node>
   CachedEdge<Node> add2(const CachedEdge<Node>& x, const CachedEdge<Node>& y,
                         const Qubit var) {
@@ -757,71 +786,25 @@ public:
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
-      CachedEdge<Node> e1{};
-      if constexpr (IsMatrix<Node>) {
-        if (x.isIdentity() || x.p->v < var) {
-          // [ 0 | 1 ]   [ x | 0 ]
-          // --------- = ---------
-          // [ 2 | 3 ]   [ 0 | x ]
-          if (i == 0 || i == 3) {
-            e1 = x;
-          }
-        } else {
-          auto& xSuccessor = x.p->e[i];
-          e1 = {xSuccessor.p, 0};
-          if (!xSuccessor.w.exactlyZero()) {
-            e1.w = x.w * xSuccessor.w;
-          }
-        }
-      } else {
-        auto& xSuccessor = x.p->e[i];
-        e1 = {xSuccessor.p, 0};
-        if (!xSuccessor.w.exactlyZero()) {
-          e1.w = x.w * xSuccessor.w;
-        }
-      }
-      CachedEdge<Node> e2{};
-      if constexpr (IsMatrix<Node>) {
-        if (y.isIdentity() || y.p->v < var) {
-          // [ 0 | 1 ]   [ y | 0 ]
-          // --------- = ---------
-          // [ 2 | 3 ]   [ 0 | y ]
-          if (i == 0 || i == 3) {
-            e2 = y;
-          }
-        } else {
-          auto& ySuccessor = y.p->e[i];
-          e2 = {ySuccessor.p, 0};
-          if (!ySuccessor.w.exactlyZero()) {
-            e2.w = y.w * ySuccessor.w;
-          }
-        }
-      } else {
-        auto& ySuccessor = y.p->e[i];
-        e2 = {ySuccessor.p, 0};
-        if (!ySuccessor.w.exactlyZero()) {
-          e2.w = y.w * ySuccessor.w;
-        }
-      }
-      edge[i] = add2(e1, e2, var - 1);
+      edge[i] = add2(weightedSuccessor(x, var, i), weightedSuccessor(y, var, i),
+                     var - 1);
     }
     auto r = makeDDNode(var, edge);
     computeTable.insert(x, y, r);
     return r;
   }
 
-  /**
-   * @brief Compute the element-wise magnitude sum of two vectors or matrices.
-   *
-   * For two vectors (or matrices) \p x and \p y, this function returns a result
-   * \p r such that for each index \p i:
-   * \f$ r[i] = \sqrt{|x[i]|^2 + |y[i]|^2} \f$
-   *
-   * @param x DD representation of the first operand.
-   * @param y DD representation of the second operand.
-   * @param var Number of qubits in the DD.
-   * @return DD representing the result.
-   */
+  /// Compute the element-wise magnitude sum of two vectors or matrices.
+  ///
+  /// For two vectors (or matrices) \p x and \p y, this function returns a
+  /// result
+  /// \p r such that for each index \p i:
+  /// \f$ r[i] = \sqrt{|x[i]|^2 + |y[i]|^2} \f$
+  ///
+  /// @param x DD representation of the first operand.
+  /// @param y DD representation of the second operand.
+  /// @param var Number of qubits in the DD.
+  /// @return DD representing the result.
   template <class Node>
   CachedEdge<Node> addMagnitudes(const CachedEdge<Node>& x,
                                  const CachedEdge<Node>& y, const Qubit var) {
@@ -849,47 +832,8 @@ public:
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (std::size_t i = 0U; i < n; i++) {
-      CachedEdge<Node> e1{};
-      if constexpr (IsMatrix<Node>) {
-        if (x.isIdentity() || x.p->v < var) {
-          if (i == 0 || i == 3) {
-            e1 = x;
-          }
-        } else {
-          auto& xSuccessor = x.p->e[i];
-          e1 = {xSuccessor.p, 0};
-          if (!xSuccessor.w.exactlyZero()) {
-            e1.w = x.w * xSuccessor.w;
-          }
-        }
-      } else {
-        auto& xSuccessor = x.p->e[i];
-        e1 = {xSuccessor.p, 0};
-        if (!xSuccessor.w.exactlyZero()) {
-          e1.w = x.w * xSuccessor.w;
-        }
-      }
-      CachedEdge<Node> e2{};
-      if constexpr (IsMatrix<Node>) {
-        if (y.isIdentity() || y.p->v < var) {
-          if (i == 0 || i == 3) {
-            e2 = y;
-          }
-        } else {
-          auto& ySuccessor = y.p->e[i];
-          e2 = {ySuccessor.p, 0};
-          if (!ySuccessor.w.exactlyZero()) {
-            e2.w = y.w * ySuccessor.w;
-          }
-        }
-      } else {
-        auto& ySuccessor = y.p->e[i];
-        e2 = {ySuccessor.p, 0};
-        if (!ySuccessor.w.exactlyZero()) {
-          e2.w = y.w * ySuccessor.w;
-        }
-      }
-      edge[i] = addMagnitudes(e1, e2, var - 1);
+      edge[i] = addMagnitudes(weightedSuccessor(x, var, i),
+                              weightedSuccessor(y, var, i), var - 1);
     }
     auto r = makeDDNode(var, edge);
     computeTable.insert(x, y, r);
@@ -902,19 +846,15 @@ public:
   UnaryComputeTable<vNode*, vCachedEdge> conjugateVector{
       config_.ctVecConjNumBucket};
 
-  /**
-   * @brief Conjugates a given decision diagram edge.
-   *
-   * @param a The decision diagram edge to conjugate.
-   * @return The conjugated decision diagram edge.
-   */
+  /// Conjugates a given decision diagram edge.
+  ///
+  /// @param a The decision diagram edge to conjugate.
+  /// @return The conjugated decision diagram edge.
   vEdge conjugate(const vEdge& a);
-  /**
-   * @brief Recursively conjugates a given decision diagram edge.
-   *
-   * @param a The decision diagram edge to conjugate.
-   * @return The conjugated decision diagram edge.
-   */
+  /// Recursively conjugates a given decision diagram edge.
+  ///
+  /// @param a The decision diagram edge to conjugate.
+  /// @return The conjugated decision diagram edge.
   vCachedEdge conjugateRec(const vEdge& a);
 
   ///
@@ -923,19 +863,15 @@ public:
   UnaryComputeTable<mNode*, mCachedEdge> conjugateMatrixTranspose{
       config_.ctMatConjTransNumBucket};
 
-  /**
-   * @brief Computes the conjugate transpose of a given matrix edge.
-   *
-   * @param a The matrix edge to conjugate transpose.
-   * @return The conjugated transposed matrix edge.
-   */
+  /// Computes the conjugate transpose of a given matrix edge.
+  ///
+  /// @param a The matrix edge to conjugate transpose.
+  /// @return The conjugated transposed matrix edge.
   mEdge conjugateTranspose(const mEdge& a);
-  /**
-   * @brief Recursively computes the conjugate transpose of a given matrix edge.
-   *
-   * @param a The matrix edge to conjugate transpose.
-   * @return The conjugated transposed matrix edge.
-   */
+  /// Recursively computes the conjugate transpose of a given matrix edge.
+  ///
+  /// @param a The matrix edge to conjugate transpose.
+  /// @return The conjugated transposed matrix edge.
   mCachedEdge conjugateTransposeRec(const mEdge& a);
 
   ///
@@ -946,13 +882,11 @@ public:
   ComputeTable<mNode*, mNode*, mCachedEdge> matrixMatrixMultiplication{
       config_.ctMatMatMultNumBucket};
 
-  /**
-   * @brief Get the compute table for multiplication operations.
-   *
-   * @tparam RightOperandNode The type of the right operand node.
-   * @return A reference to the appropriate compute table for the given node
-   * type.
-   */
+  /// Get the compute table for multiplication operations.
+  ///
+  /// @tparam RightOperandNode The type of the right operand node.
+  /// @return A reference to the appropriate compute table for the given node
+  /// type.
   template <class RightOperandNode>
   [[nodiscard]] auto& getMultiplicationComputeTable() {
     if constexpr (std::is_same_v<RightOperandNode, vNode>) {
@@ -962,53 +896,39 @@ public:
     }
   }
 
-  /**
-   * @brief Applies a matrix operation to a vector.
-   *
-   * @details The reference count of the input vector is decreased,
-   * while the reference count of the result is increased. After the operation,
-   * garbage collection is triggered.
-   *
-   * @param operation Matrix operation to apply
-   * @param e Vector to apply the operation to
-   * @return The appropriately reference-counted result.
-   */
+  /// Applies a matrix operation to a vector.
+  ///
+  /// The reference count of the input vector is decreased,
+  /// while the reference count of the result is increased. After the operation,
+  /// garbage collection is triggered.
+  ///
+  /// @param operation Matrix operation to apply
+  /// @param e Vector to apply the operation to
+  /// @return The appropriately reference-counted result.
   VectorDD applyOperation(const MatrixDD& operation, const VectorDD& e);
 
-  /**
-   * @brief Applies a matrix operation to a matrix.
-   *
-   * @details The reference count of the input matrix is decreased,
-   * while the reference count of the result is increased. After the operation,
-   * garbage collection is triggered.
-   *
-   * @param operation Matrix operation to apply
-   * @param e Matrix to apply the operation to
-   * @param applyFromLeft Flag to indicate if the operation should be applied
-   * from the left (default) or right.
-   * @return The appropriately reference-counted result.
-   */
+  /// Applies a matrix operation to a matrix.
+  ///
+  /// The reference count of the input matrix is decreased,
+  /// while the reference count of the result is increased. After the operation,
+  /// garbage collection is triggered.
+  ///
+  /// @param operation Matrix operation to apply
+  /// @param e Matrix to apply the operation to
+  /// @param applyFromLeft Flag to indicate if the operation should be applied
+  /// from the left (default) or right.
+  /// @return The appropriately reference-counted result.
   MatrixDD applyOperation(const MatrixDD& operation, const MatrixDD& e,
                           bool applyFromLeft = true);
 
-  /**
-   * @brief Multiplies two decision diagrams.
-   *
-   * @tparam LeftOperandNode The type of the left operand node.
-   * @tparam RightOperandNode The type of the right operand node.
-   * @param x The left operand decision diagram.
-   * @param y The right operand decision diagram.
-   * @return The resulting decision diagram after multiplication.
-   *
-   * @details This function performs the multiplication of two decision diagrams
-   * (DDs). It uses a compute table to cache intermediate results and avoid
-   * redundant computations. The multiplication is conducted recursively, where
-   * the function traverses the nodes of the DDs, multiplies corresponding
-   * edges, and normalizes the resulting edges. If the nodes are terminal, their
-   * weights are directly multiplied. The function ensures that the resulting DD
-   * is properly normalized and stored in the unique table to maintain the
-   * canonical form.
-   */
+  /// Multiplies two decision diagrams.
+  ///
+  /// @tparam LeftOperandNode The type of the left operand node.
+  /// @tparam RightOperandNode The type of the right operand node.
+  /// @param x The left operand decision diagram.
+  /// @param y The right operand decision diagram.
+  /// @return The resulting decision diagram after multiplication.
+  ///
   template <class LeftOperandNode, class RightOperandNode>
     requires IsMatrix<LeftOperandNode> &&
              (IsVector<RightOperandNode> || IsMatrix<RightOperandNode>)
@@ -1027,23 +947,18 @@ public:
   }
 
 private:
-  /**
-   * @brief Internal function to multiply two decision diagrams.
-   *
-   * This function is used internally to multiply two decision diagrams (DDs) of
-   * type Node. It is not intended to be called directly.
-   *
-   * @tparam LeftOperandNode The type of the left operand node.
-   * @tparam RightOperandNode The type of the right operand node.
-   * @param x The left operand decision diagram.
-   * @param y The right operand decision diagram.
-   * @param var The variable associated with the current level of recursion.
-   * @return The resulting DD after multiplication.
-   */
+  /// Internal function to multiply two decision diagrams.
+  ///
+  /// @tparam LeftOperandNode The type of the left operand node.
+  /// @tparam RightOperandNode The type of the right operand node.
+  /// @param x The left operand decision diagram.
+  /// @param y The right operand decision diagram.
+  /// @param var The variable associated with the current level of recursion.
+  /// @return The resulting DD after multiplication.
   template <class LeftOperandNode, class RightOperandNode>
   CachedEdge<RightOperandNode> multiply2(const Edge<LeftOperandNode>& x,
                                          const Edge<RightOperandNode>& y,
-                                         const Qubit var) {
+                                         Qubit var) {
     using LEdge = Edge<LeftOperandNode>;
     using REdge = Edge<RightOperandNode>;
     using ResultEdge = CachedEdge<RightOperandNode>;
@@ -1070,48 +985,59 @@ private:
       return {r->p, r->w * rWeight};
     }
 
+    if constexpr (IsMatrix<RightOperandNode>) {
+      var = std::max(x.p->v, y.p->v);
+    }
+
     constexpr std::size_t n = std::tuple_size_v<decltype(y.p->e)>;
 
     constexpr std::size_t rows = RADIX;
     constexpr std::size_t cols = n == NEDGE ? RADIX : 1U;
 
     std::array<ResultEdge, n> edge{};
-    for (auto i = 0U; i < rows; i++) {
-      for (auto j = 0U; j < cols; j++) {
-        auto idx = (cols * i) + j;
-        edge[idx] = ResultEdge::zero();
-        for (auto k = 0U; k < rows; k++) {
-          const auto xIdx = (rows * i) + k;
-          LEdge e1{};
-          if (x.p != nullptr && x.p->v == var) {
-            e1 = x.p->e[xIdx];
-          } else {
-            if (xIdx == 0 || xIdx == 3) {
-              e1 = LEdge{x.p, Complex::one()};
+    if (x.p->v < var && !y.isTerminal() && y.p->v == var) {
+      /// The left operand acts as identity at this level.
+      for (std::size_t i = 0; i < n; ++i) {
+        edge[i] = multiply2(LEdge{x.p, Complex::one()}, y.p->e[i], var - 1);
+      }
+    } else {
+      for (auto i = 0U; i < rows; i++) {
+        for (auto j = 0U; j < cols; j++) {
+          auto idx = (cols * i) + j;
+          edge[idx] = ResultEdge::zero();
+          for (auto k = 0U; k < rows; k++) {
+            const auto xIdx = (rows * i) + k;
+            LEdge e1{};
+            if (x.p != nullptr && x.p->v == var) {
+              e1 = x.p->e[xIdx];
             } else {
-              e1 = LEdge::zero();
+              if (xIdx == 0 || xIdx == 3) {
+                e1 = LEdge{x.p, Complex::one()};
+              } else {
+                e1 = LEdge::zero();
+              }
             }
-          }
 
-          const auto yIdx = j + (cols * k);
-          REdge e2{};
-          if (y.p != nullptr && y.p->v == var) {
-            e2 = y.p->e[yIdx];
-          } else {
-            if (yIdx == 0 || yIdx == 3) {
-              e2 = REdge{y.p, Complex::one()};
+            const auto yIdx = j + (cols * k);
+            REdge e2{};
+            if (y.p != nullptr && y.p->v == var) {
+              e2 = y.p->e[yIdx];
             } else {
-              e2 = REdge::zero();
+              if (yIdx == 0 || yIdx == 3) {
+                e2 = REdge{y.p, Complex::one()};
+              } else {
+                e2 = REdge::zero();
+              }
             }
-          }
 
-          const auto v = static_cast<Qubit>(var - 1);
-          auto m = multiply2(e1, e2, v);
+            const auto v = static_cast<Qubit>(var - 1);
+            auto m = multiply2(e1, e2, v);
 
-          if (k == 0 || edge[idx].w.exactlyZero()) {
-            edge[idx] = m;
-          } else if (!m.w.exactlyZero()) {
-            edge[idx] = add2(edge[idx], m, v);
+            if (k == 0 || edge[idx].w.exactlyZero()) {
+              edge[idx] = m;
+            } else if (!m.w.exactlyZero()) {
+              edge[idx] = add2(edge[idx], m, v);
+            }
           }
         }
       }
@@ -1131,94 +1057,63 @@ public:
   ComputeTable<vNode*, vNode*, vCachedEdge> vectorInnerProduct{
       config_.ctVecInnerProdNumBucket};
 
-  /**
-   * @brief Calculates the inner product of two vector decision diagrams.
-   *
-   * @param x A vector DD representing a quantum state.
-   * @param y A vector DD representing a quantum state.
-   * @return A complex number representing the scalar product of the DDs.
-   */
+  /// Calculates the inner product of two vector decision diagrams.
+  ///
+  /// @param x A vector DD representing a quantum state.
+  /// @param y A vector DD representing a quantum state.
+  /// @return A complex number representing the scalar product of the DDs.
   ComplexValue innerProduct(const vEdge& x, const vEdge& y);
 
-  /**
-   * @brief Calculates the fidelity between two vector decision diagrams.
-   *
-   * @param x A vector DD representing a quantum state.
-   * @param y A vector DD representing a quantum state.
-   * @return The fidelity between the two quantum states.
-   */
+  /// Calculates the fidelity between two vector decision diagrams.
+  ///
+  /// @param x A vector DD representing a quantum state.
+  /// @param y A vector DD representing a quantum state.
+  /// @return The fidelity between the two quantum states.
   fp fidelity(const vEdge& x, const vEdge& y);
 
-  /**
-   * @brief Calculates the fidelity between a vector decision diagram and a
-   * sparse probability vector.
-   *
-   * @details This function computes the fidelity between a quantum state
-   * represented by a vector decision diagram and a sparse probability vector.
-   * The optional permutation of qubits can be provided to match the qubit
-   * ordering.
-   *
-   * @param e The root edge of the decision diagram.
-   * @param probs A map of probabilities for each measurement outcome.
-   * @param permutation An optional permutation of qubits.
-   * @return The fidelity of the measurement outcomes.
-   */
-  static fp
-  fidelityOfMeasurementOutcomes(const vEdge& e, const SparsePVec& probs,
-                                const qc::Permutation& permutation = {});
+  /// Calculates the fidelity between a vector decision diagram and a
+  /// sparse probability vector.
+  ///
+  /// @param e The root edge of the decision diagram.
+  /// @param probs A map of probabilities for each measurement outcome.
+  /// @param permutation Optional permutation matching the measurement order.
+  /// @return The fidelity of the measurement outcomes.
+  static fp fidelityOfMeasurementOutcomes(const vEdge& e,
+                                          const SparsePVec& probs,
+                                          const Permutation& permutation = {});
 
 private:
-  /**
-   * @brief Recursively calculates the inner product of two vector decision
-   * diagrams.
-   *
-   * @param x A vector DD representing a quantum state.
-   * @param y A vector DD representing a quantum state.
-   * @param var The number of levels contained in each vector DD.
-   * @return A complex number representing the scalar product of the DDs.
-   * @note This function is called recursively such that the number of levels
-   *       decreases each time to traverse the DDs.
-   */
+  /// Recursively calculates the inner product of two vector decision
+  /// diagrams.
+  ///
+  /// @param x A vector DD representing a quantum state.
+  /// @param y A vector DD representing a quantum state.
+  /// @param var The number of levels contained in each vector DD.
+  /// @return A complex number representing the scalar product of the DDs.
   ComplexValue innerProduct(const vEdge& x, const vEdge& y, Qubit var);
 
-  /**
-   * @brief Recursively calculates the fidelity of measurement outcomes.
-   *
-   * @details This function computes the fidelity between a quantum state
-   * represented by a vector decision diagram and a sparse probability vector.
-   * It traverses the decision diagram recursively, calculating the contribution
-   * of each path to the overall fidelity. An optional permutation of qubits can
-   * be provided to match the qubit ordering.
-   *
-   * @param e The root edge of the decision diagram.
-   * @param probs A map of probabilities for each measurement outcome.
-   * @param i The current index in the decision diagram traversal.
-   * @param permutation An optional permutation of qubits.
-   * @param nQubits The number of qubits in the decision diagram.
-   * @return The fidelity of the measurement outcomes.
-   */
+  /// Recursively calculates the fidelity of measurement outcomes.
+  ///
+  /// @param e The root edge of the decision diagram.
+  /// @param probs A map of probabilities for each measurement outcome.
+  /// @param i The current index in the decision diagram traversal.
+  /// @param permutation Optional permutation matching the measurement order.
+  /// @param nQubits The number of qubits in the decision diagram.
+  /// @return The fidelity of the measurement outcomes.
   static fp fidelityOfMeasurementOutcomesRecursive(
       const vEdge& e, const SparsePVec& probs, std::size_t i,
-      const qc::Permutation& permutation, std::size_t nQubits);
+      const Permutation& permutation, std::size_t nQubits);
 
 public:
-  /**
-   * @brief Calculates the expectation value of an operator with respect to a
-   * quantum state.
-   *
-   * @param x A matrix decision diagram (DD) representing the operator.
-   * @param y A vector decision diagram (DD) representing the quantum state.
-   * @return A floating-point value representing the expectation value of the
-   * operator with respect to the quantum state.
-   * @throws std::runtime_error if the edges are not on the same level or if the
-   * expectation value is non-real.
-   *
-   * @details This function calls the multiply() function to apply the operator
-   * to the quantum state, then calls innerProduct() to calculate the overlap
-   * between the original state and the applied state (i.e., <Psi| Psi'> = <Psi|
-   * (Op|Psi>)). It also calls the garbageCollect() function to free up any
-   * unused memory.
-   */
+  /// Compute the real expectation value <y|x|y>.
+  ///
+  /// @param x An observable whose expectation value is real.
+  /// @param y A non-terminal state vector DD.
+  /// @return The real part of the expectation value.
+  /// @throws std::invalid_argument If the observable acts on a qubit outside
+  /// the state.
+  /// @pre The observable is not the zero terminal. Debug assertions also
+  /// require a non-terminal state and an approximately zero imaginary part.
   fp expectationValue(const mEdge& x, const vEdge& y);
 
   ///
@@ -1230,13 +1125,11 @@ public:
   ComputeTable<mNode*, mNode*, mCachedEdge> matrixKronecker{
       config_.ctMatKronNumBucket};
 
-  /**
-   * @brief Get the compute table for Kronecker product operations.
-   *
-   * @tparam Node The type of the node.
-   * @return A reference to the appropriate compute table for the given node
-   * type.
-   */
+  /// Get the compute table for Kronecker product operations.
+  ///
+  /// @tparam Node The type of the node.
+  /// @return A reference to the appropriate compute table for the given node
+  /// type.
   template <class Node> [[nodiscard]] auto& getKroneckerComputeTable() {
     if constexpr (IsVector<Node>) {
       return vectorKronecker;
@@ -1245,45 +1138,54 @@ public:
     }
   }
 
-  /**
-   * @brief Computes the Kronecker product of two decision diagrams.
-   *
-   * @tparam Node The type of the node.
-   * @param x The first decision diagram.
-   * @param y The second decision diagram.
-   * @param yNumQubits The number of qubits in the second decision diagram.
-   * @param incIdx Whether to increment the index of the nodes in the second
-   * decision diagram.
-   * @return The resulting decision diagram after computing the Kronecker
-   * product.
-   */
+  /// Computes the Kronecker product of two decision diagrams.
+  ///
+  /// @tparam Node The type of the node.
+  /// @param x The first decision diagram.
+  /// @param y The second decision diagram.
+  /// @param yNumQubits The number of qubits in the second decision diagram.
+  /// @param incIdx Whether to shift the first DD above the second DD.
+  ///
+  /// Matrix widths include leading identity levels omitted from the DD.
+  /// The compute table is reused while the index shift remains unchanged.
+  /// @return The resulting decision diagram after computing the Kronecker
+  /// product.
   template <class Node>
   Edge<Node> kronecker(const Edge<Node>& x, const Edge<Node>& y,
                        const std::size_t yNumQubits, const bool incIdx = true) {
-    const auto e = kronecker2(x, y, yNumQubits, incIdx);
+    size_t shift = 0;
+    if (incIdx) {
+      if constexpr (IsMatrix<Node>) {
+        shift = yNumQubits;
+      } else if (!y.isTerminal()) {
+        shift = static_cast<size_t>(y.p->v) + 1;
+      }
+    }
+    auto& cachedShift =
+        IsVector<Node> ? vectorKroneckerShift_ : matrixKroneckerShift_;
+    if (cachedShift != shift) {
+      getKroneckerComputeTable<Node>().clear();
+      cachedShift = shift;
+    }
+    const auto e = kronecker2(x, y, shift);
     return cn.lookup(e);
   }
 
 private:
-  /**
-   * @brief Internal function to compute the Kronecker product of two decision
-   * diagrams.
-   *
-   * This function is used internally to compute the Kronecker product of two
-   * decision diagrams (DDs) of type Node. It is not intended to be called
-   * directly.
-   *
-   * @tparam Node The type of the node.
-   * @param x The first decision diagram.
-   * @param y The second decision diagram.
-   * @param yNumQubits The number of qubits in the second decision diagram.
-   * @param incIdx Whether to increment the qubit index.
-   * @return The resulting decision diagram after the Kronecker product.
-   */
+  size_t vectorKroneckerShift_ = 0;
+  size_t matrixKroneckerShift_ = 0;
+
+  /// Internal function to compute the Kronecker product of two decision
+  /// diagrams.
+  ///
+  /// @tparam Node The type of the node.
+  /// @param x The first decision diagram.
+  /// @param y The second decision diagram.
+  /// @param shift The qubit index offset for nodes from the first DD.
+  /// @return The resulting decision diagram after the Kronecker product.
   template <class Node>
   CachedEdge<Node> kronecker2(const Edge<Node>& x, const Edge<Node>& y,
-                              const std::size_t yNumQubits,
-                              const bool incIdx = true) {
+                              const size_t shift) {
     if (x.w.exactlyZero() || y.w.exactlyZero()) {
       return CachedEdge<Node>::zero();
     }
@@ -1326,24 +1228,10 @@ private:
     constexpr std::size_t n = std::tuple_size_v<decltype(x.p->e)>;
     std::array<CachedEdge<Node>, n> edge{};
     for (auto i = 0U; i < n; ++i) {
-      edge[i] = kronecker2(x.p->e[i], y, yNumQubits, incIdx);
+      edge[i] = kronecker2(x.p->e[i], y, shift);
     }
 
-    // Increase the qubit index
-    Qubit idx = x.p->v;
-    if (incIdx) {
-      // use the given number of qubits if y is an identity
-      if constexpr (IsMatrix<Node>) {
-        if (y.isIdentity()) {
-          idx += static_cast<Qubit>(yNumQubits);
-        } else {
-          idx += static_cast<Qubit>(y.p->v + 1U);
-        }
-      } else {
-        idx += static_cast<Qubit>(y.p->v + 1U);
-      }
-    }
-    auto e = makeDDNode(idx, edge);
+    auto e = makeDDNode(static_cast<Qubit>(x.p->v + shift), edge);
     computeTable.insert(x.p, y.p, {e.p, e.w});
     return {e.p, rWeight};
   }
@@ -1355,174 +1243,146 @@ public:
   UnaryComputeTable<mNode*, mCachedEdge> matrixTrace{
       config_.ctMatTraceNumBucket};
 
-  /**
-   * @brief Get the compute table for trace operations.
-   *
-   * @tparam Node The type of the node.
-   * @return A reference to the appropriate compute table for the given node
-   * type.
-   */
+  /// Get the compute table for trace operations.
+  ///
+  /// @tparam Node The type of the node.
+  /// @return A reference to the appropriate compute table for the given node
+  /// type.
   [[nodiscard]] auto& getTraceComputeTable() { return matrixTrace; }
 
-  /**
-   * @brief Computes the partial trace of a matrix decision diagram.
-   *
-   * @param a The matrix decision diagram.
-   * @param eliminate A vector of booleans indicating which qubits to trace out.
-   * @return The resulting matrix decision diagram after the partial trace.
-   */
+  /// Computes the partial trace of a matrix decision diagram.
+  ///
+  /// @param a The matrix decision diagram.
+  /// @param eliminate A vector of booleans indicating which qubits to trace
+  /// out.
+  /// @return The normalized partial trace, divided by two per eliminated qubit.
   mEdge partialTrace(const mEdge& a, const std::vector<bool>& eliminate);
 
-  /**
-   * @brief Computes the trace of a matrix decision diagram.
-   *
-   * @param a The decision diagram.
-   * @param numQubits The number of qubits in the decision diagram.
-   * @return The trace of the decision diagram as a complex value.
-   */
+  /// Computes the trace of a matrix decision diagram.
+  ///
+  /// @param a The decision diagram.
+  /// @param numQubits The number of qubits in the decision diagram.
+  /// @return The normalized trace, divided by the matrix dimension.
   ComplexValue trace(const mEdge& a, std::size_t numQubits);
 
-  /**
-   * @brief Checks if a given matrix is close to the identity matrix.
-   * @details This function checks if a given matrix is close to the identity
-   * matrix, while ignoring any potential garbage qubits and ignoring the
-   * diagonal weights if `checkCloseToOne` is set to false.
-   * @param m An mEdge that represents the DD of the matrix.
-   * @param tol The accepted tolerance for the edge weights of the DD.
-   * @param garbage A vector of boolean values that defines which qubits are
-   * considered garbage qubits. If it's empty, then no qubit is considered to be
-   * a garbage qubit.
-   * @param checkCloseToOne If false, the function only checks if the matrix is
-   * close to a diagonal matrix.
-   */
+  /// Checks if a given matrix is close to the identity matrix.
+  ///
+  /// This function checks if a given matrix is close to the identity
+  /// matrix, while ignoring any potential garbage qubits and ignoring the
+  /// diagonal weights if `checkCloseToOne` is set to false.
+  /// @param m An mEdge that represents the DD of the matrix.
+  /// @param tol The accepted tolerance for the edge weights of the DD.
+  /// @param garbage A vector of boolean values that defines which qubits are
+  /// considered garbage qubits. If it's empty, then no qubit is considered to
+  /// be a garbage qubit.
+  /// @param checkCloseToOne If false, the function only checks if the matrix is
+  /// close to a diagonal matrix.
   [[nodiscard]] bool isCloseToIdentity(const mEdge& m, fp tol = 1e-10,
                                        const std::vector<bool>& garbage = {},
                                        bool checkCloseToOne = true) const;
 
 private:
-  /**
-   * @brief Computes the normalized (partial) trace using a compute table to
-   * store results for eliminated nodes.
-   * @details At each level, perform a lookup and store results in the compute
-   * table only if all lower-level qubits are eliminated as well.
-   *
-   * This optimization allows the full trace
-   * computation to scale linearly with respect to the number of nodes.
-   * However, the partial trace computation still scales with the number of
-   * paths to the lowest level in the DD that should be traced out.
-   *
-   * For matrices, normalization is continuously applied, dividing by two at
-   * each level marked for elimination, thereby ensuring that the result is
-   * mapped to the interval [0,1] (as opposed to the interval [0,2^N]).
-   */
-  mCachedEdge trace(const mEdge& a, const std::vector<bool>& eliminate,
-                    std::size_t level, std::size_t alreadyEliminated = 0);
+  /// Computes the normalized (partial) trace using a compute table to
+  /// store results for eliminated nodes.
+  ///
+  /// At each level, perform a lookup and store results in the compute
+  /// table only if all lower-level qubits are eliminated as well.
+  ///
+  /// This optimization allows the full trace
+  /// computation to scale linearly with respect to the number of nodes.
+  /// However, the partial trace computation still scales with the number of
+  /// paths to the lowest level in the DD that should be traced out.
+  ///
+  /// For matrices, normalization is continuously applied, dividing by two at
+  /// each level marked for elimination, thereby ensuring that the result is
+  /// mapped to the interval [0,1] (as opposed to the interval [0,2^N]).
+  mCachedEdge trace(const mEdge& a, std::span<const size_t> eliminatedBelow);
 
-  /**
-   * @brief Recursively checks if a given matrix is close to the identity
-   * matrix.
-   *
-   * @param m The matrix edge to check.
-   * @param visited A set of visited nodes to avoid redundant checks.
-   * @param tol The tolerance for comparing edge weights.
-   * @param garbage A vector of boolean values indicating which qubits are
-   * considered garbage.
-   * @param checkCloseToOne A flag to indicate whether to check if diagonal
-   * elements are close to one.
-   * @return True if the matrix is close to the identity matrix, false
-   * otherwise.
-   */
+  /// Recursively checks if a given matrix is close to the identity
+  /// matrix.
+  ///
+  /// @param m The matrix edge to check.
+  /// @param visited A set of visited nodes to avoid redundant checks.
+  /// @param tol The tolerance for comparing edge weights.
+  /// @param garbage A vector of boolean values indicating which qubits are
+  /// considered garbage.
+  /// @param checkCloseToOne A flag to indicate whether to check if diagonal
+  /// elements are close to one.
+  /// @return True if the matrix is close to the identity matrix, false
+  /// otherwise.
   static bool isCloseToIdentityRecursive(
       const mEdge& m, std::unordered_set<decltype(m.p)>& visited, fp tol,
       const std::vector<bool>& garbage, bool checkCloseToOne);
 
 public:
-  ///
-  /// Identity matrices
-  ///
+  //
+  // Identity matrices
+  //
 
   /// Create identity DD represented by the one-terminal.
   static mEdge makeIdent();
 
   mEdge createInitialMatrix(const std::vector<bool>& ancillary);
 
-  ///
-  /// Ancillary and garbage reduction
-  ///
+  //
+  // Ancillary and garbage reduction
+  //
 
-  /**
-   * @brief Reduces the decision diagram by handling ancillary qubits.
-   *
-   * @param e The matrix decision diagram edge to be reduced.
-   * @param ancillary A boolean vector indicating which qubits are ancillary
-   * (true) or not (false).
-   * @param regular Flag indicating whether to perform regular (true) or inverse
-   * (false) reduction.
-   * @return The reduced matrix decision diagram edge.
-   *
-   * @details This function modifies the decision diagram to account for
-   * ancillary qubits by:
-   * 1. Early returning if there are no ancillary qubits or if the edge is zero
-   * 2. Special handling for identity matrices by creating appropriate zero
-   * nodes
-   * 3. Finding the lowest ancillary qubit as a starting point
-   * 4. Recursively reducing nodes starting from the lowest ancillary qubit
-   * 5. Adding zero nodes for any remaining higher ancillary qubits
-   *
-   * The function maintains proper reference counting by incrementing the
-   * reference count of the result and decrementing the reference count of the
-   * input edge.
-   */
+  /// Reduces the decision diagram by handling ancillary qubits.
+  ///
+  /// @param e The matrix decision diagram edge to be reduced.
+  /// @param ancillary A boolean vector indicating which qubits are ancillary
+  /// (true) or not (false).
+  /// @param regular Flag indicating whether to perform regular (true) or
+  /// inverse (false) reduction.
+  /// @return The reduced matrix decision diagram edge.
+  ///
+  /// Transfers the input edge's reference to the result when reduction changes
+  /// a non-terminal DD. The input reference is unchanged for a no-op.
+  /// Identity inputs retain their reference and yield an incremented result.
   mEdge reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
                        bool regular = true);
 
-  /**
-   * @brief Reduces the given decision diagram by summing entries for garbage
-   * qubits.
-   *
-   * For each garbage qubit q, this function sums all the entries for q = 0 and
-   * q = 1, setting the entry for q = 0 to the sum and the entry for q = 1 to
-   * zero. To ensure that the probabilities of the resulting state are the sum
-   * of the probabilities of the initial state, the function computes
-   * `sqrt(|a|^2 + |b|^2)` for two entries `a` and `b`.
-   *
-   * @param e DD representation of the matrix/vector.
-   * @param garbage Vector that describes which qubits are garbage and which
-   * ones are not. If garbage[i] = true, then qubit q_i is considered garbage.
-   * @param normalizeWeights By default set to `false`. If set to `true`, the
-   * function changes all weights in the DD to their magnitude, also for
-   *                         non-garbage qubits. This is used for checking
-   * partial equivalence of circuits. For partial equivalence, only the
-   *                         measurement probabilities are considered, so we
-   * need to consider only the magnitudes of each entry.
-   * @return DD representing the reduced matrix/vector.
-   */
+  /// Reduces the given decision diagram by summing entries for garbage
+  /// qubits.
+  ///
+  /// For each garbage qubit q, this function sums all the entries for q = 0 and
+  /// q = 1, setting the entry for q = 0 to the sum and the entry for q = 1 to
+  /// zero. To ensure that the probabilities of the resulting state are the sum
+  /// of the probabilities of the initial state, the function computes
+  /// `sqrt(|a|^2 + |b|^2)` for two entries `a` and `b`.
+  ///
+  /// @param e DD representation of the matrix/vector.
+  /// @param garbage Vector that describes which qubits are garbage and which
+  /// ones are not. If garbage[i] = true, then qubit q_i is considered garbage.
+  /// @param normalizeWeights By default set to `false`. If set to `true`, the
+  /// function changes all weights in the DD to their magnitude, also for
+  /// non-garbage qubits. This is used for checking partial equivalence of
+  /// circuits. For partial equivalence, only the measurement probabilities are
+  /// considered, so we need to consider only the magnitudes of each entry.
+  /// @return DD representing the reduced matrix/vector.
   vEdge reduceGarbage(vEdge& e, const std::vector<bool>& garbage,
                       bool normalizeWeights = false);
 
-  /**
-   * @brief Reduces garbage qubits in a matrix decision diagram.
-   *
-   * @param e The matrix decision diagram edge to be reduced.
-   * @param garbage A boolean vector indicating which qubits are garbage (true)
-   * or not (false).
-   * @param regular Flag indicating whether to apply regular (true) or inverse
-   * (false) reduction. In regular mode, garbage entries are summed in the first
-   * two components, in inverse mode, they are summed in the first and third
-   * components.
-   * @param normalizeWeights Flag indicating whether to normalize weights to
-   * their magnitudes. When true, all weights in the DD are changed to their
-   * magnitude, also for non-garbage qubits. This is used for checking partial
-   * equivalence where only measurement probabilities matter.
-   * @return The reduced matrix decision diagram edge.
-   *
-   * @details For each garbage qubit q, this function sums all the entries for
-   * q=0 and q=1, setting the entry for q=0 to the sum and the entry for q=1 to
-   * zero. To maintain proper probabilities, the function computes sqrt(|a|^2 +
-   * |b|^2) for two entries a and b. The function handles special cases like
-   * zero terminals and identity matrices separately and maintains proper
-   * reference counting throughout the reduction process.
-   */
+  /// Reduces garbage qubits in a matrix decision diagram.
+  ///
+  /// @param e The matrix decision diagram edge to be reduced.
+  /// @param garbage A boolean vector indicating which qubits are garbage (true)
+  /// or not (false).
+  /// @param regular Flag indicating whether to apply regular (true) or inverse
+  /// (false) reduction. In regular mode, garbage entries are summed in the
+  /// first two components, in inverse mode, they are summed in the first and
+  /// third components.
+  /// @param normalizeWeights Flag indicating whether to normalize weights to
+  /// their magnitudes. When true, all weights in the DD are changed to their
+  /// magnitude, also for non-garbage qubits. This is used for checking partial
+  /// equivalence where only measurement probabilities matter.
+  /// @return The reduced matrix decision diagram edge.
+  ///
+  /// For each garbage qubit q, this function sums all the entries for
+  /// q=0 and q=1, setting the entry for q=0 to the sum and the entry for q=1 to
+  /// zero. To maintain proper probabilities, the function computes sqrt(|a|^2 +
+  /// |b|^2) for two entries a and b.
   mEdge reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
                       bool regular = true, bool normalizeWeights = false);
 
@@ -1538,9 +1398,9 @@ private:
                                      Qubit lowerbound, bool regular = true,
                                      bool normalizeWeights = false);
 
-  ///
-  /// Vector and matrix extraction from DDs
-  ///
+  //
+  // Vector and matrix extraction from DDs
+  //
 public:
   /// transfers a decision diagram from another package to this package
   template <class Node> Edge<Node> transfer(Edge<Node>& original) {
@@ -1630,7 +1490,7 @@ public:
   template <class Node, class Edge = Edge<Node>,
             std::size_t N = std::tuple_size_v<decltype(Node::e)>>
   Edge deserialize(std::istream& is, const bool readBinary = false) {
-    auto result = CachedEdge<Node>{};
+    auto result = CachedEdge<Node>::one();
     ComplexValue rootweight{};
 
     std::unordered_map<std::int64_t, Node*> nodes{};

@@ -10,10 +10,32 @@
 
 #pragma once
 
+#include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/StringRef.h"
+
 #include <string>
 
 // NOLINTBEGIN(readability-identifier-naming)
 namespace mlir::qasm {
+
+struct OpenQASMProgram {
+  llvm::StringRef name;
+  llvm::StringRef source;
+};
+
+/// OpenQASM programs expected to traverse QC, optimized QCO, reconstructed QC,
+/// and Adaptive QIR.
+[[nodiscard]] llvm::ArrayRef<OpenQASMProgram> standardPipelinePrograms();
+
+/// OpenQASM programs that additionally round-trip through jeff.
+[[nodiscard]] llvm::ArrayRef<OpenQASMProgram> jeffCompatiblePrograms();
+
+/// OpenQASM programs accepted by the standard pipeline but rejected when QCO
+/// is converted to jeff.
+[[nodiscard]] llvm::ArrayRef<OpenQASMProgram> jeffIncompatiblePrograms();
+
+/// Straight-line compiler programs that additionally support Base QIR.
+[[nodiscard]] llvm::ArrayRef<OpenQASMProgram> baseProfilePrograms();
 
 /// Allocates a single qubit.
 extern const std::string allocQubit;
@@ -94,6 +116,43 @@ extern const std::string inverseX;
 
 /// Creates a circuit with an inverse modifier applied to a controlled X gate.
 extern const std::string inverseMultipleControlledX;
+
+/// Creates a circuit with a power of two applied to an X gate.
+extern const std::string powTwoX;
+
+/// Creates a circuit with a power of zero applied to an X gate.
+extern const std::string powZeroX;
+
+/// Creates a circuit with a negative power applied to an S gate.
+extern const std::string negativePowS;
+
+/// Creates a circuit with controlled, power, and inverse modifiers applied to
+/// an S gate.
+extern const std::string controlledInversePowS;
+
+/// Creates a circuit with nested power modifiers applied to an X gate.
+extern const std::string nestedPowX;
+
+/// Creates a circuit with a power modifier applied to a custom gate.
+extern const std::string customPowHS;
+
+/// Creates a circuit with a power modifier broadcast over an X gate.
+extern const std::string broadcastPowX;
+
+/// Creates a circuit with a floating-point power modifier exponent.
+extern const std::string floatingPowX;
+
+/// Creates a circuit with a Boolean power modifier exponent.
+extern const std::string booleanPowX;
+
+/// Creates a circuit with an exactly representable large power exponent.
+extern const std::string exactLargePowX;
+
+/// Creates a circuit with an inexact large power exponent.
+extern const std::string inexactLargePowX;
+
+/// Creates a circuit with nested power modifiers whose exponents overflow.
+extern const std::string overflowingNestedPowX;
 
 /// Creates a circuit with just a Y gate.
 extern const std::string y;
@@ -339,6 +398,15 @@ extern const std::string singleControlledXxMinusYY;
 /// Creates a circuit with a multi-controlled XXMinusYY gate.
 extern const std::string multipleControlledXxMinusYY;
 
+/// Creates a circuit with just an RCCX gate.
+extern const std::string rccx;
+
+/// Creates a circuit with a single controlled RCCX gate.
+extern const std::string singleControlledRccx;
+
+/// Creates a circuit with a multi-controlled RCCX gate.
+extern const std::string multipleControlledRccx;
+
 /// Creates a circuit with a barrier.
 extern const std::string barrier;
 
@@ -358,17 +426,107 @@ extern const std::string ctrlTwoMixed;
 /// Creates a circuit with a simple if operation with one qubit.
 extern const std::string simpleIf;
 
-/// Creates a circuit with an if operation with a negated condition.
-extern const std::string ifNot;
+/// Creates a circuit with an if operation with an else branch.
+extern const std::string ifElse;
 
 /// Creates a circuit with an if operation with two qubits.
 extern const std::string ifTwoQubits;
 
+/// Creates a circuit that measures a qubit inside an if operation.
+extern const std::string ifWithMeasurement;
+
+/// Creates a circuit with an if operation with a negated condition.
+extern const std::string ifNot;
+
 /// Creates a circuit with an if operation with an empty then branch.
 extern const std::string ifEmptyThen;
 
-/// Creates a circuit with an if operation with an else branch.
-extern const std::string ifElse;
+/// Creates an if operation with a nested register loop.
+extern const std::string nestedIfOpForLoop;
+
+/// Creates a measurement-controlled while loop.
+extern const std::string simpleWhileReset;
+
+/// Applies a gate to every qubit selected by a source-level for loop.
+extern const std::string simpleForLoop;
+
+/// Creates a for loop containing a measurement-controlled branch.
+extern const std::string nestedForLoopIfOp;
+
+/// Creates two register loops, one containing a while loop.
+extern const std::string nestedForLoopWhileOp;
+
+/// Uses a separately allocated control in a register loop.
+extern const std::string nestedForLoopCtrlOpWithSeparateQubit;
+
+/// Uses one register element as a control for dynamically selected elements.
+extern const std::string nestedForLoopCtrlOpWithExtractedQubit;
+
+/// Broadcasts a controlled gate over a register and scalar qubit.
+extern const std::string broadcastRegisterAndQubit;
+
+/// Broadcasts a custom compound gate over a register and scalar qubit.
+extern const std::string broadcastCompoundGate;
+
+/// Exercises arithmetic precedence in gate parameters.
+extern const std::string expressionArithmetic;
+
+/// Exercises unary negation in a gate parameter.
+extern const std::string expressionUnaryMinus;
+
+/// Exercises the built-in pi, tau, and Euler constants.
+extern const std::string expressionBuiltinConstants;
+
+/// Exercises scalar mathematical functions in gate parameters.
+extern const std::string expressionMathFunctions;
+
+/// Exercises population count and dynamic whole-bit-register rotation.
+extern const std::string bitVectorBuiltins;
+
+/// Exercises runtime ceiling and floor through the compiler pipeline.
+extern const std::string runtimeScalarRounding;
+
+/// Exercises nested scalar mathematical functions.
+extern const std::string expressionNestedMathFunctions;
+
+/// Uses a constant floating-point variable as a gate parameter.
+extern const std::string expressionConstFloat;
+
+/// Reassigns a mutable floating-point variable used by a gate.
+extern const std::string expressionMutableFloat;
+
+/// Exercises constant integer arithmetic used as an index.
+extern const std::string expressionConstIntArithmetic;
+
+/// Uses a mutable integer as a dynamic qubit index.
+extern const std::string expressionDynamicIntIndex;
+
+/// Uses the integer modulo operator to derive a dynamic qubit index.
+extern const std::string expressionModIndex;
+
+/// Creates a conditional from a Boolean literal.
+extern const std::string conditionLiteral;
+
+/// Creates a conditional directly from a measurement.
+extern const std::string conditionMeasurement;
+
+/// Combines two measurement conditions with logical conjunction.
+extern const std::string conditionAnd;
+
+/// Combines two measurement conditions with logical disjunction.
+extern const std::string conditionOr;
+
+/// Exercises precedence among negation, conjunction, and disjunction.
+extern const std::string conditionNotAndOr;
+
+/// Creates a conditional from a mutable Boolean variable.
+extern const std::string conditionBoolVariable;
+
+/// Creates a conditional from an indexed classical bit.
+extern const std::string conditionIndexedBit;
+
+/// Combines a while loop with a compound measurement condition.
+extern const std::string conditionWhileAnd;
 
 } // namespace mlir::qasm
 // NOLINTEND(readability-identifier-naming)

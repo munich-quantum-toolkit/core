@@ -8,48 +8,246 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QIR/Utils/QIRUtils.h"
+#include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/LLVMIR/LLVMAttrs.h>
-#include <mlir/Dialect/LLVMIR/LLVMDialect.h>
-#include <mlir/Dialect/LLVMIR/LLVMTypes.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/Location.h>
-#include <mlir/IR/Operation.h>
-#include <mlir/IR/SymbolTable.h>
-#include <mlir/IR/Value.h>
-#include <mlir/Support/LLVM.h>
+#include "mqt/Dialect/QIR/QIRDefinitions.h"
 
+#include "mlir/Dialect/LLVMIR/LLVMAttrs.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/LLVMIR/LLVMTypes.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/Location.h"
+#include "mlir/IR/Operation.h"
+#include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/Value.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Interfaces/DataLayoutInterfaces.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/IR/Constants.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/Metadata.h"
+#include "llvm/IR/Module.h"
+#include "llvm/Support/Casting.h"
+#include "llvm/Support/ErrorHandling.h"
+
+#include <cassert>
 #include <cstdint>
+#include <iterator>
+#include <limits>
+#include <string>
 
 namespace mlir::qir {
 
-LLVM::LLVMFuncOp getMainFunction(Operation* op) {
-  auto module = dyn_cast<ModuleOp>(op);
-  if (!module) {
-    module = op->getParentOfType<ModuleOp>();
+[[nodiscard]] static uint64_t moduleFlagIntegerValue(llvm::Module& moduleOp,
+                                                     const StringRef key) {
+  const auto* constant = llvm::dyn_cast_or_null<llvm::ConstantAsMetadata>(
+      moduleOp.getModuleFlag(key));
+  const auto* integer =
+      constant != nullptr
+          ? llvm::dyn_cast<llvm::ConstantInt>(constant->getValue())
+          : nullptr;
+  return integer != nullptr ? integer->getZExtValue() : 0;
+}
+
+static void setIntegerModuleFlag(llvm::Module& moduleOp,
+                                 const llvm::Module::ModFlagBehavior behavior,
+                                 const StringRef key, const unsigned bitWidth,
+                                 const uint64_t value) {
+  auto& context = moduleOp.getContext();
+  moduleOp.setModuleFlag(
+      behavior, key,
+      llvm::ConstantInt::get(llvm::IntegerType::get(context, bitWidth), value));
+}
+
+void normalizeQIRModuleFlags(llvm::Module& moduleOp) {
+  for (const auto* const key : {
+           "dynamic_qubit_management",
+           "dynamic_result_management",
+           "arrays",
+           "ir_functions",
+           "multiple_target_branching",
+           "multiple_return_points",
+       }) {
+    if (moduleOp.getModuleFlag(key) != nullptr) {
+      setIntegerModuleFlag(moduleOp, llvm::Module::Error, key, 1,
+                           moduleFlagIntegerValue(moduleOp, key));
+    }
   }
-  if (!module) {
+  if (moduleOp.getModuleFlag("backwards_branching") != nullptr) {
+    setIntegerModuleFlag(
+        moduleOp, llvm::Module::Error, "backwards_branching", 2,
+        moduleFlagIntegerValue(moduleOp, "backwards_branching"));
+  }
+}
+
+void emitQISCall(OpBuilder& builder, Operation* anchor, const Location loc,
+                 ValueRange parameters, ValueRange controls, ValueRange targets,
+                 const StringRef fnName) {
+  const auto ptrType = LLVM::LLVMPointerType::get(builder.getContext());
+  const auto voidType = LLVM::LLVMVoidType::get(builder.getContext());
+  const auto isGenericControlled =
+      fnName.ends_with("__ctl") || fnName.ends_with("__ctladj");
+
+  if (!isGenericControlled) {
+    SmallVector<Value> operands;
+    operands.reserve(parameters.size() + controls.size() + targets.size());
+    operands.append(parameters.begin(), parameters.end());
+    operands.append(controls.begin(), controls.end());
+    operands.append(targets.begin(), targets.end());
+
+    SmallVector<Type> argumentTypes;
+    argumentTypes.reserve(operands.size());
+    llvm::transform(operands, std::back_inserter(argumentTypes),
+                    [](Value value) { return value.getType(); });
+    const auto signature = LLVM::LLVMFunctionType::get(voidType, argumentTypes);
+    auto declaration =
+        getOrCreateFunctionDeclaration(builder, anchor, fnName, signature);
+    LLVM::CallOp::create(builder, loc, declaration, operands);
+    return;
+  }
+  assert(!controls.empty() &&
+         "generic controlled specialization requires controls");
+
+  const auto i32Type = builder.getI32Type();
+  const auto i64Type = builder.getI64Type();
+  const auto layout = DataLayout::closest(anchor);
+  const auto pointerSize = layout.getTypeSize(ptrType);
+  assert(!pointerSize.isScalable() && "pointer size must be fixed");
+  const auto pointerBytes = pointerSize.getFixedValue();
+  assert(pointerBytes <= std::numeric_limits<std::uint32_t>::max());
+
+  const auto arrayCreateType =
+      LLVM::LLVMFunctionType::get(ptrType, {i32Type, i64Type});
+  auto arrayCreate = getOrCreateFunctionDeclaration(
+      builder, anchor, QIR_ARRAY_CREATE, arrayCreateType);
+  auto elementSize =
+      LLVM::ConstantOp::create(
+          builder, loc,
+          builder.getI32IntegerAttr(static_cast<std::int32_t>(pointerBytes)))
+          .getResult();
+  auto controlCount =
+      LLVM::ConstantOp::create(
+          builder, loc,
+          builder.getI64IntegerAttr(static_cast<std::int64_t>(controls.size())))
+          .getResult();
+  auto controlArray =
+      LLVM::CallOp::create(builder, loc, arrayCreate,
+                           ValueRange{elementSize, controlCount})
+          .getResult();
+
+  const auto arrayElementType =
+      LLVM::LLVMFunctionType::get(ptrType, {ptrType, i64Type});
+  auto arrayElement = getOrCreateFunctionDeclaration(
+      builder, anchor, QIR_ARRAY_ELEMENT, arrayElementType);
+  for (const auto& [index, control] : llvm::enumerate(controls)) {
+    auto indexValue =
+        LLVM::ConstantOp::create(
+            builder, loc,
+            builder.getI64IntegerAttr(static_cast<std::int64_t>(index)))
+            .getResult();
+    auto element = LLVM::CallOp::create(builder, loc, arrayElement,
+                                        ValueRange{controlArray, indexValue})
+                       .getResult();
+    auto store = LLVM::StoreOp::create(builder, loc, control, element);
+    store->setAttr(QIR_QUBIT_STORE_ATTR, builder.getUnitAttr());
+  }
+
+  const bool usesTuple = !parameters.empty() || targets.size() != 1;
+  Value gateArgs;
+  if (!usesTuple) {
+    gateArgs = targets.front();
+  } else {
+    SmallVector<Value> payload;
+    payload.reserve(parameters.size() + targets.size());
+    payload.append(parameters.begin(), parameters.end());
+    payload.append(targets.begin(), targets.end());
+
+    SmallVector<Type> payloadTypes;
+    payloadTypes.reserve(payload.size());
+    llvm::transform(payload, std::back_inserter(payloadTypes),
+                    [](Value value) { return value.getType(); });
+    const auto tupleType =
+        LLVM::LLVMStructType::getLiteral(builder.getContext(), payloadTypes);
+    const auto tupleSize = layout.getTypeSize(tupleType);
+    assert(!tupleSize.isScalable() && "QIR tuple size must be fixed");
+
+    const auto tupleCreateType = LLVM::LLVMFunctionType::get(ptrType, i64Type);
+    auto tupleCreate = getOrCreateFunctionDeclaration(
+        builder, anchor, QIR_TUPLE_CREATE, tupleCreateType);
+    auto sizeValue = LLVM::ConstantOp::create(
+                         builder, loc,
+                         builder.getI64IntegerAttr(static_cast<std::int64_t>(
+                             tupleSize.getFixedValue())))
+                         .getResult();
+    gateArgs =
+        LLVM::CallOp::create(builder, loc, tupleCreate, sizeValue).getResult();
+
+    for (const auto& [index, value] : llvm::enumerate(payload)) {
+      const SmallVector<LLVM::GEPArg> indices{
+          0,
+          static_cast<std::int32_t>(index),
+      };
+      auto element = LLVM::GEPOp::create(builder, loc, ptrType, tupleType,
+                                         gateArgs, indices)
+                         .getResult();
+      auto store = LLVM::StoreOp::create(builder, loc, value, element);
+      if (index >= parameters.size()) {
+        store->setAttr(QIR_QUBIT_STORE_ATTR, builder.getUnitAttr());
+      }
+    }
+  }
+
+  const auto controlledType =
+      LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
+  auto controlled =
+      getOrCreateFunctionDeclaration(builder, anchor, fnName, controlledType);
+  LLVM::CallOp::create(builder, loc, controlled,
+                       ValueRange{controlArray, gateArgs});
+
+  const auto releaseType =
+      LLVM::LLVMFunctionType::get(voidType, {ptrType, i32Type});
+  auto decrement =
+      LLVM::ConstantOp::create(builder, loc, builder.getI32IntegerAttr(-1))
+          .getResult();
+  if (usesTuple) {
+    auto tupleRelease = getOrCreateFunctionDeclaration(
+        builder, anchor, QIR_TUPLE_RELEASE, releaseType);
+    LLVM::CallOp::create(builder, loc, tupleRelease,
+                         ValueRange{gateArgs, decrement});
+  }
+  auto arrayRelease = getOrCreateFunctionDeclaration(
+      builder, anchor, QIR_ARRAY_RELEASE, releaseType);
+  LLVM::CallOp::create(builder, loc, arrayRelease,
+                       ValueRange{controlArray, decrement});
+}
+
+LLVM::LLVMFuncOp getMainFunction(Operation* op) {
+  auto moduleOp = dyn_cast<ModuleOp>(op);
+  if (!moduleOp) {
+    moduleOp = op->getParentOfType<ModuleOp>();
+  }
+  if (!moduleOp) {
     return nullptr;
   }
 
-  // Search for function with entry_point attribute
-  for (const auto funcOp : module.getOps<LLVM::LLVMFuncOp>()) {
-    auto passthrough = funcOp->getAttrOfType<ArrayAttr>("passthrough");
-    if (!passthrough) {
+  LLVM::LLVMFuncOp main;
+  const auto entryPoint =
+      StringAttr::get(op->getContext(), ::qir::ENTRY_POINT_ATTR);
+  for (auto function : moduleOp.getOps<LLVM::LLVMFuncOp>()) {
+    const auto passthrough = function.getPassthroughAttr();
+    if (!passthrough || !llvm::is_contained(passthrough, entryPoint)) {
       continue;
     }
-    if (llvm::any_of(passthrough, [](Attribute attr) {
-          const auto strAttr = dyn_cast<StringAttr>(attr);
-          return strAttr && strAttr.getValue() == "entry_point";
-        })) {
-      return funcOp;
+    if (main) {
+      return nullptr;
     }
+    main = function;
   }
-  return nullptr;
+  return main;
 }
 
 LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
@@ -60,76 +258,95 @@ LLVM::LLVMFuncOp getOrCreateFunctionDeclaration(OpBuilder& builder,
       SymbolTable::lookupNearestSymbolFrom(op, builder.getStringAttr(fnName));
 
   if (fnDecl == nullptr) {
-    // Save current insertion point
+
     const OpBuilder::InsertionGuard guard(builder);
 
     // Create the declaration at the end of the module
-    auto module = dyn_cast<ModuleOp>(op);
-    if (!module) {
-      module = op->getParentOfType<ModuleOp>();
+    auto moduleOp = dyn_cast<ModuleOp>(op);
+    if (!moduleOp) {
+      moduleOp = op->getParentOfType<ModuleOp>();
     }
-    if (!module) {
+    if (!moduleOp) {
       llvm::reportFatalInternalError("Module not found");
     }
-    builder.setInsertionPointToEnd(module.getBody());
+    builder.setInsertionPointToEnd(moduleOp.getBody());
 
     fnDecl = LLVM::LLVMFuncOp::create(builder, op->getLoc(), fnName, fnType);
-
-    // Add irreversible attribute to irreversible quantum operations
-    if (fnName == QIR_MEASURE || fnName == QIR_RESET) {
-      fnDecl->setAttr("passthrough", builder.getStrArrayAttr({"irreversible"}));
-    }
   }
 
-  return cast<LLVM::LLVMFuncOp>(fnDecl);
+  auto function = cast<LLVM::LLVMFuncOp>(fnDecl);
+  if (fnName != QIR_MEASURE && fnName != QIR_RESET) {
+    return function;
+  }
+
+  const auto irreversible = builder.getStringAttr(::qir::IRREVERSIBLE_ATTR);
+  const auto passthrough = function->getAttrOfType<ArrayAttr>("passthrough");
+  if (passthrough && llvm::is_contained(passthrough, irreversible)) {
+    return function;
+  }
+
+  SmallVector<Attribute> entries;
+  if (passthrough) {
+    entries.append(passthrough.begin(), passthrough.end());
+  }
+  entries.push_back(irreversible);
+  function->setAttr("passthrough", builder.getArrayAttr(entries));
+  return function;
 }
 
-LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
-                                    const StringRef label,
-                                    const StringRef symbolPrefix) {
-  // Save current insertion point
+static LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
+                                           StringRef label,
+                                           StringRef symbolPrefix,
+                                           SymbolTable& symbols,
+                                           LLVM::LLVMFuncOp main) {
   const OpBuilder::InsertionGuard guard(builder);
+  auto moduleOp = cast<ModuleOp>(symbols.getOp());
 
-  auto module = dyn_cast<ModuleOp>(op);
-  if (!module) {
-    module = op->getParentOfType<ModuleOp>();
-  }
-  if (!module) {
-    llvm::reportFatalInternalError("Module not found");
-  }
+  auto symbolName = builder.getStringAttr((symbolPrefix + "_" + label).str());
 
-  const auto symbolName =
-      builder.getStringAttr((symbolPrefix + "_" + label).str());
-
-  if (!module.lookupSymbol<LLVM::GlobalOp>(symbolName)) {
+  if (!symbols.lookup<LLVM::GlobalOp>(symbolName)) {
     const auto llvmArrayType = LLVM::LLVMArrayType::get(
         builder.getIntegerType(8), static_cast<unsigned>(label.size() + 1));
     const auto stringInitializer = builder.getStringAttr(label.str() + '\0');
 
     // Create the declaration at the start of the module
-    builder.setInsertionPointToStart(module.getBody());
+    builder.setInsertionPointToStart(moduleOp.getBody());
 
-    const auto globalOp = LLVM::GlobalOp::create(
+    auto globalOp = LLVM::GlobalOp::create(
         builder, op->getLoc(), llvmArrayType, /*isConstant=*/true,
         LLVM::Linkage::Internal, symbolName, stringInitializer);
     globalOp->setAttr("addr_space", builder.getI32IntegerAttr(0));
     globalOp->setAttr("dso_local", builder.getUnitAttr());
+    symbolName = symbols.insert(globalOp);
   }
 
   // Create AddressOfOp
   // Shall be added to the first block of the `main` function in the module
-  auto main = getMainFunction(op);
   if (!main) {
     llvm::reportFatalInternalError("Main function not found");
   }
-  auto& firstBlock = *(main.getBlocks().begin());
+  auto& firstBlock = *main.getBlocks().begin();
   builder.setInsertionPointToStart(&firstBlock);
 
-  const auto addressOfOp = LLVM::AddressOfOp::create(
+  auto addressOfOp = LLVM::AddressOfOp::create(
       builder, op->getLoc(), LLVM::LLVMPointerType::get(builder.getContext()),
       symbolName);
 
   return addressOfOp;
+}
+
+LLVM::AddressOfOp createResultLabel(OpBuilder& builder, Operation* op,
+                                    StringRef label, StringRef symbolPrefix) {
+  auto moduleOp = dyn_cast<ModuleOp>(op);
+  if (!moduleOp) {
+    moduleOp = op->getParentOfType<ModuleOp>();
+  }
+  if (!moduleOp) {
+    llvm::reportFatalInternalError("Module not found");
+  }
+  SymbolTable symbols(moduleOp);
+  return createResultLabel(builder, op, label, symbolPrefix, symbols,
+                           getMainFunction(op));
 }
 
 Value createPointerFromIndex(OpBuilder& builder, const Location loc,
@@ -140,6 +357,83 @@ Value createPointerFromIndex(OpBuilder& builder, const Location loc,
       builder, loc, LLVM::LLVMPointerType::get(builder.getContext()),
       constantOp.getResult());
   return intToPtrOp.getResult();
+}
+
+void emitOutputRecording(OpBuilder& builder, Operation* anchor,
+                         ArrayRef<ClassicalRegister> classicalRegisters,
+                         const DenseMap<int64_t, StaticResult>& staticResults) {
+  if (classicalRegisters.empty() && staticResults.empty()) {
+    return;
+  }
+
+  auto* ctx = builder.getContext();
+  auto i64Type = builder.getI64Type();
+  auto ptrType = LLVM::LLVMPointerType::get(ctx);
+  auto voidType = LLVM::LLVMVoidType::get(ctx);
+  auto loc = anchor->getLoc();
+
+  auto resultSig = LLVM::LLVMFunctionType::get(voidType, {ptrType, ptrType});
+  auto resultDec = getOrCreateFunctionDeclaration(builder, anchor,
+                                                  QIR_RECORD_OUTPUT, resultSig);
+
+  auto main = getMainFunction(anchor);
+  if (!main) {
+    llvm::reportFatalInternalError("Main function not found");
+  }
+  SymbolTable symbols(main->getParentOfType<ModuleOp>());
+  const auto createLabel = [&](StringRef label) {
+    return createResultLabel(builder, anchor, label, "qir.result_label",
+                             symbols, main)
+        .getResult();
+  };
+
+  LLVM::LLVMFuncOp baseArrayDec;
+  LLVM::LLVMFuncOp adaptiveArrayDec;
+  // Classical registers
+  for (const auto& reg : classicalRegisters) {
+    if (!reg.record) {
+      continue;
+    }
+
+    auto size = resolveIntVariant(builder, loc, reg.size);
+    auto label = createLabel(reg.label);
+
+    // Adaptive Profile: emit `__quantum__rt__result_array_record_output`
+    if (reg.array) {
+      if (!adaptiveArrayDec) {
+        auto arraySig =
+            LLVM::LLVMFunctionType::get(voidType, {i64Type, ptrType, ptrType});
+        adaptiveArrayDec = getOrCreateFunctionDeclaration(
+            builder, anchor, QIR_RESULT_ARRAY_RECORD_OUTPUT, arraySig);
+      }
+      LLVM::CallOp::create(builder, loc, adaptiveArrayDec,
+                           ValueRange{size, reg.array, label});
+      continue;
+    }
+
+    // Base Profile: emit `__quantum__rt__array_record_output` followed by
+    // `__quantum__rt__result_record_output` for each bit
+    if (!baseArrayDec) {
+      auto arraySig = LLVM::LLVMFunctionType::get(voidType, {i64Type, ptrType});
+      baseArrayDec = getOrCreateFunctionDeclaration(
+          builder, anchor, QIR_ARRAY_RECORD_OUTPUT, arraySig);
+    }
+    LLVM::CallOp::create(builder, loc, baseArrayDec, ValueRange{size, label});
+    for (auto [index, ptr] : llvm::enumerate(reg.results)) {
+      auto bitLabel = createLabel(reg.label + "_" + std::to_string(index));
+      LLVM::CallOp::create(builder, loc, resultDec, ValueRange{ptr, bitLabel});
+    }
+  }
+
+  // Static results
+  for (const auto& [index, result] : staticResults) {
+    if (!result.record) {
+      continue;
+    }
+    auto label = createLabel("__unnamed__" + std::to_string(index));
+    LLVM::CallOp::create(builder, loc, resultDec,
+                         ValueRange{result.pointer, label});
+  }
 }
 
 } // namespace mlir::qir

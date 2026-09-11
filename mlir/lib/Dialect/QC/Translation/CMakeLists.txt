@@ -6,25 +6,47 @@
 #
 # Licensed under the MIT License
 
+add_mlir_library(MLIRQCTranslationSupport PARTIAL_SOURCES_INTENDED StandardGate.cpp LINK_LIBS
+                 MLIRQCDialect MLIRSCFDialect)
+
+mqt_mlir_target_use_project_options(MLIRQCTranslationSupport)
+
+target_sources(
+  MLIRQCTranslationSupport
+  PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR} FILES
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/StandardGate.h)
+
 add_mlir_library(
-  MLIRQCTranslation
-  TranslateQuantumComputationToQC.cpp
-  TranslateQASM3ToQC.cpp
+  MLIRQCOpenQASMTranslation
+  PARTIAL_SOURCES_INTENDED
+  OpenQASMToQCEmitter.cpp
+  TranslateOpenQASMToQC.cpp
+  TranslateQCToOpenQASM3.cpp
   LINK_LIBS
+  MLIRAnalysis
   MLIRArithDialect
+  MLIRCBitDialect
   MLIRFuncDialect
+  MLIRLLVMDialect
+  MLIROpenQASMFrontend
+  MLIRControlFlowDialect
+  MLIRMathDialect
+  MLIRMemRefDialect
+  MLIRMQTDialect
   MLIRSCFDialect
+  MLIRUBDialect
   MLIRQCDialect
   MLIRQCProgramBuilder
-  MQT::CoreIR
-  MQT::CoreQASM)
+  MLIRQCTranslationSupport)
 
-mqt_mlir_target_use_project_options(MLIRQCTranslation)
+mqt_mlir_target_use_project_options(MLIRQCOpenQASMTranslation)
 
-# collect header files
-file(GLOB_RECURSE TRANSLATION_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QC/Translation/*.h)
-
-# add public headers using file sets
-target_sources(MLIRQCTranslation PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
-                                        FILES ${TRANSLATION_HEADERS_SOURCE})
+target_sources(
+  MLIRQCOpenQASMTranslation
+  PUBLIC FILE_SET
+         HEADERS
+         BASE_DIRS
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}
+         FILES
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h)

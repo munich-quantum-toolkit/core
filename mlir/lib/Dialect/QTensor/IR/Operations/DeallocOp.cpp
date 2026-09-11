@@ -8,27 +8,26 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
 
 using namespace mlir;
 using namespace mlir::qtensor;
 
 namespace {
 
-/**
- * @brief Remove matching allocation-deallocation pairs without operations
- * between them.
- */
+/// Remove matching allocation-deallocation pairs without operations
+/// between them.
 struct RemoveAllocDeallocPair final : OpRewritePattern<DeallocOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(DeallocOp op,
                                 PatternRewriter& rewriter) const override {
-    // Check whether the tensor is directly defined by a qtensor::AllocOp.
+    // Check whether the tensor is directly defined by an otherwise unused
+    // qtensor::AllocOp.
     auto tensor = op.getTensor();
     auto allocOp = tensor.getDefiningOp<AllocOp>();
     if (!allocOp) {

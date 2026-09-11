@@ -12,7 +12,6 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/RealNumber.hpp"
-#include "ir/Definitions.hpp"
 
 #include <cassert>
 #include <cmath>
@@ -76,9 +75,9 @@ ComplexValue::getLowestFraction(const fp x,
 
   while ((lowerBound.second <= maxDenominator) &&
          (upperBound.second <= maxDenominator)) {
-    auto num = lowerBound.first + upperBound.first;
-    auto den = lowerBound.second + upperBound.second;
-    auto median = static_cast<fp>(num) / static_cast<fp>(den);
+    auto const num = lowerBound.first + upperBound.first;
+    auto const den = lowerBound.second + upperBound.second;
+    auto const median = static_cast<fp>(num) / static_cast<fp>(den);
     if (std::abs(x - median) <= RealNumber::eps) {
       if (den <= maxDenominator) {
         return std::pair{num, den};
@@ -291,7 +290,6 @@ ComplexValue operator/(const ComplexValue& c1, const ComplexValue& c2) {
   const auto gr = kahan(c1.r, c1.i, c2.r, c2.i);
   // evaluates c1.i * c2.r - c1.r * c2.i
   const auto gi = kahan(c1.i, -c1.r, c2.r, c2.i);
-  // performs the division
   return {gr / d, gi / d};
 }
 
@@ -302,9 +300,7 @@ std::ostream& operator<<(std::ostream& os, const ComplexValue& c) {
 
 std::size_t std::hash<dd::ComplexValue>::operator()(
     const dd::ComplexValue& c) const noexcept {
-  const auto h1 = dd::murmur64(
-      static_cast<std::size_t>(std::round(c.r / dd::RealNumber::eps)));
-  const auto h2 = dd::murmur64(
-      static_cast<std::size_t>(std::round(c.i / dd::RealNumber::eps)));
-  return qc::combineHash(h1, h2);
+  const auto h1 = std::hash<dd::fp>{}(std::round(c.r / dd::RealNumber::eps));
+  const auto h2 = std::hash<dd::fp>{}(std::round(c.i / dd::RealNumber::eps));
+  return dd::combineHash(h1, h2);
 }

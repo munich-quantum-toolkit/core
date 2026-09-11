@@ -10,24 +10,72 @@
 
 #include "qc_programs.h"
 
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
+
+#include <cstdint>
 #include <numbers>
 
 namespace mlir::qc {
 
-void emptyQC([[maybe_unused]] QCProgramBuilder& builder) {}
-
-void allocQubit(QCProgramBuilder& b) { b.allocQubit(); }
-
-void allocQubitRegister(QCProgramBuilder& b) { b.allocQubitRegister(2); }
-
-void allocMultipleQubitRegisters(QCProgramBuilder& b) {
-  b.allocQubitRegister(2);
-  b.allocQubitRegister(3);
+static Value measureToRegister(QCProgramBuilder& b, ValueRange qubits) {
+  auto c = b.allocClassicalBitRegister(static_cast<int64_t>(qubits.size()));
+  for (auto [i, q] : llvm::enumerate(qubits)) {
+    b.measure(q, c, static_cast<int64_t>(i));
+  }
+  return c;
 }
 
-void allocMultipleQubitRegistersWithOps(QCProgramBuilder& b) {
+static Value measureToRegister(QCProgramBuilder& b, Value qubit) {
+  return measureToRegister(b, ValueRange(qubit));
+}
+
+static Value measureAndReturn(QCProgramBuilder& b, ValueRange qubits) {
+  if (qubits.empty()) {
+    return b.intConstant(0);
+  }
+  return measureToRegister(b, qubits);
+}
+
+Value emptyQC(QCProgramBuilder& b) { return b.intConstant(0); }
+
+Value reusableUnitaryFunction(QCProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto rotate = b.createUnitaryFunction(
+      "rotate", TypeRange{b.getF64Type(), qubit.getType()},
+      [&](ValueRange arguments) { b.rx(arguments[0], arguments[1]); });
+  b.call(rotate, {b.floatConstant(0.5), qubit});
+  return b.measure(qubit);
+}
+
+Value reusableResetFunction(QCProgramBuilder& b) {
+  auto qubit = b.allocQubit();
+  auto reset = b.createFunction("reset", TypeRange{qubit.getType()},
+                                [&](ValueRange arguments) {
+                                  b.reset(arguments[0]);
+                                  return SmallVector<Value>{};
+                                });
+  b.call(reset, qubit);
+  return b.measure(qubit);
+}
+
+Value allocQubit(QCProgramBuilder& b) {
+  auto q = b.allocQubit();
+  return measureToRegister(b, q);
+}
+
+Value allocQubitNoMeasure(QCProgramBuilder& b) {
+  b.allocQubit();
+  return b.intConstant(0);
+}
+
+Value allocMultipleQubitRegistersWithOps(QCProgramBuilder& b) {
   auto q0 = b.allocQubitRegister(2);
   auto q1 = b.allocQubitRegister(3);
   b.h(q0[0]);
@@ -35,1344 +83,2059 @@ void allocMultipleQubitRegistersWithOps(QCProgramBuilder& b) {
   b.h(q1[0]);
   b.h(q1[1]);
   b.h(q1[2]);
+  return measureAndReturn(b, {q0[0], q0[1], q1[0], q1[1], q1[2]});
 }
 
-void allocLargeRegister(QCProgramBuilder& b) { b.allocQubitRegister(100); }
+Value alloc1QubitRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  return measureToRegister(b, q[0]);
+}
 
-void staticQubits(QCProgramBuilder& b) {
+Value allocQubitRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value alloc3QubitRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value allocMultipleQubitRegisters(QCProgramBuilder& b) {
+  auto q0 = b.allocQubitRegister(2);
+  auto q1 = b.allocQubitRegister(3);
+  return measureAndReturn(b, {q0[0], q0[1], q1[0], q1[1], q1[2]});
+}
+
+Value allocLargeRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(100);
+  return measureAndReturn(b, {q[0], q[99]});
+}
+
+Value staticQubits(QCProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
+  return measureAndReturn(b, {q0, q1});
+}
+
+Value staticQubitsNoMeasure(QCProgramBuilder& b) {
   b.staticQubit(0);
   b.staticQubit(1);
+  return b.intConstant(0);
 }
 
-void staticQubitsWithOps(QCProgramBuilder& b) {
+Value staticQubitsWithOps(QCProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.h(q0);
   b.h(q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
-void staticQubitsWithParametricOps(QCProgramBuilder& b) {
+Value staticQubitsWithParametricOps(QCProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.rx(std::numbers::pi / 4., q0);
   b.p(std::numbers::pi / 2., q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
-void staticQubitsWithTwoTargetOps(QCProgramBuilder& b) {
+Value staticQubitsWithTwoTargetOps(QCProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.rzz(0.123, q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
-void staticQubitsWithCtrl(QCProgramBuilder& b) {
+Value staticQubitsWithCtrl(QCProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
   auto q1 = b.staticQubit(1);
   b.cx(q0, q1);
+  return measureAndReturn(b, {q0, q1});
 }
 
-void staticQubitsWithInv(QCProgramBuilder& b) {
+Value staticQubitsWithInv(QCProgramBuilder& b) {
   auto q0 = b.staticQubit(0);
-  b.inv({q0}, [&](ValueRange qubits) { b.t(qubits[0]); });
+  b.inv(q0, [&](Value qubit) { b.t(qubit); });
+  return measureToRegister(b, q0);
 }
 
-void staticQubitsWithDuplicates(QCProgramBuilder& b) {
-  const auto q0a = b.staticQubit(0);
-  const auto q1a = b.staticQubit(1);
-  const auto q0b = b.staticQubit(0);
-  const auto q1b = b.staticQubit(1);
+Value staticQubitsWithDuplicates(QCProgramBuilder& b) {
+  auto q0a = b.staticQubit(0);
+  auto q1a = b.staticQubit(1);
+  auto q0b = b.staticQubit(0);
+  auto q1b = b.staticQubit(1);
 
   b.rx(std::numbers::pi / 4., q0a);
   b.p(std::numbers::pi / 2., q1a);
   b.rzz(0.123, q0b, q1b);
   b.cx(q0b, q1b);
-  b.inv({q0a}, [&](ValueRange qubits) { b.t(qubits[0]); });
+  b.inv(q0a, [&](Value qubit) { b.t(qubit); });
+  return measureAndReturn(b, {q0b, q1b});
 }
 
-void staticQubitsCanonical(QCProgramBuilder& b) {
-  const auto q0 = b.staticQubit(0);
-  const auto q1 = b.staticQubit(1);
+Value staticQubitsCanonical(QCProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.staticQubit(1);
 
   b.rx(std::numbers::pi / 4., q0);
   b.p(std::numbers::pi / 2., q1);
   b.rzz(0.123, q0, q1);
   b.cx(q0, q1);
-  b.inv({q0}, [&](ValueRange qubits) { b.t(qubits[0]); });
+  b.inv(q0, [&](Value qubit) { b.t(qubit); });
+  return measureAndReturn(b, {q0, q1});
 }
 
-void allocDeallocPair(QCProgramBuilder& b) {
+Value allocDeallocPair(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   b.dealloc(q);
+  return b.intConstant(0);
 }
 
-void mixedStaticThenDynamicQubit(QCProgramBuilder& b) {
-  b.staticQubit(0);
-  b.allocQubit();
+Value mixedStaticThenDynamicQubit(QCProgramBuilder& b) {
+  auto q0 = b.staticQubit(0);
+  auto q1 = b.allocQubit();
+  return measureAndReturn(b, {q0, q1});
 }
 
-void mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b) {
-  b.allocQubitRegister(2);
-  b.staticQubit(0);
+Value mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b) {
+  auto q0 = b.allocQubitRegister(2);
+  auto q1 = b.staticQubit(0);
+  return measureAndReturn(b, {q0[0], q0[1], q1});
 }
 
-void singleMeasurementToSingleBit(QCProgramBuilder& b) {
+Value singleMeasurementToSingleBit(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto& c = b.allocClassicalBitRegister(1);
-  b.measure(q[0], c[0]);
+  auto c = b.allocClassicalBitRegister(1);
+  b.measure(q[0], c, 0);
+  return c;
 }
 
-void repeatedMeasurementToSameBit(QCProgramBuilder& b) {
+Value repeatedMeasurementToSameBit(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto& c = b.allocClassicalBitRegister(1);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[0]);
+  auto c = b.allocClassicalBitRegister(1);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 0);
+  return c;
 }
 
-void repeatedMeasurementToDifferentBits(QCProgramBuilder& b) {
+SmallVector<Value> repeatedMeasurementToDifferentBits(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  const auto& c = b.allocClassicalBitRegister(3);
-  b.measure(q[0], c[0]);
-  b.measure(q[0], c[1]);
-  b.measure(q[0], c[2]);
+  auto c = b.allocClassicalBitRegister(3);
+  b.measure(q[0], c, 0);
+  b.measure(q[0], c, 1);
+  b.measure(q[0], c, 2);
+  return {c};
 }
 
-void multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
+SmallVector<Value>
+multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  const auto& c0 = b.allocClassicalBitRegister(1, "c0");
-  const auto& c1 = b.allocClassicalBitRegister(2, "c1");
-  b.measure(q[0], c0[0]);
-  b.measure(q[1], c1[0]);
-  b.measure(q[2], c1[1]);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(2);
+  b.measure(q[0], c0, 0);
+  b.measure(q[1], c1, 0);
+  b.measure(q[2], c1, 1);
+  return {c0, c1};
 }
 
-void measurementWithoutRegisters(QCProgramBuilder& b) {
+Value partialMeasurementToRegister(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto c = b.allocClassicalBitRegister(2);
+  b.measure(q[0], c, 0);
+  return c;
+}
+
+Value dynamicallyIndexedMeasurement(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto c = b.allocClassicalBitRegister(2);
+  b.scfFor(0, 2, 1, [&](Value iv) {
+    auto qubit = b.loadQubit(q.value, iv);
+    b.measure(qubit, c, iv);
+  });
+  return c;
+}
+
+Value measurementWithoutRegisters(QCProgramBuilder& b) {
   auto q = b.allocQubit();
-  b.measure(q);
+  auto c = b.measure(q);
+  return c;
 }
 
-void resetQubitWithoutOp(QCProgramBuilder& b) {
+Value resetQubitWithoutOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.reset(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void resetMultipleQubitsWithoutOp(QCProgramBuilder& b) {
+Value resetMultipleQubitsWithoutOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.reset(q[0]);
   b.reset(q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void repeatedResetWithoutOp(QCProgramBuilder& b) {
+Value repeatedResetWithoutOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.reset(q[0]);
   b.reset(q[0]);
   b.reset(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void resetQubitAfterSingleOp(QCProgramBuilder& b) {
+SmallVector<Value> resetQubitAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
+  auto c = b.allocClassicalBitRegister(2);
   b.h(q[0]);
+  b.measure(q[0], c, 0);
   b.reset(q[0]);
+  b.measure(q[0], c, 1);
+  return {c};
 }
 
-void resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b) {
+SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
+  auto c = b.allocClassicalBitRegister(4);
   b.h(q[0]);
+  b.measure(q[0], c, 0);
   b.reset(q[0]);
+  b.measure(q[0], c, 1);
   b.h(q[1]);
+  b.measure(q[1], c, 2);
   b.reset(q[1]);
+  b.measure(q[1], c, 3);
+  return {c};
 }
 
-void repeatedResetAfterSingleOp(QCProgramBuilder& b) {
+SmallVector<Value> repeatedResetAfterSingleOp(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
+  auto c = b.allocClassicalBitRegister(2);
   b.h(q[0]);
+  b.measure(q[0], c, 0);
   b.reset(q[0]);
   b.reset(q[0]);
   b.reset(q[0]);
+  b.measure(q[0], c, 1);
+  return {c};
 }
 
-void globalPhase(QCProgramBuilder& b) { b.gphase(0.123); }
+Value globalPhase(QCProgramBuilder& b) {
+  b.gphase(0.123);
+  return b.intConstant(0);
+}
 
-void singleControlledGlobalPhase(QCProgramBuilder& b) {
+Value globalPhaseAndMeasure(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.gphase(0.123);
+  return measureToRegister(b, q[0]);
+}
+
+Value singleControlledGlobalPhase(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.cgphase(0.123, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void multipleControlledGlobalPhase(QCProgramBuilder& b) {
+Value multipleControlledGlobalPhase(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcgphase(0.123, {q[0], q[1], q[2]});
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledGlobalPhase(QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(3);
-  b.ctrl(q[0], {q[1]},
-         [&](ValueRange targets) { b.cgphase(0.123, targets[0]); });
+Value nestedControlledGlobalPhase(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](Value target) { b.cgphase(0.123, target); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void trivialControlledGlobalPhase(QCProgramBuilder& b) {
+Value trivialControlledGlobalPhase(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcgphase(0.123, {});
+  return measureToRegister(b, q[0]);
 }
 
-void inverseGlobalPhase(QCProgramBuilder& b) {
-  b.inv({}, [&](ValueRange /*qubits*/) { b.gphase(-0.123); });
+Value inverseGlobalPhase(QCProgramBuilder& b) {
+  b.inv(ValueRange{}, [&](ValueRange /*qubits*/) { b.gphase(-0.123); });
+  return b.intConstant(0);
 }
 
-void inverseMultipleControlledGlobalPhase(QCProgramBuilder& b) {
+Value inverseMultipleControlledGlobalPhase(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]},
         [&](ValueRange qubits) { b.mcgphase(-0.123, qubits); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void identity(QCProgramBuilder& b) {
+Value powGphaseScaled(QCProgramBuilder& b) {
+  b.pow(3.0, ValueRange{}, [&](ValueRange) { b.gphase(0.123); });
+  return b.intConstant(0);
+}
+
+Value powGphaseScaledRef(QCProgramBuilder& b) {
+  b.gphase(3.0 * 0.123);
+  return b.intConstant(0);
+}
+
+Value negPowGphase(QCProgramBuilder& b) {
+  b.pow(-3.0, ValueRange{}, [&](ValueRange) { b.gphase(0.123); });
+  return b.intConstant(0);
+}
+
+Value negPowGphaseRef(QCProgramBuilder& b) {
+  b.gphase(-3.0 * 0.123);
+  return b.intConstant(0);
+}
+
+Value identity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.id(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledIdentity(QCProgramBuilder& b) {
+Value singleControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.cid(q[1], q[0]);
+  b.cid(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledIdentity(QCProgramBuilder& b) {
+Value twoQubitsOneIdentity(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.id(q[1]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value threeQubitsOneIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.mcid({q[2], q[1]}, q[0]);
+  b.id(q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledIdentity(QCProgramBuilder& b) {
+Value multipleControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
-  b.ctrl(q[2], {q[0], q[1]},
-         [&](ValueRange targets) { b.cid(targets[1], targets[0]); });
+  b.mcid({q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void trivialControlledIdentity(QCProgramBuilder& b) {
+Value twoQubitsOneBarrier(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.barrier(q[0]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value nestedControlledIdentity(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.ctrl(q[0], {q[1], q[2]},
+         [&](ValueRange targets) { b.cid(targets[0], targets[1]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value trivialControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcid({}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseIdentity(QCProgramBuilder& b) {
+Value inverseIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.id(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.id(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledIdentity(QCProgramBuilder& b) {
+Value inverseMultipleControlledIdentity(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]},
         [&](ValueRange qubits) { b.mcid({qubits[0], qubits[1]}, qubits[2]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void x(QCProgramBuilder& b) {
+Value powId(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubits) { b.id(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value x(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.x(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledX(QCProgramBuilder& b) {
+Value singleControlledX(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cx(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledX(QCProgramBuilder& b) {
+Value multipleControlledX(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcx({q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledX(QCProgramBuilder& b) {
+Value nestedControlledX(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.cx(targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledX(QCProgramBuilder& b) {
+Value trivialControlledX(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcx({}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void repeatedControlledX(QCProgramBuilder& b) {
-  auto q = b.allocQubitRegister(64);
-  b.h(q[0]);
-  for (auto i = 1; i < 64; i++) {
-    b.cx(q[0], q[i]);
+Value repeatedControlledX(QCProgramBuilder& b) {
+  auto control = b.allocQubit();
+  b.h(control);
+  SmallVector<Value> qubits;
+  for (auto i = 0; i < 50; i++) {
+    auto qubit = b.allocQubit();
+    b.cx(control, qubit);
+    qubits.push_back(qubit);
   }
+  qubits.push_back(control);
+  return measureAndReturn(b, qubits);
 }
 
-void inverseX(QCProgramBuilder& b) {
+Value inverseX(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.x(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.x(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledX(QCProgramBuilder& b) {
+Value inverseMultipleControlledX(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]},
         [&](ValueRange qubits) { b.mcx({qubits[0], qubits[1]}, qubits[2]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void y(QCProgramBuilder& b) {
+Value powHalfX(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, q[0], [&](Value qubits) { b.x(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powHalfXRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.sx(q[0]);
+  return b.measure(q[0]);
+}
+
+Value powNegHalfX(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(-0.5, q[0], [&](Value qubits) { b.x(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value powThirdX(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, q[0], [&](Value qubits) { b.x(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powThirdXRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.gphase(1.0 / 3.0 * std::numbers::pi / 2.0);
+  b.rx(1.0 / 3.0 * std::numbers::pi, q[0]);
+  return b.measure(q[0]);
+}
+
+Value y(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.y(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledY(QCProgramBuilder& b) {
+Value singleControlledY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cy(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledY(QCProgramBuilder& b) {
+Value multipleControlledY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcy({q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledY(QCProgramBuilder& b) {
+Value nestedControlledY(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.cy(targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledY(QCProgramBuilder& b) {
+Value trivialControlledY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcy({}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseY(QCProgramBuilder& b) {
+Value inverseY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.y(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.y(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledY(QCProgramBuilder& b) {
+Value inverseMultipleControlledY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]},
         [&](ValueRange qubits) { b.mcy({qubits[0], qubits[1]}, qubits[2]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void z(QCProgramBuilder& b) {
+Value powHalfY(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, q[0], [&](Value qubits) { b.y(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powHalfYRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.gphase(std::numbers::pi / 4.0);
+  b.ry(std::numbers::pi / 2.0, q[0]);
+  return b.measure(q[0]);
+}
+
+Value z(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.z(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledZ(QCProgramBuilder& b) {
+Value singleControlledZ(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cz(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledZ(QCProgramBuilder& b) {
+Value multipleControlledZ(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcz({q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledZ(QCProgramBuilder& b) {
+Value nestedControlledZ(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.cz(targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledZ(QCProgramBuilder& b) {
+Value trivialControlledZ(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcz({}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseZ(QCProgramBuilder& b) {
+Value inverseZ(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.z(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.z(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledZ(QCProgramBuilder& b) {
+Value inverseMultipleControlledZ(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]},
         [&](ValueRange qubits) { b.mcz({qubits[0], qubits[1]}, qubits[2]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void h(QCProgramBuilder& b) {
+Value powHalfZ(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, q[0], [&](Value qubits) { b.z(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value powThreeHalvesZ(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.5, q[0], [&](Value qubits) { b.z(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value powThirdZ(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, q[0], [&](Value qubits) { b.z(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powThirdZRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.p(1.0 / 3.0 * std::numbers::pi, q[0]);
+  return b.measure(q[0]);
+}
+
+Value h(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.h(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledH(QCProgramBuilder& b) {
+Value singleControlledH(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ch(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledH(QCProgramBuilder& b) {
+Value multipleControlledH(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mch({q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledH(QCProgramBuilder& b) {
+Value nestedControlledH(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.ch(targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledH(QCProgramBuilder& b) {
+Value trivialControlledH(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mch({}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseH(QCProgramBuilder& b) {
+Value inverseH(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.h(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.h(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledH(QCProgramBuilder& b) {
+Value inverseMultipleControlledH(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]},
         [&](ValueRange qubits) { b.mch({qubits[0], qubits[1]}, qubits[2]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void hWithoutRegister(QCProgramBuilder& b) {
+Value hWithoutRegister(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
+  return b.measure(q);
 }
 
-void s(QCProgramBuilder& b) {
+Value powEvenH(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubits) { b.h(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value powOddH(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(3.0, q[0], [&](Value qubits) { b.h(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value s(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.s(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledS(QCProgramBuilder& b) {
+Value singleControlledS(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cs(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledS(QCProgramBuilder& b) {
+Value multipleControlledS(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcs({q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledS(QCProgramBuilder& b) {
+Value nestedControlledS(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.cs(targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledS(QCProgramBuilder& b) {
+Value trivialControlledS(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcs({}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseS(QCProgramBuilder& b) {
+Value inverseS(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.s(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.s(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledS(QCProgramBuilder& b) {
+Value inverseMultipleControlledS(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]},
         [&](ValueRange qubits) { b.mcs({qubits[0], qubits[1]}, qubits[2]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void sdg(QCProgramBuilder& b) {
+Value powTwoS(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubits) { b.s(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value powFourS(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(4.0, q[0], [&](Value qubits) { b.s(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value powHalfS(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, q[0], [&](Value qubits) { b.s(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value powThirdS(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, q[0], [&](Value qubits) { b.s(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powThirdSRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.p(1.0 / 3.0 * std::numbers::pi / 2.0, q[0]);
+  return b.measure(q[0]);
+}
+
+Value sdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.sdg(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledSdg(QCProgramBuilder& b) {
+Value singleControlledSdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.csdg(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledSdg(QCProgramBuilder& b) {
+Value multipleControlledSdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcsdg({q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledSdg(QCProgramBuilder& b) {
+Value nestedControlledSdg(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.csdg(targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledSdg(QCProgramBuilder& b) {
+Value trivialControlledSdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcsdg({}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseSdg(QCProgramBuilder& b) {
+Value inverseSdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.sdg(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.sdg(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledSdg(QCProgramBuilder& b) {
+Value inverseMultipleControlledSdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]},
         [&](ValueRange qubits) { b.mcsdg({qubits[0], qubits[1]}, qubits[2]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void t_(QCProgramBuilder& b) {
+Value powTwoSdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubits) { b.sdg(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value powHalfSdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, q[0], [&](Value qubits) { b.sdg(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value powThirdSdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, q[0], [&](Value qubits) { b.sdg(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powThirdSdgRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.p(-1.0 / 3.0 * std::numbers::pi / 2.0, q[0]);
+  return b.measure(q[0]);
+}
+
+Value t_(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.t(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledT(QCProgramBuilder& b) {
+Value singleControlledT(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ct(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledT(QCProgramBuilder& b) {
+Value multipleControlledT(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mct({q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledT(QCProgramBuilder& b) {
+Value nestedControlledT(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.ct(targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledT(QCProgramBuilder& b) {
+Value trivialControlledT(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mct({}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseT(QCProgramBuilder& b) {
+Value inverseT(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.t(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.t(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledT(QCProgramBuilder& b) {
+Value inverseMultipleControlledT(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]},
         [&](ValueRange qubits) { b.mct({qubits[0], qubits[1]}, qubits[2]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void tdg(QCProgramBuilder& b) {
+Value powTwoT(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubits) { b.t(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value powThirdT(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, q[0], [&](Value qubits) { b.t(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powThirdTRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.p(1.0 / 3.0 * std::numbers::pi / 4.0, q[0]);
+  return b.measure(q[0]);
+}
+
+Value tdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.tdg(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledTdg(QCProgramBuilder& b) {
+Value singleControlledTdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctdg(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledTdg(QCProgramBuilder& b) {
+Value multipleControlledTdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mctdg({q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledTdg(QCProgramBuilder& b) {
+Value nestedControlledTdg(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.ctdg(targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledTdg(QCProgramBuilder& b) {
+Value trivialControlledTdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mctdg({}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseTdg(QCProgramBuilder& b) {
+Value inverseTdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.tdg(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.tdg(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledTdg(QCProgramBuilder& b) {
+Value inverseMultipleControlledTdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]},
         [&](ValueRange qubits) { b.mctdg({qubits[0], qubits[1]}, qubits[2]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void sx(QCProgramBuilder& b) {
+Value powTwoTdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubits) { b.tdg(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value powThirdTdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, q[0], [&](Value qubits) { b.tdg(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powThirdTdgRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.p(-1.0 / 3.0 * std::numbers::pi / 4.0, q[0]);
+  return b.measure(q[0]);
+}
+
+Value sx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.sx(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledSx(QCProgramBuilder& b) {
+Value singleControlledSx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.csx(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledSx(QCProgramBuilder& b) {
+Value multipleControlledSx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcsx({q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledSx(QCProgramBuilder& b) {
+Value nestedControlledSx(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.csx(targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledSx(QCProgramBuilder& b) {
+Value trivialControlledSx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcsx({}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseSx(QCProgramBuilder& b) {
+Value inverseSx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.sx(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.sx(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledSx(QCProgramBuilder& b) {
+Value inverseMultipleControlledSx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]},
         [&](ValueRange qubits) { b.mcsx({qubits[0], qubits[1]}, qubits[2]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void sxdg(QCProgramBuilder& b) {
+Value powTwoSx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubits) { b.sx(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powTwoSxRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.x(q[0]);
+  return b.measure(q[0]);
+}
+
+Value powThirdSx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, q[0], [&](Value qubits) { b.sx(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powThirdSxRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.gphase(1.0 / 3.0 * std::numbers::pi / 4.0);
+  b.rx(1.0 / 3.0 * std::numbers::pi / 2.0, q[0]);
+  return b.measure(q[0]);
+}
+
+Value sxdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.sxdg(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledSxdg(QCProgramBuilder& b) {
+Value singleControlledSxdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.csxdg(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledSxdg(QCProgramBuilder& b) {
+Value multipleControlledSxdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcsxdg({q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledSxdg(QCProgramBuilder& b) {
+Value nestedControlledSxdg(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.csxdg(targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledSxdg(QCProgramBuilder& b) {
+Value trivialControlledSxdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcsxdg({}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseSxdg(QCProgramBuilder& b) {
+Value inverseSxdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.sxdg(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.sxdg(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledSxdg(QCProgramBuilder& b) {
+Value inverseMultipleControlledSxdg(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     b.mcsxdg({qubits[0], qubits[1]}, qubits[2]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void rx(QCProgramBuilder& b) {
+Value powTwoSxdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubits) { b.sxdg(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powTwoSxdgRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.x(q[0]);
+  return b.measure(q[0]);
+}
+
+Value powThirdSxdg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(1.0 / 3.0, q[0], [&](Value qubits) { b.sxdg(qubits); });
+  return b.measure(q[0]);
+}
+
+Value powThirdSxdgRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.gphase(-1.0 / 3.0 * std::numbers::pi / 4.0);
+  b.rx(-1.0 / 3.0 * std::numbers::pi / 2.0, q[0]);
+  return b.measure(q[0]);
+}
+
+Value rx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.rx(0.123, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledRx(QCProgramBuilder& b) {
+Value singleControlledRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.crx(0.123, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledRx(QCProgramBuilder& b) {
+Value multipleControlledRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcrx(0.123, {q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledRx(QCProgramBuilder& b) {
+Value nestedControlledRx(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.crx(0.123, targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledRx(QCProgramBuilder& b) {
+Value trivialControlledRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcrx(0.123, {}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseRx(QCProgramBuilder& b) {
+Value inverseRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.rx(-0.123, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.rx(-0.123, qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledRx(QCProgramBuilder& b) {
+Value inverseMultipleControlledRx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     b.mcrx(-0.123, {qubits[0], qubits[1]}, qubits[2]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void ry(QCProgramBuilder& b) {
+Value powRxScaled(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubits) { b.rx(0.123, qubits); });
+  return b.measure(q[0]);
+}
+
+Value rxScaled(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.rx(0.246, q[0]);
+  return b.measure(q[0]);
+}
+
+Value ry(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.ry(0.456, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledRy(QCProgramBuilder& b) {
+Value singleControlledRy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cry(0.456, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledRy(QCProgramBuilder& b) {
+Value multipleControlledRy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcry(0.456, {q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledRy(QCProgramBuilder& b) {
+Value nestedControlledRy(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.cry(0.456, targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledRy(QCProgramBuilder& b) {
+Value trivialControlledRy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcry(0.456, {}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseRy(QCProgramBuilder& b) {
+Value inverseRy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.ry(-0.456, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.ry(-0.456, qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledRy(QCProgramBuilder& b) {
+Value inverseMultipleControlledRy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     b.mcry(-0.456, {qubits[0], qubits[1]}, qubits[2]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void rz(QCProgramBuilder& b) {
+Value rz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.rz(0.789, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledRz(QCProgramBuilder& b) {
+Value singleControlledRz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.crz(0.789, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledRz(QCProgramBuilder& b) {
+Value multipleControlledRz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcrz(0.789, {q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledRz(QCProgramBuilder& b) {
+Value nestedControlledRz(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.crz(0.789, targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledRz(QCProgramBuilder& b) {
+Value trivialControlledRz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcrz(0.789, {}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseRz(QCProgramBuilder& b) {
+Value inverseRz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.rz(-0.789, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.rz(-0.789, qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledRz(QCProgramBuilder& b) {
+Value inverseMultipleControlledRz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     b.mcrz(-0.789, {qubits[0], qubits[1]}, qubits[2]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void p(QCProgramBuilder& b) {
+Value p(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.p(0.123, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledP(QCProgramBuilder& b) {
+Value singleControlledP(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cp(0.123, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledP(QCProgramBuilder& b) {
+Value multipleControlledP(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcp(0.123, {q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledP(QCProgramBuilder& b) {
+Value nestedControlledP(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]},
          [&](ValueRange targets) { b.cp(0.123, targets[0], targets[1]); });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledP(QCProgramBuilder& b) {
+Value trivialControlledP(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcp(0.123, {}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseP(QCProgramBuilder& b) {
+Value inverseP(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.p(-0.123, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.p(-0.123, qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledP(QCProgramBuilder& b) {
+Value inverseMultipleControlledP(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     b.mcp(-0.123, {qubits[0], qubits[1]}, qubits[2]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void r(QCProgramBuilder& b) {
+Value r(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.r(0.123, 0.456, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledR(QCProgramBuilder& b) {
+Value singleControlledR(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cr(0.123, 0.456, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledR(QCProgramBuilder& b) {
+Value multipleControlledR(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcr(0.123, 0.456, {q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledR(QCProgramBuilder& b) {
+Value nestedControlledR(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]}, [&](ValueRange targets) {
     b.cr(0.123, 0.456, targets[0], targets[1]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledR(QCProgramBuilder& b) {
+Value trivialControlledR(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcr(0.123, 0.456, {}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseR(QCProgramBuilder& b) {
+Value inverseR(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.r(-0.123, 0.456, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.r(-0.123, 0.456, qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledR(QCProgramBuilder& b) {
+Value inverseMultipleControlledR(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     b.mcr(-0.123, 0.456, {qubits[0], qubits[1]}, qubits[2]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void u2(QCProgramBuilder& b) {
+Value powRScaled(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(3.0, q[0], [&](Value qubits) { b.r(0.123, 0.456, qubits); });
+  return b.measure(q[0]);
+}
+
+Value powRScaledRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.r(3.0 * 0.123, 0.456, q[0]);
+  return b.measure(q[0]);
+}
+
+Value u2(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.u2(0.234, 0.567, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledU2(QCProgramBuilder& b) {
+Value singleControlledU2(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cu2(0.234, 0.567, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledU2(QCProgramBuilder& b) {
+Value multipleControlledU2(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcu2(0.234, 0.567, {q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledU2(QCProgramBuilder& b) {
+Value nestedControlledU2(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]}, [&](ValueRange targets) {
     b.cu2(0.234, 0.567, targets[0], targets[1]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledU2(QCProgramBuilder& b) {
+Value trivialControlledU2(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcu2(0.234, 0.567, {}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseU2(QCProgramBuilder& b) {
-  constexpr double pi = std::numbers::pi;
-  auto q = b.allocQubitRegister(1);
-  b.inv(q[0],
-        [&](ValueRange qubits) { b.u2(-0.567 + pi, -0.234 - pi, qubits[0]); });
-}
-
-void inverseMultipleControlledU2(QCProgramBuilder& b) {
-  constexpr double pi = std::numbers::pi;
-  auto q = b.allocQubitRegister(3);
-  b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
-    b.mcu2(-0.567 + pi, -0.234 - pi, {qubits[0], qubits[1]}, qubits[2]);
-  });
-}
-
-void u(QCProgramBuilder& b) {
+Value u(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.u(0.1, 0.2, 0.3, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void singleControlledU(QCProgramBuilder& b) {
+Value singleControlledU(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.cu(0.1, 0.2, 0.3, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledU(QCProgramBuilder& b) {
+Value multipleControlledU(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.mcu(0.1, 0.2, 0.3, {q[0], q[1]}, q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledU(QCProgramBuilder& b) {
+Value nestedControlledU(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   b.ctrl(reg[0], {reg[1], reg[2]}, [&](ValueRange targets) {
     b.cu(0.1, 0.2, 0.3, targets[0], targets[1]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledU(QCProgramBuilder& b) {
+Value trivialControlledU(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.mcu(0.1, 0.2, 0.3, {}, q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void inverseU(QCProgramBuilder& b) {
+Value inverseU(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.u(-0.1, -0.3, -0.2, qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.u(-0.1, -0.3, -0.2, qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void inverseMultipleControlledU(QCProgramBuilder& b) {
+Value inverseMultipleControlledU(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     b.mcu(-0.1, -0.3, -0.2, {qubits[0], qubits[1]}, qubits[2]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void swap(QCProgramBuilder& b) {
+Value swap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.swap(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void singleControlledSwap(QCProgramBuilder& b) {
+Value singleControlledSwap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cswap(q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledSwap(QCProgramBuilder& b) {
+Value multipleControlledSwap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcswap({q[0], q[1]}, q[2], q[3]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledSwap(QCProgramBuilder& b) {
+Value nestedControlledSwap(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.ctrl(reg[0], {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
     b.cswap(targets[0], targets[1], targets[2]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledSwap(QCProgramBuilder& b) {
+Value trivialControlledSwap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.mcswap({}, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseSwap(QCProgramBuilder& b) {
+Value inverseSwap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange qubits) { b.swap(qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseMultipleControlledSwap(QCProgramBuilder& b) {
+Value inverseMultipleControlledSwap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     b.mcswap({qubits[0], qubits[1]}, qubits[2], qubits[3]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void iswap(QCProgramBuilder& b) {
+Value powEvenSwap(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, {q[0], q[1]},
+        [&](ValueRange qubits) { b.swap(qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powOddSwap(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(3.0, {q[0], q[1]},
+        [&](ValueRange qubits) { b.swap(qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value iswap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.iswap(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void singleControlledIswap(QCProgramBuilder& b) {
+Value singleControlledIswap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.ciswap(q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledIswap(QCProgramBuilder& b) {
+Value multipleControlledIswap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mciswap({q[0], q[1]}, q[2], q[3]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledIswap(QCProgramBuilder& b) {
+Value nestedControlledIswap(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.ctrl(reg[0], {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
     b.ciswap(targets[0], targets[1], targets[2]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledIswap(QCProgramBuilder& b) {
+Value trivialControlledIswap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.mciswap({}, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseIswap(QCProgramBuilder& b) {
+Value inverseIswap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]},
         [&](ValueRange qubits) { b.iswap(qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseMultipleControlledIswap(QCProgramBuilder& b) {
+Value inverseMultipleControlledIswap(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     b.mciswap({qubits[0], qubits[1]}, qubits[2], qubits[3]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void dcx(QCProgramBuilder& b) {
+Value powHalfIswap(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(0.5, {q[0], q[1]},
+        [&](ValueRange qubits) { b.iswap(qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powHalfIswapRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.xx_plus_yy(-std::numbers::pi / 2.0, 0.0, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value dcx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.dcx(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void singleControlledDcx(QCProgramBuilder& b) {
+Value singleControlledDcx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cdcx(q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledDcx(QCProgramBuilder& b) {
+Value multipleControlledDcx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcdcx({q[0], q[1]}, q[2], q[3]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledDcx(QCProgramBuilder& b) {
+Value nestedControlledDcx(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.ctrl(reg[0], {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
     b.cdcx(targets[0], targets[1], targets[2]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledDcx(QCProgramBuilder& b) {
+Value trivialControlledDcx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.mcdcx({}, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseDcx(QCProgramBuilder& b) {
+Value inverseDcx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange qubits) { b.dcx(qubits[1], qubits[0]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseMultipleControlledDcx(QCProgramBuilder& b) {
+Value inverseMultipleControlledDcx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[3], q[2]}, [&](ValueRange qubits) {
     b.mcdcx({qubits[0], qubits[1]}, qubits[2], qubits[3]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void ecr(QCProgramBuilder& b) {
+Value ecr(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ecr(q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void singleControlledEcr(QCProgramBuilder& b) {
+Value singleControlledEcr(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cecr(q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledEcr(QCProgramBuilder& b) {
+Value multipleControlledEcr(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcecr({q[0], q[1]}, q[2], q[3]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledEcr(QCProgramBuilder& b) {
+Value nestedControlledEcr(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.ctrl(reg[0], {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
     b.cecr(targets[0], targets[1], targets[2]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledEcr(QCProgramBuilder& b) {
+Value trivialControlledEcr(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.mcecr({}, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseEcr(QCProgramBuilder& b) {
+Value inverseEcr(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange qubits) { b.ecr(qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseMultipleControlledEcr(QCProgramBuilder& b) {
+Value inverseMultipleControlledEcr(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     b.mcecr({qubits[0], qubits[1]}, qubits[2], qubits[3]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void rxx(QCProgramBuilder& b) {
+Value powEvenEcr(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, {q[0], q[1]},
+        [&](ValueRange qubits) { b.ecr(qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powOddEcr(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(3.0, {q[0], q[1]},
+        [&](ValueRange qubits) { b.ecr(qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value rxx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rxx(0.123, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void singleControlledRxx(QCProgramBuilder& b) {
+Value singleControlledRxx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.crxx(0.123, q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledRxx(QCProgramBuilder& b) {
+Value multipleControlledRxx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcrxx(0.123, {q[0], q[1]}, q[2], q[3]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledRxx(QCProgramBuilder& b) {
+Value nestedControlledRxx(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.ctrl(reg[0], {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
     b.crxx(0.123, targets[0], targets[1], targets[2]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledRxx(QCProgramBuilder& b) {
+Value trivialControlledRxx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.mcrxx(0.123, {}, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseRxx(QCProgramBuilder& b) {
+Value inverseRxx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]},
         [&](ValueRange qubits) { b.rxx(-0.123, qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseMultipleControlledRxx(QCProgramBuilder& b) {
+Value inverseMultipleControlledRxx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     b.mcrxx(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void tripleControlledRxx(QCProgramBuilder& b) {
+Value tripleControlledRxx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(5);
   b.mcrxx(0.123, {q[0], q[1], q[2]}, q[3], q[4]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void fourControlledRxx(QCProgramBuilder& b) {
+Value fourControlledRxx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(6);
   b.mcrxx(0.123, {q[0], q[1], q[2], q[3]}, q[4], q[5]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void ryy(QCProgramBuilder& b) {
+Value ryy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ryy(0.123, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void singleControlledRyy(QCProgramBuilder& b) {
+Value singleControlledRyy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cryy(0.123, q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledRyy(QCProgramBuilder& b) {
+Value multipleControlledRyy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcryy(0.123, {q[0], q[1]}, q[2], q[3]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledRyy(QCProgramBuilder& b) {
+Value nestedControlledRyy(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.ctrl(reg[0], {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
     b.cryy(0.123, targets[0], targets[1], targets[2]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledRyy(QCProgramBuilder& b) {
+Value trivialControlledRyy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.mcryy(0.123, {}, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseRyy(QCProgramBuilder& b) {
+Value inverseRyy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]},
         [&](ValueRange qubits) { b.ryy(-0.123, qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseMultipleControlledRyy(QCProgramBuilder& b) {
+Value inverseMultipleControlledRyy(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     b.mcryy(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void rzx(QCProgramBuilder& b) {
+Value rzx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rzx(0.123, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void singleControlledRzx(QCProgramBuilder& b) {
+Value singleControlledRzx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.crzx(0.123, q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledRzx(QCProgramBuilder& b) {
+Value multipleControlledRzx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcrzx(0.123, {q[0], q[1]}, q[2], q[3]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledRzx(QCProgramBuilder& b) {
+Value nestedControlledRzx(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.ctrl(reg[0], {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
     b.crzx(0.123, targets[0], targets[1], targets[2]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledRzx(QCProgramBuilder& b) {
+Value trivialControlledRzx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.mcrzx(0.123, {}, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseRzx(QCProgramBuilder& b) {
+Value inverseRzx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]},
         [&](ValueRange qubits) { b.rzx(-0.123, qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseMultipleControlledRzx(QCProgramBuilder& b) {
+Value inverseMultipleControlledRzx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     b.mcrzx(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void rzz(QCProgramBuilder& b) {
+Value rzz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rzz(0.123, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void singleControlledRzz(QCProgramBuilder& b) {
+Value singleControlledRzz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.crzz(0.123, q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledRzz(QCProgramBuilder& b) {
+Value multipleControlledRzz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcrzz(0.123, {q[0], q[1]}, q[2], q[3]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledRzz(QCProgramBuilder& b) {
+Value nestedControlledRzz(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.ctrl(reg[0], {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
     b.crzz(0.123, targets[0], targets[1], targets[2]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledRzz(QCProgramBuilder& b) {
+Value trivialControlledRzz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.mcrzz(0.123, {}, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseRzz(QCProgramBuilder& b) {
+Value inverseRzz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]},
         [&](ValueRange qubits) { b.rzz(-0.123, qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseMultipleControlledRzz(QCProgramBuilder& b) {
+Value inverseMultipleControlledRzz(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     b.mcrzz(-0.123, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void xxPlusYY(QCProgramBuilder& b) {
+Value xxPlusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.xx_plus_yy(0.123, 0.456, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void singleControlledXxPlusYY(QCProgramBuilder& b) {
+Value singleControlledXxPlusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cxx_plus_yy(0.123, 0.456, q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledXxPlusYY(QCProgramBuilder& b) {
+Value multipleControlledXxPlusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcxx_plus_yy(0.123, 0.456, {q[0], q[1]}, q[2], q[3]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledXxPlusYY(QCProgramBuilder& b) {
+Value nestedControlledXxPlusYY(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.ctrl(reg[0], {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
     b.cxx_plus_yy(0.123, 0.456, targets[0], targets[1], targets[2]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledXxPlusYY(QCProgramBuilder& b) {
+Value trivialControlledXxPlusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.mcxx_plus_yy(0.123, 0.456, {}, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseXxPlusYY(QCProgramBuilder& b) {
+Value inverseXxPlusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     b.xx_plus_yy(-0.123, 0.456, qubits[0], qubits[1]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseMultipleControlledXxPlusYY(QCProgramBuilder& b) {
+Value inverseMultipleControlledXxPlusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     b.mcxx_plus_yy(-0.123, 0.456, {qubits[0], qubits[1]}, qubits[2], qubits[3]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void xxMinusYY(QCProgramBuilder& b) {
+Value powXxPlusYYScaled(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(3.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.xx_plus_yy(0.123, 0.456, qubits[0], qubits[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powXxPlusYYScaledRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.xx_plus_yy(3.0 * 0.123, 0.456, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value xxMinusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.xx_minus_yy(0.123, 0.456, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void singleControlledXxMinusYY(QCProgramBuilder& b) {
+Value singleControlledXxMinusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.cxx_minus_yy(0.123, 0.456, q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void multipleControlledXxMinusYY(QCProgramBuilder& b) {
+Value multipleControlledXxMinusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.mcxx_minus_yy(0.123, 0.456, {q[0], q[1]}, q[2], q[3]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedControlledXxMinusYY(QCProgramBuilder& b) {
+Value nestedControlledXxMinusYY(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.ctrl(reg[0], {reg[1], reg[2], reg[3]}, [&](ValueRange targets) {
     b.cxx_minus_yy(0.123, 0.456, targets[0], targets[1], targets[2]);
   });
+  return measureAndReturn(b, reg.qubits);
 }
 
-void trivialControlledXxMinusYY(QCProgramBuilder& b) {
+Value trivialControlledXxMinusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.mcxx_minus_yy(0.123, 0.456, {}, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseXxMinusYY(QCProgramBuilder& b) {
+Value inverseXxMinusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     b.xx_minus_yy(-0.123, 0.456, qubits[0], qubits[1]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseMultipleControlledXxMinusYY(QCProgramBuilder& b) {
+Value inverseMultipleControlledXxMinusYY(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.inv({q[0], q[1], q[2], q[3]}, [&](ValueRange qubits) {
     b.mcxx_minus_yy(-0.123, 0.456, {qubits[0], qubits[1]}, qubits[2],
                     qubits[3]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void barrier(QCProgramBuilder& b) {
+Value powXxMinusYYScaled(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(3.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.xx_minus_yy(0.123, 0.456, qubits[0], qubits[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powXxMinusYYScaledRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.xx_minus_yy(3.0 * 0.123, 0.456, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value rccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.rccx(q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powEvenRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.pow(2.0, q.qubits,
+        [&](ValueRange args) { b.rccx(args[0], args[1], args[2]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powOddRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.pow(3.0, q.qubits,
+        [&](ValueRange args) { b.rccx(args[0], args[1], args[2]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value singleControlledRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(4);
+  b.crccx(q[0], q[1], q[2], q[3]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value multipleControlledRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(5);
+  b.mcrccx({q[0], q[1]}, q[2], q[3], q[4]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value nestedControlledRccx(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(5);
+  b.ctrl(reg[0], {reg[1], reg[2], reg[3], reg[4]}, [&](ValueRange targets) {
+    b.crccx(targets[0], targets[1], targets[2], targets[3]);
+  });
+  return measureAndReturn(b, reg.qubits);
+}
+
+Value trivialControlledRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.mcrccx({}, q[0], q[1], q[2]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value inverseRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.inv({q[0], q[1], q[2]},
+        [&](ValueRange qubits) { b.rccx(qubits[0], qubits[1], qubits[2]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value inverseMultipleControlledRccx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(5);
+  b.inv({q[0], q[1], q[2], q[3], q[4]}, [&](ValueRange qubits) {
+    b.mcrccx({qubits[0], qubits[1]}, qubits[2], qubits[3], qubits[4]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value barrier(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
   b.barrier(q[0]);
+  return measureToRegister(b, q[0]);
 }
 
-void barrierTwoQubits(QCProgramBuilder& b) {
+Value barrierTwoQubits(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.barrier({q[0], q[1]});
+  return measureAndReturn(b, q.qubits);
 }
 
-void barrierMultipleQubits(QCProgramBuilder& b) {
+Value barrierMultipleQubits(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.barrier({q[0], q[1], q[2]});
+  return measureAndReturn(b, q.qubits);
 }
 
-void singleControlledBarrier(QCProgramBuilder& b) {
+Value singleControlledBarrier(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
-  b.ctrl(q[1], q[0], [&](ValueRange targets) { b.barrier(targets[0]); });
+  b.ctrl(q[1], q[0], [&](Value target) { b.barrier({target}); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void inverseBarrier(QCProgramBuilder& b) {
+Value inverseBarrier(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.inv(q[0], [&](ValueRange qubits) { b.barrier(qubits[0]); });
+  b.inv(q[0], [&](Value qubit) { b.barrier(qubit); });
+  return measureToRegister(b, q[0]);
 }
 
-void trivialCtrl(QCProgramBuilder& b) {
+Value powBarrier(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubits) { b.barrier(qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value trivialCtrl(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.ctrl({}, {q[0], q[1]},
          [&](ValueRange targets) { b.rxx(0.123, targets[0], targets[1]); });
+  return measureAndReturn(b, q.qubits);
 }
 
-void emptyCtrl(QCProgramBuilder& b) {
+Value emptyCtrl(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rxx(0.123, q[0], q[1]);
-  b.ctrl({q[0]}, {q[1]}, [&](ValueRange /*targets*/) {});
+  b.ctrl(q[0], q[1], [&](Value /*target*/) {});
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedCtrl(QCProgramBuilder& b) {
+Value nestedCtrl(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl(q[0], {q[1], q[2], q[3]}, [&](ValueRange targets) {
     b.ctrl(targets[0], {targets[1], targets[2]}, [&](ValueRange innerTargets) {
       b.rxx(0.123, innerTargets[0], innerTargets[1]);
     });
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void tripleNestedCtrl(QCProgramBuilder& b) {
+Value tripleNestedCtrl(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(5);
   b.ctrl(q[0], {q[1], q[2], q[3], q[4]}, [&](ValueRange targets) {
     b.ctrl(targets[0], {targets[1], targets[2], targets[3]},
@@ -1383,9 +2146,10 @@ void tripleNestedCtrl(QCProgramBuilder& b) {
                     });
            });
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void doubleNestedCtrlTwoQubits(QCProgramBuilder& b) {
+Value doubleNestedCtrlTwoQubits(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(6);
   b.ctrl({q[0], q[1]}, {q[2], q[3], q[4], q[5]}, [&](ValueRange targets) {
     b.ctrl({targets[0], targets[1]}, {targets[2], targets[3]},
@@ -1393,9 +2157,10 @@ void doubleNestedCtrlTwoQubits(QCProgramBuilder& b) {
              b.rxx(0.123, innerTargets[0], innerTargets[1]);
            });
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void ctrlInvSandwich(QCProgramBuilder& b) {
+Value ctrlInvSandwich(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl(q[0], {q[1], q[2], q[3]}, [&](ValueRange targets) {
     b.inv(targets, [&](ValueRange qubits) {
@@ -1404,25 +2169,38 @@ void ctrlInvSandwich(QCProgramBuilder& b) {
       });
     });
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void ctrlTwo(QCProgramBuilder& b) {
+Value ctrlTwo(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
     b.x(targets[0]);
     b.rxx(0.123, targets[0], targets[1]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void ctrlTwoMixed(QCProgramBuilder& b) {
+Value ctrlThree(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(3);
+  b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {
+    b.x(targets[1]);
+    b.dcx(targets[1], targets[0]);
+    b.y(targets[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value ctrlTwoMixed(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl({q[0], q[1]}, {q[2], q[3]}, [&](ValueRange targets) {
     b.cx(targets[0], targets[1]);
     b.rxx(0.123, targets[0], targets[1]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedCtrlTwo(QCProgramBuilder& b) {
+Value nestedCtrlTwo(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(4);
   b.ctrl(q[0], {q[1], q[2], q[3]}, [&](ValueRange targets) {
     b.ctrl(targets[0], {targets[1], targets[2]}, [&](ValueRange innerTargets) {
@@ -1430,9 +2208,10 @@ void nestedCtrlTwo(QCProgramBuilder& b) {
       b.rxx(0.123, innerTargets[0], innerTargets[1]);
     });
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void ctrlInvTwo(QCProgramBuilder& b) {
+Value ctrlInvTwo(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.ctrl(q[0], {q[1], q[2]}, [&](ValueRange targets) {
     b.inv(targets, [&](ValueRange qubits) {
@@ -1440,24 +2219,76 @@ void ctrlInvTwo(QCProgramBuilder& b) {
       b.rxx(0.123, qubits[0], qubits[1]);
     });
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void emptyInv(QCProgramBuilder& b) {
+Value modifierBodyReuseReordered(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(10);
+
+  b.ctrl({q[0]}, {q[1], q[2], q[3]}, [&](ValueRange outerTargets) {
+    b.ctrl({outerTargets[2]}, {outerTargets[1], outerTargets[0]},
+           [&](ValueRange innerTargets) {
+             b.rzx(0.123, innerTargets[0], innerTargets[1]);
+           });
+  });
+
+  b.inv({q[4], q[5], q[6]}, [&](ValueRange invArgs) {
+    b.ctrl({invArgs[2]}, {invArgs[1], invArgs[0]},
+           [&](ValueRange targets) { b.rzx(0.234, targets[0], targets[1]); });
+  });
+
+  b.pow(3.0, {q[7], q[8], q[9]}, [&](ValueRange powArgs) {
+    b.ctrl({powArgs[2]}, {powArgs[1], powArgs[0]},
+           [&](ValueRange targets) { b.rzx(0.345, targets[0], targets[1]); });
+  });
+
+  return measureAndReturn(b, q.qubits);
+}
+
+Value modifierBodyReuseReorderedRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(10);
+
+  b.ctrl({q[0], q[3]}, {q[2], q[1]},
+         [&](ValueRange targets) { b.rzx(0.123, targets[0], targets[1]); });
+
+  b.ctrl({q[6]}, {q[5], q[4]}, [&](ValueRange targets) {
+    b.inv(targets,
+          [&](ValueRange invArgs) { b.rzx(0.234, invArgs[0], invArgs[1]); });
+  });
+
+  b.ctrl({q[9]}, {q[8], q[7]}, [&](ValueRange targets) {
+    b.pow(3.0, targets,
+          [&](ValueRange powArgs) { b.rzx(0.345, powArgs[0], powArgs[1]); });
+  });
+
+  return measureAndReturn(b, q.qubits);
+}
+
+Value emptyInv(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.rxx(0.123, q[0], q[1]);
   b.inv({q[0], q[1]}, [&](ValueRange /*targets*/) {});
+  return measureAndReturn(b, q.qubits);
 }
 
-void nestedInv(QCProgramBuilder& b) {
+Value emptyPow(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.rxx(0.123, q[0], q[1]);
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange /*qubits*/) {});
+  return measureAndReturn(b, q.qubits);
+}
+
+Value nestedInv(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     b.inv(qubits, [&](ValueRange innerQubits) {
       b.rxx(0.123, innerQubits[0], innerQubits[1]);
     });
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void tripleNestedInv(QCProgramBuilder& b) {
+Value tripleNestedInv(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     b.inv(qubits, [&](ValueRange innerQubits) {
@@ -1466,9 +2297,10 @@ void tripleNestedInv(QCProgramBuilder& b) {
       });
     });
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void invCtrlSandwich(QCProgramBuilder& b) {
+Value invCtrlSandwich(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     b.ctrl(qubits[0], {qubits[1], qubits[2]}, [&](ValueRange targets) {
@@ -1477,17 +2309,19 @@ void invCtrlSandwich(QCProgramBuilder& b) {
       });
     });
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void invTwo(QCProgramBuilder& b) {
+Value invTwo(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
   b.inv({q[0], q[1]}, [&](ValueRange qubits) {
     b.x(qubits[0]);
     b.rxx(0.123, qubits[0], qubits[1]);
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void invCtrlTwo(QCProgramBuilder& b) {
+Value invCtrlTwo(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(3);
   b.inv({q[0], q[1], q[2]}, [&](ValueRange qubits) {
     b.ctrl(qubits[0], {qubits[1], qubits[2]}, [&](ValueRange targets) {
@@ -1495,33 +2329,292 @@ void invCtrlTwo(QCProgramBuilder& b) {
       b.rxx(0.123, targets[0], targets[1]);
     });
   });
+  return measureAndReturn(b, q.qubits);
 }
 
-void simpleIf(QCProgramBuilder& b) {
+Value pow1Inline(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
-  b.h(q[0]);
-  auto cond = b.measure(q[0]);
-  b.scfIf(cond, [&] { b.x(q[0]); });
+  b.pow(1.0, q[0], [&](Value qubits) { b.rx(0.123, qubits); });
+  return measureToRegister(b, q[0]);
 }
 
-void ifTwoQubits(QCProgramBuilder& b) {
+Value pow0Erase(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.0, q[0], [&](Value qubits) { b.rx(0.123, qubits); });
+  return measureToRegister(b, q[0]);
+}
+
+Value nestedPow(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(3.0, q[0], [&](Value qubit) {
+    b.pow(2.0, qubit, [&](Value inner) { b.rx(0.123, inner); });
+  });
+  return b.measure(q[0]);
+}
+
+Value powSingleExponent(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(6.0, q[0], [&](Value qubits) { b.rx(0.123, qubits); });
+  return b.measure(q[0]);
+}
+
+Value nestedPowBranchCut(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(0.5, q[0], [&](Value outer) {
+    b.pow(2.0, outer, [&](Value inner) { b.x(inner); });
+  });
+  return b.measure(q[0]);
+}
+
+Value powRxx(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(2);
+  b.pow(2.0, {q[0], q[1]},
+        [&](ValueRange qubits) { b.rxx(0.123, qubits[0], qubits[1]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powRxxRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.rxx(0.246, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value negPowRx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(-2.0, q[0], [&](Value qubits) { b.rx(0.123, qubits); });
+  return b.measure(q[0]);
+}
+
+Value powRxNeg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(2.0, q[0], [&](Value qubits) { b.rx(-0.123, qubits); });
+  return b.measure(q[0]);
+}
+
+Value negPowH(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(-0.5, q[0], [&](Value qubits) { b.h(qubits); });
+  return b.measure(q[0]);
+}
+
+Value invPowHFrac(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange args) {
+    b.pow(0.5, args[0], [&](Value p) { b.h(p); });
+  });
+  return b.measure(q[0]);
+}
+
+Value powHFracNeg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.pow(-0.5, q[0], [&](Value qubits) { b.h(qubits); });
+  return b.measure(q[0]);
+}
+
+Value invPowEvenH(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange args) {
+    b.pow(2.0, args[0], [&](Value p) { b.h(p); });
+  });
+  return measureToRegister(b, q[0]);
+}
+
+Value invPowEvenSwap(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.inv({q[0], q[1]}, [&](ValueRange args) {
+    b.pow(2.0, {args[0], args[1]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value invPowSquaredZ(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange args) {
+    b.pow(2.0, args[0], [&](Value p) { b.z(p); });
+  });
+  return measureToRegister(b, q[0]);
+}
+
+Value invPowRx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  b.inv(q[0], [&](ValueRange args) {
+    b.pow(2.0, args[0], [&](Value p) { b.rx(0.123, p); });
+  });
+  return b.measure(q[0]);
+}
+
+Value invPowReordered(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.inv({q[0], q[1]}, [&](ValueRange args) {
+    b.pow(0.5, {args[1], args[0]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value invPowReorderedRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(-0.5, {q[1], q[0]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value mergeNestedPowReordered(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange o) {
+    b.pow(0.5, {o[1], o[0]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value mergeNestedPowReorderedRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(1.0, {q[1], q[0]}, [&](ValueRange p) { b.swap(p[0], p[1]); });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powCtrlRx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.ctrl(qubits[0], qubits[1],
+           [&](ValueRange args) { b.rx(0.123, args[0]); });
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value ctrlPowRx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](ValueRange args) {
+    b.pow(2.0, args[0], [&](Value p) { b.rx(0.123, p); });
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value negPowInvIswap(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(-2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.inv({qubits[0], qubits[1]},
+          [&](ValueRange args) { b.iswap(args[0], args[1]); });
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value negPowInvIswapRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.xx_plus_yy(-2.0 * std::numbers::pi, 0.0, q[0], q[1]);
+  return measureAndReturn(b, q.qubits);
+}
+
+Value ctrlPowSx(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](ValueRange args) {
+    b.pow(1.0 / 3.0, args[0], [&](Value p) { b.sx(p); });
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value ctrlPowSxRef(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.ctrl(q[0], q[1], [&](Value target) {
+    b.gphase(std::numbers::pi / 12.0);
+    b.rx(std::numbers::pi / 6.0, target);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powTwo(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.x(qubits[0]);
+    b.rxx(0.123, qubits[0], qubits[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powTwoDisjoint(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(2.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.s(qubits[0]);
+    b.t(qubits[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value powHalfDisjoint(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(0.5, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.s(qubits[0]);
+    b.t(qubits[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+Value pow0Two(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  b.pow(0.0, {q[0], q[1]}, [&](ValueRange qubits) {
+    b.x(qubits[0]);
+    b.rxx(0.123, qubits[0], qubits[1]);
+  });
+  return measureAndReturn(b, q.qubits);
+}
+
+SmallVector<Value> simpleIf(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
   b.h(q[0]);
-  auto cond = b.measure(q[0]);
-  b.scfIf(cond, [&] {
+  b.measure(q[0], c0, 0);
+  b.scfIf(c0, 0, [&] { b.x(q[0]); });
+  b.measure(q[0], c1, 0);
+  return {c0, c1};
+}
+
+SmallVector<Value> ifElse(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
+  b.h(q[0]);
+  b.measure(q[0], c0, 0);
+  b.scfIf(c0, 0, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
+  b.measure(q[0], c1, 0);
+  return {c0, c1};
+}
+
+SmallVector<Value> ifTwoQubits(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(2);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(2);
+  b.h(q[0]);
+  b.measure(q[0], c0, 0);
+  b.scfIf(c0, 0, [&] {
     b.x(q[0]);
     b.x(q[1]);
   });
+  b.measure(q[0], c1, 0);
+  b.measure(q[1], c1, 1);
+  return {c0, c1};
 }
 
-void ifElse(QCProgramBuilder& b) {
+SmallVector<Value> ifWithMeasurement(QCProgramBuilder& b) {
   auto q = b.allocQubitRegister(1);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
   b.h(q[0]);
-  auto cond = b.measure(q[0]);
-  b.scfIf(cond, [&] { b.x(q[0]); }, [&] { b.z(q[0]); });
+  b.measure(q[0], c0, 0);
+  b.scfIf(c0, 0, [&] { b.measure(q[0], c1, 0); });
+  return {c0, c1};
 }
 
-void nestedIfOpForLoop(QCProgramBuilder& b) {
+SmallVector<Value> ifWithCreg(QCProgramBuilder& b) {
+  auto q = b.allocQubitRegister(1);
+  auto c0 = b.allocClassicalBitRegister(1);
+  auto c1 = b.allocClassicalBitRegister(1);
+  b.h(q[0]);
+  b.measure(q[0], c0, 0);
+  b.scfIf(c0, 0, [&] { b.x(q[0]); });
+  b.measure(q[0], c1, 0);
+  return {c0, c1};
+}
+
+Value nestedIfOpForLoop(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto q0 = b.allocQubit();
   b.h(q0);
@@ -1530,13 +2623,58 @@ void nestedIfOpForLoop(QCProgramBuilder& b) {
       cond, [&] { b.h(q0); },
       [&] {
         b.scfFor(0, 3, 1, [&](Value iv) {
-          auto q1 = b.memrefLoad(reg.value, iv);
+          auto q1 = b.loadQubit(reg.value, iv);
           b.h(q1);
         });
       });
+  return measureToRegister(b, q0);
 }
 
-void simpleWhileReset(QCProgramBuilder& b) {
+SmallVector<Value> simpleIndexSwitch(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegister(1);
+  b.h(reg[0]);
+  auto bit0 = b.measure(reg[0]);
+  auto i0 = arith::IndexCastUIOp::create(b, b.getIndexType(), bit0).getOut();
+  b.scfIndexSwitch(i0, SmallVector<int64_t>{0},
+                   SmallVector<function_ref<void()>>{[&] { b.x(reg[0]); }},
+                   [&] { b.z(reg[0]); });
+  auto bit1 = b.measure(reg[0]);
+  return {bit0, bit1};
+}
+
+Value indexSwitchMultiCase(QCProgramBuilder& b) {
+  constexpr int64_t size = 2;
+
+  auto reg = b.allocQubitRegister(size);
+  auto c1 = arith::ConstantOp::create(b, b.getIndexType(), b.getIndexAttr(1))
+                .getResult();
+  auto condition =
+      arith::ConstantOp::create(b, b.getIndexType(), b.getIndexAttr(0))
+          .getResult();
+  for (int64_t i = 0; i < size; ++i) {
+    b.h(reg[i]);
+    auto bit = b.measure(reg[i]);
+    auto index =
+        arith::IndexCastUIOp::create(b, b.getIndexType(), bit).getOut();
+    condition = arith::OrIOp::create(b, {condition, index}).getResult();
+    condition = arith::ShLIOp::create(b, {condition, c1});
+  }
+
+  b.scfIndexSwitch(condition, SmallVector<int64_t>{1, 2, 3},
+                   SmallVector<function_ref<void()>>{
+                       [&] { b.x(reg[1]); },
+                       [&] { b.x(reg[0]); },
+                       [&] {
+                         b.x(reg[0]);
+                         b.x(reg[1]);
+                       },
+                   },
+                   [&] { /* no-op */ });
+
+  return measureAndReturn(b, reg.qubits);
+}
+
+Value simpleWhileReset(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   b.h(q);
   b.scfWhile(
@@ -1545,9 +2683,10 @@ void simpleWhileReset(QCProgramBuilder& b) {
         b.scfCondition(measureResult);
       },
       [&] { b.h(q); });
+  return measureToRegister(b, q);
 }
 
-void simpleDoWhileReset(QCProgramBuilder& b) {
+Value simpleDoWhileReset(QCProgramBuilder& b) {
   auto q = b.allocQubit();
   b.scfWhile(
       [&] {
@@ -1556,37 +2695,51 @@ void simpleDoWhileReset(QCProgramBuilder& b) {
         b.scfCondition(measureResult);
       },
       [&] {});
+  return measureToRegister(b, q);
 }
 
-void simpleForLoop(QCProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
+/// Load each reference where the converted program consumes it.
+static Value measureRegisterAtUse(QCProgramBuilder& b, Value reg,
+                                  int64_t size) {
+  auto result = b.allocClassicalBitRegister(size);
+  for (int64_t i = 0; i < size; ++i) {
+    auto q = b.loadQubit(reg, b.indexConstant(i));
+    b.measure(q, result, i);
+  }
+  return result;
+}
+
+Value simpleForLoop(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegisterStorage(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.memrefLoad(reg.value, iv);
+    auto q = b.loadQubit(reg, iv);
     b.h(q);
   });
+  return measureRegisterAtUse(b, reg, 2);
 };
 
-void nestedForLoopIfOp(QCProgramBuilder& b) {
+Value nestedForLoopIfOp(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(2);
   auto qCond = b.allocQubit();
   b.scfFor(0, 2, 1, [&](Value iv) {
     b.h(qCond);
     auto cond = b.measure(qCond);
     b.scfIf(cond, [&] {
-      auto q = b.memrefLoad(reg.value, iv);
+      auto q = b.loadQubit(reg.value, iv);
       b.h(q);
     });
   });
+  return measureToRegister(b, qCond);
 }
 
-void nestedForLoopWhileOp(QCProgramBuilder& b) {
-  auto reg = b.allocQubitRegister(2);
+Value nestedForLoopWhileOp(QCProgramBuilder& b) {
+  auto reg = b.allocQubitRegisterStorage(2);
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.memrefLoad(reg.value, iv);
+    auto q = b.loadQubit(reg, iv);
     b.h(q);
   });
   b.scfFor(0, 2, 1, [&](Value iv) {
-    auto q = b.memrefLoad(reg.value, iv);
+    auto q = b.loadQubit(reg, iv);
     b.scfWhile(
         [&] {
           auto measureResult = b.measure(q);
@@ -1594,27 +2747,66 @@ void nestedForLoopWhileOp(QCProgramBuilder& b) {
         },
         [&] { b.h(q); });
   });
+  return measureRegisterAtUse(b, reg, 2);
 }
 
-void nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b) {
+Value nestedForLoopSwitchOp(QCProgramBuilder& b) {
+  constexpr int64_t n = 3;
+  auto reg = b.allocQubitRegisterStorage(n);
+  auto c3 = arith::ConstantOp::create(b, b.getIndexAttr(3));
+  b.scfFor(0, n, 1, [&](Value iv) {
+    auto rem = arith::RemUIOp::create(b, {iv, c3}).getResult();
+    auto q = b.loadQubit(reg, iv);
+    b.scfIndexSwitch(rem, SmallVector<int64_t>{0, 1, 2},
+                     SmallVector<function_ref<void()>>{
+                         [&] { b.x(q); },
+                         [&] { b.y(q); },
+                         [&] {
+                           b.x(q);
+                           b.y(q);
+                         },
+                     },
+                     [&] { /* error */ });
+  });
+  return measureRegisterAtUse(b, reg, n);
+}
+
+Value nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(3);
   auto control = b.allocQubit();
   b.h(control);
   b.scfFor(0, 3, 1, [&](Value iv) {
-    auto q0 = b.memrefLoad(reg.value, iv);
+    auto q0 = b.loadQubit(reg.value, iv);
     b.h(q0);
     b.cx(control, q0);
   });
+  return measureToRegister(b, control);
 }
 
-void nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b) {
+Value nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b) {
   auto reg = b.allocQubitRegister(4);
   b.h(reg[0]);
   b.scfFor(1, 4, 1, [&](Value iv) {
-    auto q0 = b.memrefLoad(reg.value, iv);
+    auto q0 = b.loadQubit(reg.value, iv);
     b.h(q0);
     b.cx(reg[0], q0);
   });
+  return measureToRegister(b, reg[0]);
+}
+
+SmallVector<Value> hGateOnMultipleQubits(QCProgramBuilder& b) {
+  auto q1 = b.allocQubit();
+  auto q2 = b.allocQubit();
+  b.h(q1);
+  b.h(q2);
+  return {b.measure(q1), b.measure(q2)};
+}
+
+SmallVector<Value> singleControlledXOnIndividualQubits(QCProgramBuilder& b) {
+  auto q1 = b.allocQubit();
+  auto q2 = b.allocQubit();
+  b.cx(q1, q2);
+  return {b.measure(q1), b.measure(q2)};
 }
 
 } // namespace mlir::qc

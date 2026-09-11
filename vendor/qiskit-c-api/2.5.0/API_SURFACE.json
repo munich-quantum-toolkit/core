@@ -1,0 +1,646 @@
+{
+  "functions": {
+    "qk_api_version": {
+      "capsule": {
+        "signature": "uint32_t(*)()",
+        "slot": 0,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "uint32_t qk_api_version(void);"
+    },
+    "qk_circuit_add_classical_register": {
+      "capsule": {
+        "signature": "void(*)(QkCircuit *, const QkClassicalRegister *)",
+        "slot": 11,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_circuit_add_classical_register(QkCircuit *circuit, const QkClassicalRegister *reg);"
+    },
+    "qk_circuit_add_quantum_register": {
+      "capsule": {
+        "signature": "void(*)(QkCircuit *, const QkQuantumRegister *)",
+        "slot": 10,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_circuit_add_quantum_register(QkCircuit *circuit, const QkQuantumRegister *reg);"
+    },
+    "qk_circuit_barrier": {
+      "capsule": {
+        "signature": "QkExitCode(*)(QkCircuit *, const uint32_t *, uint32_t)",
+        "slot": 21,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkExitCode qk_circuit_barrier(QkCircuit *circuit, const uint32_t *qubits, uint32_t num_qubits);"
+    },
+    "qk_circuit_borrow_from_python": {
+      "capsule": {
+        "signature": "QkCircuit *(*)(PyObject *)",
+        "slot": 41,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkCircuit *qk_circuit_borrow_from_python(PyObject *ob);"
+    },
+    "qk_circuit_free": {
+      "capsule": {
+        "signature": "void(*)(QkCircuit *)",
+        "slot": 15,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_circuit_free(QkCircuit *circuit);"
+    },
+    "qk_circuit_gate": {
+      "capsule": {
+        "signature": "QkExitCode(*)(QkCircuit *, QkGate, const uint32_t *, const double *)",
+        "slot": 16,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkExitCode qk_circuit_gate(QkCircuit *circuit, QkGate gate, const uint32_t *qubits, const double *params);"
+    },
+    "qk_circuit_get_classical_register": {
+      "capsule": {
+        "signature": "const QkClassicalRegister *(*)(const QkCircuit *, size_t)",
+        "slot": 62,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "const QkClassicalRegister *qk_circuit_get_classical_register(const QkCircuit *circuit, size_t creg_idx);"
+    },
+    "qk_circuit_get_control_flow_instruction": {
+      "capsule": {
+        "signature": "QkControlFlowInstruction *(*)(const QkCircuit *, size_t, const QkControlFlowInstruction *)",
+        "slot": 63,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkControlFlowInstruction *qk_circuit_get_control_flow_instruction(const QkCircuit *circuit, size_t inst_idx, const QkControlFlowInstruction *parent_cf);"
+    },
+    "qk_circuit_get_instruction": {
+      "capsule": {
+        "signature": "void(*)(const QkCircuit *, size_t, QkCircuitInstruction *)",
+        "slot": 31,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_circuit_get_instruction(const QkCircuit *circuit, size_t index, QkCircuitInstruction *instruction);"
+    },
+    "qk_circuit_get_quantum_register": {
+      "capsule": {
+        "signature": "const QkQuantumRegister *(*)(const QkCircuit *, size_t)",
+        "slot": 60,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "const QkQuantumRegister *qk_circuit_get_quantum_register(const QkCircuit *circuit, size_t qreg_idx);"
+    },
+    "qk_circuit_global_phase": {
+      "capsule": {
+        "signature": "QkParam *(*)(const QkCircuit *)",
+        "slot": 50,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkParam *qk_circuit_global_phase(const QkCircuit *circuit);"
+    },
+    "qk_circuit_instruction_clear": {
+      "capsule": {
+        "signature": "void(*)(QkCircuitInstruction *)",
+        "slot": 32,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_circuit_instruction_clear(QkCircuitInstruction *inst);"
+    },
+    "qk_circuit_instruction_kind": {
+      "capsule": {
+        "signature": "QkOperationKind(*)(const QkCircuit *, size_t)",
+        "slot": 28,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkOperationKind qk_circuit_instruction_kind(const QkCircuit *circuit, size_t index);"
+    },
+    "qk_circuit_measure": {
+      "capsule": {
+        "signature": "QkExitCode(*)(QkCircuit *, uint32_t, uint32_t)",
+        "slot": 19,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkExitCode qk_circuit_measure(QkCircuit *circuit, uint32_t qubit, uint32_t clbit);"
+    },
+    "qk_circuit_new": {
+      "capsule": {
+        "signature": "QkCircuit *(*)(uint32_t, uint32_t)",
+        "slot": 5,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkCircuit *qk_circuit_new(uint32_t num_qubits, uint32_t num_clbits);"
+    },
+    "qk_circuit_num_classical_registers": {
+      "capsule": {
+        "signature": "size_t(*)(const QkCircuit *)",
+        "slot": 61,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "size_t qk_circuit_num_classical_registers(const QkCircuit *circuit);"
+    },
+    "qk_circuit_num_clbits": {
+      "capsule": {
+        "signature": "uint32_t(*)(const QkCircuit *)",
+        "slot": 14,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "uint32_t qk_circuit_num_clbits(const QkCircuit *circuit);"
+    },
+    "qk_circuit_num_instructions": {
+      "capsule": {
+        "signature": "size_t(*)(const QkCircuit *)",
+        "slot": 30,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "size_t qk_circuit_num_instructions(const QkCircuit *circuit);"
+    },
+    "qk_circuit_num_quantum_registers": {
+      "capsule": {
+        "signature": "size_t(*)(const QkCircuit *)",
+        "slot": 59,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "size_t qk_circuit_num_quantum_registers(const QkCircuit *circuit);"
+    },
+    "qk_circuit_num_qubits": {
+      "capsule": {
+        "signature": "uint32_t(*)(const QkCircuit *)",
+        "slot": 13,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "uint32_t qk_circuit_num_qubits(const QkCircuit *circuit);"
+    },
+    "qk_circuit_reset": {
+      "capsule": {
+        "signature": "QkExitCode(*)(QkCircuit *, uint32_t)",
+        "slot": 20,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkExitCode qk_circuit_reset(QkCircuit *circuit, uint32_t qubit);"
+    },
+    "qk_circuit_set_global_phase": {
+      "capsule": {
+        "signature": "QkExitCode(*)(QkCircuit *, const QkParam *)",
+        "slot": 51,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkExitCode qk_circuit_set_global_phase(QkCircuit *circuit, const QkParam *phase);"
+    },
+    "qk_circuit_to_python_full": {
+      "capsule": {
+        "signature": "PyObject *(*)(QkCircuit *)",
+        "slot": 40,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "PyObject *qk_circuit_to_python_full(QkCircuit *qc);"
+    },
+    "qk_classical_register_circuit_bits": {
+      "capsule": {
+        "signature": "void(*)(const QkClassicalRegister *, const QkCircuit *, uint32_t *)",
+        "slot": 58,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_classical_register_circuit_bits(const QkClassicalRegister *creg, const QkCircuit *circuit, uint32_t *out_bits);"
+    },
+    "qk_classical_register_free": {
+      "capsule": {
+        "signature": "void(*)(QkClassicalRegister *)",
+        "slot": 8,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_classical_register_free(QkClassicalRegister *reg);"
+    },
+    "qk_classical_register_name": {
+      "capsule": {
+        "signature": "char *(*)(const QkClassicalRegister *)",
+        "slot": 56,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "char *qk_classical_register_name(const QkClassicalRegister *creg);"
+    },
+    "qk_classical_register_new": {
+      "capsule": {
+        "signature": "QkClassicalRegister *(*)(uint32_t, const char *)",
+        "slot": 9,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkClassicalRegister *qk_classical_register_new(uint32_t num_clbits, const char *name);"
+    },
+    "qk_classical_register_num_bits": {
+      "capsule": {
+        "signature": "size_t(*)(const QkClassicalRegister *)",
+        "slot": 57,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "size_t qk_classical_register_num_bits(const QkClassicalRegister *creg);"
+    },
+    "qk_control_flow_block_circuit": {
+      "capsule": {
+        "signature": "const QkCircuit *(*)(const QkControlFlowInstruction *, size_t)",
+        "slot": 67,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "const QkCircuit *qk_control_flow_block_circuit(const QkControlFlowInstruction *cf_inst, size_t block_idx);"
+    },
+    "qk_control_flow_clbit_map": {
+      "capsule": {
+        "signature": "const uint32_t *(*)(const QkControlFlowInstruction *)",
+        "slot": 69,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "const uint32_t *qk_control_flow_clbit_map(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_condition_bit_info": {
+      "capsule": {
+        "signature": "QkConditionBitInfo(*)(const QkControlFlowInstruction *)",
+        "slot": 71,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkConditionBitInfo qk_control_flow_condition_bit_info(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_condition_expr": {
+      "capsule": {
+        "signature": "const QkExprNode *(*)(const QkControlFlowInstruction *)",
+        "slot": 75,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "const QkExprNode *qk_control_flow_condition_expr(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_condition_reg": {
+      "capsule": {
+        "signature": "const QkClassicalRegister *(*)(const QkControlFlowInstruction *)",
+        "slot": 73,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "const QkClassicalRegister *qk_control_flow_condition_reg(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_condition_reg_cond_bit_width": {
+      "capsule": {
+        "signature": "uint64_t(*)(const QkControlFlowInstruction *)",
+        "slot": 72,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "uint64_t qk_control_flow_condition_reg_cond_bit_width(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_condition_reg_cond_uint": {
+      "capsule": {
+        "signature": "uint64_t(*)(const QkControlFlowInstruction *)",
+        "slot": 74,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "uint64_t qk_control_flow_condition_reg_cond_uint(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_condition_type": {
+      "capsule": {
+        "signature": "QkConditionType(*)(const QkControlFlowInstruction *)",
+        "slot": 70,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkConditionType qk_control_flow_condition_type(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_instruction_free": {
+      "capsule": {
+        "signature": "void(*)(QkControlFlowInstruction *)",
+        "slot": 64,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_control_flow_instruction_free(QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_kind": {
+      "capsule": {
+        "signature": "QkControlFlowKind(*)(const QkControlFlowInstruction *)",
+        "slot": 65,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkControlFlowKind qk_control_flow_kind(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_loop_collection_type": {
+      "capsule": {
+        "signature": "QkLoopCollectionType(*)(const QkControlFlowInstruction *)",
+        "slot": 79,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkLoopCollectionType qk_control_flow_loop_collection_type(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_loop_elements": {
+      "capsule": {
+        "signature": "QkLoopElements(*)(const QkControlFlowInstruction *)",
+        "slot": 80,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkLoopElements qk_control_flow_loop_elements(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_loop_param_kind": {
+      "capsule": {
+        "signature": "QkLoopParamKind(*)(const QkControlFlowInstruction *)",
+        "slot": 82,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkLoopParamKind qk_control_flow_loop_param_kind(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_loop_range": {
+      "capsule": {
+        "signature": "void(*)(const QkControlFlowInstruction *, int64_t *, int64_t *, int64_t *)",
+        "slot": 81,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_control_flow_loop_range(const QkControlFlowInstruction *cf_inst, int64_t *out_start, int64_t *out_stop, int64_t *out_step);"
+    },
+    "qk_control_flow_loop_symbol_info": {
+      "capsule": {
+        "signature": "QkSymbolInfo(*)(const QkControlFlowInstruction *)",
+        "slot": 83,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkSymbolInfo qk_control_flow_loop_symbol_info(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_num_blocks": {
+      "capsule": {
+        "signature": "size_t(*)(const QkControlFlowInstruction *)",
+        "slot": 66,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "size_t qk_control_flow_num_blocks(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_qubit_map": {
+      "capsule": {
+        "signature": "const uint32_t *(*)(const QkControlFlowInstruction *)",
+        "slot": 68,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "const uint32_t *qk_control_flow_qubit_map(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_switch_case_labels_bit_width": {
+      "capsule": {
+        "signature": "uint64_t(*)(const QkControlFlowInstruction *, size_t)",
+        "slot": 91,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "uint64_t qk_control_flow_switch_case_labels_bit_width(const QkControlFlowInstruction *cf_inst, size_t case_idx);"
+    },
+    "qk_control_flow_switch_case_labels_clear": {
+      "capsule": {
+        "signature": "void(*)(QkSwitchCaseLabels *)",
+        "slot": 93,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_control_flow_switch_case_labels_clear(QkSwitchCaseLabels *labels);"
+    },
+    "qk_control_flow_switch_case_labels_uint": {
+      "capsule": {
+        "signature": "QkSwitchCaseLabels(*)(const QkControlFlowInstruction *, size_t)",
+        "slot": 92,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkSwitchCaseLabels qk_control_flow_switch_case_labels_uint(const QkControlFlowInstruction *cf_inst, size_t case_idx);"
+    },
+    "qk_control_flow_switch_is_case_default": {
+      "capsule": {
+        "signature": "bool(*)(const QkControlFlowInstruction *, size_t)",
+        "slot": 90,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "bool qk_control_flow_switch_is_case_default(const QkControlFlowInstruction *cf_inst, size_t case_idx);"
+    },
+    "qk_control_flow_switch_num_cases": {
+      "capsule": {
+        "signature": "size_t(*)(const QkControlFlowInstruction *)",
+        "slot": 89,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "size_t qk_control_flow_switch_num_cases(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_switch_target_bit": {
+      "capsule": {
+        "signature": "uint32_t(*)(const QkControlFlowInstruction *)",
+        "slot": 86,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "uint32_t qk_control_flow_switch_target_bit(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_switch_target_expr": {
+      "capsule": {
+        "signature": "const QkExprNode *(*)(const QkControlFlowInstruction *)",
+        "slot": 88,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "const QkExprNode *qk_control_flow_switch_target_expr(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_switch_target_register": {
+      "capsule": {
+        "signature": "const QkClassicalRegister *(*)(const QkControlFlowInstruction *)",
+        "slot": 87,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "const QkClassicalRegister *qk_control_flow_switch_target_register(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_control_flow_switch_target_type": {
+      "capsule": {
+        "signature": "QkConditionType(*)(const QkControlFlowInstruction *)",
+        "slot": 85,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkConditionType qk_control_flow_switch_target_type(const QkControlFlowInstruction *cf_inst);"
+    },
+    "qk_expr_as_value": {
+      "capsule": {
+        "signature": "const QkValue *(*)(const QkExprNode *)",
+        "slot": 310,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "const QkValue *qk_expr_as_value(const QkExprNode *expr);"
+    },
+    "qk_expr_binary_info": {
+      "capsule": {
+        "signature": "QkBinaryExprInfo(*)(const QkExprNode *)",
+        "slot": 306,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkBinaryExprInfo qk_expr_binary_info(const QkExprNode *expr);"
+    },
+    "qk_expr_cast_info": {
+      "capsule": {
+        "signature": "QkCastExprInfo(*)(const QkExprNode *)",
+        "slot": 308,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkCastExprInfo qk_expr_cast_info(const QkExprNode *expr);"
+    },
+    "qk_expr_index_info": {
+      "capsule": {
+        "signature": "QkIndexExprInfo(*)(const QkExprNode *)",
+        "slot": 309,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkIndexExprInfo qk_expr_index_info(const QkExprNode *expr);"
+    },
+    "qk_expr_kind": {
+      "capsule": {
+        "signature": "QkExprNodeKind(*)(const QkExprNode *)",
+        "slot": 305,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkExprNodeKind qk_expr_kind(const QkExprNode *expr);"
+    },
+    "qk_expr_unary_info": {
+      "capsule": {
+        "signature": "QkUnaryExprInfo(*)(const QkExprNode *)",
+        "slot": 307,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkUnaryExprInfo qk_expr_unary_info(const QkExprNode *expr);"
+    },
+    "qk_gate_num_params": {
+      "capsule": {
+        "signature": "uint32_t(*)(QkGate)",
+        "slot": 18,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "uint32_t qk_gate_num_params(QkGate gate);"
+    },
+    "qk_gate_num_qubits": {
+      "capsule": {
+        "signature": "uint32_t(*)(QkGate)",
+        "slot": 17,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "uint32_t qk_gate_num_qubits(QkGate gate);"
+    },
+    "qk_import": {
+      "capsule": null,
+      "declaration": "static int qk_import(void);"
+    },
+    "qk_param_as_real": {
+      "capsule": {
+        "signature": "double(*)(const QkParam *)",
+        "slot": 230,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "double qk_param_as_real(const QkParam *param);"
+    },
+    "qk_param_equal": {
+      "capsule": {
+        "signature": "bool(*)(const QkParam *, const QkParam *)",
+        "slot": 229,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "bool qk_param_equal(const QkParam *lhs, const QkParam *rhs);"
+    },
+    "qk_param_free": {
+      "capsule": {
+        "signature": "void(*)(QkParam *)",
+        "slot": 207,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_param_free(QkParam *param);"
+    },
+    "qk_param_from_double": {
+      "capsule": {
+        "signature": "QkParam *(*)(double)",
+        "slot": 208,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkParam *qk_param_from_double(double value);"
+    },
+    "qk_param_str": {
+      "capsule": {
+        "signature": "char *(*)(const QkParam *)",
+        "slot": 211,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "char *qk_param_str(const QkParam *param);"
+    },
+    "qk_quantum_register_circuit_bits": {
+      "capsule": {
+        "signature": "void(*)(const QkQuantumRegister *, const QkCircuit *, uint32_t *)",
+        "slot": 55,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_quantum_register_circuit_bits(const QkQuantumRegister *qreg, const QkCircuit *circuit, uint32_t *out_bits);"
+    },
+    "qk_quantum_register_free": {
+      "capsule": {
+        "signature": "void(*)(QkQuantumRegister *)",
+        "slot": 7,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "void qk_quantum_register_free(QkQuantumRegister *reg);"
+    },
+    "qk_quantum_register_name": {
+      "capsule": {
+        "signature": "char *(*)(const QkQuantumRegister *)",
+        "slot": 53,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "char *qk_quantum_register_name(const QkQuantumRegister *qreg);"
+    },
+    "qk_quantum_register_new": {
+      "capsule": {
+        "signature": "QkQuantumRegister *(*)(uint32_t, const char *)",
+        "slot": 6,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkQuantumRegister *qk_quantum_register_new(uint32_t num_qubits, const char *name);"
+    },
+    "qk_quantum_register_num_bits": {
+      "capsule": {
+        "signature": "size_t(*)(const QkQuantumRegister *)",
+        "slot": 54,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "size_t qk_quantum_register_num_bits(const QkQuantumRegister *qreg);"
+    },
+    "qk_str_free": {
+      "capsule": {
+        "signature": "void(*)(char *)",
+        "slot": 26,
+        "table": "_Qk_API_QI"
+      },
+      "declaration": "void qk_str_free(char *string);"
+    },
+    "qk_value_bool": {
+      "capsule": {
+        "signature": "bool(*)(const QkValue *)",
+        "slot": 317,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "bool qk_value_bool(const QkValue *value);"
+    },
+    "qk_value_float": {
+      "capsule": {
+        "signature": "double(*)(const QkValue *)",
+        "slot": 315,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "double qk_value_float(const QkValue *value);"
+    },
+    "qk_value_type_info": {
+      "capsule": {
+        "signature": "QkExprTypeInfo(*)(const QkValue *)",
+        "slot": 313,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "QkExprTypeInfo qk_value_type_info(const QkValue *value);"
+    },
+    "qk_value_uint": {
+      "capsule": {
+        "signature": "uint64_t(*)(const QkValue *)",
+        "slot": 316,
+        "table": "_Qk_API_Circuit"
+      },
+      "declaration": "uint64_t qk_value_uint(const QkValue *value);"
+    }
+  },
+  "types": {
+    "QkBinaryOpType": "typedef uint8_t QkBinaryOpType;",
+    "QkCircuit": "typedef struct QkCircuit QkCircuit;",
+    "QkCircuitInstruction": "typedef struct { char *name; uint32_t *qubits; uint32_t *clbits; QkParam **params; uint32_t num_qubits; uint32_t num_clbits; uint32_t num_params; } QkCircuitInstruction;",
+    "QkClassicalRegister": "typedef struct QkClassicalRegister QkClassicalRegister;",
+    "QkControlFlowInstruction": "typedef struct QkControlFlowInstruction QkControlFlowInstruction;",
+    "QkExitCode": "typedef uint32_t QkExitCode;",
+    "QkExprNode": "typedef struct QkExprNode QkExprNode;",
+    "QkExprTypeInfo": "typedef struct { QkExprType ty; uint32_t width; } QkExprTypeInfo;",
+    "QkGate": "typedef uint8_t QkGate;",
+    "QkOperationKind": "typedef uint8_t QkOperationKind;",
+    "QkParam": "typedef struct QkParam QkParam;",
+    "QkUnaryOpType": "typedef uint8_t QkUnaryOpType;"
+  }
+}

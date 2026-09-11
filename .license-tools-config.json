@@ -9,8 +9,8 @@
   "title": false,
   "include": ["**/*"],
   "style_override_for_suffix": {
+    ".inc": "C_STYLE",
     ".pyi": "DOCSTRING_STYLE",
-    ".in": "POUND_STYLE",
     ".mlir": "SLASH_STYLE",
     ".td": "SLASH_STYLE",
     ".yaml": "POUND_STYLE",
@@ -28,6 +28,7 @@
     ".*\\.css",
     ".*\\.json",
     ".*\\.html",
+    ".*\\.tag",
     ".*\\.tfc",
     ".*\\.qc",
     ".*\\.real",
@@ -35,6 +36,7 @@
     "uv\\.lock",
     "py\\.typed",
     ".*build.*",
-    "(^|/)LICENSE$"
+    "(^|/)LICENSE$",
+    "patterns.txt"
   ]
 }

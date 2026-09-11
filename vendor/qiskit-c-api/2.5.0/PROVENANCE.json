@@ -1,0 +1,22 @@
+{
+  "component": "Qiskit C API headers",
+  "embedded_version": "2.5.0",
+  "files": {
+    "LICENSE": "0a7558bc0c5a5bcac5e2bdc5e5367f3550b0c3b45b7e6f5a81b4f9fde6693374",
+    "include/qiskit.h": "c265ecedf3627c500d7ba22367c97d527f355094fa3bb0ea4b2424ded60012b2",
+    "include/qiskit/attributes.h": "42c7897060acac76dd9bbc38ec3b155a47e2b31c376b9cb2c5e81b023cf71c89",
+    "include/qiskit/complex.h": "6d500f38c6e178db6edf9449d5688363bde99c9f87a772e89a2a4801a4072b31",
+    "include/qiskit/funcs.h": "48d16f000ec2f90933ee5492885102403be226b4d7087ce27572385b5cb54df0",
+    "include/qiskit/funcs_py.h": "73ba5dfff4041fbd5c291a634a498114f102f3216513997fcfb3be0cf9932193",
+    "include/qiskit/funcs_py_generated.h": "ecd0e483a355e52df9bb8d0aef8e9a13b7fe8228902c169ae6d854f5dc828193",
+    "include/qiskit/types.h": "9ea1bb810d5d08d75ef1d5ff3455890c20b0de79c7b3a3af86e4b08e1d0e82d7",
+    "include/qiskit/version.h": "ed4be2fbd4d44eeefc4651a49540413b21aab4f838aeffec42c104bc5989c4c4"
+  },
+  "license": "Apache-2.0",
+  "qiskit_version": "2.5.0",
+  "source": {
+    "filename": "qiskit-2.5.0-cp310-abi3-macosx_11_0_arm64.whl",
+    "sha256": "896d24f564d5192ccdad26d9628251942155cc637059e2dbb24df891a56567de",
+    "url": "https://files.pythonhosted.org/packages/fc/b8/d13df60c5264f74529ecbfd4c9b827c34b89fb1f0e2a02bf2990d6010a94/qiskit-2.5.0-cp310-abi3-macosx_11_0_arm64.whl"
+  }
+}

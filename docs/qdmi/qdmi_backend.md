@@ -10,8 +10,8 @@ mystnb:
 
 The {py:mod}`mqt.core.plugins.qiskit` module provides a Qiskit
 {py:class}`~qiskit.providers.BackendV2`-compatible interface to QDMI devices via
-FoMaC. This integration allows you to execute Qiskit circuits on QDMI-compliant
-quantum devices using a familiar Qiskit workflow.
+the MQT Core QDMI bindings. This integration lets you execute Qiskit circuits on
+QDMI devices with a standard Qiskit workflow.
 
 ## Installation
 
@@ -33,7 +33,7 @@ uv pip install "mqt-core[qiskit]"
 :sync: pip
 
 ```console
-(.venv) $ python -m pip install "mqt-core[qiskit]"
+python -m pip install "mqt-core[qiskit]"
 ```
 
 :::
@@ -43,12 +43,11 @@ uv pip install "mqt-core[qiskit]"
 ## Quickstart
 
 ```{code-cell} ipython3
-from mqt.core.plugins.qiskit import QDMIProvider
+from mqt.core.plugins.qiskit import QDMIBackend
 from qiskit import QuantumCircuit
 
-# Create a provider and get a backend
-provider = QDMIProvider()
-backend = provider.get_backend("MQT Core DDSIM QDMI Device")
+# Open the registered DDSIM device by its stable ID
+backend = QDMIBackend.from_device_id("mqt.ddsim.default")
 
 # Create a simple circuit
 qc = QuantumCircuit(2)
@@ -61,6 +60,8 @@ job = backend.run(qc, shots=1024)
 result = job.result()
 counts = result.get_counts()
 
+assert sum(counts.values()) == 1024
+assert set(counts) <= {"00", "11"}
 print(f"Results: {counts}")
 ```
 
@@ -68,9 +69,8 @@ print(f"Results: {counts}")
 
 ### Using the Provider
 
-The {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` discovers QDMI devices
-available through the FoMaC layer. Backends should always be obtained through
-the provider rather than instantiated directly.
+The {py:class}`~mqt.core.plugins.qiskit.provider.QDMIProvider` discovers
+registered QDMI devices. Use it when an application must enumerate backends.
 
 ```{code-cell} ipython3
 from mqt.core.plugins.qiskit import QDMIProvider
@@ -87,10 +87,25 @@ for backend in backends:
 ### Getting a Specific Backend
 
 ```{code-cell} ipython3
-# Get a backend by name
-backend = provider.get_backend("MQT Core DDSIM QDMI Device")
+# Open a backend directly by stable device ID
+from mqt.core.plugins.qiskit import QDMIBackend
+
+backend = QDMIBackend.from_device_id("mqt.ddsim.default")
 print(f"Backend: {backend.name}")
 print(f"Qubits: {backend.target.num_qubits}")
+```
+
+Optional session keywords apply explicit overrides to this fresh device session.
+Their names and value types are described by
+{py:class}`mqt.core.typing.QDMISessionParameters`; persistent configuration
+remains the default:
+
+```python
+backend = QDMIBackend.from_device_id(
+    "provider.device",
+    token="access-token",
+    custom1="provider-specific-value",
+)
 ```
 
 ### Filtering Backends
@@ -106,118 +121,17 @@ exact = provider.backends(name="MQT Core DDSIM QDMI Device")
 
 ## Authentication
 
-The {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` supports authentication
-for accessing QDMI devices that require credentials. Authentication parameters
-are passed to the provider constructor and forwarded to the underlying session.
-
-:::{note}
-The default local devices (MQT Core DDSIM QDMI Device, MQT NA Default QDMI
-Device) do not require authentication. Authentication is primarily used when
-connecting to remote quantum hardware.
-:::
-
-### Supported Authentication Methods
-
-The provider supports multiple authentication methods:
-
-- **Token-based authentication**: Using an API token or access token
-- **Username/password authentication**: Traditional credential-based
-  authentication
-- **File-based authentication**: Reading credentials from a file
-- **URL-based authentication**: Connecting to an authentication server
-- **Project-based authentication**: Associating sessions with specific projects,
-  e.g., for accounting or quota management
-
-### Using Authentication Tokens
-
-The most common authentication method is using an API token:
-
-```python
-from mqt.core.plugins.qiskit import QDMIProvider
-
-# Authenticate with a token
-provider = QDMIProvider(token="your_api_token_here")
-
-# Get backends
-backends = provider.backends()
-for backend in backends:
-    print(f"{backend.name}: {backend.target.num_qubits} qubits")
-```
-
-### Username and Password Authentication
-
-For services that use traditional username/password authentication:
-
-```python
-# Authenticate with username and password
-provider = QDMIProvider(username="your_username", password="your_password")
-
-# Access backend
-backend = provider.get_backend("RemoteQuantumDevice")
-```
-
-### File-Based Authentication
-
-Store credentials in a secure file for better security:
-
-```python
-# Authenticate using a credentials file
-# The file should contain authentication information in the format expected by the service
-provider = QDMIProvider(auth_file="/path/to/credentials.txt")
-```
-
-### Authentication Server URL
-
-Connect to a custom authentication server:
-
-```python
-# Use a custom authentication URL
-provider = QDMIProvider(auth_url="https://auth.quantum-service.com/api/v1/auth")
-```
-
-### Project-Based Authentication
-
-Associate your session with a specific project or organization:
-
-```python
-# Specify a project ID
-provider = QDMIProvider(token="your_api_token", project_id="quantum-research-project-2024")
-```
-
-### Combining Authentication Parameters
-
-Multiple authentication parameters can be combined for services that require
-multiple credentials:
-
-```python
-# Use multiple authentication parameters
-provider = QDMIProvider(
-    token="your_api_token",
-    username="your_username",
-    password="your_password",
-    project_id="your_project_id",
-    auth_url="https://custom-auth.example.com",
-)
-```
-
-### Authentication Error Handling
-
-When authentication fails, the provider raises a `RuntimeError`:
-
-```python
-try:
-    provider = QDMIProvider(token="invalid_token")
-    backends = provider.backends()
-except RuntimeError as e:
-    print(f"Authentication failed: {e}")
-    # Handle authentication error (e.g., prompt for valid credentials)
-```
+{py:class}`~mqt.core.plugins.qiskit.provider.QDMIProvider` does not define a
+generic credential interface. It opens each registered device with its
+persistent definition. Configure credentials through the selected QDMI device
+implementation. For example, a provider can use a credential file, an
+environment variable, or a platform credential-provider chain. See
+[QDMI device configuration](configuration.md) for persistent session settings.
 
 ## Device Capabilities and Target
 
-The backend automatically introspects the FoMaC (QDMI) device and constructs a
-Qiskit {py:class}`~qiskit.transpiler.Target` object describing device
-capabilities.
+The backend automatically introspects the QDMI device and constructs a Qiskit
+{py:class}`~qiskit.transpiler.Target` object describing device capabilities.
 
 ```{code-cell} ipython3
 # Access device properties via the Target
@@ -242,36 +156,18 @@ including:
   `swap`, `iswap`, `dcx`, `ecr`
 - **Two-qubit parametric gates**: `cp`, `cu1`, `cu3`, `crx`, `cry`, `crz`,
   `rxx`, `ryy`, `rzz`, `rzx`, `xx_plus_yy`, `xx_minus_yy`
-- **Three-qubit gates**: `ccx`, `ccz`, `cswap`
-- **Multi-controlled gates**: `mcx`, `mcz`, `mcp`, `mcrx`, `mcry`, `mcrz`
+- **Three-qubit gates**: `ccx`, `ccz`, `cswap`, `rccx`
+- **Multi-controlled gates**: `mcx`, `mcx_gray`, `mcphase`/`mcp`
 - **Non-unitary operations**: `reset`, `measure`
 
 ## Circuit Execution
 
-```{code-cell} ipython3
-from qiskit import QuantumCircuit
-
-# Create a circuit
-qc = QuantumCircuit(2)
-qc.h(0)
-qc.cx(0, 1)
-qc.measure_all()
-
-# Run on the backend
-job = backend.run(qc, shots=500)
-result = job.result()
-counts = result.get_counts()
-
-print(f"Counts: {counts}")
-print(f"Total shots: {sum(counts.values())}")
-```
-
 Circuits must meet the following requirements before execution:
 
 1. **All parameters must be bound**: Circuits with unbound parameters raise
-   {py:class}`~mqt.core.plugins.qiskit.CircuitValidationError`
+   {py:class}`~mqt.core.plugins.qiskit.exceptions.CircuitValidationError`
 2. **Only supported operations**: Operations not supported by the device raise
-   {py:class}`~mqt.core.plugins.qiskit.UnsupportedOperationError`
+   {py:class}`~mqt.core.plugins.qiskit.exceptions.UnsupportedOperationError`
 3. **Valid shots value**: Must be a non-negative integer
 
 ### Parameter Binding
@@ -280,32 +176,35 @@ The backend supports automatic parameter binding through the `parameter_values`
 argument. You can pass parameter values either as dictionaries or as sequences
 of values:
 
-```python
+```{code-cell} ipython3
 from qiskit.circuit import Parameter
 
 # Option 1: Bind parameters manually
 theta = Parameter("theta")
-qc = QuantumCircuit(1)
-qc.ry(theta, 0)
-qc.measure_all()
+parameterized = QuantumCircuit(1)
+parameterized.ry(theta, 0)
+parameterized.measure_all()
 
-qc_bound = qc.assign_parameters({theta: 1.5708})
+qc_bound = parameterized.assign_parameters({theta: 1.5708})
 job = backend.run(qc_bound, shots=100)
 
 # Option 2: Use parameter_values argument (recommended)
-job = backend.run(qc, parameter_values=[{theta: 1.5708}], shots=100)
+job = backend.run(parameterized, parameter_values=[{theta: 1.5708}], shots=100)
 
 # For multiple circuits with different parameters
-circuits = [qc, qc, qc]
+circuits = [parameterized, parameterized, parameterized]
 param_values = [{theta: 0.5}, {theta: 1.0}, {theta: 1.5}]
 job = backend.run(circuits, parameter_values=param_values, shots=100)
+bound_results = job.result()
+assert len(bound_results.results) == 3
+print([bound_results.get_counts(i) for i in range(3)])
 ```
 
 ## Job Handling
 
 ### Job Status
 
-The {py:class}`~mqt.core.plugins.qiskit.QDMIJob` wraps a FoMaC (QDMI) job and
+The {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` wraps a QDMI job and
 provides status tracking:
 
 ```python
@@ -344,7 +243,7 @@ print(f"Success: {exp_result.success}")
 The backend supports both single-circuit and multi-circuit execution. You can
 submit multiple circuits in a single call:
 
-```python
+```{code-cell} ipython3
 # Create multiple circuits
 qc1 = QuantumCircuit(2)
 qc1.h(0)
@@ -373,110 +272,86 @@ for idx in range(len(circuits)):
     print(f"Circuit {idx} results: {counts}")
 ```
 
-Alternatively, you can still submit circuits individually:
-
-```python
-results = []
-for qc in circuits:
-    job = backend.run(qc, shots=1000)
-    result = job.result()
-    results.append(result)
-```
-
 ## Qiskit Primitives
 
-The backend provides implementations of Qiskit's
-[Primitives V2](https://docs.quantum.ibm.com/api/qiskit/primitives) interfaces:
-{py:class}`~mqt.core.plugins.qiskit.QDMISampler` and
-{py:class}`~mqt.core.plugins.qiskit.QDMIEstimator`. These primitives allow for a
-simplified execution workflow for sampling bitstrings and estimating expectation
-values.
-
-### Sampler
-
-The {py:class}`~mqt.core.plugins.qiskit.QDMISampler` implements the
-`BaseSamplerV2` interface. It is used to sample quantum circuits and obtain
-measurement counts (bitstrings).
+Use Qiskit's
+[BackendSamplerV2](https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.primitives.BackendSamplerV2)
+and
+[BackendEstimatorV2](https://quantum.cloud.ibm.com/docs/en/api/qiskit/qiskit.primitives.BackendEstimatorV2).
+The backend factories construct these native objects with typed keyword options.
+Qiskit supplies the defaults and validates the options:
 
 ```{code-cell} ipython3
-from mqt.core.plugins.qiskit import QDMISampler
-from qiskit import QuantumCircuit
-
-# Initialize sampler with the backend
-sampler = QDMISampler(backend)
-
-# Create a circuit
-qc = QuantumCircuit(2)
-qc.h(0)
-qc.cx(0, 1)
-qc.measure_all()
-
-# Run the sampler
-job = sampler.run([qc], shots=1024)
-result = job.result()
-
-# Get results for the first pub (Primitive Unified Bloc)
-pub_result = result[0]
-counts = pub_result.data.meas.get_counts()
-
-print(f"Sampler results: {counts}")
-```
-
-### Estimator
-
-The {py:class}`~mqt.core.plugins.qiskit.QDMIEstimator` implements the
-`BaseEstimatorV2` interface. It is used to calculate expectation values of
-observables.
-
-```{code-cell} ipython3
-from mqt.core.plugins.qiskit import QDMIEstimator
-from qiskit import QuantumCircuit
 from qiskit.quantum_info import SparsePauliOp
-import numpy as np
 
-# Initialize estimator
-estimator = QDMIEstimator(backend)
+measured_circuit = QuantumCircuit(2)
+measured_circuit.h(0)
+measured_circuit.cx(0, 1)
+measured_circuit.measure_all()
+circuit = measured_circuit.remove_final_measurements(inplace=False)
+sampler = backend.sampler(default_shots=1024)
+estimator = backend.estimator(default_precision=0.1, abelian_grouping=True)
 
-# Create a circuit and observable
-qc = QuantumCircuit(2)
-qc.h(0)
-qc.cx(0, 1)
-
-observable = SparsePauliOp("ZZ")
-
-# Run the estimator
-job = estimator.run([(qc, observable)])
-result = job.result()
-
-# Get the expectation value
-pub_result = result[0]
-ev = pub_result.data.evs
-std = pub_result.data.stds
-
-print(f"Expectation value: {ev}")
-print(f"Standard deviation: {std}")
+samples = sampler.run([measured_circuit]).result()[0]
+counts = samples.data.meas.get_counts()
+estimate = estimator.run([(circuit, SparsePauliOp("ZZ"))]).result()[0]
+assert sum(counts.values()) == 1024
+assert set(counts) <= {"00", "11"}
+assert float(estimate.data.evs) == 1.0
+print("Bell counts:", counts)
+print("ZZ expectation:", float(estimate.data.evs))
 ```
 
-You can also use parameterized circuits with the estimator:
+Sampler defaults to 1024 shots. Estimator requires positive precision and
+defaults to `1/64` (4096 shots); it groups qubit-wise commuting measurements.
+Both use Qiskit's broadcasting, metadata, and asynchronous primitive jobs.
+Calling `result()` waits for completion. PUBs with equal shot counts share a
+backend batch; different shot counts or precisions follow Qiskit's scheduling.
+Primitive-job cancellation follows Qiskit's future semantics: it does not abort
+an already-running backend call.
+
+### Backend requirements
+
+| Feature                                    | Required QDMI result support  |
+| ------------------------------------------ | ----------------------------- |
+| Counts-only execution and native Estimator | `HIST_KEYS` and `HIST_VALUES` |
+| `memory=True` and native Sampler           | `SHOTS`                       |
+
+Native Sampler requests memory automatically. DDSIM supports both primitives;
+counts-only devices must add `SHOTS` support to run Sampler. The backend never
+reconstructs shots from counts; when memory is requested, it derives counts from
+those same genuine shots.
 
 ```{code-cell} ipython3
-from qiskit.circuit import Parameter
-
-# Parameterized circuit
-theta = Parameter("theta")
-qc_param = QuantumCircuit(1)
-qc_param.rx(theta, 0)
-
-op = SparsePauliOp("Z")
-
-# Run with specific parameter values
-# Format: (circuit, observable, parameter_values)
-vals = [0.0, np.pi/2, np.pi]
-job = estimator.run([(qc_param, op, vals)])
-result = job.result()
-
-print(f"Expectation values: {result[0].data.evs}")
+sampler = backend.sampler(default_shots=100)
+samples = sampler.run([qc]).result()[0]
+print(samples.data.meas.get_counts())
 ```
+
+A device must advertise its supported operations and accept OpenQASM 2, OpenQASM
+3, or a [registered program format](#program-serializers). Transpile circuits to
+the backend target before submission. Estimator also needs the basis rotations
+and measurements that Qiskit generates for the observables. Use the provider's
+specialized backend when its program dialect requires one, such as
+`amazon.braket.qdmi.qiskit.AmazonBraketBackend` for Braket.
+
+Results must contain one binary digit per classical bit, with `clbits[0]` on the
+right, including unmeasured bits initialized to zero. Classical registers must
+partition `circuit.clbits` in register order; loose, aliased, and reordered bits
+are rejected. Serializers and providers must preserve this mapping. Shot order
+is unchanged across registers, so joint samples and postselection remain valid.
+
+The backend accepts nonnegative integer `shots` and boolean `memory` options.
+QDMI has no standard seed parameter, so the generic backend rejects non-`None`
+`seed_simulator`. DDSIM's [custom seed parameter](ddsim_device.md) is available
+through direct QDMI job submission; other providers can define different custom
+parameters. Other execution options are unsupported. The backend validates the
+whole batch before submission, submits jobs in circuit order, and collects
+results in that order. Remote IDs are queried only when needed. Submission or
+collection failure triggers best-effort cancellation of submitted jobs;
+cancellation errors do not replace the original error. Missing memory, invalid
+bitstrings or shot totals, and failed or canceled jobs raise instead of yielding
+partial or zero-filled samples. Successful repeated reads reuse the result.
 
 ## Error Handling
 
@@ -517,50 +392,121 @@ except UnsupportedFormatError as e:
 
 ## Implementation Details
 
-### Circuit Conversion
+### Circuit Serialization
 
 When you run a circuit, the backend:
 
 1. Validates the circuit (checks for unbound parameters, supported operations,
    valid options)
-2. Converts the circuit to one of the program formats supported by the target
-   device (IQM JSON, OpenQASM 2, OpenQASM 3) using
-   {py:func}`~mqt.core.plugins.qiskit.qiskit_to_iqm_json` or Qiskit's built-in
-   QASM exporters
+2. Serializes the circuit into one of the program formats supported by the
+   target device, through the program serializer registered for that format
 3. Submits the program to the QDMI device via `device.submit_job()`
-4. Returns a {py:class}`~mqt.core.plugins.qiskit.QDMIJob`
+4. Returns a {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob`
+
+The built-in OpenQASM serializers validate circuit width and ordered operation
+placements against native QDMI metadata after preprocessing. They reject an
+invalid circuit before any job in its batch is submitted. This check uses the
+native device sites because a backend extension may hide sites from its public
+Target or use preprocessing to address them. It does not route circuits.
+
+Control-flow instructions require explicit support in the backend's Target;
+their bodies are checked recursively using the enclosing circuit's qubits.
+Advertising OpenQASM 3 alone does not enable control flow. Custom serializers
+retain responsibility for validating the native programs they produce.
+
+### Program Serializers
+
+A _program serializer_ turns one circuit into one program in one program format.
+MQT Core provides the serializers for OpenQASM 2 and OpenQASM 3. Every other
+format belongs to the package that owns the device, which registers its
+serializer through the same registry.
+
+A format fixes the kind of payload it carries, so there are two signatures. A
+text format takes a serializer that returns `str`:
+
+```python
+def serialize(circuit: QuantumCircuit, backend: QDMIBackend) -> str: ...
+```
+
+A binary format takes one that returns `bytes`:
+
+```python
+def serialize(circuit: QuantumCircuit, backend: QDMIBackend) -> bytes: ...
+```
+
+{py:func}`~mqt.core.qdmi.is_binary_program_format` states which kind a format
+carries. The backend checks the returned type against the format and raises
+{py:class}`~mqt.core.plugins.qiskit.exceptions.TranslationError` on a mismatch.
+A serializer reads the device through
+{py:attr}`~mqt.core.plugins.qiskit.backend.QDMIBackend.device` and the supported
+operations through
+{py:attr}`~mqt.core.plugins.qiskit.backend.QDMIBackend.target`.
+
+A package advertises its serializers through the
+`mqt.core.qiskit.program_serializers` entry point group. The entry point name is
+the {py:class}`~mqt.core.qdmi.ProgramFormat` member name:
+
+```toml
+[project.entry-points."mqt.core.qiskit.program_serializers"]
+IQM_JSON = "iqm.qdmi.serializers:qiskit_to_iqm_json"
+```
+
+{py:func}`~mqt.core.plugins.qiskit.serializers.register_program_serializer` does
+the same at run time:
+
+```python
+from mqt.core.plugins.qiskit import register_program_serializer
+from mqt.core.qdmi import ProgramFormat
+
+register_program_serializer(ProgramFormat.IQM_JSON, qiskit_to_iqm_json)
+```
+
+Pass `replace=True` to take over a format that already has a serializer,
+including OpenQASM 2 and OpenQASM 3.
+
+A device usually accepts several formats. The backend walks them in the order of
+{py:data}`~mqt.core.plugins.qiskit.serializers.PROGRAM_FORMAT_PREFERENCE` and
+uses the first one that has a serializer, so the order of the list decides and
+not the order the device reports:
+
+```text
+IQM_JSON, CUSTOM1 ... CUSTOM5,
+QIR_ADAPTIVE_MODULE, QIR_ADAPTIVE_STRING,
+QPY, QASM3,
+QIR_BASE_MODULE, QIR_BASE_STRING,
+QASM2
+```
+
+Device-native formats take precedence. Among standard formats, those with
+classical control precede restricted profiles; binary encoding wins ties within
+a QIR profile. `CALIBRATION` and `BATCH_JOB` do not carry serialized circuits
+and cannot have a program serializer.
 
 ### Device Introspection
 
 The backend builds its {py:class}`~qiskit.transpiler.Target` by:
 
-1. Querying the FoMaC (QDMI) device for available operations
+1. Querying the QDMI device for available operations
 2. Mapping each operation to the corresponding Qiskit gate
-3. Determining qubit connectivity from the device's coupling map
+3. Preserving each operation's ordered site tuples, including gates on three or
+   more qubits
 4. Including operation properties (duration, fidelity) if available
 
-### Primitives Implementation
-
-The Qiskit Primitives are implemented as lightweight wrappers around the backend
-execution:
-
-- **Sampler**: Submits circuits to the backend and reshapes the resulting
-  bitstrings into the requested structure (PubResult).
-- **Estimator**: Decomposes observables into Pauli terms, appends necessary
-  basis rotations and measurements to the provided circuits, and submits them to
-  the backend. It then reconstructs expectation values and standard deviations
-  from the measurement counts of each term based on the provided precision or
-  shots.
+Instruction durations use seconds: the backend multiplies raw QDMI durations by
+the device's duration scale factor and converts the advertised time unit. An
+absent scale factor defaults to one. A reported duration with a missing or
+unsupported unit, or an invalid scale factor, raises
+{py:class}`~mqt.core.plugins.qiskit.exceptions.UnsupportedOperationError`.
+Operations without duration metadata remain uncalibrated.
 
 ## API Reference
 
 For complete API documentation, see:
 
-- {py:class}`~mqt.core.plugins.qiskit.QDMIProvider` — Device provider interface
-- {py:class}`~mqt.core.plugins.qiskit.QDMIBackend` — BackendV2 implementation
-- {py:class}`~mqt.core.plugins.qiskit.QDMIJob` — Job wrapper and result handling
-- {py:class}`~mqt.core.plugins.qiskit.QDMIEstimator` — EstimatorV2 primitive
+- {py:class}`~mqt.core.plugins.qiskit.provider.QDMIProvider` — Device provider
+  interface
+- {py:class}`~mqt.core.plugins.qiskit.backend.QDMIBackend` — BackendV2
   implementation
-- {py:class}`~mqt.core.plugins.qiskit.QDMISampler` — SamplerV2 primitive
-  implementation
+- {py:class}`~mqt.core.plugins.qiskit.job.QDMIJob` — Job wrapper and result
+  handling
 - {py:mod}`~mqt.core.plugins.qiskit.exceptions` — Exception types

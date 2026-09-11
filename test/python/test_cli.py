@@ -19,6 +19,8 @@ from unittest.mock import patch
 
 import pytest
 
+# Import the private module to test its process replacement directly.
+import mqt.core._bench as benchmark_cli  # ruff: ignore[import-private-name]
 from mqt.core import __version__ as mqt_core_version
 
 if TYPE_CHECKING:
@@ -109,5 +111,38 @@ def test_cli_cmake_dir_not_found(script_runner: ScriptRunner) -> None:
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="The subprocess calls do not work properly on Windows.")
 def test_cli_execute_module() -> None:
     """Test running the CLI by executing the mqt-core module."""
-    output = check_output(["python", "-m", "mqt.core", "--version"])  # noqa: S607
+    output = check_output(["python", "-m", "mqt.core", "--version"])  # ruff:ignore[start-process-with-partial-path]
     assert mqt_core_version in output.decode()
+
+
+@pytest.mark.script_launch_mode("subprocess")
+def test_benchmark_cli(script_runner: ScriptRunner) -> None:
+    """Run the bundled benchmark driver through its console script."""
+    ret = script_runner.run(["mqt-core-bench", "list"])
+    assert ret.success
+    assert '"modular-multiplier"' in ret.stdout
+    assert '"ghz"' in ret.stdout
+    assert '"grover"' in ret.stdout
+    assert '"multiplexer"' in ret.stdout
+    assert '"qft-adder"' in ret.stdout
+    assert '"qpe"' in ret.stdout
+    assert '"repeat-until-success"' in ret.stdout
+    assert '"teleportation"' in ret.stdout
+
+
+@pytest.mark.parametrize(("platform", "suffix"), [("linux", ""), ("win32", ".exe")])
+def test_benchmark_cli_launcher(platform: str, suffix: str) -> None:
+    """Locate and execute the bundled benchmark driver on each platform."""
+    executable = Path(f"installation/mqt/core/bin/mqt-core-bench{suffix}")
+    with (
+        patch.object(benchmark_cli.sys, "platform", platform),
+        patch.object(benchmark_cli.sys, "argv", ["mqt-core-bench", "list"]),
+        patch.object(benchmark_cli, "distribution") as distribution_mock,
+        patch.object(benchmark_cli.os, "execv") as execv_mock,
+    ):
+        distribution_mock.return_value.locate_file.return_value = executable
+        benchmark_cli.main()
+
+    distribution_mock.assert_called_once_with("mqt-core")
+    distribution_mock.return_value.locate_file.assert_called_once_with(f"mqt/core/bin/mqt-core-bench{suffix}")
+    execv_mock.assert_called_once_with(executable, [str(executable), "list"])

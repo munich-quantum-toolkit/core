@@ -21,9 +21,15 @@ function(kebab_to_camel output input)
 endfunction()
 
 function(add_mqt_core_library name)
-  cmake_parse_arguments(ARG "FORCE_SHARED;HIDDEN_VISIBILITY" "ALIAS_NAME" "" ${ARGN})
+  cmake_parse_arguments(ARG "FORCE_SHARED;FORCE_STATIC;HIDDEN_VISIBILITY" "ALIAS_NAME" "" ${ARGN})
 
-  if(ARG_FORCE_SHARED OR BUILD_MQT_CORE_SHARED_LIBS)
+  if(ARG_FORCE_SHARED AND ARG_FORCE_STATIC)
+    message(FATAL_ERROR "${name} cannot be both FORCE_SHARED and FORCE_STATIC")
+  elseif(ARG_FORCE_SHARED)
+    add_library(${name} SHARED ${ARG_UNPARSED_ARGUMENTS})
+  elseif(ARG_FORCE_STATIC)
+    add_library(${name} STATIC ${ARG_UNPARSED_ARGUMENTS})
+  elseif(BUILD_MQT_CORE_SHARED_LIBS)
     add_library(${name} SHARED ${ARG_UNPARSED_ARGUMENTS})
   else()
     add_library(${name} ${ARG_UNPARSED_ARGUMENTS})
@@ -32,15 +38,12 @@ function(add_mqt_core_library name)
   if(NOT ARG_ALIAS_NAME)
     # remove prefix 'mqt-' from target name if exists
     string(REGEX REPLACE "^${MQT_CORE_TARGET_NAME}" "" ALIAS_NAME_ARG ${name})
-    # transform kebab-case to camelCase
     kebab_to_camel(ARG_ALIAS_NAME ${ALIAS_NAME_ARG})
   endif()
   add_library(MQT::Core${ARG_ALIAS_NAME} ALIAS ${name})
 
-  # Set c++ standard
   target_compile_features(${name} PUBLIC cxx_std_20)
 
-  # Add link libraries for warnings and options
   target_link_libraries(${name} PRIVATE MQT::ProjectWarnings MQT::ProjectOptions)
 
   if(ARG_HIDDEN_VISIBILITY)
@@ -54,12 +57,13 @@ function(add_mqt_core_library name)
   # Always compile with position-independent code to enable usage in shared libraries
   set_target_properties(${name} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-  # Set versioning information
-  set_target_properties(
-    ${name}
-    PROPERTIES VERSION ${PROJECT_VERSION}
-               SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
-               EXPORT_NAME Core${ARG_ALIAS_NAME})
+  set_target_properties(${name} PROPERTIES EXPORT_NAME Core${ARG_ALIAS_NAME})
+  # Wheels materialize version symlinks as duplicate libraries.
+  if(NOT SKBUILD)
+    set_target_properties(
+      ${name} PROPERTIES VERSION ${PROJECT_VERSION}
+                         SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR})
+  endif()
 
   # Make version available
   target_compile_definitions(${name} PRIVATE MQT_CORE_VERSION="${MQT_CORE_VERSION}")

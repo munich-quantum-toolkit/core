@@ -1,0 +1,45 @@
+// Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+// Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+// All rights reserved.
+//
+// SPDX-License-Identifier: MIT
+//
+// Licensed under the MIT License
+
+#ifndef MLIR_DIALECT_QCO_IR_QCODIALECT_TD
+#define MLIR_DIALECT_QCO_IR_QCODIALECT_TD
+
+include "mlir/IR/DialectBase.td"
+
+def QCODialect : Dialect {
+  let name = "qco";
+
+  let summary = "The QCO (value semantics) dialect for quantum computing.";
+
+  let description = [{
+        The QCO dialect uses **value semantics** where quantum operations
+        consume input qubits and produce new output values, following the
+        SSA model. Dependencies between quantum operations are explicit in
+        the use-def chains.
+
+        The name "QCO" stands for "Quantum Circuit Optimization."
+
+        In a program, dynamic qubit and qubit-tensor allocations must be in
+        the entry block of the `mqt.entry_point` function. Helper functions
+        receive quantum resources as arguments. The MQT entry-point verifier
+        checks this rule across the program.
+
+        Example:
+        ```mlir
+        %q_out = qco.h %q_in                       // Consumes %q_in, produces %q_out
+        %q0_out, %q1_out = qco.swap %q0_in, %q1_in // Consumes inputs, produces outputs
+        ```
+    }];
+
+  let cppNamespace = "::mlir::qco";
+  let dependentDialects = ["::mlir::arith::ArithDialect"];
+
+  let useDefaultTypePrinterParser = 1;
+}
+
+#endif // MLIR_DIALECT_QCO_IR_QCODIALECT_TD

@@ -10,7 +10,6 @@
 
 include(FetchContent)
 include(CMakeDependentOption)
-include(GNUInstallDirs)
 set(FETCH_PACKAGES "")
 
 if(BUILD_MQT_CORE_BINDINGS)
@@ -26,48 +25,27 @@ if(BUILD_MQT_CORE_MLIR)
   # Fetch jeff-mlir
   FetchContent_Declare(
     jeff-mlir
-    GIT_REPOSITORY https://github.com/PennyLaneAI/jeff-mlir.git
-    # Pinned to an unreleased commit until v0.3.0 is released. jeff-mlir's SCF operations are
-    # already marked as IsolatedFromAbove in the pinned version.
-    GIT_TAG 3f34dc3e2865ceaffb8003b2410404306a49f0ab)
-  list(APPEND FETCH_PACKAGES jeff-mlir)
+    GIT_REPOSITORY https://github.com/unitaryfoundation/jeff-mlir.git
+    GIT_TAG eec13f1f41da0da03ad55090adce4c6b4afecd21
+    EXCLUDE_FROM_ALL)
+  block()
+  # Cap'n Proto, which is fetched transitively by jeff-mlir, uses the generic BUILD_TESTING option
+  # and defines a global `check` target when it is enabled. Do not let an embedding project's test
+  # setting leak into this third-party dependency.
+  set(BUILD_TESTING OFF)
+  # jeff's transitive Cap'n Proto dependency contains source files that cannot share a unity
+  # translation unit. Keep the complete dependency subtree out of unity builds.
+  set(CMAKE_UNITY_BUILD OFF)
+  FetchContent_MakeAvailable(jeff-mlir)
+  endblock()
 endif()
 
 set(JSON_VERSION
     3.12.0
     CACHE STRING "nlohmann_json version")
 set(JSON_URL https://github.com/nlohmann/json/releases/download/v${JSON_VERSION}/json.tar.xz)
-set(JSON_SystemInclude
-    ON
-    CACHE INTERNAL "Treat the library headers like system headers")
-cmake_dependent_option(MQT_CORE_JSON_INSTALL "Install nlohmann_json library" ON "MQT_CORE_INSTALL"
-                       OFF)
-# Disable upstream nlohmann_json install rules and install with explicit MQT components below.
-set(JSON_Install
-    OFF
-    CACHE BOOL "Disable upstream nlohmann_json install rules; handled by mqt-core" FORCE)
-FetchContent_Declare(nlohmann_json URL ${JSON_URL} FIND_PACKAGE_ARGS ${JSON_VERSION})
+FetchContent_Declare(nlohmann_json URL ${JSON_URL} SYSTEM FIND_PACKAGE_ARGS ${JSON_VERSION})
 list(APPEND FETCH_PACKAGES nlohmann_json)
-
-option(USE_SYSTEM_BOOST "Whether to try to use the system Boost installation" OFF)
-set(BOOST_MIN_VERSION
-    1.80.0
-    CACHE STRING "Minimum required Boost version")
-if(USE_SYSTEM_BOOST)
-  find_package(Boost ${BOOST_MIN_VERSION} CONFIG REQUIRED)
-else()
-  set(BOOST_MP_STANDALONE
-      ON
-      CACHE INTERNAL "Use standalone boost multiprecision")
-  set(BOOST_VERSION
-      1_89_0
-      CACHE INTERNAL "Boost version")
-  set(BOOST_URL
-      https://github.com/boostorg/multiprecision/archive/refs/tags/Boost_${BOOST_VERSION}.tar.gz)
-  FetchContent_Declare(boost_mp URL ${BOOST_URL} FIND_PACKAGE_ARGS ${BOOST_MIN_VERSION} CONFIG
-                                    NAMES boost_multiprecision)
-  list(APPEND FETCH_PACKAGES boost_mp)
-endif()
 
 if(BUILD_MQT_CORE_TESTS)
   set(gtest_force_shared_crt
@@ -86,9 +64,11 @@ if(BUILD_MQT_CORE_TESTS)
 endif()
 
 # cmake-format: off
-set(QDMI_VERSION 1.3.0
+set(QDMI_MINIMUM_VERSION 1.3.3
+        CACHE STRING "Minimum QDMI version")
+set(QDMI_VERSION 1.3.4
         CACHE STRING "QDMI version")
-set(QDMI_REV "0f7e08c58b72800d1022a01cfb618af67b9a9c30" # v1.3.0
+set(QDMI_REV "7cf3dfd3a2337d0156dcc739cb96bf760828f0ec" # QDMI #537
         CACHE STRING "QDMI identifier (tag, branch or commit hash)")
 set(QDMI_REPO_OWNER "Munich-Quantum-Software-Stack"
         CACHE STRING "QDMI repository owner (change when using a fork)")
@@ -98,151 +78,7 @@ FetchContent_Declare(
   qdmi
   GIT_REPOSITORY https://github.com/${QDMI_REPO_OWNER}/qdmi.git
   GIT_TAG ${QDMI_REV}
-  FIND_PACKAGE_ARGS ${QDMI_VERSION})
+  FIND_PACKAGE_ARGS ${QDMI_MINIMUM_VERSION})
 list(APPEND FETCH_PACKAGES qdmi)
 
-set(SPDLOG_VERSION
-    1.17.0
-    CACHE STRING "spdlog version")
-set(SPDLOG_URL https://github.com/gabime/spdlog/archive/refs/tags/v${SPDLOG_VERSION}.tar.gz)
-# Add position independent code for spdlog, this is required for python bindings on linux
-set(SPDLOG_BUILD_PIC ON)
-set(SPDLOG_SYSTEM_INCLUDES
-    ON
-    CACHE INTERNAL "Treat the library headers like system headers")
-cmake_dependent_option(MQT_CORE_SPDLOG_INSTALL "Install spdlog library" ON "MQT_CORE_INSTALL" OFF)
-# Disable upstream spdlog install rules and install with explicit MQT components below.
-set(SPDLOG_INSTALL
-    OFF
-    CACHE BOOL "Disable upstream spdlog install rules; handled by mqt-core" FORCE)
-cmake_dependent_option(SPDLOG_BUILD_SHARED "Build spdlog as shared library" ON
-                       "BUILD_MQT_CORE_SHARED_LIBS" OFF)
-FetchContent_Declare(spdlog URL ${SPDLOG_URL} FIND_PACKAGE_ARGS ${SPDLOG_VERSION})
-list(APPEND FETCH_PACKAGES spdlog)
-
-# Make all declared dependencies available.
 FetchContent_MakeAvailable(${FETCH_PACKAGES})
-
-# Install nlohmann_json with explicit MQT components.
-if(MQT_CORE_JSON_INSTALL AND TARGET nlohmann_json)
-  set(MQT_CORE_JSON_CONFIG_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/cmake/nlohmann_json")
-  set(MQT_CORE_JSON_TARGETS_EXPORT_NAME "nlohmann_jsonTargets")
-  set(MQT_CORE_JSON_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/nlohmann_jsonConfig.cmake")
-  set(MQT_CORE_JSON_VERSION_CONFIG_FILE
-      "${CMAKE_CURRENT_BINARY_DIR}/nlohmann_jsonConfigVersion.cmake")
-
-  # nlohmann_json's upstream templates expect these names.
-  set(_mqt_core_saved_project_name "${PROJECT_NAME}")
-  set(_mqt_core_saved_project_version "${PROJECT_VERSION}")
-  set(_mqt_core_saved_project_version_major "${PROJECT_VERSION_MAJOR}")
-  set(PROJECT_NAME "nlohmann_json")
-  set(PROJECT_VERSION "${JSON_VERSION}")
-  string(REGEX MATCH "^[0-9]+" PROJECT_VERSION_MAJOR "${JSON_VERSION}")
-  set(NLOHMANN_JSON_TARGET_NAME "nlohmann_json")
-  set(NLOHMANN_JSON_TARGETS_EXPORT_NAME "${MQT_CORE_JSON_TARGETS_EXPORT_NAME}")
-
-  configure_file(${nlohmann_json_SOURCE_DIR}/cmake/config.cmake.in ${MQT_CORE_JSON_CONFIG_FILE}
-                 @ONLY)
-  configure_file(${nlohmann_json_SOURCE_DIR}/cmake/nlohmann_jsonConfigVersion.cmake.in
-                 ${MQT_CORE_JSON_VERSION_CONFIG_FILE} @ONLY)
-
-  set(PROJECT_NAME "${_mqt_core_saved_project_name}")
-  set(PROJECT_VERSION "${_mqt_core_saved_project_version}")
-  set(PROJECT_VERSION_MAJOR "${_mqt_core_saved_project_version_major}")
-  unset(_mqt_core_saved_project_name)
-  unset(_mqt_core_saved_project_version)
-  unset(_mqt_core_saved_project_version_major)
-  unset(NLOHMANN_JSON_TARGET_NAME)
-  unset(NLOHMANN_JSON_TARGETS_EXPORT_NAME)
-
-  install(
-    DIRECTORY ${nlohmann_json_SOURCE_DIR}/include/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-
-  if(MSVC)
-    install(
-      FILES ${nlohmann_json_SOURCE_DIR}/nlohmann_json.natvis
-      DESTINATION .
-      COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-  endif()
-
-  install(TARGETS nlohmann_json EXPORT ${MQT_CORE_JSON_TARGETS_EXPORT_NAME})
-
-  install(
-    EXPORT ${MQT_CORE_JSON_TARGETS_EXPORT_NAME}
-    NAMESPACE nlohmann_json::
-    DESTINATION ${MQT_CORE_JSON_CONFIG_INSTALL_DIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-
-  install(
-    FILES ${MQT_CORE_JSON_CONFIG_FILE} ${MQT_CORE_JSON_VERSION_CONFIG_FILE}
-    DESTINATION ${MQT_CORE_JSON_CONFIG_INSTALL_DIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-endif()
-
-# Ensure external shared libraries end up in a common lib layout used by our RUNPATH
-if(TARGET spdlog)
-  set_target_properties(
-    spdlog
-    PROPERTIES LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
-               ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_LIBDIR}"
-               RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
-endif()
-
-# Install spdlog with explicit MQT components.
-if(MQT_CORE_SPDLOG_INSTALL
-   AND TARGET spdlog
-   AND TARGET spdlog_header_only)
-  include(CMakePackageConfigHelpers)
-
-  set(MQT_CORE_SPDLOG_CONFIG_INSTALL_DIR "${CMAKE_INSTALL_DATADIR}/cmake/spdlog")
-  set(MQT_CORE_SPDLOG_CONFIG_TARGETS_FILE "spdlogConfigTargets.cmake")
-  set(MQT_CORE_SPDLOG_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/spdlogConfig.cmake")
-  set(MQT_CORE_SPDLOG_VERSION_CONFIG_FILE "${CMAKE_CURRENT_BINARY_DIR}/spdlogConfigVersion.cmake")
-
-  install(
-    TARGETS spdlog spdlog_header_only
-    EXPORT spdlog
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            COMPONENT ${MQT_CORE_TARGET_NAME}_Runtime
-            NAMELINK_COMPONENT ${MQT_CORE_TARGET_NAME}_Development
-    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR} COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-
-  install(
-    DIRECTORY ${spdlog_SOURCE_DIR}/include/
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Development
-    PATTERN "fmt/bundled" EXCLUDE)
-
-  if(NOT SPDLOG_USE_STD_FORMAT
-     AND NOT SPDLOG_FMT_EXTERNAL
-     AND NOT SPDLOG_FMT_EXTERNAL_HO)
-    install(
-      DIRECTORY ${spdlog_SOURCE_DIR}/include/spdlog/fmt/bundled/
-      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/spdlog/fmt/bundled
-      COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-  endif()
-
-  install(
-    EXPORT spdlog
-    FILE ${MQT_CORE_SPDLOG_CONFIG_TARGETS_FILE}
-    NAMESPACE spdlog::
-    DESTINATION ${MQT_CORE_SPDLOG_CONFIG_INSTALL_DIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-
-  set(config_targets_file ${MQT_CORE_SPDLOG_CONFIG_TARGETS_FILE})
-  configure_package_config_file(
-    ${spdlog_SOURCE_DIR}/cmake/spdlogConfig.cmake.in ${MQT_CORE_SPDLOG_CONFIG_FILE}
-    INSTALL_DESTINATION ${MQT_CORE_SPDLOG_CONFIG_INSTALL_DIR})
-  write_basic_package_version_file(
-    ${MQT_CORE_SPDLOG_VERSION_CONFIG_FILE}
-    VERSION ${SPDLOG_VERSION}
-    COMPATIBILITY SameMajorVersion)
-
-  install(
-    FILES ${MQT_CORE_SPDLOG_CONFIG_FILE} ${MQT_CORE_SPDLOG_VERSION_CONFIG_FILE}
-    DESTINATION ${MQT_CORE_SPDLOG_CONFIG_INSTALL_DIR}
-    COMPONENT ${MQT_CORE_TARGET_NAME}_Development)
-endif()

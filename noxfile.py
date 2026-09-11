@@ -28,14 +28,14 @@ import nox
 if TYPE_CHECKING:
     from collections.abc import Generator, Sequence
 
+
 nox.needs_version = ">=2025.10.16"
 nox.options.default_venv_backend = "uv"
 
-
-PYTHON_ALL_VERSIONS = ["3.10", "3.11", "3.12", "3.13", "3.14"]
-
 if os.environ.get("CI", None):
     nox.options.error_on_missing_interpreters = True
+
+PYTHON_ALL_VERSIONS = ["3.11", "3.12", "3.13", "3.14"]
 
 
 @contextlib.contextmanager
@@ -58,6 +58,77 @@ def lint(session: nox.Session) -> None:
     session.run("prek", "run", "--all-files", *session.posargs, external=True)
 
 
+@nox.session(name="cpp-lint", reuse_venv=True, venv_backend="uv")
+def cpp_lint(session: nox.Session) -> None:
+    """Reproduce the CI cpp-linter check for changed or all C++ files."""
+    all_files = session.posargs == ["--all"]
+    if not all_files and (len(session.posargs) > 1 or (session.posargs and session.posargs[0].startswith("-"))):
+        session.error("pass --all or at most one diff base")
+    diff_base = session.posargs[0] if session.posargs else "origin/main"
+
+    if shutil.which("cmake") is None:
+        session.install("cmake")
+    if shutil.which("ninja") is None:
+        session.install("ninja")
+    # Keep this group aligned with cpp-linter-action v2.21.0 and its inputs.
+    session.install("--group", "cpp-lint")
+
+    clang_tidy = shutil.which("clang-tidy-23") or shutil.which("clang-tidy")
+    if clang_tidy is None:
+        session.error("clang-tidy 23 is required")
+    llvm_bin = Path(clang_tidy).resolve().parent
+    version = session.run(llvm_bin / "clang-tidy", "--version", external=True, silent=True)
+    if "version 23." not in (version or ""):
+        session.error("clang-tidy 23 is required")
+
+    compiler_env = {
+        "CC": str(llvm_bin / "clang"),
+        "CXX": str(llvm_bin / "clang++"),
+    }
+    session.run(
+        "cmake",
+        "-B",
+        "build/cpp-lint",
+        "--preset",
+        "lint",
+        env=compiler_env,
+        external=True,
+    )
+    session.run(
+        "cmake",
+        "--build",
+        "build/cpp-lint",
+        "--target",
+        "mqt-core-lint-headers",
+        env=compiler_env,
+        external=True,
+    )
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        output = Path(temp_dir) / "github-output"
+        session.run(
+            "cpp-linter",
+            "--style=",
+            "--tidy-checks=",
+            f"--version={llvm_bin}",
+            "--ignore=build|!build/mlir/**|**/include|include|vendor/**|.agent/benchmarks/**",
+            "--thread-comments=false",
+            "--step-summary=false",
+            "--database=build/cpp-lint",
+            "--extra-arg=-std=c++20",
+            "--extra-arg=-Wunused-template",
+            f"--files-changed-only={'false' if all_files else 'true'}",
+            "--lines-changed-only=false",
+            *(() if all_files else (f"--diff-base={diff_base}",)),
+            "--jobs=0",
+            "--verbosity=info",
+            env={"GITHUB_OUTPUT": str(output)},
+        )
+        results = dict(line.split("=", 1) for line in output.read_text().splitlines())
+        if int(results["checks-failed"]) != 0:
+            session.error(f"cpp-linter reported {results['checks-failed']} finding(s)")
+
+
 def _run_tests(
     session: nox.Session,
     *,
@@ -66,7 +137,7 @@ def _run_tests(
     pytest_run_args: Sequence[str] = (),
 ) -> None:
     env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
-    if shutil.which("cmake") is None and shutil.which("cmake3") is None:
+    if shutil.which("cmake") is None:
         session.install("cmake")
     if shutil.which("ninja") is None:
         session.install("ninja")
@@ -95,9 +166,6 @@ def _run_tests(
     )
     if extra_command:
         session.run(*extra_command, env=env)
-    if "--cov" in session.posargs:
-        # try to use the lighter-weight `sys.monitoring` coverage core
-        env["COVERAGE_CORE"] = "sysmon"
     session.run(
         "uv",
         "run",
@@ -132,29 +200,121 @@ def minimums(session: nox.Session) -> None:
 
 @nox.session(reuse_venv=True, venv_backend="uv", python=PYTHON_ALL_VERSIONS)
 def qiskit(session: nox.Session) -> None:
-    """Tests against the latest version of Qiskit."""
+    """Test against Qiskit main with its exact extension headers."""
+    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
     with preserve_lockfile():
-        _run_tests(
-            session,
-            extra_command=["uv", "pip", "install", "qiskit[qasm3-import] @ git+https://github.com/Qiskit/qiskit.git"],
+        if shutil.which("cmake") is None:
+            session.install("cmake")
+        if shutil.which("ninja") is None:
+            session.install("ninja")
+        session.run(
+            "uv",
+            "sync",
+            "--inexact",
+            "--only-group",
+            "build",
+            "--only-group",
+            "test",
+            env=env,
         )
-        env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+        session.run(
+            "uv",
+            "pip",
+            "install",
+            "--reinstall",
+            "qiskit[qasm3-import] @ git+https://github.com/Qiskit/qiskit.git",
+            env=env,
+        )
+        details = session.run(
+            "uv",
+            "run",
+            "--no-sync",
+            "python",
+            "-c",
+            ("import qiskit; from qiskit import capi; print(qiskit.__version__); print(capi.get_include())"),
+            env=env,
+            silent=True,
+        )
+        if details is None:
+            session.error("failed to inspect the installed Qiskit build")
+        detail_lines = details.strip().splitlines()
+        if len(detail_lines) < 2:
+            session.error("installed Qiskit did not report its version and C API include directory")
+        version, include = detail_lines[-2:]
+        include_path = Path(include).resolve(strict=True)
+        cmake_args = [
+            argument
+            for argument in os.environ.get("SKBUILD_CMAKE_ARGS", "").split(";")
+            if argument
+            and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE=")
+            and not argument.startswith("-DMQT_QISKIT_CAPI_CANDIDATE_VERSION=")
+        ]
+        cmake_args.extend([
+            f"-DMQT_QISKIT_CAPI_CANDIDATE_INCLUDE={include_path}",
+            f"-DMQT_QISKIT_CAPI_CANDIDATE_VERSION={version}",
+        ])
+        env["SKBUILD_CMAKE_ARGS"] = ";".join(cmake_args)
+        env["MQT_QISKIT_TEST_CANDIDATE_VERSION"] = version
+        session.run(
+            "uv",
+            "sync",
+            "--inexact",
+            "--no-dev",
+            "--no-build-isolation-package",
+            "mqt-core",
+            "--no-install-package",
+            "qiskit",
+            env=env,
+        )
+        session.run(
+            "uv",
+            "run",
+            "--no-sync",
+            "pytest",
+            *session.posargs,
+            "--cov-config=pyproject.toml",
+            env=env,
+        )
         session.run("uv", "pip", "show", "qiskit", env=env)
 
 
-@nox.session(reuse_venv=True)
+@nox.session(python="3.14", reuse_venv=True)
 def docs(session: nox.Session) -> None:
-    """Build the docs. Use "--non-interactive" to avoid serving. Pass "-b linkcheck" to check links."""
+    """Build the docs.
+
+    Use ``--non-interactive`` to avoid serving.
+    Pass ``-b linkcheck`` to check links.
+    """
     parser = argparse.ArgumentParser()
     parser.add_argument("-b", dest="builder", default="html", help="Build target (default: html)")
     args, posargs = parser.parse_known_args(session.posargs)
+
+    # MyST loads this generated file so the README owns the executable example.
+    _, example = Path("README.md").read_text(encoding="utf-8").split("```python\n")
+    example_file = Path("docs/_build/readme_example.py")
+    example_file.parent.mkdir(parents=True, exist_ok=True)
+    example_file.write_text(example.split("\n```", maxsplit=1)[0] + "\n", encoding="utf-8")
+
+    # Retain packaged devices while excluding host file and inline configuration.
+    registry = Path(session.create_tmp()) / "qdmi.json"
+    registry.write_text('{"schema-version": 1, "qdmi": {"devices": []}}', encoding="utf-8")
 
     serve = args.builder == "html" and session.interactive
     if serve:
         session.install("sphinx-autobuild")
 
-    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
-    # install build and docs dependencies on top of the existing environment
+    env = {
+        "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
+        "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
+        "MQT_CORE_QDMI_CONFIG_FILE": str(registry.resolve()),
+        "MQT_CORE_QDMI_CONFIG_JSON": registry.read_text(encoding="utf-8"),
+        # Let scikit-build-core generate the MLIR reference pages while it
+        # builds the extension used to execute the documentation examples.
+        # The docs exercise only the DDSIM provider. The common Python package
+        # configuration enables unity builds.
+        "SKBUILD_CMAKE_ARGS": "-DBUILD_MQT_CORE_DOCUMENTATION=ON;-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF",
+    }
+
     session.run(
         "uv",
         "sync",
@@ -165,40 +325,6 @@ def docs(session: nox.Session) -> None:
         "docs",
         env=env,
     )
-
-    # build the C++ API docs using doxygen
-    with session.chdir("docs"):
-        if shutil.which("doxygen") is None:
-            session.error("doxygen is required to build the C++ API docs")
-
-        Path("_build/doxygen").mkdir(parents=True, exist_ok=True)
-        session.run("doxygen", "Doxyfile", external=True)
-        Path("api/cpp").mkdir(parents=True, exist_ok=True)
-        session.run(
-            "breathe-apidoc",
-            "-o",
-            "api/cpp",
-            "-m",
-            "-f",
-            "-g",
-            "namespace",
-            "_build/doxygen/xml/",
-            external=True,
-        )
-
-    # build the MLIR API docs via building mlir-doc
-    session.run("uvx", "cmake", "-S", ".", "-B", "build", "-DBUILD_MQT_CORE_MLIR=ON")
-    session.run("uvx", "cmake", "--build", "build", "--target", "mlir-doc")
-
-    shared_args = [
-        "-n",  # nitpicky mode
-        "-T",  # full tracebacks
-        f"-b={args.builder}",
-        "docs",
-        f"docs/_build/{args.builder}",
-        *posargs,
-    ]
-
     session.run(
         "uv",
         "run",
@@ -206,21 +332,42 @@ def docs(session: nox.Session) -> None:
         "--no-build-isolation-package",
         "mqt-core",  # build the project without isolation
         "sphinx-autobuild" if serve else "sphinx-build",
-        *shared_args,
+        "-n",  # nitpicky mode
+        "-T",  # full tracebacks
+        "-E",  # Doxygen inventories are regenerated for every docs build
+        "-W",  # fail the session if documentation diagnostics are emitted
+        f"-b={args.builder}",
+        "docs",
+        f"docs/_build/{args.builder}",
+        *posargs,
         env=env,
     )
+
+    if args.builder == "html" and not serve:
+        session.run("python", "scripts/check_docs_links.py", "docs/_build/html")
 
 
 @nox.session(reuse_venv=True, venv_backend="uv")
 def stubs(session: nox.Session) -> None:
     """Generate type stubs for Python bindings using nanobind."""
-    env = {"UV_PROJECT_ENVIRONMENT": session.virtualenv.location}
+    env = {
+        "UV_PROJECT_ENVIRONMENT": session.virtualenv.location,
+        # Stub generation only imports the extension modules, so this build
+        # favors compilation speed over optimized code. The settings match the
+        # documentation build, which lets both sessions share a build tree.
+        "SKBUILD_CMAKE_BUILD_TYPE": "MinSizeRel",
+        "SKBUILD_CMAKE_ARGS": "-DBUILD_MQT_CORE_QDMI_SC_DEVICE=OFF",
+    }
+
+    session.run("uv", "sync", "--inexact", "--only-group", "build", env=env)
     session.run(
         "uv",
         "sync",
         "--no-dev",
         "--group",
         "build",
+        "--no-build-isolation-package",
+        "mqt-core",  # build the project without isolation
         env=env,
     )
 
@@ -235,13 +382,15 @@ def stubs(session: nox.Session) -> None:
         "--output-dir",
         str(package_root),
         "--module",
-        "mqt.core.ir",
+        "mqt.core.bench",
         "--module",
         "mqt.core.dd",
         "--module",
-        "mqt.core.fomac",
+        "mqt.core.qdmi",
         "--module",
-        "mqt.core.na",
+        "mqt.core.mlir",
+        "--pattern-file",
+        "bindings/patterns.txt",
     )
 
     pyi_files = list(package_root.glob("**/*.pyi"))

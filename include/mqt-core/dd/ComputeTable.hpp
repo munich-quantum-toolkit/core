@@ -8,16 +8,15 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file ComputeTable.hpp
- * @brief Data structure for caching computed results of binary operations
- */
+/// @file ComputeTable.hpp
+/// Data structure for caching computed results of binary operations
 
 #pragma once
 
 #include "dd/statistics/TableStatistics.hpp"
-#include "ir/Definitions.hpp"
 
+#include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <functional>
 #include <iostream>
@@ -26,25 +25,21 @@
 
 namespace dd {
 
-/**
- * @brief Data structure for caching computed results of binary operations
- * @tparam LeftOperandType type of the operation's left operand
- * @tparam RightOperandType type of the operation's right operand
- * @tparam ResultType type of the operation's result
- */
+/// Data structure for caching computed results of binary operations
+/// @tparam LeftOperandType type of the operation's left operand
+/// @tparam RightOperandType type of the operation's right operand
+/// @tparam ResultType type of the operation's result
 template <class LeftOperandType, class RightOperandType, class ResultType>
 class ComputeTable {
 public:
   /// Default number of buckets for the compute table
   static constexpr std::size_t DEFAULT_NUM_BUCKETS = 16384U;
 
-  /**
-   * Default constructor
-   * @param numBuckets Number of hash table buckets. Must be a power of two.
-   */
+  /// Default constructor
+  /// @param numBuckets Number of hash table buckets. Must be a power of two.
   explicit ComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
     // numBuckets must be a power of two
-    if ((numBuckets & (numBuckets - 1)) != 0) {
+    if (!std::has_single_bit(numBuckets)) {
       throw std::invalid_argument("Number of buckets must be a power of two.");
     }
     stats.entrySize = sizeof(Entry);
@@ -53,28 +48,25 @@ public:
     table = std::vector<Entry>(numBuckets);
   }
 
-  /**
-   * @brief An entry in the compute table
-   * @details A triple consisting of the left operand, the right operand, and
-   * the result of a binary operation.
-   */
+  /// An entry in the compute table
+  ///
+  /// A triple consisting of the left operand, the right operand, and
+  /// the result of a binary operation.
   struct Entry {
     LeftOperandType leftOperand;
     RightOperandType rightOperand;
     ResultType result;
   };
 
-  /**
-   * @brief Compute the hash value for a given pair of operands
-   * @param leftOperand The left operand
-   * @param rightOperand The right operand
-   * @return The hash value
-   */
+  /// Compute the hash value for a given pair of operands
+  /// @param leftOperand The left operand
+  /// @param rightOperand The right operand
+  /// @return The hash value
   [[nodiscard]] std::size_t hash(const LeftOperandType& leftOperand,
                                  const RightOperandType& rightOperand) const {
     const auto h1 = std::hash<LeftOperandType>{}(leftOperand);
     const auto h2 = std::hash<RightOperandType>{}(rightOperand);
-    const auto hash = qc::combineHash(h1, h2);
+    const auto hash = combineHash(h1, h2);
     const auto mask = stats.numBuckets - 1;
     return hash & mask;
   }
@@ -85,13 +77,12 @@ public:
   /// Get a reference to the statistics
   [[nodiscard]] const auto& getStats() const noexcept { return stats; }
 
-  /**
-   * @brief Insert a new entry into the compute table
-   * @details Any existing entry for the resulting hash value will be replaced.
-   * @param leftOperand The left operand
-   * @param rightOperand The right operand
-   * @param result The result of the operation
-   */
+  /// Insert a new entry into the compute table
+  ///
+  /// Any existing entry for the resulting hash value will be replaced.
+  /// @param leftOperand The left operand
+  /// @param rightOperand The right operand
+  /// @param result The result of the operation
   void insert(const LeftOperandType& leftOperand,
               const RightOperandType& rightOperand, const ResultType& result) {
     const auto key = hash(leftOperand, rightOperand);
@@ -104,12 +95,10 @@ public:
     table[key] = {leftOperand, rightOperand, result};
   }
 
-  /**
-   * @brief Look up a result in the compute table
-   * @param leftOperand The left operand
-   * @param rightOperand The right operand
-   * @return A pointer to the result if it is found, otherwise nullptr.
-   */
+  /// Look up a result in the compute table
+  /// @param leftOperand The left operand
+  /// @param rightOperand The right operand
+  /// @return A pointer to the result if it is found, otherwise nullptr.
   ResultType* lookup(const LeftOperandType& leftOperand,
                      const RightOperandType& rightOperand) {
     ResultType* result = nullptr;
@@ -131,17 +120,14 @@ public:
     return &entry.result;
   }
 
-  /**
-   * @brief Clear the compute table
-   * @details Sets all entries to invalid.
-   */
-  void clear() { valid = std::vector(stats.numBuckets, false); }
+  /// Clear the compute table
+  ///
+  /// Sets all entries to invalid.
+  void clear() { std::fill(valid.begin(), valid.end(), false); }
 
-  /**
-   * @brief Print the statistics of the compute table
-   * @param os The output stream to print to
-   * @return The output stream
-   */
+  /// Print the statistics of the compute table
+  /// @param os The output stream to print to
+  /// @return The output stream
   std::ostream& printStatistics(std::ostream& os = std::cout) const {
     return os << stats;
   }

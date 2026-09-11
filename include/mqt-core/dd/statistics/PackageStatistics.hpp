@@ -8,48 +8,47 @@
  * Licensed under the MIT License
  */
 
+/// @file PackageStatistics.hpp
+/// Aggregate statistics for decision-diagram packages.
+
 #pragma once
 
 #include "dd/Package.hpp"
-
-#include <nlohmann/json_fwd.hpp>
 
 #include <iostream>
 #include <string>
 
 namespace dd {
 
-/**
- * @brief Computes an estimate for the memory usage of active DDs.
- * @details The estimate is based on the number of active entries which are
- * computed by temporarily marking all nodes reachable from the current root
- * set and subsequently counting them in the unique tables. It accounts for the
- * memory used by DD nodes, DD edges, and real numbers.
- * @param package The package instance
- * @return The estimated memory usage in MiB
- */
+/// Computes an estimate for the memory usage of active DDs.
+///
+/// The estimate is based on the number of active entries which are
+/// computed by temporarily marking all nodes reachable from the current root
+/// set and subsequently counting them in the unique tables. It accounts for the
+/// memory used by DD nodes, DD edges, and real numbers.
+/// @param package The package instance
+/// @return The estimated memory usage in MiB
 [[nodiscard]] double computeActiveMemoryMiB(Package& package);
 
-/**
- * @brief Computes an estimate for the peak memory usage of DDs.
- * @details The estimate is based on the peak number of used entries in the
- * respective memory managers. It accounts for the memory used by DD nodes, DD
- * edges, and real numbers.
- * @param package The package instance
- * @return The estimated memory usage in MiB
- */
+/// Computes an estimate for the peak memory usage of DDs.
+///
+/// The estimate is based on the peak number of used entries in the
+/// respective memory managers. It accounts for the memory used by DD nodes, DD
+/// edges, and real numbers.
+/// @param package The package instance
+/// @return The estimated memory usage in MiB
 [[nodiscard]] double computePeakMemoryMiB(const Package& package);
 
-[[nodiscard]] nlohmann::json
-getStatistics(Package& package, bool includeIndividualTables = false);
+/// Get key statistics about the data structures used by the DD package.
+/// @return A JSON-formatted string representation of the statistics
+[[nodiscard]] std::string getDataStructureStatisticsString();
 
-/**
- * @brief Get some key statistics about data structures used by the DD package
- * @return A JSON representation of the statistics
- */
-[[nodiscard]] nlohmann::json getDataStructureStatistics();
-
-[[nodiscard]] std::string getStatisticsString(Package& package);
+/// Get key statistics about the data structures held by @p package.
+/// @param package The package instance
+/// @param includeIndividualTables Whether to report every unique table
+/// @return A JSON-formatted string representation of the statistics
+[[nodiscard]] std::string
+getStatisticsString(Package& package, bool includeIndividualTables = false);
 
 void printStatistics(Package& package, std::ostream& os = std::cout);
 

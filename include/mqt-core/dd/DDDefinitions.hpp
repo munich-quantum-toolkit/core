@@ -8,16 +8,21 @@
  * Licensed under the MIT License
  */
 
-#pragma once
+/// @file DDDefinitions.hpp
+/// Fundamental decision-diagram types, constants, and helper functions.
 
-#include "ir/Definitions.hpp"
+#pragma once
 
 #include <array>
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
+#include <map>
 #include <numbers>
+#include <set>
+#include <sstream>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
@@ -25,18 +30,76 @@
 #include <vector>
 
 namespace dd {
-/**
- * @brief Integer type used for indexing qubits
- * @details `std::uint16_t` can address up to 65536 qubits as [0, ..., 65535].
- * @note If you need even more qubits, this can be increased to `std::uint32_t`.
- * Beware of the increased memory footprint of matrix nodes.
- */
+/// Integer type used for indexing qubits
+///
+/// `std::uint16_t` can address up to 65536 qubits as [0, ..., 65535].
+/// @note If you need even more qubits, this can be increased to
+/// `std::uint32_t`. Beware of the increased memory footprint of matrix nodes.
 using Qubit = std::uint16_t;
 
-/**
- * @brief Floating point type to use for computations
- * @note Adjusting the precision might lead to unexpected results.
- */
+/// Qubit indices targeted by an operation.
+using Targets = std::vector<Qubit>;
+
+/// A control qubit and its polarity.
+struct Control {
+  /// Control polarity.
+  enum class Type : bool {
+    /// Positive controls trigger on \f$\ket{1}\f$.
+    Pos = true,
+    /// Negative controls trigger on \f$\ket{0}\f$.
+    Neg = false,
+  };
+
+  /// Control qubit index.
+  Qubit qubit{};
+  /// Control polarity.
+  Type type = Type::Pos;
+
+  /// Allow implicit conversion from a qubit index.
+  /// NOLINTBEGIN(misc-explicit-constructor)
+  Control(const Qubit q = {}, const Type t = Type::Pos) : qubit(q), type(t) {}
+  /// NOLINTEND(misc-explicit-constructor)
+
+  [[nodiscard]] std::string toString() const {
+    std::ostringstream oss{};
+    oss << "Control(qubit=" << qubit << ", type_=\""
+        << (type == Type::Pos ? "Pos" : "Neg") << "\")";
+    return oss.str();
+  }
+};
+
+inline bool operator<(const Control& lhs, const Control& rhs) {
+  return lhs.qubit < rhs.qubit ||
+         (lhs.qubit == rhs.qubit && lhs.type < rhs.type);
+}
+
+inline bool operator==(const Control& lhs, const Control& rhs) {
+  return lhs.qubit == rhs.qubit && lhs.type == rhs.type;
+}
+
+/// Compare controls by qubit index.
+struct CompareControl {
+  using is_transparent [[maybe_unused]] = void;
+
+  bool operator()(const Control& lhs, const Control& rhs) const {
+    return lhs < rhs;
+  }
+  bool operator()(const Qubit lhs, const Control& rhs) const {
+    return lhs < rhs.qubit;
+  }
+  bool operator()(const Control& lhs, const Qubit rhs) const {
+    return lhs.qubit < rhs;
+  }
+};
+
+/// Controls sorted by qubit index and polarity.
+using Controls = std::set<Control, CompareControl>;
+
+/// Map logical qubit indices to physical qubit indices.
+using Permutation = std::map<Qubit, Qubit>;
+
+/// Floating point type to use for computations
+/// @note Adjusting the precision might lead to unexpected results.
 using fp = double;
 static_assert(std::is_floating_point_v<fp>,
               "fp should be a floating point type (float or double)");
@@ -52,7 +115,7 @@ enum class BasisStates : std::uint8_t {
   plus,  // NOLINT(readability-identifier-naming)
   minus, // NOLINT(readability-identifier-naming)
   right, // NOLINT(readability-identifier-naming)
-  left   // NOLINT(readability-identifier-naming)
+  left,  // NOLINT(readability-identifier-naming)
 };
 
 static constexpr auto SQRT2_2 = static_cast<fp>(
@@ -61,12 +124,23 @@ static constexpr fp PI = std::numbers::pi;
 static constexpr auto PI_2 = PI / 2;
 static constexpr fp PI_4 = PI / 4;
 
+/// Combine two hashes with the Boost hash-combine formula.
+[[nodiscard]] constexpr std::size_t
+combineHash(const std::size_t lhs, const std::size_t rhs) noexcept {
+  return lhs ^ (rhs + 0x9e3779b97f4a7c15ULL + (lhs << 6U) + (lhs >> 2U));
+}
+
+/// Add an integer to a hash.
+constexpr void hashCombine(std::size_t& hash, const std::size_t with) noexcept {
+  hash = combineHash(hash, with);
+}
+
 static constexpr std::uint64_t SERIALIZATION_VERSION = 1;
 
 struct PairHash {
   std::size_t
   operator()(const std::pair<std::size_t, std::size_t>& p) const noexcept {
-    return qc::combineHash(p.first, p.second);
+    return combineHash(p.first, p.second);
   }
 };
 
@@ -81,13 +155,16 @@ using SparseCMat = std::unordered_map<std::pair<std::size_t, std::size_t>,
 using GateMatrix = std::array<std::complex<fp>, NEDGE>;
 using TwoQubitGateMatrix =
     std::array<std::array<std::complex<fp>, NEDGE>, NEDGE>;
+/// Dimension of a three-qubit gate matrix (`2^3`).
+static constexpr std::uint8_t THREE_QUBIT_GATE_DIM = 8;
+using ThreeQubitGateMatrix =
+    std::array<std::array<std::complex<fp>, THREE_QUBIT_GATE_DIM>,
+               THREE_QUBIT_GATE_DIM>;
 
-/**
- * @brief Converts a decimal number to a binary string (big endian)
- * @param value The decimal number to convert
- * @param nbits The number of bits to use for the binary representation
- * @return The binary representation of the decimal number
- */
+/// Converts a decimal number to a binary string (big endian)
+/// @param value The decimal number to convert
+/// @param nbits The number of bits to use for the binary representation
+/// @return The binary representation of the decimal number
 [[nodiscard, maybe_unused]] static std::string
 intToBinaryString(const std::size_t value, const std::size_t nbits) {
   std::string binary(nbits, '0');
@@ -117,19 +194,18 @@ intToBinaryString(const std::size_t value, const std::size_t nbits) {
   return ulps;
 }
 
-/**
- * @brief 64bit mixing hash (from MurmurHash3)
- * @details Hash function for 64bit integers adapted from MurmurHash3
- * @param k the number to hash
- * @returns the hash value
- * @see https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
- */
+/// 64bit mixing hash (from MurmurHash3)
+///
+/// Hash function for 64bit integers adapted from MurmurHash3
+/// @param k the number to hash
+/// @returns the hash value
+/// @see https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
 [[nodiscard]] constexpr std::size_t murmur64(std::size_t k) noexcept {
-  k ^= k >> 33;
+  k ^= k >> 33U;
   k *= 0xff51afd7ed558ccdULL;
-  k ^= k >> 33;
+  k ^= k >> 33U;
   k *= 0xc4ceb9fe1a85ec53ULL;
-  k ^= k >> 33;
+  k ^= k >> 33U;
   return k;
 }
 
@@ -142,3 +218,10 @@ template <typename T>
 concept IsMatrix = std::is_same_v<T, mNode>;
 
 } // namespace dd
+
+template <> struct std::hash<dd::Control> {
+  std::size_t operator()(const dd::Control& control) const noexcept {
+    return std::hash<dd::Qubit>{}(control.qubit) ^
+           std::hash<dd::Control::Type>{}(control.type);
+  }
+};

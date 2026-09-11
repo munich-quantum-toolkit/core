@@ -7,6 +7,7 @@ __pycache__/
 *.so
 .ccache/
 cmake-build-*
+build_*
 
 # Distribution / packaging
 .Python
@@ -78,7 +79,7 @@ docs/api/
 
 # PyBuilder
 .pybuilder/
-target/
+/target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -130,7 +131,7 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# setuptools_scm
+# vcs-versioning
 python/**/_version.py
 
 # SKBuild cache dir
@@ -150,6 +151,9 @@ test/**/build/
 
 # ruff
 .ruff_cache/
+
+# rumdl
+.rumdl_cache/
 
 # Claude
 CLAUDE.md

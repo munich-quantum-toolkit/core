@@ -8,29 +8,32 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/Transforms/Passes.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/SCF/Utils/Utils.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/Visitors.h>
-#include <mlir/Interfaces/FunctionInterfaces.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/SCF/Utils/Utils.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Visitors.h"
+#include "mlir/Interfaces/FunctionInterfaces.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+
+#include "llvm/ADT/STLExtras.h"
 
 namespace mlir::qco {
 
 #define GEN_PASS_DEF_QUANTUMLOOPUNROLL
-#include "mlir/Dialect/QCO/Transforms/Passes.h.inc"
+#include "mqt/Dialect/QCO/Transforms/Passes.h.inc"
 
-/**
- * @brief Predicate for quantum loops.
- * @details A quantum loop is a `scf.for` operation that has at least one qubit
- * or qtensor value as init argument.
- * @param loop The loop to test.
- * @returns true, if the loop is a quantum loop.
- */
+/// Predicate for quantum loops.
+///
+/// A quantum loop is a `scf.for` operation that has at least one qubit
+/// or qtensor value as init argument.
+/// @param loop The loop to test.
+/// @returns true, if the loop is a quantum loop.
 static bool isQuantumLoop(scf::ForOp loop) {
   return llvm::any_of(loop.getInitArgs(), [](Value arg) {
     if (isa<QubitType>(arg.getType())) {
@@ -43,11 +46,9 @@ static bool isQuantumLoop(scf::ForOp loop) {
   });
 }
 
-/**
- * @brief Post-order collect all quantum loops in a function.
- * @param func The function to collect quantum loops from.
- * @return A vector of quantum `scf.for` loops.
- */
+/// Post-order collect all quantum loops in a function.
+/// @param func The function to collect quantum loops from.
+/// @return A vector of quantum `scf.for` loops.
 static SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {
   SmallVector<scf::ForOp> loops;
   func.walk<WalkOrder::PostOrder>([&](scf::ForOp loop) {
@@ -58,11 +59,18 @@ static SmallVector<scf::ForOp> collectQuantumLoops(FunctionOpInterface func) {
   return loops;
 }
 
+static bool hasIdentityYieldOnlyBody(scf::ForOp loop) {
+  if (!llvm::hasSingleElement(loop.getBody()->getOperations())) {
+    return false;
+  }
+  return llvm::equal(
+      loop.getRegionIterArgs(),
+      cast<scf::YieldOp>(loop.getBody()->getTerminator()).getResults());
+}
+
 namespace {
 
-/**
- * @brief Unroll bounded quantum loops.
- */
+/// Unroll bounded quantum loops.
 struct QuantumLoopUnroll final
     : impl::QuantumLoopUnrollBase<QuantumLoopUnroll> {
   using QuantumLoopUnrollBase::QuantumLoopUnrollBase;
@@ -87,14 +95,52 @@ protected:
 
     // If the unroll factor is -1, fully unroll all loops.
     if (unrollFactor == -1) {
-      for (auto loop : collectQuantumLoops(getOperation())) {
-        if (failed(loopUnrollFull(loop))) {
-          loop.emitError() << "failed to fully unroll";
+      while (true) {
+        auto loops = collectQuantumLoops(getOperation());
+        if (loops.empty()) {
+          return;
+        }
+
+        bool changed = false;
+        for (auto loop : loops) {
+          const auto tripCount = loop.getStaticTripCount();
+          if (!tripCount) {
+            continue;
+          }
+          if (tripCount->isZero() || hasIdentityYieldOnlyBody(loop)) {
+            loop.replaceAllUsesWith(loop.getInitArgs());
+            loop.erase();
+            changed = true;
+            continue;
+          }
+
+          if (llvm::hasSingleElement(loop.getBody()->getOperations())) {
+            // LLVM skips terminator-only bodies. Let its unroller remap the
+            // yielded permutation; greedy cleanup removes this unused constant.
+            OpBuilder builder(loop.getContext());
+            builder.setInsertionPointToStart(loop.getBody());
+            arith::ConstantIndexOp::create(builder, loop.getLoc(), 0);
+          }
+          if (failed(loopUnrollFull(loop))) {
+            loop.emitError() << "failed to fully unroll";
+            signalPassFailure();
+            return;
+          }
+          changed = true;
+        }
+
+        if (!changed) {
+          loops.front().emitError() << "failed to fully unroll";
+          signalPassFailure();
+          return;
+        }
+
+        if (failed(applyPatternsGreedily(getOperation(),
+                                         RewritePatternSet(&getContext())))) {
           signalPassFailure();
           return;
         }
       }
-      return;
     }
 
     for (auto loop : collectQuantumLoops(getOperation())) {

@@ -14,7 +14,10 @@ add_mlir_conversion_library(
   DEPENDS
   QCToQIRAdaptiveIncGen
   LINK_LIBS
+  MLIRCBitDialect
   MLIRQCToQIRCommon
+  MLIRMQTDialect
+  MLIRMQTTransforms
   MLIRQIRUtils
   MLIRLLVMDialect
   MLIRQCDialect
@@ -22,7 +25,6 @@ add_mlir_conversion_library(
   MLIRTransforms
   MLIRFuncDialect
   MLIRFuncToLLVM
-  MLIRSCFToControlFlow
-  MLIRReconcileUnrealizedCasts)
+  MLIRSCFToControlFlow)
 
 mqt_mlir_target_use_project_options(MLIRQCToQIRAdaptive)

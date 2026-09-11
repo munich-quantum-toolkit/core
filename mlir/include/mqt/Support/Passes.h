@@ -1,0 +1,92 @@
+/*
+ * Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ * Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ * All rights reserved.
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Licensed under the MIT License
+ */
+
+#pragma once
+
+#include "mlir/Support/LLVM.h"
+
+#include <cstdint>
+
+namespace mlir {
+class ModuleOp;
+class OpPassManager;
+class PassManager;
+} // namespace mlir
+
+/// Populate the pass manager and run it on the module.
+mlir::LogicalResult runWithPassManager(
+    mlir::ModuleOp moduleOp,
+    mlir::function_ref<void(mlir::OpPassManager&)> populatePasses,
+    mlir::StringRef errorMessage);
+
+/// Register the QCO passes, upstream transforms, and named compiler pipelines.
+void registerMQTCompilerPasses();
+
+/// Populate the default QCO optimization pipeline.
+void populateDefaultQCOOptimizationPipeline(mlir::OpPassManager& pm);
+
+/// Prepare reusable QC functions and modifiers for QIR conversion.
+void populateQIRPreparationPipeline(mlir::OpPassManager& pm);
+
+/// Populate the qubit reuse pipeline including its preparation passes.
+void populateQubitReusePipeline(mlir::OpPassManager& pm);
+
+/// Return whether @p minQubits is valid for multi-controlled decomposition.
+[[nodiscard]] bool isDecomposeMultiControlledConfigValid(uint64_t minQubits);
+
+/// Populate the multi-controlled decomposition pass sequence.
+void populateDecomposeMultiControlledPipeline(mlir::OpPassManager& pm,
+                                              uint64_t minQubits);
+
+/// Parse and run a module-level MLIR textual pass pipeline.
+[[nodiscard]] mlir::LogicalResult
+runPassPipeline(mlir::ModuleOp moduleOp, mlir::StringRef pipeline,
+                bool enableTiming = false, bool enableStatistics = false);
+
+/// Populate a QC-oriented cleanup pipeline on the given pass manager.
+///
+/// Adds generic cleanup, QC qubit-register shrinking, and dead-value removal.
+void populateQCCleanupPipeline(mlir::OpPassManager& pm);
+
+/// Run QC cleanup that preserves defined values on every syntactic loop edge.
+/// Source formats cannot represent the poison backedge values introduced by
+/// RemoveDeadValues, even when those edges are unreachable.
+void populateQCExportPipeline(mlir::OpPassManager& pm);
+
+/// Populate a QCO-oriented cleanup pipeline on the given pass manager.
+///
+/// Adds generic cleanup, qtensor shrink-to-fit, and dead-value removal.
+void populateQCOCleanupPipeline(mlir::OpPassManager& pm);
+
+/// Populate a QIR-oriented cleanup pipeline on the given pass manager.
+///
+/// Adds generic cleanup and QIR-specific simplifications. Updates the
+/// metadata accordingly.
+void populateQIRCleanupPipeline(mlir::OpPassManager& pm, bool useAdaptive);
+
+/// Populate a `jeff`-oriented cleanup pipeline on the given pass manager.
+///
+/// Adds generic cleanup and dead-value removal after lowering to jeff.
+void populateJeffCleanupPipeline(mlir::OpPassManager& pm);
+
+/// Run the QC-oriented cleanup pipeline on a module.
+[[nodiscard]] mlir::LogicalResult runQCCleanupPipeline(mlir::ModuleOp moduleOp);
+
+/// Run the QCO-oriented cleanup pipeline on a module.
+[[nodiscard]] mlir::LogicalResult
+runQCOCleanupPipeline(mlir::ModuleOp moduleOp);
+
+/// Run the QIR-oriented cleanup pipeline on a module.
+[[nodiscard]] mlir::LogicalResult runQIRCleanupPipeline(mlir::ModuleOp moduleOp,
+                                                        bool useAdaptive);
+
+/// Run the `jeff`-oriented cleanup pipeline on a module.
+[[nodiscard]] mlir::LogicalResult
+runJeffCleanupPipeline(mlir::ModuleOp moduleOp);

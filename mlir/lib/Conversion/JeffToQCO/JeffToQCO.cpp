@@ -8,36 +8,44 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Conversion/JeffToQCO/JeffToQCO.h"
+#include "mqt/Conversion/JeffToQCO/JeffToQCO.h"
 
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Dialect/CBit/IR/CBitAttributes.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
-#include <jeff/Conversion/JeffToNative/JeffToNative.h>
-#include <jeff/IR/JeffDialect.h>
-#include <jeff/IR/JeffOps.h>
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <llvm/Support/ErrorHandling.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/Math/IR/Math.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/Dialect/Tensor/IR/Tensor.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/BuiltinAttributes.h>
-#include <mlir/IR/BuiltinOps.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/IR/Region.h>
-#include <mlir/IR/Types.h>
-#include <mlir/IR/ValueRange.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Support/LogicalResult.h>
-#include <mlir/Transforms/DialectConversion.h>
+#include "jeff/Conversion/JeffToNative/JeffToNative.h"
+#include "jeff/IR/JeffDialect.h"
+#include "jeff/IR/JeffOps.h"
+
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/Func/Transforms/FuncConversions.h"
+#include "mlir/Dialect/Math/IR/Math.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Tensor/IR/Tensor.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/BuiltinAttributes.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/BuiltinTypeInterfaces.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/Types.h"
+#include "mlir/IR/ValueRange.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/DialectConversion.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <cstddef>
 #include <utility>
@@ -47,66 +55,54 @@ namespace mlir {
 using namespace qco;
 
 #define GEN_PASS_DEF_JEFFTOQCO
-#include "mlir/Conversion/JeffToQCO/JeffToQCO.h.inc"
+#include "mqt/Conversion/JeffToQCO/JeffToQCO.h.inc"
 
-/**
- * @brief Creates a modified QCO operation from a jeff operation
- *
- * @tparam JeffOpType The operation type of the jeff operation
- * @param op The jeff operation instance to convert
- * @param rewriter The pattern rewriter
- * @param controls The control qubits of the operation
- * @param targets The target qubits of the operation
- * @param lambda A lambda function that creates the inner QCO operation and
- * returns its results
- */
+/// Returns whether @p op carries a jeff gate modifier
+template <typename JeffOpType>
+[[nodiscard]] static bool isModified(JeffOpType& op) {
+  return op.getNumCtrls() != 0 || op.getIsAdjoint() || op.getPower() != 1;
+}
+
+/// Nest jeff modifiers in QCO's canonical `ctrl { pow { inv { ... } } }` order.
+/// @param lambda Build the inner operation from its targets and return its
+/// results.
 template <typename JeffOpType>
 static void
 createModified(JeffOpType& op, ConversionPatternRewriter& rewriter,
                ValueRange controls, ValueRange targets,
                function_ref<SmallVector<Value>(ValueRange)> lambda) {
   auto loc = op.getLoc();
-  if (op.getNumCtrls() != 0) {
-    CtrlOp ctrlOp;
+
+  auto inverted = [&](ValueRange invTargets) -> SmallVector<Value> {
     if (!op.getIsAdjoint()) {
-      ctrlOp = CtrlOp::create(rewriter, loc, controls, targets, lambda);
-    } else {
-      ctrlOp = CtrlOp::create(
-          rewriter, loc, controls, targets,
-          [&](ValueRange ctrlTargets) -> SmallVector<Value> {
-            auto invOp = InvOp::create(rewriter, loc, ctrlTargets, lambda);
-            return invOp.getQubitsOut();
-          });
+      return lambda(invTargets);
     }
-    SmallVector<Value> results;
-    llvm::append_range(results, ctrlOp.getTargetsOut());
-    llvm::append_range(results, ctrlOp.getControlsOut());
-    rewriter.replaceOp(op, results);
-  } else if (op.getIsAdjoint()) {
-    auto invOp = InvOp::create(rewriter, loc, targets, lambda);
-    rewriter.replaceOp(op, invOp.getQubitsOut());
+    auto invOp = InvOp::create(rewriter, loc, invTargets, lambda);
+    return invOp.getQubitsOut();
+  };
+
+  auto raised = [&](ValueRange powTargets) -> SmallVector<Value> {
+    if (op.getPower() == 1) {
+      return inverted(powTargets);
+    }
+    auto powOp = PowOp::create(rewriter, loc, powTargets,
+                               static_cast<double>(op.getPower()), inverted);
+    return powOp.getQubitsOut();
+  };
+
+  if (op.getNumCtrls() == 0) {
+    rewriter.replaceOp(op, raised(targets));
+    return;
   }
+
+  auto ctrlOp = CtrlOp::create(rewriter, loc, controls, targets, raised);
+  SmallVector<Value> results;
+  llvm::append_range(results, ctrlOp.getTargetsOut());
+  llvm::append_range(results, ctrlOp.getControlsOut());
+  rewriter.replaceOp(op, results);
 }
 
-/**
- * @brief Creates a (potentially modified) QCO operation from a jeff operation.
- *
- * @details
- * This helper centralizes the "direct vs. ctrl/inv-wrapped" decision and uses
- * index sequences to forward the desired number of targets and parameters into
- * the QCO op builder.
- *
- * @tparam QCOOpType The QCO operation type to create
- * @tparam JeffOpType The jeff operation type to convert from
- * @tparam TargetIndices Indices of target operands to forward
- * @tparam ParamIndices Indices of parameters to forward
- *
- * @param op The jeff operation instance to convert
- * @param rewriter The pattern rewriter
- * @param controls The control qubits (type-converted) of the operation
- * @param targets The target qubits (type-converted) of the operation
- * @param parameters The parameters of the operation
- */
+/// Create a QCO gate with type-converted targets and any jeff modifiers.
 template <typename QCOOpType, typename JeffOpType, std::size_t... TargetIndices,
           std::size_t... ParamIndices>
 static LogicalResult
@@ -115,7 +111,7 @@ createGateFromJeff(JeffOpType& op, ConversionPatternRewriter& rewriter,
                    ValueRange parameters,
                    std::index_sequence<TargetIndices...> /*targetIndices*/,
                    std::index_sequence<ParamIndices...> /*paramIndices*/) {
-  if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
+  if (!isModified(op)) {
     rewriter.replaceOpWithNewOp<QCOOpType>(op, targets[TargetIndices]...,
                                            parameters[ParamIndices]...);
     return success();
@@ -152,17 +148,32 @@ createGateFromJeffArity(JeffOpType& op, ConversionPatternRewriter& rewriter,
       std::make_index_sequence<NumParams>{});
 }
 
-/**
- * @brief Creates a qco.barrier operation from a jeff.custom operation
- *
- * @param op The jeff.custom operation instance to convert
- * @param adaptor The OpAdaptor of the jeff.custom operation
- * @param rewriter The pattern rewriter
- */
+/// Convert a jeff index operand to the MLIR index type.
+///
+/// QCO-to-jeff conversion narrows SCF induction variables to i32. When the
+/// converted jeff loop is converted back to QCO, the new SCF induction
+/// variable has index type again. Reuse that value directly because its bounds
+/// came from i32 values, so the intermediate narrowing is lossless.
+static Value toIndex(Location loc, Value value,
+                     ConversionPatternRewriter& rewriter) {
+  if (auto castOp = value.getDefiningOp<arith::IndexCastOp>()) {
+    const auto input = castOp.getIn();
+    const auto blockArgument = dyn_cast<BlockArgument>(input);
+    if (isa<IndexType>(input.getType()) && value.getType().isInteger(32) &&
+        blockArgument && blockArgument.getArgNumber() == 0 &&
+        isa<scf::ForOp>(blockArgument.getOwner()->getParentOp())) {
+      return input;
+    }
+  }
+  return rewriter.createOrFold<arith::IndexCastOp>(loc, rewriter.getIndexType(),
+                                                   value);
+}
+
+/// Convert the jeff custom gate named "barrier" to qco.barrier.
 static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
                             ConversionPatternRewriter& rewriter) {
   auto targets = adaptor.getInTargetQubits();
-  if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
+  if (!isModified(op)) {
     rewriter.replaceOpWithNewOp<BarrierOp>(op, targets);
   } else {
     auto lambda = [&](ValueRange innerTargets) -> SmallVector<Value> {
@@ -173,74 +184,206 @@ static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
   }
 }
 
-/**
- * @brief Gets the name of the entry point from the module attributes
- */
-static StringRef getEntryPointName(Operation* op) {
-  auto module = dyn_cast<ModuleOp>(op);
-  if (!module) {
-    llvm::reportFatalInternalError("Expected a module operation");
+/// Resolve the entry point by its index in the function table.
+static FailureOr<func::FuncOp> getEntryPoint(ModuleOp moduleOp) {
+  auto entryPointAttr = moduleOp->getAttrOfType<IntegerAttr>("jeff.entrypoint");
+  if (!entryPointAttr || !entryPointAttr.getType().isUnsignedInteger()) {
+    return moduleOp.emitError(
+        "requires an unsigned integer 'jeff.entrypoint' attribute");
   }
+  auto entryPoint = entryPointAttr.getUInt();
 
-  auto entryPointAttr = module->getAttr("jeff.entrypoint");
-  if (!entryPointAttr) {
-    llvm::reportFatalInternalError(
-        "Module is missing 'jeff.entrypoint' attribute");
+  for (auto [index, function] :
+       llvm::enumerate(moduleOp.getOps<func::FuncOp>())) {
+    if (index == entryPoint) {
+      return function;
+    }
   }
-  auto entryPoint = cast<IntegerAttr>(entryPointAttr).getUInt();
-
-  auto stringsAttr = module->getAttr("jeff.strings");
-  if (!stringsAttr) {
-    llvm::reportFatalInternalError(
-        "Module is missing 'jeff.strings' attribute");
-  }
-  auto strings = cast<ArrayAttr>(stringsAttr);
-
-  if (entryPoint >= strings.size()) {
-    llvm::reportFatalInternalError("Entry point index is out of bounds");
-  }
-
-  return cast<StringAttr>(strings[entryPoint]).getValue();
+  return moduleOp.emitError(
+      "'jeff.entrypoint' function index is out of bounds");
 }
 
-/**
- * @brief Cleans up the module after conversion
- *
- * @param op The module operation to clean up
- * @return LogicalResult Success or failure of the cleanup
- */
-static LogicalResult cleanUp(Operation* op) {
-  auto module = dyn_cast<ModuleOp>(op);
-  if (!module) {
-    return failure();
+/// Checks if a type is a linear type
+static bool isLinearType(Type t) {
+  return isa<jeff::QubitType, jeff::QuregType>(t);
+}
+
+/// Returns the CBit type represented by a static one-dimensional i1 tensor.
+static cbit::RegisterType getCBitType(Type type) {
+  const auto tensorType = dyn_cast<RankedTensorType>(type);
+  if (!tensorType || tensorType.getRank() != 1 || tensorType.isDynamicDim(0) ||
+      tensorType.getShape()[0] <= 0 ||
+      !tensorType.getElementType().isInteger(1)) {
+    return {};
+  }
+  return cbit::RegisterType::get(type.getContext(), tensorType.getShape()[0]);
+}
+
+/// Earlier bit reads finish using an array before a later storage update.
+/// Other users can pass an alias to values that remain live after the update.
+static bool needsArrayCopy(Value value, Operation* update) {
+  return llvm::any_of(value.getUsers(), [&](Operation* user) {
+    if (user == update) {
+      return false;
+    }
+    auto* ancestor = update->getBlock()->findAncestorOpInBlock(*user);
+    return !isa<jeff::IntArrayGetIndexOp>(user) || ancestor == nullptr ||
+           !ancestor->isBeforeInBlock(update);
+  });
+}
+
+/// Moves a region from a jeff operation to a QCO/SCF operation
+template <typename YieldOpType>
+static void moveRegion(Region& source, Region& dest,
+                       ConversionPatternRewriter& rewriter,
+                       const TypeConverter* typeConverter, ValueRange inValues,
+                       ArrayRef<unsigned> yieldIndices,
+                       ArrayRef<bool> capturedArguments = {}) {
+  auto* oldBlock = &source.back();
+  auto* newBlock = &dest.emplaceBlock();
+  rewriter.setInsertionPointToEnd(newBlock);
+
+  IRMapping mapping;
+  for (auto [oldArg, adapted] :
+       llvm::zip_equal(oldBlock->getArguments(), inValues)) {
+    if (isLinearType(oldArg.getType()) ||
+        (!capturedArguments.empty() && !getCBitType(oldArg.getType()) &&
+         !capturedArguments[oldArg.getArgNumber()])) {
+      auto newArg = newBlock->addArgument(
+          typeConverter->convertType(oldArg.getType()), oldArg.getLoc());
+      mapping.map(oldArg, newArg);
+    } else {
+      mapping.map(oldArg, adapted);
+    }
   }
 
-  // Remove module attributes
-  module->removeAttr("jeff.entrypoint");
-  module->removeAttr("jeff.strings");
-  module->removeAttr("jeff.tool");
-  module->removeAttr("jeff.toolVersion");
-  module->removeAttr("jeff.version");
-  module->removeAttr("jeff.versionMinor");
-  module->removeAttr("jeff.versionPatch");
+  for (auto& op : oldBlock->without_terminator()) {
+    rewriter.clone(op, mapping);
+  }
 
-  return success();
+  auto* oldTerminator = oldBlock->getTerminator();
+  SmallVector<Value> yields;
+  for (auto index : yieldIndices) {
+    auto value = oldTerminator->getOperand(index);
+    yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
+  }
+
+  if constexpr (std::is_same_v<YieldOpType, scf::ConditionOp>) {
+    auto condition =
+        rewriter.getRemappedValue(mapping.lookup(oldTerminator->getOperand(0)));
+    rewriter.replaceOpWithNewOp<YieldOpType>(oldTerminator, condition, yields);
+  } else {
+    rewriter.replaceOpWithNewOp<YieldOpType>(oldTerminator, yields);
+  }
+}
+
+/// Resolve the reference represented by a forwarded or updated CBit array.
+static Value forwardedRegister(Value value, Block& block, ValueRange inputs,
+                               ConversionPatternRewriter& rewriter) {
+  while (auto update = value.getDefiningOp<jeff::IntArraySetIndexOp>()) {
+    value = update.getInArray();
+  }
+  if (auto argument = dyn_cast<BlockArgument>(value);
+      argument && argument.getOwner() == &block) {
+    return inputs[argument.getArgNumber()];
+  }
+  auto mapped = rewriter.getRemappedValue(value);
+  return mapped && isa<cbit::RegisterType>(mapped.getType()) ? mapped : Value{};
 }
 
 namespace {
 
-/**
- * @brief Converts jeff.qureg_alloc to qtensor.alloc
- *
- * @par Example:
- * ```mlir
- * %qureg = jeff.qureg_alloc(%c3) : !jeff.qureg
- * ```
- * is converted to
- * ```mlir
- * %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
- * ```
- */
+/// Converts a jeff zero-initialized i1 array to a CBit register.
+struct ConvertJeffIntArrayZeroOpToCBit final
+    : OpConversionPattern<jeff::IntArrayZeroOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::IntArrayZeroOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    const auto registerType = getCBitType(op.getType());
+    if (!registerType) {
+      return failure();
+    }
+    const auto length = getConstantIntValue(adaptor.getLength());
+    if (!length || *length != registerType.getWidth()) {
+      return rewriter.notifyMatchFailure(
+          op, "CBit array length must match its static result width");
+    }
+    rewriter.replaceOpWithNewOp<cbit::AllocOp>(op, registerType,
+                                               cbit::Initialization::Zero);
+    return success();
+  }
+};
+
+/// Converts a jeff i1-array update to a CBit store.
+struct ConvertJeffIntArraySetIndexOpToCBit final
+    : OpConversionPattern<jeff::IntArraySetIndexOp> {
+  ConvertJeffIntArraySetIndexOpToCBit(TypeConverter& converter,
+                                      MLIRContext* context,
+                                      const DenseSet<Operation*>& shared)
+      : OpConversionPattern(converter, context, PatternBenefit(2)),
+        shared(shared) {}
+  const DenseSet<Operation*>& shared;
+
+  LogicalResult
+  matchAndRewrite(jeff::IntArraySetIndexOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto reg = adaptor.getInArray();
+    if (!isa<cbit::RegisterType>(reg.getType())) {
+      return failure();
+    }
+    if (shared.contains(op)) {
+      auto type = cast<cbit::RegisterType>(reg.getType());
+      auto snapshot = cbit::ReadOp::create(
+          rewriter, op.getLoc(),
+          rewriter.getIntegerType(static_cast<unsigned>(type.getWidth())), reg);
+      reg = cbit::AllocOp::create(rewriter, op.getLoc(), type,
+                                  cbit::Initialization::Zero);
+      cbit::WriteOp::create(rewriter, op.getLoc(), snapshot, reg);
+    }
+    auto index = toIndex(op.getLoc(), adaptor.getIndex(), rewriter);
+    cbit::StoreOp::create(rewriter, op.getLoc(), adaptor.getValue(), reg,
+                          index);
+    rewriter.replaceOp(op, reg);
+    return success();
+  }
+};
+
+/// The schema's right shift is logical, independently of operand signedness.
+struct ConvertJeffLogicalShift final : OpConversionPattern<jeff::IntBinaryOp> {
+  using OpConversionPattern::OpConversionPattern;
+  LogicalResult
+  matchAndRewrite(jeff::IntBinaryOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (op.getOp() != jeff::IntBinaryOperation::_shr) {
+      return failure();
+    }
+    rewriter.replaceOpWithNewOp<arith::ShRUIOp>(op, adaptor.getA(),
+                                                adaptor.getB());
+    return success();
+  }
+};
+
+/// Converts a jeff i1-array access to a CBit load.
+struct ConvertJeffIntArrayGetIndexOpToCBit final
+    : OpConversionPattern<jeff::IntArrayGetIndexOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  LogicalResult
+  matchAndRewrite(jeff::IntArrayGetIndexOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto reg = adaptor.getInArray();
+    if (!isa<cbit::RegisterType>(reg.getType())) {
+      return failure();
+    }
+    auto index = toIndex(op.getLoc(), adaptor.getIndex(), rewriter);
+    rewriter.replaceOpWithNewOp<cbit::LoadOp>(op, op.getType(), reg, index);
+    return success();
+  }
+};
+
+/// Converts jeff.qureg_alloc to qtensor.alloc
 struct ConvertJeffQuregAllocOpToQCO final
     : OpConversionPattern<jeff::QuregAllocOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -257,29 +400,14 @@ struct ConvertJeffQuregAllocOpToQCO final
                                        rewriter.getIndexAttr(*sizeValue))
                  .getResult();
     } else {
-      size = arith::IndexCastOp::create(rewriter, op.getLoc(),
-                                        rewriter.getIndexType(),
-                                        adaptor.getNumQubits())
-                 .getResult();
+      size = toIndex(op.getLoc(), adaptor.getNumQubits(), rewriter);
     }
     rewriter.replaceOpWithNewOp<qtensor::AllocOp>(op, tensorType, size);
     return success();
   }
 };
 
-/**
- * @brief Converts jeff.qureg_extract_index to qtensor.extract
- *
- * @par Example:
- * ```mlir
- * %qureg_out, %q = jeff.qureg_extract_index(%c0) %qureg_in : !jeff.qureg,
- * !jeff.qubit
- * ```
- * is converted to
- * ```mlir
- * %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
- * ```
- */
+/// Converts jeff.qureg_extract_index to qtensor.extract
 struct ConvertJeffQuregExtractIndexOpToQCO final
     : OpConversionPattern<jeff::QuregExtractIndexOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -287,26 +415,14 @@ struct ConvertJeffQuregExtractIndexOpToQCO final
   LogicalResult
   matchAndRewrite(jeff::QuregExtractIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto index = arith::IndexCastOp::create(
-        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
+    auto index = toIndex(op.getLoc(), adaptor.getIndex(), rewriter);
     rewriter.replaceOpWithNewOp<qtensor::ExtractOp>(op, adaptor.getInQreg(),
-                                                    index.getResult());
+                                                    index);
     return success();
   }
 };
 
-/**
- * @brief Converts jeff.qureg_insert_index to qtensor.insert
- *
- * @par Example:
- * ```mlir
- * %qureg_out = jeff.qureg_insert_index(%c0) %qureg_in %q : !jeff.qureg
- * ```
- * is converted to
- * ```mlir
- * %tensor_out = qtensor.insert %q into %tensor_in[%c0] : tensor<3x!qco.qubit>
- * ```
- */
+/// Converts jeff.qureg_insert_index to qtensor.insert
 struct ConvertJeffQuregInsertIndexOpToQCO final
     : OpConversionPattern<jeff::QuregInsertIndexOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -314,26 +430,14 @@ struct ConvertJeffQuregInsertIndexOpToQCO final
   LogicalResult
   matchAndRewrite(jeff::QuregInsertIndexOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    auto index = arith::IndexCastOp::create(
-        rewriter, op.getLoc(), rewriter.getIndexType(), adaptor.getIndex());
-    rewriter.replaceOpWithNewOp<qtensor::InsertOp>(
-        op, adaptor.getInQubit(), adaptor.getInQreg(), index.getResult());
+    auto index = toIndex(op.getLoc(), adaptor.getIndex(), rewriter);
+    rewriter.replaceOpWithNewOp<qtensor::InsertOp>(op, adaptor.getInQubit(),
+                                                   adaptor.getInQreg(), index);
     return success();
   }
 };
 
-/**
- * @brief Converts jeff.qureg_free_zero to qtensor.dealloc
- *
- * @par Example:
- * ```mlir
- * jeff.qureg_free_zero %qureg : !jeff.qureg
- * ```
- * is converted to
- * ```mlir
- * qtensor.dealloc %tensor : tensor<3x!qco.qubit>
- * ```
- */
+/// Converts jeff.qureg_free_zero to qtensor.dealloc
 struct ConvertJeffQuregFreeZeroOpToQCO final
     : OpConversionPattern<jeff::QuregFreeZeroOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -346,18 +450,7 @@ struct ConvertJeffQuregFreeZeroOpToQCO final
   }
 };
 
-/**
- * @brief Converts jeff.qubit_alloc to qco.alloc
- *
- * @par Example:
- * ```mlir
- * %q = jeff.qubit_alloc : !jeff.qubit
- * ```
- * is converted to
- * ```mlir
- * %q = qco.alloc : !qco.qubit
- * ```
- */
+/// Converts jeff.qubit_alloc to qco.alloc
 struct ConvertJeffQubitAllocOpToQCO final
     : OpConversionPattern<jeff::QubitAllocOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -370,19 +463,7 @@ struct ConvertJeffQubitAllocOpToQCO final
   }
 };
 
-/**
- * @brief Converts jeff.qubit_free to qco.reset + qco.sink
- *
- * @par Example:
- * ```mlir
- * jeff.qubit_free %q : !jeff.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = qco.reset %q_in : !qco.qubit
- * qco.sink %q_out : !qco.qubit
- * ```
- */
+/// Converts jeff.qubit_free to qco.reset + qco.sink
 struct ConvertJeffQubitFreeOpToQCO final
     : OpConversionPattern<jeff::QubitFreeOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -396,18 +477,7 @@ struct ConvertJeffQubitFreeOpToQCO final
   }
 };
 
-/**
- * @brief Converts jeff.qubit_free_zero to qco.sink
- *
- * @par Example:
- * ```mlir
- * jeff.qubit_free_zero %q : !jeff.qubit
- * ```
- * is converted to
- * ```mlir
- * qco.sink %q : !qco.qubit
- * ```
- */
+/// Converts jeff.qubit_free_zero to qco.sink
 struct ConvertJeffQubitFreeZeroOpToQCO final
     : OpConversionPattern<jeff::QubitFreeZeroOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -420,19 +490,7 @@ struct ConvertJeffQubitFreeZeroOpToQCO final
   }
 };
 
-/**
- * @brief Converts jeff.qubit_measure to qco.measure + qco.sink
- *
- * @par Example:
- * ```mlir
- * %result = jeff.qubit_measure %q_in : !i1
- * ```
- * is converted to
- * ```mlir
- * %q_out, %result = qco.measure %q_in : !qco.qubit
- * qco.sink %q_out : !qco.qubit
- * ```
- */
+/// Converts jeff.qubit_measure to qco.measure + qco.sink
 struct ConvertJeffQubitMeasureOpToQCO final
     : OpConversionPattern<jeff::QubitMeasureOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -448,18 +506,7 @@ struct ConvertJeffQubitMeasureOpToQCO final
   }
 };
 
-/**
- * @brief Converts jeff.qubit_measure_nd to qco.measure
- *
- * @par Example:
- * ```mlir
- * %q_out, %result = jeff.qubit_measure_nd %q_in : !jeff.qubit, i1
- * ```
- * is converted to
- * ```mlir
- * %q_out, %result = qco.measure %q_in : !qco.qubit
- * ```
- */
+/// Converts jeff.qubit_measure_nd to qco.measure
 struct ConvertJeffQubitMeasureNDOpToQCO final
     : OpConversionPattern<jeff::QubitMeasureNDOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -472,18 +519,7 @@ struct ConvertJeffQubitMeasureNDOpToQCO final
   }
 };
 
-/**
- * @brief Converts jeff.reset to qco.qubit_reset
- *
- * @par Example:
- * ```mlir
- * %q_out = jeff.qubit_reset %q_in : !jeff.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = qco.reset %q_in : !qco.qubit
- * ```
- */
+/// Converts jeff.qubit_reset to qco.reset
 struct ConvertJeffQubitResetOpToQCO final
     : OpConversionPattern<jeff::QubitResetOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -496,30 +532,14 @@ struct ConvertJeffQubitResetOpToQCO final
   }
 };
 
-/**
- * @brief Converts jeff.gphase to qco.gphase
- *
- * @par Example:
- * ```mlir
- * jeff.gphase(%theta) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
- * ```
- * is converted to
- * ```mlir
- * qco.gphase(%theta)
- * ```
- */
+/// Converts jeff.gphase to qco.gphase
 struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::GPhaseOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
-    if (op.getNumCtrls() == 0 && !op.getIsAdjoint()) {
+    if (!isModified(op)) {
       rewriter.replaceOpWithNewOp<GPhaseOp>(op, op.getRotation());
     } else {
       auto lambda = [&](ValueRange /*targets*/) -> SmallVector<Value> {
@@ -533,22 +553,7 @@ struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
   }
 };
 
-/**
- * @brief Converts one-target, zero-parameter jeff gate to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the jeff operation
- *
- * @par Example:
- * ```mlir
- * %q_out = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
- * %q_in : !jeff.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = qco.x %q_in : !qco.qubit
- * ```
- */
+/// Converts one-target, zero-parameter jeff gate to QCO
 template <typename JeffOpType, typename QCOOpType>
 struct ConvertJeffOneTargetZeroParameterToQCO final
     : OpConversionPattern<JeffOpType> {
@@ -557,32 +562,12 @@ struct ConvertJeffOneTargetZeroParameterToQCO final
   LogicalResult
   matchAndRewrite(JeffOpType op, JeffOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     return createGateFromJeffArity<QCOOpType, JeffOpType, 1, 0>(
         op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInQubit());
   }
 };
 
-/**
- * @brief Converts one-target, one-parameter jeff gate to QCO
- *
- * @tparam QCOOpType The operation type of the QCO operation
- * @tparam JeffOpType The operation type of the jeff operation
- *
- * @par Example:
- * ```mlir
- * %q_out = jeff.rx(%theta) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 :
- * i8} %q_in : !jeff.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = qco.rx(%theta) %q_in : !qco.qubit
- * ```
- */
+/// Converts one-target, one-parameter jeff gate to QCO
 template <typename JeffOpType, typename QCOOpType>
 struct ConvertJeffOneTargetOneParameterToQCO final
     : OpConversionPattern<JeffOpType> {
@@ -591,102 +576,56 @@ struct ConvertJeffOneTargetOneParameterToQCO final
   LogicalResult
   matchAndRewrite(JeffOpType op, JeffOpType::Adaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     return createGateFromJeffArity<QCOOpType, JeffOpType, 1, 1>(
         op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInQubit(),
         op.getRotation());
   }
 };
 
-/**
- * @brief Converts jeff.u to qco.u
- *
- * @par Example:
- * ```mlir
- * %q_out = jeff.u(%theta, %phi, %lambda) {is_adjoint = false, num_ctrls = 0 :
- * i8, power = 1 : i8} %q_in : !jeff.qubit
- * ```
- * is converted to
- * ```mlir
- * %q_out = qco.u(%theta, %phi, %lambda) %q_in : !qco.qubit
- * ```
- */
+/// Converts jeff.u to qco.u
 struct ConvertJeffUOpToQCO final : OpConversionPattern<jeff::UOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::UOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     return createGateFromJeffArity<UOp, jeff::UOp, 1, 3>(
         op, rewriter, adaptor.getInCtrlQubits(), adaptor.getInQubit(),
         {op.getTheta(), op.getPhi(), op.getLambda()});
   }
 };
 
-/**
- * @brief Converts jeff.swap to qco.swap
- *
- * @par Example:
- * ```mlir
- * %q0_out, %q1_out = jeff.swap {is_adjoint = false, num_ctrls = 0 : i8, power =
- * 1 : i8} %q0_in %q1_in : !jeff.qubit !jeff.qubit
- * ```
- * is converted to
- * ```mlir
- * %q0_out, %q1_out = qco.swap %q0_in, %q1_in : !qco.qubit, !qco.qubit
- * ```
- */
+/// Converts jeff.swap to qco.swap
 struct ConvertJeffSwapOpToQCO final : OpConversionPattern<jeff::SwapOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::SwapOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     return createGateFromJeffArity<SWAPOp, jeff::SwapOp, 2, 0>(
         op, rewriter, adaptor.getInCtrlQubits(),
         {adaptor.getInQubitOne(), adaptor.getInQubitTwo()});
   }
 };
 
-/**
- * @brief Converts jeff.custom to the corresponding QCO operation
- *
- * @par Example:
- * ```mlir
- * %q_out:2 = jeff.custom "iswap"() {is_adjoint = false, num_ctrls = 0 : i8,
- * power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- * is converted to
- * ```mlir
- * %q0_out, %q1_out = qco.iswap %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- */
+/// Converts jeff.custom to the corresponding QCO operation
+///
+/// @par Example:
+/// ```mlir
+/// %q_out:2 = jeff.custom "iswap"() {is_adjoint = false, num_ctrls = 0 : i8,
+/// power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// %q0_out, %q1_out = qco.iswap %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
+/// !qco.qubit, !qco.qubit
+/// ```
 struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::CustomOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     auto controls = adaptor.getInCtrlQubits();
     auto targets = adaptor.getInTargetQubits();
     auto params = op.getParams();
@@ -756,36 +695,37 @@ struct ConvertJeffCustomOpToQCO final : OpConversionPattern<jeff::CustomOp> {
       return createGateFromJeffArity<XXMinusYYOp, jeff::CustomOp, 2, 2>(
           op, rewriter, controls, targets, params);
     }
+    if (name == "rccx") {
+      if (targets.size() != 3 || !params.empty()) {
+        return rewriter.notifyMatchFailure(
+            op, "Custom rccx expects three targets and no parameters");
+      }
+      return createGateFromJeffArity<RCCXOp, jeff::CustomOp, 3, 0>(
+          op, rewriter, controls, targets, params);
+    }
     return rewriter.notifyMatchFailure(op,
                                        "Unsupported custom operation: " + name);
   }
 };
 
-/**
- * @brief Converts jeff.ppr to the corresponding QCO operation
- *
- * @par Example:
- * ```mlir
- * %q_out:2 = jeff.ppr(%theta, [1, 1]) {is_adjoint = false, num_ctrls = 0 : i8,
- * power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
- * ```
- * is converted to
- * ```mlir
- * %q0_out, %q1_out = qco.rxx(%theta) %q0_in, %q1_in : !qco.qubit, !qco.qubit ->
- * !qco.qubit, !qco.qubit
- * ```
- */
+/// Converts jeff.ppr to the corresponding QCO operation
+///
+/// @par Example:
+/// ```mlir
+/// %q_out:2 = jeff.ppr(%theta, [1, 1]) {is_adjoint = false, num_ctrls = 0 : i8,
+/// power = 1 : i8} %q0_in, %q1_in : !jeff.qubit, !jeff.qubit
+/// ```
+/// is converted to
+/// ```mlir
+/// %q0_out, %q1_out = qco.rxx(%theta) %q0_in, %q1_in : !qco.qubit, !qco.qubit
+/// -> !qco.qubit, !qco.qubit
+/// ```
 struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
   using OpConversionPattern::OpConversionPattern;
 
   LogicalResult
   matchAndRewrite(jeff::PPROp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getPower() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "Operations with power != 1 are not yet supported");
-    }
-
     auto pauliGates = op.getPauliGates();
     auto targets = adaptor.getInQubits();
     auto controls = adaptor.getInCtrlQubits();
@@ -815,36 +755,38 @@ struct ConvertJeffPPROpToQCO final : OpConversionPattern<jeff::PPROp> {
   }
 };
 
-/**
- * @brief Converts jeff.switch to qco.if
- *
- * @par Example:
- * ```mlir
- * %q_out = jeff.switch(%condition) : i1 -> (!jeff.qubit)
- * case 0 args(%a = %q_in) {
- *   %jeff.yield %a : !jeff.qubit
- * }
- * case 1 args(%a = %q_in) {
- *   %q_res = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %a
- * : !jeff.qubit
- *   jeff.yield %q_res : !jeff.qubit
- * }
- * default args(%a = %q_in) {
- *   jeff.yield %a : !jeff.qubit
- * }
- * ```
- * is converted to
- * ```mlir
- * %q_out = qco.if %condition args(%a = %q_in) -> (!qco.qubit) {
- *   %q_res = qco.x %a : !qco.qubit -> !qco.qubit
- *   qco.yield %q_res : !qco.qubit
- * } else args(%a = %q_in) {
- *   qco.yield %a : !qco.qubit
- * }
- * ```
- */
+/// Converts jeff.switch to qco.if
+///
+/// @par Example:
+/// ```mlir
+/// %q_out = jeff.switch(%condition) : i1 -> (!jeff.qubit)
+/// case 0 args(%a = %q_in) {
+///   %jeff.yield %a : !jeff.qubit
+/// }
+/// case 1 args(%a = %q_in) {
+///   %q_res = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
+///   %a
+/// : !jeff.qubit
+///   jeff.yield %q_res : !jeff.qubit
+/// }
+/// default args(%a = %q_in) {
+///   jeff.yield %a : !jeff.qubit
+/// }
+/// ```
+/// is converted to
+/// ```mlir
+/// %q_out = qco.if %condition args(%a = %q_in) -> (!qco.qubit) {
+///   %q_res = qco.x %a : !qco.qubit -> !qco.qubit
+///   qco.yield %q_res : !qco.qubit
+/// } else args(%a = %q_in) {
+///   qco.yield %a : !qco.qubit
+/// }
+/// ```
 struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
   using OpConversionPattern::OpConversionPattern;
+
+  /// Cloning a region exposes nested operations of the same kind.
+  void initialize() { setHasBoundedRewriteRecursion(); }
 
   LogicalResult
   matchAndRewrite(jeff::SwitchOp op, OpAdaptor adaptor,
@@ -852,77 +794,63 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
     if (!adaptor.getSelection().getType().isInteger(1)) {
       return rewriter.notifyMatchFailure(op, "qco.if requires an i1 selector");
     }
-    if (op.getDefault().front().getOperations().size() != 1) {
-      return rewriter.notifyMatchFailure(
-          op, "qco.if requires a trivial default branch");
+    if (op.getDefault().empty()) {
+      return rewriter.notifyMatchFailure(op,
+                                         "qco.if requires a default branch");
     }
     if (op.getBranches().size() != 2) {
       return rewriter.notifyMatchFailure(
           op, "qco.if requires exactly two branches");
     }
 
-    auto isLinearType = [](Type t) {
-      return isa<jeff::QubitType, jeff::QuregType>(t);
-    };
-
     auto inValues = adaptor.getInValues();
 
     SmallVector<Value> qubits;
-    for (auto [value, adapted] : llvm::zip(op.getInValues(), inValues)) {
-      if (isLinearType(value.getType())) {
+    for (auto [argument, adapted] : llvm::zip_equal(
+             op.getBranches()[0].front().getArguments(), inValues)) {
+      if (isLinearType(argument.getType())) {
         qubits.push_back(adapted);
       }
     }
-
-    auto qcoIf =
-        IfOp::create(rewriter, op.getLoc(), adaptor.getSelection(), qubits);
-
-    auto moveRegion = [&](Region& source, Region& dest) -> LogicalResult {
-      auto* oldBlock = &source.back();
-      auto* newBlock = &dest.emplaceBlock();
-      rewriter.setInsertionPointToEnd(newBlock);
-
-      IRMapping mapping;
-      for (auto [oldArg, adapted] :
-           llvm::zip(oldBlock->getArguments(), inValues)) {
-        if (isLinearType(oldArg.getType())) {
-          auto newArg = newBlock->addArgument(
-              typeConverter->convertType(oldArg.getType()), oldArg.getLoc());
-          mapping.map(oldArg, newArg);
-        } else {
-          mapping.map(oldArg, adapted);
+    SmallVector<Type> classicalTypes, linearTypes;
+    SmallVector<unsigned> classicalIndices, linearIndices;
+    SmallVector<Value> results(op.getNumResults());
+    for (auto [index, type] : llvm::enumerate(op.getResultTypes())) {
+      if (isLinearType(type)) {
+        linearTypes.push_back(typeConverter->convertType(type));
+        linearIndices.push_back(index);
+      } else if (getCBitType(type)) {
+        for (auto& region : op.getBranches()) {
+          auto reference = forwardedRegister(
+              region.front().getTerminator()->getOperand(index), region.front(),
+              inValues, rewriter);
+          if (!reference || (results[index] && results[index] != reference)) {
+            return rewriter.notifyMatchFailure(
+                op, "conditional CBit results must refer to the same enclosing "
+                    "register");
+          }
+          results[index] = reference;
         }
+      } else {
+        classicalTypes.push_back(typeConverter->convertType(type));
+        classicalIndices.push_back(index);
       }
-
-      for (auto& op : oldBlock->without_terminator()) {
-        rewriter.clone(op, mapping);
-      }
-
-      auto* oldTerminator = oldBlock->getTerminator();
-      SmallVector<Value> yields;
-      for (auto value : oldTerminator->getOperands()) {
-        if (isLinearType(value.getType())) {
-          yields.push_back(rewriter.getRemappedValue(mapping.lookup(value)));
-        }
-      }
-      rewriter.replaceOpWithNewOp<YieldOp>(oldTerminator, yields);
-
-      return success();
-    };
-
-    if (failed(moveRegion(op.getBranches()[0], qcoIf.getElseRegion()))) {
-      return failure();
     }
-    if (failed(moveRegion(op.getBranches()[1], qcoIf.getThenRegion()))) {
-      return failure();
+    if (linearTypes.size() != qubits.size()) {
+      return rewriter.notifyMatchFailure(op,
+                                         "conditional quantum allocations and "
+                                         "deallocations are not supported");
     }
-
-    SmallVector<Value> results;
-    size_t index = 0;
-    for (auto [value, adapted] : llvm::zip(op.getResults(), inValues)) {
-      results.push_back(isLinearType(value.getType())
-                            ? qcoIf.getResults()[index++]
-                            : adapted);
+    auto qcoIf = IfOp::create(rewriter, op.getLoc(), classicalTypes,
+                              linearTypes, adaptor.getSelection(), qubits);
+    SmallVector<unsigned> yielded = classicalIndices;
+    llvm::append_range(yielded, linearIndices);
+    moveRegion<YieldOp>(op.getBranches()[0], qcoIf.getElseRegion(), rewriter,
+                        typeConverter, inValues, yielded);
+    moveRegion<YieldOp>(op.getBranches()[1], qcoIf.getThenRegion(), rewriter,
+                        typeConverter, inValues, yielded);
+    for (auto [index, result] : llvm::zip_equal(yielded, qcoIf.getResults())) {
+      results[index] = result;
     }
     rewriter.replaceOp(op, results);
 
@@ -930,33 +858,32 @@ struct ConvertJeffSwitchOpToQCO final : OpConversionPattern<jeff::SwitchOp> {
   }
 };
 
-/**
- * @brief Converts jeff.for to scf.for
- *
- * @par Example:
- * ```mlir
- * %reg_out = jeff.for %iv = %start to %stop step %step args(%a = %reg_in) ->
- * (!jeff.qureg<2>) : i32 {
- *   %reg0, %q0 = jeff.qureg_extract_index(%iv) %a : (!jeff.qureg<2>, i32) ->
- * (!jeff.qureg<2>, !jeff.qubit)
- *   %q1 = jeff.h {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0 :
- * !jeff.qubit
- *   %reg1 = jeff.qureg_insert_index(%iv) %reg0 %q1 : (!jeff.qureg<2>, i32,
- * !jeff.qubit) -> !jeff.qureg<2>
- *   jeff.yield %reg1 : !jeff.qureg<2>
- * }
- * ```
- * is converted to
- * ```mlir
- * %reg_out = scf.for %iv = %start to %stop step %step iter_args(%a = %reg_in)
- * -> (tensor<2x!qco.qubit>) {
- *   %reg0, %q0 = qtensor.extract %a[%iv] : tensor<2x!qco.qubit>
- *   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
- *   %reg1 = qtensor.insert %q1 into %reg0[%iv] : tensor<2x!qco.qubit>
- *   scf.yield %reg1 : tensor<2x!qco.qubit>
- * }
- * ```
- */
+/// Converts jeff.for to scf.for
+///
+/// @par Example:
+/// ```mlir
+/// %reg_out = jeff.for %iv = %start to %stop step %step args(%a = %reg_in) ->
+/// (!jeff.qureg<2>) : i32 {
+///   %reg0, %q0 = jeff.qureg_extract_index(%iv) %a : (!jeff.qureg<2>, i32) ->
+/// (!jeff.qureg<2>, !jeff.qubit)
+///   %q1 = jeff.h {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8} %q0
+///   :
+/// !jeff.qubit
+///   %reg1 = jeff.qureg_insert_index(%iv) %reg0 %q1 : (!jeff.qureg<2>, i32,
+/// !jeff.qubit) -> !jeff.qureg<2>
+///   jeff.yield %reg1 : !jeff.qureg<2>
+/// }
+/// ```
+/// is converted to
+/// ```mlir
+/// %reg_out = scf.for %iv = %start to %stop step %step iter_args(%a = %reg_in)
+/// -> (tensor<2x!qco.qubit>) {
+///   %reg0, %q0 = qtensor.extract %a[%iv] : tensor<2x!qco.qubit>
+///   %q1 = qco.h %q0 : !qco.qubit -> !qco.qubit
+///   %reg1 = qtensor.insert %q1 into %reg0[%iv] : tensor<2x!qco.qubit>
+///   scf.yield %reg1 : tensor<2x!qco.qubit>
+/// }
+/// ```
 struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -964,14 +891,10 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
   matchAndRewrite(jeff::ForOp op, OpAdaptor adaptor,
                   ConversionPatternRewriter& rewriter) const override {
     auto loc = op.getLoc();
-    auto indexType = rewriter.getIndexType();
 
-    auto start = arith::IndexCastOp::create(rewriter, loc, indexType,
-                                            adaptor.getStart());
-    auto stop =
-        arith::IndexCastOp::create(rewriter, loc, indexType, adaptor.getStop());
-    auto step =
-        arith::IndexCastOp::create(rewriter, loc, indexType, adaptor.getStep());
+    auto start = toIndex(loc, adaptor.getStart(), rewriter);
+    auto stop = toIndex(loc, adaptor.getStop(), rewriter);
+    auto step = toIndex(loc, adaptor.getStep(), rewriter);
 
     auto scfFor = scf::ForOp::create(rewriter, loc, start, stop, step,
                                      adaptor.getInValues());
@@ -997,9 +920,117 @@ struct ConvertJeffForOpToQCO final : OpConversionPattern<jeff::ForOp> {
   }
 };
 
-/**
- * @brief Converts jeff.yield to QCO
- */
+/// Converts jeff.while to scf.while
+///
+/// @par Example:
+/// ```mlir
+/// %targets_out = jeff.while : (!jeff.qubit) -> (!jeff.qubit) args(%arg0 = %q)
+/// {
+///   %q1, %cond = jeff.qubit_measure_nd %arg0 : !jeff.qubit, i1
+///   jeff.yield %cond, %q1 : i1, !jeff.qubit
+/// } args(%arg0) {
+///   %q2 = jeff.h {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
+///   %arg0
+///  : !jeff.qubit
+///   jeff.yield %q2 : !jeff.qubit
+///   }
+/// ```
+/// is converted to
+/// ```mlir
+/// %targets_out = scf.while (%arg0 = %q0) : (!qco.qubit) -> !qco.qubit {
+///   %q1 = qco.measure %arg0 : !qco.qubit
+///   scf.condition(%cond) %q1 : !qco.qubit
+/// } do {
+/// ^bb0(%arg0: !qco.qubit):
+///   %q2 = qco.h %arg0 : !qco.qubit -> !qco.qubit
+///   scf.yield %q2 : !qco.qubit
+/// }
+/// ```
+struct ConvertJeffWhileOpToQCO final : OpConversionPattern<jeff::WhileOp> {
+  using OpConversionPattern::OpConversionPattern;
+
+  /// Cloning a region exposes nested operations of the same kind.
+  void initialize() { setHasBoundedRewriteRecursion(); }
+
+  LogicalResult
+  matchAndRewrite(jeff::WhileOp op, OpAdaptor adaptor,
+                  ConversionPatternRewriter& rewriter) const override {
+    auto inValues = adaptor.getInValues();
+
+    SmallVector<Value> inits;
+    SmallVector<unsigned> yieldIndices, conditionIndices;
+    auto& before = op.getBefore().front();
+    auto& after = op.getAfter().front();
+    SmallVector<bool> capturedInputs(inValues.size(), false);
+    SmallVector<bool> capturedOutputs(op.getNumResults(), false);
+    SmallVector<Value> results(op.getNumResults());
+    for (auto [index, input] : llvm::enumerate(before.getArguments())) {
+      if (isLinearType(input.getType()) || getCBitType(input.getType())) {
+        continue;
+      }
+      auto afterArgument =
+          dyn_cast<BlockArgument>(after.getTerminator()->getOperand(index));
+      if (!afterArgument || afterArgument.getOwner() != &after) {
+        continue;
+      }
+      const auto output = afterArgument.getArgNumber();
+      if (before.getTerminator()->getOperand(output + 1) == input) {
+        capturedInputs[index] = true;
+        capturedOutputs[output] = true;
+        results[output] = inValues[index];
+      }
+    }
+    for (auto [index, pair] :
+         llvm::enumerate(llvm::zip_equal(before.getArguments(), inValues))) {
+      auto [argument, adapted] = pair;
+      if (!getCBitType(argument.getType()) && !capturedInputs[index]) {
+        inits.push_back(adapted);
+        yieldIndices.push_back(index);
+      }
+    }
+    SmallVector<Type> outTypes;
+    for (auto [index, type] : llvm::enumerate(op.getResultTypes())) {
+      if (getCBitType(type)) {
+        results[index] =
+            forwardedRegister(before.getTerminator()->getOperand(index + 1),
+                              before, inValues, rewriter);
+        if (!results[index]) {
+          return rewriter.notifyMatchFailure(
+              op, "while CBit exit value must refer to an enclosing register");
+        }
+      } else if (!capturedOutputs[index]) {
+        outTypes.push_back(typeConverter->convertType(type));
+        conditionIndices.push_back(index + 1);
+      }
+    }
+    for (auto [index, input] : llvm::enumerate(before.getArguments())) {
+      if (getCBitType(input.getType()) &&
+          forwardedRegister(after.getTerminator()->getOperand(index), after,
+                            results, rewriter) != inValues[index]) {
+        return rewriter.notifyMatchFailure(
+            op, "while CBit backedge must update the same enclosing register");
+      }
+    }
+    auto scfWhile =
+        scf::WhileOp::create(rewriter, op.getLoc(), outTypes, inits);
+    for (auto [index, result] :
+         llvm::zip_equal(conditionIndices, scfWhile.getResults())) {
+      results[index - 1] = result;
+    }
+    /// Each region has its own argument tuple; CBit references remain captures.
+    moveRegion<scf::ConditionOp>(op.getBefore(), scfWhile.getBefore(), rewriter,
+                                 typeConverter, inValues, conditionIndices,
+                                 capturedInputs);
+    moveRegion<scf::YieldOp>(op.getAfter(), scfWhile.getAfter(), rewriter,
+                             typeConverter, results, yieldIndices,
+                             capturedOutputs);
+    rewriter.replaceOp(op, results);
+
+    return success();
+  }
+};
+
+/// Converts jeff.yield to QCO
 struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -1011,30 +1042,31 @@ struct ConvertJeffYieldOpToQCO final : OpConversionPattern<jeff::YieldOp> {
   }
 };
 
-/**
- * @brief Converts the jeff-style main function to a QCO-style main function
- *
- * @par Example:
- * ```mlir
- * func.func @main() -> () {
- *   return
- * }
- * ```
- * is converted to
- * ```mlir
- * func.func @main() -> i64 attributes {passthrough = ["entry_point"]} {
- *   %0 = arith.constant 0 : i64
- *   return %0
- * }
- * ```
- */
+/// Converts the jeff-style main function to a QCO-style main function
+///
+/// @par Example:
+/// ```mlir
+/// func.func @main() -> () {
+///   return
+/// }
+/// ```
+/// is converted to
+/// ```mlir
+/// func.func @main() -> i64 attributes {mqt.entry_point} {
+///   %0 = arith.constant 0 : i64
+///   return %0
+/// }
+/// ```
 struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
-  using OpConversionPattern::OpConversionPattern;
+  ConvertJeffMainToQCO(TypeConverter& typeConverter, MLIRContext* context,
+                       func::FuncOp entryPoint)
+      : OpConversionPattern(typeConverter, context, PatternBenefit(2)),
+        entryPoint_(entryPoint) {}
 
   LogicalResult
   matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
                   ConversionPatternRewriter& rewriter) const override {
-    if (op.getSymName() != getEntryPointName(op->getParentOfType<ModuleOp>())) {
+    if (op != entryPoint_) {
       return failure();
     }
 
@@ -1043,40 +1075,52 @@ struct ConvertJeffMainToQCO final : OpConversionPattern<func::FuncOp> {
     }
     auto* block = &op.getBlocks().front();
 
-    auto* returnOp = block->getTerminator();
-    if (!isa<func::ReturnOp>(returnOp)) {
+    auto returnOp = dyn_cast<func::ReturnOp>(block->getTerminator());
+    if (!returnOp) {
       return failure();
     }
 
-    // Update function signature and add passthrough attribute
-    rewriter.startOpModification(op);
-    auto* ctx = rewriter.getContext();
-    op.setType(FunctionType::get(ctx, {}, {rewriter.getI64Type()}));
-    auto entryPointAttr = StringAttr::get(ctx, "entry_point");
-    op->setAttr("passthrough", ArrayAttr::get(ctx, {entryPointAttr}));
-    rewriter.finalizeOpModification(op);
+    SmallVector<Type> inputTypes;
+    SmallVector<Type> resultTypes;
+    if (failed(getTypeConverter()->convertTypes(op.getArgumentTypes(),
+                                                inputTypes)) ||
+        failed(getTypeConverter()->convertTypes(op.getResultTypes(),
+                                                resultTypes))) {
+      return failure();
+    }
 
-    // Replace return operation
-    rewriter.setInsertionPointToStart(block);
-    auto constOp = arith::ConstantOp::create(rewriter, op.getLoc(),
-                                             rewriter.getI64IntegerAttr(0));
+    // A result-less jeff entry point uses the compiler's legacy status result.
+    const bool needsStatusResult = resultTypes.empty();
+    if (needsStatusResult) {
+      resultTypes.push_back(rewriter.getI64Type());
+    }
+    rewriter.modifyOpInPlace(op, [&] {
+      mqt::setEntryPoint(op);
+      op.setType(rewriter.getFunctionType(inputTypes, resultTypes));
+      for (const auto& [argument, type] :
+           llvm::zip_equal(block->getArguments(), inputTypes)) {
+        argument.setType(type);
+      }
+    });
 
-    rewriter.setInsertionPointToEnd(block);
-    func::ReturnOp::create(rewriter, op.getLoc(), constOp.getResult());
-
-    rewriter.eraseOp(returnOp);
+    if (needsStatusResult) {
+      rewriter.setInsertionPointToStart(block);
+      auto zero = arith::ConstantIntOp::create(rewriter, op.getLoc(), 0, 64);
+      rewriter.setInsertionPoint(returnOp);
+      rewriter.replaceOpWithNewOp<func::ReturnOp>(returnOp, zero.getResult());
+    }
 
     return success();
   }
+
+private:
+  func::FuncOp entryPoint_;
 };
 
-/**
- * @brief Type converter for jeff-to-QCO conversion
- *
- * @details
- * Converts `!jeff.qubit` to `!qco.qubit` and `!jeff.qureg` to
- * `!tensor<?x!qco.qubit>`.
- */
+/// Type converter for jeff-to-QCO conversion
+///
+/// Converts `!jeff.qubit` to `!qco.qubit` and `!jeff.qureg` to
+/// `!tensor<?x!qco.qubit>`.
 class JeffToQCOTypeConverter final : public TypeConverter {
 public:
   explicit JeffToQCOTypeConverter(MLIRContext* ctx) {
@@ -1090,38 +1134,115 @@ public:
     addConversion([ctx](jeff::QuregType type) -> Type {
       return RankedTensorType::get({type.getLength()}, QubitType::get(ctx));
     });
+
+    addConversion([](RankedTensorType type) -> Type {
+      if (const auto registerType = getCBitType(type)) {
+        return registerType;
+      }
+      return type;
+    });
   }
 };
 
-/**
- * @brief Pass for converting jeff operations to QCO operations
- */
+/// Pass for converting jeff operations to QCO operations
 struct JeffToQCO final : impl::JeffToQCOBase<JeffToQCO> {
   using JeffToQCOBase::JeffToQCOBase;
 
 protected:
   void runOnOperation() override {
     MLIRContext* context = &getContext();
-    auto* module = getOperation();
+    auto moduleOp = getOperation();
+    auto entryPoint = getEntryPoint(moduleOp);
+    if (failed(entryPoint)) {
+      signalPassFailure();
+      return;
+    }
 
+    DenseSet<Operation*> sharedArrayUpdates;
+    const auto unsupportedSnapshots = moduleOp.walk([&](Operation* operation) {
+      if (auto update = dyn_cast<jeff::IntArraySetIndexOp>(operation);
+          update && getCBitType(update.getInArray().getType()) &&
+          needsArrayCopy(update.getInArray(), update)) {
+        if (update->getParentOfType<jeff::SwitchOp>() ||
+            update->getParentOfType<jeff::WhileOp>()) {
+          update.emitError("live old array values inside jeff switch or while "
+                           "regions are not supported");
+          return WalkResult::interrupt();
+        }
+        sharedArrayUpdates.insert(update);
+      }
+      /// ponytail: reject live arrays across any mutating region; track region
+      /// argument aliases if independent live arrays need support.
+      if (isa<jeff::SwitchOp, jeff::ForOp, jeff::WhileOp>(operation) &&
+          llvm::any_of(operation->getOperands(), [&](Value value) {
+            return getCBitType(value.getType()) &&
+                   needsArrayCopy(value, operation);
+          })) {
+        bool updatesArray = false;
+        operation->walk([&](jeff::IntArraySetIndexOp update) {
+          updatesArray |=
+              static_cast<bool>(getCBitType(update.getInArray().getType()));
+        });
+        if (updatesArray) {
+          operation->emitError("live old array values across jeff control "
+                               "flow are not supported");
+          return WalkResult::interrupt();
+        }
+      }
+      return WalkResult::advance();
+    });
+    if (unsupportedSnapshots.wasInterrupted()) {
+      signalPassFailure();
+      return;
+    }
     ConversionTarget target(*context);
     RewritePatternSet patterns(context);
-    const JeffToQCOTypeConverter typeConverter(context);
+    JeffToQCOTypeConverter typeConverter(context);
+
+    for (auto function : moduleOp.getOps<func::FuncOp>()) {
+      if (function == *entryPoint) {
+        function.setPublic();
+        continue;
+      }
+      if (llvm::any_of(function.getArgumentTypes(), [&](Type type) {
+            return isa<cbit::RegisterType>(typeConverter.convertType(type));
+          })) {
+        function.emitError("classical register arguments in helper functions "
+                           "are not supported");
+        signalPassFailure();
+        return;
+      }
+      // A jeff module is a complete program with one external entry point.
+      function.setPrivate();
+    }
 
     // Configure conversion target
     target.addIllegalDialect<jeff::JeffDialect>();
-    target.addLegalDialect<QCODialect, qtensor::QTensorDialect,
-                           arith::ArithDialect, math::MathDialect,
-                           tensor::TensorDialect, scf::SCFDialect>();
+    target
+        .addLegalDialect<cbit::CBitDialect, QCODialect, qtensor::QTensorDialect,
+                         arith::ArithDialect, math::MathDialect,
+                         tensor::TensorDialect, scf::SCFDialect>();
 
     target.addDynamicallyLegalOp<func::FuncOp>([&](func::FuncOp op) {
-      return !(op.getSymName() == getEntryPointName(module) &&
-               op.getFunctionType().getResults().empty());
+      return (op != *entryPoint || mqt::isEntryPoint(op)) &&
+             typeConverter.isSignatureLegal(op.getFunctionType()) &&
+             typeConverter.isLegal(&op.getBody());
     });
-    target.addLegalOp<func::ReturnOp>();
+    target.addDynamicallyLegalOp<func::CallOp, func::ReturnOp>(
+        [&](Operation* op) { return typeConverter.isLegal(op); });
 
     // Register operation conversion patterns
     jeff::populateJeffToNativeConversionPatterns(patterns);
+    populateFunctionOpInterfaceTypeConversionPattern<func::FuncOp>(
+        patterns, typeConverter);
+    populateReturnOpTypeConversionPattern(patterns, typeConverter);
+    populateCallOpTypeConversionPattern(patterns, typeConverter);
+    patterns.add<ConvertJeffMainToQCO>(typeConverter, context, *entryPoint);
+    patterns.add<ConvertJeffIntArraySetIndexOpToCBit>(typeConverter, context,
+                                                      sharedArrayUpdates);
+    patterns.add<ConvertJeffIntArrayZeroOpToCBit, ConvertJeffLogicalShift,
+                 ConvertJeffIntArrayGetIndexOpToCBit>(typeConverter, context,
+                                                      PatternBenefit(2));
     patterns.add<
         ConvertJeffQuregAllocOpToQCO, ConvertJeffQuregExtractIndexOpToQCO,
         ConvertJeffQuregInsertIndexOpToQCO, ConvertJeffQuregFreeZeroOpToQCO,
@@ -1142,17 +1263,23 @@ protected:
         ConvertJeffOneTargetOneParameterToQCO<jeff::R1Op, POp>,
         ConvertJeffUOpToQCO, ConvertJeffSwapOpToQCO, ConvertJeffCustomOpToQCO,
         ConvertJeffPPROpToQCO, ConvertJeffSwitchOpToQCO, ConvertJeffForOpToQCO,
-        ConvertJeffYieldOpToQCO, ConvertJeffMainToQCO>(typeConverter, context);
+        ConvertJeffWhileOpToQCO, ConvertJeffYieldOpToQCO>(typeConverter,
+                                                          context);
 
     // Apply the conversion
-    if (applyPartialConversion(module, target, std::move(patterns)).failed()) {
+    if (applyPartialConversion(moduleOp, target, std::move(patterns))
+            .failed()) {
       signalPassFailure();
       return;
     }
 
-    if (cleanUp(module).failed()) {
-      signalPassFailure();
-    }
+    moduleOp->removeAttr("jeff.entrypoint");
+    moduleOp->removeAttr("jeff.strings");
+    moduleOp->removeAttr("jeff.tool");
+    moduleOp->removeAttr("jeff.toolVersion");
+    moduleOp->removeAttr("jeff.version");
+    moduleOp->removeAttr("jeff.versionMinor");
+    moduleOp->removeAttr("jeff.versionPatch");
   }
 };
 

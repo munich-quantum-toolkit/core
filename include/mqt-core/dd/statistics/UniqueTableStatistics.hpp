@@ -8,16 +8,18 @@
  * Licensed under the MIT License
  */
 
+/// @file UniqueTableStatistics.hpp
+/// Statistics for decision-diagram unique tables.
+
 #pragma once
 
 #include "dd/statistics/TableStatistics.hpp"
 
-#include <nlohmann/json_fwd.hpp>
-
 #include <cstddef>
+#include <string>
 
 namespace dd {
-/// \brief A class for storing statistics of a unique table
+/// A class for storing statistics of a unique table
 struct UniqueTableStatistics : TableStatistics {
   /// The number of garbage collection runs
   std::size_t gcRuns = 0U;
@@ -25,8 +27,8 @@ struct UniqueTableStatistics : TableStatistics {
   /// Reset all statistics (except for the peak values)
   void reset() noexcept override;
 
-  /// Get a JSON representation of the statistics
-  [[nodiscard]] nlohmann::json json() const override;
+  /// Get a JSON-formatted string representation of the statistics
+  [[nodiscard]] std::string toString() const override;
 };
 
 } // namespace dd

@@ -7,13 +7,24 @@
 # Licensed under the MIT License
 
 set(target_name mqt-core-mlir-unittest-optimizations)
-add_executable(${target_name} test_qco_hadamard_lifting.cpp
-                              test_qco_merge_single_qubit_rotation.cpp test_quantum_loop_unroll.cpp)
+add_executable(
+  ${target_name}
+  test_qco_hadamard_lifting.cpp
+  test_qco_measurement_lifting.cpp
+  test_qco_merge_single_qubit_rotation.cpp
+  test_qco_pauli_twirling.cpp
+  test_qco_remove_dead_gates.cpp
+  test_qco_replace_classical_controls.cpp
+  test_qco_reuse_qubits.cpp
+  test_quantum_loop_unroll.cpp)
 
 target_link_libraries(
   ${target_name}
   PRIVATE GTest::gtest_main
+          MLIRControlFlowDialect
+          MLIRQCODDFunctionality
           MLIRQCOProgramBuilder
+          MLIRQCOPrograms
           MLIRQCOTransforms
           MLIRQCOUtils
           MLIRParser
@@ -23,6 +34,6 @@ target_link_libraries(
           LLVMSupport
           MLIRSupportMQT)
 
-mqt_mlir_configure_unittest_target(${target_name})
+mqt_mlir_configure_unittest_target(${target_name} REQUIRES_EH)
 
 gtest_discover_tests(${target_name} PROPERTIES LABELS mqt-mlir-unittests DISCOVERY_TIMEOUT 60)

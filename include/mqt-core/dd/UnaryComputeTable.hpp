@@ -8,15 +8,15 @@
  * Licensed under the MIT License
  */
 
-/**
- * @file UnaryComputeTable.hpp
- * @brief Data structure for caching computed results of unary operations
- */
+/// @file UnaryComputeTable.hpp
+/// Data structure for caching computed results of unary operations
 
 #pragma once
 
 #include "dd/statistics/TableStatistics.hpp"
 
+#include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <functional>
 #include <stdexcept>
@@ -24,11 +24,9 @@
 
 namespace dd {
 
-/**
- * @brief Data structure for caching computed results of unary operations
- * @tparam OperandType type of the operation's operand
- * @tparam ResultType type of the operation's result
- */
+/// Data structure for caching computed results of unary operations
+/// @tparam OperandType type of the operation's operand
+/// @tparam ResultType type of the operation's result
 template <class OperandType, class ResultType> class UnaryComputeTable {
 public:
   /// Default number of buckets for the compute table
@@ -37,7 +35,7 @@ public:
   /// Default constructor
   explicit UnaryComputeTable(const size_t numBuckets = DEFAULT_NUM_BUCKETS) {
     // numBuckets must be a power of two
-    if ((numBuckets & (numBuckets - 1)) != 0) {
+    if (!std::has_single_bit(numBuckets)) {
       throw std::invalid_argument("Number of buckets must be a power of two.");
     }
     stats.entrySize = sizeof(Entry);
@@ -64,12 +62,11 @@ public:
     return std::hash<OperandType>{}(a)&mask;
   }
 
-  /**
-   * @brief Insert a new entry into the compute table
-   * @details Any existing entry for the resulting hash value will be replaced.
-   * @param operand The operand
-   * @param result The result of the operation
-   */
+  /// Insert a new entry into the compute table
+  ///
+  /// Any existing entry for the resulting hash value will be replaced.
+  /// @param operand The operand
+  /// @param result The result of the operation
   void insert(const OperandType& operand, const ResultType& result) {
     const auto key = hash(operand);
     if (valid[key]) {
@@ -81,11 +78,9 @@ public:
     table[key] = {operand, result};
   }
 
-  /**
-   * @brief Look up a result in the compute table
-   * @param operand The operand
-   * @return A pointer to the result if it is found, otherwise nullptr.
-   */
+  /// Look up a result in the compute table
+  /// @param operand The operand
+  /// @return A pointer to the result if it is found, otherwise nullptr.
   ResultType* lookup(const OperandType& operand) {
     ResultType* result = nullptr;
     ++stats.lookups;
@@ -104,11 +99,10 @@ public:
     return &entry.result;
   }
 
-  /**
-   * @brief Clear the compute table
-   * @details Sets all entries to invalid.
-   */
-  void clear() { valid = std::vector(stats.numBuckets, false); }
+  /// Clear the compute table
+  ///
+  /// Sets all entries to invalid.
+  void clear() { std::fill(valid.begin(), valid.end(), false); }
 
 private:
   /// The actual table storing the entries

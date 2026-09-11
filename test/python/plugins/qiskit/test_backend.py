@@ -10,7 +10,10 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol
+import json
+import os
+from pathlib import Path
+from typing import TYPE_CHECKING, Protocol, get_type_hints
 
 import numpy as np
 import pytest
@@ -19,17 +22,18 @@ from qiskit.circuit import Parameter
 from qiskit.circuit.library import UnitaryGate
 from qiskit.providers import JobStatus
 
-from mqt.core import fomac
 from mqt.core.plugins.qiskit import (
     CircuitValidationError,
     QDMIBackend,
     UnsupportedOperationError,
 )
-from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
+from mqt.core.qdmi.driver import open_device
+from mqt.core.typing import QDMISessionParameters
 
 if TYPE_CHECKING:
+    from mqt.core.qdmi import Device as QDMIDevice
 
-    class _FomacDeviceLike(Protocol):  # pragma: no cover - typing helper to fix mypy errors
+    class _QDMIDeviceLike(Protocol):  # pragma: no cover - typing helper to fix mypy errors
         def name(self) -> str: ...
 
         def version(self) -> str: ...
@@ -40,9 +44,9 @@ if TYPE_CHECKING:
 
         def coupling_map(self) -> object: ...
 
-    SiteSpecificDevice = _FomacDeviceLike
-    MisconfiguredDevice = _FomacDeviceLike
-    ZonedDevice = _FomacDeviceLike
+    SiteSpecificDevice = _QDMIDeviceLike
+    MisconfiguredDevice = _QDMIDeviceLike
+    ZonedDevice = _QDMIDeviceLike
 
 
 @pytest.fixture
@@ -52,17 +56,81 @@ def ddsim_backend() -> QDMIBackend:
     Returns:
         A QDMIBackend instance wrapping the DDSIM device.
     """
-    session = fomac.Session()
-    devices = session.get_devices()
-    for device in devices:
-        if "DDSIM" in device.name():
-            return QDMIBackend(device=device, provider=None)
-    pytest.skip("DDSIM device not available")
+    return QDMIBackend.from_device_id("mqt.ddsim.default")
+
+
+def test_backend_from_device_id_forwards_session_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Open one stable device ID with explicit per-session overrides."""
+    observed: tuple[str, dict[str, object]] | None = None
+
+    def fake_open_device(device_id: str, **session_parameters: object) -> QDMIDevice:
+        nonlocal observed
+        observed = device_id, session_parameters
+        return open_device("mqt.ddsim.default")
+
+    monkeypatch.setattr("mqt.core.plugins.qiskit.backend.open_device", fake_open_device)
+
+    auth_file = Path("auth.json")
+    config_file = Path("device.json")
+    session_parameters: QDMISessionParameters = {
+        "base_url": "https://device.example",
+        "token": "token",
+        "auth_file": auth_file,
+        "auth_url": "https://auth.example",
+        "username": "user",
+        "password": "password",
+        "device_config": "{}",
+        "device_config_file": config_file,
+        "custom1": "one",
+        "custom2": "two",
+        "custom3": "three",
+        "custom4": "four",
+        "custom5": "five",
+    }
+    backend = QDMIBackend.from_device_id("test.device", **session_parameters)
+
+    assert observed == ("test.device", session_parameters)
+    assert backend.target.num_qubits > 0
+
+
+def test_backend_from_device_id_rejects_unknown_session_parameter() -> None:
+    """Reject unknown stable-ID factory keywords at runtime."""
+    with pytest.raises(TypeError, match="unknown"):
+        QDMIBackend.from_device_id("mqt.ddsim.default", unknown="value")
+
+
+def test_qdmi_session_parameter_annotations_are_runtime_resolvable() -> None:
+    """Expose the public TypedDict to runtime annotation consumers."""
+    annotations = get_type_hints(QDMISessionParameters)
+    assert annotations["auth_file"] == str | os.PathLike[str] | None
+
+
+def test_backend_from_device_id_rejects_conflicting_device_configuration() -> None:
+    """Retain native validation for mutually exclusive device configuration sources."""
+    with pytest.raises(ValueError, match="mutually exclusive"):
+        QDMIBackend.from_device_id(
+            "mqt.ddsim.default",
+            device_config="{}",
+            device_config_file=Path("device.json"),
+        )
 
 
 def test_backend_instantiation(ddsim_backend: QDMIBackend) -> None:
     """Backend exposes target qubit count."""
     assert ddsim_backend.target.num_qubits > 0
+    assert ddsim_backend.device_id == "mqt.ddsim.default"
+
+
+def test_direct_backend_has_no_stable_device_id() -> None:
+    """Direct construction remains valid when no registry ID is available."""
+    backend = QDMIBackend(open_device("mqt.ddsim.default"))
+    assert backend.device_id is None
+
+
+def test_direct_backend_accepts_explicit_stable_device_id() -> None:
+    """Specialized construction can retain the ID of an already-open device."""
+    backend = QDMIBackend(open_device("mqt.ddsim.default"), device_id="allocated.device")
+    assert backend.device_id == "allocated.device"
 
 
 def _single_qubit_circuit() -> QuantumCircuit:
@@ -162,10 +230,7 @@ def test_backend_runs_multiple_circuits(ddsim_backend: QDMIBackend) -> None:
     for idx, expected_name in enumerate(["bell_state", "x_then_measure", "hadamard_all"]):
         exp_result = result.results[idx]
         assert exp_result.success is True
-        # Support both dict-style (Qiskit 2.x) and object-style (Qiskit 1.x) header access
-        header = exp_result.header
-        circuit_name = header["name"] if isinstance(header, dict) else header.name
-        assert circuit_name == expected_name
+        assert exp_result.header["name"] == expected_name
         assert exp_result.shots == 500
 
         # Check counts for this circuit
@@ -283,7 +348,6 @@ def test_backend_circuit_with_parameters(ddsim_backend: QDMIBackend) -> None:
     qc.ry(theta, 0)
     qc.measure_all()
 
-    # Unbound parameters should raise an error
     with pytest.raises(CircuitValidationError, match=r"Circuit contains unbound parameters"):
         ddsim_backend.run(qc)
 
@@ -295,7 +359,6 @@ def test_backend_circuit_with_bound_parameters(ddsim_backend: QDMIBackend) -> No
     qc.ry(theta, 0)
     qc.measure_all()
 
-    # Bound parameters should work
     qc_bound = qc.assign_parameters({theta: 1.5708})
 
     job = ddsim_backend.run(qc_bound, shots=100)
@@ -473,10 +536,7 @@ def test_backend_named_circuit_results_queryable_by_name(ddsim_backend: QDMIBack
 
     # Circuit name should be preserved in metadata
     assert result.results is not None
-    header = result.results[0].header
-    # Support both dict-style (pre-Qiskit 2.0) and object-style (post-Qiskit 2.0) access
-    circuit_name = header["name"] if isinstance(header, dict) else header.name
-    assert circuit_name == "my_circuit"
+    assert result.results[0].header["name"] == "my_circuit"
 
     # Should be able to query results by circuit name
     counts = result.get_counts("my_circuit")
@@ -495,13 +555,8 @@ def test_backend_unnamed_circuit_results_queryable_by_generated_name(ddsim_backe
     # Should have a generated name
     assert result.results is not None
     header = result.results[0].header
-    # Support both dict-style (pre-Qiskit 2.0) and object-style (post-Qiskit 2.0) access
-    if isinstance(header, dict):
-        assert "name" in header
-        circuit_name = header["name"]
-    else:
-        assert hasattr(header, "name")
-        circuit_name = header.name
+    assert header["name"] == qc.name
+    circuit_name = header["name"]
 
     # Should be able to query results by the generated name
     counts = result.get_counts(circuit_name)
@@ -558,6 +613,21 @@ def test_job_submit_raises_error(ddsim_backend: QDMIBackend) -> None:
         job.submit()
 
 
+def test_backend_supports_rccx_gate(ddsim_backend: QDMIBackend) -> None:
+    """DDSIM backend exposes and executes native RCCX gate circuits."""
+    assert "rccx" in ddsim_backend.target.operation_names
+
+    qc = QuantumCircuit(3)
+    qc.x(0)
+    qc.x(1)
+    qc.rccx(0, 1, 2)
+    qc.measure_all()
+
+    job = ddsim_backend.run(qc, shots=100)
+    counts = job.result().get_counts()
+    assert counts == {"111": 100}
+
+
 def test_backend_supports_cz_gate(ddsim_backend: QDMIBackend) -> None:
     """Backend executes CZ gate circuits and returns counts."""
     qc = QuantumCircuit(2)
@@ -582,13 +652,7 @@ def test_backend_supports_multicontrolled_gates(ddsim_backend: QDMIBackend) -> N
 
 
 def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDMIBackend) -> None:
-    """Ensures the backend can run circuits with gates that are not natively supported by OpenQASM 3.
-
-    The DDSIM backend defines support for `mcx` gates, which are not native to OpenQASM3.
-    Qiskit's OpenQASM3 exporter has problems providing proper definitions for such gates,
-    which we work around by declaring the device's basis gates in the export call.
-    This test ensures that this workaround is effective and that the backend can successfully run such circuits.
-    """
+    """Backend executes a six-qubit MCX circuit through its selected serializer."""
     qc = QuantumCircuit(6)
     qc.mcx([0, 1, 2, 3, 4], 5)
     qc.measure_all()
@@ -598,13 +662,30 @@ def test_backend_openqasm3_translation_works_for_native_gates(ddsim_backend: QDM
     assert sum(counts.values()) == 100
 
 
-def test_zoned_operation_rejected_at_backend_init() -> None:
-    """Backend rejects devices exposing zoned operations."""
-    session = fomac.Session()
-    devices = session.get_devices()
-    for device in devices:
-        if device.name().startswith("MQT NA"):
-            with pytest.raises(UnsupportedDeviceError, match="cannot be represented in Qiskit's Target model"):
-                QDMIBackend(device)
-            return
-    pytest.skip("NA device not available")
+@pytest.mark.parametrize(("unit", "seconds"), [("s", 1.0), ("ms", 1e-3), ("us", 1e-6), ("ns", 1e-9)])
+def test_sc_target_preserves_placements_and_physical_calibration(unit: str, seconds: float) -> None:
+    """SC metadata retains ordered placements and converts raw durations to seconds."""
+    config = {
+        "schema-version": 1,
+        "name": "Target calibration test",
+        "numQubits": 4,
+        "durationUnit": {"unit": unit, "scaleFactor": 0.5},
+        "qubitProperties": {"defaults": {}, "overrides": []},
+        "couplings": [[0, 1]],
+        "operations": [
+            {"name": "x", "numParameters": 0, "numQubits": 1, "duration": 20, "fidelity": 0.99},
+            {"name": "cx", "numParameters": 0, "numQubits": 2, "sites": [[0, 1]], "duration": 40},
+            {"name": "ccx", "numParameters": 0, "numQubits": 3, "sites": [[0, 1, 2]], "duration": 60, "fidelity": 0.95},
+            {"name": "measure", "numParameters": 0, "numQubits": 1},
+        ],
+    }
+    backend = QDMIBackend(open_device("mqt.sc.default", device_config=json.dumps(config)))
+    target = backend.target
+    assert target["x"][0,].duration == pytest.approx(10 * seconds)
+    assert target["x"][0,].error == pytest.approx(0.01)
+    assert target["cx"][0, 1].duration == pytest.approx(20 * seconds)
+    assert set(target["ccx"]) == {(0, 1, 2)}
+    assert target["ccx"][0, 1, 2].duration == pytest.approx(30 * seconds)
+    assert target["ccx"][0, 1, 2].error == pytest.approx(0.05)
+    assert not target.instruction_supported(operation_name="ccx", qargs=(1, 2, 3))
+    assert target["measure"][0,] is None

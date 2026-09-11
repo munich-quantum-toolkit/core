@@ -21,6 +21,7 @@ Checks: |
   google-*,
   -google-readability-todo,
   -google-build-using-namespace,
+  llvm-formatv-string,
   misc-*,
   -misc-no-recursion,
   -misc-non-private-member-variables-in-classes,
@@ -37,6 +38,8 @@ Checks: |
   -*-prefer-static-over-anonymous-namespace
 
 CheckOptions:
+  - key: readability-trailing-comma.SingleLineCommaPolicy
+    value: Ignore
   - key: readability-identifier-naming.ClassCase
     value: CamelCase
   - key: readability-identifier-naming.ClassIgnoredRegexp

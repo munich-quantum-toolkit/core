@@ -12,25 +12,30 @@ add_mlir_library(
   MLIRQCOTransforms
   ${PASSES_SOURCES}
   LINK_LIBS
+  PUBLIC
+  MQTCompilerTarget
   PRIVATE
   MLIRQCODialect
   MLIRQCOUtils
   MLIRQTensorUtils
   MLIRArithDialect
   MLIRMathDialect
+  MLIRMQTDialect
+  MLIRMQTTransforms
+  MLIRMQTUtils
+  MLIRSCFDialect
   MLIRSCFUtils
+  MLIRTransformUtils
   DEPENDS
   MLIRQCOTransformsIncGen)
 
 mqt_mlir_target_use_project_options(MLIRQCOTransforms)
 
-# collect header files
 file(GLOB_RECURSE PASSES_HEADERS_SOURCE
-     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.h)
+     ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QCO/Transforms/*.h)
 file(GLOB_RECURSE PASSES_HEADERS_BUILD
-     ${MQT_MLIR_BUILD_INCLUDE_DIR}/mlir/Dialect/QCO/Transforms/*.inc)
+     ${MQT_MLIR_BUILD_INCLUDE_DIR}/mqt/Dialect/QCO/Transforms/*.inc)
 
-# add public headers using file sets
 target_sources(
   MLIRQCOTransforms
   PUBLIC FILE_SET

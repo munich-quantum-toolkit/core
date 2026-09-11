@@ -8,6 +8,9 @@
  * Licensed under the MIT License
  */
 
+/// @file DDpackageConfig.hpp
+/// Configuration of decision-diagram packages.
+
 #pragma once
 
 #include <cstddef>
@@ -32,7 +35,7 @@ struct DDPackageConfig {
   std::size_t ctVecInnerProdNumBucket = 4096U;
 };
 
-constexpr auto UNITARY_SIMULATOR_DD_PACKAGE_CONFIG = []() {
+constexpr auto UNITARY_SIMULATOR_DD_PACKAGE_CONFIG = [] {
   DDPackageConfig config{};
   config.utMatNumBucket = 65'536U;
   config.ctMatAddNumBucket = 65'536U;

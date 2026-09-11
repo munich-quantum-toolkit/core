@@ -11,13 +11,15 @@
 /*
  * DDSIM QDMI Device - Job parameters and properties
  */
-#include "helpers/circuits.hpp"
-#include "helpers/test_utils.hpp"
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <gtest/gtest.h>
+#include "helpers/circuits.hpp"
+#include "helpers/test_utils.hpp"
 
+#include "gtest/gtest.h"
+
+#include <array>
 #include <cstddef>
 #include <cstring>
 #include <string>
@@ -64,6 +66,11 @@ TEST(JobParameters, SetAndQueryBasics) {
             QDMI_SUCCESS);
   EXPECT_EQ(shotsOut, shots);
 
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_query_property(
+          j.job, QDMI_DEVICE_JOB_PROPERTY_QUEUEPOSITION, 0, nullptr, nullptr),
+      QDMI_ERROR_NOTSUPPORTED);
+
   EXPECT_EQ(MQT_DDSIM_QDMI_device_job_query_property(
                 j.job, QDMI_DEVICE_JOB_PROPERTY_ID, 0, nullptr, &size),
             QDMI_SUCCESS);
@@ -85,6 +92,40 @@ TEST(JobParameters, SetAndQueryBasics) {
   EXPECT_EQ(program, qdmi_test::QASM3_BELL_SAMPLING);
 }
 
+TEST(JobParameters, RejectsUnterminatedTextProgram) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+
+  constexpr QDMI_Program_Format fmt = QDMI_PROGRAM_FORMAT_QASM3;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
+                sizeof(QDMI_Program_Format), &fmt),
+            QDMI_SUCCESS);
+
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM,
+                strlen(qdmi_test::QASM3_BELL_SAMPLING),
+                qdmi_test::QASM3_BELL_SAMPLING),
+            QDMI_ERROR_INVALIDARGUMENT);
+}
+
+TEST(JobParameters, RejectsInteriorNullInTextProgram) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+
+  constexpr QDMI_Program_Format fmt = QDMI_PROGRAM_FORMAT_QASM3;
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
+                sizeof(QDMI_Program_Format), &fmt),
+            QDMI_SUCCESS);
+
+  constexpr auto program = std::to_array("OPENQASM 3.0;\0garbage");
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAM, program.size(),
+                program.data()),
+            QDMI_ERROR_INVALIDARGUMENT);
+}
+
 TEST(JobParameters, ProgramFormatSupport) {
   const qdmi_test::SessionGuard s{};
   const qdmi_test::JobGuard j{s.session};
@@ -93,12 +134,10 @@ TEST(JobParameters, ProgramFormatSupport) {
   for (QDMI_Program_Format fmt : {
            QDMI_PROGRAM_FORMAT_QASM2,
            QDMI_PROGRAM_FORMAT_QASM3,
-#ifdef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
            QDMI_PROGRAM_FORMAT_QIRBASESTRING,
            QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
            QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
            QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
-#endif
        }) {
     EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
                   j.job, QDMI_DEVICE_JOB_PARAMETER_PROGRAMFORMAT,
@@ -108,12 +147,6 @@ TEST(JobParameters, ProgramFormatSupport) {
 
   // Unsupported → NOTSUPPORTED
   for (QDMI_Program_Format fmt : {
-#ifndef BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR
-           QDMI_PROGRAM_FORMAT_QIRBASESTRING,
-           QDMI_PROGRAM_FORMAT_QIRBASEMODULE,
-           QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
-           QDMI_PROGRAM_FORMAT_QIRADAPTIVEMODULE,
-#endif
            QDMI_PROGRAM_FORMAT_CALIBRATION,
            QDMI_PROGRAM_FORMAT_QPY,
            QDMI_PROGRAM_FORMAT_IQMJSON,
@@ -128,4 +161,19 @@ TEST(JobParameters, ProgramFormatSupport) {
                   sizeof(QDMI_Program_Format), &fmt),
               QDMI_ERROR_NOTSUPPORTED);
   }
+}
+
+TEST(JobParameters, SamplingSeed) {
+  const qdmi_test::SessionGuard s{};
+  const qdmi_test::JobGuard j{s.session};
+
+  EXPECT_EQ(qdmi_test::setSeed(j.job, 7), QDMI_SUCCESS);
+  EXPECT_EQ(qdmi_test::setSeed(j.job, 0), QDMI_ERROR_INVALIDARGUMENT);
+  EXPECT_EQ(qdmi_test::setSeed(j.job, -1), QDMI_ERROR_INVALIDARGUMENT);
+
+  constexpr bool wrongType = true;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                j.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM1, sizeof(wrongType),
+                &wrongType),
+            QDMI_ERROR_INVALIDARGUMENT);
 }

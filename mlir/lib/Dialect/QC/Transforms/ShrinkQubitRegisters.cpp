@@ -8,18 +8,19 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QC/Transforms/Passes.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/Transforms/Passes.h"
 
-#include <llvm/ADT/STLExtras.h>
-#include <llvm/ADT/SmallVector.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/Utils/StaticValueUtils.h>
-#include <mlir/IR/BuiltinTypes.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LLVM.h>
-#include <mlir/Transforms/GreedyPatternRewriteDriver.h>
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
+
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SmallVector.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -29,12 +30,10 @@
 namespace mlir::qc {
 
 #define GEN_PASS_DEF_SHRINKQUBITREGISTERSPASS
-#include "mlir/Dialect/QC/Transforms/Passes.h.inc"
+#include "mqt/Dialect/QC/Transforms/Passes.h.inc"
 
-/**
- * @brief Return the constant index of a one-dimensional `memref.load`
- * operation.
- */
+/// Return the constant index of a one-dimensional `memref.load`
+/// operation.
 [[nodiscard]] static std::optional<int64_t>
 getLoadIndex(memref::LoadOp loadOp) {
   if (loadOp.getIndices().size() != 1) {
@@ -44,9 +43,7 @@ getLoadIndex(memref::LoadOp loadOp) {
 }
 
 namespace {
-/**
- * @brief Shrink static qubit registers to actually read indices.
- */
+/// Shrink static qubit registers to actually read indices.
 struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
   using OpRewritePattern::OpRewritePattern;
 
@@ -124,6 +121,7 @@ struct ShrinkQubitRegister final : OpRewritePattern<memref::DeallocOp> {
                         memRefType.getElementType());
     auto newAlloc =
         memref::AllocOp::create(rewriter, allocOp.getLoc(), newMemRefType);
+    newAlloc->setDiscardableAttrs(allocOp->getDiscardableAttrDictionary());
 
     for (auto loadOp : loadOps) {
       if (loadOp.getResult().use_empty()) {

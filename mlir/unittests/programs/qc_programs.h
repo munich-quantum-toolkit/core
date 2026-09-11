@@ -10,906 +10,1301 @@
 
 #pragma once
 
+#include "mlir/IR/Value.h"
+#include "mlir/Support/LLVM.h"
+
 namespace mlir::qc {
 class QCProgramBuilder;
 
 /// Creates an empty QC Program.
-void emptyQC(QCProgramBuilder& builder);
+Value emptyQC(QCProgramBuilder& b);
+
+/// Calls a reusable unitary rotation.
+Value reusableUnitaryFunction(QCProgramBuilder& b);
+
+/// Calls a reusable reset function.
+Value reusableResetFunction(QCProgramBuilder& b);
 
 // --- Qubit Management ----------------------------------------------------- //
 
 /// Allocates a single qubit.
-void allocQubit(QCProgramBuilder& b);
+Value allocQubit(QCProgramBuilder& b);
+
+/// Allocates a single qubit without measuring it.
+Value allocQubitNoMeasure(QCProgramBuilder& b);
+
+/// Allocates a qubit register of size `1`.
+Value alloc1QubitRegister(QCProgramBuilder& b);
 
 /// Allocates a qubit register of size `2`.
-void allocQubitRegister(QCProgramBuilder& b);
+Value allocQubitRegister(QCProgramBuilder& b);
+
+/// Allocates a qubit register of size `3`.
+Value alloc3QubitRegister(QCProgramBuilder& b);
 
 /// Allocates two qubit registers of size `2` and `3`.
-void allocMultipleQubitRegisters(QCProgramBuilder& b);
+Value allocMultipleQubitRegisters(QCProgramBuilder& b);
 
 /// Allocates two qubit registers of size `2` and `3` and applies operations.
-void allocMultipleQubitRegistersWithOps(QCProgramBuilder& b);
+Value allocMultipleQubitRegistersWithOps(QCProgramBuilder& b);
 
 /// Allocates a large qubit register.
-void allocLargeRegister(QCProgramBuilder& b);
+Value allocLargeRegister(QCProgramBuilder& b);
 
 /// Allocates two inline qubits.
-void staticQubits(QCProgramBuilder& b);
+Value staticQubits(QCProgramBuilder& b);
+
+/// Allocates two inline qubits without measuring them.
+Value staticQubitsNoMeasure(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies operations.
-void staticQubitsWithOps(QCProgramBuilder& b);
+Value staticQubitsWithOps(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies parametric gates.
-void staticQubitsWithParametricOps(QCProgramBuilder& b);
+Value staticQubitsWithParametricOps(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies a two-target gate.
-void staticQubitsWithTwoTargetOps(QCProgramBuilder& b);
+Value staticQubitsWithTwoTargetOps(QCProgramBuilder& b);
 
 /// Allocates two static qubits and applies a controlled gate.
-void staticQubitsWithCtrl(QCProgramBuilder& b);
+Value staticQubitsWithCtrl(QCProgramBuilder& b);
 
 /// Allocates a static qubit and applies an inverse modifier.
-void staticQubitsWithInv(QCProgramBuilder& b);
+Value staticQubitsWithInv(QCProgramBuilder& b);
 
 /// Allocates duplicate static qubits and applies operations on both.
-void staticQubitsWithDuplicates(QCProgramBuilder& b);
+Value staticQubitsWithDuplicates(QCProgramBuilder& b);
 
 /// Same as `staticQubitsWithDuplicates`, but with canonical static qubit
 /// retrievals.
-void staticQubitsCanonical(QCProgramBuilder& b);
+Value staticQubitsCanonical(QCProgramBuilder& b);
 
 /// Allocates and explicitly deallocates a single qubit.
-void allocDeallocPair(QCProgramBuilder& b);
+Value allocDeallocPair(QCProgramBuilder& b);
 
 // --- Invalid / mixed addressing (unit tests) --------------------------------
 
 /// @pre `builder.initialize()`. Fatal mixed addressing: static then dynamic
 /// alloc.
-void mixedStaticThenDynamicQubit(QCProgramBuilder& b);
+Value mixedStaticThenDynamicQubit(QCProgramBuilder& b);
 
 /// @pre `builder.initialize()`. Fatal mixed addressing: dynamic register then
 /// static.
-void mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b);
+Value mixedDynamicRegisterThenStaticQubit(QCProgramBuilder& b);
 
 // --- MeasureOp ------------------------------------------------------------ //
 
 /// Measures a single qubit into a single classical bit.
-void singleMeasurementToSingleBit(QCProgramBuilder& b);
+Value singleMeasurementToSingleBit(QCProgramBuilder& b);
 
 /// Repeatedly measures a single qubit into the same classical bit.
-void repeatedMeasurementToSameBit(QCProgramBuilder& b);
+Value repeatedMeasurementToSameBit(QCProgramBuilder& b);
 
 /// Repeatedly measures a single qubit into different classical bits.
-void repeatedMeasurementToDifferentBits(QCProgramBuilder& b);
+SmallVector<Value> repeatedMeasurementToDifferentBits(QCProgramBuilder& b);
 
 /// Measures multiple qubits into multiple classical bits.
-void multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b);
+SmallVector<Value>
+multipleClassicalRegistersAndMeasurements(QCProgramBuilder& b);
+
+/// Measures one bit of a two-bit register.
+Value partialMeasurementToRegister(QCProgramBuilder& b);
+
+/// Measures qubits into a classical register at a dynamic bit index.
+Value dynamicallyIndexedMeasurement(QCProgramBuilder& b);
 
 /// Measures a single qubit into a single classical bit, without explicitly
 /// allocating a quantum or classical register.
-void measurementWithoutRegisters(QCProgramBuilder& b);
+Value measurementWithoutRegisters(QCProgramBuilder& b);
 
 // --- ResetOp -------------------------------------------------------------- //
 
 /// Resets a single qubit without any operations being applied.
-void resetQubitWithoutOp(QCProgramBuilder& b);
+Value resetQubitWithoutOp(QCProgramBuilder& b);
 
 /// Resets multiple qubits without any operations being applied.
-void resetMultipleQubitsWithoutOp(QCProgramBuilder& b);
+Value resetMultipleQubitsWithoutOp(QCProgramBuilder& b);
 
 /// Repeatedly resets a single qubit without any operations being applied.
-void repeatedResetWithoutOp(QCProgramBuilder& b);
+Value repeatedResetWithoutOp(QCProgramBuilder& b);
 
 /// Resets a single qubit after a single operation.
-void resetQubitAfterSingleOp(QCProgramBuilder& b);
+SmallVector<Value> resetQubitAfterSingleOp(QCProgramBuilder& b);
 
 /// Resets multiple qubits after a single operation.
-void resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b);
+SmallVector<Value> resetMultipleQubitsAfterSingleOp(QCProgramBuilder& b);
 
 /// Repeatedly resets a single qubit after a single operation.
-void repeatedResetAfterSingleOp(QCProgramBuilder& b);
+SmallVector<Value> repeatedResetAfterSingleOp(QCProgramBuilder& b);
 
 // --- GPhaseOp ------------------------------------------------------------- //
 
 /// Creates a circuit with just a global phase.
-void globalPhase(QCProgramBuilder& b);
+Value globalPhase(QCProgramBuilder& b);
+
+/// Creates a circuit with just a global phase and a single measured qubit.
+Value globalPhaseAndMeasure(QCProgramBuilder& b);
 
 /// Creates a controlled global phase gate with a single control qubit.
-void singleControlledGlobalPhase(QCProgramBuilder& b);
+Value singleControlledGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a multi-controlled global phase gate with multiple control qubits.
-void multipleControlledGlobalPhase(QCProgramBuilder& b);
+Value multipleControlledGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled global phase gate.
-void nestedControlledGlobalPhase(QCProgramBuilder& b);
+Value nestedControlledGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled global phase gate.
-void trivialControlledGlobalPhase(QCProgramBuilder& b);
+Value trivialControlledGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a global phase gate.
-void inverseGlobalPhase(QCProgramBuilder& b);
+Value inverseGlobalPhase(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled global
 /// phase gate.
-void inverseMultipleControlledGlobalPhase(QCProgramBuilder& b);
+Value inverseMultipleControlledGlobalPhase(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3.0) wrapping a global-phase gate (scales θ).
+Value powGphaseScaled(QCProgramBuilder& b);
+
+/// Creates the reference for powGphaseScaled: gphase(3*0.123).
+Value powGphaseScaledRef(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(-3.0) wrapping gphase (negative exponent).
+Value negPowGphase(QCProgramBuilder& b);
+
+/// Reference for negPowGphase: gphase(-3.0 * 0.123).
+Value negPowGphaseRef(QCProgramBuilder& b);
 
 // --- IdOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an identity gate.
-void identity(QCProgramBuilder& b);
+Value identity(QCProgramBuilder& b);
 
 /// Creates a controlled identity gate with a single control qubit.
-void singleControlledIdentity(QCProgramBuilder& b);
+Value singleControlledIdentity(QCProgramBuilder& b);
+
+/// Creates an identity gate on a single qubit in a two-qubit register.
+Value twoQubitsOneIdentity(QCProgramBuilder& b);
+
+/// Creates an identity gate on a single qubit in a three-qubit register.
+Value threeQubitsOneIdentity(QCProgramBuilder& b);
 
 /// Creates a multi-controlled identity gate with multiple control qubits.
-void multipleControlledIdentity(QCProgramBuilder& b);
+Value multipleControlledIdentity(QCProgramBuilder& b);
+
+/// Creates a barrier operation on a single qubit in a two-qubit register.
+Value twoQubitsOneBarrier(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled identity gate.
-void nestedControlledIdentity(QCProgramBuilder& b);
+Value nestedControlledIdentity(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled identity gate.
-void trivialControlledIdentity(QCProgramBuilder& b);
+Value trivialControlledIdentity(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an identity gate.
-void inverseIdentity(QCProgramBuilder& b);
+Value inverseIdentity(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled identity
 /// gate.
-void inverseMultipleControlledIdentity(QCProgramBuilder& b);
+Value inverseMultipleControlledIdentity(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2.0) wrapping id (should pass through).
+Value powId(QCProgramBuilder& b);
 
 // --- XOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an X gate.
-void x(QCProgramBuilder& b);
+Value x(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled X gate.
-void singleControlledX(QCProgramBuilder& b);
+Value singleControlledX(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled X gate.
-void multipleControlledX(QCProgramBuilder& b);
+Value multipleControlledX(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled X gate.
-void nestedControlledX(QCProgramBuilder& b);
+Value nestedControlledX(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled X gate.
-void trivialControlledX(QCProgramBuilder& b);
+Value trivialControlledX(QCProgramBuilder& b);
 
 /// Creates a circuit with repeated controlled X gates.
-void repeatedControlledX(QCProgramBuilder& b);
+Value repeatedControlledX(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an X gate.
-void inverseX(QCProgramBuilder& b);
+Value inverseX(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled X gate.
-void inverseMultipleControlledX(QCProgramBuilder& b);
+Value inverseMultipleControlledX(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.5) wrapping an X gate (folds to gphase + RX).
+Value powHalfX(QCProgramBuilder& b);
+
+/// Creates the reference for powHalfX: sx (X^(1/2) = SX exactly).
+Value powHalfXRef(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(-0.5) wrapping an X gate (r == -0.5 → sxdg).
+Value powNegHalfX(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping an X gate (general: gphase + rx).
+Value powThirdX(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdX: gphase(π/6) + rx(π/3).
+Value powThirdXRef(QCProgramBuilder& b);
 
 // --- YOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Y gate.
-void y(QCProgramBuilder& b);
+Value y(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Y gate.
-void singleControlledY(QCProgramBuilder& b);
+Value singleControlledY(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Y gate.
-void multipleControlledY(QCProgramBuilder& b);
+Value multipleControlledY(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Y gate.
-void nestedControlledY(QCProgramBuilder& b);
+Value nestedControlledY(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Y gate.
-void trivialControlledY(QCProgramBuilder& b);
+Value trivialControlledY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a Y gate.
-void inverseY(QCProgramBuilder& b);
+Value inverseY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Y gate.
-void inverseMultipleControlledY(QCProgramBuilder& b);
+Value inverseMultipleControlledY(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.5) wrapping a Y gate (folds to gphase + RY).
+Value powHalfY(QCProgramBuilder& b);
+
+/// Creates the reference for powHalfY: gphase(π/4) followed by ry(π/2).
+Value powHalfYRef(QCProgramBuilder& b);
 
 // --- ZOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a Z gate.
-void z(QCProgramBuilder& b);
+Value z(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Z gate.
-void singleControlledZ(QCProgramBuilder& b);
+Value singleControlledZ(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Z gate.
-void multipleControlledZ(QCProgramBuilder& b);
+Value multipleControlledZ(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Z gate.
-void nestedControlledZ(QCProgramBuilder& b);
+Value nestedControlledZ(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Z gate.
-void trivialControlledZ(QCProgramBuilder& b);
+Value trivialControlledZ(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a Z gate.
-void inverseZ(QCProgramBuilder& b);
+Value inverseZ(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Z gate.
-void inverseMultipleControlledZ(QCProgramBuilder& b);
+Value inverseMultipleControlledZ(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.5) wrapping a Z gate (folds to P(π/2) = S).
+Value powHalfZ(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1.5) wrapping a Z gate. Exercises normalizeAngle
+/// `theta -= twoPi` (1.5π normalises to -π/2 → sdg).
+Value powThreeHalvesZ(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping a Z gate (falls through to P gate).
+Value powThirdZ(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdZ: p(π/3).
+Value powThirdZRef(QCProgramBuilder& b);
 
 // --- HOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an H gate.
-void h(QCProgramBuilder& b);
+Value h(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled H gate.
-void singleControlledH(QCProgramBuilder& b);
+Value singleControlledH(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled H gate.
-void multipleControlledH(QCProgramBuilder& b);
+Value multipleControlledH(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled H gate.
-void nestedControlledH(QCProgramBuilder& b);
+Value nestedControlledH(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled H gate.
-void trivialControlledH(QCProgramBuilder& b);
+Value trivialControlledH(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an H gate.
-void inverseH(QCProgramBuilder& b);
+Value inverseH(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled H gate.
-void inverseMultipleControlledH(QCProgramBuilder& b);
+Value inverseMultipleControlledH(QCProgramBuilder& b);
 
 /// Creates a circuit with just an H gate and no qubit register.
-void hWithoutRegister(QCProgramBuilder& b);
+Value hWithoutRegister(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping an H gate (even hermitian → erase).
+Value powEvenH(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3) wrapping an H gate (odd hermitian → H).
+Value powOddH(QCProgramBuilder& b);
 
 // --- SOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an S gate.
-void s(QCProgramBuilder& b);
+Value s(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled S gate.
-void singleControlledS(QCProgramBuilder& b);
+Value singleControlledS(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled S gate.
-void multipleControlledS(QCProgramBuilder& b);
+Value multipleControlledS(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled S gate.
-void nestedControlledS(QCProgramBuilder& b);
+Value nestedControlledS(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled S gate.
-void trivialControlledS(QCProgramBuilder& b);
+Value trivialControlledS(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an S gate.
-void inverseS(QCProgramBuilder& b);
+Value inverseS(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled S gate.
-void inverseMultipleControlledS(QCProgramBuilder& b);
+Value inverseMultipleControlledS(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping an S gate (folds to P(π) = Z).
+Value powTwoS(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(4.0) wrapping an S gate.
+/// Exercises tryReplaceWithNamedPhaseGate erase path (angle=2π → identity).
+Value powFourS(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.5) wrapping an S gate.
+/// Exercises tryReplaceWithNamedPhaseGate TOp path (angle=π/4 → t).
+Value powHalfS(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping an S gate (default: p(π/6)).
+Value powThirdS(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdS: p(π/6).
+Value powThirdSRef(QCProgramBuilder& b);
 
 // --- SdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an Sdg gate.
-void sdg(QCProgramBuilder& b);
+Value sdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Sdg gate.
-void singleControlledSdg(QCProgramBuilder& b);
+Value singleControlledSdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Sdg gate.
-void multipleControlledSdg(QCProgramBuilder& b);
+Value multipleControlledSdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Sdg gate.
-void nestedControlledSdg(QCProgramBuilder& b);
+Value nestedControlledSdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Sdg gate.
-void trivialControlledSdg(QCProgramBuilder& b);
+Value trivialControlledSdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an Sdg gate.
-void inverseSdg(QCProgramBuilder& b);
+Value inverseSdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Sdg gate.
-void inverseMultipleControlledSdg(QCProgramBuilder& b);
+Value inverseMultipleControlledSdg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping an Sdg gate (folds to P(-π) = Z).
+Value powTwoSdg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.5) wrapping an Sdg gate.
+/// Exercises tryReplaceWithNamedPhaseGate TdgOp path (angle=-π/4 → tdg).
+Value powHalfSdg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping an Sdg gate (default: p(-π/6)).
+Value powThirdSdg(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdSdg: p(-π/6).
+Value powThirdSdgRef(QCProgramBuilder& b);
 
 // --- TOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a T gate.
-void t_(QCProgramBuilder& b); // NOLINT(*-identifier-naming)
+Value t_(QCProgramBuilder& b); // NOLINT(*-identifier-naming)
 
 /// Creates a circuit with a single controlled T gate.
-void singleControlledT(QCProgramBuilder& b);
+Value singleControlledT(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled T gate.
-void multipleControlledT(QCProgramBuilder& b);
+Value multipleControlledT(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled T gate.
-void nestedControlledT(QCProgramBuilder& b);
+Value nestedControlledT(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled T gate.
-void trivialControlledT(QCProgramBuilder& b);
+Value trivialControlledT(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a T gate.
-void inverseT(QCProgramBuilder& b);
+Value inverseT(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled T gate.
-void inverseMultipleControlledT(QCProgramBuilder& b);
+Value inverseMultipleControlledT(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping a T gate (folds to P(π/2) = S).
+Value powTwoT(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping a T gate (default: p(π/12)).
+Value powThirdT(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdT: p(π/12).
+Value powThirdTRef(QCProgramBuilder& b);
 
 // --- TdgOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just a Tdg gate.
-void tdg(QCProgramBuilder& b);
+Value tdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled Tdg gate.
-void singleControlledTdg(QCProgramBuilder& b);
+Value singleControlledTdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled Tdg gate.
-void multipleControlledTdg(QCProgramBuilder& b);
+Value multipleControlledTdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled Tdg gate.
-void nestedControlledTdg(QCProgramBuilder& b);
+Value nestedControlledTdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled Tdg gate.
-void trivialControlledTdg(QCProgramBuilder& b);
+Value trivialControlledTdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a Tdg gate.
-void inverseTdg(QCProgramBuilder& b);
+Value inverseTdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled Tdg gate.
-void inverseMultipleControlledTdg(QCProgramBuilder& b);
+Value inverseMultipleControlledTdg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping a Tdg gate (folds to P(-π/2) = Sdg).
+Value powTwoTdg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping a Tdg gate (default: p(-π/12)).
+Value powThirdTdg(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdTdg: p(-π/12).
+Value powThirdTdgRef(QCProgramBuilder& b);
 
 // --- SXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an SX gate.
-void sx(QCProgramBuilder& b);
+Value sx(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SX gate.
-void singleControlledSx(QCProgramBuilder& b);
+Value singleControlledSx(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SX gate.
-void multipleControlledSx(QCProgramBuilder& b);
+Value multipleControlledSx(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled SX gate.
-void nestedControlledSx(QCProgramBuilder& b);
+Value nestedControlledSx(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled SX gate.
-void trivialControlledSx(QCProgramBuilder& b);
+Value trivialControlledSx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an SX gate.
-void inverseSx(QCProgramBuilder& b);
+Value inverseSx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled SX gate.
-void inverseMultipleControlledSx(QCProgramBuilder& b);
+Value inverseMultipleControlledSx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping an SX gate (folds to X: SX^2 = X).
+Value powTwoSx(QCProgramBuilder& b);
+
+/// Creates the reference for powTwoSx: x (SX^2 = X exactly).
+Value powTwoSxRef(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping an SX gate (default: gphase+rx).
+Value powThirdSx(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdSx: gphase(π/12) + rx(π/6).
+Value powThirdSxRef(QCProgramBuilder& b);
 
 // --- SXdgOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just an SXdg gate.
-void sxdg(QCProgramBuilder& b);
+Value sxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SXdg gate.
-void singleControlledSxdg(QCProgramBuilder& b);
+Value singleControlledSxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SXdg gate.
-void multipleControlledSxdg(QCProgramBuilder& b);
+Value multipleControlledSxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled SXdg gate.
-void nestedControlledSxdg(QCProgramBuilder& b);
+Value nestedControlledSxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled SXdg gate.
-void trivialControlledSxdg(QCProgramBuilder& b);
+Value trivialControlledSxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an SXdg gate.
-void inverseSxdg(QCProgramBuilder& b);
+Value inverseSxdg(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled SXdg
 /// gate.
-void inverseMultipleControlledSxdg(QCProgramBuilder& b);
+Value inverseMultipleControlledSxdg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping an SXdg gate (folds to X: SXdg^2 =
+/// X).
+Value powTwoSxdg(QCProgramBuilder& b);
+
+/// Creates the reference for powTwoSxdg: x (SXdg^2 = X exactly).
+Value powTwoSxdgRef(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(1/3) wrapping an SXdg gate (default: gphase+rx).
+Value powThirdSxdg(QCProgramBuilder& b);
+
+/// Creates the reference for powThirdSxdg: gphase(-π/12) + rx(-π/6).
+Value powThirdSxdgRef(QCProgramBuilder& b);
 
 // --- RXOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RX gate.
-void rx(QCProgramBuilder& b);
+Value rx(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RX gate.
-void singleControlledRx(QCProgramBuilder& b);
+Value singleControlledRx(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RX gate.
-void multipleControlledRx(QCProgramBuilder& b);
+Value multipleControlledRx(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RX gate.
-void nestedControlledRx(QCProgramBuilder& b);
+Value nestedControlledRx(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RX gate.
-void trivialControlledRx(QCProgramBuilder& b);
+Value trivialControlledRx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RX gate.
-void inverseRx(QCProgramBuilder& b);
+Value inverseRx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RX gate.
-void inverseMultipleControlledRx(QCProgramBuilder& b);
+Value inverseMultipleControlledRx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping rx(0.123) (folds to rx(0.246)).
+Value powRxScaled(QCProgramBuilder& b);
+
+/// Creates the reference for powRxScaled: rx(0.246) directly.
+Value rxScaled(QCProgramBuilder& b);
 
 // --- RYOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RY gate.
-void ry(QCProgramBuilder& b);
+Value ry(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RY gate.
-void singleControlledRy(QCProgramBuilder& b);
+Value singleControlledRy(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RY gate.
-void multipleControlledRy(QCProgramBuilder& b);
+Value multipleControlledRy(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RY gate.
-void nestedControlledRy(QCProgramBuilder& b);
+Value nestedControlledRy(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RY gate.
-void trivialControlledRy(QCProgramBuilder& b);
+Value trivialControlledRy(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RY gate.
-void inverseRy(QCProgramBuilder& b);
+Value inverseRy(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RY gate.
-void inverseMultipleControlledRy(QCProgramBuilder& b);
+Value inverseMultipleControlledRy(QCProgramBuilder& b);
 
 // --- RZOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZ gate.
-void rz(QCProgramBuilder& b);
+Value rz(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZ gate.
-void singleControlledRz(QCProgramBuilder& b);
+Value singleControlledRz(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZ gate.
-void multipleControlledRz(QCProgramBuilder& b);
+Value multipleControlledRz(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RZ gate.
-void nestedControlledRz(QCProgramBuilder& b);
+Value nestedControlledRz(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RZ gate.
-void trivialControlledRz(QCProgramBuilder& b);
+Value trivialControlledRz(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RZ gate.
-void inverseRz(QCProgramBuilder& b);
+Value inverseRz(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RZ gate.
-void inverseMultipleControlledRz(QCProgramBuilder& b);
+Value inverseMultipleControlledRz(QCProgramBuilder& b);
 
 // --- POp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a P gate.
-void p(QCProgramBuilder& b);
+Value p(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled P gate.
-void singleControlledP(QCProgramBuilder& b);
+Value singleControlledP(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled P gate.
-void multipleControlledP(QCProgramBuilder& b);
+Value multipleControlledP(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled P gate.
-void nestedControlledP(QCProgramBuilder& b);
+Value nestedControlledP(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled P gate.
-void trivialControlledP(QCProgramBuilder& b);
+Value trivialControlledP(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a P gate.
-void inverseP(QCProgramBuilder& b);
+Value inverseP(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled P gate.
-void inverseMultipleControlledP(QCProgramBuilder& b);
+Value inverseMultipleControlledP(QCProgramBuilder& b);
 
 // --- ROp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just an R gate.
-void r(QCProgramBuilder& b);
+Value r(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled R gate.
-void singleControlledR(QCProgramBuilder& b);
+Value singleControlledR(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled R gate.
-void multipleControlledR(QCProgramBuilder& b);
+Value multipleControlledR(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled R gate.
-void nestedControlledR(QCProgramBuilder& b);
+Value nestedControlledR(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled R gate.
-void trivialControlledR(QCProgramBuilder& b);
+Value trivialControlledR(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an R gate.
-void inverseR(QCProgramBuilder& b);
+Value inverseR(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled R gate.
-void inverseMultipleControlledR(QCProgramBuilder& b);
+Value inverseMultipleControlledR(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3.0) wrapping an R gate (scales θ, preserves φ).
+Value powRScaled(QCProgramBuilder& b);
+
+/// Creates the reference for powRScaled: r(3*0.123, 0.456).
+Value powRScaledRef(QCProgramBuilder& b);
 
 // --- U2Op ----------------------------------------------------------------- //
 
 /// Creates a circuit with just a U2 gate.
-void u2(QCProgramBuilder& b);
+Value u2(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled U2 gate.
-void singleControlledU2(QCProgramBuilder& b);
+Value singleControlledU2(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled U2 gate.
-void multipleControlledU2(QCProgramBuilder& b);
+Value multipleControlledU2(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled U2 gate.
-void nestedControlledU2(QCProgramBuilder& b);
+Value nestedControlledU2(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled U2 gate.
-void trivialControlledU2(QCProgramBuilder& b);
-
-/// Creates a circuit with an inverse modifier applied to a U2 gate.
-void inverseU2(QCProgramBuilder& b);
-
-/// Creates a circuit with an inverse modifier applied to a controlled U2 gate.
-void inverseMultipleControlledU2(QCProgramBuilder& b);
+Value trivialControlledU2(QCProgramBuilder& b);
 
 // --- UOp ------------------------------------------------------------------ //
 
 /// Creates a circuit with just a U gate.
-void u(QCProgramBuilder& b);
+Value u(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled U gate.
-void singleControlledU(QCProgramBuilder& b);
+Value singleControlledU(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled U gate.
-void multipleControlledU(QCProgramBuilder& b);
+Value multipleControlledU(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled U gate.
-void nestedControlledU(QCProgramBuilder& b);
+Value nestedControlledU(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled U gate.
-void trivialControlledU(QCProgramBuilder& b);
+Value trivialControlledU(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a U gate.
-void inverseU(QCProgramBuilder& b);
+Value inverseU(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled U gate.
-void inverseMultipleControlledU(QCProgramBuilder& b);
+Value inverseMultipleControlledU(QCProgramBuilder& b);
 
 // --- SWAPOp --------------------------------------------------------------- //
 
 /// Creates a circuit with just a SWAP gate.
-void swap(QCProgramBuilder& b);
+Value swap(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled SWAP gate.
-void singleControlledSwap(QCProgramBuilder& b);
+Value singleControlledSwap(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled SWAP gate.
-void multipleControlledSwap(QCProgramBuilder& b);
+Value multipleControlledSwap(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled SWAP gate.
-void nestedControlledSwap(QCProgramBuilder& b);
+Value nestedControlledSwap(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled SWAP gate.
-void trivialControlledSwap(QCProgramBuilder& b);
+Value trivialControlledSwap(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a SWAP gate.
-void inverseSwap(QCProgramBuilder& b);
+Value inverseSwap(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled SWAP
 /// gate.
-void inverseMultipleControlledSwap(QCProgramBuilder& b);
+Value inverseMultipleControlledSwap(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping a SWAP gate (even hermitian → erase).
+Value powEvenSwap(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3) wrapping a SWAP gate (odd hermitian → SWAP).
+Value powOddSwap(QCProgramBuilder& b);
 
 // --- iSWAPOp -------------------------------------------------------------- //
 
 /// Creates a circuit with just an iSWAP gate.
-void iswap(QCProgramBuilder& b);
+Value iswap(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled iSWAP gate.
-void singleControlledIswap(QCProgramBuilder& b);
+Value singleControlledIswap(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled iSWAP gate.
-void multipleControlledIswap(QCProgramBuilder& b);
+Value multipleControlledIswap(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled iSWAP gate.
-void nestedControlledIswap(QCProgramBuilder& b);
+Value nestedControlledIswap(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled iSWAP gate.
-void trivialControlledIswap(QCProgramBuilder& b);
+Value trivialControlledIswap(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an iSWAP gate.
-void inverseIswap(QCProgramBuilder& b);
+Value inverseIswap(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled iSWAP
 /// gate.
-void inverseMultipleControlledIswap(QCProgramBuilder& b);
+Value inverseMultipleControlledIswap(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.5) wrapping an iSWAP gate (folds to
+/// xx_plus_yy(-π/2, 0)).
+Value powHalfIswap(QCProgramBuilder& b);
+
+/// Creates the reference for powHalfIswap: xx_plus_yy(-π/2, 0) directly.
+Value powHalfIswapRef(QCProgramBuilder& b);
 
 // --- DCXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just a DCX gate.
-void dcx(QCProgramBuilder& b);
+Value dcx(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled DCX gate.
-void singleControlledDcx(QCProgramBuilder& b);
+Value singleControlledDcx(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled DCX gate.
-void multipleControlledDcx(QCProgramBuilder& b);
+Value multipleControlledDcx(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled DCX gate.
-void nestedControlledDcx(QCProgramBuilder& b);
+Value nestedControlledDcx(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled DCX gate.
-void trivialControlledDcx(QCProgramBuilder& b);
+Value trivialControlledDcx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a DCX gate.
-void inverseDcx(QCProgramBuilder& b);
+Value inverseDcx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled DCX gate.
-void inverseMultipleControlledDcx(QCProgramBuilder& b);
+Value inverseMultipleControlledDcx(QCProgramBuilder& b);
 
 // --- ECROp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an ECR gate.
-void ecr(QCProgramBuilder& b);
+Value ecr(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled ECR gate.
-void singleControlledEcr(QCProgramBuilder& b);
+Value singleControlledEcr(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled ECR gate.
-void multipleControlledEcr(QCProgramBuilder& b);
+Value multipleControlledEcr(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled ECR gate.
-void nestedControlledEcr(QCProgramBuilder& b);
+Value nestedControlledEcr(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled ECR gate.
-void trivialControlledEcr(QCProgramBuilder& b);
+Value trivialControlledEcr(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an ECR gate.
-void inverseEcr(QCProgramBuilder& b);
+Value inverseEcr(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled ECR gate.
-void inverseMultipleControlledEcr(QCProgramBuilder& b);
+Value inverseMultipleControlledEcr(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2) wrapping an ECR gate (even hermitian → erase).
+Value powEvenEcr(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3) wrapping an ECR gate (odd hermitian → ECR).
+Value powOddEcr(QCProgramBuilder& b);
 
 // --- RXXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RXX gate.
-void rxx(QCProgramBuilder& b);
+Value rxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RXX gate.
-void singleControlledRxx(QCProgramBuilder& b);
+Value singleControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RXX gate.
-void multipleControlledRxx(QCProgramBuilder& b);
+Value multipleControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RXX gate.
-void nestedControlledRxx(QCProgramBuilder& b);
+Value nestedControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RXX gate.
-void trivialControlledRxx(QCProgramBuilder& b);
+Value trivialControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RXX gate.
-void inverseRxx(QCProgramBuilder& b);
+Value inverseRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RXX gate.
-void inverseMultipleControlledRxx(QCProgramBuilder& b);
+Value inverseMultipleControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a triple-controlled RXX gate.
-void tripleControlledRxx(QCProgramBuilder& b);
+Value tripleControlledRxx(QCProgramBuilder& b);
 
 /// Creates a circuit with a four-controlled RXX gate.
-void fourControlledRxx(QCProgramBuilder& b);
+Value fourControlledRxx(QCProgramBuilder& b);
 
 // --- RYYOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RYY gate.
-void ryy(QCProgramBuilder& b);
+Value ryy(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RYY gate.
-void singleControlledRyy(QCProgramBuilder& b);
+Value singleControlledRyy(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RYY gate.
-void multipleControlledRyy(QCProgramBuilder& b);
+Value multipleControlledRyy(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RYY gate.
-void nestedControlledRyy(QCProgramBuilder& b);
+Value nestedControlledRyy(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RYY gate.
-void trivialControlledRyy(QCProgramBuilder& b);
+Value trivialControlledRyy(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RYY gate.
-void inverseRyy(QCProgramBuilder& b);
+Value inverseRyy(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RYY gate.
-void inverseMultipleControlledRyy(QCProgramBuilder& b);
+Value inverseMultipleControlledRyy(QCProgramBuilder& b);
 
 // --- RZXOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZX gate.
-void rzx(QCProgramBuilder& b);
+Value rzx(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZX gate.
-void singleControlledRzx(QCProgramBuilder& b);
+Value singleControlledRzx(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZX gate.
-void multipleControlledRzx(QCProgramBuilder& b);
+Value multipleControlledRzx(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RZX gate.
-void nestedControlledRzx(QCProgramBuilder& b);
+Value nestedControlledRzx(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RZX gate.
-void trivialControlledRzx(QCProgramBuilder& b);
+Value trivialControlledRzx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RZX gate.
-void inverseRzx(QCProgramBuilder& b);
+Value inverseRzx(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RZX gate.
-void inverseMultipleControlledRzx(QCProgramBuilder& b);
+Value inverseMultipleControlledRzx(QCProgramBuilder& b);
 
 // --- RZZOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with just an RZZ gate.
-void rzz(QCProgramBuilder& b);
+Value rzz(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled RZZ gate.
-void singleControlledRzz(QCProgramBuilder& b);
+Value singleControlledRzz(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled RZZ gate.
-void multipleControlledRzz(QCProgramBuilder& b);
+Value multipleControlledRzz(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled RZZ gate.
-void nestedControlledRzz(QCProgramBuilder& b);
+Value nestedControlledRzz(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled RZZ gate.
-void trivialControlledRzz(QCProgramBuilder& b);
+Value trivialControlledRzz(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an RZZ gate.
-void inverseRzz(QCProgramBuilder& b);
+Value inverseRzz(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled RZZ gate.
-void inverseMultipleControlledRzz(QCProgramBuilder& b);
+Value inverseMultipleControlledRzz(QCProgramBuilder& b);
 
 // --- XXPlusYYOp ----------------------------------------------------------- //
 
 /// Creates a circuit with just an XXPlusYY gate.
-void xxPlusYY(QCProgramBuilder& b);
+Value xxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled XXPlusYY gate.
-void singleControlledXxPlusYY(QCProgramBuilder& b);
+Value singleControlledXxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled XXPlusYY gate.
-void multipleControlledXxPlusYY(QCProgramBuilder& b);
+Value multipleControlledXxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled XXPlusYY gate.
-void nestedControlledXxPlusYY(QCProgramBuilder& b);
+Value nestedControlledXxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled XXPlusYY gate.
-void trivialControlledXxPlusYY(QCProgramBuilder& b);
+Value trivialControlledXxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an XXPlusYY gate.
-void inverseXxPlusYY(QCProgramBuilder& b);
+Value inverseXxPlusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled XXPlusYY
 /// gate.
-void inverseMultipleControlledXxPlusYY(QCProgramBuilder& b);
+Value inverseMultipleControlledXxPlusYY(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3.0) wrapping an XX+YY gate (scales θ).
+Value powXxPlusYYScaled(QCProgramBuilder& b);
+
+/// Creates the reference for powXxPlusYYScaled: xx_plus_yy(3*0.123, 0.456).
+Value powXxPlusYYScaledRef(QCProgramBuilder& b);
 
 // --- XXMinusYYOp ---------------------------------------------------------- //
 
 /// Creates a circuit with just an XXMinusYY gate.
-void xxMinusYY(QCProgramBuilder& b);
+Value xxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled XXMinusYY gate.
-void singleControlledXxMinusYY(QCProgramBuilder& b);
+Value singleControlledXxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a multi-controlled XXMinusYY gate.
-void multipleControlledXxMinusYY(QCProgramBuilder& b);
+Value multipleControlledXxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a nested controlled XXMinusYY gate.
-void nestedControlledXxMinusYY(QCProgramBuilder& b);
+Value nestedControlledXxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with a trivial controlled XXMinusYY gate.
-void trivialControlledXxMinusYY(QCProgramBuilder& b);
+Value trivialControlledXxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to an XXMinusYY gate.
-void inverseXxMinusYY(QCProgramBuilder& b);
+Value inverseXxMinusYY(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a controlled XXMinusYY
 /// gate.
-void inverseMultipleControlledXxMinusYY(QCProgramBuilder& b);
+Value inverseMultipleControlledXxMinusYY(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3.0) wrapping an XX-YY gate (scales θ).
+Value powXxMinusYYScaled(QCProgramBuilder& b);
+
+/// Creates the reference for powXxMinusYYScaled: xx_minus_yy(3*0.123, 0.456).
+Value powXxMinusYYScaledRef(QCProgramBuilder& b);
+
+// --- RCCXOp --------------------------------------------------------------- //
+
+/// Creates a circuit with just an RCCX gate.
+Value rccx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2.0) wrapping an RCCX gate.
+Value powEvenRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(3.0) wrapping an RCCX gate.
+Value powOddRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a single controlled RCCX gate.
+Value singleControlledRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a multi-controlled RCCX gate.
+Value multipleControlledRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a nested controlled RCCX gate.
+Value nestedControlledRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with a trivial controlled RCCX gate.
+Value trivialControlledRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to an RCCX gate.
+Value inverseRccx(QCProgramBuilder& b);
+
+/// Creates a circuit with an inverse modifier applied to a multi-controlled
+/// RCCX gate.
+Value inverseMultipleControlledRccx(QCProgramBuilder& b);
 
 // --- BarrierOp ------------------------------------------------------------ //
 
 /// Creates a circuit with a barrier.
-void barrier(QCProgramBuilder& b);
+Value barrier(QCProgramBuilder& b);
 
 /// Creates a circuit with a barrier on two qubits.
-void barrierTwoQubits(QCProgramBuilder& b);
+Value barrierTwoQubits(QCProgramBuilder& b);
 
 /// Creates a circuit with a barrier on multiple qubits.
-void barrierMultipleQubits(QCProgramBuilder& b);
+Value barrierMultipleQubits(QCProgramBuilder& b);
 
 /// Creates a circuit with a single controlled barrier.
-void singleControlledBarrier(QCProgramBuilder& b);
+Value singleControlledBarrier(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a barrier.
-void inverseBarrier(QCProgramBuilder& b);
+Value inverseBarrier(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2.0) wrapping barrier (should pass through).
+Value powBarrier(QCProgramBuilder& b);
 
 // --- CtrlOp --------------------------------------------------------------- //
 
 /// Creates a circuit with a trivial ctrl modifier.
-void trivialCtrl(QCProgramBuilder& b);
+Value trivialCtrl(QCProgramBuilder& b);
 
 /// Creates a circuit with an empty ctrl modifier.
-void emptyCtrl(QCProgramBuilder& b);
+Value emptyCtrl(QCProgramBuilder& b);
 
 /// Creates a circuit with nested ctrl modifiers.
-void nestedCtrl(QCProgramBuilder& b);
+Value nestedCtrl(QCProgramBuilder& b);
 
 /// Creates a circuit with triple nested ctrl modifiers.
-void tripleNestedCtrl(QCProgramBuilder& b);
+Value tripleNestedCtrl(QCProgramBuilder& b);
 
 /// Creates a circuit with double nested ctrl modifiers with two qubits each.
-void doubleNestedCtrlTwoQubits(QCProgramBuilder& b);
+Value doubleNestedCtrlTwoQubits(QCProgramBuilder& b);
 
 /// Creates a circuit with control modifiers interleaved by an inverse modifier.
-void ctrlInvSandwich(QCProgramBuilder& b);
+Value ctrlInvSandwich(QCProgramBuilder& b);
 
 /// Creates a circuit with a control modifier applied to two gates.
-void ctrlTwo(QCProgramBuilder& b);
+Value ctrlTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with a control modifier applied to three gates that use
+/// the targets out of order, repeat one of them, and swap the qubits of a
+/// two-qubit gate.
+Value ctrlThree(QCProgramBuilder& b);
 
 /// Creates a circuit with a control modifier applied to a controlled and a
 /// non-controlled gate.
-void ctrlTwoMixed(QCProgramBuilder& b);
+Value ctrlTwoMixed(QCProgramBuilder& b);
 
 /// Creates a circuit with nested control modifiers applied to two gates.
-void nestedCtrlTwo(QCProgramBuilder& b);
+Value nestedCtrlTwo(QCProgramBuilder& b);
 
 /// Creates a circuit with a control modifier applied to a inverse modifier
 /// applied to two gates.
-void ctrlInvTwo(QCProgramBuilder& b);
+Value ctrlInvTwo(QCProgramBuilder& b);
+
+/// Exercises modifier-body reuse with reordered control and target aliases.
+Value modifierBodyReuseReordered(QCProgramBuilder& b);
+
+/// Canonical reference for modifierBodyReuseReordered.
+Value modifierBodyReuseReorderedRef(QCProgramBuilder& b);
 
 // --- InvOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with an empty inverse modifier.
-void emptyInv(QCProgramBuilder& b);
+Value emptyInv(QCProgramBuilder& b);
+
+/// Creates a circuit with an empty power modifier.
+Value emptyPow(QCProgramBuilder& b);
 
 /// Creates a circuit with nested inverse modifiers.
-void nestedInv(QCProgramBuilder& b);
+Value nestedInv(QCProgramBuilder& b);
 
 /// Creates a circuit with triple nested inverse modifiers.
-void tripleNestedInv(QCProgramBuilder& b);
+Value tripleNestedInv(QCProgramBuilder& b);
 
 /// Creates a circuit with inverse modifiers interleaved by a control modifier.
-void invCtrlSandwich(QCProgramBuilder& b);
+Value invCtrlSandwich(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to two gates.
-void invTwo(QCProgramBuilder& b);
+Value invTwo(QCProgramBuilder& b);
 
 /// Creates a circuit with an inverse modifier applied to a control modifier
 /// applied to two gates.
-void invCtrlTwo(QCProgramBuilder& b);
+Value invCtrlTwo(QCProgramBuilder& b);
+
+// --- PowOp ---------------------------------------------------------------- //
+
+/// Creates a circuit with pow(1.0) modifier (should inline to just the gate).
+Value pow1Inline(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(0.0) modifier (should erase to identity).
+Value pow0Erase(QCProgramBuilder& b);
+
+/// Creates a circuit with nested pow modifiers (should merge exponents).
+Value nestedPow(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(6.0) as the merged reference for nestedPow.
+Value powSingleExponent(QCProgramBuilder& b);
+
+/// Creates pow(0.5){pow(2){X}}, which is identity under principal-branch
+/// matrix-power semantics and must not be flattened to pow(1){X}.
+Value nestedPowBranchCut(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2.0) wrapping a two-qubit RXX gate.
+Value powRxx(QCProgramBuilder& b);
+
+/// Creates the reference for powRxx: RXX with twice the rotation angle.
+Value powRxxRef(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(-2.0) wrapping an RX gate (negative exponent).
+Value negPowRx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(2.0) wrapping RX(-0.123) (reference for
+/// negPowRx and invPowRx — inv folds into angle negation).
+Value powRxNeg(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(-0.5) wrapping H (negative non-integer exponent).
+/// Expected to remain unchanged: fractional exponent on a unitary with
+/// eigenvalue -1 cannot safely apply NegPowToInvPow.
+Value negPowH(QCProgramBuilder& b);
+
+/// Creates a circuit with inv wrapping pow(0.5) wrapping H.
+/// MovePowOutside emits pow(-0.5){H} (not wrapping in inv).
+Value invPowHFrac(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(-0.5) wrapping H (reference for invPowHFrac).
+Value powHFracNeg(QCProgramBuilder& b);
+
+/// Creates inv wrapping pow(2){H}. The even power folds to the identity inside
+/// the modifier, leaving the inv body empty so it is erased (reference:
+/// emptyQC).
+Value invPowEvenH(QCProgramBuilder& b);
+
+/// Creates inv wrapping pow(2){SWAP}. The even power folds to the identity
+/// inside the modifier, leaving the inv body empty so it is erased (reference:
+/// emptyQC).
+Value invPowEvenSwap(QCProgramBuilder& b);
+
+/// Creates inv wrapping pow(2){Z}. Z^2 folds to the identity inside the
+/// modifier, leaving the inv body empty so it is erased (reference: emptyQC).
+Value invPowSquaredZ(QCProgramBuilder& b);
+
+/// Creates a circuit with inv wrapping pow (should reorder to pow wrapping
+/// inv).
+Value invPowRx(QCProgramBuilder& b);
+
+/// Creates inv(pow(0.5){swap}) whose inner pow aliases the inv's qubits in
+/// swapped order.
+Value invPowReordered(QCProgramBuilder& b);
+
+/// Creates the reference for invPowReordered: pow(-0.5) over the swapped
+/// qubits.
+Value invPowReorderedRef(QCProgramBuilder& b);
+
+/// Creates a nested pow with an integral outer exponent whose inner pow aliases
+/// the outer pow's qubits in swapped order.
+Value mergeNestedPowReordered(QCProgramBuilder& b);
+
+/// Creates the reference for mergeNestedPowReordered: pow(1.0) over the swapped
+/// qubits.
+Value mergeNestedPowReorderedRef(QCProgramBuilder& b);
+
+/// Creates a circuit with pow wrapping ctrl wrapping RX (should move ctrl
+/// outside).
+Value powCtrlRx(QCProgramBuilder& b);
+
+/// Creates a circuit with ctrl wrapping pow wrapping RX (reference for
+/// powCtrlRx).
+Value ctrlPowRx(QCProgramBuilder& b);
+
+/// Creates a circuit with pow(-2) wrapping inv wrapping iSWAP.
+/// Exercises NegPowToInvPow: inv{iswap} survives InvOp canonicalization,
+/// FoldPowIntoGate fails (inner is InvOp), so NegPowToInvPow fires.
+Value negPowInvIswap(QCProgramBuilder& b);
+
+/// Reference for negPowInvIswap: xx_plus_yy(-2π, 0) (the fully folded form).
+Value negPowInvIswapRef(QCProgramBuilder& b);
+
+/// Creates a circuit with ctrl wrapping pow(1/3) wrapping SX. Canonicalization
+/// expands pow(p){SX} to gphase+rx inside ctrl.
+Value ctrlPowSx(QCProgramBuilder& b);
+
+/// Creates the reference for ctrlPowSx: controlled gphase(π/12) and RX(π/6).
+Value ctrlPowSxRef(QCProgramBuilder& b);
+
+/// pow(2) with a two-unitary body (x; rxx). The optimizer leaves multi-unitary
+/// pow bodies untouched; checks verification and the QC ↔ QCO round-trip.
+Value powTwo(QCProgramBuilder& b);
+
+/// Creates a circuit with a power modifier applied to two gates that act on
+/// disjoint qubits.
+Value powTwoDisjoint(QCProgramBuilder& b);
+
+/// Creates a circuit with a non-integer power modifier applied to two gates
+/// that act on disjoint qubits.
+Value powHalfDisjoint(QCProgramBuilder& b);
+
+/// pow(0) with a two-unitary body (x; rxx) — folds to identity (erased at top
+/// level).
+Value pow0Two(QCProgramBuilder& b);
 
 // --- IfOp ----------------------------------------------------------------- //
 
 /// Creates a circuit with a simple if operation with one qubit.
-void simpleIf(QCProgramBuilder& b);
-
-/// Creates a circuit with an if operation with two qubits.
-void ifTwoQubits(QCProgramBuilder& b);
+SmallVector<Value> simpleIf(QCProgramBuilder& b);
 
 /// Creates a circuit with an if operation with an else branch.
-void ifElse(QCProgramBuilder& b);
+SmallVector<Value> ifElse(QCProgramBuilder& b);
+
+/// Creates a circuit with an if operation with two qubits.
+SmallVector<Value> ifTwoQubits(QCProgramBuilder& b);
+
+/// Creates a circuit that measures a qubit inside an if operation.
+SmallVector<Value> ifWithMeasurement(QCProgramBuilder& b);
+
+/// Creates a circuit with an if operation conditioned on a bit loaded from a
+/// classical bit register.
+SmallVector<Value> ifWithCreg(QCProgramBuilder& b);
 
 /// Creates a circuit with an if operation with a nested for operation with
 /// a register.
-void nestedIfOpForLoop(QCProgramBuilder& b);
+Value nestedIfOpForLoop(QCProgramBuilder& b);
+
+// --- IndexSwitchOp -------------------------------------------------------- //
+
+/// Creates a circuit with an index switch operation with one qubit.
+SmallVector<Value> simpleIndexSwitch(QCProgramBuilder& b);
+
+/// Creates a circuit with an index switch operation with multiple cases.
+Value indexSwitchMultiCase(QCProgramBuilder& b);
 
 // --- WhileOp -------------------------------------------------------------- //
 
 /// Creates a circuit with a while operation using a while loop.
-void simpleWhileReset(QCProgramBuilder& b);
+Value simpleWhileReset(QCProgramBuilder& b);
 
 /// Creates a circuit with a while operation using a do-while loop.
-void simpleDoWhileReset(QCProgramBuilder& b);
+Value simpleDoWhileReset(QCProgramBuilder& b);
 
 // --- ForOp ---------------------------------------------------------------- //
 
 /// Creates a circuit with a simple for operation with a register.
-void simpleForLoop(QCProgramBuilder& b);
+Value simpleForLoop(QCProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested if operation.
-void nestedForLoopIfOp(QCProgramBuilder& b);
+Value nestedForLoopIfOp(QCProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a nested while
 /// operation.
-void nestedForLoopWhileOp(QCProgramBuilder& b);
+Value nestedForLoopWhileOp(QCProgramBuilder& b);
+
+/// Creates a circuit with a for operation with a register and a nested index
+/// switch operation.
+Value nestedForLoopSwitchOp(QCProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is separately allocated from the
 /// register.
-void nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b);
+Value nestedForLoopCtrlOpWithSeparateQubit(QCProgramBuilder& b);
 
 /// Creates a circuit with a for operation with a register and a qubit and a
 /// nested ctrl operation where the qubit is extracted from the register.
-void nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b);
+Value nestedForLoopCtrlOpWithExtractedQubit(QCProgramBuilder& b);
+
+// --- Qubit Reuse ---------------------------------------------------------- //
+
+/// Creates a circuit with two qubits and a H gate applied to both.
+SmallVector<Value> hGateOnMultipleQubits(QCProgramBuilder& b);
+
+/// Creates a circuit with a single controlled X gate on two individual qubits.
+SmallVector<Value> singleControlledXOnIndividualQubits(QCProgramBuilder& b);
 
 } // namespace mlir::qc

@@ -8,16 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LLVM.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LLVM.h"
 
 #include <cmath>
 #include <complex>
@@ -26,37 +27,19 @@
 
 using namespace mlir;
 using namespace mlir::qco;
-using namespace mlir::utils;
-
-namespace {
-
-/**
- * @brief Merge subsequent RYY operations on the same qubits by adding their
- * angles.
- */
-struct MergeSubsequentRYY final : OpRewritePattern<RYYOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RYYOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeTwoTargetOneParameter(op, rewriter, true);
-  }
-};
-
-} // namespace
+using namespace mlir::mqt;
 
 void RYYOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                   Value qubit0In, Value qubit1In,
                   const std::variant<double, Value>& theta) {
-  const auto thetaOperand =
-      variantToValue(odsBuilder, odsState.location, theta);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, qubit0In, qubit1In, thetaOperand);
 }
 
 LogicalResult RYYOp::fold(FoldAdaptor /*adaptor*/,
                           SmallVectorImpl<OpFoldResult>& results) {
   if (const auto theta = valueToDouble(getTheta());
-      theta && std::abs(*theta) <= TOLERANCE) {
+      theta && std::abs(*theta) <= PARAMETER_COMPARISON_TOLERANCE) {
     results.emplace_back(getInputQubit(0));
     results.emplace_back(getInputQubit(1));
     return success();
@@ -65,8 +48,10 @@ LogicalResult RYYOp::fold(FoldAdaptor /*adaptor*/,
 }
 
 void RYYOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                        MLIRContext* context) {
-  results.add<MergeSubsequentRYY>(context);
+                                        MLIRContext* /*context*/) {
+  results.add(+[](RYYOp op, PatternRewriter& rewriter) {
+    return mergeTwoTargetOneParameter(op, rewriter, true);
+  });
 }
 
 Matrix4x4 RYYOp::unitaryMatrix(const double theta) {

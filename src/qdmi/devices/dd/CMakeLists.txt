@@ -6,26 +6,19 @@
 #
 # Licensed under the MIT License
 
-# Set target name
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-ddsim-device)
 
-# Set prefix for QDMI
 set(QDMI_PREFIX "MQT_DDSIM")
 
-# If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
-  # Add library
   add_mqt_core_library(${TARGET_NAME} FORCE_SHARED HIDDEN_VISIBILITY ALIAS_NAME QDMI_DDSIM_Device)
 
-  # Generate prefixed QDMI headers
   generate_prefixed_qdmi_headers(${QDMI_PREFIX})
   file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_ddsim_qdmi/**.h)
 
-  # Add sources to target
   target_sources(${TARGET_NAME} PRIVATE Device.cpp)
 
-  # Add headers using file sets
   target_sources(
     ${TARGET_NAME}
     PUBLIC FILE_SET
@@ -37,19 +30,19 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/dd/Device.hpp
            ${QDMI_HDRS})
 
-  # Add link libraries
-  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQASM MQT::CoreCircuitOptimizer
-                                               MQT::CoreQDMICommon spdlog::spdlog)
-  if(BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR)
-    target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQIRJIT MQT::CoreQIRRuntime)
-    target_compile_definitions(${TARGET_NAME} PRIVATE BUILD_MQT_CORE_QDMI_DDSIM_WITH_QIR)
+  target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreDD MQT::CoreQDMICommon)
+  mqt_llvm_target_disable_rtti(${TARGET_NAME})
+  # Keep symbols from static dependencies local. A plugin-enabled host can otherwise interpose
+  # LLVM's process-wide registries when it loads this device.
+  if(APPLE)
+    target_link_options(${TARGET_NAME} PRIVATE "LINKER:-exported_symbol,_${QDMI_PREFIX}_QDMI_*")
+  elseif(UNIX)
+    target_link_options(${TARGET_NAME} PRIVATE "LINKER:--exclude-libs,ALL")
   endif()
+  target_link_libraries(${TARGET_NAME} PRIVATE MLIRQCODDFunctionality MQTCompilerPrograms
+                                               MQT::CoreQIRJIT MQT::CoreQIRRuntime)
 
-  # Make QDMI version available and ensure symbols are exported when building the library
-  target_compile_definitions(${TARGET_NAME} PRIVATE QDMI_VERSION="${QDMI_VERSION}"
-                                                    ${QDMI_PREFIX}_QDMI_device_EXPORTS)
-
-  # Add to list of MQT Core targets
+  mqt_configure_qdmi_device(${TARGET_NAME} ID mqt.ddsim.default PREFIX ${QDMI_PREFIX})
   list(APPEND MQT_CORE_TARGETS ${TARGET_NAME})
 endif()
 

@@ -8,15 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mqt/Dialect/MQT/Utils/Angles.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <cmath>
 #include <complex>
@@ -25,20 +27,18 @@
 
 using namespace mlir;
 using namespace mlir::qco;
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 namespace {
 
-/**
- * @brief Remove trivial GPhase operations.
- */
+/// Remove trivial GPhase operations.
 struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
   using OpRewritePattern::OpRewritePattern;
 
   LogicalResult matchAndRewrite(GPhaseOp op,
                                 PatternRewriter& rewriter) const override {
     if (const auto theta = valueToDouble(op.getTheta());
-        !theta || std::abs(*theta) > TOLERANCE) {
+        !theta || std::abs(*theta) > PARAMETER_COMPARISON_TOLERANCE) {
       return failure();
     }
 
@@ -51,9 +51,12 @@ struct RemoveTrivialGPhase final : OpRewritePattern<GPhaseOp> {
 
 void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                      const std::variant<double, Value>& theta) {
-  const auto thetaOperand =
-      variantToValue(odsBuilder, odsState.location, theta);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, thetaOperand);
+}
+
+LogicalResult GPhaseOp::verify() {
+  return verifyGlobalPhaseAngle(getOperation(), getTheta());
 }
 
 void GPhaseOp::getCanonicalizationPatterns(RewritePatternSet& results,

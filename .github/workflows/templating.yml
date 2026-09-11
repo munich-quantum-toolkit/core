@@ -8,15 +8,18 @@ on:
       - ".github/workflows/templating.yml"
   workflow_dispatch: # Allow manual triggering
 
+permissions: {}
+
 jobs:
   render-template:
     name: Render template
     runs-on: ubuntu-slim
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - id: read-release-drafter-categories
         run: |
           JSON_CONTENT=$(cat .github/workflow_inputs/release_drafter_categories.json | jq -c .)
@@ -26,11 +29,15 @@ jobs:
         with:
           client-id: ${{ secrets.APP_ID }}
           private-key: ${{ secrets.APP_PRIVATE_KEY }}
-      - uses: munich-quantum-toolkit/templates@6b796f4c0404f74be469f32a3dcac05ef61d7b72 # v1.3.3
+          permission-contents: write # Needed to push the templating branch
+          permission-pull-requests: write # Needed to open the templating pull request
+      - uses: munich-quantum-toolkit/templates@38a2369c8303887135af5e98d9e7003ed267b613 # main
         with:
           token: ${{ steps.create-token.outputs.token }}
           name: Core
           organization: ${{ github.repository_owner }}
           project-type: c++-mlir-python
           repository: ${{ github.event.repository.name }}
+          synchronize-agents-md: false
+          synchronize-gitignore: false
           release-drafter-categories: ${{ steps.read-release-drafter-categories.outputs.release_drafter_categories }}

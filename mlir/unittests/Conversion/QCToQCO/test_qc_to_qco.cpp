@@ -8,32 +8,68 @@
  * Licensed under the MIT License
  */
 
+#include "mqt/Conversion/ConversionUtils.h"
+#include "mqt/Conversion/QCOToQC/QCOToQC.h"
+#include "mqt/Conversion/QCToQCO/QCToQCO.h"
+#include "mqt/Dialect/CBit/IR/CBitAttributes.h"
+#include "mqt/Dialect/CBit/IR/CBitDialect.h"
+#include "mqt/Dialect/CBit/IR/CBitOps.h"
+#include "mqt/Dialect/MQT/IR/MQTDialect.h"
+#include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
+#include "mqt/Dialect/QC/IR/QCDialect.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QCO/Builder/QCOProgramBuilder.h"
+#include "mqt/Dialect/QCO/IR/QCODialect.h"
+#include "mqt/Dialect/QCO/IR/QCOInterfaces.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
+#include "mqt/Dialect/QTensor/IR/QTensorOps.h"
+#include "mqt/Support/Passes.h"
+
+#include "Support/IRVerification.h"
 #include "TestCaseUtils.h"
-#include "mlir/Conversion/QCToQCO/QCToQCO.h"
-#include "mlir/Dialect/QC/Builder/QCProgramBuilder.h"
-#include "mlir/Dialect/QC/IR/QCDialect.h"
-#include "mlir/Dialect/QCO/Builder/QCOProgramBuilder.h"
-#include "mlir/Dialect/QCO/IR/QCODialect.h"
-#include "mlir/Dialect/QTensor/IR/QTensorDialect.h"
-#include "mlir/Support/IRVerification.h"
-#include "mlir/Support/Passes.h"
 #include "qc_programs.h"
 #include "qco_programs.h"
 
-#include <gtest/gtest.h>
-#include <mlir/Dialect/Arith/IR/Arith.h>
-#include <mlir/Dialect/Func/IR/FuncOps.h>
-#include <mlir/Dialect/MemRef/IR/MemRef.h>
-#include <mlir/Dialect/SCF/IR/SCF.h>
-#include <mlir/IR/DialectRegistry.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/Verifier.h>
-#include <mlir/Pass/PassManager.h>
-#include <mlir/Support/LogicalResult.h>
+#include "gtest/gtest.h"
 
+#include "mlir/Dialect/Arith/IR/Arith.h"
+#include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
+#include "mlir/Dialect/Func/IR/FuncOps.h"
+#include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/BuiltinTypes.h"
+#include "mlir/IR/Diagnostics.h"
+#include "mlir/IR/DialectRegistry.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Matchers.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/OwningOpRef.h"
+#include "mlir/IR/Region.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+#include "mlir/Pass/PassManager.h"
+#include "mlir/Support/LLVM.h"
+#include "mlir/Support/LogicalResult.h"
+#include "mlir/Transforms/DialectConversion.h"
+
+#include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/STLFunctionalExtras.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ErrorHandling.h"
+
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
 #include <ostream>
 #include <string>
+#include <tuple>
 
 using namespace mlir;
 
@@ -41,8 +77,10 @@ namespace {
 
 struct QCToQCOTestCase {
   std::string name;
-  mqt::test::NamedBuilder<qc::QCProgramBuilder> programBuilder;
-  mqt::test::NamedBuilder<qco::QCOProgramBuilder> referenceBuilder;
+  ::mqt::test::NamedMLIRBuilder<qc::QCProgramBuilder> programBuilder;
+  ::mqt::test::NamedMLIRBuilder<qco::QCOProgramBuilder> referenceBuilder;
+  bool expectsCompleteTensorState = false;
+  bool skipReferenceComparison = false;
 
   friend std::ostream& operator<<(std::ostream& os,
                                   const QCToQCOTestCase& info);
@@ -50,10 +88,10 @@ struct QCToQCOTestCase {
 
 // NOLINTNEXTLINE(llvm-prefer-static-over-anonymous-namespace)
 std::ostream& operator<<(std::ostream& os, const QCToQCOTestCase& info) {
-  return os << "QCToQCO{" << info.name
-            << ", original=" << mqt::test::displayName(info.programBuilder.name)
+  return os << "QCToQCO{" << info.name << ", original="
+            << ::mqt::test::displayName(info.programBuilder.name)
             << ", reference="
-            << mqt::test::displayName(info.referenceBuilder.name) << "}";
+            << ::mqt::test::displayName(info.referenceBuilder.name) << "}";
 }
 
 class QCToQCOTest : public testing::TestWithParam<QCToQCOTestCase> {
@@ -63,9 +101,10 @@ protected:
   void SetUp() override {
     // Register all necessary dialects
     DialectRegistry registry;
-    registry.insert<qc::QCDialect, qco::QCODialect, qtensor::QTensorDialect,
-                    arith::ArithDialect, func::FuncDialect,
-                    memref::MemRefDialect, scf::SCFDialect>();
+    registry
+        .insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                qtensor::QTensorDialect, arith::ArithDialect, func::FuncDialect,
+                memref::MemRefDialect, scf::SCFDialect>();
     context = std::make_unique<MLIRContext>();
     context->appendDialectRegistry(registry);
     context->loadAllAvailableDialects();
@@ -74,18 +113,1273 @@ protected:
 
 } // namespace
 
-static LogicalResult runQCToQCOConversion(ModuleOp module) {
-  PassManager pm(module.getContext());
+static LogicalResult runQCToQCOConversion(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
   pm.addPass(createQCToQCO());
-  return pm.run(module);
+  return pm.run(moduleOp);
 }
 
-TEST_P(QCToQCOTest, ProgramEquivalence) {
-  const auto& [_, programBuilder, referenceBuilder] = GetParam();
-  const auto name = " (" + GetParam().name + ")";
-  mqt::test::DeferredPrinter printer;
+static LogicalResult runQCOToQCConversion(ModuleOp moduleOp) {
+  PassManager pm(moduleOp.getContext());
+  pm.addPass(createQCOToQC());
+  return pm.run(moduleOp);
+}
 
-  auto program = qc::QCProgramBuilder::build(context.get(), programBuilder.fn);
+namespace {
+
+class QCToQCORegressionTest : public testing::Test {
+protected:
+  MLIRContext context;
+
+  QCToQCORegressionTest() {
+    DialectRegistry registry;
+    registry
+        .insert<mlir::mqt::MQTDialect, qc::QCDialect, qco::QCODialect,
+                qtensor::QTensorDialect, arith::ArithDialect, func::FuncDialect,
+                memref::MemRefDialect, scf::SCFDialect>();
+    context.appendDialectRegistry(registry);
+    context.loadAllAvailableDialects();
+  }
+
+  void expectNoQCOperations(ModuleOp moduleOp) {
+    bool retainsQCOperations = false;
+    moduleOp.walk([&](Operation* operation) {
+      retainsQCOperations |=
+          operation->getDialect() == context.getLoadedDialect<qc::QCDialect>();
+    });
+    EXPECT_FALSE(retainsQCOperations);
+  }
+
+public:
+  static void expectOperationLocalRegisterAccesses(ModuleOp moduleOp) {
+    std::size_t extracts = 0;
+    std::size_t inserts = 0;
+    llvm::DenseSet<Operation*> committedExtracts;
+    moduleOp.walk([&](qtensor::ExtractOp extract) {
+      ++extracts;
+      ASSERT_TRUE(extract.getResult().hasOneUse());
+      auto* user = *extract.getResult().getUsers().begin();
+      EXPECT_EQ(user->getDialect(),
+                moduleOp.getContext()->getOrLoadDialect<qco::QCODialect>());
+    });
+    moduleOp.walk([&](qtensor::InsertOp insert) {
+      ++inserts;
+      auto* producer = insert.getScalar().getDefiningOp();
+      ASSERT_NE(producer, nullptr);
+      EXPECT_EQ(producer->getDialect(),
+                moduleOp.getContext()->getOrLoadDialect<qco::QCODialect>());
+
+      Value input;
+      if (auto unitary = dyn_cast<qco::UnitaryOpInterface>(producer)) {
+        input = unitary.getInputForOutput(insert.getScalar());
+      } else if (auto measure = dyn_cast<qco::MeasureOp>(producer)) {
+        EXPECT_EQ(insert.getScalar(), measure.getQubitOut());
+        input = measure.getQubitIn();
+      } else if (auto reset = dyn_cast<qco::ResetOp>(producer)) {
+        EXPECT_EQ(insert.getScalar(), reset.getQubitOut());
+        input = reset.getQubitIn();
+      }
+      ASSERT_TRUE(input);
+
+      auto extract = input.getDefiningOp<qtensor::ExtractOp>();
+      ASSERT_TRUE(extract);
+      EXPECT_TRUE(
+          isEqualConstantIntOrValue(extract.getIndex(), insert.getIndex()));
+      EXPECT_EQ(extract->getBlock(), producer->getBlock());
+      EXPECT_EQ(producer->getBlock(), insert->getBlock());
+      EXPECT_TRUE(extract->isBeforeInBlock(producer));
+      EXPECT_TRUE(producer->isBeforeInBlock(insert));
+      committedExtracts.insert(extract);
+    });
+    EXPECT_GT(extracts, 0U);
+    EXPECT_EQ(extracts, inserts);
+    EXPECT_EQ(committedExtracts.size(), extracts);
+
+    moduleOp.walk([&](memref::LoadOp load) {
+      EXPECT_FALSE(isa<qc::QubitType>(load.getMemRefType().getElementType()));
+    });
+  }
+
+  static void expectStructuredStateUsesCompleteTensors(ModuleOp moduleOp) {
+    bool sawStructuredQuantumState = false;
+    moduleOp.walk([&](Operation* operation) {
+      if (!isa<qco::IfOp, qco::IndexSwitchOp, scf::ForOp, scf::WhileOp>(
+              operation)) {
+        return;
+      }
+      const auto isQubitTensor = [](Type type) {
+        const auto tensor = dyn_cast<RankedTensorType>(type);
+        return tensor && isa<qco::QubitType>(tensor.getElementType());
+      };
+      const bool hasTensorOperand =
+          llvm::any_of(operation->getOperandTypes(), isQubitTensor);
+      const bool hasTensorResult =
+          llvm::any_of(operation->getResultTypes(), isQubitTensor);
+      EXPECT_TRUE(hasTensorOperand);
+      EXPECT_TRUE(hasTensorResult);
+      const auto tensorOperands =
+          llvm::filter_to_vector(operation->getOperandTypes(), isQubitTensor);
+      const auto tensorResults =
+          llvm::filter_to_vector(operation->getResultTypes(), isQubitTensor);
+      EXPECT_EQ(tensorOperands, tensorResults);
+      for (Region& region : operation->getRegions()) {
+        if (region.empty()) {
+          continue;
+        }
+        const auto tensorArguments = llvm::filter_to_vector(
+            region.front().getArgumentTypes(), isQubitTensor);
+        EXPECT_EQ(tensorArguments, tensorResults);
+      }
+      sawStructuredQuantumState = true;
+    });
+    EXPECT_TRUE(sawStructuredQuantumState);
+  }
+};
+
+class RejectingRegionMovePattern final
+    : public OpConversionPattern<func::FuncOp> {
+public:
+  RejectingRegionMovePattern(TypeConverter& typeConverter, MLIRContext* context,
+                             bool& sourcePreserved)
+      : OpConversionPattern(typeConverter, context),
+        sourcePreserved(sourcePreserved) {}
+
+  LogicalResult
+  matchAndRewrite(func::FuncOp op, OpAdaptor /*adaptor*/,
+                  ConversionPatternRewriter& rewriter) const override {
+    if (!op->hasAttr("test.reject_region_move")) {
+      return failure();
+    }
+    auto moduleOp = op->getParentOfType<ModuleOp>();
+    auto destination = moduleOp.lookupSymbol<func::FuncOp>("destination");
+    if (!destination) {
+      return failure();
+    }
+
+    const auto result = moveRegion(op.getBody(), destination.getBody(),
+                                   rewriter, getTypeConverter());
+    if (failed(result)) {
+      sourcePreserved = !op.getBody().empty() && destination.getBody().empty();
+    }
+    return result;
+  }
+
+private:
+  bool& sourcePreserved;
+};
+
+} // namespace
+
+TEST_F(QCToQCORegressionTest, RejectedRegionMovePreservesSource) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @destination()
+  func.func @source(%arg: index) attributes {test.reject_region_move} {
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  TypeConverter typeConverter;
+  typeConverter.addConversion([](Type type) -> std::optional<Type> {
+    if (isa<IndexType>(type)) {
+      return std::nullopt;
+    }
+    return type;
+  });
+  ConversionTarget target(context);
+  target.markUnknownOpDynamicallyLegal([](Operation*) { return true; });
+  target.addDynamicallyLegalOp<func::FuncOp>(
+      [](func::FuncOp op) { return !op->hasAttr("test.reject_region_move"); });
+
+  bool sourcePreserved = false;
+  RewritePatternSet patterns(&context);
+  patterns.add<RejectingRegionMovePattern>(typeConverter, &context,
+                                           sourcePreserved);
+  ScopedDiagnosticHandler handler(
+      &context, [](Diagnostic& /*diagnostic*/) { return success(); });
+  EXPECT_TRUE(
+      failed(applyPartialConversion(*moduleOp, target, std::move(patterns))));
+  EXPECT_TRUE(sourcePreserved);
+
+  auto sourceFunc = moduleOp->lookupSymbol<func::FuncOp>("source");
+  auto destination = moduleOp->lookupSymbol<func::FuncOp>("destination");
+  ASSERT_TRUE(sourceFunc);
+  ASSERT_TRUE(destination);
+  EXPECT_FALSE(sourceFunc.getBody().empty());
+  EXPECT_TRUE(destination.getBody().empty());
+}
+
+TEST_F(QCToQCORegressionTest, PreservesForResultsWithQuantumState) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i1 attributes {mqt.entry_point} {
+    %qc = qc.alloc : !qc.qubit
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %true = arith.constant true
+    %loop = scf.for %i = %c0 to %c1 step %c1
+        iter_args(%flag = %true) -> (i1) {
+      qc.h %qc : !qc.qubit
+      scf.yield %flag : i1
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %loop : i1
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawLoop = false;
+  moduleOp->walk([&](scf::ForOp loop) {
+    sawLoop = true;
+    EXPECT_EQ(loop.getNumResults(), 2);
+    EXPECT_TRUE(loop.getResult(0).getType().isInteger(1));
+    EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(1).getType()));
+    auto yield = cast<scf::YieldOp>(loop.getBody()->getTerminator());
+    EXPECT_EQ(yield.getNumOperands(), loop.getNumResults());
+    EXPECT_TRUE(llvm::equal(yield.getOperandTypes(), loop.getResultTypes()));
+  });
+  EXPECT_TRUE(sawLoop);
+
+  expectNoQCOperations(*moduleOp);
+}
+
+TEST_F(QCToQCORegressionTest, CoalescesStaticQubitsAcrossRegions) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%condition: i1) attributes {mqt.entry_point} {
+    scf.if %condition {
+      %then0 = qc.static 0 : !qc.qubit
+      %then1 = qc.static 1 : !qc.qubit
+      %then2 = qc.static 2 : !qc.qubit
+      qc.x %then0 : !qc.qubit
+      qc.x %then1 : !qc.qubit
+      qc.x %then2 : !qc.qubit
+    } else {
+      %else0 = qc.static 0 : !qc.qubit
+      %else1 = qc.static 1 : !qc.qubit
+      qc.h %else0 : !qc.qubit
+      qc.h %else1 : !qc.qubit
+    }
+    %after0 = qc.static 0 : !qc.qubit
+    %after1 = qc.static 1 : !qc.qubit
+    qc.z %after0 : !qc.qubit
+    qc.z %after1 : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  size_t staticOps = 0;
+  moduleOp->walk([&](qco::StaticOp op) {
+    ++staticOps;
+    EXPECT_EQ(op->getBlock(), &main.getBody().front());
+  });
+  EXPECT_EQ(staticOps, 3U);
+  expectNoQCOperations(*moduleOp);
+}
+
+TEST_F(QCToQCORegressionTest, PreservesWhileConditionArgumentsAndOrdering) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i1 attributes {mqt.entry_point} {
+    %qc = qc.alloc : !qc.qubit
+    %true = arith.constant true
+    %zero = arith.constant 0 : i64
+    %result:2 = scf.while (%flag = %true, %count = %zero)
+        : (i1, i64) -> (i64, i1) {
+      qc.h %qc : !qc.qubit
+      %false = arith.constant false
+      scf.condition(%false) %count, %flag : i64, i1
+    } do {
+    ^bb0(%count: i64, %flag: i1):
+      qc.x %qc : !qc.qubit
+      scf.yield %flag, %count : i1, i64
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %result#1 : i1
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool sawWhile = false;
+  moduleOp->walk([&](scf::WhileOp loop) {
+    sawWhile = true;
+    ASSERT_EQ(loop.getNumResults(), 3);
+    EXPECT_TRUE(loop.getResult(0).getType().isInteger(64));
+    EXPECT_TRUE(loop.getResult(1).getType().isInteger(1));
+    EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(2).getType()));
+    auto condition =
+        cast<scf::ConditionOp>(loop.getBeforeBody()->getTerminator());
+    EXPECT_TRUE(
+        llvm::equal(condition.getArgs().getTypes(), loop.getResultTypes()));
+    auto yield = cast<scf::YieldOp>(loop.getAfterBody()->getTerminator());
+    EXPECT_TRUE(
+        llvm::equal(yield.getOperandTypes(), loop.getInits().getTypes()));
+  });
+  EXPECT_TRUE(sawWhile);
+  expectNoQCOperations(*moduleOp);
+  ASSERT_TRUE(succeeded(runQCOCleanupPipeline(*moduleOp)));
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  APInt result;
+  ASSERT_TRUE(matchPattern(returnOp.getOperand(0), m_ConstantInt(&result)));
+  EXPECT_TRUE(result.isOne());
+}
+
+TEST_F(QCToQCORegressionTest, IgnoresClassicalRegisterLoadsInWhileState) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> memref<1xi1>
+      attributes {mqt.entry_point} {
+    %qc = qc.alloc : !qc.qubit
+    %c = memref.alloc() : memref<1xi1>
+    %c0 = arith.constant 0 : index
+    %true = arith.constant true
+    memref.store %true, %c[%c0] : memref<1xi1>
+    %result = scf.while (%running = %true) : (i1) -> i1 {
+      %condition = memref.load %c[%c0] : memref<1xi1>
+      scf.condition(%condition) %running : i1
+    } do {
+    ^bb0(%running: i1):
+      qc.x %qc : !qc.qubit
+      %false = arith.constant false
+      memref.store %false, %c[%c0] : memref<1xi1>
+      scf.yield %false : i1
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %c : memref<1xi1>
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  expectNoQCOperations(*moduleOp);
+
+  bool retainsClassicalRegister = false;
+  moduleOp->walk([&](memref::LoadOp op) {
+    retainsClassicalRegister |=
+        op.getMemRefType().getElementType().isInteger(1);
+  });
+  EXPECT_TRUE(retainsClassicalRegister);
+}
+
+TEST_F(QCToQCORegressionTest, ConvertsTypeChangingWhileWithQuantumState) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i64 attributes {mqt.entry_point} {
+    %qc = qc.alloc : !qc.qubit
+    %initial = arith.constant 1.0 : f32
+    %result = scf.while (%input = %initial) : (f32) -> i64 {
+      qc.h %qc : !qc.qubit
+      %condition = arith.constant true
+      %next = arith.constant 7 : i64
+      scf.condition(%condition) %next : i64
+    } do {
+    ^bb0(%input: i64):
+      qc.x %qc : !qc.qubit
+      %next = arith.sitofp %input : i64 to f32
+      scf.yield %next : f32
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  scf::WhileOp loop;
+  moduleOp->walk([&](scf::WhileOp candidate) { loop = candidate; });
+  ASSERT_TRUE(loop);
+  ASSERT_EQ(loop.getInits().size(), 2);
+  EXPECT_TRUE(loop.getInits().front().getType().isF32());
+  EXPECT_TRUE(isa<qco::QubitType>(loop.getInits().back().getType()));
+  ASSERT_EQ(loop.getNumResults(), 2);
+  EXPECT_TRUE(loop.getResult(0).getType().isInteger(64));
+  EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(1).getType()));
+
+  auto condition =
+      cast<scf::ConditionOp>(loop.getBeforeBody()->getTerminator());
+  EXPECT_TRUE(
+      llvm::equal(condition.getArgs().getTypes(), loop.getResultTypes()));
+  auto yield = cast<scf::YieldOp>(loop.getAfterBody()->getTerminator());
+  EXPECT_TRUE(llvm::equal(yield.getOperandTypes(), loop.getInits().getTypes()));
+  expectNoQCOperations(*moduleOp);
+}
+
+TEST_F(QCToQCORegressionTest, LeavesUnrelatedSCFTerminatorsUntouched) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() -> i1 attributes {mqt.entry_point} {
+    %qc = qc.alloc : !qc.qubit
+    qc.h %qc : !qc.qubit
+    %result = scf.execute_region -> i1 {
+      %true = arith.constant true
+      scf.yield %true : i1
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %result : i1
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExecuteRegion = false;
+  moduleOp->walk([&](scf::ExecuteRegionOp) { sawExecuteRegion = true; });
+  EXPECT_TRUE(sawExecuteRegion);
+  expectNoQCOperations(*moduleOp);
+}
+
+TEST_F(QCToQCORegressionTest, PreservesIfClassicalResultsWithoutScratch) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%condition: i1) -> i64
+      attributes {mqt.entry_point} {
+    %qc = qc.alloc : !qc.qubit
+    %result = scf.if %condition -> i64 {
+      qc.h %qc : !qc.qubit
+      %then = arith.constant 1 : i64
+      scf.yield %then : i64
+    } else {
+      qc.x %qc : !qc.qubit
+      %else = arith.constant 2 : i64
+      scf.yield %else : i64
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  qco::IfOp ifOp;
+  moduleOp->walk([&](qco::IfOp candidate) { ifOp = candidate; });
+  ASSERT_TRUE(ifOp);
+  ASSERT_EQ(ifOp.getClassicalResults().size(), 1);
+  EXPECT_TRUE(ifOp.getClassicalResults().front().getType().isInteger(64));
+  ASSERT_EQ(ifOp.getLinearResults().size(), 1);
+  EXPECT_TRUE(isa<qco::QubitType>(ifOp.getLinearResults().front().getType()));
+  for (qco::YieldOp yield : {ifOp.thenYield(), ifOp.elseYield()}) {
+    ASSERT_EQ(yield.getNumOperands(), 2);
+    EXPECT_TRUE(yield.getOperand(0).getType().isInteger(64));
+    EXPECT_TRUE(isa<qco::QubitType>(yield.getOperand(1).getType()));
+  }
+
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  EXPECT_EQ(returnOp.getOperand(0), ifOp.getClassicalResults().front());
+
+  bool containsScratchStorage = false;
+  moduleOp->walk([&](Operation* operation) {
+    containsScratchStorage |=
+        isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(operation);
+  });
+  EXPECT_FALSE(containsScratchStorage);
+  expectNoQCOperations(*moduleOp);
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreservesIndexSwitchClassicalResultsWithoutScratch) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%index: index) -> i64
+      attributes {mqt.entry_point} {
+    %qc = qc.alloc : !qc.qubit
+    %result = scf.index_switch %index -> i64
+    case 0 {
+      qc.h %qc : !qc.qubit
+      %case = arith.constant 1 : i64
+      scf.yield %case : i64
+    }
+    default {
+      qc.x %qc : !qc.qubit
+      %default = arith.constant 2 : i64
+      scf.yield %default : i64
+    }
+    qc.dealloc %qc : !qc.qubit
+    return %result : i64
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  qco::IndexSwitchOp switchOp;
+  moduleOp->walk([&](qco::IndexSwitchOp candidate) { switchOp = candidate; });
+  ASSERT_TRUE(switchOp);
+  ASSERT_EQ(switchOp.getClassicalResults().size(), 1);
+  EXPECT_TRUE(switchOp.getClassicalResults().front().getType().isInteger(64));
+  ASSERT_EQ(switchOp.getLinearResults().size(), 1);
+  EXPECT_TRUE(
+      isa<qco::QubitType>(switchOp.getLinearResults().front().getType()));
+  for (Region* region : switchOp.getRegions()) {
+    auto yield = cast<qco::YieldOp>(region->front().getTerminator());
+    ASSERT_EQ(yield.getNumOperands(), 2);
+    EXPECT_TRUE(yield.getOperand(0).getType().isInteger(64));
+    EXPECT_TRUE(isa<qco::QubitType>(yield.getOperand(1).getType()));
+  }
+
+  auto main = moduleOp->lookupSymbol<func::FuncOp>("main");
+  ASSERT_TRUE(main);
+  auto returnOp = cast<func::ReturnOp>(main.getBody().front().getTerminator());
+  EXPECT_EQ(returnOp.getOperand(0), switchOp.getClassicalResults().front());
+
+  bool containsScratchStorage = false;
+  moduleOp->walk([&](Operation* operation) {
+    containsScratchStorage |=
+        isa<memref::AllocaOp, memref::LoadOp, memref::StoreOp>(operation);
+  });
+  EXPECT_FALSE(containsScratchStorage);
+  expectNoQCOperations(*moduleOp);
+}
+
+TEST_F(QCToQCORegressionTest,
+       MaterializesSequentialPotentialAliasesAtEachOperation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%i: index) attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<2x!qc.qubit>
+    %c0 = arith.constant 0 : index
+    %q0 = memref.load %reg[%c0] : memref<2x!qc.qubit>
+    qc.h %q0 : !qc.qubit
+    %q1 = memref.load %reg[%c0] : memref<2x!qc.qubit>
+    qc.x %q1 : !qc.qubit
+    %q2 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    qc.y %q2 : !qc.qubit
+    %q3 = memref.load %reg[%c0] : memref<2x!qc.qubit>
+    %unused = qc.measure %q3 : !qc.qubit -> i1
+    %q4 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    qc.reset %q4 : !qc.qubit
+    %q5 = memref.load %reg[%c0] : memref<2x!qc.qubit>
+    qc.barrier %q5 : !qc.qubit
+    %q6 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    qc.inv (%arg0 = %q6) {
+      qc.z %arg0 : !qc.qubit
+      qc.yield
+    } : !qc.qubit
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  expectOperationLocalRegisterAccesses(*moduleOp);
+  expectNoQCOperations(*moduleOp);
+
+  std::size_t allocations = 0;
+  std::size_t deallocations = 0;
+  moduleOp->walk([&](qtensor::AllocOp) { ++allocations; });
+  moduleOp->walk([&](qtensor::DeallocOp) { ++deallocations; });
+  EXPECT_EQ(allocations, 1U);
+  EXPECT_EQ(deallocations, 1U);
+}
+
+TEST_F(QCToQCORegressionTest, RetainsQubitRegisterName) {
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  std::ignore = builder.allocQubitRegisterStorage(2, "named_qubits");
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+
+  qtensor::AllocOp allocation;
+  moduleOp->walk([&](qtensor::AllocOp op) { allocation = op; });
+  ASSERT_TRUE(allocation);
+  const auto name = allocation->getAttrOfType<StringAttr>(
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
+}
+
+TEST_F(QCToQCORegressionTest, RetainsDynamicQubitRegisterName) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%size: index) attributes {mqt.entry_point} {
+    %reg = memref.alloc(%size) {mqt.register_name = "named_qubits"} : memref<?x!qc.qubit>
+    memref.dealloc %reg : memref<?x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+
+  qtensor::AllocOp allocation;
+  moduleOp->walk([&](qtensor::AllocOp op) { allocation = op; });
+  ASSERT_TRUE(allocation);
+  EXPECT_TRUE(allocation.getResult().getType().isDynamicDim(0));
+  EXPECT_EQ(allocation.getSize(), allocation->getBlock()->getArgument(0));
+  const auto name = allocation->getAttrOfType<StringAttr>(
+      mlir::mqt::MQTDialect::RegisterNameAttrHelper::getNameStr());
+  ASSERT_TRUE(name);
+  EXPECT_EQ(name.getValue(), "named_qubits");
+}
+
+TEST_F(QCToQCORegressionTest, ConvertsRegisterBackedGenericCalls) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @reset(%flag: i1, %q: !qc.qubit, %value: i64) -> i1 {
+    qc.reset %q : !qc.qubit
+    return %flag : i1
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<1x!qc.qubit>
+    %c0 = arith.constant 0 : index
+    %q = memref.load %reg[%c0] : memref<1x!qc.qubit>
+    %true = arith.constant true
+    %value = arith.constant 42 : i64
+    %result = func.call @reset(%true, %q, %value)
+        : (i1, !qc.qubit, i64) -> i1
+    memref.dealloc %reg : memref<1x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  auto call = *mlir::mqt::getEntryPoint(*moduleOp)
+                   .getBody()
+                   .getOps<func::CallOp>()
+                   .begin();
+  ASSERT_EQ(call.getNumOperands(), 3U);
+  EXPECT_TRUE(isa<qco::QubitType>(call.getOperand(1).getType()));
+  ASSERT_EQ(call.getNumResults(), 2U);
+  EXPECT_TRUE(isa<qco::QubitType>(call.getResult(1).getType()));
+  EXPECT_TRUE(call.getOperand(1).getDefiningOp<qtensor::ExtractOp>());
+  ASSERT_TRUE(call.getResult(1).hasOneUse());
+  EXPECT_TRUE(isa<qtensor::InsertOp>(*call.getResult(1).getUsers().begin()));
+}
+
+TEST_F(QCToQCORegressionTest, RejectsUnstructuredControlFlow) {
+  context.getOrLoadDialect<cf::ControlFlowDialect>();
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.static 0 : !qc.qubit
+    %c = arith.constant true
+    cf.cond_br %c, ^then, ^else
+  ^then:
+    qc.x %q : !qc.qubit
+    return
+  ^else:
+    qc.z %q : !qc.qubit
+    return
+  }
+}
+)mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("QC-to-QCO does not support unstructured control flow");
+    return success();
+  });
+
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest, PreflightRejectsNonOneDimensionalQubitRegisters) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<!qc.qubit>
+    %q = memref.load %reg[] : memref<!qc.qubit>
+    qc.x %q : !qc.qubit
+    memref.dealloc %reg : memref<!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("requires one-dimensional qubit register storage");
+    return success();
+  });
+
+  PassManager pm(&context);
+  pm.enableVerifier(false);
+  pm.addPass(createQCToQCO());
+  EXPECT_TRUE(failed(pm.run(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest, PreflightRejectsDerivedQubitRegisterValues) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<1x!qc.qubit>
+    %cast = memref.cast %reg : memref<1x!qc.qubit> to memref<?x!qc.qubit>
+    memref.dealloc %cast : memref<?x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains("requires a directly allocated qubit register");
+    return success();
+  });
+
+  PassManager pm(&context);
+  pm.enableVerifier(false);
+  pm.addPass(createQCToQCO());
+  EXPECT_TRUE(failed(pm.run(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest, ConvertsQubitFunctionArgumentsToTrailingResults) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main(%q: !qc.qubit)
+      attributes {mqt.entry_point} {
+    qc.x %q : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  auto function = *moduleOp->getOps<func::FuncOp>().begin();
+  ASSERT_EQ(function.getNumArguments(), 1U);
+  EXPECT_TRUE(isa<qco::QubitType>(function.getArgument(0).getType()));
+  ASSERT_EQ(function.getNumResults(), 1U);
+  EXPECT_TRUE(isa<qco::QubitType>(function.getResultTypes().front()));
+  auto x = *function.getBody().front().getOps<qco::XOp>().begin();
+  EXPECT_EQ(
+      cast<func::ReturnOp>(function.getBody().front().back()).getOperand(0),
+      x.getQubitOut());
+}
+
+TEST_F(QCToQCORegressionTest, RoundTripsUnitaryFunctionCalls) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @flip(%q: !qc.qubit) attributes {mqt.unitary} {
+    qc.x %q : !qc.qubit
+    return
+  }
+  func.func private @reset(%q: !qc.qubit) -> i1 {
+    qc.reset %q : !qc.qubit
+    %flag = arith.constant true
+    return %flag : i1
+  }
+  func.func @main(%q: !qc.qubit) -> i1 attributes {mqt.entry_point} {
+    qc.call @flip(%q) {
+        arg_attrs = [{tag = "unitary-input"}], tag = "unitary-call"
+      }
+        : !qc.qubit
+    %flag = func.call @reset(%q) {
+        arg_attrs = [{tag = "generic-input"}], no_inline,
+        res_attrs = [{tag = "ordinary-result"}], tag = "generic-call"
+      } : (!qc.qubit) -> i1
+    return %flag : i1
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  SmallVector<qco::CallOp> qcoCalls;
+  moduleOp->walk([&](qco::CallOp call) { qcoCalls.emplace_back(call); });
+  ASSERT_EQ(qcoCalls.size(), 1U);
+  ASSERT_TRUE(qcoCalls.front().getArgAttrsAttr());
+  EXPECT_EQ(cast<DictionaryAttr>(qcoCalls.front().getArgAttrsAttr()[0])
+                .getAs<StringAttr>("tag")
+                .getValue(),
+            "unitary-input");
+  EXPECT_EQ(qcoCalls.front()->getAttrOfType<StringAttr>("tag").getValue(),
+            "unitary-call");
+  EXPECT_FALSE(qcoCalls.front().getResAttrsAttr());
+
+  SmallVector<func::CallOp> genericCalls;
+  moduleOp->walk([&](func::CallOp call) { genericCalls.emplace_back(call); });
+  ASSERT_EQ(genericCalls.size(), 1U);
+  EXPECT_TRUE(genericCalls.front().getNoInline());
+  EXPECT_EQ(genericCalls.front()->getAttrOfType<StringAttr>("tag").getValue(),
+            "generic-call");
+  ASSERT_EQ(genericCalls.front().getResAttrsAttr().size(), 2U);
+  EXPECT_EQ(cast<DictionaryAttr>(genericCalls.front().getResAttrsAttr()[0])
+                .getAs<StringAttr>("tag")
+                .getValue(),
+            "ordinary-result");
+  EXPECT_TRUE(
+      cast<DictionaryAttr>(genericCalls.front().getResAttrsAttr()[1]).empty());
+
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  std::size_t qcCalls = 0;
+  moduleOp->walk([&](qc::CallOp call) {
+    ++qcCalls;
+    ASSERT_TRUE(call.getArgAttrsAttr());
+    EXPECT_EQ(cast<DictionaryAttr>(call.getArgAttrsAttr()[0])
+                  .getAs<StringAttr>("tag")
+                  .getValue(),
+              "unitary-input");
+    EXPECT_EQ(call->getAttrOfType<StringAttr>("tag").getValue(),
+              "unitary-call");
+  });
+  EXPECT_EQ(qcCalls, 1U);
+  auto genericCall = *mlir::mqt::getEntryPoint(*moduleOp)
+                          .getBody()
+                          .getOps<func::CallOp>()
+                          .begin();
+  EXPECT_TRUE(genericCall.getNoInline());
+  EXPECT_EQ(genericCall->getAttrOfType<StringAttr>("tag").getValue(),
+            "generic-call");
+  ASSERT_EQ(genericCall.getResAttrsAttr().size(), 1U);
+  EXPECT_EQ(cast<DictionaryAttr>(genericCall.getResAttrsAttr()[0])
+                .getAs<StringAttr>("tag")
+                .getValue(),
+            "ordinary-result");
+  for (auto function : moduleOp->getOps<func::FuncOp>()) {
+    EXPECT_TRUE(isa<qc::QubitType>(function.getArgument(0).getType()));
+    EXPECT_EQ(function.getNumResults(), function.getName() == "flip" ? 0U : 1U);
+  }
+}
+
+TEST_F(QCToQCORegressionTest, ConvertsRegisterBackedUnitaryCalls) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @rotate(%theta: f64, %q: !qc.qubit)
+      attributes {mqt.unitary} {
+    qc.rx(%theta) %q : !qc.qubit
+    return
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<1x!qc.qubit>
+    %c0 = arith.constant 0 : index
+    %theta = arith.constant 5.000000e-01 : f64
+    %q = memref.load %reg[%c0] : memref<1x!qc.qubit>
+    qc.call @rotate(%theta, %q) : f64, !qc.qubit
+    %two = arith.constant 2.000000e+00 : f64
+    qc.pow(%two) (%arg0 = %q) {
+      qc.call @rotate(%theta, %arg0) : f64, !qc.qubit
+      qc.yield
+    } : !qc.qubit
+    memref.dealloc %reg : memref<1x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  size_t calls = 0;
+  size_t extracts = 0;
+  size_t inserts = 0;
+  moduleOp->walk([&](Operation* operation) {
+    calls += isa<qco::CallOp>(operation);
+    extracts += isa<qtensor::ExtractOp>(operation);
+    inserts += isa<qtensor::InsertOp>(operation);
+  });
+  EXPECT_EQ(calls, 2);
+  EXPECT_EQ(extracts, 2);
+  EXPECT_EQ(inserts, 2);
+}
+
+TEST_F(QCToQCORegressionTest, PreflightRejectsAliasedAndDuplicateQubitResults) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"mlir(
+module {
+  func.func private @borrowed(%q: !qc.qubit) -> !qc.qubit {
+    return %q : !qc.qubit
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    return
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func private @duplicate() -> (!qc.qubit, !qc.qubit) {
+    %q = qc.static 0 : !qc.qubit
+    return %q, %q : !qc.qubit, !qc.qubit
+  }
+  func.func @main() attributes {mqt.entry_point} {
+    return
+  }
+}
+)mlir",
+  });
+  constexpr std::array<StringLiteral, 2> diagnostics{
+      "cannot return a borrowed qubit argument explicitly",
+      "cannot return the same qubit more than once",
+  };
+
+  for (auto [source, expected] : llvm::zip_equal(sources, diagnostics)) {
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    OwningOpRef<ModuleOp> original = moduleOp->clone();
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |= StringRef(diagnostic.str()).contains(expected);
+      return success();
+    });
+    EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+    EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+        moduleOp->getOperation(), original->getOperation(),
+        OperationEquivalence::Flags::None));
+  }
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreflightRejectsUnsupportedQuantumRegisterBlockArguments) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"mlir(
+module {
+  func.func @main(%reg: memref<1x!qc.qubit>)
+      attributes {mqt.entry_point} {
+    return
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func @main(%reg: memref<*x!qc.qubit>)
+      attributes {mqt.entry_point} {
+    return
+  }
+}
+)mlir",
+  });
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("cannot convert arbitrary qubit or qubit-register "
+                        "block arguments; only QC modifier qubit arguments are "
+                        "supported");
+      return success();
+    });
+
+    PassManager pm(&context);
+    pm.enableVerifier(false);
+    pm.addPass(createQCToQCO());
+    EXPECT_TRUE(failed(pm.run(*moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+TEST_F(QCToQCORegressionTest,
+       PreflightRejectsUnsupportedQuantumRegionCaptures) {
+  constexpr auto sources = std::to_array<llvm::StringLiteral>({
+      R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    scf.execute_region {
+      qc.x %q : !qc.qubit
+      scf.yield
+    }
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+)mlir",
+      R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<1x!qc.qubit>
+    %c0 = arith.constant 0 : index
+    %q = memref.load %reg[%c0] : memref<1x!qc.qubit>
+    scf.execute_region {
+      qc.x %q : !qc.qubit
+      scf.yield
+    }
+    memref.dealloc %reg : memref<1x!qc.qubit>
+    return
+  }
+}
+)mlir",
+  });
+
+  for (const auto source : sources) {
+    SCOPED_TRACE(source.str());
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+    bool sawExpectedDiagnostic = false;
+    ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+      sawExpectedDiagnostic |=
+          StringRef(diagnostic.str())
+              .contains("cannot capture quantum values in an unsupported "
+                        "region-bearing operation");
+      return success();
+    });
+
+    PassManager pm(&context);
+    pm.enableVerifier(false);
+    pm.addPass(createQCToQCO());
+    EXPECT_TRUE(failed(pm.run(*moduleOp)));
+    EXPECT_TRUE(sawExpectedDiagnostic);
+  }
+}
+
+TEST_F(QCToQCORegressionTest, CapturesQubitsUsedByPowInsideFor) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %q = qc.alloc : !qc.qubit
+    %c0 = arith.constant 0 : index
+    %c1 = arith.constant 1 : index
+    %exponent = arith.constant 2.0 : f64
+    scf.for %i = %c0 to %c1 step %c1 {
+      qc.pow(%exponent) (%arg0 = %q) {
+        qc.x %arg0 : !qc.qubit
+        qc.yield
+      } : !qc.qubit
+    }
+    qc.dealloc %q : !qc.qubit
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  scf::ForOp loop;
+  moduleOp->walk([&](scf::ForOp candidate) { loop = candidate; });
+  ASSERT_TRUE(loop);
+  ASSERT_EQ(loop.getNumResults(), 1);
+  EXPECT_TRUE(isa<qco::QubitType>(loop.getResult(0).getType()));
+  EXPECT_FALSE(loop.getBody()->getOps<qco::PowOp>().empty());
+  expectNoQCOperations(*moduleOp);
+}
+
+namespace {
+enum class ModifierKind : std::uint8_t { Inv, Ctrl, Pow };
+} // namespace
+
+static StringRef modifierName(const ModifierKind modifier) {
+  switch (modifier) {
+  case ModifierKind::Inv:
+    return "inv";
+  case ModifierKind::Ctrl:
+    return "ctrl";
+  case ModifierKind::Pow:
+    return "pow";
+  }
+  llvm_unreachable("unknown modifier");
+}
+
+static OwningOpRef<ModuleOp>
+buildClassicalCaptureProgram(MLIRContext* context,
+                             const ModifierKind modifier) {
+  qc::QCProgramBuilder builder(context);
+  builder.initialize();
+  auto target = builder.allocQubit();
+  auto theta = arith::ConstantOp::create(builder, builder.getF64FloatAttr(0.75))
+                   .getResult();
+  const auto modifierBody = [&](Value argument) {
+    builder.rx(theta, argument);
+  };
+
+  switch (modifier) {
+  case ModifierKind::Inv:
+    builder.inv(target, modifierBody);
+    break;
+  case ModifierKind::Ctrl:
+    builder.ctrl(builder.allocQubit(), target, modifierBody);
+    break;
+  case ModifierKind::Pow:
+    builder.pow(2.0, target, modifierBody);
+    break;
+  }
+  return builder.finalize();
+}
+
+TEST_F(QCToQCORegressionTest, ModifiersPermitClassicalCaptures) {
+  constexpr std::array modifiers{
+      ModifierKind::Inv,
+      ModifierKind::Ctrl,
+      ModifierKind::Pow,
+  };
+
+  for (const auto modifier : modifiers) {
+    SCOPED_TRACE(testing::Message()
+                 << "modifier=" << modifierName(modifier).str());
+    auto moduleOp = buildClassicalCaptureProgram(&context, modifier);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+    EXPECT_TRUE(succeeded(verify(*moduleOp)));
+    expectNoQCOperations(*moduleOp);
+  }
+}
+
+TEST_F(QCToQCORegressionTest,
+       RejectsSameDynamicRegisterIndexWithinOneOperation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func private @touch(!qc.qubit, !qc.qubit)
+  func.func @main(%i: index) attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<2x!qc.qubit>
+    %q0 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    %q1 = memref.load %reg[%i] : memref<2x!qc.qubit>
+    func.call @touch(%q0, %q1) : (!qc.qubit, !qc.qubit) -> ()
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("use the same dynamic index");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest,
+       RejectsEqualConstantRegisterIndicesWithinOneOperation) {
+  constexpr llvm::StringLiteral source = R"mlir(
+module {
+  func.func @main() attributes {mqt.entry_point} {
+    %reg = memref.alloc() : memref<2x!qc.qubit>
+    %lhs = arith.constant 0 : index
+    %rhs = arith.constant 0 : index
+    %q0 = memref.load %reg[%lhs] : memref<2x!qc.qubit>
+    %q1 = memref.load %reg[%rhs] : memref<2x!qc.qubit>
+    qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
+    memref.dealloc %reg : memref<2x!qc.qubit>
+    return
+  }
+}
+)mlir";
+
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str()).contains("same constant index");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_P(QCToQCOTest, ProgramConversion) {
+  const auto& [_, programBuilder, referenceBuilder, expectsCompleteTensorState,
+               skipReferenceComparison] = GetParam();
+  const auto name = " (" + GetParam().name + ")";
+  ::mqt::test::DeferredPrinter printer;
+
+  auto program = ::mqt::test::buildMLIRProgram(context.get(), programBuilder);
   ASSERT_TRUE(program);
   printer.record(program.get(), "Original QC IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
@@ -97,27 +1391,33 @@ TEST_P(QCToQCOTest, ProgramEquivalence) {
   EXPECT_TRUE(succeeded(runQCToQCOConversion(program.get())));
   printer.record(program.get(), "Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
+  if (expectsCompleteTensorState) {
+    QCToQCORegressionTest::expectOperationLocalRegisterAccesses(program.get());
+    QCToQCORegressionTest::expectStructuredStateUsesCompleteTensors(
+        program.get());
+  }
 
   EXPECT_TRUE(runQCOCleanupPipeline(program.get()).succeeded());
   printer.record(program.get(), "Canonicalized Converted QCO IR" + name);
   EXPECT_TRUE(verify(*program).succeeded());
 
-  auto reference =
-      qco::QCOProgramBuilder::build(context.get(), referenceBuilder.fn);
-  ASSERT_TRUE(reference);
-  printer.record(reference.get(), "Reference QCO IR" + name);
-  EXPECT_TRUE(verify(*reference).succeeded());
+  if (!skipReferenceComparison) {
+    auto reference =
+        ::mqt::test::buildMLIRProgram(context.get(), referenceBuilder);
+    ASSERT_TRUE(reference);
+    printer.record(reference.get(), "Reference QCO IR" + name);
+    EXPECT_TRUE(verify(*reference).succeeded());
 
-  EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
-  printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
-  EXPECT_TRUE(verify(*reference).succeeded());
+    EXPECT_TRUE(runQCOCleanupPipeline(reference.get()).succeeded());
+    printer.record(reference.get(), "Canonicalized Reference QCO IR" + name);
+    EXPECT_TRUE(verify(*reference).succeeded());
 
-  EXPECT_TRUE(
-      areModulesEquivalentWithPermutations(program.get(), reference.get()));
+    EXPECT_TRUE(
+        areModulesEquivalentWithPermutations(program.get(), reference.get()));
+  }
 }
 
-/// \name QCToQCO/QubitManagement/StaticOp.cpp
-/// @{
+// QCToQCO/QubitManagement/StaticOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCStaticOpTest, QCToQCOTest,
     testing::Values(
@@ -140,11 +1440,18 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::staticQubitsWithInv)},
         QCToQCOTestCase{"AllocDeallocPair",
                         MQT_NAMED_BUILDER(qc::allocDeallocPair),
-                        MQT_NAMED_BUILDER(qco::allocSinkPair)}));
-/// @}
+                        MQT_NAMED_BUILDER(qco::emptyQCO)}));
 
-/// \name QCToQCO/Modifiers/CtrlOp.cpp
-/// @{
+// QCToQCO/Modifiers/PowOp.cpp
+INSTANTIATE_TEST_SUITE_P(
+    QCPowOpTest, QCToQCOTest,
+    testing::Values(QCToQCOTestCase{"CtrlPowSx",
+                                    MQT_NAMED_BUILDER(qc::ctrlPowSx),
+                                    MQT_NAMED_BUILDER(qco::ctrlPowSx)},
+                    QCToQCOTestCase{"PowTwo", MQT_NAMED_BUILDER(qc::powTwo),
+                                    MQT_NAMED_BUILDER(qco::powTwo)}));
+
+// QCToQCO/Modifiers/CtrlOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCCtrlOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"CtrlTwo", MQT_NAMED_BUILDER(qc::ctrlTwo),
@@ -155,10 +1462,8 @@ INSTANTIATE_TEST_SUITE_P(
                     QCToQCOTestCase{"CtrlInvTwo",
                                     MQT_NAMED_BUILDER(qc::ctrlInvTwo),
                                     MQT_NAMED_BUILDER(qco::ctrlInvTwo)}));
-/// @}
 
-/// \name QCToQCO/Modifiers/InvOp.cpp
-/// @{
+// QCToQCO/Modifiers/InvOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCInvOpTest, QCToQCOTest,
     testing::Values(
@@ -170,10 +1475,8 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qco::inverseMultipleControlledIswap)},
         QCToQCOTestCase{"InvTwo", MQT_NAMED_BUILDER(qc::invTwo),
                         MQT_NAMED_BUILDER(qco::invTwo)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/BarrierOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/BarrierOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCBarrierOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"Barrier", MQT_NAMED_BUILDER(qc::barrier),
@@ -185,10 +1488,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "BarrierMultipleQubits",
                         MQT_NAMED_BUILDER(qc::barrierMultipleQubits),
                         MQT_NAMED_BUILDER(qco::barrierMultipleQubits)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/DcxOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/DcxOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCDCXOpTest, QCToQCOTest,
     testing::Values(
@@ -200,10 +1501,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledDCX",
                         MQT_NAMED_BUILDER(qc::multipleControlledDcx),
                         MQT_NAMED_BUILDER(qco::multipleControlledDcx)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/EcrOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/EcrOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCECROpTest, QCToQCOTest,
     testing::Values(
@@ -215,18 +1514,14 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledECR",
                         MQT_NAMED_BUILDER(qc::multipleControlledEcr),
                         MQT_NAMED_BUILDER(qco::multipleControlledEcr)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/GphaseOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/GphaseOp.cpp
 INSTANTIATE_TEST_SUITE_P(QCGPhaseOpTest, QCToQCOTest,
                          testing::Values(QCToQCOTestCase{
                              "GlobalPhase", MQT_NAMED_BUILDER(qc::globalPhase),
                              MQT_NAMED_BUILDER(qco::globalPhase)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/HOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/HOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCHOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"H", MQT_NAMED_BUILDER(qc::h),
@@ -241,18 +1536,14 @@ INSTANTIATE_TEST_SUITE_P(
                     QCToQCOTestCase{"HWithoutRegister",
                                     MQT_NAMED_BUILDER(qc::hWithoutRegister),
                                     MQT_NAMED_BUILDER(qco::hWithoutRegister)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/IdOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/IdOp.cpp
 INSTANTIATE_TEST_SUITE_P(QCIDOpTest, QCToQCOTest,
                          testing::Values(QCToQCOTestCase{
                              "Identity", MQT_NAMED_BUILDER(qc::identity),
-                             MQT_NAMED_BUILDER(qco::emptyQCO)}));
-/// @}
+                             MQT_NAMED_BUILDER(qco::alloc1QubitRegister)}));
 
-/// \name QCToQCO/Operations/StandardGates/IswapOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/IswapOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCiSWAPOpTest, QCToQCOTest,
     testing::Values(
@@ -264,10 +1555,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControllediSWAP",
                         MQT_NAMED_BUILDER(qc::multipleControlledIswap),
                         MQT_NAMED_BUILDER(qco::multipleControlledIswap)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/POp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/POp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCPOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"P", MQT_NAMED_BUILDER(qc::p),
@@ -279,10 +1568,21 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledP",
                         MQT_NAMED_BUILDER(qc::multipleControlledP),
                         MQT_NAMED_BUILDER(qco::multipleControlledP)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/ROp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/RCCXOp.cpp
+INSTANTIATE_TEST_SUITE_P(
+    QCRCCXOpTest, QCToQCOTest,
+    testing::Values(
+        QCToQCOTestCase{"RCCX", MQT_NAMED_BUILDER(qc::rccx),
+                        MQT_NAMED_BUILDER(qco::rccx)},
+        QCToQCOTestCase{"SingleControlledRCCX",
+                        MQT_NAMED_BUILDER(qc::singleControlledRccx),
+                        MQT_NAMED_BUILDER(qco::singleControlledRccx)},
+        QCToQCOTestCase{"MultipleControlledRCCX",
+                        MQT_NAMED_BUILDER(qc::multipleControlledRccx),
+                        MQT_NAMED_BUILDER(qco::multipleControlledRccx)}));
+
+// QCToQCO/Operations/StandardGates/ROp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCROpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"R", MQT_NAMED_BUILDER(qc::r),
@@ -294,10 +1594,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledR",
                         MQT_NAMED_BUILDER(qc::multipleControlledR),
                         MQT_NAMED_BUILDER(qco::multipleControlledR)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/RxOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/RxOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRXOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"RX", MQT_NAMED_BUILDER(qc::rx),
@@ -309,10 +1607,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledRX",
                         MQT_NAMED_BUILDER(qc::multipleControlledRx),
                         MQT_NAMED_BUILDER(qco::multipleControlledRx)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/RxxOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/RxxOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRXXOpTest, QCToQCOTest,
     testing::Values(
@@ -324,10 +1620,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledRXX",
                         MQT_NAMED_BUILDER(qc::multipleControlledRxx),
                         MQT_NAMED_BUILDER(qco::multipleControlledRxx)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/RyOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/RyOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRYOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"RY", MQT_NAMED_BUILDER(qc::ry),
@@ -339,10 +1633,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledRY",
                         MQT_NAMED_BUILDER(qc::multipleControlledRy),
                         MQT_NAMED_BUILDER(qco::multipleControlledRy)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/RyyOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/RyyOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRYYOpTest, QCToQCOTest,
     testing::Values(
@@ -354,10 +1646,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledRYY",
                         MQT_NAMED_BUILDER(qc::multipleControlledRyy),
                         MQT_NAMED_BUILDER(qco::multipleControlledRyy)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/RzOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/RzOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRZOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"RZ", MQT_NAMED_BUILDER(qc::rz),
@@ -369,10 +1659,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledRZ",
                         MQT_NAMED_BUILDER(qc::multipleControlledRz),
                         MQT_NAMED_BUILDER(qco::multipleControlledRz)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/RzxOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/RzxOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRZXOpTest, QCToQCOTest,
     testing::Values(
@@ -384,10 +1672,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledRZX",
                         MQT_NAMED_BUILDER(qc::multipleControlledRzx),
                         MQT_NAMED_BUILDER(qco::multipleControlledRzx)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/RzzOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/RzzOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCRZZOpTest, QCToQCOTest,
     testing::Values(
@@ -399,10 +1685,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledRZZ",
                         MQT_NAMED_BUILDER(qc::multipleControlledRzz),
                         MQT_NAMED_BUILDER(qco::multipleControlledRzz)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/SOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/SOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCSOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"S", MQT_NAMED_BUILDER(qc::s),
@@ -414,10 +1698,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledS",
                         MQT_NAMED_BUILDER(qc::multipleControlledS),
                         MQT_NAMED_BUILDER(qco::multipleControlledS)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/SdgOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/SdgOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCSdgOpTest, QCToQCOTest,
     testing::Values(
@@ -429,10 +1711,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledSdg",
                         MQT_NAMED_BUILDER(qc::multipleControlledSdg),
                         MQT_NAMED_BUILDER(qco::multipleControlledSdg)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/SwapOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/SwapOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCSWAPOpTest, QCToQCOTest,
     testing::Values(
@@ -444,10 +1724,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledSWAP",
                         MQT_NAMED_BUILDER(qc::multipleControlledSwap),
                         MQT_NAMED_BUILDER(qco::multipleControlledSwap)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/SxOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/SxOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCSXOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"SX", MQT_NAMED_BUILDER(qc::sx),
@@ -459,10 +1737,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledSX",
                         MQT_NAMED_BUILDER(qc::multipleControlledSx),
                         MQT_NAMED_BUILDER(qco::multipleControlledSx)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/SxdgOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/SxdgOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCSXdgOpTest, QCToQCOTest,
     testing::Values(
@@ -474,10 +1750,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledSXdg",
                         MQT_NAMED_BUILDER(qc::multipleControlledSxdg),
                         MQT_NAMED_BUILDER(qco::multipleControlledSxdg)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/TOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/TOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCTOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"T", MQT_NAMED_BUILDER(qc::t_),
@@ -489,10 +1763,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledT",
                         MQT_NAMED_BUILDER(qc::multipleControlledT),
                         MQT_NAMED_BUILDER(qco::multipleControlledT)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/TdgOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/TdgOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCTdgOpTest, QCToQCOTest,
     testing::Values(
@@ -504,10 +1776,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledTdg",
                         MQT_NAMED_BUILDER(qc::multipleControlledTdg),
                         MQT_NAMED_BUILDER(qco::multipleControlledTdg)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/U2Op.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/U2Op.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCU2OpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"U2", MQT_NAMED_BUILDER(qc::u2),
@@ -519,10 +1789,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledU2",
                         MQT_NAMED_BUILDER(qc::multipleControlledU2),
                         MQT_NAMED_BUILDER(qco::multipleControlledU2)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/UOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/UOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCUOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"U", MQT_NAMED_BUILDER(qc::u),
@@ -534,10 +1802,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledU",
                         MQT_NAMED_BUILDER(qc::multipleControlledU),
                         MQT_NAMED_BUILDER(qco::multipleControlledU)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/XOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/XOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCXOpTest, QCToQCOTest,
     testing::Values(
@@ -553,10 +1819,7 @@ INSTANTIATE_TEST_SUITE_P(
                         MQT_NAMED_BUILDER(qc::repeatedControlledX),
                         MQT_NAMED_BUILDER(qco::repeatedControlledX)}));
 
-/// @}
-
-/// \name QCToQCO/Operations/StandardGates/XxMinusYyOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/XxMinusYyOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCXXMinusYYOpTest, QCToQCOTest,
     testing::Values(
@@ -568,10 +1831,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledXXMinusYY",
                         MQT_NAMED_BUILDER(qc::multipleControlledXxMinusYY),
                         MQT_NAMED_BUILDER(qco::multipleControlledXxMinusYY)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/XxPlusYyOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/XxPlusYyOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCXXPlusYYOpTest, QCToQCOTest,
     testing::Values(
@@ -583,10 +1844,8 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"MultipleControlledXXPlusYY",
                         MQT_NAMED_BUILDER(qc::multipleControlledXxPlusYY),
                         MQT_NAMED_BUILDER(qco::multipleControlledXxPlusYY)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/YOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/YOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCYOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"Y", MQT_NAMED_BUILDER(qc::y),
@@ -598,10 +1857,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledY",
                         MQT_NAMED_BUILDER(qc::multipleControlledY),
                         MQT_NAMED_BUILDER(qco::multipleControlledY)}));
-/// @}
 
-/// \name QCToQCO/Operations/StandardGates/ZOp.cpp
-/// @{
+// QCToQCO/Operations/StandardGates/ZOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCZOpTest, QCToQCOTest,
     testing::Values(QCToQCOTestCase{"Z", MQT_NAMED_BUILDER(qc::z),
@@ -613,10 +1870,8 @@ INSTANTIATE_TEST_SUITE_P(
                         "MultipleControlledZ",
                         MQT_NAMED_BUILDER(qc::multipleControlledZ),
                         MQT_NAMED_BUILDER(qco::multipleControlledZ)}));
-/// @}
 
-/// \name QCToQCO/Operations/MeasureOp.cpp
-/// @{
+// QCToQCO/Operations/MeasureOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCMeasureOpTest, QCToQCOTest,
     testing::Values(
@@ -634,13 +1889,18 @@ INSTANTIATE_TEST_SUITE_P(
             "MultipleClassicalRegistersAndMeasurements",
             MQT_NAMED_BUILDER(qc::multipleClassicalRegistersAndMeasurements),
             MQT_NAMED_BUILDER(qco::multipleClassicalRegistersAndMeasurements)},
+        QCToQCOTestCase{"PartialMeasurementToRegister",
+                        MQT_NAMED_BUILDER(qc::partialMeasurementToRegister),
+                        MQT_NAMED_BUILDER(qco::partialMeasurementToRegister)},
+        QCToQCOTestCase{"DynamicallyIndexedMeasurement",
+                        MQT_NAMED_BUILDER(qc::dynamicallyIndexedMeasurement),
+                        MQT_NAMED_BUILDER(qco::dynamicallyIndexedMeasurement),
+                        true},
         QCToQCOTestCase{"MeasurementWithoutRegisters",
                         MQT_NAMED_BUILDER(qc::measurementWithoutRegisters),
                         MQT_NAMED_BUILDER(qco::measurementWithoutRegisters)}));
-/// @}
 
-/// \name QCToQCO/Operations/ResetOp.cpp
-/// @{
+// QCToQCO/Operations/ResetOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     QCResetOpTest, QCToQCOTest,
     testing::Values(
@@ -654,26 +1914,43 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"RepeatedResetAfterSingleOp",
                         MQT_NAMED_BUILDER(qc::repeatedResetAfterSingleOp),
                         MQT_NAMED_BUILDER(qco::resetQubitAfterSingleOp)}));
-/// @}
 
-/// \name QCToQCO/Operations/IfOp.cpp
-/// @{
+// QCToQCO/Operations/IfOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     SCFIfOpTest, QCToQCOTest,
     testing::Values(
         QCToQCOTestCase{"SimpleIfOp", MQT_NAMED_BUILDER(qc::simpleIf),
-                        MQT_NAMED_BUILDER(qco::simpleIf)},
-        QCToQCOTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
-                        MQT_NAMED_BUILDER(qco::ifTwoQubits)},
+                        MQT_NAMED_BUILDER(qco::simpleIfCompleteTensorState),
+                        true},
         QCToQCOTestCase{"IfElse", MQT_NAMED_BUILDER(qc::ifElse),
-                        MQT_NAMED_BUILDER(qco::ifElse)},
+                        MQT_NAMED_BUILDER(qco::ifElseCompleteTensorState),
+                        true},
+        QCToQCOTestCase{"IfTwoQubits", MQT_NAMED_BUILDER(qc::ifTwoQubits),
+                        MQT_NAMED_BUILDER(qco::ifTwoQubitsCompleteTensorState),
+                        true},
+        QCToQCOTestCase{
+            "IfWithMeasurement", MQT_NAMED_BUILDER(qc::ifWithMeasurement),
+            MQT_NAMED_BUILDER(qco::ifWithMeasurementCompleteTensorState), true},
+        QCToQCOTestCase{"IfWithCreg", MQT_NAMED_BUILDER(qc::ifWithCreg),
+                        MQT_NAMED_BUILDER(qco::ifWithCregCompleteTensorState),
+                        true},
         QCToQCOTestCase{"NestedIfOpForLoop",
                         MQT_NAMED_BUILDER(qc::nestedIfOpForLoop),
-                        MQT_NAMED_BUILDER(qco::nestedIfOpForLoop)}));
-/// @}
+                        MQT_NAMED_BUILDER(qco::nestedIfOpForLoop), true}));
 
-/// \name QCToQCO/Operations/WhileOp.cpp
-/// @{
+// QCToQCO/Operations/IndexSwitchOp.cpp
+INSTANTIATE_TEST_SUITE_P(
+    QCOIndexSwitchOpTest, QCToQCOTest,
+    testing::Values(
+        QCToQCOTestCase{
+            "SimpleIndexSwitchOp", MQT_NAMED_BUILDER(qc::simpleIndexSwitch),
+            MQT_NAMED_BUILDER(qco::simpleIndexSwitchCompleteTensorState), true},
+        QCToQCOTestCase{
+            "IndexSwitchMultiCase", MQT_NAMED_BUILDER(qc::indexSwitchMultiCase),
+            MQT_NAMED_BUILDER(qco::indexSwitchMultiCaseCompleteTensorState),
+            true}));
+
+// QCToQCO/Operations/WhileOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     SCFWhileOpTest, QCToQCOTest,
     testing::Values(
@@ -682,27 +1959,180 @@ INSTANTIATE_TEST_SUITE_P(
         QCToQCOTestCase{"SimpleDoWhile",
                         MQT_NAMED_BUILDER(qc::simpleDoWhileReset),
                         MQT_NAMED_BUILDER(qco::simpleDoWhileReset)}));
-/// @}
 
-/// \name QCToQCO/Operations/ForOp.cpp
-/// @{
+// QCToQCO/Operations/ForOp.cpp
 INSTANTIATE_TEST_SUITE_P(
     SCFForOpTest, QCToQCOTest,
     testing::Values(
         QCToQCOTestCase{"SimpleForLoop", MQT_NAMED_BUILDER(qc::simpleForLoop),
-                        MQT_NAMED_BUILDER(qco::simpleForLoop)},
+                        MQT_NAMED_BUILDER(qco::simpleForLoop), true},
         QCToQCOTestCase{"NestedForLoopIfOp",
                         MQT_NAMED_BUILDER(qc::nestedForLoopIfOp),
-                        MQT_NAMED_BUILDER(qco::nestedForLoopIfOp)},
-        QCToQCOTestCase{"NestedForLoopWhileOp",
-                        MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
-                        MQT_NAMED_BUILDER(qco::nestedForLoopWhileOp)},
+                        MQT_NAMED_BUILDER(qco::nestedForLoopIfOp), true},
         QCToQCOTestCase{
-            "nestedForLoopCtrlOpWithSeparateQubit",
+            "NestedForLoopWhileOp", MQT_NAMED_BUILDER(qc::nestedForLoopWhileOp),
+            MQT_NAMED_BUILDER(qco::nestedForLoopWhileOpCompleteTensorState),
+            true},
+        QCToQCOTestCase{
+            "NestedForLoopSwitchOp",
+            MQT_NAMED_BUILDER(qc::nestedForLoopSwitchOp),
+            MQT_NAMED_BUILDER(qco::nestedForLoopSwitchOpCompleteTensorState),
+            true},
+        QCToQCOTestCase{
+            "NestedForLoopCtrlOpWithSeparateQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithSeparateQubit),
-            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit)},
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithSeparateQubit), true},
         QCToQCOTestCase{
-            "nestedForLoopCtrlOpWithExtractedQubit",
+            "NestedForLoopCtrlOpWithExtractedQubit",
             MQT_NAMED_BUILDER(qc::nestedForLoopCtrlOpWithExtractedQubit),
-            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit)}));
-/// @}
+            MQT_NAMED_BUILDER(qco::nestedForLoopCtrlOpWithExtractedQubit),
+            true}));
+
+TEST_F(QCToQCOTest, EmitsSinksInAllocationOrder) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @main() {
+      %q0 = qc.alloc : !qc.qubit
+      %q1 = qc.alloc : !qc.qubit
+      %q2 = qc.alloc : !qc.qubit
+      %q3 = qc.alloc : !qc.qubit
+      qc.x %q2 : !qc.qubit
+      qc.h %q0 : !qc.qubit
+      return
+    }
+  )mlir",
+                                              context.get());
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto allocations = llvm::to_vector(function.getOps<qco::AllocOp>());
+  auto sinks = llvm::to_vector(function.getOps<qco::SinkOp>());
+  ASSERT_EQ(sinks.size(), 4U);
+  EXPECT_EQ(sinks[0].getQubit(),
+            (*function.getOps<qco::HOp>().begin()).getResult());
+  EXPECT_EQ(sinks[1].getQubit(), allocations[1].getResult());
+  EXPECT_EQ(sinks[2].getQubit(),
+            (*function.getOps<qco::XOp>().begin()).getResult());
+  EXPECT_EQ(sinks[3].getQubit(), allocations[3].getResult());
+}
+
+TEST_F(QCToQCORegressionTest, PreservesLiveQubitsAfterExplicitDeallocation) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @main() -> !qc.qubit {
+      %q0 = qc.alloc : !qc.qubit
+      %q1 = qc.alloc : !qc.qubit
+      %q2 = qc.alloc : !qc.qubit
+      %q3 = qc.alloc : !qc.qubit
+      %q4 = qc.alloc : !qc.qubit
+      qc.dealloc %q1 : !qc.qubit
+      qc.dealloc %q3 : !qc.qubit
+      qc.h %q0 : !qc.qubit
+      qc.x %q2 : !qc.qubit
+      return %q4 : !qc.qubit
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto allocations = llvm::to_vector(function.getOps<qco::AllocOp>());
+  auto sinks = llvm::to_vector(function.getOps<qco::SinkOp>());
+  ASSERT_EQ(allocations.size(), 5U);
+  ASSERT_EQ(sinks.size(), 4U);
+  EXPECT_EQ(sinks[0].getQubit(), allocations[1].getResult());
+  EXPECT_EQ(sinks[1].getQubit(), allocations[3].getResult());
+  EXPECT_EQ(sinks[2].getQubit(),
+            (*function.getOps<qco::HOp>().begin()).getResult());
+  EXPECT_EQ(sinks[3].getQubit(),
+            (*function.getOps<qco::XOp>().begin()).getResult());
+  auto returnOp =
+      cast<func::ReturnOp>(function.getBody().front().getTerminator());
+  EXPECT_EQ(returnOp.getOperand(0), allocations[4].getResult());
+}
+
+TEST_F(QCToQCORegressionTest, RejectsConsumedBorrowedQubit) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @consume(%q: !qc.qubit) {
+      qc.dealloc %q : !qc.qubit
+      return
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  bool sawExpectedDiagnostic = false;
+  ScopedDiagnosticHandler handler(&context, [&](Diagnostic& diagnostic) {
+    sawExpectedDiagnostic |=
+        StringRef(diagnostic.str())
+            .contains(
+                "cannot convert a function that consumes a qubit argument");
+    return success();
+  });
+  EXPECT_TRUE(failed(runQCToQCOConversion(*moduleOp)));
+  EXPECT_TRUE(sawExpectedDiagnostic);
+}
+
+TEST_F(QCToQCORegressionTest, CoalescesStaticQubitsInEntryBlock) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    func.func @main() {
+      %q0 = qc.static 0 : !qc.qubit
+      %q1 = qc.static 0 : !qc.qubit
+      qc.h %q0 : !qc.qubit
+      qc.x %q1 : !qc.qubit
+      return
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  EXPECT_EQ(llvm::range_size(function.getOps<qco::StaticOp>()), 1U);
+  auto h = *function.getOps<qco::HOp>().begin();
+  auto x = *function.getOps<qco::XOp>().begin();
+  EXPECT_EQ(x.getQubitIn(), h.getQubitOut());
+}
+
+TEST_F(QCToQCORegressionTest,
+       RoundTripsRepeatedGenericCallsBeforeTheirDefinitions) {
+  auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func @main(%q: !qc.qubit) {
+        func.call @flip(%q) : (!qc.qubit) -> ()
+        func.call @flip(%q) : (!qc.qubit) -> ()
+        return
+      }
+      func.func private @flip(%q: !qc.qubit) {
+        qc.x %q : !qc.qubit
+        return
+      }
+    }
+  )mlir",
+                                              &context);
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(runQCToQCOConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+  auto function = moduleOp->lookupSymbol<func::FuncOp>("main");
+  auto calls = llvm::to_vector(function.getOps<func::CallOp>());
+  ASSERT_EQ(calls.size(), 2U);
+  ASSERT_EQ(calls[0].getNumResults(), 1U);
+  EXPECT_EQ(calls[1].getOperand(0), calls[0].getResult(0));
+
+  ASSERT_TRUE(succeeded(runQCOToQCConversion(*moduleOp)));
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  calls = llvm::to_vector(function.getOps<func::CallOp>());
+  ASSERT_EQ(calls.size(), 2U);
+  for (auto call : calls) {
+    EXPECT_EQ(call.getCallee(), "flip");
+    EXPECT_EQ(call.getNumResults(), 0U);
+    EXPECT_EQ(call.getOperand(0), function.getArgument(0));
+  }
+}

@@ -10,13 +10,13 @@
 
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
+import warnings
 
 import pytest
 
-from mqt.core import fomac
-from mqt.core.plugins.qiskit import QDMIProvider
+from mqt.core.plugins.qiskit import QDMIBackend, QDMIProvider
+from mqt.core.plugins.qiskit.exceptions import UnsupportedDeviceError
+from mqt.core.qdmi.driver import open_device
 
 
 def test_provider_backends_filter_by_name() -> None:
@@ -69,6 +69,34 @@ def test_provider_get_backend_by_name() -> None:
     assert backend.provider is provider
 
 
+def test_provider_get_backend_stops_after_exact_match(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exact-name lookup does not open devices after the matching backend."""
+    expected = QDMIBackend(open_device("mqt.ddsim.default"), device_id="matching.device")
+    opened_ids: list[str] = []
+    monkeypatch.setattr(
+        "mqt.core.plugins.qiskit.provider.registered_device_ids",
+        lambda: ["unavailable.device", "matching.device", "later.device"],
+    )
+
+    def lookup(device_id: str, **_session_parameters: object) -> QDMIBackend:
+        opened_ids.append(device_id)
+        if device_id == "unavailable.device":
+            msg = "credential=do-not-disclose"
+            raise RuntimeError(msg)
+        if device_id == "later.device":
+            pytest.fail("exact-name lookup continued after finding its backend")
+        return expected
+
+    provider = QDMIProvider()
+    monkeypatch.setattr(provider, "get_backend_by_device_id", lookup)
+
+    expected_name = expected.name
+    assert expected_name is not None
+    with pytest.warns(RuntimeWarning, match="unavailable.device"):
+        assert provider.get_backend(expected_name) is expected
+    assert opened_ids == ["unavailable.device", "matching.device"]
+
+
 def test_provider_get_backend_nonexistent() -> None:
     """Provider raises ValueError for non-existent backend."""
     provider = QDMIProvider()
@@ -78,12 +106,7 @@ def test_provider_get_backend_nonexistent() -> None:
 
 def test_provider_get_backend_no_devices(monkeypatch: pytest.MonkeyPatch) -> None:
     """Provider raises ValueError when no devices available."""
-
-    # Monkeypatch to return empty device list
-    def mock_get_devices(_self: object) -> list[object]:
-        return []
-
-    monkeypatch.setattr(fomac.Session, "get_devices", mock_get_devices)
+    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.registered_device_ids", list)
 
     provider = QDMIProvider()
     with pytest.raises(ValueError, match="No backend found with name"):
@@ -95,7 +118,7 @@ def test_provider_repr() -> None:
     provider = QDMIProvider()
     repr_str = repr(provider)
     assert "QDMIProvider" in repr_str
-    assert "backends=" in repr_str
+    assert "devices=" in repr_str
 
 
 def test_backend_has_provider_reference() -> None:
@@ -106,141 +129,104 @@ def test_backend_has_provider_reference() -> None:
     assert backend.provider is provider
 
 
-def test_provider_with_token_parameter() -> None:
-    """Provider accepts token parameter."""
-    # Should not raise an error when creating provider with token
-    # Note: The currently available QDMI devices don't support authentication.
-    try:
-        provider = QDMIProvider(token="test_token")  # noqa: S106
-        # If device supports token, verify provider was created
-        assert provider is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
-
-
-def test_provider_with_auth_file_parameter() -> None:
-    """Provider accepts auth_file parameter."""
-    # Create a temporary file for testing
-    with tempfile.NamedTemporaryFile(delete=False, mode="w", encoding="utf-8") as tmp_file:
-        tmp_file.write("test_auth_content")
-        tmp_path = tmp_file.name
-
-    try:
-        # Should not raise an error when creating provider with auth_file
-        # Note: The currently available QDMI devices don't support authentication.
-        try:
-            provider = QDMIProvider(auth_file=tmp_path)
-            assert provider is not None
-        except RuntimeError:
-            # If not supported, that's okay for now
-            pass
-    finally:
-        # Clean up
-        Path(tmp_path).unlink(missing_ok=True)
-
-
-def test_provider_with_auth_url_parameter() -> None:
-    """Provider accepts auth_url parameter."""
-    # Should not raise an error when creating provider with auth_url
-    # Note: The currently available QDMI devices don't support authentication.
-    try:
-        provider = QDMIProvider(auth_url="https://auth.example.com")
-        assert provider is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
-
-
-def test_provider_with_username_password_parameters() -> None:
-    """Provider accepts username and password parameters."""
-    # Should not raise an error when creating provider with username and password
-    # Note: The currently available QDMI devices don't support authentication.
-    try:
-        provider = QDMIProvider(username="test_user", password="test_pass")  # noqa: S106
-        assert provider is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
-
-
-def test_provider_with_project_id_parameter() -> None:
-    """Provider accepts project_id parameter."""
-    # Should not raise an error when creating provider with project_id
-    # Note: The currently available QDMI devices don't support authentication.
-    try:
-        provider = QDMIProvider(project_id="test_project")
-        assert provider is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
-
-
-def test_provider_with_multiple_auth_parameters() -> None:
-    """Provider accepts multiple authentication parameters."""
-    # Should not raise an error when creating provider with multiple auth parameters
-    # Note: The currently available QDMI devices don't support authentication.
-    try:
-        provider = QDMIProvider(
-            token="test_token",  # noqa: S106
-            username="test_user",
-            password="test_pass",  # noqa: S106
-            project_id="test_project",
-        )
-        assert provider is not None
-    except RuntimeError:
-        # If not supported, that's okay for now
-        pass
-
-
-def test_provider_default_constructor_unchanged() -> None:
-    """Provider default constructor behavior is unchanged (backward compatibility)."""
-    # Create provider without any parameters
+def test_provider_default_constructor() -> None:
+    """Provider discovers registered devices without generic session parameters."""
     provider = QDMIProvider()
-
-    # Should have at least one backend (the DDSIM device)
     backends = provider.backends()
     assert len(backends) > 0
-
-    # Should be able to get backends
-    all_backends = provider.backends()
-    assert isinstance(all_backends, list)
-
-    # Should be able to get a specific backend
     backend = provider.get_backend("MQT Core DDSIM QDMI Device")
     assert backend.name == "MQT Core DDSIM QDMI Device"
 
 
-def test_provider_with_custom_parameters() -> None:
-    """Provider accepts custom configuration parameters."""
-    # Test custom1
-    try:
-        provider = QDMIProvider(custom1="custom_value_1")
-        assert provider is not None
-    except (RuntimeError, ValueError):
-        # If not supported, that's okay for now
-        pass
+def test_provider_construction_opens_no_devices(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Constructing a provider does not initialize any registered device."""
+    monkeypatch.setattr(
+        "mqt.core.plugins.qiskit.provider.QDMIBackend.from_device_id",
+        lambda *_args, **_kwargs: pytest.fail("provider construction opened a device"),
+    )
+    QDMIProvider()
 
-    # Test all custom parameters together
-    try:
-        provider = QDMIProvider(
-            custom1="value1",
-            custom2="value2",
-            custom3="value3",
-            custom4="value4",
-            custom5="value5",
-        )
-        assert provider is not None
-    except (RuntimeError, ValueError):
-        pass
 
-    # Test mixing custom with standard authentication
-    try:
-        provider = QDMIProvider(
-            token="test_token",  # noqa: S106
-            custom1="custom_value",
-            project_id="project_id",
-        )
-        assert provider is not None
-    except (RuntimeError, ValueError):
-        pass
+def test_provider_reads_registry_on_each_discovery_call(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A provider reflects registrations made after its construction."""
+    device_ids = ["first.device"]
+    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.registered_device_ids", lambda: list(device_ids))
+    provider = QDMIProvider()
+
+    assert provider.device_ids() == ["first.device"]
+    device_ids.append("second.device")
+    assert provider.device_ids() == ["first.device", "second.device"]
+
+
+def test_provider_exact_id_lookup_forwards_session_parameters(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Exact-ID lookup opens only that device with typed overrides."""
+    observed: tuple[str, QDMIProvider, dict[str, object]] | None = None
+    expected = QDMIBackend(open_device("mqt.ddsim.default"), device_id="test.device")
+
+    def fake_from_device_id(
+        device_id: str,
+        *,
+        provider: QDMIProvider,
+        **session_parameters: object,
+    ) -> QDMIBackend:
+        nonlocal observed
+        observed = device_id, provider, session_parameters
+        return expected
+
+    monkeypatch.setattr("mqt.core.plugins.qiskit.provider.QDMIBackend.from_device_id", fake_from_device_id)
+    provider = QDMIProvider()
+    token = str(123)
+
+    backend = provider.get_backend_by_device_id("test.device", token=token, custom1="queue")
+
+    assert backend is expected
+    assert observed == ("test.device", provider, {"token": token, "custom1": "queue"})
+
+
+def test_provider_warns_with_only_id_and_skips_unavailable_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enumeration reports an unavailable ID without leaking failure details."""
+    available = QDMIBackend(open_device("mqt.ddsim.default"), device_id="available.device")
+    monkeypatch.setattr(
+        "mqt.core.plugins.qiskit.provider.registered_device_ids",
+        lambda: ["available.device", "unavailable.device"],
+    )
+
+    def lookup(device_id: str, **_session_parameters: object) -> QDMIBackend:
+        if device_id == "unavailable.device":
+            msg = "credential=do-not-disclose"
+            raise RuntimeError(msg)
+        return available
+
+    provider = QDMIProvider()
+    monkeypatch.setattr(provider, "get_backend_by_device_id", lookup)
+
+    with pytest.warns(RuntimeWarning) as warnings:
+        assert provider.backends() == [available]
+
+    message = str(warnings[0].message)
+    assert warnings[0].filename == __file__
+    assert "unavailable.device" in message
+    assert "credential" not in message
+    assert "do-not-disclose" not in message
+
+
+def test_provider_silently_skips_incompatible_device(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Enumeration silently omits devices that Qiskit cannot represent."""
+    available = QDMIBackend(open_device("mqt.ddsim.default"), device_id="available.device")
+    monkeypatch.setattr(
+        "mqt.core.plugins.qiskit.provider.registered_device_ids",
+        lambda: ["incompatible.device", "available.device"],
+    )
+
+    def lookup(device_id: str, **_session_parameters: object) -> QDMIBackend:
+        if device_id == "incompatible.device":
+            msg = "device cannot be represented by a Qiskit target"
+            raise UnsupportedDeviceError(msg)
+        return available
+
+    provider = QDMIProvider()
+    monkeypatch.setattr(provider, "get_backend_by_device_id", lookup)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert provider.backends() == [available]

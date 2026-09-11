@@ -1,0 +1,32 @@
+{
+  "schema-version": 1,
+  "name": "Higher-arity SC Test Device",
+  "numQubits": 3,
+  "durationUnit": {
+    "unit": "ns",
+    "scaleFactor": 1.0
+  },
+  "qubitProperties": {
+    "defaults": {},
+    "overrides": []
+  },
+  "couplings": [
+    [0, 1],
+    [1, 2]
+  ],
+  "operations": [
+    {
+      "name": "ccnot",
+      "numQubits": 3,
+      "numParameters": 0,
+      "sites": [
+        [0, 1, 2],
+        [0, 2, 1],
+        [1, 0, 2],
+        [1, 2, 0],
+        [2, 0, 1],
+        [2, 1, 0]
+      ]
+    }
+  ]
+}

@@ -10,8 +10,28 @@
 set(MQT_MLIR_SOURCE_INCLUDE_DIR "${PROJECT_SOURCE_DIR}/mlir/include")
 set(MQT_MLIR_BUILD_INCLUDE_DIR "${PROJECT_BINARY_DIR}/mlir/include")
 set(MQT_MLIR_MIN_VERSION
-    "22.1"
+    "23.1"
     CACHE STRING "Minimum required MLIR version")
+
+# Attempt to load MLIR_DIR from a local .env file for developer convenience.
+if(NOT DEFINED MLIR_DIR AND EXISTS "${PROJECT_SOURCE_DIR}/.env")
+  file(STRINGS "${PROJECT_SOURCE_DIR}/.env" MQT_CORE_DOTENV_LINES)
+  foreach(MQT_CORE_DOTENV_LINE IN LISTS MQT_CORE_DOTENV_LINES)
+    if(MQT_CORE_DOTENV_LINE MATCHES "^[ \t]*(#|$)")
+      continue()
+    endif()
+
+    if(MQT_CORE_DOTENV_LINE MATCHES
+       "^[ \t]*(export[ \t]+)?MLIR_DIR[ \t]*=[ \t]*['\"]?([^'\"]+)['\"]?[ \t]*$")
+      file(TO_CMAKE_PATH "${CMAKE_MATCH_2}" MQT_CORE_DOTENV_MLIR_DIR)
+      set(MLIR_DIR
+          "${MQT_CORE_DOTENV_MLIR_DIR}"
+          CACHE PATH "Path to MLIRConfig.cmake" FORCE)
+      message(STATUS "Using MLIR_DIR from ${PROJECT_SOURCE_DIR}/.env: ${MLIR_DIR}")
+      break()
+    endif()
+  endforeach()
+endif()
 
 # MLIR must be installed on the system
 find_package(MLIR REQUIRED CONFIG)
@@ -21,17 +41,25 @@ endif()
 message(STATUS "Using MLIRConfig.cmake in: ${MLIR_DIR}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
-# Add the paths to the MLIR and LLVM CMake modules.
 list(APPEND CMAKE_MODULE_PATH "${MLIR_CMAKE_DIR}")
 list(APPEND CMAKE_MODULE_PATH "${LLVM_CMAKE_DIR}")
 
-# Include the TableGen, LLVM and MLIR CMake modules.
 include(TableGen)
 include(AddLLVM)
 include(AddMLIR)
-set(LLVM_ENABLE_RTTI ON)
-set(LLVM_ENABLE_EH ON)
 include(HandleLLVMOptions)
+
+# Keep direct LLVM consumers compatible with an RTTI-free LLVM installation. Ordinary MLIR targets
+# receive this policy through llvm_update_compile_flags.
+function(mqt_llvm_target_disable_rtti target_name)
+  if(NOT TARGET ${target_name})
+    message(FATAL_ERROR "Cannot configure RTTI for missing target ${target_name}.")
+  endif()
+  if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(${target_name}
+                           PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${LLVM_CXXFLAGS_RTTI_DISABLE}>)
+  endif()
+endfunction()
 
 include_directories(SYSTEM ${LLVM_INCLUDE_DIRS} ${MLIR_INCLUDE_DIRS})
 include_directories(${MQT_MLIR_SOURCE_INCLUDE_DIR})

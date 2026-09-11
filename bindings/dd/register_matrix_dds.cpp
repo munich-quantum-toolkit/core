@@ -10,21 +10,20 @@
 
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
-#include "dd/Export.hpp"
 #include "dd/Node.hpp"
 
-#include <nanobind/nanobind.h>
-#include <nanobind/ndarray.h>
-#include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
+#include "register_dd_export.hpp"
+
+#include "nanobind/nanobind.h"
+#include "nanobind/ndarray.h"
+#include "nanobind/stl/complex.h" // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string.h"  // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/vector.h"  // NOLINT(misc-include-cleaner)
 
 #include <cmath>
 #include <complex>
 #include <cstddef>
 #include <memory>
-#include <sstream>
-#include <string>
 
 namespace mqt {
 
@@ -35,33 +34,35 @@ using Matrix = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<2>>;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 Matrix getMatrix(const dd::mEdge& m, const size_t numQubits,
-                 const dd::fp threshold = 0.) {
+                 const dd::fp threshold) {
   if (numQubits > 20U) {
     throw nb::value_error("num_qubits exceeds practical limit of 20");
   }
 
   if (numQubits == 0U) {
     auto dataPtr = std::make_unique<std::complex<dd::fp>>(m.w);
-    auto* data = dataPtr.release();
+    auto* const data = dataPtr.get();
     const nb::capsule owner(data, [](void* ptr) noexcept {
       delete static_cast<std::complex<dd::fp>*>(ptr);
     });
+    [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
     return Matrix(data, {1, 1}, owner);
   }
 
   const auto dim = 1ULL << numQubits;
-  auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(dim * dim);
+  auto dataPtr = std::make_unique<dd::CVec>(dim * dim);
   m.traverseMatrix(
       std::complex<dd::fp>{1., 0.}, 0ULL, 0ULL,
       [&dataPtr, dim](const std::size_t i, const std::size_t j,
                       const std::complex<dd::fp>& c) {
-        dataPtr[(i * dim) + j] = c;
+        (*dataPtr)[(i * dim) + j] = c;
       },
       numQubits, threshold);
-  auto* data = dataPtr.release();
-  const nb::capsule owner(data, [](void* ptr) noexcept {
-    delete[] static_cast<std::complex<dd::fp>*>(ptr);
+  auto* const data = dataPtr->data();
+  const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
+    delete static_cast<dd::CVec*>(ptr);
   });
+  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
   return Matrix(data, {dim, dim}, owner);
 }
 
@@ -117,53 +118,6 @@ Returns:
 Raises:
     MemoryError: If the memory allocation fails.)pb");
 
-  mat.def(
-      "to_dot",
-      [](const dd::mEdge& e, const bool colored = true,
-         const bool edgeLabels = false, const bool classic = false,
-         const bool memory = false, const bool formatAsPolar = true) {
-        std::ostringstream os;
-        toDot(e, os, colored, edgeLabels, classic, memory, formatAsPolar);
-        return os.str();
-      },
-      "colored"_a = true, "edge_labels"_a = false, "classic"_a = false,
-      "memory"_a = false, "format_as_polar"_a = true,
-      R"pb(Convert the DD to a DOT graph that can be plotted via Graphviz.
-
-Args:
-    colored: Whether to use colored edge weights
-    edge_labels: Whether to include edge weights as labels.
-    classic: Whether to use the classic DD visualization style.
-    memory: Whether to include memory information. For debugging purposes only.
-    format_as_polar: Whether to format the edge weights in polar coordinates.
-
-Returns:
-    The DOT graph.)pb");
-
-  mat.def(
-      "to_svg",
-      [](const dd::mEdge& e, const std::string& filename,
-         const bool colored = true, const bool edgeLabels = false,
-         const bool classic = false, const bool memory = false,
-         const bool formatAsPolar = true) {
-        // replace the filename extension with .dot
-        const auto dotFilename =
-            filename.substr(0, filename.find_last_of('.')) + ".dot";
-        export2Dot(e, dotFilename, colored, edgeLabels, classic, memory, true,
-                   formatAsPolar);
-      },
-      "filename"_a, "colored"_a = true, "edge_labels"_a = false,
-      "classic"_a = false, "memory"_a = false, "format_as_polar"_a = true,
-      R"pb(Convert the DD to an SVG file that can be viewed in a browser.
-
-Requires the `dot` command from Graphviz to be installed and available in the PATH.
-
-Args:
-    filename: The filename of the SVG file. Any file extension will be replaced by `.dot` and then `.svg`.
-    colored: Whether to use colored edge weights.
-    edge_labels: Whether to include edge weights as labels.
-    classic: Whether to use the classic DD visualization style.
-    memory: Whether to include memory information. For debugging purposes only.
-    format_as_polar: Whether to format the edge weights in polar coordinates.)pb");
+  registerDDExport(mat);
 }
 } // namespace mqt

@@ -14,36 +14,26 @@
 #include "dd/RealNumber.hpp"
 #include "dd/StateGeneration.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <limits>
 #include <memory>
 #include <numbers>
-#include <numeric>
 #include <stdexcept>
 #include <vector>
 
 using namespace dd;
 
 namespace {
-/**
- * @brief Compare the elements of @p a and @p b with precision @p delta.
- */
-void vecNear(CVec a, CVec b, double delta = 1e-6) {
+/// Compare the elements of @p a and @p b with precision @p delta.
+void expectStateVectorNear(CVec a, CVec b, double delta = 1e-6) {
   for (std::size_t i = 0; i < b.size(); ++i) {
     EXPECT_NEAR(a[i].real(), b[i].real(), delta);
     EXPECT_NEAR(a[i].imag(), b[i].imag(), delta);
   }
-}
-
-double norm(const std::vector<std::complex<double>>& v) {
-  double sum{};
-  for (const auto& entry : v) {
-    sum += std::norm(entry);
-  }
-  return sum;
 }
 }; // namespace
 
@@ -63,7 +53,7 @@ TEST(StateGenerationTest, MakeZero) {
   vec[0] = {1., 0};
 
   auto dd = std::make_unique<Package>(nq);
-  auto zero = makeZeroState(nq, *dd);
+  auto const zero = makeZeroState(nq, *dd);
 
   EXPECT_EQ(zero.getVector(), vec);
 
@@ -88,7 +78,7 @@ TEST(StateGenerationTest, MakeBasis) {
   vec[13] = {1., 0};
 
   auto dd = std::make_unique<Package>(nq);
-  auto basis = makeBasisState(nq, state, *dd);
+  auto const basis = makeBasisState(nq, state, *dd);
 
   EXPECT_EQ(basis.getVector(), vec);
 
@@ -106,8 +96,12 @@ TEST(StateGenerationTest, MakeBasisDifficult) {
 
   constexpr std::size_t nq = 4;
 
-  const std::vector<BasisStates> state{BasisStates::plus, BasisStates::minus,
-                                       BasisStates::right, BasisStates::left};
+  const std::vector<BasisStates> state{
+      BasisStates::plus,
+      BasisStates::minus,
+      BasisStates::right,
+      BasisStates::left,
+  };
 
   const CVec vec{
       {.25, 0},  {.25, 0},  {-.25, 0}, {-.25, 0}, {0, .25}, {0, .25},
@@ -116,9 +110,9 @@ TEST(StateGenerationTest, MakeBasisDifficult) {
   };
 
   auto dd = std::make_unique<Package>(nq);
-  auto basis = makeBasisState(nq, state, *dd);
+  auto const basis = makeBasisState(nq, state, *dd);
 
-  vecNear(basis.getVector(), vec);
+  expectStateVectorNear(basis.getVector(), vec);
 
   dd->decRef(basis);
   dd->garbageCollect(true);
@@ -140,9 +134,9 @@ TEST(StateGenerationTest, MakeGHZ) {
   vec[len - 1] = {SQRT2_2, 0};
 
   auto dd = std::make_unique<Package>(nq);
-  auto ghz = makeGHZState(nq, *dd);
+  auto const ghz = makeGHZState(nq, *dd);
 
-  vecNear(ghz.getVector(), vec);
+  expectStateVectorNear(ghz.getVector(), vec);
 
   dd->decRef(ghz);
   dd->garbageCollect(true);
@@ -158,7 +152,7 @@ TEST(StateGenerationTest, MakeGHZZeroQubits) {
   constexpr std::size_t nq = 1;
 
   auto dd = std::make_unique<Package>(nq);
-  auto ghz = makeGHZState(0, *dd);
+  auto const ghz = makeGHZState(0, *dd);
 
   EXPECT_EQ(ghz, vEdge::one());
 }
@@ -171,19 +165,21 @@ TEST(StateGenerationTest, MakeW) {
 
   constexpr std::size_t nq = 3;
 
-  const CVec vec{0,
-                 std::numbers::inv_sqrt3,
-                 std::numbers::inv_sqrt3,
-                 0,
-                 std::numbers::inv_sqrt3,
-                 0,
-                 0,
-                 0};
+  const CVec vec{
+      0,
+      std::numbers::inv_sqrt3,
+      std::numbers::inv_sqrt3,
+      0,
+      std::numbers::inv_sqrt3,
+      0,
+      0,
+      0,
+  };
 
   auto dd = std::make_unique<Package>(nq);
-  auto w = makeWState(nq, *dd);
+  auto const w = makeWState(nq, *dd);
 
-  vecNear(w.getVector(), vec);
+  expectStateVectorNear(w.getVector(), vec);
 
   dd->decRef(w);
   dd->garbageCollect(true);
@@ -199,7 +195,7 @@ TEST(StateGenerationTest, MakeWZeroQubits) {
   constexpr std::size_t nq = 1;
 
   auto dd = std::make_unique<Package>(nq);
-  auto w = makeWState(0, *dd);
+  auto const w = makeWState(0, *dd);
 
   EXPECT_EQ(w, vEdge::one());
 }
@@ -214,7 +210,7 @@ TEST(StateGenerationTest, FromVectorZero) {
   const CVec vec{};
 
   auto dd = std::make_unique<Package>(nq);
-  auto psi = makeStateFromVector(vec, *dd);
+  auto const psi = makeStateFromVector(vec, *dd);
 
   EXPECT_EQ(psi, vEdge::one());
 }
@@ -230,10 +226,14 @@ TEST(StateGenerationTest, FromVectorScalar) {
   const CVec vec{alpha};
 
   auto dd = std::make_unique<Package>(nq);
-  auto psi = makeStateFromVector(vec, *dd);
+  auto const psi = makeStateFromVector(vec, *dd);
 
   EXPECT_TRUE(psi.isTerminal());
+  ASSERT_TRUE(dd->getRootSet<vNode>().contains(psi));
+  dd->garbageCollect(true);
   EXPECT_TRUE(psi.w.approximatelyEquals(dd->cn.lookup(alpha)));
+  EXPECT_NO_THROW(dd->decRef(psi));
+  EXPECT_TRUE(dd->getRootSet<vNode>().empty());
 }
 
 TEST(StateGenerationTest, FromVector) {
@@ -251,12 +251,16 @@ TEST(StateGenerationTest, FromVector) {
       {.25, 0},  {.25, 0},  {-.25, 0}, {-.25, 0},
   };
 
-  const std::vector<BasisStates> state{BasisStates::plus, BasisStates::minus,
-                                       BasisStates::right, BasisStates::left};
+  const std::vector<BasisStates> state{
+      BasisStates::plus,
+      BasisStates::minus,
+      BasisStates::right,
+      BasisStates::left,
+  };
 
   auto dd = std::make_unique<Package>(nq);
-  auto ref = makeBasisState(nq, state, *dd);
-  auto psi = makeStateFromVector(vec, *dd);
+  auto const ref = makeBasisState(nq, state, *dd);
+  auto const psi = makeStateFromVector(vec, *dd);
 
   EXPECT_EQ(psi, ref);
 
@@ -305,7 +309,7 @@ TEST(StateGenerationTest, MakeWInvalidArguments) {
 
   // Test: Misconfigured package (# of qubits).
 
-  constexpr std::size_t nq = 100;
+  constexpr std::size_t nq = 2;
 
   auto dd = std::make_unique<Package>(nq);
   EXPECT_THROW({ makeWState(nq + 1, *dd); }, std::invalid_argument);
@@ -328,254 +332,62 @@ TEST(StateGenerationTest, FromVectorInvalidArguments) {
   EXPECT_THROW({ makeStateFromVector(CVec(3), *dd); }, std::invalid_argument);
 }
 
-///-----------------------------------------------------------------------------
-///                      \n generate random VectorDDs \n
-///-----------------------------------------------------------------------------
-
-TEST(StateGenerationTest, GenerateExponential) {
-
-  // Test: Generate a random exponentially large vector DD with a random seed.
-  // Expect: The norm of the resulting vector DD must be 1.
-  // Expect: The size of the resulting vector DD must be exponentially large.
-  // Expect: If rebuild from a state vector the DDs are approximately the same.
-  // Expect: Properly increase and decrease the ref counts.
-
-  constexpr std::size_t nq = 3;
-
-  const auto dd = std::make_unique<Package>(nq);
-  const auto state = generateExponentialState(nq, *dd);
-  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
-  const std::size_t size = 1ULL << nq;
-
-  EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
-  EXPECT_EQ(state.size(), size);
-  EXPECT_EQ(state, rebuild);
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size - 1);
-
-  dd->decRef(state);
-  dd->decRef(rebuild);
-  dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
+TEST(StateGenerationTest, VectorConstructionChecksCapacity) {
+  Package empty(0);
+  EXPECT_THROW(makeStateFromVector(CVec(2), empty), std::invalid_argument);
+  Package oneQubit(1);
+  EXPECT_THROW(makeStateFromVector(CVec(4), oneQubit), std::invalid_argument);
+  EXPECT_THROW(makeStateFromVector(CVec(8), oneQubit), std::invalid_argument);
+  bool read = false;
+  const auto entry = [&read](size_t) {
+    read = true;
+    return std::complex<fp>{};
+  };
+  EXPECT_THROW(makeStateFromVector(4, entry, oneQubit), std::invalid_argument);
+  EXPECT_FALSE(read);
+  const auto state =
+      makeStateFromVector(CVec{{0.5, 0.25}, {-0.5, 0.75}}, oneQubit);
+  expectStateVectorNear(state.getVector(), {{0.5, 0.25}, {-0.5, 0.75}});
+  EXPECT_NO_THROW(oneQubit.decRef(state));
 }
 
-TEST(StateGenerationTest, GenerateExponentialWithSeed) {
-
-  // Test: Generate a random exponentially large vector DD with a given seed.
-  // Expect: The norm of the resulting vector DD must be 1.
-  // Expect: The size of the resulting vector DD must be exponentially large.
-  // Expect: If rebuild from a state vector the DDs are approximately the same.
-  // Expect: Properly increase and decrease the ref counts.
-
-  constexpr std::size_t nq = 3;
-
-  const auto dd = std::make_unique<Package>(nq);
-  const auto state = generateExponentialState(nq, *dd, 42U);
-  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
-  const std::size_t size = 1ULL << nq;
-
-  EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
-  EXPECT_EQ(state.size(), size);
-  EXPECT_EQ(state, rebuild);
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size - 1);
-
-  dd->decRef(state);
-  dd->decRef(rebuild);
-  dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
+TEST(StateGenerationTest, StateIntervalsRejectOverflow) {
+  Package package(2);
+  const auto maximum = std::numeric_limits<size_t>::max();
+  EXPECT_THROW(makeZeroState(maximum, package), std::invalid_argument);
+  EXPECT_THROW(makeZeroState(1, package, maximum), std::invalid_argument);
+  EXPECT_THROW(makeBasisState(1, std::vector<bool>{false}, package, maximum),
+               std::invalid_argument);
+  EXPECT_THROW(makeBasisState(2, std::vector<BasisStates>(2), package, maximum),
+               std::invalid_argument);
+  EXPECT_THROW(makeBasisState(2, std::vector<BasisStates>(2), package, 1),
+               std::invalid_argument);
+  const auto state = makeBasisState(1, std::vector<bool>{true}, package, 1);
+  ASSERT_FALSE(state.isTerminal());
+  EXPECT_EQ(state.p->v, 1);
+  EXPECT_TRUE(state.p->e[0].isZeroTerminal());
+  EXPECT_TRUE(state.p->e[1].isOneTerminal());
+  EXPECT_NO_THROW(package.decRef(state));
 }
 
-TEST(StateGenerationTest, GenerateRandomOneQubit) {
-
-  // Test: Generate a random single qubit vector DD.
-  // Expect: The norm of the resulting vector DD must be 1.
-  // Expect: The size of the resulting vector DD must be 2 (node + terminal).
-  // Expect: Properly increase and decrease the ref counts.
-
-  constexpr std::size_t nq = 1;
-
-  const std::vector<std::size_t> nodesPerLevel{1};
-
-  const auto dd = std::make_unique<Package>(nq);
-  const auto state = generateRandomState(
-      nq, nodesPerLevel, GenerationWireStrategy::ROUNDROBIN, *dd);
-
-  EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
-  EXPECT_EQ(state.size(), 2); // Node plus Terminal.
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 1);
-
-  dd->decRef(state);
-  dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
-}
-
-TEST(StateGenerationTest, GenerateRandomRoundRobin) {
-
-  // Test: Generate a random vector DD using the round-robin strategy.
-  // Expect: The norm of the resulting vector DD must be 1.
-  // Expect: The size of the resulting vector DD must be the sum of the
-  //         specified nodes.
-  // Expect: If rebuild from a state vector the DDs are approximately the same.
-  // Expect: Properly increase and decrease the ref counts.
-
-  constexpr std::size_t nq = 5;
-
-  const std::vector<std::size_t> nodesPerLevel{1, 2, 3, 4, 5};
-  const std::size_t size =
-      std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
-
-  const auto dd = std::make_unique<Package>(nq);
-  const auto state = generateRandomState(
-      nq, nodesPerLevel, GenerationWireStrategy::ROUNDROBIN, *dd);
-  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
-
-  EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
-  EXPECT_EQ(state.size(), size + 1); // plus terminal.
-  EXPECT_EQ(state, rebuild);
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
-
-  dd->decRef(state);
-  dd->decRef(rebuild);
-  dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
-}
-
-TEST(StateGenerationTest, GenerateRandomRoundRobinWithSeed) {
-
-  // Test: Generate a random vector DD using the round-robin strategy with a
-  //       given seed.
-  // Expect: The norm of the resulting vector DD must be 1.
-  // Expect: The size of the resulting vector DD must be the sum of the
-  //         specified nodes.
-  // Expect: If rebuild from a state vector the DDs are approximately the same.
-  // Expect: Properly increase and decrease the ref counts.
-
-  constexpr std::size_t nq = 5;
-
-  const std::vector<std::size_t> nodesPerLevel{1, 2, 3, 4, 5};
-  const std::size_t size =
-      std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
-
-  const auto dd = std::make_unique<Package>(nq);
-  const auto state = generateRandomState(
-      nq, nodesPerLevel, GenerationWireStrategy::ROUNDROBIN, *dd, 72U);
-  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
-
-  EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
-  EXPECT_EQ(state.size(), size + 1); // plus terminal.
-  EXPECT_EQ(state, rebuild);
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
-
-  dd->decRef(state);
-  dd->decRef(rebuild);
-  dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
-}
-
-TEST(StateGenerationTest, GenerateRandomRandom) {
-
-  // Test: Generate a random vector DD using the random strategy.
-  // Expect: The norm of the resulting vector DD must be 1.
-  // Expect: The size of the resulting vector DD must be the sum of the
-  //         specified nodes.
-  // Expect: If rebuild from a state vector the DDs are approximately the same.
-  // Expect: Properly increase and decrease the ref counts.
-
-  constexpr std::size_t nq = 6;
-
-  const std::vector<std::size_t> nodesPerLevel{1, 2, 4, 8, 10, 12};
-  const std::size_t size =
-      std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
-
-  const auto dd = std::make_unique<Package>(nq);
-  const auto state = generateRandomState(nq, nodesPerLevel,
-                                         GenerationWireStrategy::RANDOM, *dd);
-  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
-
-  EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
-  EXPECT_EQ(state.size(), size + 1); // plus terminal.
-  EXPECT_EQ(state, rebuild);
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
-
-  dd->decRef(state);
-  dd->decRef(rebuild);
-  dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
-}
-
-TEST(StateGenerationTest, GenerateRandomRandomWithSeed) {
-
-  // Test: Generate a random vector DD using the random strategy with a given
-  //       seed.
-  // Expect: The norm of the resulting vector DD must be 1.
-  // Expect: The size of the resulting vector DD must be the sum of the
-  //         specified nodes.
-  // Expect: If rebuild from a state vector the DDs are approximately the same.
-  // Expect: Properly increase and decrease the ref counts.
-
-  constexpr std::size_t nq = 8;
-
-  const std::vector<std::size_t> nodesPerLevel{1, 2, 2, 2, 2, 2, 2, 2};
-  const std::size_t size =
-      std::accumulate(nodesPerLevel.begin(), nodesPerLevel.end(), 0UL);
-
-  const auto dd = std::make_unique<Package>(nq);
-  const auto state = generateRandomState(
-      nq, nodesPerLevel, GenerationWireStrategy::RANDOM, *dd, 1337U);
-  const auto rebuild = makeStateFromVector(state.getVector(), *dd);
-
-  EXPECT_NEAR(norm(state.getVector()), 1., 1e-6);
-  EXPECT_EQ(state.size(), size + 1); // plus terminal.
-  EXPECT_EQ(state, rebuild);
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), size);
-
-  dd->decRef(state);
-  dd->decRef(rebuild);
-  dd->garbageCollect(true);
-
-  EXPECT_EQ(dd->vUniqueTable.getNumEntries(), 0);
-}
-
-TEST(StateGenerationTest, GenerateRandomInvalidArguments) {
-
-  // Test: Misconfigured package (# of qubits).
-  // Test: Number of levels must be greater than zero.
-  // Test: Invalid size of nodesPerLevel.
-  // Test: Invalid nodesPerLevel.
-
-  constexpr std::size_t nq = 3;
-
-  auto dd = std::make_unique<Package>(nq);
-
-  EXPECT_THROW(
-      {
-        generateRandomState(nq + 1, {}, GenerationWireStrategy::RANDOM, *dd,
-                            1337U);
-      },
-      std::invalid_argument);
-
-  EXPECT_THROW(
-      {
-        generateRandomState(0, {0}, GenerationWireStrategy::RANDOM, *dd, 1337U);
-      },
-      std::invalid_argument);
-
-  EXPECT_THROW(
-      {
-        generateRandomState(nq, {0}, GenerationWireStrategy::RANDOM, *dd,
-                            1337U);
-      },
-      std::invalid_argument);
-
-  EXPECT_THROW(
-      {
-        generateRandomState(nq, {1, 2, 5}, GenerationWireStrategy::RANDOM, *dd,
-                            1337U);
-      },
-      std::invalid_argument);
+TEST(StateGenerationTest, BasisConstructionUsesRequestedPrefix) {
+  Package package(4);
+  const std::vector<bool> bits{true, false, true, true, false};
+  const std::vector<BasisStates> basis{
+      BasisStates::one, BasisStates::zero, BasisStates::one,
+      BasisStates::one, BasisStates::zero,
+  };
+  for (const size_t width : {0U, 1U, 4U}) {
+    const auto binary = makeBasisState(width, bits, package);
+    const auto product = makeBasisState(width, basis, package);
+    const auto zero = makeZeroState(width, package);
+    EXPECT_EQ(binary, product);
+    EXPECT_EQ(binary.getValueByIndex(13U & ((1U << width) - 1U)), 1.);
+    EXPECT_EQ(zero.getValueByIndex(0), 1.);
+    package.decRef(binary);
+    package.decRef(product);
+    package.decRef(zero);
+  }
+  EXPECT_THROW(makeBasisState(2, std::vector<bool>{true}, package),
+               std::invalid_argument);
 }

@@ -8,17 +8,16 @@
  * Licensed under the MIT License
  */
 
-/*
- * DDSIM QDMI Device - Device status transitions (OFFLINE/BUSY/IDLE)
- */
-#include "helpers/circuits.hpp"
-#include "helpers/test_utils.hpp"
+/* DDSIM QDMI device status transitions. */
 #include "mqt_ddsim_qdmi/constants.h"
 #include "mqt_ddsim_qdmi/device.h"
 
-#include <gtest/gtest.h>
+#include "helpers/controlled_job.hpp"
+#include "helpers/test_utils.hpp"
 
-#include <atomic>
+#include "gtest/gtest.h"
+
+#include <chrono>
 #include <thread>
 
 namespace {
@@ -35,33 +34,21 @@ QDMI_Device_Status queryStatus(MQT_DDSIM_QDMI_Device_Session session) {
 TEST(DeviceStatus, TransitionsBusyThenIdleAfterJob) {
   const qdmi_test::SessionGuard s{};
 
-  // Initial status can be OFFLINE depending on implementation; do not assert
-  // it. Submit a job to force BUSY then completion to IDLE.
+  EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_IDLE);
+
   const qdmi_test::JobGuard j{s.session};
-  ASSERT_EQ(qdmi_test::setProgram(j.job, QDMI_PROGRAM_FORMAT_QASM3,
-                                  qdmi_test::QASM3_HEAVY_SAMPLING),
-            QDMI_SUCCESS);
-  ASSERT_EQ(qdmi_test::setShots(j.job, 16384), QDMI_SUCCESS);
-  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_submit(j.job), QDMI_SUCCESS);
-
-  // Poll while running to observe BUSY at least once.
-  std::atomic<bool> sawBusy{false};
-  std::atomic<bool> done{false};
-  std::thread poller([&]() {
-    while (!done.load(std::memory_order_acquire)) {
-      if (const auto st = queryStatus(s.session);
-          st == QDMI_DEVICE_STATUS_BUSY) {
-        sawBusy.store(true, std::memory_order_release);
-      }
-    }
-  });
-
+  qdmi_test::ControlledJob running{j.job};
+  EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_BUSY);
+  running.release();
   ASSERT_EQ(MQT_DDSIM_QDMI_device_job_wait(j.job, 0), QDMI_SUCCESS);
-  done.store(true, std::memory_order_release);
-  poller.join();
+  /// Job completion is published just before the device busy count is cleared.
+  const auto deadline =
+      std::chrono::steady_clock::now() + std::chrono::seconds(1);
+  while (queryStatus(s.session) == QDMI_DEVICE_STATUS_BUSY &&
+         std::chrono::steady_clock::now() < deadline) {
+    std::this_thread::yield();
+  }
 
-  EXPECT_TRUE(sawBusy.load(std::memory_order_acquire));
-
-  // After completion, the status should be IDLE.
+  /// After completion, the status should be IDLE.
   EXPECT_EQ(queryStatus(s.session), QDMI_DEVICE_STATUS_IDLE);
 }

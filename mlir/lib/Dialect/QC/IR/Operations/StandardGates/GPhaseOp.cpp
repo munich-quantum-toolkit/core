@@ -8,20 +8,27 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QC/IR/QCOps.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mqt/Dialect/MQT/Utils/Angles.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QC/IR/QCOps.h"
 
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/OperationSupport.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/Support/LogicalResult.h"
 
+#include <cmath>
 #include <variant>
 
 using namespace mlir;
 using namespace mlir::qc;
-using namespace mlir::utils;
+using namespace mlir::mqt;
 
 void GPhaseOp::build(OpBuilder& odsBuilder, OperationState& odsState,
                      const std::variant<double, Value>& theta) {
   auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, thetaOperand);
+}
+
+LogicalResult GPhaseOp::verify() {
+  return verifyGlobalPhaseAngle(getOperation(), getTheta());
 }

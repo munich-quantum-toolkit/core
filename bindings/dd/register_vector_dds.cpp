@@ -9,22 +9,21 @@
  */
 
 #include "dd/DDDefinitions.hpp"
-#include "dd/Edge.hpp"
-#include "dd/Export.hpp"
 #include "dd/Node.hpp"
 
-#include <nanobind/nanobind.h>
-#include <nanobind/ndarray.h>
-#include <nanobind/stl/complex.h> // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/string.h>  // NOLINT(misc-include-cleaner)
-#include <nanobind/stl/vector.h>  // NOLINT(misc-include-cleaner)
+#include "register_dd_export.hpp"
 
-#include <algorithm>
+#include "nanobind/nanobind.h"
+#include "nanobind/ndarray.h"
+#include "nanobind/stl/complex.h" // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/string.h"  // NOLINT(misc-include-cleaner)
+#include "nanobind/stl/vector.h"  // NOLINT(misc-include-cleaner)
+
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <limits>
 #include <memory>
-#include <sstream>
 #include <string>
 
 namespace mqt {
@@ -35,15 +34,15 @@ using namespace nb::literals;
 using Vector = nb::ndarray<nb::numpy, std::complex<dd::fp>, nb::ndim<1>>;
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
-Vector getVector(const dd::vEdge& v, const dd::fp threshold = 0.) {
-  auto vec = v.getVector(threshold);
-  auto dataPtr = std::make_unique<std::complex<dd::fp>[]>(vec.size());
-  std::ranges::copy(vec, dataPtr.get());
-  auto* data = dataPtr.release();
-  const nb::capsule owner(data, [](void* ptr) noexcept {
-    delete[] static_cast<std::complex<dd::fp>*>(ptr);
+Vector getVector(const dd::vEdge& v, const dd::fp threshold) {
+  auto dataPtr = std::make_unique<dd::CVec>(v.getVector(threshold));
+  auto* const data = dataPtr->data();
+  const auto size = dataPtr->size();
+  const nb::capsule owner(dataPtr.get(), [](void* ptr) noexcept {
+    delete static_cast<dd::CVec*>(ptr);
   });
-  return Vector(data, {vec.size()}, owner);
+  [[maybe_unused]] const auto* const releasedDataPtr = dataPtr.release();
+  return Vector(data, {size}, owner);
 }
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
@@ -63,14 +62,30 @@ void registerVectorDDs(const nb::module_& m) {
   vec.def(
       "__getitem__",
       [](const dd::vEdge& v, nb::ssize_t idx) {
-        const auto n = static_cast<nb::ssize_t>(v.size());
-        if (idx < 0) {
-          idx += n;
+        const auto numQubits =
+            v.isTerminal() ? 0U : static_cast<size_t>(v.p->v) + 1U;
+        auto index = static_cast<size_t>(idx);
+        constexpr auto digits = std::numeric_limits<size_t>::digits;
+        if (numQubits < digits) {
+          const auto length = size_t{1} << numQubits;
+          if (idx < 0) {
+            if (size_t{0} - index > length) {
+              throw nb::index_error();
+            }
+            index += length;
+          }
+          if (index >= length) {
+            throw nb::index_error();
+          }
+        } else if (idx < 0 && numQubits > digits) {
+          /// Sign-extend negative indices beyond the native index width.
+          auto decisions = std::string(numQubits, '1');
+          for (auto bit = 0U; bit < digits; ++bit) {
+            decisions[bit] = ((index >> bit) & 1U) != 0U ? '1' : '0';
+          }
+          return v.getValueByPath(numQubits, decisions);
         }
-        if (idx < 0 || idx >= n) {
-          throw nb::index_error();
-        }
-        return v.getValueByIndex(static_cast<std::size_t>(idx));
+        return v.getValueByIndex(index);
       },
       "key"_a, "Get the amplitude of a basis state by index.");
 
@@ -103,54 +118,7 @@ Returns:
 Raises:
     MemoryError: If the memory allocation fails.)pb");
 
-  vec.def(
-      "to_dot",
-      [](const dd::vEdge& e, const bool colored = true,
-         const bool edgeLabels = false, const bool classic = false,
-         const bool memory = false, const bool formatAsPolar = true) {
-        std::ostringstream os;
-        toDot(e, os, colored, edgeLabels, classic, memory, formatAsPolar);
-        return os.str();
-      },
-      "colored"_a = true, "edge_labels"_a = false, "classic"_a = false,
-      "memory"_a = false, "format_as_polar"_a = true,
-      R"pb(Convert the DD to a DOT graph that can be plotted via Graphviz.
-
-Args:
-    colored: Whether to use colored edge weights
-    edge_labels: Whether to include edge weights as labels.
-    classic: Whether to use the classic DD visualization style.
-    memory: Whether to include memory information. For debugging purposes only.
-    format_as_polar: Whether to format the edge weights in polar coordinates.
-
-Returns:
-    The DOT graph.)pb");
-
-  vec.def(
-      "to_svg",
-      [](const dd::vEdge& e, const std::string& filename,
-         const bool colored = true, const bool edgeLabels = false,
-         const bool classic = false, const bool memory = false,
-         const bool formatAsPolar = true) {
-        // replace the filename extension with .dot
-        const auto dotFilename =
-            filename.substr(0, filename.find_last_of('.')) + ".dot";
-        export2Dot(e, dotFilename, colored, edgeLabels, classic, memory, true,
-                   formatAsPolar);
-      },
-      "filename"_a, "colored"_a = true, "edge_labels"_a = false,
-      "classic"_a = false, "memory"_a = false, "format_as_polar"_a = true,
-      R"pb(Convert the DD to an SVG file that can be viewed in a browser.
-
-Requires the `dot` command from Graphviz to be installed and available in the PATH.
-
-Args:
-    filename: The filename of the SVG file. Any file extension will be replaced by `.dot` and then `.svg`.
-    colored: Whether to use colored edge weights.
-    edge_labels: Whether to include edge weights as labels.
-    classic: Whether to use the classic DD visualization style.
-    memory: Whether to include memory information. For debugging purposes only.
-    format_as_polar: Whether to format the edge weights in polar coordinates.)pb");
+  registerDDExport(vec);
 }
 
 } // namespace mqt

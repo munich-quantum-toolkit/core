@@ -8,16 +8,17 @@
  * Licensed under the MIT License
  */
 
-#include "mlir/Dialect/QCO/IR/QCOOps.h"
-#include "mlir/Dialect/QCO/QCOUtils.h"
-#include "mlir/Dialect/QCO/Utils/Matrix.h"
-#include "mlir/Dialect/Utils/Utils.h"
+#include "mqt/Dialect/MQT/Utils/ConstantFolding.h"
+#include "mqt/Dialect/MQT/Utils/Parameters.h"
+#include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
+#include "mqt/Dialect/QCO/Utils/Matrix.h"
 
-#include <mlir/IR/Builders.h>
-#include <mlir/IR/MLIRContext.h>
-#include <mlir/IR/OperationSupport.h>
-#include <mlir/IR/PatternMatch.h>
-#include <mlir/Support/LogicalResult.h>
+#include "mlir/IR/Builders.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
+#include "mlir/IR/PatternMatch.h"
+#include "mlir/Support/LogicalResult.h"
 
 #include <cmath>
 #include <complex>
@@ -26,43 +27,25 @@
 
 using namespace mlir;
 using namespace mlir::qco;
-using namespace mlir::utils;
-
-namespace {
-
-/**
- * @brief Merge subsequent RZ operations on the same qubit by adding their
- * angles.
- */
-struct MergeSubsequentRZ final : OpRewritePattern<RZOp> {
-  using OpRewritePattern::OpRewritePattern;
-
-  LogicalResult matchAndRewrite(RZOp op,
-                                PatternRewriter& rewriter) const override {
-    return mergeOneTargetOneParameter(op, rewriter);
-  }
-};
-
-} // namespace
+using namespace mlir::mqt;
 
 void RZOp::build(OpBuilder& odsBuilder, OperationState& odsState, Value qubitIn,
                  const std::variant<double, Value>& theta) {
-  const auto thetaOperand =
-      variantToValue(odsBuilder, odsState.location, theta);
+  auto thetaOperand = variantToValue(odsBuilder, odsState.location, theta);
   build(odsBuilder, odsState, qubitIn, thetaOperand);
 }
 
 OpFoldResult RZOp::fold(FoldAdaptor /*adaptor*/) {
   if (const auto theta = valueToDouble(getTheta());
-      theta && std::abs(*theta) <= TOLERANCE) {
+      theta && std::abs(*theta) <= PARAMETER_COMPARISON_TOLERANCE) {
     return getInputQubit(0);
   }
   return {};
 }
 
 void RZOp::getCanonicalizationPatterns(RewritePatternSet& results,
-                                       MLIRContext* context) {
-  results.add<MergeSubsequentRZ>(context);
+                                       MLIRContext* /*context*/) {
+  results.add(&mergeOneTargetOneParameter<RZOp>);
 }
 
 Matrix2x2 RZOp::unitaryMatrix(const double theta) {
