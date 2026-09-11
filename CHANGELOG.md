@@ -1,4 +1,4 @@
-<!-- Entries in each category are sorted by merge time, with the latest PRs appearing first. -->
+<!-- v4 entries follow user workflows; PR references are in ascending number order. Earlier releases retain their existing order. -->
 
 # Changelog
 
@@ -10,130 +10,300 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+## [4.0.0] - 2026-09-11
+
+### MQT Core 4: a compiler foundation built on MLIR and LLVM
+
+MQT Core 4 is a major architectural release centered on the
+**MQT Compiler Collection**, a quantum-classical compilation framework built on
+**MLIR and LLVM**. It replaces the classic circuit representation with a
+compiler infrastructure that connects program import, optimization, hardware
+mapping, program exchange, and execution through C++, Python, and `mqt-cc`.
+
+The new foundation makes quantum operations and classical computation part of
+the same structured program. Quantum dialects work with MLIR's classical
+arithmetic, functions, and control flow, so the compiler can represent loops,
+reusable functions, and measurement feedback throughout supported pipelines.
+
+The central changes are:
+
+- **A new program model.** QC provides reference-based quantum operations for
+  frontend interoperability; QCO uses linear quantum values for transformations.
+  QTensor and CBit represent quantum and classical registers. Typed programs,
+  builders, and verifiers expose this structure to compiler users and
+  developers.
+- **A shared, extensible compilation pipeline.** Import OpenQASM or Qiskit,
+  inspect intermediate representations, compose optimization passes, synthesize
+  gates, and place and route programs for a device's operations and topology.
+  Python, C++, and the command-line driver use the same compiler infrastructure.
+- **Compilation connected to execution.** Exchange structured programs through
+  jeff or emit OpenQASM and QIR. QIR lowering produces LLVM text or bitcode for
+  Base and Adaptive profiles; DDSIM uses LLVM JIT compilation and the DD runtime
+  to execute supported QIR through QDMI. QCO also supports direct DD simulation,
+  sampling, and unitary construction.
+- **Workflows built around the compiler.** Typed benchmarks, SDK integrations,
+  device-directed compilation, and six executable tutorials connect program
+  construction to results. Python wheels include the compiler and local
+  simulator; source builds enable the LLVM/MLIR compiler by default.
+
+**Upgrading from v3 requires an explicit migration.** Classic circuit APIs,
+including `QuantumComputation`, are removed. The low-level DD and QDMI libraries
+remain available. Start with the [v3-to-v4 upgrade guide](UPGRADING.md#400) for
+the new program model, migration paths, API replacements, and build changes
+relative to v3.10.0. The entries below retain the contributing PRs and authors.
+
 ### Added
 
-#### General MQT Compiler Collection infrastructure
+#### Compiler APIs and representations
 
-- ✨ Launch the MQT Compiler Collection with the QC and QCO dialects, its core
-  compiler infrastructure, and C++ and Python APIs ([#1264], [#1330], [#1402],
-  [#1428], [#1430], [#1436], [#1443], [#1446], [#1464], [#1465], [#1470],
-  [#1471], [#1472], [#1474], [#1475], [#1506], [#1510], [#1513], [#1521],
-  [#1542], [#1548], [#1550], [#1554], [#1567], [#1569], [#1570], [#1572],
-  [#1573], [#1580], [#1602], [#1603], [#1620], [#1623], [#1626], [#1627],
-  [#1635], [#1638], [#1673], [#1675], [#1700], [#1717], [#1728], [#1730],
-  [#1749], [#1751], [#1762], [#1765], [#1780], [#1781], [#1782], [#1806],
-  [#1807], [#1808], [#1815], [#1824], [#1869], [#1872], [#1914], [#1925],
-  [#1927], [#1935], [#1936], [#1938], [#1975], [#1976], [#2006], [#2014],
-  [#2015], [#2017], [#2026], [#2028], [#2054], [#2058], [#2125], [#2136],
-  [#2149], [#2150], [#2158], [#2194], [#2210], [#2211], [#2215], [#2218],
-  [#2220], [#2323], [#2336], [#2344]) ([**@burgholzer**], [**@denialhaag**],
-  [**@taminob**], [**@DRovara**], [**@li-mingbao**], [**@Ectras**],
-  [**@MatthiasReumann**], [**@simon1hofmann**], [**@J4MMlE**])
-- ✨ Add a library for typed structured quantum benchmarks with versioned
-  instance specifications, analytic references, deterministic manifests, and
-  C++, Python, and command-line interfaces ([#2135], [#2299], [#2315], [#2324],
-  [#2337], [#2380], [#2402], [#2404], [#2409], [#2410], [#2493])
-  ([**@burgholzer**], [**@denialhaag**])
-- ✨ Add DD construction, simulation, statevector extraction, and sampling for
-  QCO programs with structured control and dynamic quantum data, including
-  direct lowering, dense-array helpers, and direct scalar arithmetic evaluation
-  for supported compiler inputs ([#1915], [#1973], [#2077], [#2078], [#2079],
-  [#2334], [#2518]) ([**@simon1hofmann**], [**@burgholzer**])
-- ✨ Add immutable MQT compiler targets, selected payload specifications,
-  payload-aware control-flow legalization, QDMI device integration, ordered
-  operation applicability, directional native synthesis, target compilation
-  through C++, Python, and `mqt-cc`, and device submission APIs ([#2497],
-  [#2495], [#2285], [#2219], [#2162], [#2049], [#1999], [#1993], [#1687])
-  ([**@MatthiasReumann**], [**@simon1hofmann**], [**@burgholzer**])
+- ✨ Introduce the MLIR/LLVM-based MQT Compiler Collection with typed QC, QCO,
+  OpenQASM, jeff, and QIR programs; shared C++ and Python compilation APIs;
+  inspection methods; and the `mqt-cc` driver. ([#1264], [#1470], [#1471],
+  [#1815], [#1914], [#2149], [#2343], [#2519]) ([**@burgholzer**],
+  [**@denialhaag**], [**@simon1hofmann**], [**@taminob**])
 
-#### Import and export
+- ✨ Add QC/QCO program builders with implicit locations, tracked qubits and
+  tensors, register names, gate matrices, and checked linear quantum values.
+  Preserve caller-owned inputs and reject invalid programs at checked
+  boundaries. ([#1402], [#1428], [#1430], [#1443], [#1446], [#1465], [#1472],
+  [#1474], [#1510], [#1542], [#1580], [#1602], [#1620], [#1623], [#1626],
+  [#1627], [#1728], [#1730], [#1781], [#1869], [#1872], [#2014], [#2017],
+  [#2136], [#2213], [#2220], [#2266], [#2295], [#2296], [#2300], [#2514])
+  ([**@burgholzer**], [**@denialhaag**], [**@li-mingbao**],
+  [**@MatthiasReumann**], [**@simon1hofmann**], [**@taminob**])
 
-- ✨ Add Qiskit circuit import, target-aware export, and reusable custom Gate
-  round trips to the compiler collection ([#2031], [#2133], [#2140], [#2150],
-  [#2175], [#2176], [#2178], [#2342], [#2497]) ([**@burgholzer**],
+- ✨ Represent classical registers and structured `if`, `for`, `while`, and
+  switch control flow across QC and QCO, including `break`, `continue`, wide
+  register arithmetic, and reusable quantum functions with tracked wire
+  correspondence. ([#1506], [#1638], [#1700], [#1717], [#1749], [#1806],
+  [#1808], [#1824], [#1925], [#1927], [#1935], [#1936], [#1938], [#1975],
+  [#1976], [#2026], [#2158], [#2181], [#2193], [#2194], [#2297], [#2307],
+  [#2308], [#2320], [#2322], [#2336], [#2344], [#2357], [#2369], [#2443],
+  [#2448], [#2464]) ([**@burgholzer**], [**@denialhaag**], [**@DRovara**],
+  [**@li-mingbao**], [**@MatthiasReumann**], [**@simon1hofmann**])
+
+- ✨ Canonicalize quantum gates, modifiers, and static qubits while preserving
+  phase, wire correspondence, and side effects. Bound angle arithmetic and
+  reduce repeated traversal and validation work. ([#1330], [#1426], [#1436],
+  [#1464], [#1475], [#1550], [#1554], [#1567], [#1569], [#1603], [#1751],
+  [#1762], [#1782], [#1807], [#1985], [#2041], [#2210], [#2281], [#2282],
+  [#2290], [#2291], [#2293], [#2435], [#2477], [#2484], [#2485], [#2486],
+  [#2492], [#2502], [#2505], [#2516], [#2524]) ([**@burgholzer**],
+  [**@denialhaag**], [**@DRovara**], [**@Ectras**], [**@J4MMlE**],
+  [**@simon1hofmann**], [**@taminob**])
+
+#### Compilation for devices
+
+- ✨ Compile for immutable device targets through C++, Python, and `mqt-cc`.
+  Match ordered operation availability, native gates, and payload capabilities;
+  legalize supported control flow; and reuse compiled payloads for explicit
+  device submission. ([#1687], [#1993], [#1999], [#2049], [#2162], [#2211],
+  [#2215], [#2218], [#2219], [#2285], [#2323], [#2495], [#2497], [#2506],
+  [#2510]) ([**@burgholzer**], [**@denialhaag**], [**@MatthiasReumann**],
   [**@simon1hofmann**])
-- ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
-  [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105],
-  [#2339], [#2457], [#2525]) ([**@denialhaag**], [**@burgholzer**])
-- ✨ Add QIR generation support to the MQT Compiler Collection ([#1264],
-  [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570], [#1572],
-  [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751], [#1755],
-  [#1787], [#1815], [#1823], [#1933], [#1978], [#1979], [#2007], [#2026],
-  [#2030], [#2066], [#2217], [#2340]) ([**@burgholzer**], [**@denialhaag**],
-  [**@simon1hofmann**], [**@li-mingbao**], [**@DRovara**],
-  [**@MatthiasReumann**])
-- ✨ Add OpenQASM import and export to the MQT Compiler Collection, including
-  fixed-angle constants and proven affine quantum-register indices ([#1910],
-  [#1987], [#1994], [#2003], [#2026], [#2169], [#2203], [#2338])
-  ([**@burgholzer**], [**@denialhaag**])
 
-#### Passes and transformations
+- ✨ Place and route QCO programs across sparse and directional device
+  topologies, preserving classical feed-forward and quantum wire mappings
+  through branches, loops, and switches. ([#1537], [#1547], [#1581], [#1583],
+  [#1588], [#1600], [#1664], [#1709], [#1716], [#1748], [#1805], [#1870],
+  [#1904], [#1911], [#1951], [#1956], [#1997], [#2004], [#2007], [#2016],
+  [#2060], [#2119], [#2179], [#2184], [#2185], [#2205], [#2240], [#2301],
+  [#2316], [#2351], [#2436], [#2489]) ([**@burgholzer**], [**@denialhaag**],
+  [**@MatthiasReumann**], [**@rturrado**], [**@simon1hofmann**])
 
-- ✨ Add passes for quantum-specific interprocedural optimizations ([#2193])
-  ([**@DRovara**], [**@burgholzer**])
-- ✨ Add Pauli twirling, quantum loop unrolling, and qubit reuse passes
+- ✨ Evaluate multiple initial layouts, including identity and greedy
+  candidates, with CPU-based default trial counts. Reuse routing search storage
+  and avoid repeated program-graph and liveness analysis. ([#1568], [#1574],
+  [#1930], [#2180], [#2488], [#2499], [#2500], [#2517], [#2535])
+  ([**@burgholzer**], [**@MatthiasReumann**], [**@simon1hofmann**])
+
+#### Optimization and synthesis
+
+- ✨ Optimize single-qubit runs with Hadamard lifting, quaternion-based rotation
+  merging, Euler synthesis, and fusion of constant or parameterized unitaries.
+  ([#1407], [#1605], [#1672], [#1674], [#2002], [#2038], [#2228], [#2478])
+  ([**@burgholzer**], [**@denialhaag**], [**@J4MMlE**], [**@lirem101**],
+  [**@MatthiasReumann**], [**@simon1hofmann**], [**@taminob**])
+
+- ✨ Decompose multi-controlled X, Z, phase, Pauli rotations, and SWAP
+  operations. Fuse two-qubit unitaries and synthesize target-native entanglers,
+  including RXX, RYY, RZX, RZZ, iSWAP, ECR, and optimal square-root iSWAP
+  circuits. ([#1774], [#1802], [#1803], [#1809], [#1810], [#1814], [#1832],
+  [#1850], [#1865], [#1961], [#1996], [#1998], [#2001], [#2444], [#2467],
+  [#2468], [#2478], [#2507], [#2531]) ([**@burgholzer**], [**@denialhaag**],
+  [**@simon1hofmann**])
+
+- ✨ Normalize global phases and expand multi-operation quantum modifiers while
+  preserving full-unitary semantics. ([#1986], [#1995], [#2006], [#2015],
+  [#2189]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
+
+- ✨ Add measurement lifting, classical-control replacement, explicit dead-gate
+  elimination, quantum-loop unrolling, qubit reuse, and Pauli twirling.
   ([#1705], [#1718], [#1755], [#1756], [#1923], [#1924], [#2039], [#2118],
-  [#2216], [#2224]) ([**@MatthiasReumann**], [**@DRovara**], [**@burgholzer**],
-  [**@simon1hofmann**])
-- ✨ Add a compiler-target-aware `place-and-route` pass ([#1537], [#1547],
-  [#1568], [#1581], [#1583], [#1588], [#1600], [#1664], [#1709], [#1716],
-  [#1748], [#1805], [#1870], [#1904], [#1911], [#1951], [#1956], [#1997],
-  [#2016], [#2060], [#2179], [#2184], [#2185], [#2205], [#2240], [#2436],
-  [#2500]) ([**@MatthiasReumann**], [**@burgholzer**], [**@rturrado**],
-  [**@simon1hofmann**])
-- ✨ Add modifier and global-phase normalization passes ([#1986], [#1995],
-  [#2015]) ([**@burgholzer**], [**@denialhaag**])
-- ✨ Add single-qubit optimization passes for unitary fusion, Hadamard lifting,
-  and rotation merging ([#1407], [#1605], [#1672], [#1674], [#2002], [#2038],
-  [#2228], [#2478]) ([**@J4MMlE**], [**@lirem101**], [**@burgholzer**],
-  [**@denialhaag**], [**@MatthiasReumann**], [**@simon1hofmann**])
-- ✨ Add multi-qubit decomposition, fusion, and target-native synthesis passes
-  ([#1774], [#1802], [#1803], [#1809], [#1810], [#1814], [#1832], [#1850],
-  [#1865], [#1961], [#1996], [#1998], [#2001], [#2467], [#2468], [#2478])
-  ([**@simon1hofmann**], [**@burgholzer**])
+  [#2216], [#2224]) ([**@burgholzer**], [**@denialhaag**], [**@DRovara**],
+  [**@MatthiasReumann**], [**@simon1hofmann**])
 
-#### Other additions
+#### Program import and exchange
 
-- ✨ Support DDSIM QDMI statevector extraction for Adaptive Profile QIR with
-  classical control flow, dynamic allocation, and terminal measurements. Retain
-  the uncollapsed state after eligible OpenQASM and QIR sampling for lazy
-  statevector and probability queries, with sparse entries in ascending basis
-  order ([#2494]) ([**@burgholzer**]).
-- ✨ Expose ordered shots from DDSIM QDMI QIR jobs, with matching histograms for
-  variable-length recorded outputs ([#2368]) ([**@burgholzer**])
-- 🐳 Add dev container configuration for a consistent local development
-  environment ([#1786]) ([**@denialhaag**])
+- ✨ Import OpenQASM 2 and 3 into QC and emit OpenQASM 3 with reusable gates,
+  structured control flow, fixed-width angles, affine qubit indices, and
+  dynamically bounded loops. Diagnose unsupported inputs and bound frontend and
+  export resource use. ([#1780], [#1910], [#1987], [#1994], [#2003], [#2050],
+  [#2169], [#2203], [#2304], [#2338], [#2456], [#2465], [#2482], [#2483],
+  [#2515]) ([**@burgholzer**], [**@denialhaag**], [**@J4MMlE**],
+  [**@simon1hofmann**])
+
+- ✨ Import and export Qiskit circuits, reusable custom gates, captured
+  classical expressions, and structured control flow. Preserve measurements,
+  wide register comparisons, and target-aware gate definitions. ([#2031],
+  [#2133], [#2140], [#2175], [#2176], [#2223], [#2342], [#2348], [#2398],
+  [#2439], [#2452], [#2461], [#2508]) ([**@burgholzer**], [**@denialhaag**],
+  [**@MatthiasReumann**], [**@simon1hofmann**])
+
+- ✨ Preserve symbolic Qiskit parameters and parameter-vector provenance through
+  supported compiler conversions. ([#2150], [#2178]) ([**@burgholzer**],
+  [**@simon1hofmann**])
+
+- ✨ Exchange jeff programs as bytes or files, preserving supported gates,
+  phase, scalar control-flow state, arrays, and reusable functions. Use native
+  integer arithmetic and report recoverable deserialization failures. ([#1479],
+  [#1548], [#1565], [#1637], [#1676], [#1706], [#1776], [#1836], [#1934],
+  [#1939], [#2000], [#2018], [#2105], [#2212], [#2339], [#2451], [#2457],
+  [#2525]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
+
+- ✨ Generate QIR 2.1 Base and Adaptive profiles as LLVM text or bitcode. Derive
+  capability and resource metadata, lower reusable functions and classical
+  computation, preserve output order, and reject unsupported Base control flow
+  during conversion. ([#1446], [#1513], [#1521], [#1548], [#1567], [#1569],
+  [#1570], [#1572], [#1580], [#1620], [#1624], [#1626], [#1648], [#1710],
+  [#1751], [#1787], [#1815], [#1823], [#1933], [#1978], [#1979], [#2026],
+  [#2030], [#2066], [#2217], [#2294], [#2302], [#2340], [#2446], [#2447],
+  [#2449], [#2463], [#2526]) ([**@burgholzer**], [**@denialhaag**],
+  [**@li-mingbao**], [**@MatthiasReumann**], [**@simon1hofmann**])
+
+#### Decision diagrams and execution
+
+- ✨ Construct functionality, simulate, and sample QCO programs through C++ and
+  Python, with dense-array helpers for supported compiler inputs. Support
+  classical arithmetic, structured control flow, dynamic quantum data, and
+  statically sized entry-block registers for unitary construction. ([#1915],
+  [#1973], [#2077], [#2078], [#2079], [#2334], [#2455], [#2474], [#2518],
+  [#2526]) ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
+
+- ✨ Return ordered DDSIM QIR shots and matching histograms, including
+  variable-length recorded outputs. ([#2368]) ([**@burgholzer**])
+
+- ✨ Extract statevectors from eligible Adaptive QIR with classical control
+  flow, dynamic allocations, and direct helpers. Retain uncollapsed states after
+  eligible OpenQASM and QIR terminal sampling, with lazy dense and sparse result
+  queries. ([#2491], [#2494], [#2512]) ([**@burgholzer**])
+
+- ✨ Capture framed, typed QIR output records through DDSIM with `custom2=True`
+  and result `CUSTOM1`, alongside ordinary shots and counts. ([#2526])
+  ([**@burgholzer**], [**@simon1hofmann**])
+
+#### Structured benchmarks
+
+- ✨ Add typed quantum benchmarks with versioned instance specifications,
+  analytic references, deterministic manifests, and C++, Python, and CLI
+  interfaces. Families cover BV, GHZ, Grover, QFT, QPE, multiplexers,
+  teleportation, QFT adders, modular multiplication, and repeat-until-success
+  programs. ([#2135], [#2299], [#2315], [#2324], [#2337], [#2380], [#2402],
+  [#2404], [#2409], [#2410], [#2493]) ([**@burgholzer**], [**@denialhaag**])
+
+#### Documentation and development
+
+- 📝 Connect compilation, execution, device access, and program exchange in the
+  user guide. Add six executable compiler tutorials and checked Python/C++
+  examples with downloadable notebooks. ([#1555], [#1635], [#1773], [#1899],
+  [#1959], [#2058], [#2165], [#2462], [#2503], [#2509], [#2526])
+  ([**@burgholzer**], [**@denialhaag**], [**@MatthiasReumann**],
+  [**@simon1hofmann**], [**@ystade**])
+
+- 📝 Consolidate development policy and agent guidance, including compiler
+  contracts, terminology, validation, and reproducible benchmarks. ([#1905],
+  [#1907], [#1908], [#1909], [#1960], [#2072], [#2120], [#2128], [#2256],
+  [#2272], [#2354], [#2490], [#2496], [#2498], [#2501], [#2523], [#2526])
+  ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
+
+- 🐳 Add a dev container for local development. ([#1786]) ([**@denialhaag**])
 
 ### Changed
 
-- 🔧 Use Ninja and shared CMake presets on all platforms, removing `-windows`
-  from preset names ([#2426]) ([**@burgholzer**])
-- 💥 Require CMake 3.28 or newer for source builds and embedded projects, use
-  native dependency exclusions and system include handling, and disable unused
-  C++ module scanning ([#2421]) ([**@burgholzer**])
+#### Builds and supported configurations
+
+- 🔧 Build the LLVM/MLIR 23.1 compiler infrastructure and DDSIM device by
+  default. Support LLVM builds without exceptions or RTTI, and use
+  `BUILD_MQT_CORE_MLIR=OFF` for DD/QDMI builds that omit the compiler and DDSIM.
+  ([#1356], [#1549], [#1953], [#2125], [#2127], [#2284], [#2298])
+  ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
+
+- 💥 Require CMake 3.28 or newer for source builds and embedded projects, with
+  native dependency exclusions and system include handling. ([#2421])
+  ([**@burgholzer**])
+
+- ⚡ Reduce build, documentation, and test-discovery overhead. Share Ninja
+  presets and generate C++ lint prerequisites without a full build while
+  honoring disabled interprocedural optimization. ([#1944], [#1954], [#1988],
+  [#2047], [#2075], [#2083], [#2426], [#2459], [#2470]) ([**@burgholzer**],
+  [**@denialhaag**])
+
+- 📦 Use `vcs-versioning` and standard dynamic metadata for SCM-derived Python
+  package versions, with lower bounds for build dependencies. ([#1544], [#2065],
+  [#2145], [#2163]) ([**@burgholzer**], [**@denialhaag**])
+
 - ⬆️ Update clang-tidy to version 23 and adapt the C++ sources to its
-  diagnostics ([#2328]) ([**@simon1hofmann**])
-- 💥 Update QIR execution for QIR 2.1, isolated runtimes, deterministic QDMI
-  sampling, and safe statevector extraction ([#2035], [#2036], [#2246])
-  ([**@burgholzer**], [**@denialhaag**])
-- 🔧 Build the LLVM/MLIR 23.1 compiler infrastructure and DDSIM QIR support by
-  default, with one build option for source builds that omit both parts
-  ([#1356], [#1549], [#1953], [#2284], [#2298]) ([**@burgholzer**],
-  [**@denialhaag**], [**@simon1hofmann**])
+  diagnostics. Format TableGen files and align LLVM include and namespace
+  conventions. ([#1573], [#1673], [#1675], [#1765], [#2028], [#2328])
+  ([**@burgholzer**], [**@denialhaag**], [**@simon1hofmann**])
+
+#### Runtime and client behavior
+
+- 💥 Align QIR execution with QIR 2.1 runtime and QIS signatures, isolated
+  per-job state, deterministic seeded sampling, and checked state extraction.
+  Optimize eligible terminal sampling and output preparation; verify Base output
+  records against QIR-Runner. ([#2034], [#2035], [#2036], [#2044], [#2466],
+  [#2513]) ([**@burgholzer**])
+
+- ⚡ Reduce QDMI discovery, result-decoding, and Slurm overhead. Release the
+  Python GIL during native QDMI calls and avoid repeated capability and result
+  queries. ([#2440], [#2460], [#2472], [#2475], [#2481], [#2511])
+  ([**@burgholzer**])
+
+- ⚡ Reduce DD cache clearing, element lookup, export, and allocation overhead,
+  and avoid repeated QC/QCO conversion work. ([#2441], [#2453], [#2473],
+  [#2474], [#2479]) ([**@burgholzer**])
 
 ### Fixed
 
+#### Decision diagrams
+
+- 🐛 Correct DD cache invalidation after garbage collection, compressed-matrix
+  entries, partial traces, Kronecker products, numeric-table reuse, and logical
+  Python vector indexing. Reject malformed paths and ragged dense matrices.
+  ([#2441], [#2453], [#2479]) ([**@burgholzer**])
+
 - 🐛 Use deterministic, collision-free DOT node IDs, define signed
   complex-weight hashing, and preserve real-number collection flags during
-  relinking ([#2518]) ([**@burgholzer**])
+  relinking. ([#2518]) ([**@burgholzer**])
+
+#### Device access
+
+- 🐛 Preserve QDMI provider lifetimes and target metadata; validate job
+  parameters and decoded results; and propagate execution failures through SDK
+  integrations. ([#2440], [#2454], [#2458], [#2511], [#2512])
+  ([**@burgholzer**])
 
 ### Removed
 
-- 💥 Remove `qc::QuantumComputation`, `MQT::CoreIR`, and `MQT::CoreQASM`. Use
-  compiler-backed QC/QCO APIs in v4 or the MQT Core v3 release series for legacy
-  code ([#2111], [#2112], [#2288]) ([**@burgholzer**], [**@simon1hofmann**])
+- 💥 Remove `qc::QuantumComputation`, `MQT::CoreIR`, `MQT::CoreQASM`, classic
+  Python circuit APIs, and circuit-taking DD helpers. Use compiler-backed QC/QCO
+  APIs or remain on the v3 release series. ([#2054], [#2288])
+  ([**@burgholzer**], [**@simon1hofmann**])
+
 - 💥 Remove the standalone QIR runner and make the QIR runtime and JIT internal
-  DDSIM implementation details ([#2246]) ([**@denialhaag**])
+  DDSIM implementation details. Execute QIR through QDMI. ([#2246])
+  ([**@burgholzer**], [**@denialhaag**])
 
 ## [3.10.0] - 2026-09-05
 
@@ -916,7 +1086,8 @@ for previous changelogs._
 
 <!-- Version links -->
 
-[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v3.10.0...HEAD
+[unreleased]: https://github.com/munich-quantum-toolkit/core/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v4.0.0
 [3.10.0]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.10.0
 [3.9.2]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.2
 [3.9.1]: https://github.com/munich-quantum-toolkit/core/releases/tag/v3.9.1
@@ -943,18 +1114,86 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2535]: https://github.com/munich-quantum-toolkit/core/pull/2535
+[#2531]: https://github.com/munich-quantum-toolkit/core/pull/2531
+[#2526]: https://github.com/munich-quantum-toolkit/core/pull/2526
 [#2525]: https://github.com/munich-quantum-toolkit/core/pull/2525
+[#2524]: https://github.com/munich-quantum-toolkit/core/pull/2524
+[#2523]: https://github.com/munich-quantum-toolkit/core/pull/2523
+[#2519]: https://github.com/munich-quantum-toolkit/core/pull/2519
 [#2518]: https://github.com/munich-quantum-toolkit/core/pull/2518
+[#2517]: https://github.com/munich-quantum-toolkit/core/pull/2517
+[#2516]: https://github.com/munich-quantum-toolkit/core/pull/2516
+[#2515]: https://github.com/munich-quantum-toolkit/core/pull/2515
+[#2514]: https://github.com/munich-quantum-toolkit/core/pull/2514
+[#2513]: https://github.com/munich-quantum-toolkit/core/pull/2513
+[#2512]: https://github.com/munich-quantum-toolkit/core/pull/2512
+[#2511]: https://github.com/munich-quantum-toolkit/core/pull/2511
+[#2510]: https://github.com/munich-quantum-toolkit/core/pull/2510
+[#2509]: https://github.com/munich-quantum-toolkit/core/pull/2509
+[#2508]: https://github.com/munich-quantum-toolkit/core/pull/2508
+[#2507]: https://github.com/munich-quantum-toolkit/core/pull/2507
+[#2506]: https://github.com/munich-quantum-toolkit/core/pull/2506
+[#2505]: https://github.com/munich-quantum-toolkit/core/pull/2505
+[#2503]: https://github.com/munich-quantum-toolkit/core/pull/2503
+[#2502]: https://github.com/munich-quantum-toolkit/core/pull/2502
+[#2501]: https://github.com/munich-quantum-toolkit/core/pull/2501
 [#2500]: https://github.com/munich-quantum-toolkit/core/pull/2500
+[#2499]: https://github.com/munich-quantum-toolkit/core/pull/2499
+[#2498]: https://github.com/munich-quantum-toolkit/core/pull/2498
 [#2497]: https://github.com/munich-quantum-toolkit/core/pull/2497
+[#2496]: https://github.com/munich-quantum-toolkit/core/pull/2496
 [#2495]: https://github.com/munich-quantum-toolkit/core/pull/2495
 [#2494]: https://github.com/munich-quantum-toolkit/core/pull/2494
 [#2493]: https://github.com/munich-quantum-toolkit/core/pull/2493
+[#2492]: https://github.com/munich-quantum-toolkit/core/pull/2492
+[#2491]: https://github.com/munich-quantum-toolkit/core/pull/2491
+[#2490]: https://github.com/munich-quantum-toolkit/core/pull/2490
+[#2489]: https://github.com/munich-quantum-toolkit/core/pull/2489
+[#2488]: https://github.com/munich-quantum-toolkit/core/pull/2488
+[#2486]: https://github.com/munich-quantum-toolkit/core/pull/2486
+[#2485]: https://github.com/munich-quantum-toolkit/core/pull/2485
+[#2484]: https://github.com/munich-quantum-toolkit/core/pull/2484
+[#2483]: https://github.com/munich-quantum-toolkit/core/pull/2483
+[#2482]: https://github.com/munich-quantum-toolkit/core/pull/2482
+[#2481]: https://github.com/munich-quantum-toolkit/core/pull/2481
+[#2479]: https://github.com/munich-quantum-toolkit/core/pull/2479
 [#2478]: https://github.com/munich-quantum-toolkit/core/pull/2478
+[#2477]: https://github.com/munich-quantum-toolkit/core/pull/2477
+[#2475]: https://github.com/munich-quantum-toolkit/core/pull/2475
+[#2474]: https://github.com/munich-quantum-toolkit/core/pull/2474
+[#2473]: https://github.com/munich-quantum-toolkit/core/pull/2473
+[#2472]: https://github.com/munich-quantum-toolkit/core/pull/2472
+[#2470]: https://github.com/munich-quantum-toolkit/core/pull/2470
 [#2468]: https://github.com/munich-quantum-toolkit/core/pull/2468
 [#2467]: https://github.com/munich-quantum-toolkit/core/pull/2467
+[#2466]: https://github.com/munich-quantum-toolkit/core/pull/2466
+[#2465]: https://github.com/munich-quantum-toolkit/core/pull/2465
+[#2464]: https://github.com/munich-quantum-toolkit/core/pull/2464
+[#2463]: https://github.com/munich-quantum-toolkit/core/pull/2463
+[#2462]: https://github.com/munich-quantum-toolkit/core/pull/2462
+[#2461]: https://github.com/munich-quantum-toolkit/core/pull/2461
+[#2460]: https://github.com/munich-quantum-toolkit/core/pull/2460
+[#2459]: https://github.com/munich-quantum-toolkit/core/pull/2459
+[#2458]: https://github.com/munich-quantum-toolkit/core/pull/2458
 [#2457]: https://github.com/munich-quantum-toolkit/core/pull/2457
+[#2456]: https://github.com/munich-quantum-toolkit/core/pull/2456
+[#2455]: https://github.com/munich-quantum-toolkit/core/pull/2455
+[#2454]: https://github.com/munich-quantum-toolkit/core/pull/2454
+[#2453]: https://github.com/munich-quantum-toolkit/core/pull/2453
+[#2452]: https://github.com/munich-quantum-toolkit/core/pull/2452
+[#2451]: https://github.com/munich-quantum-toolkit/core/pull/2451
+[#2449]: https://github.com/munich-quantum-toolkit/core/pull/2449
+[#2448]: https://github.com/munich-quantum-toolkit/core/pull/2448
+[#2447]: https://github.com/munich-quantum-toolkit/core/pull/2447
+[#2446]: https://github.com/munich-quantum-toolkit/core/pull/2446
+[#2444]: https://github.com/munich-quantum-toolkit/core/pull/2444
+[#2443]: https://github.com/munich-quantum-toolkit/core/pull/2443
+[#2441]: https://github.com/munich-quantum-toolkit/core/pull/2441
+[#2440]: https://github.com/munich-quantum-toolkit/core/pull/2440
+[#2439]: https://github.com/munich-quantum-toolkit/core/pull/2439
 [#2436]: https://github.com/munich-quantum-toolkit/core/pull/2436
+[#2435]: https://github.com/munich-quantum-toolkit/core/pull/2435
 [#2426]: https://github.com/munich-quantum-toolkit/core/pull/2426
 [#2421]: https://github.com/munich-quantum-toolkit/core/pull/2421
 [#2410]: https://github.com/munich-quantum-toolkit/core/pull/2410
@@ -962,11 +1201,18 @@ for previous changelogs._
 [#2404]: https://github.com/munich-quantum-toolkit/core/pull/2404
 [#2402]: https://github.com/munich-quantum-toolkit/core/pull/2402
 [#2399]: https://github.com/munich-quantum-toolkit/core/pull/2399
+[#2398]: https://github.com/munich-quantum-toolkit/core/pull/2398
 [#2380]: https://github.com/munich-quantum-toolkit/core/pull/2380
+[#2369]: https://github.com/munich-quantum-toolkit/core/pull/2369
 [#2368]: https://github.com/munich-quantum-toolkit/core/pull/2368
 [#2358]: https://github.com/munich-quantum-toolkit/core/pull/2358
+[#2357]: https://github.com/munich-quantum-toolkit/core/pull/2357
+[#2354]: https://github.com/munich-quantum-toolkit/core/pull/2354
+[#2351]: https://github.com/munich-quantum-toolkit/core/pull/2351
 [#2349]: https://github.com/munich-quantum-toolkit/core/pull/2349
+[#2348]: https://github.com/munich-quantum-toolkit/core/pull/2348
 [#2344]: https://github.com/munich-quantum-toolkit/core/pull/2344
+[#2343]: https://github.com/munich-quantum-toolkit/core/pull/2343
 [#2342]: https://github.com/munich-quantum-toolkit/core/pull/2342
 [#2340]: https://github.com/munich-quantum-toolkit/core/pull/2340
 [#2339]: https://github.com/munich-quantum-toolkit/core/pull/2339
@@ -978,25 +1224,47 @@ for previous changelogs._
 [#2328]: https://github.com/munich-quantum-toolkit/core/pull/2328
 [#2324]: https://github.com/munich-quantum-toolkit/core/pull/2324
 [#2323]: https://github.com/munich-quantum-toolkit/core/pull/2323
+[#2322]: https://github.com/munich-quantum-toolkit/core/pull/2322
+[#2320]: https://github.com/munich-quantum-toolkit/core/pull/2320
+[#2316]: https://github.com/munich-quantum-toolkit/core/pull/2316
 [#2315]: https://github.com/munich-quantum-toolkit/core/pull/2315
+[#2308]: https://github.com/munich-quantum-toolkit/core/pull/2308
+[#2307]: https://github.com/munich-quantum-toolkit/core/pull/2307
+[#2304]: https://github.com/munich-quantum-toolkit/core/pull/2304
+[#2302]: https://github.com/munich-quantum-toolkit/core/pull/2302
+[#2301]: https://github.com/munich-quantum-toolkit/core/pull/2301
+[#2300]: https://github.com/munich-quantum-toolkit/core/pull/2300
 [#2299]: https://github.com/munich-quantum-toolkit/core/pull/2299
 [#2298]: https://github.com/munich-quantum-toolkit/core/pull/2298
+[#2297]: https://github.com/munich-quantum-toolkit/core/pull/2297
+[#2296]: https://github.com/munich-quantum-toolkit/core/pull/2296
+[#2295]: https://github.com/munich-quantum-toolkit/core/pull/2295
+[#2294]: https://github.com/munich-quantum-toolkit/core/pull/2294
+[#2293]: https://github.com/munich-quantum-toolkit/core/pull/2293
+[#2291]: https://github.com/munich-quantum-toolkit/core/pull/2291
+[#2290]: https://github.com/munich-quantum-toolkit/core/pull/2290
+[#2288]: https://github.com/munich-quantum-toolkit/core/pull/2288
 [#2285]: https://github.com/munich-quantum-toolkit/core/pull/2285
 [#2284]: https://github.com/munich-quantum-toolkit/core/pull/2284
 [#2283]: https://github.com/munich-quantum-toolkit/core/pull/2283
-[#2288]: https://github.com/munich-quantum-toolkit/core/pull/2288
+[#2282]: https://github.com/munich-quantum-toolkit/core/pull/2282
+[#2281]: https://github.com/munich-quantum-toolkit/core/pull/2281
 [#2278]: https://github.com/munich-quantum-toolkit/core/pull/2278
+[#2272]: https://github.com/munich-quantum-toolkit/core/pull/2272
 [#2270]: https://github.com/munich-quantum-toolkit/core/pull/2270
+[#2266]: https://github.com/munich-quantum-toolkit/core/pull/2266
 [#2262]: https://github.com/munich-quantum-toolkit/core/pull/2262
 [#2259]: https://github.com/munich-quantum-toolkit/core/pull/2259
 [#2258]: https://github.com/munich-quantum-toolkit/core/pull/2258
 [#2257]: https://github.com/munich-quantum-toolkit/core/pull/2257
+[#2256]: https://github.com/munich-quantum-toolkit/core/pull/2256
 [#2249]: https://github.com/munich-quantum-toolkit/core/pull/2249
 [#2246]: https://github.com/munich-quantum-toolkit/core/pull/2246
 [#2240]: https://github.com/munich-quantum-toolkit/core/pull/2240
 [#2232]: https://github.com/munich-quantum-toolkit/core/pull/2232
 [#2228]: https://github.com/munich-quantum-toolkit/core/pull/2228
 [#2224]: https://github.com/munich-quantum-toolkit/core/pull/2224
+[#2223]: https://github.com/munich-quantum-toolkit/core/pull/2223
 [#2220]: https://github.com/munich-quantum-toolkit/core/pull/2220
 [#2219]: https://github.com/munich-quantum-toolkit/core/pull/2219
 [#2218]: https://github.com/munich-quantum-toolkit/core/pull/2218
@@ -1004,6 +1272,8 @@ for previous changelogs._
 [#2216]: https://github.com/munich-quantum-toolkit/core/pull/2216
 [#2215]: https://github.com/munich-quantum-toolkit/core/pull/2215
 [#2214]: https://github.com/munich-quantum-toolkit/core/pull/2214
+[#2213]: https://github.com/munich-quantum-toolkit/core/pull/2213
+[#2212]: https://github.com/munich-quantum-toolkit/core/pull/2212
 [#2211]: https://github.com/munich-quantum-toolkit/core/pull/2211
 [#2210]: https://github.com/munich-quantum-toolkit/core/pull/2210
 [#2209]: https://github.com/munich-quantum-toolkit/core/pull/2209
@@ -1011,14 +1281,19 @@ for previous changelogs._
 [#2203]: https://github.com/munich-quantum-toolkit/core/pull/2203
 [#2194]: https://github.com/munich-quantum-toolkit/core/pull/2194
 [#2193]: https://github.com/munich-quantum-toolkit/core/pull/2193
+[#2189]: https://github.com/munich-quantum-toolkit/core/pull/2189
 [#2185]: https://github.com/munich-quantum-toolkit/core/pull/2185
 [#2184]: https://github.com/munich-quantum-toolkit/core/pull/2184
+[#2181]: https://github.com/munich-quantum-toolkit/core/pull/2181
+[#2180]: https://github.com/munich-quantum-toolkit/core/pull/2180
 [#2179]: https://github.com/munich-quantum-toolkit/core/pull/2179
 [#2178]: https://github.com/munich-quantum-toolkit/core/pull/2178
 [#2176]: https://github.com/munich-quantum-toolkit/core/pull/2176
 [#2175]: https://github.com/munich-quantum-toolkit/core/pull/2175
 [#2169]: https://github.com/munich-quantum-toolkit/core/pull/2169
 [#2168]: https://github.com/munich-quantum-toolkit/core/pull/2168
+[#2165]: https://github.com/munich-quantum-toolkit/core/pull/2165
+[#2163]: https://github.com/munich-quantum-toolkit/core/pull/2163
 [#2162]: https://github.com/munich-quantum-toolkit/core/pull/2162
 [#2158]: https://github.com/munich-quantum-toolkit/core/pull/2158
 [#2157]: https://github.com/munich-quantum-toolkit/core/pull/2157
@@ -1028,6 +1303,7 @@ for previous changelogs._
 [#2149]: https://github.com/munich-quantum-toolkit/core/pull/2149
 [#2148]: https://github.com/munich-quantum-toolkit/core/pull/2148
 [#2147]: https://github.com/munich-quantum-toolkit/core/pull/2147
+[#2145]: https://github.com/munich-quantum-toolkit/core/pull/2145
 [#2141]: https://github.com/munich-quantum-toolkit/core/pull/2141
 [#2140]: https://github.com/munich-quantum-toolkit/core/pull/2140
 [#2138]: https://github.com/munich-quantum-toolkit/core/pull/2138
@@ -1035,8 +1311,12 @@ for previous changelogs._
 [#2136]: https://github.com/munich-quantum-toolkit/core/pull/2136
 [#2135]: https://github.com/munich-quantum-toolkit/core/pull/2135
 [#2133]: https://github.com/munich-quantum-toolkit/core/pull/2133
+[#2128]: https://github.com/munich-quantum-toolkit/core/pull/2128
+[#2127]: https://github.com/munich-quantum-toolkit/core/pull/2127
 [#2125]: https://github.com/munich-quantum-toolkit/core/pull/2125
 [#2124]: https://github.com/munich-quantum-toolkit/core/pull/2124
+[#2120]: https://github.com/munich-quantum-toolkit/core/pull/2120
+[#2119]: https://github.com/munich-quantum-toolkit/core/pull/2119
 [#2118]: https://github.com/munich-quantum-toolkit/core/pull/2118
 [#2116]: https://github.com/munich-quantum-toolkit/core/pull/2116
 [#2115]: https://github.com/munich-quantum-toolkit/core/pull/2115
@@ -1047,23 +1327,32 @@ for previous changelogs._
 [#2106]: https://github.com/munich-quantum-toolkit/core/pull/2106
 [#2105]: https://github.com/munich-quantum-toolkit/core/pull/2105
 [#2084]: https://github.com/munich-quantum-toolkit/core/pull/2084
+[#2083]: https://github.com/munich-quantum-toolkit/core/pull/2083
 [#2082]: https://github.com/munich-quantum-toolkit/core/pull/2082
 [#2079]: https://github.com/munich-quantum-toolkit/core/pull/2079
 [#2078]: https://github.com/munich-quantum-toolkit/core/pull/2078
 [#2077]: https://github.com/munich-quantum-toolkit/core/pull/2077
+[#2075]: https://github.com/munich-quantum-toolkit/core/pull/2075
 [#2074]: https://github.com/munich-quantum-toolkit/core/pull/2074
+[#2072]: https://github.com/munich-quantum-toolkit/core/pull/2072
 [#2066]: https://github.com/munich-quantum-toolkit/core/pull/2066
+[#2065]: https://github.com/munich-quantum-toolkit/core/pull/2065
 [#2060]: https://github.com/munich-quantum-toolkit/core/pull/2060
 [#2058]: https://github.com/munich-quantum-toolkit/core/pull/2058
 [#2054]: https://github.com/munich-quantum-toolkit/core/pull/2054
+[#2050]: https://github.com/munich-quantum-toolkit/core/pull/2050
 [#2049]: https://github.com/munich-quantum-toolkit/core/pull/2049
+[#2047]: https://github.com/munich-quantum-toolkit/core/pull/2047
 [#2046]: https://github.com/munich-quantum-toolkit/core/pull/2046
+[#2044]: https://github.com/munich-quantum-toolkit/core/pull/2044
 [#2043]: https://github.com/munich-quantum-toolkit/core/pull/2043
 [#2042]: https://github.com/munich-quantum-toolkit/core/pull/2042
+[#2041]: https://github.com/munich-quantum-toolkit/core/pull/2041
 [#2039]: https://github.com/munich-quantum-toolkit/core/pull/2039
 [#2038]: https://github.com/munich-quantum-toolkit/core/pull/2038
 [#2036]: https://github.com/munich-quantum-toolkit/core/pull/2036
 [#2035]: https://github.com/munich-quantum-toolkit/core/pull/2035
+[#2034]: https://github.com/munich-quantum-toolkit/core/pull/2034
 [#2031]: https://github.com/munich-quantum-toolkit/core/pull/2031
 [#2030]: https://github.com/munich-quantum-toolkit/core/pull/2030
 [#2028]: https://github.com/munich-quantum-toolkit/core/pull/2028
@@ -1080,6 +1369,7 @@ for previous changelogs._
 [#2007]: https://github.com/munich-quantum-toolkit/core/pull/2007
 [#2006]: https://github.com/munich-quantum-toolkit/core/pull/2006
 [#2005]: https://github.com/munich-quantum-toolkit/core/pull/2005
+[#2004]: https://github.com/munich-quantum-toolkit/core/pull/2004
 [#2003]: https://github.com/munich-quantum-toolkit/core/pull/2003
 [#2002]: https://github.com/munich-quantum-toolkit/core/pull/2002
 [#2001]: https://github.com/munich-quantum-toolkit/core/pull/2001
@@ -1093,8 +1383,10 @@ for previous changelogs._
 [#1993]: https://github.com/munich-quantum-toolkit/core/pull/1993
 [#1992]: https://github.com/munich-quantum-toolkit/core/pull/1992
 [#1989]: https://github.com/munich-quantum-toolkit/core/pull/1989
+[#1988]: https://github.com/munich-quantum-toolkit/core/pull/1988
 [#1987]: https://github.com/munich-quantum-toolkit/core/pull/1987
 [#1986]: https://github.com/munich-quantum-toolkit/core/pull/1986
+[#1985]: https://github.com/munich-quantum-toolkit/core/pull/1985
 [#1984]: https://github.com/munich-quantum-toolkit/core/pull/1984
 [#1983]: https://github.com/munich-quantum-toolkit/core/pull/1983
 [#1980]: https://github.com/munich-quantum-toolkit/core/pull/1980
@@ -1108,17 +1400,23 @@ for previous changelogs._
 [#1967]: https://github.com/munich-quantum-toolkit/core/pull/1967
 [#1965]: https://github.com/munich-quantum-toolkit/core/pull/1965
 [#1961]: https://github.com/munich-quantum-toolkit/core/pull/1961
+[#1960]: https://github.com/munich-quantum-toolkit/core/pull/1960
+[#1959]: https://github.com/munich-quantum-toolkit/core/pull/1959
 [#1957]: https://github.com/munich-quantum-toolkit/core/pull/1957
 [#1956]: https://github.com/munich-quantum-toolkit/core/pull/1956
+[#1954]: https://github.com/munich-quantum-toolkit/core/pull/1954
 [#1953]: https://github.com/munich-quantum-toolkit/core/pull/1953
 [#1952]: https://github.com/munich-quantum-toolkit/core/pull/1952
 [#1951]: https://github.com/munich-quantum-toolkit/core/pull/1951
 [#1950]: https://github.com/munich-quantum-toolkit/core/pull/1950
+[#1944]: https://github.com/munich-quantum-toolkit/core/pull/1944
+[#1939]: https://github.com/munich-quantum-toolkit/core/pull/1939
 [#1938]: https://github.com/munich-quantum-toolkit/core/pull/1938
 [#1936]: https://github.com/munich-quantum-toolkit/core/pull/1936
 [#1935]: https://github.com/munich-quantum-toolkit/core/pull/1935
 [#1934]: https://github.com/munich-quantum-toolkit/core/pull/1934
 [#1933]: https://github.com/munich-quantum-toolkit/core/pull/1933
+[#1930]: https://github.com/munich-quantum-toolkit/core/pull/1930
 [#1927]: https://github.com/munich-quantum-toolkit/core/pull/1927
 [#1925]: https://github.com/munich-quantum-toolkit/core/pull/1925
 [#1924]: https://github.com/munich-quantum-toolkit/core/pull/1924
@@ -1128,7 +1426,12 @@ for previous changelogs._
 [#1912]: https://github.com/munich-quantum-toolkit/core/pull/1912
 [#1911]: https://github.com/munich-quantum-toolkit/core/pull/1911
 [#1910]: https://github.com/munich-quantum-toolkit/core/pull/1910
+[#1909]: https://github.com/munich-quantum-toolkit/core/pull/1909
+[#1908]: https://github.com/munich-quantum-toolkit/core/pull/1908
+[#1907]: https://github.com/munich-quantum-toolkit/core/pull/1907
+[#1905]: https://github.com/munich-quantum-toolkit/core/pull/1905
 [#1904]: https://github.com/munich-quantum-toolkit/core/pull/1904
+[#1899]: https://github.com/munich-quantum-toolkit/core/pull/1899
 [#1897]: https://github.com/munich-quantum-toolkit/core/pull/1897
 [#1895]: https://github.com/munich-quantum-toolkit/core/pull/1895
 [#1887]: https://github.com/munich-quantum-toolkit/core/pull/1887
@@ -1170,6 +1473,7 @@ for previous changelogs._
 [#1780]: https://github.com/munich-quantum-toolkit/core/pull/1780
 [#1776]: https://github.com/munich-quantum-toolkit/core/pull/1776
 [#1774]: https://github.com/munich-quantum-toolkit/core/pull/1774
+[#1773]: https://github.com/munich-quantum-toolkit/core/pull/1773
 [#1766]: https://github.com/munich-quantum-toolkit/core/pull/1766
 [#1765]: https://github.com/munich-quantum-toolkit/core/pull/1765
 [#1762]: https://github.com/munich-quantum-toolkit/core/pull/1762
@@ -1222,6 +1526,7 @@ for previous changelogs._
 [#1583]: https://github.com/munich-quantum-toolkit/core/pull/1583
 [#1581]: https://github.com/munich-quantum-toolkit/core/pull/1581
 [#1580]: https://github.com/munich-quantum-toolkit/core/pull/1580
+[#1574]: https://github.com/munich-quantum-toolkit/core/pull/1574
 [#1573]: https://github.com/munich-quantum-toolkit/core/pull/1573
 [#1572]: https://github.com/munich-quantum-toolkit/core/pull/1572
 [#1571]: https://github.com/munich-quantum-toolkit/core/pull/1571
@@ -1231,11 +1536,13 @@ for previous changelogs._
 [#1567]: https://github.com/munich-quantum-toolkit/core/pull/1567
 [#1565]: https://github.com/munich-quantum-toolkit/core/pull/1565
 [#1564]: https://github.com/munich-quantum-toolkit/core/pull/1564
+[#1555]: https://github.com/munich-quantum-toolkit/core/pull/1555
 [#1554]: https://github.com/munich-quantum-toolkit/core/pull/1554
 [#1550]: https://github.com/munich-quantum-toolkit/core/pull/1550
 [#1549]: https://github.com/munich-quantum-toolkit/core/pull/1549
 [#1548]: https://github.com/munich-quantum-toolkit/core/pull/1548
 [#1547]: https://github.com/munich-quantum-toolkit/core/pull/1547
+[#1544]: https://github.com/munich-quantum-toolkit/core/pull/1544
 [#1542]: https://github.com/munich-quantum-toolkit/core/pull/1542
 [#1537]: https://github.com/munich-quantum-toolkit/core/pull/1537
 [#1528]: https://github.com/munich-quantum-toolkit/core/pull/1528
@@ -1264,6 +1571,7 @@ for previous changelogs._
 [#1436]: https://github.com/munich-quantum-toolkit/core/pull/1436
 [#1430]: https://github.com/munich-quantum-toolkit/core/pull/1430
 [#1428]: https://github.com/munich-quantum-toolkit/core/pull/1428
+[#1426]: https://github.com/munich-quantum-toolkit/core/pull/1426
 [#1415]: https://github.com/munich-quantum-toolkit/core/pull/1415
 [#1414]: https://github.com/munich-quantum-toolkit/core/pull/1414
 [#1413]: https://github.com/munich-quantum-toolkit/core/pull/1413

@@ -19,9 +19,16 @@
 # MQT Core - The Backbone of the Munich Quantum Toolkit (MQT)
 
 MQT Core is a collection of open-source C++20 and Python libraries for quantum
-computing. Generate programs, compile them for a device, execute them, and
-analyze the results. Its libraries form the backbone of the
+computing. Its MQT Compiler Collection is built on **MLIR and LLVM** and
+connects structured quantum-classical programs to optimization, hardware
+mapping, and execution. Its libraries form the backbone of the
 [_Munich Quantum Toolkit (MQT)_](https://mqt.readthedocs.io).
+
+**MQT Core 4 is a major architectural release:** the compiler's program
+representations replace the classic circuit APIs. Start with the
+[v4 release overview](CHANGELOG.md#400---2026-09-11) and
+[v3-to-v4 upgrade guide](UPGRADING.md#400) when migrating an existing
+application. The low-level DD and QDMI libraries remain available.
 
 <p align="center">
   <a href="https://mqt.readthedocs.io/projects/core">

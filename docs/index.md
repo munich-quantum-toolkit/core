@@ -1,9 +1,16 @@
 # MQT Core
 
-MQT Core provides reusable C++20 and Python libraries for quantum computing:
-compilers, decision diagrams, QIR execution, QDMI device access, SDK and HPC
-integrations, and structured benchmarks. It forms the backbone of the
+MQT Core provides reusable C++20 and Python libraries for quantum computing: the
+**MQT Compiler Collection**, built on **MLIR and LLVM**, together with decision
+diagrams, QIR execution, QDMI device access, SDK and HPC integrations, and
+structured benchmarks. It forms the backbone of the
 {doc}`Munich Quantum Toolkit (MQT) <mqt:index>`.
+
+**MQT Core 4 is a major architectural release.** Structured compiler
+representations replace the classic circuit APIs and connect quantum-classical
+programs to optimization, hardware mapping, and execution. For the release
+highlights, see the {doc}`v4 overview <CHANGELOG>`. Existing users should start
+with the {doc}`v3-to-v4 migration guide <UPGRADING>`.
 
 ## Start with your task
 

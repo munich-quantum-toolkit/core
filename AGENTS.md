@@ -56,10 +56,11 @@ and disclosure for agent-assisted contributions.
   supported presets and keep machine setup in local configuration.
 - Remove obsolete scaffolding and suppressions. Retain only necessary, narrowly
   scoped workarounds with a technical reason, reproducer, and removal condition.
-- Until v4 is released, fold changes to unreleased functionality into its
-  existing changelog feature entry or defer them to a dedicated changelog
-  update. Do not add `UPGRADING.md` sections for unreleased changes. Document
-  changes to released APIs, especially breaking changes, in both files.
+- Follow the
+  [release documentation policy](docs/development.md#release-documentation).
+  Record notable changes under Unreleased. Fold refinements to never-released
+  functionality into its feature entry; document migrations from released APIs,
+  not intermediate unreleased designs.
 - Changelog entries name the PR and every contributing author, for example
   `([#123]) ([**@username**])`, with link definitions at the bottom.
 - Never commit or print secrets or personal data. Use documented environment

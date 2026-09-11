@@ -217,6 +217,35 @@ relying on prose.
 [google-cpp]: https://google.github.io/styleguide/cppguide.html
 [llvm-coding-standards]: https://llvm.org/docs/CodingStandards.html
 
+## Release documentation
+
+Record notable user-facing changes in the current Unreleased section of
+`CHANGELOG.md`, with PR references and all contributing human authors. Group
+entries by user workflow and subsystem. Fold refinements to functionality that
+has never shipped into its feature entry. After release, describe subsequent
+changes relative to that published behavior.
+
+Lead major architectural releases with the new program model, enabled workflows,
+and consequences for existing users before listing individual changes. Keep the
+release overview and migration paths visible from the README and documentation
+home page. Preserve PR and contributor references when regrouping entries.
+
+Document breaking changes to released interfaces in both `CHANGELOG.md` and
+`UPGRADING.md`. Give the replacement, changed semantics, or lack of a
+replacement. Do not add migrations between intermediate unreleased APIs.
+Preserve published release sections except when correcting a verified error.
+
+Before a release, reconcile the Git history, merged PRs, and existing entries.
+Account for maintenance branches, backports, and frontports; merge dates alone
+do not define what ships for the first time. Include relevant feature and fix
+PRs, verify contributor attribution, and record why maintenance-only changes do
+not need public entries. Check migration examples against the released and
+proposed APIs, build the executable documentation, and check its links.
+
+Keep Unreleased until the final version and release date are set. Version tags
+drive package metadata; do not edit generated version files to stage a release.
+Release preparation does not itself publish a release.
+
 ## Documentation validation
 
 Install Python 3.14, LLVM/MLIR 23.1, Doxygen, and Graphviz before building the
