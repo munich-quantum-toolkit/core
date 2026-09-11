@@ -258,7 +258,10 @@ test-groups = [ "test" ]
 test-sources = [
   "test/python",
   "test/circuits",
+  "test/slurm/run_integration.py",
   "json",
+  "bindings/mlir/qiskit/SupportedVersions.inc",
+  "scripts/check_docs_links.py",
   "scripts/qiskit_c_api_adopt.py",
   "vendor/qiskit-c-api/2.5.0",
 ]
