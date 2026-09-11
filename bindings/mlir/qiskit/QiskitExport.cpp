@@ -20,6 +20,7 @@
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/Translation/MeasurementStores.h"
 #include "mqt/Dialect/QC/Translation/StandardGate.h"
 #include "mqt/Support/IntegerExpressions.h"
 
@@ -43,7 +44,6 @@
 #include "mlir/IR/Region.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/ValueRange.h"
-#include "mlir/Interfaces/SideEffectInterfaces.h"
 #include "mlir/Support/WalkResult.h"
 #include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 
@@ -52,11 +52,9 @@
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/STLExtras.h"
-#include "llvm/ADT/SmallBitVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringSet.h"
-#include "llvm/ADT/TypeSwitch.h"
 #include "llvm/Support/Casting.h"
 
 #include <algorithm>
@@ -2078,115 +2076,29 @@ static void validateControlFlowDepth(const size_t controlFlowDepth) {
   }
 }
 
-/// Put each supported measurement store at its emitted position before
-/// snapshot analysis. Quantum operations keep their order.
+/// Put measurement stores at their emitted positions before snapshot analysis.
 static void prepareMeasurementStores(mlir::func::FuncOp function) {
-  function.walk([&](mlir::Block* block) {
-    auto measurements = block->getOps<mlir::qc::MeasureOp>();
-    if (llvm::all_of(measurements, [](mlir::qc::MeasureOp measure) {
-          auto destination = measurementDestination(measure);
-          return destination == measure->getNextNode() &&
-                 mlir::getConstantIntValue(destination.getIndex()).has_value();
-        })) {
-      return;
+  const auto destinations =
+      mlir::qc::findMeasurementStores(function, /*allowOtherUses=*/true);
+  function.walk([&](mlir::qc::MeasureOp measure) {
+    auto destination = measurementDestination(measure);
+    const auto index = mlir::getConstantIntValue(destination.getIndex());
+    if (!index) {
+      throw std::runtime_error(
+          "QC measurement uses a dynamic classical destination");
     }
-    struct Accesses {
-      llvm::SmallVector<size_t> positions;
-      size_t next = 0U;
-    };
-    Accesses unknownAccesses;
-    llvm::DenseMap<mlir::Value, Accesses> registerAccesses;
-    llvm::DenseMap<std::pair<mlir::Value, int64_t>, Accesses> bitAccesses;
-    llvm::DenseMap<mlir::Operation*, size_t> positions;
-    for (auto [position, operation] : llvm::enumerate(*block)) {
-      positions[&operation] = position;
-      operation.walk<mlir::WalkOrder::PreOrder>([&](mlir::Operation*
-                                                        candidate) {
-        return llvm::TypeSwitch<mlir::Operation*, mlir::WalkResult>(candidate)
-            .Case([](mlir::qc::UnitaryOpInterface) {
-              /// Verified unitary regions cannot access classical memory.
-              return mlir::WalkResult::skip();
-            })
-            .Case([&](mlir::MemoryEffectOpInterface mem) {
-              llvm::SmallVector<mlir::MemoryEffects::EffectInstance> effects;
-              mem.getEffects(effects);
-              const auto bit =
-                  llvm::TypeSwitch<mlir::Operation*, std::optional<int64_t>>(
-                      candidate)
-                      .Case<mlir::cbit::LoadOp, mlir::cbit::StoreOp>(
-                          [](auto access) {
-                            return mlir::getConstantIntValue(access.getIndex());
-                          })
-                      .Default(std::nullopt);
-              for (const auto& effect : effects) {
-                auto value = effect.getValue();
-                if (!value) {
-                  unknownAccesses.positions.push_back(position);
-                } else if (bit) {
-                  bitAccesses[{value, *bit}].positions.push_back(position);
-                } else {
-                  registerAccesses[value].positions.push_back(position);
-                }
-              }
-              return mlir::WalkResult::advance();
-            })
-            .Default([&](mlir::Operation* op) {
-              if (!op->hasTrait<mlir::OpTrait::HasRecursiveMemoryEffects>()) {
-                unknownAccesses.positions.push_back(position);
-              }
-              return mlir::WalkResult::advance();
-            });
-      });
+    if (!destinations.contains(measure)) {
+      throw std::runtime_error("QC measurement destination must follow the "
+                               "measurement in the same block");
     }
-    llvm::SmallBitVector moved(positions.size());
-    const auto conflicts = [&](Accesses& accesses, size_t measurement,
-                               size_t destination) {
-      /// Queries follow block order. Relocated stores precede every later
-      /// query.
-      while (accesses.next < accesses.positions.size() &&
-             (accesses.positions[accesses.next] <= measurement ||
-              moved[accesses.positions[accesses.next]])) {
-        ++accesses.next;
-      }
-      return accesses.next < accesses.positions.size() &&
-             accesses.positions[accesses.next] < destination;
-    };
-    for (auto measure : measurements) {
-      auto destination = measurementDestination(measure);
-      const auto index = mlir::getConstantIntValue(destination.getIndex());
-      if (!index) {
-        throw std::runtime_error(
-            "QC measurement uses a dynamic classical destination");
-      }
-      if (destination->getBlock() != block ||
-          positions.at(destination) <= positions.at(measure)) {
-        throw std::runtime_error("QC measurement destination must follow the "
-                                 "measurement in the same block");
-      }
-      const auto measurementPosition = positions.at(measure);
-      const auto destinationPosition = positions.at(destination);
-      const auto reg = registerAccesses.find(destination.getReg());
-      const auto bit = bitAccesses.find({destination.getReg(), *index});
-      if (conflicts(unknownAccesses, measurementPosition,
-                    destinationPosition) ||
-          (reg != registerAccesses.end() &&
-           conflicts(reg->second, measurementPosition, destinationPosition)) ||
-          (bit != bitAccesses.end() &&
-           conflicts(bit->second, measurementPosition, destinationPosition))) {
-        throw std::runtime_error("QC measurement destination must follow the "
-                                 "measurement in the same block");
-      }
-      if (auto* definition = destination.getIndex().getDefiningOp();
-          definition && definition->getBlock() == block &&
-          positions.at(definition) > measurementPosition) {
-        mlir::OpBuilder builder(measure);
-        destination.getIndexMutable().assign(
-            mlir::arith::ConstantIndexOp::create(builder, measure.getLoc(),
-                                                 *index));
-      }
-      destination->moveAfter(measure);
-      moved.set(destinationPosition);
+    if (auto* definition = destination.getIndex().getDefiningOp();
+        definition && definition->getBlock() == measure->getBlock() &&
+        measure->isBeforeInBlock(definition)) {
+      mlir::OpBuilder builder(measure);
+      destination.getIndexMutable().assign(mlir::arith::ConstantIndexOp::create(
+          builder, measure.getLoc(), *index));
     }
+    destination->moveAfter(measure);
   });
 }
 

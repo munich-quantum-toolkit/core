@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
+#include "mqt/Dialect/QC/Translation/MeasurementStores.h"
 #include "mqt/Support/IntegerExpressions.h"
 #include "mqt/Target/OpenQASM/Frontend.h"
 #include "mqt/Target/OpenQASM/GateCatalog.h"
@@ -120,6 +121,7 @@ public:
         failed(collectProgramShape())) {
       return failure();
     }
+    measurementStores = findMeasurementStores(function);
     for (auto gate : gateFunctions_) {
       if (failed(emitGateDefinition(gate))) {
         return failure();
@@ -154,6 +156,7 @@ public:
   }
 
 private:
+  DenseMap<Operation*, cbit::StoreOp> measurementStores;
   ModuleOp moduleOp;
   func::FuncOp function;
   raw_indented_ostream* output = nullptr;
@@ -1230,13 +1233,7 @@ private:
       return failure();
     }
     if (auto measurement = store.getValue().getDefiningOp<qc::MeasureOp>();
-        measurement && measurement.getResult().hasOneUse() &&
-        measurement->getNextNode() == store.getOperation()) {
-      auto qubit = emitQubit(measurement.getQubit());
-      if (failed(qubit)) {
-        return failure();
-      }
-      *output << *target << " = measure " << *qubit << ";\n";
+        measurement && measurementStores.contains(measurement)) {
       return success();
     }
     auto value = emitExpression(store.getValue());
@@ -1248,16 +1245,19 @@ private:
   }
 
   [[nodiscard]] LogicalResult emitMeasurement(qc::MeasureOp measurement) {
-    if (measurement.getResult().hasOneUse()) {
-      if (auto store = dyn_cast<cbit::StoreOp>(
-              *measurement.getResult().getUsers().begin());
-          store && measurement->getNextNode() == store.getOperation()) {
-        return success();
-      }
-    }
     auto qubit = emitQubit(measurement.getQubit());
     if (failed(qubit)) {
       return failure();
+    }
+    if (const auto destination = measurementStores.find(measurement);
+        destination != measurementStores.end()) {
+      auto store = destination->second;
+      auto target = emitBitReference(store.getReg(), store.getIndex());
+      if (failed(target)) {
+        return failure();
+      }
+      *output << *target << " = measure " << *qubit << ";\n";
+      return success();
     }
     if (measurement.getResult().use_empty()) {
       *output << "measure " << *qubit << ";\n";

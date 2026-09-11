@@ -9,14 +9,18 @@ mystnb:
 # MQT Compiler Collection
 
 The MQT Compiler Collection compiles, optimizes, and exchanges structured
-quantum programs. It provides the circuit and program interface in MQT Core v4
-through three interfaces that share the same MLIR representations and passes:
+quantum programs. Its three interfaces share the same MLIR representations and
+passes:
 
 | Interface    | Entry point                                                         |
 | ------------ | ------------------------------------------------------------------- |
 | Command line | `mqt-cc`, with examples below                                       |
 | Python       | {py:mod}`mqt.core.mlir`                                             |
 | C++          | [Source-tree compiler API](target_compilation.md#c-source-tree-api) |
+
+For a guided explanation of the representations and transformations, start with
+the {doc}`getting-started tutorial <../tutorials/index>`. This guide documents
+the interfaces and options for applying those concepts.
 
 The Python examples below accept source strings, {code}`.qasm`, {code}`.mlir`,
 and {code}`.jeff` files, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit`
@@ -178,8 +182,6 @@ qco = direct.to_qco(copy=True)
 restored = qco.to_qiskit()
 assert qco.is_valid
 ```
-
-This compiler route is the Qiskit circuit interface in MQT Core v4.
 
 See {doc}`qiskit` for supported circuit features and translation limitations.
 

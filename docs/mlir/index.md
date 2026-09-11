@@ -4,6 +4,11 @@ The MQT Compiler Collection (`mqt-cc`) compiles quantum-classical programs using
 the Multi-Level Intermediate Representation (MLIR). For an overview, see
 {cite:p}`MQTCompilerCollection2026`.
 
+The {doc}`getting-started tutorial <../tutorials/index>` explains
+representations, optimizations, control flow, and hardware constraints through
+three executable Python notebooks. It assumes basic quantum computing and
+Python, but no MLIR experience.
+
 The {doc}`compiler guide <mqt_compiler_collection>` introduces the Python,
 command-line, and C++ interfaces for compiling and inspecting quantum programs.
 The {doc}`target-compilation guide <target_compilation>` shows how to compile
