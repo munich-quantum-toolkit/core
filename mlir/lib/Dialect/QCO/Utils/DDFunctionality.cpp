@@ -1405,9 +1405,12 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
       })
       .Case([&](qtensor::AllocOp alloc) -> LogicalResult {
         if constexpr (!std::is_same_v<StateDD, dd::VectorDD>) {
-          return alloc.emitError()
-                 << "qtensor allocation is not supported for QCO DD "
-                    "functionality construction";
+          if (!walk.tensors->lookup(alloc.getResult())) {
+            return alloc.emitError()
+                   << "dynamic qtensor allocation is not supported for QCO DD "
+                      "functionality construction";
+          }
+          return success();
         } else {
           auto size = lookupIndex(alloc.getSize(), *walk.classical, alloc);
           if (failed(size)) {
@@ -1876,13 +1879,32 @@ prepare(func::FuncOp func, dd::Package& dd,
     qubits.numQubits = next;
   }
   if (bindEntryAllocations) {
-    for (AllocOp alloc : func.getBody().front().getOps<AllocOp>()) {
-      if (qubits.numQubits >= dd::Package::MAX_POSSIBLE_QUBITS) {
-        return alloc.emitError()
-               << "QCO function exceeds the supported qubit range";
+    for (Operation& operation : func.getBody().front()) {
+      if (auto alloc = dyn_cast<AllocOp>(operation)) {
+        if (qubits.numQubits >= dd::Package::MAX_POSSIBLE_QUBITS) {
+          return alloc.emitError()
+                 << "QCO function exceeds the supported qubit range";
+        }
+        qubits.bind(alloc.getResult(),
+                    static_cast<dd::Qubit>(qubits.numQubits++));
+      } else if (auto tensorAlloc = dyn_cast<qtensor::AllocOp>(operation)) {
+        const auto type = tensorAlloc.getResult().getType();
+        if (type.isDynamicDim(0)) {
+          continue;
+        }
+        const auto count = static_cast<size_t>(type.getDimSize(0));
+        if (count > dd::Package::MAX_POSSIBLE_QUBITS - qubits.numQubits) {
+          return tensorAlloc.emitError()
+                 << "QCO function exceeds the supported qubit range";
+        }
+        TensorSlots slots;
+        slots.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+          slots.emplace_back(static_cast<dd::Qubit>(qubits.numQubits++));
+        }
+        prepared.tensors.bind(tensorAlloc.getResult(),
+                              std::make_shared<TensorSlots>(std::move(slots)));
       }
-      qubits.bind(alloc.getResult(),
-                  static_cast<dd::Qubit>(qubits.numQubits++));
     }
   }
   if (dd.qubits() < qubits.numQubits) {

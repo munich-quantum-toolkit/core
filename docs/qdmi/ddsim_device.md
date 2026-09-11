@@ -75,6 +75,26 @@ order. Their keys and values share that order. Sparse exports require at most 64
 qubits on a 64-bit platform; wider states return `QDMI_ERROR_NOTSUPPORTED`
 because their basis indices do not fit the sparse representation.
 
+## QIR output capture
+
+Set `QDMI_DEVICE_JOB_PARAMETER_CUSTOM2` to a `bool` value of `true` before
+submission to capture textual QIR output. In Python, pass `custom2=True` to
+`submit_job` or `submit_program`. This option requires a QIR Base or Adaptive
+program and a positive shot count; other jobs reject it with
+`QDMI_ERROR_NOTSUPPORTED`.
+
+After successful execution, `QDMI_JOB_RESULT_CUSTOM1` returns the complete,
+null-terminated output stream. Its reported size includes the terminator. The
+Python equivalent is `job.get_custom_result(CustomProperty.CUSTOM1, str)`; C++
+clients use `job.getCustomResult<std::string>(qdmi::CustomProperty::Custom1)`.
+Without capture, that result is unsupported (`None` in Python).
+
+Capture retains the QIR header, per-shot metadata, typed output records, and
+exit codes in memory. It executes the program once per shot, so capture jobs
+provide counts and shots but no uncollapsed statevector. Default sampling keeps
+its optimized path. See the
+[executable QIR example](../qir/index.md#retrieve-the-qir-output-stream-through-qdmi).
+
 ## Compile and execute
 
 Compile a Bell circuit, sample its measurements, and inspect its statevector.

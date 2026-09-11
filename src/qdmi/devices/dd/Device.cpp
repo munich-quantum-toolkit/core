@@ -48,6 +48,7 @@
 #include <optional>
 #include <ranges>
 #include <span>
+#include <sstream>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -472,6 +473,15 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::setParameter(
     }
     seed_ = *static_cast<const int*>(value);
     return QDMI_SUCCESS;
+  case QDMI_DEVICE_JOB_PARAMETER_CUSTOM2:
+    if (value == nullptr) {
+      return QDMI_SUCCESS;
+    }
+    if (size != sizeof(bool)) {
+      return QDMI_ERROR_INVALIDARGUMENT;
+    }
+    captureQIROutput_ = *static_cast<const bool*>(value);
+    return QDMI_SUCCESS;
   default:
     return QDMI_ERROR_NOTSUPPORTED;
   }
@@ -588,14 +598,22 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramSampling()
     const auto seed =
         seed_ ? std::optional<uint64_t>{static_cast<uint64_t>(*seed_)}
               : std::nullopt;
+    std::optional<std::ostringstream> output;
     auto jitSession =
         qir::JitSession(irBytes, "QDMI job", qir::Execution::Sampling, seed);
-    jitSession.runtime().disableOutput();
+    if (captureQIROutput_) {
+      jitSession.runtime().setOstream(output.emplace());
+    } else {
+      jitSession.runtime().disableOutput();
+    }
     bool stateAvailable = false;
     if (const auto rc = jitSession.sample(numShots_, shots_, &stateAvailable);
         rc != 0) {
       std::cerr << "Error: QIR program failed with error: " << rc << '\n';
       return false;
+    }
+    if (output) {
+      qirOutput_ = std::move(*output).str();
     }
     for (auto& shot : shots_) {
       /// QDMI spells the highest-index output bit first.
@@ -636,6 +654,11 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::submitQIRProgramStateExtraction()
 auto MQT_DDSIM_QDMI_Device_Job_impl_d::submit() -> QDMI_STATUS {
   if (status_.load() != QDMI_JOB_STATUS_CREATED) {
     return QDMI_ERROR_BADSTATE;
+  }
+  if (captureQIROutput_ &&
+      (numShots_ == 0 || format_ == QDMI_PROGRAM_FORMAT_QASM2 ||
+       format_ == QDMI_PROGRAM_FORMAT_QASM3)) {
+    return QDMI_ERROR_NOTSUPPORTED;
   }
   status_.store(QDMI_JOB_STATUS_SUBMITTED);
   if (format_ == QDMI_PROGRAM_FORMAT_QASM2 ||
@@ -928,6 +951,10 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::getResults(const QDMI_Job_Result result,
   }
   if (status_.load() != QDMI_JOB_STATUS_DONE) {
     return QDMI_ERROR_BADSTATE;
+  }
+  if (qirOutput_) {
+    ADD_STRING_PROPERTY(QDMI_JOB_RESULT_CUSTOM1, qirOutput_->c_str(), result,
+                        size, data, sizeRet)
   }
   switch (result) {
   case QDMI_JOB_RESULT_SHOTS:

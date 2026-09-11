@@ -459,3 +459,45 @@ attributes #0 = { "entry_point" "qir_profiles"="base_profile" "required_num_qubi
   EXPECT_EQ(keys, std::vector<std::string>{"0101"});
   EXPECT_EQ(values, std::vector<size_t>{NUM_SHOTS});
 }
+
+TEST(QIROutput, CapturesTypedRecordsAndValidatesBuffers) {
+  const qdmi_test::SessionGuard session{};
+  const qdmi_test::JobGuard job{session.session};
+  const bool capture = true;
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM2, sizeof(bool) + 1,
+                &capture),
+            QDMI_ERROR_INVALIDARGUMENT);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_set_parameter(
+                job.job, QDMI_DEVICE_JOB_PARAMETER_CUSTOM2, sizeof(capture),
+                &capture),
+            QDMI_SUCCESS);
+  EXPECT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                job.job, QDMI_JOB_RESULT_CUSTOM1, 0, nullptr, nullptr),
+            QDMI_ERROR_BADSTATE);
+  ASSERT_EQ(qdmi_test::setProgram(
+                job.job, QDMI_PROGRAM_FORMAT_QIRADAPTIVESTRING,
+                qdmi_test::getQIRProgram("AdaptiveRecordOutputs.ll")),
+            QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::setShots(job.job, 2), QDMI_SUCCESS);
+  ASSERT_EQ(qdmi_test::submitAndWait(job.job, 0), QDMI_SUCCESS);
+  const auto size = qdmi_test::querySize(job.job, QDMI_JOB_RESULT_CUSTOM1);
+  ASSERT_GT(size, 1U);
+  std::string output(size, '\0');
+  EXPECT_EQ(
+      MQT_DDSIM_QDMI_device_job_get_results(job.job, QDMI_JOB_RESULT_CUSTOM1,
+                                            size - 1, output.data(), nullptr),
+      QDMI_ERROR_INVALIDARGUMENT);
+  ASSERT_EQ(MQT_DDSIM_QDMI_device_job_get_results(
+                job.job, QDMI_JOB_RESULT_CUSTOM1, size, output.data(), nullptr),
+            QDMI_SUCCESS);
+  EXPECT_EQ(output.back(), '\0');
+  EXPECT_TRUE(output.starts_with("HEADER\tschema_id\t"));
+  EXPECT_TRUE(output.ends_with(std::string("END\t0\n\0", 7)));
+  for (const auto* type :
+       {"RESULT", "BOOL", "INT", "DOUBLE", "TUPLE", "ARRAY"}) {
+    EXPECT_NE(output.find(std::string("OUTPUT\t") + type + "\t"),
+              std::string::npos);
+  }
+  EXPECT_NE(output.find("\t  hamming_weight\n"), std::string::npos);
+}

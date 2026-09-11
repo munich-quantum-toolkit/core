@@ -18,16 +18,8 @@ Estimate a phase with two qubits and measurement feedback.
 
 - **First example:** {doc}`QPE walkthrough <getting_started>`
 - **Tutorials:** {doc}`Understand quantum compilation <tutorials/index>`
-- **Guide:** {doc}`MQT Compiler Collection <mlir/mqt_compiler_collection>`
+- **Guide:** {doc}`Compilation and execution <compilation/index>`
 - **API:** {py:mod}`mqt.core.mlir`
-:::
-
-:::{grid-item-card} Use decision diagrams
-Represent and manipulate quantum states and operations in C++ or Python.
-
-- **First example:** [DD quickstart](dd_package.md#quickstart)
-- **Guide:** {doc}`Decision diagrams <dd_package>`
-- **API:** {py:mod}`mqt.core.dd` and {doc}`C++ <cpp_api>`
 :::
 
 :::{grid-item-card} Connect or implement a device
@@ -36,6 +28,14 @@ Discover QDMI devices, integrate SDKs, and implement device interfaces.
 - **First example:** [Discover and use a device](qdmi/driver.md#python-bindings)
 - **Guide:** {doc}`QDMI devices and integrations <qdmi/index>`
 - **API:** {py:mod}`mqt.core.qdmi` and {doc}`C++ <cpp_api>`
+:::
+
+:::{grid-item-card} Use decision diagrams
+Represent and manipulate quantum states and operations in C++ or Python.
+
+- **First example:** [DD quickstart](dd_package.md#quickstart)
+- **Guide:** {doc}`Decision diagrams <dd_package>`
+- **API:** {py:mod}`mqt.core.dd` and {doc}`C++ <cpp_api>`
 :::
 
 :::{grid-item-card} Generate and evaluate benchmarks
@@ -47,12 +47,21 @@ Configure structured programs and compare results with analytic references.
 - **API:** {py:mod}`mqt.core.bench`
 :::
 
+:::{grid-item-card} Exchange quantum programs
+Move between Qiskit, OpenQASM, jeff, and QIR text or bitcode.
+
+- **First example:** [Qiskit to QIR](qir/index.md#from-a-qiskit-circuit-to-qir)
+- **Guides:** {doc}`QIR <qir/index>`, {doc}`OpenQASM <mlir/OpenQASM>`, and
+  {doc}`Qiskit <mlir/qiskit>`, plus {doc}`jeff exchange <jeff>`
+- **API:** {py:func}`~mqt.core.mlir.compile_program`
+:::
+
 :::{grid-item-card} Embed or extend MQT Core
 Use the C++ libraries or work on the MLIR compiler infrastructure.
 
 - **First example:** [C++ library quickstart](cpp_api.md#use-the-dd-library)
 - **Guide:** [C++ compilation](mlir/target_compilation.md#c-source-tree-api) and
-  {doc}`compiler development <mlir/development>`
+  [compiler development](development.md#mlir)
 - **API:** {doc}`C++ reference <cpp_api>` and
   {doc}`MLIR dialects and passes <mlir/index>`
 :::
@@ -75,13 +84,10 @@ self
 :hidden:
 
 installation
-getting_started
-tutorials/index
-benchmarks
-dd_package
-mlir/index
+compilation/index
 qdmi/index
-qir/index
+dd_package
+benchmarks
 references
 CHANGELOG
 UPGRADING
@@ -109,6 +115,7 @@ support
 
 api/mqt/core/index
 cpp_api
+mlir/index
 ```
 
 ## Contributors and Supporters

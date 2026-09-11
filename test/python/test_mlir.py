@@ -363,6 +363,20 @@ def test_compile_program_convert_to_qir() -> None:
     assert bitcode.startswith(b"BC\xc0\xde")
 
 
+def test_qir_base_rejects_feedback_before_serialization() -> None:
+    """Fail during conversion instead of returning an unserializable QIR program."""
+    source = """OPENQASM 3.0;
+include "stdgates.inc";
+qubit[2] q;
+h q[0];
+bit flag = measure q[0];
+if (flag) { x q[1]; }
+bit answer = measure q[1];
+"""
+    with pytest.raises(RuntimeError, match="Compiler action failed"):
+        compile_program(source, output=OutputFormat.QIR_BASE)
+
+
 def test_qir_program_writes_bitcode(tmp_path: Path) -> None:
     """Write generated LLVM bitcode to a file."""
     result = compile_program(QASM_STRING, output=OutputFormat.QIR_BASE)

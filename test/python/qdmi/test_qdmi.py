@@ -638,7 +638,7 @@ def test_device_submit_job_handles_custom_parameters(ddsim_device: Device) -> No
 
     with pytest.raises(ValueError, match=r"Setting custom parameter: Invalid argument\."):
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom1="value")
-    with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
+    with pytest.raises(ValueError, match=r"Setting custom parameter: Invalid argument\."):
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom2="value")
     with pytest.raises(RuntimeError, match=r"Setting custom parameter: Not supported\."):
         ddsim_device.submit_job("OPENQASM 3.0;", ProgramFormat.QASM3, 1, custom3="value")

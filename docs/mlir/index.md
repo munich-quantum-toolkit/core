@@ -1,20 +1,9 @@
-# MQT Compiler Collection
+# MLIR dialects and passes
 
-The MQT Compiler Collection (`mqt-cc`) compiles quantum-classical programs using
-the Multi-Level Intermediate Representation (MLIR). For an overview, see
-{cite:p}`MQTCompilerCollection2026`.
-
-The {doc}`getting-started tutorial <../tutorials/index>` explains
-representations, optimizations, control flow, and hardware constraints through
-three executable Python notebooks. It assumes basic quantum computing and
-Python, but no MLIR experience.
-
-The {doc}`compiler guide <mqt_compiler_collection>` introduces the Python,
-command-line, and C++ interfaces for compiling and inspecting quantum programs.
-The {doc}`target-compilation guide <target_compilation>` shows how to compile
-for QDMI devices from Python, C++, and `mqt-cc`. The interface guides describe
-OpenQASM and Qiskit interoperability, followed by the MLIR technical reference
-and compiler development guidance.
+This reference describes the MQT Compiler Collection's MLIR infrastructure. For
+compilation, simulation, and device execution, start with
+{doc}`compilation and execution <../compilation/index>`. Compiler contributions
+follow the [development policy](../development.md#mlir).
 
 We define multiple dialects, each with its dedicated purpose:
 
@@ -37,16 +26,9 @@ hardware. Passes that are not tied to a single dialect are documented on the
 {doc}`passes <Transforms>` page. For interoperability, we provide
 {doc}`conversions <Conversions>` between dialects.
 
-The {doc}`OpenQASM interface <OpenQASM>` translates supported OpenQASM input
-directly to QC and emits structured OpenQASM from QC.
-
 ```{toctree}
 :maxdepth: 2
 
-mqt_compiler_collection
-target_compilation
-OpenQASM
-qiskit
 MQT
 QC
 QCO
@@ -54,5 +36,4 @@ QTensor
 CBit
 Transforms
 Conversions
-development
 ```

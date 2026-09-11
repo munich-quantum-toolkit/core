@@ -29,6 +29,7 @@
 #include "mlir/Dialect/LLVMIR/LLVMTypes.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
+#include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -517,7 +518,7 @@ protected:
     {
       RewritePatternSet patterns(ctx);
       target.addIllegalDialect<cbit::CBitDialect, QCDialect,
-                               memref::MemRefDialect>();
+                               memref::MemRefDialect, scf::SCFDialect>();
 
       populateQCToQIRBasePatterns(patterns, typeConverter, ctx, state);
 

@@ -30,7 +30,7 @@ the audit and implementation scope. Their tests establish relevant consumer
 contracts only. Preserve verified IR, full unitaries including global phase,
 wire identity, and exactly-one-use quantum values after each rewrite. Failed
 matches leave IR unchanged. The owning policy is
-[MLIR development](../../docs/mlir/development.md).
+[MLIR development](../../docs/development.md#mlir).
 
 ## Findings and decisions
 

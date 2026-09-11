@@ -1007,7 +1007,16 @@ TEST_F(DDSimulatorDeviceTest, SubmitJobCustomSupportedTypes) {
     }
   };
   submitWithCustoms(7, 1);
-  for (size_t i = 2; i <= 5; ++i) {
+  EXPECT_NO_THROW(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                                   std::nullopt, false));
+  EXPECT_THROW(device.submitJob(qasm3Program, QDMI_PROGRAM_FORMAT_QASM3, 10,
+                                std::nullopt, true),
+               std::runtime_error);
+  EXPECT_THROW(submitWithCustoms(std::string("custom"), 2),
+               std::invalid_argument);
+  EXPECT_THROW(submitWithCustoms(42, 2), std::invalid_argument);
+  EXPECT_THROW(submitWithCustoms(3.14, 2), std::invalid_argument);
+  for (size_t i = 3; i <= 5; ++i) {
     submitWithCustoms(std::string("custom"), i);
     submitWithCustoms(42, i);
     submitWithCustoms(3.14, i);

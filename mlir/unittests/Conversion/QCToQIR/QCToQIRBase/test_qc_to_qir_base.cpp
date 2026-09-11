@@ -125,6 +125,23 @@ static void expectFollowingXIsUncontrolled(
   EXPECT_EQ(controlledXCalls, 0);
 }
 
+TEST(QCToQIRBaseNativeTest, RejectsMeasurementFeedbackDuringConversion) {
+  MLIRContext context;
+  context.loadDialect<qc::QCDialect, arith::ArithDialect, func::FuncDialect,
+                      LLVM::LLVMDialect, scf::SCFDialect>();
+  qc::QCProgramBuilder builder(&context);
+  builder.initialize();
+  auto control = builder.allocQubit();
+  auto target = builder.allocQubit();
+  builder.h(control);
+  auto result = builder.measure(control);
+  builder.scfIf(result, [&] { builder.x(target); });
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  ASSERT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(failed(runQCToQIRBaseConversion(*moduleOp)));
+}
+
 TEST(QCToQIRBaseNativeTest, EmptyCtrlDoesNotControlFollowingGate) {
   expectFollowingXIsUncontrolled(
       [](qc::QCProgramBuilder& builder, Value control, Value target) {

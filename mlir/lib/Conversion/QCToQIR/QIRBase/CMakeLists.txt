@@ -22,6 +22,7 @@ add_mlir_conversion_library(
   MLIRLLVMDialect
   MLIRQCDialect
   MLIRArithDialect
+  MLIRSCFDialect
   MLIRTransforms
   MLIRFuncDialect
   MLIRFuncToLLVM)

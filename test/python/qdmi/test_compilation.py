@@ -20,7 +20,7 @@ import pytest
 
 from mqt.core.bench import qpe, repeat_until_success
 from mqt.core.mlir import CompiledProgram, CompilerTarget, OutputFormat, compile_program, submit_program
-from mqt.core.qdmi import Job, ProgramFormat
+from mqt.core.qdmi import CustomProperty, Job, ProgramFormat
 from mqt.core.qdmi.driver import open_device
 
 if TYPE_CHECKING:
@@ -307,3 +307,54 @@ c = measure q;
     job = submit_program(source, target="mqt.ddsim.default", program_format=ProgramFormat.QASM3, num_shots=16)
     job.wait()
     assert job.get_counts() == {"0": 16}
+
+
+@pytest.mark.parametrize(
+    "program_format",
+    [
+        ProgramFormat.QIR_BASE_STRING,
+        ProgramFormat.QIR_BASE_MODULE,
+        ProgramFormat.QIR_ADAPTIVE_STRING,
+        ProgramFormat.QIR_ADAPTIVE_MODULE,
+    ],
+)
+def test_qir_output_stream_matches_shots(program_format: ProgramFormat) -> None:
+    """Capture framed records without changing QDMI result order or other jobs."""
+    source = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; h q[0]; bit[2] c = measure q;'
+    device = open_device("mqt.ddsim.default")
+    compiled = compile_program(source, target=device, program_format=program_format)
+    job = submit_program(compiled, target=device, num_shots=8, custom1=7, custom2=True)
+    ordinary = submit_program(compiled, target=device, num_shots=8, custom1=7)
+    assert job.wait()
+    assert ordinary.wait()
+    output = job.get_custom_result(CustomProperty.CUSTOM1, str)
+    assert isinstance(output, str)
+    assert output.startswith("HEADER\tschema_id\tlabeled\nHEADER\tschema_version\t2.1\n")
+    records = output.split("START\n")[1:]
+    assert len(records) == 8
+    for record, shot in zip(records, job.get_shots(), strict=True):
+        assert record.endswith("END\t0\n")
+        bits = [
+            line.split("\t")[2]
+            for line in record.splitlines()
+            if line.startswith(("OUTPUT\tRESULT\t", "OUTPUT\tRESULT_ARRAY\t"))
+        ]
+        assert "".join(bits)[::-1] == shot
+    assert sum(job.get_counts().values()) == 8
+    assert job.get_custom_result(CustomProperty.CUSTOM1, str) == output
+    assert job.get_custom_result(CustomProperty.CUSTOM1, bytes) == output.encode() + b"\0"
+    assert ordinary.get_custom_result(CustomProperty.CUSTOM1, str) is None
+    with pytest.raises(RuntimeError, match="Not supported"):
+        job.get_dense_statevector()
+
+
+@pytest.mark.parametrize(("program_format", "shots"), [(ProgramFormat.QASM3, 1), (ProgramFormat.QIR_BASE_MODULE, 0)])
+def test_qir_output_capture_requires_qir_sampling(program_format: ProgramFormat, shots: int) -> None:
+    """Reject output requests that cannot produce a sampled QIR stream."""
+    device = open_device("mqt.ddsim.default")
+    compiled = compile_program(BELL, target=device, program_format=program_format)
+    with pytest.raises(RuntimeError, match="Not supported"):
+        device.submit_job(compiled.payload, program_format, num_shots=shots, custom2=True)
+    # The RTTI-free adapter can lose the nested exception text on macOS.
+    with pytest.raises(ValueError, match="Failed to submit compiled program"):
+        submit_program(compiled, target=device, num_shots=shots, custom2=True)
