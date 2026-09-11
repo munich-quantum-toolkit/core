@@ -12,8 +12,8 @@ releases may include breaking changes.
 
 ### Changed
 
-- 🔧 Use Ninja and shared CMake presets on all platforms ([#2522])
-  ([**@denialhaag**])
+- 🔧 Use Ninja and shared CMake presets on all platforms, removing `-windows`
+  from preset names ([#2522]) ([**@denialhaag**])
 
 ### Fixed
 

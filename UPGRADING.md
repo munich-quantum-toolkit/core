@@ -6,13 +6,19 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### CMake presets
+### CMake presets on Windows
 
-All CMake presets now use Ninja. On Windows, replace `debug-windows` and
-`release-windows` with `debug` and `release` when configuring, building, and
-testing. Install Ninja and run CMake from a Visual Studio developer shell for
-the target architecture. Use a new build directory if an existing directory uses
-the Visual Studio generator.
+All CMake presets now use Ninja. On Windows, remove `-windows` from preset names
+when configuring, building, and testing:
+
+| Previous preset   | Replacement |
+| ----------------- | ----------- |
+| `debug-windows`   | `debug`     |
+| `release-windows` | `release`   |
+
+Install Ninja and run CMake from a Visual Studio developer shell for the target
+architecture. Use a new build directory if an existing directory uses the Visual
+Studio generator.
 
 Presets no longer set ccache or sccache environment variables. Set cache paths
 and limits in your environment if needed.
