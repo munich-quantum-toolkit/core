@@ -12,15 +12,15 @@ A logical program names qubits and gates. Hardware offers physical sites,
 connections, and a native gate set. What changes when the program's interactions
 do not fit those connections?
 
-This final part of the {doc}`compiler workshop <GettingStarted>` takes
-**25–35 minutes**. It runs independently with the
-[workshop setup](GettingStarted.md#run-the-notebook). The targets below are
-small models for compilation. Execution uses the bundled DDSIM simulator and
-requires no hardware account or external device.
+This final compiler tutorial runs independently with the
+[tutorial setup](index.md#run-the-notebooks). The targets below are small models
+for compilation. Execution uses the bundled DDSIM simulator and requires no
+hardware account or external device.
 
-{download}`Download this notebook <../_build/jupyter_execute/mlir/getting_started_targets.ipynb>`.
+{download}`Download this notebook <../_build/jupyter_execute/tutorials/hardware_compilation.ipynb>`.
 
 ```{code-cell} ipython3
+:tags: [hide-input]
 from IPython.display import Code, display
 from matplotlib import pyplot as plt
 from qiskit.visualization import plot_distribution
@@ -112,6 +112,7 @@ available on every placement permitted by the target topology. Our CX gates have
 no additional direction restriction.
 
 ```{code-cell} ipython3
+:tags: [hide-input]
 positions = [(0, 0), (1, 0), (2, 0)]
 fig, axes = plt.subplots(1, 2, figsize=(9, 2.4))
 for ax, (name, edges) in zip(
@@ -169,8 +170,8 @@ for name, circuit in circuits.items():
 
 The figures use the emitted physical site order. A routing exchange may already
 be decomposed into native gates, so do not expect an explicit SWAP symbol.
-Classical stores in a routed circuit preserve the program's declared result bits
-even when their source physical qubits have moved.
+Measurements still write to the declared `result` register, even when their
+source physical qubits have moved.
 
 Compare the gate counts of these straight-line outputs:
 
@@ -187,14 +188,16 @@ assert circuits["Line"].count_ops()["cx"] > circuits["All-to-all"].count_ops()["
 This experiment illustrates routing cost, not an optimality guarantee. The
 compiler uses heuristics; exact layouts and decompositions can change between
 versions or machines. Mapping uses one initial-layout trial per available CPU by
-default. The [target guide](target_compilation.md#define-a-target) describes
-explicit pass options for reproducible mapping experiments.
+default. The [target guide](../mlir/target_compilation.md#define-a-target)
+describes explicit pass options for reproducible mapping experiments.
 
 Verify that the compiler used native gates and that every emitted CX on the line
 joins adjacent sites:
 
 ```{code-cell} ipython3
+:tags: [hide-input]
 for name, circuit in circuits.items():
+    assert [(register.name, len(register)) for register in circuit.cregs] == [("result", 3)]
     assert set(circuit.count_ops()) <= {"rz", "ry", "cx", "measure", "store"}
     for instruction in circuit.data:
         if instruction.operation.name == "cx":
@@ -285,7 +288,7 @@ native gate set impose separate requirements.
 A compiler cannot place three simultaneously live qubits on two sites in this
 program. The following cell deliberately tries it, catches the exception, and
 shows the **expected diagnostic**. This is the only intended failure in the
-workshop; the later cells still run.
+tutorial; the later cells still run.
 
 ```{code-cell} ipython3
 too_small = CompilerTarget(
@@ -306,7 +309,21 @@ It does not indicate a Python syntax error or a missing installation. Qubit
 reuse is a separate optimization with its own applicability conditions; merely
 declaring a smaller target does not make it possible.
 
-## Compile for an execution device
+## Connect compilation and execution with QDMI
+
+The **Quantum Device Management Interface (QDMI)** defines a common C interface
+for querying device capabilities, submitting jobs, checking their status, and
+retrieving results. MQT Core's driver loads device implementations and exposes
+them through Python and C++.
+
+QDMI can connect to a local simulator, a QPU, or a cloud service. The device
+reports which program formats it accepts; QDMI does not require every device to
+use the same format. `compile_program` uses those capabilities to prepare a
+payload, and `submit_program` creates a job for it. The
+{doc}`QDMI overview <../qdmi/index>` explains the layers and links to Amazon
+Braket and IQM integration case studies.
+
+### Compile for an execution device
 
 A target model describes constraints. A **QDMI device** also accepts jobs. Open
 the packaged DDSIM device and compile the logical source for its actual
@@ -349,11 +366,12 @@ continues to match.
 
 ## Choose the next experiment
 
-- Use {doc}`target_compilation` for device discovery, payload selection, target
-  capabilities, and control-flow restrictions.
-- Read {doc}`mqt_compiler_collection` for compiler checkpoints, pass pipelines,
-  serialization, and the Python, CLI, and C++ interfaces.
-- Explore {doc}`qiskit`, {doc}`OpenQASM`, and {doc}`../qir/index` for
-  interoperability and output formats.
+- Use {doc}`../mlir/target_compilation` for device discovery, payload selection,
+  target capabilities, and control-flow restrictions.
+- Read {doc}`../mlir/mqt_compiler_collection` for compiler checkpoints, pass
+  pipelines, serialization, and the Python, CLI, and C++ interfaces.
+- Explore {doc}`../mlir/qiskit`, {doc}`../mlir/OpenQASM`, and
+  {doc}`../qir/index` for interoperability and output formats.
 - Try {doc}`../benchmarks` for structured programs with analytic references.
-- Use {doc}`development` when you are ready to implement a compiler change.
+- Use {doc}`../mlir/development` when you are ready to implement a compiler
+  change.

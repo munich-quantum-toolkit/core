@@ -109,7 +109,7 @@ custom job properties are device-specific.
 
 ## Continue
 
-- Work through the {doc}`compiler workshop <mlir/GettingStarted>` to explain
+- Work through the {doc}`compiler tutorial <tutorials/index>` to explain
   representations, optimizations, control flow, and hardware constraints.
 - Try the [repeat-until-success benchmark](benchmarks.md#repeat-until-success)
   for a measurement-controlled retry loop.

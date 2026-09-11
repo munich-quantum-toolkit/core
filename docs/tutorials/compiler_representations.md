@@ -9,45 +9,18 @@ mystnb:
 # Follow a program through the compiler
 
 Why does the compiler use more than one representation of a quantum program? How
-can you tell whether an optimization changed its meaning? This workshop answers
+can you tell whether an optimization changed its meaning? This tutorial answers
 these questions by compiling small programs, inspecting the intermediate
 representation (IR), and checking their results.
 
 You need basic Python and quantum computing knowledge, but no MLIR experience.
-Allow **60–90 minutes** for the three notebooks, including the experiments:
+Follow the [tutorial setup](index.md#run-the-notebooks), then run the cells from
+top to bottom. Each notebook runs independently.
 
-1. **This notebook:** read QC and QCO, apply an optimization, and check it
-   (about 25 minutes).
-2. **{doc}`getting_started_control_flow`:** follow registers, loops, and
-   measurement results (20–25 minutes).
-3. **{doc}`getting_started_targets`:** explain routing and native gates, then
-   execute a compiled program (25–35 minutes).
-
-For a first execution without inspecting IR, start with
-{doc}`the QPE walkthrough <../getting_started>`. The
-{doc}`compiler guide <mqt_compiler_collection>` documents the interfaces and
-options used here; this workshop explains
-*why the output looks the way it does*.
-
-## Run the notebook
-
-Use an installation with the **MQT Core v4 compiler interface** described in
-{doc}`../installation`. Before v4 is released, use a current development build;
-a stable v3 package does not provide this interface. The Python package includes
-the compiler and local simulation used here. You do not need a separate MLIR
-installation when using a compatible wheel.
-
-The figures use Qiskit's visualization tools. Direct compiler translation
-currently supports **Qiskit 2.5.x**; see {doc}`qiskit`. Install
-`qiskit[visualization]~=2.5.0` and JupyterLab in the same Python environment if
-they are not already available.
-
-{download}`Download this notebook <../_build/jupyter_execute/mlir/GettingStarted.ipynb>`
-and run its cells from top to bottom in JupyterLab. Each notebook has its own
-setup. On this website, the cells and figures show results executed during the
-documentation build; edit and rerun the downloaded notebook to experiment.
+{download}`Download this notebook <../_build/jupyter_execute/tutorials/compiler_representations.ipynb>`.
 
 ```{code-cell} ipython3
+:tags: [hide-input]
 import numpy as np
 from IPython.display import Code, display
 
@@ -207,7 +180,7 @@ $1/\sqrt{2}$. Their measurement probabilities are $1/2$.
 We selected one pass to explain its effect. Ordinary `compile_program` calls
 coordinate frontend preparation, conversion, optimization, and output lowering.
 
-```{figure} ../_static/mlir/compiler-workshop-pipeline.svg
+```{figure} ../_static/mlir/compiler-pipeline.svg
 :alt: OpenQASM is imported into QC, converted to QCO, optimized, and converted back to QC for export. Target compilation adds placement, routing, and native synthesis before emission. Submission is a separate step.
 :width: 100%
 
@@ -243,8 +216,9 @@ display(Code(compiled.ir, language="mlir"))
 Use `qco_pipeline="canonicalize"` to replace the default QCO optimization
 pipeline in a target-independent compilation. It does not remove the compiler's
 required preparation and output stages. See the
-[compiler guide](mqt_compiler_collection.md#run-passes-explicitly) for composing
-passes; the workshop's target compilation uses the coordinated target pipeline.
+[compiler guide](../mlir/mqt_compiler_collection.md#run-passes-explicitly) for
+composing passes; the tutorial's target compilation uses the coordinated target
+pipeline.
 
 ## Keep Python ownership separate from quantum semantics
 
@@ -324,13 +298,7 @@ across Z would be incorrect. A different rewrite may use the complete identity
 $HZH = X$; this is not cancellation of adjacent inverse gates.
 :::
 
-Continue with {doc}`getting_started_control_flow` to see how quantum values move
-through registers and control flow. For operation definitions and implementation
-guidance, use the {doc}`QC`, {doc}`QCO`, and {doc}`development` references.
-
-```{toctree}
-:hidden:
-
-getting_started_control_flow
-getting_started_targets
-```
+Continue with {doc}`control_flow` to see how quantum values move through
+registers and control flow. For operation definitions and implementation
+guidance, use the {doc}`../mlir/QC`, {doc}`../mlir/QCO`, and
+{doc}`../mlir/development` references.

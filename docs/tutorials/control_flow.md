@@ -12,14 +12,14 @@ A quantum program can keep a register, repeat a block, and use a measurement to
 choose what happens next. How does the compiler represent these features while
 preserving QCO's linear quantum values?
 
-This is the second part of the {doc}`compiler workshop <GettingStarted>`. Allow
-**20–25 minutes**. The notebook runs independently; use the same v4-capable MQT
-Core installation, Qiskit 2.5.x visualization tools, and Jupyter environment
-described in the [workshop setup](GettingStarted.md#run-the-notebook).
+This second compiler tutorial runs independently with the
+[tutorial setup](index.md#run-the-notebooks). Start with
+{doc}`compiler_representations` for an introduction to QC and QCO.
 
-{download}`Download this notebook <../_build/jupyter_execute/mlir/getting_started_control_flow.ipynb>`.
+{download}`Download this notebook <../_build/jupyter_execute/tutorials/control_flow.ipynb>`.
 
 ```{code-cell} ipython3
+:tags: [hide-input]
 from IPython.display import Code, display
 from qiskit.visualization import plot_distribution
 
@@ -150,7 +150,7 @@ unrolled_qc.to_qiskit().draw("mpl")
 Unrolling duplicates the body for the known iterations. It changes the
 representation, not the algorithm. Keeping loops can keep IR compact; some
 output formats or target-address requirements need the iterations exposed. The
-[target notebook](getting_started_targets.md) explains how output and hardware
+[target notebook](hardware_compilation.md) explains how output and hardware
 constraints guide compilation.
 
 ## Check the observable result
@@ -181,6 +181,7 @@ three times. The histogram still has two outcomes, now with two or four bits.
 These checks execute both variants during the documentation build:
 
 ```{code-cell} ipython3
+:tags: [hide-input]
 for test_width in (2, 4):
     variant = ghz_source.replace(f"[{width}]", f"[{test_width}]").replace(
         f"[1:{width - 1}]", f"[1:{test_width - 1}]"
@@ -268,9 +269,9 @@ plot_distribution(
 )
 ```
 
-Continue with {doc}`getting_started_targets` to compile against explicit
-hardware constraints. For larger structured examples, explore
+Continue with {doc}`hardware_compilation` to compile against explicit hardware
+constraints. For larger structured examples, explore
 [iterative QPE](../getting_started.md#standard-versus-iterative-qpe) and
 [repeat until success](../benchmarks.md#repeat-until-success). The
-{doc}`QTensor`, {doc}`CBit`, and {doc}`OpenQASM` references describe the
-operations and supported input forms in detail.
+{doc}`../mlir/QTensor`, {doc}`../mlir/CBit`, and {doc}`../mlir/OpenQASM`
+references describe the operations and supported input forms in detail.

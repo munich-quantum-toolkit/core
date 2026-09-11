@@ -13,7 +13,8 @@ The resulting {py:class}`~mqt.core.mlir.CompiledProgram` can be submitted with
 `submit_program` in the MLIR submodule.
 
 For a hands-on comparison of connectivity, native gates, and logical outputs,
-see the {doc}`hardware-compilation workshop <getting_started_targets>`.
+see the
+{doc}`hardware-compilation tutorial <../tutorials/hardware_compilation>`.
 
 ## Python
 
