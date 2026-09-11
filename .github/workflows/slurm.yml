@@ -71,7 +71,7 @@ jobs:
       - name: Set up MLIR
         uses: munich-quantum-software/setup-mlir@3f32263ce571a8b745068980f30f188b6e800763 # v1.4.2
         with:
-          llvm-version: 23.1.0
+          llvm-version: 23.1.1
 
       - name: Set up compiler cache
         uses: Mozilla-Actions/sccache-action@fc920bf0ec8de6ee65d409111f7ec508035751ba # v0.0.11
