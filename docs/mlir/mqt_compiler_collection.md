@@ -18,6 +18,10 @@ through three interfaces that share the same MLIR representations and passes:
 | Python       | {py:mod}`mqt.core.mlir`                                             |
 | C++          | [Source-tree compiler API](target_compilation.md#c-source-tree-api) |
 
+For a guided explanation of the representations and transformations, start with
+the {doc}`getting-started workshop <GettingStarted>`. This guide documents the
+interfaces and options for applying those concepts.
+
 The Python examples below accept source strings, {code}`.qasm`, {code}`.mlir`,
 and {code}`.jeff` files, Qiskit {py:class}`~qiskit.circuit.QuantumCircuit`
 objects, and typed compiler programs. The requested output format determines

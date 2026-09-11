@@ -1,0 +1,49 @@
+<!--
+ Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ All rights reserved.
+
+ SPDX-License-Identifier: MIT
+
+ Licensed under the MIT License
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="400" viewBox="0 0 1000 400" role="img" aria-labelledby="title description">
+  <title id="title">References and quantum value flow</title>
+  <desc id="description">QC gates share one qubit reference. QCO gates consume successive values. Cancelling two adjacent Hadamards reconnects the input directly to the third Hadamard.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#334155"/></marker>
+  </defs>
+  <rect x="1" y="1" width="998" height="398" rx="14" fill="#f8fafc" stroke="#cbd5e1"/>
+  <g font-family="sans-serif" fill="#172033">
+    <text x="28" y="38" font-size="22" font-weight="bold">One qubit, three Hadamards</text>
+    <g font-size="17" font-weight="bold"><text x="28" y="96">QC</text><text x="28" y="202">QCO</text><text x="28" y="324">After</text><text x="28" y="346">cancellation</text></g>
+    <g stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)">
+      <path d="M168 92H637"/>
+      <path d="M168 198H245"/><path d="M301 198H409"/><path d="M465 198H573"/><path d="M629 198H698"/>
+      <path d="M168 323H573"/><path d="M629 323H698"/>
+    </g>
+    <g fill="#e0efff" stroke="#0065bd" stroke-width="2">
+      <rect x="245" y="65" width="56" height="54" rx="7"/><rect x="409" y="65" width="56" height="54" rx="7"/><rect x="573" y="65" width="56" height="54" rx="7"/>
+      <rect x="245" y="171" width="56" height="54" rx="7"/><rect x="409" y="171" width="56" height="54" rx="7"/><rect x="573" y="171" width="56" height="54" rx="7"/>
+      <rect x="573" y="296" width="56" height="54" rx="7"/>
+    </g>
+    <g font-size="23" text-anchor="middle">
+      <text x="273" y="101">H</text><text x="437" y="101">H</text><text x="601" y="101">H</text>
+      <text x="273" y="207">H</text><text x="437" y="207">H</text><text x="601" y="207">H</text><text x="601" y="332">H</text>
+    </g>
+    <g font-family="monospace" font-size="16" text-anchor="middle">
+      <text x="273" y="144">%q</text><text x="437" y="144">%q</text><text x="601" y="144">%q</text>
+      <text x="201" y="182">%q0</text><text x="354" y="182">%q1</text><text x="519" y="182">%q2</text><text x="673" y="182">%q3</text>
+      <text x="201" y="307">%q0</text><text x="673" y="307">%q3</text>
+    </g>
+    <g font-size="17">
+      <text x="726" y="87">A stable reference;</text><text x="726" y="112">the state changes in place.</text>
+      <text x="726" y="192">Each gate consumes a value</text><text x="726" y="217">and returns its successor.</text>
+      <text x="726" y="316">The next gate receives</text><text x="726" y="341">the original input value.</text>
+    </g>
+    <path d="M245 236V248H465V236" fill="none" stroke="#0065bd" stroke-width="2"/>
+    <text x="355" y="275" font-size="17" text-anchor="middle" fill="#0065bd">H · H = I</text>
+    <text x="28" y="380" font-size="15" fill="#475569">Arrows show the qubit's path. Other qubits and the final controlled-X are omitted.</text>
+  </g>
+</svg>

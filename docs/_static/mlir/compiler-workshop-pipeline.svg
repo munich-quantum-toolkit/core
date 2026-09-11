@@ -1,0 +1,43 @@
+<!--
+ Copyright (c) 2023 - 2026 Chair for Design Automation, TUM
+ Copyright (c) 2025 - 2026 Munich Quantum Software Company GmbH
+ All rights reserved.
+
+ SPDX-License-Identifier: MIT
+
+ Licensed under the MIT License
+-->
+
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="345" viewBox="0 0 1000 345" role="img" aria-labelledby="title description">
+  <title id="title">Compiler checkpoints and target compilation</title>
+  <desc id="description">OpenQASM is imported to QC, converted to QCO, optimized, and converted back to QC for output. Target compilation also applies placement, routing, and native synthesis under a selected target and output contract. Submission follows compilation.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10Z" fill="#334155"/></marker>
+  </defs>
+  <rect x="1" y="1" width="998" height="343" rx="14" fill="#f8fafc" stroke="#cbd5e1"/>
+  <g font-family="sans-serif" fill="#172033">
+    <text x="28" y="37" font-size="22" font-weight="bold">From source to compiler output</text>
+    <g stroke="#334155" stroke-width="2" fill="none" marker-end="url(#arrow)">
+      <path d="M157 110H224"/><path d="M321 110H389"/><path d="M486 110H553"/><path d="M691 110H758"/><path d="M855 110H883"/>
+      <path d="M675 144V148H720V192H633V212"/><path d="M855 250H883"/>
+    </g>
+    <g fill="#e0efff" stroke="#0065bd" stroke-width="2">
+      <rect x="28" y="78" width="129" height="65" rx="8"/><rect x="224" y="78" width="97" height="65" rx="8"/>
+      <rect x="389" y="78" width="97" height="65" rx="8"/><rect x="553" y="78" width="138" height="65" rx="8"/>
+      <rect x="758" y="78" width="97" height="65" rx="8"/>
+      <rect x="411" y="212" width="444" height="75" rx="8"/>
+    </g>
+    <g font-size="18" text-anchor="middle">
+      <text x="92" y="117">OpenQASM</text><text x="272" y="117">QC</text><text x="437" y="117">QCO</text>
+      <text x="622" y="105">Optimized</text><text x="622" y="130">QCO</text><text x="806" y="117">QC</text>
+      <text x="190" y="68" font-size="14">Import</text><text x="355" y="68" font-size="14">Convert</text><text x="519" y="68" font-size="14">Optimize</text><text x="724" y="68" font-size="14">Convert</text>
+      <text x="633" y="241">Placement · Routing · Native synthesis</text><text x="633" y="268" font-size="16">Under the selected target and output contract</text>
+    </g>
+    <g font-size="15" text-anchor="middle" font-family="monospace" fill="#475569">
+      <text x="272" y="170">QC_IMPORT</text><text x="437" y="170">QCO</text><text x="622" y="170">QCO_OPTIMIZED</text><text x="806" y="170">QC</text>
+    </g>
+    <g font-size="17"><text x="892" y="106">Emit</text><text x="892" y="130">output</text><text x="892" y="245">Emit</text><text x="892" y="269">payload</text></g>
+    <text x="28" y="244" font-size="17">Target compilation also needs:</text><text x="28" y="270" font-size="17">topology, native gates, output capabilities</text>
+    <text x="28" y="321" font-size="15" fill="#475569">Simplified checkpoints, not every pass. Compilation and device submission are separate operations.</text>
+  </g>
+</svg>

@@ -17,6 +17,7 @@ Install the [Python package](https://pypi.org/project/mqt.core/) or follow the
 Estimate a phase with two qubits and measurement feedback.
 
 - **First example:** {doc}`QPE walkthrough <getting_started>`
+- **Workshop:** {doc}`Understand quantum compilation <mlir/GettingStarted>`
 - **Guide:** {doc}`MQT Compiler Collection <mlir/mqt_compiler_collection>`
 - **API:** {py:mod}`mqt.core.mlir`
 :::
