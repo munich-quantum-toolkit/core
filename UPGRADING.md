@@ -6,23 +6,6 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
-### CMake presets on Windows
-
-All CMake presets now use Ninja. On Windows, remove `-windows` from preset names
-when configuring, building, and testing:
-
-| Previous preset   | Replacement |
-| ----------------- | ----------- |
-| `debug-windows`   | `debug`     |
-| `release-windows` | `release`   |
-
-Install Ninja and run CMake from a Visual Studio developer shell for the target
-architecture. Use a new build directory if an existing directory uses the Visual
-Studio generator.
-
-Presets no longer set ccache or sccache environment variables. Set cache paths
-and limits in your environment if needed.
-
 ## [3.10.0]
 
 ### Shared-library ABI version
@@ -985,6 +968,20 @@ be conveniently installed from PyPI using the
 [`cmake`](https://pypi.org/project/cmake/) package.
 
 It also requires the `uv` library version 0.5.20 or higher.
+
+## CMake presets on Windows
+
+All CMake presets now use Ninja. On Windows, remove `-windows` from preset names
+when configuring, building, and testing:
+
+| Previous preset   | Replacement |
+| ----------------- | ----------- |
+| `debug-windows`   | `debug`     |
+| `release-windows` | `release`   |
+
+Install Ninja and run CMake from a Visual Studio developer shell for the target
+architecture. Use a new build directory if an existing directory uses the Visual
+Studio generator.
 
 <!-- Version links -->
 
