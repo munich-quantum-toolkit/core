@@ -15,6 +15,7 @@
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OpDefinition.h"
 #include "mlir/IR/PatternMatch.h"
+#include "mlir/IR/RegionKindInterface.h"
 #include "mlir/IR/Value.h"
 #include "mlir/Support/LLVM.h"
 
@@ -51,9 +52,12 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
 
   LogicalResult matchAndRewrite(InsertOp insert,
                                 PatternRewriter& rewriter) const override {
+    // SSA def-use chains already follow block order. Querying that order after
+    // each move would repeatedly rescan the whole block.
+    const bool checkOrder = mayBeGraphRegion(*insert->getParentRegion());
     auto extract = dyn_cast<ExtractOp>(*insert.getResult().getUsers().begin());
     if (!extract || insert->getBlock() != extract->getBlock() ||
-        !insert->isBeforeInBlock(extract)) {
+        (checkOrder && !insert->isBeforeInBlock(extract))) {
       return failure();
     }
 
@@ -70,7 +74,7 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
     auto tensor = insert.getDest();
     while (auto* definingOp = tensor.getDefiningOp()) {
       if (definingOp->getBlock() != insert->getBlock() ||
-          !definingOp->isBeforeInBlock(firstInsert)) {
+          (checkOrder && !definingOp->isBeforeInBlock(firstInsert))) {
         break;
       }
       if (auto previousExtract = dyn_cast<ExtractOp>(definingOp)) {
@@ -103,7 +107,7 @@ struct CommuteInsertExtractChains final : OpRewritePattern<InsertOp> {
     while (true) {
       auto* user = *tensor.user_begin();
       if (user->getBlock() != insert->getBlock() ||
-          !previous->isBeforeInBlock(user)) {
+          (checkOrder && !previous->isBeforeInBlock(user))) {
         break;
       }
       if (auto nextInsert = dyn_cast<InsertOp>(user)) {

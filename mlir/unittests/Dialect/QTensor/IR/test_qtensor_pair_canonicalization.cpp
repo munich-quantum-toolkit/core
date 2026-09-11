@@ -19,6 +19,7 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Utils/StaticValueUtils.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -96,13 +97,15 @@ protected:
                                        &context_);
   }
 
-  LogicalResult applyInsertPattern(InsertOp insert) {
+  LogicalResult applyInsertPattern(InsertOp insert,
+                                   RewriterBase::Listener* listener = nullptr) {
     RewritePatternSet patterns(&context_);
     InsertOp::getCanonicalizationPatterns(patterns, &context_);
     FrozenRewritePatternSet frozen(std::move(patterns));
     PatternApplicator applicator(frozen);
     applicator.applyDefaultCostModel();
     PatternRewriter rewriter(&context_);
+    rewriter.setListener(listener);
     rewriter.setInsertionPoint(insert);
     return applicator.matchAndRewrite(insert, rewriter);
   }
@@ -159,8 +162,15 @@ TEST_F(QTensorPairCanonicalizationTest,
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
 
-  /// One rewrite must normalize the whole chain to avoid quadratic commuting.
-  ASSERT_TRUE(succeeded(applyInsertPattern(inserts[2])));
+  // Each rewrite must traverse only its chain, not recompute whole-block order.
+  struct NoOrderRebuild final : RewriterBase::Listener {
+    void notifyOperationModified(Operation* operation) override {
+      EXPECT_FALSE(operation->getBlock()->isOpOrderValid());
+    }
+  } listener;
+  function.getBody().front().invalidateOpOrder();
+  // One rewrite must normalize the whole chain to avoid quadratic commuting.
+  ASSERT_TRUE(succeeded(applyInsertPattern(inserts[2], &listener)));
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
   constexpr std::array<int64_t, 4> indices{3, 0, 2, 1};
@@ -226,6 +236,41 @@ TEST_F(QTensorPairCanonicalizationTest, DoesNotCommuteAcrossADynamicSlot) {
   EXPECT_EQ(extracts[1].getTensor(), inserts[0].getResult());
   EXPECT_EQ(extracts[2].getTensor(), inserts[1].getResult());
   EXPECT_TRUE(extracts[3]->isBeforeInBlock(inserts[2]));
+}
+
+TEST_F(QTensorPairCanonicalizationTest, ChecksOperationOrderInGraphRegions) {
+  for (const bool backwardUse : {false, true}) {
+    SCOPED_TRACE(backwardUse);
+    auto moduleOp = parseSourceString<ModuleOp>(R"mlir(
+      module {
+        %c0 = arith.constant 0 : index
+        %c1 = arith.constant 1 : index
+        %c2 = arith.constant 2 : index
+        %tensor = qtensor.alloc(%c2) : tensor<2x!qco.qubit>
+        %r0, %q0 = qtensor.extract %tensor[%c0] : tensor<2x!qco.qubit>
+        %h0 = qco.h %q0 : !qco.qubit -> !qco.qubit
+        %t0 = qtensor.insert %h0 into %r0[%c0] : tensor<2x!qco.qubit>
+        %r1, %q1 = qtensor.extract %t0[%c1] : tensor<2x!qco.qubit>
+        %h1 = qco.h %q1 : !qco.qubit -> !qco.qubit
+        %t1 = qtensor.insert %h1 into %r1[%c1] : tensor<2x!qco.qubit>
+        qtensor.dealloc %t1 : tensor<2x!qco.qubit>
+      }
+    )mlir",
+                                                &context_);
+    ASSERT_TRUE(moduleOp);
+    auto insert = *moduleOp->getOps<InsertOp>().begin();
+    auto extract = cast<ExtractOp>(*insert.getResult().user_begin());
+    if (backwardUse) {
+      extract->moveBefore(insert);
+    }
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+
+    EXPECT_EQ(succeeded(applyInsertPattern(insert)), !backwardUse);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    EXPECT_EQ(extract.getTensor() == insert.getResult(), backwardUse);
+  }
 }
 
 } // namespace

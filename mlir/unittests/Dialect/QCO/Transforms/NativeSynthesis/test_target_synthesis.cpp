@@ -28,6 +28,7 @@
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/Math/IR/Math.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
+#include "mlir/IR/Block.h"
 #include "mlir/IR/BuiltinAttributes.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/BuiltinTypes.h"
@@ -337,12 +338,24 @@ TEST_F(TargetSynthesisTest, TwoQubitGateFusionRequiresStrictImprovement) {
     const auto q0Input = builder.staticQubit(0);
     const auto q1Input = builder.staticQubit(1);
     auto [q0, q1] = builder.cx(q0Input, q1Input);
+    q1 = builder.x(q1);
+    q0 = builder.z(q0);
     std::tie(q1, q0) = builder.cx(q1, q0);
     std::tie(q0, q1) = builder.cx(q0, q1);
     return builder.intConstant(0);
   });
-  ASSERT_TRUE(mlir::succeeded(
-      runPass(*nonImproving, mlir::qco::createFuseTwoQubitGates())));
+  const auto before = printModule(*nonImproving);
+  auto& block = mainFunction(*nonImproving).getBody().front();
+  block.invalidateOpOrder();
+  mlir::PassManager manager(context.get());
+  // Check fusion's order queries separately from the verifier's queries.
+  manager.enableVerifier(false);
+  manager.addPass(mlir::qco::createFuseTwoQubitGates());
+  ASSERT_TRUE(mlir::succeeded(manager.run(*nonImproving)));
+  EXPECT_FALSE(block.isOpOrderValid());
+  EXPECT_EQ(printModule(*nonImproving), before);
+  EXPECT_TRUE(mlir::succeeded(mlir::verify(*nonImproving)));
+  EXPECT_TRUE(mlir::succeeded(mlir::qco::verifyLinearity(*nonImproving)));
   EXPECT_EQ(countOps<CtrlOp>(*nonImproving), 3U);
 }
 
