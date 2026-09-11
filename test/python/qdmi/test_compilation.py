@@ -351,5 +351,10 @@ def test_qir_output_stream_matches_shots(program_format: ProgramFormat) -> None:
 @pytest.mark.parametrize(("program_format", "shots"), [(ProgramFormat.QASM3, 1), (ProgramFormat.QIR_BASE_MODULE, 0)])
 def test_qir_output_capture_requires_qir_sampling(program_format: ProgramFormat, shots: int) -> None:
     """Reject output requests that cannot produce a sampled QIR stream."""
-    with pytest.raises(ValueError, match="Not supported"):
-        submit_program(BELL, target="mqt.ddsim.default", program_format=program_format, num_shots=shots, custom2=True)
+    device = open_device("mqt.ddsim.default")
+    compiled = compile_program(BELL, target=device, program_format=program_format)
+    with pytest.raises(RuntimeError, match="Not supported"):
+        device.submit_job(compiled.payload, program_format, num_shots=shots, custom2=True)
+    # The RTTI-free adapter can lose the nested exception text on macOS.
+    with pytest.raises(ValueError, match="Failed to submit compiled program"):
+        submit_program(compiled, target=device, num_shots=shots, custom2=True)
