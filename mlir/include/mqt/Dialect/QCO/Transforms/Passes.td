@@ -228,7 +228,7 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
     scores each candidate. The pass selects the initial layout with the fewest
     SWAPs in that traversal, retaining the earlier candidate on a tie.
   }];
-  let options = [Option<"nlookahead", "nlookahead", "std::size_t", "1",
+  let options = [Option<"nlookahead", "nlookahead", "std::size_t", "20",
                         "The number of lookahead steps.">,
                  Option<"alpha", "alpha", "float", "1.0F",
                         "The alpha cost factor. Must be finite and > 0.">,
