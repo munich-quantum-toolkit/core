@@ -106,6 +106,8 @@ releases may include breaking changes.
 
 ### Changed
 
+- 🔧 Use Ninja and shared CMake presets on all platforms, removing `-windows`
+  from preset names ([#2426]) ([**@burgholzer**])
 - 💥 Require CMake 3.28 or newer for source builds and embedded projects, use
   native dependency exclusions and system include handling, and disable unused
   C++ module scanning ([#2421]) ([**@burgholzer**])
@@ -952,6 +954,7 @@ for previous changelogs._
 [#2467]: https://github.com/munich-quantum-toolkit/core/pull/2467
 [#2457]: https://github.com/munich-quantum-toolkit/core/pull/2457
 [#2436]: https://github.com/munich-quantum-toolkit/core/pull/2436
+[#2426]: https://github.com/munich-quantum-toolkit/core/pull/2426
 [#2421]: https://github.com/munich-quantum-toolkit/core/pull/2421
 [#2410]: https://github.com/munich-quantum-toolkit/core/pull/2410
 [#2409]: https://github.com/munich-quantum-toolkit/core/pull/2409
