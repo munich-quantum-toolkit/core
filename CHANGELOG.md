@@ -54,7 +54,7 @@ releases may include breaking changes.
   [**@simon1hofmann**])
 - ✨ Add conversions between `jeff` and QCO ([#1479], [#1548], [#1565], [#1637],
   [#1676], [#1706], [#1776], [#1836], [#1934], [#2000], [#2018], [#2105],
-  [#2339], [#2457]) ([**@denialhaag**], [**@burgholzer**])
+  [#2339], [#2457], [#2525]) ([**@denialhaag**], [**@burgholzer**])
 - ✨ Add QIR generation support to the MQT Compiler Collection ([#1264],
   [#1446], [#1513], [#1521], [#1548], [#1567], [#1569], [#1570], [#1572],
   [#1580], [#1620], [#1624], [#1626], [#1648], [#1710], [#1751], [#1755],
@@ -943,6 +943,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2525]: https://github.com/munich-quantum-toolkit/core/pull/2525
 [#2518]: https://github.com/munich-quantum-toolkit/core/pull/2518
 [#2500]: https://github.com/munich-quantum-toolkit/core/pull/2500
 [#2497]: https://github.com/munich-quantum-toolkit/core/pull/2497
