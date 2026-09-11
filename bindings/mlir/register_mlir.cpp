@@ -77,7 +77,7 @@ template <class T>
 [[nodiscard]] static T takeResult(std::optional<T>&& result) {
   if (!result) {
     throw std::runtime_error(
-        "MLIR operation failed; see diagnostics for details.");
+        "Compiler action failed; see diagnostics for details.");
   }
   return *std::move(result);
 }
@@ -98,7 +98,7 @@ static void constructFromExpected(T& self, llvm::Expected<T>&& result) {
 static void requireSuccess(const bool succeeded) {
   if (!succeeded) {
     throw std::runtime_error(
-        "MLIR operation failed; see diagnostics for details.");
+        "Compiler action failed; see diagnostics for details.");
   }
 }
 
@@ -250,7 +250,7 @@ programFromPath(const std::filesystem::path& path) {
     return takeResult(mlir::QCProgram::fromMLIRFile(path));
   }
   if (extension == ".qasm") {
-    return takeResult(mlir::QCProgram::fromQASMFile(path));
+    return takeResult(mlir::QCProgram::fromOpenQASMFile(path));
   }
   throw std::runtime_error("Input file '" + path.string() +
                            "' has unsupported extension '" + extension + "'.");
@@ -261,7 +261,7 @@ programFromPath(const std::filesystem::path& path) {
 programFromString(const std::string& input) {
   if (isSourceString(input)) {
     if (input.find("OPENQASM") != std::string::npos) {
-      return takeResult(mlir::QCProgram::fromQASMString(input));
+      return takeResult(mlir::QCProgram::fromOpenQASMString(input));
     }
     return takeResult(mlir::QCProgram::fromMLIRString(input));
   }
@@ -681,7 +681,7 @@ NB_MODULE(MQT_CORE_MODULE_NAME, m) {
                    "Whether optional capability metadata is complete.");
 
   auto compilerTarget = nb::class_<mlir::CompilerTarget>(
-      m, "CompilerTarget", R"pb(Immutable MLIR compiler target.
+      m, "CompilerTarget", R"pb(Immutable MQT compiler target.
 
 Every target has either all-to-all or explicitly enumerated connectivity and
 either unrestricted or explicitly enumerated native-operation support.)pb");
@@ -767,38 +767,45 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
   nb::implicitly_convertible<std::vector<mlir::CompilerTarget::SiteId>,
                              mlir::CompilerTarget::SiteTuple>();
 
-  nb::enum_<mlir::CompilerTarget::Operation::Arity::Kind>(
+  nb::enum_<mlir::CompilerTarget::OperationCapability::Arity::Kind>(
       compilerTarget, "OperationArityKind",
       "How an operation capability accepts qubit widths.")
-      .value("FIXED", mlir::CompilerTarget::Operation::Arity::Kind::Fixed)
+      .value("FIXED",
+             mlir::CompilerTarget::OperationCapability::Arity::Kind::Fixed)
       .value("VARIADIC",
-             mlir::CompilerTarget::Operation::Arity::Kind::Variadic);
+             mlir::CompilerTarget::OperationCapability::Arity::Kind::Variadic);
 
-  auto operationArity = nb::class_<mlir::CompilerTarget::Operation::Arity>(
-      compilerTarget, "OperationArity", "Accepted operation qubit widths.");
+  auto operationArity =
+      nb::class_<mlir::CompilerTarget::OperationCapability::Arity>(
+          compilerTarget, "OperationArity", "Accepted operation qubit widths.");
   operationArity
-      .def_static("fixed", &mlir::CompilerTarget::Operation::Arity::fixed,
+      .def_static("fixed",
+                  &mlir::CompilerTarget::OperationCapability::Arity::fixed,
                   "value"_a, "Create an exact operation arity.")
-      .def_static("variadic", &mlir::CompilerTarget::Operation::Arity::variadic,
+      .def_static("variadic",
+                  &mlir::CompilerTarget::OperationCapability::Arity::variadic,
                   "minimum"_a,
                   "Create an operation arity with an inclusive minimum. "
-                  "Operation construction requires a positive minimum.")
-      .def_prop_ro("kind", &mlir::CompilerTarget::Operation::Arity::kind,
+                  "Capability construction requires a positive minimum.")
+      .def_prop_ro("kind",
+                   &mlir::CompilerTarget::OperationCapability::Arity::kind,
                    "The arity kind.")
-      .def_prop_ro("value", &mlir::CompilerTarget::Operation::Arity::value,
+      .def_prop_ro("value",
+                   &mlir::CompilerTarget::OperationCapability::Arity::value,
                    "The exact arity or inclusive variadic minimum.")
-      .def("accepts", &mlir::CompilerTarget::Operation::Arity::accepts,
+      .def("accepts",
+           &mlir::CompilerTarget::OperationCapability::Arity::accepts,
            "width"_a, "Whether this arity accepts a concrete width.");
 
-  auto targetOperation = nb::class_<mlir::CompilerTarget::Operation>(
-      compilerTarget, "Operation",
+  auto targetOperation = nb::class_<mlir::CompilerTarget::OperationCapability>(
+      compilerTarget, "OperationCapability",
       "A target operation capability, calibration, and ordered "
       "applicability.");
   targetOperation
       .def(
           "__init__",
-          [](mlir::CompilerTarget::Operation& self, std::string name,
-             const mlir::CompilerTarget::Operation::Arity arity,
+          [](mlir::CompilerTarget::OperationCapability& self, std::string name,
+             const mlir::CompilerTarget::OperationCapability::Arity arity,
              const size_t numParameters,
              std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
                  siteTuples,
@@ -806,7 +813,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              const std::optional<double> fidelity) {
             constructFromExpected(
                 self,
-                mlir::CompilerTarget::Operation::create(
+                mlir::CompilerTarget::OperationCapability::create(
                     std::move(name), arity, numParameters,
                     std::move(siteTuples)
                         .value_or(
@@ -817,7 +824,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           "duration"_a = nb::none(), "fidelity"_a = nb::none())
       .def(
           "__init__",
-          [](mlir::CompilerTarget::Operation& self, std::string name,
+          [](mlir::CompilerTarget::OperationCapability& self, std::string name,
              const size_t arity, const size_t numParameters,
              std::optional<std::vector<mlir::CompilerTarget::SiteTuple>>
                  siteTuples,
@@ -825,7 +832,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
              const std::optional<double> fidelity) {
             constructFromExpected(
                 self,
-                mlir::CompilerTarget::Operation::create(
+                mlir::CompilerTarget::OperationCapability::create(
                     std::move(name), arity, numParameters,
                     std::move(siteTuples)
                         .value_or(
@@ -836,32 +843,34 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
           "duration"_a = nb::none(), "fidelity"_a = nb::none())
       .def_prop_ro(
           "name",
-          [](const mlir::CompilerTarget::Operation& operation) {
+          [](const mlir::CompilerTarget::OperationCapability& operation) {
             return operation.name().str();
           },
           "The exact reported operation name.")
       .def_prop_ro(
           "canonical_name",
-          [](const mlir::CompilerTarget::Operation& operation) {
+          [](const mlir::CompilerTarget::OperationCapability& operation) {
             return operation.canonicalName().str();
           },
           "The normalized compiler operation name.")
-      .def_prop_ro("arity", &mlir::CompilerTarget::Operation::arity,
+      .def_prop_ro("arity", &mlir::CompilerTarget::OperationCapability::arity,
                    "The accepted operation arity.")
       .def_prop_ro("num_parameters",
-                   &mlir::CompilerTarget::Operation::numParameters,
+                   &mlir::CompilerTarget::OperationCapability::numParameters,
                    "The number of real-valued parameters.")
       .def_prop_ro(
           "site_tuples",
-          [](const mlir::CompilerTarget::Operation& operation) {
+          [](const mlir::CompilerTarget::OperationCapability& operation) {
             return std::vector<mlir::CompilerTarget::SiteTuple>(
                 operation.siteTuples().begin(), operation.siteTuples().end());
           },
           "Supported ordered placements with optional calibration; empty means "
           "general applicability.")
-      .def_prop_ro("duration", &mlir::CompilerTarget::Operation::duration,
+      .def_prop_ro("duration",
+                   &mlir::CompilerTarget::OperationCapability::duration,
                    "The raw default duration, if available.")
-      .def_prop_ro("fidelity", &mlir::CompilerTarget::Operation::fidelity,
+      .def_prop_ro("fidelity",
+                   &mlir::CompilerTarget::OperationCapability::fidelity,
                    "The default fidelity, if available.");
 
   nb::enum_<mlir::CompilerTarget::GateKind>(
@@ -946,7 +955,8 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .def(
           "__init__",
           [](mlir::CompilerTarget::NativeOperations& self,
-             const std::vector<mlir::CompilerTarget::Operation>& operations) {
+             const std::vector<mlir::CompilerTarget::OperationCapability>&
+                 operations) {
             new (&self) mlir::CompilerTarget::NativeOperations(
                 mlir::CompilerTarget::NativeOperations::fromOperations(
                     operations));
@@ -960,7 +970,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .def_prop_ro(
           "operations",
           [](const mlir::CompilerTarget::NativeOperations& value) {
-            return std::vector<mlir::CompilerTarget::Operation>(
+            return std::vector<mlir::CompilerTarget::OperationCapability>(
                 value.operations().begin(), value.operations().end());
           },
           "The explicit operations, if present.");
@@ -1112,7 +1122,7 @@ either unrestricted or explicitly enumerated native-operation support.)pb");
       .def_prop_ro(
           "operations",
           [](const mlir::CompilerTarget& target) {
-            return std::vector<mlir::CompilerTarget::Operation>(
+            return std::vector<mlir::CompilerTarget::OperationCapability>(
                 target.operations().begin(), target.operations().end());
           },
           "Operation capabilities in reported order.")
@@ -1190,13 +1200,17 @@ before conversion to QCO.)pb");
           &OptionalFunctionAdapter<&mlir::QCProgram::fromMLIRFile>::call,
           "path"_a, "Parse QC MLIR from a file.")
       .def_static(
-          "from_qasm_str",
-          &OptionalFunctionAdapter<&mlir::QCProgram::fromQASMString>::call,
-          "source"_a, "Translate an OpenQASM 3 source string to QC MLIR.")
+          "from_openqasm_str",
+          &OptionalFunctionAdapter<&mlir::QCProgram::fromOpenQASMString>::call,
+          "source"_a,
+          "Translate supported OpenQASM to QC MLIR. Accepts versionless input "
+          "and versions 2.0, 3.0, and 3.1.")
       .def_static(
-          "from_qasm_file",
-          &OptionalFunctionAdapter<&mlir::QCProgram::fromQASMFile>::call,
-          "path"_a, "Translate an OpenQASM 3 file to QC MLIR.")
+          "from_openqasm_file",
+          &OptionalFunctionAdapter<&mlir::QCProgram::fromOpenQASMFile>::call,
+          "path"_a,
+          "Translate a supported OpenQASM file to QC MLIR. Accepts versionless "
+          "input and versions 2.0, 3.0, and 3.1.")
       .def_static(
           "from_qiskit",
           [](const nb::object& circuit) {
@@ -1273,9 +1287,9 @@ Set ``copy=True`` to preserve it.)pb")
             requireValid(program);
             return program.numGates();
           },
-          R"pb(Count the gates in the program.
+          R"pb(Return the static gate count of the entry-point IR.
 
-Any operation that implements the ``UnitaryOpInterface`` is counted. Operations
+Any entry-point operation that implements the ``UnitaryOpInterface`` is counted. Operations
 in every structured control-flow region are counted once, regardless of how
 often the region executes. Operations within modifiers are not counted
 recursively, and barriers are skipped.)pb")
@@ -1285,9 +1299,9 @@ recursively, and barriers are skipped.)pb")
             requireValid(program);
             return program.numSingleQubitGates();
           },
-          R"pb(Count the single-qubit gates in the program.
+          R"pb(Return the static single-qubit gate count of the entry-point IR.
 
-Any operation that implements the ``UnitaryOpInterface`` and acts on one qubit
+Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on one qubit
 is counted. Operations in every structured control-flow region are counted
 once, regardless of how often the region executes. Operations within modifiers
 are not counted recursively, and barriers are skipped.)pb")
@@ -1297,9 +1311,9 @@ are not counted recursively, and barriers are skipped.)pb")
             requireValid(program);
             return program.numTwoQubitGates();
           },
-          R"pb(Count the two-qubit gates in the program.
+          R"pb(Return the static two-qubit gate count of the entry-point IR.
 
-Any operation that implements the ``UnitaryOpInterface`` and acts on two qubits
+Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on two qubits
 is counted. Operations in every structured control-flow region are counted
 once, regardless of how often the region executes. Operations within modifiers
 are not counted recursively, and barriers are skipped.)pb");
@@ -1416,12 +1430,13 @@ Set ``copy=True`` to preserve it.)pb")
             return takeResult(std::move(source).intoJeff());
           },
           nb::kw_only(), "copy"_a = false,
-          R"pb(Serialize this program as ``jeff``.
+          R"pb(Convert this program to ``jeff`` MLIR.
 
 Set ``copy=True`` to preserve it.)pb");
 
   auto jeffProgram = nb::class_<mlir::JeffProgram, mlir::Program>(
-      m, "JeffProgram", R"pb(A serialized ``jeff`` compiler program.
+      m, "JeffProgram",
+      R"pb(A serializable compiler program in the ``jeff`` dialect.
 
 ``jeff`` programs can be stored as bytes or files and converted back to QCO for
 further compilation.)pb");
@@ -1459,7 +1474,7 @@ further compilation.)pb");
             return takeResult(std::move(source).intoQCO());
           },
           nb::kw_only(), "copy"_a = false,
-          R"pb(Deserialize this program to QCO.
+          R"pb(Convert this program to QCO.
 
 Set ``copy=True`` to preserve it.)pb");
 
@@ -1607,7 +1622,7 @@ Raises:
                 "qiskit.circuit.QuantumCircuit | QCProgram | QCOProgram | "
                 "JeffProgram | OpenQASMProgram, shots: int = 1024, seed: int = "
                 "0) -> dict[str, int]"),
-        R"pb(Sample a supported input after lowering it directly to QCO.
+        R"pb(Sample a supported input after translating or converting it to QCO.
 
 An existing QCO program is used without copying. See
 {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error

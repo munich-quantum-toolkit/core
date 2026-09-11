@@ -7,8 +7,8 @@ Status: complete.
 The frontend builds syntax IDs directly, shares leaf types, bounds affine
 analysis per proof, and deduplicates static operands with sets. Typed register
 comparisons use bit vectors. QC emission counts actual inserted operations.
-Analysis accepts `GatePolicy` directly; `QASM3ImportOptions` owns the policy and
-emission limit.
+Analysis accepts `GatePolicy` directly; `OpenQASMImportOptions` owns the policy
+and emission limit.
 
 OpenQASM export preserves ordered results and zero-valued data, rejects repeated
 register outputs, and keeps absent outputs void. It materializes scalar

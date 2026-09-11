@@ -50,8 +50,8 @@ unsupported.
 Private gate parameters bind by position and receive generated local names
 during Qiskit export; their original names and grouping are not preserved.
 Public program inputs still require explicit names. OpenQASM custom gates can
-therefore use `QCProgram.from_qasm_str(source).to_qiskit()` directly within the
-supported subset below.
+therefore use `QCProgram.from_openqasm_str(source).to_qiskit()` directly within
+the supported subset below.
 
 Export folds scalar expressions on a copy of the QC program. Constant
 arithmetic, casts, and idempotent expressions can therefore disappear;

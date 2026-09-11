@@ -25,7 +25,7 @@
 #include <variant>
 #include <vector>
 
-namespace mlir::oq3::frontend::detail {
+namespace mlir::openqasm::frontend::detail {
 
 using SyntaxExpressionId = uint32_t;
 
@@ -400,4 +400,4 @@ private:
   bool sawConstruct = false;
 };
 
-} // namespace mlir::oq3::frontend::detail
+} // namespace mlir::openqasm::frontend::detail

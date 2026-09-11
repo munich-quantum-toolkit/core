@@ -48,7 +48,7 @@ def check_paths(program: QCProgram, expected: int) -> None:
     assert observe(program) == expected
     source = program.to_openqasm3().source
     assert source == program.to_openqasm3().source
-    assert observe(QCProgram.from_qasm_str(source)) == expected
+    assert observe(QCProgram.from_openqasm_str(source)) == expected
     qiskit = program.to_qiskit()
     # Each export owns fresh native variables; their serialized structure is stable.
     assert qasm3.dumps(qiskit) == qasm3.dumps(program.to_qiskit())
@@ -57,7 +57,7 @@ def check_paths(program: QCProgram, expected: int) -> None:
     restored = JeffProgram.from_bytes(jeff.to_bytes()).to_qco().to_qc()
     assert observe(restored) == expected
     assert observe(QCProgram.from_qiskit(restored.to_qiskit())) == expected
-    assert observe(QCProgram.from_qasm_str(restored.to_openqasm3().source)) == expected
+    assert observe(QCProgram.from_openqasm_str(restored.to_openqasm3().source)) == expected
     assert program.ir == original
 
 
@@ -84,7 +84,7 @@ def test_do_while_round_trip(iterations: int) -> None:
     imported = QCProgram.from_qiskit(restored)
     assert imported.ir.count("scf.while") == 1
     assert "scf.if" not in imported.ir
-    qasm = QCProgram.from_qasm_str(program.to_openqasm3().source)
+    qasm = QCProgram.from_openqasm_str(program.to_openqasm3().source)
     assert qasm.ir.count("scf.while") == 1
     assert "scf.if" not in qasm.ir
     check_paths(program, iterations % 2)
@@ -92,7 +92,7 @@ def test_do_while_round_trip(iterations: int) -> None:
 
 def test_general_while_preserves_after_region_global_phase() -> None:
     """A general while loop applies its after-region phase only while continuing."""
-    program = QCProgram.from_qasm_str("""
+    program = QCProgram.from_openqasm_str("""
 OPENQASM 3.1;
 include "stdgates.inc";
 qubit q;
@@ -147,7 +147,7 @@ module {{
     if stale:
         with pytest.raises(RuntimeError, match="stale classical snapshot"):
             program.to_qiskit()
-        assert observe(QCProgram.from_qasm_str(program.to_openqasm3().source)) == 1 << 64
+        assert observe(QCProgram.from_openqasm_str(program.to_openqasm3().source)) == 1 << 64
     else:
         check_paths(program, (1 << 64) | 1)
         assert program.to_qiskit().num_clbits == 65
@@ -203,7 +203,7 @@ module {
 @pytest.mark.parametrize(("condition", "expected"), [("false", 250), ("true", 4)])
 def test_zero_iterations_and_narrow_overflow(condition: str, expected: int) -> None:
     """The initial value survives a zero-trip loop and i8 addition wraps."""
-    program = QCProgram.from_qasm_str(f"""
+    program = QCProgram.from_openqasm_str(f"""
 OPENQASM 3.1;
 output bit[8] result;
 uint[8] value = 250;
@@ -218,7 +218,7 @@ result = bit[8](value);
 
 def test_for_continue_does_not_wrap_induction() -> None:
     """A singleton range stops before its positive step can overflow."""
-    program = QCProgram.from_qasm_str("""
+    program = QCProgram.from_openqasm_str("""
 OPENQASM 3.1;
 output bit[8] result;
 uint[8] iterations = 0;
@@ -233,7 +233,7 @@ result = bit[8](iterations);
 
 def test_nested_breaks_and_switches() -> None:
     """An inner break cannot escape an outer iteration or run its tail."""
-    program = QCProgram.from_qasm_str("""
+    program = QCProgram.from_openqasm_str("""
 OPENQASM 3.1;
 output bit[8] result;
 uint[8] value = 0;
@@ -270,7 +270,7 @@ def test_qiskit_for_jump(indexset: range | list[int], jump: str) -> None:
 @pytest.mark.parametrize("extra_cases", ["", "case -1, 4294967296 { value += 100; break; }"])
 def test_continue_in_nested_loop_and_switch(extra_cases: str) -> None:
     """Continue targets the inner loop and break still skips its remaining iterations."""
-    program = QCProgram.from_qasm_str(
+    program = QCProgram.from_openqasm_str(
         """
 OPENQASM 3.1;
 output bit[8] result;
@@ -311,7 +311,7 @@ def test_qiskit_while_continue() -> None:
 def test_invalid_loop_jump_placement(source: str) -> None:
     """The source diagnostic distinguishes an invalid break from export limits."""
     with pytest.raises((ValueError, RuntimeError)):
-        QCProgram.from_qasm_str("OPENQASM 3.1; " + source)
+        QCProgram.from_openqasm_str("OPENQASM 3.1; " + source)
 
 
 def test_qiskit_uninitialized_local() -> None:
@@ -391,7 +391,7 @@ module {
 
 def test_initialization_on_first_body_and_multiple_exits() -> None:
     """The first body initializes every exit, while unreachable tails do not merge."""
-    program = QCProgram.from_qasm_str("""
+    program = QCProgram.from_openqasm_str("""
 OPENQASM 3.1;
 output bit[8] result;
 uint[8] value;
@@ -416,7 +416,7 @@ result = bit[8](value);
     circuit.measure(0, 0)
     check_paths(QCProgram.from_qiskit(circuit), 1)
     with pytest.raises((ValueError, RuntimeError)):
-        QCProgram.from_qasm_str("""
+        QCProgram.from_openqasm_str("""
 OPENQASM 3.1;
 output bit result;
 bool value;
@@ -490,7 +490,7 @@ module {
 
 def test_loop_resource_allocation_is_rejected_at_import(capfd: pytest.CaptureFixture[str]) -> None:
     """Reject loop-local quantum allocations when constructing the program."""
-    with pytest.raises(RuntimeError, match="MLIR operation failed"):
+    with pytest.raises(RuntimeError, match="Compiler action failed"):
         QCProgram.from_mlir_str("""
 module {
   func.func @main() attributes {mqt.entry_point} {
@@ -514,7 +514,7 @@ module {
 
 def test_first_measurement_initializes_do_while_output() -> None:
     """A measurement in the guaranteed first body defines both its test and output."""
-    program = QCProgram.from_qasm_str("""
+    program = QCProgram.from_openqasm_str("""
 OPENQASM 3.1;
 qubit q;
 output bit result;

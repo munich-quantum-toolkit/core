@@ -20,7 +20,7 @@ add_mlir_library(
   MLIRQCOpenQASMTranslation
   PARTIAL_SOURCES_INTENDED
   OpenQASMToQCEmitter.cpp
-  TranslateQASM3ToQC.cpp
+  TranslateOpenQASMToQC.cpp
   TranslateQCToOpenQASM3.cpp
   LINK_LIBS
   MLIRAnalysis
@@ -48,5 +48,5 @@ target_sources(
          BASE_DIRS
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}
          FILES
-         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h
+         ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h
          ${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h)

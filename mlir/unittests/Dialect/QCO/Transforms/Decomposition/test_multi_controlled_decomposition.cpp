@@ -702,14 +702,14 @@ TEST_F(MultiControlledDecompositionTest, RotationsRespectMinQubits) {
 }
 
 TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeRotations) {
-  using TargetOperation = CompilerTarget::Operation;
+  using OperationCapability = CompilerTarget::OperationCapability;
   const std::vector operations{
-      llvm::cantFail(TargetOperation::create(
-          "rx", TargetOperation::Arity::variadic(4), 1)),
-      llvm::cantFail(TargetOperation::create(
-          "ry", TargetOperation::Arity::variadic(4), 1)),
-      llvm::cantFail(TargetOperation::create(
-          "rz", TargetOperation::Arity::variadic(4), 1)),
+      llvm::cantFail(OperationCapability::create(
+          "rx", OperationCapability::Arity::variadic(4), 1)),
+      llvm::cantFail(OperationCapability::create(
+          "ry", OperationCapability::Arity::variadic(4), 1)),
+      llvm::cantFail(OperationCapability::create(
+          "rz", OperationCapability::Arity::variadic(4), 1)),
   };
   const auto target = llvm::cantFail(CompilerTarget::create(
       4, CompilerTarget::Connectivity::allToAll(),
@@ -906,10 +906,10 @@ TEST_F(MultiControlledDecompositionTest,
       });
   ASSERT_TRUE(moduleOp);
 
-  using Operation = CompilerTarget::Operation;
+  using OperationCapability = CompilerTarget::OperationCapability;
   std::vector operations{
-      llvm::cantFail(
-          Operation::create("rccx", Operation::Arity::variadic(4), 0)),
+      llvm::cantFail(OperationCapability::create(
+          "rccx", OperationCapability::Arity::variadic(4), 0)),
   };
   const auto target = llvm::cantFail(CompilerTarget::create(
       4, CompilerTarget::Connectivity::allToAll(),
@@ -959,10 +959,10 @@ TEST_F(MultiControlledDecompositionTest, PreservesTargetNativeMcy) {
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(verify(moduleOp.get())));
   ASSERT_TRUE(succeeded(verifyLinearity(moduleOp.get())));
-  using TargetOperation = CompilerTarget::Operation;
+  using OperationCapability = CompilerTarget::OperationCapability;
   const std::vector operations{
-      llvm::cantFail(
-          TargetOperation::create("y", TargetOperation::Arity::variadic(4), 0)),
+      llvm::cantFail(OperationCapability::create(
+          "y", OperationCapability::Arity::variadic(4), 0)),
   };
   const auto target = llvm::cantFail(CompilerTarget::create(
       4, CompilerTarget::Connectivity::allToAll(),

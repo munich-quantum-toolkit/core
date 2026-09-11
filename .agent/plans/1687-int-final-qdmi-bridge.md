@@ -32,9 +32,9 @@ historical merge-heavy implementation.
   augmentation, native-gate menu, and duplicated pipeline are obsolete and must
   not be ported.
 
-- `CompilerTarget::Operation` deliberately models homogeneous target-wide
-  support, while QDMI can report a restricted site list. The adapter must
-  therefore verify that a one-qubit operation covers every site and that a
+- `CompilerTarget::OperationCapability` deliberately models homogeneous
+  target-wide support, while QDMI can report a restricted site list. The adapter
+  must therefore verify that a one-qubit operation covers every site and that a
   two-qubit operation covers every topology edge or all-to-all pair before
   treating it as target-wide. Ordered site tuples then carry calibration
   overrides only.

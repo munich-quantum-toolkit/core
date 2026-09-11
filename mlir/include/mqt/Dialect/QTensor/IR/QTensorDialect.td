@@ -15,12 +15,14 @@ def QTensorDialect : Dialect {
   let name = "qtensor";
 
   let summary = "The QTensor dialect for one-dimensional tensors of qubits "
-                "with linear typing.";
+                "with linear semantics.";
 
   let description = [{
-    The QTensor dialect is an adjusted variant of the standard tensor dialect of MLIR that supports linear typing for one-dimensional tensors of qubits.
-    In order to support linear typing, the extract operations of this dialect are modified so that they also return the updated tensor.
-    In addition, alloc/dealloc operations are added to the dialect to support the bulk allocation and deallocation of qubit tensors with linear types.
+    The QTensor dialect represents one-dimensional tensors of qubits with
+    linear ownership. Each quantum SSA value must have exactly one use.
+    Extraction consumes a tensor and returns both the extracted qubits and
+    the remaining tensor. Allocation and deallocation create and consume
+    whole qubit tensors.
   }];
 
   let dependentDialects = ["::mlir::qco::QCODialect",

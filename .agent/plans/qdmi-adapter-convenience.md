@@ -9,7 +9,7 @@ Later removal of transitional aliases:
 
 MQT Core registers QDMI devices under stable string identifiers, but users still
 need to assemble framework adapters manually. This change makes the stable ID
-the common entry point for Qiskit backends and MLIR compiler targets.
+the common entry point for Qiskit backends and MQT compiler targets.
 
 After the change, a user can call `QDMIBackend.from_device_id`, then construct a
 sampler or estimator from that backend. A user can also call

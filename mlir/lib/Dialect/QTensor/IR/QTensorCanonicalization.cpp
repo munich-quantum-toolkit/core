@@ -64,7 +64,7 @@ analyzeQTensorBranch(Block* block, size_t qTensorArgumentIndex,
   bool reachedInsertPhase = false;
 
   while (true) {
-    assert(currentQTensor.hasOneUse() && "expected linear typing");
+    assert(currentQTensor.hasOneUse() && "expected linear semantics");
     Operation* user = *currentQTensor.getUsers().begin();
     if (user->getBlock() != block) {
       return std::nullopt;

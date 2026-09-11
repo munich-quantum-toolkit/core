@@ -16,7 +16,7 @@
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCInterfaces.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
-#include "mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
@@ -242,29 +242,28 @@ QCProgram::fromMLIRFile(const std::filesystem::path& path) {
 }
 
 std::optional<QCProgram>
-QCProgram::fromQASMString(const std::string_view source) {
+QCProgram::fromOpenQASMString(const std::string_view source) {
   auto context = createCompilerContext();
-  auto mod = qc::translateQASM3ToQC(source, context.get());
+  auto mod = qc::translateOpenQASMToQC(source, context.get());
   if (!mod) {
     emitError(UnknownLoc::get(context.get()),
-              "failed to translate OpenQASM 3 source to QC");
+              "failed to translate OpenQASM source to QC");
     return std::nullopt;
   }
   return QCProgram({.context = std::move(context), .mod = std::move(mod)});
 }
 
 std::optional<QCProgram>
-QCProgram::fromQASMFile(const std::filesystem::path& path) {
+QCProgram::fromOpenQASMFile(const std::filesystem::path& path) {
   auto context = createCompilerContext();
   llvm::SourceMgr sourceMgr;
   if (failed(openSourceMgr(path, context.get(), sourceMgr))) {
     return std::nullopt;
   }
-  auto mod = qc::translateQASM3ToQC(sourceMgr, context.get());
+  auto mod = qc::translateOpenQASMToQC(sourceMgr, context.get());
   if (!mod) {
     emitError(UnknownLoc::get(context.get()))
-        << "failed to translate OpenQASM 3 file '" << path.string()
-        << "' to QC";
+        << "failed to translate OpenQASM file '" << path.string() << "' to QC";
     return std::nullopt;
   }
   return QCProgram({.context = std::move(context), .mod = std::move(mod)});

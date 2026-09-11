@@ -18,7 +18,7 @@
 #include <cstdint>
 #include <iterator>
 
-namespace mlir::oq3::frontend::detail {
+namespace mlir::openqasm::frontend::detail {
 
 /// The kind of a lexical token.
 enum class TokenKind : uint8_t {
@@ -133,7 +133,7 @@ struct Token {
   bool wideInteger = false; ///< True when an integer literal exceeds `uint64_t`
 };
 
-/// A zero-copy lexer over an OpenQASM 3 source buffer.
+/// A zero-copy lexer over an OpenQASM source buffer.
 ///
 /// The lexer holds pointers into the buffer and produces tokens on demand
 /// without allocating. Token locations are `SMLoc`s into the buffer, so they
@@ -171,4 +171,4 @@ private:
   const char* end;
 };
 
-} // namespace mlir::oq3::frontend::detail
+} // namespace mlir::openqasm::frontend::detail

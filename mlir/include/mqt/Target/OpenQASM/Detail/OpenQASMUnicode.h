@@ -15,7 +15,7 @@
 #include <cstdint>
 #include <iterator>
 
-namespace mlir::oq3::frontend::detail {
+namespace mlir::openqasm::frontend::detail {
 
 struct UnicodeRange {
   constexpr UnicodeRange(const uint32_t first, const uint32_t last) noexcept
@@ -275,4 +275,4 @@ isOpenQASMIdentifierCodePoint(const uint32_t codePoint) noexcept {
   return false;
 }
 
-} // namespace mlir::oq3::frontend::detail
+} // namespace mlir::openqasm::frontend::detail

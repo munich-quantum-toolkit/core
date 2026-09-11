@@ -28,11 +28,11 @@ using namespace mlir;
 namespace {
 
 TEST(OpenQASMFrontendTest, PreservesExactAndOptionalVersionSemantics) {
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM("qubit q; x q;"));
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM("OPENQASM 3; qubit q; x q;"));
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM("qubit q; x q;"));
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM("OPENQASM 3; qubit q; x q;"));
 
   auto unsupported =
-      oq3::frontend::analyzeOpenQASM("OPENQASM 3.10; qubit q; x q;");
+      openqasm::frontend::analyzeOpenQASM("OPENQASM 3.10; qubit q; x q;");
   ASSERT_FALSE(unsupported);
   ASSERT_FALSE(unsupported.diagnostics.empty());
   EXPECT_NE(unsupported.diagnostics.front().message.find("3.10"),
@@ -45,7 +45,7 @@ OPENQASM 3.2;
 qubit q;
 x q;
 )qasm";
-  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_FALSE(analyzed);
   ASSERT_FALSE(analyzed.diagnostics.empty());
   EXPECT_NE(analyzed.diagnostics.front().message.find("Unsupported OpenQASM"),
@@ -64,11 +64,11 @@ include "stdgates.inc";
 qubit q;
 x q;
 )qasm";
-  const auto strict = oq3::frontend::GatePolicy::Strict;
+  const auto strict = openqasm::frontend::GatePolicy::Strict;
 
-  EXPECT_FALSE(oq3::frontend::analyzeOpenQASM(withoutInclude, strict));
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(withInclude, strict));
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(withoutInclude));
+  EXPECT_FALSE(openqasm::frontend::analyzeOpenQASM(withoutInclude, strict));
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(withInclude, strict));
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(withoutInclude));
 }
 
 TEST(OpenQASMFrontendTest, PreservesSourceNamesInSemanticDiagnostics) {
@@ -77,7 +77,7 @@ TEST(OpenQASMFrontendTest, PreservesSourceNamesInSemanticDiagnostics) {
       llvm::MemoryBuffer::getMemBufferCopy(
           "OPENQASM 3.0;\nqubit q;\nunknown q;\n", "fixture.qasm"),
       llvm::SMLoc());
-  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(sourceMgr);
   ASSERT_FALSE(analyzed);
   ASSERT_FALSE(analyzed.diagnostics.empty());
   EXPECT_EQ(analyzed.diagnostics.front().location.filename, "fixture.qasm");
@@ -90,7 +90,7 @@ TEST(OpenQASMFrontendTest, LocatesVersionAndOutputDiagnosticsPrecisely) {
       llvm::MemoryBuffer::getMemBufferCopy("OPENQASM 3.2;\nqubit q;\n",
                                            "unsupported-version.qasm"),
       llvm::SMLoc());
-  auto version = oq3::frontend::analyzeOpenQASM(versionSources);
+  auto version = openqasm::frontend::analyzeOpenQASM(versionSources);
   ASSERT_FALSE(version);
   ASSERT_FALSE(version.diagnostics.empty());
   EXPECT_EQ(version.diagnostics.front().location.filename,
@@ -103,7 +103,7 @@ TEST(OpenQASMFrontendTest, LocatesVersionAndOutputDiagnosticsPrecisely) {
           "OPENQASM 3.1;\nqubit q;\noutput bit result;\n",
           "incomplete-output.qasm"),
       llvm::SMLoc());
-  auto output = oq3::frontend::analyzeOpenQASM(outputSources);
+  auto output = openqasm::frontend::analyzeOpenQASM(outputSources);
   ASSERT_FALSE(output);
   ASSERT_FALSE(output.diagnostics.empty());
   EXPECT_EQ(output.diagnostics.front().location.filename,
@@ -124,7 +124,7 @@ if (true) {
 value += 5;
 )qasm";
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   ASSERT_EQ(analyzed.program->scalars.size(), 2);
 
@@ -132,7 +132,7 @@ value += 5;
   size_t innerAssignments = 0;
   for (const auto& statement : analyzed.program->statements) {
     if (const auto* assignment =
-            std::get_if<oq3::frontend::ScalarAssignmentStatement>(
+            std::get_if<openqasm::frontend::ScalarAssignmentStatement>(
                 &statement.data)) {
       outerAssignments += static_cast<size_t>(assignment->scalar == 0);
       innerAssignments += static_cast<size_t>(assignment->scalar == 1);
@@ -143,7 +143,7 @@ value += 5;
 }
 
 TEST(OpenQASMFrontendTest, OwnsAndAnalyzesProvidedIncludeBuffers) {
-  oq3::frontend::ParseResult parsed;
+  openqasm::frontend::ParseResult parsed;
   {
     llvm::SourceMgr sourceMgr;
     sourceMgr.AddNewSourceBuffer(
@@ -162,11 +162,11 @@ gate custom q { x q; }
 )qasm",
                                              "custom.inc"),
         llvm::SMLoc());
-    parsed = oq3::frontend::parseOpenQASM(sourceMgr);
+    parsed = openqasm::frontend::parseOpenQASM(sourceMgr);
   }
 
   ASSERT_TRUE(parsed) << parsed.diagnostics.front().message;
-  auto analyzed = oq3::frontend::analyzeOpenQASM(*parsed.program);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(*parsed.program);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   ASSERT_EQ(analyzed.program->gates.size(), 1);
   EXPECT_EQ(analyzed.program->gates.front().name, "custom");
@@ -195,7 +195,7 @@ int after = nested;
       llvm::MemoryBuffer::getMemBufferCopy("int nested = 2;\n", "nested.inc"),
       llvm::SMLoc());
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(sourceMgr);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   ASSERT_EQ(analyzed.program->scalars.size(), 4);
   EXPECT_EQ(analyzed.program->scalars[0].name, "outer");
@@ -217,7 +217,7 @@ TEST(OpenQASMFrontendTest, PreservesNestedIncludeStacksInDiagnostics) {
                                    "int value = missing;\n", "nested.inc"),
                                llvm::SMLoc());
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(sourceMgr);
   ASSERT_FALSE(analyzed);
   ASSERT_EQ(analyzed.diagnostics.size(), 1);
   const auto& location = analyzed.diagnostics.front().location;
@@ -247,7 +247,7 @@ TEST(OpenQASMFrontendTest, PreservesDistinctProvenanceForRepeatedIncludes) {
                                    "int duplicate = 1;\n", "shared.inc"),
                                llvm::SMLoc());
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(sourceMgr);
   ASSERT_FALSE(analyzed);
   ASSERT_EQ(analyzed.diagnostics.size(), 1);
   const auto& location = analyzed.diagnostics.front().location;
@@ -275,13 +275,13 @@ TEST(OpenQASMFrontendTest, CachesSearchPathIncludesAndKeepsEveryOccurrence) {
           "main.qasm"),
       llvm::SMLoc());
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(sourceMgr);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   /// One failed direct lookup and one successful search-path lookup.
   EXPECT_EQ(traced->NumOpenFileForReadCalls, 2);
   size_t assignments = 0;
   for (const auto& statement : analyzed.program->statements) {
-    if (std::holds_alternative<oq3::frontend::ScalarAssignmentStatement>(
+    if (std::holds_alternative<openqasm::frontend::ScalarAssignmentStatement>(
             statement.data)) {
       EXPECT_EQ(statement.location.filename, "/includes/body.inc");
       ASSERT_EQ(statement.location.includeStack.size(), 1);
@@ -307,7 +307,7 @@ TEST(OpenQASMFrontendTest, RejectsRecursiveIncludesResolvedThroughSearchPaths) {
           "OPENQASM 3.1; include \"recursive.inc\";", "main.qasm"),
       llvm::SMLoc());
 
-  auto parsed = oq3::frontend::parseOpenQASM(sourceMgr);
+  auto parsed = openqasm::frontend::parseOpenQASM(sourceMgr);
   ASSERT_FALSE(parsed);
   ASSERT_FALSE(parsed.diagnostics.empty());
   EXPECT_NE(parsed.diagnostics.front().message.find("recursive include"),
@@ -333,7 +333,7 @@ TEST(OpenQASMFrontendTest, LimitsIncludeNesting) {
         llvm::SMLoc());
   }
 
-  auto parsed = oq3::frontend::parseOpenQASM(sourceMgr);
+  auto parsed = openqasm::frontend::parseOpenQASM(sourceMgr);
   ASSERT_FALSE(parsed);
   ASSERT_FALSE(parsed.diagnostics.empty());
   EXPECT_NE(parsed.diagnostics.front().message.find("include nesting"),
@@ -366,7 +366,7 @@ TEST(OpenQASMFrontendTest, LimitsTextualIncludeExpansion) {
           llvm::SMLoc());
     }
 
-    auto parsed = oq3::frontend::parseOpenQASM(sourceMgr);
+    auto parsed = openqasm::frontend::parseOpenQASM(sourceMgr);
     ASSERT_FALSE(parsed);
     ASSERT_FALSE(parsed.diagnostics.empty());
     EXPECT_NE(parsed.diagnostics.front().message.find(
@@ -376,17 +376,18 @@ TEST(OpenQASMFrontendTest, LimitsTextualIncludeExpansion) {
 }
 
 TEST(OpenQASMFrontendTest, EnforcesUnicodeIdentifierCategoriesAndUtf8) {
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
       "OPENQASM 3.1; int θ = 1; int Ångström = θ;"));
 
-  auto symbol = oq3::frontend::analyzeOpenQASM("OPENQASM 3.1; int 💥 = 1;");
+  auto symbol =
+      openqasm::frontend::analyzeOpenQASM("OPENQASM 3.1; int 💥 = 1;");
   ASSERT_FALSE(symbol);
   ASSERT_FALSE(symbol.diagnostics.empty());
 
   std::string invalid = "OPENQASM 3.1; int ";
   invalid.push_back(static_cast<char>(0xC3));
   invalid += " = 1;";
-  auto malformed = oq3::frontend::analyzeOpenQASM(invalid);
+  auto malformed = openqasm::frontend::analyzeOpenQASM(invalid);
   ASSERT_FALSE(malformed);
   ASSERT_FALSE(malformed.diagnostics.empty());
 }
@@ -412,7 +413,7 @@ bit result = measure q;
                                    "bool enabled = true;\n", "b/defs.inc"),
                                llvm::SMLoc());
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(sourceMgr);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(sourceMgr);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   ASSERT_EQ(analyzed.program->scalars.size(), 2);
   EXPECT_EQ(analyzed.program->scalars[0].name, "counter");
@@ -434,12 +435,13 @@ bit result = measure q;
       llvm::MemoryBuffer::getMemBufferCopy("x q;\n", "operations.inc"),
       llvm::SMLoc());
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(sources);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(sources);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
   size_t applications = 0;
   for (const auto& statement : analyzed.program->statements) {
     applications += static_cast<size_t>(
-        std::holds_alternative<oq3::frontend::GateApplication>(statement.data));
+        std::holds_alternative<openqasm::frontend::GateApplication>(
+            statement.data));
   }
   EXPECT_EQ(applications, 2);
 }
@@ -456,13 +458,13 @@ TEST(OpenQASMFrontendTest, RejectsRecursiveAndRepeatedStandardIncludes) {
   recursiveSources.AddNewSourceBuffer(
       llvm::MemoryBuffer::getMemBufferCopy("include \"a.inc\";", "b.inc"),
       llvm::SMLoc());
-  auto recursive = oq3::frontend::parseOpenQASM(recursiveSources);
+  auto recursive = openqasm::frontend::parseOpenQASM(recursiveSources);
   ASSERT_FALSE(recursive);
   ASSERT_FALSE(recursive.diagnostics.empty());
   EXPECT_NE(recursive.diagnostics.front().message.find("recursive"),
             std::string::npos);
 
-  auto repeated = oq3::frontend::analyzeOpenQASM(
+  auto repeated = openqasm::frontend::analyzeOpenQASM(
       "OPENQASM 3.1; include \"stdgates.inc\"; include "
       "\"stdgates.inc\";");
   ASSERT_FALSE(repeated);
@@ -472,7 +474,7 @@ TEST(OpenQASMFrontendTest, RejectsRecursiveAndRepeatedStandardIncludes) {
 }
 
 TEST(OpenQASMFrontendTest, RejectsIncludesInsideBlocks) {
-  auto parsed = oq3::frontend::parseOpenQASM(
+  auto parsed = openqasm::frontend::parseOpenQASM(
       "OPENQASM 3.1; if (true) { include \"nested.inc\"; }");
   ASSERT_FALSE(parsed);
   ASSERT_FALSE(parsed.diagnostics.empty());
@@ -481,10 +483,10 @@ TEST(OpenQASMFrontendTest, RejectsIncludesInsideBlocks) {
 }
 
 TEST(OpenQASMFrontendTest, AcceptsBothIncludeStringQuoteStyles) {
-  EXPECT_TRUE(
-      oq3::frontend::parseOpenQASM("OPENQASM 3.1; include \"stdgates.inc\";"));
-  EXPECT_TRUE(
-      oq3::frontend::parseOpenQASM("OPENQASM 3.1; include 'stdgates.inc';"));
+  EXPECT_TRUE(openqasm::frontend::parseOpenQASM(
+      "OPENQASM 3.1; include \"stdgates.inc\";"));
+  EXPECT_TRUE(openqasm::frontend::parseOpenQASM(
+      "OPENQASM 3.1; include 'stdgates.inc';"));
 }
 
 TEST(OpenQASMFrontendTest, RejectsInvalidIncludeStringsAtTheOffendingByte) {
@@ -506,7 +508,7 @@ TEST(OpenQASMFrontendTest, RejectsInvalidIncludeStringsAtTheOffendingByte) {
     sources.AddNewSourceBuffer(llvm::MemoryBuffer::getMemBufferCopy(
                                    include.source, "invalid-include.qasm"),
                                llvm::SMLoc());
-    auto parsed = oq3::frontend::parseOpenQASM(sources);
+    auto parsed = openqasm::frontend::parseOpenQASM(sources);
     ASSERT_FALSE(parsed);
     ASSERT_FALSE(parsed.diagnostics.empty());
     EXPECT_EQ(parsed.diagnostics.front().location.filename,
@@ -529,13 +531,13 @@ first q;
 bit result = measure q;
 )qasm";
 
-  auto misplaced = oq3::frontend::analyzeOpenQASM(misplacedVersion);
+  auto misplaced = openqasm::frontend::analyzeOpenQASM(misplacedVersion);
   ASSERT_FALSE(misplaced);
   ASSERT_FALSE(misplaced.diagnostics.empty());
   EXPECT_NE(misplaced.diagnostics.front().message.find("must be the first"),
             std::string::npos);
 
-  auto recursive = oq3::frontend::analyzeOpenQASM(recursiveGates);
+  auto recursive = openqasm::frontend::analyzeOpenQASM(recursiveGates);
   ASSERT_FALSE(recursive);
   ASSERT_FALSE(recursive.diagnostics.empty());
   EXPECT_NE(recursive.diagnostics.front().message.find("recursive"),
@@ -614,7 +616,7 @@ TEST(OpenQASMFrontendTest, DiagnosesMalformedLexicalAndGrammarFamilies) {
 
   for (const auto& fixture : fixtures) {
     SCOPED_TRACE(fixture.name.str());
-    auto parsed = oq3::frontend::parseOpenQASM(fixture.source);
+    auto parsed = openqasm::frontend::parseOpenQASM(fixture.source);
     ASSERT_FALSE(parsed);
     ASSERT_FALSE(parsed.diagnostics.empty());
     EXPECT_FALSE(parsed.diagnostics.front().message.empty());
@@ -632,7 +634,7 @@ if (uint[2](value) == 3) {}
 if (int[2](value) == -1) {}
 )qasm";
 
-  auto parsed = oq3::frontend::parseOpenQASM(source);
+  auto parsed = openqasm::frontend::parseOpenQASM(source);
   ASSERT_TRUE(parsed) << parsed.diagnostics.front().message;
 }
 
@@ -646,7 +648,7 @@ TEST(OpenQASMFrontendTest, RejectsUnsupportedReservedWordsAsIdentifiers) {
   for (const auto keyword : reservedWords) {
     SCOPED_TRACE(keyword.str());
     const std::string source = "OPENQASM 3.1; int " + keyword.str() + " = 0;";
-    auto parsed = oq3::frontend::parseOpenQASM(source);
+    auto parsed = openqasm::frontend::parseOpenQASM(source);
     ASSERT_FALSE(parsed);
     ASSERT_FALSE(parsed.diagnostics.empty());
     EXPECT_NE(parsed.diagnostics.front().message.find("reserved keyword"),
@@ -664,7 +666,7 @@ TEST(OpenQASMFrontendTest, DiagnosesUnsupportedReservedFeatureSyntax) {
   });
   for (const auto source : sources) {
     SCOPED_TRACE(source.str());
-    auto parsed = oq3::frontend::parseOpenQASM(source);
+    auto parsed = openqasm::frontend::parseOpenQASM(source);
     ASSERT_FALSE(parsed);
     ASSERT_FALSE(parsed.diagnostics.empty());
     EXPECT_NE(parsed.diagnostics.front().message.find("reserved keyword"),
@@ -687,12 +689,12 @@ TEST(OpenQASMFrontendTest, EnforcesNumericSeparatorPlacement) {
     SCOPED_TRACE(literal.str());
     const std::string source =
         "OPENQASM 3.1; float value = " + literal.str() + ";";
-    auto parsed = oq3::frontend::parseOpenQASM(source);
+    auto parsed = openqasm::frontend::parseOpenQASM(source);
     ASSERT_FALSE(parsed);
     ASSERT_FALSE(parsed.diagnostics.empty());
   }
 
-  auto valid = oq3::frontend::parseOpenQASM(
+  auto valid = openqasm::frontend::parseOpenQASM(
       "OPENQASM 3.1; int hex = 0xA_B; float value = 1_2.3_4e+5_6;");
   ASSERT_TRUE(valid) << valid.diagnostics.front().message;
 }
@@ -700,7 +702,7 @@ TEST(OpenQASMFrontendTest, EnforcesNumericSeparatorPlacement) {
 TEST(OpenQASMFrontendTest, AcceptsWideIntegerLiteralsWithDigitSeparators) {
   // DecimalIntegerLiteral allows '_' separators; values beyond uint64_t are
   // still valid tokens (wide integers). Constant evaluation may reject them.
-  auto parsed = oq3::frontend::parseOpenQASM(
+  auto parsed = openqasm::frontend::parseOpenQASM(
       "OPENQASM 3.1; int value = 999_999_999_999_999_999_999;");
   ASSERT_TRUE(parsed) << parsed.diagnostics.front().message;
 }
@@ -711,12 +713,12 @@ TEST(OpenQASMFrontendTest, SourceManagerOverloadsPreserveParseFailures) {
                                  "OPENQASM 3.1; qubit ;", "broken.qasm"),
                              llvm::SMLoc());
 
-  auto parsed = oq3::frontend::parseOpenQASM(sources);
+  auto parsed = openqasm::frontend::parseOpenQASM(sources);
   ASSERT_FALSE(parsed);
   ASSERT_FALSE(parsed.diagnostics.empty());
   EXPECT_EQ(parsed.diagnostics.front().location.filename, "broken.qasm");
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(sources);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(sources);
   ASSERT_FALSE(analyzed);
   ASSERT_FALSE(analyzed.diagnostics.empty());
   EXPECT_EQ(analyzed.diagnostics.front().location.filename, "broken.qasm");
@@ -742,7 +744,7 @@ if (precedence && powered == binary && binary == octal && octal == hexadecimal &
 }
 )qasm";
 
-  auto analyzed = oq3::frontend::analyzeOpenQASM(source);
+  auto analyzed = openqasm::frontend::analyzeOpenQASM(source);
   ASSERT_TRUE(analyzed) << analyzed.diagnostics.front().message;
 }
 

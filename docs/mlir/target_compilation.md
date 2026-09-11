@@ -89,20 +89,20 @@ target = CompilerTarget(
     3,
     connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2)]),
     native_operations=CompilerTarget.NativeOperations([
-        CompilerTarget.Operation(
+        CompilerTarget.OperationCapability(
             "gphase",
             arity=CompilerTarget.OperationArity.fixed(0),
             num_parameters=1,
         ),
-        CompilerTarget.Operation("u", arity=1, num_parameters=3),
-        CompilerTarget.Operation(
+        CompilerTarget.OperationCapability("u", arity=1, num_parameters=3),
+        CompilerTarget.OperationCapability(
             "cx",
             arity=2,
             num_parameters=0,
             site_tuples=[(1, 0), (1, 2)],
         ),
-        CompilerTarget.Operation("measure", arity=1, num_parameters=0),
-        CompilerTarget.Operation("reset", arity=1, num_parameters=0),
+        CompilerTarget.OperationCapability("measure", arity=1, num_parameters=0),
+        CompilerTarget.OperationCapability("reset", arity=1, num_parameters=0),
     ]),
 )
 mapped = compile_program(
@@ -269,7 +269,7 @@ Compile a file and submit it to DDSIM:
 #include "llvm/Support/raw_ostream.h"
 
 auto device = qdmi::Session::openDevice("mqt.ddsim.default");
-auto input = mlir::QCProgram::fromQASMFile("input.qasm");
+auto input = mlir::QCProgram::fromOpenQASMFile("input.qasm");
 if (!input) {
   return 1;
 }

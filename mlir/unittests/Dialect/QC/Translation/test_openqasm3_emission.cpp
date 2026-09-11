@@ -15,7 +15,7 @@
 #include "mqt/Dialect/QC/Builder/QCProgramBuilder.h"
 #include "mqt/Dialect/QC/IR/QCDialect.h"
 #include "mqt/Dialect/QC/IR/QCOps.h"
-#include "mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 #include "mqt/Dialect/QC/Translation/TranslateQCToOpenQASM3.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Support/Passes.h"
@@ -88,7 +88,7 @@ bit[2] c = measure q;
 
 TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(BELL, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(BELL, &context);
   ASSERT_TRUE(moduleOp);
 
   auto source = qc::translateQCToOpenQASM3(*moduleOp);
@@ -106,9 +106,9 @@ TEST(OpenQASM3EmissionTest, EmitsStrictPortableBellProgram) {
   EXPECT_NE(source->find("include \"stdgates.inc\";"), std::string::npos);
   EXPECT_NE(source->find("ctrl @ x"), std::string::npos);
   EXPECT_NE(source->find("output bit[2] c;"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-      *source, oq3::frontend::GatePolicy::Strict));
-  EXPECT_TRUE(qc::translateQASM3ToQC(*source, &context));
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *source, openqasm::frontend::GatePolicy::Strict));
+  EXPECT_TRUE(qc::translateOpenQASMToQC(*source, &context));
 }
 
 TEST(OpenQASM3EmissionTest, RoundTripsSwitchBreakContinueAndFallthrough) {
@@ -144,14 +144,14 @@ if (accumulated == )qasm" +
 result = measure q;
 )qasm";
     MLIRContext context;
-    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    auto moduleOp = qc::translateOpenQASMToQC(source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
     ASSERT_TRUE(succeeded(emitted));
-    ASSERT_TRUE(oq3::frontend::analyzeOpenQASM(
-        *emitted, oq3::frontend::GatePolicy::Strict));
-    auto restored = qc::translateQASM3ToQC(*emitted, &context);
+    ASSERT_TRUE(openqasm::frontend::analyzeOpenQASM(
+        *emitted, openqasm::frontend::GatePolicy::Strict));
+    auto restored = qc::translateOpenQASMToQC(*emitted, &context);
     ASSERT_TRUE(restored) << *emitted;
     ASSERT_TRUE(succeeded(verify(*restored)));
     expectOneSample(*moduleOp);
@@ -190,8 +190,8 @@ TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
   ASSERT_NE(store, std::string::npos) << *emitted;
   EXPECT_LT(measurement, gate);
   EXPECT_LT(gate, store);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -223,7 +223,7 @@ TEST(OpenQASM3EmissionTest, PreservesStaleClassicalSnapshots) {
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
   ASSERT_TRUE(succeeded(emitted));
-  auto restored = qc::translateQASM3ToQC(*emitted, &context);
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
   expectOneSample(*restored);
 }
@@ -238,7 +238,7 @@ output bit result;
 result = measure q;
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
@@ -248,8 +248,8 @@ result = measure q;
   EXPECT_EQ(emitted->find("mqt.openqasm"), std::string::npos);
   EXPECT_NE(emitted->find("rx(1.5707963267948966)"), std::string::npos)
       << *emitted;
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -271,7 +271,7 @@ unsigned_value = 2;
 real = 3.0;
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
   ASSERT_EQ(function.getNumResults(), 6U);
@@ -286,7 +286,7 @@ real = 3.0;
   EXPECT_NE(emitted->find("output int _mqt_out"), std::string::npos);
   EXPECT_NE(emitted->find("output float _mqt_out"), std::string::npos);
   EXPECT_EQ(emitted->find("output uint "), std::string::npos);
-  EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
+  EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context)) << *emitted;
 }
 
 TEST(OpenQASM3EmissionTest, RenamesOutputsThatCollideWithCompatibilityHelpers) {
@@ -298,7 +298,7 @@ r(0.5, 0.25) q;
 r = measure q;
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
@@ -306,8 +306,8 @@ r = measure q;
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("gate r("), std::string::npos);
   EXPECT_NE(emitted->find("output bit[1] _mqt_out0;"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -328,10 +328,10 @@ TEST(OpenQASM3EmissionTest, RenamesOutputsThatCollideWithStandardGates) {
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("output bit[1] _mqt_out0;"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
-  EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
+  EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context)) << *emitted;
 }
 
 TEST(OpenQASM3EmissionTest, EmitsStatementOnlyStructuredControl) {
@@ -360,7 +360,7 @@ switch (selector) {
 }
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   ASSERT_TRUE(succeeded(runQCCleanupPipeline(*moduleOp)));
 
@@ -370,8 +370,8 @@ switch (selector) {
   EXPECT_NE(emitted->find("if ("), std::string::npos);
   EXPECT_NE(emitted->find("for int "), std::string::npos);
   EXPECT_NE(emitted->find("while ("), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -385,15 +385,15 @@ while (c == 1) {
 }
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("while ("), std::string::npos) << *emitted;
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -476,8 +476,8 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -513,7 +513,7 @@ module {
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
   ASSERT_TRUE(succeeded(emitted));
-  auto restored = qc::translateQASM3ToQC(*emitted, &context);
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
   expectOneSample(*restored, "001");
 }
@@ -550,8 +550,8 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -602,7 +602,7 @@ module {
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
+  EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context)) << *emitted;
 }
 
 TEST(OpenQASM3EmissionTest, EmitsScalarWidthOneRegisterWrites) {
@@ -625,8 +625,8 @@ module {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -639,13 +639,13 @@ result = measure q;
 result = rotl(result, 2);
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
+  EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context)) << *emitted;
 }
 
 TEST(OpenQASM3EmissionTest, RoundTripsWideBitVectorBuiltins) {
@@ -659,11 +659,11 @@ output uint count;
 count = popcount(c);
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
   ASSERT_TRUE(succeeded(emitted));
-  auto restored = qc::translateQASM3ToQC(*emitted, &context);
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
   EXPECT_TRUE(succeeded(verify(*restored)));
 }
@@ -711,7 +711,7 @@ TEST(OpenQASM3EmissionTest, EmitsIndexArithmetic) {
   ASSERT_TRUE(moduleOp);
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
   ASSERT_TRUE(succeeded(emitted));
-  EXPECT_TRUE(qc::translateQASM3ToQC(*emitted, &context)) << *emitted;
+  EXPECT_TRUE(qc::translateOpenQASMToQC(*emitted, &context)) << *emitted;
 }
 
 TEST(OpenQASM3EmissionTest, EmitsNativeIndexSwitch) {
@@ -745,8 +745,8 @@ module {
   EXPECT_NE(emitted->find("switch (1)"), std::string::npos);
   EXPECT_NE(emitted->find("case 1 {"), std::string::npos);
   EXPECT_NE(emitted->find("default {"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -798,11 +798,11 @@ TEST(OpenQASM3EmissionTest, EmitsCatalogHelpersUnderTheirNativeNames) {
   }
   EXPECT_NE(emitted->find("gate _mqt_gate"), std::string::npos);
   EXPECT_NE(emitted->find("pow(0.5) @ z"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 
-  auto roundTripped = qc::translateQASM3ToQC(*emitted, &context);
+  auto roundTripped = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(roundTripped);
   for (const auto* const helper : helperNames) {
     bool found = false;
@@ -828,7 +828,7 @@ float theta = 0.25;
 inv @ pair(theta) q;
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
@@ -836,10 +836,10 @@ inv @ pair(theta) q;
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("gate pair(p0) q0"), std::string::npos);
   EXPECT_NE(emitted->find("inv @ pair("), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
-  auto roundTripped = qc::translateQASM3ToQC(*emitted, &context);
+  auto roundTripped = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(roundTripped);
   EXPECT_TRUE(roundTripped->lookupSymbol<func::FuncOp>("pair"));
 }
@@ -880,8 +880,8 @@ TEST(OpenQASM3EmissionTest, OrdersNestedGateFunctionsBeforeTheirCallers) {
   ASSERT_NE(call, std::string::npos) << *emitted;
   EXPECT_LT(inner, outer);
   EXPECT_LT(outer, call);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -897,7 +897,7 @@ qubit q;
 wrapper(0.5) q;
 )qasm";
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(source, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(moduleOp);
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
@@ -910,10 +910,10 @@ wrapper(0.5) q;
   EXPECT_LT(repeated, wrapper);
   EXPECT_NE(emitted->find("for int ", repeated), std::string::npos);
   EXPECT_NE(emitted->find("while (false)", repeated), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
-  auto roundTripped = qc::translateQASM3ToQC(*emitted, &context);
+  auto roundTripped = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(roundTripped);
   EXPECT_TRUE(roundTripped->lookupSymbol<func::FuncOp>("repeated"));
   EXPECT_TRUE(roundTripped->lookupSymbol<func::FuncOp>("wrapper"));
@@ -951,7 +951,7 @@ TEST(OpenQASM3EmissionTest, PreservesFloatingArithmeticOnGateLoopIndices) {
 
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
   ASSERT_TRUE(succeeded(emitted));
-  auto roundTripped = qc::translateQASM3ToQC(*emitted, &context);
+  auto roundTripped = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(roundTripped) << *emitted;
   ASSERT_TRUE(succeeded(runQCCleanupPipeline(*roundTripped)));
   ASSERT_TRUE(succeeded(verify(*roundTripped)));
@@ -995,7 +995,7 @@ TEST(OpenQASM3EmissionTest, OrdersLongReverseDeclaredGateGraph) {
   auto repeated = qc::translateQCToOpenQASM3(*moduleOp);
   ASSERT_TRUE(succeeded(repeated));
   EXPECT_EQ(*emitted, *repeated);
-  auto roundTripped = qc::translateQASM3ToQC(*emitted, &context);
+  auto roundTripped = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(roundTripped) << *emitted;
   EXPECT_TRUE(succeeded(verify(*roundTripped)));
   EXPECT_EQ(std::distance(roundTripped->getOps<func::FuncOp>().begin(),
@@ -1187,8 +1187,8 @@ module {
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("mod(5.5, 2.0)"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -1308,7 +1308,7 @@ TEST(OpenQASM3EmissionTest, RoundTripsNestedDynamicBoundsAndCarriedScalars) {
 
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find(" << "), std::string::npos) << *emitted;
-  auto restored = qc::translateQASM3ToQC(*emitted, &context);
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
   ASSERT_TRUE(succeeded(verify(*restored)));
   EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(*restored)));
@@ -1373,7 +1373,7 @@ TEST(OpenQASM3EmissionTest, PreservesDynamicRangeBoundaries) {
     auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
     ASSERT_TRUE(succeeded(emitted));
-    auto restored = qc::translateQASM3ToQC(*emitted, &context);
+    auto restored = qc::translateOpenQASMToQC(*emitted, &context);
     ASSERT_TRUE(restored) << *emitted;
     expectOneSample(*restored);
   }
@@ -1414,7 +1414,7 @@ TEST(OpenQASM3EmissionTest, SnapshotsDynamicBoundsBeforeClassicalWrites) {
   ASSERT_TRUE(moduleOp);
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
   ASSERT_TRUE(succeeded(emitted));
-  auto restored = qc::translateQASM3ToQC(*emitted, &context);
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
   expectOneSample(*restored);
 }
@@ -1455,7 +1455,7 @@ TEST(OpenQASM3EmissionTest,
     )qasm";
     SCOPED_TRACE(source);
     MLIRContext context;
-    auto moduleOp = qc::translateQASM3ToQC(source, &context);
+    auto moduleOp = qc::translateOpenQASMToQC(source, &context);
     ASSERT_TRUE(moduleOp);
     ASSERT_TRUE(succeeded(verify(*moduleOp)));
     moduleOp->walk([&](Operation* operation) {
@@ -1469,7 +1469,7 @@ TEST(OpenQASM3EmissionTest,
     auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
     ASSERT_TRUE(succeeded(emitted));
-    auto restored = qc::translateQASM3ToQC(*emitted, &context);
+    auto restored = qc::translateOpenQASMToQC(*emitted, &context);
     ASSERT_TRUE(restored) << *emitted;
     EXPECT_TRUE(succeeded(qc::translateQCToOpenQASM3(*restored)));
     expectOneSample(*restored);
@@ -1541,8 +1541,8 @@ TEST(OpenQASM3EmissionTest, ReusesQubitRegisterNames) {
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_NE(emitted->find("qubit[2] named_qubits;"), std::string::npos);
   EXPECT_EQ(emitted->find("qubit[2] not-valid;"), std::string::npos);
-  EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(*emitted,
-                                             oq3::frontend::GatePolicy::Strict))
+  EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+      *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
 }
 
@@ -1567,7 +1567,7 @@ TEST(OpenQASM3EmissionTest, DefinesECRWithOneEntanglingGate) {
 
 TEST(OpenQASM3EmissionTest, LeavesDestinationEmptyOnFailure) {
   MLIRContext context;
-  auto moduleOp = qc::translateQASM3ToQC(BELL, &context);
+  auto moduleOp = qc::translateOpenQASMToQC(BELL, &context);
   ASSERT_TRUE(moduleOp);
   auto function = *moduleOp->getOps<func::FuncOp>().begin();
   OpBuilder builder(function.getBody());
@@ -1609,7 +1609,7 @@ TEST(OpenQASM3EmissionTest, MaterializesDeepScalarExpressions) {
   auto emitted = qc::translateQCToOpenQASM3(moduleOp);
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_LT(emitted->size(), 100000);
-  auto restored = qc::translateQASM3ToQC(*emitted, &context);
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
   PassManager manager(&context);
   manager.addPass(createCanonicalizerPass());
@@ -1646,7 +1646,7 @@ TEST(OpenQASM3EmissionTest, MaterializesSharedScalarExpressions) {
   auto emitted = qc::translateQCToOpenQASM3(moduleOp);
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_LT(emitted->size(), 10000);
-  auto restored = qc::translateQASM3ToQC(*emitted, &context);
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored) << *emitted;
   PassManager manager(&context);
   manager.addPass(createCanonicalizerPass());
@@ -2034,7 +2034,7 @@ TEST(OpenQASM3EmissionTest, SupportsScalarRegionResults) {
     ASSERT_TRUE(moduleOp);
     auto source = qc::translateQCToOpenQASM3(*moduleOp);
     ASSERT_TRUE(succeeded(source));
-    EXPECT_TRUE(qc::translateQASM3ToQC(*source, &context));
+    EXPECT_TRUE(qc::translateOpenQASMToQC(*source, &context));
   }
 }
 
@@ -2052,7 +2052,7 @@ while (true) {
 }
 )qasm";
   MLIRContext context;
-  auto imported = qc::translateQASM3ToQC(source, &context);
+  auto imported = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(imported);
   size_t loops = 0;
   size_t conditionals = 0;
@@ -2065,7 +2065,7 @@ while (true) {
   EXPECT_EQ(conditionals, 0);
   auto exported = qc::translateQCToOpenQASM3(*imported);
   ASSERT_TRUE(succeeded(exported));
-  auto roundTrip = qc::translateQASM3ToQC(*exported, &context);
+  auto roundTrip = qc::translateOpenQASMToQC(*exported, &context);
   ASSERT_TRUE(roundTrip);
   loops = 0;
   conditionals = 0;
@@ -2093,7 +2093,7 @@ for int i in [0:5] {
 }
 )qasm";
   MLIRContext context;
-  auto imported = qc::translateQASM3ToQC(source, &context);
+  auto imported = qc::translateOpenQASMToQC(source, &context);
   ASSERT_TRUE(imported);
   EXPECT_TRUE(succeeded(verify(*imported)));
 }
@@ -2105,11 +2105,11 @@ TEST(OpenQASM3EmissionTest, PreservesZeroAndMixedOutputResults) {
   };
   for (const auto* source : sources) {
     MLIRContext context;
-    auto original = qc::translateQASM3ToQC(source, &context);
+    auto original = qc::translateOpenQASMToQC(source, &context);
     ASSERT_TRUE(original);
     auto emitted = qc::translateQCToOpenQASM3(*original);
     ASSERT_TRUE(succeeded(emitted));
-    auto restored = qc::translateQASM3ToQC(*emitted, &context);
+    auto restored = qc::translateOpenQASMToQC(*emitted, &context);
     ASSERT_TRUE(restored) << *emitted;
     EXPECT_EQ(original->lookupSymbol<func::FuncOp>("main").getResultTypes(),
               restored->lookupSymbol<func::FuncOp>("main").getResultTypes());
@@ -2146,8 +2146,8 @@ TEST(OpenQASM3EmissionTest, UsesFrontendIdentifierRulesForOutputNames) {
     ASSERT_TRUE(moduleOp);
     auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
     ASSERT_TRUE(succeeded(emitted));
-    EXPECT_TRUE(oq3::frontend::analyzeOpenQASM(
-        *emitted, oq3::frontend::GatePolicy::Strict))
+    EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
+        *emitted, openqasm::frontend::GatePolicy::Strict))
         << *emitted;
   }
 }
@@ -2155,12 +2155,12 @@ TEST(OpenQASM3EmissionTest, UsesFrontendIdentifierRulesForOutputNames) {
 TEST(OpenQASM3EmissionTest, DoesNotIntroduceOutputsForUnusedMeasurements) {
   MLIRContext context;
   auto original =
-      qc::translateQASM3ToQC("OPENQASM 3.1; qubit q; measure q;", &context);
+      qc::translateOpenQASMToQC("OPENQASM 3.1; qubit q; measure q;", &context);
   ASSERT_TRUE(original);
   auto emitted = qc::translateQCToOpenQASM3(*original);
   ASSERT_TRUE(succeeded(emitted));
   EXPECT_EQ(emitted->find("\nbit "), std::string::npos);
-  auto restored = qc::translateQASM3ToQC(*emitted, &context);
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored);
   EXPECT_TRUE(
       restored->lookupSymbol<func::FuncOp>("main").getResultTypes().empty());
@@ -2173,14 +2173,14 @@ TEST(OpenQASM3EmissionTest,
      RoundTripsFloatingInequalityAndRejectsOrderedNotEqual) {
   MLIRContext context;
   auto original =
-      qc::translateQASM3ToQC("OPENQASM 3.1; qubit q; bit value = measure q; "
-                             "float f = float(bool(value)); "
-                             "output bool b; b = f != 2.0;",
-                             &context);
+      qc::translateOpenQASMToQC("OPENQASM 3.1; qubit q; bit value = measure q; "
+                                "float f = float(bool(value)); "
+                                "output bool b; b = f != 2.0;",
+                                &context);
   ASSERT_TRUE(original);
   auto emitted = qc::translateQCToOpenQASM3(*original);
   ASSERT_TRUE(succeeded(emitted));
-  auto restored = qc::translateQASM3ToQC(*emitted, &context);
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
   ASSERT_TRUE(restored);
   size_t comparisons = 0;
   restored->walk([&](arith::CmpFOp comparison) {
@@ -2236,13 +2236,13 @@ TEST(OpenQASM3EmissionTest,
       func::registerInlinerExtension(registry);
       LLVM::registerInlinerInterface(registry);
       MLIRContext context(registry);
-      auto original = qc::translateQASM3ToQC(input, &context);
+      auto original = qc::translateOpenQASMToQC(input, &context);
       ASSERT_TRUE(original);
       auto emitted = qc::translateQCToOpenQASM3(*original);
       ASSERT_TRUE(succeeded(emitted));
-      auto restored = qc::translateQASM3ToQC(
+      auto restored = qc::translateOpenQASMToQC(
           *emitted, &context,
-          {.gatePolicy = oq3::frontend::GatePolicy::Strict});
+          {.gatePolicy = openqasm::frontend::GatePolicy::Strict});
       ASSERT_TRUE(restored);
       dd::Package package(width);
       PassManager manager(&context);

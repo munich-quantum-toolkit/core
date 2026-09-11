@@ -52,6 +52,11 @@ returns a {py:class}`~mqt.core.mlir.QCProgram`. Its
 representation for inspection and debugging. Programs do not need to be written
 in MLIR to use the compiler.
 
+For versionless OpenQASM text, use
+`compile_program(QCProgram.from_openqasm_str(source))`. Automatic source-string
+detection uses the `OPENQASM` header; see {doc}`OpenQASM` for the import
+contract.
+
 ## Inspect a QC program
 
 Use the inspection methods of a {py:class}`~mqt.core.mlir.QCProgram` to count
@@ -63,9 +68,11 @@ print("Single-qubit gates:", compiled.num_single_qubit_gates())
 print("Two-qubit gates:", compiled.num_two_qubit_gates())
 ```
 
-These counts describe the entry-point IR. A gate in each structured control-flow
-region counts once, regardless of the runtime path or loop iteration count.
-Barriers do not count, and operations inside gate modifiers do not count again.
+These are static gate counts of the entry-point IR. A gate in each structured
+control-flow region counts once, regardless of the runtime path or loop
+iteration count. Barriers do not count, and operations inside gate modifiers do
+not count again. The counts do not expand function calls or estimate the gates
+executed at runtime.
 
 ## Select an output format
 
@@ -78,7 +85,7 @@ Select an output format to stop the pipeline at a particular representation:
 | Inspect QCO after optimization           | `OutputFormat.QCO_OPTIMIZED`                           | `QCOProgram`      |
 | Obtain the optimized circuit             | `OutputFormat.QC` (default)                            | `QCProgram`       |
 | Emit an optimized OpenQASM program       | `OutputFormat.OPENQASM3`                               | `OpenQASMProgram` |
-| Serialize a compiler program             | `OutputFormat.JEFF`                                    | `JeffProgram`     |
+| Convert to the jeff dialect              | `OutputFormat.JEFF`                                    | `JeffProgram`     |
 | Generate QIR                             | `OutputFormat.QIR_BASE` or `OutputFormat.QIR_ADAPTIVE` | `QIRProgram`      |
 
 For example, select optimized QCO to inspect the representation after the
@@ -109,7 +116,7 @@ from tempfile import TemporaryDirectory
 with TemporaryDirectory() as directory:
     path = Path(directory) / "bell.qasm"
     openqasm.write(path)
-    reparsed = QCProgram.from_qasm_file(path)
+    reparsed = QCProgram.from_openqasm_file(path)
 
 assert reparsed.is_valid
 ```
@@ -182,7 +189,7 @@ The following example keeps the imported QC program, applies transformations to
 QCO, and converts the result back to QC:
 
 ```{code-cell} ipython3
-qc = QCProgram.from_qasm_str(bell_qasm)
+qc = QCProgram.from_openqasm_str(bell_qasm)
 qco = qc.to_qco(copy=True)
 qco.cleanup()
 qco.merge_single_qubit_rotation_gates()
@@ -287,8 +294,10 @@ pipeline. It is applied when compilation proceeds beyond the raw
 
 ## Serialize programs and generate QIR
 
-{code}`jeff` is a serializable representation that can be stored and compiled
-again in a later process.
+{py:class}`~mqt.core.mlir.JeffProgram` holds MLIR in the {code}`jeff` dialect.
+Use {py:meth}`~mqt.core.mlir.JeffProgram.to_bytes` or
+{py:meth}`~mqt.core.mlir.JeffProgram.write` to serialize it. The bytes or file
+can be loaded and compiled again in a later process.
 
 Integer expressions support widths through 64 bits. Integer absolute value and
 power require jeff's native widths: 1, 8, 16, 32, or 64. Import preserves
@@ -341,5 +350,5 @@ filenames, including filenames without an extension, retain the bitcode output
 used by earlier versions.
 
 The {doc}`QC <QC>`, {doc}`QCO <QCO>`, and {doc}`QTensor <QTensor>` references
-describe the underlying operations. See {doc}`Conversions` for the lowering
-steps between dialects.
+describe the underlying operations. See {doc}`Conversions` for conversions
+between dialects.

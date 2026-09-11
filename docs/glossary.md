@@ -151,8 +151,8 @@ canonicalization
   a particular downstream target.
 
 conversion
-  A change from one legal set of MLIR operations or types to another within the
-  MLIR framework. Conversion can be partial or complete and is governed by a
+  A change between or within MLIR dialects, from one legal set of operations or
+  types to another. Conversion can be partial or complete and is governed by a
   conversion target that states what is legal.
 
 translation
@@ -165,6 +165,13 @@ import
 
 export
   A translation from MQT Core or MLIR into an external representation.
+
+serialization
+  **Preferred term:** serialization. **Accepted aliases:** none. Encoding a
+  program as bytes or writing that encoding to a file. Deserialization reads
+  the encoding back into a program. Converting QCO to the `jeff` MLIR dialect
+  prepares a serializable program; `JeffProgram.to_bytes` and
+  `JeffProgram.write` serialize it.
 
 lowering
   A transformation from a higher-level representation to one closer to the
@@ -179,6 +186,19 @@ compiler target
   An immutable MQT description of the operations, topology, and properties that
   a compiler pipeline may use for one destination. It is a snapshot used for
   compilation, not a live device connection.
+
+operation capability
+  **Preferred term:** operation capability. **Accepted aliases:** none. A
+  compiler target's description of a supported operation, including its name,
+  arity, parameters, placements, and optional calibration data. Represented by
+  `CompilerTarget::OperationCapability` in C++ and
+  `CompilerTarget.OperationCapability` in Python. An MLIR operation is an IR
+  instance, not this capability description.
+
+conversion target
+  **Preferred term:** conversion target. **Accepted aliases:** none. The MLIR
+  legality rules used by a dialect conversion. It is distinct from an MQT
+  compiler target, which describes a compilation destination.
 
 compiled program
   A serialized program with the target and payload specification used to compile
@@ -205,10 +225,20 @@ execution payload
 
 static
   Known while compiling the program. Static does not necessarily mean a C++
-  object with static storage duration.
+  object with static storage duration. In `qc.static` and `qco.static`, it
+  describes a known qubit identifier, not a known quantum state.
 
 dynamic
   Known only while executing the compiled program or interacting with a target.
+  A dynamic quantum allocation acquires resources during execution, even when
+  its size is a compile-time constant.
+
+static gate count
+  **Preferred term:** static gate count. **Accepted aliases:** none. The number
+  of gate operations in the entry-point IR. Each structured control-flow region
+  is counted once, including every branch and loop body. Modifier bodies are
+  not counted recursively, and barriers are excluded. This is not the number
+  of gates executed at runtime or a count expanded through function calls.
 
 QC
   MQT's compatibility-oriented quantum-circuit dialect. QC uses reference
@@ -233,9 +263,13 @@ value semantics
   values. QCO uses this model to make quantum data flow explicit in SSA form.
 
 linear semantics
-  A value-ownership rule under which a quantum value has one live use along a
-  program path. The rule prevents copying unknown quantum state and makes
-  ownership transfers explicit.
+linear ownership
+  **Preferred term:** linear semantics. **Accepted alias:** linear ownership
+  when discussing ownership transfers. Each quantum SSA value in valid QCO IR
+  has exactly one use, including block arguments. Control-flow operations
+  transfer ownership through their operands, region arguments, and results.
+  `qco::verifyLinearity` checks this rule; ordinary MLIR type checking alone
+  does not establish it. Linearity does not imply positional wire correspondence.
 ```
 
 ## Quantum benchmark terms

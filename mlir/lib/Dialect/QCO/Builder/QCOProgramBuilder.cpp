@@ -366,7 +366,7 @@ void QCOProgramBuilder::storeClassicalBit(
 }
 
 //===----------------------------------------------------------------------===//
-// Linear Type Tracking Helpers
+/// Linear Ownership Tracking Helpers
 //===----------------------------------------------------------------------===//
 
 void QCOProgramBuilder::validateQubitValue(Value qubit) const {

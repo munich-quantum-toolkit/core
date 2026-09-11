@@ -59,7 +59,7 @@ def SinkOp : QCOOp<"sink", [MemoryEffects<[MemFree]>]> {
   let description = [{
         Consumes a qubit SSA value and marks the end of its lifetime.
 
-        This operation is the canonical "sink" for QCO's linear/value semantics:
+        This operation is the canonical "sink" for QCO's linear ownership:
         every qubit value must be consumed exactly once on all paths.
 
         When converting back to QC (reference semantics), sinks corresponding to
@@ -1088,9 +1088,10 @@ def UnitaryOp : QCOOp<"unitary", traits = [UnitaryOpInterface, Pure]> {
 }
 
 def BarrierOp : QCOOp<"barrier", traits = [UnitaryOpInterface, Pure]> {
-  let summary = "Apply a barrier gate to a set of qubits";
+  let summary = "Apply a barrier operation to a set of qubits";
   let description = [{
-        Applies a barrier gate to a set of qubits and returns the transformed qubits.
+        Marks a barrier and transfers ownership of the input qubits to the results
+        without changing their quantum state.
 
         Example:
         ```mlir

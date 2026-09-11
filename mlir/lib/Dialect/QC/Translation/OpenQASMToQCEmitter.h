@@ -24,11 +24,11 @@ class Location;
 namespace qc::detail {
 
 [[nodiscard]] Location
-getOpenQASMLocation(const oq3::frontend::SourceLocation& source,
+getOpenQASMLocation(const openqasm::frontend::SourceLocation& source,
                     MLIRContext& context);
 
 [[nodiscard]] OwningOpRef<ModuleOp>
-emitOpenQASMToQC(const oq3::frontend::TypedProgram& program,
+emitOpenQASMToQC(const openqasm::frontend::TypedProgram& program,
                  MLIRContext& context, size_t operationLimit);
 
 } // namespace qc::detail

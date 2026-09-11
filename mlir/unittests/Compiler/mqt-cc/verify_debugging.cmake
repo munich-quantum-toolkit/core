@@ -31,6 +31,23 @@ function(reject_compiler expected_diagnostic)
 endfunction()
 
 file(MAKE_DIRECTORY "${OUTPUT_DIR}")
+
+# The default checkpoint is QC, including when the input format is explicit.
+run_compiler(0 "${QASM_INPUT}")
+set(default_output "${output}")
+run_compiler(0 "${QASM_INPUT}" --input-format=openqasm --emit=qc)
+if(NOT output STREQUAL default_output OR NOT output MATCHES "qc.h")
+  message(FATAL_ERROR "Default and explicit QC checkpoints disagree: ${output}")
+endif()
+set(openqasm_text "${OUTPUT_DIR}/program.txt")
+configure_file("${QASM_INPUT}" "${openqasm_text}" COPYONLY)
+run_compiler(0 "${openqasm_text}" --input-format=openqasm --emit=qc)
+if(NOT output STREQUAL default_output)
+  message(FATAL_ERROR "Explicit OpenQASM input changed the program: ${output}")
+endif()
+reject_compiler("Could not determine the input format" "${QASM_INPUT}" --input-format=qasm)
+reject_compiler("Unknown output format" "${QASM_INPUT}" --emit=mlir)
+
 set(reduced "${OUTPUT_DIR}/reduced.mlir")
 file(
   WRITE "${reduced}"

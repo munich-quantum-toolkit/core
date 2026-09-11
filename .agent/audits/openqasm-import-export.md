@@ -43,8 +43,8 @@ The parser builds persistent expression IDs directly. Operands, bit references,
 and modifiers have one shared representation. Gate-call arrays remain borrowed
 while parsing and owned in stored syntax. Parsing remains separate from analysis
 so source lifetimes, diagnostics, and reanalysis under different policies
-survive. `GatePolicy` is passed directly to analysis; `QASM3ImportOptions` owns
-a flat policy and emission limit.
+survive. `GatePolicy` is passed directly to analysis; `OpenQASMImportOptions`
+owns a flat policy and emission limit.
 
 For 100,000 distinct declarations, the original syntax-ID change reduced peak
 RSS from about 137,600 KiB to 88,000 KiB. Three-run median parse time fell from

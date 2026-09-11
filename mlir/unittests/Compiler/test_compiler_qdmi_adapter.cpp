@@ -31,7 +31,7 @@
 
 using mlir::CompilerTarget;
 
-[[nodiscard]] static const CompilerTarget::Operation&
+[[nodiscard]] static const CompilerTarget::OperationCapability&
 findOperation(const CompilerTarget& target, const llvm::StringRef name) {
   const auto* const found =
       llvm::find_if(target.operations(),
@@ -140,7 +140,7 @@ TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
             CompilerTarget::NativeOperations::Kind::Explicit);
   const auto& gphase = findOperation(target, "gphase");
   EXPECT_EQ(gphase.arity().kind(),
-            CompilerTarget::Operation::Arity::Kind::Fixed);
+            CompilerTarget::OperationCapability::Arity::Kind::Fixed);
   EXPECT_EQ(gphase.arity().value(), 0);
   for (const auto [name, minimum] :
        std::initializer_list<std::pair<llvm::StringRef, size_t>>{
@@ -153,7 +153,7 @@ TEST(CompilerQDMIAdapterTest, InfersDDSIMTargetFacts) {
        }) {
     const auto& operation = findOperation(target, name);
     EXPECT_EQ(operation.arity().kind(),
-              CompilerTarget::Operation::Arity::Kind::Variadic)
+              CompilerTarget::OperationCapability::Arity::Kind::Variadic)
         << name.str();
     EXPECT_EQ(operation.arity().value(), minimum) << name.str();
     EXPECT_TRUE(operation.siteTuples().empty()) << name.str();
@@ -366,8 +366,10 @@ TEST(CompilerQDMIAdapterTest,
     }
     const auto tuple = llvm::cantFail(CompilerTarget::SiteTuple::create(
         std::move(operands), calibrated ? 50 : 10, calibrated ? 0.99 : 0.9));
-    const auto operation = llvm::cantFail(CompilerTarget::Operation::create(
-        "cx", 2, 0, {tuple}, calibrated ? 50 : 10, calibrated ? 0.99 : 0.9));
+    const auto operation =
+        llvm::cantFail(CompilerTarget::OperationCapability::create(
+            "cx", 2, 0, {tuple}, calibrated ? 50 : 10,
+            calibrated ? 0.99 : 0.9));
     return llvm::cantFail(CompilerTarget::create(
         calibrated ? "updated device" : "original device", std::move(sites),
         CompilerTarget::Connectivity::allToAll(),
@@ -492,8 +494,9 @@ TEST(CompilerQDMIAdapterTest,
           siteTuples.push_back(llvm::cantFail(
               CompilerTarget::SiteTuple::create(std::move(tuple))));
         }
-        const auto operation = llvm::cantFail(CompilerTarget::Operation::create(
-            "cx", 2, 0, std::move(siteTuples)));
+        const auto operation =
+            llvm::cantFail(CompilerTarget::OperationCapability::create(
+                "cx", 2, 0, std::move(siteTuples)));
         const auto target = llvm::cantFail(CompilerTarget::create(
             {
                 llvm::cantFail(CompilerTarget::Site::create(0)),

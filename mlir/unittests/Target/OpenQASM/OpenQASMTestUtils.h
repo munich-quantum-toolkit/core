@@ -13,7 +13,7 @@
 #include "mqt/Dialect/CBit/IR/CBitAttributes.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/CBit/IR/CBitOps.h"
-#include "mqt/Dialect/QC/Translation/TranslateQASM3ToQC.h"
+#include "mqt/Dialect/QC/Translation/TranslateOpenQASMToQC.h"
 
 #include "gtest/gtest.h"
 
@@ -36,7 +36,7 @@
 #include <cstdint>
 #include <optional>
 
-namespace mlir::oq3::test {
+namespace mlir::openqasm::test {
 
 inline constexpr llvm::StringLiteral BROADCAST_PROGRAM = R"qasm(
 OPENQASM 3.0;
@@ -169,4 +169,4 @@ inline SmallVector<std::optional<Value>> returnedBitValues(ModuleOp moduleOp) {
   return values;
 }
 
-} // namespace mlir::oq3::test
+} // namespace mlir::openqasm::test

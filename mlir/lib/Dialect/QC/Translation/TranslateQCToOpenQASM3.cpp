@@ -100,9 +100,9 @@ struct GateCall {
 } // namespace
 
 [[nodiscard]] static bool isValidOutputName(const StringRef value) {
-  return oq3::frontend::isValidIdentifier(value) &&
+  return openqasm::frontend::isValidIdentifier(value) &&
          !value.starts_with("_mqt_") &&
-         oq3::frontend::lookupGate(value) == nullptr;
+         openqasm::frontend::lookupGate(value) == nullptr;
 }
 
 [[nodiscard]] static std::optional<int64_t> getConstantInteger(Value value) {
@@ -1888,15 +1888,16 @@ private:
       fixedHelpers.insert("_mqt_u");
       return std::string("_mqt_u");
     }
-    const auto* gate = oq3::frontend::lookupGate(symbol);
+    const auto* gate = openqasm::frontend::lookupGate(symbol);
     if (gate == nullptr ||
-        gate->availability == oq3::frontend::GateAvailability::QELib1) {
+        gate->availability == openqasm::frontend::GateAvailability::QELib1) {
       emitError(function.getLoc())
           << "OpenQASM emission error: unsupported quantum gate '" << symbol
           << "'";
       return failure();
     }
-    if (gate->availability == oq3::frontend::GateAvailability::Compatibility) {
+    if (gate->availability ==
+        openqasm::frontend::GateAvailability::Compatibility) {
       fixedHelpers.insert(symbol);
     }
     return symbol.str();

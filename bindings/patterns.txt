@@ -128,7 +128,7 @@ mqt\.core\.mlir\.CompilerTarget\.__init__$:
         duration_unit: CompilerTarget.DurationUnit | None = None,
     ) -> None: ...
 
-mqt\.core\.mlir\.CompilerTarget\.Operation\.__init__$:
+mqt\.core\.mlir\.CompilerTarget\.OperationCapability\.__init__$:
     \from collections.abc import Sequence
     def __init__(
         self,

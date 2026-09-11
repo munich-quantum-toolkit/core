@@ -443,7 +443,7 @@ runDefaultPipelineImpl(CompilerInput&& program, ProgramFormat output,
       return CompilerProgram(std::move(std::get<QCProgram>(program)));
     }
     if (std::holds_alternative<OpenQASMProgram>(program)) {
-      auto qc = QCProgram::fromQASMString(
+      auto qc = QCProgram::fromOpenQASMString(
           std::get<OpenQASMProgram>(program).source());
       if (qc) {
         return CompilerProgram(std::move(*qc));
@@ -462,7 +462,7 @@ runDefaultPipelineImpl(CompilerInput&& program, ProgramFormat output,
         if constexpr (std::is_same_v<ProgramType, QCOProgram>) {
           return std::forward<T>(value);
         } else if constexpr (std::is_same_v<ProgramType, OpenQASMProgram>) {
-          auto qc = QCProgram::fromQASMString(value.source());
+          auto qc = QCProgram::fromOpenQASMString(value.source());
           if (!qc) {
             return std::nullopt;
           }

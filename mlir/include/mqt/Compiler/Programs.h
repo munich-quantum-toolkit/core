@@ -140,13 +140,17 @@ public:
   [[nodiscard]] static std::optional<QCProgram>
   fromMLIRFile(const std::filesystem::path& path);
 
-  /// Translate OpenQASM 3 source to QC.
+  /// Translate supported OpenQASM source to QC.
+  ///
+  /// Accepts versionless input and versions 2.0, 3.0, and 3.1.
   [[nodiscard]] static std::optional<QCProgram>
-  fromQASMString(std::string_view source);
+  fromOpenQASMString(std::string_view source);
 
-  /// Translate an OpenQASM 3 file to QC.
+  /// Translate a supported OpenQASM file to QC.
+  ///
+  /// Accepts versionless input and versions 2.0, 3.0, and 3.1.
   [[nodiscard]] static std::optional<QCProgram>
-  fromQASMFile(const std::filesystem::path& path);
+  fromOpenQASMFile(const std::filesystem::path& path);
 
   /// Take ownership of an MLIR module that contains a QC program.
   ///
@@ -167,7 +171,7 @@ public:
   /// Normalize scoped global phases in place.
   [[nodiscard]] bool normalizeGlobalPhases();
 
-  /// Translate this program to portable OpenQASM without consuming it.
+  /// Translate this program to portable OpenQASM 3.1 without consuming it.
   [[nodiscard]] std::optional<OpenQASMProgram> toOpenQASM3() const;
 
   /// Consume this program and convert it to QCO.
@@ -176,30 +180,30 @@ public:
   /// Consume this program and lower it to QIR.
   [[nodiscard]] std::optional<QIRProgram> intoQIR(QIRProfile profile) &&;
 
-  /// Count the gates in the program.
+  /// Return the static gate count of the entry-point IR.
   ///
-  /// Any operation that implements the `UnitaryOpInterface` is counted.
-  /// The count includes operations in every structured control-flow region
-  /// once, regardless of how often the region executes. Operations within
-  /// modifiers are not counted recursively, and barriers are skipped.
+  /// Any entry-point operation that implements the `UnitaryOpInterface` is
+  /// counted. The count includes operations in every structured control-flow
+  /// region once, regardless of how often the region executes. Operations
+  /// within modifiers are not counted recursively, and barriers are skipped.
   [[nodiscard]] size_t numGates() const;
 
-  /// Count the single-qubit gates in the program.
+  /// Return the static single-qubit gate count of the entry-point IR.
   ///
-  /// Any operation that implements the `UnitaryOpInterface` and acts on
-  /// one qubit is counted. The count includes operations in every structured
-  /// control-flow region once, regardless of how often the region executes.
-  /// Operations within modifiers are not counted recursively, and barriers are
-  /// skipped.
+  /// Any entry-point operation that implements the `UnitaryOpInterface` and
+  /// acts on one qubit is counted. The count includes operations in every
+  /// structured control-flow region once, regardless of how often the region
+  /// executes. Operations within modifiers are not counted recursively, and
+  /// barriers are skipped.
   [[nodiscard]] size_t numSingleQubitGates() const;
 
-  /// Count the two-qubit gates in the program.
+  /// Return the static two-qubit gate count of the entry-point IR.
   ///
-  /// Any operation that implements the `UnitaryOpInterface` and acts on
-  /// two qubits is counted. The count includes operations in every structured
-  /// control-flow region once, regardless of how often the region executes.
-  /// Operations within modifiers are not counted recursively, and barriers are
-  /// skipped.
+  /// Any entry-point operation that implements the `UnitaryOpInterface` and
+  /// acts on two qubits is counted. The count includes operations in every
+  /// structured control-flow region once, regardless of how often the region
+  /// executes. Operations within modifiers are not counted recursively, and
+  /// barriers are skipped.
   [[nodiscard]] size_t numTwoQubitGates() const;
 };
 
@@ -283,7 +287,7 @@ private:
   [[nodiscard]] bool hasValidLinearity() const;
 };
 
-/// A serializable `jeff` program.
+/// A serializable compiler program in the `jeff` dialect.
 class JeffProgram final : public Program {
 public:
   explicit JeffProgram(Storage storage) : Program(std::move(storage)) {}

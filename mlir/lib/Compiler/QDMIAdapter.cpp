@@ -91,7 +91,7 @@ requireCircuitDevice(bool condition, llvm::StringRef deviceName,
                      llvm::StringRef detail) {
   return requireAdapterInput(
       condition, llvm::Twine("QDMI device '") + deviceName +
-                     "' cannot be used as an MLIR compiler target: only "
+                     "' cannot be used as an MQT compiler target: only "
                      "circuit-model devices with one qubit per non-zone site "
                      "are supported (" +
                      detail + ")");
@@ -104,7 +104,7 @@ requireRepresentableOperation(bool condition, llvm::StringRef deviceName,
   return requireAdapterInput(
       condition, llvm::Twine("QDMI device '") + deviceName + "' operation '" +
                      operationName +
-                     "' cannot be represented by the MLIR compiler target (" +
+                     "' cannot be represented by the MQT compiler target (" +
                      detail + ")");
 }
 
@@ -344,7 +344,7 @@ snapshotOperations(
       expectedCouplings->insert(canonicalCoupling(first, second));
     }
   }
-  std::vector<CompilerTarget::Operation> targetOperations;
+  std::vector<CompilerTarget::OperationCapability> targetOperations;
   targetOperations.reserve(operations.size());
   for (const auto& operation : operations) {
     if (auto error =
@@ -419,9 +419,9 @@ snapshotOperations(
     }
     const auto targetArity =
         hasArbitraryPositiveControls
-            ? CompilerTarget::Operation::Arity::variadic(*arity)
-            : CompilerTarget::Operation::Arity::fixed(*arity);
-    auto targetOperation = CompilerTarget::Operation::create(
+            ? CompilerTarget::OperationCapability::Arity::variadic(*arity)
+            : CompilerTarget::OperationCapability::Arity::fixed(*arity);
+    auto targetOperation = CompilerTarget::OperationCapability::create(
         std::move(operationName), targetArity, operation.getParametersNum(),
         std::move(siteTuples), includeCalibration ? duration : std::nullopt,
         includeCalibration ? fidelity : std::nullopt);
@@ -490,7 +490,7 @@ snapshotCompilerTarget(const qdmi::Device& device,
   if (auto error = requireAdapterInput(
           couplings || hasHomogeneousAllToAllMetadata || sites.size() == 1,
           llvm::Twine("QDMI device '") + deviceName +
-              "' cannot be used as an MLIR compiler target: connectivity is "
+              "' cannot be used as an MQT compiler target: connectivity is "
               "not reported")) {
     return error;
   }
@@ -574,8 +574,8 @@ static llvm::Error incompatible(const llvm::Twine& detail) {
           "; recompile for this device");
 }
 
-static bool sameOperation(const CompilerTarget::Operation& lhs,
-                          const CompilerTarget::Operation& rhs) {
+static bool sameOperation(const CompilerTarget::OperationCapability& lhs,
+                          const CompilerTarget::OperationCapability& rhs) {
   if (lhs.canonicalName() != rhs.canonicalName() ||
       lhs.arity() != rhs.arity() ||
       lhs.numParameters() != rhs.numParameters() ||

@@ -39,7 +39,7 @@ releases may include breaking changes.
   direct lowering and dense-array helpers for supported compiler inputs
   ([#1915], [#1973], [#2077], [#2078], [#2079], [#2334]) ([**@simon1hofmann**],
   [**@burgholzer**])
-- ✨ Add immutable MLIR compiler targets, selected payload specifications,
+- ✨ Add immutable MQT compiler targets, selected payload specifications,
   payload-aware control-flow legalization, QDMI device integration, ordered
   operation applicability, directional native synthesis, target compilation
   through C++, Python, and `mqt-cc`, and device submission APIs ([#2497],

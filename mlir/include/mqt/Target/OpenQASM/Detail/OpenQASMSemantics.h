@@ -15,7 +15,7 @@
 
 #include "llvm/Support/SourceMgr.h"
 
-namespace mlir::oq3::frontend::detail {
+namespace mlir::openqasm::frontend::detail {
 
 [[nodiscard]] AnalysisResult
 analyzeSyntaxProgram(const SyntaxProgram& syntax,
@@ -24,4 +24,4 @@ analyzeSyntaxProgram(const SyntaxProgram& syntax,
 [[nodiscard]] SourceLocation sourceLocation(const llvm::SourceMgr& sources,
                                             llvm::SMLoc location);
 
-} // namespace mlir::oq3::frontend::detail
+} // namespace mlir::openqasm::frontend::detail

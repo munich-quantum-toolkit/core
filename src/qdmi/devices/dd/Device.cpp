@@ -185,7 +185,7 @@ constexpr std::array SUPPORTED_PROGRAM_FORMATS = {
 
 [[nodiscard]] auto parseQASMToQCO(const std::string_view source)
     -> std::optional<mlir::QCOProgram> {
-  auto qcProgram = mlir::QCProgram::fromQASMString(source);
+  auto qcProgram = mlir::QCProgram::fromOpenQASMString(source);
   if (!qcProgram) {
     return std::nullopt;
   }

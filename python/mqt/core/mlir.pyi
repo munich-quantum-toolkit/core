@@ -156,7 +156,7 @@ class PayloadSpecification:
         """Whether optional capability metadata is complete."""
 
 class CompilerTarget:
-    """Immutable MLIR compiler target.
+    """Immutable MQT compiler target.
 
     Every target has either all-to-all or explicitly enumerated connectivity and
     either unrestricted or explicitly enumerated native-operation support.
@@ -269,7 +269,7 @@ class CompilerTarget:
 
         @staticmethod
         def variadic(minimum: int) -> CompilerTarget.OperationArity:
-            """Create an operation arity with an inclusive minimum. Operation construction requires a positive minimum."""
+            """Create an operation arity with an inclusive minimum. Capability construction requires a positive minimum."""
 
         @property
         def kind(self) -> CompilerTarget.OperationArityKind:
@@ -282,7 +282,7 @@ class CompilerTarget:
         def accepts(self, width: int) -> bool:
             """Whether this arity accepts a concrete width."""
 
-    class Operation:
+    class OperationCapability:
         """A target operation capability, calibration, and ordered applicability."""
 
         def __init__(
@@ -420,7 +420,7 @@ class CompilerTarget:
     class NativeOperations:
         """Native-operation support."""
 
-        def __init__(self, operations: Sequence[CompilerTarget.Operation]) -> None:
+        def __init__(self, operations: Sequence[CompilerTarget.OperationCapability]) -> None:
             """Create explicit native-operation support."""
 
         @staticmethod
@@ -432,7 +432,7 @@ class CompilerTarget:
             """The native-operation support model."""
 
         @property
-        def operations(self) -> list[CompilerTarget.Operation]:
+        def operations(self) -> list[CompilerTarget.OperationCapability]:
             """The explicit operations, if present."""
 
     @staticmethod
@@ -472,7 +472,7 @@ class CompilerTarget:
         """The target native-operation support model."""
 
     @property
-    def operations(self) -> list[CompilerTarget.Operation]:
+    def operations(self) -> list[CompilerTarget.OperationCapability]:
         """Operation capabilities in reported order."""
 
     @property
@@ -531,12 +531,12 @@ class QCProgram(Program):
         """Parse QC MLIR from a file."""
 
     @staticmethod
-    def from_qasm_str(source: str) -> QCProgram:
-        """Translate an OpenQASM 3 source string to QC MLIR."""
+    def from_openqasm_str(source: str) -> QCProgram:
+        """Translate supported OpenQASM to QC MLIR. Accepts versionless input and versions 2.0, 3.0, and 3.1."""
 
     @staticmethod
-    def from_qasm_file(path: str | os.PathLike) -> QCProgram:
-        """Translate an OpenQASM 3 file to QC MLIR."""
+    def from_openqasm_file(path: str | os.PathLike) -> QCProgram:
+        """Translate a supported OpenQASM file to QC MLIR. Accepts versionless input and versions 2.0, 3.0, and 3.1."""
 
     @staticmethod
     def from_qiskit(circuit: qiskit.circuit.QuantumCircuit) -> QCProgram:
@@ -576,27 +576,27 @@ class QCProgram(Program):
         """
 
     def num_gates(self) -> int:
-        """Count the gates in the program.
+        """Return the static gate count of the entry-point IR.
 
-        Any operation that implements the ``UnitaryOpInterface`` is counted. Operations
+        Any entry-point operation that implements the ``UnitaryOpInterface`` is counted. Operations
         in every structured control-flow region are counted once, regardless of how
         often the region executes. Operations within modifiers are not counted
         recursively, and barriers are skipped.
         """
 
     def num_single_qubit_gates(self) -> int:
-        """Count the single-qubit gates in the program.
+        """Return the static single-qubit gate count of the entry-point IR.
 
-        Any operation that implements the ``UnitaryOpInterface`` and acts on one qubit
+        Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on one qubit
         is counted. Operations in every structured control-flow region are counted
         once, regardless of how often the region executes. Operations within modifiers
         are not counted recursively, and barriers are skipped.
         """
 
     def num_two_qubit_gates(self) -> int:
-        """Count the two-qubit gates in the program.
+        """Return the static two-qubit gate count of the entry-point IR.
 
-        Any operation that implements the ``UnitaryOpInterface`` and acts on two qubits
+        Any entry-point operation that implements the ``UnitaryOpInterface`` and acts on two qubits
         is counted. Operations in every structured control-flow region are counted
         once, regardless of how often the region executes. Operations within modifiers
         are not counted recursively, and barriers are skipped.
@@ -671,7 +671,7 @@ class QCOProgram(Program):
         """
 
     def to_jeff(self, *, copy: bool = False) -> JeffProgram:
-        """Serialize this program as ``jeff``.
+        """Convert this program to ``jeff`` MLIR.
 
         Set ``copy=True`` to preserve it.
         """
@@ -728,7 +728,7 @@ class QCOProgram(Program):
         """
 
 class JeffProgram(Program):
-    """A serialized ``jeff`` compiler program.
+    """A serializable compiler program in the ``jeff`` dialect.
 
     ``jeff`` programs can be stored as bytes or files and converted back to QCO for
     further compilation.
@@ -755,7 +755,7 @@ class JeffProgram(Program):
         """Write this program to a ``jeff`` file."""
 
     def to_qco(self, *, copy: bool = False) -> QCOProgram:
-        """Deserialize this program to QCO.
+        """Convert this program to QCO.
 
         Set ``copy=True`` to preserve it.
         """
@@ -858,7 +858,7 @@ def sample(
     shots: int = 1024,
     seed: int = 0,
 ) -> dict[str, int]:
-    """Sample a supported input after lowering it directly to QCO.
+    """Sample a supported input after translating or converting it to QCO.
 
     An existing QCO program is used without copying. See
     {py:meth}`QCOProgram.sample` for the shot, seed, histogram, and error

@@ -26,7 +26,7 @@
 #include <optional>
 #include <utility>
 
-namespace mlir::oq3::frontend::detail {
+namespace mlir::openqasm::frontend::detail {
 
 [[nodiscard]] static bool canStartIdentifier(char c) {
   return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '_';
@@ -574,4 +574,4 @@ Token Lexer::next() {
   return single(TokenKind::Error);
 }
 
-} // namespace mlir::oq3::frontend::detail
+} // namespace mlir::openqasm::frontend::detail

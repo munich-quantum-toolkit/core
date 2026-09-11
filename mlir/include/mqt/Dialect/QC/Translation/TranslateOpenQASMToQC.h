@@ -28,36 +28,40 @@ class ModuleOp;
 namespace qc {
 
 /// Controls source acceptance and the size of the emitted QC program.
-struct QASM3ImportOptions {
-  oq3::frontend::GatePolicy gatePolicy =
-      oq3::frontend::GatePolicy::MQTCompatibility;
+struct OpenQASMImportOptions {
+  openqasm::frontend::GatePolicy gatePolicy =
+      openqasm::frontend::GatePolicy::MQTCompatibility;
   /// Maximum number of inserted operations, excluding the module itself.
   size_t maxOperations = 10'000'000;
 };
 
-/// Translate an OpenQASM 3 program to a QC program.
+/// Translate supported OpenQASM to QC.
 ///
-/// Frontend and lowering failures are reported through the diagnostic engine of
+/// Accepts versionless input and versions 2.0, 3.0, and 3.1.
+///
+/// Frontend and emission failures are reported through the diagnostic engine of
 /// @p context and result in a null return value.
 ///
 /// @param sourceMgr Source manager containing the OpenQASM program.
 /// @param context MLIRContext to create the module in.
 /// @param options Frontend policy and emission resource limit.
 [[nodiscard]] OwningOpRef<ModuleOp>
-translateQASM3ToQC(llvm::SourceMgr& sourceMgr, MLIRContext* context,
-                   const QASM3ImportOptions& options = {});
+translateOpenQASMToQC(llvm::SourceMgr& sourceMgr, MLIRContext* context,
+                      const OpenQASMImportOptions& options = {});
 
-/// Translate an OpenQASM 3 program to a QC program.
+/// Translate supported OpenQASM to QC.
 ///
-/// Frontend and lowering failures are reported through the diagnostic engine of
+/// Accepts versionless input and versions 2.0, 3.0, and 3.1.
+///
+/// Frontend and emission failures are reported through the diagnostic engine of
 /// @p context and result in a null return value.
 ///
 /// @param source String containing the OpenQASM program.
 /// @param context MLIRContext to create the module in.
 /// @param options Frontend policy and emission resource limit.
 [[nodiscard]] OwningOpRef<ModuleOp>
-translateQASM3ToQC(StringRef source, MLIRContext* context,
-                   const QASM3ImportOptions& options = {});
+translateOpenQASMToQC(StringRef source, MLIRContext* context,
+                      const OpenQASMImportOptions& options = {});
 
 } // namespace qc
 

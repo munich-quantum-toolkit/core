@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-namespace mlir::oq3::frontend::detail {
+namespace mlir::openqasm::frontend::detail {
 
 LogicalResult SyntaxBuilder::error(SMLoc location, const Twine& message) {
   diagnostics.push_back({.location = location, .message = message.str()});
@@ -316,4 +316,4 @@ SyntaxBuilder::switchDefault(SMLoc /*location*/,
   return success();
 }
 
-} // namespace mlir::oq3::frontend::detail
+} // namespace mlir::openqasm::frontend::detail

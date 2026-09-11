@@ -18,7 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace mlir::oq3::frontend {
+namespace mlir::openqasm::frontend {
 
 enum class GateAvailability : uint8_t {
   Language,
@@ -28,22 +28,20 @@ enum class GateAvailability : uint8_t {
   Compatibility,
 };
 
-using GateLowering = qc::StandardGate;
-
 struct GateCatalogEntry {
-  GateCatalogEntry(llvm::StringRef name, GateLowering lowering,
+  GateCatalogEntry(llvm::StringRef name, qc::StandardGate gate,
                    size_t controlCount, GateAvailability availability,
                    bool variadicControls = false, bool inverse = false) noexcept
-      : name(name), lowering(lowering),
-        parameterCount(qc::getStandardGateDescriptor(lowering).parameterCount),
+      : name(name), gate(gate),
+        parameterCount(qc::getStandardGateDescriptor(gate).parameterCount),
         controlCount(controlCount +
-                     qc::getStandardGateDescriptor(lowering).controlCount),
-        targetCount(qc::getStandardGateDescriptor(lowering).targetCount),
+                     qc::getStandardGateDescriptor(gate).controlCount),
+        targetCount(qc::getStandardGateDescriptor(gate).targetCount),
         availability(availability), variadicControls(variadicControls),
         inverse(inverse) {}
 
   llvm::StringRef name;
-  GateLowering lowering;
+  qc::StandardGate gate;
   size_t parameterCount;
   size_t controlCount;
   size_t targetCount;
@@ -58,6 +56,6 @@ struct GateCatalogEntry {
 
 [[nodiscard]] const GateCatalogEntry* lookupGate(llvm::StringRef name);
 
-[[nodiscard]] llvm::StringRef canonicalGateName(GateLowering lowering);
+[[nodiscard]] llvm::StringRef canonicalGateName(qc::StandardGate gate);
 
-} // namespace mlir::oq3::frontend
+} // namespace mlir::openqasm::frontend

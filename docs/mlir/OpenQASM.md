@@ -12,12 +12,12 @@ The frontend parses and validates the source before translating it directly to
 QC. The C++ compiler API accepts strings and files:
 
 ```cpp
-auto fromString = mlir::QCProgram::fromQASMString(source);
-auto fromFile = mlir::QCProgram::fromQASMFile("program.qasm");
+auto fromString = mlir::QCProgram::fromOpenQASMString(source);
+auto fromFile = mlir::QCProgram::fromOpenQASMFile("program.qasm");
 ```
 
-The lower-level `mlir::qc::translateQASM3ToQC` importer accepts
-`QASM3ImportOptions`. Its `frontend` field selects the gate policy, and
+The lower-level `mlir::qc::translateOpenQASMToQC` importer accepts
+`OpenQASMImportOptions`. Its `gatePolicy` field selects the gate policy, and
 `maxOperations` limits the number of inserted QC operations (10,000,000 by
 default). Exceeding the limit emits a diagnostic and returns no program.
 
@@ -26,28 +26,38 @@ Python provides the corresponding constructors:
 ```python
 from mqt.core.mlir import QCProgram
 
-from_string = QCProgram.from_qasm_str(source)
-from_file = QCProgram.from_qasm_file("program.qasm")
-qiskit_circuit = QCProgram.from_qasm_str(source).to_qiskit()
+from_string = QCProgram.from_openqasm_str(source)
+from_file = QCProgram.from_openqasm_file("program.qasm")
+qiskit_circuit = QCProgram.from_openqasm_str(source).to_qiskit()
 ```
 
-`mqt-cc` recognizes `.qasm` files automatically. Use `--input-format=qasm` when
-the filename does not identify the format:
+Python convenience functions such as `compile_program` recognize OpenQASM source
+strings by the `OPENQASM` header. For versionless source, construct a
+`QCProgram` with `from_openqasm_str` first. The explicit constructors and
+`.qasm` file imports accept versionless input directly.
+
+`mqt-cc` recognizes `.qasm` files automatically. Use `--input-format=openqasm`
+when the filename does not identify the format:
 
 ```console
 mqt-cc program.qasm
-mqt-cc --input-format=qasm program.txt
+mqt-cc --input-format=openqasm program.txt
 ```
+
+The default output checkpoint is `--emit=qc`, which emits QC MLIR after the
+default compiler pipeline. Use `--emit=qc-import` to inspect the imported QC
+before cleanup or QCO optimization. MLIR is the representation shared by the QC,
+QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 
 ### Input support
 
 | OpenQASM concept           | Support and restrictions                                                                                                                                                                                                                                                  |
 | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Versions and includes      | Versionless input and versions 3.0 and 3.1 use the maintained OpenQASM profile. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                                                                                                  |
+| Versions and includes      | Versionless input and versions 2.0, 3.0, and 3.1 are accepted within the supported subset below. `stdgates.inc`, `qelib1.inc`, and nested textual includes are supported.                                                                                                 |
 | Classical types            | `bit`, `bool`, `int`, `uint`, and `float` declarations are supported, including integer widths 1–64. Initialized compile-time `angle[N]` values support widths 1–52. Other sized numeric declarations, general arrays, complex values, and aliases are not yet supported. |
 | Outputs                    | Explicit `output` declarations are preserved in source order. Without any explicit output, global classical variables become outputs.                                                                                                                                     |
 | Gates                      | Language gates, the standard libraries, custom gates, broadcasting, and `inv`, `ctrl`, `negctrl`, and `pow` modifiers are supported. Custom definitions remain private QC functions instead of being expanded at every use. Recursive custom gates are rejected.          |
-| Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC target rejects programs that mix logical allocation with physical qubits.                                                                                                          |
+| Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC translation rejects programs that mix logical allocation with physical qubits.                                                                                                     |
 | Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. Initialized bit registers support `~`, `&`, `\|`, `^`, `<<`, `>>`, `popcount`, `rotl`, and `rotr`.                                             |
 | Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop; `continue` advances to its next iteration. Both may appear inside conditional and switch bodies.                                                                    |
 | Dynamic indexing           | Classical bit indices can be dynamic and receive runtime bounds checks. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                                  |
@@ -165,7 +175,7 @@ if (mlir::failed(source)) {
 The compiler API returns an owned textual program:
 
 ```cpp
-auto qc = mlir::QCProgram::fromQASMFile("input.qasm");
+auto qc = mlir::QCProgram::fromOpenQASMFile("input.qasm");
 auto direct = qc->toOpenQASM3(); // Export without QCO optimization.
 direct->write("direct.qasm");
 auto reimported = mlir::runDefaultPipeline(
@@ -180,7 +190,7 @@ Python exposes both forms:
 ```python
 from mqt.core.mlir import OutputFormat, QCProgram, compile_program
 
-qc = QCProgram.from_qasm_file("input.qasm")
+qc = QCProgram.from_openqasm_file("input.qasm")
 direct = qc.to_openqasm3()
 print(direct.source)
 direct.write("direct.qasm")
