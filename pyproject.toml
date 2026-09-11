@@ -244,7 +244,7 @@ archs = "auto64"
 build-frontend = "uv"
 test-command = "pytest test/python"
 test-groups = [ "test" ]
-test-sources = [ "test/python", "test/circuits", "json" ]
+test-sources = [ "json", "test/circuits", "test/python" ]
 
 [tool.cibuildwheel.linux]
 environment = { DEPLOY = "ON", PATH = "$PATH:/root/.local/bin" }
