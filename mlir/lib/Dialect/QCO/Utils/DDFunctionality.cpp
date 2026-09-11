@@ -60,6 +60,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <map>
 #include <memory>
 #include <optional>
@@ -784,15 +785,6 @@ static LogicalResult foldClassicalOp(Operation& op, ClassicalEnv& classical) {
       operands.push_back(*attr);
     }
 
-    if (isa<arith::ShLIOp, arith::ShRUIOp, arith::ShRSIOp>(op)) {
-      const auto lhs = cast<IntegerAttr>(operands[0]);
-      const auto rhs = cast<IntegerAttr>(operands[1]);
-      if (rhs.getValue().uge(lhs.getValue().getBitWidth())) {
-        return op.emitError()
-               << "shift amount out of range for QCO DD simulation";
-      }
-    }
-
     SmallVector<OpFoldResult, 1> results;
     if (failed(clone->fold(operands, results))) {
       break;
@@ -817,6 +809,127 @@ static LogicalResult foldClassicalOp(Operation& op, ClassicalEnv& classical) {
   return success();
 }
 
+template <typename OpTy, typename Combine>
+static LogicalResult applyIntegerBinaryOp(OpTy op, ClassicalEnv& classical,
+                                          Combine combine) {
+  auto lhs = lookupInteger(op.getLhs(), classical, op);
+  auto rhs = lookupInteger(op.getRhs(), classical, op);
+  if (failed(lhs) || failed(rhs)) {
+    return failure();
+  }
+  if constexpr (std::is_same_v<OpTy, arith::ShLIOp> ||
+                std::is_same_v<OpTy, arith::ShRUIOp> ||
+                std::is_same_v<OpTy, arith::ShRSIOp>) {
+    if (rhs->uge(lhs->getBitWidth())) {
+      return op.emitError()
+             << "shift amount out of range for QCO DD simulation";
+    }
+  }
+  if constexpr (requires { op.getOverflowFlags(); }) {
+    if (op.getOverflowFlags() != arith::IntegerOverflowFlags::none) {
+      return foldClassicalOp(*op, classical);
+    }
+  }
+  if constexpr (requires { op.getIsExact(); }) {
+    if (op.getIsExact()) {
+      return foldClassicalOp(*op, classical);
+    }
+  }
+  return bindInteger(op.getResult(), combine(*lhs, *rhs), classical);
+}
+
+static LogicalResult applyFloatOp(Operation& op, ClassicalEnv& classical) {
+  /// Keep MLIR's flag-dependent folds and explicit rounding modes.
+  if (auto flagged = dyn_cast<arith::ArithFastMathInterface>(op);
+      (flagged && flagged.getFastMathFlagsAttr().getValue() !=
+                      arith::FastMathFlags::none) ||
+      op.hasAttr("roundingmode")) {
+    return foldClassicalOp(op, classical);
+  }
+  SmallVector<llvm::APFloat, 2> operands;
+  for (Value operand : op.getOperands()) {
+    auto attr = lookupAttribute(operand, classical, &op);
+    if (failed(attr)) {
+      return failure();
+    }
+    auto floating = dyn_cast<FloatAttr>(*attr);
+    if (!floating) {
+      return op.emitError() << "expected an f64 SSA value";
+    }
+    /// Folders can preserve NaN payloads through algebraic identities.
+    if (!floating.getValue().isFinite()) {
+      return foldClassicalOp(op, classical);
+    }
+    operands.push_back(floating.getValue());
+  }
+  auto& lhs = operands.front();
+  if (isa<math::LogOp, math::SqrtOp>(op) && lhs.isNegative()) {
+    return foldClassicalOp(op, classical);
+  }
+  if (auto cmp = dyn_cast<arith::CmpFOp>(op)) {
+    return bindInteger(
+        cmp.getResult(),
+        llvm::APInt(1, static_cast<uint64_t>(arith::applyCmpPredicate(
+                           cmp.getPredicate(), lhs, operands[1]))),
+        classical);
+  }
+  const llvm::APFloat result =
+      TypeSwitch<Operation*, llvm::APFloat>(&op)
+          .Case([&](arith::AddFOp) { return lhs + operands[1]; })
+          .Case([&](arith::SubFOp) { return lhs - operands[1]; })
+          .Case([&](arith::MulFOp) { return lhs * operands[1]; })
+          .Case([&](arith::DivFOp) { return lhs / operands[1]; })
+          .Case([&](arith::RemFOp) {
+            lhs.mod(operands[1]);
+            return lhs;
+          })
+          .Case([&](arith::NegFOp) { return -lhs; })
+          .Case([&](arith::MaximumFOp) {
+            return llvm::maximum(lhs, operands[1]);
+          })
+          .Case([&](arith::MinimumFOp) {
+            return llvm::minimum(lhs, operands[1]);
+          })
+          .Case(
+              [&](arith::MaxNumFOp) { return llvm::maxnum(lhs, operands[1]); })
+          .Case(
+              [&](arith::MinNumFOp) { return llvm::minnum(lhs, operands[1]); })
+          .Case([&](math::AbsFOp) { return llvm::abs(lhs); })
+          .Case([&](math::CeilOp) {
+            lhs.roundToIntegral(llvm::APFloat::rmTowardPositive);
+            return lhs;
+          })
+          .Case([&](math::FloorOp) {
+            lhs.roundToIntegral(llvm::APFloat::rmTowardNegative);
+            return lhs;
+          })
+          .Case([&](math::CosOp) {
+            return llvm::APFloat(std::cos(lhs.convertToDouble()));
+          })
+          .Case([&](math::SinOp) {
+            return llvm::APFloat(std::sin(lhs.convertToDouble()));
+          })
+          .Case([&](math::TanOp) {
+            return llvm::APFloat(std::tan(lhs.convertToDouble()));
+          })
+          .Case([&](math::ExpOp) {
+            return llvm::APFloat(std::exp(lhs.convertToDouble()));
+          })
+          .Case([&](math::LogOp) {
+            return llvm::APFloat(std::log(lhs.convertToDouble()));
+          })
+          .Case([&](math::SqrtOp) {
+            return llvm::APFloat(std::sqrt(lhs.convertToDouble()));
+          })
+          .Case([&](math::PowFOp) {
+            return llvm::APFloat(
+                std::pow(lhs.convertToDouble(), operands[1].convertToDouble()));
+          });
+  classical.values[op.getResult(0)] =
+      FloatAttr::get(op.getResult(0).getType(), result);
+  return success();
+}
+
 static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
   const auto isUnsupportedFloat = [](Type type) {
     return isa<FloatType>(type) && !type.isF64();
@@ -827,29 +940,83 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
            << "QCO DD simulation only supports f64 classical values";
   }
   return TypeSwitch<Operation*, LogicalResult>(&op)
-      .Case([&](arith::AddIOp add) -> LogicalResult {
-        if (add.getOverflowFlags() != arith::IntegerOverflowFlags::none) {
-          return foldClassicalOp(op, classical);
-        }
-        auto lhs = lookupInteger(add.getLhs(), classical, add);
-        auto rhs = lookupInteger(add.getRhs(), classical, add);
-        if (failed(lhs) || failed(rhs)) {
+      .Case([&](arith::AddIOp integer) {
+        return applyIntegerBinaryOp(integer, classical, std::plus<>{});
+      })
+      .Case([&](arith::SubIOp integer) {
+        return applyIntegerBinaryOp(integer, classical, std::minus<>{});
+      })
+      .Case([&](arith::MulIOp integer) {
+        return applyIntegerBinaryOp(integer, classical, std::multiplies<>{});
+      })
+      .Case([&](arith::AndIOp integer) {
+        return applyIntegerBinaryOp(integer, classical, std::bit_and<>{});
+      })
+      .Case([&](arith::OrIOp integer) {
+        return applyIntegerBinaryOp(integer, classical, std::bit_or<>{});
+      })
+      .Case([&](arith::XOrIOp integer) {
+        return applyIntegerBinaryOp(integer, classical, std::bit_xor<>{});
+      })
+      .Case([&](arith::MaxSIOp integer) {
+        return applyIntegerBinaryOp(integer, classical, llvm::APIntOps::smax);
+      })
+      .Case([&](arith::MinSIOp integer) {
+        return applyIntegerBinaryOp(integer, classical, llvm::APIntOps::smin);
+      })
+      .Case([&](arith::MaxUIOp integer) {
+        return applyIntegerBinaryOp(integer, classical, llvm::APIntOps::umax);
+      })
+      .Case([&](arith::MinUIOp integer) {
+        return applyIntegerBinaryOp(integer, classical, llvm::APIntOps::umin);
+      })
+      .Case([&](arith::ShLIOp shift) {
+        return applyIntegerBinaryOp(
+            shift, classical,
+            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
+              return lhs.shl(rhs);
+            });
+      })
+      .Case([&](arith::ShRUIOp shift) {
+        return applyIntegerBinaryOp(
+            shift, classical,
+            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
+              return lhs.lshr(rhs);
+            });
+      })
+      .Case([&](arith::ShRSIOp shift) {
+        return applyIntegerBinaryOp(
+            shift, classical,
+            [](const llvm::APInt& lhs, const llvm::APInt& rhs) {
+              return lhs.ashr(rhs);
+            });
+      })
+      .Case([&](arith::CmpIOp cmp) {
+        return applyIntegerBinaryOp(
+            cmp, classical,
+            [&](const llvm::APInt& lhs, const llvm::APInt& rhs) {
+              return llvm::APInt(1,
+                                 static_cast<uint64_t>(arith::applyCmpPredicate(
+                                     cmp.getPredicate(), lhs, rhs)));
+            });
+      })
+      .Case([&](math::CtPopOp count) -> LogicalResult {
+        auto value = lookupInteger(count.getOperand(), classical, count);
+        if (failed(value)) {
           return failure();
         }
-        return bindInteger(add.getResult(), *lhs + *rhs, classical);
+        return bindInteger(count.getResult(),
+                           llvm::APInt(value->getBitWidth(), value->popcount()),
+                           classical);
       })
-      .Case<arith::AndIOp, arith::OrIOp, arith::XOrIOp, arith::SubIOp,
-            arith::MulIOp, arith::ShLIOp, arith::ShRUIOp, arith::ShRSIOp,
-            arith::CmpIOp, arith::AddFOp, arith::SubFOp, arith::MulFOp,
-            arith::DivFOp, arith::RemFOp, arith::NegFOp, arith::CmpFOp,
-            arith::SIToFPOp, arith::UIToFPOp, arith::MaxSIOp, arith::MinSIOp,
-            arith::MaxUIOp, arith::MinUIOp, arith::MaximumFOp,
+      .Case<arith::AddFOp, arith::SubFOp, arith::MulFOp, arith::DivFOp,
+            arith::RemFOp, arith::NegFOp, arith::CmpFOp, arith::MaximumFOp,
             arith::MinimumFOp, arith::MaxNumFOp, arith::MinNumFOp, math::AbsFOp,
             math::CeilOp, math::CosOp, math::ExpOp, math::FloorOp, math::LogOp,
-            math::SinOp, math::SqrtOp, math::TanOp, math::PowFOp,
-            math::CtPopOp>([&](Operation* foldable) {
-        return foldClassicalOp(*foldable, classical);
-      })
+            math::SinOp, math::SqrtOp, math::TanOp, math::PowFOp>(
+          [&](Operation* floating) {
+            return applyFloatOp(*floating, classical);
+          })
       .Case<LLVM::FshlOp, LLVM::FshrOp>([&](Operation* shift) -> LogicalResult {
         auto lhs = lookupInteger(shift->getOperand(0), classical, shift);
         auto rhs = lookupInteger(shift->getOperand(1), classical, shift);
@@ -912,6 +1079,24 @@ static LogicalResult applyClassicalOp(Operation& op, ClassicalEnv& classical) {
         return applyIntegerCast(cast.getIn(), cast.getOut(), cast, classical,
                                 true);
       })
+      .Case<arith::SIToFPOp, arith::UIToFPOp>(
+          [&](Operation* castOp) -> LogicalResult {
+            if (auto cast = dyn_cast<arith::UIToFPOp>(castOp);
+                cast && cast.getNonNeg()) {
+              return foldClassicalOp(*castOp, classical);
+            }
+            auto value =
+                lookupInteger(castOp->getOperand(0), classical, castOp);
+            if (failed(value)) {
+              return failure();
+            }
+            llvm::APFloat result(0.0);
+            result.convertFromAPInt(*value, isa<arith::SIToFPOp>(castOp),
+                                    llvm::APFloat::rmNearestTiesToEven);
+            classical.values[castOp->getResult(0)] =
+                FloatAttr::get(castOp->getResult(0).getType(), result);
+            return success();
+          })
       .Case<arith::FPToSIOp, arith::FPToUIOp>(
           [&](Operation* castOp) -> LogicalResult {
             auto value = lookupFloat(castOp->getOperand(0), classical, castOp);

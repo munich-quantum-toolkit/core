@@ -36,9 +36,9 @@ releases may include breaking changes.
   ([**@burgholzer**], [**@denialhaag**])
 - ✨ Add DD construction, simulation, statevector extraction, and sampling for
   QCO programs with structured control and dynamic quantum data, including
-  direct lowering and dense-array helpers for supported compiler inputs
-  ([#1915], [#1973], [#2077], [#2078], [#2079], [#2334], [#2518])
-  ([**@simon1hofmann**], [**@burgholzer**])
+  direct lowering, dense-array helpers, and direct scalar arithmetic evaluation
+  for supported compiler inputs ([#1915], [#1973], [#2077], [#2078], [#2079],
+  [#2334], [#2518]) ([**@simon1hofmann**], [**@burgholzer**])
 - ✨ Add immutable MQT compiler targets, selected payload specifications,
   payload-aware control-flow legalization, QDMI device integration, ordered
   operation applicability, directional native synthesis, target compilation
