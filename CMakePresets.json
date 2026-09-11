@@ -16,7 +16,8 @@
       "inherits": "base",
       "displayName": "Debug config",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Debug"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "Embedded"
       }
     },
     {
