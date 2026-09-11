@@ -182,6 +182,10 @@ private:
   /// Optional positive seed for deterministic sampling.
   std::optional<int> seed_;
 
+  /// Opt-in textual QIR records, separate from measurement shots and counts.
+  bool captureQIROutput_ = false;
+  std::optional<std::string> qirOutput_;
+
   /// Handle for the asynchronous job
   std::future<void> jobHandle_;
 
