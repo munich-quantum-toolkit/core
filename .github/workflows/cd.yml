@@ -32,7 +32,7 @@ jobs:
     with:
       runs-on: ${{ matrix.runs-on }}
       setup-mlir: true
-      llvm-version: 23.1.0
+      llvm-version: 23.1.1
     permissions:
       contents: read
 
