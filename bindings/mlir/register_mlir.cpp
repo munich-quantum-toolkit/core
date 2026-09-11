@@ -1396,6 +1396,25 @@ operations.)pb");
           "its contents if compilation fails. Failures raise RuntimeError "
           "with the emitted MLIR diagnostics.")
       .def(
+          "synthesize_for_target",
+          [](mlir::QCOProgram& program,
+             const mlir::TargetEnvironment& environment, bool enableTiming,
+             bool enableStatistics) {
+            requireValid(program);
+            withDiagnostics<nb::exception_type::runtime_error>(
+                program.module().getContext(), "Target synthesis failed", [&] {
+                  return mlir::success(program.synthesizeForTarget(
+                      environment, enableTiming, enableStatistics));
+                });
+          },
+          "target_environment"_a, nb::kw_only(), "enable_timing"_a = false,
+          "enable_statistics"_a = false,
+          "Synthesize native operations for an all-to-all target in place. "
+          "Assigns static sites but does not run optimization or routing "
+          "stages. "
+          "Do not rely on the program contents if synthesis fails. Failures "
+          "raise RuntimeError with the emitted MLIR diagnostics.")
+      .def(
           "to_qiskit",
           [](const mlir::QCOProgram& program,
              const mlir::CompilerTarget* target) {
