@@ -1,289 +1,199 @@
 # MQT Core Agent Guide
 
-This file contains repository-specific instructions for coding agents working on
-MQT Core. The project-wide policy for AI-assisted contributions is
-[`docs/ai_usage.md`](docs/ai_usage.md); follow it in addition to this guide.
+Follow this guide and the repository's
+[development policy](docs/development.md), including its MLIR section when
+relevant. The [AI usage policy](docs/ai_usage.md) defines human accountability
+and disclosure for agent-assisted contributions.
 
-## Repository Layout
+## Repository layout
 
-- `include/mqt-core/` contains the public C++ headers; implementations live in
+- Public C++ headers live in `include/mqt-core/`; implementations live in
   `src/`.
-- `bindings/` contains the nanobind-based Python bindings, and
-  `python/mqt/core/` contains the Python package and generated type stubs.
-- `mlir/` contains the MQT MLIR dialects, transformations, tools, and unit
-  tests. Building it requires LLVM/MLIR 23.1 or newer.
-- `test/` contains the C++ and Python tests. C++ tests generally mirror the
-  corresponding component under `src/`.
-- `docs/` contains the Sphinx and MyST documentation; `json/` contains schemas
-  and data used by the project.
-- `cmake/` and `CMakePresets.json` define the supported builds. Keep generated
-  build output in `build/` and do not commit it.
+- `bindings/` contains nanobind bindings; `python/mqt/core/` contains Python
+  code and generated stubs.
+- `mlir/` contains dialects, transforms, tools, and unit tests. It requires
+  LLVM/MLIR 23.1 or newer.
+- `test/` contains C++ and Python tests, generally mirroring production code.
+- `docs/` contains Sphinx and MyST documentation; `json/` contains schemas and
+  data. `cmake/` and `CMakePresets.json` define supported builds.
+- Keep generated build output in `build/` and out of commits.
 
-## Working Principles
+## Working principles
 
-- Keep changes focused on the assigned task. Do not perform unrelated cleanup,
-  broad reformatting, dependency upgrades, or refactors without explicit
-  authorization.
-- Preserve user changes and inspect the working tree before editing. Never
-  discard or overwrite changes that are outside the task.
-- Follow the repository's documented development policies and the nearest scoped
-  `AGENTS.md`. Before working under `mlir/`, read
-  [`mlir/AGENTS.md`](mlir/AGENTS.md). Use neighboring code as evidence of
-  established practice, not as authority when it conflicts with current policy.
-- Prefer the smallest change that fully solves the problem.
-- Before designing a change, trace the behavior through its producers, shared
-  helpers, and consumers. Reuse existing code or dependency facilities and fix
-  the owning layer. Do not reconstruct a shared contract separately in each
-  frontend, exporter, or caller.
-- State the supported inputs, failure behavior, and ownership boundary before
-  expanding an API. Preserve runtime efficiency and correctness when reducing
-  code; fewer lines alone do not establish a simpler design.
-- Document current behavior, contracts, and reasons that the code or signature
-  does not explain. Remove comments that repeat nearby code, boilerplate
-  parameter descriptions, change narration ("previously", "now fixed"), and
-  unsupported assurances ("should work", "for robustness"). State a concrete
-  constraint or delete the comment. Keep useful API summaries, examples,
-  ownership and numerical limits, and reasons for workarounds or regressions.
-  Use symbol references instead of brittle file/line pointers. Keep prompts,
-  review discussion, former names, and speculative plans out of code and API
-  docs; retain history in changelogs, migration guides, and decision records.
-- Apply
-  [Orwell's six rules for writing](https://www.orwellfoundation.com/the-orwell-foundation/orwell/essays-and-other-works/politics-and-the-english-language/)
-  to every category of prose, including reasoning, descriptions, commit
-  messages, documentation, docstrings, comments, test text, diagnostics, and
-  handoffs:
+- Inspect the working tree first and preserve user changes. Keep the diff
+  focused on the assigned task; avoid unrelated cleanup, formatting, and
+  upgrades.
+- Trace producers, shared helpers, and consumers before editing. Fix the owning
+  layer and reuse existing code or dependency facilities. Do not reconstruct a
+  shared contract in each frontend, exporter, or caller.
+- State supported inputs, failure behavior, and ownership before expanding an
+  API. Prefer the smallest complete solution while preserving correctness and
+  runtime efficiency. Fewer lines alone do not prove a simpler design.
+- Existing code is evidence, not authority over current policy. Follow
+  repository policy, enforcing configuration, and explicitly adopted upstream
+  guidance in that order.
+- Apply Orwell's six writing rules and the relevant ASD-STE100 principles in
+  every category of prose: choose short familiar words, remove needless words,
+  use active voice, keep each sentence direct, and prefer clarity over rigid
+  application of a style rule. Do not claim formal ASD-STE100 compliance.
+- Use established technical terms, one term per concept, and the spelling in
+  `docs/glossary.md`. Preserve project names such as `jeff` and `jeff-mlir`.
+  Update the glossary when introducing or changing public or ambiguous terms.
+- Document contracts, reasons, ownership, numerical limits, and useful examples.
+  Remove repetition of code, boilerplate parameters, change narration, and
+  unsupported assurances. Use symbol references instead of brittle line
+  pointers. Keep prompts and review history out of code and API docs.
+- Add or update tests for behavioral changes. Protect supported semantics and
+  concrete regressions, not provisional implementation choices. Check history,
+  callers, invariants, and resource limits before weakening a test; equal line
+  coverage or a shared failure does not establish redundancy.
+- Put tests in the owning subsystem's test tree. Use direct unit tests for
+  semantic contracts and subprocesses only for irreducible CLI behavior. Do not
+  put MLIR tests under production tools or enable an optional production tool
+  solely to satisfy a subprocess test.
+- Diagnose failed checks before changing code or build policy. Distinguish
+  defects from stale output, dependency mismatches, and service failures. Use
+  supported presets and keep machine setup in local configuration.
+- Remove obsolete scaffolding and suppressions. Retain only necessary, narrowly
+  scoped workarounds with a technical reason, reproducer, and removal condition.
+- Until v4 is released, fold changes to unreleased functionality into its
+  existing changelog feature entry or defer them to a dedicated changelog
+  update. Do not add `UPGRADING.md` sections for unreleased changes. Document
+  changes to released APIs, especially breaking changes, in both files.
+- Changelog entries name the PR and every contributing author, for example
+  `([#123]) ([**@username**])`, with link definitions at the bottom.
+- Never commit or print secrets or personal data. Use documented environment
+  variables and repository secrets.
+- Do not edit files marked as generated from an external template. Contribute
+  those changes to the MQT templates repository or its update workflow.
 
-  1. Do not use a familiar metaphor, simile, or other figure of speech.
-  2. Use a short word when it has the same meaning as a long word.
-  3. Remove every word that does not add meaning.
-  4. Use active voice when possible.
-  5. Use everyday English instead of a foreign phrase, scientific word, or
-     jargon term when this does not reduce precision.
-  6. Break a rule before it makes the text unclear, incorrect, or needlessly
-     difficult to read.
+## C++ and MLIR
 
-- Apply the relevant principles of
-  [ASD-STE100 Simplified Technical English](https://www.asd-ste100.org/): use
-  short, direct sentences; give each sentence one main idea; use one term for
-  one meaning; and use explicit nouns instead of vague pronouns. These are
-  mandatory style rules, not a claim of formal ASD-STE100 compliance.
-- Base terminology and phrasing on repository usage and established precedents
-  in the quantum computing, LLVM/MLIR and compiler, high-performance computing,
-  and general computer science communities. Use the established term that most
-  precisely matches the concept. If communities use different terms, explain the
-  mapping once. Never invent synonyms for variety.
-- Preserve the established capitalization of project and dependency names in
-  prose. For example, write `jeff` for the exchange format and `jeff-mlir` for
-  the related MLIR project.
-- Use the preferred terms in `docs/glossary.md`. Update the glossary in the same
-  change when public or potentially ambiguous terminology is introduced or
-  changed.
-- Add or update automated tests for every behavioral code change. During
-  development, run the narrowest relevant test first, then the required lint
-  checks before handoff.
-- Add tests that protect intended behavior or reproduce a concrete regression.
-  Never test provisional implementation choices that are not part of the
-  supported contract.
-- Missing prose documentation does not make a test unnecessary. Check regression
-  history, public and downstream uses, invariants, and numerical or resource
-  limits before weakening it. One shared failure or equal line coverage does not
-  prove that two tests are redundant.
-- Place tests in the corresponding test tree, organized by the subsystem that
-  owns the behavior. Within MLIR, keep tests under `mlir/unittests/` or another
-  established test root; never place them under `mlir/tools/` or another
-  production source directory. Prefer pass, compiler, or dialect unit tests for
-  semantic contracts, and reserve subprocess tests for irreducible driver-level
-  CLI behavior. Normal test targets and dependencies belong in the test build;
-  avoid promoting an otherwise optional production tool into the default build
-  solely for subprocess testing.
-- Remove obsolete scaffolding and diagnostic suppressions before handoff. Keep a
-  workaround or suppression only when it is still necessary, scope it as
-  narrowly as possible, and document the technical reason.
-- Diagnose a failed check before changing production code or build policy.
-  Distinguish a product defect from stale build output, a dependency mismatch,
-  and a temporary service failure. Use supported presets and keep machine setup
-  in local configuration. Retain a repository workaround only with a reproducer
-  and a condition for removing it.
-- Until MQT Core v4 is released, do not add standalone changelog entries for
-  changes to unreleased v4 functionality. Fold such changes into the existing
-  feature entry or defer them to a dedicated changelog update.
-- Do not add `UPGRADING.md` sections for changes to unreleased functionality.
-  Continue to document changes to released APIs, especially breaking changes, in
-  both `CHANGELOG.md` and `UPGRADING.md`.
-- Format changelog entries with the pull request reference and every
-  contributing author, for example `([#123]) ([**@username**])`, and define the
-  corresponding links at the bottom of `CHANGELOG.md`.
-- Never commit credentials, tokens, private keys, personal data, or other
-  secrets. Do not print secrets from the environment or GitHub Actions. Use
-  documented environment variables and repository secrets instead.
-- Do not edit files whose header says that they are generated from an external
-  template. Propose those changes in the
-  [MQT templates repository](https://github.com/munich-quantum-toolkit/templates)
-  or let the templating workflow update them.
+Use C++20 and CMake 3.28 or newer. The development policy owns detailed include,
+comment, data-structure, diagnostic, and debugging guidance.
 
-## Build and Test
+- Use `#pragma once`, direct includes, and standard-library facilities before
+  adding abstractions. Use C typedefs such as `size_t` and `uint64_t` without
+  `std::`. Do not use C-style casts, including casts to `void`.
+- Use `///` for Doxygen documentation and `//` for ordinary implementation and
+  namespace closing comments. Preserve trailing `//!<` or `///<`, inline block
+  comments, and block documentation inside continued macros.
+- Use `moduleOp` instead of the C++20 keyword `module` for an MLIR module
+  handle. Generally give non-public data members a trailing underscore.
+- Never add `const` to MLIR `Value` forms, range views, `Operation`, `Block`,
+  `Region`, `ModuleOp`, or typed operation wrappers, including via `const auto`.
+  Copy cheap handles and views. Do not add top-level `const` to by-value
+  parameters. Ordinary C++ objects retain normal const-correctness.
+- In the `mlir` namespace, prefer suitable LLVM facilities and unqualified names
+  imported by `mlir/Support/LLVM.h`; include their defining headers directly.
+- Trace IR contracts through builders/frontends, verifiers, interfaces,
+  transformations, and consumers. TableGen is not the complete contract.
+- Passes must not crash on valid IR and successful output must verify. Verifiers
+  own operation invariants; conversions and exporters diagnose their supported
+  subsets. Failed rewrite matches leave IR unchanged. Do not silently broaden
+  support or emit partial success.
+- QCO qubits and QTensors have exactly one use in valid IR. Validate with
+  `qco::verifyLinearity` at boundaries; avoid redundant rewrite guards.
+  Linearity does not imply positional wire correspondence.
+- Search upstream MLIR before adding operations, interfaces, traits,
+  conversions, or utilities. Reuse folding, canonicalization, and analysis
+  facilities. Keep custom state only for a concrete correctness or complexity
+  requirement.
+- Preserve deterministic output; never expose pointer or unordered traversal
+  order. Require evidence for performance rewrites.
+- Use GoogleTest/CTest, not `lit` or FileCheck. Assert semantics and required
+  normal forms. Exact trees, text, target choices, and operation counts need a
+  contract reason. Preserve phase, wire identity, numerical limits, and negative
+  cases when replacing an oracle.
+- Review the MLIR policy and `mlir/.clang-tidy` on major LLVM/MLIR upgrades.
 
-Use CMake 3.28 or newer for all C++ builds.
+## Python and bindings
 
-### C++
+- Use Google-style docstrings. Fix `ruff` and `ty` diagnostics instead of
+  suppressing them unless a documented exception is necessary.
+- Preserve supported Python APIs unless a breaking change is authorized. Keep
+  optional integration imports lazy where the binding already does so.
+- Choose finite-shot tolerances with low false-failure probability; keep
+  expected values away from tolerance boundaries.
+- Regenerate stubs after every binding change with `uvx nox -s stubs`. Never
+  edit generated `.pyi` files manually. MLIR handle rules apply in bindings too.
 
-- Configure a release build with `cmake --preset release`.
-- Build it with `cmake --build --preset release`.
-- Run all configured C++ tests with `ctest --preset release`.
-- Before pushing a C++ change, run `uvx nox -s cpp-lint`. This reproduces the CI
-  `cpp-linter` check on every line of each changed C++ file. A changed-line
-  `clang-tidy` run is useful while iterating but is not sufficient validation.
-- Run a component binary directly when iterating, for example
-  `./build/release/test/qdmi/driver/mqt-core-qdmi-driver-test`.
-- Use GoogleTest filters to narrow a binary further.
-- Replace `release` with `debug` for a debug build. Consult `CMakePresets.json`
-  for other supported configurations.
+## Build and validation
 
-The C++ code targets C++20 and uses GoogleTest. Follow these rules:
+Use the narrowest relevant test while iterating, then run the required gates.
+Local machine overrides may select another supported preset.
 
-- Write Doxygen API and `@file` descriptions with `///`, preserving their
-  content. Keep `//!<` or `///<` for trailing member documentation and block
-  documentation inside continued macros.
-- Use `//` for ordinary code comments and namespace closing comments. Keep
-  inline `/* ... */` comments, including unused parameter names.
-- Use `#pragma once` in headers and use existing project abstractions.
-- Prefer C++20 standard-library facilities over custom equivalents.
-- Within the `mlir` namespace and its nested namespaces, prefer LLVM types such
-  as `SmallVector` and `function_ref` where appropriate.
-- Do not use C-style casts, including casts to `void`. Use the appropriate C++
-  cast or adjust the code so that no cast is needed.
-- Use C standard-library typedefs such as `size_t` and fixed-width integer types
-  such as `uint64_t` without the `std::` namespace qualifier. Directly include
-  the header that provides each type.
-- Do not use `module` as a C++ variable or parameter name because it conflicts
-  with the C++20 keyword. Use `moduleOp` for `mlir::ModuleOp` values.
-- Generally give non-public data members a trailing underscore.
-- Follow the canonical general and MLIR-specific coding policies in
-  [`docs/development.md`](docs/development.md) and
-  [`docs/mlir/development.md`](docs/mlir/development.md).
+| Task                                            | Command                                                            |
+| ----------------------------------------------- | ------------------------------------------------------------------ |
+| Configure / build native release                | `cmake --preset release` / `cmake --build --preset release`        |
+| Native tests                                    | `ctest --preset release`                                           |
+| C++ lint before pushing C++ changes             | `uvx nox -s cpp-lint`                                              |
+| Install development dependencies                | `uv sync --locked --only-group dev`                                |
+| Install editable package                        | `uv sync --inexact --no-dev --no-build-isolation-package mqt-core` |
+| Focused Python tests                            | `uv run --no-sync pytest <file-or-filter>`                         |
+| Supported Python sessions                       | `uvx nox -s tests` / `uvx nox -s minimums`                         |
+| MLIR reference generation                       | `cmake --build --preset release --target mlir-doc`                 |
+| Complete executable documentation               | `uvx nox --non-interactive -s docs`                                |
+| External documentation links                    | `uvx nox --non-interactive -s docs -- -b linkcheck`                |
+| Full repository lint after each completed batch | `uvx nox -s lint`                                                  |
 
-### Python and Bindings
+Use `debug` for debug builds. Run component binaries directly with GoogleTest
+filters when useful, such as
+`build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler`. Python
+3.14 test sessions are `tests-3.14` and `minimums-3.14`.
 
-- Install development dependencies without building the package with
-  `uv sync --locked --only-group dev`.
-- Install the package for fast local rebuilds with
-  `uv sync --inexact --no-dev --no-build-isolation-package mqt-core`.
-- Run the Python tests with `uv run --no-sync pytest`; pass a file or `-k`
-  expression while iterating.
-- Run the supported test sessions with `uvx nox -s tests` and
-  `uvx nox -s minimums`. Python 3.14 variants are `tests-3.14` and
-  `minimums-3.14`.
-- For finite-shot tests, choose shot counts and tolerances with a sufficiently
-  low false-failure probability; avoid placing expected values on tolerance
-  boundaries.
-- If a file in `bindings/` is added or changed, regenerate type stubs with
-  `uvx nox -s stubs`. Never edit generated `.pyi` files in `python/mqt/core/`
-  manually.
+C++ lint checks every line of each changed C++ file against `origin/main` by
+default; changed-line clang-tidy alone is insufficient. Inspect which files ran.
+Keep pass and option documentation aligned with actual scope, defaults,
+supported shapes, limitations, and failure modes.
 
-Use Google-style Python docstrings. Prefer fixing diagnostics from `ruff` and
-`ty` over suppressing them; document suppressions that are genuinely required.
+Inspect the final diff and status. Exclude generated, template-managed, secret,
+and unrelated files. Tie validation to the final code: rerun affected checks
+following edits and distinguish passes from skipped, blocked, or pending checks.
+Report checks run and their outcomes; stop after required gates pass unless a
+concrete remaining risk justifies more validation.
 
-### MLIR and Documentation
+## Plans, audits, and benchmarks
 
-- Build the MLIR documentation with
-  `cmake --build --preset release --target mlir-doc`.
-- A real focused MLIR test binary is
-  `./build/release/mlir/unittests/Compiler/mqt-core-mlir-unittests-compiler`.
-- Build the complete documentation with `uvx nox --non-interactive -s docs`.
-- Check documentation links with `uvx nox -s docs -- -b linkcheck`.
-- When changing MLIR passes, pipelines, or command-line options, keep summaries
-  and descriptions aligned with the implementation's actual scope, defaults,
-  supported operation shapes, compile-time or runtime limitations, failure
-  modes, and deliberately out-of-scope behavior.
+Use an [ExecPlan](.agent/PLANS.md) for complex features or significant
+refactors, with one file per independent task under `.agent/plans/`. Keep scope,
+decisions, remaining work, and validation concise; retain a decision record at
+completion. Small tasks do not need activity records.
 
-## Generated Files and Validation
+Use a [SpecAudit](.agent/AUDITS.md) for concrete concerns about tests and their
+contracts, under `.agent/audits/`. Separate confirmed findings from candidates,
+apply changes only within authorization, and group related fixes for review.
 
-- Do not hand-edit generated stubs, rendered documentation, CMake-generated
-  files, or template-managed files.
-- Run `uvx nox -s lint` after each completed batch of changes. It runs the full
-  `prek` hook set, including formatting, spelling, type, and metadata checks.
-- Inspect the final diff and working-tree status. Report every check run and
-  clearly distinguish passes, failures, and checks that could not be run.
-- Tie validation to the code tested. A pass before a later edit is not proof for
-  that edit; queued, skipped, cancelled, or infrastructure-failed CI is not a
-  pass. Rerun affected checks and required gates, then stop unless a concrete
-  remaining risk warrants broader validation.
+### Benchmark experiments
 
-## Benchmark experiments
+Put temporary benchmark experiments under `.agent/benchmarks/<scope>/`, outside
+normal build, test, and lint targets. Small improvements need workload,
+baseline, measurements, and limits in the PR or audit; remove unneeded harnesses
+before pushing. For major features or performance changes, retain reproduction
+commands, exact revisions, environment, raw measurements, and comparison plots.
+Use matched comparisons; check correctness, output quality, spread, and
+regressions. Durable regression tests belong in the test tree.
 
-Use `.agent/benchmarks/<scope>/` for temporary experiments, outside normal build
-and test targets. Small improvements do not require benchmark setups in the PR:
-summarize the workload, baseline, results, and limits in the PR or audit, and
-discard temporary harnesses, data, and plots before pushing if no longer useful.
+## Git and public contributions
 
-Retain benchmark setups for large features or major performance changes. Include
-the harness, reproduction commands, exact revisions, environment, raw
-measurements, and before/after plots.
-
-Run matched comparisons; check correctness and output quality alongside speed.
-Report sample spread, regressions, and limits. Keep old results tied to their
-measured revisions. Exclude these folders from routine lint; validate
-experiments explicitly. Durable regression tests belong in the test tree.
-
-## ExecPlans
-
-When writing complex features or significant refactors, use an ExecPlan (as
-described in [`.agent/PLANS.md`](.agent/PLANS.md)) from design to
-implementation. Keep one ExecPlan per independently implemented task and store
-it under `.agent/plans/<task-slug>.md`. Keep its current scope, decisions,
-remaining work, and validation concise. At completion, retain a decision record
-and remove iteration history, obsolete recipes, and temporary failures. Small
-tasks do not need a plan merely to record activity.
-
-## Spec Audits
-
-Use a SpecAudit (as described in [`.agent/AUDITS.md`](.agent/AUDITS.md)) to
-investigate a concrete concern about tests and the code they constrain. Keep one
-record per bounded scope under `.agent/audits/<scope-slug>.md`. Report
-actionable findings with contract evidence, benefits, and limits; distinguish
-unresolved candidates from confirmed findings. Apply findings only within the
-user's authorized scope. Group related fixes for review rather than requiring
-one pull request per finding.
-
-## Git and GitHub Actions
-
-- Match the established issue and pull-request title style. Begin each title
-  with an appropriate gitmoji, followed by a concise description.
-- Keep the repository's gitmoji commit prefix. Write an imperative subject that
-  targets 50 characters and never exceeds 72 characters, including the prefix.
-  Do not end the subject with a period. Separate a body with a blank line and
-  use it to explain why, constraints, and non-obvious tradeoffs.
-- Preserve legitimate human authorship trailers. Record AI assistance with an
-  `Assisted-by` trailer, never an AI `Co-authored-by` trailer.
-- A coding agent may perform coding, Git, and GitHub workflow tasks that a human
-  has explicitly delegated. Authorization is limited to that stated scope;
-  request fresh authorization before taking an external action outside it.
-- Scoped authorization to create or update public GitHub text permits posting
-  within that scope without separate approval for each message. A human remains
-  accountable and must review agent-assisted work before it is accepted or
-  merged.
-- Every public text body authored or edited by an agent—including issue and
-  pull-request descriptions, comments, and reviews—must begin with the exact
-  disclosure `🤖 *AI text below* 🤖`. Titles are exempt.
-- Never use an agent to work on an issue labeled `good first issue`, and never
-  generate spam, repetitive reviews, or unreviewed contributions.
-- Do not push, open or merge a pull request, post on GitHub, or otherwise change
-  remote state unless the human has explicitly authorized that action.
-- Pushing or opening a pull request does not imply a request to monitor CI.
-  Unless the human explicitly asks for CI monitoring, report the status already
-  available at handoff, then stop and wait for further instructions.
-- Review findings should focus on substantive correctness, contracts,
-  maintainability, tests, documentation, licensing, and validation rather than
-  optional process metadata.
-
-## Handoff Checklist
-
-- The diff is focused and follows neighboring code conventions.
-- Behavioral changes have automated test coverage, and targeted tests pass.
-- `uvx nox -s lint` passes.
-- `uvx nox -s cpp-lint` passes when C++ files changed.
-- Binding changes have regenerated stubs.
-- User-facing changes update `CHANGELOG.md` and `UPGRADING.md` when appropriate.
-- Generated, template-managed, secret, and unrelated files are absent from the
-  diff.
-- AI assistance and validation results are reported transparently.
+- Begin issue, PR, and commit titles with the established gitmoji. Commit
+  subjects are imperative, target 50 characters, never exceed 72, and have no
+  final period. Separate the body with a blank line and explain reasons and
+  constraints.
+- Preserve human authorship trailers. Record AI assistance with `Assisted-by`,
+  never an AI `Co-authored-by` trailer.
+- Act only within the human's delegated scope. Do not push, open or merge PRs,
+  post GitHub text, or otherwise change remote state without authorization.
+  Request fresh authorization for external actions outside that scope.
+- Scoped authorization to create or update public text permits those actions
+  without per-message approval. Humans must review agent-assisted work before
+  acceptance or merging and remain accountable for the result.
+- Every agent-authored or agent-edited public body starts exactly with
+  `🤖 *AI text below* 🤖`. Titles are exempt.
+- Do not use agents on issues labeled `good first issue` or generate spam,
+  repetitive reviews, or unreviewed contributions.
+- Pushing or opening a PR does not request CI monitoring. Unless asked to
+  monitor, report the available status at handoff and stop.
+- Reviews focus on correctness, contracts, maintainability, tests,
+  documentation, licensing, and validation rather than optional process
+  metadata.

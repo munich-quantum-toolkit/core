@@ -56,7 +56,7 @@ prohibited `const` declarations without a new dependency.
 
 ## Decisions
 
-- Treat `docs/development.md` and `docs/mlir/development.md` as the canonical
+- Treat `docs/development.md`, including its MLIR section, as the canonical
   policy, while agent files and configuration are condensed views or
   enforcement. Rationale: one normative source prevents duplicated guidance from
   drifting.

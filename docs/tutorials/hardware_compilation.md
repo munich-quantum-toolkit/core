@@ -12,7 +12,7 @@ A logical program names qubits and gates. Hardware offers physical sites,
 connections, and a native gate set. What changes when the program's interactions
 do not fit those connections?
 
-This final compiler tutorial runs independently with the
+This tutorial runs independently with the
 [tutorial setup](index.md#run-the-notebooks). The targets below are small models
 for compilation. Execution uses the bundled DDSIM simulator and requires no
 hardware account or external device.
@@ -364,7 +364,14 @@ then compiled the logical source for DDSIM before submitting it. A compiled
 DDSIM program can be submitted again without recompilation while its contract
 continues to match.
 
-## Choose the next experiment
+## Continue to execution and exchange
+
+Continue with {doc}`qir_execution` to inspect the executable payload, then
+{doc}`qdmi_execution` to explore the device and job API. The
+{doc}`jeff_exchange` tutorial shows how to hand programs to another compiler
+before choosing an execution format.
+
+For further reference:
 
 - Use {doc}`../mlir/target_compilation` for device discovery, payload selection,
   target capabilities, and control-flow restrictions.
@@ -373,5 +380,5 @@ continues to match.
 - Explore {doc}`../mlir/qiskit`, {doc}`../mlir/OpenQASM`, and
   {doc}`../qir/index` for interoperability and output formats.
 - Try {doc}`../benchmarks` for structured programs with analytic references.
-- Use {doc}`../mlir/development` when you are ready to implement a compiler
-  change.
+- Use [MLIR development policy](../development.md#mlir) when you are ready to
+  implement a compiler change.

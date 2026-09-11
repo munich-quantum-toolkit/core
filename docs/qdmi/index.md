@@ -33,8 +33,15 @@ clients must use those queries to prepare compatible jobs.
 
 Compilation and submission remain separate: `compile_program` prepares a
 `CompiledProgram`; `submit_program` submits it to a matching execution device.
-The {doc}`hardware compilation tutorial <../tutorials/hardware_compilation>`
-shows both steps with bundled DDSIM.
+The {doc}`compilation and execution guide <../compilation/index>` introduces
+this workflow. The
+{doc}`hardware compilation tutorial <../tutorials/hardware_compilation>` shows
+both steps with bundled DDSIM; the {doc}`QIR guide <../qir/index>` also
+retrieves QIR output records through the same job API.
+
+Work through the {doc}`QDMI tutorial <../tutorials/qdmi_execution>` to discover
+capabilities, reuse a compiled program, and relate shots, counts, and simulator
+states.
 
 ## Choose a guide
 

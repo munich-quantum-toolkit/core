@@ -301,4 +301,4 @@ $HZH = X$; this is not cancellation of adjacent inverse gates.
 Continue with {doc}`control_flow` to see how quantum values move through
 registers and control flow. For operation definitions and implementation
 guidance, use the {doc}`../mlir/QC`, {doc}`../mlir/QCO`, and
-{doc}`../mlir/development` references.
+[MLIR development policy](../development.md#mlir) references.

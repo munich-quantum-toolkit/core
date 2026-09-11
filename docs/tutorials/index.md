@@ -1,7 +1,7 @@
 # Tutorials
 
 Learn how quantum compilation works by predicting a result, inspecting the
-compiler's output, and changing the program. These three executable notebooks
+compiler's output, and changing the program. These six executable notebooks
 assume basic Python and quantum computing knowledge; no MLIR experience is
 needed.
 
@@ -11,6 +11,12 @@ needed.
    branches, then check their sampled results.
 3. **{doc}`hardware_compilation`:** compare hardware constraints, inspect
    routing, and submit a compiled program through QDMI.
+4. **{doc}`qir_execution`:** inspect Base and Adaptive QIR, execute feedback,
+   and relate output records to counts.
+5. **{doc}`qdmi_execution`:** discover device capabilities, submit and reuse
+   jobs, and compare shots, counts, and simulator state results.
+6. **{doc}`jeff_exchange`:** hand a structured program between compiler
+   processes, preserve phase and loops, then compile it for execution.
 
 For a first execution, use the {doc}`QPE walkthrough <../getting_started>`. The
 {doc}`compiler guide <../mlir/mqt_compiler_collection>` describes interfaces and
@@ -19,12 +25,8 @@ options; these tutorials explain their effects through experiments.
 ## Run the notebooks
 
 Install [uv](https://docs.astral.sh/uv/getting-started/installation/). Download
-{download}`requirements.txt <requirements.txt>` and the notebooks below into one
-directory:
-
-- {download}`Compiler representations <../_build/jupyter_execute/tutorials/compiler_representations.ipynb>`
-- {download}`Control flow <../_build/jupyter_execute/tutorials/control_flow.ipynb>`
-- {download}`Hardware compilation <../_build/jupyter_execute/tutorials/hardware_compilation.ipynb>`
+{download}`requirements.txt <requirements.txt>` and use the download link at the
+start of each tutorial to save its notebook in the same directory.
 
 In that directory, start JupyterLab with all tutorial dependencies:
 
@@ -56,4 +58,7 @@ try the experiments.
 compiler_representations
 control_flow
 hardware_compilation
+qir_execution
+qdmi_execution
+jeff_exchange
 ```
