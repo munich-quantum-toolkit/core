@@ -17,4 +17,5 @@ target_link_libraries(
           MLIRLLVMDialect
           MLIRQCOUtils)
 mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-support)
-gtest_discover_tests(mqt-core-mlir-unittests-support PROPERTIES LABELS mqt-mlir-unittests)
+gtest_discover_tests(mqt-core-mlir-unittests-support PROPERTIES LABELS mqt-mlir-unittests
+                                                                DISCOVERY_TIMEOUT 60)
