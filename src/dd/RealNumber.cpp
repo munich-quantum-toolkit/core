@@ -11,6 +11,7 @@
 #include "dd/RealNumber.hpp"
 
 #include "dd/DDDefinitions.hpp"
+#include "dd/LinkedListBase.hpp"
 
 #include <cassert>
 #include <cstdint>
@@ -27,6 +28,12 @@ constexpr std::uintptr_t IMMORTAL_FLAG = std::uintptr_t{1} << 2U;
 
 RealNumber* RealNumber::next() const noexcept {
   return RealNumber::getAlignedPointer(reinterpret_cast<RealNumber*>(next_));
+}
+
+void RealNumber::setNext(LLBase* next) noexcept {
+  const auto flags =
+      reinterpret_cast<uintptr_t>(next_) & (MARK_FLAG | IMMORTAL_FLAG);
+  next_ = reinterpret_cast<LLBase*>(reinterpret_cast<uintptr_t>(next) | flags);
 }
 
 RealNumber* RealNumber::getAlignedPointer(const RealNumber* e) noexcept {
@@ -50,19 +57,19 @@ RealNumber* RealNumber::flipPointerSign(const RealNumber* e) noexcept {
 
 void RealNumber::mark(RealNumber* e) noexcept {
   RealNumber* p = getAlignedPointer(e);
-  p->next_ = reinterpret_cast<RealNumber*>(
+  p->next_ = reinterpret_cast<LLBase*>(
       reinterpret_cast<std::uintptr_t>(p->next_) | MARK_FLAG);
 }
 
 void RealNumber::unmark(RealNumber* e) noexcept {
   RealNumber* p = getAlignedPointer(e);
-  p->next_ = reinterpret_cast<RealNumber*>(
+  p->next_ = reinterpret_cast<LLBase*>(
       reinterpret_cast<std::uintptr_t>(p->next_) & ~MARK_FLAG);
 }
 
 void RealNumber::immortalize(RealNumber* e) noexcept {
   RealNumber* p = +getAlignedPointer(e);
-  p->next_ = reinterpret_cast<RealNumber*>(
+  p->next_ = reinterpret_cast<LLBase*>(
       reinterpret_cast<std::uintptr_t>(p->next_) | IMMORTAL_FLAG);
 }
 

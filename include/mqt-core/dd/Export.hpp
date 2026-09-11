@@ -19,6 +19,7 @@
 #include "dd/Node.hpp"
 #include "dd/RealNumber.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <fstream>
@@ -49,13 +50,7 @@ static std::ostream& header(const Edge<Node>& e, std::ostream& os,
   os << "t [label=<<font "
         "point-size=\"20\">1</"
         "font>>,shape=box,tooltip=\"1\",width=0.3,height=0.3]\n";
-  auto toplabel = (reinterpret_cast<std::uintptr_t>(e.p) & 0x001fffffU) >> 1U;
-  os << "root->";
-  if (e.isTerminal()) {
-    os << "t";
-  } else {
-    os << toplabel;
-  }
+  os << "root->" << (e.isTerminal() ? "t" : "0");
   os << "[penwidth=\"" << thicknessFromMagnitude(e.w) << "\",tooltip=\""
      << conditionalFormat(e.w, formatAsPolar) << "\"";
   if (!e.w.exactlyOne()) {
@@ -79,15 +74,9 @@ static std::ostream& coloredHeader(const Edge<Node>& e, std::ostream& os,
         "point-size=\"20\">1</"
         "font>>,shape=box,tooltip=\"1\",width=0.3,height=0.3]\n";
 
-  auto toplabel = (reinterpret_cast<std::uintptr_t>(e.p) & 0x001fffffU) >> 1U;
   auto mag = thicknessFromMagnitude(e.w);
   auto color = colorFromPhase(e.w);
-  os << "root->";
-  if (e.isTerminal()) {
-    os << "t";
-  } else {
-    os << toplabel;
-  }
+  os << "root->" << (e.isTerminal() ? "t" : "0");
   os << "[penwidth=\"" << mag << "\",tooltip=\""
      << conditionalFormat(e.w, formatAsPolar) << "\",color=\"" << color << "\"";
   if (edgeLabels) {
@@ -106,15 +95,9 @@ static std::ostream& memoryHeader(const Edge<Node>& e, std::ostream& os,
         "point-size=\"20\">1</"
         "font>>,shape=box,tooltip=\"1\",width=0.3,height=0.3]\n";
 
-  auto toplabel = (reinterpret_cast<std::uintptr_t>(e.p) & 0x001fffffU) >> 1U;
   auto mag = thicknessFromMagnitude(e.w);
   auto color = colorFromPhase(e.w);
-  os << "root->";
-  if (e.isTerminal()) {
-    os << "t";
-  } else {
-    os << toplabel;
-  }
+  os << "root->" << (e.isTerminal() ? "t" : "0");
   os << "[penwidth=\"" << mag << "\",tooltip=\"" << e.w.toString(false, 4)
      << "\" color=\"" << color << "\"";
   if (edgeLabels) {
@@ -150,20 +133,19 @@ static std::ostream& memoryHeader(const Edge<Node>& e, std::ostream& os,
   return os;
 }
 
-std::ostream& modernNode(const mEdge& e, std::ostream& os,
+std::ostream& modernNode(const mEdge& e, size_t nodeId, std::ostream& os,
                          bool formatAsPolar = true);
-std::ostream& modernNode(const vEdge& e, std::ostream& os,
+std::ostream& modernNode(const vEdge& e, size_t nodeId, std::ostream& os,
                          bool formatAsPolar = true);
-std::ostream& classicNode(const mEdge& e, std::ostream& os,
+std::ostream& classicNode(const mEdge& e, size_t nodeId, std::ostream& os,
                           bool formatAsPolar = true);
-std::ostream& classicNode(const vEdge& e, std::ostream& os,
+std::ostream& classicNode(const vEdge& e, size_t nodeId, std::ostream& os,
                           bool formatAsPolar = true);
 template <class Node>
-static std::ostream& memoryNode(const Edge<Node>& e, std::ostream& os) {
+static std::ostream& memoryNode(const Edge<Node>& e, size_t nodeId,
+                                std::ostream& os) {
   constexpr std::size_t n = std::tuple_size_v<decltype(e.p->e)>;
-  auto nodelabel = (reinterpret_cast<std::uintptr_t>(e.p) & 0x001fffffU) >>
-                   1U; // this allows for 2^20 (roughly 1e6) unique nodes
-  os << nodelabel << "[label=<";
+  os << nodeId << "[label=<";
   os << R"(<font point-size="10"><table border="1" cellspacing="0" cellpadding="2" style="rounded">)";
   os << R"(<tr><td colspan=")" << n << R"(" border="1" sides="B">)" << std::hex
      << reinterpret_cast<std::uintptr_t>(e.p) << std::dec << "</td></tr>";
@@ -186,31 +168,31 @@ static std::ostream& memoryNode(const Edge<Node>& e, std::ostream& os) {
   return os;
 }
 
-std::ostream& bwEdge(const mEdge& from, const mEdge& to, std::uint16_t idx,
-                     std::ostream& os, bool edgeLabels = false,
-                     bool classic = false, bool formatAsPolar = true);
-std::ostream& bwEdge(const vEdge& from, const vEdge& to, std::uint16_t idx,
-                     std::ostream& os, bool edgeLabels = false,
-                     bool classic = false, bool formatAsPolar = true);
-std::ostream& coloredEdge(const mEdge& from, const mEdge& to, std::uint16_t idx,
-                          std::ostream& os, bool edgeLabels = false,
-                          bool classic = false, bool formatAsPolar = true);
-std::ostream& coloredEdge(const vEdge& from, const vEdge& to, std::uint16_t idx,
-                          std::ostream& os, bool edgeLabels = false,
-                          bool classic = false, bool formatAsPolar = true);
+std::ostream& bwEdge(const mEdge& to, size_t fromId, size_t toId,
+                     std::uint16_t idx, std::ostream& os,
+                     bool edgeLabels = false, bool classic = false,
+                     bool formatAsPolar = true);
+std::ostream& bwEdge(const vEdge& to, size_t fromId, size_t toId,
+                     std::uint16_t idx, std::ostream& os,
+                     bool edgeLabels = false, bool classic = false,
+                     bool formatAsPolar = true);
+std::ostream& coloredEdge(const mEdge& to, size_t fromId, size_t toId,
+                          std::uint16_t idx, std::ostream& os,
+                          bool edgeLabels = false, bool classic = false,
+                          bool formatAsPolar = true);
+std::ostream& coloredEdge(const vEdge& to, size_t fromId, size_t toId,
+                          std::uint16_t idx, std::ostream& os,
+                          bool edgeLabels = false, bool classic = false,
+                          bool formatAsPolar = true);
 template <class Node>
-static std::ostream& memoryEdge(const Edge<Node>& from, const Edge<Node>& to,
-                                std::uint16_t idx, std::ostream& os,
-                                bool edgeLabels = false) {
-  auto fromlabel =
-      (reinterpret_cast<std::uintptr_t>(from.p) & 0x001fffffU) >> 1U;
-  auto tolabel = (reinterpret_cast<std::uintptr_t>(to.p) & 0x001fffffU) >> 1U;
-
-  os << fromlabel << ":" << idx << ":s->";
+static std::ostream& memoryEdge(const Edge<Node>& to, size_t fromId,
+                                size_t toId, std::uint16_t idx,
+                                std::ostream& os, bool edgeLabels = false) {
+  os << fromId << ":" << idx << ":s->";
   if (to.isTerminal()) {
     os << "t";
   } else {
-    os << tolabel;
+    os << toId;
   }
 
   auto mag = thicknessFromMagnitude(to.w);
@@ -264,26 +246,14 @@ static void toDot(const Edge<Node>& e, std::ostream& os, bool colored = true,
     header(e, oss, edgeLabels, formatAsPolar);
   }
 
-  std::unordered_set<decltype(e.p)> nodes{};
-
-  auto priocmp = [](const Edge<Node>* left, const Edge<Node>* right) {
-    if (left->p == nullptr) {
-      return right->p != nullptr;
-    }
-    if (right->p == nullptr) {
-      return false;
-    }
-    return left->p->v < right->p->v;
-  };
-
-  std::priority_queue<const Edge<Node>*, std::vector<const Edge<Node>*>,
-                      decltype(priocmp)>
-      q(priocmp);
+  /// Assign IDs on discovery, independent of allocation addresses.
+  std::unordered_map<const Node*, size_t> nodes{{e.p, 0}};
+  std::queue<const Edge<Node>*> q;
   q.push(&e);
 
   // bfs until finished
   while (!q.empty()) {
-    auto node = q.top();
+    auto node = q.front();
     q.pop();
 
     // base case
@@ -291,20 +261,16 @@ static void toDot(const Edge<Node>& e, std::ostream& os, bool colored = true,
       continue;
     }
 
-    // check if node has already been processed
-    auto ret = nodes.emplace(node->p);
-    if (!ret.second) {
-      continue;
-    }
+    const auto nodeId = nodes.at(node->p);
 
     // node definition as HTML-like label (href="javascript:;" is used as
     // workaround to make tooltips work)
     if (memory) {
-      memoryNode(*node, oss);
+      memoryNode(*node, nodeId, oss);
     } else if (classic) {
-      classicNode(*node, oss, formatAsPolar);
+      classicNode(*node, nodeId, oss, formatAsPolar);
     } else {
-      modernNode(*node, oss, formatAsPolar);
+      modernNode(*node, nodeId, oss, formatAsPolar);
     }
 
     // iterate over edges in reverse to guarantee correct processing order
@@ -316,17 +282,24 @@ static void toDot(const Edge<Node>& e, std::ostream& os, bool colored = true,
         continue;
       }
 
-      // non-zero edge to be included
-      q.push(&edge);
+      size_t childId = 0;
+      if (!edge.isTerminal()) {
+        const auto [it, inserted] = nodes.try_emplace(edge.p, nodes.size());
+        childId = it->second;
+        if (inserted) {
+          q.push(&edge);
+        }
+      }
 
       if (memory) {
-        memoryEdge(*node, edge, static_cast<std::uint16_t>(i), oss, edgeLabels);
+        memoryEdge(edge, nodeId, childId, static_cast<std::uint16_t>(i), oss,
+                   edgeLabels);
       } else if (colored) {
-        coloredEdge(*node, edge, static_cast<std::uint16_t>(i), oss, edgeLabels,
-                    classic, formatAsPolar);
+        coloredEdge(edge, nodeId, childId, static_cast<std::uint16_t>(i), oss,
+                    edgeLabels, classic, formatAsPolar);
       } else {
-        bwEdge(*node, edge, static_cast<std::uint16_t>(i), oss, edgeLabels,
-               classic, formatAsPolar);
+        bwEdge(edge, nodeId, childId, static_cast<std::uint16_t>(i), oss,
+               edgeLabels, classic, formatAsPolar);
       }
     }
   }

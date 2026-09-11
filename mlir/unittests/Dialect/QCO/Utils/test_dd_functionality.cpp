@@ -24,6 +24,7 @@
 
 #include "gtest/gtest.h"
 
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
@@ -44,6 +45,7 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Support/FormatVariadic.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <array>
@@ -3423,6 +3425,384 @@ TEST_F(QCODDFunctionalityTest, StatevectorSkipsUnreachedAllocations) {
   ASSERT_EQ(vector.size(), 1U);
   EXPECT_NEAR(std::norm(vector[0]), 1.0, 1e-12);
   dd->decRef(*state);
+}
+
+TEST_F(QCODDFunctionalityTest,
+       IntegerEvaluationPreservesWidthsFlagsAndInputIR) {
+  for (const auto& [opcode, type, lhs, rhs, expected, flags] : {
+           std::array{"arith.addi", "i8", "127", "1", "-128", ""},
+           std::array{
+               "arith.addi",
+               "i64",
+               "9223372036854775807",
+               "1",
+               "-9223372036854775808",
+               "",
+           },
+           std::array{
+               "arith.addi",
+               "i129",
+               "170141183460469231731687303715884105728",
+               "170141183460469231731687303715884105728",
+               "340282366920938463463374607431768211456",
+               "",
+           },
+           std::array{"arith.addi", "index", "-1", "1", "0", ""},
+           std::array{"arith.addi", "i8", "-3", "1", "-2", ""},
+           std::array{"arith.addi", "i64", "-3", "1", "-2", "overflow<nsw>"},
+           std::array{
+               "arith.addi",
+               "i129",
+               "1",
+               "2",
+               "3",
+               "overflow<nuw, nsw>",
+           },
+           std::array{"arith.subi", "i8", "-128", "1", "127", ""},
+           std::array{"arith.subi", "i8", "-3", "1", "-4", "overflow<nsw>"},
+           std::array{"arith.muli", "i8", "64", "4", "0", ""},
+           std::array{"arith.muli", "i8", "3", "4", "12", "overflow<nuw, nsw>"},
+           std::array{"arith.andi", "i8", "-86", "15", "10", ""},
+           std::array{"arith.ori", "i8", "-86", "15", "-81", ""},
+           std::array{"arith.xori", "i8", "-86", "15", "-91", ""},
+           std::array{"arith.shli", "i8", "1", "7", "-128", ""},
+           std::array{"arith.shli", "i8", "1", "3", "8", "overflow<nuw, nsw>"},
+           std::array{"arith.shrui", "i8", "-128", "7", "1", ""},
+           std::array{"arith.shrsi", "i8", "-128", "7", "-1", ""},
+           std::array{"arith.shrui", "i8", "-128", "7", "1", "exact"},
+           std::array{"arith.shrsi", "i8", "-128", "7", "-1", "exact"},
+           std::array{
+               "arith.shli",
+               "i129",
+               "1",
+               "128",
+               "340282366920938463463374607431768211456",
+               "",
+           },
+           std::array{"arith.maxsi", "i8", "-1", "1", "1", ""},
+           std::array{"arith.minsi", "i8", "-1", "1", "-1", ""},
+           std::array{"arith.maxui", "i8", "-1", "1", "-1", ""},
+           std::array{"arith.minui", "i8", "-1", "1", "1", ""},
+           std::array{"math.ctpop", "i129", "-1", "0", "129", ""},
+           std::array{"arith.cmpi eq,", "i8", "-1", "1", "0", ""},
+           std::array{"arith.cmpi ne,", "i8", "-1", "1", "1", ""},
+           std::array{"arith.cmpi slt,", "i8", "-1", "1", "1", ""},
+           std::array{"arith.cmpi sle,", "i8", "-1", "1", "1", ""},
+           std::array{"arith.cmpi sgt,", "i8", "-1", "1", "0", ""},
+           std::array{"arith.cmpi sge,", "i8", "-1", "1", "0", ""},
+           std::array{"arith.cmpi ult,", "i8", "-1", "1", "0", ""},
+           std::array{"arith.cmpi ule,", "i8", "-1", "1", "0", ""},
+           std::array{"arith.cmpi ugt,", "i8", "-1", "1", "1", ""},
+           std::array{"arith.cmpi uge,", "i8", "-1", "1", "1", ""},
+       }) {
+    SCOPED_TRACE(::testing::Message() << opcode << " " << type << " " << flags);
+    const auto* const resultType =
+        StringRef(opcode).starts_with("arith.cmpi") ? "i1" : type;
+    const auto* const operands =
+        StringRef(opcode) == "math.ctpop" ? "%lhs" : "%lhs, %rhs";
+    auto mod = parseSourceString<ModuleOp>(
+        llvm::formatv(R"mlir(
+      module {{
+        func.func @main(%lhs: {0}, %rhs: {0}) {{
+          %expected = arith.constant {1} : {2}
+          %result = {3} {4} {5} : {0}
+          %ok = arith.cmpi eq, %result, %expected : {2}
+          %q = qco.static 0 : !qco.qubit
+          %out = qco.if %ok args(%arg = %q) -> (!qco.qubit) {{
+            %x = qco.x %arg : !qco.qubit -> !qco.qubit
+            qco.yield %x : !qco.qubit
+          } else args(%arg = %q) {{
+            qco.yield %arg : !qco.qubit
+          }
+          qco.sink %out : !qco.qubit
+          return
+        }
+      }
+    )mlir",
+                      type, expected, resultType, opcode, operands, flags)
+            .str(),
+        context.get());
+    ASSERT_TRUE(mod);
+    ASSERT_TRUE(succeeded(verify(*mod)));
+    auto func = mainFunc(*mod);
+    const DDArgumentBindings bindings{
+        {
+            func.getArgument(0),
+            parseAttribute(llvm::formatv("{0} : {1}", lhs, type).str(),
+                           context.get()),
+        },
+        {
+            func.getArgument(1),
+            parseAttribute(llvm::formatv("{0} : {1}", rhs, type).str(),
+                           context.get()),
+        },
+    };
+    std::string before;
+    llvm::raw_string_ostream beforeStream(before);
+    mod->print(beforeStream);
+    for (unsigned repeat = 0; repeat < 2; ++repeat) {
+      const auto counts = sample(func, 2, 1, bindings);
+      ASSERT_TRUE(succeeded(counts));
+      EXPECT_EQ(*counts, (std::map<std::string, size_t>{{"1", 2}}));
+    }
+    ASSERT_TRUE(succeeded(verify(*mod)));
+    std::string after;
+    llvm::raw_string_ostream afterStream(after);
+    mod->print(afterStream);
+    EXPECT_EQ(before, after);
+  }
+}
+
+TEST_F(QCODDFunctionalityTest,
+       FloatingEvaluationPreservesValuesFlagsAndInputIR) {
+  for (const auto& [opcode, type, lhs, rhs, expected, flags] : {
+           std::array{"arith.addf", "f64", "1.5", "2.5", "4.0", ""},
+           std::array{"arith.subf", "f64", "1.5", "2.5", "-1.0", ""},
+           std::array{"arith.mulf", "f64", "-1.5", "2.0", "-3.0", ""},
+           std::array{"arith.divf", "f64", "-3.0", "2.0", "-1.5", ""},
+           std::array{"arith.remf", "f64", "-5.0", "2.0", "-1.0", ""},
+           std::array{"arith.negf", "f64", "0.0", "0.0", "-0.0", ""},
+           std::array{"arith.addf", "f64", "-0.0", "-0.0", "-0.0", ""},
+           std::array{"arith.subf", "f64", "-0.0", "0.0", "-0.0", ""},
+           std::array{"arith.maximumf", "f64", "-0.0", "0.0", "0.0", ""},
+           std::array{"arith.minimumf", "f64", "0.0", "-0.0", "-0.0", ""},
+           std::array{"arith.maxnumf", "f64", "2.0", "-3.0", "2.0", ""},
+           std::array{"arith.minnumf", "f64", "2.0", "-3.0", "-3.0", ""},
+           std::array{"math.absf", "f64", "-0.0", "0.0", "0.0", ""},
+           std::array{"math.ceil", "f64", "-0.25", "0.0", "-0.0", ""},
+           std::array{"math.floor", "f64", "-0.25", "0.0", "-1.0", ""},
+           std::array{"math.cos", "f64", "0.0", "0.0", "1.0", ""},
+           std::array{"math.sin", "f64", "-0.0", "0.0", "-0.0", ""},
+           std::array{"math.tan", "f64", "-0.0", "0.0", "-0.0", ""},
+           std::array{"math.exp", "f64", "0.0", "0.0", "1.0", ""},
+           std::array{"math.log", "f64", "1.0", "0.0", "0.0", ""},
+           std::array{"math.sqrt", "f64", "4.0", "0.0", "2.0", ""},
+           std::array{"math.powf", "f64", "2.0", "3.0", "8.0", ""},
+           std::array{
+               "arith.addf",
+               "f64",
+               "0x7FF0000000000000",
+               "-0.0",
+               "0x7FF0000000000000",
+               "",
+           },
+           std::array{
+               "arith.maximumf",
+               "f64",
+               "0x7FF8000000000001",
+               "1.0",
+               "0x7FF8000000000001",
+               "",
+           },
+           std::array{
+               "arith.maxnumf",
+               "f64",
+               "0x7FF8000000000001",
+               "1.0",
+               "1.0",
+               "",
+           },
+           std::array{
+               "arith.minimumf",
+               "f64",
+               "1.0",
+               "0x7FF8000000000001",
+               "0x7FF8000000000001",
+               "",
+           },
+           std::array{
+               "arith.minnumf",
+               "f64",
+               "1.0",
+               "0x7FF8000000000001",
+               "1.0",
+               "",
+           },
+           std::array{
+               "math.log",
+               "f64",
+               "0.0",
+               "0.0",
+               "0xFFF0000000000000",
+               "",
+           },
+           std::array{
+               "arith.addf",
+               "f64",
+               "1.0",
+               "1.1102230246251565e-16",
+               "1.0000000000000002",
+               "upward",
+           },
+           std::array{
+               "arith.mulf",
+               "f64",
+               "1.5",
+               "2.0",
+               "3.0",
+               "fastmath<fast>",
+           },
+           std::array{"arith.sitofp", "i8", "-1", "0", "-1.0", ""},
+           std::array{"arith.uitofp", "i8", "-1", "0", "255.0", ""},
+           std::array{"arith.uitofp", "i8", "42", "0", "42.0", "nneg"},
+           std::array{
+               "arith.sitofp",
+               "i64",
+               "9007199254740993",
+               "0",
+               "9007199254740992.0",
+               "",
+           },
+           std::array{
+               "arith.uitofp",
+               "i129",
+               "170141183460469231731687303715884105728",
+               "0",
+               "1.7014118346046923e38",
+               "",
+           },
+           std::array{"arith.cmpf oeq,", "f64", "-1.0", "1.0", "0", ""},
+           std::array{"arith.cmpf ogt,", "f64", "-1.0", "1.0", "0", ""},
+           std::array{"arith.cmpf oge,", "f64", "-1.0", "1.0", "0", ""},
+           std::array{"arith.cmpf olt,", "f64", "-1.0", "1.0", "1", ""},
+           std::array{"arith.cmpf ole,", "f64", "-1.0", "1.0", "1", ""},
+           std::array{"arith.cmpf one,", "f64", "-1.0", "1.0", "1", ""},
+           std::array{"arith.cmpf ord,", "f64", "-1.0", "1.0", "1", ""},
+           std::array{"arith.cmpf ueq,", "f64", "-1.0", "1.0", "0", ""},
+           std::array{"arith.cmpf ugt,", "f64", "-1.0", "1.0", "0", ""},
+           std::array{"arith.cmpf uge,", "f64", "-1.0", "1.0", "0", ""},
+           std::array{"arith.cmpf ult,", "f64", "-1.0", "1.0", "1", ""},
+           std::array{"arith.cmpf ule,", "f64", "-1.0", "1.0", "1", ""},
+           std::array{"arith.cmpf une,", "f64", "-1.0", "1.0", "1", ""},
+           std::array{"arith.cmpf uno,", "f64", "-1.0", "1.0", "0", ""},
+           std::array{"arith.cmpf false,", "f64", "-1.0", "1.0", "0", ""},
+           std::array{"arith.cmpf true,", "f64", "-1.0", "1.0", "1", ""},
+           std::array{
+               "arith.cmpf uno,",
+               "f64",
+               "0x7FF8000000000001",
+               "1.0",
+               "1",
+               "",
+           },
+       }) {
+    SCOPED_TRACE(::testing::Message()
+                 << opcode << " " << lhs << " " << rhs << " " << flags);
+    const StringRef name(opcode);
+    const bool comparison = name.starts_with("arith.cmpf");
+    const bool cast = name == "arith.sitofp" || name == "arith.uitofp";
+    const bool unary = cast || name == "arith.negf" ||
+                       (name.starts_with("math.") && name != "math.powf");
+    const auto* const operands = unary ? "%lhs" : "%lhs, %rhs";
+    const auto signature =
+        cast ? llvm::formatv("{0} to f64", type).str() : std::string(type);
+    const auto* const resultType = comparison ? "i1" : "f64";
+    std::string check = comparison
+                            ? "%ok = arith.cmpi eq, %result, %expected : i1"
+                        : StringRef(expected).starts_with("0x7FF8")
+                            ? "%ok = arith.cmpf uno, %result, %result : f64"
+                            : "%ok = arith.cmpf oeq, %result, %expected : f64";
+    if (StringRef(expected) == "0.0" || StringRef(expected) == "-0.0") {
+      check = R"mlir(
+        %one = arith.constant 1.0 : f64
+        %actual_inverse = arith.divf %one, %result : f64
+        %expected_inverse = arith.divf %one, %expected : f64
+        %ok = arith.cmpf oeq, %actual_inverse, %expected_inverse : f64
+      )mlir";
+    }
+    auto mod = parseSourceString<ModuleOp>(
+        llvm::formatv(R"mlir(
+      module {{
+        func.func @main(%lhs: {0}, %rhs: {0}) {{
+          %expected = arith.constant {1} : {2}
+          %result = {3} {4} {5} : {6}
+          {7}
+          %q = qco.static 0 : !qco.qubit
+          %out = qco.if %ok args(%arg = %q) -> (!qco.qubit) {{
+            %x = qco.x %arg : !qco.qubit -> !qco.qubit
+            qco.yield %x : !qco.qubit
+          } else args(%arg = %q) {{
+            qco.yield %arg : !qco.qubit
+          }
+          qco.sink %out : !qco.qubit
+          return
+        }
+      }
+    )mlir",
+                      type, expected, resultType, opcode, operands, flags,
+                      signature, check)
+            .str(),
+        context.get());
+    ASSERT_TRUE(mod);
+    ASSERT_TRUE(succeeded(verify(*mod)));
+    auto func = mainFunc(*mod);
+    const DDArgumentBindings bindings{
+        {
+            func.getArgument(0),
+            parseAttribute(llvm::formatv("{0} : {1}", lhs, type).str(),
+                           context.get()),
+        },
+        {
+            func.getArgument(1),
+            parseAttribute(llvm::formatv("{0} : {1}", rhs, type).str(),
+                           context.get()),
+        },
+    };
+    std::string before;
+    llvm::raw_string_ostream beforeStream(before);
+    mod->print(beforeStream);
+    for (unsigned repeat = 0; repeat < 2; ++repeat) {
+      const auto counts = sample(func, 2, 1, bindings);
+      ASSERT_TRUE(succeeded(counts));
+      EXPECT_EQ(*counts, (std::map<std::string, size_t>{{"1", 2}}));
+    }
+    ASSERT_TRUE(succeeded(verify(*mod)));
+    std::string after;
+    llvm::raw_string_ostream afterStream(after);
+    mod->print(afterStream);
+    EXPECT_EQ(before, after);
+  }
+}
+
+TEST_F(QCODDFunctionalityTest, RejectsShiftAndMathDomainErrors) {
+  for (const auto* const opcode :
+       {"arith.shli", "arith.shrui", "arith.shrsi"}) {
+    for (const auto* const flags :
+         {"", StringRef(opcode) == "arith.shli" ? "overflow<nsw>" : "exact"}) {
+      for (const auto* const amount : {"-1", "8", "255"}) {
+        SCOPED_TRACE(::testing::Message()
+                     << opcode << " " << amount << " " << flags);
+        expectMlirSimulationFails(0, llvm::formatv(R"mlir(
+        module {{
+          func.func @main() {{
+            %zero = arith.constant 0 : i8
+            %amount = arith.constant {0} : i8
+            %result = {1} %zero, %amount {2} : i8
+            return
+          }
+        }
+      )mlir",
+                                                   amount, opcode, flags)
+                                         .str());
+      }
+    }
+  }
+  for (const auto* const opcode : {"math.log", "math.sqrt"}) {
+    for (const auto* const value : {"-1.0", "-0.0"}) {
+      SCOPED_TRACE(::testing::Message() << opcode << " " << value);
+      expectMlirSimulationFails(0, llvm::formatv(R"mlir(
+        module {{
+          func.func @main() {{
+            %value = arith.constant {0} : f64
+            %result = {1} %value : f64
+            return
+          }
+        }
+      )mlir",
+                                                 value, opcode)
+                                       .str());
+    }
+  }
 }
 
 } // namespace

@@ -34,6 +34,10 @@ struct RealNumber final : LLBase {
   /// Getter for the next object.
   [[nodiscard]] RealNumber* next() const noexcept;
 
+  /// Relink an entry without discarding its collection flags.
+  /// Use LLBase::setNext to initialize a fresh or reused entry.
+  void setNext(LLBase* next) noexcept;
+
   /// Check whether the number points to the zero number.
   /// @param e The number to check.
   /// @returns Whether the number points to zero.

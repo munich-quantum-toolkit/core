@@ -301,9 +301,7 @@ std::ostream& operator<<(std::ostream& os, const ComplexValue& c) {
 
 std::size_t std::hash<dd::ComplexValue>::operator()(
     const dd::ComplexValue& c) const noexcept {
-  const auto h1 = dd::murmur64(
-      static_cast<std::size_t>(std::round(c.r / dd::RealNumber::eps)));
-  const auto h2 = dd::murmur64(
-      static_cast<std::size_t>(std::round(c.i / dd::RealNumber::eps)));
+  const auto h1 = std::hash<dd::fp>{}(std::round(c.r / dd::RealNumber::eps));
+  const auto h2 = std::hash<dd::fp>{}(std::round(c.i / dd::RealNumber::eps));
   return dd::combineHash(h1, h2);
 }

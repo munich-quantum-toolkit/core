@@ -9,6 +9,7 @@
  */
 
 #include "dd/CachedEdge.hpp"
+#include "dd/Complex.hpp"
 #include "dd/ComputeTable.hpp"
 #include "dd/DDDefinitions.hpp"
 #include "dd/Edge.hpp"
@@ -39,6 +40,7 @@
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <numeric>
 #include <random>
 #include <span>
 #include <sstream>
@@ -76,6 +78,58 @@ void checkDotFile(const Edge<Node>& edge, const std::string& filename) {
   EXPECT_NE(is.peek(), std::ifstream::traits_type::eof());
   is.close();
   std::filesystem::remove(filename);
+}
+
+template <class Node> void checkDotIds() {
+  /// The old address mask aliases nodes a multiple of 2 MiB apart.
+  constexpr size_t distance = std::lcm(size_t{1} << 21U, sizeof(Node));
+  std::vector<Node> spaced((distance / sizeof(Node)) + 1);
+  std::array<Node, 2> adjacent{};
+  const auto makeRoot = [](Node& low, Node& high) {
+    low.v = 0;
+    high.v = 1;
+    low.e.fill(Edge<Node>::zero());
+    high.e.fill(Edge<Node>::zero());
+    low.e[0] = Edge<Node>::one();
+    high.e[0] = {&low, Complex::one()};
+    if constexpr (IsMatrix<Node>) {
+      low.e[3] = Edge<Node>::one();
+      high.e[3] = high.e[0];
+    }
+    return Edge<Node>{&high, Complex::one()};
+  };
+  const auto far = makeRoot(spaced.front(), spaced.back());
+  const auto near = makeRoot(adjacent[0], adjacent[1]);
+  for (const bool colored : {false, true}) {
+    for (const bool classic : {false, true}) {
+      for (const bool memory : {false, true}) {
+        SCOPED_TRACE(::testing::Message() << colored << classic << memory);
+        std::ostringstream first;
+        toDot(far, first, colored, true, classic, memory);
+        const auto dot = first.str();
+        EXPECT_NE(dot.find("root->0["), std::string::npos);
+        EXPECT_NE(dot.find("\n0["), std::string::npos);
+        const auto child = dot.find("\n1[");
+        ASSERT_NE(child, std::string::npos);
+        EXPECT_EQ(dot.find("\n1[", child + 1), std::string::npos);
+        EXPECT_NE(dot.find(memory ? "0:0:s->1[" : "0:0:sw->1["),
+                  std::string::npos);
+        if (!memory) {
+          std::ostringstream second;
+          toDot(near, second, colored, true, classic, memory);
+          EXPECT_EQ(dot, second.str());
+        }
+      }
+    }
+  }
+}
+
+TEST(DDPackageTest, VectorDotIdsAreUniqueAndIndependentOfAddresses) {
+  checkDotIds<vNode>();
+}
+
+TEST(DDPackageTest, MatrixDotIdsAreUniqueAndIndependentOfAddresses) {
+  checkDotIds<mNode>();
 }
 
 enum class Fixture : uint8_t { H, X, Z, S, T, Tdg, SWAP };
