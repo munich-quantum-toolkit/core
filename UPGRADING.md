@@ -11,22 +11,6 @@ of changes including minor and patch releases, please refer to the
 MQT Core now requires CMake 3.28 or newer. Upgrade CMake before configuring a
 source build or embedding MQT Core with `FetchContent`.
 
-### CMake presets on Windows
-
-All CMake presets now use Ninja. On Windows, remove `-windows` from preset names
-when configuring, building, and testing:
-
-| Previous preset           | Replacement       |
-| ------------------------- | ----------------- |
-| `debug-windows`           | `debug`           |
-| `release-windows`         | `release`         |
-| `debug-windows-no-mlir`   | `debug-no-mlir`   |
-| `release-windows-no-mlir` | `release-no-mlir` |
-
-Install Ninja and run CMake from a Visual Studio developer shell for the target
-architecture. Use a new build directory if an existing directory uses the Visual
-Studio generator.
-
 ### Removal of the classic circuit representation
 
 MQT Core 4 removes the complete classic circuit surface. This includes the C++
@@ -1076,6 +1060,22 @@ be conveniently installed from PyPI using the
 [`cmake`](https://pypi.org/project/cmake/) package.
 
 It also requires the `uv` library version 0.5.20 or higher.
+
+## CMake presets on Windows
+
+All CMake presets now use Ninja. On Windows, remove `-windows` from preset names
+when configuring, building, and testing:
+
+| Previous preset           | Replacement       |
+| ------------------------- | ----------------- |
+| `debug-windows`           | `debug`           |
+| `release-windows`         | `release`         |
+| `debug-windows-no-mlir`   | `debug-no-mlir`   |
+| `release-windows-no-mlir` | `release-no-mlir` |
+
+Install Ninja and run CMake from a Visual Studio developer shell for the target
+architecture. Use a new build directory if an existing directory uses the Visual
+Studio generator.
 
 <!-- Version links -->
 

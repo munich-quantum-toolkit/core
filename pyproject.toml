@@ -256,13 +256,13 @@ build-frontend = "uv"
 test-command = "pytest test/python"
 test-groups = [ "test" ]
 test-sources = [
-  "test/python",
-  "test/circuits",
-  "test/slurm/run_integration.py",
-  "json",
   "bindings/mlir/qiskit/SupportedVersions.inc",
+  "json",
   "scripts/check_docs_links.py",
   "scripts/qiskit_c_api_adopt.py",
+  "test/circuits",
+  "test/python",
+  "test/slurm/run_integration.py",
   "vendor/qiskit-c-api/2.5.0",
 ]
 
