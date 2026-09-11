@@ -55,28 +55,6 @@ The integration base is `a66a9b206` on 2026-09-10, using LLVM/MLIR 23.1.0.
    The complete-lifetime proof falls back to runtime state beyond 64 nested
    regions. This bounds analysis recursion without dropping supported behavior.
 
-## Measurements and limits
-
-Historical measurements below predate the current upstream integration. The
-[benchmark record](../benchmarks/compiler-placement/README.md) also contains the
-fresh current-main comparison, including unsupported inputs.
-
-[Matched measurements](../benchmarks/compiler-placement/README.md) retain exact
-inputs, native module hashes, raw samples, reproduction commands, and a plot.
-Both arms run the complete device pipeline. Three alternating batches provide
-nine samples per workload. QPE and RUS execution checks the analytic reference
-at 1,024 shots; widths 32 and 64 are compile-only.
-
-Standard QPE at width 64 changes from 386.36 ms to 51.09 ms median compilation
-and from 22,876 to 4,480 bytes. Small timing differences are inconclusive on
-this shared host. Retained loops can cost execution time: RUS at width 16
-changes from 42.53 to 72.84 ms median, including job/JIT setup. RUS at width 4
-grows from 3,640 to 3,748 bytes. No universal runtime speedup is claimed.
-
-The earlier device-versus-direct-QIR probe remains diagnostic evidence only; one
-arm skipped target passes. Its reduced partial-release input exposed the
-independent ownership defect. Those findings are now protected by native tests.
-
 ## Integration and validation
 
 Retain the merged control-flow work reduction, measurement/store analysis,
@@ -86,14 +64,13 @@ stricter mapper and modifier contracts remain and which QIR analysis was
 replaced. The local-buffer alias rule stays in the shared measurement/store
 analysis.
 
-The updated implementation passes 992 focused native tests, all 27 Python
-device-compilation tests, and all executed benchmark reference checks. Full-file
-C++ lint against `a66a9b206` reports zero formatting or tidy findings. Generated
-MLIR documentation and general lint pass. The stacked README and RtD checks
-belong to PR #2509.
+After the rebase onto `fce58f02d`, the implementation passes 1,026 selected
+native tests and 305 Python compiler and device tests. Full-file C++ lint
+against that base reports zero formatting or tidy findings. Generated MLIR
+documentation and general lint pass. The stacked README and RtD checks belong to
+PR #2509.
 
-The requested final ponytail review found no further justified C++ cuts. It
-removed 16 superseded diagnostic scripts, raw runs, and generated LLVM snapshots
-(1,478 lines), retaining native regressions, minimized inputs, and reproducible
-matched benchmarks. No dependency or abstraction was added. Hosted CI monitoring
-is outside this task.
+The final ponytail review found no further justified C++ cuts. Durable
+regressions cover the compiler behavior; temporary benchmark artifacts are not
+part of the PR. No dependency or abstraction was added. Hosted CI monitoring is
+outside this task.

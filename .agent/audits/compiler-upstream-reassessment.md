@@ -70,8 +70,6 @@ dynamic-size physical placement, or loop-aware routing algorithm is introduced.
 ## Validation
 
 The [placement audit](compiler-placement-reassessment.md) records the final
-native, Python, lint, and documentation checks. The
-[benchmark record](../benchmarks/compiler-placement/README.md) distinguishes
-fresh current-main results from historical speed measurements and records
-unsupported inputs explicitly. The final ponytail review removed superseded
+native, Python, lint, and documentation checks. Native regressions cover the
+retained compiler contracts. The final ponytail review removed superseded
 diagnostic artifacts and found no further justified C++ cuts.

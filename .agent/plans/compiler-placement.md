@@ -35,8 +35,8 @@ review before publication.
 All three findings are implemented: allocation-level placement for homogeneous
 Adaptive QIR targets, shared constant-slot scalarization, and partial tensor
 ownership. Existing exact-site routing and payload checks remain in force. The
-audit records the supported inputs, ownership boundary, and matched scaling
-results. No new runtime API, public option, or repository dependency is needed.
+audit records the supported inputs, ownership boundary, and compilation limits.
+No new runtime API, public option, or repository dependency is needed.
 
 ## Validation and integration
 
@@ -46,9 +46,9 @@ corrections. The added indexed-placement test uses `fromOpenQASMString` and
 rejections, pass. All 305 selected Python compiler, loop, integer-interchange,
 QCO DD, and device-compilation tests pass after rebuilding the extension with
 both packaged providers. Full-file C++ lint against that fixed base, general
-lint, and generated MLIR documentation pass. The benchmark record keeps timings
-tied to their measured revisions. The final complexity review found no further
-C++ cuts.
+lint, and generated MLIR documentation pass. Temporary benchmark artifacts have
+been removed from the PR; native regressions retain coverage. The final
+complexity review found no further C++ cuts.
 
 The separate README/RtD plan owns the stacked documentation checks and PR #2509.
-PR #2506 contains the compiler implementation and its measured limits.
+PR #2506 contains the compiler implementation and its supported-input limits.
