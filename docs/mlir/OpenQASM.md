@@ -302,6 +302,11 @@ is diagnosed because OpenQASM outputs cannot preserve that aliasing. Programs
 without results keep generated classical temporaries in a local scope to avoid
 implicit outputs. Unused measurement results need no temporary.
 
+Measurements write directly to a named register when their result has one store
+and that store can occur at the measurement without crossing a conflicting
+classical access. This also preserves registers for grouped measurements after
+routing. Measurement order is unchanged; other cases retain temporary bits.
+
 Import and export do not preserve `uint`, fixed-angle spelling or width,
 scalar-versus-one-element bit spelling, or scalar output names. Integer
 computations use explicit `int[N]`/`uint[N]` casts, so signedness is chosen by

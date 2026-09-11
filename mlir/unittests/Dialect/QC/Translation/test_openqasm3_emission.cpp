@@ -182,17 +182,85 @@ TEST(OpenQASM3EmissionTest, PreservesMeasurementOrderBeforeDelayedStore) {
   auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
 
   ASSERT_TRUE(succeeded(emitted));
-  const auto measurement = emitted->find("_mqt_b0 = measure _mqt_q0;");
+  const auto measurement = emitted->find("c[0] = measure _mqt_q0;");
   const auto gate = emitted->find("x _mqt_q0;");
-  const auto store = emitted->find("c[0] = _mqt_b0;");
   ASSERT_NE(measurement, std::string::npos) << *emitted;
   ASSERT_NE(gate, std::string::npos) << *emitted;
-  ASSERT_NE(store, std::string::npos) << *emitted;
   EXPECT_LT(measurement, gate);
-  EXPECT_LT(gate, store);
+  EXPECT_EQ(emitted->find("_mqt_b"), std::string::npos);
   EXPECT_TRUE(openqasm::frontend::analyzeOpenQASM(
       *emitted, openqasm::frontend::GatePolicy::Strict))
       << *emitted;
+}
+
+TEST(OpenQASM3EmissionTest, PreservesGroupedMeasurementRegisterAndBitOrder) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %q = qc.alloc : !qc.qubit
+      %bits = cbit.alloc(#cbit.init<undefined>) {mqt.register_name = "result"}
+          : !cbit.reg<2>
+      qc.x %q : !qc.qubit
+      %first = qc.measure %q : !qc.qubit -> i1
+      qc.x %q : !qc.qubit
+      %second = qc.measure %q : !qc.qubit -> i1
+      cbit.store %first, %bits[%one] : !cbit.reg<2>
+      cbit.store %second, %bits[%zero] : !cbit.reg<2>
+      qc.dealloc %q : !qc.qubit
+      return %bits : !cbit.reg<2>
+    }
+  })mlir";
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  const auto original = [&] {
+    std::string text;
+    llvm::raw_string_ostream stream(text);
+    moduleOp->print(stream);
+    return text;
+  }();
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("output bit[2] result;"), std::string::npos);
+  EXPECT_EQ(emitted->find("_mqt_b"), std::string::npos) << *emitted;
+  std::string unchanged;
+  llvm::raw_string_ostream stream(unchanged);
+  moduleOp->print(stream);
+  EXPECT_EQ(original, unchanged);
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(restored) << *emitted;
+  expectOneSample(*moduleOp, "10");
+  expectOneSample(*restored, "10");
+}
+
+TEST(OpenQASM3EmissionTest, KeepsTemporariesForConflictingMeasurementStores) {
+  constexpr llvm::StringLiteral source = R"mlir(module {
+    func.func @main() -> !cbit.reg<2> attributes {mqt.entry_point} {
+      %zero = arith.constant 0 : index
+      %one = arith.constant 1 : index
+      %q = qc.alloc : !qc.qubit
+      %bits = cbit.alloc(#cbit.init<zero>) {mqt.register_name = "result"}
+          : !cbit.reg<2>
+      qc.x %q : !qc.qubit
+      %measured = qc.measure %q : !qc.qubit -> i1
+      %prior = cbit.load %bits[%zero] : !cbit.reg<2>
+      cbit.store %prior, %bits[%one] : !cbit.reg<2>
+      cbit.store %measured, %bits[%zero] : !cbit.reg<2>
+      qc.dealloc %q : !qc.qubit
+      return %bits : !cbit.reg<2>
+    }
+  })mlir";
+  MLIRContext context(emissionDialects());
+  auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+  ASSERT_TRUE(moduleOp);
+  auto emitted = qc::translateQCToOpenQASM3(*moduleOp);
+  ASSERT_TRUE(succeeded(emitted));
+  EXPECT_NE(emitted->find("_mqt_b"), std::string::npos) << *emitted;
+  auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+  ASSERT_TRUE(restored) << *emitted;
+  expectOneSample(*moduleOp, "01");
+  expectOneSample(*restored, "01");
 }
 
 TEST(OpenQASM3EmissionTest, PreservesStaleClassicalSnapshots) {
