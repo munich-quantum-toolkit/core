@@ -634,7 +634,8 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
                                 CompilerTarget::SynthesisBasis basis,
                                 const CompilerTarget* target,
                                 const SiteMap* sites,
-                                LastTwoQubitDecomposition& lastDecomposition) {
+                                LastTwoQubitDecomposition& lastDecomposition,
+                                bool shrinkOnly) {
   auto run = scanFusableTwoQubitRun(head, headMatrix);
   if (run.ops.size() < 2) {
     return false;
@@ -652,7 +653,7 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
   const auto native = decomposeUnitary2QWeyl(
       reverseEntangler ? run.composed.reorderForQubits(1, 0) : run.composed,
       *basis.entangler);
-  if (!native ||
+  if (!native || (shrinkOnly && native->numBasisUses >= run.numTwoQ) ||
       (target != nullptr
            ? !reducesNativeCost(run, native->numBasisUses, *target,
                                 *basis.entangler, sites, lastDecomposition)
@@ -681,7 +682,8 @@ static bool fuseTwoQubitGateRun(IRRewriter& rewriter, UnitaryOpInterface head,
 static bool fuseTwoQubitGates(IRRewriter& rewriter, ModuleOp moduleOp,
                               CompilerTarget::SynthesisBasis basis,
                               const CompilerTarget* target = nullptr,
-                              const SiteMap* sites = nullptr) {
+                              const SiteMap* sites = nullptr,
+                              bool shrinkOnly = false) {
   bool changed = false;
   LastTwoQubitDecomposition lastDecomposition;
   /// A run's successors have already been visited when its head erases them.
@@ -690,8 +692,9 @@ static bool fuseTwoQubitGates(IRRewriter& rewriter, ModuleOp moduleOp,
         auto unitary = dyn_cast<UnitaryOpInterface>(operation);
         const auto matrix = twoQubitRunMemberMatrix(unitary);
         if (matrix && !feedsFromSameTwoQubitRun(unitary)) {
-          changed |= fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis,
-                                         target, sites, lastDecomposition);
+          changed |=
+              fuseTwoQubitGateRun(rewriter, unitary, *matrix, basis, target,
+                                  sites, lastDecomposition, shrinkOnly);
         }
       });
   return changed;
@@ -703,6 +706,10 @@ struct FuseTwoQubitGatesPass final
     : PassWrapper<FuseTwoQubitGatesPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(FuseTwoQubitGatesPass)
 
+  FuseTwoQubitGatesPass() = default;
+  explicit FuseTwoQubitGatesPass(const CompilerTarget& target)
+      : target_(target) {}
+
   void getDependentDialects(DialectRegistry& registry) const override {
     registry.insert<QCODialect, arith::ArithDialect>();
   }
@@ -710,16 +717,25 @@ struct FuseTwoQubitGatesPass final
 protected:
   void runOnOperation() override {
     ModuleOp moduleOp = getOperation();
-    constexpr CompilerTarget::SynthesisBasis basis{
-        .singleQubit = CompilerTarget::SingleQubitBasis::U,
-        .entangler = CompilerTarget::GateKind::CZ,
-    };
+    const auto basis =
+        target_ ? target_->synthesisBasis()
+                : std::optional{CompilerTarget::SynthesisBasis{
+                      .singleQubit = CompilerTarget::SingleQubitBasis::U,
+                      .entangler = CompilerTarget::GateKind::CZ,
+                  }};
+    if (!basis || !basis->entangler) {
+      return;
+    }
     IRRewriter rewriter(&getContext());
-    if (fuseTwoQubitGates(rewriter, moduleOp, basis) &&
+    if (fuseTwoQubitGates(rewriter, moduleOp, *basis,
+                          target_ ? &*target_ : nullptr, nullptr, true) &&
         failed(mlir::mqt::normalizeGlobalPhases(moduleOp))) {
       signalPassFailure();
     }
   }
+
+private:
+  std::optional<CompilerTarget> target_;
 };
 
 /// Track generated wire sites and defer folding until builders finish.
@@ -893,6 +909,10 @@ protected:
 
 std::unique_ptr<Pass> createFuseTwoQubitGates() {
   return std::make_unique<FuseTwoQubitGatesPass>();
+}
+
+std::unique_ptr<Pass> createFuseTwoQubitGates(const CompilerTarget& target) {
+  return std::make_unique<FuseTwoQubitGatesPass>(target);
 }
 
 } // namespace mlir::qco

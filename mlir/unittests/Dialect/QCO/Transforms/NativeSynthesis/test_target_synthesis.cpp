@@ -456,6 +456,33 @@ TEST_F(TargetSynthesisTest, NativeSynthesisUsesBlockCostInTargetBasis) {
   }
 }
 
+TEST_F(TargetSynthesisTest, PrePlacementFusionRequiresSmallerNativeCircuit) {
+  for (const bool nativeSwap : {false, true}) {
+    const auto target = valid(
+        Target::create(2, Connectivity::allToAll(),
+                       NativeOperations::fromOperations({
+                           valid(OperationCapability::create("u", 1, 3)),
+                           valid(OperationCapability::create("cz", 2, 0)),
+                           valid(OperationCapability::create("gphase", 0, 1)),
+                           valid(OperationCapability::create(
+                               nativeSwap ? "swap" : "cx", 2, 0)),
+                           valid(OperationCapability::create("rzz", 2, 1)),
+                       })));
+    auto moduleOp = build([&](QCOProgramBuilder& builder) {
+      auto [a, b] =
+          builder.swap(builder.staticQubit(0), builder.staticQubit(1));
+      std::tie(a, b) = nativeSwap ? builder.rzz(0.3, a, b) : builder.cx(a, b);
+      return builder.intConstant(0);
+    });
+    const auto before = printModule(*moduleOp);
+    ASSERT_TRUE(mlir::succeeded(
+        runPass(*moduleOp, mlir::qco::createFuseTwoQubitGates(target))));
+    /// Two native gates stay native; a SWAP plus CX also stays compact until
+    /// placement, even though their individual native lowering costs more.
+    EXPECT_EQ(printModule(*moduleOp), before);
+  }
+}
+
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionPreservesUnevenWireRuns) {
   const auto uneven = [](QCOProgramBuilder& builder) {
     auto q0Input = builder.staticQubit(0);

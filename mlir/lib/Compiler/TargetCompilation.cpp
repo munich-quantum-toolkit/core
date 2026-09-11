@@ -85,6 +85,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
+  pm.addPass(qco::createFuseTwoQubitGates(target));
   populateDefaultQCOOptimizationPipeline(pm);
   switch (target.connectivityKind()) {
   case CompilerTarget::Connectivity::Kind::Explicit:
@@ -109,6 +110,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
+  pm.addPass(qco::createFuseTwoQubitGates(target));
   pm.addPass(qco::createPlacementPass(target));
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createTargetNativeSynthesis());

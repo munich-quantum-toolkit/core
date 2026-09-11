@@ -161,6 +161,11 @@ example, a non-native RZZ followed by RXX can require two CZ gates together,
 compared with four when lowered separately. Already-native operations are
 preserved unless block synthesis reduces their native gate count.
 
+Before placement, both target pipelines also fuse runs when this reduces the
+number of two-qubit operations in the IR and their native gate count. This
+removes cancelled interactions before routing. Native support at this stage is
+checked without physical sites; the later synthesis pass checks assigned sites.
+
 Native support includes physical sites and operand direction. Barriers,
 non-unitary operations, and unavailable matrices stop a run. If block
 decomposition fails numerically, synthesis falls back to individual lowering.

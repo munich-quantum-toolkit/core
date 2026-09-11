@@ -127,11 +127,12 @@ relative to v3.10.0. The entries below retain the contributing PRs and authors.
 
 - ✨ Decompose multi-controlled X, Z, phase, Pauli rotations, and SWAP
   operations. Resynthesize two-qubit blocks in the native basis for target
-  compilation and synthesis, preserving cheaper native gates. Support RXX, RYY,
-  RZX, RZZ, iSWAP, ECR, and optimal square-root iSWAP circuits. ([#1774],
-  [#1802], [#1803], [#1809], [#1810], [#1814], [#1832], [#1850], [#1865],
-  [#1961], [#1996], [#1998], [#2001], [#2444], [#2467], [#2468], [#2478],
-  [#2507], [#2531], [#2537]) ([**@burgholzer**], [**@denialhaag**],
+  compilation and synthesis, preserving cheaper native gates. Simplify
+  interactions before placement when their two-qubit count also shrinks. Support
+  RXX, RYY, RZX, RZZ, iSWAP, ECR, and optimal square-root iSWAP circuits.
+  ([#1774], [#1802], [#1803], [#1809], [#1810], [#1814], [#1832], [#1850],
+  [#1865], [#1961], [#1996], [#1998], [#2001], [#2444], [#2467], [#2468],
+  [#2478], [#2507], [#2531], [#2537]) ([**@burgholzer**], [**@denialhaag**],
   [**@simon1hofmann**])
 
 - ✨ Normalize global phases and expand multi-operation quantum modifiers while

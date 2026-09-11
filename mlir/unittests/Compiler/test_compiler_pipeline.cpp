@@ -3608,6 +3608,50 @@ TEST_F(CompilerPipelineTest, TargetCompilationFusesOnlyWithUsableNativeBasis) {
   }
 }
 
+TEST_F(CompilerPipelineTest,
+       TargetCompilationCancelsInteractionsBeforeRouting) {
+  using Capability = CompilerTarget::OperationCapability;
+  const auto target = llvm::cantFail(CompilerTarget::create(
+      5,
+      CompilerTarget::Connectivity::fromCouplings(
+          {{0, 1}, {1, 2}, {2, 3}, {3, 4}}),
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(Capability::create("u", 1, 3)),
+          llvm::cantFail(Capability::create("cz", 2, 0)),
+          llvm::cantFail(Capability::create("gphase", 0, 1)),
+      })));
+  auto ownedContext = createCompilerContext();
+  auto moduleOp = QCOProgramBuilder::build(
+      ownedContext.get(), [](QCOProgramBuilder& builder) {
+        SmallVector<Value> qubits;
+        for (size_t i = 0; i < 5; ++i) {
+          qubits.push_back(builder.staticQubit(i));
+        }
+        for (size_t round = 0; round < 4; ++round) {
+          for (size_t i = 1; i < 5; ++i) {
+            std::tie(qubits[0], qubits[i]) = builder.cx(qubits[0], qubits[i]);
+            qubits[0] = builder.rz(0.13, qubits[0]);
+            std::tie(qubits[0], qubits[i]) = builder.cx(qubits[0], qubits[i]);
+          }
+        }
+        return builder.intConstant(0);
+      });
+  auto reference = OwningOpRef<ModuleOp>(moduleOp->clone());
+  auto program = QCOProgram::fromModule(ownedContext, std::move(moduleOp));
+  ASSERT_TRUE(program);
+  ASSERT_TRUE(program->compileForTarget(
+      TargetEnvironment(target, makePayloadSpecification())));
+  ASSERT_TRUE(succeeded(verify(program->module())));
+  ASSERT_TRUE(succeeded(qco::verifyLinearity(program->module())));
+  expectFullUnitaryEqual(*reference, program->module(), 5);
+  size_t entanglers = 0;
+  program->module().walk([&](qco::UnitaryOpInterface unitary) {
+    entanglers += unitary.isTwoQubit();
+  });
+  /// Each pair of CX gates cancels; routing must see no interactions.
+  EXPECT_EQ(entanglers, 0U);
+}
+
 TEST_F(CompilerPipelineTest, TargetCompilationFusesRoutingSwaps) {
   using Capability = CompilerTarget::OperationCapability;
   const auto target = llvm::cantFail(CompilerTarget::create(
