@@ -58,25 +58,14 @@ using namespace qco;
 #include "mqt/Conversion/JeffToQCO/JeffToQCO.h.inc"
 
 /// Returns whether @p op carries a jeff gate modifier
-///
-/// @tparam JeffOpType The operation type of the jeff operation
 template <typename JeffOpType>
 [[nodiscard]] static bool isModified(JeffOpType& op) {
   return op.getNumCtrls() != 0 || op.getIsAdjoint() || op.getPower() != 1;
 }
 
-/// Creates a modified QCO operation from a jeff operation
-///
-/// The jeff modifiers are nested in the canonical QCO order
-/// `ctrl { pow { inv { ... } } }`.
-///
-/// @tparam JeffOpType The operation type of the jeff operation
-/// @param op The jeff operation instance to convert
-/// @param rewriter The pattern rewriter
-/// @param controls The control qubits of the operation
-/// @param targets The target qubits of the operation
-/// @param lambda A lambda function that creates the inner QCO operation and
-/// returns its results
+/// Nest jeff modifiers in QCO's canonical `ctrl { pow { inv { ... } } }` order.
+/// @param lambda Build the inner operation from its targets and return its
+/// results.
 template <typename JeffOpType>
 static void
 createModified(JeffOpType& op, ConversionPatternRewriter& rewriter,
@@ -113,22 +102,7 @@ createModified(JeffOpType& op, ConversionPatternRewriter& rewriter,
   rewriter.replaceOp(op, results);
 }
 
-/// Creates a (potentially modified) QCO operation from a jeff operation.
-///
-/// This helper centralizes the "direct vs. modifier-wrapped" decision and uses
-/// index sequences to forward the desired number of targets and parameters into
-/// the QCO op builder.
-///
-/// @tparam QCOOpType The QCO operation type to create
-/// @tparam JeffOpType The jeff operation type to convert from
-/// @tparam TargetIndices Indices of target operands to forward
-/// @tparam ParamIndices Indices of parameters to forward
-///
-/// @param op The jeff operation instance to convert
-/// @param rewriter The pattern rewriter
-/// @param controls The control qubits (type-converted) of the operation
-/// @param targets The target qubits (type-converted) of the operation
-/// @param parameters The parameters of the operation
+/// Create a QCO gate with type-converted targets and any jeff modifiers.
 template <typename QCOOpType, typename JeffOpType, std::size_t... TargetIndices,
           std::size_t... ParamIndices>
 static LogicalResult
@@ -195,11 +169,7 @@ static Value toIndex(Location loc, Value value,
                                                    value);
 }
 
-/// Creates a qco.barrier operation from a jeff.custom operation
-///
-/// @param op The jeff.custom operation instance to convert
-/// @param adaptor The OpAdaptor of the jeff.custom operation
-/// @param rewriter The pattern rewriter
+/// Convert the jeff custom gate named "barrier" to qco.barrier.
 static void createBarrierOp(jeff::CustomOp& op, jeff::CustomOpAdaptor& adaptor,
                             ConversionPatternRewriter& rewriter) {
   auto targets = adaptor.getInTargetQubits();
@@ -414,15 +384,6 @@ struct ConvertJeffIntArrayGetIndexOpToCBit final
 };
 
 /// Converts jeff.qureg_alloc to qtensor.alloc
-///
-/// @par Example:
-/// ```mlir
-/// %qureg = jeff.qureg_alloc(%c3) : !jeff.qureg
-/// ```
-/// is converted to
-/// ```mlir
-/// %tensor = qtensor.alloc(%c3) : tensor<3x!qco.qubit>
-/// ```
 struct ConvertJeffQuregAllocOpToQCO final
     : OpConversionPattern<jeff::QuregAllocOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -447,16 +408,6 @@ struct ConvertJeffQuregAllocOpToQCO final
 };
 
 /// Converts jeff.qureg_extract_index to qtensor.extract
-///
-/// @par Example:
-/// ```mlir
-/// %qureg_out, %q = jeff.qureg_extract_index(%c0) %qureg_in : !jeff.qureg,
-/// !jeff.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %tensor_out, %q = qtensor.extract %tensor_in[%c0]: tensor<3x!qco.qubit>
-/// ```
 struct ConvertJeffQuregExtractIndexOpToQCO final
     : OpConversionPattern<jeff::QuregExtractIndexOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -472,15 +423,6 @@ struct ConvertJeffQuregExtractIndexOpToQCO final
 };
 
 /// Converts jeff.qureg_insert_index to qtensor.insert
-///
-/// @par Example:
-/// ```mlir
-/// %qureg_out = jeff.qureg_insert_index(%c0) %qureg_in %q : !jeff.qureg
-/// ```
-/// is converted to
-/// ```mlir
-/// %tensor_out = qtensor.insert %q into %tensor_in[%c0] : tensor<3x!qco.qubit>
-/// ```
 struct ConvertJeffQuregInsertIndexOpToQCO final
     : OpConversionPattern<jeff::QuregInsertIndexOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -496,15 +438,6 @@ struct ConvertJeffQuregInsertIndexOpToQCO final
 };
 
 /// Converts jeff.qureg_free_zero to qtensor.dealloc
-///
-/// @par Example:
-/// ```mlir
-/// jeff.qureg_free_zero %qureg : !jeff.qureg
-/// ```
-/// is converted to
-/// ```mlir
-/// qtensor.dealloc %tensor : tensor<3x!qco.qubit>
-/// ```
 struct ConvertJeffQuregFreeZeroOpToQCO final
     : OpConversionPattern<jeff::QuregFreeZeroOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -518,15 +451,6 @@ struct ConvertJeffQuregFreeZeroOpToQCO final
 };
 
 /// Converts jeff.qubit_alloc to qco.alloc
-///
-/// @par Example:
-/// ```mlir
-/// %q = jeff.qubit_alloc : !jeff.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q = qco.alloc : !qco.qubit
-/// ```
 struct ConvertJeffQubitAllocOpToQCO final
     : OpConversionPattern<jeff::QubitAllocOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -540,16 +464,6 @@ struct ConvertJeffQubitAllocOpToQCO final
 };
 
 /// Converts jeff.qubit_free to qco.reset + qco.sink
-///
-/// @par Example:
-/// ```mlir
-/// jeff.qubit_free %q : !jeff.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out = qco.reset %q_in : !qco.qubit
-/// qco.sink %q_out : !qco.qubit
-/// ```
 struct ConvertJeffQubitFreeOpToQCO final
     : OpConversionPattern<jeff::QubitFreeOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -564,15 +478,6 @@ struct ConvertJeffQubitFreeOpToQCO final
 };
 
 /// Converts jeff.qubit_free_zero to qco.sink
-///
-/// @par Example:
-/// ```mlir
-/// jeff.qubit_free_zero %q : !jeff.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// qco.sink %q : !qco.qubit
-/// ```
 struct ConvertJeffQubitFreeZeroOpToQCO final
     : OpConversionPattern<jeff::QubitFreeZeroOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -586,16 +491,6 @@ struct ConvertJeffQubitFreeZeroOpToQCO final
 };
 
 /// Converts jeff.qubit_measure to qco.measure + qco.sink
-///
-/// @par Example:
-/// ```mlir
-/// %result = jeff.qubit_measure %q_in : !i1
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out, %result = qco.measure %q_in : !qco.qubit
-/// qco.sink %q_out : !qco.qubit
-/// ```
 struct ConvertJeffQubitMeasureOpToQCO final
     : OpConversionPattern<jeff::QubitMeasureOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -612,15 +507,6 @@ struct ConvertJeffQubitMeasureOpToQCO final
 };
 
 /// Converts jeff.qubit_measure_nd to qco.measure
-///
-/// @par Example:
-/// ```mlir
-/// %q_out, %result = jeff.qubit_measure_nd %q_in : !jeff.qubit, i1
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out, %result = qco.measure %q_in : !qco.qubit
-/// ```
 struct ConvertJeffQubitMeasureNDOpToQCO final
     : OpConversionPattern<jeff::QubitMeasureNDOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -633,16 +519,7 @@ struct ConvertJeffQubitMeasureNDOpToQCO final
   }
 };
 
-/// Converts jeff.reset to qco.qubit_reset
-///
-/// @par Example:
-/// ```mlir
-/// %q_out = jeff.qubit_reset %q_in : !jeff.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out = qco.reset %q_in : !qco.qubit
-/// ```
+/// Converts jeff.qubit_reset to qco.reset
 struct ConvertJeffQubitResetOpToQCO final
     : OpConversionPattern<jeff::QubitResetOp> {
   using OpConversionPattern::OpConversionPattern;
@@ -656,15 +533,6 @@ struct ConvertJeffQubitResetOpToQCO final
 };
 
 /// Converts jeff.gphase to qco.gphase
-///
-/// @par Example:
-/// ```mlir
-/// jeff.gphase(%theta) {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
-/// ```
-/// is converted to
-/// ```mlir
-/// qco.gphase(%theta)
-/// ```
 struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -686,19 +554,6 @@ struct ConvertJeffGPhaseOpToQCO final : OpConversionPattern<jeff::GPhaseOp> {
 };
 
 /// Converts one-target, zero-parameter jeff gate to QCO
-///
-/// @tparam QCOOpType The operation type of the QCO operation
-/// @tparam JeffOpType The operation type of the jeff operation
-///
-/// @par Example:
-/// ```mlir
-/// %q_out = jeff.x {is_adjoint = false, num_ctrls = 0 : i8, power = 1 : i8}
-/// %q_in : !jeff.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out = qco.x %q_in : !qco.qubit
-/// ```
 template <typename JeffOpType, typename QCOOpType>
 struct ConvertJeffOneTargetZeroParameterToQCO final
     : OpConversionPattern<JeffOpType> {
@@ -713,19 +568,6 @@ struct ConvertJeffOneTargetZeroParameterToQCO final
 };
 
 /// Converts one-target, one-parameter jeff gate to QCO
-///
-/// @tparam QCOOpType The operation type of the QCO operation
-/// @tparam JeffOpType The operation type of the jeff operation
-///
-/// @par Example:
-/// ```mlir
-/// %q_out = jeff.rx(%theta) {is_adjoint = false, num_ctrls = 0 : i8, power = 1
-/// : i8} %q_in : !jeff.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out = qco.rx(%theta) %q_in : !qco.qubit
-/// ```
 template <typename JeffOpType, typename QCOOpType>
 struct ConvertJeffOneTargetOneParameterToQCO final
     : OpConversionPattern<JeffOpType> {
@@ -741,16 +583,6 @@ struct ConvertJeffOneTargetOneParameterToQCO final
 };
 
 /// Converts jeff.u to qco.u
-///
-/// @par Example:
-/// ```mlir
-/// %q_out = jeff.u(%theta, %phi, %lambda) {is_adjoint = false, num_ctrls = 0 :
-/// i8, power = 1 : i8} %q_in : !jeff.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q_out = qco.u(%theta, %phi, %lambda) %q_in : !qco.qubit
-/// ```
 struct ConvertJeffUOpToQCO final : OpConversionPattern<jeff::UOp> {
   using OpConversionPattern::OpConversionPattern;
 
@@ -764,16 +596,6 @@ struct ConvertJeffUOpToQCO final : OpConversionPattern<jeff::UOp> {
 };
 
 /// Converts jeff.swap to qco.swap
-///
-/// @par Example:
-/// ```mlir
-/// %q0_out, %q1_out = jeff.swap {is_adjoint = false, num_ctrls = 0 : i8, power
-/// = 1 : i8} %q0_in %q1_in : !jeff.qubit !jeff.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// %q0_out, %q1_out = qco.swap %q0_in, %q1_in : !qco.qubit, !qco.qubit
-/// ```
 struct ConvertJeffSwapOpToQCO final : OpConversionPattern<jeff::SwapOp> {
   using OpConversionPattern::OpConversionPattern;
 

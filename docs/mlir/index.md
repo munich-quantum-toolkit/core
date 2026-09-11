@@ -1,8 +1,8 @@
 # MQT Compiler Collection
 
-The MQT Compiler Collection (`mqt-cc`) is a blueprint for a future-proof
-quantum-classical compilation framework built on the Multi-Level Intermediate
-Representation (MLIR). For an overview, see {cite:p}`MQTCompilerCollection2026`.
+The MQT Compiler Collection (`mqt-cc`) compiles quantum-classical programs using
+the Multi-Level Intermediate Representation (MLIR). For an overview, see
+{cite:p}`MQTCompilerCollection2026`.
 
 The {doc}`compiler guide <mqt_compiler_collection>` introduces the Python,
 command-line, and C++ interfaces for compiling and inspecting quantum programs.
@@ -51,9 +51,3 @@ Transforms
 Conversions
 development
 ```
-
-:::{note}
-This page is a work in progress. The content is not yet complete and subject to
-change. Contributions are welcome. See the
-{doc}`contribution guide <../contributing>` for more information.
-:::

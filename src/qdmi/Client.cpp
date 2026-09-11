@@ -293,7 +293,7 @@ std::vector<Site> Device::getRegularSites() const {
 std::vector<Site> Device::getZones() const {
   const auto& allSites = getSites();
   std::vector<Site> zones;
-  zones.reserve(3); // Reserve space for a typical max number of zones
+  zones.reserve(3);
   std::ranges::copy_if(allSites, std::back_inserter(zones),
                        [](const auto& s) { return s.isZone(); });
   return zones;
@@ -791,7 +791,6 @@ Session::Session(const SessionConfig& config) {
         session, QDMI_session_free);
   }();
 
-  // Helper to set session parameters
   const auto setParameter = [this](const std::optional<std::string>& value,
                                    QDMI_Session_Parameter param) -> void {
     if (value) {
@@ -813,37 +812,16 @@ Session::Session(const SessionConfig& config) {
     }
   };
 
-  // Validate file existence for authFile
   if (config.authFile) {
     if (!std::filesystem::exists(*config.authFile)) {
       throw std::runtime_error("Authentication file does not exist: " +
                                config.authFile->string());
     }
   }
-  // Validate URL format for authUrl
   if (config.authUrl) {
-    // Breakdown of the regex pattern:
-    // 1. ^https?://              -> Start with http:// or https://
-    // 2. (?:                     -> Start Host Group
-    //      \[[a-fA-F0-9:]+\]     -> Branch A: IPv6 (Must be in brackets like
-    //      [::1])
-    //                            -> Note: No \b used here because ']' is a
-    //                            non-word char
-    //      |                     -> OR
-    //      (?:                   -> Branch B: Alphanumeric Hosts (Group for
-    //      \b check)
-    //        (?:\d{1,3}\.){3}\d{1,3} -> IPv4 (e.g., 127.0.0.1)
-    //        |                   -> OR
-    //        localhost           -> Localhost
-    //        |                   -> OR
-    //        (?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6} ->
-    //        Domain
-    //      )\b                   -> End Branch B + Word Boundary (Prevents
-    //      "localhostX")
-    //    )                       -> End Host Group
-    // 3. (?::\d+)?               -> Optional Port (e.g., :8080)
-    // 4. (?:...)*$               -> Optional Path/Query params + End of
-    // string
+    /// Match HTTP(S) URLs with bracketed IPv6, IPv4, localhost, or a domain.
+    /// Apply the host word boundary only outside IPv6: ']' is not a word
+    /// character.
     static const std::regex URL_PATTERN(
         R"(^https?://(?:\[[a-fA-F0-9:]+\]|(?:(?:\d{1,3}\.){3}\d{1,3}|localhost|(?:www\.)?[-a-zA-Z0-9@:%._\+~#=]{1,256}\.[a-zA-Z0-9()]{1,6})\b)(?::\d+)?(?:[-a-zA-Z0-9()@:%_\+.~#?&/=]*)$)",
         std::regex::optimize);
@@ -852,7 +830,6 @@ Session::Session(const SessionConfig& config) {
     }
   }
 
-  // Set session parameters
   setParameter(config.token, QDMI_SESSION_PARAMETER_TOKEN);
   if (config.authFile) {
     const std::optional authFile = config.authFile->string();
@@ -868,7 +845,6 @@ Session::Session(const SessionConfig& config) {
   setParameter(config.custom4, QDMI_SESSION_PARAMETER_CUSTOM4);
   setParameter(config.custom5, QDMI_SESSION_PARAMETER_CUSTOM5);
 
-  // Initialize the session
   qdmi::throwIfError(QDMI_session_init(session_.get()), "Initializing session");
 }
 

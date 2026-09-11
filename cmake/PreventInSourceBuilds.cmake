@@ -8,7 +8,7 @@
 
 # This function will prevent in-source builds
 function(assure_out_of_source_builds)
-  # make sure the user doesn't play dirty with symlinks
+  # Resolve symlinks before comparing source and build directories.
   get_filename_component(srcdir "${CMAKE_SOURCE_DIR}" REALPATH)
   get_filename_component(bindir "${CMAKE_BINARY_DIR}" REALPATH)
 

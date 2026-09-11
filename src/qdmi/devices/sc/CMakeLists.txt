@@ -6,19 +6,14 @@
 #
 # Licensed under the MIT License
 
-# Set target name
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device-config)
 
-# If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
-  # Add the runtime configuration parser library
   add_mqt_core_library(${TARGET_NAME} ALIAS_NAME QDMIScDeviceConfig)
 
-  # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Configuration.cpp)
 
-  # add headers using file sets
   target_sources(
     ${TARGET_NAME} PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_CORE_INCLUDE_BUILD_DIR} FILES
                           ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Configuration.hpp)
@@ -35,26 +30,19 @@ if(NOT TARGET ${TARGET_NAME})
                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/${CMAKE_INSTALL_BINDIR}")
 endif()
 
-# Set target name
 set(TARGET_NAME ${MQT_CORE_TARGET_NAME}-qdmi-sc-device)
 
-# Set prefix for QDMI
 set(QDMI_PREFIX "MQT_SC")
 
-# If the target is not already defined
 if(NOT TARGET ${TARGET_NAME})
 
-  # Add library
   add_mqt_core_library(${TARGET_NAME} FORCE_SHARED HIDDEN_VISIBILITY ALIAS_NAME QDMIScDevice)
 
-  # Generate prefixed QDMI headers
   generate_prefixed_qdmi_headers(${QDMI_PREFIX})
   file(GLOB_RECURSE QDMI_HDRS ${CMAKE_CURRENT_BINARY_DIR}/include/mqt_sc_qdmi/**.h)
 
-  # add sources to target
   target_sources(${TARGET_NAME} PRIVATE Device.cpp)
 
-  # add headers using file sets
   target_sources(
     ${TARGET_NAME}
     PUBLIC FILE_SET
@@ -66,7 +54,6 @@ if(NOT TARGET ${TARGET_NAME})
            ${MQT_CORE_INCLUDE_BUILD_DIR}/qdmi/devices/sc/Device.hpp
            ${QDMI_HDRS})
 
-  # add link libraries
   target_link_libraries(${TARGET_NAME} PRIVATE MQT::CoreQDMICommon MQT::CoreQDMIScDeviceConfig)
 
   mqt_configure_qdmi_device(

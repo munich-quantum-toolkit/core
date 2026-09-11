@@ -165,89 +165,13 @@ convertUnitaryToCallOp(QCOpType& op, QCOpAdaptorType& adaptor,
 
 namespace {
 
-/// Generic converter for unitary QC ops to QIR calls.
+/// Lower a unitary gate to a QIR call selected by its active control count.
 ///
-/// Many QC gates lower to a QIR runtime call where the callee name depends on
-/// the number of active controls. This helper factors out that boilerplate
-/// without relying on preprocessor macros.
+/// For example, qc.rx(θ) becomes
+/// `__quantum__qis__rx__body(θ, qubit)` without controls. The shared
+/// qir::emitQISCall helper owns argument packing for controlled calls.
 ///
-/// @par Examples
-/// The examples below illustrate the lowering shapes for unitary gates that
-/// are registered through the shared QIR gate table in
-/// `populateQCToQIRPatterns`.
-///
-/// @par One target, zero parameters
-/// ```mlir
-/// qc.x %q : !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// llvm.call @__quantum__qis__x__body(%q) : (!llvm.ptr) -> ()
-/// ```
-///
-/// @par One target, one parameter
-/// ```mlir
-/// qc.rx(%theta) %q : !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// llvm.call @__quantum__qis__rx__body(%theta, %q) : (f64, !llvm.ptr) -> ()
-/// ```
-///
-/// @par One target, two parameters
-/// ```mlir
-/// qc.r(%theta, %phi) %q : !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// llvm.call @__quantum__qis__prx__body(%theta, %phi, %q)
-///     : (f64, f64, !llvm.ptr) -> ()
-/// ```
-///
-/// @par One target, three parameters
-/// ```mlir
-/// qc.u(%theta, %phi, %lambda) %q : !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// llvm.call @__quantum__qis__u3__body(%theta, %phi, %lambda, %q)
-///     : (f64, f64, f64, !llvm.ptr) -> ()
-/// ```
-///
-/// @par Two targets, zero parameters
-/// ```mlir
-/// qc.swap %q0, %q1 : !qc.qubit, !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// llvm.call @__quantum__qis__swap__body(%q0, %q1) : (!llvm.ptr, !llvm.ptr) ->
-/// ()
-/// ```
-///
-/// @par Two targets, one parameter
-/// ```mlir
-/// qc.rxx(%theta) %q0, %q1 : !qc.qubit, !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// llvm.call @__quantum__qis__rxx__body(%theta, %q0, %q1)
-///     : (f64, !llvm.ptr, !llvm.ptr) -> ()
-/// ```
-///
-/// @par Two targets, two parameters
-/// ```mlir
-/// qc.xx_plus_yy(%theta, %beta) %q0, %q1 : !qc.qubit, !qc.qubit
-/// ```
-/// is converted to
-/// ```mlir
-/// llvm.call @__quantum__qis__xx_plus_yy__body(%theta, %beta, %q0, %q1)
-///     : (f64, f64, !llvm.ptr, !llvm.ptr) -> ()
-/// ```
-///
-/// @tparam OpType The QC operation type to convert
-/// @tparam NumTargets Number of target qubits for this operation
-/// @tparam NumParams Number of floating-point parameters for this operation
-/// @tparam GetFnName Function that maps numCtrls → QIR function name
+/// @tparam GetFnName Map the number of controls to the QIR callee name.
 template <typename OpType, std::size_t NumTargets, std::size_t NumParams,
           auto GetFnName>
 struct ConvertQCUnitaryOpQIR : StatefulOpConversionPattern<OpType> {
@@ -299,20 +223,15 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
       return failure();
     }
 
-    // Save current insertion point
     const OpBuilder::InsertionGuard guard(rewriter);
 
-    // Switch to entry block
     rewriter.setInsertionPoint(state.entryBlock->getTerminator());
 
-    // Get or create a pointer to the qubit
     Value qubit;
     if (const auto it = state.staticQubits.find(index);
         it != state.staticQubits.end()) {
-      // Reuse existing pointer
       qubit = it->second;
     } else {
-      // Create and cache for reuse
       qubit = createPointerFromIndex(rewriter, op.getLoc(), index);
       state.staticQubits.try_emplace(index, qubit);
     }
@@ -321,8 +240,6 @@ struct ConvertQCStaticOp final : StatefulOpConversionPattern<StaticOp> {
     return success();
   }
 };
-
-// GPhaseOp
 
 /// Converts qc.gphase to QIR gphase
 ///

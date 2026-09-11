@@ -9,7 +9,6 @@
 set(TARGET_NAME "${MQT_CORE_TARGET_NAME}-mlir-bindings")
 
 if(NOT TARGET ${TARGET_NAME})
-  # collect source files
   file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS *.cpp)
 
   # Qiskit's extension C API tables are translation-unit local. Each supported minor therefore gets
@@ -70,7 +69,6 @@ if(NOT TARGET ${TARGET_NAME})
                  "${MQT_QISKIT_CAPI_CANDIDATE_INCLUDE};${CMAKE_CURRENT_SOURCE_DIR}/qiskit")
   endif()
 
-  # declare the Python module
   add_mqt_python_binding(
     CORE
     ${TARGET_NAME}

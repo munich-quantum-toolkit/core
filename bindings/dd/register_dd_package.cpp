@@ -43,19 +43,12 @@ using TwoQubitMatrix =
 
 // NOLINTNEXTLINE(misc-use-internal-linkage)
 void registerDDPackage(const nb::module_& m) {
-  auto dd = nb::class_<dd::Package>(
-      m, "DDPackage",
-      R"pb(The central manager for performing computations on decision diagrams.
+  auto dd =
+      nb::class_<dd::Package>(m, "DDPackage",
+                              R"pb(Create and manipulate decision diagrams.
 
-It drives all computation on decision diagrams and maintains the necessary data structures for this purpose.
-Specifically, it
-
-- manages the memory for the decision diagram nodes (Memory Manager),
-- ensures the canonical representation of decision diagrams (Unique Table),
-- ensures the efficiency of decision diagram operations (Compute Table),
-- provides methods for creating quantum states and operations from various sources,
-- provides methods for various operations on quantum states and operations, and
-- provides means for reference counting and garbage collection.
+The package owns DD storage, unique tables, and cached computation results.
+It provides reference counting and garbage collection.
 
 Notes:
     It is undefined behavior to pass VectorDD or MatrixDD objects that were created with a different DDPackage to the methods of the DDPackage.
@@ -63,10 +56,7 @@ Notes:
 
 Args:
     num_qubits: The maximum number of qubits that the DDPackage can handle.
-        Mainly influences the size of the unique tables.
-        Can be adjusted dynamically using the `resize` method.
-        Since resizing the DDPackage can be expensive, it is recommended to choose a value that is large enough for the quantum computations that are to be performed, but not unnecessarily large.
-        Default is 32.)pb");
+        Defaults to 32; use `resize` to change the capacity.)pb");
 
   // Constructor
   dd.def(nb::init<size_t>(), "num_qubits"_a = dd::Package::DEFAULT_QUBITS);
@@ -608,8 +598,6 @@ Returns:
 
 Notes:
     The state must have at least as many qubits as the observable non-trivially acts on.
-
-    The method computes :math:`\langle \psi | O | \psi \rangle` as :math:`\langle \psi | (O | \psi \rangle)`.
 
 Args:
     observable: The observable.

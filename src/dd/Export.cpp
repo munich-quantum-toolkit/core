@@ -412,7 +412,6 @@ void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
             continue;
           }
 
-          // non-zero edge to be included
           stack.push(&edge);
         }
         stack.push(node);
@@ -454,7 +453,6 @@ void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
           os.write(reinterpret_cast<const char*>(&node->p->v),
                    sizeof(decltype(node->p->v)));
 
-          // iterate over edges in reverse to guarantee correct processing order
           for (auto i = 0U; i < RADIX; ++i) {
             auto const& edge = node->p->e.at(i);
             std::int64_t edgeIdx = edge.isTerminal() ? -1 : nodeIndex[edge.p];
@@ -466,7 +464,6 @@ void serialize(const vEdge& basic, std::ostream& os, const bool writeBinary) {
           os << nodeIndex[node->p] << " "
              << static_cast<std::size_t>(node->p->v);
 
-          // iterate over edges in reverse to guarantee correct processing order
           for (auto i = 0U; i < RADIX; ++i) {
             os << " (";
             auto const& edge = node->p->e.at(i);
@@ -506,7 +503,6 @@ void serializeMatrix(const mEdge& basic, std::int64_t& idx,
       os.write(reinterpret_cast<const char*>(&basic.p->v),
                sizeof(decltype(basic.p->v)));
 
-      // iterate over edges in reverse to guarantee correct processing order
       for (auto const& edge : basic.p->e) {
         std::int64_t edgeIdx = edge.isTerminal() ? -1 : nodeIndex[edge.p];
         os.write(reinterpret_cast<const char*>(&edgeIdx),
@@ -516,7 +512,6 @@ void serializeMatrix(const mEdge& basic, std::int64_t& idx,
     } else {
       os << nodeIndex[basic.p] << " " << static_cast<std::size_t>(basic.p->v);
 
-      // iterate over edges in reverse to guarantee correct processing order
       for (auto const& edge : basic.p->e) {
         os << " (";
         if (!edge.w.approximatelyZero()) {

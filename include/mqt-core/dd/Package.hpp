@@ -496,11 +496,8 @@ private:
 public:
   /// Create a normalized DD node and return an edge pointing to it.
   ///
-  /// The node is not recreated if it already exists. This function
-  /// retrieves a node from the memory manager, sets its variable, and
-  /// normalizes the edges. If the node resembles the identity, it is skipped.
-  /// The function then looks up the node in the unique table and returns an
-  /// edge pointing to it.
+  /// Reuses the unique-table entry for an existing normalized node and omits
+  /// matrix nodes that represent an identity level.
   ///
   /// @tparam Node The type of the node.
   /// @tparam EdgeType The type of the edge.
@@ -616,10 +613,6 @@ public:
 
   /// Measure all qubits in the given decision diagram.
   ///
-  /// This function measures all qubits in the decision diagram
-  /// represented by `rootEdge`. It checks for numerical instabilities and
-  /// collapses the state if requested.
-  ///
   /// @param rootEdge The decision diagram to measure.
   /// @param collapse If true, the state is collapsed after measurement.
   /// @param mt A random number generator.
@@ -632,10 +625,6 @@ public:
 
 private:
   /// Assigns probabilities to nodes in a decision diagram.
-  ///
-  /// This function recursively assigns probabilities to nodes in a
-  /// decision diagram. It calculates the probability of reaching each node and
-  /// stores the result in a map.
   ///
   /// @param edge The edge to start the probability assignment from.
   /// @param probs A map to store the probabilities of each node.
@@ -655,12 +644,6 @@ public:
   /// @return A pair of floating-point values representing the probabilities of
   /// measuring 0 and 1, respectively.
   ///
-  /// This function calculates the probabilities of measuring 0 and 1
-  /// for a given qubit index in the decision diagram. It uses a breadth-first
-  /// search to traverse the decision diagram and accumulate the measurement
-  /// probabilities. The function maintains a map of measurement probabilities
-  /// for each node to avoid redundant calculations.
-  /// It also uses a queue to process nodes level by level.
   /// @throws std::invalid_argument If the qubit is outside the state.
   static std::pair<fp, fp>
   determineMeasurementProbabilities(const vEdge& rootEdge, Qubit index);
@@ -737,13 +720,6 @@ public:
   /// @param y The second DD.
   /// @return The resulting DD after addition.
   ///
-  /// This function performs the addition of two decision diagrams
-  /// (DDs). It uses a compute table to cache intermediate results and avoid
-  /// redundant computations. The addition is conducted recursively, where the
-  /// function traverses the nodes of the DDs, adds corresponding edges, and
-  /// normalizes the resulting edges. If the nodes are terminal, their weights
-  /// are directly added. The function ensures that the resulting DD is properly
-  /// normalized and stored in the unique table to maintain the canonical form.
   template <class Node>
   Edge<Node> add(const Edge<Node>& x, const Edge<Node>& y) {
     Qubit var{};
@@ -779,9 +755,6 @@ private:
 
 public:
   /// Internal function to add two decision diagrams.
-  ///
-  /// This function is used internally to add two decision diagrams (DDs) of
-  /// type Node. It is not intended to be called directly.
   ///
   /// @tparam Node The type of the node.
   /// @param x The first DD.
@@ -956,14 +929,6 @@ public:
   /// @param y The right operand decision diagram.
   /// @return The resulting decision diagram after multiplication.
   ///
-  /// This function performs the multiplication of two decision diagrams
-  /// (DDs). It uses a compute table to cache intermediate results and avoid
-  /// redundant computations. The multiplication is conducted recursively, where
-  /// the function traverses the nodes of the DDs, multiplies corresponding
-  /// edges, and normalizes the resulting edges. If the nodes are terminal,
-  /// their weights are directly multiplied. The function ensures that the
-  /// resulting DD is properly normalized and stored in the unique table to
-  /// maintain the canonical form.
   template <class LeftOperandNode, class RightOperandNode>
     requires IsMatrix<LeftOperandNode> &&
              (IsVector<RightOperandNode> || IsMatrix<RightOperandNode>)
@@ -983,9 +948,6 @@ public:
 
 private:
   /// Internal function to multiply two decision diagrams.
-  ///
-  /// This function is used internally to multiply two decision diagrams (DDs)
-  /// of type Node. It is not intended to be called directly.
   ///
   /// @tparam LeftOperandNode The type of the left operand node.
   /// @tparam RightOperandNode The type of the right operand node.
@@ -1112,14 +1074,9 @@ public:
   /// Calculates the fidelity between a vector decision diagram and a
   /// sparse probability vector.
   ///
-  /// This function computes the fidelity between a quantum state
-  /// represented by a vector decision diagram and a sparse probability vector.
-  /// The optional permutation of qubits can be provided to match the qubit
-  /// ordering.
-  ///
   /// @param e The root edge of the decision diagram.
   /// @param probs A map of probabilities for each measurement outcome.
-  /// @param permutation An optional permutation of qubits.
+  /// @param permutation Optional permutation matching the measurement order.
   /// @return The fidelity of the measurement outcomes.
   static fp fidelityOfMeasurementOutcomes(const vEdge& e,
                                           const SparsePVec& probs,
@@ -1133,22 +1090,14 @@ private:
   /// @param y A vector DD representing a quantum state.
   /// @param var The number of levels contained in each vector DD.
   /// @return A complex number representing the scalar product of the DDs.
-  /// @note This function is called recursively such that the number of levels
-  /// decreases each time to traverse the DDs.
   ComplexValue innerProduct(const vEdge& x, const vEdge& y, Qubit var);
 
   /// Recursively calculates the fidelity of measurement outcomes.
   ///
-  /// This function computes the fidelity between a quantum state
-  /// represented by a vector decision diagram and a sparse probability vector.
-  /// It traverses the decision diagram recursively, calculating the
-  /// contribution of each path to the overall fidelity. An optional permutation
-  /// of qubits can be provided to match the qubit ordering.
-  ///
   /// @param e The root edge of the decision diagram.
   /// @param probs A map of probabilities for each measurement outcome.
   /// @param i The current index in the decision diagram traversal.
-  /// @param permutation An optional permutation of qubits.
+  /// @param permutation Optional permutation matching the measurement order.
   /// @param nQubits The number of qubits in the decision diagram.
   /// @return The fidelity of the measurement outcomes.
   static fp fidelityOfMeasurementOutcomesRecursive(
@@ -1156,21 +1105,15 @@ private:
       const Permutation& permutation, std::size_t nQubits);
 
 public:
-  /// Calculates the expectation value of an operator with respect to a
-  /// quantum state.
+  /// Compute the real expectation value <y|x|y>.
   ///
-  /// @param x A matrix decision diagram (DD) representing the operator.
-  /// @param y A vector decision diagram (DD) representing the quantum state.
-  /// @return A floating-point value representing the expectation value of the
-  /// operator with respect to the quantum state.
-  /// @throws std::runtime_error if the edges are not on the same level or if
-  /// the expectation value is non-real.
-  ///
-  /// This function calls the multiply() function to apply the operator
-  /// to the quantum state, then calls innerProduct() to calculate the overlap
-  /// between the original state and the applied state (i.e., <Psi| Psi'> =
-  /// <Psi| (Op|Psi>)). It also calls the garbageCollect() function to free up
-  /// any unused memory.
+  /// @param x An observable whose expectation value is real.
+  /// @param y A non-terminal state vector DD.
+  /// @return The real part of the expectation value.
+  /// @throws std::invalid_argument If the observable acts on a qubit outside
+  /// the state.
+  /// @pre The observable is not the zero terminal. Debug assertions also
+  /// require a non-terminal state and an approximately zero imaginary part.
   fp expectationValue(const mEdge& x, const vEdge& y);
 
   ///
@@ -1234,10 +1177,6 @@ private:
 
   /// Internal function to compute the Kronecker product of two decision
   /// diagrams.
-  ///
-  /// This function is used internally to compute the Kronecker product of two
-  /// decision diagrams (DDs) of type Node. It is not intended to be called
-  /// directly.
   ///
   /// @tparam Node The type of the node.
   /// @param x The first decision diagram.
@@ -1398,18 +1337,9 @@ public:
   /// inverse (false) reduction.
   /// @return The reduced matrix decision diagram edge.
   ///
-  /// This function modifies the decision diagram to account for
-  /// ancillary qubits by:
-  /// 1. Early returning if there are no ancillary qubits or if the edge is zero
-  /// 2. Special handling for identity matrices by creating appropriate zero
-  /// nodes
-  /// 3. Finding the lowest ancillary qubit as a starting point
-  /// 4. Recursively reducing nodes starting from the lowest ancillary qubit
-  /// 5. Adding zero nodes for any remaining higher ancillary qubits
-  ///
-  /// The function maintains proper reference counting by incrementing the
-  /// reference count of the result and decrementing the reference count of the
-  /// input edge.
+  /// Transfers the input edge's reference to the result when reduction changes
+  /// a non-terminal DD. The input reference is unchanged for a no-op.
+  /// Identity inputs retain their reference and yield an incremented result.
   mEdge reduceAncillae(mEdge e, const std::vector<bool>& ancillary,
                        bool regular = true);
 
@@ -1452,9 +1382,7 @@ public:
   /// For each garbage qubit q, this function sums all the entries for
   /// q=0 and q=1, setting the entry for q=0 to the sum and the entry for q=1 to
   /// zero. To maintain proper probabilities, the function computes sqrt(|a|^2 +
-  /// |b|^2) for two entries a and b. The function handles special cases like
-  /// zero terminals and identity matrices separately and maintains proper
-  /// reference counting throughout the reduction process.
+  /// |b|^2) for two entries a and b.
   mEdge reduceGarbage(const mEdge& e, const std::vector<bool>& garbage,
                       bool regular = true, bool normalizeWeights = false);
 

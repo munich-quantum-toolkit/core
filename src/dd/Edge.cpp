@@ -189,11 +189,7 @@ auto Edge<Node>::normalize(Node* p, const std::array<Edge, RADIX>& e,
   vEdge r = {p, cn.lookup(topWeight)};
   assert(!r.w.exactlyZero() && "Top edge weight should not be zero.");
 
-  // In theory, the more efficient computation here would be
-  //              weights[argMin] / topWeight
-  // However, the lookup of the top weight can slightly change its value.
-  // Therefore, we use the following computation instead, which accounts for the
-  // potential difference (at the cost of a Complex → ComplexValue conversion).
+  /// Lookup can round the top weight; normalize against the stored value.
   const auto minWeight = weights[argMin] / r.w;
   auto& min = p->e[argMin];
   min.w = cn.lookup(minWeight);
@@ -306,7 +302,6 @@ void Edge<Node>::traverseVector(const std::complex<fp>& amp,
                                 const fp threshold) const
   requires IsVector<Node>
 {
-  // calculate new accumulated amplitude
   const auto c = amp * static_cast<std::complex<fp>>(w);
 
   if (threshold > 0. && std::abs(c) < threshold) {
@@ -481,7 +476,6 @@ auto Edge<Node>::printMatrix(const std::size_t numQubits) const -> void
     std::cout << static_cast<std::complex<fp>>(w) << "\n";
     return;
   }
-  // total number of qubits should not be lower than the highest qubit index
   assert(isTerminal() || numQubits > p->v);
   const std::size_t element = 1ULL << numQubits;
   for (auto i = 0ULL; i < element; ++i) {
@@ -513,7 +507,6 @@ void Edge<Node>::traverseMatrixImpl(const std::complex<fp>& amp,
                                     const fp threshold) const
   requires IsMatrix<Node>
 {
-  // calculate new accumulated amplitude
   const auto c = amp * static_cast<std::complex<fp>>(w);
 
   if (threshold > 0. && std::abs(c) < threshold) {

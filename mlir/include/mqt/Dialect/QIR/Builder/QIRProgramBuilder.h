@@ -38,27 +38,18 @@ class ValueRange;
 
 namespace qir {
 
-/// Builder API for constructing QIR (Quantum Intermediate
-/// Representation) programs
+/// Build QIR programs using LLVM calls and pointer-valued qubits.
 ///
-/// The QIRProgramBuilder provides a type-safe interface for constructing
-/// quantum programs in QIR format. Like QC, QIR uses reference semantics
-/// where operations modify qubits in place, but QIR programs require specific
-/// boilerplate structure including proper block organization and metadata
-/// attributes.
-///
-/// @par QIR Base Profile Structure:
-/// QIR Base Profile compliant programs follow a specific 4-block structure:
-/// - Entry block: Constants and initialization (__quantum__rt__initialize)
-/// - Body block: Reversible quantum operations (gates)
-/// - Measurements block: Measurements, resets, deallocations
-/// - Output block: Output recording calls (array-based, grouped by register)
+/// @par Block layout:
+/// The builder creates entry, body, and output blocks. Base Profile programs
+/// also have a measurements block between body and output. Adaptive programs
+/// keep measurements at the current insertion point.
 ///
 /// @par Qubit addressing:
-/// A program must use either static qubits (`staticQubit`) or dynamic
-/// allocation
-/// (`allocQubit`, `allocQubitRegister`), never both. The builder terminates
-/// with a usage error if the modes are mixed.
+/// In the Adaptive Profile, `allocQubit` and `allocQubitRegister` allocate
+/// dynamically and cannot be mixed with `staticQubit`. In the Base Profile,
+/// all three methods use static qubit IDs. Mixing static and dynamic
+/// addressing terminates with a usage error.
 ///
 /// @par Example Usage:
 /// ```c++
@@ -92,9 +83,8 @@ public:
 
   /// Initialize the builder and prepare for program construction
   ///
-  /// Creates the main function with proper QIR structure (4-block layout),
-  /// adds __quantum__rt__initialize call, and sets up the builder's insertion
-  /// points. Must be called before adding operations.
+  /// Creates an i64-returning entry point and calls
+  /// `__quantum__rt__initialize`. Must be called before adding operations.
   void initialize();
 
   /// Initialize the builder and prepare for program construction
@@ -113,48 +103,18 @@ public:
   // Constants
   //===--------------------------------------------------------------------===//
 
-  /// Create a constant integer value
-  /// @param value The value to store in the constant
-  /// @return The value produced by the constant operation
-  ///
-  /// @par Example:
-  /// ```c++
-  /// auto c = builder.intConstant(1);
-  /// ```
-  /// ```mlir
-  /// %c = arith.constant 1 : i64
-  /// ```
+  /// Create an LLVM i64 constant.
   Value intConstant(int64_t value);
 
-  /// Create a constant double value
-  /// @param value The value to store in the constant
-  /// @return The value produced by the constant operation
-  ///
-  /// @par Example:
-  /// ```c++
-  /// auto c = builder.doubleConstant(0.5);
-  /// ```
-  /// ```mlir
-  /// %c = arith.constant 0.5 : f64
-  /// ```
+  /// Create an LLVM f64 constant.
   Value doubleConstant(double value);
 
   //===--------------------------------------------------------------------===//
   // Memory Management
   //===--------------------------------------------------------------------===//
 
-  /// Allocate a qubit
+  /// Allocate a dynamic qubit in Adaptive or the next static qubit in Base.
   /// @return An LLVM pointer representing the qubit
-  ///
-  /// @par Example:
-  /// ```c++
-  /// auto q = builder.allocQubit();
-  /// ```
-  /// ```mlir
-  /// %zero = llvm.mlir.zero : !llvm.ptr
-  /// %q = llvm.call @"@__quantum__rt__qubit_allocate"(%zero) : !llvm.ptr ->
-  /// !llvm.ptr
-  /// ```
   Value allocQubit();
 
   /// Get a static qubit by index
@@ -188,7 +148,7 @@ public:
 
   /// Represents a qubit register with its qubits.
   struct QubitRegister {
-    /// The llvm.ptr value representing the qubit register
+    /// Backing LLVM array pointer in Adaptive; empty in Base.
     Value value;
     /// The allocated qubit values
     SmallVector<Value> qubits;
@@ -198,33 +158,17 @@ public:
     /// @return The specified qubit value
     Value operator[](size_t index) const;
 
-    /// Conversion to the backing MemRef value
-    /// @return The llvm.ptr value representing the qubit register
+    /// Return the backing LLVM array pointer, or an empty value in Base.
     explicit operator Value() const { return value; }
   };
 
-  /// Allocate an array of qubits
+  /// Allocate a qubit register using the selected profile's addressing mode.
+  /// Adaptive allocates a runtime array; Base creates consecutive static IDs.
   /// @param size Number of qubits (must be positive)
-  /// @return A `QubitRegister` structure
-  ///
-  /// @par Example:
-  /// ```c++
-  /// auto q = builder.allocQubitRegister(3);
-  /// ```
-  /// ```mlir
-  /// %zero = llvm.mlir.zero : !llvm.ptr
-  /// %alloca = llvm.alloca %c3 x !llvm.ptr : (i64) -> !llvm.ptr
-  /// llvm.call @"@__quantum__rt__qubit_array_allocate"(%c3, %alloca, %zero) :
-  /// (i64, !llvm.ptr, !llvm.ptr) -> ()
-  /// %q0 = llvm.load %alloca : !llvm.ptr -> !llvm.ptr
-  /// %ptr1 = llvm.getelementptr %alloca[1] : !llvm.ptr -> !llvm.ptr
-  /// %q1 = llvm.load %ptr1 : !llvm.ptr -> !llvm.ptr
-  /// %ptr2 = llvm.getelementptr %alloca[2] : !llvm.ptr -> !llvm.ptr
-  /// %q2 = llvm.load %ptr2 : !llvm.ptr -> !llvm.ptr
-  /// ```
+  /// @return The qubit values and, in Adaptive, their backing array pointer
   QubitRegister allocQubitRegister(int64_t size);
 
-  /// Loads a qubit from a register
+  /// Load a qubit from a register in the Adaptive Profile.
   ///
   /// @param reg The qubit register
   /// @param index The index within the register
@@ -242,7 +186,7 @@ public:
   Value loadQubit(Value reg, Value index);
 
   /// Allocate a classical bit register
-  /// @param size Number of bits
+  /// @param size Number of bits (must be positive)
   /// @param record Whether the register should be recorded in the output
   /// @return A `ClassicalRegister` structure
   ///
@@ -252,7 +196,7 @@ public:
   /// ```
   ClassicalRegister allocClassicalBitRegister(int64_t size, bool record = true);
 
-  /// Loads a classical bit from a register
+  /// Load a result pointer from a register in the Adaptive Profile.
   ///
   /// @param reg The classical bit register
   /// @param index The index within the register
@@ -274,38 +218,18 @@ public:
   // Measurement and Reset
   //===--------------------------------------------------------------------===//
 
-  /// Measure a qubit and record the result
+  /// Measure a qubit in the Z basis using `__quantum__qis__mz__body`.
   ///
-  /// Performs a Z-basis measurement using `__quantum__qis__mz__body`. The
-  /// result is recorded during `finalize()`.
+  /// Base uses static result IDs and inserts the call in the measurements
+  /// block. Adaptive allocates result slots once in the entry block and
+  /// measures at the current insertion point. Finalization records selected
+  /// results and releases dynamic slots. Adaptive measurements cannot be mixed
+  /// with explicit `staticResult()` calls.
   ///
   /// @param qubit The qubit to measure
-  /// Base uses static result IDs. Adaptive allocates dynamic result slots once
-  /// in the entry block and releases them after output recording. An explicit
-  /// `staticResult()` cannot be mixed with Adaptive measurements or result
-  /// arrays.
-  ///
-  /// @param index The index for result pointer
-  /// @param record Whether the measurement should be recorded in the output
+  /// @param index Non-negative result slot index
+  /// @param record Whether to record the result during `finalize()`
   /// @return An LLVM pointer to the measurement result
-  ///
-  /// @par Example:
-  /// ```c++
-  /// auto result = builder.measure(q, 0);
-  /// ```
-  /// ```mlir
-  /// // In entry block:
-  /// %zero = llvm.mlir.zero : !llvm.ptr
-  /// %b = llvm.call @__quantum__rt__result_allocate(%zero) : !llvm.ptr ->
-  /// !llvm.ptr
-  ///
-  /// // In measurements block:
-  /// llvm.call @__quantum__qis__mz__body(%q, %b) : (!llvm.ptr, !llvm.ptr) -> ()
-  ///
-  /// // In output block:
-  /// llvm.call @__quantum__rt__result_record_output(%b, %label) : (!llvm.ptr,
-  /// !llvm.ptr) -> ()
-  /// ```
   Value measure(Value qubit, int64_t index, bool record = true);
 
   /// Measure a qubit into a classical register
@@ -313,10 +237,10 @@ public:
   /// Performs a Z-basis measurement using `__quantum__qis__mz__body`. The
   /// result is stored in the specified classical register at the given bit
   /// index. The index may be a constant or, in the Adaptive Profile, computed
-  /// at runtime. The result is recorded during `finalize()`.
+  /// at runtime. Finalization records registers created with `record=true`.
   ///
   /// @param qubit The qubit to measure
-  /// @param reg The memref representing the classical register
+  /// @param reg The classical register descriptor
   /// @param index The index within the classical register
   /// @return An LLVM pointer to the measurement result
   ///
@@ -335,7 +259,7 @@ public:
 
   /// Reset a qubit to |0⟩ state
   ///
-  /// Resets a qubit using __quantum__qis__reset__body.
+  /// Uses `__quantum__qis__reset__body`; requires the Adaptive Profile.
   ///
   /// @param qubit The qubit to reset
   /// @return Reference to this builder for method chaining

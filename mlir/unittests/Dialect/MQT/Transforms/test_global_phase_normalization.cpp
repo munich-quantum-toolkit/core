@@ -299,9 +299,8 @@ TEST_F(GlobalPhaseNormalizationTest, CombinesQCOConstantsAtBlockExit) {
 
 TEST_F(GlobalPhaseNormalizationTest,
        FoldsMulDerivedPhasesWithinPracticalAngleLimit) {
-  // Many arith.mulf-derived gphase angles used to be treated as dynamic and
-  // merged into an addf chain whose later constant-fold exceeded the 1e4 rad
-  // GPhase verifier contract (seen on QASMBench vqe_uccsd_n28 / QV_n100).
+  /// Fold and normalize each constant phase contribution before accumulation
+  /// so the merged angle stays within the GPhase verifier's 1e4-radian bound.
   OwningOpRef moduleOp = ModuleOp::create(UnknownLoc::get(context.get()));
   OpBuilder builder(context.get());
   builder.setInsertionPointToStart(moduleOp->getBody());

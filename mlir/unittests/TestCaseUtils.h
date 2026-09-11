@@ -121,16 +121,9 @@ buildMLIRProgram(mlir::MLIRContext* context,
 
 /// RAII helper that defers IR printing until the end of a test.
 ///
-/// Each call to @c record() eagerly renders the given @c ModuleOp to a string
-/// and stores it alongside its header. When the @c DeferredPrinter is destroyed
-/// (i.e., at the end of the test body) it either:
-///   - flushes all captured IR to @c llvm::errs() when the test has already
-///     recorded a failure (@c ::testing::Test::HasFailure()), or
-///   - flushes unconditionally when the @c MQT_MLIR_TEST_PRINT_IR environment
-///     variable is set to a non-empty value.
-///
-/// In all other cases the captured strings are simply discarded, avoiding the
-/// significant I/O overhead of box-printing on every passing test.
+/// Captures IR when `record()` is called so later mutations cannot change the
+/// snapshot. Destruction prints to `llvm::errs()` only after a test failure or
+/// when `MQT_MLIR_TEST_PRINT_IR` is non-empty.
 ///
 /// Usage:
 /// @code

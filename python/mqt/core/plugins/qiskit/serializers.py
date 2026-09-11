@@ -128,28 +128,16 @@ class BinaryProgramSerializer(Protocol):
 #: A serializer for one program format, text or binary.
 ProgramSerializer = TextProgramSerializer | BinaryProgramSerializer
 
-#: The program formats that no program serializer can produce. A serializer
-#: turns one Qiskit circuit into one program, and neither of these carries such
-#: a program: ``CALIBRATION`` asks the device to run a calibration routine, and
-#: ``BATCH_JOB`` carries a list of already-created jobs. This states what a
-#: circuit can be serialized into, which is a question about this adapter
-#: rather than about what
-#: :meth:`~mqt.core.qdmi.Device.submit_job` accepts.
+#: Formats without a circuit payload: calibration requests and lists of jobs.
+#: These cannot have a Qiskit program serializer.
 NON_CIRCUIT_FORMATS: frozenset[ProgramFormat] = frozenset({
     ProgramFormat.CALIBRATION,
     ProgramFormat.BATCH_JOB,
 })
 
-#: The program formats in the order the backend prefers them, most preferred
-#: first. A device-native format comes first, because a package that registers a
-#: serializer for its own device's format wants that format used. The
-#: standardized formats follow in order of what a circuit may contain: the QIR
-#: adaptive profile allows classical control, QPY carries a Qiskit circuit
-#: without loss, and OpenQASM 3 expresses control flow, while the QIR base
-#: profile forbids classical feedback and OpenQASM 2 has no control flow at all.
-#: Encoding only breaks a tie within one profile, because it decides how the
-#: program travels rather than what it may say. ``CALIBRATION`` and
-#: ``BATCH_JOB`` are absent because a serialized circuit is not what they carry.
+#: Preferred formats, in descending order: device-native formats first, then
+#: standard formats with classical control before restricted profiles. Binary
+#: encoding wins ties within a QIR profile. Excludes :data:`NON_CIRCUIT_FORMATS`.
 PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
     ProgramFormat.IQM_JSON,
     ProgramFormat.CUSTOM1,
@@ -168,7 +156,7 @@ PROGRAM_FORMAT_PREFERENCE: tuple[ProgramFormat, ...] = (
 
 
 class _LoadState(Enum):
-    """How far the registry has got with reading the entry points."""
+    """Entry-point discovery state."""
 
     NOT_STARTED = auto()
     LOADING = auto()
@@ -198,10 +186,8 @@ class _ProgramSerializerRegistry:
     def register(self, fmt: ProgramFormat, serializer: ProgramSerializer, *, replace: bool = False) -> None:
         """Add a serializer for one program format.
 
-        Registering does not read the entry points. A registration must be able
-        to precede them, because that is what gives it precedence, and because
-        ``backend.py`` registers the OpenQASM formats while the adapter is still
-        importing.
+        Registration skips entry-point discovery to allow calls during import.
+        Explicit registrations take precedence over discovered serializers.
 
         Args:
             fmt: The program format the serializer produces.
@@ -245,12 +231,9 @@ class _ProgramSerializerRegistry:
     def _load_entry_points(self) -> None:
         """Read the entry points once and publish what they name.
 
-        Loading an entry point imports a third-party module, which may call back
-        into this registry. Such a call sees the ``LOADING`` state and returns
-        without starting a second pass, so it observes the registrations made so
-        far and none of the discovery in flight. Publishing the discovered
-        serializers in one step at the end keeps that observation the same
-        whatever order the entry points arrive in.
+        Imported plugins may reenter the registry. During discovery, they see
+        only explicit registrations; discovered serializers are published after
+        all entry points have loaded.
         """
         if self._load_state is not _LoadState.NOT_STARTED:
             return
@@ -264,8 +247,7 @@ class _ProgramSerializerRegistry:
                     fmt, serializer = loaded
                     discovered.setdefault(fmt, serializer)
         except BaseException:
-            # Discovery did not finish, so leave the registry cold. A later
-            # lookup tries again rather than reporting an empty result forever.
+            # Allow a later lookup to retry interrupted discovery.
             self._load_state = _LoadState.NOT_STARTED
             raise
 
@@ -337,9 +319,8 @@ def register_program_serializer(fmt: ProgramFormat, serializer: ProgramSerialize
 
     Raises:
         ValueError: If the format does not carry a serialized circuit, or if the
-            format already has a serializer and ``replace`` is false. Raised by
-            the registry this function delegates to.
-    """  # ruff:ignore[docstring-extraneous-exception] The delegate raises it, and a caller must know
+            format already has a serializer and ``replace`` is false.
+    """  # ruff:ignore[docstring-extraneous-exception] The registry raises ValueError.
     _REGISTRY.register(fmt, serializer, replace=replace)
 
 

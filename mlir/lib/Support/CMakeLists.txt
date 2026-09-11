@@ -36,7 +36,6 @@ mqt_mlir_target_use_project_options(MLIRSupportMQT)
 # add library alias
 add_library(MQT::MLIRSupport ALIAS MLIRSupportMQT)
 
-# collect header files
 file(GLOB_RECURSE SUPPORT_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Support/*.h")
 target_sources(MLIRSupportMQT PUBLIC FILE_SET HEADERS BASE_DIRS ${MQT_MLIR_SOURCE_INCLUDE_DIR}
                                      FILES ${SUPPORT_HEADERS_SOURCE})

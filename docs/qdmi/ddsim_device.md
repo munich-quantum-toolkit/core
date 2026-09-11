@@ -8,13 +8,8 @@ mystnb:
 
 # MQT Core DD-based Simulator QDMI Device
 
-## Objective
-
-MQT Core provides a QDMI device that is powered by a classical quantum circuit
-simulator based on decision diagrams (see
-[the documentation of the DD Package](../dd_package.md)). This functionality is
-exposed through the QDMI interface as a device, which can be used to classically
-simulate quantum programs.
+DDSIM executes quantum programs locally through QDMI using
+[decision diagrams](../dd_package.md).
 
 ## Capabilities
 

@@ -25,22 +25,11 @@ namespace dd {
 // forward declarations
 struct LLBase;
 
-/// A memory manager for objects of the same type that inherit from
-/// `LLBase`.
+/// Allocate and reuse objects of one type derived from `LLBase`.
 ///
-/// The class manages a collection of objects. The objects are
-/// stored in contiguous chunks of memory. The manager supports reclaiming
-/// objects that are no longer in use. This is done by maintaining a linked list
-/// of available objects. When an object is no longer in use, it is added to the
-/// list. When a new object is requested, the first object from the list is
-/// returned. If the list is empty, an object from the current chunk is
-/// returned. If the current chunk is full, a new chunk is allocated. The size
-/// of chunks grows exponentially according to a growth factor.
-/// @note The main purpose of this class is to reduce the number of memory
-/// allocations and deallocations. This is achieved by allocating a large number
-/// of objects at once and reusing them. This is especially useful for objects
-/// that are frequently created and destroyed, such as decision diagram nodes,
-/// edge weights, etc.
+/// Objects are stored in contiguous chunks whose capacity grows geometrically.
+/// Returned objects enter a free list and are reused before allocating from a
+/// chunk, reducing allocation overhead for DD nodes and edge weights.
 class MemoryManager {
   MemoryManager(size_t entrySize, std::size_t initialAllocationSize);
 
@@ -49,19 +38,10 @@ public:
   MemoryManager(const MemoryManager&) = delete;
   MemoryManager& operator=(const MemoryManager&) = delete;
 
-  /// The number of initially allocated entries.
-  ///
-  /// The number of initially allocated entries is the number of entries
-  /// that are allocated as a chunk when the manager is created. Increasing this
-  /// number reduces the number of allocations, but increases the memory usage.
+  /// Initial chunk capacity. Larger chunks trade memory for fewer allocations.
   static constexpr std::size_t INITIAL_ALLOCATION_SIZE = 2048U;
 
-  /// The growth factor for table entry allocation.
-  ///
-  /// The growth factor is used to determine the number of entries that
-  /// are allocated when the manager runs out of entries. Per default, the
-  /// number of entries is doubled. Increasing this number reduces the number of
-  /// memory allocations, but increases the memory usage.
+  /// Capacity multiplier when allocating the next chunk.
   static constexpr double GROWTH_FACTOR = 2U;
 
   /// Construct a new MemoryManager object for objects of type T.
@@ -73,7 +53,6 @@ public:
     return {sizeof(T), initialAllocationSize};
   }
 
-  /// default destructor
   ~MemoryManager() = default;
 
   /// Get an entry from the manager.

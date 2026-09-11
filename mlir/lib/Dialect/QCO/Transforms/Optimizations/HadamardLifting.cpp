@@ -48,10 +48,7 @@ struct LiftHadamardsAbovePauliGatesPattern final
   explicit LiftHadamardsAbovePauliGatesPattern(MLIRContext* context)
       : OpInterfaceRewritePattern(context) {}
 
-  /// This method swaps a Pauli gate with a Hadamard gate.
-  ///
-  /// This method swaps a Pauli gate with a Hadamard gate. This is done using
-  /// the commutation rules of Pauli and Hadamard gates, which are:
+  /// Commute a Pauli gate through a Hadamard using:
   /// - X - H - = - H - Z -
   /// - Y - H - = - H - Y -, while adding a gPhase(π)
   /// - Z - H - = - H - X -

@@ -38,15 +38,12 @@ function(add_mqt_core_library name)
   if(NOT ARG_ALIAS_NAME)
     # remove prefix 'mqt-' from target name if exists
     string(REGEX REPLACE "^${MQT_CORE_TARGET_NAME}" "" ALIAS_NAME_ARG ${name})
-    # transform kebab-case to camelCase
     kebab_to_camel(ARG_ALIAS_NAME ${ALIAS_NAME_ARG})
   endif()
   add_library(MQT::Core${ARG_ALIAS_NAME} ALIAS ${name})
 
-  # Set c++ standard
   target_compile_features(${name} PUBLIC cxx_std_20)
 
-  # Add link libraries for warnings and options
   target_link_libraries(${name} PRIVATE MQT::ProjectWarnings MQT::ProjectOptions)
 
   if(ARG_HIDDEN_VISIBILITY)

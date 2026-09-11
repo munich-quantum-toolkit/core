@@ -221,7 +221,6 @@ class QDMIJob(JobV1):
         Raises:
             ValueError: If the job status is unknown.
         """
-        # Map QDMI status to Qiskit JobStatus
         status_map = {
             QDMIJobHandle.Status.DONE: JobStatus.DONE,
             QDMIJobHandle.Status.RUNNING: JobStatus.RUNNING,
@@ -232,7 +231,6 @@ class QDMIJob(JobV1):
             QDMIJobHandle.Status.FAILED: JobStatus.ERROR,
         }
 
-        # Collect all statuses (self._jobs is guaranteed non-empty by __init__)
         statuses = []
         for job in self._jobs:
             qdmi_status = job.check()
@@ -241,7 +239,6 @@ class QDMIJob(JobV1):
                 raise ValueError(msg)
             statuses.append(status_map[qdmi_status])
 
-        # Aggregate statuses by priority
         if JobStatus.ERROR in statuses:
             return JobStatus.ERROR
         if JobStatus.CANCELLED in statuses:
@@ -252,7 +249,6 @@ class QDMIJob(JobV1):
             return JobStatus.QUEUED
         if JobStatus.INITIALIZING in statuses:
             return JobStatus.INITIALIZING
-        # All jobs must be DONE
         return JobStatus.DONE
 
     def submit(self) -> None:

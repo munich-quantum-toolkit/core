@@ -656,8 +656,7 @@ auto MQT_DDSIM_QDMI_Device_Job_impl_d::cancel() -> QDMI_STATUS {
   }
 
   if (jobHandle_.valid()) {
-    // Note: There is no direct way to cancel a running std::async task.
-    // We can only wait for its completion here.
+    /// std::async has no cancellation API; wait before releasing the job.
     jobHandle_.wait();
   }
   status_.store(QDMI_JOB_STATUS_CANCELED);

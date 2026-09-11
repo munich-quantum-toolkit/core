@@ -242,8 +242,7 @@ private:
   /// `u3*` / `u2*` / `u1*` / `u0*` index layers from outside (post-`K2`) to
   /// inside (pre-`K1`) in the three-basis layout; `q*` members are the
   /// two-basis-only substitutes for the inner `u0*` and the `u2*a` halves of
-  /// layer 1. `u3*`, `u2l*b`, and `u2r*b` are reused in both decomp paths
-  /// (formerly duplicated as `q2*` / `q1l*b`).
+  /// layer 1. `u3*`, `u2l*b`, and `u2r*b` are reused in both decomp paths.
   ///
   /// Emission order matches @ref TwoQubitNativeDecomposition: layer `i` applies
   /// `kron(factors[2*i+1], factors[2*i])`, then the basis gate `E` (except

@@ -33,11 +33,9 @@ add_mlir_dialect_library(
 
 mqt_mlir_target_use_project_options(MLIRQCDialect)
 
-# collect header files
 file(GLOB_RECURSE IR_HEADERS_SOURCE "${MQT_MLIR_SOURCE_INCLUDE_DIR}/mqt/Dialect/QC/IR/*.h")
 file(GLOB_RECURSE IR_HEADERS_BUILD "${MQT_MLIR_BUILD_INCLUDE_DIR}/mqt/Dialect/QC/IR/*.inc")
 
-# add public headers using file sets
 target_sources(
   MLIRQCDialect
   PUBLIC FILE_SET

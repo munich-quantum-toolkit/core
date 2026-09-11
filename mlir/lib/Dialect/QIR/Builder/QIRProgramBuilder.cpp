@@ -167,7 +167,6 @@ Value QIRProgramBuilder::staticQubit(const int64_t index) {
   checkFinalized();
   ensureAllocationMode(AllocationMode::Static);
 
-  // Save current insertion point
   InsertionGuard guard(*this);
 
   // Insert allocations and constants in entry block
@@ -203,7 +202,6 @@ Value QIRProgramBuilder::getResult(int64_t index, bool record,
   checkFinalized();
   ensureResultAllocationMode(mode);
 
-  // Save current insertion point
   InsertionGuard guard(*this);
 
   // Insert allocations and constants in entry block
@@ -332,7 +330,6 @@ QIRProgramBuilder::allocClassicalBitRegister(const int64_t size,
   reg.size = size;
   reg.record = record;
 
-  // Save current insertion point
   InsertionGuard guard(*this);
 
   // Insert allocations and constants in entry block
@@ -395,7 +392,6 @@ Value QIRProgramBuilder::measure(Value qubit, const int64_t index,
     llvm::reportFatalUsageError("Result index must be non-negative");
   }
 
-  // Save current insertion point
   InsertionGuard guard(*this);
   auto insertionPoint = saveInsertionPoint();
 
@@ -487,7 +483,6 @@ void QIRProgramBuilder::createCallOp(
     ValueRange controls, const SmallVector<Value>& targets, StringRef fnName) {
   checkFinalized();
 
-  // Save current insertion point
   InsertionGuard guard(*this);
   auto insertionPoint = saveInsertionPoint();
 
@@ -1024,7 +1019,6 @@ OwningOpRef<ModuleOp> QIRProgramBuilder::finalize(Value returnValue) {
   checkFinalized();
   const bool isAdaptive = (profile == Profile::Adaptive);
 
-  // Save current insertion point
   InsertionGuard guard(*this);
 
   /// Release owned qubits at the finalization point, before leaving the body.

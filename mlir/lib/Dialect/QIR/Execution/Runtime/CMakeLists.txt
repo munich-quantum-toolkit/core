@@ -17,7 +17,6 @@ if(NOT TARGET ${TARGET_NAME})
                              PUBLIC $<BUILD_INTERFACE:${MQT_MLIR_SOURCE_INCLUDE_DIR}>)
   set_target_properties(${TARGET_NAME} PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-  # Add link libraries
   target_link_libraries(
     ${TARGET_NAME}
     PUBLIC MLIRQCODDAdapter MQT::CoreDD

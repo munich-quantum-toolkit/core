@@ -87,13 +87,8 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
     ++v;
   }
 
-  // The garbage collection limit changes dynamically depending on the number
-  // of remaining (active) nodes. If it were not changed, garbage collection
-  // would run through the complete table on each successive call once the
-  // number of remaining entries reaches the garbage collection limit. It is
-  // increased whenever the number of remaining entries is rather close to the
-  // garbage collection threshold and decreased if the number of remaining
-  // entries is much lower than the current limit.
+  /// Adapt the threshold to live entries so a mostly full table does not
+  /// trigger a complete scan on every subsequent collection request.
   const auto numEntries = getNumEntries();
   if (numEntries > gcLimit / 10 * 9) {
     gcLimit = numEntries + cfg.initialGCLimit;
@@ -102,7 +97,6 @@ std::size_t UniqueTable::garbageCollect(const bool force) {
 }
 
 void UniqueTable::clear() {
-  // clear unique table buckets
   for (auto& table : tables) {
     for (auto& bucket : table) {
       bucket = nullptr;

@@ -704,7 +704,6 @@ std::pair<Value, Value> QCOProgramBuilder::measure(Value qubit) {
   auto qubitOut = measureOp.getQubitOut();
   auto result = measureOp.getResult();
 
-  // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
   return {qubitOut, result};
@@ -719,7 +718,6 @@ QCOProgramBuilder::measure(Value qubit, Value reg,
   auto qubitOut = measureOp.getQubitOut();
   auto result = measureOp.getResult();
 
-  // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
   storeClassicalBit(result, reg, index);
@@ -733,7 +731,6 @@ Value QCOProgramBuilder::reset(Value qubit) {
   auto resetOp = ResetOp::create(*this, qubit);
   auto qubitOut = resetOp.getQubitOut();
 
-  // Update tracking
   updateQubitTracking(qubit, qubitOut);
 
   return qubitOut;
@@ -1188,7 +1185,6 @@ QCOProgramBuilder::ctrl(ValueRange controls, ValueRange targets,
         "Ctrl body must return exactly one output qubit per target");
   }
 
-  // Update tracking
   auto controlsOut = ctrlOp.getControlsOut();
   for (auto [control, controlOut] : llvm::zip_equal(controls, controlsOut)) {
     updateQubitTracking(control, controlOut);
@@ -1228,7 +1224,6 @@ QCOProgramBuilder::inv(ValueRange qubits,
         "Inv body must return exactly one output qubit per target");
   }
 
-  // Update tracking
   auto targetsOut = invOp.getQubitsOut();
   for (auto [target, targetOut] :
        llvm::zip_equal(innerTargetsOut, targetsOut)) {
@@ -1265,7 +1260,6 @@ QCOProgramBuilder::pow(const std::variant<double, Value>& exponent,
         "Pow body must return exactly one output qubit per target");
   }
 
-  // Update tracking
   auto targetsOut = powOp.getQubitsOut();
   for (auto [target, targetOut] :
        llvm::zip_equal(innerTargetsOut, targetsOut)) {

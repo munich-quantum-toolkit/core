@@ -72,10 +72,8 @@ RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
     return findOrInsert(lowerKey, val);
   }
 
-  // code below is to properly handle border cases |----(-|-)----|
-  // in case a value close to a border is looked up,
-  // only the last entry in the lower bucket and the first entry in the upper
-  // bucket need to be checked
+  /// Buckets are sorted: tolerance matches across a boundary can only be at
+  /// the lower bucket's tail or the upper bucket's head.
 
   const auto key = hash(val);
 
@@ -100,7 +98,6 @@ RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
     ++stats.hits;
     const auto diffToLower = std::abs(pLower->value - val);
     const auto diffToUpper = std::abs(pUpper->value - val);
-    // val is actually closer to p_lower than to p_upper
     if (diffToLower < diffToUpper) {
       return pLower;
     }
@@ -117,9 +114,7 @@ RealNumber* RealNumberUniqueTable::lookupNonNegative(const fp val) {
     return pUpper;
   }
 
-  // Since no match was found, a new value needs to be added
-  // Depending on which border of the bucket the value lies, a value either
-  // needs to be inserted in the front or the back of the bucket.
+  /// Preserve bucket order when inserting a value next to a boundary.
   if (key == lowerKey) {
     return insertBack(key, val);
   }
@@ -162,13 +157,8 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
     }
   }
 
-  // The garbage collection limit changes dynamically depending on the number
-  // of remaining (active) nodes. If it were not changed, garbage collection
-  // would run through the complete table on each successive call once the
-  // number of remaining entries reaches the garbage collection limit. It is
-  // increased whenever the number of remaining entries is rather close to the
-  // garbage collection threshold and decreased if the number of remaining
-  // entries is much lower than the current limit.
+  /// Adapt the threshold to live entries so a mostly full table does not
+  /// trigger a complete scan on every subsequent collection request.
   if (stats.numEntries > gcLimit / 10 * 9) {
     gcLimit = stats.numEntries + initialGCLimit;
   } else if (stats.numEntries < gcLimit / 128) {
@@ -178,7 +168,6 @@ std::size_t RealNumberUniqueTable::garbageCollect(const bool force) noexcept {
 }
 
 void RealNumberUniqueTable::clear() noexcept {
-  // clear table buckets
   for (auto& bucket : table) {
     bucket = nullptr;
   }
@@ -276,15 +265,12 @@ RealNumber* RealNumberUniqueTable::findOrInsert(const std::int64_t key,
   const fp valTol = val + RealNumber::eps;
   while (curr != nullptr && curr->value <= valTol) {
     if (RealNumber::approximatelyEquals(curr->value, val)) {
-      // check if val is actually closer to the next element in the list (if
-      // there is one)
+      /// Two adjacent entries can both lie within tolerance; choose the closer.
       if (curr->next() != nullptr) {
         const auto& next = curr->next();
-        // potential candidate in range
         if (valTol >= next->value) {
           const auto diffToCurr = std::abs(curr->value - val);
           const auto diffToNext = std::abs(next->value - val);
-          // val is actually closer to next than to curr
           if (diffToNext < diffToCurr) {
             ++stats.hits;
             return next;
@@ -303,7 +289,6 @@ RealNumber* RealNumberUniqueTable::findOrInsert(const std::int64_t key,
   entry->value = val;
 
   if (prev == nullptr) {
-    // add to front of bucket
     table[k] = entry;
   } else {
     prev->setNext(entry);

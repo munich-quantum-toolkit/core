@@ -398,19 +398,8 @@ struct QCToQIRBase final : impl::QCToQIRBaseBase<QCToQIRBase> {
     registerQIRClassicalTensorDialects(registry);
   }
 
-  /// Ensures proper block structure for QIR base profile
-  ///
-  /// The QIR base profile requires a specific 4-block structure:
-  /// 1. **Entry block**: Contains constant operations and initialization
-  /// 2. **Body block**: Contains reversible quantum operations (gates)
-  /// 3. **Measurements block**: Contains irreversible operations (measure
-  /// operations)
-  /// 4. **Output block**: Contains output recording calls
-  ///
-  /// Blocks are connected with unconditional jumps (entry, body, measurements,
-  /// output). This structure ensures proper QIR Base Profile semantics.
-  ///
-  /// @param main The main LLVM function to restructure
+  /// Arrange the entry point into initialization, gates, measurements, and
+  /// output blocks, connected in that order by unconditional branches.
   static void ensureBlocks(LLVM::LLVMFuncOp& main, LoweringState& state) {
     // Get the existing block
     auto* bodyBlock = &main.front();

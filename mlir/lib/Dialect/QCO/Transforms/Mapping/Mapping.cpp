@@ -1771,7 +1771,6 @@ private:
     // Route each child branch and prepare the wire iterators for
     // epilogue SWAP insertion, i.e., point each iterator at the final
     // qubit op (note: might be a measurement) before the yield.
-    // TODO: Parallelize multiple children, if possible.
 
     Statistics totalStats;
 
