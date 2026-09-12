@@ -22,6 +22,7 @@ class BV;
 class ModularMultiplier;
 class GHZ;
 class Grover;
+class MagicStateDistillation;
 class Multiplexer;
 class QFT;
 class QFTAdder;
@@ -43,6 +44,11 @@ SmallVector<Value> modularMultiplier(qc::QCProgramBuilder& builder,
 
 /// Emit one configured GHZ benchmark.
 SmallVector<Value> ghz(qc::QCProgramBuilder& builder, const GHZ& benchmark);
+
+/// Emit concatenated 15-to-1 magic-state distillation.
+SmallVector<Value>
+magicStateDistillation(qc::QCProgramBuilder& builder,
+                       const MagicStateDistillation& benchmark);
 
 /// Emit one configured Grover benchmark.
 SmallVector<Value> grover(qc::QCProgramBuilder& builder,

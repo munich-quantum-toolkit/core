@@ -1998,6 +1998,56 @@ TEST_F(QCODDFunctionalityTest, RepeatedCallsRespectNearestSymbolTable) {
   expectEqualToReference(mainFunc(nested), 1, {referenceGate<HOp>({0})});
 }
 
+TEST_F(QCODDFunctionalityTest, ParameterizedUnitaryCallsUseClassicalBindings) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(
+    module {
+      func.func private @rotate(%theta: f64, %q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        qco.gphase(%theta)
+        %out = qco.rx(%theta) %q : !qco.qubit -> !qco.qubit
+        return %out : !qco.qubit
+      }
+      func.func private @twice(%theta: f64, %q: !qco.qubit) -> !qco.qubit
+          attributes {mqt.unitary} {
+        %a = qco.call @rotate(%theta, %q) : (f64, !qco.qubit) -> !qco.qubit
+        %b = qco.call @rotate(%theta, %a) : (f64, !qco.qubit) -> !qco.qubit
+        return %b : !qco.qubit
+      }
+      func.func @main(%theta: f64) {
+        %q = qco.static 0 : !qco.qubit
+        %out = qco.call @twice(%theta, %q) : (f64, !qco.qubit) -> !qco.qubit
+        qco.sink %out : !qco.qubit
+        return
+      }
+    }
+  )mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  ASSERT_TRUE(succeeded(verify(*mod)));
+  auto func = mainFunc(*mod);
+  DDArgumentBindings bindings;
+  bindings[func.getArgument(0)] =
+      FloatAttr::get(Float64Type::get(context.get()), std::numbers::pi / 2.);
+  dd::Package package(1);
+  auto matrix = buildFunctionality(func, package, bindings);
+  ASSERT_TRUE(succeeded(matrix));
+  const auto dense = matrix->getMatrix(1);
+  /// Two rotations and their global phases give iX, checking the phase too.
+  EXPECT_NEAR(std::abs(dense[0][0]), 0., 1e-12);
+  EXPECT_NEAR(std::abs(dense[1][1]), 0., 1e-12);
+  EXPECT_NEAR(std::abs(dense[0][1] - std::complex<double>(0., 1.)), 0., 1e-12);
+  EXPECT_NEAR(std::abs(dense[1][0] - std::complex<double>(0., 1.)), 0., 1e-12);
+  package.decRef(*matrix);
+  auto state = simulateStatevector(func, package, bindings);
+  ASSERT_TRUE(succeeded(state));
+  EXPECT_NEAR(std::abs(state->getVector()[1] - std::complex<double>(0., 1.)),
+              0., 1e-12);
+  package.decRef(*state);
+  auto counts = sample(func, 8, 17, bindings);
+  ASSERT_TRUE(succeeded(counts));
+  EXPECT_EQ(*counts, (std::map<std::string, size_t>{{"1", 8}}));
+}
+
 TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
   auto selfRecursive = parseSourceString<ModuleOp>(R"mlir(
     module {

@@ -15,6 +15,13 @@ releases may include breaking changes.
   native operations in both target compilation and synthesis. Avoid redundant
   cleanup in both target pipelines. ([#2537]) ([**@burgholzer**])
 
+- ✨ Add a 15-to-1 magic-state distillation benchmark with one to four
+  concatenated levels, ideal inputs, and C++, Python, and CLI interfaces.
+  ([#2543]) ([**@burgholzer**])
+
+- 🐛 Execute parameterized unitary calls in DD simulation, including gate
+  helpers reimported from compiled OpenQASM. ([#2543]) ([**@burgholzer**])
+
 ## [4.0.0] - 2026-09-11
 
 ### MQT Core 4: a compiler foundation built on MLIR and LLVM
@@ -1119,6 +1126,7 @@ for previous changelogs._
 
 <!-- PR links -->
 
+[#2543]: https://github.com/munich-quantum-toolkit/core/pull/2543
 [#2538]: https://github.com/munich-quantum-toolkit/core/pull/2538
 [#2537]: https://github.com/munich-quantum-toolkit/core/pull/2537
 [#2535]: https://github.com/munich-quantum-toolkit/core/pull/2535

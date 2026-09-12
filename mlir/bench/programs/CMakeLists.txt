@@ -11,6 +11,7 @@ add_library(
   BV.cpp
   GHZ.cpp
   Grover.cpp
+  MagicStateDistillation.cpp
   ModularMultiplier.cpp
   Multiplexer.cpp
   QFT.cpp
