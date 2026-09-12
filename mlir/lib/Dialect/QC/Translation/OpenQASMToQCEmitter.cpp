@@ -385,52 +385,11 @@ private:
     return true;
   }
 
-  [[nodiscard]] static Value conditionalIntegerMultiply(OpBuilder& opBuilder,
-                                                        Location loc,
-                                                        Value condition,
-                                                        Value lhs, Value rhs,
-                                                        const bool isUnsigned) {
-    if (isUnsigned) {
-      auto product = arith::MulIOp::create(opBuilder, loc, lhs, rhs);
-      return arith::SelectOp::create(opBuilder, loc, condition, product, lhs);
-    }
-    auto i128 = opBuilder.getIntegerType(128);
-    auto lhsWide = arith::ExtSIOp::create(opBuilder, loc, i128, lhs);
-    auto rhsWide = arith::ExtSIOp::create(opBuilder, loc, i128, rhs);
-    auto productWide = arith::MulIOp::create(opBuilder, loc, lhsWide, rhsWide);
-    auto minimum = arith::ConstantIntOp::create(
-        opBuilder, loc, i128, std::numeric_limits<int64_t>::min());
-    auto maximum = arith::ConstantIntOp::create(
-        opBuilder, loc, i128, std::numeric_limits<int64_t>::max());
-    auto aboveMinimum = arith::CmpIOp::create(
-        opBuilder, loc, arith::CmpIPredicate::sge, productWide, minimum);
-    auto belowMaximum = arith::CmpIOp::create(
-        opBuilder, loc, arith::CmpIPredicate::sle, productWide, maximum);
-    auto fits =
-        arith::AndIOp::create(opBuilder, loc, aboveMinimum, belowMaximum);
-    auto notRequired = arith::XOrIOp::create(
-        opBuilder, loc, condition,
-        arith::ConstantIntOp::create(opBuilder, loc, 1, 1));
-    auto valid = arith::OrIOp::create(opBuilder, loc, notRequired, fits);
-    cf::AssertOp::create(opBuilder, loc, valid, "integer power overflows i64");
-    auto product = arith::TruncIOp::create(opBuilder, loc,
-                                           opBuilder.getI64Type(), productWide);
-    return arith::SelectOp::create(opBuilder, loc, condition, product, lhs);
-  }
-
   [[nodiscard]] static Value emitIntegerPower(OpBuilder& opBuilder,
                                               Location loc, Value base,
-                                              Value exponent,
-                                              const bool resultIsUnsigned,
-                                              const bool exponentIsUnsigned) {
+                                              Value exponent) {
     auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
     auto one = arith::ConstantIntOp::create(opBuilder, loc, 1, 64);
-    if (!exponentIsUnsigned) {
-      auto nonnegative = arith::CmpIOp::create(
-          opBuilder, loc, arith::CmpIPredicate::sge, exponent, zero);
-      cf::AssertOp::create(opBuilder, loc, nonnegative,
-                           "integer power requires a nonnegative exponent");
-    }
     auto power = scf::WhileOp::create(
         opBuilder, loc,
         TypeRange{base.getType(), base.getType(), exponent.getType()},
@@ -445,75 +404,18 @@ private:
               arith::AndIOp::create(nested, nestedLoc, arguments[2], one);
           auto odd = arith::CmpIOp::create(
               nested, nestedLoc, arith::CmpIPredicate::ne, lowBit, zero);
-          auto nextResult =
-              conditionalIntegerMultiply(nested, nestedLoc, odd, arguments[0],
-                                         arguments[1], resultIsUnsigned);
+          auto product = arith::MulIOp::create(nested, nestedLoc, arguments[0],
+                                               arguments[1]);
+          auto nextResult = arith::SelectOp::create(nested, nestedLoc, odd,
+                                                    product, arguments[0]);
           auto nextExponent =
               arith::ShRUIOp::create(nested, nestedLoc, arguments[2], one);
-          auto squareBase = arith::CmpIOp::create(
-              nested, nestedLoc, arith::CmpIPredicate::ne, nextExponent, zero);
-          auto nextBase = conditionalIntegerMultiply(
-              nested, nestedLoc, squareBase, arguments[1], arguments[1],
-              resultIsUnsigned);
+          auto nextBase = arith::MulIOp::create(nested, nestedLoc, arguments[1],
+                                                arguments[1]);
           scf::YieldOp::create(nested, nestedLoc,
                                ValueRange{nextResult, nextBase, nextExponent});
         });
     return power.getResult(0);
-  }
-
-  [[nodiscard]] static Value
-  emitExactlyRepresentableIntegerAsF64(OpBuilder& opBuilder, Location loc,
-                                       Value integer, const bool isUnsigned) {
-    const auto type =
-        isUnsigned ? frontend::ScalarType::Uint : frontend::ScalarType::Int;
-    integer = emitScalarCast(opBuilder, loc, integer, type, type);
-    auto zero = arith::ConstantIntOp::create(opBuilder, loc, 0, 64);
-    Value magnitude = integer;
-    if (!isUnsigned) {
-      auto negative = arith::CmpIOp::create(
-          opBuilder, loc, arith::CmpIPredicate::slt, integer, zero);
-      auto negated = arith::SubIOp::create(opBuilder, loc, zero, integer);
-      magnitude =
-          arith::SelectOp::create(opBuilder, loc, negative, negated, integer);
-    }
-
-    auto one = arith::ConstantIntOp::create(opBuilder, loc, 1, 64);
-    auto reduced = scf::WhileOp::create(
-        opBuilder, loc, TypeRange{integer.getType()}, ValueRange{magnitude},
-        [&](OpBuilder& nested, Location nestedLoc, ValueRange arguments) {
-          auto lowBit =
-              arith::AndIOp::create(nested, nestedLoc, arguments[0], one);
-          auto even = arith::CmpIOp::create(
-              nested, nestedLoc, arith::CmpIPredicate::eq, lowBit, zero);
-          auto nonzero = arith::CmpIOp::create(
-              nested, nestedLoc, arith::CmpIPredicate::ne, arguments[0], zero);
-          auto hasTrailingZero =
-              arith::AndIOp::create(nested, nestedLoc, even, nonzero);
-          scf::ConditionOp::create(nested, nestedLoc, hasTrailingZero,
-                                   arguments);
-        },
-        [&](OpBuilder& nested, Location nestedLoc, ValueRange arguments) {
-          auto shifted =
-              arith::ShRUIOp::create(nested, nestedLoc, arguments[0], one);
-          scf::YieldOp::create(nested, nestedLoc, ValueRange{shifted});
-        });
-    auto maximumSignificand = arith::ConstantOp::create(
-        opBuilder, loc,
-        IntegerAttr::get(opBuilder.getI64Type(),
-                         APInt(64, (uint64_t{1} << 53U) - 1U)));
-    auto exact =
-        arith::CmpIOp::create(opBuilder, loc, arith::CmpIPredicate::ule,
-                              reduced.getResult(0), maximumSignificand);
-    cf::AssertOp::create(
-        opBuilder, loc, exact,
-        "integer power modifier exponent cannot be represented exactly as an "
-        "f64");
-    return isUnsigned ? arith::UIToFPOp::create(opBuilder, loc,
-                                                opBuilder.getF64Type(), integer)
-                            .getResult()
-                      : arith::SIToFPOp::create(opBuilder, loc,
-                                                opBuilder.getF64Type(), integer)
-                            .getResult();
   }
 
   [[nodiscard]] Value
@@ -837,9 +739,7 @@ private:
                                   .getResult();
         }
         if (expression.kind == frontend::ExpressionKind::Power) {
-          return emitIntegerPower(opBuilder, loc, lhs, rhs, isUnsigned,
-                                  program.expressions.at(expression.rhs).type ==
-                                      frontend::ScalarType::Uint);
+          return emitIntegerPower(opBuilder, loc, lhs, rhs);
         }
         /// Like explicit integer casts, runtime integer arithmetic wraps at its
         /// width.
@@ -875,33 +775,22 @@ private:
     llvm_unreachable("unknown scalar expression kind");
   }
 
-  [[nodiscard]] Value emitCheckedIndex(const frontend::ExpressionId expression,
-                                       const int64_t width,
-                                       const llvm::StringRef message) {
+  [[nodiscard]] Value
+  emitClassicalIndex(const frontend::ExpressionId expression,
+                     const int64_t width) {
     auto index = emitExpression(builder, expression, {});
     if (!index) {
       return {};
     }
     const auto type = program.expressions.at(expression).type;
     index = emitScalarCast(builder, builder.getLoc(), index, type, type);
-    auto zero = builder.intConstant(0);
-    auto upper = builder.intConstant(width);
-    Value inBounds;
-    if (program.expressions.at(expression).type == frontend::ScalarType::Uint) {
-      inBounds = arith::CmpIOp::create(builder, arith::CmpIPredicate::ult,
-                                       index, upper);
-    } else {
+    if (type == frontend::ScalarType::Int) {
       auto negative = arith::CmpIOp::create(builder, arith::CmpIPredicate::slt,
-                                            index, zero);
-      auto wrapped = arith::AddIOp::create(builder, index, upper);
+                                            index, builder.intConstant(0));
+      auto wrapped =
+          arith::AddIOp::create(builder, index, builder.intConstant(width));
       index = arith::SelectOp::create(builder, negative, wrapped, index);
-      auto nonnegative = arith::CmpIOp::create(
-          builder, arith::CmpIPredicate::sge, index, zero);
-      auto belowWidth = arith::CmpIOp::create(
-          builder, arith::CmpIPredicate::slt, index, upper);
-      inBounds = arith::AndIOp::create(builder, nonnegative, belowWidth);
     }
-    cf::AssertOp::create(builder, inBounds, message);
     return index;
   }
 
@@ -1248,9 +1137,8 @@ private:
           return;
         }
         if (isa<IntegerType>(exponent.getType())) {
-          exponent = emitExactlyRepresentableIntegerAsF64(
-              opBuilder, loc, exponent,
-              expression.type == frontend::ScalarType::Uint);
+          exponent = emitScalarCast(opBuilder, loc, exponent, expression.type,
+                                    frontend::ScalarType::Float);
         }
         modifierOperands[position] = exponent;
         continue;
@@ -1404,8 +1292,7 @@ private:
 
     const auto width =
         static_cast<int64_t>(program.registers.at(reference.reg).width);
-    auto index = emitCheckedIndex(*reference.dynamicIndex, width,
-                                  "dynamic classical index out of bounds");
+    auto index = emitClassicalIndex(*reference.dynamicIndex, width);
     if (!index) {
       return {};
     }
@@ -1822,8 +1709,7 @@ private:
     }
     const auto width =
         static_cast<int64_t>(program.registers.at(target.reg).width);
-    auto index = emitCheckedIndex(*target.dynamicIndex, width,
-                                  "dynamic classical index out of bounds");
+    auto index = emitClassicalIndex(*target.dynamicIndex, width);
     if (!index) {
       return;
     }
@@ -2102,14 +1988,6 @@ private:
                                      program.expressions.at(loop.step).type ==
                                          frontend::ScalarType::Uint);
     auto stopWide = extendRangeValue(stop, i128, unsignedEndpoints);
-    if (program.expressions.at(loop.step).kind !=
-        frontend::ExpressionKind::Constant) {
-      auto nonzero =
-          arith::CmpIOp::create(builder, arith::CmpIPredicate::ne, stepWide,
-                                arith::ConstantIntOp::create(builder, 0, 128));
-      cf::AssertOp::create(builder, nonzero,
-                           "for-loop range step must not be zero");
-    }
     return {startWide, stepWide, stopWide};
   }
 

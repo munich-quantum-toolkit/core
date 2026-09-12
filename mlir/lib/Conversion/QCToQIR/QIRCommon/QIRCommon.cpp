@@ -110,7 +110,6 @@ LogicalResult finalizeQIRConversion(ModuleOp moduleOp, ConversionTarget& target,
   LLVMTypeConverter memoryTypeConverter(ctx);
   populateFinalizeMemRefToLLVMConversionPatterns(memoryTypeConverter, patterns);
   cf::populateControlFlowToLLVMConversionPatterns(typeConverter, patterns);
-  cf::populateAssertToLLVMConversionPattern(typeConverter, patterns);
   arith::populateArithToLLVMConversionPatterns(typeConverter, patterns);
   populateMathToLLVMConversionPatterns(typeConverter, patterns);
   if (failed(applyPartialConversion(moduleOp, target, std::move(patterns)))) {

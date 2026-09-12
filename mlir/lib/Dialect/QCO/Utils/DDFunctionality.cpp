@@ -74,7 +74,7 @@
 namespace mlir::qco {
 namespace {
 
-constexpr size_t MAX_CONTROL_FLOW_STEPS = 10'000;
+constexpr size_t MAX_CONTROL_FLOW_STEPS = 100'000;
 
 struct QubitMap {
   DenseMap<Value, dd::Qubit> qubits;
@@ -208,7 +208,7 @@ struct SamplingPlan {
 static LogicalResult consumeExecutionStep(WalkState& walk, Operation* op) {
   if (walk.remainingExecutionSteps == 0) {
     return op->emitError(
-        "QCO DD execution exceeds the limit of 10000 control-flow steps");
+        "QCO DD execution exceeds the limit of 100000 control-flow steps");
   }
   --walk.remainingExecutionSteps;
   return success();
@@ -1693,20 +1693,20 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                          yield.getOperands().end());
         }
       })
-      .Case([&](func::CallOp call) -> LogicalResult {
+      .template Case<func::CallOp, CallOp>([&](auto call) -> LogicalResult {
         auto callee = walk.symbols.lookupNearestSymbolFrom<func::FuncOp>(
             call, call.getCalleeAttr());
         if (!callee) {
-          return call.emitError() << "func.call callee '" << call.getCallee()
+          return call.emitError() << "call callee '" << call.getCallee()
                                   << "' could not be resolved";
         }
         if (callee.isDeclaration()) {
-          return call.emitError() << "func.call callee must have a body";
+          return call.emitError() << "call callee must have a body";
         }
         Operation* calleeOp = callee.getOperation();
         if (!walk.activeCalls.insert(calleeOp).second) {
           return call.emitError()
-                 << "recursive func.call is not supported for QCO DD "
+                 << "recursive call is not supported for QCO DD "
                     "simulation";
         }
         const auto guard =

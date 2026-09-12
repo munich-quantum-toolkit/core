@@ -15,9 +15,15 @@ releases may include breaking changes.
   native operations in both target compilation and synthesis. Avoid redundant
   cleanup in both target pipelines. ([#2537]) ([**@burgholzer**])
 - ✨ Support private helpers borrowing fixed-size quantum registers through
-  QC/QCO conversion, structured control flow, and target compilation.
-  Validate register correspondence, complete lifetimes, and disjoint call
-  arguments. ([**@burgholzer**])
+  QC/QCO conversion, structured control flow, and target compilation. Validate
+  register correspondence, complete lifetimes, and disjoint call arguments.
+  ([#2546]) ([**@burgholzer**])
+- 🐛 Execute runtime-parameterized gate calls in the QCO DD interpreter. Allow
+  up to 100,000 control-flow steps while retaining the shared bound across loops
+  and calls. ([#2546]) ([**@burgholzer**])
+- ♻️ Remove generated runtime assertions and their QIR/DD handling. Keep static
+  input checks, treat runtime validity as a program precondition, and use
+  machine-width arithmetic for integer powers. ([#2546]) ([**@burgholzer**])
 
 ## [4.0.0] - 2026-09-11
 
@@ -1125,6 +1131,7 @@ for previous changelogs._
 
 [#2538]: https://github.com/munich-quantum-toolkit/core/pull/2538
 [#2537]: https://github.com/munich-quantum-toolkit/core/pull/2537
+[#2546]: https://github.com/munich-quantum-toolkit/core/pull/2546
 [#2535]: https://github.com/munich-quantum-toolkit/core/pull/2535
 [#2531]: https://github.com/munich-quantum-toolkit/core/pull/2531
 [#2526]: https://github.com/munich-quantum-toolkit/core/pull/2526

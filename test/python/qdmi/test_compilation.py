@@ -29,6 +29,32 @@ if TYPE_CHECKING:
 BELL = 'OPENQASM 3.0; include "stdgates.inc"; qubit[2] q; bit[2] c; h q[0]; cx q[0],q[1]; c = measure q;'
 
 
+@pytest.mark.parametrize("program_format", [ProgramFormat.QASM3, ProgramFormat.QIR_ADAPTIVE_MODULE])
+def test_runtime_indices_and_integer_powers(program_format: ProgramFormat) -> None:
+    """Execute valid runtime arithmetic and indexing without assertion lowering."""
+    source = """OPENQASM 3.1;
+      include "stdgates.inc";
+      qubit q;
+      x q;
+      bit choose = measure q;
+      reset q;
+      int exponent = 2;
+      if (choose) { exponent = 3; }
+      int value = 3 ** exponent;
+      bit[3] bits = "000";
+      int index = -1;
+      bits[index] = true;
+      int turns = 3;
+      if (bits[index] && value == 27) { pow(turns) @ x q; }
+      output bit result;
+      result = measure q;
+    """
+    compiled = compile_program(source, target="mqt.ddsim.default", program_format=program_format)
+    job = submit_program(compiled, target="mqt.ddsim.default", num_shots=16, custom1=17)
+    job.wait()
+    assert job.get_counts() == {"1": 16}
+
+
 @pytest.mark.parametrize("method", [qpe.Method.STANDARD, qpe.Method.ITERATIVE])
 def test_qpe_device_execution(method: qpe.Method) -> None:
     """Compile structured QPE and recover its exact phase through QIR execution."""
