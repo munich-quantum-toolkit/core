@@ -97,7 +97,7 @@ enum class AllocationMode : std::uint8_t {
 struct LoweringState {
   /// Function symbols remain in place while their signatures are converted.
   SymbolTableCollection symbolTables;
-  /// Original scalar-qubit arguments, retained while signatures are rewritten.
+  /// Original quantum arguments, retained while signatures are rewritten.
   DenseMap<Operation*, SmallVector<Value>> functionQubitArguments;
   struct StructuredValues {
     SmallVector<Value> qubits;
@@ -455,6 +455,22 @@ static void commitQubits(LoweringState& state, Operation* anchor,
           "operations");
       return WalkResult::interrupt();
     }
+    if (auto function = dyn_cast<func::FuncOp>(operation)) {
+      for (auto type : function.getArgumentTypes()) {
+        if (!isQubitMemrefType(type)) {
+          continue;
+        }
+        auto memref = dyn_cast<MemRefType>(type);
+        if (!function.isPrivate() || !memref || memref.getRank() != 1 ||
+            !memref.hasStaticShape() || !memref.getLayout().isIdentity() ||
+            memref.getMemorySpace()) {
+          function.emitOpError(
+              "borrowed registers require private functions and fixed-size "
+              "rank-one memrefs with identity layout and default memory space");
+          return WalkResult::interrupt();
+        }
+      }
+    }
     if (auto returnOp = dyn_cast<func::ReturnOp>(operation)) {
       auto function = returnOp->getParentOfType<func::FuncOp>();
       llvm::SmallDenseSet<Value, 4> returnedQubits;
@@ -485,6 +501,16 @@ static void commitQubits(LoweringState& state, Operation* anchor,
               isa<func::FuncOp>(operation) &&
               &region == &cast<func::FuncOp>(operation).getBody() &&
               &block == &region.front();
+          if (isFunctionArgument && isQubitMemrefType(argument.getType())) {
+            for (auto* user : argument.getUsers()) {
+              if (!isa<memref::LoadOp, func::CallOp>(user)) {
+                user->emitOpError("borrowed registers may only be loaded or "
+                                  "passed to helpers");
+                return WalkResult::interrupt();
+              }
+            }
+            continue;
+          }
           if ((!isQubit && !isQubitMemrefType(argument.getType())) ||
               (isModifier && isQubit) || (isFunctionArgument && isQubit)) {
             continue;
@@ -548,6 +574,14 @@ static void commitQubits(LoweringState& state, Operation* anchor,
 /// Collects stable register identifiers and load provenance.
 [[nodiscard]] static LogicalResult
 collectRegisterAccesses(Operation* root, LoweringState& state) {
+  root->walk([&](func::FuncOp function) {
+    for (auto argument : function.getArguments()) {
+      if (isQubitMemrefType(argument.getType())) {
+        const auto reg = state.registerIds.size();
+        state.registerIds.try_emplace(argument, reg);
+      }
+    }
+  });
   root->walk([&](memref::AllocOp op) {
     if (isa<qc::QubitType>(op.getType().getElementType())) {
       const auto reg = state.registerIds.size();
@@ -604,8 +638,16 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
         }
       }
     }
-    if (operationQubits.size() < 2) {
-      return WalkResult::advance();
+    DenseSet<RegisterId> borrowedRegisters;
+    if (auto call = dyn_cast<func::CallOp>(operation)) {
+      for (auto operand : call.getOperands()) {
+        if (isQubitMemrefType(operand.getType()) &&
+            !borrowedRegisters.insert(lookupRegisterId(state, operand))
+                 .second) {
+          call.emitOpError("requires distinct borrowed register operands");
+          return WalkResult::interrupt();
+        }
+      }
     }
 
     llvm::SmallDenseSet<Value, 4> qubits;
@@ -621,6 +663,11 @@ collectRegisterAccesses(Operation* root, LoweringState& state) {
         continue;
       }
 
+      if (borrowedRegisters.contains(access->second.reg)) {
+        operation->emitOpError(
+            "cannot borrow a register together with one of its qubits");
+        return WalkResult::interrupt();
+      }
       auto& seen = registerIndices[access->second.reg];
       if (const auto constant = getConstantIntValue(access->second.index)) {
         if (!seen.constants.insert(*constant).second) {
@@ -730,6 +777,11 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
     }
     auto function = op->getParentOfType<func::FuncOp>();
     for (Value argument : state.functionQubitArguments[function]) {
+      if (auto reg = state.registerIds.find(argument);
+          reg != state.registerIds.end()) {
+        returnValues.emplace_back(lookupMappedTensor(state, op, reg->second));
+        continue;
+      }
       auto* const current = map.find(argument);
       if (current == map.end() || !current->second) {
         return op.emitOpError(
@@ -746,6 +798,7 @@ struct ConvertFuncReturnOp final : StatefulOpConversionPattern<func::ReturnOp> {
       }
     }
     state.qubitMap.erase(funcRegion);
+    state.functionQubitArguments.erase(function);
 
     rewriter.replaceOpWithNewOp<func::ReturnOp>(op, returnValues);
     return success();
@@ -769,6 +822,12 @@ public:
     // Convert QC qubit references to QCO qubit values
     addConversion([ctx](qc::QubitType /*type*/) -> Type {
       return qco::QubitType::get(ctx);
+    });
+    addConversion([ctx](MemRefType type) -> Type {
+      if (isa<qc::QubitType>(type.getElementType())) {
+        return RankedTensorType::get(type.getShape(), qco::QubitType::get(ctx));
+      }
+      return type;
     });
   }
 };
@@ -803,9 +862,9 @@ struct ConvertFuncOp final : StatefulOpConversionPattern<func::FuncOp> {
       resultAttrs.emplace_back(op.getResultAttrDict(index));
     }
     for (auto [index, type] : llvm::enumerate(op.getArgumentTypes())) {
-      if (isa<qc::QubitType>(type)) {
+      if (isa<qc::QubitType>(type) || isQubitMemrefType(type)) {
         qubitArguments.emplace_back(index);
-        results.emplace_back(qco::QubitType::get(op.getContext()));
+        results.emplace_back(inputs[index]);
         resultAttrs.emplace_back(DictionaryAttr::get(op.getContext()));
       }
     }
@@ -828,7 +887,14 @@ struct ConvertFuncOp final : StatefulOpConversionPattern<func::FuncOp> {
     auto& functionArguments = getState().functionQubitArguments[op];
     for (unsigned index : qubitArguments) {
       Value converted = (*convertedEntry)->getArgument(index);
-      map[originalArguments[index]] = converted;
+      if (auto reg = getState().registerIds.find(originalArguments[index]);
+          reg != getState().registerIds.end()) {
+        const auto id = reg->second;
+        getState().tensorMap[&op.getBody()][id] = converted;
+        getState().registerIds.try_emplace(converted, id);
+      } else {
+        map[originalArguments[index]] = converted;
+      }
       functionArguments.emplace_back(originalArguments[index]);
     }
     return success();
@@ -859,22 +925,29 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
                                                 resultTypes))) {
       return failure();
     }
-    resultTypes.append(qcQubits.size(), qco::QubitType::get(op.getContext()));
-
     auto materialized = materializeQubits(state, op, qcQubits, rewriter);
     SmallVector<Value> operands(adaptor.getOperands());
+    SmallVector<unsigned> quantumArguments;
     size_t qubitIndex = 0;
     for (auto [index, source] : llvm::enumerate(op.getOperands())) {
-      if (isa<qc::QubitType, qco::QubitType>(source.getType())) {
+      if (auto reg = state.registerIds.find(source);
+          reg != state.registerIds.end()) {
+        operands[index] = lookupMappedTensor(state, op, reg->second);
+      } else if (isa<qc::QubitType, qco::QubitType>(source.getType())) {
         operands[index] = materialized.values[qubitIndex++];
+      } else {
+        continue;
       }
+      quantumArguments.emplace_back(index);
+      resultTypes.emplace_back(operands[index].getType());
     }
     auto call = func::CallOp::create(rewriter, op.getLoc(), op.getCallee(),
                                      resultTypes, operands);
     call->setAttrs(op->getAttrs());
     if (auto attrs = op.getResAttrsAttr()) {
       SmallVector<Attribute> resultAttrs(attrs.getValue());
-      resultAttrs.append(qcQubits.size(), rewriter.getDictionaryAttr({}));
+      resultAttrs.append(quantumArguments.size(),
+                         rewriter.getDictionaryAttr({}));
       call.setResAttrsAttr(rewriter.getArrayAttr(resultAttrs));
     }
 
@@ -883,9 +956,18 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
         assignMappedQubit(state, call, source, call.getResult(index));
       }
     }
-    commitQubits(state, op, qcQubits,
-                 call.getResults().drop_front(op.getNumResults()), materialized,
-                 rewriter);
+    SmallVector<Value> qubitResults;
+    for (auto [index, result] :
+         llvm::zip_equal(quantumArguments,
+                         call.getResults().drop_front(op.getNumResults()))) {
+      if (auto reg = state.registerIds.find(op.getOperand(index));
+          reg != state.registerIds.end()) {
+        assignMappedTensor(state, op, reg->second, result);
+      } else {
+        qubitResults.emplace_back(result);
+      }
+    }
+    commitQubits(state, op, qcQubits, qubitResults, materialized, rewriter);
     rewriter.replaceOp(op, call.getResults().take_front(op.getNumResults()));
     return success();
   }
@@ -1963,6 +2045,10 @@ protected:
     patterns.add<ConvertFuncReturnOp>(typeConverter, context, &state);
     target.addDynamicallyLegalOp<func::ReturnOp>([&](func::ReturnOp op) {
       if (!typeConverter.isLegal(op)) {
+        return false;
+      }
+      if (state.functionQubitArguments.contains(
+              op->getParentOfType<func::FuncOp>())) {
         return false;
       }
       const auto it = state.qubitMap.find(op->getParentRegion());

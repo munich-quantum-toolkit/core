@@ -14,6 +14,10 @@ releases may include breaking changes.
   synthesis. Remove cancelled interactions before routing and preserve cheaper
   native operations in both target compilation and synthesis. Avoid redundant
   cleanup in both target pipelines. ([#2537]) ([**@burgholzer**])
+- ✨ Support private helpers borrowing fixed-size quantum registers through
+  QC/QCO conversion, structured control flow, and target compilation.
+  Validate register correspondence, complete lifetimes, and disjoint call
+  arguments. ([**@burgholzer**])
 
 ## [4.0.0] - 2026-09-11
 

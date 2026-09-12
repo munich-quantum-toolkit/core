@@ -17,6 +17,7 @@
 #include "mqt/Dialect/QC/IR/QCOps.h"
 #include "mqt/Dialect/QCO/IR/QCODialect.h"
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/Utils/FunctionUtils.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
 
@@ -40,14 +41,12 @@
 #include "mlir/Transforms/DialectConversion.h"
 
 #include "llvm/ADT/DenseSet.h"
-#include "llvm/ADT/PointerUnion.h"
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/ScopeExit.h"
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
-#include <iterator>
 #include <utility>
 
 namespace mlir {
@@ -96,58 +95,6 @@ private:
   LoweringState* state_;
 };
 } // namespace
-
-/// Require dynamic tensor slots to be restored before leaving each region.
-/// Positional region correspondence is checked separately.
-static bool hasCompleteTensorLifetime(Value tensor, unsigned depth = 0) {
-  /// ponytail: reject deeper nesting; use a worklist if proving
-  /// completeness beyond 64 nested regions becomes necessary.
-  if (depth == 64) {
-    return false;
-  }
-  const auto isTensor = [](Value value) {
-    auto type = dyn_cast<RankedTensorType>(value.getType());
-    return type && isa<qco::QubitType>(type.getElementType());
-  };
-  DenseSet<llvm::PointerUnion<Attribute, Value>> extracted;
-  while (true) {
-    auto* user = *tensor.user_begin();
-    if (auto extract = dyn_cast<qtensor::ExtractOp>(user)) {
-      if (!extracted.insert(getAsOpFoldResult(extract.getIndex())).second) {
-        return false;
-      }
-      tensor = extract.getOutTensor();
-    } else if (auto insert = dyn_cast<qtensor::InsertOp>(user)) {
-      if (!extracted.erase(getAsOpFoldResult(insert.getIndex()))) {
-        return false;
-      }
-      tensor = insert.getResult();
-    } else if (isa<scf::ForOp, scf::WhileOp, qco::IfOp, qco::IndexSwitchOp>(
-                   user)) {
-      const auto index =
-          llvm::count_if(user->getOperands().take_front(
-                             tensor.use_begin()->getOperandNumber()),
-                         isTensor);
-      for (Region& region : user->getRegions()) {
-        auto arguments =
-            llvm::filter_to_vector(region.getArguments(), isTensor);
-        if (index >= arguments.size() ||
-            !hasCompleteTensorLifetime(arguments[index], depth + 1)) {
-          return false;
-        }
-      }
-      auto results = llvm::filter_to_vector(user->getResults(), isTensor);
-      if (index >= results.size()) {
-        return false;
-      }
-      tensor = results[index];
-    } else {
-      return isa<qtensor::DeallocOp, qco::YieldOp, scf::YieldOp,
-                 scf::ConditionOp>(user) &&
-             extracted.empty();
-    }
-  }
-}
 
 /// Determines allocation mode independently of conversion traversal order.
 [[nodiscard]] static FailureOr<AllocationMode>
@@ -386,14 +333,11 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
     } else if (auto insert = dyn_cast<qtensor::InsertOp>(op)) {
       origins[insert.getResult()] = origin(insert.getDest());
     } else if (auto call = dyn_cast<func::CallOp>(op)) {
-      SmallVector<Value> arguments;
-      for (auto operand : call.getOperands()) {
-        if (isa<qco::QubitType>(operand.getType())) {
-          arguments.push_back(operand);
+      for (auto [index, result] : llvm::enumerate(call.getResults())) {
+        if (auto argument = qco::getCallArgumentForResult(call, index);
+            succeeded(argument)) {
+          origins[result] = origin(call.getOperand(*argument));
         }
-      }
-      if (call.getNumResults() >= arguments.size()) {
-        tie(arguments, call.getResults().take_back(arguments.size()));
       }
     }
     if (!positional) {
@@ -410,30 +354,46 @@ collectWireOrigins(ModuleOp moduleOp, DenseMap<Value, Value>& origins) {
 collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state,
                               const DenseMap<Value, Value>& origins) {
   for (auto function : moduleOp.getOps<func::FuncOp>()) {
-    const auto isQTensor = [](Type type) {
-      auto tensor = dyn_cast<RankedTensorType>(type);
-      return tensor && isa<qco::QubitType>(tensor.getElementType());
-    };
-    if (llvm::any_of(function.getArgumentTypes(), isQTensor) ||
-        llvm::any_of(function.getResultTypes(), isQTensor)) {
-      return function.emitOpError(
-          "inline functions that accept or return qubit tensors before "
-          "QCO-to-QC conversion; tensor references are local to a function");
-    }
     auto& qubitArguments = state.qubitArguments[function];
-    for (auto [index, type] : llvm::enumerate(function.getArgumentTypes())) {
-      if (isa<qco::QubitType>(type)) {
-        qubitArguments.emplace_back(index);
+    qubitArguments =
+        qco::getQuantumArgumentIndices(function.getArgumentTypes());
+    if (function.getNumResults() < qubitArguments.size()) {
+      return function.emitOpError(
+          "must return one trailing quantum value for each quantum argument");
+    }
+    auto returnedTypes =
+        function.getResultTypes().take_back(qubitArguments.size());
+    for (auto [argument, result] :
+         llvm::zip_equal(qubitArguments, returnedTypes)) {
+      const auto type = function.getArgumentTypes()[argument];
+      if (type != result) {
+        return function.emitOpError(
+            "must return one trailing quantum value for each quantum argument");
       }
+      if (auto tensor = dyn_cast<RankedTensorType>(type)) {
+        if (!function.isPrivate() || tensor.getRank() != 1 ||
+            !tensor.hasStaticShape() || tensor.getEncoding()) {
+          return function.emitOpError(
+              "borrowed registers require private functions and fixed-size "
+              "rank-one tensors without encoding");
+        }
+        if (!function.isDeclaration() &&
+            !hasCompleteTensorLifetime(function.getArgument(argument))) {
+          return function.emitOpError(
+              "borrowed registers must restore all extracted slots");
+        }
+      }
+    }
+    if (llvm::any_of(function.getResultTypes().drop_back(qubitArguments.size()),
+                     [](Type type) {
+                       return isa<RankedTensorType>(type) &&
+                              isQuantumStateType(type);
+                     })) {
+      return function.emitOpError(
+          "cannot transfer ownership of quantum registers");
     }
     if (qubitArguments.empty()) {
       continue;
-    }
-    if (function.getNumResults() < qubitArguments.size() ||
-        llvm::any_of(function.getResultTypes().take_back(qubitArguments.size()),
-                     [](Type type) { return !isa<qco::QubitType>(type); })) {
-      return function.emitOpError()
-             << "must return one trailing qubit for each qubit argument";
     }
     const auto firstQubitResult =
         function.getNumResults() - qubitArguments.size();
@@ -467,7 +427,21 @@ collectFunctionQubitArguments(ModuleOp moduleOp, LoweringState& state,
       }
     }
   }
-  return success();
+  auto calls = moduleOp.walk([&](func::CallOp call) {
+    const auto count =
+        qco::getQuantumArgumentIndices(call.getOperandTypes()).size();
+    if (auto attrs = call.getResAttrsAttr();
+        attrs &&
+        llvm::any_of(attrs.getValue().take_back(count), [](Attribute attr) {
+          return !cast<DictionaryAttr>(attr).empty();
+        })) {
+      call.emitOpError(
+          "cannot preserve attributes on pass-through qubit results in QC");
+      return WalkResult::interrupt();
+    }
+    return WalkResult::advance();
+  });
+  return success(!calls.wasInterrupted());
 }
 
 namespace {
@@ -542,15 +516,6 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
     const auto& qubitArguments = getState().qubitArguments[callee];
     const auto firstQubitResult = op.getNumResults() - qubitArguments.size();
     auto resultAttrs = op.getResAttrsAttr();
-    if (resultAttrs &&
-        llvm::any_of(resultAttrs.getValue().take_back(qubitArguments.size()),
-                     [](Attribute attr) {
-                       return !cast<DictionaryAttr>(attr).empty();
-                     })) {
-      return op.emitOpError(
-          "cannot preserve attributes on pass-through qubit results in QC");
-    }
-
     SmallVector<Type> keptResultTypes(op.getResultTypes());
     keptResultTypes.resize(firstQubitResult);
     SmallVector<Type> resultTypes;
@@ -570,6 +535,14 @@ struct ConvertFuncCallOp final : StatefulOpConversionPattern<func::CallOp> {
     llvm::append_range(replacements, call.getResults());
     for (const auto argument : qubitArguments) {
       replacements.emplace_back(adaptor.getOperands()[argument]);
+    }
+    for (const auto argument : qubitArguments) {
+      auto value = adaptor.getOperands()[argument];
+      if (isa<MemRefType>(value.getType())) {
+        for (auto& cache : llvm::make_second_range(getState().qubitValues)) {
+          cache.erase(value);
+        }
+      }
     }
     rewriter.replaceOp(op, replacements);
     return success();
