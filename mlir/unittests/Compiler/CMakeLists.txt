@@ -39,7 +39,9 @@ target_compile_definitions(
     MQT_CORE_MLIR_DIRECTIONAL_TWO_WAY_SC_CONFIG="${CMAKE_CURRENT_SOURCE_DIR}/Inputs/directional-two-way-sc.json"
 )
 
+set(LLVM_REQUIRES_RTTI ON)
 mqt_mlir_configure_unittest_target(mqt-core-mlir-unittests-compiler REQUIRES_EH)
+unset(LLVM_REQUIRES_RTTI)
 
 gtest_discover_tests(mqt-core-mlir-unittests-compiler PROPERTIES LABELS mqt-mlir-unittests
                                                                  DISCOVERY_TIMEOUT 60)

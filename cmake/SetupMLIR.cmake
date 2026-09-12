@@ -57,7 +57,7 @@ function(mqt_llvm_target_disable_rtti target_name)
   if(NOT TARGET ${target_name})
     message(FATAL_ERROR "Cannot configure RTTI for missing target ${target_name}.")
   endif()
-  if(NOT LLVM_ENABLE_RTTI)
+  if(NOT (LLVM_ENABLE_RTTI OR LLVM_REQUIRES_RTTI))
     target_compile_options(${target_name}
                            PRIVATE $<$<COMPILE_LANGUAGE:CXX>:${LLVM_CXXFLAGS_RTTI_DISABLE}>)
   endif()
