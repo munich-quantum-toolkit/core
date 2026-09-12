@@ -22,7 +22,11 @@ from pathlib import Path
 
 
 def main() -> None:
-    """Run the release optimization checks."""
+    """Run the release optimization checks.
+
+    Raises:
+        RuntimeError: If an ELF binary retains an absolute runtime search path.
+    """
     wheel, destination, project = map(Path, sys.argv[1:])
     with tempfile.TemporaryDirectory(prefix="mqt-wheel-bolt-") as directory:
         work = Path(directory)
@@ -52,6 +56,10 @@ def main() -> None:
                 with path.open("rb") as stream:
                     is_elf = stream.read(4) == b"\x7fELF"
                 if is_elf:
+                    rpath = subprocess.check_output(["patchelf", "--print-rpath", str(path)], text=True).strip()
+                    if any(Path(entry).is_absolute() for entry in rpath.split(":")):
+                        msg = f"Absolute runtime search path in {path}: {rpath}"
+                        raise RuntimeError(msg)
                     subprocess.run(["llvm-strip", "--strip-unneeded", str(path)], check=True)
         subprocess.run(training, env=environment, check=True)
         packed = work / "packed"

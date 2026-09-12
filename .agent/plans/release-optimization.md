@@ -64,3 +64,14 @@ full LTO. Final PGO flags now use directory compile/link options, which keep
 profiles out of CMake's probes. A retained-profile reproducer fails before the
 change and passes afterward, including a fresh full Core wheel build. Hosted
 qualification must use this corrected configuration.
+
+The Linux stable qualification found a direct loader dependency missing from the
+driver test target. Linking `${CMAKE_DL_LIBS}` fixes the reproduced manylinux
+link error. Both loader tests pass in the shared build, and all 106 driver tests
+pass with the native release library settings. The supplementary hosted C++
+build now uses those settings; repaired wheel consumers still test the shared
+package with Clang and GCC. The first macOS and Linux free-threaded checks
+passed, as did all Windows jobs. Direct ELF inspection then found a
+build-directory RPATH in three Linux wheel libraries. The driver now adds its
+build-tree search paths only to consumers using build RPATHs. Current Linux and
+macOS qualification must use this packaging correction.
