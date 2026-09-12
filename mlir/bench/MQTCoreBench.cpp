@@ -8,26 +8,28 @@
  * Licensed under the MIT License
  */
 
-// Generates configured benchmarks and evaluates their results.
+/// Generates configured benchmarks and evaluates their results.
 
 #include "bench/JSON.hpp"
 #include "mqt/Compiler/Programs.h"
 #include "mqt/bench/Generate.h"
 
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SmallString.h"
 #include "llvm/ADT/StringExtras.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/FileSystem.h"
+#include "llvm/Support/InitLLVM.h"
 #include "llvm/Support/JSON.h"
 #include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/Path.h"
 #include "llvm/Support/Process.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <cstddef>
 #include <cstdint>
-#include <filesystem>
 #include <optional>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
@@ -78,145 +80,141 @@ static llvm::cl::opt<std::string> countsInputPath(
     llvm::cl::value_desc("file|-"), llvm::cl::Required,
     llvm::cl::cat(benchmarkOptions), llvm::cl::sub(evaluateCommand));
 
-[[nodiscard]] static std::string readText(const std::string& path) {
+[[nodiscard]] static std::optional<std::string>
+readText(const std::string& path) {
   auto buffer = path == "-" ? llvm::MemoryBuffer::getSTDIN()
                             : llvm::MemoryBuffer::getFile(path);
   if (!buffer) {
-    throw std::runtime_error("failed to read '" + path +
-                             "': " + buffer.getError().message());
+    llvm::errs() << "failed to read '" << path
+                 << "': " << buffer.getError().message() << '\n';
+    return std::nullopt;
   }
   return (*buffer)->getBuffer().str();
 }
 
-[[nodiscard]] static bool pathExists(const std::filesystem::path& path) {
-  std::error_code error;
-  const auto status = std::filesystem::symlink_status(path, error);
+[[nodiscard]] static bool validateOutputTarget(llvm::StringRef path) {
+  llvm::sys::fs::file_status status;
+  const auto error = llvm::sys::fs::status(path, status, false);
   if (error == std::errc::no_such_file_or_directory) {
-    return false;
+    return true;
   }
   if (error) {
-    throw std::runtime_error("failed to inspect '" + path.string() +
-                             "': " + error.message());
+    llvm::errs() << "failed to inspect '" << path << "': " << error.message()
+                 << '\n';
+    return false;
   }
-  return status.type() != std::filesystem::file_type::not_found;
-}
-
-static void validateOutputTarget(const std::filesystem::path& path) {
-  if (pathExists(path)) {
-    throw std::runtime_error("refusing to overwrite existing file '" +
-                             path.string() + "'");
+  if (llvm::sys::fs::exists(status)) {
+    llvm::errs() << "refusing to overwrite existing file '" << path << "'\n";
+    return false;
   }
+  return true;
 }
 
 namespace {
 struct OpenSibling {
-  std::filesystem::path path;
+  std::string path;
   int descriptor;
 };
 } // namespace
 
-[[nodiscard]] static std::filesystem::path
-siblingPath(const std::filesystem::path& finalPath,
-            const std::string_view purpose) {
+[[nodiscard]] static std::string siblingPath(llvm::StringRef finalPath,
+                                             const std::string_view purpose) {
   const auto random =
       (static_cast<uint64_t>(llvm::sys::Process::GetRandomNumber()) << 32U) |
       llvm::sys::Process::GetRandomNumber();
-  const auto name = finalPath.filename().string() + "." + std::string(purpose) +
-                    "-" + llvm::utohexstr(random);
-  return finalPath.parent_path() / name;
+  return finalPath.str() + "." + std::string(purpose) + "-" +
+         llvm::utohexstr(random);
 }
 
-[[nodiscard]] static OpenSibling
-createSibling(const std::filesystem::path& finalPath,
-              const std::string_view purpose) {
+[[nodiscard]] static std::optional<OpenSibling>
+createSibling(llvm::StringRef finalPath, const std::string_view purpose) {
   for (size_t attempt = 0; attempt < 32; ++attempt) {
     auto path = siblingPath(finalPath, purpose);
     int descriptor = -1;
     const auto error = llvm::sys::fs::openFileForWrite(
-        path.string(), descriptor, llvm::sys::fs::CD_CreateNew);
+        path, descriptor, llvm::sys::fs::CD_CreateNew);
     if (!error) {
-      return {.path = std::move(path), .descriptor = descriptor};
+      return OpenSibling{.path = std::move(path), .descriptor = descriptor};
     }
     if (error != std::errc::file_exists) {
-      throw std::runtime_error("failed to create a " + std::string(purpose) +
-                               " file next to '" + finalPath.string() +
-                               "': " + error.message());
+      llvm::errs() << "failed to create a " << purpose << " file next to '"
+                   << finalPath << "': " << error.message() << '\n';
+      return std::nullopt;
     }
   }
-  throw std::runtime_error("failed to choose a unique " + std::string(purpose) +
-                           " file next to '" + finalPath.string() + "'");
+  llvm::errs() << "failed to choose a unique " << purpose << " file next to '"
+               << finalPath << "'\n";
+  return std::nullopt;
 }
 
-[[nodiscard]] static std::filesystem::path
-stageFile(const std::filesystem::path& finalPath,
-          const std::string_view contents) {
+[[nodiscard]] static std::optional<std::string>
+stageFile(llvm::StringRef finalPath, const std::string_view contents) {
   auto temporary = createSibling(finalPath, "tmp");
-  llvm::raw_fd_ostream stream(temporary.descriptor, true);
+  if (!temporary) {
+    return std::nullopt;
+  }
+  llvm::raw_fd_ostream stream(temporary->descriptor, true);
   stream.write(contents.data(), contents.size());
   stream.close();
   const auto error = stream.error();
   stream.clear_error();
   if (error) {
-    if (const auto cleanupError =
-            llvm::sys::fs::remove(temporary.path.string())) {
-      llvm::errs() << "failed to remove temporary file '"
-                   << temporary.path.string() << "': " << cleanupError.message()
-                   << '\n';
+    if (const auto cleanupError = llvm::sys::fs::remove(temporary->path)) {
+      llvm::errs() << "failed to remove temporary file '" << temporary->path
+                   << "': " << cleanupError.message() << '\n';
     }
-    throw std::runtime_error("failed to write temporary output for '" +
-                             finalPath.string() + "': " + error.message());
+    llvm::errs() << "failed to write temporary output for '" << finalPath
+                 << "': " << error.message() << '\n';
+    return std::nullopt;
   }
-  return temporary.path;
+  return std::move(temporary->path);
 }
 
-static void removeIfPresent(const std::optional<std::filesystem::path>& path) {
+static void removeIfPresent(const std::optional<std::string>& path) {
   if (path) {
-    if (const auto error = llvm::sys::fs::remove(path->string());
+    if (const auto error = llvm::sys::fs::remove(*path);
         error && error != std::errc::no_such_file_or_directory) {
-      llvm::errs() << "failed to remove temporary file '" << path->string()
+      llvm::errs() << "failed to remove temporary file '" << *path
                    << "': " << error.message() << '\n';
     }
   }
 }
 
-[[nodiscard]] static const char*
-programExtension(const std::string_view format) {
-  if (format == "qc") {
-    return ".qc.mlir";
-  }
-  if (format == "jeff") {
-    return ".jeff";
-  }
-  throw std::invalid_argument("unsupported output format '" +
-                              std::string(format) + "'");
-}
-
 [[nodiscard]] static int publish(mqt::bench::GeneratedBenchmark generated,
                                  const std::string_view format,
-                                 const std::filesystem::path& directory) {
-  const auto* const extension = programExtension(format);
-  std::error_code error;
-  std::filesystem::create_directories(directory, error);
-  if (error) {
-    throw std::runtime_error("failed to create output directory '" +
-                             directory.string() + "': " + error.message());
+                                 llvm::StringRef directory) {
+  if (format != "qc" && format != "jeff") {
+    llvm::errs() << "unsupported output format '" << format << "'\n";
+    return 1;
   }
-  const auto directoryExists = std::filesystem::is_directory(directory, error);
-  if (error) {
-    throw std::runtime_error("failed to inspect output directory '" +
-                             directory.string() + "': " + error.message());
+  const auto* const extension = format == "qc" ? ".qc.mlir" : ".jeff";
+  if (const auto error = llvm::sys::fs::create_directories(directory)) {
+    llvm::errs() << "failed to create output directory '" << directory
+                 << "': " << error.message() << '\n';
+    return 1;
+  }
+  bool directoryExists = false;
+  if (const auto error =
+          llvm::sys::fs::is_directory(directory, directoryExists)) {
+    llvm::errs() << "failed to inspect output directory '" << directory
+                 << "': " << error.message() << '\n';
+    return 1;
   }
   if (!directoryExists) {
-    throw std::runtime_error("output path is not a directory: '" +
-                             directory.string() + "'");
+    llvm::errs() << "output path is not a directory: '" << directory << "'\n";
+    return 1;
   }
 
   const auto baseName = generated.benchmarkId + "-" + generated.caseId;
-  const auto programPath = directory / (baseName + extension);
-  const auto manifestPath =
-      directory / (baseName + "." + std::string(format) + ".manifest.json");
-  validateOutputTarget(programPath);
-  validateOutputTarget(manifestPath);
+  llvm::SmallString<128> programPath(directory);
+  llvm::sys::path::append(programPath, baseName + extension);
+  llvm::SmallString<128> manifestPath(directory);
+  llvm::sys::path::append(manifestPath, baseName + "." + std::string(format) +
+                                            ".manifest.json");
+  if (!validateOutputTarget(programPath) ||
+      !validateOutputTarget(manifestPath)) {
+    return 1;
+  }
 
   std::string serializedProgram;
   if (format == "qc") {
@@ -239,27 +237,33 @@ programExtension(const std::string_view format) {
   auto manifest = std::move(generated.manifestJSON);
   manifest.push_back('\n');
 
-  std::optional<std::filesystem::path> temporaryProgram;
-  std::optional<std::filesystem::path> temporaryManifest;
+  std::optional<std::string> temporaryProgram;
+  std::optional<std::string> temporaryManifest;
   const auto removeTemporaryFiles = llvm::make_scope_exit([&] {
     removeIfPresent(temporaryProgram);
     removeIfPresent(temporaryManifest);
   });
 
   temporaryProgram = stageFile(programPath, serializedProgram);
+  if (!temporaryProgram) {
+    return 1;
+  }
   temporaryManifest = stageFile(manifestPath, manifest);
+  if (!temporaryManifest) {
+    return 1;
+  }
 
   if (const auto linkError = llvm::sys::fs::create_hard_link(
-          temporaryProgram->string(), programPath.string())) {
-    llvm::errs() << "failed to publish '" << programPath.string()
+          *temporaryProgram, programPath.str())) {
+    llvm::errs() << "failed to publish '" << programPath.str()
                  << "': " << linkError.message() << '\n';
     return 1;
   }
   if (const auto linkError = llvm::sys::fs::create_hard_link(
-          temporaryManifest->string(), manifestPath.string())) {
-    llvm::errs() << "failed to publish '" << manifestPath.string()
+          *temporaryManifest, manifestPath.str())) {
+    llvm::errs() << "failed to publish '" << manifestPath.str()
                  << "': " << linkError.message() << "; program remains at '"
-                 << programPath.string()
+                 << programPath.str()
                  << "'; this invocation did not publish a manifest\n";
     return 1;
   }
@@ -272,8 +276,8 @@ programExtension(const std::string_view format) {
       {.K = "benchmark", .V = generated.benchmarkId},
       {.K = "case_id", .V = generated.caseId},
       {.K = "format", .V = std::string(format)},
-      {.K = "manifest_path", .V = manifestPath.string()},
-      {.K = "program_path", .V = programPath.string()},
+      {.K = "manifest_path", .V = manifestPath.str()},
+      {.K = "program_path", .V = programPath.str()},
       {.K = "schema_version", .V = 1},
   };
   llvm::outs() << llvm::json::Value(std::move(response)) << '\n';
@@ -287,47 +291,59 @@ generateFromInstanceSpecification(const std::string& instanceSpecification,
   if (!generated) {
     return 1;
   }
-  return publish(std::move(*generated), outputFormat,
-                 std::filesystem::path(outputDirectory.getValue()));
+  return publish(std::move(*generated), outputFormat, outputDirectory);
+}
+
+[[nodiscard]] static int
+printJSON(std::variant<std::string, mqt::bench::JSONError> result) {
+  if (const auto* error = std::get_if<mqt::bench::JSONError>(&result)) {
+    llvm::errs() << error->message << '\n';
+    return 1;
+  }
+  llvm::outs() << std::get<std::string>(result) << '\n';
+  return 0;
 }
 
 int main(int argc, char** argv) {
+  const llvm::InitLLVM init(argc, argv);
   llvm::cl::HideUnrelatedOptions(benchmarkOptions);
   llvm::cl::ParseCommandLineOptions(
       argc, argv, "Generate and evaluate structured quantum benchmarks\n");
-
-  try {
-    if (listCommand) {
-      llvm::outs() << mqt::bench::listBenchmarksJSON() << '\n';
-      return 0;
-    }
-    if (describeCommand) {
-      llvm::outs() << mqt::bench::describeBenchmarkJSON(benchmarkId) << '\n';
-      return 0;
-    }
-    if (generateCommand) {
-      const auto instanceSpecification = readText(instanceSpecificationPath);
-      const auto source = instanceSpecificationPath == "-"
-                              ? "<stdin>"
-                              : instanceSpecificationPath.getValue();
-      return generateFromInstanceSpecification(instanceSpecification, source);
-    }
-    if (evaluateCommand) {
-      if (manifestInputPath == "-") {
-        throw std::invalid_argument("--manifest requires a file path");
-      }
-      const auto manifest = readText(manifestInputPath);
-      const auto counts = readText(countsInputPath);
-      const auto countsSource =
-          countsInputPath == "-" ? "<stdin>" : countsInputPath.getValue();
-      llvm::outs() << mqt::bench::evaluateJSON(manifest, counts,
-                                               manifestInputPath, countsSource)
-                   << '\n';
-      return 0;
-    }
-    llvm::errs() << "a command is required; use --help for usage\n";
-  } catch (const std::exception& exception) {
-    llvm::errs() << exception.what() << '\n';
+  if (listCommand) {
+    llvm::outs() << mqt::bench::listBenchmarksJSON() << '\n';
+    return 0;
   }
+  if (describeCommand) {
+    return printJSON(mqt::bench::tryDescribeBenchmarkJSON(benchmarkId));
+  }
+  if (generateCommand) {
+    const auto instanceSpecification = readText(instanceSpecificationPath);
+    if (!instanceSpecification) {
+      return 1;
+    }
+    const auto source = instanceSpecificationPath == "-"
+                            ? "<stdin>"
+                            : instanceSpecificationPath.getValue();
+    return generateFromInstanceSpecification(*instanceSpecification, source);
+  }
+  if (evaluateCommand) {
+    if (manifestInputPath == "-") {
+      llvm::errs() << "--manifest requires a file path\n";
+      return 1;
+    }
+    const auto manifest = readText(manifestInputPath);
+    if (!manifest) {
+      return 1;
+    }
+    const auto counts = readText(countsInputPath);
+    if (!counts) {
+      return 1;
+    }
+    const auto countsSource =
+        countsInputPath == "-" ? "<stdin>" : countsInputPath.getValue();
+    return printJSON(mqt::bench::tryEvaluateJSON(
+        *manifest, *counts, manifestInputPath, countsSource));
+  }
+  llvm::errs() << "a command is required; use --help for usage\n";
   return 1;
 }
