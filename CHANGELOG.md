@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+- 🐛 Import Qiskit gates and instructions with array-valued parameters through
+  their circuit definitions and lower permutations to SWAPs in Core. Preserve
+  nested and controlled operations, and report unsupported opaque operations
+  without aborting the process. ([**@simon1hofmann**])
+
 - ⚡ Speed up qubit placement and routing. Skip layout search for flat programs
   whose initial qubit placement already satisfies the target topology. Place
   disjoint interaction paths along connected target sites to avoid needless

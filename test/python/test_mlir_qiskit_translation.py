@@ -1368,6 +1368,87 @@ def test_custom_gate_definitions_are_interned_by_name_and_body() -> None:
     assert np.allclose(Operator(restored).data, Operator(circuit).data)
 
 
+@pytest.mark.parametrize("wrapper", ["plain", "nested", "controlled", "annotated"])
+def test_array_parameter_gate_definitions(wrapper: str) -> None:
+    """Import array-valued gates without sending objects to the scalar C API."""
+    gate = library.PermutationGate([2, 0, 1])
+    if wrapper == "nested":
+        definition = QuantumCircuit(3)
+        definition.append(gate, [2, 0, 1])
+        gate = definition.to_gate()
+    elif wrapper == "controlled":
+        # Qiskit requires a definition before constructing an eager control.
+        definition = QuantumCircuit(3)
+        definition.swap(0, 2)
+        definition.swap(1, 2)
+        gate.definition = definition
+        gate = gate.control(1, annotated=False)
+    elif wrapper == "annotated":
+        gate = AnnotatedOperation(gate, [InverseModifier(), ControlModifier(1)])
+    circuit = QuantumCircuit(gate.num_qubits)
+    circuit.append(gate, list(reversed(range(gate.num_qubits))))
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert np.allclose(Operator(restored).data, Operator(circuit).data)
+
+
+def test_array_parameter_definitions_remain_distinct() -> None:
+    """Preserve distinct permutation patterns in the same circuit."""
+    circuit = QuantumCircuit(3)
+    for pattern in ([2, 0, 1], [1, 0, 2], [2, 0, 1]):
+        circuit.append(library.PermutationGate(pattern), range(3))
+    program = QCProgram.from_qiskit(circuit)
+
+    assert program.ir.count("mqt.unitary") == 2
+    assert np.allclose(Operator(program.to_qiskit()).data, Operator(circuit).data)
+
+
+@pytest.mark.parametrize("pattern", list(permutations(range(4))))
+def test_permutation_lowering_patterns(pattern: tuple[int, ...]) -> None:
+    """Cover identity, disjoint cycles, and both orientations of long cycles."""
+    circuit = QuantumCircuit(4)
+    circuit.append(library.PermutationGate(list(pattern)), range(4))
+
+    assert np.allclose(Operator(QCProgram.from_qiskit(circuit).to_qiskit()).data, Operator(circuit).data)
+
+
+@pytest.mark.parametrize("pattern", [[0, 0, 2], [0, 1, 3], [-1, 1, 2]])
+def test_invalid_permutation_is_rejected(pattern: list[int]) -> None:
+    """Validate mutated input patterns before indexing the permutation."""
+    gate = library.PermutationGate([0, 1, 2])
+    gate.params[0][:] = pattern
+    circuit = QuantumCircuit(3)
+    circuit.append(gate, range(3))
+
+    with pytest.raises(RuntimeError, match="permutation"):
+        QCProgram.from_qiskit(circuit)
+
+
+def test_array_parameter_instruction_with_classical_operands() -> None:
+    """Resolve custom Instruction qubits and clbits through its definition."""
+    definition = QuantumCircuit(1, 1)
+    definition.x(0)
+    definition.measure(0, 0)
+    instruction = Instruction("array_measure", 1, 1, [np.array([1, 2])])
+    instruction.definition = definition
+    circuit = QuantumCircuit(2, 2)
+    circuit.append(instruction, [1], [1])
+
+    restored = QCProgram.from_qiskit(circuit).to_qiskit()
+
+    assert restored == circuit.decompose()
+
+
+def test_opaque_array_parameter_instruction_is_rejected() -> None:
+    """Reject opaque object-valued operations with a catchable diagnostic."""
+    circuit = QuantumCircuit(1)
+    circuit.append(Instruction("opaque_array", 1, 0, [np.array([1, 2])]), [0])
+
+    with pytest.raises(RuntimeError, match="no circuit definition"):
+        QCProgram.from_qiskit(circuit)
+
+
 def test_custom_gate_with_standard_name_is_not_mistranslated() -> None:
     """Classify standard gates by Qiskit identity rather than by name."""
     definition = QuantumCircuit(1)

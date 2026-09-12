@@ -77,7 +77,11 @@ are supported and remain distinct from free symbols. Parameterized
 custom-instruction definitions are expanded after their symbols and expressions
 are resolved. Definition expansion rejects missing definitions, cycles, operand
 arity mismatches, nesting beyond 64 levels, and more than 10 million expanded
-operations.
+operations. Permutation patterns lower directly to SWAPs in Core, including
+inside nested definitions and gate modifiers. Other array-valued custom
+parameters are represented by the circuit definition rather than scalar program
+inputs. Operations without a supported definition are rejected with a Python
+exception; arbitrary Python parameter objects are not preserved on export.
 
 Structured-control export supports scalar results from {code}`scf.if` and
 {code}`scf.index_switch`, carried scalar state in constant-range

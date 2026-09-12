@@ -88,6 +88,7 @@ using ValidationParameters = llvm::StringMap<Parameter>;
 namespace {
 struct GateImportState {
   llvm::DenseMap<uintptr_t, mlir::func::FuncOp> gates;
+  std::map<std::vector<uint32_t>, mlir::func::FuncOp> permutations;
   llvm::StringSet<> functionNames;
   llvm::StringMap<size_t> nextFunctionSuffix;
 };
@@ -2001,7 +2002,46 @@ void translateCircuit(mlir::qc::QCProgramBuilder& builder,
     const auto instruction = circuit.instruction(index);
     switch (instruction.kind) {
     case OperationKind::Gate:
-      if (instruction.standardGate) {
+      if (instruction.permutation) {
+        const auto& pattern = *instruction.permutation;
+        auto& function = gateState.permutations[pattern];
+        if (!function) {
+          std::string name = "permutation";
+          auto& suffix = gateState.nextFunctionSuffix[name];
+          while (!gateState.functionNames.insert(name).second) {
+            name = "permutation_" + std::to_string(suffix++);
+          }
+          llvm::SmallVector<mlir::Type> types(
+              pattern.size(), mlir::qc::QubitType::get(builder.getContext()));
+          function = builder.createUnitaryFunction(
+              name, types, [&](mlir::ValueRange targets) {
+                // Place each requested input at its output position. Track
+                // inverse positions so a cycle takes linear time to lower.
+                std::vector<uint32_t> inputs(pattern.size());
+                std::iota(inputs.begin(), inputs.end(), 0U);
+                auto positions = inputs;
+                for (size_t output = 0; output < pattern.size(); ++output) {
+                  const auto source = positions[pattern[output]];
+                  if (source == output) {
+                    continue;
+                  }
+                  builder.swap(targets[output], targets[source]);
+                  positions[inputs[output]] = source;
+                  positions[inputs[source]] = static_cast<uint32_t>(output);
+                  std::swap(inputs[output], inputs[source]);
+                }
+              });
+        }
+        llvm::SmallVector<mlir::Value> operands;
+        for (const auto qubit : instruction.qubits) {
+          operands.push_back(getQubit(qubit));
+        }
+        emitModifiedOperation(
+            builder, instruction, operands,
+            modifiedQubitArity(instruction, pattern.size()), localParameters,
+            globalParameters,
+            [&](mlir::ValueRange targets) { builder.call(function, targets); });
+      } else if (instruction.standardGate) {
         emitGate(builder, instruction, allQubits, qubitMap, localParameters,
                  globalParameters);
       } else {
@@ -2117,8 +2157,9 @@ expansionSummary(const CircuitReader& circuit, ExpansionCountState& state,
       continue;
     }
     const auto instruction = circuit.instruction(index);
-    const bool customGate =
-        instruction.kind == OperationKind::Gate && !instruction.standardGate;
+    const bool customGate = instruction.kind == OperationKind::Gate &&
+                            !instruction.standardGate &&
+                            !instruction.permutation;
     if (customGate || instruction.kind == OperationKind::Unknown) {
       if (instruction.kind == OperationKind::Unknown &&
           !instruction.modifiers.empty()) {
@@ -2670,6 +2711,21 @@ void validateCircuit(const CircuitReader& circuit,
 
     switch (instruction.kind) {
     case OperationKind::Gate:
+      if (instruction.permutation) {
+        const auto& pattern = *instruction.permutation;
+        static_cast<void>(modifiedQubitArity(instruction, pattern.size()));
+        if (!instruction.clbits.empty() || !instruction.parameters.empty()) {
+          throw std::runtime_error("Qiskit permutation has an invalid arity");
+        }
+        std::vector<bool> seen(pattern.size(), false);
+        for (const auto input : pattern) {
+          if (input >= pattern.size() || seen[input]) {
+            throw std::runtime_error("Qiskit permutation must be a bijection");
+          }
+          seen[input] = true;
+        }
+        break;
+      }
       if (const auto arity = gateArity(instruction)) {
         size_t modifierControls = 0U;
         for (const auto& modifier : instruction.modifiers) {
