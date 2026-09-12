@@ -13,7 +13,7 @@ releases may include breaking changes.
 - 🐛 Import Qiskit gates and instructions with array-valued parameters through
   their circuit definitions and lower permutations to SWAPs in Core. Preserve
   nested and controlled operations, and report unsupported opaque operations
-  without aborting the process. ([**@simon1hofmann**])
+  without aborting the process. ([#2550]) ([**@simon1hofmann**])
 
 - ⚡ Speed up qubit placement and routing. Skip layout search for flat programs
   whose initial qubit placement already satisfies the target topology. Place
@@ -1770,3 +1770,5 @@ for previous changelogs._
 [munich-quantum-toolkit/workflows]: https://github.com/munich-quantum-toolkit/workflows
 [MQT QMAP]: https://github.com/munich-quantum-toolkit/qmap
 [MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
+
+[#2550]: https://github.com/munich-quantum-toolkit/core/pull/2550
