@@ -30,7 +30,7 @@ class OpPassManager;
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment);
 
-/// Populate target-native block synthesis without rotation merging or routing.
+/// Populate target-native block synthesis without routing.
 ///
 /// Requires an all-to-all target. Inlines calls, decomposes supported
 /// multi-controlled gates, assigns static sites, resynthesizes constant
