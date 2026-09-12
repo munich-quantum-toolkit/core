@@ -54,6 +54,7 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/ADT/StringExtras.h"
 #include "llvm/ADT/StringSet.h"
 #include "llvm/Support/Casting.h"
 
@@ -509,7 +510,13 @@ static void collectParameters(mlir::func::FuncOp function, ExportState& state,
       }
       state.parameterGroups.add(*group);
     }
-    auto parameter = Parameter::symbol(name.str(), std::move(group));
+    std::optional<std::string> identity;
+    if (const auto id = function.getArgAttrOfType<mlir::IntegerAttr>(
+            index, mlir::mqt::MQTDialect::InputIdAttrHelper::getNameStr())) {
+      identity = llvm::toString(id.getValue(), 16, false);
+    }
+    auto parameter =
+        Parameter::symbol(name.str(), std::move(group), std::move(identity));
     state.parameters[argument] = parameter;
     state.inputParameters.push_back(std::move(parameter));
   }

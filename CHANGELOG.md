@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+- 🐛 Preserve free Qiskit parameter UUIDs and parameter-vector identities
+  through QC/QCO conversion and MLIR serialization. Bind exported circuits using
+  the original parameters. Add optional frontend-neutral `mqt.input_id` metadata
+  for named compiler inputs. ([**@simon1hofmann**])
+
 - ⚡ Speed up qubit placement and routing. Skip layout search for flat programs
   whose initial qubit placement already satisfies the target topology. Place
   disjoint interaction paths along connected target sites to avoid needless

@@ -2881,6 +2881,12 @@ mlir::QCProgram importCircuit(const nb::handle circuit) {
             mlir::mqt::MQTDialect::InputNameAttrHelper::getNameStr(),
             builder.getStringAttr(symbol->name)),
     };
+    if (symbol->identity) {
+      argumentAttributes.push_back(builder.getNamedAttr(
+          mlir::mqt::MQTDialect::InputIdAttrHelper::getNameStr(),
+          builder.getIntegerAttr(builder.getIntegerType(128),
+                                 llvm::APInt(128, *symbol->identity, 16))));
+    }
     if (symbol->group) {
       argumentAttributes.push_back(builder.getNamedAttr(
           mlir::mqt::MQTDialect::ParameterGroupAttrHelper::getNameStr(),

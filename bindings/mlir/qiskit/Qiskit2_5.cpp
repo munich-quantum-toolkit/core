@@ -156,6 +156,11 @@ pythonUnsignedValue(const nb::handle object, const uint32_t width,
   }
 }
 
+[[nodiscard]] static nb::object pythonUuid(const llvm::APInt& identity) {
+  return nb::module_::import_("uuid").attr("UUID")(
+      nb::arg("int") = pythonInteger(identity, "invalid parameter identity"));
+}
+
 [[noreturn]] static void throwPythonError(const std::string_view message) {
   const nb::python_error error;
   throw std::runtime_error(std::string(message) + ": " + error.what());
@@ -236,10 +241,16 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
     throw std::runtime_error(
         "Qiskit parameter names cannot contain null characters");
   }
+  const auto uuid =
+      pythonAttribute(parameter, "uuid", "Qiskit parameter has no identity");
+  auto identity = pythonUnsignedValue(
+      pythonAttribute(uuid, "int", "Qiskit parameter identity is not a UUID"),
+      128U, "Qiskit parameter identity does not fit in 128 bits");
   const auto vectorElement =
       nb::module_::import_("qiskit.circuit").attr("ParameterVectorElement");
   if (!nb::isinstance(parameter, vectorElement)) {
-    return Parameter::symbol(std::move(name));
+    return Parameter::symbol(std::move(name), std::nullopt,
+                             llvm::toString(identity, 16, false));
   }
 
   const auto vector = pythonAttribute(
@@ -271,7 +282,8 @@ normalizePythonParameterLeaf(const nb::handle parameter) {
                                .name = std::move(groupName),
                                .index = groupIndex,
                                .size = groupSize,
-                           });
+                           },
+                           llvm::toString(identity, 16, false));
 }
 
 namespace {
@@ -2358,21 +2370,46 @@ private:
       auto pythonSymbol = symbols.find(symbol->name);
       if (pythonSymbol == symbols.end()) {
         nb::object value;
+        nb::object uuid = nb::none();
+        if (symbol->identity) {
+          uuid = pythonUuid(llvm::APInt(128, *symbol->identity, 16));
+        }
         if (symbol->group) {
           const auto& metadata = *symbol->group;
           const auto [group, inserted] =
               parameters_->groups.try_emplace(metadata.identity);
           if (inserted) {
+            nb::object groupUuid = nb::none();
+            if (symbol->identity) {
+              auto root = llvm::APInt(128, *symbol->identity, 16);
+              root -= metadata.index;
+              groupUuid = pythonUuid(root);
+            } else {
+              try {
+                groupUuid = nb::module_::import_("uuid").attr("UUID")(
+                    metadata.identity);
+              } catch (const nb::python_error& error) {
+                // Other frontends can use non-UUID group identities.
+                if (!error.matches(nb::handle(PyExc_ValueError))) {
+                  throw;
+                }
+              }
+            }
             group->second =
                 nb::module_::import_("qiskit.circuit")
-                    .attr("ParameterVector")(metadata.name, metadata.size);
+                    .attr("ParameterVector")(metadata.name, metadata.size,
+                                             nb::arg("uuid") = groupUuid);
           }
           value = nb::module_::import_("qiskit.circuit")
                       .attr("ParameterVectorElement")(group->second,
                                                       metadata.index);
+          if (!uuid.is_none() && !value.attr("uuid").equal(uuid)) {
+            throw std::runtime_error(
+                "inconsistent parameter-vector input identities");
+          }
         } else {
           value = nb::module_::import_("qiskit.circuit")
-                      .attr("Parameter")(symbol->name);
+                      .attr("Parameter")(symbol->name, nb::arg("uuid") = uuid);
         }
         pythonSymbol =
             symbols.try_emplace(symbol->name, std::move(value)).first;

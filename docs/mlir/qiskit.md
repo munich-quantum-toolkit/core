@@ -59,7 +59,16 @@ expression-tree shape is not preserved. Quantum-resource and classical-snapshot
 canonicalization patterns are not applied, because they can change circuit width
 or introduce scratch bits. Call `cleanup()` explicitly when those broader
 transformations are wanted. Live free parameters retain their identities; unused
-named program inputs remain unsupported.
+named program inputs remain unsupported. Imported free parameter UUIDs survive
+QC/QCO conversion, optimization, and MLIR serialization, so the original
+`Parameter` objects can be used with `assign_parameters` on the exported
+circuit. Core stores an optional opaque 128-bit `mqt.input_id` on each named
+input; programs without this metadata receive fresh scalar parameter identities.
+Parameter-vector group UUIDs also survive, including those of unused elements.
+The exporter rejects vector element IDs that do not share one root UUID.
+Lexically bound loop and private helper parameters retain lexical sharing but do
+not guarantee preservation of their original external UUIDs. Input identities
+are compiler metadata; OpenQASM and QIR serialization do not retain them.
 
 Free symbols become named {code}`f64` program inputs. Parameter-vector elements
 retain their grouping and index, preserving vector order and positional binding
