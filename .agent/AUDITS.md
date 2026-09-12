@@ -1,10 +1,9 @@
 # Contract audits (SpecAudits)
 
-A SpecAudit checks a concrete concern about a subsystem's tests and the
-production code they constrain. Its purpose is to find useful, safe changes, not
-to maximize findings or delete tests. Report results directly unless the user
-requests a file or a durable record helps ongoing work; then use
-`.agent/audits/<scope-slug>.md`. Follow the root `AGENTS.md`.
+A SpecAudit checks a concrete concern about tests and the code they constrain.
+Seek useful changes, not a finding count. Report results directly; save a record
+in `.agent/audits/<scope-slug>.md` only when useful or requested. Follow
+`AGENTS.md`.
 
 ## Scope and stopping point
 
@@ -20,12 +19,9 @@ requests when overlap matters, and refresh when that scope or baseline changes.
 Record actual overlap, not a repository-wide snapshot of unrelated items.
 Missing access is a limitation, not evidence that no related work exists.
 
-An audit request authorizes investigation and a report. It does not by itself
-authorize applying findings or publishing changes. If the user has also
-requested fixes, continue through implementation and relevant validation within
-that scope without another approval checkpoint. Group related changes by
-behavior and reviewability; neither one PR per assertion nor a fixed commit
-split is required.
+An audit request authorizes investigation and a report. If fixes are also
+authorized, implement and validate them without another approval checkpoint.
+Publish only when authorized. Group related changes for review.
 
 ## Establish the contract
 
@@ -81,11 +77,9 @@ changes. Serialize experiments that share a checkout or build directory. A
 read-only investigation does not require aborting merely because unrelated user
 edits exist.
 
-Benchmarks are optional; use them for a requested measurement or a concrete
-performance question. Follow the
-[performance evidence guidance](../AGENTS.md#performance-evidence) and keep ad
-hoc experiments outside the repository. Record neutral results and regressions;
-an untested optimization remains a candidate, not a measured finding.
+Follow the [performance evidence guidance](../AGENTS.md#performance-evidence).
+Record neutral results and regressions; untested optimizations remain
+candidates.
 
 ### What an experiment proves
 

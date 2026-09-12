@@ -213,27 +213,15 @@ non-obvious rules that agents must keep in immediate context to avoid a
 recurring mistake. Enforce mechanical rules in repository tooling instead of
 relying on prose.
 
-Following OpenAI's
-[guidance for GPT-6 Astra](https://developers.openai.com/blog/rethinking-skills-and-prompts-for-gpt-6-astra),
-scope instructions to the work that needs them. Keep skill descriptions short
-and specific, and load supporting material only for the selected workflow.
-Prefer an outcome, constraints, and a completion criterion over a prescribed
-sequence of steps. Plans and audit records are useful for durable decisions, not
-as mandatory artifacts for every task.
+Scope instructions to relevant work. Keep skill descriptions short and load
+workflow details on demand. Define outcomes and constraints rather than
+prescribing each step. Complete authorized work through relevant validation;
+repeat checks only for new changes, failures, or unresolved concerns.
 
-Carry authorized changes through relevant validation and fixes without stopping
-for an unrequested review checkpoint. Preserve explicit boundaries for public
-communication and other external actions in the
-{doc}`AI usage policy <ai_usage>`. If guidance blocks an otherwise authorized
-step, identify the instruction and its source instead of silently narrowing the
-task.
-
-Scale validation to the affected behavior. Once relevant checks pass, repeat or
-broaden them only for new changes, failures, unresolved concerns, or repository
-requirements. Benchmarks are optional unless requested or needed to answer a
-concrete performance question. Keep ad hoc harnesses, raw measurements, and
-plots outside the repository unless the user explicitly asks to retain them;
-summarize evidence and limits with any performance claim.
+Plans and audit files should preserve useful decisions, not log routine tasks.
+Benchmark only when requested or needed to answer a concrete performance
+question. Keep ad hoc experiments outside the repository unless explicitly
+requested.
 
 [commit-messages]: https://chris.beams.io/posts/git-commit/
 [google-cpp]: https://google.github.io/styleguide/cppguide.html

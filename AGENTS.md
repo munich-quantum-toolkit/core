@@ -1,9 +1,7 @@
 # MQT Core Agent Guide
 
-Use the relevant sections of the [development policy](docs/development.md) for
-the subsystem being changed. Read the [AI usage policy](docs/ai_usage.md) when
-preparing a contribution or public communication. Load plans, audit guidance,
-and other supporting documents only when they help the current task.
+Use relevant sections of the [development policy](docs/development.md) and the
+[AI usage policy](docs/ai_usage.md). Load supporting documents only as needed.
 
 ## Repository layout
 
@@ -23,11 +21,9 @@ and other supporting documents only when they help the current task.
 - Inspect the working tree first and preserve user changes. Keep the diff
   focused on the assigned task; avoid unrelated cleanup, formatting, and
   upgrades.
-- Carry authorized work through implementation, relevant validation, and fixes
-  for failures caused by the change. Resolve routine choices without another
-  approval round. Ask only for missing information that materially changes the
-  result or for actions outside the delegated scope. If guidance blocks work,
-  identify the file and instruction; do not turn a recommendation into a gate.
+- Complete authorized work, including relevant validation and fixes, without
+  routine approval checkpoints. Ask only about consequential ambiguity or work
+  outside scope; cite any instruction that blocks progress.
 - For behavioral changes, trace producers, shared helpers, and consumers. Fix
   the owning layer and reuse existing code or dependency facilities. Do not
   reconstruct a shared contract in each frontend, exporter, or caller.
@@ -48,12 +44,10 @@ and other supporting documents only when they help the current task.
   Remove repetition of code, boilerplate parameters, change narration, and
   unsupported assurances. Use symbol references instead of brittle line
   pointers. Keep prompts and review history out of code and API docs.
-- Add or update tests when needed to protect changed behavior or a concrete
-  regression. Low-impact edits do not need tests that restate the
-  implementation. Protect supported semantics, not provisional implementation
-  choices. Check history, callers, invariants, and resource limits before
-  weakening a test; equal line coverage or a shared failure does not establish
-  redundancy.
+- Test changed behavior and concrete regressions, not implementation details.
+  Low-impact edits need no new tests. Before weakening a test, check history,
+  callers, invariants, and resource limits; equal line coverage or a shared
+  failure does not establish redundancy.
 - Put tests in the owning subsystem's test tree. Use direct unit tests for
   semantic contracts and subprocesses only for irreducible CLI behavior. Do not
   put MLIR tests under production tools or enable an optional production tool
@@ -128,9 +122,8 @@ comment, data-structure, diagnostic, and debugging guidance.
 
 ## Build and validation
 
-Choose checks for the affected behavior and repository requirements. A small
-change does not require every command below. Local machine overrides may select
-another supported preset.
+Run checks relevant to the change and required by repository policy. Local
+machine overrides may select another supported preset.
 
 | Task                                            | Command                                                            |
 | ----------------------------------------------- | ------------------------------------------------------------------ |
@@ -164,24 +157,19 @@ concrete remaining risk justifies more validation.
 
 ## Plans and audits
 
-Use an [ExecPlan](.agent/PLANS.md) when a complex task needs a durable record of
-design decisions or coordination, or the user requests one. Small tasks do not
-need plan files. Keep one concise record per independent task in
-`.agent/plans/`.
+Keep an [ExecPlan](.agent/PLANS.md) in `.agent/plans/` when design or
+coordination needs a durable record, or on request. Small tasks need no plan
+file.
 
-Use [audit guidance](.agent/AUDITS.md) for a requested audit or a concrete
-concern about contracts and their tests. Report findings in the response unless
-a durable record in `.agent/audits/` helps the work or is requested. An audit
-with authorized fixes should continue through implementation and validation.
+Use [audit guidance](.agent/AUDITS.md) for contract reviews. Save findings in
+`.agent/audits/` only when a durable record is useful or requested.
 
 ## Performance evidence
 
-Benchmarks are not a routine task deliverable. Run one when requested or when a
-concrete performance question needs measurement; prefer existing tooling. Keep
-ad hoc harnesses, raw results, and plots outside the repository and out of
-commits unless explicitly requested. Report enough workload, baseline,
-environment, and measurement detail to support any performance claim, including
-its limits. Durable correctness regressions belong in the owning test tree.
+Benchmark only when requested or needed for a concrete performance question;
+prefer existing tools. Keep ad hoc harnesses, data, and plots outside the
+repository unless explicitly requested. Support performance claims with the
+workload, baseline, environment, measurements, and limits.
 
 ## Git and public contributions
 

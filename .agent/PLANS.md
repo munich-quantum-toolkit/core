@@ -1,11 +1,8 @@
 # Execution plans (ExecPlans)
 
-An ExecPlan records the goal, current implementation approach, consequential
-decisions, and evidence when a complex task needs a durable record or the user
-requests one. Store one plan per independently implemented task in
-`.agent/plans/<task-slug>.md`. Small fixes and documentation edits do not need a
-plan unless unresolved design or coordination makes one useful. Use the relevant
-repository guidance; a plan is not a required first step for every change.
+Use an ExecPlan when complex work needs a durable decision record, or on
+request. Store one per task in `.agent/plans/<task-slug>.md`. Small fixes and
+documentation edits rarely need one. Follow the root `AGENTS.md`.
 
 ## Write for the next contributor
 
@@ -21,14 +18,11 @@ choice only when its rationale will help someone maintain or change the result.
 A plan is evidence of intent, not authority over a user request, public
 contract, or the implementation that ultimately landed.
 
-Define completion in terms of delivered behavior and relevant validation, then
-continue until that outcome is reached or a real blocker remains. Do not stop
-after a prototype or first implementation for an unrequested review checkpoint.
-State assumptions and unresolved decisions explicitly. Resolve routine choices
-within the authorized scope. Ask when a consequential ambiguity remains or a
-choice would exceed the requested scope or change a supported contract beyond
-what the user authorized. A plan does not authorize commits, publication,
-external actions, or work in another task's checkout.
+Define completion by delivered behavior and relevant checks. Resolve routine
+choices and continue until done or blocked; ask about consequential ambiguity or
+work outside the authorized scope. State unresolved assumptions explicitly. A
+plan does not authorize commits, publication, external actions, or work in
+another task's checkout.
 
 ## Keep one current account
 
@@ -86,10 +80,9 @@ monitoring.
 
 ## Performance evidence
 
-Follow the [performance evidence guidance](../AGENTS.md#performance-evidence). A
-plan does not require a benchmark, harness, or comparison plot. When measurement
-is needed, keep experiments outside the repository and summarize only the
-evidence and limits needed to understand the decision.
+Follow the [performance evidence guidance](../AGENTS.md#performance-evidence).
+Record measurements and limits that explain the decision, not experiment
+artifacts.
 
 ## Validation
 
