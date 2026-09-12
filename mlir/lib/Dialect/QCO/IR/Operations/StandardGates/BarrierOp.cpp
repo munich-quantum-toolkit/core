@@ -9,6 +9,7 @@
  */
 
 #include "mqt/Dialect/QCO/IR/QCOOps.h"
+#include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Utils/Matrix.h"
 
 #include "mlir/IR/Builders.h"
@@ -36,6 +37,12 @@ struct MergeSubsequentBarrier final : OpRewritePattern<BarrierOp> {
 
   LogicalResult matchAndRewrite(BarrierOp op,
                                 PatternRewriter& rewriter) const override {
+    if (op->hasAttr(kLayoutBoundaryAttr) ||
+        llvm::any_of(op->getUsers(), [](Operation* user) {
+          return user->hasAttr(kLayoutBoundaryAttr);
+        })) {
+      return failure();
+    }
     auto qubitsIn = op.getQubitsIn();
 
     auto anythingToMerge = false;
