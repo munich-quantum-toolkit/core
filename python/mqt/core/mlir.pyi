@@ -515,6 +515,23 @@ class Program:
     def ir(self) -> str:
         """The textual MLIR representation of this program."""
 
+class MappingOptions:
+    """Native mapping controls. Set seed and trials for reproducible mapping with a fixed Core build, input, and target. All-to-all placement ignores valid mapping options."""
+
+    def __init__(self, *, seed: int = 42, trials: int | None = None) -> None: ...
+    @property
+    def seed(self) -> int:
+        """Native mapper seed."""
+
+    @seed.setter
+    def seed(self, arg: int, /) -> None: ...
+    @property
+    def trials(self) -> int | None:
+        """Positive trial count; None uses the available logical CPU count."""
+
+    @trials.setter
+    def trials(self, arg: int | None, /) -> None: ...
+
 class QCProgram(Program):
     """A compiler program in the QC dialect.
 
@@ -651,7 +668,12 @@ class QCOProgram(Program):
         """Decompose controlled X/Y/Z/SWAP and RX/RY/RZ gates, qco.rccx, and constant-angle phase gates that act on at least min_qubits qubits (min_qubits must be at least 3; default 3 means wider than two-qubit)."""
 
     def compile_for_target(
-        self, target_environment: TargetEnvironment, *, enable_timing: bool = False, enable_statistics: bool = False
+        self,
+        target_environment: TargetEnvironment,
+        *,
+        enable_timing: bool = False,
+        enable_statistics: bool = False,
+        mapping: MappingOptions = ...,
     ) -> None:
         """Compile this QCO program for the target in place. Do not rely on its contents if compilation fails. Failures raise RuntimeError with the emitted MLIR diagnostics."""
 
@@ -1002,6 +1024,7 @@ def compile_program(
     inplace: bool = False,
     enable_timing: bool = False,
     enable_statistics: bool = False,
+    mapping: MappingOptions = ...,
 ) -> CompiledProgram:
     """Compile for a device ID, open device, or explicit compiler target.
 
@@ -1029,6 +1052,7 @@ def compile_program(
     inplace: bool = False,
     enable_timing: bool = False,
     enable_statistics: bool = False,
+    mapping: MappingOptions = ...,
 ) -> CompiledProgram: ...
 @overload
 def compile_program(
@@ -1045,6 +1069,7 @@ def compile_program(
     inplace: bool = False,
     enable_timing: bool = False,
     enable_statistics: bool = False,
+    mapping: MappingOptions = ...,
 ) -> OpenQASMProgram: ...
 @overload
 def compile_program(
@@ -1061,6 +1086,7 @@ def compile_program(
     inplace: bool = False,
     enable_timing: bool = False,
     enable_statistics: bool = False,
+    mapping: MappingOptions = ...,
 ) -> QIRProgram: ...
 
 class CompiledProgram:

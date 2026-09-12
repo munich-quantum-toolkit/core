@@ -11,6 +11,7 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/CBit/IR/CBitDialect.h"
 #include "mqt/Dialect/MQT/IR/MQTAttributes.h"
@@ -2076,6 +2077,19 @@ cx q[0], q[2];
   EXPECT_NE(loopProgram->str().find("scf.for"), std::string::npos);
   EXPECT_TRUE(loopProgram->unrollQuantumLoops());
   EXPECT_EQ(loopProgram->str().find("scf.for"), std::string::npos);
+}
+
+TEST_F(CompilerPipelineTest, TargetPipelineForwardsMappingControls) {
+  const TargetEnvironment environment(makeSparseUCZTarget(true),
+                                      makePayloadSpecification());
+  OpPassManager pm("builtin.module");
+  populateTargetCompilationPipeline(pm, environment,
+                                    MappingOptions{.seed = 17, .trials = 3});
+  std::string pipeline;
+  llvm::raw_string_ostream stream(pipeline);
+  pm.printAsTextualPipeline(stream);
+  EXPECT_NE(pipeline.find("seed=17"), std::string::npos);
+  EXPECT_NE(pipeline.find("ntrials=3"), std::string::npos);
 }
 
 // Test: target compilation decomposes, maps, synthesizes, and verifies.

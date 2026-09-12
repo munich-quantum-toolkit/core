@@ -10,6 +10,8 @@
 
 #pragma once
 
+#include "mqt/Compiler/TargetCompilation.h"
+
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/OwningOpRef.h"
@@ -271,7 +273,8 @@ public:
   /// Do not rely on the program contents if compilation fails.
   [[nodiscard]] bool compileForTarget(const TargetEnvironment& environment,
                                       bool enableTiming = false,
-                                      bool enableStatistics = false);
+                                      bool enableStatistics = false,
+                                      const MappingOptions& mapping = {});
 
   /// Synthesize native operations for an all-to-all target in place.
   ///
@@ -382,6 +385,7 @@ runDefaultPipeline(CompilerInput&& program, ProgramFormat output,
 [[nodiscard]] std::optional<CompilerProgram>
 runDefaultPipeline(CompilerInput&& program,
                    const TargetEnvironment& environment,
-                   bool enableTiming = false, bool enableStatistics = false);
+                   bool enableTiming = false, bool enableStatistics = false,
+                   const MappingOptions& mapping = {});
 
 } // namespace mlir
