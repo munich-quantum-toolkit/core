@@ -10,4 +10,18 @@
 
 #pragma once
 
-int runMQTCoreBench(int argc, char** argv);
+#include <cstdint>
+#include <string>
+
+struct BenchmarkOptions {
+  enum class Command : uint8_t { None, List, Describe, Generate, Evaluate };
+  Command command;
+  const std::string& benchmarkId;
+  const std::string& instanceSpecificationPath;
+  const std::string& outputFormat;
+  const std::string& outputDirectory;
+  const std::string& manifestInputPath;
+  const std::string& countsInputPath;
+};
+
+int runMQTCoreBench(const BenchmarkOptions& options);
