@@ -1,6 +1,6 @@
 # Reproducible target mapping controls
 
-Status: in progress; final C++ lint and publication remain.
+Status: complete.
 
 ## Goal and scope
 
@@ -18,13 +18,15 @@ routing and ignores valid mapping options. Reject zero trials before rewriting.
 These controls do not prescribe the selected layout or guarantee the same result
 across compiler releases. Layout provenance is a separate change.
 
-## Work remaining
-
-- [ ] Complete full changed-file C++ lint and review the final diff.
-
 ## Validation
 
 The seven mapping cases in `test/python/test_mlir.py` pass, as do 37 native
-`*Target*:*Mapping*` tests and all four `mqt-cc` CTests. The native build and
-stub generation pass. Repository lint has applied formatting; its final rerun
-and full changed-file C++ lint remain.
+`*Target*:*Mapping*` tests and all four `mqt-cc` CTests. The native build, stub
+generation, repository lint, and full changed-file C++ lint pass.
+
+## Outcome
+
+`MappingOptions` reaches the existing mapper from native, Python, QIR/device,
+and CLI entry points. Existing call defaults remain unchanged. To submit source
+with explicit controls, compile first and submit the compiled payload. Layout
+selection and layout provenance remain separate contracts.
