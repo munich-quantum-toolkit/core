@@ -11,6 +11,18 @@ set -euo pipefail
 
 root=${1:?release tool directory}
 mkdir -p "$root/sdk-tools" "$root/llvm-source"
+if [[ $(uname -s) == Linux ]]; then
+  uv tool install "sccache>=0.10.0"
+  sdk=/opt/llvm-23.1.1
+  if [[ ! -x "$sdk/bin/llvm-config" ]]; then
+    curl --fail --location --retry 3 \
+      https://raw.githubusercontent.com/munich-quantum-software/setup-mlir/01969745aad746dc11e47941c35316704158aa6f/installation/setup-mlir.sh \
+      -o "$root/setup-mlir.sh"
+    bash "$root/setup-mlir.sh" -v 23.1.1 -p "$sdk" -a OFF
+  fi
+  [[ $("$sdk/bin/llvm-config" --version) == 23.1.1 ]] || { echo 'Expected LLVM 23.1.1' >&2; exit 1; }
+  [[ $("$sdk/bin/llvm-config" --assertion-mode) == OFF ]] || { echo 'Expected assertion-free LLVM' >&2; exit 1; }
+fi
 sdk_revision=57fd0184f2fd416effcc131eeeff17659c07c7fb
 llvm_revision=6dfe1677ab8dffbc6ec13d53a1e0215d75147689
 curl --fail --location --retry 3 \

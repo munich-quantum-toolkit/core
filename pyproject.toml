@@ -280,8 +280,6 @@ environment-pass = [
   "ACTIONS_RUNTIME_TOKEN",
 ]
 before-all = """
-uv tool install "sccache>=0.10.0"
-curl -LsSf https://raw.githubusercontent.com/munich-quantum-software/setup-mlir/01969745aad746dc11e47941c35316704158aa6f/installation/setup-mlir.sh | bash -s -- -v 23.1.1 -p /opt/llvm-23.1.1 -a OFF
 uv run --no-project --python /opt/python/cp311-cp311/bin/python --with cmake==4.4.3 --with ninja==1.13.0 bash "{project}/scripts/provision_release.sh" /opt/mqt-release
 """
 before-build = """
