@@ -928,6 +928,69 @@ private:
       degree[b] += weight;
     }
 
+    /// Embed disjoint logical paths along one path through the target sites.
+    /// ponytail: One hardware walk; add bounded backtracking only for measured
+    /// missed embeddings.
+    if (llvm::all_of(neighbours, [](const auto& adjacent) {
+          return adjacent.size() <= 2;
+        })) {
+      SmallVector<size_t> order;
+      SmallVector<bool> visited(nprogram, false);
+      for (size_t start = 0; start < nprogram; ++start) {
+        if (neighbours[start].size() > 1 || visited[start]) {
+          continue;
+        }
+        size_t current = start;
+        while (current != nprogram) {
+          order.push_back(current);
+          visited[current] = true;
+          size_t next = nprogram;
+          for (const auto& [partner, weight] : neighbours[current]) {
+            if (!visited[partner]) {
+              next = partner;
+            }
+          }
+          current = next;
+        }
+      }
+      if (order.size() == nprogram) {
+        SmallVector<size_t> remaining(nhardware, 0);
+        SmallVector<bool> usedHardware(nhardware, false);
+        for (size_t hw = 0; hw < nhardware; ++hw) {
+          target->forEachNeighbour(hw, [&](size_t) { ++remaining[hw]; });
+        }
+        auto current = static_cast<size_t>(
+            std::distance(remaining.begin(), llvm::min_element(remaining)));
+        SmallVector<size_t> mapping(nhardware, nhardware);
+        size_t placed = 0;
+        while (current != nhardware && placed < nprogram) {
+          mapping[order[placed++]] = current;
+          usedHardware[current] = true;
+          target->forEachNeighbour(
+              current, [&](size_t neighbour) { --remaining[neighbour]; });
+          size_t next = nhardware;
+          target->forEachNeighbour(current, [&](size_t neighbour) {
+            if (!usedHardware[neighbour] &&
+                (remaining[neighbour] != 0 || placed + 1 == nprogram) &&
+                (next == nhardware ||
+                 std::tie(remaining[neighbour], neighbour) <
+                     std::tie(remaining[next], next))) {
+              next = neighbour;
+            }
+          });
+          current = next;
+        }
+        if (placed == nprogram) {
+          for (size_t hw = 0; hw < nhardware; ++hw) {
+            if (!usedHardware[hw]) {
+              mapping[placed++] = hw;
+            }
+          }
+          return std::pair{Layout::fromMapping(mapping), false};
+        }
+      }
+    }
+
     SmallVector<size_t> centrality(nhardware, 0);
     SmallVector<size_t> hardwareDegree(nhardware, 0);
     for (size_t hw = 0; hw < nhardware; ++hw) {

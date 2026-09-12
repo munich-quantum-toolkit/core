@@ -226,8 +226,12 @@ def MappingPass : Pass<"place-and-route", "mlir::ModuleOp"> {
 
     For programs with two-qubit interactions and no nested control flow on their
     wires, the pass also constructs an interaction-weighted greedy layout.
-    It places frequently interacting qubits nearby, starting at a central
-    target site. Both the raw and refined greedy layouts are additional
+    For disjoint interaction paths and isolated qubits, it first tries to place
+    them along one path through the target sites. The walk prefers neighbors
+    with fewer unused edges and accepts only a complete placement; it does not
+    backtrack. Other interaction graphs and failed walks use the weighted
+    greedy layout, which places frequently interacting qubits nearby, starting
+    at a central target site. Both the raw and refined layouts are additional
     candidates, independent of `ntrials`. A final forward routing traversal
     scores each candidate. The pass selects the initial layout with the fewest
     SWAPs in that traversal, retaining the earlier candidate on a tie.
