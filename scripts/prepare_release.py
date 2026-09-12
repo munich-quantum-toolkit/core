@@ -103,6 +103,8 @@ def main() -> None:
     records = []
 
     def execute(label: str, command: list[str], extra: dict[str, str] | None = None) -> None:
+        sys.stdout.write(f"Release stage: {label}\n")
+        sys.stdout.flush()
         started = time.monotonic()
         with (root / (label + ".log")).open("w") as log:
             result = subprocess.run(

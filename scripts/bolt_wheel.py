@@ -63,6 +63,27 @@ def main() -> None:
         validated = work / "validated"
         subprocess.run([sys.executable, "-m", "wheel", "unpack", str(result), "-d", str(validated)], check=True)
         subprocess.run(training, env=environment | {"PYTHONPATH": str(next(validated.iterdir()))}, check=True)
+        package = next(validated.iterdir()) / "mqt/core"
+        for compiler in [os.environ["CXX"], "g++"]:
+            consumer = work / ("consumer-" + Path(compiler).name)
+            subprocess.run(
+                [
+                    "cmake",
+                    "-S",
+                    str(project / "test/release/consumer"),
+                    "-B",
+                    str(consumer),
+                    "-G",
+                    "Ninja",
+                    "-DCMAKE_BUILD_TYPE=Release",
+                    "-DENABLE_IPO=OFF",
+                    "-DCMAKE_PREFIX_PATH=" + str(package),
+                    "-DCMAKE_CXX_COMPILER=" + compiler,
+                ],
+                check=True,
+            )
+            subprocess.run(["cmake", "--build", str(consumer), "-j", "2"], check=True)
+            subprocess.run([str(consumer / "consumer")], env=environment, check=True)
         destination.mkdir(parents=True, exist_ok=True)
         shutil.copy2(result, destination)
 

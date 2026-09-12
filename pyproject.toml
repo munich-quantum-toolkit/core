@@ -196,7 +196,7 @@ version = ">=1.10"
 
 [tool.scikit-build.sdist]
 
-include = [ "python/mqt/core/_version.py", "test/release/*.py" ]
+include = [ "python/mqt/core/_version.py", "test/release/**" ]
 exclude = [
   "**/.github",
   "**/doc",
@@ -288,13 +288,14 @@ before-build = """
 uv run --no-project --python "$(command -v python)" --with cmake==4.4.3 --with ninja==1.13.0 --with wheel==0.45.1 --with "nanobind-backend>=1" python "{project}/scripts/prepare_release.py" --project "{project}" --sdk-tools /opt/mqt-release/sdk-tools --llvm-source /opt/mqt-release/llvm-source --source-id "$(cat /opt/mqt-release/llvm-revision)" --lto Full --pgo both --jobs 4
 """
 repair-wheel-command = """\
-  uv run --no-project --with wheel --python \"$(command -v python)\" python \"{project}/scripts/bolt_wheel.py\" \
-  \"{wheel}\" \"{dest_dir}\" \"{project}\"\
+  uv run --no-project --with wheel --with cmake==4.4.3 --with ninja==1.13.0 --python \"$(command -v python)\" python \
+  \"{project}/scripts/bolt_wheel.py\" \"{wheel}\" \"{dest_dir}\" \"{project}\"\
   """
 before-test = "uvx sccache --show-stats"
 # QIR-Runner's Linux wheels require a newer glibc than the manylinux_2_28
 # containers used to build and test MQT Core's broadly compatible wheels.
 test-groups = [ "test-base" ]
+container-engine = "docker; create_args: --cpus=4 --memory=16g --memory-swap=16g"
 
 [tool.cibuildwheel.macos]
 environment = { MACOSX_DEPLOYMENT_TARGET = "13.3" }
