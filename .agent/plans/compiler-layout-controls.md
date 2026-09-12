@@ -35,7 +35,7 @@ tracking.
 
 The compiler bindings, native DD simulation, and translation suites pass all 516
 selected Python cases, with both bundled device providers available. The final
-rebuilt extension passes all 26 layout regressions. All 40 native target and
+rebuilt extension passes all 26 layout regressions. All 44 native target and
 mapping tests pass. Builds, generated stubs, repository lint, and changed-file
 C++ lint pass.
 
@@ -43,6 +43,10 @@ Regressions cover complex-amplitude equivalence, forced routing through unused
 sites, measurement feedback, sparse site IDs, idle slots, scalar and tensor
 allocation order, empty inputs, malformed layouts, and failure publication. The
 documented example runs successfully.
+
+Native tests also cover complete routed unitaries, user barriers, and
+unsupported quantum entry arguments. The instrumented native tests cover 233 of
+252 changed executable production lines (92.5%) in the local coverage build.
 
 Tracking starts at the compilation call; it cannot recover earlier resource
 changes. Dynamic, nested, and already physical allocations are unsupported.
