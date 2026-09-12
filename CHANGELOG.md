@@ -12,7 +12,7 @@ releases may include breaking changes.
 
 - ✨ Expose native mapping seeds and trial counts through `MappingOptions` in
   C++ and Python target compilation, and through `--mapping-seed` and
-  `--mapping-trials` in `mqt-cc`. Existing defaults remain unchanged.
+  `--mapping-trials` in `mqt-cc`. Existing defaults remain unchanged. ([#2551])
   ([**@simon1hofmann**])
 
 - ⚡ Speed up qubit placement and routing. Skip layout search for flat programs
@@ -1770,3 +1770,5 @@ for previous changelogs._
 [munich-quantum-toolkit/workflows]: https://github.com/munich-quantum-toolkit/workflows
 [MQT QMAP]: https://github.com/munich-quantum-toolkit/qmap
 [MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
+
+[#2551]: https://github.com/munich-quantum-toolkit/core/pull/2551
