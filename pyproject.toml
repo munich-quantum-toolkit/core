@@ -298,7 +298,14 @@ manylinux-aarch64-image = "quay.io/pypa/manylinux_2_28_aarch64:2026.08.04-1"
 container-engine = "docker; create_args: --cpus=4 --memory=16g --memory-swap=16g"
 
 [tool.cibuildwheel.macos]
-environment = { MACOSX_DEPLOYMENT_TARGET = "13.3" }
+config-settings = { "cmake.define.CMAKE_PROJECT_INCLUDE_BEFORE" = "{project}/build/release-pgo.cmake" }
+environment = { DEPLOY = "ON", MACOSX_DEPLOYMENT_TARGET = "13.3", CC = "$(xcrun --find clang)", CXX = "$(xcrun --find clang++)", AR = "$(xcrun --find ar)", RANLIB = "$(xcrun --find ranlib)", LLVM_PROFDATA = "$(xcrun --find llvm-profdata)", SDKROOT = "$(xcrun --show-sdk-path)", CMAKE_BUILD_PARALLEL_LEVEL = "3" }
+before-all = """
+uv run --no-project --python 3.11 --with cmake==4.4.3 --with ninja==1.13.0 bash "{project}/scripts/provision_release.sh" "{project}/build/release-tools"
+"""
+before-build = """
+uv run --no-project --python "$(command -v python)" --with cmake==4.4.3 --with ninja==1.13.0 --with wheel==0.45.1 --with "nanobind-backend>=1" python "{project}/scripts/prepare_release.py" --project "{project}" --sdk-tools "{project}/build/release-tools/sdk-tools" --llvm-source "{project}/build/release-tools/llvm-source" --source-id "$(cat "{project}/build/release-tools/llvm-revision")" --lto Thin --pgo both --jobs 3
+"""
 
 [tool.cibuildwheel.windows]
 config-settings = { "cmake.define.ENABLE_IPO" = "OFF" }

@@ -127,14 +127,17 @@ Use `//` for ordinary implementation and namespace closing comments. Inline
 
 ### Release wheel optimization
 
-Linux release wheels use manylinux Clang 22.1.8, native assertion-free SDK
-libraries, full Core LTO, combined SDK/Core PGO, and BOLT. SDK tools remain
-native. The profiling build replaces only the LLVM/MLIR archive dependencies
-linked into the wheel; it does not profile the complete SDK.
+Linux and macOS release wheels use native assertion-free SDK libraries and
+combined SDK/Core PGO. Linux uses manylinux Clang 22.1.8, full Core LTO, and
+BOLT. macOS uses Apple Clang and ThinLTO for Core. Its compiler and profile
+tools come from the same Xcode installation, with SDK deployment target 11.0 and
+Core target 13.3. SDK tools remain native. The profiling build replaces only the
+LLVM/MLIR archive dependencies linked into the wheel; it does not profile the
+complete SDK.
 
-`cibuildwheel` runs `scripts/provision_release.sh` once per container to obtain
-the pinned compiler and profiling tools. `scripts/prepare_release.py` then
-builds an instrumented wheel, trains it with
+`cibuildwheel` runs `scripts/provision_release.sh` once per container or macOS
+job to obtain the pinned sources and Linux compiler and profiling tools.
+`scripts/prepare_release.py` then builds an instrumented wheel, trains it with
 `test/release/train_optimization.py`, requires executed Core and SDK counters,
 rebuilds the selected SDK libraries, and writes the final CMake configuration. A
 failed training step stops the release build. Each Python ABI uses fresh build
