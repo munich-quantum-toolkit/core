@@ -1,7 +1,7 @@
 # Release wheel optimization
 
-Status: in progress; final macOS selection and integrated hosted qualification
-remain outstanding.
+Status: platform selection is complete; integrated hosted qualification remains
+outstanding.
 
 ## Goal and scope
 
@@ -21,9 +21,9 @@ unexecuted profiles stop the build before the final configuration is used.
 
 - Linux uses the qualified prebuilt manylinux Clang 22.1.8 package, full Core
   LTO, native SDK dependency PGO, and BOLT. There is no compiler bootstrap.
-- The two macOS native-SDK cohorts select ThinLTO for Core and combined SDK/Core
-  PGO. Qualify that recipe while the final matched-SDK trial finishes; its
-  adoption gate remains pending.
+- Both final macOS cohorts select native SDK libraries, ThinLTO for Core, and
+  combined SDK/Core PGO. No matched candidate meets the confidence-supported
+  adoption gate.
 - Keep native SDK libraries unless both paired runtime cohorts meet the study's
   10% adoption gate without a confirmed workload regression above 3%.
 - Split Linux and macOS wheel jobs by Python ABI to fit the five-hour budget.
@@ -38,7 +38,7 @@ unexecuted profiles stop the build before the final configuration is used.
 
 ## Work remaining
 
-- [ ] Complete macOS final runtime comparisons and record the selected LTO and
+- [x] Complete macOS final runtime comparisons and record the selected LTO and
       PGO scope. Both Linux architectures retain native SDK libraries after
       their completed paired comparisons.
 - [ ] Qualify the actual cibuildwheel hooks with LLVM 23.1.1 trial SDK artifacts
@@ -56,3 +56,11 @@ frozen Core revisions; those results are distinct from qualification of the
 current integration. See the
 [SDK study](https://github.com/munich-quantum-software/portable-mlir-toolchain/blob/codex/optimized-release-toolchain/experiments/RESULTS.md)
 for runtime samples, artifact identities, resource measurements, and limits.
+
+The first current Linux profile-use build exposed false compiler-probe failures:
+its unrelated `main` functions collided with trained profile entries under
+`-Werror`. LLVM then omitted PIC flags, causing invalid TLS relocations during
+full LTO. Final PGO flags now use directory compile/link options, which keep
+profiles out of CMake's probes. A retained-profile reproducer fails before the
+change and passes afterward, including a fresh full Core wheel build. Hosted
+qualification must use this corrected configuration.

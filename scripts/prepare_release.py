@@ -259,13 +259,16 @@ def main() -> None:
         identity["xcode"] = subprocess.check_output(["xcodebuild", "-version"], text=True)
         identity["macos_sdk"] = subprocess.check_output(["xcrun", "--show-sdk-build-version"], text=True).strip()
     (root / "identity.json").write_text(json.dumps(identity, indent=2) + "\n")
-    final = definitions | flags("-fprofile-use=" + str(profile))
-    # Write the final configuration only after training and both profile checks pass.
+    optimization_flags = f"-flto={args.lto.lower()} [==[-fprofile-use={profile}]==]"
+    # Compiler probes have unrelated function profiles; apply PGO only to targets.
     output.write_text(
         "if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)\n"
         + "".join(
-            f'  set({key} [==[{value}]==] CACHE STRING "Release optimization" FORCE)\n' for key, value in final.items()
+            f'  set({key} [==[{value}]==] CACHE STRING "Release optimization" FORCE)\n'
+            for key, value in definitions.items()
         )
+        + f"  add_compile_options({optimization_flags})\n"
+        + f"  add_link_options({optimization_flags})\n"
         + "endif()\n"
     )
     sys.stdout.write(f"Release PGO ready: {root}\n")
