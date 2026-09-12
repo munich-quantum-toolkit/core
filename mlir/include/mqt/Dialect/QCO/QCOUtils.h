@@ -21,12 +21,18 @@
 #include "mlir/Support/LLVM.h"
 #include "mlir/Support/LogicalResult.h"
 
+#include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/TypeSwitch.h"
 
 #include <cstddef>
 #include <optional>
 
 namespace mlir::qco {
+
+/// Temporary barrier tag used only inside native layout compilation.
+/// Canonicalization must preserve these barriers until placement consumes them.
+inline constexpr llvm::StringLiteral kLayoutBoundaryAttr =
+    "qco.layout_boundary";
 
 /// Check if given quantum operation is unused (i.e., only used by sinks
 /// or resets and has no memory effects).
