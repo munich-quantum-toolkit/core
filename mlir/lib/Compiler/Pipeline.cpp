@@ -232,11 +232,12 @@ bool QCOProgram::decomposeMultiControlled(uint64_t minQubits) {
 }
 
 bool QCOProgram::compileForTarget(const TargetEnvironment& environment,
-                                  bool enableTiming, bool enableStatistics) {
+                                  bool enableTiming, bool enableStatistics,
+                                  const MappingOptions& mapping) {
   return succeeded(runQCOTransformPasses(
       mod(),
-      [&environment](OpPassManager& pm) {
-        populateTargetCompilationPipeline(pm, environment);
+      [&environment, &mapping](OpPassManager& pm) {
+        populateTargetCompilationPipeline(pm, environment, mapping);
       },
       "failed to compile the QCO program for the target", enableTiming,
       enableStatistics));
@@ -442,7 +443,8 @@ bool QIRProgram::writeBitcode(const std::filesystem::path& path) const {
 runDefaultPipelineImpl(CompilerInput&& program, ProgramFormat output,
                        const TargetEnvironment* environment,
                        std::string_view qcoPipeline, bool enableTiming,
-                       bool enableStatistics) {
+                       bool enableStatistics,
+                       const MappingOptions& mapping = {}) {
   if ((output == ProgramFormat::QCImport || output == ProgramFormat::QCO) &&
       qcoPipeline != "mqt-qco-default") {
     llvm::errs() << "a custom QCO pass pipeline cannot be used with an output "
@@ -501,7 +503,8 @@ runDefaultPipelineImpl(CompilerInput&& program, ProgramFormat output,
   }
 
   if (environment != nullptr) {
-    if (!qco->compileForTarget(*environment, enableTiming, enableStatistics)) {
+    if (!qco->compileForTarget(*environment, enableTiming, enableStatistics,
+                               mapping)) {
       return std::nullopt;
     }
   } else {
@@ -556,7 +559,7 @@ std::optional<CompilerProgram> runDefaultPipeline(CompilerInput&& program,
 std::optional<CompilerProgram>
 runDefaultPipeline(CompilerInput&& program,
                    const TargetEnvironment& environment, bool enableTiming,
-                   bool enableStatistics) {
+                   bool enableStatistics, const MappingOptions& mapping) {
   auto output = environment.payloadSpecification().compilerOutput();
   if (!output) {
     llvm::errs() << llvm::toString(output.takeError()) << '\n';
@@ -564,7 +567,7 @@ runDefaultPipeline(CompilerInput&& program,
   }
   return runDefaultPipelineImpl(std::move(program), *output, &environment,
                                 "mqt-qco-default", enableTiming,
-                                enableStatistics);
+                                enableStatistics, mapping);
 }
 
 } // namespace mlir

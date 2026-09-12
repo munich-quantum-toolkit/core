@@ -64,6 +64,31 @@ that the device still has matching sites, topology, operations, timing units,
 and program capabilities. Names and calibration-only changes do not require
 recompilation. Use `device.submit_job` to submit raw payloads.
 
+### Reproduce mapping trials
+
+Use {py:class}`~mqt.core.mlir.MappingOptions` with an explicit seed and positive
+trial count when comparing compiler runs across machines:
+
+```python
+from mqt.core.mlir import MappingOptions
+
+mapping = MappingOptions(seed=7, trials=4)
+compiled = compile_program(bell_qasm, target=device, mapping=mapping)
+```
+
+`QCOProgram.compile_for_target(environment, mapping=mapping)` accepts the same
+options. To submit with these controls, compile first and pass the resulting
+program to `submit_program`. C++ target compilation APIs accept `MappingOptions`
+as their final argument. In `mqt-cc`, use
+`--qdmi-device ID --mapping-seed 7 --mapping-trials 4`.
+
+The defaults remain seed 42 and a trial count based on available logical CPUs. A
+seed alone does not fix the trial count. Explicit values make the native mapping
+trials repeatable for the same Core build, input, and target; compiler releases
+can change the selected layout. All-to-all placement does not use randomized
+mapping and ignores valid mapping controls. Zero trials are rejected. The mapper
+can add deterministic heuristic candidates beyond this trial count.
+
 ### Choose a format
 
 The compiler selects the first supported format in this order: Adaptive QIR

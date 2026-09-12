@@ -6,6 +6,12 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+Target compilation calls keep their existing defaults. For repeatable mapping
+across CPU counts, pass `MappingOptions(seed=..., trials=...)` to Python target
+compilation, or as the final argument of the C++ target compilation APIs. C++
+code that stores pointers to these functions must include the new final
+`const MappingOptions&` parameter in the pointer type.
+
 ## [4.0.0]
 
 ### Migrating from MQT Core 3 to 4

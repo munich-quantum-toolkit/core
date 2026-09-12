@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+- ✨ Expose native mapping seeds and trial counts through `MappingOptions` in
+  C++ and Python target compilation, and through `--mapping-seed` and
+  `--mapping-trials` in `mqt-cc`. Existing defaults remain unchanged.
+  ([**@simon1hofmann**])
+
 - ⚡ Speed up qubit placement and routing. Skip layout search for flat programs
   whose initial qubit placement already satisfies the target topology. Place
   disjoint interaction paths along connected target sites to avoid needless
