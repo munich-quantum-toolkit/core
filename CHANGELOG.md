@@ -12,7 +12,7 @@ releases may include breaking changes.
 
 - ✨ Add native target compilation with an optional complete initial layout and
   a detached report of initial and final input-to-site assignments. Preserve
-  idle input slots and diagnose unsupported allocation forms.
+  idle input slots and diagnose unsupported allocation forms. ([#2553])
   ([**@simon1hofmann**])
 
 - ✨ Expose native mapping seeds and trial counts through `MappingOptions` in
@@ -1777,3 +1777,5 @@ for previous changelogs._
 [MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
 
 [#2551]: https://github.com/munich-quantum-toolkit/core/pull/2551
+
+[#2553]: https://github.com/munich-quantum-toolkit/core/pull/2553
