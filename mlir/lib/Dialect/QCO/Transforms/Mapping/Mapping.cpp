@@ -56,7 +56,6 @@
 #include "llvm/ADT/Sequence.h"
 #include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallVector.h"
-#include "llvm/Support/Allocator.h"
 #include "llvm/Support/ErrorHandling.h"
 
 #include <algorithm>
@@ -64,6 +63,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <deque>
 #include <iterator>
 #include <memory>
 #include <optional>
@@ -503,23 +503,20 @@ private:
 
     Layout layout;
     IndexPairType swap;
-    Node* parent;
-    size_t depth;
-    float f;
+    Node* parent = nullptr;
+    size_t depth = 0;
+    float f = 0;
 
-    /// Construct a root node with the given layout. Initialize the
-    /// sequence with an empty vector and set the cost to zero.
-    explicit Node(Layout layout)
-        : layout(std::move(layout)), parent(nullptr), depth(0), f(0) {}
-
-    /// Construct a non-root node from its parent node. Apply the given swap to
-    /// the layout of the parent node.
-    Node(Node* parent, const IndexPairType& swap, const Window& window,
-         const CompilerTarget& target, const Parameters& params)
-        : layout(parent->layout), swap(swap), parent(parent),
-          depth(parent->depth + 1), f(0) {
+    /// Reuse layout capacity when replacing a previously searched node.
+    void reset(Node* nextParent, const IndexPairType& nextSwap,
+               const Window& window, const CompilerTarget& target,
+               const Parameters& params) {
+      layout = nextParent->layout;
+      swap = nextSwap;
+      parent = nextParent;
+      depth = parent->depth + 1;
       layout.swap(swap.first, swap.second);
-      f = g(params.alpha) + h(window, target, params); // NOLINT
+      f = params.alpha * static_cast<float>(depth) + h(window, target, params);
     }
 
     /// Return true, if the current SWAP sequence makes all gates in the front
@@ -532,12 +529,6 @@ private:
     }
 
   private:
-    /// Calculate the path cost for the A* search algorithm.
-    /// The path costs are the weighted sum of the currently required SWAPs.
-    [[nodiscard]] float g(const float alpha) const {
-      return alpha * static_cast<float>(depth);
-    }
-
     /// Calculate the heuristic cost for the A* search algorithm.
     ///
     /// Computes the minimal number of SWAPs required to route each gate in
@@ -712,8 +703,10 @@ protected:
         .layout = std::move(*layout),
     };
 
-    const auto routeRes =
-        route<WireDirection::Forward, RoutingMode::Hot>(bundle, &rewriter);
+    /// Each concurrent trial and the final route own separate search storage.
+    std::deque<Node> nodes;
+    const auto routeRes = route<WireDirection::Forward, RoutingMode::Hot>(
+        bundle, nodes, &rewriter);
     if (failed(routeRes)) {
       func.emitError() << "failed to map the function";
       signalPassFailure();
@@ -1100,19 +1093,20 @@ private:
     }
 
     parallelForEach(&getContext(), trials, [&, this](Trial& t) {
+      std::deque<Node> nodes;
       for (size_t i = 0; i < t.iterations; ++i) {
-        const auto fwRouteRes = route<WireDirection::Forward>(t.bundle);
+        const auto fwRouteRes = route<WireDirection::Forward>(t.bundle, nodes);
         if (failed(fwRouteRes)) {
           return;
         }
 
-        const auto bwRouteRes = route<WireDirection::Backward>(t.bundle);
+        const auto bwRouteRes = route<WireDirection::Backward>(t.bundle, nodes);
         if (failed(bwRouteRes)) {
           return;
         }
       }
       auto scoringBundle = t.bundle;
-      const auto score = route<WireDirection::Forward>(scoringBundle);
+      const auto score = route<WireDirection::Forward>(scoringBundle, nodes);
       if (failed(score)) {
         return;
       }
@@ -1135,31 +1129,28 @@ private:
     return best->bundle.layout;
   }
 
-  /// Perform A* search to find a sequence of SWAPs that makes all two-qubit ops
-  /// inside the first layer executable.
-  ///
-  /// The iteration budget is b^{3} node expansions, i.e. roughly a depth-3
-  /// search in a tree with branching factor b, where b is the product of the
-  /// architecture's maximum qubit degree and the maximum number of two-qubit
-  /// gates in any layer: `b = maxDegree × ⌈N/2⌉`. A hard cap prevents
-  /// impractical runtimes on larger architectures.
-  ///
-  /// Returns `failure`, if the A* search fails.
-  FailureOr<SmallVector<IndexPairType>> search(const Window& window,
-                                               const Layout& layout) const {
-    constexpr size_t cap = 25'000'000UL;
-
-    const size_t b = target->maxDegree() * ((target->numSites() + 1) / 2);
-    const size_t budget = std::min(b * b * b, cap);
+  /// Route the leading interaction with bounded A* node storage.
+  /// Drain queued states at the limit, then use distance-reducing SWAPs.
+  [[nodiscard]] SmallVector<IndexPairType>
+  search(const Window& window, const Layout& layout,
+         std::deque<Node>& storage) const {
+    /// Estimate retained node and layout storage; keep at least the root.
+    const size_t nodeBytes =
+        sizeof(Node) + 2 * target->numSites() * sizeof(size_t);
+    const size_t nodeBudget =
+        std::max<size_t>(1, searchMemoryLimit.getValue() / nodeBytes);
 
     const Parameters params{.alpha = alpha, .lambda = lambda};
-
-    llvm::SpecificBumpPtrAllocator<Node> arena;
     llvm::PriorityQueue<Node*, std::vector<Node*>, Node::ComparePointer>
         frontier;
 
-    // Early exit, if the root node is a goal node already.
-    Node* root = std::construct_at(arena.Allocate(), layout);
+    /// Append keeps node addresses stable; reuse starts after the previous
+    /// search's queue and borrowed layout keys have been destroyed.
+    if (storage.empty()) {
+      storage.emplace_back();
+    }
+    Node* root = &storage.front();
+    root->layout = layout;
     if (root->isGoal(window.front(), *target)) {
       return SmallVector<IndexPairType>{};
     }
@@ -1169,8 +1160,8 @@ private:
     DenseMap<ArrayRef<size_t>, size_t> bestDepth;
     SmallVector<IndexPairType, 6> expansionSet;
 
-    size_t i = 0;
-    while (!frontier.empty() && i < budget) {
+    size_t nodes = 1;
+    while (!frontier.empty()) {
       Node* curr = frontier.top();
       frontier.pop();
 
@@ -1184,7 +1175,6 @@ private:
       if (!inserted) {
         if (const auto otherDepth = it->getSecond();
             curr->depth >= otherDepth) {
-          ++i;
           continue;
         }
 
@@ -1214,20 +1204,49 @@ private:
         target->forEachNeighbour(hw0, [&](const auto hw1) {
           // Ensure consistent hashing/comparison.
           const IndexPairType swap = std::minmax(hw0, hw1);
-          if (is_contained(expansionSet, swap)) {
+          if (nodes >= nodeBudget || is_contained(expansionSet, swap)) {
             return;
           }
           expansionSet.push_back(swap);
 
-          frontier.emplace(std::construct_at(arena.Allocate(), curr, swap,
-                                             window, *target, params));
+          if (nodes == storage.size()) {
+            storage.emplace_back();
+          }
+          storage[nodes].reset(curr, swap, window, *target, params);
+          frontier.emplace(&storage[nodes]);
+          ++nodes;
         });
       }
-
-      ++i;
     }
 
-    return failure();
+    /// A connected target always permits a SWAP that brings the pair closer.
+    /// ponytail: Greedy completion can cost later gates; increase the search
+    /// budget when routing quality matters more than memory use.
+    SmallVector<IndexPairType> swaps;
+    Node current{.layout = layout};
+    const auto [q0, q1] = window.front();
+    while (!current.isGoal(window.front(), *target)) {
+      const auto [a, b] = current.layout.getHardwareIndices(q0, q1);
+      const auto distance = target->distanceBetween(a, b);
+      std::optional<Node> best;
+      for (const auto [from, to] : {IndexPairType{a, b}, IndexPairType{b, a}}) {
+        target->forEachNeighbour(from, [&](size_t next) {
+          if (target->distanceBetween(next, to) >= distance) {
+            return;
+          }
+          Node candidate;
+          candidate.reset(&current, std::minmax(from, next), window, *target,
+                          params);
+          if (!best || candidate.f < best->f) {
+            best = std::move(candidate);
+          }
+        });
+      }
+      assert(best && "connected target must have a distance-reducing edge");
+      swaps.push_back(best->swap);
+      current.layout = std::move(best->layout);
+    }
+    return swaps;
   }
 
   /// Return the SWAP sequence to move from one layout to another.
@@ -1754,7 +1773,7 @@ private:
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
   FailureOr<Statistics> dispatch(const CompositeUnitary& composite,
-                                 RoutingBundle& parent,
+                                 RoutingBundle& parent, std::deque<Node>& nodes,
                                  IRRewriter* rewriter = nullptr) {
     const auto& [op, indices] = composite;
 
@@ -1858,7 +1877,7 @@ private:
     Statistics totalStats;
 
     for (auto& child : children) {
-      const auto stats = route<Direction, Mode>(child, rewriter);
+      const auto stats = route<Direction, Mode>(child, nodes, rewriter);
       if (failed(stats)) {
         return failure();
       }
@@ -1893,7 +1912,7 @@ private:
         children[1].infos.insertOrUpdate(i, prog);
       }
 
-      const auto stats = route<Direction, Mode>(children[1], rewriter);
+      const auto stats = route<Direction, Mode>(children[1], nodes, rewriter);
       if (failed(stats)) {
         return failure();
       }
@@ -2004,12 +2023,11 @@ private:
   /// Iterates over a dynamically computed window of layers and uses A* search
   /// to find a SWAP sequence that makes each layer executable. Depending on
   /// the template parameter, this function only updates the layout or also
-  /// inserts the SWAPs into the IR. Returns `FailureOr<Statistics>` containing
-  /// the accumulated statistics on success, or `failure` if A* is unable to
-  /// find a solution.
+  /// inserts the SWAPs into the IR. Returns the accumulated statistics, or
+  /// failure if routing a nested operation fails.
   template <WireDirection Direction, RoutingMode Mode = RoutingMode::Cold>
     requires(Mode != RoutingMode::Hot || Direction == WireDirection::Forward)
-  FailureOr<Statistics> route(RoutingBundle& bundle,
+  FailureOr<Statistics> route(RoutingBundle& bundle, std::deque<Node>& nodes,
                               IRRewriter* rewriter = nullptr) {
     auto& [wires, infos, layout] = bundle;
 
@@ -2026,7 +2044,8 @@ private:
             place(composite, bundle, *rewriter);
           }
 
-          auto res = dispatch<Direction, Mode>(composite, bundle, rewriter);
+          auto res =
+              dispatch<Direction, Mode>(composite, bundle, nodes, rewriter);
           if (failed(res)) {
             return failure();
           }
@@ -2048,10 +2067,7 @@ private:
         break;
       }
 
-      const auto swaps = search(window, layout);
-      if (failed(swaps)) {
-        return failure();
-      }
+      const auto swaps = search(window, layout, nodes);
 
       if constexpr (Mode == RoutingMode::Hot) {
 
@@ -2063,7 +2079,7 @@ private:
         for_each(wires, [](auto& it) { std::ranges::advance(it, -1); });
       }
 
-      insertSWAPs<Mode>(*swaps, bundle, stats, rewriter);
+      insertSWAPs<Mode>(swaps, bundle, stats, rewriter);
 
       if constexpr (Mode == RoutingMode::Hot) {
 
