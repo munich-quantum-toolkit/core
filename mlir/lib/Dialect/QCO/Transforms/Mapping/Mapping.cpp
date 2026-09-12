@@ -433,6 +433,7 @@ struct LayoutPreparationPass final
     registry.insert<QCODialect, qtensor::QTensorDialect, arith::ArithDialect>();
   }
 
+protected:
   void runOnOperation() override {
     auto moduleOp = getOperation();
     auto func = mqt::getEntryPoint(moduleOp);
@@ -517,8 +518,8 @@ struct LayoutPreparationPass final
       Value tensor = root;
       if (isa<qtensor::AllocOp>(op)) {
         for (size_t i = 0; i < size; ++i) {
-          auto index =
-              arith::ConstantIndexOp::create(rewriter, op->getLoc(), i);
+          auto index = arith::ConstantIndexOp::create(rewriter, op->getLoc(),
+                                                      static_cast<int64_t>(i));
           indices.push_back(index);
           auto extract =
               ExtractOp::create(rewriter, op->getLoc(), tensor, index);
@@ -551,6 +552,8 @@ struct LayoutPreparationPass final
 private:
   std::shared_ptr<LayoutTracking> tracking_;
 };
+
+} // namespace
 
 /// Resolve source markers before dynamic allocations are replaced.
 static LogicalResult collectSourceOrder(func::FuncOp func,
@@ -633,11 +636,15 @@ static void finishLayout(func::FuncOp func, const CompilerTarget& target,
   tracking.mapped = true;
 }
 
+namespace {
+
 struct LayoutResultPass final
     : PassWrapper<LayoutResultPass, OperationPass<ModuleOp>> {
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(LayoutResultPass)
   explicit LayoutResultPass(std::shared_ptr<LayoutTracking> tracking)
       : tracking_(std::move(tracking)) {}
+
+protected:
   void runOnOperation() override {
     if (!tracking_->mapped) {
       getOperation().emitError(

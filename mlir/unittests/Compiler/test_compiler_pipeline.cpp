@@ -2151,8 +2151,10 @@ TEST_F(CompilerPipelineTest, FailedTargetSynthesisDoesNotPublishLayout) {
   ASSERT_TRUE(program);
   auto target = llvm::cantFail(CompilerTarget::create(
       1, CompilerTarget::Connectivity::allToAll(),
-      CompilerTarget::NativeOperations::fromOperations({llvm::cantFail(
-          CompilerTarget::OperationCapability::create("h", 1, 0))})));
+      CompilerTarget::NativeOperations::fromOperations({
+          llvm::cantFail(
+              CompilerTarget::OperationCapability::create("h", 1, 0)),
+      })));
   MappingResult result{
       .allocationSizes = {7},
       .initialLayout = {8},
