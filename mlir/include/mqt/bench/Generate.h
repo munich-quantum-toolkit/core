@@ -20,6 +20,7 @@ namespace mqt::bench {
 class BV;
 class ModularMultiplier;
 class GHZ;
+class WState;
 class Grover;
 class Multiplexer;
 class QFT;
@@ -42,6 +43,9 @@ struct GeneratedBenchmark {
 /// Generate a configured modular multiplier benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram>
 generate(const ModularMultiplier& benchmark);
+
+/// Generate W-state preparation.
+[[nodiscard]] std::optional<mlir::QCProgram> generate(const WState& benchmark);
 
 /// Generate the QC program for a configured GHZ benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const GHZ& benchmark);

@@ -18,6 +18,7 @@ from mqt.core.bench import qft_adder as qft_adder
 from mqt.core.bench import qpe as qpe
 from mqt.core.bench import repeat_until_success as repeat_until_success
 from mqt.core.bench import teleportation as teleportation
+from mqt.core.bench import w_state as w_state
 
 class Output:
     """One logical classical output register."""

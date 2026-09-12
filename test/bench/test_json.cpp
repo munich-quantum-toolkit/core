@@ -538,7 +538,7 @@ TEST(BenchmarkJSON, RejectsAlteredOrUnresolvedManifestData) {
 TEST(BenchmarkJSON, ListsBenchmarksAndDescribesStandardSchemas) {
   EXPECT_EQ(
       listBenchmarksJSON(),
-      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"modular-multiplier"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"repeat-until-success"},{"definition_version":1,"id":"teleportation"}],"schema_version":1})");
+      R"({"benchmarks":[{"definition_version":1,"id":"bv"},{"definition_version":1,"id":"ghz"},{"definition_version":1,"id":"grover"},{"definition_version":1,"id":"modular-multiplier"},{"definition_version":1,"id":"multiplexer"},{"definition_version":1,"id":"qft"},{"definition_version":1,"id":"qft-adder"},{"definition_version":1,"id":"qpe"},{"definition_version":1,"id":"repeat-until-success"},{"definition_version":1,"id":"teleportation"},{"definition_version":1,"id":"w-state"}],"schema_version":1})");
   const auto bv = describeBenchmarkJSON("bv");
   const auto modularMultiplier = describeBenchmarkJSON("modular-multiplier");
   const auto ghz = describeBenchmarkJSON("ghz");
