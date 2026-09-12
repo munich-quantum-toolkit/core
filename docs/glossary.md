@@ -321,6 +321,10 @@ semiclassical QFT
   alias:** semiclassical QFT. A quantum Fourier-transform method that measures,
   resets, and reuses one qubit for each output bit. Each round applies rotations
   controlled by earlier measurement results.
+
+W state
+  **Preferred term:** W state. The equal, positive-amplitude superposition of
+  all computational-basis states with exactly one qubit in state one.
 ```
 
 ## Index

@@ -49,8 +49,8 @@ endif()
 run_success("benchmark listing" list_output "${CLI}" list)
 run_failure("unknown benchmark" "${CLI}" describe unknown)
 string(JSON benchmark_count LENGTH "${list_output}" benchmarks)
-if(NOT benchmark_count EQUAL 10)
-  message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 10")
+if(NOT benchmark_count EQUAL 11)
+  message(FATAL_ERROR "list returned ${benchmark_count} benchmarks instead of 11")
 endif()
 
 run_success("multiplexer description" describe_output "${CLI}" describe multiplexer)
@@ -287,4 +287,35 @@ run_failure(
 file(GLOB invalid_outputs "${invalid_directory}/*")
 if(invalid_outputs)
   message(FATAL_ERROR "an invalid instance specification left a final output")
+endif()
+
+set(w_specification "${OUTPUT_DIR}/w-state.json")
+file(WRITE "${w_specification}"
+     "{\"schema_version\":1,\"benchmark\":\"w-state\",\"parameters\":{\"qubits\":2}}\n")
+run_success(
+  "W-state generation"
+  w_output
+  "${CLI}"
+  generate
+  --instance-specification
+  "${w_specification}"
+  --format
+  jeff
+  --output
+  "${OUTPUT_DIR}/w-state")
+string(JSON w_manifest GET "${w_output}" manifest_path)
+set(w_counts "${OUTPUT_DIR}/w-counts.json")
+file(WRITE "${w_counts}" "{\"schema_version\":1,\"counts\":{\"01\":10,\"10\":10}}\n")
+run_success(
+  "W-state evaluation"
+  w_evaluation
+  "${CLI}"
+  evaluate
+  --manifest
+  "${w_manifest}"
+  --counts
+  "${w_counts}")
+string(JSON w_fidelity GET "${w_evaluation}" metrics squared_hellinger_fidelity)
+if(NOT w_fidelity EQUAL 1)
+  message(FATAL_ERROR "uniform W-state counts did not match the analytic distribution")
 endif()
