@@ -198,7 +198,6 @@ version = ">=1.10"
 
 include = [ "python/mqt/core/_version.py" ]
 exclude = [
-  ".agent/benchmarks/**",
   "**/.github",
   "**/doc",
   "**/docs",
@@ -298,7 +297,6 @@ test-sources = []
 line-length = 120
 namespace-packages = [ "mqt" ]
 src = [ "python" ]
-extend-exclude = [ ".agent/benchmarks/**" ]
 preview = true
 fix = true
 unsafe-fixes = true
@@ -354,7 +352,6 @@ PC170 = "We do not use rST files anymore"
 [tool.check-sdist]
 sdist-only = [ "python/mqt/core/_version.py" ]
 git-only = [
-  ".agent/benchmarks/*",
   "docs/*",
   "test/*",
   "mlir/*",
@@ -396,7 +393,6 @@ olt = "olt"
 
 [tool.ty.src]
 exclude = [
-  ".agent/benchmarks/**",
   "docs/**",
   "mlir/**",
 ]

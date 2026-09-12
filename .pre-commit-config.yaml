@@ -14,8 +14,6 @@ ci:
   autofix_commit_msg: "🎨 pre-commit fixes"
   skip: [ty]
 
-exclude: ^\.agent/benchmarks/
-
 repos:
   ## Standard hooks
   - repo: https://github.com/pre-commit/pre-commit-hooks

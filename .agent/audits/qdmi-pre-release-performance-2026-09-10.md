@@ -154,10 +154,10 @@ the rebase. Timing samples above remain tied to the measurement baseline.
   whole-header clang-tidy check for `Client.hpp` reports five existing naming
   and implicit-conversion warnings. The baseline header, supplied through a VFS
   overlay, produces the same diagnostics; no new warning was introduced.
-- `uvx check-sdist --inject-junk` passes with tracked benchmark sentinels. A
-  built source archive excludes the sentinels, including nested code/data files.
-  Both the archive exclusions and consistency-check exceptions cover
-  `.agent/benchmarks`.
+- At the recorded baseline, `uvx check-sdist --inject-junk` passed with tracked
+  benchmark sentinels, and the source archive excluded nested code/data files.
+  The ad hoc benchmark directory and its packaging exceptions were removed after
+  the 4.0 release.
 
 Detailed test, baseline-failure, packaging, and lint logs are in
 `/tmp/qdmi-release-evidence`.
