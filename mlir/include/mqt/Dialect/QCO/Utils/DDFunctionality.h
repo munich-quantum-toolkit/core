@@ -45,16 +45,17 @@ struct DDSamplingState {
 /// Build a matrix DD for a unitary QCO function.
 ///
 /// The function must have one block. The interpreter supports concrete QCO and
-/// SCF structured control, non-recursive calls, common scalar math,
-/// one-dimensional memrefs, dense rank-one f64 tensor constants and element
-/// extraction, and QTensor bookkeeping. `qco.static` values, or
+/// SCF structured control, non-recursive calls, common
+/// scalar math, one-dimensional memrefs, dense rank-one f64 tensor constants
+/// and element extraction, and QTensor bookkeeping. `qco.static` values, or
 /// qubit arguments when no static values exist, set the wire map. Entry-block
 /// `qco.alloc` and statically sized `qtensor.alloc` operations add subsequent
 /// wires in instruction order. Measurements, resets, symbolic control, and
 /// other runtime allocation are not supported.
 ///
-/// Runtime-bound parameters are supported for standard gates and for a sole
-/// standard gate inside `qco.ctrl`. Custom matrices and composite modifiers
+/// Runtime-bound parameters are supported for standard gates, ordinary and
+/// gate-function calls, and a sole standard gate inside `qco.ctrl`.
+/// Custom matrices and composite modifiers
 /// must have a compile-time-known matrix.
 ///
 /// The containing module must pass MLIR verification and
@@ -73,7 +74,7 @@ FailureOr<dd::MatrixDD> buildFunctionality(
 /// In addition to the operations supported by `buildFunctionality`, simulation
 /// supports measurements, resets, CBit registers, and runtime qubit and QTensor
 /// allocation. QCO and SCF structured control requires concrete values. A
-/// shared 10000-step limit bounds loops and calls. `qco.sink` and
+/// shared 100000-step limit bounds loops and calls. `qco.sink` and
 /// `qtensor.dealloc` mark lifetimes but do not remove DD wires.
 ///
 /// The containing module must pass MLIR verification and

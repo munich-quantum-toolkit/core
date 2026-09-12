@@ -219,11 +219,11 @@ For explicit restrictions, use the constants on
 accepted.
 
 Target compilation requires structured QCO/SCF input. Producers of raw CFG
-branches must normalize them before target compilation; runtime assertions are
-allowed. The pipeline removes unused symbols, propagates constants, and runs QCO
-cleanup before deciding which loops need expansion. It then specializes loops
-required by the selected payload or by placement, cleans up the resulting IR,
-and checks the remaining control flow with `legalize-control-flow`:
+branches must normalize them before target compilation. The pipeline removes
+unused symbols, propagates constants, and runs QCO cleanup before deciding which
+loops need expansion. It then specializes loops required by the selected payload
+or by placement, cleans up the resulting IR, and checks the remaining control
+flow with `legalize-control-flow`:
 
 | Capability           | Residual operations                                 |
 | -------------------- | --------------------------------------------------- |

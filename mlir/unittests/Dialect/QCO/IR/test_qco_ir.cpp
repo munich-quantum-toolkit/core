@@ -3875,3 +3875,59 @@ TEST_F(QCOTest, BarrierRejectsMismatchedQubitArity) {
   EXPECT_NE(diagnostics.find("one output qubit for each input qubit"),
             std::string::npos);
 }
+
+TEST_F(QCOTest, BuilderCallsBorrowedRegistersAndRestoresExtractedSlots) {
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  auto qubitType = QubitType::get(context.get());
+  auto tensorType = RankedTensorType::get({2}, qubitType);
+  auto helper = builder.createFunction(
+      "helper", TypeRange{qubitType, tensorType}, [&](ValueRange arguments) {
+        auto [tensor, qubit] = builder.qtensorExtract(arguments[1], 0);
+        qubit = builder.x(qubit);
+        tensor = builder.qtensorInsert(qubit, tensor, 0);
+        auto [reset, bit] = builder.measure(arguments[0]);
+        return SmallVector<Value>{bit, reset, tensor};
+      });
+  auto outer = builder.createFunction(
+      "outer", TypeRange{qubitType, tensorType}, [&](ValueRange arguments) {
+        auto result = builder.scfWhile(
+            arguments,
+            [&](ValueRange values) {
+              auto updated = builder.call(helper, values);
+              SmallVector<Value> carried{updated[1], updated[2]};
+              builder.scfCondition(builder.boolConstant(false), carried);
+              return carried;
+            },
+            [&](ValueRange values) { return SmallVector<Value>(values); });
+        return SmallVector<Value>(result);
+      });
+  auto tensor = builder.qtensorAlloc(2);
+  auto [rest, extracted] = builder.qtensorExtract(tensor, 1);
+  extracted = builder.h(extracted);
+  auto qubit = builder.allocQubit();
+  auto result = builder.call(helper, {qubit, rest});
+  result = builder.call(outer, {result[1], result[2]});
+  builder.sink(result[0]);
+  builder.qtensorDealloc(result[1]);
+  auto moduleOp = builder.finalize();
+  ASSERT_TRUE(moduleOp);
+  EXPECT_TRUE(succeeded(verify(*moduleOp)));
+  EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+}
+
+TEST_F(QCOTest, BuilderRejectsMissingBorrowedRegisterSlots) {
+  EXPECT_DEATH(
+      {
+        QCOProgramBuilder builder(context.get());
+        builder.initialize();
+        auto type = RankedTensorType::get({2}, QubitType::get(context.get()));
+        builder.createFunction(
+            "missing", TypeRange{type}, [&](ValueRange arguments) {
+              auto [rest, qubit] = builder.qtensorExtract(arguments[0], 0);
+              builder.sink(qubit);
+              return SmallVector<Value>{rest};
+            });
+      },
+      "must restore all extracted slots");
+}

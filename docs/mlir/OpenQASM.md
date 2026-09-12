@@ -60,7 +60,7 @@ QCO, and `jeff` dialects, so each output checkpoint names its dialect.
 | Quantum statements         | Measurement, reset, barrier, logical qubits, and physical qubits are supported. The QC translation rejects programs that mix logical allocation with physical qubits.                                                                                                     |
 | Expressions                | Scalar arithmetic, comparisons, Boolean expressions, and the supported math functions are type checked before translation. Initialized bit registers support `~`, `&`, `\|`, `^`, `<<`, `>>`, `popcount`, `rotl`, and `rotr`.                                             |
 | Structured control         | `if`, `switch`, supported range-based `for`, and `while`. `break` exits the innermost enclosing loop; `continue` advances to its next iteration. Both may appear inside conditional and switch bodies.                                                                    |
-| Dynamic indexing           | Classical bit indices can be dynamic and receive runtime bounds checks. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                                  |
+| Dynamic indexing           | Classical bit indices can be dynamic and must remain in bounds. A nonconstant qubit index must be a proven affine expression as described below.                                                                                                                          |
 | Unsupported language areas | Subroutines, `extern`, calibration and timing constructs, input declarations, and arbitrary arrays are diagnosed.                                                                                                                                                         |
 
 Sized `uint[N](bits)` and `int[N](bits)` casts accept an initialized `bit[N]`
@@ -77,13 +77,18 @@ process working directory, then in the include directories supplied to
 SourceMgr. They are not resolved relative to the including file. The built-in
 standard libraries do not require files on disk.
 
-Syntax and semantic diagnostics retain source locations and include stacks.
-Classical-index bounds and integer-power preconditions are represented
-explicitly in QC. Runtime integer arithmetic uses machine-width promotion and
-wraps modulo that width; explicit integer casts truncate or extend to their
+Syntax and semantic diagnostics retain source locations and include stacks. The
+importer diagnoses statically invalid inputs and emits no runtime assertions.
+Runtime classical indices must be in bounds after negative-index wrapping, range
+steps must be nonzero, and integer arithmetic powers require nonnegative
+exponents. Integer `pow` modifier exponents must be exactly representable as
+`f64`, the QC/QCO exponent type. These are program preconditions; violating them
+has no guaranteed diagnostic or result.
+
+Runtime integer arithmetic, including powers, uses machine-width promotion and
+wraps modulo that width. Explicit integer casts truncate or extend to their
 declared width. Compile-time invalid arithmetic is diagnosed. Runtime division
-by zero remains undefined. Dynamic-index checks are supported by compiler/QIR
-paths but remain outside the source-export subset.
+by zero remains undefined.
 
 OpenQASM 3 supports all six comparisons between fixed-width bit-register
 expressions. Direct register comparisons use unsigned meaning. An exact-width
@@ -235,7 +240,7 @@ use 64-bit arithmetic when their bodies contain no `break` or `continue`. The
 loop tests the unsigned distance to the inclusive endpoint before continuing, so
 a final increment that wraps cannot cause another iteration. This supports round
 trips without restricting the signed range of the endpoints. Other range forms
-can still require wider arithmetic or runtime checks that the exporter rejects.
+can still require wider arithmetic that the exporter rejects.
 
 Entry-function while loops use `while (true)` and a conditional `break`, so
 condition-region expressions are evaluated once per iteration. Gate functions
@@ -361,13 +366,11 @@ limited to 1,000,000 statements and 1,000,000 file-include expansions, including
 empty files. Standard-library includes count as statements. Include nesting is
 limited to 64 levels. Exceeding any bound produces a diagnostic and no program.
 
-The exporter does not reconstruct the runtime checks created for dynamic indices
-or checked integer arithmetic. Surviving assertions, checked-index control flow,
-or live poison values cause an explicit diagnostic. Programs with static qubit
-and bit indices and supported integer/Boolean casts can be exported and parsed
-again through the strict frontend. Integer-to-floating-point conversions support
-this round trip. Compile-time floating-point-to-integer conversions remain
-outside the input subset. Floating-point `!=` uses unordered-or-not-equal
-semantics, including NaNs; ordered-not-equal MLIR comparisons are rejected.
-Programs that rely on the input safety machinery must continue through another
-output path such as QIR.
+The exporter rejects unsupported operations, including explicit `cf.assert`
+operations and live poison values. It does not silently discard them. Programs
+with supported qubit indices, dynamic bit indices, and integer/Boolean casts can
+be exported and parsed again through the strict frontend.
+Integer-to-floating-point conversions support this round trip. Compile-time
+floating-point-to-integer conversions remain outside the input subset.
+Floating-point `!=` uses unordered-or-not-equal semantics, including NaNs;
+ordered-not-equal MLIR comparisons are rejected.

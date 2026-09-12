@@ -31,6 +31,7 @@ add_mlir_dialect_library(
   MLIRFuncDialect
   MLIRMQTUtils
   MLIRQCODialect
+  MLIRQTensorUtils
   MLIRSCFDialect)
 
 mqt_mlir_target_use_project_options(MLIRQCOUtils)

@@ -13,11 +13,11 @@ def QCOToQC : Pass<"qco-to-qc", "mlir::ModuleOp"> {
 
   let description = [{
     Convert QCO qubit values to QC references and QTensor registers to memrefs.
-    Scalar function arguments become in-place references; each function must
-    return its qubit arguments as a positional suffix. Other results remain
-    explicit, including qubits created by a function.
-    Inline functions with qubit-tensor arguments or results before conversion;
-    tensor references are local to a function.
+    Scalar qubits and fixed-size rank-one qubit-tensor arguments become in-place
+    references; each function must return its quantum arguments as a positional
+    suffix. Register helpers must be private and restore extracted slots before
+    calls and returns. Explicit register ownership transfers are unsupported.
+    Other results remain explicit, including qubits created by a function.
 
     Before rewriting, prove that quantum values yielded by modifiers, branches,
     and loops correspond positionally to their region arguments. Reject wire
