@@ -74,7 +74,11 @@ set(ipo_supported FALSE)
 if(ENABLE_IPO)
   include(CheckIPOSupported)
   check_ipo_supported(RESULT ipo_supported OUTPUT ipo_output)
-  if(NOT ipo_supported)
+  if(NOT ipo_supported
+     AND SKBUILD
+     AND DEPLOY)
+    message(FATAL_ERROR "Release wheel IPO is not supported: ${ipo_output}")
+  elseif(NOT ipo_supported)
     message(DEBUG "IPO is not supported: ${ipo_output}")
   endif()
 endif()
@@ -88,3 +92,13 @@ set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS
     CACHE BOOL "Export all symbols on Windows")
 
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
+option(ENABLE_BOLT "Prepare Linux release binaries for BOLT post-link optimization" OFF)
+if(ENABLE_BOLT)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "BOLT release optimization requires Linux")
+  endif()
+  add_compile_options("$<$<COMPILE_LANG_AND_ID:C,GNU>:-fno-reorder-blocks-and-partition>"
+                      "$<$<COMPILE_LANG_AND_ID:CXX,GNU>:-fno-reorder-blocks-and-partition>")
+  add_link_options("LINKER:--emit-relocs")
+endif()

@@ -10,6 +10,11 @@ releases may include breaking changes.
 
 ## [Unreleased]
 
+- ⚡ Build Linux release wheels with full Core LTO, profile the linked native
+  LLVM/MLIR libraries and Core together, and apply BOLT before wheel repair.
+  Train each Python ABI independently and retain assertion-enabled SDKs for
+  development. ([#2476]) ([**@burgholzer**])
+
 - 🐛 Return QDMI and benchmark input errors to the compiler without requiring
   exceptions or RTTI. Preserve diagnostics on macOS and report benchmark CLI
   failures without aborting. ([#2545]) ([**@burgholzer**])
@@ -1770,3 +1775,5 @@ for previous changelogs._
 [munich-quantum-toolkit/workflows]: https://github.com/munich-quantum-toolkit/workflows
 [MQT QMAP]: https://github.com/munich-quantum-toolkit/qmap
 [MQT QCEC]: https://github.com/munich-quantum-toolkit/qcec
+
+[#2476]: https://github.com/munich-quantum-toolkit/core/pull/2476

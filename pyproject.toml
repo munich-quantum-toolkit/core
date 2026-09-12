@@ -196,7 +196,7 @@ version = ">=1.10"
 
 [tool.scikit-build.sdist]
 
-include = [ "python/mqt/core/_version.py" ]
+include = [ "python/mqt/core/_version.py", "test/release/*.py" ]
 exclude = [
   "**/.github",
   "**/doc",
@@ -251,6 +251,7 @@ build = "cp3*"
 skip = [ "*-musllinux_*", "cp314t-*" ]
 archs = "auto64"
 build-frontend = "uv"
+config-settings = { "cmake.define.ENABLE_IPO" = "ON" }
 test-command = "pytest test/python"
 test-groups = [ "test" ]
 test-sources = [
@@ -258,6 +259,7 @@ test-sources = [
   "json",
   "scripts/check_docs_links.py",
   "scripts/qiskit_c_api_adopt.py",
+  "scripts/prepare_release.py",
   "test/circuits",
   "test/python",
   "test/slurm/run_integration.py",
@@ -265,11 +267,30 @@ test-sources = [
 ]
 
 [tool.cibuildwheel.linux]
-environment = { DEPLOY = "ON", PATH = "$PATH:/root/.local/bin", MLIR_DIR = "/opt/llvm-23.1.1/lib/cmake/mlir" }
+config-settings = { "cmake.define.CMAKE_PROJECT_INCLUDE_BEFORE" = "{project}/build/release-pgo.cmake", "install.strip" = "false" }
+environment = { DEPLOY = "ON", PATH = "/opt/clang/bin:/opt/llvm-23.1.1/bin:$PATH:/root/.local/bin", MLIR_DIR = "/opt/llvm-23.1.1/lib/cmake/mlir", CC = "/opt/clang/bin/clang", CXX = "/opt/clang/bin/clang++", AR = "/opt/clang/bin/llvm-ar", RANLIB = "/opt/clang/bin/llvm-ranlib", LLVM_PROFDATA = "/opt/mqt-release/profiling/tools/bin/llvm-profdata", CMAKE_BUILD_PARALLEL_LEVEL = "4" }
+environment-pass = [
+  "CMAKE_C_COMPILER_LAUNCHER",
+  "CMAKE_CXX_COMPILER_LAUNCHER",
+  "SCCACHE_GHA_ENABLED",
+  "SCCACHE_GHA_RW_MODE",
+  "SCCACHE_IDLE_TIMEOUT",
+  "ACTIONS_CACHE_SERVICE_V2",
+  "ACTIONS_RESULTS_URL",
+  "ACTIONS_RUNTIME_TOKEN",
+]
 before-all = """
-uv tool install sccache>=0.10.0
-curl -LsSf https://github.com/munich-quantum-software/setup-mlir/releases/download/v1.4.2/setup-mlir.sh | bash -s -- -v 23.1.1 -p /opt/llvm-23.1.1
+uv tool install "sccache>=0.10.0"
+curl -LsSf https://raw.githubusercontent.com/munich-quantum-software/setup-mlir/01969745aad746dc11e47941c35316704158aa6f/installation/setup-mlir.sh | bash -s -- -v 23.1.1 -p /opt/llvm-23.1.1 -a OFF
+uv run --no-project --python /opt/python/cp311-cp311/bin/python --with cmake==4.4.3 --with ninja==1.13.0 bash "{project}/scripts/provision_release.sh" /opt/mqt-release
 """
+before-build = """
+uv run --no-project --python "$(command -v python)" --with cmake==4.4.3 --with ninja==1.13.0 --with wheel==0.45.1 --with "nanobind-backend>=1" python "{project}/scripts/prepare_release.py" --project "{project}" --sdk-tools /opt/mqt-release/sdk-tools --llvm-source /opt/mqt-release/llvm-source --source-id "$(cat /opt/mqt-release/llvm-revision)" --lto Full --pgo both --jobs 4
+"""
+repair-wheel-command = """\
+  uv run --no-project --with wheel --python \"$(command -v python)\" python \"{project}/scripts/bolt_wheel.py\" \
+  \"{wheel}\" \"{dest_dir}\" \"{project}\"\
+  """
 before-test = "uvx sccache --show-stats"
 # QIR-Runner's Linux wheels require a newer glibc than the manylinux_2_28
 # containers used to build and test MQT Core's broadly compatible wheels.
@@ -279,6 +300,7 @@ test-groups = [ "test-base" ]
 environment = { MACOSX_DEPLOYMENT_TARGET = "13.3" }
 
 [tool.cibuildwheel.windows]
+config-settings = { "cmake.define.ENABLE_IPO" = "OFF" }
 repair-wheel-command = "delvewheel repair -w {dest_dir} {wheel} --namespace-pkg mqt --ignore-existing"
 before-test = "uv pip install --group test"
 # cibuildwheel 4.2 passes expanded dependency groups through cmd.exe, which interprets version
