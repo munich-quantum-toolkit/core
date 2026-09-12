@@ -110,8 +110,8 @@ public:
 
   /// Create a private function.
   ///
-  /// The callback must return one trailing qubit for every qubit argument, in
-  /// qubit-argument order.
+  /// The callback must return one trailing value for every scalar qubit or
+  /// complete quantum register argument, in argument order.
   /// The body must not dynamically allocate qubits or qubit tensors.
   func::FuncOp
   createFunction(StringRef name, TypeRange argumentTypes,
@@ -124,7 +124,7 @@ public:
 
   /// Call a function, using `qco.call` for a unitary function.
   ///
-  /// Ordinary results are followed by the updated qubit arguments.
+  /// Ordinary results are followed by updated scalar qubits and registers.
   SmallVector<Value> call(func::FuncOp callee, ValueRange operands);
 
   //===--------------------------------------------------------------------===//

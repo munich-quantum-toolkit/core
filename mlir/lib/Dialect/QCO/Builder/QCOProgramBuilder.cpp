@@ -147,29 +147,19 @@ func::FuncOp QCOProgramBuilder::createFunction(
   }
   function.setType(
       getFunctionType(argumentTypes, ValueRange(results).getTypes()));
-  SmallVector<unsigned> qubitArguments;
-  for (auto [index, argument] : llvm::enumerate(block->getArguments())) {
-    if (isa<QubitType>(argument.getType())) {
-      qubitArguments.emplace_back(index);
-    }
-  }
-  if (results.size() < qubitArguments.size()) {
+  auto quantumArguments = getQuantumArgumentIndices(argumentTypes);
+  if (results.size() < quantumArguments.size()) {
     llvm::reportFatalUsageError(
-        "Function must return every qubit argument as a trailing result");
+        "Function must return every quantum argument as a trailing result");
   }
-  const auto firstQubitResult = results.size() - qubitArguments.size();
-  if (llvm::any_of(
-          ValueRange(results).drop_front(firstQubitResult),
-          [](Value result) { return !isa<QubitType>(result.getType()); })) {
-    llvm::reportFatalUsageError(
-        "Function must return every qubit argument as a trailing result");
-  }
-  for (auto [offset, argument] : llvm::enumerate(qubitArguments)) {
-    auto origin =
-        traceQubitArgument(function, results[firstQubitResult + offset]);
-    if (failed(origin) || *origin != argument) {
+  const auto firstQuantumResult = results.size() - quantumArguments.size();
+  for (auto [offset, argument] : llvm::enumerate(quantumArguments)) {
+    auto result = results[firstQuantumResult + offset];
+    auto origin = traceQubitArgument(function, result);
+    if (result.getType() != argumentTypes[argument] || failed(origin) ||
+        *origin != argument) {
       llvm::reportFatalUsageError(
-          "Function must return every qubit argument as a trailing result");
+          "Function must return every quantum argument as a trailing result");
     }
   }
   for (Value result : results) {
@@ -183,6 +173,13 @@ func::FuncOp QCOProgramBuilder::createFunction(
   }
   disposeLinearValues();
   func::ReturnOp::create(*this, results);
+  for (auto argument : quantumArguments) {
+    auto value = block->getArgument(argument);
+    if (isQubitTensor(value.getType()) && !hasCompleteTensorLifetime(value)) {
+      llvm::reportFatalUsageError(
+          "Function must restore all extracted slots in borrowed registers");
+    }
+  }
   return function;
 }
 
@@ -202,55 +199,69 @@ SmallVector<Value> QCOProgramBuilder::call(func::FuncOp callee,
     llvm::reportFatalUsageError(
         "Call operands must match a function in the current module");
   }
-  if (llvm::any_of(operands, [](Value operand) {
-        return isQubitTensor(operand.getType());
-      })) {
-    llvm::reportFatalUsageError(
-        "Quantum tensor function calls are not supported");
+  auto quantumArguments = getQuantumArgumentIndices(operands.getTypes());
+  SmallVector<Value> quantumOperands;
+  for (const auto argument : quantumArguments) {
+    quantumOperands.emplace_back(operands[argument]);
   }
-
-  SmallVector<Qubit> qubitArguments;
-  for (auto operand : operands) {
-    if (!isa<QubitType>(operand.getType())) {
-      continue;
+  const auto registerInfo = getRegisterInfo(quantumOperands);
+  for (auto [index, operand] : llvm::enumerate(quantumOperands)) {
+    if (isQubitTensor(operand.getType()) &&
+        llvm::any_of(llvm::enumerate(registerInfo), [&](auto entry) {
+          return entry.index() != index &&
+                 entry.value().regId == registerInfo[index].regId;
+        })) {
+      llvm::reportFatalUsageError(
+          "Calls must borrow complete, distinct quantum registers");
     }
-    validateQubitValue(operand);
-    auto iterator = validQubits.find(operand);
-    qubitArguments.emplace_back(*iterator);
-    validQubits.erase(iterator);
+  }
+  quantumOperands = prepareInitArgs(quantumOperands);
+  SmallVector<Value> updatedOperands(operands);
+  for (auto [argument, operand] :
+       llvm::zip_equal(quantumArguments, quantumOperands)) {
+    updatedOperands[argument] = operand;
+    if (isa<QubitType>(operand.getType())) {
+      validateQubitValue(operand);
+      validQubits.erase(operand);
+    } else {
+      validateTensorValue(operand);
+      validTensors.erase(operand);
+    }
   }
 
   SmallVector<Value> results;
   if (mqt::isUnitaryFunction(callee)) {
     auto call = CallOp::create(
         *this, FlatSymbolRefAttr::get(getContext(), callee.getName()),
-        operands);
+        updatedOperands);
     llvm::append_range(results, call.getResults());
   } else {
-    auto call = func::CallOp::create(*this, callee, operands);
+    auto call = func::CallOp::create(*this, callee, updatedOperands);
     llvm::append_range(results, call.getResults());
   }
 
-  if (results.size() < qubitArguments.size()) {
+  if (results.size() < quantumArguments.size()) {
     llvm::reportFatalUsageError(
-        "Callee does not return its qubit arguments positionally");
+        "Callee does not return its quantum arguments positionally");
   }
-  const auto firstQubitResult = results.size() - qubitArguments.size();
-  if (llvm::any_of(
-          ValueRange(results).drop_front(firstQubitResult),
-          [](Value result) { return !isa<QubitType>(result.getType()); })) {
-    llvm::reportFatalUsageError(
-        "Callee does not return its qubit arguments positionally");
-  }
+  const auto firstQuantumResult = results.size() - quantumArguments.size();
   for (auto [index, result] : llvm::enumerate(results)) {
-    if (!isa<QubitType>(result.getType())) {
-      continue;
-    }
-    if (index >= firstQubitResult) {
-      const auto& tracked = qubitArguments[index - firstQubitResult];
-      validQubits.insert(Qubit{result, tracked.regId, tracked.regIndex});
-    } else {
+    if (index >= firstQuantumResult) {
+      const auto& info = registerInfo[index - firstQuantumResult];
+      if (result.getType() != info.type) {
+        llvm::reportFatalUsageError(
+            "Callee does not return its quantum arguments positionally");
+      }
+      if (isa<QubitType>(result.getType())) {
+        validQubits.insert(Qubit{result, info.regId, info.regIndex});
+      } else {
+        validTensors.insert(Tensor{result, info.regId});
+      }
+    } else if (isa<QubitType>(result.getType())) {
       validQubits.insert(result);
+    } else if (isQubitTensor(result.getType())) {
+      llvm::reportFatalUsageError(
+          "Calls cannot transfer ownership of quantum registers");
     }
   }
   return results;

@@ -35,6 +35,7 @@
 #include "mlir/IR/Diagnostics.h"
 #include "mlir/IR/DialectRegistry.h"
 #include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/OperationSupport.h"
 #include "mlir/IR/Value.h"
 #include "mlir/IR/Verifier.h"
 #include "mlir/Parser/Parser.h"
@@ -137,7 +138,7 @@ TEST(QCOToQCRegressionTest, RejectsUnsupportedDynamicTensorOwnership) {
   }
 }
 
-TEST(QCOToQCRegressionTest, RequiresInliningTensorOwnershipAcrossFunctions) {
+TEST(QCOToQCRegressionTest, RejectsBorrowedTensorConsumption) {
   MLIRContext context;
   context.loadDialect<qco::QCODialect, qtensor::QTensorDialect,
                       func::FuncDialect>();
@@ -158,10 +159,48 @@ TEST(QCOToQCRegressionTest, RequiresInliningTensorOwnershipAcrossFunctions) {
   });
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
   EXPECT_NE(
-      diagnostics.find("inline functions that accept or return qubit tensors"),
+      diagnostics.find(
+          "must return one trailing quantum value for each quantum argument"),
       std::string::npos);
   EXPECT_TRUE(succeeded(verify(*moduleOp)));
   EXPECT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+}
+
+TEST(QCOToQCRegressionTest, RejectsIncompleteOrReorderedBorrowedRegisters) {
+  MLIRContext context;
+  context.loadDialect<qco::QCODialect, qtensor::QTensorDialect,
+                      arith::ArithDialect, func::FuncDialect>();
+  for (const auto* source : {
+           R"mlir(module {
+             func.func private @missing(%reg: tensor<2x!qco.qubit>)
+                 -> tensor<2x!qco.qubit> {
+               %c0 = arith.constant 0 : index
+               %rest, %q = qtensor.extract %reg[%c0] : tensor<2x!qco.qubit>
+               qco.sink %q : !qco.qubit
+               return %rest : tensor<2x!qco.qubit>
+             }
+           })mlir",
+           R"mlir(module {
+             func.func private @reordered(%a: tensor<2x!qco.qubit>, %b: tensor<2x!qco.qubit>)
+                 -> (tensor<2x!qco.qubit>, tensor<2x!qco.qubit>) {
+               return %b, %a : tensor<2x!qco.qubit>, tensor<2x!qco.qubit>
+             }
+           })mlir",
+       }) {
+    SCOPED_TRACE(source);
+    auto moduleOp = parseSourceString<ModuleOp>(source, &context);
+    auto original = parseSourceString<ModuleOp>(source, &context);
+    ASSERT_TRUE(moduleOp);
+    ASSERT_TRUE(original);
+    ASSERT_TRUE(succeeded(verify(*moduleOp)));
+    ASSERT_TRUE(succeeded(qco::verifyLinearity(*moduleOp)));
+    ScopedDiagnosticHandler handler(&context,
+                                    [](Diagnostic&) { return success(); });
+    EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
+    EXPECT_TRUE(OperationEquivalence::isEquivalentTo(
+        moduleOp->getOperation(), original->getOperation(),
+        OperationEquivalence::Flags::None));
+  }
 }
 
 TEST(QCOToQCRegressionTest, RejectsBranchWirePermutation) {
@@ -522,9 +561,10 @@ TEST(QCOToQCRegressionTest, RejectsMissingPositionalQubitResults) {
     return success();
   });
   EXPECT_TRUE(failed(runQCOToQCConversion(*moduleOp)));
-  EXPECT_NE(diagnosticText.find(
-                "must return one trailing qubit for each qubit argument"),
-            std::string::npos);
+  EXPECT_NE(
+      diagnosticText.find(
+          "must return one trailing quantum value for each quantum argument"),
+      std::string::npos);
 }
 
 TEST(QCOToQCRegressionTest, PreservesDistinctResultsOfIndexProducer) {

@@ -15,11 +15,27 @@
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
 #include "mlir/IR/DialectImplementation.h" // IWYU pragma: keep (template instantiations)
+#include "mlir/Transforms/InliningUtils.h"
 
 #include "llvm/ADT/TypeSwitch.h" // IWYU pragma: keep (template instantiations)
 
 using namespace mlir;
 using namespace mlir::qtensor;
+
+namespace {
+
+struct QTensorInlinerInterface final : DialectInlinerInterface {
+  using DialectInlinerInterface::DialectInlinerInterface;
+
+  /// Inlining remaps each linear tensor and extracted qubit to its local value.
+  bool isLegalToInline(Operation* /*operation*/, Region* /*destination*/,
+                       bool /*wouldBeCloned*/,
+                       IRMapping& /*valueMapping*/) const final {
+    return true;
+  }
+};
+
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // Dialect
@@ -28,6 +44,7 @@ using namespace mlir::qtensor;
 #include "mqt/Dialect/QTensor/IR/QTensorOpsDialect.cpp.inc"
 
 void QTensorDialect::initialize() {
+  addInterfaces<QTensorInlinerInterface>();
   // NOLINTNEXTLINE(clang-analyzer-core.StackAddressEscape)
   addTypes<
 #define GET_TYPEDEF_LIST
