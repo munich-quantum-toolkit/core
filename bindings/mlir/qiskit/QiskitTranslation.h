@@ -133,9 +133,11 @@ public:
   [[nodiscard]] static Parameter
   symbol(std::string name, std::optional<ParameterGroup> group = std::nullopt,
          std::optional<std::string> identity = std::nullopt) {
-    return Parameter(Symbol{.name = std::move(name),
-                            .group = std::move(group),
-                            .identity = std::move(identity)});
+    return Parameter(Symbol{
+        .name = std::move(name),
+        .group = std::move(group),
+        .identity = std::move(identity),
+    });
   }
 
   [[nodiscard]] static Parameter unary(const UnaryParameterKind operation,

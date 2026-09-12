@@ -720,7 +720,7 @@ TEST_F(MQTIRTest, AcceptsOpaqueInputIdentities) {
 }
 
 TEST_F(MQTIRTest, RejectsInvalidInputIdentities) {
-  for (const auto source : {
+  for (const auto* source : {
            R"mlir(module {
          func.func @main(%arg: f64 {mqt.input_id = 1 : i128}) { return }
        })mlir",
