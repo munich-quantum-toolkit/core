@@ -135,7 +135,6 @@ def main() -> None:
         "ENABLE_CACHE": "OFF",
         "LLVM_ENABLE_LTO": "OFF",
         "ENABLE_BOLT": "ON" if system == "Linux" else "OFF",
-        "BUILD_MQT_CORE_TESTS": "OFF",
         "CMAKE_JOB_POOLS": "release_links=1",
         "CMAKE_JOB_POOL_LINK": "release_links",
         **{f"CMAKE_{kind}_LINKER_FLAGS": linker for kind in ["EXE", "SHARED", "MODULE"]},
