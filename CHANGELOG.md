@@ -12,8 +12,8 @@ releases may include breaking changes.
 
 - ✨ Optimize constant two-qubit blocks before placement and during native
   synthesis. Remove cancelled interactions before routing and preserve cheaper
-  native operations in both target compilation and synthesis. ([#2537])
-  ([**@burgholzer**])
+  native operations in both target compilation and synthesis. Avoid redundant
+  cleanup in both target pipelines. ([#2537]) ([**@burgholzer**])
 
 ## [4.0.0] - 2026-09-11
 

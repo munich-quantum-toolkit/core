@@ -14,12 +14,14 @@
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QTensor/Transforms/Passes.h"
 #include "mqt/Support/Passes.h"
 
 #include "mlir/IR/Visitors.h"
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Support/WalkResult.h"
+#include "mlir/Transforms/GreedyPatternRewriteDriver.h"
 #include "mlir/Transforms/Passes.h"
 
 #include <memory>
@@ -72,6 +74,18 @@ private:
 
 } /* namespace */
 
+static void populatePostPlacementPipeline(OpPassManager& pm) {
+  /// Placement consumes allocations; native synthesis normalizes phases.
+  pm.addPass(createCanonicalizerPass(
+      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+  /// Reuse unchanged classical reads before native synthesis splits their uses.
+  pm.addPass(createCSEPass());
+  pm.addPass(createRemoveDeadValuesPass());
+  pm.addPass(qco::createTargetNativeSynthesis());
+  pm.addPass(createCSEPass());
+  pm.addPass(qco::createVerifyTargetConformance());
+}
+
 void populateTargetCompilationPipeline(OpPassManager& pm,
                                        const TargetEnvironment& environment) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment));
@@ -82,7 +96,12 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   populateQCOCleanupPipeline(pm);
   pm.addPass(qco::createUnrollLoopsForPayload());
   pm.addPass(createSCCPPass());
-  populateQCOCleanupPipeline(pm);
+  /// Unrolling exposes static tensor slots and unreachable callees.
+  pm.addPass(createCanonicalizerPass(
+      GreedyRewriteConfig{}.setMaxIterations(GreedyRewriteConfig::kNoLimit)));
+  pm.addPass(createCSEPass());
+  pm.addPass(qtensor::createShrinkQTensorToFitPass());
+  pm.addPass(createSymbolDCEPass());
   pm.addPass(qco::createLegalizeControlFlow());
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
@@ -95,10 +114,7 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
     pm.addPass(qco::createPlacementPass(target));
     break;
   }
-  populateQCOCleanupPipeline(pm);
-  pm.addPass(qco::createTargetNativeSynthesis());
-  pm.addPass(createCSEPass());
-  pm.addPass(qco::createVerifyTargetConformance());
+  populatePostPlacementPipeline(pm);
 }
 
 void populateTargetSynthesisPipeline(OpPassManager& pm,
@@ -112,10 +128,7 @@ void populateTargetSynthesisPipeline(OpPassManager& pm,
   pm.addPass(qco::createDecomposeMultiControlled(target));
   pm.addPass(qco::createFuseTwoQubitGates(target));
   pm.addPass(qco::createPlacementPass(target));
-  populateQCOCleanupPipeline(pm);
-  pm.addPass(qco::createTargetNativeSynthesis());
-  pm.addPass(createCSEPass());
-  pm.addPass(qco::createVerifyTargetConformance());
+  populatePostPlacementPipeline(pm);
 }
 
 } // namespace mlir
