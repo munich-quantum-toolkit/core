@@ -153,6 +153,13 @@ using LLVM's affinity-aware CPU count with a minimum of one. An explicit
 `place-and-route` pass for reproducible results across machines. Disabling
 multithreading runs the same trials sequentially.
 
+Each routing search limits its estimated node and layout storage to 64 MiB by
+default. When the budget is exhausted, it checks queued states before falling
+back to SWAPs that reduce the leading interaction's distance. Set
+`search-memory-limit` in bytes on `place-and-route` to trade memory for routing
+quality; zero disables node expansion. Concurrent trials each have this budget.
+Container overhead, target distance caches, and IR storage are additional.
+
 Native synthesis collects constant runs on the same two qubits, including
 interleaved single-qubit gates, and resynthesizes them in the target's selected
 basis. It replaces a run only when the result uses fewer native two-qubit gates
