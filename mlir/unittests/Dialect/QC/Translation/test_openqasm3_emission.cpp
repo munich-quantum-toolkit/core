@@ -25,7 +25,6 @@
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlow.h"
-#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/Extensions/InlinerExtension.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/Transforms/InlinerInterfaceImpl.h"
@@ -1633,6 +1632,47 @@ TEST(OpenQASM3EmissionTest, DefinesECRWithOneEntanglingGate) {
   EXPECT_EQ(llvm::StringRef(*emitted).count("ctrl @ x"), 1U);
 }
 
+TEST(OpenQASM3EmissionTest, RoundTripsRuntimeIndicesAndIntegerPowers) {
+  constexpr std::array sources{
+      R"qasm(OPENQASM 3.1;
+        include "stdgates.inc";
+        qubit q;
+        bit[3] bits = "000";
+        int index = -1;
+        int exponent = 3;
+        int value = 3 ** exponent;
+        bits[index] = true;
+        if (bits[index] && value == 27) { pow(exponent) @ x q; }
+        output bit[2] result; result = "00";
+        result[0] = measure q;
+        result[1] = bits[index];
+      )qasm",
+      R"qasm(OPENQASM 3.1;
+        include "stdgates.inc";
+        qubit q;
+        int base = 2;
+        int exponent = 63;
+        int value = base ** exponent;
+        if (value == -9223372036854775808) { x q; }
+        output bit[2] result; result = "10";
+        result[0] = measure q;
+      )qasm",
+  };
+  for (const auto* source : sources) {
+    MLIRContext context;
+    auto original = qc::translateOpenQASMToQC(source, &context);
+    ASSERT_TRUE(original);
+    original->walk([](Operation* operation) {
+      EXPECT_NE(operation->getName().getDialectNamespace(), "cf");
+    });
+    auto emitted = qc::translateQCToOpenQASM3(*original);
+    ASSERT_TRUE(succeeded(emitted));
+    auto restored = qc::translateOpenQASMToQC(*emitted, &context);
+    ASSERT_TRUE(restored) << *emitted;
+    expectOneSample(*restored, "11");
+  }
+}
+
 TEST(OpenQASM3EmissionTest, LeavesDestinationEmptyOnFailure) {
   MLIRContext context;
   auto moduleOp = qc::translateOpenQASMToQC(BELL, &context);
@@ -1641,10 +1681,9 @@ TEST(OpenQASM3EmissionTest, LeavesDestinationEmptyOnFailure) {
   OpBuilder builder(function.getBody());
   builder.setInsertionPointToStart(&function.getBody().front());
   const auto location = builder.getUnknownLoc();
-  auto condition =
-      arith::ConstantOp::create(builder, location, builder.getBoolAttr(true));
-  cf::AssertOp::create(builder, location, condition,
-                       "unsupported safety check");
+  auto value = arith::ConstantOp::create(builder, location,
+                                         builder.getF64FloatAttr(-1.));
+  math::AbsFOp::create(builder, location, value);
 
   std::string output;
   llvm::raw_string_ostream stream(output);

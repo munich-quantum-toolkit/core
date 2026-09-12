@@ -1807,6 +1807,42 @@ TEST_F(QCODDFunctionalityTest, Rejects) {
   }
 }
 
+TEST_F(QCODDFunctionalityTest, ExecuteParameterizedGateCallsWithGlobalPhase) {
+  auto mod = parseSourceString<ModuleOp>(R"mlir(module {
+    func.func private @gate(%angle: f64, %q: !qco.qubit) -> !qco.qubit
+        attributes {mqt.unitary} {
+      %scale = arith.constant -0.5 : f64
+      %phase = arith.mulf %angle, %scale : f64
+      qco.gphase(%phase)
+      %out = qco.rx(%angle) %q : !qco.qubit -> !qco.qubit
+      return %out : !qco.qubit
+    }
+    func.func @main(%angle: f64) {
+      %q = qco.static 0 : !qco.qubit
+      %a = qco.call @gate(%angle, %q) : (f64, !qco.qubit) -> !qco.qubit
+      %b = qco.call @gate(%angle, %a) : (f64, !qco.qubit) -> !qco.qubit
+      qco.sink %b : !qco.qubit
+      return
+    }
+  })mlir",
+                                         context.get());
+  ASSERT_TRUE(mod);
+  auto function = mainFunc(*mod);
+  DDArgumentBindings bindings;
+  bindings[function.getArgument(0)] =
+      FloatAttr::get(Float64Type::get(context.get()), std::numbers::pi / 2);
+  dd::Package package(1);
+  auto result = buildFunctionality(function, package, bindings);
+  ASSERT_TRUE(succeeded(result));
+  const auto matrix = result->getMatrix(1);
+  for (size_t row = 0; row < 2; ++row) {
+    for (size_t column = 0; column < 2; ++column) {
+      EXPECT_NEAR(std::abs(matrix[row][column] - (row == column ? 0. : -1.)),
+                  0., 1e-12);
+    }
+  }
+}
+
 TEST_F(QCODDFunctionalityTest, SimulateScfForAndFuncCallWithClassicalValues) {
   auto mod = parseSourceString<ModuleOp>(R"mlir(
     module {
@@ -2057,8 +2093,8 @@ TEST_F(QCODDFunctionalityTest, RejectsUnsupportedFuncCalls) {
 TEST_F(QCODDFunctionalityTest, HandlesScfForBounds) {
   for (const auto [lower, upper, step, succeeds] : {
            std::tuple<int64_t, int64_t, int64_t, bool>{3, 3, 1, true},
-           {0, 10000, 1, true},
-           {0, 10001, 1, false},
+           {0, 100000, 1, true},
+           {0, 100001, 1, false},
            {0, 3, 0, false},
            {0, 3, -1, false},
        }) {
@@ -2156,7 +2192,7 @@ TEST_F(QCODDFunctionalityTest, ScfForSharesExecutionBudget) {
   auto mod = buildModule([](QCOProgramBuilder& b) {
     auto q = b.staticQubit(0);
     auto outer = b.scfFor(
-        0, 100, 1, ValueRange{q},
+        0, 1000, 1, ValueRange{q},
         [&](Value /*iv*/, ValueRange outerArgs) -> SmallVector<Value> {
           return b.scfFor(0, 100, 1, outerArgs,
                           [&](Value /*innerIv*/, ValueRange innerArgs)
@@ -2179,7 +2215,7 @@ TEST_F(QCODDFunctionalityTest, ExecutionBudgetIncludesBranchesAndCalls) {
              func.func @main() {
                %true = arith.constant true
                %zero = arith.constant 0 : index
-               %limit = arith.constant 10000 : index
+               %limit = arith.constant 100000 : index
                %one = arith.constant 1 : index
                scf.for %i = %zero to %limit step %one {
                  scf.if %true {
@@ -2194,7 +2230,7 @@ TEST_F(QCODDFunctionalityTest, ExecutionBudgetIncludesBranchesAndCalls) {
              }
              func.func @main() {
                %zero = arith.constant 0 : index
-               %limit = arith.constant 10000 : index
+               %limit = arith.constant 100000 : index
                %one = arith.constant 1 : index
                scf.for %i = %zero to %limit step %one {
                  func.call @noop() : () -> ()

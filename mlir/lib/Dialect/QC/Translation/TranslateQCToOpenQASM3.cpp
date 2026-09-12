@@ -24,7 +24,6 @@
 
 #include "mlir/Analysis/CallGraph.h"
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/MemRef/IR/MemRef.h"
 #include "mlir/Dialect/SCF/IR/SCF.h"
@@ -579,8 +578,8 @@ private:
              cbit::CBitDialect::getDialectNamespace() ||
          isa<memref::LoadOp, memref::AllocOp, memref::DeallocOp, qc::AllocOp,
              qc::DeallocOp, qc::StaticOp, qc::MeasureOp, qc::ResetOp,
-             qc::BarrierOp, scf::IfOp, scf::IndexSwitchOp, cf::AssertOp,
-             ub::PoisonOp>(&operation))) {
+             qc::BarrierOp, scf::IfOp, scf::IndexSwitchOp, ub::PoisonOp>(
+             &operation))) {
       return fail(&operation,
                   "operation is not supported in an OpenQASM gate function");
     }
@@ -615,10 +614,9 @@ private:
     if (isInlineExpressionOperation(operation)) {
       return success();
     }
-    if (isa<cf::AssertOp>(&operation) ||
-        (isa<ub::PoisonOp>(&operation) &&
-         llvm::any_of(operation.getResults(),
-                      [](Value result) { return !result.use_empty(); }))) {
+    if (isa<ub::PoisonOp>(&operation) &&
+        llvm::any_of(operation.getResults(),
+                     [](Value result) { return !result.use_empty(); })) {
       return fail(&operation, "runtime safety machinery is not supported");
     }
     if (isa<ub::PoisonOp>(&operation)) {

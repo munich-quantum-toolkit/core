@@ -3389,21 +3389,6 @@ TEST_F(CompilerPipelineTest, PayloadControlRejectsConstantCFGBeforeCleanup) {
       << diagnostics;
 }
 
-TEST_F(CompilerPipelineTest, PayloadControlAllowsRuntimeAssertions) {
-  auto program = QCOProgram::fromMLIRString(R"mlir(
-    module {
-      func.func @main(%condition: i1) attributes {mqt.entry_point} {
-        cf.assert %condition, "runtime precondition"
-        return
-      }
-    }
-  )mlir");
-  ASSERT_TRUE(program);
-  ASSERT_TRUE(program->compileForTarget(TargetEnvironment(
-      makeUnrestrictedTarget(), makeControlPayloadSpecification({}))));
-  EXPECT_TRUE(StringRef(program->str()).contains("cf.assert"));
-}
-
 TEST_F(CompilerPipelineTest, PayloadControlPreservesSingleCaseNativeSwitches) {
   constexpr llvm::StringLiteral quantum = R"mlir(
     module {

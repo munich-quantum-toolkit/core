@@ -6,6 +6,14 @@ of changes including minor and patch releases, please refer to the
 
 ## [Unreleased]
 
+OpenQASM import no longer emits runtime assertions, and QIR conversion no longer
+lowers explicit `cf.assert` operations. Validate runtime inputs before
+execution: classical indices must stay in bounds after negative-index wrapping,
+range steps must be nonzero, integer arithmetic powers require nonnegative
+exponents, and integer `pow` modifier exponents must be exactly representable as
+`f64`. Static diagnostics remain. Runtime integer powers now wrap at their
+machine width, matching other runtime integer arithmetic.
+
 ## [4.0.0]
 
 ### Migrating from MQT Core 3 to 4

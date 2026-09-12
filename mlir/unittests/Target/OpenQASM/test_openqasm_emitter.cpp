@@ -23,7 +23,6 @@
 #include "gtest/gtest.h"
 
 #include "mlir/Dialect/Arith/IR/Arith.h"
-#include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 #include "mlir/Dialect/Func/IR/FuncOps.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/Dialect/Math/IR/Math.h"
@@ -504,61 +503,6 @@ pow(exponent) @ x q;
   ASSERT_EQ(powers.size(), 1U);
   ASSERT_TRUE(powers.front().getExponentValue().has_value());
   EXPECT_DOUBLE_EQ(*powers.front().getExponentValue(), 0.5);
-}
-
-TEST(OpenQASMTargetTest, GuardsRuntimeIntegerPowerModifierExactness) {
-  constexpr auto sources = std::to_array<llvm::StringLiteral>({
-      R"qasm(
-OPENQASM 3.1;
-qubit q;
-uint exponent = 9007199254740993;
-pow(exponent) @ x q;
-)qasm",
-      R"qasm(
-OPENQASM 3.1;
-qubit q;
-int exponent = 9007199254740992;
-bit choose = measure q;
-if (choose) { exponent = 9007199254740993; }
-pow(exponent) @ x q;
-)qasm",
-      R"qasm(
-OPENQASM 3.1;
-qubit q;
-uint exponent = 9007199254740993;
-bit repeat = measure q;
-while (repeat) {
-  exponent -= 1;
-  repeat = measure q;
-}
-pow(exponent) @ x q;
-)qasm",
-  });
-
-  for (const auto source : sources) {
-    SCOPED_TRACE(source.str());
-    MLIRContext context;
-    auto moduleOp = qc::translateOpenQASMToQC(source, &context);
-    ASSERT_TRUE(moduleOp);
-    ASSERT_TRUE(succeeded(verify(*moduleOp)));
-
-    SmallVector<qc::PowOp> powers;
-    size_t exactnessAssertions = 0;
-    moduleOp->walk([&](Operation* operation) {
-      if (auto power = dyn_cast<qc::PowOp>(operation)) {
-        powers.push_back(power);
-      }
-      if (auto assertion = dyn_cast<cf::AssertOp>(operation);
-          assertion &&
-          assertion.getMsg().contains(
-              "power modifier exponent cannot be represented exactly")) {
-        ++exactnessAssertions;
-      }
-    });
-    ASSERT_EQ(powers.size(), 1U);
-    EXPECT_FALSE(powers.front().getExponentValue().has_value());
-    EXPECT_EQ(exactnessAssertions, 1U);
-  }
 }
 
 TEST(OpenQASMTargetTest,
@@ -1901,9 +1845,6 @@ barrier q[i], q[j];
   EXPECT_EQ(measurements, 1);
   EXPECT_EQ(resets, 1);
   EXPECT_EQ(barriers, 1);
-  size_t assertions = 0;
-  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
-  EXPECT_EQ(assertions, 0);
 }
 
 TEST(OpenQASMTargetTest, QuantumEmissionDoesNotScaleWithRegisterWidth) {
@@ -1936,17 +1877,14 @@ TEST(OpenQASMTargetTest, LargeStaticBarrierAvoidsAliasChecks) {
 
   size_t loads = 0;
   size_t barriers = 0;
-  size_t assertions = 0;
   moduleOp->walk([&](memref::LoadOp load) {
     if (isa<qc::QubitType>(load.getType())) {
       ++loads;
     }
   });
   moduleOp->walk([&](qc::BarrierOp) { ++barriers; });
-  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
   EXPECT_EQ(loads, width);
   EXPECT_EQ(barriers, 1);
-  EXPECT_EQ(assertions, 0);
 }
 
 TEST(OpenQASMTargetTest, SupportsOrdinaryBitInitializationAndAssignment) {
@@ -2248,15 +2186,12 @@ for int i in [0:stride:6] { x q[i]; }
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t forLoops = 0;
   size_t whileLoops = 0;
-  size_t assertions = 0;
   size_t selections = 0;
   moduleOp->walk([&](scf::ForOp) { ++forLoops; });
   moduleOp->walk([&](scf::WhileOp) { ++whileLoops; });
-  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
   moduleOp->walk([&](arith::SelectOp) { ++selections; });
   EXPECT_EQ(forLoops, 4);
   EXPECT_EQ(whileLoops, 0);
-  EXPECT_EQ(assertions, 0);
   EXPECT_EQ(selections, 0);
   std::string text;
   llvm::raw_string_ostream stream(text);
@@ -2391,13 +2326,10 @@ for int i in [start:step:stop] { x q; }
   ASSERT_TRUE(succeeded(verify(*moduleOp)));
   size_t whileLoops = 0;
   size_t divisions = 0;
-  size_t assertions = 0;
   moduleOp->walk([&](scf::WhileOp) { ++whileLoops; });
   moduleOp->walk([&](arith::DivUIOp) { ++divisions; });
-  moduleOp->walk([&](cf::AssertOp) { ++assertions; });
   EXPECT_EQ(whileLoops, 1);
   EXPECT_EQ(divisions, 0);
-  EXPECT_GE(assertions, 1);
 }
 
 TEST(OpenQASMTargetTest, PreservesStaticallySelectedIndexState) {
