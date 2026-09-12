@@ -46,6 +46,7 @@
 #include "mlir/Support/LogicalResult.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/raw_ostream.h"
 
@@ -379,6 +380,109 @@ TEST_F(TargetSynthesisTest,
   expectEquivalent(expected, optimized);
 }
 
+TEST_F(TargetSynthesisTest, NativeSynthesisFusesSwapWithCx) {
+  for (const bool reverse : {false, true}) {
+    const auto target = reverse ? makeOneWayUCxTarget() : makeUCxTarget();
+    for (const bool swapFirst : {false, true}) {
+      const auto circuit = [&](QCOProgramBuilder& builder) {
+        auto q0 = builder.staticQubit(0);
+        auto q1 = builder.staticQubit(1);
+        if (swapFirst) {
+          std::tie(q0, q1) = builder.swap(q0, q1);
+        }
+        std::tie(q0, q1) = builder.cx(q0, q1);
+        if (!swapFirst) {
+          std::tie(q0, q1) = builder.swap(q0, q1);
+        }
+        return builder.intConstant(0);
+      };
+      auto expected = build(circuit);
+      auto optimized = build(circuit);
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *optimized, target, mlir::qco::createTargetNativeSynthesis())));
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *optimized, target, mlir::qco::createVerifyTargetConformance())));
+      EXPECT_EQ(countOps<SWAPOp>(*optimized), 0U);
+      /// A CX and a SWAP need two CX gates after cancellation, rather than
+      /// four.
+      EXPECT_EQ(countOps<CtrlOp>(*optimized), 2U);
+      expectEquivalent(expected, optimized);
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, NativeSynthesisUsesBlockCostInTargetBasis) {
+  for (const auto* basis : {"cz", "sqrt_iswap", "rzz"}) {
+    const bool nativeSwap = llvm::StringRef(basis) == "rzz";
+    std::vector operations{
+        valid(OperationCapability::create("u", 1, 3)),
+        valid(OperationCapability::create("gphase", 0, 1)),
+        valid(OperationCapability::create(basis, 2, nativeSwap ? 1 : 0)),
+    };
+    if (nativeSwap) {
+      operations.push_back(valid(OperationCapability::create("swap", 2, 0)));
+    }
+    const auto target =
+        valid(Target::create(2, Connectivity::allToAll(),
+                             NativeOperations::fromOperations(operations)));
+    for (const bool swap : {false, true}) {
+      SCOPED_TRACE(testing::Message() << basis << ", swap=" << swap);
+      const auto circuit = [&](QCOProgramBuilder& builder) {
+        auto a = builder.staticQubit(0);
+        auto b = builder.staticQubit(1);
+        if (swap) {
+          std::tie(a, b) = builder.swap(a, b);
+          std::tie(a, b) = builder.rzz(0.3, a, b);
+        } else {
+          std::tie(a, b) = builder.rzz(0.3, a, b);
+          std::tie(a, b) = builder.rxx(0.4, a, b);
+        }
+        return builder.intConstant(0);
+      };
+      auto expected = build(circuit);
+      auto synthesized = build(circuit);
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target, mlir::qco::createTargetNativeSynthesis())));
+      ASSERT_TRUE(mlir::succeeded(runTargetPass(
+          *synthesized, target, mlir::qco::createVerifyTargetConformance())));
+      size_t entanglers = 0;
+      synthesized->walk([&](mlir::qco::UnitaryOpInterface op) {
+        entanglers += op.isTwoQubit();
+      });
+      EXPECT_EQ(entanglers, swap && !nativeSwap ? 3U : 2U);
+      EXPECT_EQ(countOps<SWAPOp>(*synthesized), swap && nativeSwap ? 1U : 0U);
+      expectEquivalent(expected, synthesized);
+    }
+  }
+}
+
+TEST_F(TargetSynthesisTest, PrePlacementFusionRequiresSmallerNativeCircuit) {
+  for (const bool nativeSwap : {false, true}) {
+    const auto target = valid(
+        Target::create(2, Connectivity::allToAll(),
+                       NativeOperations::fromOperations({
+                           valid(OperationCapability::create("u", 1, 3)),
+                           valid(OperationCapability::create("cz", 2, 0)),
+                           valid(OperationCapability::create("gphase", 0, 1)),
+                           valid(OperationCapability::create(
+                               nativeSwap ? "swap" : "cx", 2, 0)),
+                           valid(OperationCapability::create("rzz", 2, 1)),
+                       })));
+    auto moduleOp = build([&](QCOProgramBuilder& builder) {
+      auto [a, b] =
+          builder.swap(builder.staticQubit(0), builder.staticQubit(1));
+      std::tie(a, b) = nativeSwap ? builder.rzz(0.3, a, b) : builder.cx(a, b);
+      return builder.intConstant(0);
+    });
+    const auto before = printModule(*moduleOp);
+    ASSERT_TRUE(mlir::succeeded(
+        runPass(*moduleOp, mlir::qco::createFuseTwoQubitGates(target))));
+    /// Two native gates stay native; a SWAP plus CX also stays compact until
+    /// placement, even though their individual native lowering costs more.
+    EXPECT_EQ(printModule(*moduleOp), before);
+  }
+}
+
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionPreservesUnevenWireRuns) {
   const auto uneven = [](QCOProgramBuilder& builder) {
     auto q0Input = builder.staticQubit(0);
@@ -428,6 +532,9 @@ TEST_F(TargetSynthesisTest,
       if (!required) {
         // Optional fusion needs at least two operations in the run.
         static_cast<void>(builder.h(outputs[0]));
+      } else {
+        /// Failed block synthesis must fall back to the individual diagnostic.
+        static_cast<void>(builder.cx(outputs[0], outputs[1]));
       }
       return builder.intConstant(0);
     });
@@ -455,23 +562,46 @@ TEST_F(TargetSynthesisTest,
 }
 
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionExposesEarlierRunContinuations) {
-  const auto adjacentRuns = [](QCOProgramBuilder& builder) {
-    auto q0 = builder.staticQubit(0);
-    auto q1 = builder.staticQubit(1);
-    auto q2 = builder.staticQubit(2);
-    std::tie(q0, q1) = builder.cx(q0, q1);
-    std::tie(q0, q2) = builder.cx(q0, q2);
-    std::tie(q0, q2) = builder.cx(q0, q2);
-    std::tie(q0, q1) = builder.cx(q0, q1);
-    return builder.intConstant(0);
-  };
-  auto expected = build(adjacentRuns);
-  auto optimized = build(adjacentRuns);
+  const auto target = valid(
+      Target::create(3, Connectivity::allToAll(),
+                     NativeOperations::fromOperations({
+                         valid(OperationCapability::create("u", 1, 3)),
+                         valid(OperationCapability::create("cz", 2, 0)),
+                         valid(OperationCapability::create("gphase", 0, 1)),
+                     })));
+  for (const bool native : {false, true}) {
+    for (const bool localGate : {false, true}) {
+      SCOPED_TRACE(native);
+      SCOPED_TRACE(localGate);
+      const auto adjacentRuns = [&](QCOProgramBuilder& builder) {
+        auto q0 = builder.staticQubit(0);
+        auto q1 = builder.staticQubit(1);
+        auto q2 = builder.staticQubit(2);
+        std::tie(q0, q1) = builder.cx(q0, q1);
+        std::tie(q0, q2) = builder.cx(q0, q2);
+        if (localGate) {
+          q0 = builder.x(q0);
+        }
+        std::tie(q0, q2) = builder.cx(q0, q2);
+        std::tie(q0, q1) = builder.cx(q0, q1);
+        return builder.intConstant(0);
+      };
+      auto expected = build(adjacentRuns);
+      auto optimized = build(adjacentRuns);
 
-  ASSERT_TRUE(mlir::succeeded(
-      runPass(*optimized, mlir::qco::createFuseTwoQubitGates())));
-  EXPECT_EQ(countOps<CtrlOp>(*optimized), 0U);
-  expectEquivalent(expected, optimized);
+      if (native) {
+        ASSERT_TRUE(mlir::succeeded(runTargetPass(
+            *optimized, target, mlir::qco::createTargetNativeSynthesis())));
+        ASSERT_TRUE(mlir::succeeded(runTargetPass(
+            *optimized, target, mlir::qco::createVerifyTargetConformance())));
+      } else {
+        ASSERT_TRUE(mlir::succeeded(
+            runPass(*optimized, mlir::qco::createFuseTwoQubitGates())));
+      }
+      EXPECT_EQ(countOps<CtrlOp>(*optimized), 0U);
+      expectEquivalent(expected, optimized);
+    }
+  }
 }
 
 TEST_F(TargetSynthesisTest, TwoQubitGateFusionEmitsSymmetricEntangler) {
@@ -1548,24 +1678,31 @@ TEST_F(TargetSynthesisTest, TargetNativeSynthesisUsesHomogeneousCapability) {
   expectEquivalent(expected, synthesized);
 }
 
-TEST_F(TargetSynthesisTest,
-       UnrestrictedOperationSetTreatsEveryOperationAsNative) {
-  auto module = build([](QCOProgramBuilder& builder) {
-    auto qubit = builder.staticQubit(0);
-    qubit = builder.h(qubit);
+TEST_F(TargetSynthesisTest, UnrestrictedTargetOptimizesNativeBlocks) {
+  const auto circuit = [](QCOProgramBuilder& builder) {
+    auto q0Input = builder.staticQubit(0);
+    auto q1Input = builder.staticQubit(1);
+    auto [q0, q1] = builder.cx(q0Input, q1Input);
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    std::tie(q0, q1) = builder.cx(q0, q1);
+    q0 = builder.h(q0);
     builder.gphase(0.25);
     return builder.intConstant(0);
-  });
+  };
+  auto expected = build(circuit);
+  auto synthesized = build(circuit);
   const auto permissive = valid(Target::create(
-      1, Connectivity::allToAll(), NativeOperations::unrestricted()));
-  attachTestEnvironment(*module, permissive);
-  const auto before = printModule(*module);
+      2, Connectivity::allToAll(), NativeOperations::unrestricted()));
 
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
-      *module, permissive, mlir::qco::createTargetNativeSynthesis())));
+      *synthesized, permissive, mlir::qco::createTargetNativeSynthesis())));
   ASSERT_TRUE(mlir::succeeded(runTargetPass(
-      *module, permissive, mlir::qco::createVerifyTargetConformance())));
-  EXPECT_EQ(printModule(*module), before);
+      *synthesized, permissive, mlir::qco::createVerifyTargetConformance())));
+  size_t entanglers = 0;
+  synthesized->walk(
+      [&](mlir::qco::UnitaryOpInterface op) { entanglers += op.isTwoQubit(); });
+  EXPECT_EQ(entanglers, 1U);
+  expectEquivalent(expected, synthesized);
 }
 
 TEST_F(TargetSynthesisTest, NativePowShellHidesItsImplementationBody) {

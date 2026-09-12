@@ -275,7 +275,8 @@ public:
 
   /// Synthesize native operations for an all-to-all target in place.
   ///
-  /// Assigns static sites without the default optimization or routing stages.
+  /// Assigns static sites and resynthesizes constant two-qubit runs in the
+  /// native basis, without routing.
   /// Do not rely on the program contents if synthesis fails.
   [[nodiscard]] bool synthesizeForTarget(const TargetEnvironment& environment,
                                          bool enableTiming = false,

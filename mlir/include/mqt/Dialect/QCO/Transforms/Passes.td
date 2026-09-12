@@ -256,7 +256,15 @@ def TargetNativeSynthesis : Pass<"target-native-synthesis", "mlir::ModuleOp"> {
   let description = [{
     Reads the typed `mqt.target_env` module attribute and lowers non-native
     unitary operations to one complete synthesis basis supported throughout the
-    compiler target. Unknown native-operation metadata is valid when no
+    compiler target. Constant two-qubit runs, including interleaved single-qubit
+    gates, are resynthesized together when this strictly reduces the number of
+    native two-qubit gates compared with preserving supported operations and
+    lowering the others individually. Native support includes ordered site
+    placements. Equal-cost runs and runs whose numerical decomposition fails
+    are left for individual lowering. Barriers, non-unitary operations, and
+    unavailable matrices stop a run.
+
+    Unknown native-operation metadata is valid when no
     surviving unitary operation needs it. Otherwise, the pass fails when the
     metadata is unknown, no complete basis exists, or an operation has no
     compile-time unitary matrix and cannot be synthesized as a parameterized
