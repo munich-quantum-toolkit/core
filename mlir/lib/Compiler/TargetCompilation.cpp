@@ -100,7 +100,7 @@ static void populatePostPlacementPipeline(OpPassManager& pm) {
 static void
 populateTargetPipeline(OpPassManager& pm, const TargetEnvironment& environment,
                        const MappingOptions& mapping,
-                       std::shared_ptr<qco::LayoutTracking> tracking) {
+                       const std::shared_ptr<qco::LayoutTracking>& tracking) {
   pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
                                                             mapping));
   if (tracking) {
