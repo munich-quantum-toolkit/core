@@ -207,6 +207,8 @@ struct Instruction {
   std::vector<Parameter> parameters;
   std::vector<GateModifier> modifiers;
   std::optional<StandardGateMapping> standardGate;
+  /// Output position i carries input position permutation[i].
+  std::optional<std::vector<uint32_t>> permutation = std::nullopt;
 };
 
 enum class ClassicalType : uint8_t {
