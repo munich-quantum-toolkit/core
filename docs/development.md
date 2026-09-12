@@ -213,6 +213,16 @@ non-obvious rules that agents must keep in immediate context to avoid a
 recurring mistake. Enforce mechanical rules in repository tooling instead of
 relying on prose.
 
+Scope instructions to relevant work. Keep skill descriptions short and load
+workflow details on demand. Define outcomes and constraints rather than
+prescribing each step. Complete authorized work through relevant validation;
+repeat checks only for new changes, failures, or unresolved concerns.
+
+Plans and audit files should preserve useful decisions, not log routine tasks.
+Benchmark only when requested or needed to answer a concrete performance
+question. Keep ad hoc experiments outside the repository unless explicitly
+requested.
+
 [commit-messages]: https://chris.beams.io/posts/git-commit/
 [google-cpp]: https://google.github.io/styleguide/cppguide.html
 [llvm-coding-standards]: https://llvm.org/docs/CodingStandards.html

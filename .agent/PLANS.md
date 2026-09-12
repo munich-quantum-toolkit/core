@@ -1,10 +1,8 @@
 # Execution plans (ExecPlans)
 
-An ExecPlan records the goal, current implementation approach, consequential
-decisions, and evidence for a complex task. Store one plan per independently
-implemented task in `.agent/plans/<task-slug>.md`. Small fixes and documentation
-edits do not need a plan unless unresolved design or coordination makes one
-useful. Follow the root `AGENTS.md` and any scoped guidance.
+Use an ExecPlan when complex work needs a durable decision record, or on
+request. Store one per task in `.agent/plans/<task-slug>.md`. Small fixes and
+documentation edits rarely need one. Follow the root `AGENTS.md`.
 
 ## Write for the next contributor
 
@@ -20,11 +18,11 @@ choice only when its rationale will help someone maintain or change the result.
 A plan is evidence of intent, not authority over a user request, public
 contract, or the implementation that ultimately landed.
 
-State assumptions and unresolved decisions explicitly. Resolve routine choices
-within the authorized scope. Ask when a consequential ambiguity remains or a
-choice would exceed the requested scope or change a supported contract beyond
-what the user authorized. A plan does not authorize commits, publication,
-external actions, or work in another task's checkout.
+Define completion by delivered behavior and relevant checks. Resolve routine
+choices and continue until done or blocked; ask about consequential ambiguity or
+work outside the authorized scope. State unresolved assumptions explicitly. A
+plan does not authorize commits, publication, external actions, or work in
+another task's checkout.
 
 ## Keep one current account
 
@@ -62,8 +60,9 @@ passes.
 Start with a status: proposed, in progress, blocked, complete, or superseded.
 State what remains for an active plan. Use a short milestone checklist only for
 work that is still being tracked; timestamps on every activity are unnecessary.
-Each milestone should end in observable behavior and a focused check. Prototype
-only a concrete uncertainty, with a criterion for keeping or discarding it.
+Milestones should describe observable behavior; validate where it can expose a
+meaningful failure. Prototype only a concrete uncertainty, with a criterion for
+keeping or discarding it.
 
 At completion or before handoff of a completed change, compact the plan into a
 decision record: outcome and scope, durable decisions, validation, and remaining
@@ -81,11 +80,9 @@ monitoring.
 
 ## Performance evidence
 
-For a performance change, identify the workload, baseline, correctness checks,
-and relevant quality measures before implementation. Follow the
-[benchmark experiment rules](../AGENTS.md#benchmark-experiments), including when
-to retain or discard the setup. Link retained setups from the plan. Keep the
-measured result and its limits in the completed decision record.
+Follow the [performance evidence guidance](../AGENTS.md#performance-evidence).
+Record measurements and limits that explain the decision, not experiment
+artifacts.
 
 ## Validation
 

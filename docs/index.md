@@ -21,6 +21,9 @@ Install the [Python package](https://pypi.org/project/mqt.core/) or follow the
 :gutter: 3
 
 :::{grid-item-card} Compile and execute a program
+:img-top: _static/tasks/compile.webp
+:img-alt:
+
 Estimate a phase with two qubits and measurement feedback.
 
 - **First example:** {doc}`QPE walkthrough <getting_started>`
@@ -30,6 +33,9 @@ Estimate a phase with two qubits and measurement feedback.
 :::
 
 :::{grid-item-card} Connect or implement a device
+:img-top: _static/tasks/devices.webp
+:img-alt:
+
 Discover QDMI devices, integrate SDKs, and implement device interfaces.
 
 - **First example:** [Discover and use a device](qdmi/driver.md#python-bindings)
@@ -38,6 +44,9 @@ Discover QDMI devices, integrate SDKs, and implement device interfaces.
 :::
 
 :::{grid-item-card} Use decision diagrams
+:img-top: _static/tasks/decision-diagrams.webp
+:img-alt:
+
 Represent and manipulate quantum states and operations in C++ or Python.
 
 - **First example:** [DD quickstart](dd_package.md#quickstart)
@@ -46,6 +55,9 @@ Represent and manipulate quantum states and operations in C++ or Python.
 :::
 
 :::{grid-item-card} Generate and evaluate benchmarks
+:img-top: _static/tasks/benchmarks.webp
+:img-alt:
+
 Configure structured programs and compare results with analytic references.
 
 - **First example:**
@@ -55,6 +67,9 @@ Configure structured programs and compare results with analytic references.
 :::
 
 :::{grid-item-card} Exchange quantum programs
+:img-top: _static/tasks/exchange.webp
+:img-alt:
+
 Move between Qiskit, OpenQASM, jeff, and QIR text or bitcode.
 
 - **First example:** [Qiskit to QIR](qir/index.md#from-a-qiskit-circuit-to-qir)
@@ -64,6 +79,9 @@ Move between Qiskit, OpenQASM, jeff, and QIR text or bitcode.
 :::
 
 :::{grid-item-card} Embed or extend MQT Core
+:img-top: _static/tasks/extend.webp
+:img-alt:
+
 Use the C++ libraries or work on the MLIR compiler infrastructure.
 
 - **First example:** [C++ library quickstart](cpp_api.md#use-the-dd-library)

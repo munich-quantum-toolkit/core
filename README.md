@@ -18,17 +18,17 @@
 
 # MQT Core - The Backbone of the Munich Quantum Toolkit (MQT)
 
-MQT Core is a collection of open-source C++20 and Python libraries for quantum
-computing. Its MQT Compiler Collection is built on **MLIR and LLVM** and
-connects structured quantum-classical programs to optimization, hardware
-mapping, and execution. Its libraries form the backbone of the
+MQT Core provides reusable C++20 and Python libraries for quantum computing: the
+**MQT Compiler Collection**, built on **MLIR and LLVM**, together with decision
+diagrams, QIR execution, QDMI device access, SDK and HPC integrations, and
+structured benchmarks. It forms the backbone of the
 [_Munich Quantum Toolkit (MQT)_](https://mqt.readthedocs.io).
 
-**MQT Core 4 is a major architectural release:** the compiler's program
-representations replace the classic circuit APIs. Start with the
-[v4 release overview](CHANGELOG.md#400---2026-09-11) and
-[v3-to-v4 upgrade guide](UPGRADING.md#400) when migrating an existing
-application. The low-level DD and QDMI libraries remain available.
+**MQT Core 4 is a major architectural release.** Structured compiler
+representations replace the classic circuit APIs and connect quantum-classical
+programs to optimization, hardware mapping, and execution. For the release
+highlights, see the [v4 overview](CHANGELOG.md#400---2026-09-11). Existing users
+should start with the [v3-to-v4 migration guide](UPGRADING.md#400).
 
 <p align="center">
   <a href="https://mqt.readthedocs.io/projects/core">
@@ -36,31 +36,7 @@ application. The low-level DD and QDMI libraries remain available.
   </a>
 </p>
 
-## Key Features
-
-- **[MQT Compiler Collection](https://mqt.readthedocs.io/projects/core/en/stable/mlir/mqt_compiler_collection.html):**
-  Generate and optimize structured quantum/classical programs, map them to
-  devices, synthesize native gates, and exchange programs through OpenQASM,
-  Qiskit, QIR, and jeff.
-- **[Decision diagrams](https://mqt.readthedocs.io/projects/core/en/stable/dd_package.html):**
-  Represent quantum states and operations, simulate programs, and analyze their
-  behavior through C++ and Python.
-- **[QIR execution](https://mqt.readthedocs.io/projects/core/en/stable/qir/index.html):**
-  Execute supported QIR Base and Adaptive Profile programs with the DD runtime.
-- **[QDMI](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/index.html):**
-  Discover devices, query capabilities, compile programs, and submit jobs. Use
-  bundled DDSIM for execution and superconducting hardware models for
-  compilation.
-- **SDK and HPC integration:** connect devices through
-  [Qiskit](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/qdmi_backend.html),
-  [PennyLane](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/pennylane_device.html),
-  and
-  [Slurm](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/slurm.html).
-- **[Structured benchmarks](https://mqt.readthedocs.io/projects/core/en/stable/benchmarks.html):**
-  Generate configurable quantum programs, query analytic references, and
-  evaluate sampled results.
-
-## Getting Started
+## Start with your task
 
 Install [mqt.core](https://pypi.org/project/mqt.core/) in a Python 3.11 or newer
 virtual environment:
@@ -68,6 +44,21 @@ virtual environment:
 ```console
 uv pip install mqt.core
 ```
+
+For other installation options, follow the
+[source-build instructions](https://mqt.readthedocs.io/projects/core/en/stable/installation.html).
+Then choose a starting point:
+
+| Task                                 | Start here                                                                                                                                                                                                                                                                    |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Compile and execute a program**    | Estimate a phase with [QPE](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html); explore [compilation and execution](https://mqt.readthedocs.io/projects/core/en/stable/compilation/index.html).                                                         |
+| **Connect or implement a device**    | [Discover devices](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/driver.html#python-bindings), [integrate SDKs, or implement an interface](https://mqt.readthedocs.io/projects/core/en/stable/qdmi/index.html).                                                     |
+| **Use decision diagrams**            | Represent states and operations in C++ or Python: [DD quickstart](https://mqt.readthedocs.io/projects/core/en/stable/dd_package.html#quickstart).                                                                                                                             |
+| **Generate and evaluate benchmarks** | [Configure quantum programs](https://mqt.readthedocs.io/projects/core/en/stable/benchmarks.html#configure-a-typed-instance) and compare results with analytic references.                                                                                                     |
+| **Exchange quantum programs**        | [Qiskit to QIR](https://mqt.readthedocs.io/projects/core/en/stable/qir/index.html#from-a-qiskit-circuit-to-qir), [OpenQASM](https://mqt.readthedocs.io/projects/core/en/stable/mlir/OpenQASM.html), and [jeff](https://mqt.readthedocs.io/projects/core/en/stable/jeff.html). |
+| **Embed or extend MQT Core**         | [Use the C++ libraries](https://mqt.readthedocs.io/projects/core/en/stable/cpp_api.html#use-the-dd-library) or [extend the MLIR compiler](https://mqt.readthedocs.io/projects/core/en/stable/development.html#mlir).                                                          |
+
+## Getting Started
 
 Estimate the phase `3/8` with eight bits of precision using
 **iterative quantum phase estimation (QPE)**. This uses two qubits and
@@ -107,15 +98,6 @@ The
 compares standard and iterative QPE and evaluates a phase that cannot be
 represented exactly with eight bits. This phase-gate benchmark illustrates the
 phase-estimation step used in algorithms such as Shor's.
-
-## Further Documentation
-
-- [Install and build MQT Core](https://mqt.readthedocs.io/projects/core/en/stable/installation.html).
-- [Compile and execute programs](https://mqt.readthedocs.io/projects/core/en/stable/getting_started.html).
-- Browse the
-  [Python API](https://mqt.readthedocs.io/projects/core/en/stable/api/mqt/core/index.html)
-  and
-  [C++ entry point](https://mqt.readthedocs.io/projects/core/en/stable/cpp_api.html).
 
 ## Development
 

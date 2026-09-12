@@ -16,10 +16,12 @@ Payload control-flow legalization remains owned by #2162. Supported structured
 regions already have single-block verifiers; the entry-function restriction is
 checked by mapping. No payload capability checks were duplicated.
 
-The optional mapping benchmark and its data, figure, and reproduction steps are
-in `.agent/benchmarks/routing/README.md`. Identical mapped-IR hashes and SWAP
-counts accompany a 1.56–1.82 times speedup for unchanged branch layouts. The
-routing workload is essentially unchanged. Graph measurements are synthetic.
+The historical comparison of `91a9e0ba514af938680cdd394d6d63195872dc9a` and
+`c38c99cf3a8974abf1b8967bb94648f2e49e2271` recorded identical mapped-IR hashes
+and SWAP counts alongside a 1.56–1.82 times speedup for unchanged branch
+layouts. The routing workload was essentially unchanged. Graph measurements were
+synthetic. The ad hoc harness and data were removed after the 4.0 release; they
+remain available in Git history at `5bd57f1cd`.
 
 ## Validation
 
@@ -35,12 +37,3 @@ combined compiler suite passed 193 of 195 tests. Its two failing tests,
 allocate qubits outside the entry block. Both failures were reproduced with the
 routing changes removed, before the mapping pass runs. Updating those #2162
 inputs is outside this PR's scope.
-
-The benchmark is self-contained under `.agent/benchmarks/routing/`, including an
-explicit CMake hook. It builds against baseline and candidate checkouts without
-source-tree edits or test targets. Relocation checks matched all 45 outputs per
-revision to the recorded hashes and SWAP counts; a candidate build with tests
-disabled and a normal build without the benchmark target verified isolation. The
-collection and plotting scripts were exercised separately from the preserved
-historical timing data. Shared benchmark rules live in `AGENTS.md`, with links
-from the plan and audit guides.

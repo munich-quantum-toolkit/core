@@ -1,9 +1,7 @@
 # MQT Core Agent Guide
 
-Follow this guide and the repository's
-[development policy](docs/development.md), including its MLIR section when
-relevant. The [AI usage policy](docs/ai_usage.md) defines human accountability
-and disclosure for agent-assisted contributions.
+Use relevant sections of the [development policy](docs/development.md) and the
+[AI usage policy](docs/ai_usage.md). Load supporting documents only as needed.
 
 ## Repository layout
 
@@ -23,9 +21,12 @@ and disclosure for agent-assisted contributions.
 - Inspect the working tree first and preserve user changes. Keep the diff
   focused on the assigned task; avoid unrelated cleanup, formatting, and
   upgrades.
-- Trace producers, shared helpers, and consumers before editing. Fix the owning
-  layer and reuse existing code or dependency facilities. Do not reconstruct a
-  shared contract in each frontend, exporter, or caller.
+- Complete authorized work, including relevant validation and fixes, without
+  routine approval checkpoints. Ask only about consequential ambiguity or work
+  outside scope; cite any instruction that blocks progress.
+- For behavioral changes, trace producers, shared helpers, and consumers. Fix
+  the owning layer and reuse existing code or dependency facilities. Do not
+  reconstruct a shared contract in each frontend, exporter, or caller.
 - State supported inputs, failure behavior, and ownership before expanding an
   API. Prefer the smallest complete solution while preserving correctness and
   runtime efficiency. Fewer lines alone do not prove a simpler design.
@@ -43,10 +44,10 @@ and disclosure for agent-assisted contributions.
   Remove repetition of code, boilerplate parameters, change narration, and
   unsupported assurances. Use symbol references instead of brittle line
   pointers. Keep prompts and review history out of code and API docs.
-- Add or update tests for behavioral changes. Protect supported semantics and
-  concrete regressions, not provisional implementation choices. Check history,
-  callers, invariants, and resource limits before weakening a test; equal line
-  coverage or a shared failure does not establish redundancy.
+- Test changed behavior and concrete regressions, not implementation details.
+  Low-impact edits need no new tests. Before weakening a test, check history,
+  callers, invariants, and resource limits; equal line coverage or a shared
+  failure does not establish redundancy.
 - Put tests in the owning subsystem's test tree. Use direct unit tests for
   semantic contracts and subprocesses only for irreducible CLI behavior. Do not
   put MLIR tests under production tools or enable an optional production tool
@@ -121,8 +122,8 @@ comment, data-structure, diagnostic, and debugging guidance.
 
 ## Build and validation
 
-Use the narrowest relevant test while iterating, then run the required gates.
-Local machine overrides may select another supported preset.
+Run checks relevant to the change and required by repository policy. Local
+machine overrides may select another supported preset.
 
 | Task                                            | Command                                                            |
 | ----------------------------------------------- | ------------------------------------------------------------------ |
@@ -136,7 +137,7 @@ Local machine overrides may select another supported preset.
 | MLIR reference generation                       | `cmake --build --preset release --target mlir-doc`                 |
 | Complete executable documentation               | `uvx nox --non-interactive -s docs`                                |
 | External documentation links                    | `uvx nox --non-interactive -s docs -- -b linkcheck`                |
-| Full repository lint after each completed batch | `uvx nox -s lint`                                                  |
+| Repository lint before handoff                  | `uvx nox -s lint`                                                  |
 
 Use `debug` for debug builds. Run component binaries directly with GoogleTest
 filters when useful, such as
@@ -154,26 +155,21 @@ following edits and distinguish passes from skipped, blocked, or pending checks.
 Report checks run and their outcomes; stop after required gates pass unless a
 concrete remaining risk justifies more validation.
 
-## Plans, audits, and benchmarks
+## Plans and audits
 
-Use an [ExecPlan](.agent/PLANS.md) for complex features or significant
-refactors, with one file per independent task under `.agent/plans/`. Keep scope,
-decisions, remaining work, and validation concise; retain a decision record at
-completion. Small tasks do not need activity records.
+Keep an [ExecPlan](.agent/PLANS.md) in `.agent/plans/` when design or
+coordination needs a durable record, or on request. Small tasks need no plan
+file.
 
-Use a [SpecAudit](.agent/AUDITS.md) for concrete concerns about tests and their
-contracts, under `.agent/audits/`. Separate confirmed findings from candidates,
-apply changes only within authorization, and group related fixes for review.
+Use [audit guidance](.agent/AUDITS.md) for contract reviews. Save findings in
+`.agent/audits/` only when a durable record is useful or requested.
 
-### Benchmark experiments
+## Performance evidence
 
-Put temporary benchmark experiments under `.agent/benchmarks/<scope>/`, outside
-normal build, test, and lint targets. Small improvements need workload,
-baseline, measurements, and limits in the PR or audit; remove unneeded harnesses
-before pushing. For major features or performance changes, retain reproduction
-commands, exact revisions, environment, raw measurements, and comparison plots.
-Use matched comparisons; check correctness, output quality, spread, and
-regressions. Durable regression tests belong in the test tree.
+Benchmark only when requested or needed for a concrete performance question;
+prefer existing tools. Keep ad hoc harnesses, data, and plots outside the
+repository unless explicitly requested. Support performance claims with the
+workload, baseline, environment, measurements, and limits.
 
 ## Git and public contributions
 
