@@ -1,6 +1,7 @@
 # Preserve compiler input identities
 
-Status: implementation and semantic validation complete; final lint and review remain.
+Status: implementation and semantic validation complete; final lint and review
+remain.
 
 ## Goal and scope
 
@@ -22,9 +23,14 @@ identities as vector UUIDs, while preserving other valid group identifiers.
 Local helper and loop parameters retain their existing lexical sharing; this
 change preserves externally bindable free inputs.
 
-## Work remaining
+## Validation and limits
 
-- [x] Add the shared metadata contract and verifier tests.
-- [x] Carry parameter IDs through import/export and test original-object binding.
-- [x] Build and regenerate stubs; pass all 385 translation and 33 native metadata tests.
-- [ ] Complete repository and C++ lint, then publish the focused draft PR.
+The built translation suite passes all 385 tests, and all 33 native MQT metadata
+tests pass. Stub generation, repository lint, and changed-file C++ lint pass.
+The regressions cover binding with the original parameter objects after QC/QCO
+conversion, optimization, and serialization, sparse vectors, extreme UUIDs, and
+invalid shared metadata.
+
+Private helper and loop identities are not guaranteed. OpenQASM and QIR do not
+retain compiler input identity metadata. Vector element IDs must have one root
+UUID; inconsistent IDs are rejected at the SDK export boundary.
