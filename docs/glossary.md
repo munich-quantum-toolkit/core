@@ -307,6 +307,17 @@ manifest
   outputs, reference model, and benchmark-definition version. It accompanies
   the generated program but does not identify its file, format, or bytes.
 
+magic state
+  **Preferred term:** magic state. A non-stabilizer quantum state consumed by
+  protocols that implement non-Clifford operations using Clifford operations
+  and measurements. The distillation benchmark uses $|T\rangle = T|+\rangle$.
+
+magic-state distillation
+  **Preferred term:** magic-state distillation. A protocol that consumes several
+  imperfect magic states and conditionally retains fewer states with smaller
+  errors. Concatenated levels feed retained quantum states into further blocks.
+  The benchmark uses ideal inputs to check the protocol's execution.
+
 iterative quantum phase estimation
 iterative QPE
 iQPE

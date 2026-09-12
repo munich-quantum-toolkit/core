@@ -21,6 +21,7 @@ class BV;
 class ModularMultiplier;
 class GHZ;
 class Grover;
+class MagicStateDistillation;
 class Multiplexer;
 class QFT;
 class QFTAdder;
@@ -45,6 +46,10 @@ generate(const ModularMultiplier& benchmark);
 
 /// Generate the QC program for a configured GHZ benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const GHZ& benchmark);
+
+/// Generate concatenated 15-to-1 magic-state distillation.
+[[nodiscard]] std::optional<mlir::QCProgram>
+generate(const MagicStateDistillation& benchmark);
 
 /// Generate the QC program for a configured Grover benchmark.
 [[nodiscard]] std::optional<mlir::QCProgram> generate(const Grover& benchmark);

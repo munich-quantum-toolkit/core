@@ -1693,20 +1693,20 @@ static LogicalResult applyOp(Operation& op, WalkState& walk, StateDD& state) {
                          yield.getOperands().end());
         }
       })
-      .Case([&](func::CallOp call) -> LogicalResult {
+      .template Case<func::CallOp, CallOp>([&](auto call) -> LogicalResult {
         auto callee = walk.symbols.lookupNearestSymbolFrom<func::FuncOp>(
             call, call.getCalleeAttr());
         if (!callee) {
-          return call.emitError() << "func.call callee '" << call.getCallee()
+          return call.emitError() << "call callee '" << call.getCallee()
                                   << "' could not be resolved";
         }
         if (callee.isDeclaration()) {
-          return call.emitError() << "func.call callee must have a body";
+          return call.emitError() << "call callee must have a body";
         }
         Operation* calleeOp = callee.getOperation();
         if (!walk.activeCalls.insert(calleeOp).second) {
           return call.emitError()
-                 << "recursive func.call is not supported for QCO DD "
+                 << "recursive call is not supported for QCO DD "
                     "simulation";
         }
         const auto guard =

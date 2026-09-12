@@ -26,9 +26,10 @@
 MQT_BENCHMARK_FAMILY(BV, bv, "bv", 1)
 MQT_BENCHMARK_FAMILY(GHZ, ghz, "ghz", 1)
 MQT_BENCHMARK_FAMILY(Grover, grover, "grover", 1)
-MQT_BENCHMARK_FAMILY(ModularMultiplier,
-                     modularMultiplier,
-                     "modular-multiplier", 1)
+MQT_BENCHMARK_FAMILY(MagicStateDistillation, magicStateDistillation,
+                     "magic-state-distillation", 1)
+MQT_BENCHMARK_FAMILY(ModularMultiplier, modularMultiplier, "modular-multiplier",
+                     1)
 MQT_BENCHMARK_FAMILY(Multiplexer, multiplexer, "multiplexer", 1)
 MQT_BENCHMARK_FAMILY(QFT, qft, "qft", 1)
 MQT_BENCHMARK_FAMILY(QFTAdder, qftAdder, "qft-adder", 1)
