@@ -20,6 +20,7 @@
 #include "mqt/Dialect/QCO/QCOUtils.h"
 #include "mqt/Dialect/QCO/Transforms/Mapping/Mapping.h"
 #include "mqt/Dialect/QCO/Transforms/Passes.h"
+#include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
 #include "mqt/Dialect/QCO/Utils/Sorting.h"
 #include "mqt/Dialect/QTensor/IR/QTensorDialect.h"
 #include "mqt/Dialect/QTensor/IR/QTensorOps.h"
@@ -58,6 +59,7 @@
 #include "llvm/Support/Threading.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <algorithm>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -2487,6 +2489,134 @@ TEST_F(MappingPassFixture, KeepExecutableIdentityAcrossTrialOptions) {
           expected = output;
         } else {
           EXPECT_EQ(output, expected);
+        }
+      }
+    }
+  }
+}
+
+TEST_F(MappingPassFixture, EmbedShuffledInteractionPathWithoutSwaps) {
+  constexpr size_t numQubits = 64;
+  std::vector<CompilerTarget::Coupling> line;
+  for (size_t i = 1; i < numQubits; ++i) {
+    line.emplace_back(i - 1, i);
+  }
+  const auto lineTarget = llvm::cantFail(
+      CompilerTarget::create(numQubits, Connectivity::fromCouplings(line),
+                             NativeOperations::unrestricted()));
+  auto order = llvm::to_vector(llvm::seq<size_t>(0, numQubits));
+  std::mt19937_64 rng(42);
+  std::shuffle(order.begin(), order.end(), rng);
+  QCOProgramBuilder builder(context.get());
+  builder.initialize();
+  SmallVector<Value> qubits;
+  for (size_t i = 0; i < numQubits; ++i) {
+    qubits.push_back(builder.h(builder.allocQubit()));
+  }
+  for (size_t i = 1; i < numQubits; ++i) {
+    const auto a = order[i - 1];
+    const auto b = order[i];
+    std::tie(qubits[a], qubits[b]) = builder.cx(qubits[a], qubits[b]);
+  }
+  for (Value qubit : qubits) {
+    builder.sink(qubit);
+  }
+  auto input = builder.finalize();
+  for (const auto& target : {lineTarget, getSquareGridTarget(8)}) {
+    std::string expected;
+    for (bool multithreading : {false, true}) {
+      context->enableMultithreading(multithreading);
+      OwningOpRef<ModuleOp> moduleOp = input->clone();
+      ASSERT_TRUE(succeeded(runPass(
+          *moduleOp, target, MappingPassOptions{.ntrials = 1, .seed = 42})));
+      ASSERT_TRUE(succeeded(verify(*moduleOp)));
+      EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+      EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+      size_t swaps = 0;
+      moduleOp->walk([&](SWAPOp) { ++swaps; });
+      /// The interaction path fits both targets without routing overhead.
+      EXPECT_EQ(swaps, 0);
+      const auto output = printModule(*moduleOp);
+      if (!multithreading) {
+        expected = output;
+      } else {
+        EXPECT_EQ(output, expected);
+      }
+    }
+  }
+}
+
+TEST_F(MappingPassFixture, PreserveInteractionPathBasisStates) {
+  const auto lineTarget = llvm::cantFail(CompilerTarget::create(
+      6, Connectivity::fromCouplings({{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}}),
+      NativeOperations::unrestricted()));
+  const auto cycleTarget = llvm::cantFail(CompilerTarget::create(
+      8,
+      Connectivity::fromCouplings(
+          {{0, 1}, {1, 2}, {2, 3}, {3, 4}, {4, 5}, {5, 6}, {6, 7}, {7, 0}}),
+      NativeOperations::unrestricted()));
+  const auto starTarget = llvm::cantFail(CompilerTarget::create(
+      6, Connectivity::fromCouplings({{0, 1}, {0, 2}, {0, 3}, {0, 4}, {0, 5}}),
+      NativeOperations::unrestricted()));
+  const SmallVector<size_t> order{5, 0, 3, 1, 4, 2};
+  for (bool disjoint : {false, true}) {
+    SCOPED_TRACE(disjoint);
+    for (bool xBasis : {false, true}) {
+      SCOPED_TRACE(xBasis);
+      for (size_t basis = 0; basis < 64; ++basis) {
+        SCOPED_TRACE(basis);
+        auto input = QCOProgramBuilder::build(
+            context.get(), [&](QCOProgramBuilder& builder) {
+              auto bits = builder.allocClassicalBitRegister(6);
+              SmallVector<Value> qubits;
+              for (size_t i = 0; i < 6; ++i) {
+                Value qubit = builder.allocQubit();
+                if ((basis & (size_t{1} << i)) != 0) {
+                  qubit = builder.x(qubit);
+                }
+                qubits.push_back(xBasis ? builder.h(qubit) : qubit);
+              }
+              for (size_t i = 1; i < order.size(); ++i) {
+                /// Split into three-qubit and two-qubit paths and an idle
+                /// qubit.
+                if (disjoint && (i == 3 || i == 5)) {
+                  continue;
+                }
+                const auto a = order[i - 1];
+                const auto b = order[i];
+                std::tie(qubits[a], qubits[b]) =
+                    builder.cx(qubits[a], qubits[b]);
+              }
+              for (size_t i = 0; i < qubits.size(); ++i) {
+                if (xBasis) {
+                  qubits[i] = builder.h(qubits[i]);
+                }
+                std::tie(qubits[i], std::ignore) =
+                    builder.measure(qubits[i], bits, static_cast<int64_t>(i));
+                builder.sink(qubits[i]);
+              }
+              return bits;
+            });
+        const auto expected = qco::sample(getEntryPoint(*input), 1, 42);
+        ASSERT_TRUE(succeeded(expected));
+        for (const auto& target :
+             {lineTarget, getSquareGridTarget(3), cycleTarget, starTarget}) {
+          SCOPED_TRACE(target.numSites());
+          OwningOpRef<ModuleOp> moduleOp = input->clone();
+          ASSERT_TRUE(
+              succeeded(runPass(*moduleOp, target,
+                                MappingPassOptions{.ntrials = 1, .seed = 42})));
+          ASSERT_TRUE(succeeded(verify(*moduleOp)));
+          EXPECT_TRUE(succeeded(verifyLinearity(*moduleOp)));
+          EXPECT_TRUE(isExecutable(getEntryPoint(*moduleOp), target));
+          const auto actual = qco::sample(getEntryPoint(*moduleOp), 1, 42);
+          ASSERT_TRUE(succeeded(actual));
+          EXPECT_EQ(*actual, *expected);
+          if (target.maxDegree() != 5) {
+            size_t swaps = 0;
+            moduleOp->walk([&](SWAPOp) { ++swaps; });
+            EXPECT_EQ(swaps, 0);
+          }
         }
       }
     }
