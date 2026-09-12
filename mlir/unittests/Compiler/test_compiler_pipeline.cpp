@@ -2130,6 +2130,7 @@ qubit[2] first;
 qubit second;
 bit[2] out;
 x second;
+barrier first, second;
 cx second, first[1];
 out[0] = measure second;
 out[1] = measure first[1];
@@ -2169,7 +2170,7 @@ out[1] = measure first[1];
            {&result->initialLayout, &result->finalLayout}) {
         auto sites = *layout;
         llvm::sort(sites);
-        EXPECT_EQ(std::unique(sites.begin(), sites.end()), sites.end());
+        EXPECT_EQ(std::ranges::adjacent_find(sites), sites.end());
         for (const auto site : sites) {
           EXPECT_TRUE(target.vertexForSite(site));
         }
@@ -2246,9 +2247,12 @@ TEST_F(CompilerPipelineTest,
       CompilerTarget::create(2, CompilerTarget::Connectivity::allToAll(),
                              CompilerTarget::NativeOperations::unrestricted()));
   const TargetEnvironment environment(target, makePayloadSpecification());
-  for (const auto& initial :
-       {std::vector<int64_t>{0}, std::vector<int64_t>{0, 0},
-        std::vector<int64_t>{-1, 1}, std::vector<int64_t>{0, 9}}) {
+  for (const auto& initial : {
+           std::vector<int64_t>{0},
+           std::vector<int64_t>{0, 0},
+           std::vector<int64_t>{-1, 1},
+           std::vector<int64_t>{0, 9},
+       }) {
     auto qc = QCProgram::fromOpenQASMString("OPENQASM 3.1; qubit[2] q;");
     ASSERT_TRUE(qc);
     auto program = std::move(*qc).intoQCO();
@@ -2281,6 +2285,15 @@ TEST_F(CompilerPipelineTest,
   })mlir");
   ASSERT_TRUE(physical);
   EXPECT_FALSE(physical->compileForTargetWithLayout(environment));
+
+  auto argument = QCOProgram::fromMLIRString(R"mlir(module {
+    func.func @main(%q: !qco.qubit) attributes {mqt.entry_point} {
+      qco.sink %q : !qco.qubit
+      return
+    }
+  })mlir");
+  ASSERT_TRUE(argument);
+  EXPECT_FALSE(argument->compileForTargetWithLayout(environment));
 }
 
 TEST_F(CompilerPipelineTest, TargetLayoutReportsEmptyPrograms) {
