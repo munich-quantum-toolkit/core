@@ -37,11 +37,18 @@ public:
   MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(PrepareTargetCompilationPass)
 
   explicit PrepareTargetCompilationPass(TargetEnvironment environment,
-                                        bool allToAllOnly = false)
-      : environment_(std::move(environment)), allToAllOnly_(allToAllOnly) {}
+                                        bool allToAllOnly = false,
+                                        MappingOptions mapping = {})
+      : environment_(std::move(environment)), allToAllOnly_(allToAllOnly),
+        mapping_(mapping) {}
 
 protected:
   void runOnOperation() override {
+    if (mapping_.trials == 0) {
+      getOperation().emitError("mapping trials must be greater than zero");
+      signalPassFailure();
+      return;
+    }
     if (allToAllOnly_ && environment_.target().connectivityKind() !=
                              CompilerTarget::Connectivity::Kind::AllToAll) {
       getOperation().emitError(
@@ -70,6 +77,7 @@ protected:
 private:
   TargetEnvironment environment_;
   bool allToAllOnly_;
+  MappingOptions mapping_;
 };
 
 } /* namespace */
@@ -87,8 +95,10 @@ static void populatePostPlacementPipeline(OpPassManager& pm) {
 }
 
 void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const TargetEnvironment& environment) {
-  pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment));
+                                       const TargetEnvironment& environment,
+                                       const MappingOptions& mapping) {
+  pm.addPass(std::make_unique<PrepareTargetCompilationPass>(environment, false,
+                                                            mapping));
   const auto& target = environment.target();
   pm.addPass(createInlinerPass());
   pm.addPass(createSymbolDCEPass());
@@ -107,9 +117,15 @@ void populateTargetCompilationPipeline(OpPassManager& pm,
   pm.addPass(qco::createFuseTwoQubitGates(target));
   populateDefaultQCOOptimizationPipeline(pm);
   switch (target.connectivityKind()) {
-  case CompilerTarget::Connectivity::Kind::Explicit:
-    pm.addPass(qco::createMappingPass(qco::MappingPassOptions{}));
+  case CompilerTarget::Connectivity::Kind::Explicit: {
+    qco::MappingPassOptions options;
+    options.seed = mapping.seed;
+    if (mapping.trials) {
+      options.ntrials = *mapping.trials;
+    }
+    pm.addPass(qco::createMappingPass(options));
     break;
+  }
   case CompilerTarget::Connectivity::Kind::AllToAll:
     pm.addPass(qco::createPlacementPass(target));
     break;

@@ -11,6 +11,7 @@
 #include "mqt/Compiler/QDMIAdapter.h"
 
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Dialect/QIR/Utils/QIRUtils.h"
 #include "qdmi/Client.hpp"
 #include "qdmi/driver/Driver.hpp"
@@ -821,16 +822,15 @@ CompiledProgram::CompiledProgram(TargetEnvironment environment,
     : environment_(std::move(environment)), payload_(std::move(payload)),
       format_(format) {}
 
-llvm::Expected<CompiledProgram>
-CompiledProgram::compile(CompilerInput&& program,
-                         const TargetEnvironment& environment,
-                         bool enableTiming, bool enableStatistics) {
+llvm::Expected<CompiledProgram> CompiledProgram::compile(
+    CompilerInput&& program, const TargetEnvironment& environment,
+    bool enableTiming, bool enableStatistics, const MappingOptions& mapping) {
   auto format = qdmiFormatForPayload(environment.payloadSpecification());
   if (!format) {
     return format.takeError();
   }
   auto result = runDefaultPipeline(std::move(program), environment,
-                                   enableTiming, enableStatistics);
+                                   enableTiming, enableStatistics, mapping);
   if (!result) {
     return llvm::createStringError(
         std::make_error_code(std::errc::invalid_argument),
@@ -890,13 +890,13 @@ CompiledProgram::compile(CompilerInput&& program,
 llvm::Expected<CompiledProgram>
 compileProgram(CompilerInput&& program, const qdmi::Device& device,
                std::optional<QDMI_Program_Format> format, bool enableTiming,
-               bool enableStatistics) {
+               bool enableStatistics, const MappingOptions& mapping) {
   auto environment = targetEnvironmentFromDevice(device, format);
   if (!environment) {
     return environment.takeError();
   }
   return CompiledProgram::compile(std::move(program), *environment,
-                                  enableTiming, enableStatistics);
+                                  enableTiming, enableStatistics, mapping);
 }
 
 static llvm::Expected<qdmi::Job>

@@ -10,10 +10,24 @@
 
 #pragma once
 
+#include <cstddef>
+#include <optional>
+
 namespace mlir {
 
 class TargetEnvironment;
 class OpPassManager;
+
+/// Controls for native placement and routing trials.
+///
+/// Set both fields for repeatable mapping across machines with different CPU
+/// counts, using the same Core build, input, and target. All-to-all placement
+/// ignores these controls. The selected layout may change between releases.
+struct MappingOptions {
+  size_t seed = 42;
+  /// A positive count, or no value to use the available logical CPU count.
+  std::optional<size_t> trials;
+};
 
 /// Populate the canonical compiler-target pipeline.
 ///
@@ -28,7 +42,8 @@ class OpPassManager;
 /// module and shares its prepared target with every target-dependent pass.
 /// The environment must remain unchanged during pipeline execution.
 void populateTargetCompilationPipeline(OpPassManager& pm,
-                                       const TargetEnvironment& environment);
+                                       const TargetEnvironment& environment,
+                                       const MappingOptions& mapping = {});
 
 /// Populate target-native block synthesis without routing.
 ///

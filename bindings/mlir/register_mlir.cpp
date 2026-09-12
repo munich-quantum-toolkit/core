@@ -15,6 +15,7 @@
 #include "mqt/Compiler/Programs.h"
 #include "mqt/Compiler/QDMIAdapter.h"
 #include "mqt/Compiler/Target.h"
+#include "mqt/Compiler/TargetCompilation.h"
 #include "mqt/Compiler/TargetEnvironment.h"
 #include "mqt/Dialect/MQT/IR/MQTDialect.h"
 #include "mqt/Dialect/QCO/Utils/DDFunctionality.h"
@@ -360,7 +361,8 @@ qdmiFormat(mlir::ProgramFormat output) {
 compileProgramForTarget(const nb::object& program, const nb::object& target,
                         std::optional<QDMI_Program_Format> programFormat,
                         std::optional<mlir::ProgramFormat> output, bool inplace,
-                        bool enableTiming, bool enableStatistics) {
+                        bool enableTiming, bool enableStatistics,
+                        mlir::MappingOptions mapping) {
   if (output && programFormat) {
     throw nb::value_error("Specify either output or program_format, not both");
   }
@@ -377,15 +379,17 @@ compileProgramForTarget(const nb::object& program, const nb::object& target,
     if (output) {
       auto compiled = [&] {
         const nb::gil_scoped_release release;
-        return takeResult(mlir::runDefaultPipeline(
-            std::move(input), environment, enableTiming, enableStatistics));
+        return takeResult(mlir::runDefaultPipeline(std::move(input),
+                                                   environment, enableTiming,
+                                                   enableStatistics, mapping));
       }();
       return nb::cast(std::move(compiled));
     }
     auto compiled = [&] {
       const nb::gil_scoped_release release;
       return takeResult(mlir::CompiledProgram::compile(
-          std::move(input), environment, enableTiming, enableStatistics));
+          std::move(input), environment, enableTiming, enableStatistics,
+          mapping));
     }();
     return nb::cast(std::move(compiled));
   }
@@ -402,7 +406,8 @@ compileProgramForTarget(const nb::object& program, const nb::object& target,
   auto compiled = [&] {
     const nb::gil_scoped_release release;
     return takeResult(mlir::CompiledProgram::compile(
-        std::move(input), environment, enableTiming, enableStatistics));
+        std::move(input), environment, enableTiming, enableStatistics,
+        mapping));
   }();
   return nb::cast(std::move(compiled));
 }
@@ -1185,6 +1190,18 @@ Programs own their MLIR module. Conversions can consume a program; use
           },
           "Return the textual MLIR representation of this program.");
 
+  nb::class_<mlir::MappingOptions>(
+      m, "MappingOptions",
+      "Native mapping controls. Set seed and trials for reproducible mapping "
+      "with a fixed Core build, input, and target. All-to-all placement "
+      "ignores valid mapping options.")
+      .def(nb::init<size_t, std::optional<size_t>>(), nb::kw_only(),
+           "seed"_a = 42, "trials"_a = nb::none())
+      .def_rw("seed", &mlir::MappingOptions::seed, "Native mapper seed.")
+      .def_rw(
+          "trials", &mlir::MappingOptions::trials,
+          "Positive trial count; None uses the available logical CPU count.");
+
   auto qcProgram = nb::class_<mlir::QCProgram, mlir::Program>(
       m, "QCProgram", R"pb(A compiler program in the QC dialect.
 
@@ -1381,17 +1398,17 @@ operations.)pb");
           "compile_for_target",
           [](mlir::QCOProgram& program,
              const mlir::TargetEnvironment& environment, bool enableTiming,
-             bool enableStatistics) {
+             bool enableStatistics, const mlir::MappingOptions& mapping) {
             requireValid(program);
             withDiagnostics<nb::exception_type::runtime_error>(
                 program.module().getContext(), "Target compilation failed",
                 [&] {
                   return mlir::success(program.compileForTarget(
-                      environment, enableTiming, enableStatistics));
+                      environment, enableTiming, enableStatistics, mapping));
                 });
           },
           "target_environment"_a, nb::kw_only(), "enable_timing"_a = false,
-          "enable_statistics"_a = false,
+          "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{},
           "Compile this QCO program for the target in place. Do not rely on "
           "its contents if compilation fails. Failures raise RuntimeError "
           "with the emitted MLIR diagnostics.")
@@ -1704,7 +1721,7 @@ Returns:
   m.def("compile_program", &compileProgramForTarget, "program"_a, nb::kw_only(),
         "target"_a, "program_format"_a = nb::none(), "output"_a = nb::none(),
         "inplace"_a = false, "enable_timing"_a = false,
-        "enable_statistics"_a = false,
+        "enable_statistics"_a = false, "mapping"_a = mlir::MappingOptions{},
         R"pb(Compile for a device ID, open device, or explicit compiler target.
 
 Device targets select Adaptive QIR (binary, text), OpenQASM 3, then Base QIR

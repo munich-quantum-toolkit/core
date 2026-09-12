@@ -262,6 +262,7 @@ mqt.core.mlir.compile_program:
         inplace: bool = False,
         enable_timing: bool = False,
         enable_statistics: bool = False,
+        mapping: MappingOptions = ...,
     ) -> CompiledProgram:
         \doc
     @overload
@@ -273,6 +274,7 @@ mqt.core.mlir.compile_program:
         inplace: bool = False,
         enable_timing: bool = False,
         enable_statistics: bool = False,
+        mapping: MappingOptions = ...,
     ) -> CompiledProgram: ...
     @overload
     def compile_program(
@@ -283,6 +285,7 @@ mqt.core.mlir.compile_program:
         inplace: bool = False,
         enable_timing: bool = False,
         enable_statistics: bool = False,
+        mapping: MappingOptions = ...,
     ) -> OpenQASMProgram: ...
     @overload
     def compile_program(
@@ -293,6 +296,7 @@ mqt.core.mlir.compile_program:
         inplace: bool = False,
         enable_timing: bool = False,
         enable_statistics: bool = False,
+        mapping: MappingOptions = ...,
     ) -> QIRProgram: ...
 
 

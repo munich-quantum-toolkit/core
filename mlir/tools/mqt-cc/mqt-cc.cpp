@@ -140,6 +140,15 @@ static llvm::cl::opt<std::string> payloadSpecification(
     llvm::cl::desc("Selected payload as a typed #mqt.payload_spec attribute"),
     llvm::cl::value_desc("attribute"), llvm::cl::init(""));
 
+static llvm::cl::opt<size_t>
+    mappingSeed("mapping-seed",
+                llvm::cl::desc("Seed for native target mapping"),
+                llvm::cl::init(42));
+static llvm::cl::opt<size_t> mappingTrials(
+    "mapping-trials",
+    llvm::cl::desc(
+        "Positive native mapping trial count (default: logical CPUs)"));
+
 static llvm::cl::opt<std::string> qdmiConfig(
     "qdmi-config",
     llvm::cl::desc("Use an explicit QDMI registry configuration file"),
@@ -405,6 +414,23 @@ static int runCompiler(int argc, char** argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv,
                                     "MQT Compiler Collection Driver\n");
 
+  if ((mappingSeed.getNumOccurrences() != 0 ||
+       mappingTrials.getNumOccurrences() != 0) &&
+      qdmiDevice.empty()) {
+    llvm::errs() << "Mapping controls require --qdmi-device.\n";
+    return 1;
+  }
+  if (mappingTrials.getNumOccurrences() != 0 && mappingTrials == 0) {
+    llvm::errs() << "--mapping-trials must be greater than zero.\n";
+    return 1;
+  }
+  const MappingOptions mapping{
+      .seed = mappingSeed,
+      .trials = mappingTrials.getNumOccurrences() == 0
+                    ? std::nullopt
+                    : std::optional<size_t>{mappingTrials.getValue()},
+  };
+
   const bool isolated = runIsolatedPipeline || runReproducer;
   if (isolated &&
       ((runIsolatedPipeline && runReproducer) ||
@@ -667,7 +693,7 @@ static int runCompiler(int argc, char** argv) {
           pm.addPass(createInlinerPass());
         }
         if (targetEnvironment) {
-          populateTargetCompilationPipeline(pm, *targetEnvironment);
+          populateTargetCompilationPipeline(pm, *targetEnvironment, mapping);
           return success();
         }
         populateQCOCleanupPipeline(pm);

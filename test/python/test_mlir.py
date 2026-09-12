@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 import re
 import sys
+from functools import partial
 from pathlib import Path
 from threading import Event, Thread
 
@@ -27,6 +28,7 @@ from qiskit.quantum_info import Operator
 from mqt.core.mlir import (
     CompilerTarget,
     JeffProgram,
+    MappingOptions,
     OpenQASMProgram,
     OutputFormat,
     PayloadEncoding,
@@ -414,6 +416,82 @@ def test_compile_program_exposes_raw_and_optimized_qco() -> None:
     assert isinstance(raw, QCOProgram)
     assert isinstance(optimized, QCOProgram)
     assert raw.ir != optimized.ir
+
+
+@pytest.mark.parametrize("all_to_all", [False, True])
+def test_mapping_options_reject_zero_trials(*, all_to_all: bool) -> None:
+    """Reject invalid public mapping controls before rewriting the input."""
+    target = CompilerTarget(
+        2,
+        connectivity=(
+            CompilerTarget.Connectivity.all_to_all() if all_to_all else CompilerTarget.Connectivity([(0, 1)])
+        ),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    program = QCProgram.from_openqasm_str(QASM_STRING).to_qco()
+    before = program.ir
+
+    with pytest.raises(RuntimeError, match="mapping trials must be greater than zero"):
+        program.compile_for_target(_test_target_environment(target), mapping=MappingOptions(trials=0))
+
+    assert program.ir == before
+
+
+@pytest.mark.parametrize("seed", [0, 7])
+def test_explicit_mapping_options_are_repeatable(seed: int) -> None:
+    """Use fixed native trials for repeatable sparse-target compilation."""
+    source = """OPENQASM 3.1;
+include "stdgates.inc";
+qubit[4] q;
+bit[4] out;
+h q[0]; cx q[0], q[3]; cx q[1], q[2];
+cx q[0], q[2]; cx q[1], q[3]; cx q[0], q[1];
+out = measure q;
+"""
+    target = CompilerTarget(
+        4,
+        connectivity=CompilerTarget.Connectivity([(0, 1), (1, 2), (2, 3)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    mapping = MappingOptions(seed=seed, trials=3)
+    outputs = []
+    for _ in range(2):
+        program = QCProgram.from_openqasm_str(source).to_qco()
+        program.compile_for_target(_test_target_environment(target), mapping=mapping)
+        outputs.append(program.ir)
+    assert outputs[0] == outputs[1]
+    assert mapping.seed == seed
+    assert mapping.trials == 3
+
+    payloads = []
+    for _ in range(2):
+        payload = compile_program(source, target=target, output=OutputFormat.QIR_BASE, mapping=mapping)
+        assert isinstance(payload, QIRProgram)
+        payloads.append(payload.ir)
+    assert payloads[0] == payloads[1]
+
+
+@pytest.mark.parametrize("output_kind", ["typed", "payload", "device"])
+def test_compilation_entry_points_forward_mapping_options(output_kind: str) -> None:
+    """Keep mapping controls effective through every public target entry point."""
+    target = CompilerTarget(
+        2,
+        connectivity=CompilerTarget.Connectivity([(0, 1)]),
+        native_operations=CompilerTarget.NativeOperations.unrestricted(),
+    )
+    mapping = MappingOptions(trials=0)
+    if output_kind == "device":
+        compile_call = partial(compile_program, QASM_STRING, target="mqt.ddsim.default", mapping=mapping)
+    elif output_kind == "typed":
+        compile_call = partial(
+            compile_program, QASM_STRING, target=target, output=OutputFormat.QIR_BASE, mapping=mapping
+        )
+    else:
+        compile_call = partial(
+            compile_program, QASM_STRING, target=target, program_format=ProgramFormat.QASM3, mapping=mapping
+        )
+    with pytest.raises((RuntimeError, ValueError)):
+        compile_call()
 
 
 @requires_qiskit_translation
